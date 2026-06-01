@@ -82,12 +82,26 @@ struct LibraryView: View {
                 set: { if !$0 { searchTarget = nil } }
             )) {
                 if let result = searchTarget {
-                    RecordingDetailView(recording: Recording(
-                        id: result.recordingId,
-                        title: result.recordingTitle,
-                        type: result.recordingType,
-                        createdAt: Date()
-                    ))
+                    RecordingDetailView(
+                        recording: Recording(
+                            id: result.recordingId,
+                            title: result.recordingTitle,
+                            type: result.recordingType,
+                            createdAt: Date()
+                        ),
+                        onTrash: {
+                            let id = result.recordingId
+                            Task {
+                                await viewModel.trashRecording(
+                                    id: id,
+                                    apiClient: appState.getAPIClient()
+                                )
+                                // Refresh the search surface so the trashed
+                                // result no longer appears behind the dismiss.
+                                performSearch()
+                            }
+                        }
+                    )
                 }
             }
             .navigationDestination(isPresented: $showImportedDetail) {
@@ -588,6 +602,8 @@ struct FolderRecordingsView: View {
     @ObservedObject var viewModel: LibraryViewModel
     @State private var editMode: EditMode = .inactive
     @State private var selection = Set<String>()
+    @State private var renameRecordingTarget: Recording?
+    @State private var recordingTitleDraft = ""
 
     private var isEditing: Bool { editMode == .active }
 
@@ -662,6 +678,13 @@ struct FolderRecordingsView: View {
                             .tint(.blue)
                         }
                         .contextMenu {
+                            Button {
+                                recordingTitleDraft = recording.title ?? ""
+                                renameRecordingTarget = recording
+                            } label: {
+                                Label(t("Rename", "Переименовать"), systemImage: "pencil")
+                            }
+
                             Menu(t("Move to Folder", "Переместить в папку")) {
                                 Button(t("Unfiled", "Без папки")) {
                                     Task {
@@ -734,6 +757,22 @@ struct FolderRecordingsView: View {
                     }
                 }
             }
+        }
+        .alert(t("Rename Recording", "Переименовать запись"), isPresented: Binding(
+            get: { renameRecordingTarget != nil },
+            set: { if !$0 { renameRecordingTarget = nil } }
+        )) {
+            TextField(t("Title", "Название"), text: $recordingTitleDraft)
+            Button(t("Save", "Сохранить")) {
+                if let recording = renameRecordingTarget {
+                    let title = recordingTitleDraft
+                    Task {
+                        await viewModel.renameRecording(id: recording.id, newTitle: title, apiClient: appState.getAPIClient())
+                    }
+                }
+                renameRecordingTarget = nil
+            }
+            Button(t("Cancel", "Отмена"), role: .cancel) { renameRecordingTarget = nil }
         }
     }
 
@@ -873,13 +912,7 @@ struct TrashView: View {
             }
             Button(t("Cancel", "Отмена"), role: .cancel) {}
         } message: {
-            Text(String(
-                format: t(
-                    "This will permanently delete %d recordings. This cannot be undone.",
-                    "Это навсегда удалит записей: %d. Это действие нельзя отменить."
-                ),
-                viewModel.trashedRecordings.count
-            ))
+            Text(emptyTrashMessage)
         }
         .confirmationDialog(
             t("Delete selected permanently?", "Удалить выбранные навсегда?"),
@@ -900,8 +933,45 @@ struct TrashView: View {
         }
     }
 
+    /// Count-aware empty-trash warning with correct English and Russian plurals
+    /// and natural Russian word order (e.g. "удалит 1 запись" / "удалит 5 записей").
+    private var emptyTrashMessage: String {
+        let count = viewModel.trashedRecordings.count
+        if OnboardingL10n.language(for: languageManager.current) == .russian {
+            let noun = RussianPlural.recordings(count)
+            return "Это навсегда удалит \(count) \(noun). Это действие нельзя отменить."
+        }
+        let noun = count == 1 ? "recording" : "recordings"
+        return "This will permanently delete \(count) \(noun). This cannot be undone."
+    }
+
     private func t(_ english: String, _ russian: String) -> String {
         OnboardingL10n.text(english, russian, language: languageManager.current)
+    }
+}
+
+// MARK: - Russian Pluralization
+
+/// Russian noun pluralization for counts (1 → singular, 2–4 → few, 0/5–20 →
+/// many, with the standard teen exception). Used for user-facing count copy.
+enum RussianPlural {
+    static func recordings(_ count: Int) -> String {
+        forms(count, one: "запись", few: "записи", many: "записей")
+    }
+
+    static func forms(_ count: Int, one: String, few: String, many: String) -> String {
+        let mod100 = abs(count) % 100
+        if (11...14).contains(mod100) {
+            return many
+        }
+        switch abs(count) % 10 {
+        case 1:
+            return one
+        case 2, 3, 4:
+            return few
+        default:
+            return many
+        }
     }
 }
 
@@ -1189,22 +1259,36 @@ class LibraryViewModel: ObservableObject {
             let fetchedRecordings = try await active
             let fetchedTrashed = try await trashed
             let fetchedFolders = try await folderList
-            let backupManifests = (try? RecordingBackupStore.manifestsByRecordingId()) ?? [:]
+
+            // Read the local backup manifests separately: a failure here must
+            // surface (no-fallbacks) and must NOT silently wipe the existing
+            // "saved locally" / "needs attention" badges. If it throws we keep
+            // the prior badge sets and show a dismissible banner; the fetched
+            // recordings still render below.
+            let backupManifests: [String: RecordingBackupManifest]?
+            do {
+                backupManifests = try RecordingBackupStore.manifestsByRecordingId()
+            } catch {
+                backupManifests = nil
+                self.error = error.userFacingMessage(context: .library)
+            }
             guard generation == loadGeneration else { return }
 
             recordings = fetchedRecordings
             trashedRecordings = fetchedTrashed
             folders = fetchedFolders
-            localRecoveryRecordingIDs = Set(
-                backupManifests.compactMap { element in
-                    element.value.syncState != .remoteReady ? element.key : nil
-                }
-            )
-            permanentLocalFailureRecordingIDs = Set(
-                backupManifests.compactMap { element in
-                    element.value.isPermanentFailure ? element.key : nil
-                }
-            )
+            if let backupManifests {
+                localRecoveryRecordingIDs = Set(
+                    backupManifests.compactMap { element in
+                        element.value.syncState != .remoteReady ? element.key : nil
+                    }
+                )
+                permanentLocalFailureRecordingIDs = Set(
+                    backupManifests.compactMap { element in
+                        element.value.isPermanentFailure ? element.key : nil
+                    }
+                )
+            }
 
             processingRefreshTask?.cancel()
 
