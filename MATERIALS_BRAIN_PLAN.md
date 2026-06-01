@@ -36,7 +36,7 @@ The Brain viz is not the real blocker — **the knowledge graph is data-empty in
 - [ ] Backend: widen `recordings.py` `ALLOWED_AUDIO_EXTENSIONS` to include `SUPPORTED_VIDEO_EXTENSIONS` (only if keeping the recordings endpoint as a video path; otherwise `/items/upload` → import_media_as_recording covers it).
 - [ ] Backend: `classify_url` for direct media (.mp4/Vimeo/Loom) + reroute audio/* video/* content-type to transcription.
 - [ ] Backend: `needs_input` reprocess endpoint (append body / attach file + re-enqueue).
-- [ ] Web: rebuild AddAnythingPanel — drag-drop (react-dropzone) + file picker + paste-detect type chip + per-file XHR progress + multi-file queue.
+- [~] Web: AddAnythingPanel drag-drop + Attach-file → `uploadItem` (native HTML5, no new dep) — DONE. PENDING: paste-detect type chip before submit, multi-file queue, per-file progress bar.
 - [ ] Mac: `.dropDestination` + `.fileImporter`; `APIClient.uploadItem(fileURL:kind:)` streaming.
 - [ ] Web+Mac: render `needs_input` recovery (why + Paste/Attach/Retry).
 
@@ -63,3 +63,4 @@ The Brain viz is not the real blocker — **the knowledge graph is data-empty in
 - 2026-06-01: worktree + analysis workflow (21 agents) done; decisions locked; starting Phase 0 backend.
 - 2026-06-01: Phase 0 COMPLETE across surfaces — backend (01ccea77), web (fa061364), Mac (58bda2f7, xcodebuild ✓).
 - 2026-06-01: Phase 1a — `POST /items/upload` for documents (PDF/txt/md → Item). 19 items-route tests green; full backend suite 95.11% (gate ✓). Heads-up: main is red on 2 `test_observability.py` tests (`OPS_FORWARD_GENERIC_ERRORS` default-off, commit c0661d4b — owned by the sentry-telegram-bridge loop, NOT this work). Next: media upload (audio/video→Recording, async), `classify_url` media + SSRF guard, then web drag-drop + Mac .fileImporter.
+- 2026-06-01: Phase 1b — web AddAnythingPanel drag-drop + Attach-file → `uploadItem` (native HTML5, no dep). 8 AddAnything tests green; eslint + tsc clean. Next: Mac `.fileImporter` + `APIClient.uploadItem`, then media-upload async routing.

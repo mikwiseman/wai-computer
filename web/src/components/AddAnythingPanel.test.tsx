@@ -4,10 +4,12 @@ import { AddAnythingPanel } from "./AddAnythingPanel";
 
 const mockCreateItem = vi.fn();
 const mockGetItem = vi.fn();
+const mockUploadItem = vi.fn();
 
 vi.mock("@/lib/api", () => ({
   createItem: (...args: unknown[]) => mockCreateItem(...args),
   getItem: (...args: unknown[]) => mockGetItem(...args),
+  uploadItem: (...args: unknown[]) => mockUploadItem(...args),
 }));
 
 function summarizedItem(overrides = {}) {
@@ -149,5 +151,40 @@ describe("AddAnythingPanel", () => {
   it("disables the button when input is empty", () => {
     render(<AddAnythingPanel />);
     expect(screen.getByRole("button", { name: /Add to brain/i })).toBeDisabled();
+  });
+
+  it("uploads a chosen file and shows its summary", async () => {
+    mockUploadItem.mockResolvedValue({
+      id: "up-1",
+      state: "raw",
+      status: "summarizing",
+      error: null,
+      summary: null,
+    });
+    mockGetItem.mockResolvedValue(summarizedItem({ id: "up-1", title: "Uploaded Doc" }));
+
+    const { container } = render(<AddAnythingPanel />);
+    const input = container.querySelector(
+      '[data-testid="add-anything-file"]',
+    ) as HTMLInputElement;
+    const file = new File(["pdf bytes"], "doc.pdf", { type: "application/pdf" });
+    fireEvent.change(input, { target: { files: [file] } });
+
+    await waitFor(() => expect(mockUploadItem).toHaveBeenCalledWith(file));
+    await waitFor(() => expect(screen.getByText("Uploaded Doc")).toBeInTheDocument());
+  });
+
+  it("surfaces upload errors via onError", async () => {
+    const onError = vi.fn();
+    mockUploadItem.mockRejectedValue(new Error("upload boom"));
+
+    const { container } = render(<AddAnythingPanel onError={onError} />);
+    const input = container.querySelector(
+      '[data-testid="add-anything-file"]',
+    ) as HTMLInputElement;
+    const file = new File(["x"], "doc.pdf", { type: "application/pdf" });
+    fireEvent.change(input, { target: { files: [file] } });
+
+    await waitFor(() => expect(onError).toHaveBeenCalledWith("upload boom"));
   });
 });
