@@ -131,3 +131,26 @@ def test_resolve_key_moment_timestamps_no_segments_noop() -> None:
         KeyMoment(timestamp=None, moment="m", why_it_matters="w", quote=None, importance="low")
     ]
     assert resolve_key_moment_timestamps(moments, []) == moments
+
+
+def test_content_prompt_appends_additional_instructions() -> None:
+    prompt = build_content_summary_prompt(
+        content_kind="web article",
+        language="English",
+        instructions="  Focus on pricing.  ",
+    )
+    assert "ADDITIONAL INSTRUCTIONS: Focus on pricing." in prompt
+
+
+@pytest.mark.asyncio
+async def test_summarize_content_requires_api_key() -> None:
+    with patch.object(summarizer.settings, "openai_api_key", ""):
+        with pytest.raises(ValueError, match="OPENAI_API_KEY not configured"):
+            await summarize_content("text", content_kind="web article")
+
+
+@pytest.mark.asyncio
+async def test_extract_key_moments_requires_api_key() -> None:
+    with patch.object(summarizer.settings, "openai_api_key", ""):
+        with pytest.raises(ValueError, match="OPENAI_API_KEY not configured"):
+            await extract_key_moments("text")
