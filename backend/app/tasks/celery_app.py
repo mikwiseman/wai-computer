@@ -59,6 +59,7 @@ celery_app.conf.update(
         "app.tasks.consolidate_user_memory",
         "app.tasks.embedding_backfill",
         "app.tasks.item_summary_generation",
+        "app.tasks.mcp_sync",
         "app.tasks.recording_audio_processing",
         "app.tasks.summary_generation",
     ],
