@@ -4,6 +4,8 @@ import WaiComputerKit
 struct RecordingView: View {
     @EnvironmentObject var appState: AppState
     @EnvironmentObject var viewModel: RecordingViewModel
+    @EnvironmentObject var languageManager: LanguageManager
+    @State private var showingDiscardConfirm = false
 
     var body: some View {
         NavigationStack {
@@ -42,10 +44,13 @@ struct RecordingView: View {
                         Image(systemName: "wifi.exclamationmark")
                             .foregroundStyle(.white)
                         VStack(alignment: .leading, spacing: 2) {
-                            Text("Live transcription unavailable")
+                            Text(t("Live transcription unavailable", "Живая расшифровка недоступна"))
                                 .font(.subheadline.weight(.medium))
                                 .foregroundStyle(.white)
-                            Text("Audio is recording locally — transcript will be generated when you stop.")
+                            Text(t(
+                                "Audio is recording locally — transcript will be generated when you stop.",
+                                "Аудио записывается локально — расшифровка появится, когда вы остановите запись."
+                            ))
                                 .font(.caption)
                                 .foregroundStyle(.white.opacity(0.85))
                         }
@@ -55,7 +60,11 @@ struct RecordingView: View {
                     .background(Color.orange)
                     .cornerRadius(12)
                     .padding(.horizontal)
-                    .accessibilityLabel("Live transcription unavailable. Audio is recording locally and will be transcribed after you stop.")
+                    .accessibilityLabel(t(
+                        "Live transcription unavailable. Audio is recording locally and will be transcribed after you stop.",
+                        "Живая расшифровка недоступна. Аудио записывается локально и будет расшифровано после остановки."
+                    ))
+                    .accessibilityIdentifier("live-transcription-offline-banner")
                 }
 
                 // Reconnection banner
@@ -65,10 +74,10 @@ struct RecordingView: View {
                             .tint(.white)
                             .controlSize(.small)
                         VStack(alignment: .leading, spacing: 2) {
-                            Text("Reconnecting… (\(attempt)/\(maxAttempts))")
+                            Text(t("Reconnecting…", "Переподключение…") + " (\(attempt)/\(maxAttempts))")
                                 .font(.subheadline.weight(.medium))
                                 .foregroundStyle(.white)
-                            Text("Audio is being buffered")
+                            Text(t("Audio is being buffered", "Аудио сохраняется локально"))
                                 .font(.caption)
                                 .foregroundStyle(.white.opacity(0.7))
                         }
@@ -78,33 +87,61 @@ struct RecordingView: View {
                     .background(Color.orange)
                     .cornerRadius(12)
                     .padding(.horizontal)
-                    .accessibilityLabel("Reconnecting, attempt \(attempt) of \(maxAttempts)")
+                    .accessibilityLabel(t("Reconnecting, attempt \(attempt) of \(maxAttempts)", "Переподключение, попытка \(attempt) из \(maxAttempts)"))
+                    .accessibilityIdentifier("reconnection-banner")
                 }
 
-                // Live transcript preview
+                // Live transcript preview — committed text renders sharp; the
+                // rolling interim guess is faded so users don't fixate on words
+                // the model is still revising ahead of their speech.
                 if viewModel.shouldShowTranscript {
-                    ScrollView {
-                        Group {
-                            if viewModel.currentTranscript.isEmpty {
-                                Text(viewModel.emptyTranscriptText)
-                                    .foregroundStyle(.secondary)
-                                    .italic()
-                            } else {
-                                Text(viewModel.currentTranscript)
-                                    .font(.body)
+                    ScrollViewReader { proxy in
+                        ScrollView {
+                            LazyVStack(alignment: .leading, spacing: Spacing.sm) {
+                                if viewModel.currentTranscript.isEmpty {
+                                    Text(viewModel.emptyTranscriptText)
+                                        .foregroundStyle(.secondary)
+                                        .italic()
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                        .padding()
+                                } else {
+                                    VStack(alignment: .leading, spacing: Spacing.xs) {
+                                        if !viewModel.committedTranscript.isEmpty {
+                                            Text(viewModel.committedTranscript)
+                                                .font(.body)
+                                                .lineSpacing(4)
+                                                .textSelection(.enabled)
+                                        }
+                                        if !viewModel.interimTranscript.isEmpty {
+                                            Text(viewModel.interimTranscript)
+                                                .font(.body.italic())
+                                                .lineSpacing(4)
+                                                .foregroundStyle(Palette.textTertiary)
+                                                .textSelection(.enabled)
+                                        }
+                                    }
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .padding()
+                                    .id("transcript-bottom")
+                                }
                             }
                         }
-                        .padding()
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .frame(maxHeight: 220)
+                        .background(Color.gray.opacity(0.1))
+                        .cornerRadius(12)
+                        .padding(.horizontal)
+                        .onChange(of: viewModel.currentTranscript) { _, _ in
+                            withAnimation {
+                                proxy.scrollTo("transcript-bottom", anchor: .bottom)
+                            }
+                        }
                     }
-                    .frame(maxHeight: 150)
-                    .background(Color.gray.opacity(0.1))
-                    .cornerRadius(12)
-                    .padding(.horizontal)
+                    .accessibilityElement(children: .ignore)
                     .accessibilityLabel(viewModel.currentTranscript.isEmpty
-                        ? "Live transcript: \(viewModel.emptyTranscriptText)"
-                        : "Live transcript: \(viewModel.currentTranscript)"
+                        ? t("Live transcript: ", "Живая расшифровка: ") + viewModel.emptyTranscriptText
+                        : t("Live transcript: ", "Живая расшифровка: ") + viewModel.currentTranscript
                     )
+                    .accessibilityIdentifier("live-transcript")
                 }
 
                 Spacer()
@@ -131,7 +168,10 @@ struct RecordingView: View {
                                     .foregroundStyle(.primary)
                             }
                         }
-                        .accessibilityLabel(viewModel.canResumeRecording ? "Resume Recording" : "Pause Recording")
+                        .accessibilityLabel(viewModel.canResumeRecording
+                            ? t("Resume Recording", "Продолжить запись")
+                            : t("Pause Recording", "Поставить запись на паузу"))
+                        .accessibilityIdentifier(viewModel.canResumeRecording ? "resume-recording-button" : "pause-recording-button")
                     }
 
                     Button(action: {
@@ -167,6 +207,23 @@ struct RecordingView: View {
                     .disabled(viewModel.isBusy)
                     .accessibilityLabel(recordButtonAccessibilityLabel)
                     .accessibilityHint(recordButtonAccessibilityHint)
+                    .accessibilityIdentifier("record-button")
+
+                    if viewModel.canDiscardRecording {
+                        Button(action: { showingDiscardConfirm = true }) {
+                            ZStack {
+                                Circle()
+                                    .fill(Color.secondary.opacity(0.16))
+                                    .frame(width: 64, height: 64)
+
+                                Image(systemName: "trash")
+                                    .font(.system(size: 22, weight: .semibold))
+                                    .foregroundStyle(.red)
+                            }
+                        }
+                        .accessibilityLabel(t("Discard Recording", "Не сохранять запись"))
+                        .accessibilityIdentifier("discard-recording-button")
+                    }
                 }
 
                 // Status text
@@ -176,11 +233,30 @@ struct RecordingView: View {
                     .padding(.bottom)
                     .accessibilityLabel(viewModel.statusText)
             }
-            .navigationTitle("Record")
-            .alert("Error", isPresented: .constant(viewModel.error != nil)) {
-                Button("OK") { viewModel.error = nil }
+            .navigationTitle(t("Record", "Запись"))
+            .accessibilityIdentifier("recording-view")
+            .alert(t("Error", "Ошибка"), isPresented: .constant(viewModel.error != nil)) {
+                Button(t("OK", "ОК")) { viewModel.error = nil }
             } message: {
                 Text(viewModel.error ?? "")
+            }
+            .confirmationDialog(
+                t("Discard this recording?", "Удалить эту запись?"),
+                isPresented: $showingDiscardConfirm,
+                titleVisibility: .visible
+            ) {
+                Button(role: .destructive) {
+                    Task { await viewModel.discardRecording() }
+                } label: {
+                    Text(t("Discard", "Не сохранять"))
+                }
+                .accessibilityIdentifier("discard-recording-confirm")
+                Button(role: .cancel) { } label: {
+                    Text(t("Cancel", "Отмена"))
+                }
+            } message: {
+                Text(t("This action cannot be undone. Your audio and transcript will be deleted.",
+                       "Это действие нельзя отменить. Ваше аудио и расшифровка будут удалены."))
             }
             .onChange(of: viewModel.isServerComplete) { _, completed in
                 if completed {
@@ -246,34 +322,60 @@ struct RecordingView: View {
     private var recordButtonAccessibilityLabel: String {
         switch viewModel.phase {
         case .recording:
-            return "Stop Recording"
+            return t("Stop Recording", "Остановить запись")
         case .preparing:
-            return "Preparing"
+            return t("Preparing", "Подготовка")
         case .finalizing:
-            return "Saving"
+            return t("Saving", "Сохранение")
         case .idle:
-            return "Start Recording"
+            return t("Start Recording", "Начать запись")
         }
     }
 
     private var recordButtonAccessibilityHint: String {
         switch viewModel.phase {
         case .recording:
-            return "Double tap to stop recording"
+            return t("Double tap to stop recording", "Дважды нажмите, чтобы остановить запись")
         case .preparing, .finalizing:
-            return "Please wait"
+            return t("Please wait", "Пожалуйста, подождите")
         case .idle:
-            return "Double tap to start recording"
+            return t("Double tap to start recording", "Дважды нажмите, чтобы начать запись")
         }
     }
 
     private var durationAccessibilityLabel: String {
         let minutes = Int(viewModel.duration) / 60
         let seconds = Int(viewModel.duration) % 60
+        let prefix = t("Recording duration:", "Длительность записи:")
         if minutes > 0 {
-            return "Recording duration: \(minutes) \(minutes == 1 ? "minute" : "minutes") \(seconds) \(seconds == 1 ? "second" : "seconds")"
+            let minuteWord = minuteWord(minutes)
+            let secondWord = secondWord(seconds)
+            return "\(prefix) \(minutes) \(minuteWord) \(seconds) \(secondWord)"
         } else {
-            return "Recording duration: \(seconds) \(seconds == 1 ? "second" : "seconds")"
+            let secondWord = secondWord(seconds)
+            return "\(prefix) \(seconds) \(secondWord)"
+        }
+    }
+
+    private func minuteWord(_ value: Int) -> String {
+        languageManager.current == .russian
+            ? russianPlural(value, one: "минута", few: "минуты", many: "минут")
+            : (value == 1 ? "minute" : "minutes")
+    }
+
+    private func secondWord(_ value: Int) -> String {
+        languageManager.current == .russian
+            ? russianPlural(value, one: "секунда", few: "секунды", many: "секунд")
+            : (value == 1 ? "second" : "seconds")
+    }
+
+    private func russianPlural(_ value: Int, one: String, few: String, many: String) -> String {
+        let mod100 = value % 100
+        if mod100 >= 11 && mod100 <= 14 { return many }
+        switch value % 10 {
+        case 1: return one
+        case 2, 3, 4: return few
+        default: return many
         }
     }
 
@@ -287,10 +389,15 @@ struct RecordingView: View {
             return .blue
         }
     }
+
+    private func t(_ english: String, _ russian: String) -> String {
+        OnboardingL10n.text(english, russian, language: languageManager.current)
+    }
 }
 
 #Preview {
     RecordingView()
         .environmentObject(AppState())
         .environmentObject(RecordingViewModel())
+        .environmentObject(LanguageManager.shared)
 }
