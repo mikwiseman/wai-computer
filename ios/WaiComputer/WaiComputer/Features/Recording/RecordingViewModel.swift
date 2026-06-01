@@ -246,7 +246,10 @@ class RecordingViewModel: ObservableObject {
                 "Диск заполнен. Запись остановлена, чтобы сохранить то, что успели записать."
             )
 
-            audioTask = Task { [weak self, weak ws] in
+            // Run the audio loop off the main actor (mirrors MacRecordingViewModel):
+            // encode/disk-write/ws-send happen at a 160ms cadence and must not
+            // block the UI event loop. Hop back to @MainActor only for state writes.
+            audioTask = Task.detached(priority: .userInitiated) { [weak self, weak ws] in
                 for await buffer in capture.audioBuffers {
                     guard !Task.isCancelled else { break }
                     guard let self, let ws else { break }
@@ -255,7 +258,15 @@ class RecordingViewModel: ObservableObject {
                         let wrote = fileWriter.writeEncodedPCM(data)
                         if !wrote {
                             recordingLog.error("Disk write failed — stopping recording to preserve data")
-                            await MainActor.run { self.error = diskFullMessage }
+                            // Surface the error AND finalize the recording so we don't
+                            // leave a zombie .recording state with a live audio engine
+                            // and an open socket. Spawn the stop on the main actor and
+                            // break first so stopRecording's `await audioTask` can return.
+                            await MainActor.run { [weak self] in
+                                guard let self else { return }
+                                self.error = diskFullMessage
+                                Task { await self.stopRecording() }
+                            }
                             break
                         }
 
@@ -269,7 +280,7 @@ class RecordingViewModel: ObservableObject {
                                 recordingLog.warning("Realtime audio send failed; continuing with local backup only")
                                 // Transcription dropped — fallback to local-only for the rest of this recording.
                                 isLiveTranscriptionActive = false
-                                await MainActor.run { self.liveTranscriptionOffline = true }
+                                await MainActor.run { [weak self] in self?.liveTranscriptionOffline = true }
                             }
                         }
                     }
