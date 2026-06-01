@@ -31,7 +31,7 @@ The Brain viz is not the real blocker — **the knowledge graph is data-empty in
 - [x] Mac: errorMessage inline banner in Content feed; `MacBrainView try? getBrain()` → do/catch + error/Retry (distinct from empty); `addDraft()` background poll; pdf chip. (xcodebuild ✓)
 
 ### Phase 1 — File ingestion: the missing entrance
-- [ ] Backend: `POST /items/upload` (multipart, kind-aware: PDF/doc→text→ingest_item; audio/video→import_media_as_recording). Reuse staging + 200MB cap; safe storage key (no filename trust). SSRF guard on fetch.
+- [~] Backend: `POST /items/upload` — DOCUMENTS done (PDF/txt/md → extract text → Item; 200MB cap; UUID storage key; dedup-unlink; shared `_enqueue_item_summary`). PENDING: audio/video → Recording (needs async enqueue — `import_media_as_recording` transcribes inline, too slow for an HTTP request); SSRF guard is a separate fetch-path slice.
   - IMPL NOTE: build a NEW `/items/upload` route — do NOT overload `/recordings/{id}/upload` (recordings.py:2853), it's intricate (claim-race `_claim_audio_upload`, size-mismatch, `_mark_recording_failed`). Reuse `_stage_upload_to_disk` (recordings.py:987) + `MAX_UPLOAD_SIZE` (2850) + `_measure_upload_size` (860). PDF→`source_fetch._extract_pdf_text` (or pdfplumber) → `ingest_item`; audio/video → `recording_import.import_media_as_recording` (recording_import.py:456, handles video via `_normalize_media_for_transcription`→Deepgram). Storage key `{user_id}/{uuid}.{ext}` — never trust `UploadFile.filename`.
 - [ ] Backend: widen `recordings.py` `ALLOWED_AUDIO_EXTENSIONS` to include `SUPPORTED_VIDEO_EXTENSIONS` (only if keeping the recordings endpoint as a video path; otherwise `/items/upload` → import_media_as_recording covers it).
 - [ ] Backend: `classify_url` for direct media (.mp4/Vimeo/Loom) + reroute audio/* video/* content-type to transcription.
@@ -61,4 +61,5 @@ The Brain viz is not the real blocker — **the knowledge graph is data-empty in
 
 ## Progress log
 - 2026-06-01: worktree + analysis workflow (21 agents) done; decisions locked; starting Phase 0 backend.
-- 2026-06-01: Phase 0 COMPLETE across surfaces — backend (01ccea77), web (fa061364), Mac (this commit, xcodebuild ✓). Next: Phase 1 file upload (`POST /items/upload` + video allow-list + classify_url media + web drag-drop + Mac .fileImporter).
+- 2026-06-01: Phase 0 COMPLETE across surfaces — backend (01ccea77), web (fa061364), Mac (58bda2f7, xcodebuild ✓).
+- 2026-06-01: Phase 1a — `POST /items/upload` for documents (PDF/txt/md → Item). 19 items-route tests green; full backend suite 95.11% (gate ✓). Heads-up: main is red on 2 `test_observability.py` tests (`OPS_FORWARD_GENERIC_ERRORS` default-off, commit c0661d4b — owned by the sentry-telegram-bridge loop, NOT this work). Next: media upload (audio/video→Recording, async), `classify_url` media + SSRF guard, then web drag-drop + Mac .fileImporter.

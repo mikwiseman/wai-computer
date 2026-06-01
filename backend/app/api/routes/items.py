@@ -18,10 +18,11 @@ paste is rejected.
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 from typing import Any
-from uuid import UUID
+from uuid import UUID, uuid4
 
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile, status
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
@@ -168,6 +169,25 @@ def _item_response(item: Item, summary: ItemSummary | None) -> ItemResponse:
     )
 
 
+async def _enqueue_item_summary(db: Database, item: Item) -> None:
+    """Enqueue background summarization. On broker failure, mark the item failed
+    with a visible error (no silent swallow) so the client can see + retry."""
+    try:
+        from app.tasks.item_summary_generation import generate_item_summary_task
+
+        generate_item_summary_task.delay(item_id=str(item.id))
+    except Exception as exc:  # noqa: BLE001 — broker down: fail loudly, never pretend success
+        logger.warning("item enqueue failed item=%s: %s", item.id, exc)
+        meta = dict(item.metadata_ or {})
+        meta["processing_error"] = {
+            "code": "enqueue_failed",
+            "message": "Couldn't start processing. Retry shortly.",
+        }
+        item.metadata_ = meta
+        item.state = "failed"
+        await db.flush()
+
+
 @router.post("", response_model=ItemResponse, status_code=status.HTTP_201_CREATED)
 async def create_item(
     request: CreateItemRequest,
@@ -201,23 +221,140 @@ async def create_item(
     await db.flush()
 
     if created:
-        # Enqueue background processing: fetch the URL (if body-less), embed,
-        # and summarize + build the key-moments table. Import lazily so the API
-        # process doesn't hard-depend on Celery wiring at import time.
-        try:
-            from app.tasks.item_summary_generation import generate_item_summary_task
+        # Fetch (if URL-only), embed, summarize + key-moments — in the worker.
+        await _enqueue_item_summary(db, item)
 
-            generate_item_summary_task.delay(item_id=str(item.id))
-        except Exception as exc:  # noqa: BLE001 — broker down: fail loudly, never pretend success
-            logger.warning("item enqueue failed item=%s: %s", item.id, exc)
-            meta = dict(item.metadata_ or {})
-            meta["processing_error"] = {
-                "code": "enqueue_failed",
-                "message": "Couldn't start processing. Retry shortly.",
-            }
-            item.metadata_ = meta
-            item.state = "failed"
-            await db.flush()
+    summary = (
+        await db.execute(select(ItemSummary).where(ItemSummary.item_id == item.id))
+    ).scalar_one_or_none()
+    return _item_response(item, summary)
+
+
+# --- Document upload (PDF / text / markdown -> Item) -------------------------
+# Audio/video uploads belong to the recording pipeline (a later slice routes
+# them through import_media_as_recording); they are rejected here for now.
+_DOC_EXTENSIONS = {"pdf", "txt", "md"}
+_UPLOAD_CHUNK = 1024 * 1024
+
+
+def _upload_ext(filename: str | None, content_type: str | None) -> str:
+    """Resolve a supported document extension from the filename or MIME type."""
+    name = (filename or "").lower().rsplit("/", 1)[-1].rsplit("\\", 1)[-1]
+    if "." in name:
+        suffix = name.rsplit(".", 1)[1]
+        if suffix in _DOC_EXTENSIONS:
+            return suffix
+        if suffix == "markdown":
+            return "md"
+    ct = (content_type or "").split(";")[0].strip().lower()
+    return {
+        "application/pdf": "pdf",
+        "text/markdown": "md",
+        "text/x-markdown": "md",
+        "text/plain": "txt",
+    }.get(ct, "")
+
+
+def _title_from_filename(filename: str | None) -> str | None:
+    base = (filename or "").strip().rsplit("/", 1)[-1].rsplit("\\", 1)[-1]
+    stem = (base.rsplit(".", 1)[0] if "." in base else base).strip()
+    return stem[:500] if stem else None
+
+
+def _store_item_upload(user_id: Any, ext: str, data: bytes) -> Path:
+    """Persist the original upload to local disk under a UUID key (never the
+    user-supplied filename — path-traversal safe). Object storage swaps in
+    behind this one call later."""
+    from app.config import get_settings
+
+    base = Path(get_settings().upload_staging_dir) / "items" / str(user_id)
+    base.mkdir(parents=True, exist_ok=True)
+    path = base / f"{uuid4().hex}.{ext}"
+    path.write_bytes(data)
+    return path
+
+
+@router.post("/upload", response_model=ItemResponse, status_code=status.HTTP_201_CREATED)
+async def upload_item(
+    user: CurrentUser,
+    db: Database,
+    file: UploadFile = File(...),
+    folder_id: UUID | None = Form(default=None),
+    title: str | None = Form(default=None),
+) -> ItemResponse:
+    """Upload a document (PDF, text, or Markdown): extract its text, store the
+    original, and summarize in the background — the file half of "add anything"."""
+    ext = _upload_ext(file.filename, file.content_type)
+    if ext not in _DOC_EXTENSIONS:
+        await file.close()
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail="Only PDF, text, and Markdown files can be uploaded as items.",
+        )
+
+    from app.config import get_settings
+
+    max_bytes = get_settings().upload_max_bytes
+    buf = bytearray()
+    while True:
+        chunk = await file.read(_UPLOAD_CHUNK)
+        if not chunk:
+            break
+        buf.extend(chunk)
+        if len(buf) > max_bytes:
+            await file.close()
+            raise HTTPException(
+                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                detail=f"File too large. Maximum size is {max_bytes // (1024 * 1024)}MB.",
+            )
+    await file.close()
+    data = bytes(buf)
+    if not data:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Empty file.")
+
+    if ext == "pdf":
+        from app.core.source_fetch import SourceFetchError, _extract_pdf_text
+
+        try:
+            body = _extract_pdf_text(data)
+        except SourceFetchError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=exc.message
+            ) from exc
+    else:
+        try:
+            body = data.decode("utf-8")
+        except UnicodeDecodeError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Couldn't read this text file (it isn't UTF-8).",
+            ) from exc
+
+    body = body.strip()
+    if not body:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="No readable text found in this file.",
+        )
+
+    stored = _store_item_upload(user.id, ext, data)
+    item, created = await ingest_item(
+        db,
+        user.id,
+        source="upload",
+        kind="pdf" if ext == "pdf" else "note",
+        title=(title or "").strip() or _title_from_filename(file.filename),
+        body=body,
+        folder_id=folder_id,
+        metadata={"upload": {"ext": ext, "path": str(stored), "size": len(data)}},
+        embed=True,
+    )
+    await db.flush()
+    if created:
+        await _enqueue_item_summary(db, item)
+    else:
+        # Dedup hit: drop the just-written original; the existing item owns its copy.
+        stored.unlink(missing_ok=True)
 
     summary = (
         await db.execute(select(ItemSummary).where(ItemSummary.item_id == item.id))
