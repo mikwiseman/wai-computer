@@ -92,6 +92,19 @@ struct MainTabView: View {
             recoveryNotice = message
             scheduleRecoveryNoticeDismiss()
         }
+        // Deep-link section navigation, mirroring MacContentView.swift:496-507.
+        // The target is carried as `object` to match the macOS poster contract
+        // (WaiComputerMacApp.swift:207-236). Only targets backed by an iOS tab
+        // are handled; others are ignored rather than guessed at.
+        .onReceive(NotificationCenter.default.publisher(for: .init("navigateTo"))) { notification in
+            guard let target = notification.object as? String else { return }
+            switch target {
+            case "allRecordings": selectedTab = 1
+            case "wai": selectedTab = 2
+            case "settings": selectedTab = 3
+            default: break
+            }
+        }
     }
 
     private func dismissRecoveryNotice() {
