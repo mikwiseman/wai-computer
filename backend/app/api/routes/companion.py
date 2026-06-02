@@ -18,6 +18,7 @@ from app.api.deps import CurrentUser, Database
 from app.core.companion import CompanionError, ErrorEvent, TurnContext, run_turn
 from app.core.companion_actions import (
     ApprovalError,
+    get_pending,
     mark_executed,
     mark_failed,
     resolve_action,
@@ -679,6 +680,16 @@ async def resolve_chat_action(
     # Approved → re-verify the locked payload, then execute exactly once.
     try:
         verify_committable(row)
+        if row.kind == "desktop_action":
+            # Dispatched to the Mac edge — NOT run server-side. It stays
+            # "approved" in the device drain queue and is marked executed only
+            # when the Mac reports back via /desktop_result.
+            await db.commit()
+            return ResolveActionResponse(
+                action_id=str(action_id),
+                status="dispatched",
+                recipient=row.recipient_display,
+            )
         args = (row.action_manifest or {}).get("args") or {}
         receipt = await execute_action(
             db, user_id=user.id, tool_name=row.tool_name, args=args
@@ -697,3 +708,49 @@ async def resolve_chat_action(
         status="executed",
         recipient=row.recipient_display,
     )
+
+
+class DesktopResultRequest(BaseModel):
+    status: Literal["executed", "failed", "refused"]
+    payload: dict[str, Any] | None = None
+
+
+class DesktopResultResponse(BaseModel):
+    action_id: str
+    status: str
+
+
+@router.post(
+    "/chats/{chat_id}/actions/{action_id}/desktop_result",
+    response_model=DesktopResultResponse,
+)
+async def desktop_action_result(
+    chat_id: uuid.UUID,
+    action_id: uuid.UUID,
+    request: DesktopResultRequest,
+    user: CurrentUser,
+    db: Database,
+) -> DesktopResultResponse:
+    """The Mac reports the outcome of a dispatched desktop action. Idempotent
+    (mark_executed is a no-op once recorded). A result is only accepted for an
+    already-approved action — a report can never mark an unapproved action done
+    (no approval bypass)."""
+    await _load_user_chat(db, user.id, chat_id)
+    row = await get_pending(db, action_id=action_id, user_id=user.id, lock=True)
+    if row is None or row.kind != "desktop_action":
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Desktop action not found"
+        )
+    if row.status not in ("approved", "executed", "failed"):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Desktop action is not dispatched",
+        )
+    if request.status == "executed":
+        await mark_executed(
+            db, row=row, receipt=request.payload or {"status": "executed"}
+        )
+    else:
+        await mark_failed(db, row=row, detail=request.status)
+    await db.commit()
+    return DesktopResultResponse(action_id=str(action_id), status=row.status)
