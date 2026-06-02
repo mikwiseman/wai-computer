@@ -78,19 +78,6 @@ struct MacContentFeedView: View {
                 Task { await model.uploadFile(url) }
             }
         }
-        .sheet(isPresented: Binding(
-            get: { model.activeComparisonId != nil },
-            set: { if !$0 { model.clearComparison() } }
-        )) {
-            if let comparisonId = model.activeComparisonId {
-                MacComparisonView(
-                    apiClient: model.apiClient,
-                    comparisonId: comparisonId,
-                    onClose: { model.clearComparison() }
-                )
-                .frame(minWidth: 640, minHeight: 480)
-            }
-        }
     }
 
     private var header: some View {
@@ -216,23 +203,6 @@ struct MacContentFeedView: View {
                 )
             }
             Spacer()
-            if model.canCompare {
-                Button {
-                    Task { await model.compareSelected() }
-                } label: {
-                    if model.isComparing {
-                        ProgressView().controlSize(.small)
-                    } else {
-                        Label(
-                            t("Compare (\(model.compareSelection.count))",
-                              "Сравнить (\(model.compareSelection.count))"),
-                            systemImage: "tablecells"
-                        )
-                    }
-                }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.small)
-            }
         }
         .padding(.horizontal, Spacing.xl)
         .padding(.vertical, Spacing.sm)
@@ -250,39 +220,26 @@ struct MacContentFeedView: View {
                                         "Добавьте ссылку или текст выше, либо подключите источник."))
                 )
             } else {
-                List(selection: Binding(
-                    get: { model.selectedId },
-                    set: { newValue in
-                        model.selectedId = newValue
-                        if let newValue {
-                            Task { await model.selectItem(newValue) }
-                        } else {
-                            model.selectedItem = nil
+                ScrollView {
+                    LazyVStack(spacing: 0) {
+                        ForEach(model.entries) { entry in
+                            Button {
+                                Task { await model.openItem(entry.id) }
+                            } label: {
+                                contentRow(entry, isActive: model.activeItemId == entry.id)
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel(displayTitle(title: entry.title, url: entry.url))
+                            Divider()
                         }
                     }
-                )) {
-                    ForEach(model.entries) { entry in
-                        contentRow(entry).tag(entry.id)
-                    }
                 }
-                .listStyle(.inset)
             }
         }
     }
 
-    private func contentRow(_ entry: ItemListEntry) -> some View {
+    private func contentRow(_ entry: ItemListEntry, isActive: Bool) -> some View {
         HStack(alignment: .top, spacing: Spacing.sm) {
-            Button {
-                model.toggleCompare(entry.id)
-            } label: {
-                Image(systemName: model.compareSelection.contains(entry.id)
-                      ? "checkmark.circle.fill" : "circle")
-                    .foregroundStyle(model.compareSelection.contains(entry.id)
-                                     ? Palette.accent : Palette.textTertiary)
-            }
-            .buttonStyle(.plain)
-            .help(t("Select to compare", "Выбрать для сравнения"))
-
             VStack(alignment: .leading, spacing: Spacing.xxs) {
                 Text(displayTitle(title: entry.title, url: entry.url))
                     .font(Typography.bodySmall.weight(.medium))
@@ -299,8 +256,13 @@ struct MacContentFeedView: View {
                     }
                 }
             }
+            Spacer(minLength: 0)
         }
-        .padding(.vertical, Spacing.xxs)
+        .padding(.horizontal, Spacing.xl)
+        .padding(.vertical, Spacing.sm)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(Rectangle())
+        .background(isActive ? Palette.surfaceSubtle : Color.clear)
     }
 
     private func t(_ english: String, _ russian: String) -> String {
@@ -353,13 +315,13 @@ struct MacContentFeedView: View {
 
     @ViewBuilder
     private var detailColumn: some View {
-        if let item = model.selectedItem {
+        if let item = model.activeItem {
             MacItemDetailView(item: item, onDelete: {
-                Task { await model.deleteSelected() }
+                Task { await model.deleteActiveItem() }
             })
         } else {
             ContentUnavailableViewCompat(
-                t("Select an item", "Выберите материал"),
+                t("Open a material", "Откройте материал"),
                 systemImage: "doc.text.magnifyingglass",
                 description: Text(t("See its summary and key moments.",
                                     "Посмотрите краткое содержание и ключевые моменты."))
