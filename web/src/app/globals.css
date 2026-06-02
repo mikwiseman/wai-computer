@@ -4800,3 +4800,25 @@ a.primary-button[aria-disabled="true"]:hover {
   gap: 0.4rem;
   flex: 0 0 auto;
 }
+
+/* needs_input / failed item recovery — paste the text or retry the source. */
+.item-detail__recover {
+  display: grid;
+  gap: 0.5rem;
+  padding: 0.85rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md, 8px);
+  background: var(--surface-subtle);
+}
+.item-detail__recover-input {
+  min-height: 80px;
+  resize: vertical;
+  padding: 0.5rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: var(--font-body-small-size);
+}
+.item-detail__recover-actions {
+  display: flex;
+  gap: 0.5rem;
+}
