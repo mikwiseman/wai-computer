@@ -1,5 +1,6 @@
 """Entity routes for knowledge graph."""
 
+from dataclasses import asdict
 from datetime import datetime
 from typing import Literal
 from uuid import UUID
@@ -10,6 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from app.api.deps import CurrentUser, Database
+from app.core.brain_graph import build_entity_page
 from app.models.entity import Entity, EntityRelation
 
 router = APIRouter(prefix="/entities", tags=["entities"])
@@ -111,6 +113,47 @@ async def get_entity(
             for r in entity.source_relations
         ],
     )
+
+
+class EntitySourceResponse(BaseModel):
+    source_kind: str
+    source_id: str
+    title: str
+    context: str | None
+
+
+class RelatedEntityResponse(BaseModel):
+    id: str
+    name: str
+    type: str
+    shared: int
+
+
+class EntityPageResponse(BaseModel):
+    """The wiki page for one entity: source backlinks + related entities."""
+
+    id: str
+    name: str
+    type: str
+    mention_count: int
+    sources: list[EntitySourceResponse]
+    related: list[RelatedEntityResponse]
+
+
+@router.get("/{entity_id}/page", response_model=EntityPageResponse)
+async def get_entity_page(
+    entity_id: UUID,
+    user: CurrentUser,
+    db: Database,
+) -> EntityPageResponse:
+    """Wiki page for one entity: the items/recordings that mention it (backlinks)
+    + related entities ranked by shared sources."""
+    page = await build_entity_page(db, user.id, entity_id)
+    if page is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Entity not found"
+        )
+    return EntityPageResponse(**asdict(page))
 
 
 class CreateEntityRequest(BaseModel):
