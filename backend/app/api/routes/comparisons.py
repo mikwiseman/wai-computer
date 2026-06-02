@@ -8,15 +8,18 @@ one with its columns + rows.
 
 from __future__ import annotations
 
+import csv
+import io
 import logging
 from typing import Any
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, HTTPException, Query, Response, status
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
 from app.api.deps import CurrentUser, Database
+from app.core.comparison import ComparisonResult, to_markdown
 from app.models.comparison import ComparisonSet
 from app.models.item import Item
 
@@ -216,3 +219,100 @@ async def delete_comparison(
     if cs is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
     await db.delete(cs)
+
+
+def _to_csv(columns: list | None, rows: list | None) -> str:
+    col_names = [c.get("name", "") for c in (columns or [])]
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow(["Item", *col_names])
+    for row in rows or []:
+        values = row.get("values") or {}
+        writer.writerow(
+            [row.get("title") or ""]
+            + ["" if values.get(name) is None else values.get(name) for name in col_names]
+        )
+    return buf.getvalue()
+
+
+@router.get("/{comparison_id}/export")
+async def export_comparison(
+    comparison_id: UUID,
+    user: CurrentUser,
+    db: Database,
+    format: str = Query("md", pattern="^(md|csv)$"),
+) -> Response:
+    """Export a ready comparison table as Markdown or CSV."""
+    cs = (
+        await db.execute(
+            select(ComparisonSet).where(
+                ComparisonSet.id == comparison_id,
+                ComparisonSet.user_id == user.id,
+            )
+        )
+    ).scalar_one_or_none()
+    if cs is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
+    if cs.status != "ready" or not cs.columns:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Comparison is not ready to export.",
+        )
+
+    if format == "csv":
+        return Response(content=_to_csv(cs.columns, cs.rows), media_type="text/csv")
+    result = ComparisonResult(
+        columns=cs.columns or [], rows=cs.rows or [], rationale=cs.schema_rationale or ""
+    )
+    return Response(content=to_markdown(result), media_type="text/markdown")
+
+
+class EditCellRequest(BaseModel):
+    item_id: str
+    column: str
+    value: str | None = None
+
+
+@router.patch("/{comparison_id}", response_model=ComparisonResponse)
+async def edit_comparison_cell(
+    comparison_id: UUID,
+    request: EditCellRequest,
+    user: CurrentUser,
+    db: Database,
+) -> ComparisonResponse:
+    """Edit a single cell of a comparison table (flags the row as user-edited)."""
+    cs = (
+        await db.execute(
+            select(ComparisonSet).where(
+                ComparisonSet.id == comparison_id,
+                ComparisonSet.user_id == user.id,
+            )
+        )
+    ).scalar_one_or_none()
+    if cs is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
+
+    col_names = {c.get("name") for c in (cs.columns or [])}
+    if request.column not in col_names:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Unknown column: {request.column}",
+        )
+
+    rows = [dict(r) for r in (cs.rows or [])]
+    found = False
+    for row in rows:
+        if str(row.get("item_id")) == request.item_id:
+            values = dict(row.get("values") or {})
+            values[request.column] = request.value
+            row["values"] = values
+            row["edited"] = True
+            found = True
+            break
+    if not found:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Item not in this comparison."
+        )
+    cs.rows = rows  # reassign so SQLAlchemy persists the JSONB change
+    await db.flush()
+    return _response(cs)
