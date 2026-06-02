@@ -1443,6 +1443,51 @@ a.primary-button[aria-disabled="true"]:hover {
   height: 1rem;
 }
 
+.cleanup-level-options {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.45rem;
+}
+
+.cleanup-level-option {
+  position: relative;
+  display: grid;
+  gap: 0.2rem;
+  min-height: 5.4rem;
+  padding: 0.65rem 0.7rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  cursor: pointer;
+}
+
+.cleanup-level-option.selected {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 9%, var(--surface));
+}
+
+.cleanup-level-option input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.cleanup-level-option strong {
+  font-size: var(--font-body-small-size);
+}
+
+.cleanup-level-option small {
+  color: var(--ink-soft);
+  font-size: var(--font-label-size);
+  line-height: 1.35;
+}
+
+@media (max-width: 700px) {
+  .cleanup-level-options {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
 .manual-note-form {
   grid-template-columns: minmax(0, 1fr) 140px auto;
 }

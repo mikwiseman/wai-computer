@@ -74,6 +74,7 @@ final class DictationManager: ObservableObject {
     static let hotkeyDefaultsKey = "dictationHotkey"
     static let handsFreeHotkeyDefaultsKey = "dictationHandsFreeHotkey"
     static let aiCleanupDefaultsKey = "dictationAICleanup"
+    static let cleanupLevelDefaultsKey = "dictationCleanupLevel"
     static let enabledDefaultsKey = "dictationEnabled"
     private static let liveSTTProvider = "deepgram"
     private static let liveSTTModel = "nova-3"
@@ -94,10 +95,10 @@ final class DictationManager: ObservableObject {
         }
     }
 
-    @Published var aiCleanupEnabled: Bool {
+    @Published var cleanupLevel: String {
         didSet {
-            guard aiCleanupEnabled != oldValue else { return }
-            UserDefaults.standard.set(aiCleanupEnabled, forKey: Self.aiCleanupDefaultsKey)
+            guard cleanupLevel != oldValue else { return }
+            UserDefaults.standard.set(cleanupLevel, forKey: Self.cleanupLevelDefaultsKey)
         }
     }
 
@@ -195,10 +196,12 @@ final class DictationManager: ObservableObject {
         self.handsFreeHotkeyChoice = defaults.string(forKey: Self.handsFreeHotkeyDefaultsKey) ?? ""
         // Dictation STT providers already return polished text in the common
         // case. Keep AI cleanup opt-in so dictation stays fast and predictable.
-        if defaults.object(forKey: Self.aiCleanupDefaultsKey) == nil {
-            self.aiCleanupEnabled = false
+        if let storedCleanupLevel = defaults.string(forKey: Self.cleanupLevelDefaultsKey) {
+            self.cleanupLevel = storedCleanupLevel
+        } else if defaults.object(forKey: Self.aiCleanupDefaultsKey) == nil {
+            self.cleanupLevel = "none"
         } else {
-            self.aiCleanupEnabled = defaults.bool(forKey: Self.aiCleanupDefaultsKey)
+            self.cleanupLevel = defaults.bool(forKey: Self.aiCleanupDefaultsKey) ? "light" : "none"
         }
         // Same idiom: default ON for fresh installs so the onboarding sandbox
         // (build 74+) can actually fire the hotkey, and so first-launch users
@@ -259,7 +262,7 @@ final class DictationManager: ObservableObject {
         let previousModel = cachedSettings?.dictationLiveSTTModel
         cachedSettings = settings
         cachedSettingsLoadedAt = Date()
-        aiCleanupEnabled = settings.dictationPostFilterEnabled
+        cleanupLevel = settings.dictationCleanupLevel
         if DictationSessionConfigInvalidationPolicy.shouldClearVault(
             previousProvider: previousProvider,
             previousModel: previousModel,
@@ -741,7 +744,7 @@ final class DictationManager: ObservableObject {
         // AI cleanup (optional). If enabled, cleanup is part of the requested
         // output contract: failure is surfaced instead of silently inserting
         // raw text that the user explicitly asked us to post-process.
-        let cleanupEnabled = aiCleanupEnabled
+        let cleanupEnabled = cleanupLevel != "none"
         var cleanedText: String?
         var cleanupError: Error?
         if cleanupEnabled {

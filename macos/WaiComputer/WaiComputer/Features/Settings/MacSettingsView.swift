@@ -114,7 +114,7 @@ struct MacSettingsView: View {
     @State private var mcpCopiedField: String?
     @State private var settingsLoaded = false
     @State private var settingsError: String?
-    @State private var dictationPostFilterEnabled = false
+    @State private var dictationCleanupLevel = "none"
     @State private var telegramStatus: TelegramLinkStatus?
     @State private var telegramPairing: TelegramPairing?
     @State private var telegramLinkCode = ""
@@ -154,6 +154,15 @@ struct MacSettingsView: View {
             (t("Brief", "Кратко"), "brief"),
             (t("Medium", "Средне"), "medium"),
             (t("Detailed", "Подробно"), "detailed"),
+        ]
+    }
+
+    private var dictationCleanupOptions: [(label: String, value: String)] {
+        [
+            (t("None", "Нет"), "none"),
+            (t("Light", "Лёгкая"), "light"),
+            (t("Medium", "Средняя"), "medium"),
+            (t("High", "Сильная"), "high"),
         ]
     }
 
@@ -371,16 +380,25 @@ struct MacSettingsView: View {
                 .disabled(!dictationManager.isFeatureEnabled)
                 .accessibilityIdentifier("settings-hands-free-picker")
 
-                Toggle(isOn: $dictationPostFilterEnabled) {
-                    Text("settings.dictation.postFilter", bundle: .main)
+                Picker(selection: $dictationCleanupLevel) {
+                    ForEach(dictationCleanupOptions, id: \.value) { option in
+                        Text(option.label).tag(option.value)
+                    }
+                } label: {
+                    Text(t("Cleanup level", "Уровень очистки"))
                 }
+                    .pickerStyle(.segmented)
                     .font(Typography.body)
                     .disabled(!dictationManager.isFeatureEnabled)
-                    .accessibilityIdentifier("settings-dictation-post-filter-toggle")
-                    .onChangeCompat(of: dictationPostFilterEnabled) { _, enabled in
+                    .accessibilityIdentifier("settings-dictation-cleanup-level-picker")
+                    .onChangeCompat(of: dictationCleanupLevel) { _, level in
                         guard settingsLoaded else { return }
-                        Task { await saveDictationPostFilterEnabled(enabled) }
+                        Task { await saveDictationCleanupLevel(level) }
                     }
+
+                Text(dictationCleanupDescription(dictationCleanupLevel))
+                    .font(Typography.caption)
+                    .foregroundStyle(Palette.textTertiary)
 
                 permissionRow(
                     title: String(localized: "settings.dictation.permission.microphone", bundle: .main),
@@ -1052,7 +1070,7 @@ struct MacSettingsView: View {
     }
 
     private var dictationPrivacyText: String {
-        if dictationPostFilterEnabled {
+        if dictationCleanupLevel != "none" {
             return t(
                 "Dictated text is cleaned up before insertion.",
                 "Перед вставкой текст проходит очистку."
@@ -1179,7 +1197,7 @@ struct MacSettingsView: View {
         summaryLanguage = settings.summaryLanguage
         summaryStyle = settings.summaryStyle
         summaryInstructions = settings.summaryInstructions ?? ""
-        dictationPostFilterEnabled = settings.dictationPostFilterEnabled
+        dictationCleanupLevel = settings.dictationCleanupLevel
         dictationManager.ingestSettings(settings)
     }
 
@@ -1493,8 +1511,8 @@ struct MacSettingsView: View {
         telegramLinkPollTask = nil
     }
 
-    private func saveDictationPostFilterEnabled(_ enabled: Bool) async {
-        let request = UpdateSettingsRequest(dictationPostFilterEnabled: enabled)
+    private func saveDictationCleanupLevel(_ level: String) async {
+        let request = UpdateSettingsRequest(dictationCleanupLevel: level)
         await saveTranscriptionSettings(request)
     }
 
@@ -1526,6 +1544,19 @@ struct MacSettingsView: View {
 
     private func t(_ english: String, _ russian: String) -> String {
         OnboardingL10n.text(english, russian, language: languageManager.current)
+    }
+
+    private func dictationCleanupDescription(_ level: String) -> String {
+        switch level {
+        case "light":
+            return t("Removes filler words and fixes grammar.", "Убирает слова-паразиты и правит грамматику.")
+        case "medium":
+            return t("Edits for clarity and conciseness.", "Делает текст яснее и короче.")
+        case "high":
+            return t("Rewrites for brevity and polish.", "Переписывает текст кратко и гладко.")
+        default:
+            return t("Inserts the dictated text after dictionary replacements.", "Вставляет текст после замен из словаря.")
+        }
     }
 
     private func dictationHotkeyLabel(_ hotkey: DictationHotkey) -> String {

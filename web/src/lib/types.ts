@@ -7,6 +7,7 @@ export type ExportLocale = "en" | "ru";
 export type RealtimeVoiceMode = "conversation" | "recording";
 
 export type SummaryStyle = "brief" | "medium" | "detailed";
+export type DictationCleanupLevel = "none" | "light" | "medium" | "high";
 
 export interface UserSettings {
   default_language: string;
@@ -20,6 +21,7 @@ export interface UserSettings {
   file_stt_provider: string;
   file_stt_model: string;
   dictation_post_filter_enabled: boolean;
+  dictation_cleanup_level: DictationCleanupLevel;
   dictation_post_filter_provider: string;
   dictation_post_filter_model: string;
 }

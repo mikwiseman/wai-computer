@@ -10,7 +10,7 @@ namespace WaiComputer.Core.ViewModels;
 /// <summary>
 /// Portable user-settings ViewModel shared by the Windows (WinUI) and Linux
 /// (Avalonia) clients. Exposes only the user-editable, NON-managed settings
-/// (default/summary language, summary style, dictation post-filter). The six
+/// (default/summary language, summary style, dictation cleanup level). The six
 /// transcription-provider/model fields are managed by the server and the backend
 /// returns HTTP 400 on any PATCH that includes them, so they are deliberately not
 /// editable here. Save sends a SPARSE <see cref="UpdateSettingsRequest"/> — only
@@ -28,6 +28,7 @@ public sealed partial class SettingsViewModel : ObservableObject
     [ObservableProperty] [NotifyPropertyChangedFor(nameof(HasChanges))] private string _summaryLanguage = string.Empty;
     [ObservableProperty] [NotifyPropertyChangedFor(nameof(HasChanges))] private SummaryStyle _summaryStyle = SummaryStyle.Medium;
     [ObservableProperty] [NotifyPropertyChangedFor(nameof(HasChanges))] private bool _dictationPostFilterEnabled;
+    [ObservableProperty] [NotifyPropertyChangedFor(nameof(HasChanges))] private DictationCleanupLevel _dictationCleanupLevel = DictationCleanupLevel.None;
 
     [ObservableProperty] private bool _isLoading;
     [ObservableProperty] private bool _isSaving;
@@ -48,7 +49,8 @@ public sealed partial class SettingsViewModel : ObservableObject
             DefaultLanguage != _loaded.DefaultLanguage ||
             SummaryLanguage != _loaded.SummaryLanguage ||
             SummaryStyle != _loaded.SummaryStyle ||
-            DictationPostFilterEnabled != _loaded.DictationPostFilterEnabled);
+            DictationPostFilterEnabled != _loaded.DictationPostFilterEnabled ||
+            DictationCleanupLevel != _loaded.DictationCleanupLevel);
 
     public async Task LoadAsync(CancellationToken ct = default)
     {
@@ -95,7 +97,8 @@ public sealed partial class SettingsViewModel : ObservableObject
                 DefaultLanguage: DefaultLanguage != _loaded.DefaultLanguage ? DefaultLanguage : null,
                 SummaryLanguage: SummaryLanguage != _loaded.SummaryLanguage ? SummaryLanguage : null,
                 SummaryStyle: SummaryStyle != _loaded.SummaryStyle ? SummaryStyle : null,
-                DictationPostFilterEnabled: DictationPostFilterEnabled != _loaded.DictationPostFilterEnabled ? DictationPostFilterEnabled : null);
+                DictationPostFilterEnabled: DictationPostFilterEnabled != _loaded.DictationPostFilterEnabled && DictationCleanupLevel == _loaded.DictationCleanupLevel ? DictationPostFilterEnabled : null,
+                DictationCleanupLevel: DictationCleanupLevel != _loaded.DictationCleanupLevel ? DictationCleanupLevel : null);
 
             var updated = await _api.UpdateSettingsAsync(request, ct).ConfigureAwait(false);
             ApplyLoaded(updated);
@@ -123,6 +126,7 @@ public sealed partial class SettingsViewModel : ObservableObject
         SummaryLanguage = settings.SummaryLanguage;
         SummaryStyle = settings.SummaryStyle;
         DictationPostFilterEnabled = settings.DictationPostFilterEnabled;
+        DictationCleanupLevel = settings.DictationCleanupLevel;
         OnPropertyChanged(nameof(HasChanges));
         SaveCommand.NotifyCanExecuteChanged();
     }
@@ -131,5 +135,6 @@ public sealed partial class SettingsViewModel : ObservableObject
     partial void OnSummaryLanguageChanged(string value) => SaveCommand.NotifyCanExecuteChanged();
     partial void OnSummaryStyleChanged(SummaryStyle value) => SaveCommand.NotifyCanExecuteChanged();
     partial void OnDictationPostFilterEnabledChanged(bool value) => SaveCommand.NotifyCanExecuteChanged();
+    partial void OnDictationCleanupLevelChanged(DictationCleanupLevel value) => SaveCommand.NotifyCanExecuteChanged();
     partial void OnIsSavingChanged(bool value) => SaveCommand.NotifyCanExecuteChanged();
 }
