@@ -16,10 +16,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
 from app.core import user_memory as user_memory_module
+from app.core.companion_actions import propose_action
 from app.core.mcp_oauth import issue_companion_mcp_access_token
 from app.core.openai_client import get_openai_client
 from app.core.openai_responses import OpenAIResponseError, ensure_response_completed
 from app.core.qa import SourceSegment, retrieve_context
+from app.core.tool_router import (
+    REQUEST_TOOL_GROUP_NAME,
+    request_tool_group_tool,
+    requestable_groups,
+    visible_tool_names,
+)
+from app.core.tool_safety import is_mutating_tool_call
 from app.models.companion import ChatMessage, Conversation
 from app.models.recording import ActionItem, Folder, Recording, Summary
 from app.models.user import User
@@ -216,6 +224,55 @@ class MemoryUpdatedEvent:
     operation: str = ""
 
 
+@dataclass(frozen=True)
+class ActionProposedEvent:
+    """A mutating tool (send / external write / desktop action) is proposed and
+    awaiting the user's explicit approval. The side effect has NOT run. The
+    client shows a confirm sheet and resolves it via /actions/{id}/resolve.
+    `preview` is a privacy-safe human-readable dry-run; `recipient` is the
+    resolved display name (never a raw id)."""
+
+    type: Literal["action_proposed"] = "action_proposed"
+    action_id: str = ""
+    kind: str = ""  # send | mutate | desktop_action
+    tool: str = ""
+    preview: str = ""
+    expires_at: str = ""
+    recipient: str | None = None
+
+
+@dataclass(frozen=True)
+class ActionResultEvent:
+    """The outcome of a resolved pending action."""
+
+    type: Literal["action_result"] = "action_result"
+    action_id: str = ""
+    status: str = ""  # executed | rejected | expired | failed
+    detail: str = ""
+    undo_token: str | None = None
+
+
+@dataclass(frozen=True)
+class NarrationEvent:
+    """A short spoken status the client reads aloud during a multi-step action
+    ("Opening Mail…", "Drafted the reply — say send to send")."""
+
+    type: Literal["narration"] = "narration"
+    text: str = ""
+
+
+@dataclass(frozen=True)
+class DesktopActionEvent:
+    """A computer-use command the cloud brain emits for the macOS edge to run
+    locally; the Mac POSTs the typed result back to /desktop_result. `command`
+    is an AXorcist CommandEnvelope (opaque to the backend)."""
+
+    type: Literal["desktop_action"] = "desktop_action"
+    action_id: str = ""
+    command: dict[str, Any] = field(default_factory=dict)
+    device_target: str | None = None
+
+
 CompanionEvent = (
     TurnStartEvent
     | ToolCallEvent
@@ -223,6 +280,10 @@ CompanionEvent = (
     | TokenEvent
     | CitationEvent
     | MemoryUpdatedEvent
+    | ActionProposedEvent
+    | ActionResultEvent
+    | NarrationEvent
+    | DesktopActionEvent
     | DoneEvent
     | ErrorEvent
 )
@@ -1329,6 +1390,115 @@ def _companion_mcp_tool(settings, access_token: str) -> dict[str, Any]:
     }
 
 
+# ---------- Action (write) tools — gated function tools for the actions loop ----------
+
+
+def _action_tool_defs() -> dict[str, dict[str, Any]]:
+    """OpenAI function-tool schemas for write actions. Reads stay on the MCP
+    tool; these are the gated 'hands', attached only when their ToolRouter group
+    is active, and every call routes through the host approval gate."""
+    return {
+        "send_message_telegram": {
+            "type": "function",
+            "name": "send_message_telegram",
+            "description": (
+                "Send a short Telegram message to the user's OWN Wai chat (when "
+                "they say 'message me', 'remind me', 'text myself'). The message "
+                "is shown to the user for explicit approval before it is sent — "
+                "never assume it was sent. Provide only `text`."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "text": {"type": "string", "description": "The message body."}
+                },
+                "required": ["text"],
+                "additionalProperties": False,
+            },
+        },
+        "desktop_open": {
+            "type": "function",
+            "name": "desktop_open",
+            "description": (
+                "Open an app or URL on the user's Mac (e.g. a Gmail compose URL, "
+                "a website, an app). Deterministic, low-risk. Requires approval "
+                "and runs on the user's Mac, not the server."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "target": {
+                        "type": "string",
+                        "description": "An app name, https URL, or mailto:/compose URL.",
+                    }
+                },
+                "required": ["target"],
+                "additionalProperties": False,
+            },
+        },
+        "desktop_type": {
+            "type": "function",
+            "name": "desktop_type",
+            "description": (
+                "Type text into the currently focused field on the user's Mac. "
+                "Requires approval; runs on the Mac."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "text": {"type": "string", "description": "Text to type."}
+                },
+                "required": ["text"],
+                "additionalProperties": False,
+            },
+        },
+        "desktop_click": {
+            "type": "function",
+            "name": "desktop_click",
+            "description": (
+                "Click a UI element by its index from the latest accessibility "
+                "snapshot of the user's Mac. Requires approval; runs on the Mac."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "index": {
+                        "type": "integer",
+                        "description": "Element index from a prior snapshot.",
+                    }
+                },
+                "required": ["index"],
+                "additionalProperties": False,
+            },
+        },
+    }
+
+
+def _visible_action_tools(active_groups: set[str]) -> list[dict[str, Any]]:
+    names = set(visible_tool_names(active_groups))
+    return [d for n, d in _action_tool_defs().items() if n in names]
+
+
+def _action_kind(tool_name: str) -> str:
+    """desktop_* tools execute on the Mac edge; everything else sends/mutates
+    server-side. Determines the pending-action kind (and thus dispatch path)."""
+    return "desktop_action" if tool_name.startswith("desktop_") else "send"
+
+
+def _action_preview(name: str, args: dict[str, Any]) -> tuple[str, str | None]:
+    """Privacy-safe human-readable dry-run + resolved recipient display name."""
+    if name == "send_message_telegram":
+        text = str(args.get("text", "")).strip()
+        return (f"Send a Telegram message to you: “{text}”", "you")
+    if name == "desktop_open":
+        return (f"Open on your Mac: {str(args.get('target', '')).strip()}", None)
+    if name == "desktop_type":
+        return ("Type into the focused field on your Mac", None)
+    if name == "desktop_click":
+        return (f"Click element {args.get('index')} on your Mac", None)
+    return (f"Run {name}", None)
+
+
 async def run_turn(
     db: AsyncSession,
     user_id: uuid.UUID,
@@ -1337,6 +1507,7 @@ async def run_turn(
     *,
     turn_context: TurnContext | None = None,
     openai_client=None,
+    enable_actions: bool = False,
 ) -> AsyncIterator[CompanionEvent]:
     settings = get_settings()
     client = openai_client if openai_client is not None else get_openai_client()
@@ -1382,6 +1553,22 @@ async def run_turn(
     # so `/mcp` can resolve the presented token on its own connection.
     await db.commit()
     mcp_tool = _companion_mcp_tool(settings, access_token)
+
+    if enable_actions:
+        async for _evt in _run_actions_loop(
+            db,
+            client,
+            settings,
+            user_id,
+            conv,
+            user_msg,
+            instructions,
+            response_input,
+            mcp_tool,
+            started,
+        ):
+            yield _evt
+        return
 
     assistant_text = ""
     usage: Any = None
@@ -1467,6 +1654,194 @@ async def run_turn(
     conv.last_message_at = datetime.now(timezone.utc)
     await db.flush()
 
+    yield DoneEvent(
+        message_id=str(assistant_msg.id),
+        input_tokens=input_tokens or None,
+        output_tokens=output_tokens or None,
+        cached_tokens=cached_tokens or None,
+        model=settings.openai_llm_model,
+        latency_ms=latency_ms,
+    )
+
+
+async def _run_actions_loop(
+    db: AsyncSession,
+    client: Any,
+    settings: Any,
+    user_id: uuid.UUID,
+    conv: Conversation,
+    user_msg: ChatMessage,
+    instructions: str,
+    response_input: list[dict[str, Any]],
+    mcp_tool: dict[str, Any],
+    started: float,
+) -> AsyncIterator[CompanionEvent]:
+    """Bounded function-tool loop for action-capable turns.
+
+    Reads still go via the MCP tool; write 'hands' are gated function tools
+    attached on demand (request_tool_group). A mutating call is proposed to the
+    approval gate and the turn DEFERS — the side effect runs only after
+    /resolve. Bounded by TOOL_CALL_CAP; errors surface (no fallback).
+    """
+    active_groups: set[str] = set()
+    prev_response_id: str | None = None
+    next_input: list[dict[str, Any]] = response_input
+    usage: Any = None
+    final_text = ""
+    proposed = False
+
+    for step in range(1, TOOL_CALL_CAP + 1):
+        # mcp_tool = read access to the user's brain; the hosted web_search tool
+        # = "find this on the internet" (runs server-side). Hosted results are
+        # not interceptable, so the propose->commit write gate (every send/OS
+        # action confirmed) is the lethal-trifecta control, not result-wrapping.
+        tools: list[dict[str, Any]] = [mcp_tool, {"type": "web_search"}]
+        if requestable_groups("voice_default"):
+            tools.append(request_tool_group_tool("voice_default"))
+        tools.extend(_visible_action_tools(active_groups))
+
+        create_kwargs: dict[str, Any] = dict(
+            model=settings.openai_llm_model,
+            instructions=instructions,
+            tools=tools,
+            prompt_cache_key=f"wai-companion-{user_id}",
+            stream=True,
+            input=next_input,
+        )
+        if prev_response_id is not None:
+            create_kwargs["previous_response_id"] = prev_response_id
+
+        stream = await client.responses.create(**create_kwargs)
+        step_text = ""
+        completed: Any = None
+        async for event in stream:
+            etype = getattr(event, "type", None) or (
+                event.get("type") if isinstance(event, dict) else None
+            )
+            if etype == "response.output_text.delta":
+                delta = getattr(event, "delta", None)
+                if delta is None and isinstance(event, dict):
+                    delta = event.get("delta", "")
+                delta = delta or ""
+                step_text += delta
+                if delta:
+                    yield TokenEvent(text=delta)
+            elif etype in ("response.completed", "response.done"):
+                completed = getattr(event, "response", None)
+                if completed is None and isinstance(event, dict):
+                    completed = event.get("response")
+                if completed is not None:
+                    try:
+                        ensure_response_completed(
+                            completed, operation="Companion response"
+                        )
+                    except OpenAIResponseError as exc:
+                        raise CompanionError("model_incomplete", str(exc)) from exc
+                    step_usage = getattr(completed, "usage", None)
+                    if step_usage is None and isinstance(completed, dict):
+                        step_usage = completed.get("usage")
+                    usage = step_usage or usage
+                    if not step_text:
+                        step_text = _extract_text(completed)
+            elif etype in ("response.error", "error"):
+                err = getattr(event, "error", None)
+                if err is None and isinstance(event, dict):
+                    err = event.get("error")
+                msg = (
+                    getattr(err, "message", None)
+                    or (err.get("message") if isinstance(err, dict) else None)
+                    or "Companion stream failed"
+                )
+                raise CompanionError("stream_error", str(msg))
+
+        if step_text:
+            final_text = step_text
+        calls = _extract_tool_calls(completed)
+        if not calls:
+            break  # model produced a final answer
+
+        prev_response_id = getattr(completed, "id", None)
+        if prev_response_id is None and isinstance(completed, dict):
+            prev_response_id = completed.get("id")
+
+        outputs: list[dict[str, Any]] = []
+        for call in calls:
+            cname = call.get("name") or ""
+            cargs = call.get("arguments") or {}
+            cid = call.get("id")
+            if cname == REQUEST_TOOL_GROUP_NAME:
+                group = str(cargs.get("group", ""))
+                active_groups.add(group)
+                outputs.append(
+                    {
+                        "type": "function_call_output",
+                        "call_id": cid,
+                        "output": json.dumps({"ok": True, "attached": group}),
+                    }
+                )
+            elif is_mutating_tool_call(cname, cargs):
+                preview, recipient = _action_preview(cname, cargs)
+                idempotency_key = f"{conv.id}:{user_msg.id}:{step}:{cname}"
+                row = await propose_action(
+                    db,
+                    user_id=user_id,
+                    conversation_id=conv.id,
+                    kind=_action_kind(cname),
+                    tool_name=cname,
+                    args=cargs,
+                    preview=preview,
+                    idempotency_key=idempotency_key,
+                    recipient_display=recipient,
+                )
+                await db.commit()  # register BEFORE surfacing (race-fix)
+                yield ActionProposedEvent(
+                    action_id=str(row.id),
+                    kind=_action_kind(cname),
+                    tool=cname,
+                    preview=preview,
+                    expires_at=row.expires_at.isoformat(),
+                    recipient=recipient,
+                )
+                proposed = True
+            else:
+                outputs.append(
+                    {
+                        "type": "function_call_output",
+                        "call_id": cid,
+                        "output": json.dumps(
+                            {"ok": False, "error": f"tool {cname} unavailable"}
+                        ),
+                    }
+                )
+        if proposed:
+            break  # defer for human approval; do not continue the loop
+        next_input = outputs
+
+    latency_ms = int((time.monotonic() - started) * 1000)
+    input_tokens = _get_usage(usage, "input_tokens")
+    output_tokens = _get_usage(usage, "output_tokens")
+    cached_tokens = _get_usage(usage, "cached_tokens")
+    text_to_store = final_text.strip()
+    if not text_to_store and not proposed:
+        raise CompanionError(
+            "empty_model_output",
+            "Companion stream completed without emitting any text.",
+        )
+    assistant_msg = ChatMessage(
+        conversation_id=conv.id,
+        role="assistant",
+        content=[{"type": "text", "text": text_to_store}],
+        cached_tokens=cached_tokens or None,
+        input_tokens=input_tokens or None,
+        output_tokens=output_tokens or None,
+        model=settings.openai_llm_model,
+        latency_ms=latency_ms,
+    )
+    db.add(assistant_msg)
+    await db.flush()
+    await db.refresh(assistant_msg)
+    conv.last_message_at = datetime.now(timezone.utc)
+    await db.flush()
     yield DoneEvent(
         message_id=str(assistant_msg.id),
         input_tokens=input_tokens or None,

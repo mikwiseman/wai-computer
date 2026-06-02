@@ -442,6 +442,19 @@ async def _persist_summary(
                 )
             )
 
+    # Seed the knowledge graph from the summary's people + topics (zero extra
+    # LLM cost) so imported recordings join the graph too.
+    from app.core.entity_graph import seed_entities_from_summary
+
+    await seed_entities_from_summary(
+        db,
+        recording.user_id,
+        source_kind="recording",
+        source_id=recording.id,
+        people=summary_result.people_mentioned,
+        topics=summary_result.topics,
+    )
+
     return summary
 
 

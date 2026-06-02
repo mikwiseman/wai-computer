@@ -32,8 +32,11 @@ def test_consolidator_schema_shape() -> None:
     updates = inner["properties"]["updates"]
     assert updates["type"] == "array"
     item = updates["items"]
-    assert set(item["required"]) == {"block", "operation", "content", "target_line"}
+    assert set(item["required"]) == {
+        "block", "operation", "content", "target_line", "confidence"
+    }
     assert item["properties"]["target_line"]["type"] == ["string", "null"]
+    assert item["properties"]["confidence"]["type"] == "number"
     assert set(item["properties"]["block"]["enum"]) == {"human", "topics", "preferences"}
     assert set(item["properties"]["operation"]["enum"]) == {"append", "replace_line", "rewrite"}
 
@@ -126,8 +129,8 @@ def test_first_output_text_returns_empty_when_content_missing() -> None:
 @pytest.mark.asyncio
 async def test_apply_updates_empty_returns_zeros() -> None:
     db = MagicMock()
-    applied, rejected = await _apply_updates(db, uuid.uuid4(), [])
-    assert (applied, rejected) == (0, 0)
+    result = await _apply_updates(db, uuid.uuid4(), [])
+    assert result == {"auto_applied": 0, "queued": 0, "duplicates": 0}
 
 
 # ---------------------------------------------------------------------------
@@ -170,7 +173,7 @@ async def test_consolidate_one_user_parse_error(db_session) -> None:
         )
 
     assert result["parse_error"] is True
-    assert result["updates_applied"] == 0
+    assert result["auto_applied"] == 0
 
 
 # ---------------------------------------------------------------------------
@@ -190,10 +193,10 @@ async def test_consolidate_all_active_users_counts_processed_and_skipped(
 
     # First user: processed; second: skipped; third: processed; fourth: failure.
     per_user_results = iter([
-        {"updates_applied": 2, "updates_rejected": 0, "considered": 2},  # processed
-        {"updates_applied": 0, "updates_rejected": 0, "skipped": True},  # skipped
-        {"updates_applied": 1, "updates_rejected": 0, "considered": 1},  # processed
-        RuntimeError("boom"),                                            # failure
+        {"auto_applied": 2, "queued": 0, "considered": 2},  # processed
+        {"auto_applied": 0, "queued": 0, "skipped": True},  # skipped
+        {"auto_applied": 1, "queued": 1, "considered": 2},  # processed
+        RuntimeError("boom"),                               # failure
     ])
 
     async def fake_consolidate_one_user(db, user_id, **kwargs):

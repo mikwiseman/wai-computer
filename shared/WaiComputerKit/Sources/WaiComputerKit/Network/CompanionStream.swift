@@ -111,6 +111,41 @@ public struct CompanionStreamParser: Sendable {
             case "error":
                 let payload = try decoder.decode(ErrorPayload.self, from: data)
                 return .error(code: payload.code, message: payload.message)
+            case "memory_updated":
+                let payload = try decoder.decode(MemoryUpdatedPayload.self, from: data)
+                return .memoryUpdated(
+                    block: payload.block, operation: payload.operation
+                )
+            case "action_proposed":
+                let payload = try decoder.decode(ActionProposedPayload.self, from: data)
+                return .actionProposed(
+                    CompanionActionProposal(
+                        actionId: payload.actionId,
+                        kind: payload.kind,
+                        tool: payload.tool,
+                        preview: payload.preview,
+                        expiresAt: payload.expiresAt,
+                        recipient: payload.recipient
+                    )
+                )
+            case "action_result":
+                let payload = try decoder.decode(ActionResultPayload.self, from: data)
+                return .actionResult(
+                    actionId: payload.actionId,
+                    status: payload.status,
+                    detail: payload.detail,
+                    undoToken: payload.undoToken
+                )
+            case "narration":
+                let payload = try decoder.decode(NarrationPayload.self, from: data)
+                return .narration(text: payload.text)
+            case "desktop_action":
+                let payload = try decoder.decode(DesktopActionPayload.self, from: data)
+                return .desktopAction(
+                    actionId: payload.actionId,
+                    command: payload.command,
+                    deviceTarget: payload.deviceTarget
+                )
             default:
                 throw CompanionStreamError.unknownEventType(eventType)
             }
@@ -197,6 +232,56 @@ public struct CompanionStreamParser: Sendable {
     private struct ErrorPayload: Decodable {
         let code: String
         let message: String
+    }
+
+    private struct MemoryUpdatedPayload: Decodable {
+        let block: String
+        let operation: String
+    }
+
+    private struct ActionProposedPayload: Decodable {
+        let actionId: String
+        let kind: String
+        let tool: String
+        let preview: String
+        let expiresAt: String
+        let recipient: String?
+        enum CodingKeys: String, CodingKey {
+            case actionId = "action_id"
+            case kind
+            case tool
+            case preview
+            case expiresAt = "expires_at"
+            case recipient
+        }
+    }
+
+    private struct ActionResultPayload: Decodable {
+        let actionId: String
+        let status: String
+        let detail: String
+        let undoToken: String?
+        enum CodingKeys: String, CodingKey {
+            case actionId = "action_id"
+            case status
+            case detail
+            case undoToken = "undo_token"
+        }
+    }
+
+    private struct NarrationPayload: Decodable {
+        let text: String
+    }
+
+    private struct DesktopActionPayload: Decodable {
+        let actionId: String
+        let command: CompanionJSONValue
+        let deviceTarget: String?
+        enum CodingKeys: String, CodingKey {
+            case actionId = "action_id"
+            case command
+            case deviceTarget = "device_target"
+        }
     }
 }
 

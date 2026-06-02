@@ -89,4 +89,37 @@ public class DeepgramSessionTests
 
         transport.SentText.Should().Contain(s => s.Contains("\"type\":\"CloseStream\""));
     }
+
+    [Fact]
+    public async Task DeepgramFinalResultsCaptureDominantSpeaker()
+    {
+        var transport = new FakeWebSocketTransport();
+        await using var session = new DeepgramSession(Cfg(), transport);
+        await session.OpenAsync(CancellationToken.None);
+
+        // speaker 1 holds the floor 0.8s vs speaker 0's 0.2s -> dominant = speaker_1.
+        transport.PushText("""
+        {"type":"Results","is_final":true,"speech_final":true,"start":0.0,"duration":1.0,"channel":{"alternatives":[{"transcript":"hello world again","confidence":0.95,"words":[{"word":"hello","start":0.0,"end":0.2,"speaker":0},{"word":"world","start":0.2,"end":0.6,"speaker":1},{"word":"again","start":0.6,"end":1.0,"speaker":1}]}]}}
+        """);
+
+        await Task.Delay(200);
+        session.CollectedSegments.Should().ContainSingle(s =>
+            s.Text == "hello world again" && s.Speaker == "speaker_1");
+    }
+
+    [Fact]
+    public async Task DeepgramResultsWithoutSpeakerLeaveSpeakerNull()
+    {
+        var transport = new FakeWebSocketTransport();
+        await using var session = new DeepgramSession(Cfg(), transport);
+        await session.OpenAsync(CancellationToken.None);
+
+        transport.PushText("""
+        {"type":"Results","is_final":true,"speech_final":true,"start":0.0,"duration":0.5,"channel":{"alternatives":[{"transcript":"no diarization","confidence":0.9}]}}
+        """);
+
+        await Task.Delay(200);
+        session.CollectedSegments.Should().ContainSingle(s =>
+            s.Text == "no diarization" && s.Speaker == null);
+    }
 }

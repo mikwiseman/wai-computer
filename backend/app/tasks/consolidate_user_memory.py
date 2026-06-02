@@ -29,6 +29,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
+from app.core import memory_proposal as memory_proposal_module
 from app.core import user_memory as user_memory_module
 from app.core.openai_client import get_openai_client
 from app.db.session import get_db_context
@@ -43,13 +44,17 @@ logger = logging.getLogger(__name__)
 CONSOLIDATOR_SYSTEM_PROMPT = (
     "You are the nightly memory consolidator for the Wai second brain. "
     "Read the new material from the last 24 hours and return a compact "
-    "JSON object {\"updates\": [{block, operation, content, target_line?}]}. "
+    "JSON object {\"updates\": [{block, operation, content, target_line?, "
+    "confidence}]}. "
     "Allowed blocks: human (durable facts about the user), topics "
     "(recurring subjects), preferences (how they want to be answered). "
     "Allowed operations: append (new bullet), replace_line (corrects one "
     "earlier claim — requires target_line that matches verbatim), rewrite "
     "(replaces whole block). Only emit updates that are durable — skip "
-    "single-day tasks, momentary feelings, and trivia. Keep content "
+    "single-day tasks, momentary feelings, and trivia. For each update give "
+    "a confidence in [0,1] for how certain and clearly-supported the fact is: "
+    "additive high-confidence facts are saved automatically, while corrections "
+    "and low-confidence guesses are held for the user to review. Keep content "
     "concise (one bullet per update, ≤200 chars). If nothing durable "
     "happened, return {\"updates\": []}."
 )
@@ -83,8 +88,19 @@ def _consolidator_schema() -> dict[str, Any]:
                                 "maxLength": 500,
                             },
                             "target_line": {"type": ["string", "null"]},
+                            "confidence": {
+                                "type": "number",
+                                "minimum": 0,
+                                "maximum": 1,
+                            },
                         },
-                        "required": ["block", "operation", "content", "target_line"],
+                        "required": [
+                            "block",
+                            "operation",
+                            "content",
+                            "target_line",
+                            "confidence",
+                        ],
                     },
                 },
             },
@@ -160,31 +176,34 @@ async def _apply_updates(
     db: AsyncSession,
     user_id: uuid.UUID,
     updates: list[dict[str, Any]],
-) -> tuple[int, int]:
-    applied = 0
-    rejected = 0
+) -> dict[str, int]:
+    """Route each LLM-proposed update through the governance gate. Additive,
+    confident, first-party facts auto-apply to memory (the same write_block
+    path as before); destructive corrections and low-confidence guesses are
+    queued as proposals for one-tap review. Returns counts by disposition."""
+    auto_applied = queued = duplicates = 0
     for upd in updates:
-        try:
-            await user_memory_module.write_block(
-                db,
-                user_id,
-                label=upd["block"],
-                operation=upd["operation"],
-                content=upd["content"],
-                target_line=upd.get("target_line"),
-                source="consolidator",
-            )
-            applied += 1
-        except user_memory_module.MemoryError as exc:
-            rejected += 1
-            logger.warning(
-                "memory_consolidator rejected: user=%s block=%s op=%s reason=%s",
-                user_id,
-                upd.get("block"),
-                upd.get("operation"),
-                exc,
-            )
-    return applied, rejected
+        outcome = await memory_proposal_module.propose_block_update(
+            db,
+            user_id,
+            block_label=upd["block"],
+            operation=upd["operation"],
+            content=upd["content"],
+            target_line=upd.get("target_line"),
+            confidence=float(upd.get("confidence", 0.5)),
+            authority="self",
+        )
+        if outcome is None:
+            duplicates += 1
+        elif outcome.decision == "auto_accepted":
+            auto_applied += 1
+        else:
+            queued += 1
+    return {
+        "auto_applied": auto_applied,
+        "queued": queued,
+        "duplicates": duplicates,
+    }
 
 
 async def _consolidate_one_user(
@@ -230,15 +249,11 @@ async def _consolidate_one_user(
         parsed = json.loads(text)
     except (TypeError, ValueError) as exc:
         logger.warning("consolidator parse failure user=%s: %s", user_id, exc)
-        return {"updates_applied": 0, "updates_rejected": 0, "parse_error": True}
+        return {"auto_applied": 0, "queued": 0, "parse_error": True}
 
     updates = parsed.get("updates") or []
-    applied, rejected = await _apply_updates(db, user_id, updates)
-    return {
-        "updates_applied": applied,
-        "updates_rejected": rejected,
-        "considered": len(updates),
-    }
+    counts = await _apply_updates(db, user_id, updates)
+    return {**counts, "considered": len(updates)}
 
 
 def _first_output_text(response: Any) -> str:

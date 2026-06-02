@@ -92,8 +92,13 @@ struct MacMainView: View {
     @EnvironmentObject var appState: MacAppState
     @EnvironmentObject var recordingViewModel: MacRecordingViewModel
     @EnvironmentObject private var languageManager: LanguageManager
+    @EnvironmentObject private var dictationManager: DictationManager
     @StateObject private var libraryViewModel = MacLibraryViewModel()
     @StateObject private var importViewModel = MacImportViewModel()
+    // Computer-use (Mac-edge channel): opt-in, off by default. Runs only while
+    // the assistant surface is open so it never silently polls 24/7.
+    @StateObject private var desktopAgent = DesktopAgentRunner()
+    @AppStorage("desktopComputerUseEnabled") private var computerUseEnabled = false
     @State private var selectedSection: SidebarSection? = .allRecordings
     @State private var selectedRecordingIds: Set<String> = []
     @State private var prefetchedRecordingDetail: RecordingDetail?
@@ -118,6 +123,9 @@ struct MacMainView: View {
         case allRecordings
         case folder(String)
         case trash
+        case content
+        case brain
+        case review
         case search
         case history
         case dictionary
@@ -134,7 +142,7 @@ struct MacMainView: View {
         switch selectedSection {
         case .allRecordings, .folder(_), .trash, .none:
             return true
-        case .search, .history, .dictionary, .wai, .settings:
+        case .content, .brain, .review, .search, .history, .dictionary, .wai, .settings:
             return false
         }
     }
@@ -180,6 +188,12 @@ struct MacMainView: View {
             return libraryViewModel.folders.first(where: { $0.id == folderId })?.name ?? t("Folder", "Папка")
         case .trash:
             return t("Trash", "Корзина")
+        case .content:
+            return t("Content", "Материалы")
+        case .brain:
+            return t("Brain", "Мозг")
+        case .review:
+            return t("Review", "На проверку")
         case .search:
             return t("Search", "Поиск")
         case .history:
@@ -460,11 +474,15 @@ struct MacMainView: View {
         }
         .task {
             await reloadLibrary()
+            syncDesktopAgent()
         }
         .onAppear {
             handleCompletedRecordingChange()
             handleSelectedRecordingFromMenu(appState.selectedRecordingFromMenu)
             handlePendingMainWindowAction(appState.pendingMainWindowAction)
+        }
+        .onDisappear {
+            desktopAgent.stop()
         }
         .onChangeCompat(of: selectedSection) { _, newSection in
             selectedRecordingIds.removeAll()
@@ -474,6 +492,10 @@ struct MacMainView: View {
                 selectedRecordingIds = [pendingSelection.recordingId]
                 pendingRecordingSelectionAfterSectionChange = nil
             }
+            syncDesktopAgent()
+        }
+        .onChangeCompat(of: computerUseEnabled) { _, _ in
+            syncDesktopAgent()
         }
         .onChangeCompat(of: hasListColumn) { _, _ in
             updateColumnVisibility(for: lastMeasuredLayoutWidth)
@@ -497,6 +519,9 @@ struct MacMainView: View {
             guard let target = notification.object as? String else { return }
             switch target {
             case "allRecordings": selectedSection = .allRecordings
+            case "content": selectedSection = .content
+            case "brain": selectedSection = .brain
+            case "review": selectedSection = .review
             case "history": selectedSection = .history
             case "dictionary": selectedSection = .dictionary
             case "search": selectedSection = .search
@@ -589,6 +614,9 @@ struct MacMainView: View {
         List {
             Section {
                 sidebarRow(t("All Recordings", "Все записи"), icon: "folder", section: .allRecordings, identifier: "all-recordings")
+                sidebarRow(t("Content", "Материалы"), icon: "square.stack.3d.up", section: .content, identifier: "content")
+                sidebarRow(t("Brain", "Мозг"), icon: "brain", section: .brain, identifier: "brain")
+                sidebarRow(t("Review", "На проверку"), icon: "tray.full", section: .review, identifier: "review")
                 sidebarRow(t("Trash", "Корзина"), icon: "trash", section: .trash, identifier: "trash")
             } header: {
                 Text(t("Library", "Библиотека"))
@@ -846,6 +874,15 @@ struct MacMainView: View {
                     isImporting: importViewModel.isImporting
                 )
             }
+        case .content:
+            MacContentFeedView(apiClient: appState.getAPIClient())
+                .environment(\.locale, MacDateFormatting.locale(for: languageManager.current))
+        case .brain:
+            MacBrainView(apiClient: appState.getAPIClient())
+                .environment(\.locale, MacDateFormatting.locale(for: languageManager.current))
+        case .review:
+            MacReviewView(apiClient: appState.getAPIClient())
+                .environment(\.locale, MacDateFormatting.locale(for: languageManager.current))
         case .search:
             MacSearchView { recordingId in
                 openSearchResult(recordingId)
@@ -857,7 +894,18 @@ struct MacMainView: View {
         case .wai:
             CompanionView(
                 apiClient: appState.getAPIClient(),
-                recordings: libraryViewModel.recordings
+                recordings: libraryViewModel.recordings,
+                onVoiceInput: {
+                    // Tap to start / tap to stop, reusing the existing dictation
+                    // pipeline — the transcript pastes into the focused composer.
+                    Task {
+                        if dictationManager.state == .listening {
+                            await dictationManager.stopAndInsert()
+                        } else {
+                            await dictationManager.startDictation()
+                        }
+                    }
+                }
             )
             .environment(\.locale, MacDateFormatting.locale(for: languageManager.current))
             .companionAccentColor(Palette.accent)
@@ -974,6 +1022,17 @@ struct MacMainView: View {
         }
 
         await libraryViewModel.loadLibrary(apiClient: appState.getAPIClient())
+    }
+
+    /// Run the Mac-edge computer-use channel only while the assistant surface is
+    /// open AND the user has opted in (default off) — never a silent 24/7 loop.
+    @MainActor
+    private func syncDesktopAgent() {
+        if computerUseEnabled, selectedSection == .wai {
+            desktopAgent.start(apiClient: appState.getAPIClient())
+        } else {
+            desktopAgent.stop()
+        }
     }
 
     // MARK: - Actions

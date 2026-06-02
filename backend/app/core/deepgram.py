@@ -18,8 +18,12 @@ DEEPGRAM_REALTIME_CHANNELS = 1
 DEEPGRAM_REALTIME_ENCODING = "linear16"
 DEEPGRAM_KEEP_ALIVE_INTERVAL_SECONDS = 4
 DEEPGRAM_UTTERANCE_END_MS = 1_000
+# Silence (ms) before Deepgram finalizes a streaming segment (is_final=true).
+# Dictation commits each final immediately, so a longer value keeps a spoken
+# number sequence ("десять тридцать") in one segment — it formats together
+# (10:30) instead of splitting (10, 30). The multilingual path previously used
+# an aggressive 100ms; unified at 300ms.
 DEEPGRAM_ENDPOINTING_MS = 300
-DEEPGRAM_MULTILINGUAL_ENDPOINTING_MS = 100
 DEEPGRAM_MAX_KEYTERMS = 100
 DEEPGRAM_MAX_KEYTERM_CHARS = 100
 DEEPGRAM_KEYTERM_TOKEN_BUDGET = 500
@@ -196,21 +200,26 @@ def build_realtime_websocket_url(
         ("channels", max(1, channels)),
         ("language", resolved_language),
         ("interim_results", "true"),
-        ("smart_format", "true"),
         ("vad_events", "true"),
         ("utterance_end_ms", DEEPGRAM_UTTERANCE_END_MS),
-        (
-            "endpointing",
-            DEEPGRAM_MULTILINGUAL_ENDPOINTING_MS
-            if resolved_language == "multi"
-            else DEEPGRAM_ENDPOINTING_MS,
-        ),
+        ("endpointing", DEEPGRAM_ENDPOINTING_MS),
     ]
     if purpose == "recording":
+        # smart_format optimizes meeting transcripts for human readability
+        # (punctuation, paragraphs, dates/times). Its readability layer keeps
+        # small spoken numbers as words ("десять") — desirable for meetings.
+        params.append(("smart_format", "true"))
         params.append(("utterances", "true"))
         params.append(("diarize", "true"))
-    if purpose == "dictation" and supports_dictation(resolved_language):
-        params.extend((("dictation", "true"), ("punctuate", "true")))
+    if purpose == "dictation":
+        # Dictation wants EVERY spoken number as a digit (десять -> 10). numerals
+        # (added below) does that, but ONLY without smart_format: smart_format's
+        # readability layer overrides numerals and leaves small numbers as words.
+        # punctuate gives sentence stops without smart_format's paragraph reflow.
+        params.append(("punctuate", "true"))
+        if supports_dictation(resolved_language):
+            # English-only: turn spoken punctuation commands into marks.
+            params.append(("dictation", "true"))
     if supports_numerals(resolved_language):
         params.append(("numerals", "true"))
     params.extend(("keyterm", keyterm) for keyterm in sanitize_deepgram_keyterms(keyterms))

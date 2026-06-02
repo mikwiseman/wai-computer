@@ -524,6 +524,38 @@ public actor APIClient {
         }
     }
 
+    // MARK: - Devices / Mac-edge channel
+
+    /// Advertise this device's presence (and register it on first call).
+    public func deviceHeartbeat(
+        platform: String,
+        name: String? = nil,
+        deviceId: String? = nil
+    ) async throws -> DeviceHeartbeatResponse {
+        let body = DeviceHeartbeatRequest(platform: platform, name: name, deviceId: deviceId)
+        return try await request(.POST, path: "/api/devices/heartbeat", body: body)
+    }
+
+    /// Drain approved desktop actions queued for this device.
+    public func drainDesktopActions(deviceId: String) async throws -> DesktopActionQueue {
+        return try await request(.GET, path: "/api/devices/\(deviceId)/desktop-actions")
+    }
+
+    /// Report the outcome of a dispatched desktop action back to the cloud.
+    public func reportDesktopResult(
+        chatId: String,
+        actionId: String,
+        status: DesktopResultStatus,
+        payload: [String: CompanionJSONValue]? = nil
+    ) async throws -> DesktopResultResponse {
+        let body = DesktopResultRequest(status: status, payload: payload)
+        return try await request(
+            .POST,
+            path: "/api/companion/chats/\(chatId)/actions/\(actionId)/desktop_result",
+            body: body
+        )
+    }
+
     // MARK: - Auth Endpoints
 
     public func register(
@@ -1010,6 +1042,298 @@ public actor APIClient {
         return try await request(.GET, path: "/api/search/fts", queryItems: queryItems)
     }
 
+    /// Unified RRF search across recordings AND items (the "search everything" box).
+    public func unifiedSearch(query: String, limit: Int = 20) async throws -> UnifiedSearchResponse {
+        let queryItems = [
+            URLQueryItem(name: "q", value: query),
+            URLQueryItem(name: "limit", value: "\(limit)")
+        ]
+        return try await request(.GET, path: "/api/search/all", queryItems: queryItems)
+    }
+
+    // MARK: - Items (universal "add anything") Endpoints
+
+    public func createItem(
+        source: String = "paste",
+        kind: String = "note",
+        title: String? = nil,
+        body: String? = nil,
+        url: String? = nil,
+        folderId: String? = nil
+    ) async throws -> Item {
+        let payload = CreateItemRequest(
+            source: source, kind: kind, title: title, body: body, url: url, folderId: folderId
+        )
+        return try await request(.POST, path: "/api/items", body: payload)
+    }
+
+    public func listItems(
+        source: String? = nil,
+        kind: String? = nil,
+        folderId: String? = nil,
+        limit: Int = 50,
+        offset: Int = 0
+    ) async throws -> ItemListResponse {
+        var queryItems: [URLQueryItem] = [
+            URLQueryItem(name: "limit", value: "\(limit)"),
+            URLQueryItem(name: "offset", value: "\(offset)")
+        ]
+        if let source = source { queryItems.append(URLQueryItem(name: "source", value: source)) }
+        if let kind = kind { queryItems.append(URLQueryItem(name: "kind", value: kind)) }
+        if let folderId = folderId {
+            queryItems.append(URLQueryItem(name: "folder_id", value: folderId))
+        }
+        return try await request(.GET, path: "/api/items", queryItems: queryItems)
+    }
+
+    public func getItem(id: String) async throws -> Item {
+        return try await request(.GET, path: "/api/items/\(id)")
+    }
+
+    /// Upload a document (PDF / text / markdown) from disk as an item. Streams
+    /// the multipart body from a temp file (`session.upload(fromFile:)`) rather
+    /// than holding it all in memory in the request.
+    private struct MediaProcessingMarker: Decodable {
+        let status: String
+    }
+
+    public func uploadItem(
+        fileURL: URL,
+        folderId: String? = nil,
+        title: String? = nil
+    ) async throws -> ItemUploadOutcome {
+        let path = "/api/items/upload"
+        let url = baseURL.appendingPathComponent(path)
+        let boundary = "Boundary-\(UUID().uuidString)"
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue(
+            "multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type"
+        )
+        request.timeoutInterval = 120
+        if let token = accessToken {
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
+
+        let multipartFileURL = try createItemUploadRequestFile(
+            fileURL: fileURL, folderId: folderId, title: title, boundary: boundary
+        )
+        defer { try? FileManager.default.removeItem(at: multipartFileURL) }
+
+        let (data, response) = try await performWithAuthRetry(
+            &request, path: path, method: "POST"
+        ) { req in
+            try await self.session.upload(for: req, fromFile: multipartFileURL)
+        }
+
+        // Audio/video are accepted as 202 (staged + transcribed in the background);
+        // documents come back as a 201 Item.
+        if (response as? HTTPURLResponse)?.statusCode == 202 {
+            let marker = try? decoder.decode(MediaProcessingMarker.self, from: data)
+            return .recording(status: marker?.status ?? "processing")
+        }
+        do {
+            return .item(try decoder.decode(Item.self, from: data))
+        } catch {
+            throw APIError.decodingError(error)
+        }
+    }
+
+    private func itemUploadMimeType(_ ext: String) -> String {
+        switch ext.lowercased() {
+        case "pdf": return "application/pdf"
+        case "md", "markdown": return "text/markdown"
+        case "txt", "text": return "text/plain"
+        case "mp3": return "audio/mpeg"
+        case "wav": return "audio/wav"
+        case "m4a": return "audio/mp4"
+        case "aac": return "audio/aac"
+        case "ogg", "oga": return "audio/ogg"
+        case "opus": return "audio/opus"
+        case "flac": return "audio/flac"
+        case "mp4": return "video/mp4"
+        case "mov": return "video/quicktime"
+        case "mkv": return "video/x-matroska"
+        case "webm": return "video/webm"
+        default: return "application/octet-stream"
+        }
+    }
+
+    private func createItemUploadRequestFile(
+        fileURL: URL,
+        folderId: String?,
+        title: String?,
+        boundary: String
+    ) throws -> URL {
+        let fileData = try Data(contentsOf: fileURL)
+        let filename = fileURL.lastPathComponent
+        let mimeType = itemUploadMimeType(fileURL.pathExtension)
+
+        let uploadURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("wai-item-\(UUID().uuidString).multipart")
+        FileManager.default.createFile(atPath: uploadURL.path, contents: nil)
+        let output = try FileHandle(forWritingTo: uploadURL)
+        defer { try? output.close() }
+
+        func writeString(_ string: String) throws {
+            try output.write(contentsOf: Data(string.utf8))
+        }
+
+        try writeString("--\(boundary)\r\n")
+        try writeString(
+            "Content-Disposition: form-data; name=\"file\"; filename=\"\(filename)\"\r\n"
+        )
+        try writeString("Content-Type: \(mimeType)\r\n\r\n")
+        try output.write(contentsOf: fileData)
+        try writeString("\r\n")
+
+        if let folderId, !folderId.isEmpty {
+            try writeString("--\(boundary)\r\n")
+            try writeString("Content-Disposition: form-data; name=\"folder_id\"\r\n\r\n")
+            try writeString(folderId)
+            try writeString("\r\n")
+        }
+        if let title, !title.isEmpty {
+            try writeString("--\(boundary)\r\n")
+            try writeString("Content-Disposition: form-data; name=\"title\"\r\n\r\n")
+            try writeString(title)
+            try writeString("\r\n")
+        }
+
+        try writeString("--\(boundary)--\r\n")
+        return uploadURL
+    }
+
+    public func deleteItem(id: String) async throws {
+        try await requestNoContent(.DELETE, path: "/api/items/\(id)")
+    }
+
+    // MARK: - Brain (compiled-wiki projection of canonical memory)
+
+    public func getBrain() async throws -> BrainProjection {
+        return try await request(.GET, path: "/api/brain")
+    }
+
+    /// Force-graph-ready knowledge graph. `focus` returns the ego graph around
+    /// one entity; `limit` caps entity nodes by degree.
+    public func getBrainGraph(
+        focus: String? = nil,
+        includeSources: Bool = true,
+        limit: Int = 200
+    ) async throws -> BrainGraph {
+        var queryItems: [URLQueryItem] = [
+            URLQueryItem(name: "include_sources", value: includeSources ? "true" : "false"),
+            URLQueryItem(name: "limit", value: "\(limit)"),
+        ]
+        if let focus, !focus.isEmpty {
+            queryItems.append(URLQueryItem(name: "focus", value: focus))
+        }
+        return try await request(.GET, path: "/api/brain/graph", queryItems: queryItems)
+    }
+
+    /// The wiki page for one entity: source backlinks + related entities.
+    public func getEntityPage(id: String) async throws -> EntityPage {
+        return try await request(.GET, path: "/api/entities/\(id)/page")
+    }
+
+    // MARK: - Memory Proposals (raw→valuable governance review)
+
+    /// The review queue. `status` defaults to "pending"; pass "all" / "accepted"
+    /// / "rejected" to widen it. `pendingCount` is always the live pending total.
+    public func listMemoryProposals(
+        status: String? = "pending",
+        limit: Int = 50
+    ) async throws -> MemoryProposalList {
+        var queryItems: [URLQueryItem] = [URLQueryItem(name: "limit", value: String(limit))]
+        if let status {
+            queryItems.append(URLQueryItem(name: "status", value: status))
+        }
+        return try await request(.GET, path: "/api/memory/proposals", queryItems: queryItems)
+    }
+
+    /// Promote a pending proposal into canonical memory (one-tap accept).
+    public func acceptMemoryProposal(id: String) async throws -> MemoryProposal {
+        return try await request(.POST, path: "/api/memory/proposals/\(id)/accept")
+    }
+
+    /// Reject a pending proposal — durable, so it is never re-proposed.
+    public func rejectMemoryProposal(id: String, reason: String? = nil) async throws -> MemoryProposal {
+        return try await request(
+            .POST,
+            path: "/api/memory/proposals/\(id)/reject",
+            body: RejectProposalRequest(reason: reason)
+        )
+    }
+
+    // MARK: - MCP Ingestion Connections (connect any MCP)
+
+    public func listMcpIngestionConnections() async throws -> [McpIngestionConnection] {
+        return try await request(.GET, path: "/api/mcp-connections")
+    }
+
+    public func createMcpIngestionConnection(
+        serverLabel: String,
+        serverUrl: String,
+        authType: String = "none",
+        authToken: String? = nil,
+        syncIntervalMinutes: Int = 60
+    ) async throws -> McpIngestionConnection {
+        let payload = CreateMcpConnectionRequest(
+            serverLabel: serverLabel,
+            serverUrl: serverUrl,
+            authType: authType,
+            authToken: authToken,
+            syncIntervalMinutes: syncIntervalMinutes
+        )
+        return try await request(.POST, path: "/api/mcp-connections", body: payload)
+    }
+
+    public func updateMcpIngestionConnection(
+        id: String,
+        enabled: Bool? = nil,
+        syncIntervalMinutes: Int? = nil
+    ) async throws -> McpIngestionConnection {
+        let payload = UpdateMcpConnectionRequest(
+            enabled: enabled, syncIntervalMinutes: syncIntervalMinutes
+        )
+        return try await request(.PATCH, path: "/api/mcp-connections/\(id)", body: payload)
+    }
+
+    public func syncMcpIngestionConnection(id: String) async throws {
+        try await requestNoContent(.POST, path: "/api/mcp-connections/\(id)/sync")
+    }
+
+    public func deleteMcpIngestionConnection(id: String) async throws {
+        try await requestNoContent(.DELETE, path: "/api/mcp-connections/\(id)")
+    }
+
+    // MARK: - Comparison Sets (forward several -> compare)
+
+    public func createComparison(
+        itemIds: [String],
+        title: String? = nil,
+        intent: String? = nil
+    ) async throws -> ComparisonSet {
+        let payload = CreateComparisonRequest(itemIds: itemIds, title: title, intent: intent)
+        return try await request(.POST, path: "/api/comparisons", body: payload)
+    }
+
+    public func listComparisons(limit: Int = 50, offset: Int = 0) async throws -> [ComparisonListEntry] {
+        let queryItems = [
+            URLQueryItem(name: "limit", value: "\(limit)"),
+            URLQueryItem(name: "offset", value: "\(offset)")
+        ]
+        return try await request(.GET, path: "/api/comparisons", queryItems: queryItems)
+    }
+
+    public func getComparison(id: String) async throws -> ComparisonSet {
+        return try await request(.GET, path: "/api/comparisons/\(id)")
+    }
+
+    public func deleteComparison(id: String) async throws {
+        try await requestNoContent(.DELETE, path: "/api/comparisons/\(id)")
+    }
+
     // MARK: - Action Items Endpoints
 
     public func listActionItems(status: ActionItem.Status? = nil, priority: ActionItem.Priority? = nil) async throws -> [ActionItem] {
@@ -1362,120 +1686,6 @@ public actor APIClient {
         return try await request(.GET, path: "/api/entities/\(id)")
     }
 
-
-
-    // MARK: - User App Endpoints
-
-    public func listApps(
-        status: AppStatus? = nil,
-        visibility: AppVisibility? = nil
-    ) async throws -> [UserApp] {
-        var queryItems: [URLQueryItem] = []
-        if let status {
-            queryItems.append(URLQueryItem(name: "status", value: status.rawValue))
-        }
-        if let visibility {
-            queryItems.append(URLQueryItem(name: "visibility", value: visibility.rawValue))
-        }
-        return try await request(
-            .GET,
-            path: "/api/apps",
-            queryItems: queryItems.isEmpty ? nil : queryItems
-        )
-    }
-
-    public func createApp(
-        name: String,
-        displayName: String,
-        description: String? = nil,
-        icon: String? = nil,
-        template: String? = nil,
-        schemaDef: [String: JSONValue]? = nil,
-        settings: [String: JSONValue]? = nil,
-        visibility: AppVisibility = .private
-    ) async throws -> UserApp {
-        let body = CreateAppRequest(
-            name: name,
-            displayName: displayName,
-            description: description,
-            icon: icon,
-            template: template,
-            schemaDef: schemaDef,
-            settings: settings,
-            visibility: visibility
-        )
-        return try await request(.POST, path: "/api/apps", body: body)
-    }
-
-    public func getApp(_ appId: String) async throws -> UserApp {
-        return try await request(.GET, path: "/api/apps/\(appId)")
-    }
-
-    public func updateApp(
-        _ appId: String,
-        displayName: String? = nil,
-        description: String? = nil,
-        icon: String? = nil,
-        schemaDef: [String: JSONValue]? = nil,
-        appUrl: String? = nil,
-        settings: [String: JSONValue]? = nil,
-        status: AppStatus? = nil,
-        visibility: AppVisibility? = nil,
-        sortOrder: Int? = nil
-    ) async throws -> UserApp {
-        let body = UpdateAppRequest(
-            displayName: displayName,
-            description: description,
-            icon: icon,
-            schemaDef: schemaDef,
-            appUrl: appUrl,
-            settings: settings,
-            status: status,
-            visibility: visibility,
-            sortOrder: sortOrder
-        )
-        return try await request(.PATCH, path: "/api/apps/\(appId)", body: body)
-    }
-
-    public func publishApp(
-        _ appId: String,
-        visibility: AppVisibility? = nil,
-        appUrl: String? = nil
-    ) async throws -> UserApp {
-        let body = PublishAppRequest(visibility: visibility, appUrl: appUrl)
-        return try await request(.POST, path: "/api/apps/\(appId)/publish", body: body)
-    }
-
-    public func deleteApp(_ appId: String) async throws {
-        try await requestNoContent(.DELETE, path: "/api/apps/\(appId)")
-    }
-
-    public func listAppItems(_ appId: String, limit: Int = 100, offset: Int = 0) async throws -> [AppItem] {
-        let queryItems = [
-            URLQueryItem(name: "limit", value: "\(limit)"),
-            URLQueryItem(name: "offset", value: "\(offset)")
-        ]
-        return try await request(.GET, path: "/api/apps/\(appId)/items", queryItems: queryItems)
-    }
-
-    public func createAppItem(_ appId: String, data: [String: JSONValue]) async throws -> AppItem {
-        let body = CreateAppItemRequest(data: data)
-        return try await request(.POST, path: "/api/apps/\(appId)/items", body: body)
-    }
-
-    public func updateAppItem(_ appId: String, itemId: String, data: [String: JSONValue]) async throws -> AppItem {
-        let body = CreateAppItemRequest(data: data)
-        return try await request(.PATCH, path: "/api/apps/\(appId)/items/\(itemId)", body: body)
-    }
-
-    public func deleteAppItem(_ appId: String, itemId: String) async throws {
-        try await requestNoContent(.DELETE, path: "/api/apps/\(appId)/items/\(itemId)")
-    }
-
-    public func getAppStats(_ appId: String) async throws -> AppStats {
-        return try await request(.GET, path: "/api/apps/\(appId)/stats")
-    }
-
     // MARK: - File Upload
 
     public func saveLiveTranscript(
@@ -1619,6 +1829,62 @@ public actor APIClient {
 
         try writeString("--\(boundary)--\r\n")
         return uploadURL
+    }
+}
+
+private struct CreateItemRequest: Encodable {
+    var source: String
+    var kind: String
+    var title: String?
+    var body: String?
+    var url: String?
+    var folderId: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case source
+        case kind
+        case title
+        case body
+        case url
+        case folderId = "folder_id"
+    }
+}
+
+private struct CreateMcpConnectionRequest: Encodable {
+    var serverLabel: String
+    var serverUrl: String
+    var authType: String
+    var authToken: String?
+    var syncIntervalMinutes: Int
+
+    private enum CodingKeys: String, CodingKey {
+        case serverLabel = "server_label"
+        case serverUrl = "server_url"
+        case authType = "auth_type"
+        case authToken = "auth_token"
+        case syncIntervalMinutes = "sync_interval_minutes"
+    }
+}
+
+private struct UpdateMcpConnectionRequest: Encodable {
+    var enabled: Bool?
+    var syncIntervalMinutes: Int?
+
+    private enum CodingKeys: String, CodingKey {
+        case enabled
+        case syncIntervalMinutes = "sync_interval_minutes"
+    }
+}
+
+private struct CreateComparisonRequest: Encodable {
+    var itemIds: [String]
+    var title: String?
+    var intent: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case itemIds = "item_ids"
+        case title
+        case intent
     }
 }
 

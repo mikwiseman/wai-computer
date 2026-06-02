@@ -67,6 +67,17 @@ struct MacSearchView: View {
             .clipShape(RoundedRectangle(cornerRadius: 8))
             .accessibilityIdentifier("search-bar")
 
+            Picker("", selection: $viewModel.scope) {
+                Text(t("Recordings", "Записи")).tag(SearchScope.recordings)
+                Text(t("Everything", "Всё")).tag(SearchScope.everything)
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .fixedSize()
+            .onChangeCompat(of: viewModel.scope) {
+                if viewModel.hasSearched { performSearch() }
+            }
+            .accessibilityIdentifier("search-scope")
         }
         .frame(maxWidth: MacMainLayoutMetrics.searchContentMaxWidth, alignment: .leading)
         .padding(Spacing.lg)
@@ -80,23 +91,28 @@ struct MacSearchView: View {
                 ProgressView(t("Searching...", "Ищем..."))
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-        } else if viewModel.results.isEmpty && !viewModel.query.isEmpty && viewModel.hasSearched {
+        } else if hasNoResults && !viewModel.query.isEmpty && viewModel.hasSearched {
             ContentUnavailableViewCompat(
                 t("No Results", "Ничего не найдено"),
                 systemImage: "magnifyingglass",
                 description: Text(t(
-                    "No recordings match \"\(viewModel.query)\".",
-                    "По запросу \"\(viewModel.query)\" записей не найдено."
+                    "Nothing matches \"\(viewModel.query)\".",
+                    "По запросу \"\(viewModel.query)\" ничего не найдено."
                 ))
             )
-        } else if viewModel.results.isEmpty {
+        } else if hasNoResults {
             ContentUnavailableViewCompat(
-                t("Search Your Recordings", "Поиск по записям"),
+                viewModel.scope == .everything
+                    ? t("Search Everything", "Поиск по всему")
+                    : t("Search Your Recordings", "Поиск по записям"),
                 systemImage: "magnifyingglass",
-                description: Text(t(
-                    "Search across all your recording transcripts.",
-                    "Ищи по всем расшифровкам записей."
-                ))
+                description: Text(
+                    viewModel.scope == .everything
+                        ? t("Search across recordings and everything you've added.",
+                            "Ищите по записям и всему, что вы добавили.")
+                        : t("Search across all your recording transcripts.",
+                            "Ищи по всем расшифровкам записей.")
+                )
             )
             .accessibilityIdentifier("search-empty-state")
         } else {
@@ -107,9 +123,17 @@ struct MacSearchView: View {
                         .foregroundStyle(Palette.textTertiary)
                         .padding(.horizontal, Spacing.lg)
 
-                    ForEach(viewModel.results) { result in
-                        SearchResultRow(result: result) {
-                            onOpenRecording(result.recordingId)
+                    if viewModel.scope == .everything {
+                        ForEach(viewModel.unifiedResults) { hit in
+                            UnifiedResultRow(hit: hit) {
+                                openUnifiedHit(hit)
+                            }
+                        }
+                    } else {
+                        ForEach(viewModel.results) { result in
+                            SearchResultRow(result: result) {
+                                onOpenRecording(result.recordingId)
+                            }
                         }
                     }
                 }
@@ -117,6 +141,20 @@ struct MacSearchView: View {
                 .frame(maxWidth: MacMainLayoutMetrics.searchContentMaxWidth, alignment: .leading)
                 .frame(maxWidth: .infinity, alignment: .topLeading)
             }
+        }
+    }
+
+    private var hasNoResults: Bool {
+        viewModel.scope == .everything ? viewModel.unifiedResults.isEmpty : viewModel.results.isEmpty
+    }
+
+    /// Route a unified hit: recordings open in the detail pane; items switch to
+    /// the Content section (which loads + can show the item).
+    private func openUnifiedHit(_ hit: UnifiedHit) {
+        if hit.sourceKind == "recording" {
+            onOpenRecording(hit.parentId)
+        } else {
+            NotificationCenter.default.post(name: .init("navigateTo"), object: "content")
         }
     }
 
@@ -202,6 +240,49 @@ struct SearchResultRow: View {
     }
 }
 
+/// A unified-search hit row (recording or item), shown in the "Everything" scope.
+struct UnifiedResultRow: View {
+    @EnvironmentObject private var languageManager: LanguageManager
+    let hit: UnifiedHit
+    let onOpen: () -> Void
+
+    var body: some View {
+        Button(action: onOpen) {
+            VStack(alignment: .leading, spacing: Spacing.xs) {
+                HStack(spacing: Spacing.xs) {
+                    Image(systemName: hit.sourceKind == "recording" ? "waveform" : "doc.text")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Palette.accent)
+                    Text(hit.title ?? t("Untitled", "Без названия"))
+                        .font(Typography.headingMedium)
+                        .lineLimit(1)
+                    Spacer()
+                    Text(hit.kind.uppercased())
+                        .font(Typography.labelSmall)
+                        .foregroundStyle(Palette.textTertiary)
+                }
+
+                Text(hit.snippet)
+                    .font(Typography.reading)
+                    .lineSpacing(6)
+                    .lineLimit(3)
+                    .foregroundStyle(Palette.textSecondary)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, Spacing.lg)
+            .padding(.vertical, Spacing.md)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityIdentifier("unified-result-\(hit.chunkId)")
+    }
+
+    private func t(_ english: String, _ russian: String) -> String {
+        OnboardingL10n.text(english, russian, language: languageManager.current)
+    }
+}
+
 enum MacSearchPresentation {
     static func searchButtonTitle(language selection: LanguageManager.SupportedLanguage) -> String {
         OnboardingL10n.text("Search", "Поиск", language: selection)
@@ -216,13 +297,20 @@ enum MacSearchPresentation {
 // MARK: - ViewModel
 
 @MainActor
+enum SearchScope: Hashable {
+    case recordings
+    case everything
+}
+
 class MacSearchViewModel: ObservableObject {
     @Published var query = ""
     @Published var results: [SearchResult] = []
+    @Published var unifiedResults: [UnifiedHit] = []
     @Published var totalResults: Int = 0
     @Published var isLoading = false
     @Published var error: String?
     @Published var hasSearched = false
+    @Published var scope: SearchScope = .recordings
 
     func applySearchResponse(_ response: SearchResponse) {
         error = nil
@@ -241,9 +329,18 @@ class MacSearchViewModel: ObservableObject {
         hasSearched = true
 
         do {
-            let response = try await apiClient.search(query: trimmed)
-            results = response.results
-            totalResults = response.total
+            switch scope {
+            case .recordings:
+                let response = try await apiClient.search(query: trimmed)
+                results = response.results
+                unifiedResults = []
+                totalResults = response.total
+            case .everything:
+                let response = try await apiClient.unifiedSearch(query: trimmed)
+                unifiedResults = response.results
+                results = []
+                totalResults = response.total
+            }
         } catch {
             self.error = error.userFacingMessage(context: .generic)
         }

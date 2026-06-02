@@ -104,6 +104,7 @@ struct MacSettingsView: View {
     @AppStorage(MacThemePreferences.appearanceKey) private var appearanceModeRawValue = MacThemePreferences.defaultAppearance.rawValue
     @AppStorage(MacThemePreferences.accentKey) private var accentChoiceRawValue = MacThemePreferences.defaultAccent.rawValue
     @AppStorage(MacPresentationSettings.showDockIconWhenMainWindowClosedKey) private var showDockIconWhenMainWindowClosed = false
+    @AppStorage("desktopComputerUseEnabled") private var computerUseEnabled = false
     @AppStorage(BetaChannelStore.userDefaultsKey) private var receiveBetaUpdates = false
     @EnvironmentObject var languageStore: DictationLanguageStore
     @State private var summaryLanguage = "auto"
@@ -185,6 +186,25 @@ struct MacSettingsView: View {
             }
 
             telegramSection
+
+            Section {
+                Toggle(isOn: $computerUseEnabled) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(t("Let Wai control this Mac", "Разрешить Wai управлять этим Mac"))
+                        Text(t(
+                            "Experimental. While the assistant is open, Wai can open the apps and links you approve. Off by default.",
+                            "Экспериментально. Пока ассистент открыт, Wai может открывать приложения и ссылки, которые вы одобрили. По умолчанию выключено."
+                        ))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    }
+                }
+                .accessibilityIdentifier("settings-computer-use-toggle")
+            } header: {
+                Text(t("Computer Use", "Управление компьютером"))
+                    .waiSectionHeader()
+                    .accessibilityIdentifier("settings-computer-use-header")
+            }
 
             #if DEBUG
                 Section {
@@ -454,6 +474,8 @@ struct MacSettingsView: View {
             }
 
             mcpConnectSection
+
+            McpIngestionSection()
 
             Section {
                 LabeledContent {

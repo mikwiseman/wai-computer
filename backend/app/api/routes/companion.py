@@ -7,7 +7,7 @@ import uuid
 from dataclasses import asdict
 from datetime import datetime, timezone
 from time import perf_counter
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
@@ -16,6 +16,15 @@ from sqlalchemy import and_, select
 
 from app.api.deps import CurrentUser, Database
 from app.core.companion import CompanionError, ErrorEvent, TurnContext, run_turn
+from app.core.companion_actions import (
+    ApprovalError,
+    get_pending,
+    mark_executed,
+    mark_failed,
+    resolve_action,
+    verify_committable,
+)
+from app.core.companion_actuators import ActuationError, execute_action
 from app.core.observability import (
     add_sentry_breadcrumb,
     capture_sentry_anomaly,
@@ -371,6 +380,12 @@ class PostMessageRequest(BaseModel):
     client_timezone: str | None = Field(default=None, max_length=64)
     viewing_recording_id: uuid.UUID | None = None
     viewing_folder_id: uuid.UUID | None = None
+    # Client-advertised capabilities so the server can withhold SSE event types
+    # an older client cannot parse (the Swift CompanionStream parser THROWS on
+    # unknown event types). New action/desktop/narration events are gated behind
+    # "actions_v1"; clients that omit it fail closed — a withheld approval simply
+    # never arrives and times out == deny.
+    client_capabilities: list[str] = Field(default_factory=list)
 
 
 def _sse_format(event_obj: Any) -> bytes:
@@ -378,6 +393,22 @@ def _sse_format(event_obj: Any) -> bytes:
     data = asdict(event_obj)
     event_type = data.pop("type")
     return f"event: {event_type}\ndata: {json.dumps(data)}\n\n".encode("utf-8")
+
+
+# Event types added after the v1 clients shipped. Emitted ONLY to clients that
+# advertise the matching capability; older clients never receive an event they
+# cannot decode (fail closed).
+_GATED_SSE_EVENTS: frozenset[str] = frozenset(
+    {"action_proposed", "action_result", "narration", "desktop_action"}
+)
+_CLIENT_CAP_ACTIONS = "actions_v1"
+
+
+def _client_can_receive(event_obj: Any, capabilities: list[str]) -> bool:
+    event_type = getattr(event_obj, "type", "")
+    if event_type in _GATED_SSE_EVENTS:
+        return _CLIENT_CAP_ACTIONS in capabilities
+    return True
 
 
 _SSE_HEARTBEAT = b": keep-alive\n\n"
@@ -465,7 +496,8 @@ async def post_message(
                     turn_context=turn_context,
                 ):
                     event_count += 1
-                    await queue.put(_sse_format(evt))
+                    if _client_can_receive(evt, request.client_capabilities):
+                        await queue.put(_sse_format(evt))
             except CompanionError as exc:
                 failed = True
                 latency_ms = round((perf_counter() - started_at) * 1000)
@@ -577,3 +609,148 @@ def sa_coalesce_last_message_or_created():
     from sqlalchemy import func
 
     return func.coalesce(Conversation.last_message_at, Conversation.created_at)
+
+
+# HTTP status for each gate failure (errors are surfaced; no silent fallback).
+_APPROVAL_HTTP_STATUS = {
+    "not_found": status.HTTP_404_NOT_FOUND,
+    "already_resolved": status.HTTP_409_CONFLICT,
+    "expired": status.HTTP_410_GONE,
+    "payload_tampered": status.HTTP_409_CONFLICT,
+    "bad_decision": status.HTTP_422_UNPROCESSABLE_ENTITY,
+}
+
+
+class ResolveActionRequest(BaseModel):
+    decision: Literal["once", "always", "reject"]
+    edited_args: dict[str, Any] | None = None
+
+
+class ResolveActionResponse(BaseModel):
+    action_id: str
+    status: str  # "executed" | "rejected"
+    recipient: str | None = None  # display name only, never a raw id
+
+
+@router.post(
+    "/chats/{chat_id}/actions/{action_id}/resolve",
+    response_model=ResolveActionResponse,
+)
+async def resolve_chat_action(
+    chat_id: uuid.UUID,
+    action_id: uuid.UUID,
+    request: ResolveActionRequest,
+    user: CurrentUser,
+    db: Database,
+) -> ResolveActionResponse:
+    """Approve (once/always) or reject a pending mutating action.
+
+    On approval the payload HMAC is re-verified and the side effect runs exactly
+    once (idempotent receipt). ``timeout == deny`` is enforced by resolve_action;
+    every failure is surfaced as an HTTP error (no silent fallback). The response
+    carries only a recipient *display name*, never a raw id/body.
+    """
+    await _load_user_chat(db, user.id, chat_id)  # ownership (404 otherwise)
+
+    try:
+        row = await resolve_action(
+            db,
+            action_id=action_id,
+            user_id=user.id,
+            decision=request.decision,
+            edited_args=request.edited_args,
+        )
+    except ApprovalError as exc:
+        await db.commit()  # persist any expired-on-read transition
+        raise HTTPException(
+            status_code=_APPROVAL_HTTP_STATUS.get(
+                exc.code, status.HTTP_400_BAD_REQUEST
+            ),
+            detail=exc.message,
+        ) from exc
+
+    if request.decision == "reject":
+        await db.commit()
+        return ResolveActionResponse(
+            action_id=str(action_id),
+            status="rejected",
+            recipient=row.recipient_display,
+        )
+
+    # Approved → re-verify the locked payload, then execute exactly once.
+    try:
+        verify_committable(row)
+        if row.kind == "desktop_action":
+            # Dispatched to the Mac edge — NOT run server-side. It stays
+            # "approved" in the device drain queue and is marked executed only
+            # when the Mac reports back via /desktop_result.
+            await db.commit()
+            return ResolveActionResponse(
+                action_id=str(action_id),
+                status="dispatched",
+                recipient=row.recipient_display,
+            )
+        args = (row.action_manifest or {}).get("args") or {}
+        receipt = await execute_action(
+            db, user_id=user.id, tool_name=row.tool_name, args=args
+        )
+        await mark_executed(db, row=row, receipt=receipt)
+        await db.commit()
+    except (ApprovalError, ActuationError) as exc:
+        await mark_failed(db, row=row, detail=exc.message)
+        await db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=exc.message
+        ) from exc
+
+    return ResolveActionResponse(
+        action_id=str(action_id),
+        status="executed",
+        recipient=row.recipient_display,
+    )
+
+
+class DesktopResultRequest(BaseModel):
+    status: Literal["executed", "failed", "refused"]
+    payload: dict[str, Any] | None = None
+
+
+class DesktopResultResponse(BaseModel):
+    action_id: str
+    status: str
+
+
+@router.post(
+    "/chats/{chat_id}/actions/{action_id}/desktop_result",
+    response_model=DesktopResultResponse,
+)
+async def desktop_action_result(
+    chat_id: uuid.UUID,
+    action_id: uuid.UUID,
+    request: DesktopResultRequest,
+    user: CurrentUser,
+    db: Database,
+) -> DesktopResultResponse:
+    """The Mac reports the outcome of a dispatched desktop action. Idempotent
+    (mark_executed is a no-op once recorded). A result is only accepted for an
+    already-approved action — a report can never mark an unapproved action done
+    (no approval bypass)."""
+    await _load_user_chat(db, user.id, chat_id)
+    row = await get_pending(db, action_id=action_id, user_id=user.id, lock=True)
+    if row is None or row.kind != "desktop_action":
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Desktop action not found"
+        )
+    if row.status not in ("approved", "executed", "failed"):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Desktop action is not dispatched",
+        )
+    if request.status == "executed":
+        await mark_executed(
+            db, row=row, receipt=request.payload or {"status": "executed"}
+        )
+    else:
+        await mark_failed(db, row=row, detail=request.status)
+    await db.commit()
+    return DesktopResultResponse(action_id=str(action_id), status=row.status)

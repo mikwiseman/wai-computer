@@ -105,7 +105,21 @@ SENTRY_AUTH_TOKEN=$(read_env_key SENTRY_AUTH_TOKEN)
 export SENTRY_UPLOAD_REQUIRED=1
 
 docker_compose config >/dev/null
-docker_compose build api web celery-worker
+
+# Build ONE service at a time with Celery stopped. The 3.8 GB VPS OOMs when
+# building all images concurrently (BuildKit parallelism); stopping the worker
+# first frees ~1 GB of headroom for the heavy web (Next.js) build. Celery's
+# queue must already be drained before a deploy.
+docker_compose stop celery-worker || true
+docker_compose build api
+docker_compose build celery-worker
+docker_compose build web
+
+# Apply DB migrations with the freshly built image before swapping containers
+# in. Migrations are additive, so the still-running old API tolerates the new
+# schema during the brief window until `up -d` recreates the containers.
+docker_compose run --rm api alembic upgrade head
+
 docker_compose up -d --remove-orphans api web celery-worker caddy
 
 wait_for_service \

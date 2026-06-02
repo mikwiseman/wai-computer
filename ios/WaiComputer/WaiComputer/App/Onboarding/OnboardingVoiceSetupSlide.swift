@@ -5,32 +5,43 @@ import WaiComputerKit
 /// iOS combined mic-test + voice-enrollment step (Wispr Flow pattern).
 struct OnboardingVoiceSetupSlide: View {
     let isActive: Bool
+    let hasMicrophonePermission: Bool
     let onAdvance: () -> Void
 
     @EnvironmentObject var appState: AppState
+    @EnvironmentObject private var languageManager: LanguageManager
     @StateObject private var recorder = VoiceEnrollmentRecorder()
-
-    private static let promptText =
-        "Hi, I'm setting up Wai Computer. It records meetings, calls, and ideas through my day so I don't have to remember them all. Wai listens, transcribes the people I talk to, and keeps the moments that matter."
 
     var body: some View {
         VStack(spacing: Spacing.lg) {
             Spacer(minLength: Spacing.lg)
 
-            Text("VOICE")
+            Text(t("VOICE", "ГОЛОС"))
                 .font(Typography.labelSmall)
                 .tracking(1.6)
                 .foregroundStyle(Palette.accent)
 
-            Text("Teach Wai your voice")
+            Text(t("Teach Wai your voice", "Научи Wai узнавать твой голос"))
                 .font(Typography.displayMedium)
                 .multilineTextAlignment(.center)
                 .foregroundStyle(Palette.textPrimary)
 
-            Text("Read the prompt for ~20 seconds. Wai will recognise you in future meetings automatically.")
+            Text(t(
+                "Read the prompt for ~20 seconds. Wai will recognise you in future meetings automatically.",
+                "Прочитай текст около 20 секунд. Wai будет узнавать тебя на будущих встречах автоматически."
+            ))
                 .font(Typography.bodyLarge)
                 .multilineTextAlignment(.center)
                 .foregroundStyle(Palette.textSecondary)
+                .padding(.horizontal, Spacing.lg)
+
+            Text(t(
+                "Record at least 5 seconds. This also checks the same microphone path used for recordings.",
+                "Запиши минимум 5 секунд. Так мы проверим тот же микрофонный путь, который используется для записей."
+            ))
+                .font(Typography.caption)
+                .multilineTextAlignment(.center)
+                .foregroundStyle(Palette.textTertiary)
                 .padding(.horizontal, Spacing.lg)
 
             promptCard
@@ -52,20 +63,25 @@ struct OnboardingVoiceSetupSlide: View {
             }
 
             HStack {
-                Button("Skip for now", action: skipAndAdvance)
+                Button(t("Skip for now", "Пропустить пока"), action: skipAndAdvance)
                     .buttonStyle(WaiGhostButtonStyle())
                 Spacer()
                 if recorder.state == .recorded {
-                    Button("Re-record", action: handleRecordTap)
+                    Button(t("Re-record", "Записать заново"), action: handleRecordTap)
                         .buttonStyle(WaiGhostButtonStyle())
-                    Button("Use this take", action: submit)
-                        .buttonStyle(WaiPrimaryButtonStyle())
-                        .disabled(recorder.state == .uploading)
+                    Button(t("Use this take", "Использовать запись"), action: submit)
+                        .buttonStyle(WaiPrimaryButtonStyle(
+                            isDisabled: recorder.state == .uploading || !recorder.hasMinimumDuration
+                        ))
+                        .disabled(recorder.state == .uploading || !recorder.hasMinimumDuration)
                 }
             }
             .padding(.horizontal, Spacing.xl)
 
-            Text("We store a 192-number signature, not your audio. The recording is deleted after the signature is created.")
+            Text(t(
+                "We store a 192-number signature, not your audio. The recording is deleted after the signature is created.",
+                "Мы храним 192-числовую подпись, а не аудио. Запись удаляется после создания подписи."
+            ))
                 .font(Typography.caption)
                 .foregroundStyle(Palette.textTertiary)
                 .multilineTextAlignment(.center)
@@ -75,6 +91,10 @@ struct OnboardingVoiceSetupSlide: View {
         }
         .padding(.horizontal, Spacing.xl)
         .padding(.vertical, Spacing.xl)
+        .onAppear { recorder.language = languageManager.current }
+        .onChange(of: languageManager.current) { _, newValue in
+            recorder.language = newValue
+        }
         .onChange(of: isActive) { _, active in
             if !active && recorder.state == .recording {
                 recorder.cancel()
@@ -83,7 +103,7 @@ struct OnboardingVoiceSetupSlide: View {
     }
 
     private var promptCard: some View {
-        Text(Self.promptText)
+        Text(promptText)
             .font(Typography.reading)
             .lineSpacing(6)
             .multilineTextAlignment(.leading)
@@ -99,6 +119,13 @@ struct OnboardingVoiceSetupSlide: View {
             )
     }
 
+    private var promptText: String {
+        t(
+            "Hi, I'm setting up Wai Computer. It records meetings, calls, and ideas through my day so I don't have to remember them all. Wai listens, transcribes the people I talk to, and keeps the moments that matter.",
+            "Привет, я настраиваю WaiComputer. Он записывает встречи, звонки и идеи в течение дня, чтобы мне не приходилось все запоминать. Wai слушает, расшифровывает людей, с которыми я говорю, и сохраняет важные моменты."
+        )
+    }
+
     private var recordButton: some View {
         Button(action: handleRecordTap) {
             ZStack {
@@ -111,7 +138,8 @@ struct OnboardingVoiceSetupSlide: View {
             }
         }
         .buttonStyle(.plain)
-        .disabled(recorder.state == .uploading)
+        .disabled(!hasMicrophonePermission || recorder.state == .uploading)
+        .accessibilityIdentifier("onboarding-voice-record-button")
     }
 
     private func handleRecordTap() {
@@ -124,7 +152,21 @@ struct OnboardingVoiceSetupSlide: View {
 
     private func submit() {
         Task {
-            guard let data = recorder.recordedData else { return }
+            guard let data = recorder.recordedData else {
+                recorder.errorMessage = t(
+                    "Recording data unavailable. Please re-record.",
+                    "Данные записи недоступны. Запишите снова."
+                )
+                recorder.state = .idle
+                return
+            }
+            guard recorder.hasMinimumDuration else {
+                recorder.errorMessage = t(
+                    "Record at least 5 seconds before submitting.",
+                    "Перед отправкой запиши минимум 5 секунд."
+                )
+                return
+            }
             recorder.state = .uploading
             do {
                 _ = try await appState.getAPIClient().enrollVoice(
@@ -151,14 +193,32 @@ struct OnboardingVoiceSetupSlide: View {
     private var statusLabel: String {
         switch recorder.state {
         case .idle:
-            return "Press the mic to start"
+            return hasMicrophonePermission
+                ? t("Press the mic to start", "Нажми микрофон, чтобы начать")
+                : t("Grant microphone access first", "Сначала разреши микрофон")
         case .recording:
-            return "Recording… \(Int(recorder.elapsedSeconds))s / 20s"
+            return t(
+                "Recording… \(Int(recorder.elapsedSeconds))s / 20s",
+                "Запись… \(Int(recorder.elapsedSeconds)) c / 20 c"
+            )
         case .recorded:
-            return "Recorded \(Int(recorder.elapsedSeconds))s. Re-record or submit."
+            if !recorder.hasMinimumDuration {
+                return t(
+                    "Recorded \(Int(recorder.elapsedSeconds))s. Minimum is 5s.",
+                    "Записано \(Int(recorder.elapsedSeconds)) c. Нужно минимум 5 c."
+                )
+            }
+            return t(
+                "Recorded \(Int(recorder.elapsedSeconds))s. Re-record or submit.",
+                "Записано \(Int(recorder.elapsedSeconds)) c. Можно перезаписать или отправить."
+            )
         case .uploading:
-            return "Uploading voice signature…"
+            return t("Uploading voice signature…", "Загружаем голосовую подпись…")
         }
+    }
+
+    private func t(_ english: String, _ russian: String) -> String {
+        OnboardingL10n.text(english, russian, language: languageManager.current)
     }
 }
 
@@ -176,10 +236,26 @@ final class VoiceEnrollmentRecorder: NSObject, ObservableObject, AVAudioRecorder
     @Published var errorMessage: String?
     private(set) var recordedData: Data?
 
+    /// In-app language, kept in sync by the owning view so the recorder's own
+    /// error strings follow the user's ``LanguageManager`` selection instead of
+    /// the system locale. Defaults to the system-derived language.
+    var language: LanguageManager.SupportedLanguage = .followSystem
+
     private var recorder: AVAudioRecorder?
     private var fileURL: URL?
     private var timer: Timer?
     private let maxDurationSeconds: Double = 20.0
+    private let minDurationSeconds: Double = 5.0
+
+    private func t(_ english: String, _ russian: String) -> String {
+        OnboardingL10n.text(english, russian, language: language)
+    }
+
+    /// A voiceprint needs a minimum amount of speech to be reliable. The
+    /// submit button stays disabled until this clears. Mirrors macOS.
+    var hasMinimumDuration: Bool {
+        elapsedSeconds >= minDurationSeconds
+    }
 
     var progress: Double {
         min(elapsedSeconds / maxDurationSeconds, 1.0)
@@ -194,7 +270,10 @@ final class VoiceEnrollmentRecorder: NSObject, ObservableObject, AVAudioRecorder
             try AVAudioSession.sharedInstance().setCategory(.record, mode: .default)
             try AVAudioSession.sharedInstance().setActive(true)
         } catch {
-            errorMessage = "Audio session error: \(error.localizedDescription)"
+            errorMessage = t(
+                "Audio session error: \(error.localizedDescription)",
+                "Ошибка аудиосессии: \(error.localizedDescription)"
+            )
             return
         }
 
@@ -212,7 +291,10 @@ final class VoiceEnrollmentRecorder: NSObject, ObservableObject, AVAudioRecorder
             let recorder = try AVAudioRecorder(url: url, settings: settings)
             recorder.delegate = self
             guard recorder.record() else {
-                errorMessage = "Could not start the microphone."
+                errorMessage = t(
+                    "Could not start the microphone.",
+                    "Не удалось запустить микрофон."
+                )
                 return
             }
             self.recorder = recorder
@@ -221,7 +303,10 @@ final class VoiceEnrollmentRecorder: NSObject, ObservableObject, AVAudioRecorder
             self.state = .recording
             startTimer()
         } catch {
-            errorMessage = "Microphone error: \(error.localizedDescription)"
+            errorMessage = t(
+                "Microphone error: \(error.localizedDescription)",
+                "Ошибка микрофона: \(error.localizedDescription)"
+            )
         }
     }
 
@@ -229,8 +314,7 @@ final class VoiceEnrollmentRecorder: NSObject, ObservableObject, AVAudioRecorder
         guard state == .recording else { return }
         recorder?.stop()
         cancelTimers()
-        loadRecordedData()
-        state = .recorded
+        Task { await finalizeRecording() }
     }
 
     func cancel() {
@@ -266,19 +350,48 @@ final class VoiceEnrollmentRecorder: NSObject, ObservableObject, AVAudioRecorder
         timer = nil
     }
 
-    private func loadRecordedData() {
+    /// Reads the just-finished recording off the main actor and surfaces any
+    /// read failure to the user instead of silently producing `nil` data
+    /// (which would leave "Use this take" enabled but no-op forever).
+    private func finalizeRecording() async {
         guard let url = fileURL else { return }
-        recordedData = try? Data(contentsOf: url)
-        try? FileManager.default.removeItem(at: url)
         fileURL = nil
+
+        // Read + delete the temp file on a background task so the synchronous
+        // Data(contentsOf:) never blocks the main actor.
+        let result: Result<Data, Error> = await Task.detached(priority: .userInitiated) {
+            do {
+                let data = try Data(contentsOf: url)
+                try? FileManager.default.removeItem(at: url)
+                return .success(data)
+            } catch {
+                try? FileManager.default.removeItem(at: url)
+                return .failure(error)
+            }
+        }.value
+
+        switch result {
+        case .success(let data):
+            recordedData = data
+            state = .recorded
+        case .failure:
+            // No-fallbacks: surface the problem and stay out of `.recorded`
+            // so the user re-records rather than pressing a dead button.
+            recordedData = nil
+            errorMessage = t(
+                "Could not read the recording. Please record again.",
+                "Не удалось прочитать запись. Запишите снова."
+            )
+            elapsedSeconds = 0
+            state = .idle
+        }
     }
 
     nonisolated func audioRecorderDidFinishRecording(_ recorder: AVAudioRecorder, successfully flag: Bool) {
         Task { @MainActor in
             if self.state == .recording {
                 self.cancelTimers()
-                self.loadRecordedData()
-                self.state = .recorded
+                await self.finalizeRecording()
             }
         }
     }
