@@ -194,6 +194,16 @@ def _extract_pdf_text(data: bytes) -> str:
     return "\n\n".join(p for p in parts if p.strip()).strip()
 
 
+def _pdf_page_count(data: bytes) -> int:
+    """Number of pages in a PDF — used to bound inline OCR cost."""
+    import io
+
+    import pdfplumber
+
+    with pdfplumber.open(io.BytesIO(data)) as pdf:
+        return len(pdf.pages)
+
+
 # ---------------------------------------------------------------------------
 # Per-source fetchers
 # ---------------------------------------------------------------------------

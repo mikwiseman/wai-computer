@@ -250,6 +250,52 @@ async def test_upload_scanned_pdf_without_text_is_422(client, auth_headers) -> N
     assert "no extractable text" in resp.json()["detail"].lower()
 
 
+async def test_upload_scanned_pdf_ocrs_via_vision(client, auth_headers) -> None:
+    # A no-text-layer PDF is OCR'd by the vision LLM instead of being rejected.
+    from unittest.mock import AsyncMock
+
+    with patch("app.tasks.item_summary_generation.generate_item_summary_task.delay"), patch(
+        "app.core.source_fetch._extract_pdf_text", return_value=""
+    ), patch("app.core.source_fetch._pdf_page_count", return_value=2), patch(
+        "app.core.ocr.ocr_pdf", new=AsyncMock(return_value="OCR'd scanned text about GPUs.")
+    ):
+        resp = await client.post(
+            "/api/items/upload",
+            files={"file": ("scan.pdf", b"%PDF-1.4 scanned", "application/pdf")},
+            headers=auth_headers,
+        )
+    assert resp.status_code == 201, resp.text
+    assert resp.json()["kind"] == "pdf"
+
+
+async def test_upload_scanned_pdf_too_long_is_422(client, auth_headers) -> None:
+    with patch("app.core.source_fetch._extract_pdf_text", return_value=""), patch(
+        "app.core.source_fetch._pdf_page_count", return_value=999
+    ):
+        resp = await client.post(
+            "/api/items/upload",
+            files={"file": ("huge.pdf", b"%PDF-1.4 scanned", "application/pdf")},
+            headers=auth_headers,
+        )
+    assert resp.status_code == 422
+    assert "too long" in resp.json()["detail"].lower()
+
+
+async def test_upload_scanned_pdf_ocr_yields_nothing_is_422(client, auth_headers) -> None:
+    from unittest.mock import AsyncMock
+
+    with patch("app.core.source_fetch._extract_pdf_text", return_value=""), patch(
+        "app.core.source_fetch._pdf_page_count", return_value=1
+    ), patch("app.core.ocr.ocr_pdf", new=AsyncMock(return_value="")):
+        resp = await client.post(
+            "/api/items/upload",
+            files={"file": ("blank.pdf", b"%PDF-1.4 scanned", "application/pdf")},
+            headers=auth_headers,
+        )
+    assert resp.status_code == 422
+    assert "no readable text" in resp.json()["detail"].lower()
+
+
 async def test_upload_video_enqueues_recording(client, auth_headers) -> None:
     # Video is no longer rejected — it's staged and handed to the recording pipeline.
     with patch("app.tasks.media_import.import_uploaded_media_task.delay") as delay:
