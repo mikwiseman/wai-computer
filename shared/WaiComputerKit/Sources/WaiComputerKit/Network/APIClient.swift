@@ -524,6 +524,38 @@ public actor APIClient {
         }
     }
 
+    // MARK: - Devices / Mac-edge channel
+
+    /// Advertise this device's presence (and register it on first call).
+    public func deviceHeartbeat(
+        platform: String,
+        name: String? = nil,
+        deviceId: String? = nil
+    ) async throws -> DeviceHeartbeatResponse {
+        let body = DeviceHeartbeatRequest(platform: platform, name: name, deviceId: deviceId)
+        return try await request(.POST, path: "/api/devices/heartbeat", body: body)
+    }
+
+    /// Drain approved desktop actions queued for this device.
+    public func drainDesktopActions(deviceId: String) async throws -> DesktopActionQueue {
+        return try await request(.GET, path: "/api/devices/\(deviceId)/desktop-actions")
+    }
+
+    /// Report the outcome of a dispatched desktop action back to the cloud.
+    public func reportDesktopResult(
+        chatId: String,
+        actionId: String,
+        status: DesktopResultStatus,
+        payload: [String: CompanionJSONValue]? = nil
+    ) async throws -> DesktopResultResponse {
+        let body = DesktopResultRequest(status: status, payload: payload)
+        return try await request(
+            .POST,
+            path: "/api/companion/chats/\(chatId)/actions/\(actionId)/desktop_result",
+            body: body
+        )
+    }
+
     // MARK: - Auth Endpoints
 
     public func register(
