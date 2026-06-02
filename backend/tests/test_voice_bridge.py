@@ -8,11 +8,13 @@ from app.core.companion import (
     CitationEvent,
     DoneEvent,
     ErrorEvent,
-    ToolCallEvent,
     TokenEvent,
+    ToolCallEvent,
 )
 from app.core.voice_bridge import (
     CHAT_COMPLETION_CHUNK_OBJECT,
+    VoiceChatCompletionRequest,
+    VoiceChatMessage,
     chat_completion_chunk,
     to_chat_completion_sse,
 )
@@ -101,3 +103,33 @@ async def test_no_tokens_still_emits_valid_empty_completion():
     assert out[0]["choices"][0]["delta"] == {"role": "assistant"}
     assert out[1]["choices"][0]["finish_reason"] == "stop"
     assert out[-1] == "[DONE]"
+
+
+def test_latest_user_message_picks_last_user_turn():
+    req = VoiceChatCompletionRequest.model_validate(
+        {
+            "model": "wai",
+            "messages": [
+                {"role": "system", "content": "you are wai"},
+                {"role": "user", "content": "first"},
+                {"role": "assistant", "content": "ok"},
+                {"role": "user", "content": "  what did I decide?  "},
+            ],
+        }
+    )
+    assert req.latest_user_message() == "what did I decide?"
+    assert req.stream is True  # default
+
+
+def test_latest_user_message_none_when_no_user_turn():
+    req = VoiceChatCompletionRequest(
+        messages=[VoiceChatMessage(role="system", content="hi")]
+    )
+    assert req.latest_user_message() is None
+
+
+def test_latest_user_message_none_when_blank():
+    req = VoiceChatCompletionRequest(
+        messages=[VoiceChatMessage(role="user", content="   ")]
+    )
+    assert req.latest_user_message() is None

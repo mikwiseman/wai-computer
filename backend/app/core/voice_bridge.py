@@ -20,9 +20,42 @@ import json
 from collections.abc import AsyncIterator
 from typing import Any
 
+from pydantic import BaseModel, Field
+
 from app.core.companion import ErrorEvent, TokenEvent
 
 CHAT_COMPLETION_CHUNK_OBJECT = "chat.completion.chunk"
+
+
+class VoiceChatMessage(BaseModel):
+    """One message in an ElevenLabs custom-LLM request. Content is a plain
+    string for voice (no multi-part); unknown roles are tolerated."""
+
+    role: str
+    content: str = ""
+
+
+class VoiceChatCompletionRequest(BaseModel):
+    """The OpenAI-compatible Chat Completions request body ElevenLabs posts to a
+    custom-LLM endpoint. We accept the documented fields and ignore the rest;
+    only the latest user turn drives the brain (run_turn owns conversation
+    history), matching ElevenLabs' stateful-agent bridging pattern."""
+
+    messages: list[VoiceChatMessage] = Field(default_factory=list)
+    model: str | None = None
+    temperature: float | None = None
+    max_tokens: int | None = None
+    stream: bool = True
+    user_id: str | None = None
+
+    def latest_user_message(self) -> str | None:
+        """The most recent user turn's text, or None if there is no user
+        message (e.g. an agent-initiated greeting request)."""
+        for message in reversed(self.messages):
+            if message.role == "user":
+                text = message.content.strip()
+                return text or None
+        return None
 
 
 def chat_completion_chunk(
