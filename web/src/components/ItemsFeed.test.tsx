@@ -5,11 +5,15 @@ import { ItemsFeed } from "./ItemsFeed";
 const mockListItems = vi.fn();
 const mockGetItem = vi.fn();
 const mockDeleteItem = vi.fn();
+const mockCreateComparison = vi.fn();
+const mockGetComparison = vi.fn();
 
 vi.mock("@/lib/api", () => ({
   listItems: (...a: unknown[]) => mockListItems(...a),
   getItem: (...a: unknown[]) => mockGetItem(...a),
   deleteItem: (...a: unknown[]) => mockDeleteItem(...a),
+  createComparison: (...a: unknown[]) => mockCreateComparison(...a),
+  getComparison: (...a: unknown[]) => mockGetComparison(...a),
 }));
 
 function entry(overrides = {}) {
@@ -66,6 +70,14 @@ describe("ItemsFeed", () => {
     mockListItems.mockResolvedValue({ items: [entry()], total: 1 });
     mockGetItem.mockResolvedValue(detail());
     mockDeleteItem.mockResolvedValue(undefined);
+    mockCreateComparison.mockResolvedValue({
+      id: "cmp-9", title: null, item_ids: ["i1", "i2"], columns: null, rows: null,
+      schema_rationale: null, status: "generating", created_at: new Date().toISOString(),
+    });
+    mockGetComparison.mockResolvedValue({
+      id: "cmp-9", title: null, item_ids: ["i1", "i2"], columns: null, rows: null,
+      schema_rationale: null, status: "generating", created_at: new Date().toISOString(),
+    });
   });
 
   it("lists items and opens detail with the key-moments table", async () => {
@@ -136,5 +148,32 @@ describe("ItemsFeed", () => {
     mockListItems.mockRejectedValue(new Error("boom"));
     render(<ItemsFeed onError={onError} />);
     await waitFor(() => expect(onError).toHaveBeenCalledWith("boom"));
+  });
+
+  it("builds a comparison from 2+ selected items and opens the view", async () => {
+    mockListItems.mockResolvedValue({
+      items: [entry(), entry({ id: "i2", title: "Wind Explainer" })],
+      total: 2,
+    });
+    render(<ItemsFeed />);
+    await waitFor(() => expect(screen.getByText("Solar Explainer")).toBeInTheDocument());
+
+    // No Compare action until at least 2 are selected.
+    expect(screen.queryByRole("button", { name: /Compare/ })).not.toBeInTheDocument();
+
+    const checks = screen.getAllByRole("checkbox");
+    fireEvent.click(checks[0]);
+    fireEvent.click(checks[1]);
+
+    const compareBtn = await screen.findByRole("button", { name: /Compare 2/ });
+    fireEvent.click(compareBtn);
+
+    await waitFor(() =>
+      expect(mockCreateComparison).toHaveBeenCalledWith({ item_ids: ["i1", "i2"] }),
+    );
+    // The comparison modal opens and polls the (still-generating) build.
+    await waitFor(() =>
+      expect(screen.getByText(/Building comparison/i)).toBeInTheDocument(),
+    );
   });
 });

@@ -2589,10 +2589,35 @@ a.primary-button[aria-disabled="true"]:hover {
 }
 
 .items-feed__list-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
   padding: 0.6rem 0.75rem;
   border-bottom: 1px solid var(--border);
   color: var(--ink-faint);
   font-size: var(--font-label-size);
+}
+
+/* Multi-select compare: a checkbox column beside each row; the divider moves
+ * to the wrapper so it spans both the checkbox and the row button. */
+.items-feed__row-wrap {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding-left: 0.6rem;
+  border-bottom: 1px solid var(--border);
+}
+.items-feed__row-wrap .items-feed__row {
+  flex: 1;
+  min-width: 0;
+  border-bottom: none;
+}
+.items-feed__check {
+  flex: 0 0 auto;
+  width: 0.95rem;
+  height: 0.95rem;
+  cursor: pointer;
 }
 
 .items-feed__rows {

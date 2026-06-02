@@ -1,9 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { deleteItem, listItems } from "@/lib/api";
+import { createComparison, deleteItem, listItems } from "@/lib/api";
 import type { ItemListEntry } from "@/lib/types";
 import { ItemDetail } from "@/components/ItemDetail";
+import { ComparisonView } from "@/components/ComparisonView";
 
 interface ItemsFeedProps {
   onError?: (message: string) => void;
@@ -50,6 +51,10 @@ export function ItemsFeed({ onError, reloadKey = 0 }: ItemsFeedProps) {
   const [kind, setKind] = useState<string>("");
   const [loading, setLoading] = useState(true);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  // Multi-select → compare (mirrors the Mac Content feed's compare flow).
+  const [compareSelection, setCompareSelection] = useState<Set<string>>(new Set());
+  const [activeComparisonId, setActiveComparisonId] = useState<string | null>(null);
+  const [building, setBuilding] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -113,6 +118,29 @@ export function ItemsFeed({ onError, reloadKey = 0 }: ItemsFeedProps) {
     [entries, selectedId],
   );
 
+  const toggleCompare = useCallback((id: string) => {
+    setCompareSelection((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const handleCompare = useCallback(async () => {
+    if (compareSelection.size < 2 || building) return;
+    setBuilding(true);
+    try {
+      const cs = await createComparison({ item_ids: [...compareSelection] });
+      setActiveComparisonId(cs.id);
+      setCompareSelection(new Set());
+    } catch (err) {
+      onError?.(err instanceof Error ? err.message : "Couldn't start the comparison.");
+    } finally {
+      setBuilding(false);
+    }
+  }, [compareSelection, building, onError]);
+
   return (
     <div className="items-feed">
       <div className="items-feed__filters" role="tablist" aria-label="Filter by kind">
@@ -126,6 +154,7 @@ export function ItemsFeed({ onError, reloadKey = 0 }: ItemsFeedProps) {
             onClick={() => {
               setKind(filter.key);
               setSelectedId(null);
+              setCompareSelection(new Set());
             }}
           >
             {filter.label}
@@ -137,6 +166,16 @@ export function ItemsFeed({ onError, reloadKey = 0 }: ItemsFeedProps) {
         <section className="items-feed__list" aria-label="Items">
           <header className="items-feed__list-header">
             <span>{total} item{total === 1 ? "" : "s"}</span>
+            {compareSelection.size >= 2 ? (
+              <button
+                type="button"
+                className="ghost-button compact-button"
+                onClick={() => void handleCompare()}
+                disabled={building}
+              >
+                {building ? "Comparing…" : `Compare ${compareSelection.size}`}
+              </button>
+            ) : null}
           </header>
           {loading ? (
             <p className="items-feed__status">Loading…</p>
@@ -147,7 +186,14 @@ export function ItemsFeed({ onError, reloadKey = 0 }: ItemsFeedProps) {
           ) : (
             <ul className="items-feed__rows">
               {entries.map((entry) => (
-                <li key={entry.id}>
+                <li key={entry.id} className="items-feed__row-wrap">
+                  <input
+                    type="checkbox"
+                    className="items-feed__check"
+                    aria-label={`Select ${entry.title ?? entry.url ?? "item"} to compare`}
+                    checked={compareSelection.has(entry.id)}
+                    onChange={() => toggleCompare(entry.id)}
+                  />
                   <button
                     type="button"
                     className={`items-feed__row ${
@@ -197,6 +243,14 @@ export function ItemsFeed({ onError, reloadKey = 0 }: ItemsFeedProps) {
           )}
         </section>
       </div>
+
+      {activeComparisonId ? (
+        <ComparisonView
+          comparisonId={activeComparisonId}
+          onClose={() => setActiveComparisonId(null)}
+          onError={onError}
+        />
+      ) : null}
     </div>
   );
 }
