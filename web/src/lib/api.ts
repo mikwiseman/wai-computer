@@ -12,6 +12,7 @@ import type {
   ApiKeyCreated,
   BrainGraph,
   ComparisonListEntry,
+  EntityPage,
   ComparisonSet,
   Item,
   ItemListResponse,
@@ -544,6 +545,10 @@ export function getBrainGraph(params?: {
   limit?: number;
 }): Promise<BrainGraph> {
   return apiFetch<BrainGraph>(`/api/brain/graph${asQuery(params ?? {})}`);
+}
+
+export function getEntityPage(entityId: string): Promise<EntityPage> {
+  return apiFetch<EntityPage>(`/api/entities/${entityId}/page`);
 }
 
 // --- Second brain: comparison sets ---

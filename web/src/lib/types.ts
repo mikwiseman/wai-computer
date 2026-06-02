@@ -536,6 +536,29 @@ export interface BrainGraph {
   stats: Record<string, number>;
 }
 
+export interface EntityPageSource {
+  source_kind: string;
+  source_id: string;
+  title: string;
+  context: string | null;
+}
+
+export interface EntityPageRelated {
+  id: string;
+  name: string;
+  type: string;
+  shared: number;
+}
+
+export interface EntityPage {
+  id: string;
+  name: string;
+  type: string;
+  mention_count: number;
+  sources: EntityPageSource[];
+  related: EntityPageRelated[];
+}
+
 export interface ComparisonColumn {
   name: string;
   type: string;

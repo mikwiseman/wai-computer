@@ -14,6 +14,12 @@ vi.mock("@/components/BrainGraphView", () => ({
   BrainGraphView: () => <div data-testid="brain-graph-stub">graph</div>,
 }));
 
+vi.mock("@/components/EntityWikiView", () => ({
+  EntityWikiView: ({ entityId }: { entityId: string }) => (
+    <div data-testid="wiki-stub">wiki:{entityId}</div>
+  ),
+}));
+
 function graph(overrides = {}) {
   return {
     nodes: [
@@ -70,5 +76,12 @@ describe("BrainPanel", () => {
     await waitFor(() => expect(screen.getByText("Anna")).toBeInTheDocument());
     fireEvent.click(screen.getByRole("tab", { name: "Graph" }));
     expect(screen.getByTestId("brain-graph-stub")).toBeInTheDocument();
+  });
+
+  it("opens the Wiki for a clicked Index entity", async () => {
+    render(<BrainPanel />);
+    await waitFor(() => expect(screen.getByText("Anna")).toBeInTheDocument());
+    fireEvent.click(screen.getByText("Anna"));
+    expect(screen.getByTestId("wiki-stub")).toHaveTextContent("wiki:e1");
   });
 });

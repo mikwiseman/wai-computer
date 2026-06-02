@@ -2285,6 +2285,13 @@ a.primary-button[aria-disabled="true"]:hover {
   padding: 0.25rem 0.625rem;
   background: var(--panel);
   font-size: var(--font-body-small-size);
+  color: inherit;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.brain-panel__chip:hover {
+  border-color: var(--accent);
 }
 
 .brain-panel__chip em {
@@ -2352,6 +2359,124 @@ a.primary-button[aria-disabled="true"]:hover {
   border-radius: 8px;
   overflow: hidden;
   background: var(--panel);
+}
+
+.brain-wiki {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.brain-wiki__type {
+  text-transform: uppercase;
+  font-size: var(--font-label-small-size);
+  color: var(--ink-faint);
+  letter-spacing: 0.04em;
+}
+
+.brain-wiki__title {
+  margin: 0.15rem 0 0;
+  font-size: 1.15rem;
+  font-weight: 600;
+}
+
+.brain-wiki__meta {
+  margin: 0.1rem 0 0;
+  color: var(--ink-soft);
+  font-size: var(--font-body-small-size);
+}
+
+.brain-wiki__h4 {
+  margin: 0 0 0.4rem;
+  font-size: var(--font-body-small-size);
+  color: var(--ink-soft);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.brain-wiki__related {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.brain-wiki__related-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0.2rem 0.55rem;
+  background: var(--panel);
+  color: inherit;
+  font-family: inherit;
+  font-size: var(--font-body-small-size);
+  cursor: pointer;
+}
+
+.brain-wiki__related-chip:hover {
+  border-color: var(--accent);
+}
+
+.brain-wiki__related-chip em {
+  font-style: normal;
+  color: var(--ink-faint);
+  font-size: var(--font-label-small-size);
+}
+
+.brain-wiki__sources {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.brain-wiki__source {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.5rem 0.75rem;
+  background: var(--panel);
+}
+
+.brain-wiki__source-kind {
+  text-transform: uppercase;
+  font-size: var(--font-label-small-size);
+  color: var(--ink-faint);
+  margin-right: 0.5rem;
+}
+
+.brain-wiki__source-title {
+  font-weight: 500;
+}
+
+.brain-wiki__source-context {
+  margin: 0.35rem 0 0;
+  color: var(--ink-soft);
+  font-size: var(--font-body-small-size);
+}
+
+.brain-wiki__status,
+.brain-wiki__empty {
+  color: var(--ink-soft);
+  font-size: var(--font-body-small-size);
+}
+
+.brain-wiki__error {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  align-items: flex-start;
+}
+
+.brain-wiki__error-detail {
+  margin: 0;
+  color: var(--danger);
+  font-size: var(--font-body-small-size);
 }
 
 .add-anything__status {
