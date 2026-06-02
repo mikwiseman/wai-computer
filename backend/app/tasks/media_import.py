@@ -1,0 +1,124 @@
+"""Celery task: turn an uploaded media file (audio/video) into a Recording.
+
+``POST /items/upload`` stages an audio/video file to disk and enqueues this
+task. We read the staged bytes and run the full recording pipeline (video
+normalisation + transcription) via :func:`import_media_as_recording`, then
+delete the staged original. Documents (PDF/text) take the synchronous Item
+path instead; only media — which needs ffmpeg + Deepgram — comes here.
+
+Staged-file lifecycle: keep it on a *retryable* failure (so the retry can
+re-read it); delete it on success or on a permanent failure (bad/corrupt file).
+"""
+
+from __future__ import annotations
+
+import asyncio
+import logging
+from pathlib import Path
+from uuid import UUID
+
+from billiard.exceptions import SoftTimeLimitExceeded
+from sqlalchemy import select
+
+from app.core.observability import (
+    capture_sentry_anomaly,
+    capture_sentry_exception,
+    fingerprint_text,
+)
+from app.core.recording_import import import_media_as_recording
+from app.db.session import get_db_context
+from app.models.user import User
+from app.tasks.celery_app import celery_app
+from app.tasks.retry_policy import is_retryable_exception
+
+logger = logging.getLogger(__name__)
+
+
+async def _import(
+    *,
+    user_id: str,
+    staged_path: str,
+    filename: str | None,
+    content_type: str | None,
+    title: str | None,
+    language: str | None,
+) -> None:
+    data = Path(staged_path).read_bytes()
+    async with get_db_context() as db:
+        user = (
+            await db.execute(select(User).where(User.id == UUID(user_id)))
+        ).scalar_one_or_none()
+        if user is None:
+            # Account vanished between upload and processing — nothing to attach to.
+            logger.warning("media import: user gone, dropping staged upload")
+            return
+        await import_media_as_recording(
+            db=db,
+            user=user,
+            data=data,
+            filename=filename,
+            content_type=content_type,
+            title=title,
+            source_label="upload",
+            language=language,
+        )
+
+
+@celery_app.task(
+    bind=True,
+    name="app.tasks.media_import.import_uploaded_media",
+    acks_late=True,
+    reject_on_worker_lost=True,
+    soft_time_limit=1800,
+    time_limit=1860,
+    max_retries=3,
+    retry_backoff=True,
+    retry_backoff_max=600,
+    retry_jitter=True,
+)
+def import_uploaded_media_task(
+    self,
+    *,
+    user_id: str,
+    staged_path: str,
+    filename: str | None = None,
+    content_type: str | None = None,
+    title: str | None = None,
+    language: str | None = None,
+) -> None:
+    try:
+        logger.info("media import task started user=%s", user_id)
+        asyncio.run(
+            _import(
+                user_id=user_id,
+                staged_path=staged_path,
+                filename=filename,
+                content_type=content_type,
+                title=title,
+                language=language,
+            )
+        )
+        Path(staged_path).unlink(missing_ok=True)  # success: drop the staged original
+        logger.info("media import task finished user=%s", user_id)
+    except SoftTimeLimitExceeded:
+        capture_sentry_anomaly(
+            "media.import.timeout",
+            "Uploaded media processing timed out",
+            category="recording",
+            extras={"user_id": user_id},
+            level="error",
+        )
+        raise
+    except Exception as exc:  # noqa: BLE001
+        capture_sentry_exception(exc)
+        logger.error(
+            "media import task failed user=%s error_type=%s error_fingerprint=%s",
+            user_id,
+            type(exc).__name__,
+            fingerprint_text(str(exc)),
+        )
+        retry_count = int(getattr(self.request, "retries", 0) or 0)
+        if is_retryable_exception(exc) and retry_count < int(self.max_retries or 0):
+            raise self.retry(exc=exc)  # transient: keep the staged file for the retry
+        Path(staged_path).unlink(missing_ok=True)  # permanent failure: clean up
+        raise
