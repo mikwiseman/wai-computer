@@ -27,8 +27,13 @@ struct MacContentFeedView: View {
     ]
 
     private var importTypes: [UTType] {
-        var types: [UTType] = [.pdf, .plainText]
-        if let md = UTType(filenameExtension: "md") { types.append(md) }
+        // Documents extract inline into an Item; audio/video are transcribed into
+        // a Recording. `.audio`/`.movie` cover the common cases; the explicit
+        // extensions catch containers that don't conform to them (mkv/webm/opus).
+        var types: [UTType] = [.pdf, .plainText, .audio, .movie]
+        for ext in ["md", "mkv", "webm", "opus", "ogg"] {
+            if let t = UTType(filenameExtension: ext) { types.append(t) }
+        }
         return types
     }
 
@@ -38,6 +43,7 @@ struct MacContentFeedView: View {
             Divider()
             addAnythingBar
             errorBanner
+            statusBanner
             Divider()
             filterChips
             Divider()
@@ -144,6 +150,31 @@ struct MacContentFeedView: View {
                 Spacer()
                 Button {
                     model.errorMessage = nil
+                } label: {
+                    Image(systemName: "xmark")
+                }
+                .buttonStyle(.plain)
+                .help(t("Dismiss", "Закрыть"))
+            }
+            .padding(.horizontal, Spacing.xl)
+            .padding(.vertical, Spacing.sm)
+            .background(Palette.surfaceSubtle)
+        }
+    }
+
+    @ViewBuilder
+    private var statusBanner: some View {
+        if let message = model.statusMessage {
+            HStack(spacing: Spacing.xs) {
+                Image(systemName: "checkmark.circle.fill")
+                    .foregroundStyle(.green)
+                Text(message)
+                    .font(Typography.bodySmall)
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+                Spacer()
+                Button {
+                    model.statusMessage = nil
                 } label: {
                     Image(systemName: "xmark")
                 }
