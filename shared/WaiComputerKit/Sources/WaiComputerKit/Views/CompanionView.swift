@@ -813,6 +813,17 @@ public struct CompanionView: View {
             }
         case .done:
             stage = .idle
+        case .memoryUpdated:
+            break  // a subtle "remembered" toast is a later nicety
+        case .actionProposed(let proposal):
+            // Approval UI lands in P7; surface a note so the turn isn't silent.
+            streamingToolNotes.append("Proposed: \(proposal.tool) — approve in the app")
+        case .actionResult(_, let status, _, _):
+            streamingToolNotes.append("Action \(status)")
+        case .narration:
+            break  // spoken via TTS on the voice surface; no-op in the chat view
+        case .desktopAction:
+            break  // executed by the macOS DesktopActuator (P4)
         case .error(_, let message):
             errorMessage = message
         }
