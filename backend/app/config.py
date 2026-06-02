@@ -141,10 +141,14 @@ class Settings(BaseSettings):
     telegram_bot_token: str = ""
     telegram_bot_username: str = "waicomputer_bot"
     telegram_webhook_secret_token: str = ""
+    telegram_bot_api_base_url: str = "https://api.telegram.org"
+    telegram_file_base_url: str = "https://api.telegram.org/file"
+    telegram_local_file_root: str = ""
     # Chat that receives best-effort operational alerts (anomalies worth
     # attention). 0 disables. Defaults to the operator's linked Telegram chat.
     telegram_ops_chat_id: int = 0
-    # Telegram Bot API file downloads are limited to 20 MB.
+    # Hosted Bot API defaults to 20 MB; production raises this with the local
+    # telegram-bot-api service.
     telegram_download_max_bytes: int = 20 * 1024 * 1024
 
     # Email (Resend)

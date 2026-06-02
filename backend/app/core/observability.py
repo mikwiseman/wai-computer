@@ -39,7 +39,7 @@ TEXT_LOG_FORMAT = (
 EMAIL_PATTERN = re.compile(r"(?P<email>[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,})", re.IGNORECASE)
 JWT_PATTERN = re.compile(r"\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b")
 TELEGRAM_BOT_URL_PATTERN = re.compile(
-    r"(https://api\.telegram\.org/(?:file/)?bot)[^/\s\"']+"
+    r"(https?://[^/\s\"']+/(?:file/)?bot)[^/\s\"']+"
 )
 SECRET_QUERY_PATTERN = re.compile(
     r"(?i)([?&](?:token|api_key|key|secret|authorization|password)=)[^&#\s\"']+"
