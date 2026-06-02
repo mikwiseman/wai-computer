@@ -222,3 +222,43 @@ async def test_loop_empty_output_raises(db_session, user_conv):
             run_turn(db_session, uid, cid, "x", openai_client=fake, enable_actions=True)
         )
     assert exc.value.code == "empty_model_output"
+
+
+async def test_desktop_tool_proposes_desktop_action(db_session, user_conv):
+    uid, cid = user_conv
+    fake = FakeOpenAISeq([
+        [
+            _CompletedEvent(
+                _FakeResponse(
+                    output=[_fc("request_tool_group", '{"group": "desktop"}', "c1")],
+                    id="r1",
+                )
+            )
+        ],
+        [
+            _CompletedEvent(
+                _FakeResponse(
+                    output=[_fc("desktop_open", '{"target": "mailto:a@x.com"}', "c2")],
+                    id="r2",
+                )
+            )
+        ],
+    ])
+    events = await _collect(
+        run_turn(db_session, uid, cid, "open my email", openai_client=fake, enable_actions=True)
+    )
+    proposed = [e for e in events if isinstance(e, ActionProposedEvent)]
+    assert len(proposed) == 1
+    assert proposed[0].tool == "desktop_open"
+    assert proposed[0].kind == "desktop_action"  # routed to the Mac edge, not a send
+    assert "Open on your Mac" in proposed[0].preview
+    assert any(t.get("name") == "desktop_open" for t in fake.calls[1]["tools"])
+
+    rows = (
+        await db_session.execute(
+            select(CompanionPendingAction).where(CompanionPendingAction.user_id == uid)
+        )
+    ).scalars().all()
+    assert len(rows) == 1
+    assert rows[0].kind == "desktop_action"
+    assert rows[0].tool_name == "desktop_open"

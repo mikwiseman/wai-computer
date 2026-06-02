@@ -36,7 +36,7 @@ TOOL_GROUPS: dict[str, list[str]] = {
     "gmail": [],      # connector writes — populated in P5
     "calendar": [],   # connector writes — populated in P5
     "drive": [],      # connector reads/writes — populated in P5
-    "desktop": [],    # native AXorcist actuator — populated in P4
+    "desktop": ["desktop_open", "desktop_type", "desktop_click"],
 }
 
 # profile -> groups exposed by default at the start of a turn. Write/OS groups

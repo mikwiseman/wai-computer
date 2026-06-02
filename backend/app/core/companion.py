@@ -1416,6 +1416,61 @@ def _action_tool_defs() -> dict[str, dict[str, Any]]:
                 "additionalProperties": False,
             },
         },
+        "desktop_open": {
+            "type": "function",
+            "name": "desktop_open",
+            "description": (
+                "Open an app or URL on the user's Mac (e.g. a Gmail compose URL, "
+                "a website, an app). Deterministic, low-risk. Requires approval "
+                "and runs on the user's Mac, not the server."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "target": {
+                        "type": "string",
+                        "description": "An app name, https URL, or mailto:/compose URL.",
+                    }
+                },
+                "required": ["target"],
+                "additionalProperties": False,
+            },
+        },
+        "desktop_type": {
+            "type": "function",
+            "name": "desktop_type",
+            "description": (
+                "Type text into the currently focused field on the user's Mac. "
+                "Requires approval; runs on the Mac."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "text": {"type": "string", "description": "Text to type."}
+                },
+                "required": ["text"],
+                "additionalProperties": False,
+            },
+        },
+        "desktop_click": {
+            "type": "function",
+            "name": "desktop_click",
+            "description": (
+                "Click a UI element by its index from the latest accessibility "
+                "snapshot of the user's Mac. Requires approval; runs on the Mac."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "index": {
+                        "type": "integer",
+                        "description": "Element index from a prior snapshot.",
+                    }
+                },
+                "required": ["index"],
+                "additionalProperties": False,
+            },
+        },
     }
 
 
@@ -1424,11 +1479,23 @@ def _visible_action_tools(active_groups: set[str]) -> list[dict[str, Any]]:
     return [d for n, d in _action_tool_defs().items() if n in names]
 
 
+def _action_kind(tool_name: str) -> str:
+    """desktop_* tools execute on the Mac edge; everything else sends/mutates
+    server-side. Determines the pending-action kind (and thus dispatch path)."""
+    return "desktop_action" if tool_name.startswith("desktop_") else "send"
+
+
 def _action_preview(name: str, args: dict[str, Any]) -> tuple[str, str | None]:
     """Privacy-safe human-readable dry-run + resolved recipient display name."""
     if name == "send_message_telegram":
         text = str(args.get("text", "")).strip()
         return (f"Send a Telegram message to you: “{text}”", "you")
+    if name == "desktop_open":
+        return (f"Open on your Mac: {str(args.get('target', '')).strip()}", None)
+    if name == "desktop_type":
+        return ("Type into the focused field on your Mac", None)
+    if name == "desktop_click":
+        return (f"Click element {args.get('index')} on your Mac", None)
     return (f"Run {name}", None)
 
 
@@ -1719,7 +1786,7 @@ async def _run_actions_loop(
                     db,
                     user_id=user_id,
                     conversation_id=conv.id,
-                    kind="send",
+                    kind=_action_kind(cname),
                     tool_name=cname,
                     args=cargs,
                     preview=preview,
@@ -1729,7 +1796,7 @@ async def _run_actions_loop(
                 await db.commit()  # register BEFORE surfacing (race-fix)
                 yield ActionProposedEvent(
                     action_id=str(row.id),
-                    kind="send",
+                    kind=_action_kind(cname),
                     tool=cname,
                     preview=preview,
                     expires_at=row.expires_at.isoformat(),
