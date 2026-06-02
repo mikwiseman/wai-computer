@@ -50,9 +50,9 @@ def test_request_tool_group_meta_tool_offers_only_nonempty_optin_groups():
     assert tool["name"] == "request_tool_group"
     enum = tool["parameters"]["properties"]["group"]["enum"]
     assert "telegram" in enum  # has tools, not default → offered
+    assert "desktop" in enum  # populated opt-in group → offered
     assert "read" not in enum  # default group → not offered
-    assert "desktop" not in enum  # empty group → not offered (yet)
-    assert "gmail" not in enum
+    assert "gmail" not in enum  # still empty → not offered yet
 
 
 def test_filter_tool_defs_keeps_only_visible():
