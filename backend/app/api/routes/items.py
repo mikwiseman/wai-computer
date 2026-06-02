@@ -412,6 +412,28 @@ async def upload_item(
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=exc.message
             ) from exc
+        if not body.strip() and get_settings().ocr_enabled:
+            # Scanned/image PDF (no text layer) — OCR it via the vision LLM,
+            # bounded by a page cap so a huge scan can't run an unbounded call.
+            from app.core.ocr import OcrError, ocr_pdf
+            from app.core.source_fetch import _pdf_page_count
+
+            max_pages = get_settings().ocr_max_pages
+            pages = _pdf_page_count(data)
+            if pages > max_pages:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail=(
+                        f"This scanned PDF is too long to OCR ({pages} pages; max "
+                        f"{max_pages}). Split it or paste the text."
+                    ),
+                )
+            try:
+                body = await ocr_pdf(data)
+            except OcrError as exc:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+                ) from exc
     else:
         try:
             body = data.decode("utf-8")
