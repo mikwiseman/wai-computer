@@ -1431,9 +1431,37 @@ final class APIClientTests: XCTestCase {
             return (response, payload)
         }
 
-        let item = try await client.uploadItem(fileURL: tmp)
+        let outcome = try await client.uploadItem(fileURL: tmp)
+        guard case let .item(item) = outcome else {
+            return XCTFail("expected .item outcome for a document upload")
+        }
         XCTAssertEqual(item.id, "itm-1")
         XCTAssertEqual(item.kind, "note")
+    }
+
+    func testUploadMediaReturnsRecordingOutcome() async throws {
+        let client = makeClient()
+        let tmp = FileManager.default.temporaryDirectory
+            .appendingPathComponent("wai-test-\(UUID().uuidString).mp4")
+        try Data("fake video bytes".utf8).write(to: tmp)
+        defer { try? FileManager.default.removeItem(at: tmp) }
+
+        MockURLProtocol.requestHandler = { request in
+            XCTAssertEqual(request.url?.path, "/api/items/upload")
+            // Audio/video are accepted asynchronously: 202 + a processing marker,
+            // NOT an Item — the client must not try to decode an Item here.
+            let response = HTTPURLResponse(
+                url: request.url!, statusCode: 202, httpVersion: nil, headerFields: nil
+            )!
+            let payload = #"{"kind":"recording","status":"processing"}"#.data(using: .utf8)!
+            return (response, payload)
+        }
+
+        let outcome = try await client.uploadItem(fileURL: tmp)
+        guard case let .recording(status) = outcome else {
+            return XCTFail("expected .recording outcome for an audio/video upload")
+        }
+        XCTAssertEqual(status, "processing")
     }
 
     func testGetBrainGraphDecodes() async throws {

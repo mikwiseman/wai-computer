@@ -1061,11 +1061,15 @@ public actor APIClient {
     /// Upload a document (PDF / text / markdown) from disk as an item. Streams
     /// the multipart body from a temp file (`session.upload(fromFile:)`) rather
     /// than holding it all in memory in the request.
+    private struct MediaProcessingMarker: Decodable {
+        let status: String
+    }
+
     public func uploadItem(
         fileURL: URL,
         folderId: String? = nil,
         title: String? = nil
-    ) async throws -> Item {
+    ) async throws -> ItemUploadOutcome {
         let path = "/api/items/upload"
         let url = baseURL.appendingPathComponent(path)
         let boundary = "Boundary-\(UUID().uuidString)"
@@ -1084,14 +1088,20 @@ public actor APIClient {
         )
         defer { try? FileManager.default.removeItem(at: multipartFileURL) }
 
-        let (data, _) = try await performWithAuthRetry(
+        let (data, response) = try await performWithAuthRetry(
             &request, path: path, method: "POST"
         ) { req in
             try await self.session.upload(for: req, fromFile: multipartFileURL)
         }
 
+        // Audio/video are accepted as 202 (staged + transcribed in the background);
+        // documents come back as a 201 Item.
+        if (response as? HTTPURLResponse)?.statusCode == 202 {
+            let marker = try? decoder.decode(MediaProcessingMarker.self, from: data)
+            return .recording(status: marker?.status ?? "processing")
+        }
         do {
-            return try decoder.decode(Item.self, from: data)
+            return .item(try decoder.decode(Item.self, from: data))
         } catch {
             throw APIError.decodingError(error)
         }
@@ -1102,6 +1112,17 @@ public actor APIClient {
         case "pdf": return "application/pdf"
         case "md", "markdown": return "text/markdown"
         case "txt", "text": return "text/plain"
+        case "mp3": return "audio/mpeg"
+        case "wav": return "audio/wav"
+        case "m4a": return "audio/mp4"
+        case "aac": return "audio/aac"
+        case "ogg", "oga": return "audio/ogg"
+        case "opus": return "audio/opus"
+        case "flac": return "audio/flac"
+        case "mp4": return "video/mp4"
+        case "mov": return "video/quicktime"
+        case "mkv": return "video/x-matroska"
+        case "webm": return "video/webm"
         default: return "application/octet-stream"
         }
     }

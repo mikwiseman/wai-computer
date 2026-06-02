@@ -14,6 +14,8 @@ final class MacContentFeedViewModel: ObservableObject {
     @Published var isLoading = false
     @Published var isAdding = false
     @Published var errorMessage: String?
+    // Non-error notice (e.g. an audio/video upload now transcribing in the background).
+    @Published var statusMessage: String?
 
     // Multi-select -> compare
     @Published var compareSelection: Set<String> = []
@@ -133,12 +135,24 @@ final class MacContentFeedViewModel: ObservableObject {
         let scoped = url.startAccessingSecurityScopedResource()
         defer { if scoped { url.stopAccessingSecurityScopedResource() } }
         do {
-            let created = try await apiClient.uploadItem(fileURL: url)
-            await load()
-            selectedId = created.id
-            await selectItem(created.id)
-            let createdId = created.id
-            Task { [weak self] in await self?.pollUntilProcessed(createdId) }
+            let outcome = try await apiClient.uploadItem(fileURL: url)
+            switch outcome {
+            case .recording:
+                // Audio/video → background transcription; it surfaces under Recordings.
+                errorMessage = nil
+                statusMessage = OnboardingL10n.text(
+                    "Transcribing — it'll appear in your recordings shortly.",
+                    "Расшифровываем — скоро появится в ваших записях.",
+                    language: LanguageManager.shared.current
+                )
+            case .item(let created):
+                statusMessage = nil
+                await load()
+                selectedId = created.id
+                await selectItem(created.id)
+                let createdId = created.id
+                Task { [weak self] in await self?.pollUntilProcessed(createdId) }
+            }
         } catch {
             errorMessage = error.localizedDescription
         }
