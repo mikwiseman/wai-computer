@@ -565,6 +565,58 @@ async def get_item(
     return _item_response(item, summary)
 
 
+class ReprocessItemRequest(BaseModel):
+    """Recover a stuck item. Provide ``body`` to paste the text we couldn't
+    fetch; omit it to retry the source URL."""
+
+    body: str | None = None
+
+
+@router.post("/{item_id}/reprocess", response_model=ItemResponse)
+async def reprocess_item(
+    item_id: UUID,
+    request: ReprocessItemRequest,
+    user: CurrentUser,
+    db: Database,
+) -> ItemResponse:
+    """Recover a needs_input / failed item: paste the text we couldn't fetch, or
+    — with no body but a URL — retry the fetch. Clears the prior error, resets to
+    raw, and re-runs the embed + summarize pipeline."""
+    item = (
+        await db.execute(
+            select(Item).where(
+                Item.id == item_id,
+                Item.user_id == user.id,
+                Item.deleted_at.is_(None),
+            )
+        )
+    ).scalar_one_or_none()
+    if item is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Item not found")
+
+    pasted = (request.body or "").strip()
+    if pasted:
+        item.body = pasted
+        meta = dict(item.metadata_ or {})
+        meta.pop("fetch_error", None)
+        meta.pop("processing_error", None)
+        item.metadata_ = meta
+    elif not (item.url or "").strip() and not (item.body or "").strip():
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Nothing to process — paste the text or add a source first.",
+        )
+
+    item.state = "raw"
+    await db.flush()
+    await _enqueue_item_summary(db, item)
+
+    summary = (
+        await db.execute(select(ItemSummary).where(ItemSummary.item_id == item.id))
+    ).scalar_one_or_none()
+    return _item_response(item, summary)
+
+
 @router.delete("/{item_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_item(
     item_id: UUID,

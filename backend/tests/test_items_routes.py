@@ -444,3 +444,77 @@ async def test_upload_same_document_is_idempotent(client, auth_headers) -> None:
         )
     assert first.status_code == 201 and second.status_code == 201, second.text
     assert first.json()["id"] == second.json()["id"]
+
+
+# --- POST /items/{id}/reprocess (needs_input / failed recovery) ---
+
+
+async def test_reprocess_with_pasted_body(client, auth_headers) -> None:
+    with patch("app.tasks.item_summary_generation.generate_item_summary_task.delay"):
+        created = await client.post(
+            "/api/items",
+            json={"source": "url", "kind": "article", "url": "https://x/failed"},
+            headers=auth_headers,
+        )
+    iid = created.json()["id"]
+    with patch(
+        "app.tasks.item_summary_generation.generate_item_summary_task.delay"
+    ) as delay:
+        r = await client.post(
+            f"/api/items/{iid}/reprocess",
+            json={"body": "Pasted article text the fetch missed."},
+            headers=auth_headers,
+        )
+    assert r.status_code == 200, r.text
+    delay.assert_called_once()
+    got = await client.get(f"/api/items/{iid}", headers=auth_headers)
+    assert got.json()["body"] == "Pasted article text the fetch missed."
+
+
+async def test_reprocess_no_body_retries_the_source(client, auth_headers) -> None:
+    with patch("app.tasks.item_summary_generation.generate_item_summary_task.delay"):
+        created = await client.post(
+            "/api/items",
+            json={"source": "url", "kind": "article", "url": "https://x/y"},
+            headers=auth_headers,
+        )
+    iid = created.json()["id"]
+    with patch(
+        "app.tasks.item_summary_generation.generate_item_summary_task.delay"
+    ) as delay:
+        r = await client.post(f"/api/items/{iid}/reprocess", json={}, headers=auth_headers)
+    assert r.status_code == 200, r.text
+    delay.assert_called_once()  # re-enqueued to retry the fetch
+
+
+async def test_reprocess_unknown_item_404(client, auth_headers) -> None:
+    from uuid import uuid4
+
+    r = await client.post(
+        f"/api/items/{uuid4()}/reprocess", json={"body": "x"}, headers=auth_headers
+    )
+    assert r.status_code == 404
+
+
+async def test_reprocess_nothing_to_process_422(client, auth_headers, db_session) -> None:
+    from uuid import UUID
+
+    from sqlalchemy import select
+
+    from app.models.item import Item
+
+    with patch("app.tasks.item_summary_generation.generate_item_summary_task.delay"):
+        created = await client.post(
+            "/api/items",
+            json={"source": "paste", "kind": "note", "body": "temp"},
+            headers=auth_headers,
+        )
+    iid = created.json()["id"]
+    item = (
+        await db_session.execute(select(Item).where(Item.id == UUID(iid)))
+    ).scalar_one()
+    item.body = ""
+    item.url = None
+    await db_session.flush()
+    r = await client.post(f"/api/items/{iid}/reprocess", json={}, headers=auth_headers)
+    assert r.status_code == 422
