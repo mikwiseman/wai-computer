@@ -1,5 +1,13 @@
 import Foundation
 
+/// Result of `POST /api/items/upload`. Documents extract inline into an `Item`
+/// (201); audio/video are staged and transcribed into a Recording in the
+/// background (202) — there is no `Item` to poll, it surfaces under Recordings.
+public enum ItemUploadOutcome: Sendable {
+    case item(Item)
+    case recording(status: String)
+}
+
 /// One row of an item's key-moments table (the hero "forward → table" output).
 public struct KeyMoment: Codable, Identifiable, Sendable {
     public let timestamp: String?

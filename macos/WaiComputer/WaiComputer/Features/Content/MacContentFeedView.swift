@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 import WaiComputerKit
 
 /// The unified "Content" surface on macOS: add anything (link/text) + a
@@ -9,6 +10,7 @@ struct MacContentFeedView: View {
 
     @EnvironmentObject private var languageManager: LanguageManager
     @StateObject private var model: MacContentFeedViewModel
+    @State private var showingImporter = false
 
     init(apiClient: APIClient) {
         self.apiClient = apiClient
@@ -19,15 +21,29 @@ struct MacContentFeedView: View {
         (nil, "All"),
         ("article", "Articles"),
         ("video", "Videos"),
+        ("pdf", "PDFs"),
         ("note", "Notes"),
         ("mcp_resource", "Connected"),
     ]
+
+    private var importTypes: [UTType] {
+        // Documents extract inline into an Item; audio/video are transcribed into
+        // a Recording. `.audio`/`.movie` cover the common cases; the explicit
+        // extensions catch containers that don't conform to them (mkv/webm/opus).
+        var types: [UTType] = [.pdf, .plainText, .audio, .movie]
+        for ext in ["md", "mkv", "webm", "opus", "ogg"] {
+            if let t = UTType(filenameExtension: ext) { types.append(t) }
+        }
+        return types
+    }
 
     var body: some View {
         VStack(spacing: 0) {
             header
             Divider()
             addAnythingBar
+            errorBanner
+            statusBanner
             Divider()
             filterChips
             Divider()
@@ -40,6 +56,20 @@ struct MacContentFeedView: View {
             }
         }
         .task { await model.load() }
+        .dropDestination(for: URL.self) { urls, _ in
+            guard let url = urls.first else { return false }
+            Task { await model.uploadFile(url) }
+            return true
+        }
+        .fileImporter(
+            isPresented: $showingImporter,
+            allowedContentTypes: importTypes,
+            allowsMultipleSelection: false
+        ) { result in
+            if case let .success(urls) = result, let url = urls.first {
+                Task { await model.uploadFile(url) }
+            }
+        }
         .sheet(isPresented: Binding(
             get: { model.activeComparisonId != nil },
             set: { if !$0 { model.clearComparison() } }
@@ -83,6 +113,15 @@ struct MacContentFeedView: View {
             .onSubmit { Task { await model.addDraft() } }
 
             Button {
+                showingImporter = true
+            } label: {
+                Image(systemName: "paperclip")
+            }
+            .buttonStyle(.bordered)
+            .disabled(model.isAdding)
+            .help(t("Attach a PDF or text file", "Прикрепить PDF или текстовый файл"))
+
+            Button {
                 Task { await model.addDraft() }
             } label: {
                 if model.isAdding {
@@ -96,6 +135,56 @@ struct MacContentFeedView: View {
         }
         .padding(.horizontal, Spacing.xl)
         .padding(.vertical, Spacing.md)
+    }
+
+    @ViewBuilder
+    private var errorBanner: some View {
+        if let message = model.errorMessage {
+            HStack(spacing: Spacing.xs) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.red)
+                Text(message)
+                    .font(Typography.bodySmall)
+                    .foregroundStyle(.red)
+                    .textSelection(.enabled)
+                Spacer()
+                Button {
+                    model.errorMessage = nil
+                } label: {
+                    Image(systemName: "xmark")
+                }
+                .buttonStyle(.plain)
+                .help(t("Dismiss", "Закрыть"))
+            }
+            .padding(.horizontal, Spacing.xl)
+            .padding(.vertical, Spacing.sm)
+            .background(Palette.surfaceSubtle)
+        }
+    }
+
+    @ViewBuilder
+    private var statusBanner: some View {
+        if let message = model.statusMessage {
+            HStack(spacing: Spacing.xs) {
+                Image(systemName: "checkmark.circle.fill")
+                    .foregroundStyle(.green)
+                Text(message)
+                    .font(Typography.bodySmall)
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+                Spacer()
+                Button {
+                    model.statusMessage = nil
+                } label: {
+                    Image(systemName: "xmark")
+                }
+                .buttonStyle(.plain)
+                .help(t("Dismiss", "Закрыть"))
+            }
+            .padding(.horizontal, Spacing.xl)
+            .padding(.vertical, Spacing.sm)
+            .background(Palette.surfaceSubtle)
+        }
     }
 
     private var filterChips: some View {
