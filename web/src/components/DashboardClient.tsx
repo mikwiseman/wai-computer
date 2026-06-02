@@ -38,6 +38,7 @@ import {
   semanticSearch,
   startSummaryGeneration,
   startTelegramLink,
+  unifiedSearch,
   updateSettings,
   unlinkTelegram,
 } from "@/lib/api";
@@ -54,6 +55,7 @@ import { DictationStatsHeader } from "@/components/DictationStatsHeader";
 import { DeleteAccountSection } from "@/components/DeleteAccountSection";
 import { AddAnythingPanel } from "@/components/AddAnythingPanel";
 import { ItemsFeed } from "@/components/ItemsFeed";
+import { BrainPanel } from "@/components/BrainPanel";
 import { DictatePanel } from "@/components/DictatePanel";
 import { PasswordField } from "@/components/PasswordField";
 import { Skeleton } from "@/components/Skeleton";
@@ -67,6 +69,7 @@ import type {
   RecordingDetail,
   RecordingType,
   SearchResponse,
+  UnifiedSearchResponse,
   TelegramLinkStatus,
   TelegramPairing,
   TranscriptionOptions,
@@ -74,11 +77,12 @@ import type {
   UserSettings,
 } from "@/lib/types";
 
-type SearchMode = "hybrid" | "semantic" | "fts";
+type SearchMode = "hybrid" | "semantic" | "fts" | "everything";
 type DashboardView =
   | "wai"
   | "add"
   | "content"
+  | "brain"
   | "library"
   | "folder"
   | "trash"
@@ -216,6 +220,7 @@ interface DashboardCopy {
     hybrid: string;
     semantic: string;
     fts: string;
+    everything: string;
     total: (n: number) => string;
     enterQuery: string;
     noResultsTitle: string;
@@ -398,6 +403,7 @@ const COPY: Record<Locale, DashboardCopy> = {
       hybrid: "Hybrid",
       semantic: "Semantic",
       fts: "Full text",
+      everything: "Everything",
       total: (n) => `Total: ${n}`,
       enterQuery: "Enter a search query.",
       noResultsTitle: "No Results",
@@ -583,6 +589,7 @@ const COPY: Record<Locale, DashboardCopy> = {
       hybrid: "Гибридный",
       semantic: "Семантический",
       fts: "По тексту",
+      everything: "Везде",
       total: (n) => `Всего: ${n}`,
       enterQuery: "Введите поисковый запрос.",
       noResultsTitle: "Ничего не найдено",
@@ -725,6 +732,8 @@ export function DashboardClient() {
   const [initializing, setInitializing] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  // Bumped after "Add anything" creates an item, to refresh the Content feed.
+  const [itemsReloadKey, setItemsReloadKey] = useState(0);
   const [user, setUser] = useState<User | null>(null);
 
   const [recordings, setRecordings] = useState<Recording[]>([]);
@@ -739,6 +748,7 @@ export function DashboardClient() {
   const [searchMode, setSearchMode] = useState<SearchMode>("hybrid");
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResponse, setSearchResponse] = useState<SearchResponse | null>(null);
+  const [unifiedResponse, setUnifiedResponse] = useState<UnifiedSearchResponse | null>(null);
 
   // Folders
   const [folders, setFolders] = useState<Folder[]>([]);
@@ -1118,10 +1128,17 @@ export function DashboardClient() {
     setMessage(null);
     if (query.length === 0) {
       setSearchResponse(null);
+      setUnifiedResponse(null);
       setMessage(copy.search.enterQuery);
       return;
     }
     try {
+      setUnifiedResponse(null);
+      if (searchMode === "everything") {
+        setSearchResponse(null);
+        setUnifiedResponse(await unifiedSearch({ q: query, limit: 25 }));
+        return;
+      }
       if (searchMode === "hybrid") {
         setSearchResponse(await search({ q: query, limit: 25, offset: 0 }));
         return;
@@ -1548,6 +1565,11 @@ export function DashboardClient() {
           count: null,
         },
         {
+          key: "brain",
+          label: locale === "ru" ? "Мозг" : "Brain",
+          count: null,
+        },
+        {
           key: "library",
           label: copy.nav.library.label,
           count: displayCount(recordings.length),
@@ -1822,14 +1844,19 @@ export function DashboardClient() {
         {view === "add" ? (
           <section className="tool-panel">
             <AddAnythingPanel
-              onCreated={() => void loadRecordingsState()}
+              onCreated={() => setItemsReloadKey((k) => k + 1)}
               onError={setMessage}
             />
           </section>
         ) : null}
         {view === "content" ? (
           <section className="tool-panel">
-            <ItemsFeed onError={setMessage} />
+            <ItemsFeed onError={setMessage} reloadKey={itemsReloadKey} />
+          </section>
+        ) : null}
+        {view === "brain" ? (
+          <section className="tool-panel">
+            <BrainPanel locale={locale} onError={setMessage} />
           </section>
         ) : null}
         {view === "dictate" ? <DictatePanel locale={locale} /> : null}
@@ -2185,11 +2212,13 @@ export function DashboardClient() {
             onChange={(event) => {
               setSearchMode(event.target.value as SearchMode);
               setSearchResponse(null);
+              setUnifiedResponse(null);
             }}
           >
             <option value="hybrid">{copy.search.hybrid}</option>
             <option value="semantic">{copy.search.semantic}</option>
             <option value="fts">{copy.search.fts}</option>
+            <option value="everything">{copy.search.everything}</option>
           </select>
           <button data-testid="search-submit" type="submit">
             {copy.search.submit}
@@ -2197,9 +2226,46 @@ export function DashboardClient() {
         </form>
 
         <p data-testid="search-total" className="muted-text">
-          {copy.search.total(searchResponse?.total ?? 0)}
+          {copy.search.total(
+            (searchMode === "everything" ? unifiedResponse?.total : searchResponse?.total) ?? 0,
+          )}
         </p>
-        {searchResponse?.results && searchResponse.results.length > 0 ? (
+        {searchMode === "everything" && unifiedResponse?.results ? (
+          unifiedResponse.results.length > 0 ? (
+            <ul className="search-results" data-testid="unified-search-results">
+              {unifiedResponse.results.map((hit) => (
+                <li key={hit.chunk_id} data-testid={`unified-result-${hit.chunk_id}`}>
+                  <strong>{hit.title ?? copy.library.untitled}</strong>
+                  <p>{hit.snippet}</p>
+                  <div className="search-result-footer">
+                    <small>
+                      {(hit.source_kind === "item" ? hit.kind : "recording").toUpperCase()} /{" "}
+                      {copy.search.score} {hit.score.toFixed(2)}
+                    </small>
+                    <button
+                      type="button"
+                      className="ghost-button compact-button"
+                      onClick={() => {
+                        if (hit.source_kind === "recording") {
+                          void handleSelectRecording(hit.parent_id);
+                        } else {
+                          setView("content");
+                        }
+                      }}
+                    >
+                      {copy.search.open}
+                    </button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <div className="empty-state" data-testid="search-no-results">
+              <h3>{copy.search.noResultsTitle}</h3>
+              <p>{copy.search.noResultsBody}</p>
+            </div>
+          )
+        ) : searchResponse?.results && searchResponse.results.length > 0 ? (
           <ul className="search-results" data-testid="search-results">
             {searchResponse.results.map((result) => (
               <li key={result.segment_id} data-testid={`search-result-${result.segment_id}`}>

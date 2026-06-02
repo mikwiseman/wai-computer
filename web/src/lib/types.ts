@@ -491,6 +491,18 @@ export interface KeyMoment {
   end_ms?: number | null;
 }
 
+export interface ItemError {
+  code: string;
+  message: string;
+}
+
+export type ItemStatus =
+  | "fetching"
+  | "summarizing"
+  | "ready"
+  | "needs_input"
+  | "failed";
+
 export interface Item {
   id: string;
   source: string;
@@ -501,6 +513,8 @@ export interface Item {
   body: string | null;
   occurred_at: string | null;
   state: string;
+  status: ItemStatus;
+  error: ItemError | null;
   folder_id: string | null;
   created_at: string;
   summary: ItemSummary | null;
@@ -513,6 +527,8 @@ export interface ItemListEntry {
   kind: string;
   title: string | null;
   state: string;
+  status: ItemStatus;
+  error: ItemError | null;
   folder_id: string | null;
   occurred_at: string | null;
   created_at: string;
@@ -522,6 +538,49 @@ export interface ItemListEntry {
 export interface ItemListResponse {
   items: ItemListEntry[];
   total: number;
+}
+
+export interface BrainGraphNode {
+  id: string;
+  label: string;
+  kind: string; // person | topic | project | item | recording
+  degree: number;
+}
+
+export interface BrainGraphEdge {
+  source: string;
+  target: string;
+  type: string; // cooccurrence | mention
+  weight: number;
+}
+
+export interface BrainGraph {
+  nodes: BrainGraphNode[];
+  edges: BrainGraphEdge[];
+  stats: Record<string, number>;
+}
+
+export interface EntityPageSource {
+  source_kind: string;
+  source_id: string;
+  title: string;
+  context: string | null;
+}
+
+export interface EntityPageRelated {
+  id: string;
+  name: string;
+  type: string;
+  shared: number;
+}
+
+export interface EntityPage {
+  id: string;
+  name: string;
+  type: string;
+  mention_count: number;
+  sources: EntityPageSource[];
+  related: EntityPageRelated[];
 }
 
 export interface ComparisonColumn {

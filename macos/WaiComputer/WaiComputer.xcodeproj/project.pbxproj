@@ -104,6 +104,7 @@
 		F423AE5C768A34AE805AEED4 /* MacThemePreferencesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC1C150E9F7C11FFA2226963 /* MacThemePreferencesTests.swift */; };
 		F4240953527DD09C6F939EB7 /* DictationOverlayPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 803E7E8D86E717C36B809FE4 /* DictationOverlayPanel.swift */; };
 		F446564CCAC4F1489FE7DAE6 /* DeferredDictationStopPolicyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B71D97551023ED36E8B36C8 /* DeferredDictationStopPolicyTests.swift */; };
+		F555038BF62B03D55034D7EF /* MacBrainGraphView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E8906761AFD6D6BFBB6DA58F /* MacBrainGraphView.swift */; };
 		F735FCBB49C960B6DD5F69EF /* LibraryUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 90C635BCA71EEECC02A0F0E4 /* LibraryUITests.swift */; };
 		FCD45F381A47680297CE1456 /* SystemAudioWarningPolicyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B3889A9A04FC3CA4A048F4D /* SystemAudioWarningPolicyTests.swift */; };
 		FDFC6C1C2F8D256C0EDED048 /* DictationHistoryStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A75D539F70136F36847122EB /* DictationHistoryStore.swift */; };
@@ -203,6 +204,7 @@
 		E16756CD86835D8D0CF4FC8A /* RecordingDetailUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingDetailUITests.swift; sourceTree = "<group>"; };
 		E1A0EB9E6D3F7A439FD6DCC9 /* ru */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = ru; path = ru.lproj/InfoPlist.strings; sourceTree = "<group>"; };
 		E5E197873E09F83ABC45311F /* MacComparisonView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacComparisonView.swift; sourceTree = "<group>"; };
+		E8906761AFD6D6BFBB6DA58F /* MacBrainGraphView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacBrainGraphView.swift; sourceTree = "<group>"; };
 		E94E6128F2B3E55CCE6BA664 /* PermissionBanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PermissionBanner.swift; sourceTree = "<group>"; };
 		EA4A03C86EF4E333421DA327 /* SettingsUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsUITests.swift; sourceTree = "<group>"; };
 		EBF23F17DA476E6DC9973406 /* SearchUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchUITests.swift; sourceTree = "<group>"; };
@@ -463,6 +465,7 @@
 		E6B047E70F441C8BBC87FBBB /* Brain */ = {
 			isa = PBXGroup;
 			children = (
+				E8906761AFD6D6BFBB6DA58F /* MacBrainGraphView.swift */,
 				CA81D61D799AAA444B4B8BF2 /* MacBrainView.swift */,
 			);
 			path = Brain;
@@ -637,6 +640,7 @@
 				273A3F0950671C68835E1262 /* IdentityAndVoiceSection.swift in Sources */,
 				BC6AA2538B96B8493E9BF247 /* LanguagePickerView.swift in Sources */,
 				833CC9619E8E2A888D6B2D8D /* LiveRecordingView.swift in Sources */,
+				F555038BF62B03D55034D7EF /* MacBrainGraphView.swift in Sources */,
 				038F4B2BD28BA9DA229D948F /* MacBrainView.swift in Sources */,
 				26BDBABE9A6514DA8BE4720D /* MacComparisonView.swift in Sources */,
 				8BD591B241EDBD3580AA29DB /* MacContentFeedView.swift in Sources */,
@@ -796,7 +800,7 @@
 				CODE_SIGN_ENTITLEMENTS = WaiComputer/WaiComputer.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 169;
+				CURRENT_PROJECT_VERSION = 170;
 				DEVELOPMENT_TEAM = <apple-team-id>;
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -806,7 +810,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 13.0;
-				MARKETING_VERSION = 1.0.29;
+				MARKETING_VERSION = 1.0.30;
 				OTHER_LDFLAGS = "-weak_framework CoreAudio -weak_framework AudioToolbox";
 				PRODUCT_BUNDLE_IDENTIFIER = is.waiwai.computer;
 				PRODUCT_NAME = WaiComputer;
@@ -960,7 +964,7 @@
 				CODE_SIGN_ENTITLEMENTS = WaiComputer/WaiComputer.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 169;
+				CURRENT_PROJECT_VERSION = 170;
 				DEVELOPMENT_TEAM = <apple-team-id>;
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -970,7 +974,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 13.0;
-				MARKETING_VERSION = 1.0.29;
+				MARKETING_VERSION = 1.0.30;
 				OTHER_LDFLAGS = "-weak_framework CoreAudio -weak_framework AudioToolbox";
 				PRODUCT_BUNDLE_IDENTIFIER = is.waiwai.computer.dev;
 				PRODUCT_NAME = WaiComputer;

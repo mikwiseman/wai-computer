@@ -1405,4 +1405,105 @@ final class APIClientTests: XCTestCase {
         XCTAssertEqual(user.id, "u1")
         XCTAssertFalse(user.hasPassword)
     }
+
+    func testUploadItemPostsMultipartAndDecodesItem() async throws {
+        let client = makeClient()
+        let tmp = FileManager.default.temporaryDirectory
+            .appendingPathComponent("wai-test-\(UUID().uuidString).txt")
+        try "hello upload body".data(using: .utf8)!.write(to: tmp)
+        defer { try? FileManager.default.removeItem(at: tmp) }
+
+        MockURLProtocol.requestHandler = { request in
+            XCTAssertEqual(request.httpMethod, "POST")
+            XCTAssertEqual(request.url?.path, "/api/items/upload")
+            XCTAssertTrue(
+                request.value(forHTTPHeaderField: "Content-Type")?
+                    .contains("multipart/form-data") ?? false
+            )
+            let response = HTTPURLResponse(
+                url: request.url!, statusCode: 201, httpVersion: nil, headerFields: nil
+            )!
+            let payload = """
+            {"id":"itm-1","source":"upload","source_ref":null,"url":null,"kind":"note",\
+            "title":"wai-test","body":"hello upload body","occurred_at":null,"state":"raw",\
+            "folder_id":null,"created_at":"2026-06-01T00:00:00Z","summary":null}
+            """.data(using: .utf8)!
+            return (response, payload)
+        }
+
+        let outcome = try await client.uploadItem(fileURL: tmp)
+        guard case let .item(item) = outcome else {
+            return XCTFail("expected .item outcome for a document upload")
+        }
+        XCTAssertEqual(item.id, "itm-1")
+        XCTAssertEqual(item.kind, "note")
+    }
+
+    func testUploadMediaReturnsRecordingOutcome() async throws {
+        let client = makeClient()
+        let tmp = FileManager.default.temporaryDirectory
+            .appendingPathComponent("wai-test-\(UUID().uuidString).mp4")
+        try Data("fake video bytes".utf8).write(to: tmp)
+        defer { try? FileManager.default.removeItem(at: tmp) }
+
+        MockURLProtocol.requestHandler = { request in
+            XCTAssertEqual(request.url?.path, "/api/items/upload")
+            // Audio/video are accepted asynchronously: 202 + a processing marker,
+            // NOT an Item — the client must not try to decode an Item here.
+            let response = HTTPURLResponse(
+                url: request.url!, statusCode: 202, httpVersion: nil, headerFields: nil
+            )!
+            let payload = #"{"kind":"recording","status":"processing"}"#.data(using: .utf8)!
+            return (response, payload)
+        }
+
+        let outcome = try await client.uploadItem(fileURL: tmp)
+        guard case let .recording(status) = outcome else {
+            return XCTFail("expected .recording outcome for an audio/video upload")
+        }
+        XCTAssertEqual(status, "processing")
+    }
+
+    func testGetBrainGraphDecodes() async throws {
+        let client = makeClient()
+        MockURLProtocol.requestHandler = { request in
+            XCTAssertEqual(request.httpMethod, "GET")
+            XCTAssertEqual(request.url?.path, "/api/brain/graph")
+            let response = HTTPURLResponse(
+                url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil
+            )!
+            let payload = """
+            {"nodes":[{"id":"e1","label":"Anna","kind":"person","degree":2}],\
+            "edges":[{"source":"e1","target":"e2","type":"cooccurrence","weight":2.0}],\
+            "stats":{"entities":1,"people":1}}
+            """.data(using: .utf8)!
+            return (response, payload)
+        }
+        let g = try await client.getBrainGraph()
+        XCTAssertEqual(g.nodes.count, 1)
+        XCTAssertEqual(g.nodes[0].label, "Anna")
+        XCTAssertEqual(g.edges[0].type, "cooccurrence")
+        XCTAssertEqual(g.stats["people"], 1)
+    }
+
+    func testGetEntityPageDecodes() async throws {
+        let client = makeClient()
+        MockURLProtocol.requestHandler = { request in
+            XCTAssertEqual(request.url?.path, "/api/entities/abc/page")
+            let response = HTTPURLResponse(
+                url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil
+            )!
+            let payload = """
+            {"id":"abc","name":"GPU","type":"topic","mention_count":3,\
+            "sources":[{"source_kind":"item","source_id":"i1","title":"Note","context":"ctx"}],\
+            "related":[{"id":"e2","name":"Anna","type":"person","shared":2}]}
+            """.data(using: .utf8)!
+            return (response, payload)
+        }
+        let p = try await client.getEntityPage(id: "abc")
+        XCTAssertEqual(p.name, "GPU")
+        XCTAssertEqual(p.mentionCount, 3)
+        XCTAssertEqual(p.sources[0].title, "Note")
+        XCTAssertEqual(p.related[0].name, "Anna")
+    }
 }

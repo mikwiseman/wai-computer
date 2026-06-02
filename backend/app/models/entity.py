@@ -3,7 +3,7 @@
 import uuid
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import ForeignKey, String, Text
+from sqlalchemy import Float, ForeignKey, Index, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -14,6 +14,11 @@ class Entity(Base, UUIDMixin, TimestampMixin):
     """Entity model for people, topics, projects in the knowledge graph."""
 
     __tablename__ = "entities"
+    __table_args__ = (
+        # Exact dedup key for the upsert path (fuzzy duplicates go to Review,
+        # never a silent merge).
+        UniqueConstraint("user_id", "type", "name", name="uq_entities_user_type_name"),
+    )
 
     user_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
@@ -72,6 +77,50 @@ class EntityRelation(Base, UUIDMixin):
     )
     target: Mapped["Entity"] = relationship(
         "Entity", back_populates="target_relations", foreign_keys=[target_id]
+    )
+
+
+class EntityMention(Base, UUIDMixin, TimestampMixin):
+    """A mention of an entity by a source — recording OR item (polymorphic).
+
+    The join that makes "any material in one brain" real at the graph layer: an
+    article / PDF / video / recording links to every entity it mentions.
+    ``source_id`` is polymorphic (no FK); ``source_kind`` says which table it
+    points at. ``EntityRelation`` stays the entity->entity edge; this is the
+    source->entity provenance edge.
+    """
+
+    __tablename__ = "entity_mentions"
+    __table_args__ = (
+        UniqueConstraint(
+            "entity_id",
+            "source_kind",
+            "source_id",
+            name="uq_entity_mentions_entity_source",
+        ),
+        Index("ix_entity_mentions_entity", "entity_id"),
+        Index("ix_entity_mentions_user_source", "user_id", "source_kind", "source_id"),
+    )
+
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    entity_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("entities.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    # source_kind: "recording" | "item". source_id is polymorphic (no FK).
+    source_kind: Mapped[str] = mapped_column(String(20), nullable=False)
+    source_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    # Optional finer-grained provenance (a segment / item_chunk).
+    chunk_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    context: Mapped[str | None] = mapped_column(Text)
+    weight: Mapped[float] = mapped_column(
+        Float, nullable=False, default=1.0, server_default="1.0"
     )
 
 

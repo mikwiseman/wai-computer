@@ -40,6 +40,12 @@ public final class WebSocketHandshakeCoordinator: NSObject, URLSessionWebSocketD
 
     private let lock = NSLock()
     private var continuations: [ObjectIdentifier: CheckedContinuation<Void, Error>] = [:]
+    /// Terminal outcome recorded by a delegate callback that fired BEFORE the
+    /// awaiter registered (the fast-upgrade lost-wakeup race that wedged
+    /// dictation on "Подключаемся…"). Replayed to the next `waitForOpen` so the
+    /// wakeup is never lost. Keyed by task identity; consumed/cleared within a
+    /// single connect attempt.
+    private var resolved: [ObjectIdentifier: Result<Void, Error>] = [:]
 
     public override init() {
         super.init()
@@ -50,8 +56,17 @@ public final class WebSocketHandshakeCoordinator: NSObject, URLSessionWebSocketD
     /// invoke this AFTER `task.resume()`.
     public func waitForOpen(task: URLSessionWebSocketTask) async throws {
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            let id = ObjectIdentifier(task)
             lock.lock()
-            continuations[ObjectIdentifier(task)] = continuation
+            if let pending = resolved.removeValue(forKey: id) {
+                lock.unlock()
+                // A delegate callback already fired for this task before we
+                // registered — replay its outcome instead of parking forever.
+                // Resume OUTSIDE the lock to avoid re-entrant acquisition.
+                continuation.resume(with: pending)
+                return
+            }
+            continuations[id] = continuation
             lock.unlock()
         }
     }
@@ -60,24 +75,33 @@ public final class WebSocketHandshakeCoordinator: NSObject, URLSessionWebSocketD
     /// task is being cancelled before the handshake completed (e.g. session
     /// `cancel()`). If no awaiter is registered, this is a no-op.
     public func cancelPending(for task: URLSessionWebSocketTask) {
+        let id = ObjectIdentifier(task)
         lock.lock()
-        let continuation = continuations.removeValue(forKey: ObjectIdentifier(task))
+        let continuation = continuations.removeValue(forKey: id)
+        // Drop any latched outcome too, so a stale result can't leak to a
+        // future task that happens to reuse this ObjectIdentifier.
+        resolved.removeValue(forKey: id)
         lock.unlock()
         continuation?.resume(throwing: HandshakeError.completedBeforeOpen(error: nil))
     }
 
     private func resumeWith(task: URLSessionWebSocketTask, result: Result<Void, Error>) -> Bool {
+        let id = ObjectIdentifier(task)
         lock.lock()
-        let continuation = continuations.removeValue(forKey: ObjectIdentifier(task))
-        lock.unlock()
-        guard let continuation else { return false }
-        switch result {
-        case .success:
-            continuation.resume(returning: ())
-        case .failure(let error):
-            continuation.resume(throwing: error)
+        if let continuation = continuations.removeValue(forKey: id) {
+            lock.unlock()
+            continuation.resume(with: result)
+            return true
         }
-        return true
+        // No awaiter registered yet — the delegate won the race. Latch the
+        // FIRST terminal outcome so a slightly-later waitForOpen can replay it;
+        // subsequent callbacks (e.g. didComplete after didClose) must not
+        // clobber it.
+        if resolved[id] == nil {
+            resolved[id] = result
+        }
+        lock.unlock()
+        return false
     }
 
     // MARK: - URLSessionWebSocketDelegate

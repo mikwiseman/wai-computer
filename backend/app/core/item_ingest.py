@@ -26,6 +26,7 @@ from datetime import datetime
 from typing import Any
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.content import chunk_with_header, content_hash, normalize_text, simhash64
@@ -117,8 +118,23 @@ async def ingest_item(
         embedding=doc_embedding,
         folder_id=folder_id,
     )
-    db.add(item)
-    await db.flush()
+    try:
+        async with db.begin_nested():
+            db.add(item)
+            await db.flush()
+    except IntegrityError:
+        # Concurrent duplicate: another request inserted the same
+        # (user_id, content_hash) between our dedup SELECT and this INSERT.
+        # Return the winning row — correct idempotency, never a 500.
+        logger.info("item_ingest race dedup user=%s source=%s", user_id, source)
+        found = (
+            await db.execute(
+                select(Item).where(
+                    Item.user_id == user_id, Item.content_hash == chash
+                )
+            )
+        ).scalar_one()
+        return found, False
 
     for seq, (chunk_text, vec) in enumerate(zip(chunks, chunk_vectors)):
         db.add(

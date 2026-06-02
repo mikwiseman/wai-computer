@@ -10,7 +10,9 @@ import type {
   AnalyticsResponse,
   ApiKey,
   ApiKeyCreated,
+  BrainGraph,
   ComparisonListEntry,
+  EntityPage,
   ComparisonSet,
   Item,
   ItemListResponse,
@@ -506,6 +508,33 @@ export function createItem(input: {
   });
 }
 
+/**
+ * Result of "add any file": documents extract inline into an Item (201);
+ * audio/video are staged + transcribed into a Recording in the background (202),
+ * so there's no Item to poll — they surface under Recordings when ready.
+ */
+export type UploadOutcome =
+  | { kind: "item"; item: Item }
+  | { kind: "recording"; status: string };
+
+export async function uploadItem(
+  file: File,
+  opts?: { folderId?: string; title?: string },
+): Promise<UploadOutcome> {
+  const formData = new FormData();
+  formData.append("file", file);
+  if (opts?.folderId) formData.append("folder_id", opts.folderId);
+  if (opts?.title) formData.append("title", opts.title);
+  const payload = await apiUpload<Item | { kind: "recording"; status: string }>(
+    "/api/items/upload",
+    formData,
+  );
+  // Documents come back as a full Item (has `id`); media come back as a
+  // lightweight processing marker with no `id`.
+  if ("id" in payload) return { kind: "item", item: payload };
+  return { kind: "recording", status: payload.status ?? "processing" };
+}
+
 export function listItems(params?: {
   source?: string;
   kind?: string;
@@ -522,6 +551,29 @@ export function getItem(itemId: string): Promise<Item> {
 
 export function deleteItem(itemId: string): Promise<void> {
   return apiFetch<void>(`/api/items/${itemId}`, { method: "DELETE" });
+}
+
+/** Recover a needs_input/failed item: paste the text we couldn't fetch (body),
+ *  or omit it to retry the source URL. */
+export function reprocessItem(itemId: string, input?: { body?: string }): Promise<Item> {
+  return apiFetch<Item>(`/api/items/${itemId}/reprocess`, {
+    method: "POST",
+    body: JSON.stringify(input ?? {}),
+  });
+}
+
+// --- Second brain: knowledge graph ---
+
+export function getBrainGraph(params?: {
+  focus?: string;
+  include_sources?: boolean;
+  limit?: number;
+}): Promise<BrainGraph> {
+  return apiFetch<BrainGraph>(`/api/brain/graph${asQuery(params ?? {})}`);
+}
+
+export function getEntityPage(entityId: string): Promise<EntityPage> {
+  return apiFetch<EntityPage>(`/api/entities/${entityId}/page`);
 }
 
 // --- Second brain: comparison sets ---
