@@ -34,7 +34,8 @@ public final class AVSpeechTTSProvider: NSObject, TTSProvider, @unchecked Sendab
             stale?.resume()
 
             let utterance = AVSpeechUtterance(string: sentence)
-            utterance.voice = AVSpeechSynthesisVoice(language: language)
+            let voiceLanguage = Self.resolvedVoiceLanguage(for: sentence, default: language)
+            utterance.voice = AVSpeechSynthesisVoice(language: voiceLanguage)
             utterance.rate = rate
             synthesizer.speak(utterance)
         }
@@ -43,6 +44,26 @@ public final class AVSpeechTTSProvider: NSObject, TTSProvider, @unchecked Sendab
     public func stop() {
         synthesizer.stopSpeaking(at: .immediate)
         resumePending()
+    }
+
+    /// Pick the voice language per utterance from its content: Cyrillic-dominant
+    /// text gets a Russian voice, everything else the configured default. The
+    /// answer's actual language is the truth here — not an app/system setting —
+    /// so a Russian reply is never read aloud by an English voice.
+    static func resolvedVoiceLanguage(for text: String, default defaultLanguage: String) -> String {
+        var cyrillic = 0
+        var latin = 0
+        for scalar in text.unicodeScalars {
+            if scalar.value >= 0x0400 && scalar.value <= 0x04FF {
+                cyrillic += 1
+            } else if (scalar.value >= 0x41 && scalar.value <= 0x5A)
+                || (scalar.value >= 0x61 && scalar.value <= 0x7A)
+            {
+                latin += 1
+            }
+        }
+        guard cyrillic > 0 else { return defaultLanguage }
+        return cyrillic >= latin ? "ru-RU" : defaultLanguage
     }
 
     private func resumePending() {
