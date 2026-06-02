@@ -160,3 +160,39 @@ class TestExecuteAndExpire:
         await db_session.refresh(fresh)
         assert old.status == "expired"
         assert fresh.status == "pending"
+
+
+class TestEdgeCases:
+    async def test_reject_with_no_conversation_skips_cascade(self, db_session, user_conv):
+        uid, _ = user_conv
+        # conversation_id=None exercises the cascade early-return.
+        row = await ca.propose_action(
+            db_session,
+            user_id=uid,
+            conversation_id=None,
+            kind="send",
+            tool_name="send_message_telegram",
+            args={"text": "hi"},
+            preview="p",
+            idempotency_key=f"k-{uuid4().hex}",
+        )
+        resolved = await ca.resolve_action(
+            db_session, action_id=row.id, user_id=uid, decision="reject"
+        )
+        assert resolved.status == "rejected"
+
+    async def test_verify_committable_raises_on_tamper(self, db_session, user_conv):
+        uid, cid = user_conv
+        row = await _propose(db_session, uid, cid)
+        # Tamper the stored args WITHOUT re-signing → HMAC must reject the commit.
+        row.action_manifest = {**row.action_manifest, "args": {"text": "MALICIOUS"}}
+        with pytest.raises(ApprovalError) as exc:
+            ca.verify_committable(row)
+        assert exc.value.code == "payload_tampered"
+
+    async def test_mark_failed_sets_failed_with_error(self, db_session, user_conv):
+        uid, cid = user_conv
+        row = await _propose(db_session, uid, cid)
+        await ca.mark_failed(db_session, row=row, detail="telegram down")
+        assert row.status == "failed"
+        assert row.receipt == {"error": "telegram down"}
