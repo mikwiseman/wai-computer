@@ -38,6 +38,7 @@ import {
   semanticSearch,
   startSummaryGeneration,
   startTelegramLink,
+  unifiedSearch,
   updateSettings,
   unlinkTelegram,
 } from "@/lib/api";
@@ -68,6 +69,7 @@ import type {
   RecordingDetail,
   RecordingType,
   SearchResponse,
+  UnifiedSearchResponse,
   TelegramLinkStatus,
   TelegramPairing,
   TranscriptionOptions,
@@ -75,7 +77,7 @@ import type {
   UserSettings,
 } from "@/lib/types";
 
-type SearchMode = "hybrid" | "semantic" | "fts";
+type SearchMode = "hybrid" | "semantic" | "fts" | "everything";
 type DashboardView =
   | "wai"
   | "add"
@@ -218,6 +220,7 @@ interface DashboardCopy {
     hybrid: string;
     semantic: string;
     fts: string;
+    everything: string;
     total: (n: number) => string;
     enterQuery: string;
     noResultsTitle: string;
@@ -400,6 +403,7 @@ const COPY: Record<Locale, DashboardCopy> = {
       hybrid: "Hybrid",
       semantic: "Semantic",
       fts: "Full text",
+      everything: "Everything",
       total: (n) => `Total: ${n}`,
       enterQuery: "Enter a search query.",
       noResultsTitle: "No Results",
@@ -585,6 +589,7 @@ const COPY: Record<Locale, DashboardCopy> = {
       hybrid: "Гибридный",
       semantic: "Семантический",
       fts: "По тексту",
+      everything: "Везде",
       total: (n) => `Всего: ${n}`,
       enterQuery: "Введите поисковый запрос.",
       noResultsTitle: "Ничего не найдено",
@@ -743,6 +748,7 @@ export function DashboardClient() {
   const [searchMode, setSearchMode] = useState<SearchMode>("hybrid");
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResponse, setSearchResponse] = useState<SearchResponse | null>(null);
+  const [unifiedResponse, setUnifiedResponse] = useState<UnifiedSearchResponse | null>(null);
 
   // Folders
   const [folders, setFolders] = useState<Folder[]>([]);
@@ -1122,10 +1128,17 @@ export function DashboardClient() {
     setMessage(null);
     if (query.length === 0) {
       setSearchResponse(null);
+      setUnifiedResponse(null);
       setMessage(copy.search.enterQuery);
       return;
     }
     try {
+      setUnifiedResponse(null);
+      if (searchMode === "everything") {
+        setSearchResponse(null);
+        setUnifiedResponse(await unifiedSearch({ q: query, limit: 25 }));
+        return;
+      }
       if (searchMode === "hybrid") {
         setSearchResponse(await search({ q: query, limit: 25, offset: 0 }));
         return;
@@ -2199,11 +2212,13 @@ export function DashboardClient() {
             onChange={(event) => {
               setSearchMode(event.target.value as SearchMode);
               setSearchResponse(null);
+              setUnifiedResponse(null);
             }}
           >
             <option value="hybrid">{copy.search.hybrid}</option>
             <option value="semantic">{copy.search.semantic}</option>
             <option value="fts">{copy.search.fts}</option>
+            <option value="everything">{copy.search.everything}</option>
           </select>
           <button data-testid="search-submit" type="submit">
             {copy.search.submit}
@@ -2211,9 +2226,46 @@ export function DashboardClient() {
         </form>
 
         <p data-testid="search-total" className="muted-text">
-          {copy.search.total(searchResponse?.total ?? 0)}
+          {copy.search.total(
+            (searchMode === "everything" ? unifiedResponse?.total : searchResponse?.total) ?? 0,
+          )}
         </p>
-        {searchResponse?.results && searchResponse.results.length > 0 ? (
+        {searchMode === "everything" && unifiedResponse?.results ? (
+          unifiedResponse.results.length > 0 ? (
+            <ul className="search-results" data-testid="unified-search-results">
+              {unifiedResponse.results.map((hit) => (
+                <li key={hit.chunk_id} data-testid={`unified-result-${hit.chunk_id}`}>
+                  <strong>{hit.title ?? copy.library.untitled}</strong>
+                  <p>{hit.snippet}</p>
+                  <div className="search-result-footer">
+                    <small>
+                      {(hit.source_kind === "item" ? hit.kind : "recording").toUpperCase()} /{" "}
+                      {copy.search.score} {hit.score.toFixed(2)}
+                    </small>
+                    <button
+                      type="button"
+                      className="ghost-button compact-button"
+                      onClick={() => {
+                        if (hit.source_kind === "recording") {
+                          void handleSelectRecording(hit.parent_id);
+                        } else {
+                          setView("content");
+                        }
+                      }}
+                    >
+                      {copy.search.open}
+                    </button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <div className="empty-state" data-testid="search-no-results">
+              <h3>{copy.search.noResultsTitle}</h3>
+              <p>{copy.search.noResultsBody}</p>
+            </div>
+          )
+        ) : searchResponse?.results && searchResponse.results.length > 0 ? (
           <ul className="search-results" data-testid="search-results">
             {searchResponse.results.map((result) => (
               <li key={result.segment_id} data-testid={`search-result-${result.segment_id}`}>
