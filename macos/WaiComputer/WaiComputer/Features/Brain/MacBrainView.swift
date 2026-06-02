@@ -4,12 +4,13 @@ import WaiComputerKit
 enum MacBrainTab: String, CaseIterable {
     case index
     case wiki
+    case graph
 }
 
 /// The macOS "Brain" view: a knowledge graph of the people / topics / projects
 /// across everything captured. Mirrors the web tri-view — Index (scannable
-/// categorized list) and Wiki (entity pages with backlinks + related). The
-/// force Graph tab lands next. Honest empty / error+retry states.
+/// categorized list), Wiki (entity pages with backlinks + related), and a
+/// force-directed Graph (Obsidian-style). Honest empty / error+retry states.
 struct MacBrainView: View {
     let apiClient: APIClient
 
@@ -48,6 +49,7 @@ struct MacBrainView: View {
         HStack(spacing: Spacing.sm) {
             tabButton(.index, t("Index", "Индекс"))
             tabButton(.wiki, t("Wiki", "Вики"))
+            tabButton(.graph, t("Graph", "Граф"))
             Spacer()
         }
         .padding(.horizontal, Spacing.xl)
@@ -91,7 +93,26 @@ struct MacBrainView: View {
             switch model.tab {
             case .index: indexView
             case .wiki: wikiView
+            case .graph: graphView
             }
+        }
+    }
+
+    // MARK: - Graph
+
+    @ViewBuilder
+    private var graphView: some View {
+        if let graph = model.graph, !graph.nodes.isEmpty {
+            MacBrainGraphView(graph: graph) { node in
+                // Only entity nodes have wiki pages; source nodes (item/recording)
+                // are drawn but not navigable here (there's no page to open).
+                if node.kind == "person" || node.kind == "topic" || node.kind == "project" {
+                    model.openEntity(id: node.id, name: node.label)
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else {
+            emptyBrain
         }
     }
 
