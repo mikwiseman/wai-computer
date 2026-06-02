@@ -18,6 +18,8 @@ final class ItemModelTests: XCTestCase {
           "body": "full text",
           "occurred_at": null,
           "state": "raw",
+          "status": "ready",
+          "error": null,
           "folder_id": null,
           "created_at": "2026-06-01T00:00:00Z",
           "summary": {
@@ -44,6 +46,8 @@ final class ItemModelTests: XCTestCase {
         XCTAssertEqual(item.id, "i1")
         XCTAssertEqual(item.kind, "article")
         XCTAssertEqual(item.title, "Solar Explainer")
+        XCTAssertEqual(item.status, "ready")
+        XCTAssertNil(item.error)
         XCTAssertEqual(item.summary?.summary, "A clear explainer.")
         XCTAssertEqual(item.summary?.keyPoints, ["costs fell", "storage grew"])
         let moment = try XCTUnwrap(item.summary?.keyMoments?.first)
@@ -58,7 +62,8 @@ final class ItemModelTests: XCTestCase {
         {
           "id": "i2", "source": "paste", "source_ref": null, "url": null,
           "kind": "note", "title": null, "body": "x", "occurred_at": null,
-          "state": "raw", "folder_id": null, "created_at": "2026-06-01T00:00:00Z",
+          "state": "raw", "status": "summarizing", "error": null,
+          "folder_id": null, "created_at": "2026-06-01T00:00:00Z",
           "summary": null
         }
         """.data(using: .utf8)!
@@ -73,7 +78,8 @@ final class ItemModelTests: XCTestCase {
           "items": [
             {
               "id": "i1", "source": "url", "url": "https://x", "kind": "article",
-              "title": "T", "state": "raw", "folder_id": null, "occurred_at": null,
+              "title": "T", "state": "raw", "status": "ready", "error": null,
+              "folder_id": null, "occurred_at": null,
               "created_at": "2026-06-01T00:00:00Z", "has_summary": true
             }
           ],
@@ -83,6 +89,7 @@ final class ItemModelTests: XCTestCase {
         let response = try decoder().decode(ItemListResponse.self, from: json)
         XCTAssertEqual(response.total, 1)
         XCTAssertTrue(response.items[0].hasSummary)
+        XCTAssertEqual(response.items[0].status, "ready")
     }
 
     func testUnifiedSearchResponseDecodes() throws {

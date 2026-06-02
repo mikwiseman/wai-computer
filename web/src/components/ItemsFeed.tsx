@@ -18,6 +18,9 @@ const KIND_FILTERS = [
   { key: "video", label: "Videos" },
   { key: "pdf", label: "PDFs" },
   { key: "note", label: "Notes" },
+  { key: "document", label: "Docs" },
+  { key: "presentation", label: "Slides" },
+  { key: "spreadsheet", label: "Sheets" },
   { key: "mcp_resource", label: "Connected" },
 ] as const;
 
@@ -29,6 +32,19 @@ const STATUS_BADGE: Record<string, { label: string; cls: string }> = {
   needs_input: { label: "needs input", cls: "items-feed__badge--attention" },
   failed: { label: "failed", cls: "items-feed__badge--error" },
 };
+
+function displayTitle(title: string | null, url: string | null): string {
+  const cleaned = title?.trim();
+  if (
+    cleaned &&
+    !["untitled", "[untitled]", "без названия", "[без названия]"].includes(
+      cleaned.toLowerCase(),
+    )
+  ) {
+    return cleaned;
+  }
+  return url ?? "Untitled";
+}
 
 function relativeTime(iso: string): string {
   const then = new Date(iso).getTime();
@@ -190,7 +206,7 @@ export function ItemsFeed({ onError, reloadKey = 0 }: ItemsFeedProps) {
                   <input
                     type="checkbox"
                     className="items-feed__check"
-                    aria-label={`Select ${entry.title ?? entry.url ?? "item"} to compare`}
+                    aria-label={`Select ${displayTitle(entry.title, entry.url)} to compare`}
                     checked={compareSelection.has(entry.id)}
                     onChange={() => toggleCompare(entry.id)}
                   />
@@ -203,7 +219,7 @@ export function ItemsFeed({ onError, reloadKey = 0 }: ItemsFeedProps) {
                     onClick={() => setSelectedId(entry.id)}
                   >
                     <span className="items-feed__row-title">
-                      {entry.title ?? entry.url ?? "Untitled"}
+                      {displayTitle(entry.title, entry.url)}
                     </span>
                     <span className="items-feed__row-meta">
                       <span className="items-feed__badge">{entry.kind}</span>

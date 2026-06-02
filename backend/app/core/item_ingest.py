@@ -31,6 +31,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.content import chunk_with_header, content_hash, normalize_text, simhash64
 from app.core.embeddings import generate_embeddings
+from app.core.item_titles import clean_title, is_placeholder_title
 from app.models.item import Item, ItemChunk
 
 logger = logging.getLogger(__name__)
@@ -74,6 +75,7 @@ async def ingest_item(
     ``(user_id, content_hash)`` already exists, returns it with
     ``created=False`` and does no embedding work.
     """
+    title = clean_title(title)
     chash = content_hash(dedup_key if dedup_key is not None else (body or url or title))
 
     existing = await db.execute(
@@ -81,6 +83,9 @@ async def ingest_item(
     )
     found = existing.scalar_one_or_none()
     if found is not None:
+        if title and is_placeholder_title(found.title):
+            found.title = title
+            await db.flush()
         logger.info("item_ingest dedup hit user=%s source=%s", user_id, source)
         return found, False
 

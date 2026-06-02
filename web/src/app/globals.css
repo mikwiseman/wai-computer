@@ -2735,6 +2735,16 @@ a.primary-button[aria-disabled="true"]:hover {
   font-size: var(--font-body-small-size);
 }
 
+.item-detail__processing {
+  margin-top: 0.85rem;
+  padding: 0.7rem 0.85rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface-subtle);
+  color: var(--ink-soft);
+  font-size: var(--font-body-small-size);
+}
+
 .item-detail__section {
   margin-top: 0.85rem;
 }

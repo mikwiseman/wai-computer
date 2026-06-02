@@ -105,6 +105,16 @@ describe("ItemsFeed", () => {
     await waitFor(() => expect(screen.getByText(/summarizing/i)).toBeInTheDocument());
   });
 
+  it("does not show placeholder titles as real row titles", async () => {
+    mockListItems.mockResolvedValue({
+      items: [entry({ title: "[Untitled]", url: "https://x/source.pdf" })],
+      total: 1,
+    });
+    render(<ItemsFeed />);
+    await waitFor(() => expect(screen.getByText("https://x/source.pdf")).toBeInTheDocument());
+    expect(screen.queryByText("[Untitled]")).not.toBeInTheDocument();
+  });
+
   it("shows a failed badge carrying the error message as a tooltip", async () => {
     mockListItems.mockResolvedValue({
       items: [

@@ -1426,7 +1426,8 @@ final class APIClientTests: XCTestCase {
             let payload = """
             {"id":"itm-1","source":"upload","source_ref":null,"url":null,"kind":"note",\
             "title":"wai-test","body":"hello upload body","occurred_at":null,"state":"raw",\
-            "folder_id":null,"created_at":"2026-06-01T00:00:00Z","summary":null}
+            "status":"summarizing","error":null,"folder_id":null,\
+            "created_at":"2026-06-01T00:00:00Z","summary":null}
             """.data(using: .utf8)!
             return (response, payload)
         }

@@ -23,6 +23,9 @@ struct MacContentFeedView: View {
         ("video", "Videos"),
         ("pdf", "PDFs"),
         ("note", "Notes"),
+        ("document", "Docs"),
+        ("presentation", "Slides"),
+        ("spreadsheet", "Sheets"),
         ("mcp_resource", "Connected"),
     ]
 
@@ -30,8 +33,13 @@ struct MacContentFeedView: View {
         // Documents extract inline into an Item; audio/video are transcribed into
         // a Recording. `.audio`/`.movie` cover the common cases; the explicit
         // extensions catch containers that don't conform to them (mkv/webm/opus).
-        var types: [UTType] = [.pdf, .plainText, .audio, .movie]
-        for ext in ["md", "mkv", "webm", "opus", "ogg"] {
+        var types: [UTType] = [
+            .pdf, .plainText, .html, .rtf, .commaSeparatedText, .json, .audio, .movie
+        ]
+        for ext in [
+            "md", "doc", "docx", "pptx", "xlsx",
+            "mkv", "webm", "opus", "ogg"
+        ] {
             if let t = UTType(filenameExtension: ext) { types.append(t) }
         }
         return types
@@ -119,7 +127,8 @@ struct MacContentFeedView: View {
             }
             .buttonStyle(.bordered)
             .disabled(model.isAdding)
-            .help(t("Attach a PDF or text file", "Прикрепить PDF или текстовый файл"))
+            .help(t("Attach a document, audio, or video file",
+                    "Прикрепить документ, аудио или видео"))
 
             Button {
                 Task { await model.addDraft() }
@@ -275,17 +284,18 @@ struct MacContentFeedView: View {
             .help(t("Select to compare", "Выбрать для сравнения"))
 
             VStack(alignment: .leading, spacing: Spacing.xxs) {
-                Text(entry.title ?? entry.url ?? t("Untitled", "Без названия"))
+                Text(displayTitle(title: entry.title, url: entry.url))
                     .font(Typography.bodySmall.weight(.medium))
                     .lineLimit(2)
                 HStack(spacing: Spacing.xs) {
-                    Text(entry.kind.uppercased())
+                    Text(kindLabel(entry.kind))
                         .font(Typography.labelSmall)
                         .foregroundStyle(Palette.textTertiary)
-                    if !entry.hasSummary {
-                        Text(t("summarizing…", "обработка…"))
+                    if let label = statusLabel(entry.status) {
+                        Text(label)
                             .font(Typography.labelSmall)
-                            .foregroundStyle(Palette.accent)
+                            .foregroundStyle(statusColor(entry.status))
+                            .help(entry.error?.message ?? "")
                     }
                 }
             }
@@ -295,6 +305,50 @@ struct MacContentFeedView: View {
 
     private func t(_ english: String, _ russian: String) -> String {
         OnboardingL10n.text(english, russian, language: languageManager.current)
+    }
+
+    private func displayTitle(title: String?, url: String?) -> String {
+        let trimmed = (title ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        if !isPlaceholderTitle(trimmed) {
+            return trimmed
+        }
+        return url ?? t("Untitled", "Без названия")
+    }
+
+    private func isPlaceholderTitle(_ value: String) -> Bool {
+        let normalized = value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return normalized.isEmpty
+            || normalized == "untitled"
+            || normalized == "[untitled]"
+            || normalized == "без названия"
+            || normalized == "[без названия]"
+    }
+
+    private func kindLabel(_ kind: String) -> String {
+        switch kind {
+        case "pdf": return "PDF"
+        case "doc", "docx", "document": return t("DOC", "ДОК")
+        case "presentation": return t("SLIDES", "СЛАЙДЫ")
+        case "spreadsheet": return t("SHEET", "ТАБЛИЦА")
+        default: return kind.uppercased()
+        }
+    }
+
+    private func statusLabel(_ status: String) -> String? {
+        switch status {
+        case "fetching": return t("fetching…", "загрузка…")
+        case "summarizing": return t("summarizing…", "обработка…")
+        case "needs_input": return t("needs input", "нужен текст")
+        case "failed": return t("failed", "ошибка")
+        default: return nil
+        }
+    }
+
+    private func statusColor(_ status: String) -> Color {
+        switch status {
+        case "needs_input", "failed": return .red
+        default: return Palette.accent
+        }
     }
 
     @ViewBuilder
