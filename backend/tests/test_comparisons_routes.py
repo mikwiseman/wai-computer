@@ -128,3 +128,48 @@ async def test_build_comparison_set_persists_table(db_session, monkeypatch) -> N
     assert len(refreshed.rows) == 2
     assert refreshed.rows[1]["values"]["Topic"] is None
     assert refreshed.title  # auto-titled
+
+
+async def test_create_comparison_dedupes_and_requires_two_distinct(client, auth_headers) -> None:
+    ids = await _two_items(client, auth_headers)
+    # Two references to the SAME item dedupe to 1 distinct -> 422 (not a self-compare).
+    resp = await client.post(
+        "/api/comparisons", json={"item_ids": [ids[0], ids[0]]}, headers=auth_headers
+    )
+    assert resp.status_code == 422
+
+
+async def test_create_comparison_persists_and_echoes_intent(client, auth_headers) -> None:
+    ids = await _two_items(client, auth_headers)
+    with patch("app.tasks.comparison_generation.generate_comparison_task.delay"):
+        resp = await client.post(
+            "/api/comparisons",
+            json={"item_ids": ids[:2], "intent": "which is cheaper"},
+            headers=auth_headers,
+        )
+    assert resp.status_code == 201, resp.text
+    assert resp.json()["intent"] == "which is cheaper"
+    cid = resp.json()["id"]
+    got = await client.get(f"/api/comparisons/{cid}", headers=auth_headers)
+    assert got.json()["intent"] == "which is cheaper"
+
+
+async def test_rebuild_comparison_re_enqueues_with_stored_intent(client, auth_headers) -> None:
+    ids = await _two_items(client, auth_headers)
+    with patch("app.tasks.comparison_generation.generate_comparison_task.delay"):
+        created = await client.post(
+            "/api/comparisons",
+            json={"item_ids": ids[:2], "intent": "by topic"},
+            headers=auth_headers,
+        )
+    cid = created.json()["id"]
+    with patch("app.tasks.comparison_generation.generate_comparison_task.delay") as delay:
+        resp = await client.post(f"/api/comparisons/{cid}/rebuild", headers=auth_headers)
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["status"] == "generating"
+    delay.assert_called_once_with(comparison_id=cid, intent="by topic")
+
+
+async def test_rebuild_comparison_404_for_unknown(client, auth_headers) -> None:
+    resp = await client.post(f"/api/comparisons/{uuid4()}/rebuild", headers=auth_headers)
+    assert resp.status_code == 404

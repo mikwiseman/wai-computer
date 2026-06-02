@@ -38,6 +38,7 @@ class ComparisonResponse(BaseModel):
     columns: list[Any] | None
     rows: list[Any] | None
     schema_rationale: str | None
+    intent: str | None
     status: str
     created_at: str
 
@@ -58,6 +59,7 @@ def _response(cs: ComparisonSet) -> ComparisonResponse:
         columns=cs.columns,
         rows=cs.rows,
         schema_rationale=cs.schema_rationale,
+        intent=cs.intent,
         status=cs.status,
         created_at=cs.created_at.isoformat(),
     )
@@ -70,13 +72,20 @@ async def create_comparison(
     db: Database,
 ) -> ComparisonResponse:
     """Create a comparison set from >= 2 of the user's items; build in background."""
-    ids = [str(i) for i in request.item_ids]
-    # Validate ownership of every item.
+    # De-dupe (preserve order); a set must compare >= 2 DISTINCT items.
+    ids = list(dict.fromkeys(str(i) for i in request.item_ids))
+    if len(ids) < 2:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="A comparison needs at least 2 distinct items.",
+        )
+
+    # Validate ownership of every (distinct) item.
     owned = (
         await db.execute(
             select(Item.id).where(
                 Item.user_id == user.id,
-                Item.id.in_(request.item_ids),
+                Item.id.in_([UUID(i) for i in ids]),
                 Item.deleted_at.is_(None),
             )
         )
@@ -93,6 +102,7 @@ async def create_comparison(
         user_id=user.id,
         title=request.title,
         item_ids=ids,
+        intent=request.intent,
         status="generating",
     )
     db.add(cs)
@@ -154,6 +164,38 @@ async def get_comparison(
     ).scalar_one_or_none()
     if cs is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
+    return _response(cs)
+
+
+@router.post("/{comparison_id}/rebuild", response_model=ComparisonResponse)
+async def rebuild_comparison(
+    comparison_id: UUID,
+    user: CurrentUser,
+    db: Database,
+) -> ComparisonResponse:
+    """Re-run a comparison's generation (e.g. after a transient failure), reusing
+    its stored intent — the user's escape hatch for a stuck/failed set."""
+    cs = (
+        await db.execute(
+            select(ComparisonSet).where(
+                ComparisonSet.id == comparison_id,
+                ComparisonSet.user_id == user.id,
+            )
+        )
+    ).scalar_one_or_none()
+    if cs is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
+
+    cs.status = "generating"
+    await db.flush()
+    try:
+        from app.tasks.comparison_generation import generate_comparison_task
+
+        generate_comparison_task.delay(comparison_id=str(cs.id), intent=cs.intent)
+    except Exception as exc:  # noqa: BLE001 — broker down: mark failed, never stuck "generating"
+        logger.warning("comparison rebuild enqueue failed id=%s: %s", cs.id, exc)
+        cs.status = "failed"
+        await db.flush()
     return _response(cs)
 
 
