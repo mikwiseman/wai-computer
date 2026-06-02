@@ -7,7 +7,7 @@ import uuid
 from dataclasses import asdict
 from datetime import datetime, timezone
 from time import perf_counter
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
@@ -16,6 +16,14 @@ from sqlalchemy import and_, select
 
 from app.api.deps import CurrentUser, Database
 from app.core.companion import CompanionError, ErrorEvent, TurnContext, run_turn
+from app.core.companion_actions import (
+    ApprovalError,
+    mark_executed,
+    mark_failed,
+    resolve_action,
+    verify_committable,
+)
+from app.core.companion_actuators import ActuationError, execute_action
 from app.core.observability import (
     add_sentry_breadcrumb,
     capture_sentry_anomaly,
@@ -600,3 +608,92 @@ def sa_coalesce_last_message_or_created():
     from sqlalchemy import func
 
     return func.coalesce(Conversation.last_message_at, Conversation.created_at)
+
+
+# HTTP status for each gate failure (errors are surfaced; no silent fallback).
+_APPROVAL_HTTP_STATUS = {
+    "not_found": status.HTTP_404_NOT_FOUND,
+    "already_resolved": status.HTTP_409_CONFLICT,
+    "expired": status.HTTP_410_GONE,
+    "payload_tampered": status.HTTP_409_CONFLICT,
+    "bad_decision": status.HTTP_422_UNPROCESSABLE_ENTITY,
+}
+
+
+class ResolveActionRequest(BaseModel):
+    decision: Literal["once", "always", "reject"]
+    edited_args: dict[str, Any] | None = None
+
+
+class ResolveActionResponse(BaseModel):
+    action_id: str
+    status: str  # "executed" | "rejected"
+    recipient: str | None = None  # display name only, never a raw id
+
+
+@router.post(
+    "/chats/{chat_id}/actions/{action_id}/resolve",
+    response_model=ResolveActionResponse,
+)
+async def resolve_chat_action(
+    chat_id: uuid.UUID,
+    action_id: uuid.UUID,
+    request: ResolveActionRequest,
+    user: CurrentUser,
+    db: Database,
+) -> ResolveActionResponse:
+    """Approve (once/always) or reject a pending mutating action.
+
+    On approval the payload HMAC is re-verified and the side effect runs exactly
+    once (idempotent receipt). ``timeout == deny`` is enforced by resolve_action;
+    every failure is surfaced as an HTTP error (no silent fallback). The response
+    carries only a recipient *display name*, never a raw id/body.
+    """
+    await _load_user_chat(db, user.id, chat_id)  # ownership (404 otherwise)
+
+    try:
+        row = await resolve_action(
+            db,
+            action_id=action_id,
+            user_id=user.id,
+            decision=request.decision,
+            edited_args=request.edited_args,
+        )
+    except ApprovalError as exc:
+        await db.commit()  # persist any expired-on-read transition
+        raise HTTPException(
+            status_code=_APPROVAL_HTTP_STATUS.get(
+                exc.code, status.HTTP_400_BAD_REQUEST
+            ),
+            detail=exc.message,
+        ) from exc
+
+    if request.decision == "reject":
+        await db.commit()
+        return ResolveActionResponse(
+            action_id=str(action_id),
+            status="rejected",
+            recipient=row.recipient_display,
+        )
+
+    # Approved → re-verify the locked payload, then execute exactly once.
+    try:
+        verify_committable(row)
+        args = (row.action_manifest or {}).get("args") or {}
+        receipt = await execute_action(
+            db, user_id=user.id, tool_name=row.tool_name, args=args
+        )
+        await mark_executed(db, row=row, receipt=receipt)
+        await db.commit()
+    except (ApprovalError, ActuationError) as exc:
+        await mark_failed(db, row=row, detail=exc.message)
+        await db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=exc.message
+        ) from exc
+
+    return ResolveActionResponse(
+        action_id=str(action_id),
+        status="executed",
+        recipient=row.recipient_display,
+    )
