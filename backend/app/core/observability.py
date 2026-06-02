@@ -3,6 +3,7 @@
 import hashlib
 import json
 import logging
+import os
 import re
 import subprocess
 from contextvars import ContextVar, Token
@@ -316,7 +317,16 @@ def _forward_generic_event_to_ops(sanitized: dict[str, Any]) -> None:
     Reads ONLY the already-sanitized event (this runs at the tail of
     ``_before_send``), and ``notify_ops`` is itself throttled (one per key /
     10 min), PII-safe, off-thread, and never raises.
+
+    OFF by default: forwarding every uncaught error per-event floods a human
+    ops chat (and the throttle is per-process, so it fans out across the api +
+    each celery worker). The group instead gets the deliberately-flagged
+    anomalies (``capture_sentry_anomaly``); deduplicated per-issue crash alerts
+    are delivered via the Sentry integration webhook (``/api/sentry/webhook``).
+    Set ``OPS_FORWARD_GENERIC_ERRORS=1`` to re-enable this raw per-event relay.
     """
+    if os.environ.get("OPS_FORWARD_GENERIC_ERRORS", "0") != "1":
+        return
     try:
         level = str(sanitized.get("level") or "error").lower()
         if level not in ("error", "fatal"):

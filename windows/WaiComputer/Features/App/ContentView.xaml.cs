@@ -1,5 +1,4 @@
 using Microsoft.UI.Xaml.Controls;
-using WaiComputer.Features.Apps;
 using WaiComputer.Features.Companion;
 using WaiComputer.Features.Dictation;
 using WaiComputer.Features.Library;
@@ -48,9 +47,6 @@ public sealed partial class ContentView : UserControl
                     break;
                 case "dictation":
                     ContentFrame.Navigate(typeof(DictationHistoryView));
-                    break;
-                case "apps":
-                    ContentFrame.Navigate(typeof(AppsView));
                     break;
             }
         }

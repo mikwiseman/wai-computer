@@ -1,6 +1,7 @@
 """SQLAlchemy models."""
 
 from app.models.admin import AdminAuditLog, AdminRole, StaffMember
+from app.models.agent import Agent, AgentRun, AgentStep
 from app.models.api_key import ApiKey
 from app.models.base import Base
 from app.models.benchmark import DictationBenchmarkVote
@@ -19,7 +20,9 @@ from app.models.billing import (
 )
 from app.models.commitment import Commitment
 from app.models.companion import ChatMessage, Conversation, MessageCitation
+from app.models.companion_pending_action import CompanionPendingAction
 from app.models.comparison import ComparisonSet
+from app.models.device import Device
 from app.models.dictation import DictationDictionaryWord, DictationEntry
 from app.models.entity import Entity, EntityRelation, RecordingTag, Tag
 from app.models.highlight import Highlight
@@ -32,6 +35,7 @@ from app.models.mcp_oauth import (
     McpOAuthConsent,
     McpOAuthToken,
 )
+from app.models.memory_proposal import MemoryProposal
 from app.models.person import (
     Person,
     PublicVoiceprint,
@@ -62,6 +66,9 @@ from app.models.user_memory import UserMemoryBlock, UserMemoryLogEntry
 __all__ = [
     "Base",
     "ApiKey",
+    "Agent",
+    "AgentRun",
+    "AgentStep",
     "AdminAuditLog",
     "AdminRole",
     "StaffMember",
@@ -93,6 +100,7 @@ __all__ = [
     "ComparisonSet",
     "McpConnection",
     "McpIngestionRun",
+    "MemoryProposal",
     "Person",
     "PublicVoiceprint",
     "RecordingSpeakerEmbedding",
@@ -112,6 +120,8 @@ __all__ = [
     "Conversation",
     "ChatMessage",
     "MessageCitation",
+    "CompanionPendingAction",
+    "Device",
     "DictationEntry",
     "DictationDictionaryWord",
     "McpOAuthClient",

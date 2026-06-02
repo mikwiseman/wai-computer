@@ -49,6 +49,7 @@ const mockDeletePersonalizationTerm = vi.fn();
 const mockImportPersonalizationText = vi.fn();
 const mockImportPersonalizationFile = vi.fn();
 const mockReplace = vi.fn();
+const mockUnifiedSearch = vi.fn();
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ replace: mockReplace }),
@@ -68,6 +69,7 @@ vi.mock("@/lib/api", () => ({
   search: (...args: unknown[]) => mockSearch(...args),
   semanticSearch: (...args: unknown[]) => mockSemanticSearch(...args),
   fulltextSearch: (...args: unknown[]) => mockFulltextSearch(...args),
+  unifiedSearch: (...args: unknown[]) => mockUnifiedSearch(...args),
   changePassword: (...args: unknown[]) => mockChangePassword(...args),
   getSettings: (...args: unknown[]) => mockGetSettings(...args),
   updateSettings: (...args: unknown[]) => mockUpdateSettings(...args),
@@ -505,6 +507,38 @@ describe("DashboardClient", () => {
     await waitFor(() => {
       expect(screen.getByTestId("recording-detail")).toHaveTextContent("(untitled recording)");
     });
+  });
+
+  it("renders unified results across recordings and items in Everything mode", async () => {
+    arrangeHappyPathMocks();
+    const user = userEvent.setup();
+    mockUnifiedSearch.mockResolvedValue({
+      results: [
+        {
+          source_kind: "recording", parent_id: "r1", chunk_id: "c1", title: "Planning",
+          kind: "note", snippet: "roadmap talk", score: 0.9, created_at: null,
+        },
+        {
+          source_kind: "item", parent_id: "i1", chunk_id: "c2", title: "Solar PDF",
+          kind: "pdf", snippet: "solar economics", score: 0.7, created_at: null,
+        },
+      ],
+      total: 2,
+    });
+
+    render(<DashboardClient />);
+    await waitForDashboardReady();
+    await openSearchView(user);
+    await user.selectOptions(screen.getByTestId("search-mode"), "everything");
+    await user.type(screen.getByTestId("search-query"), "solar");
+    await user.click(screen.getByTestId("search-submit"));
+
+    await waitFor(() =>
+      expect(screen.getByTestId("unified-search-results")).toBeInTheDocument(),
+    );
+    expect(screen.getByText("Solar PDF")).toBeInTheDocument();
+    expect(screen.getByText("Planning")).toBeInTheDocument();
+    expect(mockUnifiedSearch).toHaveBeenCalledWith({ q: "solar", limit: 25 });
   });
 
   it("renders search results when results are returned", async () => {

@@ -426,6 +426,30 @@ public struct RecordingDetail: Codable, Identifiable, Sendable {
             highlights: highlights
         )
     }
+
+    public func withTitle(_ newTitle: String) -> RecordingDetail {
+        RecordingDetail(
+            id: id,
+            title: newTitle,
+            type: type,
+            audioUrl: audioUrl,
+            status: status,
+            failureCode: failureCode,
+            failureMessage: failureMessage,
+            uploadedAt: uploadedAt,
+            durationSeconds: durationSeconds,
+            language: language,
+            folderId: folderId,
+            deletedAt: deletedAt,
+            starredAt: starredAt,
+            createdAt: createdAt,
+            segments: segments,
+            summary: summary,
+            summaryGeneration: summaryGeneration,
+            actionItems: actionItems,
+            highlights: highlights
+        )
+    }
 }
 
 /// Request to create a new recording

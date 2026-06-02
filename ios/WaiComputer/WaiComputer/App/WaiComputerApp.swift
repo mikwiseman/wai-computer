@@ -7,6 +7,7 @@ enum IOSScreenshotScreen: String {
     case library
     case detail
     case settings
+    case search
 }
 #endif
 
@@ -194,6 +195,42 @@ enum IOSScreenshotFixtures {
         }()
     )
 
+    static let searchResponse: SearchResponse = {
+        let data = """
+        {
+            "results": [
+                {
+                    "recording_id": "rec-1",
+                    "recording_title": "Weekly Team Standup",
+                    "recording_type": "meeting",
+                    "segment_id": "search-seg-1",
+                    "speaker": "Alex",
+                    "content": "Quick update. Search is shipping this week and beta feedback is strong.",
+                    "start_ms": 0,
+                    "end_ms": 4800,
+                    "score": 0.96
+                },
+                {
+                    "recording_id": "rec-2",
+                    "recording_title": "Product Roadmap Sync",
+                    "recording_type": "meeting",
+                    "segment_id": "search-seg-2",
+                    "speaker": "Sarah",
+                    "content": "We aligned the roadmap around search, capture stability, and the library polish.",
+                    "start_ms": 12000,
+                    "end_ms": 19200,
+                    "score": 0.74
+                }
+            ],
+            "total": 2
+        }
+        """.data(using: .utf8)!
+        guard let response = try? JSONDecoder().decode(SearchResponse.self, from: data) else {
+            fatalError("searchResponse fixture JSON is malformed — fix IOSScreenshotFixtures")
+        }
+        return response
+    }()
+
     static func recording(id: String) -> Recording {
         recordings.first(where: { $0.id == id }) ?? detailRecording
     }
@@ -204,11 +241,29 @@ enum IOSScreenshotFixtures {
 struct WaiComputerApp: App {
     @Environment(\.scenePhase) private var scenePhase
     @StateObject private var appState = AppState()
+    @StateObject private var languageManager = LanguageManager.shared
+    @AppStorage(IOSThemePreferences.appearanceKey) private var appearanceModeRawValue = IOSThemePreferences.defaultAppearance.rawValue
+    @AppStorage(IOSThemePreferences.accentKey) private var accentChoiceRawValue = IOSThemePreferences.defaultAccent.rawValue
+
+    private var appearanceMode: IOSAppearanceMode {
+        IOSAppearanceMode(rawValue: appearanceModeRawValue) ?? IOSThemePreferences.defaultAppearance
+    }
+
+    private var accentChoice: IOSAccentChoice {
+        IOSAccentChoice(rawValue: accentChoiceRawValue) ?? IOSThemePreferences.defaultAccent
+    }
 
     var body: some Scene {
         WindowGroup {
             ContentView()
+                .environment(\.locale, languageManager.preferredLocale)
+                .environmentObject(languageManager)
                 .environmentObject(appState)
+                .preferredColorScheme(appearanceMode.preferredColorScheme)
+                .tint(accentChoice.tintColor)
+                .onOpenURL { url in
+                    Task { await appState.handleIncomingURL(url) }
+                }
                 .onChange(of: scenePhase) { _, newPhase in
                     guard newPhase == .active else { return }
                     Task {
@@ -228,6 +283,8 @@ class AppState: ObservableObject {
     @Published var isLoading = false
     @Published var error: String?
     @Published var hasCompletedOnboarding: Bool = false
+    @Published var magicLinkSent = false
+    @Published var passwordResetSent = false
 
     static let onboardingCompletedKey = "nativeOnboardingV2Completed"
 
@@ -392,6 +449,80 @@ class AppState: ObservableObject {
         isLoading = false
     }
 
+    /// In-app language → backend locale tag ("ru" or "en"). Mirrors macOS.
+    private var authLocale: String {
+        LanguageManager.shared.preferredLocale.language.languageCode?.identifier == "ru" ? "ru" : "en"
+    }
+
+    /// Request a passwordless sign-in link. Mirrors macOS `requestMagicLink`.
+    func requestMagicLink(email: String, acceptedLegalTerms: Bool = false) async {
+        isLoading = true
+        error = nil
+        do {
+            _ = try await apiClient.requestMagicLink(
+                email: email,
+                client: "ios",
+                locale: authLocale,
+                acceptedLegalTerms: acceptedLegalTerms
+            )
+            magicLinkSent = true
+        } catch let apiError as APIError {
+            handleAPIError(apiError)
+        } catch {
+            self.error = error.userFacingMessage(context: .authentication)
+        }
+        isLoading = false
+    }
+
+    /// Request a password-reset email. Mirrors macOS `requestPasswordReset`.
+    func requestPasswordReset(email: String, locale: String?) async {
+        isLoading = true
+        error = nil
+        do {
+            _ = try await apiClient.requestPasswordReset(email: email, locale: locale)
+            passwordResetSent = true
+        } catch let apiError as APIError {
+            handleAPIError(apiError)
+        } catch {
+            self.error = error.userFacingMessage(context: .authentication)
+        }
+        isLoading = false
+    }
+
+    /// Handle the magic-link deep link `waicomputer://auth/verify?token=…`.
+    func handleIncomingURL(_ url: URL) async {
+        guard url.scheme == "waicomputer",
+              url.host == "auth",
+              url.path == "/verify" || url.path == "verify",
+              let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+              let token = components.queryItems?.first(where: { $0.name == "token" })?.value
+        else { return }
+
+        isLoading = true
+        error = nil
+        do {
+            let response = try await apiClient.verifyMagicLink(token: token)
+            await apiClient.setAccessToken(response.accessToken)
+            KeychainHelper.save(key: KeychainHelper.accessTokenKey, value: response.accessToken)
+            if let rt = response.refreshToken {
+                await apiClient.setRefreshToken(rt)
+                KeychainHelper.save(key: KeychainHelper.refreshTokenKey, value: rt)
+            }
+            magicLinkSent = false
+            // A user arriving via magic link has effectively finished onboarding.
+            if !hasCompletedOnboarding {
+                UserDefaults.standard.set(true, forKey: AppState.onboardingCompletedKey)
+                hasCompletedOnboarding = true
+            }
+            await loadCurrentUser()
+        } catch let apiError as APIError {
+            handleAPIError(apiError)
+        } catch {
+            self.error = error.userFacingMessage(context: .authentication)
+        }
+        isLoading = false
+    }
+
     func logout() async {
         let rt = await apiClient.getRefreshToken()
         do {
@@ -481,5 +612,19 @@ class AppState: ObservableObject {
 
     func getAPIClient() -> APIClient {
         return apiClient
+    }
+
+    /// Deterministic search results for DEBUG screenshot / UI-test runs so the
+    /// search surface can be captured without a live backend. Mirrors
+    /// `MacAppState.uiTestSearchResponse(query:)`.
+    func uiTestSearchResponse(query: String) -> SearchResponse? {
+        #if DEBUG
+        guard IOSTestingMode.current.isScreenshot,
+              !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        else { return nil }
+        return IOSScreenshotFixtures.searchResponse
+        #else
+        return nil
+        #endif
     }
 }

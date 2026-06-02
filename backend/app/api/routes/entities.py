@@ -1,5 +1,6 @@
 """Entity routes for knowledge graph."""
 
+from dataclasses import asdict
 from datetime import datetime
 from typing import Literal
 from uuid import UUID
@@ -10,6 +11,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from app.api.deps import CurrentUser, Database
+from app.core.brain_graph import build_entity_page
+from app.core.entity_dedup import find_duplicate_entity_candidates, merge_entities
 from app.models.entity import Entity, EntityRelation
 
 router = APIRouter(prefix="/entities", tags=["entities"])
@@ -73,6 +76,64 @@ async def list_entities(
     ]
 
 
+class MergeCandidateResponse(BaseModel):
+    """A near-duplicate entity pair surfaced for human-confirmed merge."""
+
+    keep_id: str
+    keep_name: str
+    drop_id: str
+    drop_name: str
+    type: str
+    score: float
+    keep_mentions: int
+    drop_mentions: int
+
+
+# NOTE: declared BEFORE `/{entity_id}` so the literal path isn't captured by the
+# UUID path param (which would 422 on "merge-candidates").
+@router.get("/merge-candidates", response_model=list[MergeCandidateResponse])
+async def list_merge_candidates(
+    user: CurrentUser,
+    db: Database,
+    threshold: float = Query(0.86, ge=0.5, le=1.0),
+    limit: int = Query(50, ge=1, le=200),
+) -> list[MergeCandidateResponse]:
+    """Fuzzy same-type near-duplicate entity pairs awaiting human-confirmed merge
+    (never silently merged — exact dups are already deduped at upsert)."""
+    candidates = await find_duplicate_entity_candidates(
+        db, user.id, threshold=threshold, limit=limit
+    )
+    return [MergeCandidateResponse(**asdict(c)) for c in candidates]
+
+
+class MergeEntitiesRequest(BaseModel):
+    keep_id: UUID
+    drop_id: UUID
+
+
+@router.post("/merge", status_code=status.HTTP_200_OK)
+async def merge_entities_route(
+    request: MergeEntitiesRequest,
+    user: CurrentUser,
+    db: Database,
+) -> dict:
+    """Merge the ``drop`` entity into ``keep``: re-point provenance, delete drop."""
+    if request.keep_id == request.drop_id:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="keep_id and drop_id must differ.",
+        )
+    merged = await merge_entities(
+        db, user_id=user.id, keep_id=request.keep_id, drop_id=request.drop_id
+    )
+    if not merged:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="One or both entities not found.",
+        )
+    return {"status": "merged", "keep_id": str(request.keep_id)}
+
+
 @router.get("/{entity_id}", response_model=EntityDetailResponse)
 async def get_entity(
     entity_id: UUID,
@@ -111,6 +172,47 @@ async def get_entity(
             for r in entity.source_relations
         ],
     )
+
+
+class EntitySourceResponse(BaseModel):
+    source_kind: str
+    source_id: str
+    title: str
+    context: str | None
+
+
+class RelatedEntityResponse(BaseModel):
+    id: str
+    name: str
+    type: str
+    shared: int
+
+
+class EntityPageResponse(BaseModel):
+    """The wiki page for one entity: source backlinks + related entities."""
+
+    id: str
+    name: str
+    type: str
+    mention_count: int
+    sources: list[EntitySourceResponse]
+    related: list[RelatedEntityResponse]
+
+
+@router.get("/{entity_id}/page", response_model=EntityPageResponse)
+async def get_entity_page(
+    entity_id: UUID,
+    user: CurrentUser,
+    db: Database,
+) -> EntityPageResponse:
+    """Wiki page for one entity: the items/recordings that mention it (backlinks)
+    + related entities ranked by shared sources."""
+    page = await build_entity_page(db, user.id, entity_id)
+    if page is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Entity not found"
+        )
+    return EntityPageResponse(**asdict(page))
 
 
 class CreateEntityRequest(BaseModel):

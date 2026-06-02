@@ -49,6 +49,11 @@ class Settings(BaseSettings):
     openai_llm_model: str = "gpt-5.5"
     openai_embedding_model: str = "text-embedding-3-large"
     embedding_dimensions: int = 1536
+    # Scanned-PDF OCR via the vision LLM (gpt-5.5 reads PDFs natively — no
+    # rasterizer/Tesseract dependency). Bounded by a page cap so a huge scan
+    # can't run an unbounded inline call. ocr_enabled=False disables it.
+    ocr_enabled: bool = True
+    ocr_max_pages: int = 10
 
     # Deepgram — realtime dictation, live transcription, and batch file STT.
     deepgram_api_key: str = ""
@@ -95,6 +100,18 @@ class Settings(BaseSettings):
     # Clamp channels sent to Deepgram (billed per channel; notes/meetings are mono).
     deepgram_max_channels: int = 2
 
+    # Working-agents guard (Redis-backed, FAIL OPEN — mirrors transcription_guard;
+    # the approval gate is the fail-CLOSED safety net, so the cost guard failing
+    # open is correct). Generous backstops against run-storms/cost-runaway,
+    # INDEPENDENT of billing. Engage `agents:killswitch` in Redis to halt all runs
+    # in one reversible flip. 0 disables a given cap.
+    agents_enabled: bool = True
+    agent_abuse_caps_enabled: bool = True
+    agent_max_concurrent_runs_per_user: int = 3
+    agent_max_concurrent_runs_global: int = 30
+    agent_user_daily_runs_cap: int = 300
+    agent_global_daily_runs_cap: int = 3000
+
     # ElevenLabs — realtime conversational voice agents.
     elevenlabs_api_key: str = ""
     elevenlabs_conversation_agent_id: str = ""
@@ -113,7 +130,12 @@ class Settings(BaseSettings):
     # worker memory, so keep speaker matching off above these explicit caps.
     voice_identification_max_audio_seconds: int = 3600
     voice_identification_max_audio_bytes: int = 30 * 1024 * 1024
-    recording_processing_stale_after_minutes: int = 15
+    # Stale-processing reclaim cutoff. MUST stay above the recording
+    # transcription task hard time_limit (21300s = 355 min) plus queue/upload
+    # headroom — otherwise the startup + every-minute recovery sweep force-FAILS
+    # an in-flight or queued transcription (e.g. an API restart on deploy killing
+    # a live ~5.9h job, or a recording waiting behind one on the solo worker).
+    recording_processing_stale_after_minutes: int = 480
 
     # Telegram bot integration. Token and webhook secret are backend-only.
     telegram_bot_token: str = ""
@@ -133,6 +155,10 @@ class Settings(BaseSettings):
     sentry_dsn: str = ""
     sentry_traces_sample_rate: float = 0.1
     sentry_profiles_sample_rate: float = 0.1
+    # Shared secret (Client Secret of the Sentry internal integration) used to
+    # verify the HMAC signature on inbound client-app Sentry webhooks. Empty =
+    # the relay endpoint is disabled (returns 503).
+    sentry_webhook_secret: str = ""
 
     # Observability
     log_format: str = "json"

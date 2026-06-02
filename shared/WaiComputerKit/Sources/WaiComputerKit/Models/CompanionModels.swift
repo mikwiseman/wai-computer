@@ -234,6 +234,11 @@ public enum CompanionStreamEvent: Sendable, Equatable {
     case toolResult(callId: String, summary: String)
     case token(text: String)
     case citation(CompanionStreamCitation)
+    case memoryUpdated(block: String, operation: String)
+    case actionProposed(CompanionActionProposal)
+    case actionResult(actionId: String, status: String, detail: String, undoToken: String?)
+    case narration(text: String)
+    case desktopAction(actionId: String, command: CompanionJSONValue, deviceTarget: String?)
     case done(messageId: String, model: String, latencyMs: Int)
     case error(code: String, message: String)
 }
@@ -246,4 +251,31 @@ public struct CompanionStreamCitation: Sendable, Equatable {
     public let endMs: Int?
     public let spanStart: Int
     public let spanEnd: Int
+}
+
+/// A mutating action (send / external write / desktop action) proposed by the
+/// brain and awaiting the user's explicit approval. The side effect has not run.
+public struct CompanionActionProposal: Sendable, Equatable {
+    public let actionId: String
+    public let kind: String          // send | mutate | desktop_action
+    public let tool: String
+    public let preview: String       // privacy-safe human-readable dry-run
+    public let expiresAt: String     // ISO timestamp; timeout == deny
+    public let recipient: String?    // resolved display name, never a raw id
+
+    public init(
+        actionId: String,
+        kind: String,
+        tool: String,
+        preview: String,
+        expiresAt: String,
+        recipient: String?
+    ) {
+        self.actionId = actionId
+        self.kind = kind
+        self.tool = tool
+        self.preview = preview
+        self.expiresAt = expiresAt
+        self.recipient = recipient
+    }
 }

@@ -8,6 +8,7 @@ from sqlalchemy import select
 from app.core.item_ingest import ingest_item
 from app.core.item_summary import generate_item_summary
 from app.core.summarizer import KeyMoment, SummaryResult
+from app.models.entity import Entity, EntityMention
 from app.models.item import ItemSummary
 from app.models.user import User
 
@@ -79,6 +80,29 @@ async def test_generate_item_summary_persists_row_and_table(db_session) -> None:
         .all()
     )
     assert len(rows) == 1
+
+    # Phase 2: the item's people + topics seeded graph entities + mentions
+    # (Alice -> person, energy -> topic) at zero extra LLM cost.
+    entities = (
+        (await db_session.execute(select(Entity).where(Entity.user_id == user.id)))
+        .scalars()
+        .all()
+    )
+    assert {(e.type, e.name) for e in entities} == {
+        ("person", "Alice"),
+        ("topic", "energy"),
+    }
+    mentions = (
+        (
+            await db_session.execute(
+                select(EntityMention).where(EntityMention.source_id == item.id)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert len(mentions) == 2
+    assert all(m.source_kind == "item" for m in mentions)
 
 
 async def test_generate_item_summary_upserts(db_session) -> None:

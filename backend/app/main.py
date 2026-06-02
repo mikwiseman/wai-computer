@@ -17,6 +17,7 @@ from app.api.routes import (
     api_keys,
     auth,
     benchmarks,
+    brain,
     companion,
     comparisons,
     dictation,
@@ -25,16 +26,20 @@ from app.api.routes import (
     items,
     mcp_connections,
     mcp_oauth,
+    memory_proposals,
     people,
     personalization,
     realtime_transcription,
     realtime_voice,
     recordings,
     search,
+    sentry_webhook,
     telegram,
     voice_enrollment,
 )
+from app.api.routes import devices as devices_routes
 from app.api.routes import settings as settings_routes
+from app.api.routes import voice as voice_routes
 from app.billing.router import router as billing_router
 from app.billing.webhooks import router as billing_webhooks_router
 from app.config import get_settings
@@ -183,6 +188,7 @@ app.include_router(benchmarks.router, prefix="/api")
 app.include_router(recordings.router, prefix="/api")
 app.include_router(search.router, prefix="/api")
 app.include_router(telegram.router, prefix="/api")
+app.include_router(sentry_webhook.router, prefix="/api")
 app.include_router(settings_routes.router, prefix="/api")
 app.include_router(action_items.router, prefix="/api")
 app.include_router(admin.router, prefix="/api")
@@ -191,14 +197,18 @@ app.include_router(folders.router, prefix="/api")
 app.include_router(items.router, prefix="/api")
 app.include_router(comparisons.router, prefix="/api")
 app.include_router(mcp_connections.router, prefix="/api")
+app.include_router(memory_proposals.router, prefix="/api")
+app.include_router(brain.router, prefix="/api")
 app.include_router(people.router, prefix="/api")
 app.include_router(personalization.router, prefix="/api")
 app.include_router(voice_enrollment.router, prefix="/api")
 app.include_router(mcp_oauth.router, prefix="/api")
 app.include_router(companion.router, prefix="/api")
+app.include_router(devices_routes.router, prefix="/api")
 app.include_router(dictation.router, prefix="/api")
 app.include_router(realtime_transcription.router, prefix="/api")
 app.include_router(realtime_voice.router, prefix="/api")
+app.include_router(voice_routes.router, prefix="/api")
 app.include_router(billing_router, prefix="/api")
 app.include_router(billing_webhooks_router, prefix="/api")
 

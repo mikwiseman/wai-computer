@@ -96,3 +96,15 @@ def test_interrupted_failure_message_localizes_ru_and_en():
     assert _interrupted_failure_message("en") == INTERRUPTED_PROCESSING_FAILURE_MESSAGES["en"]
     assert _interrupted_failure_message(None) == INTERRUPTED_PROCESSING_FAILURE_MESSAGES["en"]
     assert _interrupted_failure_message("") == INTERRUPTED_PROCESSING_FAILURE_MESSAGES["en"]
+
+
+def test_stale_cutoff_stays_above_recording_task_hard_limit():
+    """The reclaim cutoff must exceed the recording transcription task's hard
+    time_limit (21300s; see app/tasks/recording_audio_processing.py). Otherwise
+    the startup + every-minute recovery sweep force-fails an in-flight or queued
+    transcription — e.g. an API restart on deploy killing a live ~5.9h job.
+    """
+    from app.config import get_settings
+
+    cutoff_seconds = get_settings().recording_processing_stale_after_minutes * 60
+    assert cutoff_seconds > 21300

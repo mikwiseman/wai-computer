@@ -739,8 +739,10 @@ async def test_admin_observability_snapshot_flags_recording_pipeline_risks(
         type="meeting",
         status="processing",
         duration_seconds=900,
-        created_at=now - timedelta(minutes=45),
-        updated_at=now - timedelta(minutes=40),
+        # Stuck = processing longer than recording_processing_stale_after_minutes
+        # (480 since f97b5bc6 raised it from 15). Still inside the 24h window.
+        created_at=now - timedelta(hours=11),
+        updated_at=now - timedelta(hours=10),
     )
     failed = Recording(
         user_id=user_id,

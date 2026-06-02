@@ -11,6 +11,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.core.entity_graph import seed_entities_from_summary
 from app.core.personalization import summary_personalization_instructions
 from app.core.summarizer import SummaryResult, resolve_highlight_timestamps, summarize_transcript
 from app.models.highlight import Highlight
@@ -189,6 +190,17 @@ async def apply_summary_result(
     await _add_summary_highlights(db, recording=recording, summary_result=summary_result)
     recording.updated_at = datetime.now(timezone.utc)
     await db.flush()
+
+    # Seed the knowledge graph from the summary's people + topics (zero extra
+    # LLM cost) so recordings are first-class graph citizens alongside items.
+    await seed_entities_from_summary(
+        db,
+        recording.user_id,
+        source_kind="recording",
+        source_id=recording.id,
+        people=summary_result.people_mentioned,
+        topics=summary_result.topics,
+    )
     return summary
 
 

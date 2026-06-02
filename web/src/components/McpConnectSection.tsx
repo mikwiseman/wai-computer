@@ -3,6 +3,7 @@
 import { useState } from "react";
 
 import { McpConnectionsList } from "./McpConnectionsList";
+import { McpSourcesPanel } from "./McpSourcesPanel";
 
 const MCP_ENDPOINT_URL = "https://wai.computer/mcp";
 
@@ -198,6 +199,7 @@ export function McpConnectSection() {
       </div>
 
       <McpConnectionsList />
+      <McpSourcesPanel />
     </div>
   );
 }

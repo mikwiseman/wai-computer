@@ -50,5 +50,16 @@
 	<string>Wai uses the microphone for notes, meetings, and realtime voice interaction.</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>is.waiwai.computer.auth</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>waicomputer</string>
+			</array>
+		</dict>
+	</array>
 </dict>
 </plist>

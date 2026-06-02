@@ -37,24 +37,38 @@ struct ContentView: View {
 }
 
 struct MainTabView: View {
+    @EnvironmentObject var languageManager: LanguageManager
+    @EnvironmentObject var appState: AppState
     @AppStorage("selectedTab") private var selectedTab = 0
     @StateObject private var recordingViewModel = RecordingViewModel()
     @State private var recoveryNotice: String?
     @State private var recoveryNoticeDismissTask: Task<Void, Never>?
 
+    private func t(_ english: String, _ russian: String) -> String {
+        OnboardingL10n.text(english, russian, language: languageManager.current)
+    }
+
     var body: some View {
         TabView(selection: $selectedTab) {
             RecordingView()
                 .tabItem {
-                    Label("Record", systemImage: "mic.circle.fill")
+                    Label(t("Record", "Запись"), systemImage: "mic.circle.fill")
                 }
                 .tag(0)
 
             LibraryView()
                 .tabItem {
-                    Label("Library", systemImage: "folder.fill")
+                    Label(t("Library", "Библиотека"), systemImage: "folder.fill")
                 }
                 .tag(1)
+
+            // Brain shows 3rd but keeps tag(4) so existing persisted selections
+            // (Wai=2, Settings=3) are NOT disrupted for users updating from build 42.
+            SecondBrainView(apiClient: appState.getAPIClient())
+                .tabItem {
+                    Label(t("Brain", "Мозг"), systemImage: "brain")
+                }
+                .tag(4)
 
             WaiHomeView()
                 .tabItem {
@@ -64,7 +78,7 @@ struct MainTabView: View {
 
             SettingsView()
                 .tabItem {
-                    Label("Settings", systemImage: "gear")
+                    Label(t("Settings", "Настройки"), systemImage: "gear")
                 }
                 .tag(3)
         }
@@ -79,8 +93,9 @@ struct MainTabView: View {
             }
         }
         .onAppear {
-            // Clamp into valid range (0 Record / 1 Library / 2 Wai / 3 Settings)
-            if !(0...3).contains(selectedTab) { selectedTab = 0 }
+            // Clamp into valid range. Tags: 0 Record / 1 Library / 2 Wai / 3 Settings / 4 Brain
+            // (Brain shows 3rd but tags last to preserve existing persisted selections).
+            if !(0...4).contains(selectedTab) { selectedTab = 0 }
             // Allow env override for screenshots
             if let tab = ProcessInfo.processInfo.environment["WAICOMPUTER_TAB"],
                let n = Int(tab) { selectedTab = n }
@@ -91,6 +106,19 @@ struct MainTabView: View {
             else { return }
             recoveryNotice = message
             scheduleRecoveryNoticeDismiss()
+        }
+        // Deep-link section navigation, mirroring MacContentView.swift:496-507.
+        // The target is carried as `object` to match the macOS poster contract
+        // (WaiComputerMacApp.swift:207-236). Only targets backed by an iOS tab
+        // are handled; others are ignored rather than guessed at.
+        .onReceive(NotificationCenter.default.publisher(for: .init("navigateTo"))) { notification in
+            guard let target = notification.object as? String else { return }
+            switch target {
+            case "allRecordings": selectedTab = 1
+            case "wai": selectedTab = 2
+            case "settings": selectedTab = 3
+            default: break
+            }
         }
     }
 

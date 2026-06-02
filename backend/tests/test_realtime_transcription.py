@@ -53,7 +53,7 @@ async def test_create_realtime_transcription_session_uses_deepgram_recording_def
     assert "smart_format=true" in provider_url
     assert "interim_results=true" in provider_url
     assert "utterances=true" in provider_url
-    assert "endpointing=100" in provider_url
+    assert "endpointing=300" in provider_url
 
 
 @pytest.mark.asyncio
@@ -118,6 +118,7 @@ async def test_create_dictation_session_adds_english_dictation_params():
     assert "dictation=true" in provider_url
     assert "punctuate=true" in provider_url
     assert "numerals=true" in provider_url
+    assert "smart_format=true" not in provider_url
     assert "utterances=true" not in provider_url
 
 
@@ -142,9 +143,10 @@ async def test_create_dictation_session_skips_english_only_dictation_for_multi()
         model=claims.model,
     )
     assert "dictation=true" not in provider_url
-    assert "punctuate=true" not in provider_url
+    assert "punctuate=true" in provider_url
     assert "numerals=true" in provider_url
-    assert "endpointing=100" in provider_url
+    assert "smart_format=true" not in provider_url
+    assert "endpointing=300" in provider_url
 
 
 @pytest.mark.asyncio

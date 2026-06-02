@@ -48,7 +48,7 @@ def test_build_realtime_websocket_url_includes_live_best_practice_params() -> No
     assert "interim_results=true" in url
     assert "smart_format=true" in url
     assert "utterance_end_ms=1000" in url
-    assert "endpointing=100" in url
+    assert "endpointing=300" in url
     assert "utterances=true" in url
     assert "diarize=true" in url
 
@@ -104,9 +104,36 @@ def test_build_realtime_websocket_url_limits_dictation_to_english() -> None:
     assert "dictation=true" in english
     assert "punctuate=true" in english
     assert "numerals=true" in english
-    assert "dictation=true" not in russian
-    assert "punctuate=true" not in russian
+    assert "dictation=true" not in russian  # spoken-punctuation cmds: English only
+    assert "punctuate=true" in russian  # punctuation: all dictation languages
     assert "numerals=true" in russian
+
+
+def test_build_realtime_websocket_url_dictation_uses_numerals_without_smart_format() -> None:
+    """Dictation must render every spoken number as a digit (десять -> 10).
+
+    Deepgram's numerals feature only converts small numbers when smart_format is
+    OFF; smart_format's readability layer overrides it and leaves them as words
+    ("десять"). Dictation therefore drops smart_format (numerals + punctuate),
+    while recording keeps smart_format for readable meeting transcripts.
+    """
+    dictation = build_realtime_websocket_url(
+        language="multi",
+        channels=1,
+        purpose="dictation",
+    )
+    recording = build_realtime_websocket_url(
+        language="multi",
+        channels=1,
+        purpose="recording",
+    )
+
+    assert "numerals=true" in dictation
+    assert "punctuate=true" in dictation
+    assert "smart_format=true" not in dictation
+    # Recording keeps smart_format (readability) and still gets numerals.
+    assert "smart_format=true" in recording
+    assert "numerals=true" in recording
 
 
 def test_require_deepgram_api_key_returns_configured_key() -> None:
