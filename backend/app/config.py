@@ -95,6 +95,18 @@ class Settings(BaseSettings):
     # Clamp channels sent to Deepgram (billed per channel; notes/meetings are mono).
     deepgram_max_channels: int = 2
 
+    # Working-agents guard (Redis-backed, FAIL OPEN — mirrors transcription_guard;
+    # the approval gate is the fail-CLOSED safety net, so the cost guard failing
+    # open is correct). Generous backstops against run-storms/cost-runaway,
+    # INDEPENDENT of billing. Engage `agents:killswitch` in Redis to halt all runs
+    # in one reversible flip. 0 disables a given cap.
+    agents_enabled: bool = True
+    agent_abuse_caps_enabled: bool = True
+    agent_max_concurrent_runs_per_user: int = 3
+    agent_max_concurrent_runs_global: int = 30
+    agent_user_daily_runs_cap: int = 300
+    agent_global_daily_runs_cap: int = 3000
+
     # ElevenLabs — realtime conversational voice agents.
     elevenlabs_api_key: str = ""
     elevenlabs_conversation_agent_id: str = ""
