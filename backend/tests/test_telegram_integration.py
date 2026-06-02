@@ -31,6 +31,7 @@ from app.core.telegram_client import (
 from app.core.transcript_utils import TranscriptResult
 from app.models.billing import UsageWeek
 from app.models.companion import Conversation
+from app.models.item import Item, ItemSummary
 from app.models.recording import ActionItem, Highlight, Recording, RecordingStatus, Segment, Summary
 from app.models.telegram import (
     TelegramAccount,
@@ -150,6 +151,27 @@ def test_extract_media_accepts_voice_video_and_audio_documents():
     )
     assert (
         telegram_routes._extract_media({"document": {"file_id": "doc-id", "file_name": "x.pdf"}})
+        is None
+    )
+
+
+def test_extract_document_accepts_supported_material_documents():
+    pdf = telegram_routes._extract_document(
+        {"document": {"file_id": "doc-id", "file_name": "x.pdf", "mime_type": "application/pdf"}}
+    )
+    assert pdf is not None
+    assert pdf["kind"] == "document"
+    assert pdf["file_name"] == "x.pdf"
+
+    html = telegram_routes._extract_document(
+        {"document": {"file_id": "doc-id", "file_name": "report.html", "mime_type": "text/html"}}
+    )
+    assert html is not None
+
+    assert (
+        telegram_routes._extract_document(
+            {"document": {"file_id": "doc-id", "file_name": "archive.zip"}}
+        )
         is None
     )
 
@@ -670,6 +692,55 @@ async def test_handle_update_routes_obligation_question_to_companion(
 
 
 @pytest.mark.asyncio
+async def test_handle_update_rejects_unsupported_document_even_with_caption(
+    db_session: AsyncSession,
+    monkeypatch,
+):
+    user = await _user(db_session, "telegram-unsupported-document@example.com")
+    db_session.add(TelegramAccount(user_id=user.id, telegram_user_id=63, telegram_chat_id=63))
+    db_session.add(
+        TelegramUpdate(
+            update_id=208,
+            status="accepted",
+            received_at=datetime.now(timezone.utc),
+        )
+    )
+    await db_session.commit()
+    capture = _TelegramCapture()
+
+    @asynccontextmanager
+    async def fake_db_context():
+        yield db_session
+
+    async def fail_run_turn(*args, **kwargs):
+        raise AssertionError("unsupported document captions must not route to Wai chat")
+
+    monkeypatch.setattr(telegram_routes, "TelegramBotClient", lambda: capture)
+    monkeypatch.setattr(telegram_routes, "get_db_context", fake_db_context)
+    monkeypatch.setattr(telegram_routes, "run_turn", fail_run_turn)
+
+    await telegram_routes._handle_update(
+        {
+            "update_id": 208,
+            "message": {
+                "message_id": 208,
+                "from": {"id": 63, "username": "mik"},
+                "chat": {"id": 63, "type": "private"},
+                "caption": "summarize this",
+                "document": {
+                    "file_id": "zip-id",
+                    "file_name": "archive.zip",
+                    "mime_type": "application/zip",
+                },
+            },
+        }
+    )
+
+    assert "Не могу извлечь текст" in capture.messages[-1]["text"]
+    assert (await db_session.get(TelegramUpdate, 208)).status == "completed"
+
+
+@pytest.mark.asyncio
 async def test_handle_update_rejects_private_data_in_group_chat(
     db_session: AsyncSession,
     monkeypatch,
@@ -953,6 +1024,82 @@ async def test_handle_media_message_imports_and_replies(
     assert "Первый пункт" in capture.messages[-1]["text"]
     assert "Саммари" not in capture.messages[-1]["text"]
     assert "Расшифровка" not in capture.messages[-1]["text"]
+
+
+@pytest.mark.asyncio
+async def test_handle_document_message_imports_html_material_and_replies(
+    db_session: AsyncSession,
+    monkeypatch,
+):
+    user = await _user(db_session, "telegram-doc@example.com")
+    account = TelegramAccount(user_id=user.id, telegram_user_id=54, telegram_chat_id=54)
+    db_session.add(account)
+    await db_session.commit()
+    capture = _TelegramCapture()
+    capture.data = (
+        b"<html><head><title>STT Benchmarks</title></head>"
+        b"<body><h1>STT Benchmarks</h1>"
+        b"<p>Deepgram and Whisper latency comparison.</p></body></html>"
+    )
+    capture.file = TelegramFile("file-id", "documents/stt-benchmarks-2026.html", len(capture.data))
+
+    async def fake_embeddings(texts: list[str]) -> list[list[float]]:
+        return [[0.03] * 1536 for _ in texts]
+
+    async def fake_summarize(text, **kwargs):
+        assert kwargs["content_kind"] == "article"
+        assert "Deepgram and Whisper" in text
+        return SummaryResult(
+            title="STT Benchmarks 2026",
+            summary="Сравнение моделей распознавания речи.",
+            key_points=["Deepgram and Whisper are compared"],
+            decisions=[],
+            action_items=[],
+            topics=["speech recognition"],
+            people_mentioned=[],
+            follow_up_questions=[],
+            sentiment="neutral",
+            highlights=[],
+        )
+
+    async def fake_moments(text, **kwargs):
+        return []
+
+    monkeypatch.setattr("app.core.item_ingest.generate_embeddings", fake_embeddings)
+    monkeypatch.setattr("app.core.item_summary.summarize_content", fake_summarize)
+    monkeypatch.setattr("app.core.item_summary.extract_key_moments", fake_moments)
+
+    await telegram_routes._handle_document_message(
+        db_session,
+        capture,
+        message={"message_id": 23, "chat": {"id": 54}},
+        account=account,
+        document={
+            "kind": "document",
+            "file_id": "file-id",
+            "file_unique_id": "unique-html",
+            "file_name": "stt-benchmarks-2026.html",
+            "mime_type": "text/html",
+            "file_size": len(capture.data),
+        },
+    )
+
+    item = (
+        await db_session.execute(
+            select(Item).where(Item.user_id == user.id, Item.source == "telegram")
+        )
+    ).scalar_one()
+    assert item.kind == "article"
+    assert item.title == "stt-benchmarks-2026"
+    assert item.source_ref == "unique-html"
+    summary = (
+        await db_session.execute(select(ItemSummary).where(ItemSummary.item_id == item.id))
+    ).scalar_one()
+    assert summary.summary == "Сравнение моделей распознавания речи."
+    assert "Извлекаю текст" in capture.messages[0]["text"]
+    assert capture.deleted_messages == [{"chat_id": 54, "message_id": 1}]
+    assert "<b>stt-benchmarks-2026</b>" in capture.messages[-1]["text"]
+    assert "Сравнение моделей" in capture.messages[-1]["text"]
 
 
 @pytest.mark.asyncio

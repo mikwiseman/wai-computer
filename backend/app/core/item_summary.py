@@ -22,6 +22,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.entity_graph import seed_entities_from_summary
+from app.core.item_titles import is_placeholder_title
 from app.core.summarizer import (
     KeyMoment,
     SummaryResult,
@@ -94,7 +95,7 @@ async def generate_item_summary(
     summary.key_moments = [asdict(m) for m in moments]
 
     # Fill in a title if the item didn't have one yet.
-    if not (item.title or "").strip() and summary_result.title:
+    if is_placeholder_title(item.title) and summary_result.title:
         item.title = summary_result.title[:500]
 
     await db.flush()

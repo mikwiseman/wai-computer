@@ -20,11 +20,19 @@ struct MacItemDetailView: View {
             VStack(alignment: .leading, spacing: Spacing.lg) {
                 header
 
-                if item.state == "needs_input", item.summary?.summary == nil {
-                    Text(t("Couldn't read this automatically — share the file or paste the text.",
-                           "Не удалось прочитать автоматически — поделитесь файлом или вставьте текст."))
-                        .font(Typography.bodySmall)
-                        .foregroundStyle(Palette.textSecondary)
+                if let processingText = processingText {
+                    HStack(alignment: .top, spacing: Spacing.sm) {
+                        if item.status == "fetching" || item.status == "summarizing" {
+                            ProgressView().controlSize(.small)
+                        } else {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .foregroundStyle(.red)
+                        }
+                        Text(processingText)
+                            .font(Typography.bodySmall)
+                            .foregroundStyle(item.status == "failed" ? .red : Palette.textSecondary)
+                            .textSelection(.enabled)
+                    }
                 }
 
                 if let summary = item.summary?.summary {
@@ -65,9 +73,14 @@ struct MacItemDetailView: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: Spacing.xs) {
             HStack {
-                Text(item.kind.uppercased())
+                Text(kindLabel(item.kind))
                     .font(Typography.labelSmall)
                     .foregroundStyle(Palette.textTertiary)
+                if let label = statusLabel(item.status) {
+                    Text(label)
+                        .font(Typography.labelSmall)
+                        .foregroundStyle(statusColor(item.status))
+                }
                 Spacer()
                 Button(role: .destructive, action: onDelete) {
                     Image(systemName: "trash")
@@ -75,7 +88,7 @@ struct MacItemDetailView: View {
                 .buttonStyle(.borderless)
                 .help(t("Delete", "Удалить"))
             }
-            Text(item.title ?? t("Untitled", "Без названия"))
+            Text(displayTitle)
                 .font(Typography.displaySmall)
                 .textSelection(.enabled)
             if let url = item.url {
@@ -100,5 +113,74 @@ struct MacItemDetailView: View {
             }
         }
         .padding(.vertical, Spacing.xxs)
+    }
+
+    private var displayTitle: String {
+        let trimmed = (item.title ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        if !isPlaceholderTitle(trimmed) {
+            return trimmed
+        }
+        return item.url ?? t("Untitled", "Без названия")
+    }
+
+    private func isPlaceholderTitle(_ value: String) -> Bool {
+        let normalized = value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return normalized.isEmpty
+            || normalized == "untitled"
+            || normalized == "[untitled]"
+            || normalized == "без названия"
+            || normalized == "[без названия]"
+    }
+
+    private var processingText: String? {
+        if item.status == "fetching" {
+            return t("Fetching the source text…", "Получаем текст источника…")
+        }
+        if item.status == "summarizing", item.summary?.summary == nil {
+            return t(
+                "Extracted text is being summarized. This material will update automatically.",
+                "Текст извлечён, идёт краткое содержание. Материал обновится автоматически."
+            )
+        }
+        if item.status == "needs_input" {
+            return item.error?.message ?? t(
+                "Couldn't read this automatically — share the file or paste the text.",
+                "Не удалось прочитать автоматически — поделитесь файлом или вставьте текст."
+            )
+        }
+        if item.status == "failed" {
+            return item.error?.message ?? t(
+                "Couldn't process this material.",
+                "Не удалось обработать этот материал."
+            )
+        }
+        return nil
+    }
+
+    private func kindLabel(_ kind: String) -> String {
+        switch kind {
+        case "pdf": return "PDF"
+        case "doc", "docx", "document": return t("DOC", "ДОК")
+        case "presentation": return t("SLIDES", "СЛАЙДЫ")
+        case "spreadsheet": return t("SHEET", "ТАБЛИЦА")
+        default: return kind.uppercased()
+        }
+    }
+
+    private func statusLabel(_ status: String) -> String? {
+        switch status {
+        case "fetching": return t("fetching…", "загрузка…")
+        case "summarizing": return t("summarizing…", "обработка…")
+        case "needs_input": return t("needs input", "нужен текст")
+        case "failed": return t("failed", "ошибка")
+        default: return nil
+        }
+    }
+
+    private func statusColor(_ status: String) -> Color {
+        switch status {
+        case "needs_input", "failed": return .red
+        default: return Palette.accent
+        }
     }
 }

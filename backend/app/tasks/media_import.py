@@ -3,8 +3,8 @@
 ``POST /items/upload`` stages an audio/video file to disk and enqueues this
 task. We read the staged bytes and run the full recording pipeline (video
 normalisation + transcription) via :func:`import_media_as_recording`, then
-delete the staged original. Documents (PDF/text) take the synchronous Item
-path instead; only media — which needs ffmpeg + Deepgram — comes here.
+delete the staged original. Documents take the synchronous Item path instead;
+only media — which needs ffmpeg + Deepgram — comes here.
 
 Staged-file lifecycle: keep it on a *retryable* failure (so the retry can
 re-read it); delete it on success or on a permanent failure (bad/corrupt file).

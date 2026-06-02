@@ -21,6 +21,8 @@ function detail(overrides = {}) {
     body: "...",
     occurred_at: null,
     state: "raw",
+    status: "ready",
+    error: null,
     folder_id: null,
     created_at: "2026-06-01T00:00:00Z",
     summary: {
@@ -65,6 +67,15 @@ describe("ItemDetail", () => {
       expect(screen.getByText("This video has no transcript.")).toBeInTheDocument(),
     );
     expect(screen.getByTestId("item-recover-input")).toBeInTheDocument();
+  });
+
+  it("does not render placeholder titles as real titles", async () => {
+    mockGetItem.mockResolvedValue(detail({ title: "[Untitled]", url: "https://x/source.pdf" }));
+    render(<ItemDetail itemId="i1" />);
+    await waitFor(() =>
+      expect(screen.getByRole("heading", { name: "https://x/source.pdf" })).toBeInTheDocument(),
+    );
+    expect(screen.queryByRole("heading", { name: "[Untitled]" })).not.toBeInTheDocument();
   });
 
   it("reprocesses a needs_input item with pasted text", async () => {

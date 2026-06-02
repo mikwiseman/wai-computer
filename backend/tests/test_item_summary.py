@@ -105,6 +105,31 @@ async def test_generate_item_summary_persists_row_and_table(db_session) -> None:
     assert all(m.source_kind == "item" for m in mentions)
 
 
+async def test_generate_item_summary_replaces_placeholder_title(db_session) -> None:
+    user = await _make_user(db_session)
+    item, _ = await ingest_item(
+        db_session,
+        user.id,
+        source="upload",
+        kind="pdf",
+        title="[Untitled]",
+        body="Document body that needs a generated title.",
+        embedder=_fake_embedder,
+    )
+
+    async def fake_summarizer(text, **kwargs):
+        return _fake_summary()
+
+    async def fake_moments(text, **kwargs):
+        return []
+
+    await generate_item_summary(
+        db_session, item, summarizer=fake_summarizer, moment_extractor=fake_moments
+    )
+
+    assert item.title == "Generated Title"
+
+
 async def test_generate_item_summary_upserts(db_session) -> None:
     user = await _make_user(db_session)
     item, _ = await ingest_item(
