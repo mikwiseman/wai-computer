@@ -47,6 +47,9 @@ class ComparisonSet(Base, UUIDMixin, TimestampMixin):
     columns: Mapped[list | None] = mapped_column(JSONB)
     rows: Mapped[list | None] = mapped_column(JSONB)
     schema_rationale: Mapped[str | None] = mapped_column(Text)
+    # The user's comparison framing ("by price", "which is healthier"), used by
+    # schema induction; persisted so a rebuild can re-use it.
+    intent: Mapped[str | None] = mapped_column(String(500))
     # generating -> ready | failed
     status: Mapped[str] = mapped_column(
         String(20), nullable=False, default="ready", server_default="ready"

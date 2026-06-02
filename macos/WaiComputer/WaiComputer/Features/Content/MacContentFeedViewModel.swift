@@ -14,6 +14,8 @@ final class MacContentFeedViewModel: ObservableObject {
     @Published var isLoading = false
     @Published var isAdding = false
     @Published var errorMessage: String?
+    // Non-error notice (e.g. an audio/video upload now transcribing in the background).
+    @Published var statusMessage: String?
 
     // Multi-select -> compare
     @Published var compareSelection: Set<String> = []
@@ -96,6 +98,61 @@ final class MacContentFeedViewModel: ObservableObject {
             await load()
             selectedId = created.id
             await selectItem(created.id)
+            // Poll in the background so the Add button frees up immediately
+            // while the summary + key-moments land (honors the doc comment).
+            let createdId = created.id
+            Task { [weak self] in await self?.pollUntilProcessed(createdId) }
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    /// After a create, poll the new item until its summary lands (or it needs
+    /// input / failed) so the "add → instant summary" payoff surfaces without a
+    /// manual refresh. Capped at ~60s; bails if the user selects another item.
+    private func pollUntilProcessed(_ id: String) async {
+        for _ in 0..<30 {
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            guard selectedId == id else { return }
+            guard let item = try? await apiClient.getItem(id: id) else { continue }
+            selectedItem = item
+            if item.summary?.summary != nil
+                || item.state == "needs_input"
+                || item.state == "failed" {
+                await load()
+                return
+            }
+        }
+        await load()
+    }
+
+    func uploadFile(_ url: URL) async {
+        guard !isAdding else { return }
+        isAdding = true
+        defer { isAdding = false }
+        // App Sandbox is off on macOS, but honor the security scope if present
+        // (e.g. a file dropped/imported with a scoped URL).
+        let scoped = url.startAccessingSecurityScopedResource()
+        defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+        do {
+            let outcome = try await apiClient.uploadItem(fileURL: url)
+            switch outcome {
+            case .recording:
+                // Audio/video → background transcription; it surfaces under Recordings.
+                errorMessage = nil
+                statusMessage = OnboardingL10n.text(
+                    "Transcribing — it'll appear in your recordings shortly.",
+                    "Расшифровываем — скоро появится в ваших записях.",
+                    language: LanguageManager.shared.current
+                )
+            case .item(let created):
+                statusMessage = nil
+                await load()
+                selectedId = created.id
+                await selectItem(created.id)
+                let createdId = created.id
+                Task { [weak self] in await self?.pollUntilProcessed(createdId) }
+            }
         } catch {
             errorMessage = error.localizedDescription
         }

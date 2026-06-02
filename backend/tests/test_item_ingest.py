@@ -119,3 +119,37 @@ async def test_ingest_without_embedding(db_session) -> None:
     )
     assert len(chunks) == 1
     assert chunks[0].embedding is None
+
+
+async def test_ingest_item_race_returns_existing_on_integrity_error(db_session) -> None:
+    """Concurrent duplicate: the dedup SELECT misses but the INSERT collides on
+    (user_id, content_hash). ingest must return the existing row, never a 500."""
+    user = await _make_user(db_session)
+    item1, created1 = await ingest_item(
+        db_session, user.id, source="paste", body="same body here", embed=False,
+    )
+    assert created1 is True
+
+    real_execute = db_session.execute
+    calls = {"n": 0}
+
+    class _Empty:
+        def scalar_one_or_none(self):
+            return None
+
+    async def fake_execute(stmt, *args, **kwargs):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return _Empty()  # hide the existing row from the dedup SELECT
+        return await real_execute(stmt, *args, **kwargs)
+
+    db_session.execute = fake_execute  # type: ignore[assignment]
+    try:
+        item2, created2 = await ingest_item(
+            db_session, user.id, source="paste", body="same body here", embed=False,
+        )
+    finally:
+        db_session.execute = real_execute  # type: ignore[assignment]
+
+    assert created2 is False
+    assert item2.id == item1.id

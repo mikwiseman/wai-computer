@@ -49,6 +49,11 @@ class Settings(BaseSettings):
     openai_llm_model: str = "gpt-5.5"
     openai_embedding_model: str = "text-embedding-3-large"
     embedding_dimensions: int = 1536
+    # Scanned-PDF OCR via the vision LLM (gpt-5.5 reads PDFs natively — no
+    # rasterizer/Tesseract dependency). Bounded by a page cap so a huge scan
+    # can't run an unbounded inline call. ocr_enabled=False disables it.
+    ocr_enabled: bool = True
+    ocr_max_pages: int = 10
 
     # Deepgram — realtime dictation, live transcription, and batch file STT.
     deepgram_api_key: str = ""
