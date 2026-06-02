@@ -33,6 +33,10 @@ public struct DeterministicDesktopActuator: DesktopActuator {
         throw DesktopActuationError.tierUnavailable("click requires the accessibility actuator")
     }
 
+    public func snapshot() async throws -> DesktopUISnapshot {
+        throw DesktopActuationError.tierUnavailable("snapshot requires the accessibility actuator")
+    }
+
     /// Resolve a bare app name to a bundle URL deterministically, without
     /// deprecated launch-by-name APIs: an absolute path is used directly,
     /// otherwise the standard application directories are searched.

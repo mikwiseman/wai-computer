@@ -74,6 +74,10 @@ final class DesktopActionRouterTests: XCTestCase {
         XCTAssertTrue(router.plan(tool: "desktop_click", args: [:]).isRefusal)
     }
 
+    func testSnapshotToolPlansSnapshot() {
+        XCTAssertEqual(router.plan(tool: "desktop_snapshot", args: [:]), .snapshot)
+    }
+
     func testUnknownToolRefused() {
         XCTAssertTrue(router.plan(tool: "desktop_launch_missiles", args: [:]).isRefusal)
     }

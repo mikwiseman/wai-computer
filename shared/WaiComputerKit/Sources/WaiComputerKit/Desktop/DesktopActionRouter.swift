@@ -17,6 +17,8 @@ public enum DesktopExecutionPlan: Sendable, Equatable {
     case typeText(String)
     /// Tier C — click an element by snapshot index via accessibility.
     case click(index: Int)
+    /// Tier C — observe the focused app's UI (the brain's "look" step).
+    case snapshot
     /// The action is not permitted or is malformed; surfaced to the user.
     case refuse(reason: String)
 
@@ -59,6 +61,8 @@ public struct DesktopActionRouter: Sendable {
                 return .refuse(reason: "missing element index")
             }
             return gated(verb: "click", bundleId: nil) { .click(index: index) }
+        case "desktop_snapshot":
+            return gated(verb: "snapshot", bundleId: nil) { .snapshot }
         default:
             return .refuse(reason: "unknown desktop tool '\(tool)'")
         }
