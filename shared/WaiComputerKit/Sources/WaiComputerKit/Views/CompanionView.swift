@@ -78,9 +78,9 @@ public struct CompanionView: View {
     @State private var streamingCitations: [CompanionStreamCitation] = []
     @State private var streamingToolNotes: [String] = []
     @State private var stage: TurnStage = .idle
-    // Read-aloud (voice out): off by default; speaks the completed answer with a
-    // content-aware voice (Russian replies get a Russian voice).
-    @State private var speakAnswers = false
+    // Read-aloud (voice out): off by default, persisted across launches; speaks
+    // the completed answer with a content-aware voice (Russian → Russian voice).
+    @AppStorage("companionSpeakAnswers") private var speakAnswers = false
     @State private var readAloud = ReadAloudController(provider: AVSpeechTTSProvider())
     @State private var input: String = ""
     @FocusState private var inputFocused: Bool
