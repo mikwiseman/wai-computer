@@ -153,13 +153,10 @@ describe("AddAnythingPanel", () => {
     expect(screen.getByRole("button", { name: /Add to brain/i })).toBeDisabled();
   });
 
-  it("uploads a chosen file and shows its summary", async () => {
+  it("uploads a chosen document and shows its summary", async () => {
     mockUploadItem.mockResolvedValue({
-      id: "up-1",
-      state: "raw",
-      status: "summarizing",
-      error: null,
-      summary: null,
+      kind: "item",
+      item: { id: "up-1", state: "raw", status: "summarizing", error: null, summary: null },
     });
     mockGetItem.mockResolvedValue(summarizedItem({ id: "up-1", title: "Uploaded Doc" }));
 
@@ -172,6 +169,24 @@ describe("AddAnythingPanel", () => {
 
     await waitFor(() => expect(mockUploadItem).toHaveBeenCalledWith(file));
     await waitFor(() => expect(screen.getByText("Uploaded Doc")).toBeInTheDocument());
+  });
+
+  it("routes an audio/video upload to transcription (no item to poll)", async () => {
+    mockUploadItem.mockResolvedValue({ kind: "recording", status: "processing" });
+
+    const { container } = render(<AddAnythingPanel />);
+    const input = container.querySelector(
+      '[data-testid="add-anything-file"]',
+    ) as HTMLInputElement;
+    const file = new File(["video bytes"], "clip.mp4", { type: "video/mp4" });
+    fireEvent.change(input, { target: { files: [file] } });
+
+    await waitFor(() => expect(mockUploadItem).toHaveBeenCalledWith(file));
+    await waitFor(() =>
+      expect(screen.getByText(/appear in your recordings shortly/i)).toBeInTheDocument(),
+    );
+    // Media has no Item — we must NOT try to poll a summary.
+    expect(mockGetItem).not.toHaveBeenCalled();
   });
 
   it("surfaces upload errors via onError", async () => {

@@ -508,15 +508,31 @@ export function createItem(input: {
   });
 }
 
-export function uploadItem(
+/**
+ * Result of "add any file": documents extract inline into an Item (201);
+ * audio/video are staged + transcribed into a Recording in the background (202),
+ * so there's no Item to poll — they surface under Recordings when ready.
+ */
+export type UploadOutcome =
+  | { kind: "item"; item: Item }
+  | { kind: "recording"; status: string };
+
+export async function uploadItem(
   file: File,
   opts?: { folderId?: string; title?: string },
-): Promise<Item> {
+): Promise<UploadOutcome> {
   const formData = new FormData();
   formData.append("file", file);
   if (opts?.folderId) formData.append("folder_id", opts.folderId);
   if (opts?.title) formData.append("title", opts.title);
-  return apiUpload<Item>("/api/items/upload", formData);
+  const payload = await apiUpload<Item | { kind: "recording"; status: string }>(
+    "/api/items/upload",
+    formData,
+  );
+  // Documents come back as a full Item (has `id`); media come back as a
+  // lightweight processing marker with no `id`.
+  if ("id" in payload) return { kind: "item", item: payload };
+  return { kind: "recording", status: payload.status ?? "processing" };
 }
 
 export function listItems(params?: {
