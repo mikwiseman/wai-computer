@@ -23,6 +23,7 @@ from typing import Any
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile, status
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
@@ -230,11 +231,97 @@ async def create_item(
     return _item_response(item, summary)
 
 
-# --- Document upload (PDF / text / markdown -> Item) -------------------------
-# Audio/video uploads belong to the recording pipeline (a later slice routes
-# them through import_media_as_recording); they are rejected here for now.
+# --- File upload: documents -> Item (sync), audio/video -> Recording (async) -
+# One "add anything" endpoint routes by type: PDF/text/markdown are extracted
+# inline into an Item; audio/video are staged to disk and handed to the
+# recording pipeline (import_media_as_recording: ffmpeg normalise + transcribe)
+# via a Celery task, since that work is too slow to run in the request.
 _DOC_EXTENSIONS = {"pdf", "txt", "md"}
 _UPLOAD_CHUNK = 1024 * 1024
+
+
+def _media_upload_ext(filename: str | None, content_type: str | None) -> str:
+    """Resolve a supported audio/video extension, or "" if this isn't media."""
+    from app.core.recording_import import RecordingImportError, resolve_import_extension
+
+    try:
+        return resolve_import_extension(filename, content_type)
+    except RecordingImportError:
+        return ""
+
+
+async def _stage_media_upload(
+    user_id: Any, ext: str, file: UploadFile, max_bytes: int
+) -> tuple[Path, int]:
+    """Stream an uploaded media file straight to a UUID-keyed staging path
+    (never buffered whole in memory — video can be large), enforcing the size
+    cap as we go. Returns (path, bytes_written)."""
+    from app.config import get_settings
+
+    base = Path(get_settings().upload_staging_dir) / "items" / str(user_id)
+    base.mkdir(parents=True, exist_ok=True)
+    path = base / f"{uuid4().hex}.{ext}"
+    size = 0
+    try:
+        with path.open("wb") as fh:
+            while True:
+                chunk = await file.read(_UPLOAD_CHUNK)
+                if not chunk:
+                    break
+                size += len(chunk)
+                if size > max_bytes:
+                    raise HTTPException(
+                        status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                        detail=f"File too large. Maximum size is {max_bytes // (1024 * 1024)}MB.",
+                    )
+                fh.write(chunk)
+    except BaseException:
+        path.unlink(missing_ok=True)
+        raise
+    return path, size
+
+
+async def _handle_media_upload(
+    user: Any, ext: str, file: UploadFile, title: str | None
+) -> JSONResponse:
+    """Stage an audio/video upload and enqueue background transcription. Returns
+    202 — the Recording appears in the library once the task finishes."""
+    from app.config import get_settings
+
+    filename, content_type, language = file.filename, file.content_type, user.default_language
+    try:
+        staged, size = await _stage_media_upload(
+            user.id, ext, file, get_settings().upload_max_bytes
+        )
+    finally:
+        await file.close()
+    if size == 0:
+        staged.unlink(missing_ok=True)
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Empty file.")
+
+    try:
+        from app.tasks.media_import import import_uploaded_media_task
+
+        import_uploaded_media_task.delay(
+            user_id=str(user.id),
+            staged_path=str(staged),
+            filename=filename,
+            content_type=content_type,
+            title=(title or "").strip() or None,
+            language=language,
+        )
+    except Exception as exc:  # noqa: BLE001 — broker down: surface, don't silently drop the file
+        staged.unlink(missing_ok=True)
+        logger.warning("media upload enqueue failed: %s", type(exc).__name__)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Couldn't queue media processing. Please retry.",
+        ) from exc
+
+    return JSONResponse(
+        status_code=status.HTTP_202_ACCEPTED,
+        content={"kind": "recording", "status": "processing"},
+    )
 
 
 def _upload_ext(filename: str | None, content_type: str | None) -> str:
@@ -281,15 +368,19 @@ async def upload_item(
     file: UploadFile = File(...),
     folder_id: UUID | None = Form(default=None),
     title: str | None = Form(default=None),
-) -> ItemResponse:
-    """Upload a document (PDF, text, or Markdown): extract its text, store the
-    original, and summarize in the background — the file half of "add anything"."""
+) -> ItemResponse | JSONResponse:
+    """Add any file: PDF/text/Markdown become an Item (text extracted inline);
+    audio/video are staged and transcribed into a Recording in the background.
+    Documents return 201 with the Item; media return 202 (processing)."""
     ext = _upload_ext(file.filename, file.content_type)
     if ext not in _DOC_EXTENSIONS:
+        media_ext = _media_upload_ext(file.filename, file.content_type)
+        if media_ext:
+            return await _handle_media_upload(user, media_ext, file, title)
         await file.close()
         raise HTTPException(
             status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
-            detail="Only PDF, text, and Markdown files can be uploaded as items.",
+            detail="Upload a PDF, text, Markdown, audio, or video file.",
         )
 
     from app.config import get_settings

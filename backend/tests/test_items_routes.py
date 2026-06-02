@@ -250,13 +250,81 @@ async def test_upload_scanned_pdf_without_text_is_422(client, auth_headers) -> N
     assert "no extractable text" in resp.json()["detail"].lower()
 
 
-async def test_upload_rejects_video(client, auth_headers) -> None:
+async def test_upload_video_enqueues_recording(client, auth_headers) -> None:
+    # Video is no longer rejected — it's staged and handed to the recording pipeline.
+    with patch("app.tasks.media_import.import_uploaded_media_task.delay") as delay:
+        resp = await client.post(
+            "/api/items/upload",
+            files={"file": ("clip.mp4", b"\x00\x00\x00\x18ftypmp42 body", "video/mp4")},
+            headers=auth_headers,
+        )
+    assert resp.status_code == 202, resp.text
+    assert resp.json() == {"kind": "recording", "status": "processing"}
+    delay.assert_called_once()
+    kwargs = delay.call_args.kwargs
+    assert kwargs["filename"] == "clip.mp4"
+    assert kwargs["content_type"] == "video/mp4"
+    assert kwargs["staged_path"].endswith(".mp4")
+
+
+async def test_upload_audio_enqueues_recording(client, auth_headers) -> None:
+    with patch("app.tasks.media_import.import_uploaded_media_task.delay") as delay:
+        resp = await client.post(
+            "/api/items/upload",
+            files={"file": ("memo.mp3", b"ID3\x03\x00\x00\x00 audio bytes", "audio/mpeg")},
+            headers=auth_headers,
+        )
+    assert resp.status_code == 202, resp.text
+    delay.assert_called_once()
+    assert delay.call_args.kwargs["staged_path"].endswith(".mp3")
+
+
+async def test_upload_rejects_truly_unsupported_type(client, auth_headers) -> None:
     resp = await client.post(
         "/api/items/upload",
-        files={"file": ("clip.mp4", b"\x00\x00\x00\x18ftyp", "video/mp4")},
+        files={"file": ("malware.exe", b"MZ\x90\x00 binary", "application/octet-stream")},
         headers=auth_headers,
     )
     assert resp.status_code == 415
+
+
+async def test_upload_empty_media_is_400(client, auth_headers) -> None:
+    with patch("app.tasks.media_import.import_uploaded_media_task.delay") as delay:
+        resp = await client.post(
+            "/api/items/upload",
+            files={"file": ("empty.mp4", b"", "video/mp4")},
+            headers=auth_headers,
+        )
+    assert resp.status_code == 400
+    delay.assert_not_called()
+
+
+async def test_upload_media_enqueue_failure_is_503(client, auth_headers) -> None:
+    # No-fallback: a broker outage surfaces as 503, and the staged file is dropped.
+    with patch(
+        "app.tasks.media_import.import_uploaded_media_task.delay",
+        side_effect=RuntimeError("broker down"),
+    ):
+        resp = await client.post(
+            "/api/items/upload",
+            files={"file": ("clip.mov", b"\x00\x00\x00\x14ftypqt  video", "video/quicktime")},
+            headers=auth_headers,
+        )
+    assert resp.status_code == 503
+
+
+async def test_upload_media_too_large_is_413(client, auth_headers, monkeypatch) -> None:
+    from app.config import get_settings
+
+    monkeypatch.setattr(get_settings(), "upload_max_bytes", 8)
+    with patch("app.tasks.media_import.import_uploaded_media_task.delay") as delay:
+        resp = await client.post(
+            "/api/items/upload",
+            files={"file": ("big.mp4", b"\x00\x00\x00\x18ftypmp42 way over eight", "video/mp4")},
+            headers=auth_headers,
+        )
+    assert resp.status_code == 413
+    delay.assert_not_called()
 
 
 async def test_upload_empty_file_is_400(client, auth_headers) -> None:
