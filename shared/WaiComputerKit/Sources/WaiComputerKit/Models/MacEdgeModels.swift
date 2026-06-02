@@ -35,15 +35,33 @@ public struct DeviceHeartbeatResponse: Decodable, Sendable, Equatable {
 
 public struct DesktopActionItem: Decodable, Sendable, Equatable {
     public let actionId: String
+    /// The conversation this action belongs to; the result is reported back
+    /// to `/api/companion/chats/{chatId}/actions/{actionId}/desktop_result`.
+    public let chatId: String
     public let tool: String
     public let args: [String: CompanionJSONValue]
     public let preview: String
 
     enum CodingKeys: String, CodingKey {
         case actionId = "action_id"
+        case chatId = "chat_id"
         case tool
         case args
         case preview
+    }
+
+    public init(
+        actionId: String,
+        chatId: String,
+        tool: String,
+        args: [String: CompanionJSONValue],
+        preview: String
+    ) {
+        self.actionId = actionId
+        self.chatId = chatId
+        self.tool = tool
+        self.args = args
+        self.preview = preview
     }
 }
 

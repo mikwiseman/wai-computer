@@ -80,12 +80,14 @@ async def test_drain_and_report_roundtrip(client, auth_headers, db_session):
     )
     assert drained.status_code == 200, drained.text
     actions = drained.json()["actions"]
-    assert any(
-        a["action_id"] == str(row.id) and a["tool"] == "desktop_open" for a in actions
-    )
+    item = next(a for a in actions if a["action_id"] == str(row.id))
+    assert item["tool"] == "desktop_open"
+    # The drained item carries its conversation so the Mac can report back
+    # without out-of-band state.
+    assert item["chat_id"] == str(cid)
 
     reported = await client.post(
-        f"/api/companion/chats/{cid}/actions/{row.id}/desktop_result",
+        f"/api/companion/chats/{item['chat_id']}/actions/{row.id}/desktop_result",
         json={"status": "executed", "payload": {"ok": True}},
         headers=auth_headers,
     )
