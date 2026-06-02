@@ -2412,6 +2412,20 @@ a.primary-button[aria-disabled="true"]:hover {
   gap: 1rem;
 }
 
+.brain-wiki__section {
+  max-width: 880px;
+}
+
+.brain-wiki__overview {
+  color: var(--ink);
+  font-size: var(--font-body-size);
+  line-height: 1.55;
+}
+
+.brain-wiki__overview p {
+  margin: 0;
+}
+
 .brain-wiki__type {
   text-transform: uppercase;
   font-size: var(--font-label-small-size);
@@ -2444,8 +2458,8 @@ a.primary-button[aria-disabled="true"]:hover {
   margin: 0;
   padding: 0;
   display: flex;
-  flex-wrap: wrap;
-  gap: 0.4rem;
+  flex-direction: column;
+  gap: 0.5rem;
 }
 
 .brain-wiki__related-chip {
@@ -2470,6 +2484,63 @@ a.primary-button[aria-disabled="true"]:hover {
   font-style: normal;
   color: var(--ink-faint);
   font-size: var(--font-label-small-size);
+}
+
+.brain-wiki__related-card {
+  width: 100%;
+  text-align: left;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.55rem 0.75rem;
+  background: var(--panel);
+  color: inherit;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.brain-wiki__related-card:hover {
+  border-color: var(--accent);
+}
+
+.brain-wiki__related-card span {
+  display: block;
+  font-weight: 600;
+}
+
+.brain-wiki__related-card p {
+  margin: 0.25rem 0 0;
+  color: var(--ink-soft);
+  font-size: var(--font-body-small-size);
+}
+
+.brain-wiki__list,
+.brain-wiki__timeline {
+  margin: 0;
+  padding-left: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.brain-wiki__list li,
+.brain-wiki__timeline li {
+  color: var(--ink);
+  line-height: 1.45;
+}
+
+.brain-wiki__list em,
+.brain-wiki__timeline em {
+  display: block;
+  margin-top: 0.15rem;
+  color: var(--ink-faint);
+  font-size: var(--font-label-small-size);
+  font-style: normal;
+}
+
+.brain-wiki__timeline p {
+  margin: 0.15rem 0 0;
+  color: var(--ink-soft);
+  font-size: var(--font-body-small-size);
 }
 
 .brain-wiki__sources {

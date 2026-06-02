@@ -15,7 +15,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, HTTPException, Query, Response, status
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
@@ -225,9 +225,14 @@ async def sync_now(
     return {"status": "queued", "connection_id": str(conn.id)}
 
 
-@router.delete("/{connection_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete(
+    "/{connection_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    response_class=Response,
+)
 async def delete_connection(
     connection_id: UUID, user: CurrentUser, db: Database
-) -> None:
+) -> Response:
     conn = await _get_owned(db, user, connection_id)
     await db.delete(conn)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

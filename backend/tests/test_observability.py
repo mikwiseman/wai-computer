@@ -785,6 +785,7 @@ def _capture_forwarded(monkeypatch):
     def _fake_notify_ops(**kwargs):
         calls.append(kwargs)
 
+    monkeypatch.setenv("OPS_FORWARD_GENERIC_ERRORS", "1")
     # _forward_generic_event_to_ops imports notify_ops lazily from ops_alerts.
     from app.core import ops_alerts
 

@@ -1496,8 +1496,16 @@ final class APIClientTests: XCTestCase {
             )!
             let payload = """
             {"id":"abc","name":"GPU","type":"topic","mention_count":3,\
-            "sources":[{"source_kind":"item","source_id":"i1","title":"Note","context":"ctx"}],\
-            "related":[{"id":"e2","name":"Anna","type":"person","shared":2}]}
+            "sources":[{"source_kind":"item","source_id":"i1","title":"Note","context":"ctx","occurred_at":null}],\
+            "related":[{"id":"e2","name":"Anna","type":"person","shared":2}],\
+            "overview":"GPU appears in 1 source.",\
+            "facts":[{"id":"fact-1","text":"GPU launch is owned by Anna.","citation_ids":["item:i1"]}],\
+            "citations":[{"id":"item:i1","source_kind":"item","source_id":"i1","title":"Note","context":"ctx","occurred_at":null}],\
+            "timeline":[{"id":"event-1","title":"GPU launch","description":"Anna owns it.","occurred_at":null,"citation_ids":["item:i1"]}],\
+            "related_explanations":[{"id":"e2","name":"Anna","type":"person","shared":2,"explanation":"Shares 2 sources.","citation_ids":["item:i1"]}],\
+            "questions":[{"id":"question-1","text":"What ships first?","citation_ids":["item:i1"]}],\
+            "actions":[{"id":"action-1","text":"Ask Anna","owner":"Mik","due_date":null,"status":"pending","citation_ids":["item:i1"]}],\
+            "cache_status":"hit"}
             """.data(using: .utf8)!
             return (response, payload)
         }
@@ -1506,5 +1514,12 @@ final class APIClientTests: XCTestCase {
         XCTAssertEqual(p.mentionCount, 3)
         XCTAssertEqual(p.sources[0].title, "Note")
         XCTAssertEqual(p.related[0].name, "Anna")
+        XCTAssertEqual(p.overview, "GPU appears in 1 source.")
+        XCTAssertEqual(p.facts[0].text, "GPU launch is owned by Anna.")
+        XCTAssertEqual(p.timeline[0].title, "GPU launch")
+        XCTAssertEqual(p.relatedExplanations[0].explanation, "Shares 2 sources.")
+        XCTAssertEqual(p.questions[0].text, "What ships first?")
+        XCTAssertEqual(p.actions[0].text, "Ask Anna")
+        XCTAssertEqual(p.cacheStatus, "hit")
     }
 }

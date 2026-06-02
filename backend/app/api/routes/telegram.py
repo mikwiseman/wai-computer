@@ -504,7 +504,11 @@ async def start_link(user: CurrentUser, db: Database) -> TelegramPairingResponse
     )
 
 
-@router.delete("/link", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete(
+    "/link",
+    status_code=status.HTTP_204_NO_CONTENT,
+    response_class=Response,
+)
 async def unlink(user: CurrentUser, db: Database) -> Response:
     result = await db.execute(select(TelegramAccount).where(TelegramAccount.user_id == user.id))
     account = result.scalar_one_or_none()

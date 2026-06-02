@@ -207,58 +207,200 @@ struct MacBrainView: View {
 
     @ViewBuilder
     private func wikiBody(_ page: EntityPage) -> some View {
-        if !page.related.isEmpty {
-            VStack(alignment: .leading, spacing: Spacing.xs) {
-                Text(t("Related", "Связанные")).font(Typography.label)
-                    .foregroundStyle(Palette.textSecondary)
-                ForEach(page.related) { rel in
-                    Button {
-                        model.openEntity(id: rel.id, name: rel.name)
-                    } label: {
-                        HStack(spacing: Spacing.xs) {
-                            Image(systemName: entityIcon(rel.type))
-                                .font(.system(size: 10))
-                                .foregroundStyle(Palette.accent)
-                            Text(rel.name).font(Typography.bodySmall)
-                            Spacer()
-                            Text("\(rel.shared)")
-                                .font(Typography.labelSmall)
-                                .foregroundStyle(Palette.textTertiary)
-                        }
+        wikiSection(t("Overview", "Обзор")) {
+            Text(page.overview)
+                .font(Typography.bodySmall)
+                .foregroundStyle(Palette.textPrimary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+
+        wikiSection(t("Facts", "Факты")) {
+            if page.facts.isEmpty {
+                wikiEmpty(t("No extracted facts yet.", "Пока нет фактов."))
+            } else {
+                VStack(alignment: .leading, spacing: Spacing.xs) {
+                    ForEach(page.facts) { fact in
+                        wikiEvidenceRow(
+                            title: fact.text,
+                            detail: citationTitle(fact.citationIds, page: page)
+                        )
                     }
-                    .buttonStyle(.plain)
                 }
             }
         }
 
-        VStack(alignment: .leading, spacing: Spacing.xs) {
-            Text(t("Sources", "Источники")).font(Typography.label)
-                .foregroundStyle(Palette.textSecondary)
-            if page.sources.isEmpty {
-                Text(t("Nothing mentions this yet.", "Пока ничего не упоминает это."))
-                    .font(Typography.bodySmall)
-                    .foregroundStyle(Palette.textTertiary)
+        wikiSection(t("Timeline", "Хронология")) {
+            if page.timeline.isEmpty {
+                wikiEmpty(t("No timeline events yet.", "Пока нет событий."))
             } else {
-                ForEach(page.sources) { source in
-                    VStack(alignment: .leading, spacing: Spacing.xxs) {
-                        HStack(spacing: Spacing.xs) {
-                            Text(source.sourceKind.uppercased())
-                                .font(Typography.labelSmall)
-                                .foregroundStyle(Palette.textTertiary)
-                            Text(source.title).font(Typography.bodySmall.weight(.medium))
-                        }
-                        if let context = source.context, !context.isEmpty {
-                            Text(context)
-                                .font(Typography.labelSmall)
-                                .foregroundStyle(Palette.textSecondary)
-                        }
+                VStack(alignment: .leading, spacing: Spacing.xs) {
+                    ForEach(page.timeline) { event in
+                        wikiEvidenceRow(
+                            title: event.title,
+                            detail: event.description ?? citationTitle(event.citationIds, page: page)
+                        )
                     }
-                    .padding(Spacing.sm)
-                    .background(Palette.surfaceSubtle)
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
                 }
             }
         }
+
+        wikiSection(t("Related", "Связанные")) {
+            if !page.relatedExplanations.isEmpty {
+                VStack(alignment: .leading, spacing: Spacing.xs) {
+                    ForEach(page.relatedExplanations) { rel in
+                        Button {
+                            model.openEntity(id: rel.id, name: rel.name)
+                        } label: {
+                            VStack(alignment: .leading, spacing: Spacing.xxs) {
+                                HStack(spacing: Spacing.xs) {
+                                    Image(systemName: entityIcon(rel.type))
+                                        .font(.system(size: 10))
+                                        .foregroundStyle(Palette.accent)
+                                    Text(rel.name).font(Typography.bodySmall.weight(.medium))
+                                    Spacer()
+                                    Text("\(rel.shared)")
+                                        .font(Typography.labelSmall)
+                                        .foregroundStyle(Palette.textTertiary)
+                                }
+                                Text(rel.explanation)
+                                    .font(Typography.labelSmall)
+                                    .foregroundStyle(Palette.textSecondary)
+                            }
+                            .padding(Spacing.sm)
+                            .background(Palette.surfaceSubtle)
+                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            } else if !page.related.isEmpty {
+                VStack(alignment: .leading, spacing: Spacing.xs) {
+                    ForEach(page.related) { rel in
+                        Button {
+                            model.openEntity(id: rel.id, name: rel.name)
+                        } label: {
+                            HStack(spacing: Spacing.xs) {
+                                Image(systemName: entityIcon(rel.type))
+                                    .font(.system(size: 10))
+                                    .foregroundStyle(Palette.accent)
+                                Text(rel.name).font(Typography.bodySmall)
+                                Spacer()
+                                Text("\(rel.shared)")
+                                    .font(Typography.labelSmall)
+                                    .foregroundStyle(Palette.textTertiary)
+                            }
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            } else {
+                wikiEmpty(t("No related entities yet.", "Пока нет связанных сущностей."))
+            }
+        }
+
+        wikiSection(t("Questions", "Вопросы")) {
+            if page.questions.isEmpty {
+                wikiEmpty(t("No open questions found.", "Открытых вопросов не найдено."))
+            } else {
+                VStack(alignment: .leading, spacing: Spacing.xs) {
+                    ForEach(page.questions) { question in
+                        wikiEvidenceRow(
+                            title: question.text,
+                            detail: citationTitle(question.citationIds, page: page)
+                        )
+                    }
+                }
+            }
+        }
+
+        wikiSection(t("Actions", "Действия")) {
+            if page.actions.isEmpty {
+                wikiEmpty(t("No action items found.", "Действий не найдено."))
+            } else {
+                VStack(alignment: .leading, spacing: Spacing.xs) {
+                    ForEach(page.actions) { action in
+                        wikiEvidenceRow(
+                            title: action.text,
+                            detail: actionDetail(action, page: page)
+                        )
+                    }
+                }
+            }
+        }
+
+        wikiSection(t("Citations", "Цитаты")) {
+            if page.citations.isEmpty {
+                wikiEmpty(t("Nothing mentions this yet.", "Пока ничего не упоминает это."))
+            } else {
+                VStack(alignment: .leading, spacing: Spacing.xs) {
+                    ForEach(page.citations) { source in
+                        VStack(alignment: .leading, spacing: Spacing.xxs) {
+                            HStack(spacing: Spacing.xs) {
+                                Text(source.sourceKind.uppercased())
+                                    .font(Typography.labelSmall)
+                                    .foregroundStyle(Palette.textTertiary)
+                                Text(source.title).font(Typography.bodySmall.weight(.medium))
+                            }
+                            if let context = source.context, !context.isEmpty {
+                                Text(context)
+                                    .font(Typography.labelSmall)
+                                    .foregroundStyle(Palette.textSecondary)
+                            }
+                        }
+                        .padding(Spacing.sm)
+                        .background(Palette.surfaceSubtle)
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                    }
+                }
+            }
+        }
+    }
+
+    private func wikiSection<Content: View>(
+        _ title: String,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        VStack(alignment: .leading, spacing: Spacing.xs) {
+            Text(title).font(Typography.label)
+                .foregroundStyle(Palette.textSecondary)
+            content()
+        }
+    }
+
+    private func wikiEmpty(_ text: String) -> some View {
+        Text(text)
+            .font(Typography.bodySmall)
+            .foregroundStyle(Palette.textTertiary)
+    }
+
+    private func wikiEvidenceRow(title: String, detail: String?) -> some View {
+        VStack(alignment: .leading, spacing: Spacing.xxs) {
+            Text(title)
+                .font(Typography.bodySmall)
+                .foregroundStyle(Palette.textPrimary)
+                .fixedSize(horizontal: false, vertical: true)
+            if let detail, !detail.isEmpty {
+                Text(detail)
+                    .font(Typography.labelSmall)
+                    .foregroundStyle(Palette.textTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private func citationTitle(_ ids: [String], page: EntityPage) -> String? {
+        let titlesById = Dictionary(
+            uniqueKeysWithValues: page.citations.map { ($0.id, $0.title) }
+        )
+        let titles = ids.compactMap { titlesById[$0] }
+        return titles.isEmpty ? nil : titles.prefix(3).joined(separator: ", ")
+    }
+
+    private func actionDetail(_ action: EntityPageAction, page: EntityPage) -> String? {
+        let detail = [action.owner, action.status, citationTitle(action.citationIds, page: page)]
+            .compactMap { $0 }
+            .joined(separator: " · ")
+        return detail.isEmpty ? nil : detail
     }
 
     // MARK: - Shared
