@@ -217,6 +217,56 @@ def _effective_duration_seconds(
     return None
 
 
+def voice_identification_enabled_for_audio(
+    *,
+    recording_id: UUID,
+    duration_seconds: int | float | None,
+    staged_size_bytes: int | None,
+) -> bool:
+    if not settings.voice_identification_enabled:
+        return False
+    skip_reasons: list[str] = []
+    max_seconds = settings.voice_identification_max_audio_seconds
+    if (
+        max_seconds > 0
+        and duration_seconds is not None
+        and duration_seconds > max_seconds
+    ):
+        skip_reasons.append("duration_limit")
+    max_bytes = settings.voice_identification_max_audio_bytes
+    if (
+        max_bytes > 0
+        and staged_size_bytes is not None
+        and staged_size_bytes > max_bytes
+    ):
+        skip_reasons.append("size_limit")
+    if not skip_reasons:
+        return True
+    logger.warning(
+        "voice identification skipped by audio guard recording_id=%s "
+        "duration_seconds=%s staged_size_bytes=%s reasons=%s",
+        recording_id,
+        duration_seconds,
+        staged_size_bytes,
+        ",".join(skip_reasons),
+    )
+    capture_sentry_anomaly(
+        "recording.voice_identification.skipped_size_guard",
+        "Recording voice identification skipped by audio size guard",
+        category="recording",
+        extras={
+            "recording_id": str(recording_id),
+            "duration_seconds": duration_seconds,
+            "staged_size_bytes": staged_size_bytes,
+            "max_audio_seconds": max_seconds,
+            "max_audio_bytes": max_bytes,
+            "reasons": skip_reasons,
+        },
+        level="warning",
+    )
+    return False
+
+
 def _recording_lifecycle_breadcrumb(
     message: str,
     *,
@@ -582,6 +632,21 @@ async def process_staged_recording_upload(
                 )
             return
 
+        max_end_ms = max(transcript.end_ms for transcript in speech_transcript_results)
+        effective_duration = _effective_duration_seconds(
+            audio_duration_seconds=audio_duration_seconds,
+            client_duration_seconds=client_duration_seconds,
+            transcript_end_ms=max_end_ms,
+        )
+        voice_identification_enabled = voice_identification_enabled_for_audio(
+            recording_id=recording_id,
+            duration_seconds=effective_duration,
+            staged_size_bytes=(
+                staged_size_bytes
+                if staged_size_bytes is not None
+                else client_file_size_bytes
+            ),
+        )
         speaker_assignments: dict[str, tuple[UUID, float] | None] = {}
         try:
             speaker_assignments = await identify_speakers_for_recording(
@@ -589,7 +654,7 @@ async def process_staged_recording_upload(
                 user_id=user_id,
                 staged_audio_path=staged_path,
                 transcript_results=speech_transcript_results,
-                enabled=settings.voice_identification_enabled,
+                enabled=voice_identification_enabled,
                 source_recording_id=recording_id,
             )
             _recording_lifecycle_breadcrumb(
@@ -597,7 +662,7 @@ async def process_staged_recording_upload(
                 recording_id=recording_id,
                 data={
                     "speaker_count": len(speaker_assignments),
-                    "enabled": settings.voice_identification_enabled,
+                    "enabled": voice_identification_enabled,
                 },
             )
         except Exception as exc:
@@ -682,7 +747,6 @@ async def process_staged_recording_upload(
                 )
             )
 
-        max_end_ms = max(transcript.end_ms for transcript in speech_transcript_results)
         recording.duration_seconds = _duration_seconds_from_sources(
             audio_duration_seconds=audio_duration_seconds,
             client_duration_seconds=client_duration_seconds,

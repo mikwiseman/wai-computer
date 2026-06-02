@@ -56,6 +56,20 @@ function fmtNumber(value: number): string {
   return value.toLocaleString("en-US");
 }
 
+function fmtHours(valueSeconds: number): string {
+  return `${(valueSeconds / 3600).toLocaleString("en-US", {
+    maximumFractionDigits: 1,
+  })} h`;
+}
+
+function fmtMoneyByCurrency(value: Record<string, number>): string {
+  const entries = Object.entries(value).sort(([a], [b]) => a.localeCompare(b));
+  if (entries.length === 0) return "-";
+  return entries
+    .map(([currency, amount]) => `${currency} ${amount.toLocaleString("en-US")}`)
+    .join(", ");
+}
+
 function fmtDate(value: string | null): string {
   if (!value) return "-";
   return new Date(value).toLocaleDateString("en-US", {
@@ -466,6 +480,9 @@ export function AdminConsoleClient() {
                     <th>Status</th>
                     <th>Plan</th>
                     <th>Words</th>
+                    <th>Hours</th>
+                    <th>AI tokens</th>
+                    <th>Money</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -475,6 +492,9 @@ export function AdminConsoleClient() {
                       <td>{user.account_status}</td>
                       <td>{user.current_plan}</td>
                       <td>{fmtNumber(user.dictation_words + user.recording_words)}</td>
+                      <td>{fmtHours(user.transcription_duration_seconds)}</td>
+                      <td>{fmtNumber(user.companion_total_tokens)}</td>
+                      <td>{fmtMoneyByCurrency(user.revenue_by_currency)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -488,6 +508,11 @@ export function AdminConsoleClient() {
                   <div><dt>Plan</dt><dd>{selectedUser.current_plan}</dd></div>
                   <div><dt>Recordings</dt><dd>{fmtNumber(selectedUser.recording_count)}</dd></div>
                   <div><dt>Words</dt><dd>{fmtNumber(selectedUser.dictation_words + selectedUser.recording_words)}</dd></div>
+                  <div><dt>Recording hours</dt><dd>{fmtHours(selectedUser.recording_duration_seconds)}</dd></div>
+                  <div><dt>Dictation hours</dt><dd>{fmtHours(selectedUser.dictation_duration_seconds)}</dd></div>
+                  <div><dt>AI tokens</dt><dd>{fmtNumber(selectedUser.companion_total_tokens)}</dd></div>
+                  <div><dt>Cached tokens</dt><dd>{fmtNumber(selectedUser.companion_cached_tokens)}</dd></div>
+                  <div><dt>Money</dt><dd>{fmtMoneyByCurrency(selectedUser.revenue_by_currency)}</dd></div>
                 </dl>
                 <div className="admin-action-row">
                   <select value={userAction.status} onChange={(event) => setUserAction((current) => ({ ...current, status: event.target.value as AdminUserSummary["account_status"] }))}>

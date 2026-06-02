@@ -504,6 +504,96 @@ async def test_process_staged_recording_upload_stores_speaker_embeddings_and_ass
 
 
 @pytest.mark.asyncio
+async def test_process_staged_recording_upload_skips_voice_identification_for_oversized_audio(
+    db_session: AsyncSession,
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user = User(
+        email="queued-voice-id-skip@example.com",
+        password_hash="x",
+        default_language="en",
+    )
+    db_session.add(user)
+    await db_session.flush()
+    recording = Recording(
+        user_id=user.id,
+        title=None,
+        type="meeting",
+        status=RecordingStatus.PROCESSING.value,
+        uploaded_at=datetime.now(timezone.utc),
+        language="en",
+    )
+    db_session.add(recording)
+    await db_session.commit()
+
+    staged_path = tmp_path / "long-recording.m4a"
+    staged_path.write_bytes(b"audio")
+    transcript_results = [
+        TranscriptResult(
+            text="A long recording should still save its transcript.",
+            speaker="speaker_0",
+            is_final=True,
+            start_ms=0,
+            end_ms=5_000,
+            confidence=0.94,
+        )
+    ]
+
+    identify_mock = AsyncMock(return_value={"speaker_0": None})
+    monkeypatch.setattr(recording_audio_processing.settings, "voice_identification_enabled", True)
+    monkeypatch.setattr(
+        recording_audio_processing.settings,
+        "voice_identification_max_audio_seconds",
+        3_600,
+    )
+    monkeypatch.setattr(
+        recording_audio_processing.settings,
+        "voice_identification_max_audio_bytes",
+        30 * 1024 * 1024,
+    )
+    monkeypatch.setattr(
+        "app.core.recording_audio_processing.transcribe_audio_file",
+        AsyncMock(return_value=transcript_results),
+    )
+    monkeypatch.setattr(
+        "app.core.recording_audio_processing.generate_embedding",
+        AsyncMock(return_value=[0.1] * 1536),
+    )
+    monkeypatch.setattr(
+        "app.core.recording_audio_processing.generate_title",
+        AsyncMock(return_value="Long Recording"),
+    )
+    monkeypatch.setattr(
+        "app.core.recording_audio_processing.identify_speakers_for_recording",
+        identify_mock,
+    )
+
+    await process_staged_recording_upload(
+        db_session,
+        recording_id=recording.id,
+        user_id=user.id,
+        staged_path=staged_path,
+        content_type="audio/mp4",
+        user_default_language="en",
+        client_duration_seconds=9_236,
+        staged_size_bytes=51_219_221,
+    )
+
+    identify_mock.assert_awaited_once()
+    assert identify_mock.await_args.kwargs["enabled"] is False
+    segment = (
+        await db_session.execute(select(Segment).where(Segment.recording_id == recording.id))
+    ).scalar_one()
+    assert segment.raw_label == "speaker_0"
+    assert segment.person_id is None
+    refreshed = await db_session.get(Recording, recording.id)
+    assert refreshed is not None
+    assert refreshed.status == RecordingStatus.READY.value
+    assert refreshed.failure_code is None
+
+
+@pytest.mark.asyncio
 async def test_process_staged_recording_upload_preserves_client_duration(
     db_session: AsyncSession,
     tmp_path,

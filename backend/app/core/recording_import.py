@@ -18,7 +18,10 @@ from app.config import get_settings
 from app.core.embeddings import generate_embedding
 from app.core.error_sanitizer import sanitize_failure_message
 from app.core.personalization import load_user_keyterms, summary_personalization_instructions
-from app.core.recording_audio_processing import apply_no_speech_failure
+from app.core.recording_audio_processing import (
+    apply_no_speech_failure,
+    voice_identification_enabled_for_audio,
+)
 from app.core.speaker_name_extraction import (
     apply_extracted_names,
     extract_speaker_names,
@@ -290,8 +293,15 @@ async def _persist_segments(
     user_id: UUID,
     recording: Recording,
     staged_path: Path,
+    staged_size_bytes: int | None,
     transcript_results: list[TranscriptResult],
 ) -> str:
+    max_end_ms = max((tr.end_ms for tr in transcript_results), default=0)
+    voice_identification_enabled = voice_identification_enabled_for_audio(
+        recording_id=recording.id,
+        duration_seconds=(max_end_ms / 1000) if max_end_ms > 0 else None,
+        staged_size_bytes=staged_size_bytes,
+    )
     speaker_assignments: dict[str, tuple[UUID, float] | None] = {}
     try:
         speaker_assignments = await identify_speakers_for_recording(
@@ -299,7 +309,7 @@ async def _persist_segments(
             user_id=user_id,
             staged_audio_path=staged_path,
             transcript_results=transcript_results,
-            enabled=settings.voice_identification_enabled,
+            enabled=voice_identification_enabled,
             source_recording_id=recording.id,
         )
     except Exception:
@@ -536,6 +546,7 @@ async def import_media_as_recording(
             user_id=user.id,
             recording=recording,
             staged_path=staged_path,
+            staged_size_bytes=len(media_data),
             transcript_results=speech_results,
         )
         summary_result = await summarize_transcript(

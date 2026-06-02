@@ -4,6 +4,8 @@ Uses fakeredis for the happy paths and a deliberately broken client to prove the
 FAIL-OPEN contract: a Redis outage must never block transcription.
 """
 
+import asyncio
+
 import fakeredis.aioredis
 import pytest
 from redis.exceptions import RedisError
@@ -191,6 +193,30 @@ async def test_get_redis_lazily_builds_and_caches_a_client():
         assert guard.get_redis() is client  # cached singleton
     finally:
         guard.set_redis_for_tests(None)
+
+
+def test_get_redis_rebuilds_real_client_for_each_event_loop(monkeypatch):
+    built_clients: list[object] = []
+
+    def fake_from_url(*_args, **_kwargs):
+        client = object()
+        built_clients.append(client)
+        return client
+
+    async def resolve_client():
+        return guard.get_redis()
+
+    monkeypatch.setattr(guard.aioredis, "from_url", fake_from_url)
+    guard.set_redis_for_tests(None)
+    try:
+        first = asyncio.run(resolve_client())
+        second = asyncio.run(resolve_client())
+    finally:
+        guard.set_redis_for_tests(None)
+
+    assert first is built_clients[0]
+    assert second is built_clients[1]
+    assert first is not second
 
 
 # --- disabled / zero-cap early returns (coverage of the no-op branches) -------

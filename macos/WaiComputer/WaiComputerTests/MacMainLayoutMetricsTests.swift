@@ -11,6 +11,12 @@ final class MacMainLayoutMetricsTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(MacMainLayoutMetrics.listMinWidth, 360)
         XCTAssertGreaterThan(MacMainLayoutMetrics.listIdealWidth, MacMainLayoutMetrics.listMinWidth)
         XCTAssertGreaterThanOrEqual(MacMainLayoutMetrics.listMaxWidth, MacMainLayoutMetrics.listIdealWidth)
+        XCTAssertGreaterThanOrEqual(MacMainLayoutMetrics.recordingRowMinHeight, 44)
+        XCTAssertGreaterThanOrEqual(MacMainLayoutMetrics.recordingRowFailureMinHeight, 64)
+        XCTAssertGreaterThan(
+            MacMainLayoutMetrics.recordingRowFailureMinHeight,
+            MacMainLayoutMetrics.recordingRowMinHeight
+        )
     }
 
     func testToolbarAndRenameSheetUseStableDimensions() {

@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Сборка ПК под Palit RTX 3090 GamingPro · DNS, июнь 2026</title>
+<style>
+  :root{
+    --bg:#fcfcfb; --ink:#16170f; --muted:#6b6e63; --line:#e6e6df; --faint:#cfcfc6;
+    --accent:#0b7a4b; --hi:#f6faf6; --warn:#8a5a00; --mono:"SF Mono",ui-monospace,Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    -webkit-font-smoothing:antialiased}
+  .wrap{max-width:880px;margin:0 auto;padding:56px 24px 80px}
+  h1{font-size:27px;line-height:1.2;margin:0 0 6px;letter-spacing:-.01em}
+  .sub{color:var(--muted);font-size:15px;margin:0 0 26px}
+  h2{font-size:14px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);
+    margin:40px 0 12px;font-weight:600}
+  p{margin:0 0 14px}
+  a{color:inherit;border-bottom:1px dotted var(--faint);text-decoration:none}
+  a:hover{color:var(--accent);border-bottom-color:var(--accent)}
+  .card{border:1px solid var(--line);background:#fff;border-radius:10px;padding:16px 18px;margin:0 0 18px}
+  .card .k{font-size:12px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);margin-bottom:4px}
+  .tbl{margin:6px 0 0;overflow-x:auto;border:1px solid var(--line);border-radius:10px}
+  table{border-collapse:collapse;width:100%;font-size:14.5px;min-width:600px}
+  th,td{padding:11px 14px;text-align:left;border-bottom:1px solid var(--line);vertical-align:top}
+  thead th{font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);font-weight:600}
+  tbody tr:last-child td{border-bottom:0}
+  .num{font-family:var(--mono);text-align:right;white-space:nowrap;font-size:13.5px}
+  th.num{text-align:right}
+  .win{color:var(--accent);font-weight:660}
+  .row-hi{background:var(--hi)}
+  .muted{color:var(--muted)}
+  .tot{display:flex;justify-content:space-between;align-items:baseline;gap:16px;
+    border:1px solid var(--accent);background:var(--hi);border-radius:10px;padding:16px 18px;margin:16px 0 0}
+  .tot .big{font-family:var(--mono);font-size:22px;font-weight:680;color:var(--accent)}
+  ul{margin:0 0 14px;padding-left:0;list-style:none}
+  li{padding:5px 0 5px 26px;position:relative;border-bottom:1px solid var(--line)}
+  li:last-child{border-bottom:0}
+  li::before{content:"✓";position:absolute;left:0;top:5px;color:var(--accent);font-weight:700}
+  ol{margin:0 0 14px;padding-left:22px}
+  ol li{padding:5px 0;border:0}
+  ol li::before{content:none}
+  code{font-family:var(--mono);font-size:13px;background:#f2f2ec;padding:1px 6px;border-radius:5px}
+  .note{font-size:13.5px;color:var(--muted);border-left:2px solid var(--line);padding:2px 0 2px 14px;margin:14px 0}
+  .warn{border-left-color:#d9a300}
+  .foot{margin-top:40px;padding-top:16px;border-top:1px solid var(--line);font-size:12.5px;color:var(--muted)}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>Сборка ПК под Palit RTX&nbsp;3090 GamingPro</h1>
+  <p class="sub">Всё, что нужно докупить, чтобы карта за&nbsp;₽65k просто заработала · цены DNS перепроверены, июнь&nbsp;2026 · 24/7 ASR-бокс</p>
+
+  <div class="card">
+    <div class="k">Под какую карту</div>
+    <p style="margin:0">Palit <a href="https://www.avito.ru/all/tovary_dlya_kompyutera/komplektuyuschie/videokarty?q=rtx+3090">RTX&nbsp;3090 GamingPro OC 24&nbsp;ГБ</a> — длина <strong>294&nbsp;мм</strong>, 2.7&nbsp;слота, <strong>2× 8-pin</strong>, 350&nbsp;Вт, PCIe&nbsp;4.0, реком. БП <strong>750&nbsp;Вт</strong>, горячая GDDR6X. Отсюда два правила: не экономить на <strong>БП</strong> и на <strong>продуве корпуса</strong>; остальное — самое дешёвое рабочее.</p>
+  </div>
+
+  <h2>Вариант 1 · новые комплектующие (DNS)</h2>
+  <div class="tbl">
+    <table>
+      <thead><tr><th>Компонент</th><th>Что брать</th><th class="num">₽</th><th>Зачем именно это</th></tr></thead>
+      <tbody>
+        <tr>
+          <td>Мат. плата</td>
+          <td><a href="https://www.dns-shop.ru/product/7954bcf9b65fed20/materinskaa-plata-gigabyte-b550m-k/">Gigabyte B550M K</a> <span class="muted">(AM4, mATX)</span></td>
+          <td class="num">7&nbsp;900</td>
+          <td>слот <strong>PCIe&nbsp;4.0 x16</strong> → 3090 на полной скорости; Ryzen&nbsp;5000 заводится без прошивки BIOS</td>
+        </tr>
+        <tr>
+          <td>Процессор</td>
+          <td><a href="https://www.dns-shop.ru/product/6d7a8c58afebed20/processor-amd-ryzen-5-5600-oem/">Ryzen&nbsp;5 5600</a> OEM <span class="muted">(6/12, 65&nbsp;Вт)</span></td>
+          <td class="num">10&nbsp;999</td>
+          <td>для инференса CPU не важен — самый дешёвый вменяемый AM4, мало греется</td>
+        </tr>
+        <tr>
+          <td>Кулер CPU</td>
+          <td><a href="https://www.dns-shop.ru/search/?q=deepcool%20ak400">DeepCool AK400</a></td>
+          <td class="num">2&nbsp;200</td>
+          <td>у OEM-процессора кулера нет; башня тихая для 24/7</td>
+        </tr>
+        <tr>
+          <td>Память</td>
+          <td><a href="https://www.dns-shop.ru/search/?q=16gb%202x8%20ddr4%203200">16&nbsp;ГБ (2×8) DDR4-3200</a> <span class="muted">любой бренд</span></td>
+          <td class="num">~11&nbsp;000<span class="muted">*</span></td>
+          <td>модель живёт в 24&nbsp;ГБ VRAM, системе хватит 16&nbsp;ГБ; 32&nbsp;ГБ — только если будет работа на CPU</td>
+        </tr>
+        <tr>
+          <td>SSD</td>
+          <td><a href="https://www.dns-shop.ru/search/?q=kingston%20nv3%201tb">1&nbsp;ТБ NVMe PCIe&nbsp;4.0</a> <span class="muted">Kingston NV3</span></td>
+          <td class="num">~13&nbsp;000<span class="muted">*</span></td>
+          <td>ОС + модели (Whisper/GigaAM весят гигабайты); 512&nbsp;ГБ дешевле, если впритык</td>
+        </tr>
+        <tr class="row-hi">
+          <td><strong>БП — не экономить</strong></td>
+          <td><a href="https://www.dns-shop.ru/product/61fda40aed8bd21a/blok-pitania-cougar-gr-850-31gr0856433p-cernyj/">Cougar GR&nbsp;850</a> <span class="muted">850&nbsp;Вт 80+ Gold, модульный</span></td>
+          <td class="num win">5&nbsp;399</td>
+          <td>нативные PCIe-кабели (у GR&nbsp;850 их 3× при нужных <strong>2× 8-pin</strong>); 850&nbsp;Вт держат броски 3090</td>
+        </tr>
+        <tr>
+          <td>Корпус</td>
+          <td><a href="https://www.dns-shop.ru/search/?q=deepcool%20cc560%20v2">DeepCool CC560 V2</a> <span class="muted">(4 вентилятора)</span></td>
+          <td class="num">4&nbsp;999</td>
+          <td>сетка + 4&nbsp;кулера в комплекте — продув для горячей GDDR6X; влезает карта до 370&nbsp;мм</td>
+        </tr>
+        <tr>
+          <td>ОС</td>
+          <td>Ubuntu Server 24.04 LTS</td>
+          <td class="num">0</td>
+          <td>бесплатно; правильная база под NVIDIA-драйвер + CUDA для сервера</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="tot">
+    <div><strong>Хост (без видеокарты)</strong><br><span class="muted">+ твоя Palit 3090 ₽65k = весь рабочий бокс</span></div>
+    <div style="text-align:right"><span class="big">≈ ₽55k</span><br><span class="muted">всё вместе ≈ ₽120k</span></div>
+  </div>
+
+  <p class="note warn">* <strong>Память и SSD скакнули</strong> в дефиците памяти 2026&nbsp;года (та же причина, по которой NVIDIA подняла DGX&nbsp;Spark на&nbsp;18%). На DNS: Kingston Fury Beast 16&nbsp;ГБ — <strong>₽13&nbsp;499</strong>, Kingston NV3 1&nbsp;ТБ — <strong>₽12&nbsp;999</strong>. Дешевле: на память — pleer/KNS/Ситилинк (~₽9–10k за 16&nbsp;ГБ), либо бери 16&nbsp;ГБ / 512&nbsp;ГБ. Цены сверены по DNS-зеркалу и РФ-трекерам (DNS блокирует парсинг) — ориентир, не оферта.</p>
+
+  <h2>Вариант 2 · бюджетный б/у-хост с Avito (~₽35k)</h2>
+  <p>Память сейчас дорогая <em>новой</em> — а <strong>б/у плата+CPU+память не изнашиваются</strong> и обходят спайк цен 2026. Поэтому самый дешёвый хост: купить б/у «связку», а новым взять только то, что на 24/7 нельзя брать бывшим в употреблении.</p>
+  <div class="tbl">
+    <table>
+      <thead><tr><th>Часть</th><th>Где / что</th><th class="num">₽</th></tr></thead>
+      <tbody>
+        <tr>
+          <td>Связка плата+CPU+память</td>
+          <td><a href="https://www.avito.ru/all?q=связка+ryzen+5+5600+b550+16gb">Avito: B550 + Ryzen&nbsp;5 5600 + 16&nbsp;ГБ DDR4</a> <span class="muted">(б/у)</span></td>
+          <td class="num">~20&nbsp;000</td>
+        </tr>
+        <tr class="row-hi">
+          <td><strong>БП — только НОВЫЙ</strong></td>
+          <td><a href="https://www.dns-shop.ru/product/61fda40aed8bd21a/blok-pitania-cougar-gr-850-31gr0856433p-cernyj/">Cougar GR&nbsp;850</a> <span class="muted">(б/у БП на 24/7 — нельзя)</span></td>
+          <td class="num win">5&nbsp;399</td>
+        </tr>
+        <tr>
+          <td>SSD 1&nbsp;ТБ</td>
+          <td><a href="https://www.avito.ru/all?q=ssd+nvme+1tb">Avito б/у NVMe</a> или новый ₽13k</td>
+          <td class="num">~6&nbsp;000</td>
+        </tr>
+        <tr>
+          <td>Корпус</td>
+          <td>б/у с продувом / новый CC560</td>
+          <td class="num">~3&nbsp;000</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="tot">
+    <div><strong>Б/у-хост</strong><br><span class="muted">+ Palit 3090 ₽65k = весь бокс ≈ ₽100k</span></div>
+    <div style="text-align:right"><span class="big">≈ ₽35k</span><br><span class="muted">экономия ~₽20k против нового</span></div>
+  </div>
+  <ul>
+    <li><strong>БП — только новый.</strong> Б/у БП на карте 350&nbsp;Вт 24/7 — риск пожара/нестабильности. Это единственная деталь, на которой нельзя экономить покупкой б/у.</li>
+    <li><strong>Плата / CPU / память б/у — безопасно</strong> (не изнашиваются). Особенно память: новая 16&nbsp;ГБ ₽13,5k → б/у ₽6–9k.</li>
+    <li><strong>Бери B550 / X570</strong> (PCIe&nbsp;4.0), не B450 — на B450 (PCIe&nbsp;3.0) 3090 теряет ~2–3%.</li>
+    <li><strong>Avito Доставка с возвратом</strong> где есть; тестируй связку в первый день (POST, memtest, стресс).</li>
+    <li><strong>Готовый системник «без видеокарты»</strong> (~₽35–38k) часто идёт с БП <strong>550–600&nbsp;Вт</strong> — для 3090 не хватит, планируй замену БП (новый GR&nbsp;850).</li>
+  </ul>
+
+  <h2>Чтобы всё заработало — проверка совместимости</h2>
+  <ul>
+    <li><strong>Сокет.</strong> Плата, процессор и кулер — все AM4. Совпадает.</li>
+    <li><strong>PCIe.</strong> Главный слот B550 = PCIe&nbsp;4.0 x16 → 3090 (PCIe&nbsp;4.0) на полной полосе.</li>
+    <li><strong>Питание GPU.</strong> БП даёт <strong>2× PCIe 8-pin</strong> (требование GamingPro). У GR&nbsp;850 их даже 3 — с запасом.</li>
+    <li><strong>Запас мощности.</strong> 850&nbsp;Вт ≥ 750&nbsp;Вт реком.; держит 350&nbsp;Вт карта + 65&nbsp;Вт CPU + транзиентные броски 3090.</li>
+    <li><strong>Габариты.</strong> Карта 294&nbsp;мм / 2.7&nbsp;слота входит в CC560 V2 (до 370&nbsp;мм). Зазор есть.</li>
+    <li><strong>BIOS.</strong> B550 заводит Ryzen&nbsp;5600 из коробки — ловушки «не стартует, нужна прошивка» нет.</li>
+    <li><strong>Видеовыход.</strong> У 5600 нет встроенной графики — картинку даёт сама 3090 (для установки), дальше работаешь по сети (headless).</li>
+  </ul>
+
+  <h2>После сборки — 4 шага до рабочего ASR</h2>
+  <ol>
+    <li>Поставить <strong>Ubuntu Server 24.04 LTS</strong>.</li>
+    <li>Драйвер + CUDA: <code>sudo ubuntu-drivers autoinstall</code>, перезагрузка, проверить <code>nvidia-smi</code>.</li>
+    <li><strong>Лимит мощности для 24/7:</strong> <code>nvidia-smi -pl 280</code> — теряешь ~3–5% throughput, но тише и холоднее.</li>
+    <li><strong>Приёмка б/у карты:</strong> <code>memtest_vulkan</code> или OCCT&nbsp;VRAM 30–60&nbsp;мин (температура памяти &lt;100&nbsp;°C), затем час реальной транскрипции — следить за XID-ошибками в <code>nvidia-smi -q</code>. Если карта пришла Авито&nbsp;Доставкой — делать это <strong>в окне возврата</strong>.</li>
+  </ol>
+
+  <p class="note"><strong>Ещё дешевле:</strong> если уже есть ПК с БП ≥750&nbsp;Вт Gold (2× PCIe 8-pin) и ~300&nbsp;мм места — просто вставь карту, ₽0. <strong>Без пайки:</strong> новые детали из «Варианта&nbsp;1» через <a href="https://www.dns-shop.ru/configurator/">конфигуратор DNS</a> + услугу сборки (~₽3–10k) — соберут и протестируют.</p>
+
+  <div class="foot">
+    Цены — DNS / РФ-ритейл, перепроверены июнь&nbsp;2026 (память/SSD волатильны из-за дефицита; DNS блокирует парсинг — сверка по зеркалу dns-shop.kg + трекерам). Полный разбор «арендовать vs купить vs self-host» — в <a href="whisper-gpu-research.html">whisper-gpu-research.html</a>.
+  </div>
+
+</div>
+</body>
+</html>

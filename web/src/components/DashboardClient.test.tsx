@@ -8,6 +8,9 @@ const mockGetCurrentUser = vi.fn();
 const mockListRecordings = vi.fn();
 const mockCreateRecording = vi.fn();
 const mockDeleteRecording = vi.fn();
+const mockRestoreRecording = vi.fn();
+const mockBulkRecordingOperation = vi.fn();
+const mockDeleteDictationEntry = vi.fn();
 const mockGetRecording = vi.fn();
 const mockGenerateSummary = vi.fn();
 const mockStartSummaryGeneration = vi.fn();
@@ -17,6 +20,7 @@ const mockFulltextSearch = vi.fn();
 const mockChangePassword = vi.fn();
 const mockGetSettings = vi.fn();
 const mockUpdateSettings = vi.fn();
+const mockGetTranscriptionOptions = vi.fn();
 const mockGetPreferences = vi.fn();
 const mockUpdatePreferences = vi.fn();
 const mockGetTelegramLinkStatus = vi.fn();
@@ -55,6 +59,9 @@ vi.mock("@/lib/api", () => ({
   listRecordings: (...args: unknown[]) => mockListRecordings(...args),
   createRecording: (...args: unknown[]) => mockCreateRecording(...args),
   deleteRecording: (...args: unknown[]) => mockDeleteRecording(...args),
+  restoreRecording: (...args: unknown[]) => mockRestoreRecording(...args),
+  bulkRecordingOperation: (...args: unknown[]) => mockBulkRecordingOperation(...args),
+  deleteDictationEntry: (...args: unknown[]) => mockDeleteDictationEntry(...args),
   getRecording: (...args: unknown[]) => mockGetRecording(...args),
   generateSummary: (...args: unknown[]) => mockGenerateSummary(...args),
   startSummaryGeneration: (...args: unknown[]) => mockStartSummaryGeneration(...args),
@@ -64,6 +71,7 @@ vi.mock("@/lib/api", () => ({
   changePassword: (...args: unknown[]) => mockChangePassword(...args),
   getSettings: (...args: unknown[]) => mockGetSettings(...args),
   updateSettings: (...args: unknown[]) => mockUpdateSettings(...args),
+  getTranscriptionOptions: (...args: unknown[]) => mockGetTranscriptionOptions(...args),
   getPreferences: (...args: unknown[]) => mockGetPreferences(...args),
   updatePreferences: (...args: unknown[]) => mockUpdatePreferences(...args),
   getTelegramLinkStatus: (...args: unknown[]) => mockGetTelegramLinkStatus(...args),
@@ -163,6 +171,9 @@ function arrangeHappyPathMocks() {
   mockListRecordings.mockResolvedValue([baseRecording]);
   mockCreateRecording.mockResolvedValue(baseRecording);
   mockDeleteRecording.mockResolvedValue(undefined);
+  mockRestoreRecording.mockResolvedValue(baseRecording);
+  mockBulkRecordingOperation.mockResolvedValue(undefined);
+  mockDeleteDictationEntry.mockResolvedValue(undefined);
   mockGetRecording.mockResolvedValue(baseRecordingDetail);
   mockGenerateSummary.mockResolvedValue(baseRecordingDetail.summary);
   mockStartSummaryGeneration.mockResolvedValue({ status: "queued" });
@@ -172,6 +183,7 @@ function arrangeHappyPathMocks() {
   mockChangePassword.mockResolvedValue({ message: "Password changed successfully" });
   mockGetSettings.mockResolvedValue(baseSettings);
   mockUpdateSettings.mockResolvedValue(baseSettings);
+  mockGetTranscriptionOptions.mockResolvedValue(null);
   mockGetPreferences.mockResolvedValue({ theme: "system", accent: "teal" });
   mockUpdatePreferences.mockResolvedValue({ theme: "system", accent: "teal" });
   mockGetTelegramLinkStatus.mockResolvedValue(baseTelegramStatus);
@@ -254,6 +266,9 @@ describe("DashboardClient", () => {
       mockListRecordings,
       mockCreateRecording,
       mockDeleteRecording,
+      mockRestoreRecording,
+      mockBulkRecordingOperation,
+      mockDeleteDictationEntry,
       mockGetRecording,
       mockGenerateSummary,
       mockStartSummaryGeneration,
@@ -263,6 +278,7 @@ describe("DashboardClient", () => {
       mockChangePassword,
       mockGetSettings,
       mockUpdateSettings,
+      mockGetTranscriptionOptions,
       mockGetTelegramLinkStatus,
       mockStartTelegramLink,
       mockClaimTelegramLinkCode,
@@ -421,6 +437,9 @@ describe("DashboardClient", () => {
     });
 
     await openLibraryView(user);
+    // r1 is still selected from earlier, so the detail panel is showing.
+    // Clicking "New" clears the selection and returns the new-recording pane.
+    await user.click(screen.getByRole("button", { name: "New" }));
     mockCreateRecording.mockRejectedValueOnce(new ApiError(400, "Create failed"));
     await user.type(screen.getByTestId("recording-title"), "Bad");
     await user.click(screen.getByTestId("create-recording"));
@@ -804,7 +823,9 @@ describe("DashboardClient", () => {
     await user.click(screen.getByTestId("confirm-delete-recording-action"));
 
     await waitFor(() => {
-      expect(mockDeleteRecording).toHaveBeenCalledWith("r1");
+      // Active-library deletion threads { permanent: false } so the recording
+      // is moved to Trash rather than removed outright.
+      expect(mockDeleteRecording).toHaveBeenCalledWith("r1", { permanent: false });
       // listRecordings should have been called again (initial load + after delete)
       expect(mockListRecordings).toHaveBeenCalledTimes(2);
     });
@@ -835,7 +856,8 @@ describe("DashboardClient", () => {
     await user.click(screen.getByTestId("confirm-delete-recording-action"));
 
     await waitFor(() => {
-      expect(mockDeleteRecording).toHaveBeenCalledWith("r1");
+      // Active-library deletion threads { permanent: false } (move to Trash).
+      expect(mockDeleteRecording).toHaveBeenCalledWith("r1", { permanent: false });
     });
 
     // Detail panel should be gone since we deleted the selected recording
@@ -1315,5 +1337,740 @@ describe("DashboardClient", () => {
         "folder-x",
       );
     });
+  });
+
+  // ===================================================================
+  // Additional coverage: trash, bulk ops, summary/restore, folder
+  // rename/delete modals, dictation history, dictionary, telegram,
+  // keyboard navigation, status pills, settings checkbox.
+  // ===================================================================
+
+  // --- Trash view: loads trashed recordings and shows restore empty state ---
+
+  it("loads trashed recordings when the trash tab is opened and shows the restore prompt", async () => {
+    arrangeHappyPathMocks();
+    const trashed = { ...baseRecording, id: "trashed-1", title: "Old idea", deleted_at: "2026-05-01T00:00:00Z" };
+    mockListRecordings.mockImplementation(async (args?: { trashed?: boolean }) =>
+      args?.trashed ? [trashed] : [baseRecording],
+    );
+    const user = userEvent.setup();
+
+    render(<DashboardClient />);
+    await waitForDashboardReady();
+
+    await user.click(screen.getByTestId("tab-trash"));
+
+    await waitFor(() => {
+      expect(mockListRecordings).toHaveBeenCalledWith({ limit: 100, trashed: true });
+      expect(screen.getByTestId("workspace-title")).toHaveTextContent("Trash");
+      expect(screen.getByTestId("select-recording-trashed-1")).toHaveTextContent("Old idea");
+    });
+
+    // The trash detail pane shows the "select a recording" prompt, not a recorder.
+    expect(screen.getByText("Select a Recording")).toBeInTheDocument();
+    expect(screen.queryByTestId("recording-title")).not.toBeInTheDocument();
+  });
+
+  it("permanently deletes a trashed recording and restores it from the detail panel", async () => {
+    arrangeHappyPathMocks();
+    const trashed = { ...baseRecording, id: "trashed-1", title: "Old", deleted_at: "2026-05-01T00:00:00Z" };
+    mockListRecordings.mockImplementation(async (args?: { trashed?: boolean }) =>
+      args?.trashed ? [trashed] : [baseRecording],
+    );
+    mockGetRecording.mockResolvedValue({ ...baseRecordingDetail, ...trashed });
+    const user = userEvent.setup();
+
+    render(<DashboardClient />);
+    await waitForDashboardReady();
+    await user.click(screen.getByTestId("tab-trash"));
+
+    await user.click(screen.getByTestId("select-recording-trashed-1"));
+    await waitFor(() => {
+      expect(screen.getByTestId("recording-detail")).toBeInTheDocument();
+    });
+
+    // Restore from the detail panel.
+    await user.click(screen.getByRole("button", { name: "Restore" }));
+    await waitFor(() => {
+      expect(mockRestoreRecording).toHaveBeenCalledWith("trashed-1");
+      expect(screen.getByTestId("dashboard-message")).toHaveTextContent("Recording restored.");
+    });
+  });
+
+  it("surfaces an error when restoring a recording fails", async () => {
+    arrangeHappyPathMocks();
+    const trashed = { ...baseRecording, id: "trashed-1", title: "Old", deleted_at: "2026-05-01T00:00:00Z" };
+    mockListRecordings.mockImplementation(async (args?: { trashed?: boolean }) =>
+      args?.trashed ? [trashed] : [baseRecording],
+    );
+    mockGetRecording.mockResolvedValue({ ...baseRecordingDetail, ...trashed });
+    mockRestoreRecording.mockRejectedValueOnce(new Error("Restore failed"));
+    const user = userEvent.setup();
+
+    render(<DashboardClient />);
+    await waitForDashboardReady();
+    await user.click(screen.getByTestId("tab-trash"));
+    await user.click(screen.getByTestId("select-recording-trashed-1"));
+    await waitFor(() => expect(screen.getByTestId("recording-detail")).toBeInTheDocument());
+
+    await user.click(screen.getByRole("button", { name: "Restore" }));
+    await waitFor(() => {
+      expect(screen.getByTestId("dashboard-message")).toHaveTextContent("Restore failed");
+    });
+  });
+
+  it("permanently deletes a trashed recording via the confirm modal", async () => {
+    arrangeHappyPathMocks();
+    const trashed = { ...baseRecording, id: "trashed-1", title: "Old", deleted_at: "2026-05-01T00:00:00Z" };
+    mockListRecordings.mockImplementation(async (args?: { trashed?: boolean }) =>
+      args?.trashed ? [trashed] : [baseRecording],
+    );
+    mockGetRecording.mockResolvedValue({ ...baseRecordingDetail, ...trashed });
+    const user = userEvent.setup();
+
+    render(<DashboardClient />);
+    await waitForDashboardReady();
+    await user.click(screen.getByTestId("tab-trash"));
+    await user.click(screen.getByTestId("select-recording-trashed-1"));
+    await waitFor(() => expect(screen.getByTestId("recording-detail")).toBeInTheDocument());
+
+    await user.click(screen.getByRole("button", { name: "Delete Permanently" }));
+    await user.click(screen.getByTestId("confirm-delete-recording-action"));
+
+    await waitFor(() => {
+      expect(mockDeleteRecording).toHaveBeenCalledWith("trashed-1", { permanent: true });
+      expect(screen.getByTestId("dashboard-message")).toHaveTextContent("Recording permanently deleted.");
+    });
+  });
+
+  // --- Bulk operations: select mode, move-to-folder, trash, restore ---
+
+  it("bulk-moves selected recordings to a folder", async () => {
+    arrangeHappyPathMocks();
+    mockListFolders.mockResolvedValue([
+      { id: "folder-work", name: "Work", created_at: "2026-05-27T00:00:00Z" },
+    ]);
+    mockListRecordings.mockResolvedValue([
+      { ...baseRecording, id: "r1", title: "A" },
+      { ...baseRecording, id: "r2", title: "B" },
+    ]);
+    const user = userEvent.setup();
+
+    render(<DashboardClient />);
+    await waitForDashboardReady();
+    await openLibraryView(user);
+
+    await user.click(screen.getByTestId("select-mode-toggle"));
+    await user.click(screen.getByTestId("select-checkbox-r1"));
+    await user.click(screen.getByTestId("select-checkbox-r2"));
+
+    expect(screen.getByTestId("bulk-bar")).toHaveTextContent("2 selected");
+
+    await user.selectOptions(screen.getByTestId("bulk-move-folder"), "folder-work");
+
+    await waitFor(() => {
+      expect(mockBulkRecordingOperation).toHaveBeenCalledWith(
+        ["r1", "r2"],
+        "move",
+        "folder-work",
+      );
+    });
+    // Select mode is exited after a bulk action completes.
+    await waitFor(() => {
+      expect(screen.queryByTestId("bulk-bar")).not.toBeInTheDocument();
+    });
+  });
+
+  it("bulk-trashes selected recordings and reports errors", async () => {
+    arrangeHappyPathMocks();
+    mockListRecordings.mockResolvedValue([
+      { ...baseRecording, id: "r1", title: "A" },
+      { ...baseRecording, id: "r2", title: "B" },
+    ]);
+    const user = userEvent.setup();
+
+    render(<DashboardClient />);
+    await waitForDashboardReady();
+    await openLibraryView(user);
+
+    await user.click(screen.getByTestId("select-mode-toggle"));
+    await user.click(screen.getByTestId("select-checkbox-r1"));
+
+    mockBulkRecordingOperation.mockRejectedValueOnce(new Error("Bulk failed"));
+    await user.click(screen.getByTestId("bulk-trash"));
+
+    await waitFor(() => {
+      expect(mockBulkRecordingOperation).toHaveBeenCalledWith(["r1"], "delete", undefined);
+      expect(screen.getByTestId("dashboard-message")).toHaveTextContent("Bulk failed");
+    });
+    // On failure the selection is NOT exited, so the bulk bar stays visible.
+    expect(screen.getByTestId("bulk-bar")).toBeInTheDocument();
+  });
+
+  it("bulk-restores selected recordings from the trash view", async () => {
+    arrangeHappyPathMocks();
+    const trashed = { ...baseRecording, id: "t1", title: "Trashed", deleted_at: "2026-05-01T00:00:00Z" };
+    mockListRecordings.mockImplementation(async (args?: { trashed?: boolean }) =>
+      args?.trashed ? [trashed] : [baseRecording],
+    );
+    const user = userEvent.setup();
+
+    render(<DashboardClient />);
+    await waitForDashboardReady();
+    await user.click(screen.getByTestId("tab-trash"));
+    await waitFor(() => expect(screen.getByTestId("select-recording-t1")).toBeInTheDocument());
+
+    await user.click(screen.getByTestId("select-mode-toggle"));
+    await user.click(screen.getByTestId("select-checkbox-t1"));
+    await user.click(screen.getByTestId("bulk-restore"));
+
+    await waitFor(() => {
+      expect(mockBulkRecordingOperation).toHaveBeenCalledWith(["t1"], "restore", undefined);
+    });
+  });
+
+  // --- Folder rename modal ---
+
+  it("renames a folder through the rename modal", async () => {
+    arrangeHappyPathMocks();
+    mockListFolders.mockResolvedValue([
+      { id: "folder-1", name: "Work", created_at: "2026-05-27T00:00:00Z" },
+    ]);
+    mockRenameFolder.mockResolvedValueOnce({
+      id: "folder-1",
+      name: "Projects",
+      created_at: "2026-05-27T00:00:00Z",
+    });
+    const user = userEvent.setup();
+
+    render(<DashboardClient />);
+    await waitForDashboardReady();
+    await waitFor(() => expect(screen.getByTestId("rename-folder-folder-1")).toBeInTheDocument());
+
+    await user.click(screen.getByTestId("rename-folder-folder-1"));
+    const input = await screen.findByTestId("folder-rename-input");
+    expect(input).toHaveValue("Work");
+    await user.clear(input);
+    await user.type(input, "Projects");
+    await user.click(screen.getByTestId("folder-rename-submit"));
+
+    await waitFor(() => {
+      expect(mockRenameFolder).toHaveBeenCalledWith("folder-1", "Projects");
+      expect(screen.getByTestId("dashboard-message")).toHaveTextContent("Folder renamed.");
+    });
+    expect(screen.queryByTestId("folder-rename-modal")).not.toBeInTheDocument();
+  });
+
+  it("rejects an empty folder rename without calling the API", async () => {
+    arrangeHappyPathMocks();
+    mockListFolders.mockResolvedValue([
+      { id: "folder-1", name: "Work", created_at: "2026-05-27T00:00:00Z" },
+    ]);
+    const user = userEvent.setup();
+
+    render(<DashboardClient />);
+    await waitForDashboardReady();
+    await waitFor(() => expect(screen.getByTestId("rename-folder-folder-1")).toBeInTheDocument());
+
+    await user.click(screen.getByTestId("rename-folder-folder-1"));
+    const input = await screen.findByTestId("folder-rename-input");
+    await user.clear(input);
+    await user.click(screen.getByTestId("folder-rename-submit"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("dashboard-message")).toHaveTextContent("Enter a folder name.");
+    });
+    expect(mockRenameFolder).not.toHaveBeenCalled();
+    // The modal stays open since the rename was invalid.
+    expect(screen.getByTestId("folder-rename-modal")).toBeInTheDocument();
+  });
+
+  it("closes the rename modal with the Escape shortcut", async () => {
+    arrangeHappyPathMocks();
+    mockListFolders.mockResolvedValue([
+      { id: "folder-1", name: "Work", created_at: "2026-05-27T00:00:00Z" },
+    ]);
+    const user = userEvent.setup();
+
+    render(<DashboardClient />);
+    await waitForDashboardReady();
+    await waitFor(() => expect(screen.getByTestId("rename-folder-folder-1")).toBeInTheDocument());
+
+    await user.click(screen.getByTestId("rename-folder-folder-1"));
+    expect(await screen.findByTestId("folder-rename-modal")).toBeInTheDocument();
+
+    await user.keyboard("{Escape}");
+    await waitFor(() => {
+      expect(screen.queryByTestId("folder-rename-modal")).not.toBeInTheDocument();
+    });
+  });
+
+  // --- Folder delete modal ---
+
+  it("deletes a folder through the confirm modal and refreshes recordings", async () => {
+    arrangeHappyPathMocks();
+    mockListFolders.mockResolvedValue([
+      { id: "folder-1", name: "Work", created_at: "2026-05-27T00:00:00Z" },
+    ]);
+    const user = userEvent.setup();
+
+    render(<DashboardClient />);
+    await waitForDashboardReady();
+    await waitFor(() => expect(screen.getByTestId("delete-folder-folder-1")).toBeInTheDocument());
+
+    // Open the folder first so the delete handler exercises the active-folder
+    // branch that resets the view back to the library.
+    await user.click(screen.getByTestId("open-folder-folder-1"));
+    await waitFor(() => expect(screen.getByTestId("workspace-title")).toHaveTextContent("Work"));
+
+    await user.click(screen.getByTestId("delete-folder-folder-1"));
+    expect(await screen.findByTestId("folder-delete-modal")).toBeInTheDocument();
+    await user.click(screen.getByTestId("folder-delete-confirm"));
+
+    await waitFor(() => {
+      expect(mockDeleteFolder).toHaveBeenCalledWith("folder-1");
+      expect(screen.getByTestId("dashboard-message")).toHaveTextContent("Folder deleted.");
+    });
+    expect(screen.queryByTestId("sidebar-folder-folder-1")).not.toBeInTheDocument();
+  });
+
+  it("cancels a folder deletion without calling the API", async () => {
+    arrangeHappyPathMocks();
+    mockListFolders.mockResolvedValue([
+      { id: "folder-1", name: "Work", created_at: "2026-05-27T00:00:00Z" },
+    ]);
+    const user = userEvent.setup();
+
+    render(<DashboardClient />);
+    await waitForDashboardReady();
+    await waitFor(() => expect(screen.getByTestId("delete-folder-folder-1")).toBeInTheDocument());
+
+    await user.click(screen.getByTestId("delete-folder-folder-1"));
+    expect(await screen.findByTestId("folder-delete-modal")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+
+    await waitFor(() => {
+      expect(screen.queryByTestId("folder-delete-modal")).not.toBeInTheDocument();
+    });
+    expect(mockDeleteFolder).not.toHaveBeenCalled();
+  });
+
+  // --- Dictation history: stats, delete entry (optimistic + rollback), clear ---
+
+  const dictationEntry = (overrides: Record<string, unknown> = {}) => ({
+    client_entry_id: "e1",
+    raw_text: "raw words here",
+    cleaned_text: "cleaned words here",
+    duration_seconds: 12,
+    word_count: 3,
+    occurred_at: "2026-05-26T10:00:00Z",
+    ...overrides,
+  });
+
+  it("renders dictation history entries with stats and deletes a single entry", async () => {
+    arrangeHappyPathMocks();
+    mockListDictationEntries.mockResolvedValue([
+      dictationEntry({ client_entry_id: "e1", word_count: 4, duration_seconds: 60 }),
+      dictationEntry({ client_entry_id: "e2", word_count: 6, duration_seconds: 60, cleaned_text: null }),
+    ]);
+    const user = userEvent.setup();
+
+    render(<DashboardClient />);
+    await waitForDashboardReady();
+    await user.click(screen.getByTestId("tab-history"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("history-list")).toBeInTheDocument();
+      // Stats header sums word_count = 10 across entries.
+      expect(screen.getByTestId("dictation-stats")).toHaveTextContent("10");
+    });
+    // Entry e2 falls back to raw_text since cleaned_text is null.
+    expect(screen.getByTestId("history-entry-e2")).toHaveTextContent("raw words here");
+
+    await user.click(screen.getByTestId("delete-history-e1"));
+    await waitFor(() => {
+      expect(mockDeleteDictationEntry).toHaveBeenCalledWith("e1");
+      expect(screen.queryByTestId("history-entry-e1")).not.toBeInTheDocument();
+      expect(screen.getByTestId("dashboard-message")).toHaveTextContent("Entry removed.");
+    });
+  });
+
+  it("rolls back the optimistic delete when removing a dictation entry fails", async () => {
+    arrangeHappyPathMocks();
+    mockListDictationEntries.mockResolvedValue([dictationEntry({ client_entry_id: "e1" })]);
+    mockDeleteDictationEntry.mockRejectedValueOnce(new Error("Delete failed"));
+    const user = userEvent.setup();
+
+    render(<DashboardClient />);
+    await waitForDashboardReady();
+    await user.click(screen.getByTestId("tab-history"));
+    await waitFor(() => expect(screen.getByTestId("history-entry-e1")).toBeInTheDocument());
+
+    await user.click(screen.getByTestId("delete-history-e1"));
+    await waitFor(() => {
+      expect(screen.getByTestId("dashboard-message")).toHaveTextContent("Delete failed");
+    });
+    // Entry is restored after the failed delete.
+    expect(screen.getByTestId("history-entry-e1")).toBeInTheDocument();
+  });
+
+  it("clears all dictation history through the confirm modal", async () => {
+    arrangeHappyPathMocks();
+    mockListDictationEntries.mockResolvedValue([
+      dictationEntry({ client_entry_id: "e1" }),
+      dictationEntry({ client_entry_id: "e2" }),
+    ]);
+    const user = userEvent.setup();
+
+    render(<DashboardClient />);
+    await waitForDashboardReady();
+    await user.click(screen.getByTestId("tab-history"));
+    await waitFor(() => expect(screen.getByTestId("history-list")).toBeInTheDocument());
+
+    await user.click(screen.getByTestId("history-clear-all"));
+    expect(await screen.findByTestId("history-confirm-clear")).toBeInTheDocument();
+    await user.click(screen.getByTestId("history-confirm-clear-action"));
+
+    await waitFor(() => {
+      expect(mockDeleteDictationEntry).toHaveBeenCalledWith("e1");
+      expect(mockDeleteDictationEntry).toHaveBeenCalledWith("e2");
+      expect(screen.getByTestId("history-empty")).toBeInTheDocument();
+    });
+  });
+
+  // --- Dictionary: delete, duplicate guard, overuse warning, search filter ---
+
+  it("deletes a dictionary word", async () => {
+    arrangeHappyPathMocks();
+    mockListDictionaryWords.mockResolvedValue([
+      { client_word_id: "w-1", word: "kube", replacement: "Kubernetes", occurred_at: "2026-05-26T00:00:00Z" },
+    ]);
+    const user = userEvent.setup();
+
+    render(<DashboardClient />);
+    await waitForDashboardReady();
+    await user.click(screen.getByTestId("tab-dictionary"));
+    await waitFor(() => expect(screen.getByTestId("dictionary-word-w-1")).toBeInTheDocument());
+
+    await user.click(screen.getByTestId("delete-dictionary-w-1"));
+    await waitFor(() => {
+      expect(mockDeleteDictionaryWord).toHaveBeenCalledWith("w-1");
+      expect(screen.queryByTestId("dictionary-word-w-1")).not.toBeInTheDocument();
+      expect(screen.getByTestId("dashboard-message")).toHaveTextContent("Word removed.");
+    });
+  });
+
+  it("rejects a duplicate dictionary word case-insensitively without calling the API", async () => {
+    arrangeHappyPathMocks();
+    mockListDictionaryWords.mockResolvedValue([
+      { client_word_id: "w-1", word: "Kube", replacement: null, occurred_at: "2026-05-26T00:00:00Z" },
+    ]);
+    const user = userEvent.setup();
+
+    render(<DashboardClient />);
+    await waitForDashboardReady();
+    await user.click(screen.getByTestId("tab-dictionary"));
+    await waitFor(() => expect(screen.getByTestId("dictionary-word-w-1")).toBeInTheDocument());
+
+    await user.type(screen.getByTestId("new-dictionary-word"), "kube");
+    await user.click(screen.getByTestId("add-dictionary-word"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("dashboard-message")).toHaveTextContent("Already in your dictionary.");
+    });
+    expect(mockCreateDictionaryWord).not.toHaveBeenCalled();
+  });
+
+  it("rejects an empty dictionary word", async () => {
+    arrangeHappyPathMocks();
+    const user = userEvent.setup();
+
+    render(<DashboardClient />);
+    await waitForDashboardReady();
+    await user.click(screen.getByTestId("tab-dictionary"));
+    await waitFor(() => expect(screen.getByTestId("dictionary-empty")).toBeInTheDocument());
+
+    await user.click(screen.getByTestId("add-dictionary-word"));
+    await waitFor(() => {
+      expect(screen.getByTestId("dashboard-message")).toHaveTextContent("Enter a word.");
+    });
+    expect(mockCreateDictionaryWord).not.toHaveBeenCalled();
+  });
+
+  it("shows the overuse warning and filters words via the search box", async () => {
+    arrangeHappyPathMocks();
+    const words = Array.from({ length: 31 }, (_, i) => ({
+      client_word_id: `w-${i}`,
+      word: i === 0 ? "alpha" : `term${i}`,
+      replacement: i === 0 ? "Alpha Corp" : null,
+      occurred_at: "2026-05-26T00:00:00Z",
+    }));
+    mockListDictionaryWords.mockResolvedValue(words);
+    const user = userEvent.setup();
+
+    render(<DashboardClient />);
+    await waitForDashboardReady();
+    await user.click(screen.getByTestId("tab-dictionary"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("dictionary-overuse")).toBeInTheDocument();
+      expect(screen.getByTestId("dictionary-list")).toBeInTheDocument();
+    });
+
+    // Filter by replacement text — only the "alpha" row matches "corp".
+    await user.type(screen.getByTestId("dictionary-search"), "corp");
+    await waitFor(() => {
+      expect(screen.getByTestId("dictionary-word-w-0")).toBeInTheDocument();
+      expect(screen.queryByTestId("dictionary-word-w-1")).not.toBeInTheDocument();
+    });
+  });
+
+  it("marks the dictionary unavailable when creating a word 404s", async () => {
+    arrangeHappyPathMocks();
+    mockCreateDictionaryWord.mockRejectedValueOnce(new ApiError(404, "Not Found"));
+    const user = userEvent.setup();
+
+    render(<DashboardClient />);
+    await waitForDashboardReady();
+    await user.click(screen.getByTestId("tab-dictionary"));
+    await waitFor(() => expect(screen.getByTestId("dictionary-empty")).toBeInTheDocument());
+
+    await user.type(screen.getByTestId("new-dictionary-word"), "newterm");
+    await user.click(screen.getByTestId("add-dictionary-word"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("dictionary-unavailable")).toBeInTheDocument();
+    });
+  });
+
+  // --- Telegram: start link, unlink, refresh status ---
+
+  it("starts a Telegram link, stores the pairing and navigates to the deep link", async () => {
+    arrangeHappyPathMocks();
+    const hrefSetter = vi.fn();
+    const originalLocation = window.location;
+    Object.defineProperty(window, "location", {
+      configurable: true,
+      value: {
+        ...originalLocation,
+        set href(value: string) {
+          hrefSetter(value);
+        },
+        get href() {
+          return originalLocation.href;
+        },
+      },
+    });
+    const user = userEvent.setup();
+
+    try {
+      render(<DashboardClient />);
+      await waitForDashboardReady();
+      await openSettingsView(user);
+
+      await user.click(screen.getByRole("button", { name: "Link Telegram" }));
+
+      await waitFor(() => {
+        expect(mockStartTelegramLink).toHaveBeenCalled();
+        expect(hrefSetter).toHaveBeenCalledWith(
+          "tg://resolve?domain=waicomputer_bot&start=link_token",
+        );
+        expect(screen.getByTestId("dashboard-message")).toHaveTextContent("Telegram opened.");
+      });
+      // The awaiting-start hint shows once a pairing exists.
+      expect(screen.getByText(/Waiting for Start in Telegram/)).toBeInTheDocument();
+    } finally {
+      Object.defineProperty(window, "location", {
+        configurable: true,
+        value: originalLocation,
+      });
+    }
+  });
+
+  it("unlinks Telegram when already linked", async () => {
+    arrangeHappyPathMocks();
+    mockGetTelegramLinkStatus.mockResolvedValue({
+      ...baseTelegramStatus,
+      linked: true,
+      username: "mik",
+      telegram_user_id: 7,
+      linked_at: "2026-05-22T09:00:00Z",
+    });
+    const user = userEvent.setup();
+
+    render(<DashboardClient />);
+    await waitForDashboardReady();
+    await openSettingsView(user);
+
+    await waitFor(() => {
+      expect(screen.getByText("@mik")).toBeInTheDocument();
+    });
+
+    // After unlinking, the status refetch reports unlinked.
+    mockGetTelegramLinkStatus.mockResolvedValueOnce(baseTelegramStatus);
+    await user.click(screen.getByRole("button", { name: "Disconnect" }));
+
+    await waitFor(() => {
+      expect(mockUnlinkTelegram).toHaveBeenCalled();
+      expect(screen.getByRole("button", { name: "Link Telegram" })).toBeInTheDocument();
+    });
+  });
+
+  it("reports an error when starting a Telegram link fails", async () => {
+    arrangeHappyPathMocks();
+    mockStartTelegramLink.mockRejectedValueOnce(new Error("TG link failed"));
+    const user = userEvent.setup();
+
+    render(<DashboardClient />);
+    await waitForDashboardReady();
+    await openSettingsView(user);
+
+    await user.click(screen.getByRole("button", { name: "Link Telegram" }));
+    await waitFor(() => {
+      expect(screen.getByTestId("dashboard-message")).toHaveTextContent("TG link failed");
+    });
+  });
+
+  it("requires a code before claiming a Telegram link by code", async () => {
+    arrangeHappyPathMocks();
+    const user = userEvent.setup();
+
+    render(<DashboardClient />);
+    await waitForDashboardReady();
+    await openSettingsView(user);
+
+    await user.click(screen.getByRole("button", { name: "Link by code" }));
+    await waitFor(() => {
+      expect(screen.getByTestId("dashboard-message")).toHaveTextContent("Enter the Telegram code.");
+    });
+    expect(mockClaimTelegramLinkCode).not.toHaveBeenCalled();
+  });
+
+  // --- Keyboard navigation shortcuts (n / d / l / w / Escape) ---
+
+  it("navigates between views with single-key shortcuts", async () => {
+    arrangeHappyPathMocks();
+    const user = userEvent.setup();
+
+    render(<DashboardClient />);
+    await waitForDashboardReady();
+
+    await user.keyboard("d");
+    await waitFor(() => expect(screen.getByTestId("workspace-title")).toHaveTextContent("Dictate"));
+
+    await user.keyboard("l");
+    await waitFor(() => expect(screen.getByTestId("recording-list")).toBeInTheDocument());
+
+    await user.keyboard("w");
+    await waitFor(() => expect(screen.getByTestId("workspace-title")).toHaveTextContent("Wai"));
+
+    // 'n' focuses the recorder pane (library view + new-recording form).
+    await user.keyboard("n");
+    await waitFor(() => expect(screen.getByTestId("recording-title")).toBeInTheDocument());
+  });
+
+  it("Escape closes the folder creator without deleting state", async () => {
+    arrangeHappyPathMocks();
+    const user = userEvent.setup();
+
+    render(<DashboardClient />);
+    await waitForDashboardReady();
+
+    await user.click(screen.getByTestId("open-create-folder"));
+    expect(screen.getByTestId("create-folder-form")).toBeInTheDocument();
+
+    await user.keyboard("{Escape}");
+    await waitFor(() => {
+      expect(screen.queryByTestId("create-folder-form")).not.toBeInTheDocument();
+    });
+  });
+
+  // --- Recording status pills (processing + sanitized failure message) ---
+
+  it("renders an in-progress status pill and a sanitized failure message", async () => {
+    arrangeHappyPathMocks();
+    mockListRecordings.mockResolvedValue([
+      { ...baseRecording, id: "r-proc", title: "Working", status: "processing" },
+      {
+        ...baseRecording,
+        id: "r-fail",
+        title: "Broken",
+        status: "failed",
+        failure_message: 'Traceback (most recent call last): File "/var/app/x.py", line 3',
+      },
+    ]);
+    const user = userEvent.setup();
+
+    render(<DashboardClient />);
+    await waitForDashboardReady();
+    await user.click(screen.getByTestId("tab-library"));
+
+    await waitFor(() => {
+      // "processing" status renders as a pill with the underscore stripped.
+      expect(screen.getByTestId("select-recording-r-proc")).toHaveTextContent("processing");
+      // Internal traceback is hidden behind the user-facing fallback copy.
+      expect(screen.getByTestId("select-recording-r-fail")).toHaveTextContent(
+        "Could not process this recording. Please try again or contact support.",
+      );
+    });
+  });
+
+  // --- Settings: dictation post-filter checkbox update ---
+
+  it("toggles the dictation cleanup checkbox and persists the setting", async () => {
+    arrangeHappyPathMocks();
+    mockUpdateSettings.mockResolvedValueOnce({
+      ...baseSettings,
+      dictation_post_filter_enabled: true,
+    });
+    const user = userEvent.setup();
+
+    render(<DashboardClient />);
+    await waitForDashboardReady();
+    await openSettingsView(user);
+
+    const checkbox = await screen.findByLabelText("Clean up dictated text before insertion");
+    expect(checkbox).not.toBeChecked();
+
+    await user.click(checkbox);
+    await waitFor(() => {
+      expect(mockUpdateSettings).toHaveBeenCalledWith({ dictation_post_filter_enabled: true });
+      expect(screen.getByTestId("dashboard-message")).toHaveTextContent("Settings updated.");
+    });
+  });
+
+  // --- Assign-to-folder error path reconciles via a refetch ---
+
+  it("reverts and reports when assigning a recording to a folder fails", async () => {
+    arrangeHappyPathMocks();
+    mockListFolders.mockResolvedValue([
+      { id: "folder-x", name: "Box", created_at: "2026-05-27T00:00:00Z" },
+    ]);
+    mockListRecordings.mockResolvedValue([
+      { ...baseRecording, id: "rec-drag", title: "Drag me", folder_id: null },
+    ]);
+    mockAssignRecordingToFolder.mockRejectedValueOnce(new Error("Assign failed"));
+
+    render(<DashboardClient />);
+    await waitForDashboardReady();
+    await waitFor(() => expect(screen.getByTestId("sidebar-folder-folder-x")).toBeInTheDocument());
+
+    const target = screen.getByTestId("sidebar-folder-folder-x");
+    const dataTransfer = {
+      getData: vi.fn(() => "rec-drag"),
+      setData: vi.fn(),
+      dropEffect: "move",
+      effectAllowed: "move",
+    };
+    const dropEvent = new Event("drop", { bubbles: true });
+    Object.defineProperty(dropEvent, "dataTransfer", { value: dataTransfer, writable: false });
+    target.dispatchEvent(dropEvent);
+
+    await waitFor(() => {
+      expect(mockAssignRecordingToFolder).toHaveBeenCalledWith("rec-drag", "folder-x");
+      expect(screen.getByTestId("dashboard-message")).toHaveTextContent("Assign failed");
+    });
+    // listRecordings is called twice on the error path (initial + reconcile).
+    expect(mockListRecordings.mock.calls.length).toBeGreaterThanOrEqual(2);
   });
 });

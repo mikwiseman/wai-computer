@@ -1,0 +1,470 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Self-hosting transcription on rented GPUs — WaiComputer feasibility</title>
+<style>
+  :root{
+    --bg:#fcfcfb;
+    --ink:#141210;
+    --muted:#6c6862;
+    --faint:#94908a;
+    --line:#e7e4dd;
+    --line-strong:#1c1a17;
+    --accent:#0b7a4b;
+    --mark:#fbf3cf;
+    --card:#ffffff;
+    --mono:"SF Mono","JetBrains Mono",ui-monospace,Menlo,Consolas,monospace;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,Helvetica,Arial,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html{-webkit-text-size-adjust:100%}
+  body{
+    margin:0;background:var(--bg);color:var(--ink);
+    font-family:var(--sans);font-size:16.5px;line-height:1.62;
+    -webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;
+  }
+  .wrap{max-width:880px;margin:0 auto;padding:72px 28px 120px}
+  ::selection{background:var(--mark)}
+
+  .eyebrow{font-size:12px;letter-spacing:.16em;text-transform:uppercase;color:var(--faint);font-weight:600}
+  h1{font-size:40px;line-height:1.1;letter-spacing:-.02em;font-weight:680;margin:14px 0 0}
+  .lede{font-size:19px;line-height:1.5;color:var(--muted);margin:18px 0 0;max-width:62ch}
+  .meta{margin-top:22px;font-size:13px;color:var(--faint);font-family:var(--mono)}
+  .rule{height:1px;background:var(--line-strong);border:0;margin:34px 0 0}
+
+  .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--line);
+    border:1px solid var(--line);margin:42px 0 0}
+  .stat{background:var(--card);padding:18px 16px}
+  .stat .n{font-family:var(--mono);font-size:23px;font-weight:600;letter-spacing:-.01em;line-height:1.1}
+  .stat .l{font-size:12px;color:var(--muted);margin-top:7px;line-height:1.35}
+  .mh{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--faint);font-weight:600}
+  .mv{font-family:var(--mono);font-size:19px;font-weight:600;margin-top:5px;line-height:1.15}
+  .ms{font-size:12px;color:var(--muted);margin-top:5px;line-height:1.35}
+
+  section{margin-top:60px}
+  .snum{font-family:var(--mono);font-size:12.5px;color:var(--accent);font-weight:600;letter-spacing:.04em}
+  h2{font-size:25px;letter-spacing:-.015em;font-weight:660;margin:8px 0 0;line-height:1.18}
+  h3{font-size:16px;font-weight:660;margin:28px 0 0;letter-spacing:-.01em}
+  p{margin:14px 0 0;max-width:70ch}
+  strong{font-weight:660}
+  mark{background:var(--mark);padding:.05em .25em;border-radius:2px}
+  a{color:var(--ink);text-decoration:none;border-bottom:1px solid var(--line-strong)}
+  a:hover{border-bottom-color:var(--accent);color:var(--accent)}
+  /* lighter links inside tables so cells stay clean */
+  td a,th a,caption a,.note a{border-bottom:1px dotted var(--faint);color:inherit}
+  td a:hover,th a:hover,caption a:hover,.note a:hover{border-bottom-color:var(--accent);color:var(--accent)}
+  .muted{color:var(--muted)}
+
+  ul{margin:14px 0 0;padding:0;list-style:none;max-width:70ch}
+  ul li{position:relative;padding-left:22px;margin-top:9px}
+  ul li::before{content:"";position:absolute;left:2px;top:.66em;width:6px;height:6px;
+    background:var(--ink);border-radius:50%}
+  ul.check li::before{content:"";left:0;top:.5em;width:9px;height:5px;border:0;background:none;
+    border-left:1.8px solid var(--accent);border-bottom:1.8px solid var(--accent);
+    transform:rotate(-45deg);border-radius:0}
+
+  .callout{background:var(--card);border:1px solid var(--line);border-left:3px solid var(--accent);
+    padding:20px 22px;margin:22px 0 0}
+  .callout .k{font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--accent);font-weight:700}
+  .callout p:first-of-type{margin-top:8px}
+
+  .tbl{margin:22px 0 0;overflow-x:auto;border:1px solid var(--line)}
+  table{border-collapse:collapse;width:100%;font-size:14px;min-width:560px}
+  caption{caption-side:top;text-align:left;font-size:13px;color:var(--muted);padding:0 0 10px}
+  th,td{padding:9px 13px;text-align:left;border-bottom:1px solid var(--line);vertical-align:top}
+  thead th{border-bottom:1.5px solid var(--line-strong);font-size:12px;letter-spacing:.03em;
+    text-transform:uppercase;color:var(--muted);font-weight:660;white-space:nowrap}
+  tbody tr:last-child td{border-bottom:0}
+  tbody tr:hover{background:#faf8f2}
+  .num{font-family:var(--mono);text-align:right;white-space:nowrap;font-size:13px}
+  th.num{text-align:right}
+  .win{color:var(--accent);font-weight:660}
+  .row-hi{background:#f6faf6}
+  .row-hi:hover{background:#f0f7f0}
+  .note{font-size:13px;color:var(--muted);margin-top:11px;max-width:74ch}
+
+  footer{margin-top:72px;padding-top:24px;border-top:1px solid var(--line);
+    font-size:12.5px;color:var(--faint);line-height:1.7}
+  footer a{border-bottom:1px dotted var(--faint);color:var(--muted)}
+
+  @media (max-width:680px){
+    .wrap{padding:48px 18px 90px}
+    h1{font-size:31px}
+    .stats{grid-template-columns:repeat(2,1fr)}
+  }
+  @media print{
+    body{background:#fff}
+    .stat,.callout,.tbl{break-inside:avoid}
+    tbody tr:hover{background:none}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- Masthead -->
+  <header>
+    <div class="eyebrow">WaiComputer · Engineering research</div>
+    <h1>Owning the model instead of renting the API</h1>
+    <p class="lede">Can we take Whisper&nbsp;v3 (or better) off Deepgram, put it on a rented GPU, and fine-tune it for Russian? Cost, models, GPUs, and users-per-card.</p>
+    <div class="meta">Compiled 2026-06-01 · 5 research agents + 14 fact-checkers + a June-2026 recency sweep · companions: <a href="stt-benchmarks-2026.html">benchmark charts</a> + <a href="stt-model-picker-2026.html">model picker</a></div>
+    <hr class="rule">
+  </header>
+
+  <!-- Stat row -->
+  <div class="stats">
+    <div class="stat"><div class="n">~$199<span style="font-size:14px">/mo</span></div><div class="l">Cheapest production GPU (<a href="https://www.hetzner.com/dedicated-rootserver/gex44/">Hetzner</a>, fixed) — same backend we already use</div></div>
+    <div class="stat"><div class="n">1k–3k</div><div class="l">Daily active users on a single 24&nbsp;GB GPU</div></div>
+    <div class="stat"><div class="n">~12×</div><div class="l">Cheaper per minute than Deepgram — on compute alone</div></div>
+    <div class="stat"><div class="n">2.6%</div><div class="l">Russian WER (best case) of the top open model — vs ~16% for Whisper&nbsp;v3</div></div>
+  </div>
+
+  <!-- Verdict -->
+  <section style="margin-top:48px">
+    <div class="callout">
+      <div class="k">Bottom line</div>
+      <p><strong>Yes — running Whisper&nbsp;v3 on a rented GPU is trivial</strong> (it needs ~3&nbsp;GB of VRAM). But the honest answer has three parts:</p>
+      <ul class="check" style="margin-top:12px">
+        <li><strong>Don't run vanilla Whisper v3 for Russian</strong> — it's beaten ~3–7× by <a href="https://huggingface.co/ai-sage/GigaAM-v3">GigaAM v3</a> (MIT) and <a href="https://huggingface.co/t-tech/T-one">T-one</a> (Apache); use <a href="https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3">Parakeet-v3</a> or <a href="https://huggingface.co/openai/whisper-large-v3-turbo">whisper-large-v3-turbo</a> for English. Route by language.</li>
+        <li><strong>One cheap 24–32&nbsp;GB card (L4, or the new RTX PRO 4500 Blackwell, ~$175–285/mo) serves ~1,000–3,000 daily users.</strong> VRAM is a non-issue; live-stream concurrency is the real limit.</li>
+        <li><strong>Self-host for control and Russian quality — not price alone.</strong> Compute is ~12× cheaper than Deepgram, but <a href="https://console.groq.com/docs/model/whisper-large-v3-turbo">Groq</a>'s hosted Whisper-turbo at <mark>$0.04/audio-hour</mark> beats self-hosting unless the GPU runs near 100%.</li>
+      </ul>
+      <p style="margin-top:14px">Fine-tuning: <strong>don't train our own first.</strong> Free Apache-2.0 Russian checkpoints already exist, and the best Russian model isn't even a Whisper fine-tune. A <a href="https://github.com/Vaibhavs10/fast-whisper-finetuning">LoRA</a> run is ~$20–55 of GPU; the real cost is labeled data ($15–45k for 200&nbsp;hours).</p>
+    </div>
+  </section>
+
+  <!-- 1. Where we are -->
+  <section>
+    <div class="snum">01</div>
+    <h2>Where WaiComputer is today</h2>
+    <p>Every pipeline — live recording, dictation, batch uploads — runs on <a href="https://deepgram.com/pricing">Deepgram Nova-3</a>, billed per minute. Audio is 16&nbsp;kHz mono PCM on a <strong>CPU-only Hetzner VPS — no GPU anywhere</strong>. We hit a cost runaway on 2026-05-31 and added Redis guards (6,000 audio-min/day global, 1,200/user, 200 concurrent streams). So: does owning the model beat renting the API?</p>
+    <div class="tbl">
+      <table>
+        <caption>Deepgram Nova-3 list price (<a href="https://deepgram.com/pricing">deepgram.com/pricing</a>, 2026-06-01)</caption>
+        <thead><tr><th>Pipeline</th><th>Model</th><th class="num">$ / audio-hr</th><th class="num">$ / min</th></tr></thead>
+        <tbody>
+          <tr><td>Batch / file uploads</td><td>Nova-3 monolingual</td><td class="num">$0.462</td><td class="num">$0.0077</td></tr>
+          <tr><td>Live recording &amp; dictation</td><td>Nova-3 streaming*</td><td class="num">$0.288</td><td class="num">$0.0048</td></tr>
+          <tr><td>Russian (multilingual)</td><td>Nova-3 multi</td><td class="num">$0.35–0.55</td><td class="num">$0.0058–0.0092</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="note">*Deepgram restructured its pricing — streaming is currently $0.0048/min under a limited-time promo (may revert to ~$0.0077), and pre-recorded is now the dearer tier. Confirm against our actual invoice before modelling savings.</p>
+  </section>
+
+  <!-- 2. Whisper on a GPU -->
+  <section>
+    <div class="snum">02</div>
+    <h2>Can we put Whisper&nbsp;v3 on a rented GPU?</h2>
+    <p>Technically, easily. Whisper large-v3 is a 1.5B-parameter model; with <a href="https://github.com/SYSTRAN/faster-whisper">faster-whisper</a> (CTranslate2) at int8 it loads in <mark>~3&nbsp;GB</mark> (~5–6&nbsp;GB with diarization). Any 24&nbsp;GB card is oversized on memory — compute is the bottleneck, not VRAM. Two caveats:</p>
+    <ul>
+      <li><strong>Whisper has no true streaming mode</strong> (30-second windows). "Real-time Whisper" is a chunking trick — <a href="https://github.com/snakers4/silero-vad">Silero VAD</a> + faster-whisper, or <a href="https://github.com/collabora/WhisperLive">WhisperLive</a>. For low-latency dictation a natively-streaming model is cleaner.</li>
+      <li><strong>For Russian, vanilla v3 is the wrong model</strong> — ~16–19% WER on real noisy Russian, vs ~3–5% for purpose-built open models. Details next.</li>
+    </ul>
+  </section>
+
+  <!-- 3. Which models -->
+  <section>
+    <div class="snum">03</div>
+    <h2>Which models can we use?</h2>
+    <p>The open landscape moved past Whisper in 2026 — on speed (Parakeet) and, decisively for us, on Russian (GigaAM, T-one). Model names link to their cards; WER = word error rate, RTFx = throughput multiple (both per the <a href="https://huggingface.co/blog/open-asr-leaderboard">Open ASR Leaderboard</a>).</p>
+    <div class="tbl">
+      <table>
+        <caption>Open / self-hostable ASR — June 2026. ★ = Russian-specialist · ⚡ = speed leader</caption>
+        <thead>
+          <tr>
+            <th>Model</th><th class="num">Params</th><th class="num">VRAM</th>
+            <th class="num">EN WER</th><th class="num">RU WER</th><th class="num">Speed</th>
+            <th>Stream</th><th>License</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td><a href="https://huggingface.co/openai/whisper-large-v3">Whisper large-v3</a></td><td class="num">1.55B</td><td class="num">~3&nbsp;GB</td><td class="num">7.4%</td><td class="num">~16–19%</td><td class="num">69×</td><td>chunk</td><td>Apache-2.0</td></tr>
+          <tr><td><a href="https://huggingface.co/openai/whisper-large-v3-turbo">Whisper large-v3-turbo</a></td><td class="num">809M</td><td class="num">~1.5&nbsp;GB</td><td class="num">7.8%</td><td class="num">~14%</td><td class="num">148×</td><td>chunk</td><td>MIT</td></tr>
+          <tr class="row-hi"><td>★ <a href="https://huggingface.co/ai-sage/GigaAM-v3">GigaAM v3</a> <span class="muted">(Sber)</span></td><td class="num">~240M</td><td class="num">~1.5&nbsp;GB</td><td class="num">—</td><td class="num win">2.6–3.9%*</td><td class="num">high</td><td>CTC</td><td class="win">MIT</td></tr>
+          <tr class="row-hi"><td>★ <a href="https://huggingface.co/t-tech/T-one">T-one</a> <span class="muted">(T-Bank)</span></td><td class="num">71M</td><td class="num">&lt;1&nbsp;GB</td><td class="num">—</td><td class="num win">5.3%</td><td class="num">very high</td><td class="win">native</td><td class="win">Apache-2.0</td></tr>
+          <tr><td>⚡ <a href="https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3">Parakeet-tdt-0.6b-v3</a> <span class="muted">(NVIDIA)</span></td><td class="num">600M</td><td class="num">~2&nbsp;GB</td><td class="num win">6.3%</td><td class="num">incl. ru*</td><td class="num win">3,330×</td><td>buffered</td><td>CC-BY-4.0</td></tr>
+          <tr><td><a href="https://huggingface.co/ibm-granite/granite-speech-4.1-2b">Granite Speech 4.1 2B</a> <span class="muted">(IBM)</span></td><td class="num">2B</td><td class="num">~4&nbsp;GB</td><td class="num win">5.33%</td><td class="num">no ru</td><td class="num">231×</td><td>no</td><td class="win">Apache-2.0</td></tr>
+          <tr><td><a href="https://huggingface.co/Qwen/Qwen3-ASR-1.7B">Qwen3-ASR 1.7B</a> <span class="muted">(Alibaba)</span></td><td class="num">1.7B</td><td class="num">~4&nbsp;GB</td><td class="num">~6%</td><td class="num">6.0%*</td><td class="num">high</td><td>yes</td><td class="win">Apache-2.0</td></tr>
+          <tr><td><a href="https://huggingface.co/mistralai/Voxtral-Mini-4B-Realtime-2602">Voxtral Realtime</a> <span class="muted">(Mistral)</span></td><td class="num">~4B</td><td class="num">~2.5&nbsp;GB</td><td class="num">6.7%</td><td class="num">~6%</td><td class="num">stream</td><td class="win">native</td><td>Apache-2.0</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="note">*GigaAM best-case (clean / <a href="https://openslr.org/114/">Golos</a>); all-domain avg ~8–9%, still far below Whisper. <a href="https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3">Parakeet</a> and <a href="https://huggingface.co/Qwen/Qwen3-ASR-1.7B">Qwen3-ASR</a> <em>do</em> handle Russian (~5.5–6% on clean FLEURS) but trail GigaAM/T-one on noisy real-world audio — multilingual fallbacks, not the Russian pick. <a href="https://huggingface.co/ibm-granite/granite-speech-4.1-2b">Granite 4.1</a> tops the English leaderboard (5.33%) but has no Russian. CTC models (Parakeet-CTC-1.1B) hit ~6,400 RTFx — faster than the 3,330 shown, at lower accuracy. (Whisper large-v3 is Apache-2.0; only its code repo and turbo are MIT.)</p>
+  </section>
+
+  <!-- 4. GPUs + users -->
+  <section>
+    <div class="snum">04</div>
+    <h2>What GPU — and how many users fit on one?</h2>
+    <p>Weights are small (~3&nbsp;GB int8), so VRAM never binds — the limit is <strong>live-stream concurrency</strong>. The practical floor is one <strong>24&nbsp;GB card</strong>; A100/H100 only pay off past ~100 simultaneous streams, and batch is effectively free. The obvious answer:</p>
+    <div class="callout">
+      <div class="k">Minimum to go live</div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:12px">
+        <div><div class="mh">Hardware</div><div class="mv">1× NVIDIA L4 · 24&nbsp;GB</div><div class="ms">or Hetzner GEX44 / RTX PRO 4500 Blackwell</div></div>
+        <div><div class="mh">Serves</div><div class="mv">~1,000–3,000<span style="font-size:13px;font-weight:400"> users/day*</span></div><div class="ms">≈ 20–40 simultaneous live streams</div></div>
+        <div><div class="mh">Price</div><div class="mv">$175–285<span style="font-size:13px;font-weight:400">/mo</span></div><div class="ms">Hetzner €184 fixed · cloud from $0.24/hr</div></div>
+      </div>
+    </div>
+    <div class="tbl">
+      <table>
+        <caption>Then scale — one box, by user count. ★ = minimum / start here.</caption>
+        <thead><tr><th>Tier</th><th>GPU (VRAM)</th><th class="num">~Daily users*</th><th class="num">Price / month</th></tr></thead>
+        <tbody>
+          <tr class="row-hi"><td>★ Minimum</td><td>L4 / RTX PRO 4500 (24–32&nbsp;GB)</td><td class="num">1,000–3,000</td><td class="num win">$175–285</td></tr>
+          <tr><td>Grow</td><td>RTX 4090 / 5090 (24–32&nbsp;GB)</td><td class="num">1,300–3,500</td><td class="num">$387–723</td></tr>
+          <tr><td>Scale</td><td>L40S / A100 80GB</td><td class="num">2,600–10,000</td><td class="num">$664–1,015</td></tr>
+          <tr><td>Max (one box)</td><td>H100 80GB</td><td class="num">7,000–12,000</td><td class="num">$2,110+</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="note">*Order-of-magnitude estimate (not a vendor figure), assuming ~10&nbsp;min audio/user/day; the real limit is peak concurrency (~40–60 simultaneous streams at 3,000 DAU). Underlying stream counts are <a href="https://www.spheron.network/blog/whisper-v4-asr-gpu-cloud-production-guide/">Spheron</a>'s large-v3-int8 figures (4090/L40S/A100/H100; L4 extrapolated). Turbo or Parakeet raise these; batch-only workloads fit tens of thousands per card.</p>
+    <div class="callout">
+      <div class="k">Two levers worth more than the GPU choice</div>
+      <ul style="margin-top:10px">
+        <li><strong>Use <a href="https://huggingface.co/openai/whisper-large-v3-turbo">turbo</a>, not large-v3, for dictation</strong> → ~1.67× the concurrent streams at &lt;0.5% WER cost — roughly a third off the GPU bill.</li>
+        <li><strong>Use <a href="https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3">Parakeet</a> where language allows</strong> → ~30–40× Whisper's batch throughput, loads in 2&nbsp;GB. One mid card then does 1,000×+ realtime batch and 50–100+ live streams.</li>
+      </ul>
+    </div>
+    <h3>Per-model hardware — minimum · medium · recommended</h3>
+    <div class="tbl">
+      <table>
+        <caption>Self-hostable models, smallest first. Minimum = single stream (int8/4-bit); Recommended = fp16 + concurrency for production serving.</caption>
+        <thead><tr><th>Model · params</th><th>Minimum (runs it)</th><th>Medium</th><th>Recommended</th></tr></thead>
+        <tbody>
+          <tr><td><a href="https://huggingface.co/t-tech/T-one">T-one</a> · 71M</td><td>CPU / any 8&nbsp;GB GPU</td><td>L4 (24&nbsp;GB)</td><td class="win">L4 (24&nbsp;GB)</td></tr>
+          <tr><td><a href="https://huggingface.co/ai-sage/GigaAM-v3">GigaAM v3</a> · 240M</td><td>CPU / 8&nbsp;GB GPU</td><td>L4 (24&nbsp;GB)</td><td class="win">L4 (24&nbsp;GB)</td></tr>
+          <tr><td><a href="https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3">Parakeet-tdt-v3</a> · 600M</td><td>8&nbsp;GB GPU</td><td>L4 (24&nbsp;GB)</td><td class="win">L4 (24&nbsp;GB)</td></tr>
+          <tr><td><a href="https://huggingface.co/nvidia/nemotron-speech-streaming-en-0.6b">Nemotron 3 ASR</a> · 600M</td><td>8&nbsp;GB GPU</td><td>L4 (24&nbsp;GB)</td><td class="win">L4 / A10 (24&nbsp;GB)</td></tr>
+          <tr><td><a href="https://huggingface.co/openai/whisper-large-v3-turbo">whisper-turbo</a> · 809M</td><td>6&nbsp;GB (int8)</td><td>L4 (24&nbsp;GB)</td><td class="win">L4 (24&nbsp;GB)</td></tr>
+          <tr><td><a href="https://huggingface.co/openai/whisper-large-v3">Whisper large-v3</a> · 1.55B</td><td>8&nbsp;GB (int8)</td><td>L4 / 4090 (24&nbsp;GB)</td><td class="win">RTX 4090 / L40S</td></tr>
+          <tr><td><a href="https://huggingface.co/Qwen/Qwen3-ASR-1.7B">Qwen3-ASR</a> · 1.7B</td><td>8&nbsp;GB</td><td>RTX 4090 (24&nbsp;GB)</td><td class="win">RTX 4090 / L40S</td></tr>
+          <tr><td><a href="https://huggingface.co/ibm-granite/granite-speech-4.1-2b">Granite Speech 4.1</a> · 2B</td><td>8–12&nbsp;GB</td><td>RTX 4090 (24&nbsp;GB)</td><td class="win">L40S (48&nbsp;GB)</td></tr>
+          <tr><td><a href="https://huggingface.co/mistralai/Voxtral-Mini-4B-Realtime-2602">Voxtral Realtime</a> · 4B</td><td>8&nbsp;GB (4-bit)</td><td>RTX 4090 / A10 (24&nbsp;GB)</td><td class="win">L40S / A100</td></tr>
+          <tr><td><a href="https://huggingface.co/microsoft/VibeVoice-ASR">VibeVoice-ASR</a> · 9B</td><td>RTX 4090 (24&nbsp;GB, int8)</td><td>A100 40GB</td><td class="win">A100 80GB</td></tr>
+          <tr><td><a href="https://huggingface.co/mistralai/Voxtral-Small-24B-2602">Voxtral Small</a> · 24B</td><td>A100 80GB (int8)</td><td>H100 80GB</td><td class="win">H100 / 2× A100</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="note">Our core picks — <a href="https://huggingface.co/ai-sage/GigaAM-v3">GigaAM v3</a>, <a href="https://huggingface.co/t-tech/T-one">T-one</a>, <a href="https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3">Parakeet-v3</a>, Nemotron, whisper-turbo, Qwen3 — all fit <strong>one L4 (24&nbsp;GB, ~$199–285/mo)</strong>, so the minimum box covers them. Only <a href="https://huggingface.co/mistralai/Voxtral-Small-24B-2602">Voxtral Small</a> (24B) and <a href="https://huggingface.co/microsoft/VibeVoice-ASR">VibeVoice-ASR</a> (9B) need an A100/H100 — used selectively for max-accuracy batch and long-form diarization. VRAM ≈ params × 1–2 bytes + batch overhead; verify per model.</p>
+  </section>
+
+  <!-- 5. Cost across providers -->
+  <section>
+    <div class="snum">05</div>
+    <h2>How much will it cost — across providers?</h2>
+    <p>On-demand, mid-2026; marketplace prices float weekly. Monthly = hourly&nbsp;× 730 (24/7). <strong>Global</strong> first, then <strong>Russia</strong> (₽, in-country hosting for data residency).</p>
+    <h3>Where to rent · Global</h3>
+    <div class="tbl">
+      <table>
+        <caption>Cheapest first within class</caption>
+        <thead><tr><th>Provider</th><th>GPU</th><th class="num">$ / hour</th><th class="num">$ / month</th><th>Note</th></tr></thead>
+        <tbody>
+          <tr class="row-hi"><td><a href="https://www.hetzner.com/dedicated-rootserver/gex44/">Hetzner GEX44</a></td><td>RTX 4000 Ada (20&nbsp;GB)</td><td class="num">fixed</td><td class="num win">€184 ≈ $199</td><td>Same backend we run on; no metering</td></tr>
+          <tr class="row-hi"><td><a href="https://vast.ai/pricing/gpu/RTX-PRO-4500">Vast.ai / RunPod</a></td><td>RTX PRO 4500 Blackwell (32&nbsp;GB)</td><td class="num win">$0.24–0.34</td><td class="num">$175–248</td><td>NEW — newest L4-successor, cheapest cloud</td></tr>
+          <tr class="row-hi"><td><a href="https://www.runpod.io/gpu-models/l4">RunPod</a></td><td>L4</td><td class="num">$0.39</td><td class="num">$285</td><td>Best mainstream L4, per-second</td></tr>
+          <tr><td><a href="https://vast.ai/pricing">Vast.ai</a> (spot)</td><td>RTX 4090</td><td class="num">~$0.53</td><td class="num">~$387</td><td>Now the cheapest 4090; interruptible</td></tr>
+          <tr><td><a href="https://www.runpod.io/gpu-models/rtx-4090">RunPod</a> (community)</td><td>RTX 4090</td><td class="num">$0.69</td><td class="num">$504</td><td>Was $0.34 — roughly doubled in 2026</td></tr>
+          <tr><td><a href="https://cloud.google.com/compute/gpus-pricing">GCP</a></td><td>L4 (g2)</td><td class="num">$0.71</td><td class="num">$514</td><td>Cheapest hyperscaler L4</td></tr>
+          <tr><td><a href="https://aws.amazon.com/ec2/pricing/on-demand/">AWS</a></td><td>L4 (g6) / A10G (g5)</td><td class="num">$0.80 / $1.01</td><td class="num">$584 / $734</td><td>Raised ~15% Jan 2026</td></tr>
+          <tr><td><a href="https://datacrunch.io/">DataCrunch</a> (EU)</td><td>L40S</td><td class="num">$0.91</td><td class="num">$664</td><td>EU, no spot</td></tr>
+          <tr><td><a href="https://www.thundercompute.com/pricing">Thunder Compute</a></td><td>A100 80GB</td><td class="num">$1.49</td><td class="num">$1,088</td><td>Was $0.78 — rose in 2026</td></tr>
+          <tr><td><a href="https://www.runpod.io/pricing">RunPod</a></td><td>A100 80GB / H100 80GB</td><td class="num">$1.39 / $2.89</td><td class="num">$1,015 / $2,110</td><td>Reliable on-demand</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <h3>Where to rent · Russia <span class="muted">— ₽, in-country data residency (152-ФЗ)</span></h3>
+    <div class="tbl">
+      <table>
+        <caption>Russian GPU hosts · ₽ incl. VAT, ≈$ at ₽90/$ · cheapest first (verified 2026-06-01)</caption>
+        <thead><tr><th>Provider</th><th>GPU (VRAM)</th><th class="num">₽ / month</th><th class="num">≈ $ / mo</th><th>Link</th></tr></thead>
+        <tbody>
+          <tr class="row-hi"><td>immers.cloud</td><td>Tesla T4 (16&nbsp;GB)</td><td class="num">₽14,550</td><td class="num win">$162</td><td><a href="https://immers.cloud/prices/">immers.cloud</a></td></tr>
+          <tr class="row-hi"><td>Intelion Cloud</td><td>Tesla A10 (24&nbsp;GB)</td><td class="num">₽18,000</td><td class="num win">$200</td><td><a href="https://intelion.cloud/prices/">intelion.cloud</a></td></tr>
+          <tr class="row-hi"><td>Intelion Cloud</td><td>RTX A5000 (24&nbsp;GB)</td><td class="num">₽21,000</td><td class="num">$233</td><td><a href="https://intelion.cloud/prices/">intelion.cloud</a></td></tr>
+          <tr><td>Selectel</td><td>RTX 4090 (24&nbsp;GB)</td><td class="num">from ₽21,999</td><td class="num">~$244</td><td><a href="https://selectel.ru/services/gpu/">selectel.ru</a></td></tr>
+          <tr><td>HOSTKEY</td><td>RTX 4090 (24&nbsp;GB)</td><td class="num">₽27,000</td><td class="num">$300</td><td><a href="https://hostkey.ru/gpu-dedicated-servers/">hostkey.ru</a></td></tr>
+          <tr><td>Cloud4Y</td><td>RTX 4090 (24&nbsp;GB)</td><td class="num">₽34,950</td><td class="num">$388</td><td><a href="https://www.cloud4y.ru/en/cloud-hosting/gpu/">cloud4y.ru</a></td></tr>
+          <tr><td>HOSTKEY</td><td>A100 80GB / H100 80GB</td><td class="num">₽120k / ₽145k</td><td class="num">$1,333 / $1,611</td><td><a href="https://hostkey.ru/gpu-dedicated-servers/">hostkey.ru</a></td></tr>
+          <tr><td>Intelion Cloud</td><td>A100 80GB / H100 80GB</td><td class="num">₽135k / ₽201k</td><td class="num">$1,500 / $2,233</td><td><a href="https://intelion.cloud/prices/">intelion.cloud</a></td></tr>
+          <tr><td>Cloud.ru · Yandex Cloud</td><td>A100 / H100 (enterprise)</td><td class="num">quote</td><td class="num">—</td><td><a href="https://cloud.ru/products/vychislitelnyye-moschnosti-s-gpu">cloud.ru</a> · <a href="https://yandex.cloud/ru/docs/compute/pricing">yandex</a></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="note">For a ~1.5B ASR model the cheapest sane Russian box is <strong>Intelion Tesla A10 / A5000 24&nbsp;GB (₽18–21k/mo ≈ $200–233)</strong>, or a T4 16&nbsp;GB which fits fine; cheapest RTX 4090 is <strong>HOSTKEY (₽27k/mo)</strong>. Big hosts (Cloud.ru, Yandex, VK Cloud) are enterprise/quote-only. Caveat: GeForce-in-datacenter has NVIDIA driver-licensing limits — some RU hosts run 4090s under a permitted-workload allowance. Russian hosting is the practical choice for 152-ФЗ data residency.</p>
+    <div class="tbl">
+      <table>
+        <caption>Serverless / scale-to-zero — best fit for spiky upload-then-transcribe</caption>
+        <thead><tr><th>Provider</th><th>GPU</th><th class="num">$ / hr equiv.</th><th>Note</th></tr></thead>
+        <tbody>
+          <tr class="row-hi"><td><a href="https://docs.runpod.io/serverless/pricing">RunPod Serverless</a> (Active)</td><td>L4</td><td class="num win">$0.47</td><td>Always-warm; cheapest above ~25% uptime</td></tr>
+          <tr><td><a href="https://docs.runpod.io/serverless/pricing">RunPod Serverless</a> (Flex)</td><td>L4</td><td class="num">$0.68</td><td>Scale-to-zero; 20–60s cold start</td></tr>
+          <tr><td><a href="https://modal.com/pricing">Modal</a></td><td>L4</td><td class="num">$0.80</td><td>Best cold-start + Python SDK</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="tbl">
+      <table>
+        <caption>Or just keep renting the API — managed STT (June 2026; no Deepgram Nova-4 yet, Nova-3 still flagship)</caption>
+        <thead><tr><th>Provider · model</th><th class="num">$ / audio-hr</th><th class="num">$ / min</th><th>Note</th></tr></thead>
+        <tbody>
+          <tr class="row-hi"><td><a href="https://console.groq.com/docs/model/whisper-large-v3-turbo">Groq · whisper-large-v3-turbo</a></td><td class="num win">$0.04</td><td class="num win">$0.00067</td><td>Cheapest hosted Whisper by far</td></tr>
+          <tr><td><a href="https://console.groq.com/docs/model/whisper-large-v3">Groq · whisper-large-v3</a></td><td class="num">$0.111</td><td class="num">$0.00185</td><td>Full accuracy</td></tr>
+          <tr><td><a href="https://www.tbank.ru/software/voicekit/">T-Bank VoiceKit · Russian</a></td><td class="num">$0.12–0.48</td><td class="num">$0.002–0.008</td><td>Managed RU STT — ₽0.18/min async → ₽0.72/min stream</td></tr>
+          <tr><td><a href="https://www.assemblyai.com/pricing/">AssemblyAI · Universal (batch)</a></td><td class="num">$0.15</td><td class="num">$0.0025</td><td></td></tr>
+          <tr><td><a href="https://deepgram.com/pricing">Deepgram · Nova-3 (streaming)</a></td><td class="num">$0.288</td><td class="num">$0.0048</td><td>Live — limited-time promo</td></tr>
+          <tr><td><a href="https://developers.openai.com/api/docs/pricing">OpenAI · gpt-4o-transcribe</a></td><td class="num">$0.36</td><td class="num">$0.006</td><td></td></tr>
+          <tr><td><a href="https://deepgram.com/pricing">Deepgram · Nova-3 (batch)</a></td><td class="num">$0.462</td><td class="num">$0.0077</td><td>Monolingual pre-recorded</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="note"><strong>The open models are free.</strong> <a href="https://huggingface.co/t-tech/T-one">T-one</a> and <a href="https://huggingface.co/ai-sage/GigaAM-v3">GigaAM v3</a> (and Whisper, Parakeet) ship their pretrained weights under Apache-2.0 / MIT / CC-BY — $0 to licence; you pay only for the GPU above. <a href="https://www.tbank.ru/software/voicekit/">T-Bank VoiceKit</a> is T-Bank's <em>paid</em> managed cloud API — the alternative if you don't want to self-host T-one.</p>
+    <div class="callout">
+      <div class="k">The economics, plainly</div>
+      <p>A self-hosted L4 transcribes for roughly <mark>$0.0004/min</mark> of compute — about <strong>12–19× cheaper than Deepgram</strong> ($0.0048–0.0077/min). <em>But</em> it only undercuts <a href="https://console.groq.com/docs/model/whisper-large-v3-turbo">Groq</a>'s $0.04/audio-hour when pinned near 100% (~10 audio-hours per wall-clock hour). Below that, Groq is cheaper <em>and</em> zero-ops — so self-host for control, residency, and Russian quality, not raw savings, and keep Groq as the burst fallback.</p>
+    </div>
+    <h3>Buy instead of rent · DNS new + Avito used</h3>
+    <p>For a 24/7 service, buying usually beats renting within ~1 month. A 1.5B ASR model needs only 8–24&nbsp;GB — <strong>Tensor Cores matter more than VRAM size</strong>, so old Tesla cards (M40/P40) are a trap.</p>
+    <div class="tbl">
+      <table>
+        <caption>On the DNS shelf — new, June 2026 (<a href="https://www.dns-shop.ru/catalog/17a89aab16404e77/videokarty/">dns-shop.ru</a>; ₽ ≈ $ at ₽90/$). DNS blocks scraping, so ₽ are cross-checked against RF price-trackers that quote DNS.</caption>
+        <thead><tr><th>GPU · VRAM</th><th>Bus · bandwidth</th><th class="num">TDP</th><th class="num">₽ from</th><th class="num">≈ $</th><th>For a 1.5B ASR box</th></tr></thead>
+        <tbody>
+          <tr class="row-hi"><td><a href="https://www.dns-shop.ru/search/?q=видеокарта%20rtx%205060%20ti%2016%20gb">RTX 5060 Ti · 16&nbsp;GB</a></td><td>128-bit · 448&nbsp;GB/s</td><td class="num">180&nbsp;W</td><td class="num win">~₽52k</td><td class="num">$580</td><td>★ value pick — cheapest new 16&nbsp;GB, Blackwell FP4/FP8, 1× 8-pin, fits any case</td></tr>
+          <tr><td><a href="https://www.dns-shop.ru/product/8f0eced0eaa9d582/videokarta-msi-geforce-rtx-5070-ventus-3x-oc-rtx-5070-12g-ventus-3x-oc/">RTX 5070 · 12&nbsp;GB</a></td><td>192-bit · 672&nbsp;GB/s</td><td class="num">250&nbsp;W</td><td class="num">~₽58k</td><td class="num">$650</td><td>faster core, but 12&nbsp;GB caps batch + headroom; SFF-ready</td></tr>
+          <tr class="row-hi"><td><a href="https://www.dns-shop.ru/product/337858f9d4b5d582/videokarta-gigabyte-geforce-rtx-5070-ti-windforce-oc-sff-gv-n507twf3oc-16gd/">RTX 5070 Ti · 16&nbsp;GB</a> <span class="muted">(SFF — you linked)</span></td><td>256-bit · 896&nbsp;GB/s</td><td class="num">300&nbsp;W</td><td class="num win">~₽90k</td><td class="num">$1,000</td><td>★ throughput pick — 2× the bandwidth of the 5060 Ti; the SFF model drops into a compact box</td></tr>
+          <tr><td><a href="https://www.dns-shop.ru/search/?q=видеокарта%20rtx%205080">RTX 5080 · 16&nbsp;GB</a></td><td>256-bit · 960&nbsp;GB/s</td><td class="num">360&nbsp;W</td><td class="num">~₽105k</td><td class="num">$1,170</td><td>more compute, same 16&nbsp;GB — only worth it batching many streams</td></tr>
+          <tr><td><a href="https://www.dns-shop.ru/search/?q=видеокарта%20rtx%205090">RTX 5090 · 32&nbsp;GB</a></td><td>512-bit · 1792&nbsp;GB/s</td><td class="num">575&nbsp;W</td><td class="num">~₽330k</td><td class="num">$3,670</td><td>overkill — only for 9B VibeVoice or many models at once</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="note"><strong>The SFF card you linked:</strong> Gigabyte <a href="https://www.dns-shop.ru/product/337858f9d4b5d582/videokarta-gigabyte-geforce-rtx-5070-ti-windforce-oc-sff-gv-n507twf3oc-16gd/">RTX 5070 Ti WINDFORCE OC SFF 16&nbsp;GB</a> (GV-N507TWF3OC-16GD) — the same Blackwell chip as the full-size 5070 Ti (8960 CUDA, 16&nbsp;GB GDDR7, 896&nbsp;GB/s), just 304&nbsp;mm / 2.5-slot and NVIDIA SFF-Ready, so it fits a small quiet box. ~₽90–95k, 300&nbsp;W, 750&nbsp;W PSU, 16-pin. A sound throughput pick for one always-on ASR node. Cheaper older 16&nbsp;GB on DNS — <a href="https://www.dns-shop.ru/search/?q=видеокарта%20rtx%204060%20ti%2016%20gb">RTX 4060 Ti 16&nbsp;GB</a> (~₽50–55k, Ada) — costs about the same as the 5060 Ti but runs slower GDDR6 (288 vs 448&nbsp;GB/s) on a PCIe x8 link, so the 5060 Ti supersedes it.</p>
+    <div class="tbl">
+      <table>
+        <caption>Pro / server cards — not DNS retail (parallel import; ₽ ≈ $ at ₽90/$), verified 2026-06-01</caption>
+        <thead><tr><th>GPU · VRAM</th><th class="num">₽ new</th><th class="num">≈ $</th><th>For ASR 1.5B</th></tr></thead>
+        <tbody>
+          <tr class="row-hi"><td>RTX 4000 Ada · 20&nbsp;GB</td><td class="num">₽118k</td><td class="num win">$1,310</td><td>★ best low-power new — Ada, 70&nbsp;W, single-slot</td></tr>
+          <tr><td>RTX A5000 · 24&nbsp;GB</td><td class="num">₽199k</td><td class="num">$2,210</td><td>ECC, NVLink</td></tr>
+          <tr><td>RTX 4090 · 24&nbsp;GB</td><td class="num">₽200–225k</td><td class="num">$2,200–2,500</td><td>fastest consumer; thin new stock</td></tr>
+          <tr><td>NVIDIA A10 · 24&nbsp;GB</td><td class="num">₽228–334k</td><td class="num">$2,530–3,710</td><td>server inference, passive</td></tr>
+          <tr><td>A100 80GB / H100 80GB</td><td class="num">₽1.1–2.6M / ₽2.5–4M</td><td class="num">$12.5–44k</td><td>huge overkill</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="tbl">
+      <table>
+        <caption>Used on <a href="https://www.avito.ru/all/tovary_dlya_kompyutera/komplektuyuschie/videokarty">Avito</a> · ₽ (snapshot 2026-06-01; торг + регион влияют)</caption>
+        <thead><tr><th>GPU · VRAM</th><th class="num">₽ used</th><th class="num">≈ $</th><th>Note</th></tr></thead>
+        <tbody>
+          <tr class="row-hi"><td>RTX 3090 · 24&nbsp;GB</td><td class="num">₽56–85k <span class="muted">(~₽62k)</span></td><td class="num win">~$690</td><td>★ best value — Tensor Cores, many listings</td></tr>
+          <tr><td>Tesla V100 · 32&nbsp;GB</td><td class="num">₽53–71k</td><td class="num">$590–790</td><td>Tensor Cores + 32&nbsp;GB; server cooling</td></tr>
+          <tr><td>Tesla V100 · 16&nbsp;GB</td><td class="num">₽13–33k</td><td class="num">$145–370</td><td>has Tensor Cores; cheap but loud</td></tr>
+          <tr><td>Tesla P40 · 24&nbsp;GB</td><td class="num">₽23–30k</td><td class="num">$255–330</td><td>cheap 24&nbsp;GB but Pascal, no Tensor Cores → slow</td></tr>
+          <tr><td>Tesla M40 · 24&nbsp;GB</td><td class="num">₽13–14k</td><td class="num">$145–155</td><td>Maxwell — too slow, avoid</td></tr>
+          <tr><td>RTX 4090 · 24&nbsp;GB</td><td class="num">₽150–210k</td><td class="num">$1,670–2,330</td><td>small saving vs new</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="note"><strong>Best value-buy → used <a href="https://www.avito.ru/all/tovary_dlya_kompyutera/komplektuyuschie/videokarty?q=rtx+3090">RTX 3090 24&nbsp;GB</a> (~₽60–65k / ~$700)</strong> — Tensor Cores, FP16/INT8, consumer cooling + video out, huge Avito supply. Pays for itself vs renting a 4090 (~₽60k/mo) in <strong>under a month</strong>, vs an A100 (~₽150k/mo) in ~12 days. New + warranty from DNS → <strong>RTX 5060 Ti 16&nbsp;GB (~₽52k)</strong> for value or the <strong>RTX 5070 Ti 16&nbsp;GB / SFF you linked (~₽90k)</strong> for throughput, both at far lower power than a 3090; lowest-power new → <strong>RTX 4000 Ada 20&nbsp;GB (~₽118k, 70&nbsp;W)</strong>. Avoid Tesla M40/K80 (no Tensor Cores) and mining cards (GDDR6X wear — demand a memtest). <strong>Verdict: for a 24/7 ASR service, buy; rent only for spikes/training.</strong></p>
+    <h3>Build the host · what to put the GPU in (RU)</h3>
+    <p>A GPU is a PCIe-x16 card — it needs a host (motherboard + CPU + PSU + RAM + SSD + a case with airflow). For inference only the GPU/VRAM matters, so CPU/RAM/disk are cheapest-acceptable; the two things you must <strong>not</strong> skimp on are the <strong>PSU</strong> and case <strong>airflow</strong>. For the used Palit <a href="https://www.avito.ru/all/tovary_dlya_kompyutera/komplektuyuschie/videokarty?q=rtx+3090">RTX 3090 GamingPro</a> above (294&nbsp;mm, 2.7-slot, <strong>2× 8-pin</strong>, 350&nbsp;W, hot GDDR6X) that means a 750–850&nbsp;W Gold PSU with native PCIe cables and a mesh case that fits a ~300&nbsp;mm card.</p>
+    <div class="tbl">
+      <table>
+        <caption>Bare build, no GPU · AM4, DNS prices (₽), 2026-06-02</caption>
+        <thead><tr><th>Component</th><th>Pick</th><th class="num">₽</th></tr></thead>
+        <tbody>
+          <tr><td>Motherboard (AM4, PCIe x16)</td><td><a href="https://www.dns-shop.ru/product/7954bcf9b65fed20/materinskaa-plata-gigabyte-b550m-k/">Gigabyte B550M K</a></td><td class="num">6,499</td></tr>
+          <tr><td>CPU (inference-irrelevant)</td><td><a href="https://www.dns-shop.ru/product/6d7a8c58afebed20/processor-amd-ryzen-5-5600-oem/">Ryzen 5 5600</a> + cooler</td><td class="num">~10,600</td></tr>
+          <tr><td>RAM 32&nbsp;GB DDR4</td><td>Kingston Fury Beast 2×16</td><td class="num">~4,100</td></tr>
+          <tr><td>SSD 1&nbsp;TB NVMe</td><td>Kingston NV2</td><td class="num">~8,000</td></tr>
+          <tr><td>Case (≤370&nbsp;mm GPU, 4 fans)</td><td><a href="https://www.dns-shop.ru/product/0d7e80408f5fed20/korpus-deepcool-cc560-v2-r-cc560-bkgaa4-g-2-cernyj/">DeepCool CC560 V2</a></td><td class="num">4,499</td></tr>
+          <tr class="row-hi"><td><strong>PSU — don't skimp</strong></td><td><a href="https://www.dns-shop.ru/search/?q=блок%20питания%20850w%2080%20plus%20gold">Cougar GR&nbsp;850 / DeepCool PN850M</a> — 850&nbsp;W Gold, native 2× PCIe 8-pin</td><td class="num win">5,600–9,600</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="note"><strong>PSU by card:</strong> RTX 5060 Ti → 550–650&nbsp;W (1× 8-pin) · RTX 5070 → 650–750&nbsp;W · RTX 5070 Ti → 750&nbsp;W (16-pin) · RTX 3090 → 750–850&nbsp;W (Palit GamingPro = <strong>2× 8-pin</strong>; some 3090s use 3×) · RTX 4090 → 850–1000&nbsp;W (12VHPWR — seat it fully). <strong>Bare build ≈ ₽43–45k</strong> (₽40–43k with a 650&nbsp;W PSU for a 5070). So a <strong>full 24/7 ASR box = used <a href="https://www.avito.ru/all/tovary_dlya_kompyutera/komplektuyuschie/videokarty?q=rtx+3090">RTX 3090</a> (₽62k) + host (~₽55k new / ~₽35k used) ≈ ₽100–120k</strong> (RAM/SSD up sharply in the 2026 memory shortage). Full verified parts list + a budget used-host option → <a href="pc-build-rtx3090.html">pc-build-rtx3090.html</a>.</p>
+    <p class="note"><strong>Where to put it:</strong> <em>existing PC</em> (₽0 if PSU ≥750&nbsp;W Gold, space, and the right PCIe power cables) — cheapest; <em>build from scratch</em> (above) — most predictable; <em>build-to-order</em> — put the parts above through the <a href="https://www.dns-shop.ru/configurator/">DNS configurator</a> + assembly/test service (~₽3–10k), or buy a prebuilt iGPU system unit with an 800&nbsp;W PSU (~₽80k) and drop the 3090 in — assembled + warrantied, no soldering; <em>server cards</em> (Tesla/A10, passive) need a server case or a 3D-printed blower — won't cool in a quiet desktop; <em>ready AI station</em> (<a href="https://hyperpc.ru/workstation/machine-learning">HYPERPC</a>, <a href="https://digital-razor.ru/workstation/ai-hpc/">DigitalRazor</a>) — turnkey but pricier and bundles its own GPU; <em>mini-PC / NUC</em> — <strong>won't work</strong> (no full PCIe x16 or power; eGPU over Thunderbolt throttles).</p>
+    <p class="note"><strong>Turnkey AI appliance? Not for ASR.</strong> NVIDIA's <a href="https://www.nvidia.com/en-us/products/workstations/dgx-spark/">DGX Spark</a> (GB10, 128&nbsp;GB unified, <strong>$4,699 ≈ ₽430k+</strong>) and its clones (ASUS Ascent GX10, Dell, MSI EdgeXpert) are built for <em>capacity</em> — holding up to 200B-param models for local dev/fine-tune. Their memory bandwidth is only <strong>273&nbsp;GB/s</strong> — lower than a 5060 Ti (448) and <strong>3.4× slower than a 3090 (936)</strong>. ASR is bandwidth-bound, so for transcription a $4.7k Spark is <em>slower</em> than your ₽60–65k used 3090. Buy one to prototype big LLMs, never to serve Whisper. Likewise a ready gaming PC (NIX/DigitalRazor, ₽255–360k) bundles a GPU you don't need — for this build, bare 3090 + a cheap assembled host beats it.</p>
+  </section>
+
+  <!-- 6. Fine-tuning Russian -->
+  <section>
+    <div class="snum">06</div>
+    <h2>Can we fine-tune it for Russian — and should we?</h2>
+    <p>Base Whisper v3 sits at ~7–11% Russian WER on clean speech and ~16–19% on noisy/far-field. Fine-tuning helps — but <strong>the work is already done and published free</strong>, and the best Russian model isn't a Whisper fine-tune at all.</p>
+    <div class="tbl">
+      <table>
+        <caption>Reuse, don't retrain — existing open Russian checkpoints</caption>
+        <thead><tr><th>Model</th><th>Base</th><th class="num">RU WER</th><th>Best for</th><th>License</th></tr></thead>
+        <tbody>
+          <tr class="row-hi"><td><a href="https://huggingface.co/ai-sage/GigaAM-v3">GigaAM v3</a></td><td>Conformer (Sber)</td><td class="num win">2.6–3.9%*</td><td>Everything Russian — accuracy king</td><td class="win">MIT</td></tr>
+          <tr><td><a href="https://huggingface.co/t-tech/T-one">T-one</a></td><td>Conformer, from scratch</td><td class="num">5.3%</td><td>Live / telephony Russian streaming</td><td>Apache-2.0</td></tr>
+          <tr><td><a href="https://huggingface.co/bond005/whisper-podlodka-turbo">bond005 / podlodka-turbo</a></td><td>large-v3-turbo</td><td class="num">5.2–11.9%</td><td>Drop-in if we keep Whisper</td><td>Apache-2.0</td></tr>
+          <tr><td><a href="https://huggingface.co/antony66/whisper-large-v3-russian">antony66 / large-v3-russian</a></td><td>large-v3</td><td class="num">6.4%</td><td>Clean / read Russian</td><td>Apache-2.0</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="note">*Best-case (clean / Golos); GigaAM's all-domain average is ~8–9%. <a href="https://huggingface.co/t-tech/T-one">T-one</a> is <strong>not</strong> a fine-tune of anything — a ~71M modified-Conformer CTC model trained from scratch (<a href="https://github.com/NVIDIA/NeMo">NVIDIA NeMo</a>, 8×A100); Whisper is only one voice in its training-data auto-labeler.</p>
+    <h3>If we fine-tune anyway — the cost</h3>
+    <p>Use <a href="https://github.com/huggingface/peft">LoRA</a> (2026 default): &lt;1% of params, fits in 8&nbsp;GB, ~60&nbsp;MB adapter, no inference penalty. Compute is trivial; <strong>data is the bill.</strong></p>
+    <div class="tbl">
+      <table>
+        <thead><tr><th>Line item</th><th class="num">Amount</th><th>Note</th></tr></thead>
+        <tbody>
+          <tr><td>LoRA fine-tune (few hundred hrs RU)</td><td class="num">$20–55</td><td>One A100, ~15–40 GPU-hrs, one-time</td></tr>
+          <tr><td>Full fine-tune (max quality)</td><td class="num">$130–200</td><td>2× A100, ~60+ hrs</td></tr>
+          <tr class="row-hi"><td>Labeled domain data (200 hrs, human)</td><td class="num win">$15,000–45,000</td><td>The actual gate — ~100× the GPU cost</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <ul class="check">
+      <li><strong>Use <a href="https://huggingface.co/ai-sage/GigaAM-v3">GigaAM v3</a> for Russian now</strong> — free, beats every Whisper-Russian fine-tune. Only train our own (a <a href="https://github.com/Vaibhavs10/fast-whisper-finetuning">LoRA</a> on a Russian checkpoint) once we've collected proprietary meeting/dictation Russian audio.</li>
+      <li><strong>Validate on real audio first</strong> — some Russian WERs are author-reported; bake off GigaAM v3 / T-one / Parakeet-v3 on a held-out sample of our own recordings before committing.</li>
+    </ul>
+  </section>
+
+  <!-- 7. Recommended architecture -->
+  <section>
+    <div class="snum">07</div>
+    <h2>Recommended architecture</h2>
+    <ul class="check">
+      <li><strong>Language router up front</strong> → split Russian vs English at the session.</li>
+      <li><strong>Russian:</strong> <a href="https://huggingface.co/ai-sage/GigaAM-v3">GigaAM v3</a> (RNNT for files, CTC for live); <a href="https://huggingface.co/t-tech/T-one">T-one</a> for telephony-grade streaming.</li>
+      <li><strong>English:</strong> <a href="https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3">Parakeet-tdt-0.6b-v3</a> for fast batch (or <a href="https://huggingface.co/ibm-granite/granite-speech-4.1-2b">Granite Speech 4.1</a> for top accuracy), <a href="https://huggingface.co/openai/whisper-large-v3-turbo">whisper-large-v3-turbo</a> + <a href="https://github.com/snakers4/silero-vad">Silero VAD</a> for dictation.</li>
+      <li><strong>Long recordings &amp; meetings:</strong> <a href="https://huggingface.co/microsoft/VibeVoice-ASR">VibeVoice-ASR</a> (Microsoft, MIT, 9B) — 60-min single-pass ASR + diarization + timestamps, incl. Russian; the best open fit for our recordings use case.</li>
+      <li><strong>Hardware:</strong> start on <strong>one L4 or RTX PRO 4500 Blackwell (32&nbsp;GB)</strong> (~$175–285/mo) — headroom for ~1,000–3,000 daily users. <a href="https://www.hetzner.com/dedicated-rootserver/gex44/">Hetzner GEX44</a> (€184/mo fixed) to keep it on the existing backend.</li>
+      <li><strong>Managed fallback:</strong> keep <a href="https://console.groq.com/docs/model/whisper-large-v3-turbo">Groq</a> Whisper-turbo ($0.04/audio-hr) wired in for overflow.</li>
+      <li><strong>Serving:</strong> <a href="https://github.com/SYSTRAN/faster-whisper">faster-whisper</a> for the Whisper path; <a href="https://github.com/NVIDIA/NeMo">NeMo</a> + Triton/TensorRT for GigaAM / T-one / Parakeet.</li>
+    </ul>
+    <div class="callout">
+      <div class="k">One honest caveat</div>
+      <p>This trades a per-minute vendor bill for an always-on GPU plus ops, model-serving, and on-call. At low/spiky volume, managed APIs (Groq especially) win on total cost. The case for self-hosting is <strong>Russian accuracy we can't buy off-the-shelf, data control, and predictable cost at scale</strong> — not a smaller invoice on day one.</p>
+    </div>
+  </section>
+
+  <!-- Benchmarks -->
+  <section>
+    <div class="snum">REF</div>
+    <h2>Benchmarks &amp; further reading</h2>
+    <p class="note">
+      <a href="https://huggingface.co/blog/open-asr-leaderboard">Open ASR Leaderboard</a> (RTFx / WER, <a href="https://arxiv.org/html/2510.06961v4">arXiv 2510.06961</a>) ·
+      <a href="https://www.spheron.network/blog/whisper-v4-asr-gpu-cloud-production-guide/">Spheron — GPU serving &amp; concurrent streams</a> ·
+      <a href="https://inferencebench.io/blog/whisper-large-v3-turbo-597x-realtime-asr-benchmark/">InferenceBench — turbo on H100</a> ·
+      <a href="https://blog.salad.com/whisper-large-v3/">SaladCloud — consumer-GPU throughput</a> ·
+      <a href="https://github.com/salute-developers/GigaAM">GigaAM repo</a> ·
+      <a href="https://github.com/voicekit-team/T-one">T-one repo</a> + <a href="https://habr.com/ru/companies/tbank/articles/929850/">architecture (Habr)</a> ·
+      <a href="https://huggingface.co/blog/fine-tune-whisper">HF — fine-tune Whisper</a> ·
+      <a href="https://github.com/alphacep/awesome-russian-speech">awesome-russian-speech</a>
+    </p>
+  </section>
+
+  <footer>
+    Built by 5 research agents, every fact re-verified by 14 fact-checkers + reconciliation, then a June-2026 recency sweep refreshed the model list (added Granite Speech 4.1, Qwen3-ASR) and prices (RunPod 4090 $0.34→$0.69; new RTX PRO 4500 Blackwell), with Deepgram pricing confirmed by direct fetch. A June-2026 pass also re-priced the DNS shelf (RTX 5060 Ti / 5070 / 5070 Ti / 5080 / 5090) against RF price-trackers, since DNS itself blocks scraping. WER/throughput vary ±2× with batch, precision, and clip length, and some Russian WERs are author-reported — validate on our own audio before committing.
+  </footer>
+
+</div>
+</body>
+</html>
