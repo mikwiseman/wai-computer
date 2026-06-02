@@ -75,7 +75,7 @@ public actor MacEdgeCoordinator {
                     chatId: action.chatId,
                     actionId: action.actionId,
                     status: outcome.status,
-                    payload: outcome.reason.map { ["reason": .string($0)] }
+                    payload: Self.reportPayload(for: outcome)
                 )
                 // Server is now authoritative; the action leaves the queue.
                 unreported[action.actionId] = nil
@@ -85,6 +85,25 @@ public actor MacEdgeCoordinator {
             }
         }
         return outcomes
+    }
+
+    /// The result payload to report: the captured UI for an observe, a generic
+    /// reason for a refusal/failure, or nothing for a plain executed action.
+    private static func reportPayload(
+        for outcome: DesktopActuationOutcome
+    ) -> [String: CompanionJSONValue]? {
+        if let snapshot = outcome.snapshot {
+            if let value = try? encodeToJSONValue(snapshot) {
+                return ["snapshot": value]
+            }
+            return nil
+        }
+        return outcome.reason.map { ["reason": .string($0)] }
+    }
+
+    private static func encodeToJSONValue<T: Encodable>(_ value: T) throws -> CompanionJSONValue {
+        let data = try JSONEncoder().encode(value)
+        return try JSONDecoder().decode(CompanionJSONValue.self, from: data)
     }
 }
 

@@ -33,6 +33,19 @@ final class DeterministicDesktopActuatorTests: XCTestCase {
         }
     }
 
+    func testSnapshotThrowsTierUnavailable() async {
+        do {
+            _ = try await actuator.snapshot()
+            XCTFail("expected throw")
+        } catch let error as DesktopActuationError {
+            guard case .tierUnavailable = error else {
+                return XCTFail("expected tierUnavailable, got \(error)")
+            }
+        } catch {
+            XCTFail("wrong error type")
+        }
+    }
+
     func testApplicationResolutionMissingNameIsNil() {
         XCTAssertNil(
             DeterministicDesktopActuator.applicationURL(forName: "NoSuchApp_zzz_123")

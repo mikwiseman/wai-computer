@@ -7,7 +7,11 @@ private final class FakeTransport: MacEdgeTransport, @unchecked Sendable {
     var heartbeatDeviceId = "dev-1"
     var heartbeatCalls: [String?] = []
     var queue = DesktopActionQueue(actions: [])
-    var reports: [(chatId: String, actionId: String, status: DesktopResultStatus)] = []
+    var reports:
+        [(
+            chatId: String, actionId: String, status: DesktopResultStatus,
+            payload: [String: CompanionJSONValue]?
+        )] = []
     var failReports = false
 
     func deviceHeartbeat(
@@ -22,7 +26,7 @@ private final class FakeTransport: MacEdgeTransport, @unchecked Sendable {
         payload: [String: CompanionJSONValue]?
     ) async throws -> DesktopResultResponse {
         if failReports { throw URLError(.notConnectedToInternet) }
-        reports.append((chatId, actionId, status))
+        reports.append((chatId, actionId, status, payload))
         return DesktopResultResponse(actionId: actionId, status: status.rawValue)
     }
 }
@@ -33,6 +37,12 @@ private final class CountingActuator: DesktopActuator, @unchecked Sendable {
     func openApp(name: String) async throws {}
     func typeText(_ text: String) async throws {}
     func click(index: Int) async throws {}
+    func snapshot() async throws -> DesktopUISnapshot {
+        DesktopUISnapshot(
+            app: "Test",
+            elements: [DesktopUIElement(index: 0, role: "AXButton", title: "OK", actionable: true)]
+        )
+    }
 }
 
 final class MacEdgeCoordinatorTests: XCTestCase {
@@ -91,6 +101,21 @@ final class MacEdgeCoordinatorTests: XCTestCase {
         _ = try await coord.pollOnce()  // report finally lands
         XCTAssertEqual(actuator.openURLCount, 1)
         XCTAssertEqual(transport.reports.count, 1)
+    }
+
+    func testSnapshotActionReportsCapturedUIInPayload() async throws {
+        let (transport, _, coord) = make()
+        transport.queue = DesktopActionQueue(actions: [
+            DesktopActionItem(
+                actionId: "s1", chatId: "c1", tool: "desktop_snapshot", args: [:],
+                preview: "look"
+            )
+        ])
+        let outcomes = try await coord.pollOnce()
+        XCTAssertEqual(outcomes.first?.status, .executed)
+        XCTAssertEqual(transport.reports.count, 1)
+        // The observe result carries the captured UI back to the brain.
+        XCTAssertNotNil(transport.reports[0].payload?["snapshot"])
     }
 
     func testRefusalIsReportedAndSkipsActuator() async throws {

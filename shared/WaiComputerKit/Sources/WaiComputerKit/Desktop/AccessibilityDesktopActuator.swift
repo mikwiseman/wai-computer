@@ -57,7 +57,7 @@ public final class AccessibilityDesktopActuator: DesktopActuator {
 
     /// Walk the frontmost app's accessibility tree into an index-addressed
     /// snapshot and remember the index→element map for a later ``click(index:)``.
-    public func snapshot() throws -> DesktopUISnapshot {
+    public func snapshot() async throws -> DesktopUISnapshot {
         guard AXIsProcessTrusted() else { throw DesktopActuationError.accessibilityNotTrusted }
         guard let app = NSWorkspace.shared.frontmostApplication else {
             throw DesktopActuationError.noFrontmostApp

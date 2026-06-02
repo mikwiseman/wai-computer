@@ -28,6 +28,14 @@ private final class FakeActuator: DesktopActuator, @unchecked Sendable {
         if shouldThrow { throw Boom(target: "\(index)") }
         clicked.append(index)
     }
+    var snapshotToReturn = DesktopUISnapshot(
+        app: "Test",
+        elements: [DesktopUIElement(index: 0, role: "AXButton", title: "OK", actionable: true)]
+    )
+    func snapshot() async throws -> DesktopUISnapshot {
+        if shouldThrow { throw Boom(target: "snapshot") }
+        return snapshotToReturn
+    }
 }
 
 final class DesktopActionExecutorTests: XCTestCase {
@@ -80,6 +88,21 @@ final class DesktopActionExecutorTests: XCTestCase {
         XCTAssertEqual(outcome.status, .refused)
         XCTAssertTrue(actuator.openedURLs.isEmpty)
         XCTAssertTrue(actuator.openedApps.isEmpty)
+    }
+
+    func testSnapshotIsObservedAndCarriesUI() async {
+        let actuator = FakeActuator()
+        let outcome = await makeExecutor(actuator).execute(item("desktop_snapshot", [:]))
+        XCTAssertEqual(outcome.status, .executed)
+        XCTAssertEqual(outcome.snapshot?.elements.first?.title, "OK")
+    }
+
+    func testSnapshotFailureIsFailed() async {
+        let actuator = FakeActuator()
+        actuator.shouldThrow = true
+        let outcome = await makeExecutor(actuator).execute(item("desktop_snapshot", [:]))
+        XCTAssertEqual(outcome.status, .failed)
+        XCTAssertNil(outcome.snapshot)
     }
 
     func testActuatorThrowBecomesFailedWithGenericReason() async {
