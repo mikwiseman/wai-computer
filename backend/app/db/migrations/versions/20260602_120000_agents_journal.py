@@ -6,7 +6,7 @@ replayable Postgres journal on the existing Celery worker. Stable
 than fork; ``UNIQUE(run_id, idx)`` orders the append-only step journal.
 
 Revision ID: 20260602_120000
-Revises: 20260601_140000
+Revises: 20260601_141000
 Create Date: 2026-06-02 12:00:00.000000
 """
 
@@ -17,7 +17,7 @@ from alembic import op
 from sqlalchemy.dialects import postgresql
 
 revision: str = "20260602_120000"
-down_revision: Union[str, None] = "20260601_140000"
+down_revision: Union[str, None] = "20260601_141000"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

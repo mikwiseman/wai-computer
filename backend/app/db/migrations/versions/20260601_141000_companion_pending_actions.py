@@ -1,6 +1,6 @@
 """companion_pending_actions (propose→commit approval gate + offline queue)
 
-Revision ID: 20260601_140000
+Revision ID: 20260601_141000
 Revises: 20260601_130000
 Create Date: 2026-06-01 14:00:00.000000
 """
@@ -11,7 +11,7 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
-revision: str = "20260601_140000"
+revision: str = "20260601_141000"
 down_revision: Union[str, None] = "20260601_130000"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
