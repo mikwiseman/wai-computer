@@ -123,6 +123,7 @@ async def test_actions_turn_with_no_tool_call_answers_like_chat(db_session, user
     assert len(fake.calls) == 1
     tools = fake.calls[0]["tools"]
     assert any(t.get("type") == "mcp" for t in tools)  # reads still on MCP
+    assert any(t.get("type") == "web_search" for t in tools)  # "find online" on by default
     assert any(t.get("name") == "request_tool_group" for t in tools)  # lazy-attach offered
     # No write tool is attached until requested.
     assert not any(t.get("name") == "send_message_telegram" for t in tools)

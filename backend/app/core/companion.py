@@ -1624,7 +1624,11 @@ async def _run_actions_loop(
     proposed = False
 
     for step in range(1, TOOL_CALL_CAP + 1):
-        tools: list[dict[str, Any]] = [mcp_tool]
+        # mcp_tool = read access to the user's brain; the hosted web_search tool
+        # = "find this on the internet" (runs server-side). Hosted results are
+        # not interceptable, so the propose->commit write gate (every send/OS
+        # action confirmed) is the lethal-trifecta control, not result-wrapping.
+        tools: list[dict[str, Any]] = [mcp_tool, {"type": "web_search"}]
         if requestable_groups("voice_default"):
             tools.append(request_tool_group_tool("voice_default"))
         tools.extend(_visible_action_tools(active_groups))
