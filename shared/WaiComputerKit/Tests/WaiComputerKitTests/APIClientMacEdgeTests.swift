@@ -42,7 +42,7 @@ final class APIClientMacEdgeTests: XCTestCase {
             XCTAssertEqual(request.httpMethod, "GET")
             XCTAssertEqual(request.url?.path, "/api/devices/dev-1/desktop-actions")
             let payload = #"""
-            {"actions":[{"action_id":"a1","tool":"desktop_open","args":{"target":"mailto:a@x.com"},"preview":"Open a new email"}]}
+            {"actions":[{"action_id":"a1","chat_id":"c1","tool":"desktop_open","args":{"target":"mailto:a@x.com"},"preview":"Open a new email"}]}
             """#.data(using: .utf8)!
             return (
                 HTTPURLResponse(
@@ -54,6 +54,7 @@ final class APIClientMacEdgeTests: XCTestCase {
         let queue = try await client.drainDesktopActions(deviceId: "dev-1")
         XCTAssertEqual(queue.actions.count, 1)
         XCTAssertEqual(queue.actions[0].actionId, "a1")
+        XCTAssertEqual(queue.actions[0].chatId, "c1")
         XCTAssertEqual(queue.actions[0].tool, "desktop_open")
         XCTAssertEqual(queue.actions[0].args["target"], .string("mailto:a@x.com"))
     }

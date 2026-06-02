@@ -41,7 +41,7 @@ final class DesktopActionExecutorTests: XCTestCase {
     }
 
     private func item(_ tool: String, _ args: [String: CompanionJSONValue]) -> DesktopActionItem {
-        DesktopActionItem(actionId: "a1", tool: tool, args: args, preview: "p")
+        DesktopActionItem(actionId: "a1", chatId: "c1", tool: tool, args: args, preview: "p")
     }
 
     func testOpenURLDispatchesAndSucceeds() async {

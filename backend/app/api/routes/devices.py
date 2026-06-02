@@ -53,6 +53,7 @@ async def heartbeat(
 
 class DesktopActionItem(BaseModel):
     action_id: str
+    chat_id: str
     tool: str
     args: dict[str, Any]
     preview: str
@@ -92,6 +93,7 @@ async def drain_desktop_actions(
     items = [
         DesktopActionItem(
             action_id=str(row.id),
+            chat_id=str(row.conversation_id),
             tool=row.tool_name,
             args=(row.action_manifest or {}).get("args") or {},
             preview=(row.action_manifest or {}).get("preview", ""),
