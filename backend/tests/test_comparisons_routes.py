@@ -1,7 +1,7 @@
 """API + build tests for comparison sets."""
 
 from unittest.mock import patch
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from sqlalchemy import select
@@ -238,3 +238,80 @@ async def test_build_excludes_deleted_items_and_notes_it(db_session, monkeypatch
     result = await build_comparison_set(db_session, cs.id)
     assert result.status == "ready"
     assert "excluded" in (result.schema_rationale or "").lower()
+
+
+async def _ready_comparison(client, auth_headers, db_session):
+    ids = await _two_items(client, auth_headers)
+    with patch("app.tasks.comparison_generation.generate_comparison_task.delay"):
+        created = await client.post(
+            "/api/comparisons", json={"item_ids": ids[:2]}, headers=auth_headers
+        )
+    cid = created.json()["id"]
+    cs = (
+        await db_session.execute(select(ComparisonSet).where(ComparisonSet.id == UUID(cid)))
+    ).scalar_one()
+    cs.columns = [{"name": "Topic", "type": "text"}]
+    cs.rows = [
+        {"item_id": ids[0], "title": "Item 0", "values": {"Topic": "a"}, "edited": False},
+        {"item_id": ids[1], "title": "Item 1", "values": {"Topic": None}, "edited": False},
+    ]
+    cs.status = "ready"
+    await db_session.flush()
+    return cid, ids
+
+
+async def test_export_comparison_md_and_csv(client, auth_headers, db_session) -> None:
+    cid, _ = await _ready_comparison(client, auth_headers, db_session)
+    md = await client.get(f"/api/comparisons/{cid}/export?format=md", headers=auth_headers)
+    assert md.status_code == 200
+    assert "| Item |" in md.text and "Topic" in md.text
+    csv_resp = await client.get(
+        f"/api/comparisons/{cid}/export?format=csv", headers=auth_headers
+    )
+    assert csv_resp.status_code == 200
+    assert csv_resp.text.splitlines()[0] == "Item,Topic"
+
+
+async def test_export_comparison_not_ready_409(client, auth_headers) -> None:
+    ids = await _two_items(client, auth_headers)
+    with patch("app.tasks.comparison_generation.generate_comparison_task.delay"):
+        created = await client.post(
+            "/api/comparisons", json={"item_ids": ids[:2]}, headers=auth_headers
+        )
+    cid = created.json()["id"]
+    resp = await client.get(f"/api/comparisons/{cid}/export?format=md", headers=auth_headers)
+    assert resp.status_code == 409
+
+
+async def test_edit_comparison_cell(client, auth_headers, db_session) -> None:
+    cid, ids = await _ready_comparison(client, auth_headers, db_session)
+    resp = await client.patch(
+        f"/api/comparisons/{cid}",
+        json={"item_id": ids[1], "column": "Topic", "value": "b"},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200, resp.text
+    got = await client.get(f"/api/comparisons/{cid}", headers=auth_headers)
+    row = next(r for r in got.json()["rows"] if r["item_id"] == ids[1])
+    assert row["values"]["Topic"] == "b"
+    assert row["edited"] is True
+
+
+async def test_edit_cell_unknown_column_422(client, auth_headers, db_session) -> None:
+    cid, ids = await _ready_comparison(client, auth_headers, db_session)
+    resp = await client.patch(
+        f"/api/comparisons/{cid}",
+        json={"item_id": ids[0], "column": "Nope", "value": "x"},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 422
+
+
+async def test_edit_cell_unknown_item_404(client, auth_headers, db_session) -> None:
+    cid, _ = await _ready_comparison(client, auth_headers, db_session)
+    resp = await client.patch(
+        f"/api/comparisons/{cid}",
+        json={"item_id": str(uuid4()), "column": "Topic", "value": "x"},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 404
