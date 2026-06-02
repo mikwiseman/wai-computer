@@ -4,7 +4,7 @@ from uuid import uuid4
 
 import pytest
 
-from app.core.brain_graph import build_brain_graph
+from app.core.brain_graph import build_brain_graph, build_entity_page
 from app.core.entity_graph import record_mention, upsert_entity
 from app.core.item_ingest import ingest_item
 from app.models.recording import Recording, RecordingStatus
@@ -118,3 +118,59 @@ async def test_brain_graph_route_smoke(client, auth_headers) -> None:
     data = resp.json()
     assert {"nodes", "edges", "stats"} <= set(data)
     assert data["stats"]["entities"] == 0  # fresh user -> honest empty graph
+
+
+async def test_build_entity_page_sources_and_related(db_session) -> None:
+    user = await _make_user(db_session)
+    item1, _ = await ingest_item(
+        db_session, user.id, source="paste", title="GPU note", body="x", embed=False
+    )
+    item2, _ = await ingest_item(
+        db_session, user.id, source="paste", title="Second", body="y", embed=False
+    )
+    anna = await upsert_entity(db_session, user.id, type="person", name="Anna")
+    gpu = await upsert_entity(db_session, user.id, type="topic", name="GPU")
+    # Anna + GPU share item1 (co-occurrence); Anna is also in item2.
+    await record_mention(
+        db_session, user_id=user.id, entity_id=anna.id, source_kind="item",
+        source_id=item1.id, context="Anna leads it",
+    )
+    await record_mention(
+        db_session, user_id=user.id, entity_id=gpu.id, source_kind="item", source_id=item1.id
+    )
+    await record_mention(
+        db_session, user_id=user.id, entity_id=anna.id, source_kind="item", source_id=item2.id
+    )
+
+    page = await build_entity_page(db_session, user.id, anna.id)
+    assert page is not None
+    assert page.name == "Anna" and page.mention_count == 2
+    assert {s.title for s in page.sources} == {"GPU note", "Second"}
+    assert "Anna leads it" in {s.context for s in page.sources}
+    related = {r.name: r.shared for r in page.related}
+    assert related.get("GPU") == 1  # shared item1
+    assert "Anna" not in related  # never lists itself
+
+
+async def test_build_entity_page_missing_returns_none(db_session) -> None:
+    user = await _make_user(db_session)
+    assert await build_entity_page(db_session, user.id, uuid4()) is None
+
+
+async def test_entity_page_route_404_for_unknown(client, auth_headers) -> None:
+    resp = await client.get(f"/api/entities/{uuid4()}/page", headers=auth_headers)
+    assert resp.status_code == 404
+
+
+async def test_entity_page_route_200_for_owned_entity(client, auth_headers) -> None:
+    created = await client.post(
+        "/api/entities", json={"type": "topic", "name": "Roadmaps"}, headers=auth_headers
+    )
+    assert created.status_code == 201, created.text
+    eid = created.json()["id"]
+    resp = await client.get(f"/api/entities/{eid}/page", headers=auth_headers)
+    assert resp.status_code == 200, resp.text
+    data = resp.json()
+    assert data["name"] == "Roadmaps"
+    assert data["mention_count"] == 0
+    assert data["sources"] == [] and data["related"] == []

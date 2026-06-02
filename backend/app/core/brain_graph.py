@@ -192,3 +192,124 @@ async def build_brain_graph(
         "mentions": len(mention_rows),
     }
     return BrainGraph(nodes=nodes, edges=edges, stats=stats)
+
+
+@dataclass
+class EntitySource:
+    source_kind: str
+    source_id: str
+    title: str
+    context: str | None
+
+
+@dataclass
+class RelatedEntity:
+    id: str
+    name: str
+    type: str
+    shared: int
+
+
+@dataclass
+class EntityPage:
+    id: str
+    name: str
+    type: str
+    mention_count: int
+    sources: list[EntitySource]
+    related: list[RelatedEntity]
+
+
+async def build_entity_page(
+    db: AsyncSession, user_id: Any, entity_id: uuid.UUID
+) -> EntityPage | None:
+    """The wiki page for one entity: its source backlinks (items/recordings that
+    mention it) + related entities (co-occurrence, ranked by shared sources).
+    Returns None if the entity isn't the user's."""
+    entity = (
+        await db.execute(
+            select(Entity).where(Entity.id == entity_id, Entity.user_id == user_id)
+        )
+    ).scalar_one_or_none()
+    if entity is None:
+        return None
+
+    mentions = (
+        await db.execute(
+            select(
+                EntityMention.source_kind,
+                EntityMention.source_id,
+                EntityMention.context,
+            ).where(
+                EntityMention.user_id == user_id,
+                EntityMention.entity_id == entity_id,
+            )
+        )
+    ).all()
+
+    item_ids = {sid for kind, sid, _ in mentions if kind == "item"}
+    rec_ids = {sid for kind, sid, _ in mentions if kind == "recording"}
+    titles: dict[tuple[str, uuid.UUID], str] = {}
+    if item_ids:
+        for iid, title, url in (
+            await db.execute(
+                select(Item.id, Item.title, Item.url).where(
+                    Item.id.in_(item_ids), Item.deleted_at.is_(None)
+                )
+            )
+        ).all():
+            titles[("item", iid)] = title or url or "Untitled"
+    if rec_ids:
+        for rid, title in (
+            await db.execute(
+                select(Recording.id, Recording.title).where(
+                    Recording.id.in_(rec_ids), Recording.deleted_at.is_(None)
+                )
+            )
+        ).all():
+            titles[("recording", rid)] = title or "Recording"
+
+    sources = [
+        EntitySource(
+            source_kind=kind, source_id=str(sid), title=titles[(kind, sid)], context=ctx
+        )
+        for kind, sid, ctx in mentions
+        if (kind, sid) in titles
+    ]
+
+    related: list[RelatedEntity] = []
+    source_ids = [sid for _, sid, _ in mentions]
+    if source_ids:
+        co_rows = (
+            await db.execute(
+                select(EntityMention.entity_id).where(
+                    EntityMention.user_id == user_id,
+                    EntityMention.source_id.in_(source_ids),
+                    EntityMention.entity_id != entity_id,
+                )
+            )
+        ).all()
+        shared: dict[uuid.UUID, int] = {}
+        for (eid,) in co_rows:
+            shared[eid] = shared.get(eid, 0) + 1
+        if shared:
+            for eid, etype, name in (
+                await db.execute(
+                    select(Entity.id, Entity.type, Entity.name).where(
+                        Entity.id.in_(list(shared.keys()))
+                    )
+                )
+            ).all():
+                related.append(
+                    RelatedEntity(id=str(eid), name=name, type=etype, shared=shared[eid])
+                )
+            related.sort(key=lambda r: r.shared, reverse=True)
+
+    return EntityPage(
+        id=str(entity.id),
+        name=entity.name,
+        type=entity.type,
+        mention_count=len(mentions),
+        sources=sources,
+        related=related,
+    )
