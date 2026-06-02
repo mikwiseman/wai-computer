@@ -4,13 +4,14 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { getBrainGraph } from "@/lib/api";
 import type { BrainGraph, BrainGraphNode } from "@/lib/types";
 import { BrainGraphView } from "@/components/BrainGraphView";
+import { EntityWikiView } from "@/components/EntityWikiView";
 
 interface BrainPanelProps {
   locale?: string;
   onError?: (message: string) => void;
 }
 
-type BrainTab = "index" | "graph";
+type BrainTab = "index" | "wiki" | "graph";
 
 const ENTITY_KINDS: Array<{ key: string; en: string; ru: string }> = [
   { key: "person", en: "People", ru: "Люди" },
@@ -32,6 +33,14 @@ export function BrainPanel({ locale = "en", onError }: BrainPanelProps) {
   const [tab, setTab] = useState<BrainTab>("index");
   const [focus, setFocus] = useState<string | null>(null);
   const [showSources, setShowSources] = useState(true);
+  const [selectedEntity, setSelectedEntity] = useState<{ id: string; name: string } | null>(
+    null,
+  );
+
+  const openWiki = useCallback((id: string, name: string) => {
+    setSelectedEntity({ id, name });
+    setTab("wiki");
+  }, []);
 
   const t = useCallback(
     (en: string, ru: string) => (locale === "ru" ? ru : en),
@@ -96,13 +105,16 @@ export function BrainPanel({ locale = "en", onError }: BrainPanelProps) {
             <h3 className="brain-panel__group-title">{t(en, ru)}</h3>
             <ul className="brain-panel__chips">
               {list.map((node) => (
-                <li
-                  key={node.id}
-                  className="brain-panel__chip"
-                  title={`${node.degree} ${t("mentions", "упоминаний")}`}
-                >
-                  <span>{node.label}</span>
-                  <em>{node.degree}</em>
+                <li key={node.id}>
+                  <button
+                    type="button"
+                    className="brain-panel__chip"
+                    title={`${node.degree} ${t("mentions", "упоминаний")}`}
+                    onClick={() => openWiki(node.id, node.label)}
+                  >
+                    <span>{node.label}</span>
+                    <em>{node.degree}</em>
+                  </button>
                 </li>
               ))}
             </ul>
@@ -137,6 +149,15 @@ export function BrainPanel({ locale = "en", onError }: BrainPanelProps) {
         <button
           type="button"
           role="tab"
+          aria-selected={tab === "wiki"}
+          className={`brain-panel__tab ${tab === "wiki" ? "brain-panel__tab--active" : ""}`}
+          onClick={() => setTab("wiki")}
+        >
+          {t("Wiki", "Вики")}
+        </button>
+        <button
+          type="button"
+          role="tab"
           aria-selected={tab === "graph"}
           className={`brain-panel__tab ${tab === "graph" ? "brain-panel__tab--active" : ""}`}
           onClick={() => setTab("graph")}
@@ -164,6 +185,22 @@ export function BrainPanel({ locale = "en", onError }: BrainPanelProps) {
         </p>
       ) : tab === "index" ? (
         indexBody
+      ) : tab === "wiki" ? (
+        selectedEntity ? (
+          <EntityWikiView
+            entityId={selectedEntity.id}
+            onNavigate={(id, name) => setSelectedEntity({ id, name })}
+            onError={onError}
+            locale={locale}
+          />
+        ) : (
+          <p className="brain-panel__empty">
+            {t(
+              "Pick a person or topic from the Index to read its page.",
+              "Выберите человека или тему в Индексе, чтобы открыть страницу.",
+            )}
+          </p>
+        )
       ) : (
         <BrainGraphView
           graph={graph as BrainGraph}
