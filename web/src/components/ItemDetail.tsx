@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { getItem } from "@/lib/api";
+import { getItem, reprocessItem } from "@/lib/api";
 import type { Item, KeyMoment } from "@/lib/types";
 
 interface ItemDetailProps {
@@ -37,6 +37,23 @@ export function ItemDetail({ itemId, onError }: ItemDetailProps) {
     };
   }, [itemId, onError]);
 
+  const [pasteText, setPasteText] = useState("");
+  const [recovering, setRecovering] = useState(false);
+
+  const handleReprocess = async (body?: string) => {
+    if (recovering) return;
+    setRecovering(true);
+    try {
+      const updated = await reprocessItem(itemId, body ? { body } : {});
+      setState({ id: itemId, item: updated, loading: false });
+      setPasteText("");
+    } catch (err) {
+      onError?.(err instanceof Error ? err.message : "Couldn't reprocess this item.");
+    } finally {
+      setRecovering(false);
+    }
+  };
+
   const loading = state.loading || state.id !== itemId;
   const item = state.id === itemId ? state.item : null;
 
@@ -64,10 +81,39 @@ export function ItemDetail({ itemId, onError }: ItemDetailProps) {
       </header>
 
       {(item.status === "needs_input" || item.status === "failed") && !summary?.summary ? (
-        <p className="item-detail__notice">
-          {item.error?.message ??
-            "Couldn't read this automatically — share the file or paste the text."}
-        </p>
+        <div className="item-detail__recover" data-testid="item-recover">
+          <p className="item-detail__notice">
+            {item.error?.message ??
+              "Couldn't read this automatically — paste the text below, or retry the source."}
+          </p>
+          <textarea
+            className="item-detail__recover-input"
+            placeholder="Paste the text here…"
+            value={pasteText}
+            onChange={(e) => setPasteText(e.target.value)}
+            data-testid="item-recover-input"
+          />
+          <div className="item-detail__recover-actions">
+            <button
+              type="button"
+              className="primary-button compact-button"
+              disabled={recovering || !pasteText.trim()}
+              onClick={() => void handleReprocess(pasteText.trim())}
+            >
+              {recovering ? "Processing…" : "Process pasted text"}
+            </button>
+            {item.url ? (
+              <button
+                type="button"
+                className="ghost-button compact-button"
+                disabled={recovering}
+                onClick={() => void handleReprocess()}
+              >
+                Retry source
+              </button>
+            ) : null}
+          </div>
+        </div>
       ) : null}
 
       {summary?.summary ? (

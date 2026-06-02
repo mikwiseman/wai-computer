@@ -553,6 +553,15 @@ export function deleteItem(itemId: string): Promise<void> {
   return apiFetch<void>(`/api/items/${itemId}`, { method: "DELETE" });
 }
 
+/** Recover a needs_input/failed item: paste the text we couldn't fetch (body),
+ *  or omit it to retry the source URL. */
+export function reprocessItem(itemId: string, input?: { body?: string }): Promise<Item> {
+  return apiFetch<Item>(`/api/items/${itemId}/reprocess`, {
+    method: "POST",
+    body: JSON.stringify(input ?? {}),
+  });
+}
+
 // --- Second brain: knowledge graph ---
 
 export function getBrainGraph(params?: {

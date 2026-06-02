@@ -1,11 +1,13 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ItemDetail } from "./ItemDetail";
 
 const mockGetItem = vi.fn();
+const mockReprocessItem = vi.fn();
 
 vi.mock("@/lib/api", () => ({
   getItem: (...a: unknown[]) => mockGetItem(...a),
+  reprocessItem: (...a: unknown[]) => mockReprocessItem(...a),
 }));
 
 function detail(overrides = {}) {
@@ -49,11 +51,43 @@ describe("ItemDetail", () => {
     expect(screen.getByText("costs fell")).toBeInTheDocument();
   });
 
-  it("shows the share-the-file notice for needs_input items", async () => {
-    mockGetItem.mockResolvedValue(detail({ state: "needs_input", summary: null }));
+  it("offers recovery (error + paste box) for a needs_input item", async () => {
+    mockGetItem.mockResolvedValue(
+      detail({
+        status: "needs_input",
+        state: "needs_input",
+        summary: null,
+        error: { code: "youtube_no_transcript", message: "This video has no transcript." },
+      }),
+    );
     render(<ItemDetail itemId="i1" />);
     await waitFor(() =>
-      expect(screen.getByText(/share the file or paste the text/i)).toBeInTheDocument(),
+      expect(screen.getByText("This video has no transcript.")).toBeInTheDocument(),
+    );
+    expect(screen.getByTestId("item-recover-input")).toBeInTheDocument();
+  });
+
+  it("reprocesses a needs_input item with pasted text", async () => {
+    mockGetItem.mockResolvedValue(
+      detail({ status: "needs_input", state: "needs_input", summary: null }),
+    );
+    mockReprocessItem.mockResolvedValue(
+      detail({ status: "summarizing", state: "raw", body: "pasted", summary: null }),
+    );
+    render(<ItemDetail itemId="i1" />);
+    await waitFor(() =>
+      expect(screen.getByTestId("item-recover-input")).toBeInTheDocument(),
+    );
+    fireEvent.change(screen.getByTestId("item-recover-input"), {
+      target: { value: "pasted article text" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /Process pasted text/i }));
+    await waitFor(() =>
+      expect(mockReprocessItem).toHaveBeenCalledWith("i1", { body: "pasted article text" }),
+    );
+    // Once reprocessing starts (no longer needs_input) the recovery box disappears.
+    await waitFor(() =>
+      expect(screen.queryByTestId("item-recover-input")).not.toBeInTheDocument(),
     );
   });
 
