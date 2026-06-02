@@ -5,11 +5,15 @@ import { ItemsFeed } from "./ItemsFeed";
 const mockListItems = vi.fn();
 const mockGetItem = vi.fn();
 const mockDeleteItem = vi.fn();
+const mockCreateComparison = vi.fn();
+const mockGetComparison = vi.fn();
 
 vi.mock("@/lib/api", () => ({
   listItems: (...a: unknown[]) => mockListItems(...a),
   getItem: (...a: unknown[]) => mockGetItem(...a),
   deleteItem: (...a: unknown[]) => mockDeleteItem(...a),
+  createComparison: (...a: unknown[]) => mockCreateComparison(...a),
+  getComparison: (...a: unknown[]) => mockGetComparison(...a),
 }));
 
 function entry(overrides = {}) {
@@ -20,6 +24,8 @@ function entry(overrides = {}) {
     kind: "article",
     title: "Solar Explainer",
     state: "raw",
+    status: "ready",
+    error: null,
     folder_id: null,
     occurred_at: null,
     created_at: new Date().toISOString(),
@@ -39,6 +45,8 @@ function detail() {
     body: "...",
     occurred_at: null,
     state: "raw",
+    status: "ready",
+    error: null,
     folder_id: null,
     created_at: new Date().toISOString(),
     summary: {
@@ -62,6 +70,14 @@ describe("ItemsFeed", () => {
     mockListItems.mockResolvedValue({ items: [entry()], total: 1 });
     mockGetItem.mockResolvedValue(detail());
     mockDeleteItem.mockResolvedValue(undefined);
+    mockCreateComparison.mockResolvedValue({
+      id: "cmp-9", title: null, item_ids: ["i1", "i2"], columns: null, rows: null,
+      schema_rationale: null, status: "generating", created_at: new Date().toISOString(),
+    });
+    mockGetComparison.mockResolvedValue({
+      id: "cmp-9", title: null, item_ids: ["i1", "i2"], columns: null, rows: null,
+      schema_rationale: null, status: "generating", created_at: new Date().toISOString(),
+    });
   });
 
   it("lists items and opens detail with the key-moments table", async () => {
@@ -80,10 +96,36 @@ describe("ItemsFeed", () => {
     await waitFor(() => expect(mockListItems).toHaveBeenCalledWith({ kind: "video" }));
   });
 
-  it("shows a summarizing badge for items without a summary yet", async () => {
-    mockListItems.mockResolvedValue({ items: [entry({ has_summary: false })], total: 1 });
+  it("shows a summarizing badge for items still processing", async () => {
+    mockListItems.mockResolvedValue({
+      items: [entry({ has_summary: false, status: "summarizing" })],
+      total: 1,
+    });
     render(<ItemsFeed />);
     await waitFor(() => expect(screen.getByText(/summarizing/i)).toBeInTheDocument());
+  });
+
+  it("shows a failed badge carrying the error message as a tooltip", async () => {
+    mockListItems.mockResolvedValue({
+      items: [
+        entry({
+          has_summary: false,
+          status: "failed",
+          error: { code: "enqueue_failed", message: "Couldn't start processing." },
+        }),
+      ],
+      total: 1,
+    });
+    render(<ItemsFeed />);
+    const badge = await screen.findByText("failed");
+    expect(badge).toHaveAttribute("title", "Couldn't start processing.");
+  });
+
+  it("offers a PDFs filter chip and filters by it", async () => {
+    render(<ItemsFeed />);
+    await waitFor(() => expect(mockListItems).toHaveBeenCalledWith(undefined));
+    fireEvent.click(screen.getByRole("tab", { name: "PDFs" }));
+    await waitFor(() => expect(mockListItems).toHaveBeenCalledWith({ kind: "pdf" }));
   });
 
   it("deletes an item and reloads", async () => {
@@ -106,5 +148,32 @@ describe("ItemsFeed", () => {
     mockListItems.mockRejectedValue(new Error("boom"));
     render(<ItemsFeed onError={onError} />);
     await waitFor(() => expect(onError).toHaveBeenCalledWith("boom"));
+  });
+
+  it("builds a comparison from 2+ selected items and opens the view", async () => {
+    mockListItems.mockResolvedValue({
+      items: [entry(), entry({ id: "i2", title: "Wind Explainer" })],
+      total: 2,
+    });
+    render(<ItemsFeed />);
+    await waitFor(() => expect(screen.getByText("Solar Explainer")).toBeInTheDocument());
+
+    // No Compare action until at least 2 are selected.
+    expect(screen.queryByRole("button", { name: /Compare/ })).not.toBeInTheDocument();
+
+    const checks = screen.getAllByRole("checkbox");
+    fireEvent.click(checks[0]);
+    fireEvent.click(checks[1]);
+
+    const compareBtn = await screen.findByRole("button", { name: /Compare 2/ });
+    fireEvent.click(compareBtn);
+
+    await waitFor(() =>
+      expect(mockCreateComparison).toHaveBeenCalledWith({ item_ids: ["i1", "i2"] }),
+    );
+    // The comparison modal opens and polls the (still-generating) build.
+    await waitFor(() =>
+      expect(screen.getByText(/Building comparison/i)).toBeInTheDocument(),
+    );
   });
 });

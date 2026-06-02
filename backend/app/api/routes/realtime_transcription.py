@@ -427,19 +427,22 @@ async def stream_realtime_transcription(websocket: WebSocket) -> None:
         )
         return
 
-    add_sentry_breadcrumb(
-        category="transcription.stream",
-        message="proxy opened",
-        data={
-            "provider": "deepgram",
-            "model": claims.model,
-            "language": claims.language,
-            "purpose": claims.purpose,
-        },
-    )
-
     stream_started = perf_counter()
     try:
+        # Breadcrumb lives INSIDE the try so a raise here still reaches the
+        # finally that releases the stream slot — otherwise a throw in the
+        # post-acquire gap would leak the slot for the full lease TTL (up to
+        # ~65 min for dictation), locking the user out behind TOO_MANY_STREAMS.
+        add_sentry_breadcrumb(
+            category="transcription.stream",
+            message="proxy opened",
+            data={
+                "provider": "deepgram",
+                "model": claims.model,
+                "language": claims.language,
+                "purpose": claims.purpose,
+            },
+        )
         async with websockets.connect(
             target_url,
             **{

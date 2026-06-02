@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter
+from dataclasses import asdict
+from uuid import UUID
+
+from fastapi import APIRouter, Query
 from pydantic import BaseModel
 
 from app.api.deps import CurrentUser, Database
 from app.core.brain import compile_brain
+from app.core.brain_graph import build_brain_graph
 
 router = APIRouter(prefix="/brain", tags=["brain"])
 
@@ -64,4 +68,48 @@ async def get_brain(user: CurrentUser, db: Database) -> BrainResponse:
             for p in projection.entity_pages
         ],
         entity_count=projection.entity_count,
+    )
+
+
+class GraphNodeResponse(BaseModel):
+    id: str
+    label: str
+    kind: str
+    degree: int
+
+
+class GraphEdgeResponse(BaseModel):
+    source: str
+    target: str
+    type: str
+    weight: float
+
+
+class BrainGraphResponse(BaseModel):
+    nodes: list[GraphNodeResponse]
+    edges: list[GraphEdgeResponse]
+    stats: dict[str, int]
+
+
+@router.get("/graph", response_model=BrainGraphResponse)
+async def get_brain_graph(
+    user: CurrentUser,
+    db: Database,
+    focus: UUID | None = None,
+    include_sources: bool = True,
+    limit: int = Query(200, ge=10, le=2000),
+) -> BrainGraphResponse:
+    """Force-graph-ready nodes + edges for the Brain visualization.
+
+    Entities (+ optionally the items/recordings that mention them) as nodes;
+    co-occurrence + mention edges. ``focus`` returns the ego graph around one
+    entity; ``limit`` caps entity nodes by degree.
+    """
+    graph = await build_brain_graph(
+        db, user.id, focus=focus, include_sources=include_sources, limit=limit
+    )
+    return BrainGraphResponse(
+        nodes=[GraphNodeResponse(**asdict(n)) for n in graph.nodes],
+        edges=[GraphEdgeResponse(**asdict(e)) for e in graph.edges],
+        stats=graph.stats,
     )
