@@ -1,13 +1,14 @@
-"""ElevenLabs Custom-LLM bridge: re-frame a ``run_turn`` event stream as an
+"""Custom-LLM bridge: re-frame a ``run_turn`` event stream as an
 OpenAI-compatible Chat Completions SSE stream.
 
-ElevenLabs Agents call a custom LLM over an OpenAI-compatible
-``/v1/chat/completions`` endpoint and expect Server-Sent Events whose chunks are
-``chat.completion.chunk`` objects, ending with ``data: [DONE]``. We own the
-brain (``run_turn``), so this module is the pure translation layer: it forwards
-only user-facing assistant text (``TokenEvent``) as ``delta.content`` chunks and
-drops tool/citation/approval events, matching ElevenLabs' documented pattern for
-bridging a stateful agent ("forward only model text, skip tool/empty events").
+The voice-agent orchestrator (primarily **Deepgram Voice Agent**, which calls a
+custom LLM via its OpenAI-compatible ``think`` endpoint; ElevenLabs
+Conversational AI uses the identical contract) expects Server-Sent Events whose
+chunks are ``chat.completion.chunk`` objects, ending with ``data: [DONE]``. We
+own the brain (``run_turn``), so this module is the pure, vendor-agnostic
+translation layer: it forwards only user-facing assistant text (``TokenEvent``)
+as ``delta.content`` chunks and drops tool/citation/approval events ("forward
+only model text, skip tool/empty events").
 
 This is decision-independent transport: no auth, no conversation resolution, no
 brain configuration. Those live in the route. Keeping the re-framing here makes

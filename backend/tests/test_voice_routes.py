@@ -30,13 +30,27 @@ def _sse_payloads(body: str) -> list[Any]:
     return out
 
 
-async def test_session_mints_token_bound_to_a_fresh_conversation(client, auth_headers):
+async def test_session_mints_token_and_deepgram_settings(client, auth_headers):
     res = await client.post("/api/voice/llm/session", headers=auth_headers)
     assert res.status_code == 200, res.text
     body = res.json()
     assert body["expires_in_seconds"] == 1800
     claims = decode_voice_session_token(body["token"])
     assert str(claims.conversation_id) == body["conversation_id"]
+    # The Deepgram Voice Agent settings point think at our bridge with the token.
+    think = body["voice_agent_settings"]["agent"]["think"]
+    assert think["provider"] == {"type": "open_ai"}
+    assert think["endpoint"]["url"].endswith("/api/voice/llm/chat/completions")
+    assert think["endpoint"]["headers"]["authorization"] == f"Bearer {body['token']}"
+    assert body["voice_agent_settings"]["agent"]["listen"]["provider"]["model"] == "nova-3"
+
+
+async def test_session_russian_without_voice_is_refused(client, auth_headers):
+    # Deepgram Aura can't speak Russian; surface it rather than a wrong voice.
+    res = await client.post(
+        "/api/voice/llm/session?language=ru", headers=auth_headers
+    )
+    assert res.status_code == 400, res.text
 
 
 async def test_chat_completions_streams_brain_answer(client, monkeypatch):
