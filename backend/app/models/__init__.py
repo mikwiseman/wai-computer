@@ -22,6 +22,7 @@ from app.models.commitment import Commitment
 from app.models.companion import ChatMessage, Conversation, MessageCitation
 from app.models.companion_pending_action import CompanionPendingAction
 from app.models.comparison import ComparisonSet
+from app.models.device import Device
 from app.models.dictation import DictationDictionaryWord, DictationEntry
 from app.models.entity import Entity, EntityRelation, RecordingTag, Tag
 from app.models.highlight import Highlight
@@ -120,6 +121,7 @@ __all__ = [
     "ChatMessage",
     "MessageCitation",
     "CompanionPendingAction",
+    "Device",
     "DictationEntry",
     "DictationDictionaryWord",
     "McpOAuthClient",

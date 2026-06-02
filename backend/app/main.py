@@ -37,6 +37,7 @@ from app.api.routes import (
     telegram,
     voice_enrollment,
 )
+from app.api.routes import devices as devices_routes
 from app.api.routes import settings as settings_routes
 from app.billing.router import router as billing_router
 from app.billing.webhooks import router as billing_webhooks_router
@@ -202,6 +203,7 @@ app.include_router(personalization.router, prefix="/api")
 app.include_router(voice_enrollment.router, prefix="/api")
 app.include_router(mcp_oauth.router, prefix="/api")
 app.include_router(companion.router, prefix="/api")
+app.include_router(devices_routes.router, prefix="/api")
 app.include_router(dictation.router, prefix="/api")
 app.include_router(realtime_transcription.router, prefix="/api")
 app.include_router(realtime_voice.router, prefix="/api")
