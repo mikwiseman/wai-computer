@@ -912,7 +912,11 @@ async def patch_admin_promo_code(
     return await _promo_response(promo, db)
 
 
-@router.delete("/promo-codes/{promo_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete(
+    "/promo-codes/{promo_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    response_class=Response,
+)
 async def archive_admin_promo_code(
     promo_id: UUID,
     db: Database,

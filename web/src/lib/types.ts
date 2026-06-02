@@ -567,6 +567,7 @@ export interface EntityPageSource {
   source_id: string;
   title: string;
   context: string | null;
+  occurred_at?: string | null;
 }
 
 export interface EntityPageRelated {
@@ -576,6 +577,53 @@ export interface EntityPageRelated {
   shared: number;
 }
 
+export interface EntityPageCitation {
+  id: string;
+  source_kind: string;
+  source_id: string;
+  title: string;
+  context: string | null;
+  occurred_at: string | null;
+}
+
+export interface EntityPageFact {
+  id: string;
+  text: string;
+  citation_ids: string[];
+}
+
+export interface EntityPageTimelineEvent {
+  id: string;
+  title: string;
+  description: string | null;
+  occurred_at: string | null;
+  citation_ids: string[];
+}
+
+export interface EntityPageRelatedExplanation {
+  id: string;
+  name: string;
+  type: string;
+  shared: number;
+  explanation: string;
+  citation_ids: string[];
+}
+
+export interface EntityPageQuestion {
+  id: string;
+  text: string;
+  citation_ids: string[];
+}
+
+export interface EntityPageAction {
+  id: string;
+  text: string;
+  owner: string | null;
+  due_date: string | null;
+  status: string | null;
+  citation_ids: string[];
+}
+
 export interface EntityPage {
   id: string;
   name: string;
@@ -583,6 +631,14 @@ export interface EntityPage {
   mention_count: number;
   sources: EntityPageSource[];
   related: EntityPageRelated[];
+  overview: string;
+  facts: EntityPageFact[];
+  citations: EntityPageCitation[];
+  timeline: EntityPageTimelineEvent[];
+  related_explanations: EntityPageRelatedExplanation[];
+  questions: EntityPageQuestion[];
+  actions: EntityPageAction[];
+  cache_status: string;
 }
 
 export interface ComparisonColumn {

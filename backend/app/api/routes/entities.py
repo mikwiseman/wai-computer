@@ -5,7 +5,7 @@ from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, HTTPException, Query, Response, status
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
@@ -179,6 +179,7 @@ class EntitySourceResponse(BaseModel):
     source_id: str
     title: str
     context: str | None
+    occurred_at: str | None = None
 
 
 class RelatedEntityResponse(BaseModel):
@@ -188,8 +189,55 @@ class RelatedEntityResponse(BaseModel):
     shared: int
 
 
+class EntityCitationResponse(BaseModel):
+    id: str
+    source_kind: str
+    source_id: str
+    title: str
+    context: str | None
+    occurred_at: str | None
+
+
+class EntityPageFactResponse(BaseModel):
+    id: str
+    text: str
+    citation_ids: list[str]
+
+
+class EntityTimelineEventResponse(BaseModel):
+    id: str
+    title: str
+    description: str | None
+    occurred_at: str | None
+    citation_ids: list[str]
+
+
+class RelatedEntityExplanationResponse(BaseModel):
+    id: str
+    name: str
+    type: str
+    shared: int
+    explanation: str
+    citation_ids: list[str]
+
+
+class EntityPageQuestionResponse(BaseModel):
+    id: str
+    text: str
+    citation_ids: list[str]
+
+
+class EntityPageActionResponse(BaseModel):
+    id: str
+    text: str
+    owner: str | None
+    due_date: str | None
+    status: str | None
+    citation_ids: list[str]
+
+
 class EntityPageResponse(BaseModel):
-    """The wiki page for one entity: source backlinks + related entities."""
+    """The cached wiki page for one entity."""
 
     id: str
     name: str
@@ -197,6 +245,14 @@ class EntityPageResponse(BaseModel):
     mention_count: int
     sources: list[EntitySourceResponse]
     related: list[RelatedEntityResponse]
+    overview: str
+    facts: list[EntityPageFactResponse]
+    citations: list[EntityCitationResponse]
+    timeline: list[EntityTimelineEventResponse]
+    related_explanations: list[RelatedEntityExplanationResponse]
+    questions: list[EntityPageQuestionResponse]
+    actions: list[EntityPageActionResponse]
+    cache_status: str
 
 
 @router.get("/{entity_id}/page", response_model=EntityPageResponse)
@@ -248,12 +304,16 @@ async def create_entity(
     )
 
 
-@router.delete("/{entity_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete(
+    "/{entity_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    response_class=Response,
+)
 async def delete_entity(
     entity_id: UUID,
     user: CurrentUser,
     db: Database,
-) -> None:
+) -> Response:
     """Delete an entity."""
     result = await db.execute(
         select(Entity).where(Entity.id == entity_id, Entity.user_id == user.id)
@@ -267,3 +327,4 @@ async def delete_entity(
         )
 
     await db.delete(entity)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

@@ -24,7 +24,7 @@ from app.models.companion_pending_action import CompanionPendingAction
 from app.models.comparison import ComparisonSet
 from app.models.device import Device
 from app.models.dictation import DictationDictionaryWord, DictationEntry
-from app.models.entity import Entity, EntityRelation, RecordingTag, Tag
+from app.models.entity import Entity, EntityPageSnapshot, EntityRelation, RecordingTag, Tag
 from app.models.highlight import Highlight
 from app.models.item import Item, ItemChunk, ItemSummary
 from app.models.mcp_connection import McpConnection, McpIngestionRun
@@ -108,6 +108,7 @@ __all__ = [
     "PersonalizationImportJob",
     "PersonalizationTerm",
     "Entity",
+    "EntityPageSnapshot",
     "EntityRelation",
     "Tag",
     "RecordingTag",

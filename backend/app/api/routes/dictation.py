@@ -36,6 +36,8 @@ logger = logging.getLogger(__name__)
 MAX_CLEANUP_TEXT_LENGTH = 100_000
 MAX_CLEANUP_VOCABULARY_ENTRIES = 200
 MAX_CLEANUP_VOCABULARY_ENTRY_CHARS = 60
+MIN_CLEANUP_OUTPUT_TOKENS = 256
+MAX_CLEANUP_OUTPUT_TOKENS = 8192
 
 DICTATION_CLEANUP_INSTRUCTIONS_BY_LEVEL = {
     "light": """\
@@ -142,6 +144,15 @@ def _build_vocabulary_block(vocabulary: list[str] | None) -> str:
     )
 
 
+def _cleanup_output_token_cap(text: str) -> int:
+    """Bound cleanup spend while allowing the output to remain near input length."""
+    estimated_tokens = (len(text) // 3) + 128
+    return max(
+        MIN_CLEANUP_OUTPUT_TOKENS,
+        min(MAX_CLEANUP_OUTPUT_TOKENS, estimated_tokens),
+    )
+
+
 @router.post("/cleanup", response_model=CleanupResponse)
 async def cleanup_dictation(request: CleanupRequest, user: CurrentUser):
     """Clean up raw dictated text via the OpenAI Responses API.
@@ -198,6 +209,7 @@ async def cleanup_dictation(request: CleanupRequest, user: CurrentUser):
             ),
             reasoning={"effort": "none"},
             text={"verbosity": "low"},
+            max_output_tokens=_cleanup_output_token_cap(text),
         )
 
         ensure_response_completed(response, operation="Dictation cleanup")
@@ -379,12 +391,16 @@ async def create_dictation_entry(
     return _serialize_entry(entry)
 
 
-@router.delete("/entries/{client_entry_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete(
+    "/entries/{client_entry_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    response_class=Response,
+)
 async def delete_dictation_entry(
     client_entry_id: UUID,
     user: CurrentUser,
     db: Database,
-) -> None:
+) -> Response:
     """Delete a dictation entry. Idempotent — returns 204 whether the row existed."""
     result = await db.execute(
         select(DictationEntry).where(
@@ -396,6 +412,7 @@ async def delete_dictation_entry(
     if entry is not None:
         await db.delete(entry)
         await db.flush()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.get("/dictionary", response_model=list[DictionaryWordResponse])
@@ -447,12 +464,16 @@ async def create_dictionary_word(
     return _serialize_word(word)
 
 
-@router.delete("/dictionary/{client_word_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete(
+    "/dictionary/{client_word_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    response_class=Response,
+)
 async def delete_dictionary_word(
     client_word_id: UUID,
     user: CurrentUser,
     db: Database,
-) -> None:
+) -> Response:
     """Delete a dictionary word. Idempotent — returns 204 whether the row existed."""
     result = await db.execute(
         select(DictationDictionaryWord).where(
@@ -464,3 +485,4 @@ async def delete_dictionary_word(
     if word is not None:
         await db.delete(word)
         await db.flush()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

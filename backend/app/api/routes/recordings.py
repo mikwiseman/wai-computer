@@ -1846,13 +1846,17 @@ async def export_recording(
     )
 
 
-@router.delete("/{recording_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete(
+    "/{recording_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    response_class=Response,
+)
 async def delete_recording(
     recording_id: UUID,
     user: CurrentUser,
     db: Database,
     permanent: bool = False,
-) -> None:
+) -> Response:
     """Delete a recording."""
     result = await db.execute(
         select(Recording).where(Recording.id == recording_id, Recording.user_id == user.id)
@@ -1864,10 +1868,11 @@ async def delete_recording(
 
     if permanent or recording.deleted_at is not None:
         await db.delete(recording)
-        return
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
 
     recording.deleted_at = datetime.now(timezone.utc)
     await db.flush()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.post("/{recording_id}/restore", response_model=RecordingResponse)
