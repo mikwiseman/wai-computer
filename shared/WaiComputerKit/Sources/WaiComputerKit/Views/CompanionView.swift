@@ -78,6 +78,10 @@ public struct CompanionView: View {
     @State private var streamingCitations: [CompanionStreamCitation] = []
     @State private var streamingToolNotes: [String] = []
     @State private var stage: TurnStage = .idle
+    // Read-aloud (voice out): off by default; speaks the completed answer with a
+    // content-aware voice (Russian replies get a Russian voice).
+    @State private var speakAnswers = false
+    @State private var readAloud = ReadAloudController(provider: AVSpeechTTSProvider())
     @State private var input: String = ""
     @FocusState private var inputFocused: Bool
     @State private var errorMessage: String?
@@ -183,6 +187,21 @@ public struct CompanionView: View {
             .layoutPriority(1)
 
             Spacer(minLength: 12)
+
+            Button {
+                speakAnswers.toggle()
+                if !speakAnswers { Task { await readAloud.cancel() } }
+            } label: {
+                Image(systemName: speakAnswers ? "speaker.wave.2.fill" : "speaker.slash")
+            }
+            .buttonStyle(.bordered)
+            .foregroundStyle(speakAnswers ? companionAccentColor : .secondary)
+            .help(
+                speakAnswers
+                    ? t("Read answers aloud: on", "Озвучивать ответы: вкл")
+                    : t("Read answers aloud: off", "Озвучивать ответы: выкл")
+            )
+            .accessibilityIdentifier("wai-speak-toggle-button")
 
             Button {
                 showChats.toggle()
@@ -684,6 +703,7 @@ public struct CompanionView: View {
         // Cancel any in-flight turn first so two streams never interleave.
         turnTask?.cancel()
         turnTask = nil
+        Task { await readAloud.cancel() }  // barge-in: stop reading the prior answer
 
         // Flip stage synchronously so the disabled button covers the gap.
         stage = .searching
@@ -737,6 +757,12 @@ public struct CompanionView: View {
                 if Task.isCancelled {
                     return
                 }
+                // Speak the finished answer (detached so reading never throttles
+                // the text stream); the segmenter splits it into sentences.
+                if speakAnswers, !streamingText.isEmpty {
+                    let answer = streamingText
+                    Task { await speakAnswer(answer) }
+                }
                 let detail = try await apiClient.getCompanionChat(chatId: chatId)
                 messages = detail.messages
                 await refreshChats(selecting: chatId)
@@ -783,10 +809,19 @@ public struct CompanionView: View {
     private func cancelTurn() {
         turnTask?.cancel()
         turnTask = nil
+        Task { await readAloud.cancel() }
         streamingText = ""
         streamingCitations = []
         streamingToolNotes = []
         stage = .idle
+    }
+
+    /// Read a completed answer aloud, sentence by sentence (content-aware voice).
+    @MainActor
+    private func speakAnswer(_ text: String) async {
+        await readAloud.begin()
+        await readAloud.feed(text)
+        await readAloud.finish()
     }
 
     @MainActor

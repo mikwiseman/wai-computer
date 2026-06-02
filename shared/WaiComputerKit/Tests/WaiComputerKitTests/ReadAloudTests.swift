@@ -75,3 +75,41 @@ final class ReadAloudTests: XCTestCase {
         XCTAssertTrue(fake.stopped)
     }
 }
+
+#if canImport(AVFoundation)
+final class AVSpeechVoiceLanguageTests: XCTestCase {
+    func testCyrillicTextGetsRussianVoice() {
+        XCTAssertEqual(
+            AVSpeechTTSProvider.resolvedVoiceLanguage(
+                for: "Привет, мир!", default: "en-US"
+            ),
+            "ru-RU"
+        )
+    }
+
+    func testLatinTextKeepsDefault() {
+        XCTAssertEqual(
+            AVSpeechTTSProvider.resolvedVoiceLanguage(
+                for: "Hello, world!", default: "en-US"
+            ),
+            "en-US"
+        )
+    }
+
+    func testNoLettersKeepsDefault() {
+        XCTAssertEqual(
+            AVSpeechTTSProvider.resolvedVoiceLanguage(for: "123 — !!!", default: "en-US"),
+            "en-US"
+        )
+    }
+
+    func testMostlyCyrillicMixedGetsRussian() {
+        XCTAssertEqual(
+            AVSpeechTTSProvider.resolvedVoiceLanguage(
+                for: "Открой Gmail и напиши письмо", default: "en-US"
+            ),
+            "ru-RU"
+        )
+    }
+}
+#endif
