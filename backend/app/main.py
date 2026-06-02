@@ -39,6 +39,7 @@ from app.api.routes import (
 )
 from app.api.routes import devices as devices_routes
 from app.api.routes import settings as settings_routes
+from app.api.routes import voice as voice_routes
 from app.billing.router import router as billing_router
 from app.billing.webhooks import router as billing_webhooks_router
 from app.config import get_settings
@@ -207,6 +208,7 @@ app.include_router(devices_routes.router, prefix="/api")
 app.include_router(dictation.router, prefix="/api")
 app.include_router(realtime_transcription.router, prefix="/api")
 app.include_router(realtime_voice.router, prefix="/api")
+app.include_router(voice_routes.router, prefix="/api")
 app.include_router(billing_router, prefix="/api")
 app.include_router(billing_webhooks_router, prefix="/api")
 
