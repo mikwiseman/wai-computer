@@ -59,5 +59,11 @@ public enum DesktopActuationError: Error, Sendable, Equatable {
     case appNotFound
     /// A verb that this tier cannot perform; the caller surfaces it.
     case tierUnavailable(String)
+    // Tier-C (accessibility) failures — all surfaced, never silent success.
+    case accessibilityNotTrusted
+    case noFrontmostApp
+    case noFocusedElement
+    case elementNotInSnapshot
+    case axActionFailed
 }
 #endif
