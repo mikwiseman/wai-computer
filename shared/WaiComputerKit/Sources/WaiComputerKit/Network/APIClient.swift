@@ -1161,6 +1161,28 @@ public actor APIClient {
         return try await request(.GET, path: "/api/brain")
     }
 
+    /// Force-graph-ready knowledge graph. `focus` returns the ego graph around
+    /// one entity; `limit` caps entity nodes by degree.
+    public func getBrainGraph(
+        focus: String? = nil,
+        includeSources: Bool = true,
+        limit: Int = 200
+    ) async throws -> BrainGraph {
+        var queryItems: [URLQueryItem] = [
+            URLQueryItem(name: "include_sources", value: includeSources ? "true" : "false"),
+            URLQueryItem(name: "limit", value: "\(limit)"),
+        ]
+        if let focus, !focus.isEmpty {
+            queryItems.append(URLQueryItem(name: "focus", value: focus))
+        }
+        return try await request(.GET, path: "/api/brain/graph", queryItems: queryItems)
+    }
+
+    /// The wiki page for one entity: source backlinks + related entities.
+    public func getEntityPage(id: String) async throws -> EntityPage {
+        return try await request(.GET, path: "/api/entities/\(id)/page")
+    }
+
     // MARK: - Memory Proposals (raw→valuable governance review)
 
     /// The review queue. `status` defaults to "pending"; pass "all" / "accepted"
