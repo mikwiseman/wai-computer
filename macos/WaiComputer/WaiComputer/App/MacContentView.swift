@@ -92,6 +92,7 @@ struct MacMainView: View {
     @EnvironmentObject var appState: MacAppState
     @EnvironmentObject var recordingViewModel: MacRecordingViewModel
     @EnvironmentObject private var languageManager: LanguageManager
+    @EnvironmentObject private var dictationManager: DictationManager
     @StateObject private var libraryViewModel = MacLibraryViewModel()
     @StateObject private var importViewModel = MacImportViewModel()
     // Computer-use (Mac-edge channel): opt-in, off by default. Runs only while
@@ -884,7 +885,18 @@ struct MacMainView: View {
         case .wai:
             CompanionView(
                 apiClient: appState.getAPIClient(),
-                recordings: libraryViewModel.recordings
+                recordings: libraryViewModel.recordings,
+                onVoiceInput: {
+                    // Tap to start / tap to stop, reusing the existing dictation
+                    // pipeline — the transcript pastes into the focused composer.
+                    Task {
+                        if dictationManager.state == .listening {
+                            await dictationManager.stopAndInsert()
+                        } else {
+                            await dictationManager.startDictation()
+                        }
+                    }
+                }
             )
             .environment(\.locale, MacDateFormatting.locale(for: languageManager.current))
             .companionAccentColor(Palette.accent)

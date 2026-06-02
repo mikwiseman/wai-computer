@@ -65,6 +65,9 @@ enum CompanionChatPresentation {
 public struct CompanionView: View {
     public let apiClient: APIClient
     public let recordings: [Recording]
+    /// Optional voice-input hook (macOS): starts the host's dictation, which
+    /// transcribes speech into the focused composer field. nil hides the mic.
+    private let onVoiceInput: (() -> Void)?
     @Environment(\.locale) private var locale
     @Environment(\.companionAccentColor) private var companionAccentColor
 
@@ -99,9 +102,14 @@ public struct CompanionView: View {
         case composing
     }
 
-    public init(apiClient: APIClient, recordings: [Recording]) {
+    public init(
+        apiClient: APIClient,
+        recordings: [Recording],
+        onVoiceInput: (() -> Void)? = nil
+    ) {
         self.apiClient = apiClient
         self.recordings = recordings
+        self.onVoiceInput = onVoiceInput
     }
 
     public var body: some View {
@@ -542,6 +550,20 @@ public struct CompanionView: View {
                 .onTapGesture { inputFocused = true }
                 .accessibilityLabel(t("Message to Wai", "Сообщение для Wai"))
                 .accessibilityIdentifier("wai-message-editor")
+
+                if let onVoiceInput, !isStreaming {
+                    Button {
+                        // Focus the composer first so the host's dictation
+                        // transcribes into this field, then start it.
+                        inputFocused = true
+                        onVoiceInput()
+                    } label: {
+                        Image(systemName: "mic.fill")
+                    }
+                    .buttonStyle(.bordered)
+                    .help(t("Dictate your message", "Продиктовать сообщение"))
+                    .accessibilityIdentifier("wai-voice-input-button")
+                }
 
                 if isStreaming {
                     Button {
