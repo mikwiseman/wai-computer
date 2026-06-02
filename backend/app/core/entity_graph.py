@@ -16,6 +16,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.entity_reconcile import reconcile_person_entities
 from app.core.name_moderation import normalise_name
 from app.models.entity import Entity, EntityMention
 
@@ -148,4 +149,8 @@ async def seed_entities_from_summary(
             source_id=source_id,
         )
         count += 1
+    # Link any freshly-seeded person entities to known speakers (idempotent,
+    # exact-name only — fuzzy stays out of the graph, per the Review-queue rule).
+    if people:
+        await reconcile_person_entities(db, user_id)
     return count
