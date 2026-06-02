@@ -152,6 +152,14 @@ export interface AdminUserSummary {
   dictation_words: number;
   recording_words: number;
   recording_count: number;
+  dictation_duration_seconds: number;
+  recording_duration_seconds: number;
+  transcription_duration_seconds: number;
+  companion_input_tokens: number;
+  companion_output_tokens: number;
+  companion_cached_tokens: number;
+  companion_total_tokens: number;
+  revenue_by_currency: Record<string, number>;
 }
 
 export interface AdminUserDetail extends AdminUserSummary {

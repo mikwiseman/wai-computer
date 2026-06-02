@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Which STT model, when — decision guide (June 2026)</title>
+<style>
+  :root{
+    --bg:#fcfcfb; --ink:#141210; --muted:#6c6862; --faint:#94908a;
+    --line:#e7e4dd; --line-strong:#1c1a17;
+    --open:#0b7a4b; --open-soft:#d7ede2; --warn:#b0481f; --warn-soft:#f3e2da;
+    --mark:#fbf3cf; --card:#ffffff;
+    --mono:"SF Mono","JetBrains Mono",ui-monospace,Menlo,Consolas,monospace;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,Helvetica,Arial,sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);
+    font-size:16px;line-height:1.55;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+  .wrap{max-width:940px;margin:0 auto;padding:64px 26px 110px}
+  ::selection{background:var(--mark)}
+  a{color:var(--ink)}
+
+  .eyebrow{font-size:12px;letter-spacing:.16em;text-transform:uppercase;color:var(--faint);font-weight:600}
+  h1{font-size:38px;line-height:1.08;letter-spacing:-.02em;font-weight:680;margin:12px 0 0}
+  .lede{font-size:18px;color:var(--muted);margin:16px 0 0;max-width:66ch}
+  .meta{margin-top:18px;font-size:12.5px;color:var(--faint);font-family:var(--mono)}
+  .rule{height:1px;background:var(--line-strong);border:0;margin:30px 0 0}
+
+  section{margin-top:52px}
+  .snum{font-family:var(--mono);font-size:12px;color:var(--open);font-weight:600;letter-spacing:.04em}
+  h2{font-size:23px;letter-spacing:-.015em;font-weight:660;margin:7px 0 0;line-height:1.2}
+  .sub{font-size:13.5px;color:var(--muted);margin:8px 0 0;max-width:74ch}
+
+  /* matrix */
+  .tbl{margin:22px 0 0;overflow-x:auto;border:1px solid var(--line)}
+  table{border-collapse:collapse;width:100%;font-size:14px;min-width:600px}
+  th,td{padding:10px 13px;text-align:left;border-bottom:1px solid var(--line);vertical-align:top}
+  thead th{border-bottom:1.5px solid var(--line-strong);font-size:12px;letter-spacing:.03em;
+    text-transform:uppercase;color:var(--muted);font-weight:660}
+  tbody tr:last-child td{border-bottom:0}
+  tbody tr:hover{background:#faf8f2}
+  td.pick{font-weight:660;white-space:nowrap}
+  td.pick a{text-decoration:none;border-bottom:1px dotted var(--faint)}
+  .scn{font-weight:600}
+  .lang{font-family:var(--mono);font-size:10px;letter-spacing:.04em;text-transform:uppercase;
+    padding:1px 6px;border-radius:3px;background:var(--open-soft);color:var(--open);margin-right:6px}
+  .lang.en{background:#e7eef6;color:#2c5a86} .lang.ml{background:#efe7f4;color:#6b3f86}
+
+  /* model cards */
+  .cards{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin:22px 0 0}
+  .card{background:var(--card);border:1px solid var(--line);padding:18px 19px}
+  .card.feat{border-left:3px solid var(--open)}
+  .card h3{margin:0;font-size:18px;font-weight:680;letter-spacing:-.01em;display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
+  .card h3 a{text-decoration:none;border-bottom:1px dotted var(--faint)}
+  .spec{font-family:var(--mono);font-size:11px;color:var(--muted);font-weight:400}
+  .role{font-size:12px;color:var(--open);font-weight:660;letter-spacing:.02em;text-transform:uppercase;margin-top:3px}
+  ul{margin:12px 0 0;padding:0;list-style:none}
+  ul li{position:relative;padding-left:23px;margin-top:7px;font-size:13.5px;line-height:1.4}
+  li.use::before{content:"✓";position:absolute;left:2px;top:0;color:var(--open);font-weight:700}
+  li.skip::before{content:"✗";position:absolute;left:2px;top:0;color:var(--warn);font-weight:700}
+  .nb{margin-top:12px;font-size:12px;color:var(--faint);border-top:1px dotted var(--line);padding-top:9px}
+  .picks{display:grid;grid-template-columns:repeat(2,1fr);gap:1px;background:var(--line);border:1px solid var(--line);margin:24px 0 0}
+  .pick{background:var(--card);padding:16px 17px}
+  .pick .job{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--faint);font-weight:600}
+  .pick .who{font-size:16px;font-weight:660;margin-top:5px;line-height:1.3}
+  .pick .who a{border-bottom:1px dotted var(--faint);text-decoration:none}
+  .pick .det{font-size:13px;color:var(--muted);margin-top:6px;line-height:1.45}
+  .pick .det a{text-decoration:none;border-bottom:1px dotted var(--faint)}
+  .cellsub{font-family:var(--mono);font-size:10.5px;color:var(--muted);margin-top:3px;line-height:1.3}
+  .pn{font-weight:600;font-size:13.5px}
+  .pn a{text-decoration:none;border-bottom:1px dotted var(--faint)}
+  td.best{background:#eef6ee} td.best:hover{background:#e6f1e6}
+  .grouphdr{font-size:12px;letter-spacing:.05em;text-transform:uppercase;color:var(--open);font-weight:700;margin:26px 0 0}
+  h3{font-size:16px;font-weight:660;margin:26px 0 0;letter-spacing:-.01em}
+  .mh{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--faint);font-weight:600}
+  .mv{font-family:var(--mono);font-size:19px;font-weight:600;margin-top:5px;line-height:1.15}
+  .ms{font-size:12px;color:var(--muted);margin-top:5px;line-height:1.35}
+  .win{color:var(--open);font-weight:660}
+  .note{font-size:13px;color:var(--muted);margin-top:11px;line-height:1.5}
+  .note a{text-decoration:none;border-bottom:1px dotted var(--faint)}
+
+  .callout{background:var(--card);border:1px solid var(--line);border-left:3px solid var(--open);
+    padding:18px 20px;margin:24px 0 0}
+  .callout .k{font-size:11.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--open);font-weight:700}
+  .flow{margin-top:12px;font-size:14.5px;line-height:1.9}
+  .flow b{font-weight:660}
+  .flow .arr{color:var(--faint)}
+  mark{background:var(--mark);padding:.05em .25em;border-radius:2px}
+
+  footer{margin-top:60px;padding-top:22px;border-top:1px solid var(--line);font-size:12px;color:var(--faint);line-height:1.7}
+  footer a{color:var(--muted)}
+
+  @media (max-width:680px){
+    .wrap{padding:44px 16px 80px} h1{font-size:28px}
+    .cards{grid-template-columns:1fr}
+  }
+  @media print{body{background:#fff} .card,.callout,tr{break-inside:avoid}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div class="eyebrow">WaiComputer · STT model picker</div>
+    <h1>Which model, when</h1>
+    <p class="lede">Where to use GigaAM, T-one, and the rest — by language, mode, and constraint. A routing guide, not a leaderboard (for the numbers, see the <a href="stt-benchmarks-2026.html">benchmark infographic</a>).</p>
+    <div class="meta">2026-06-01 · every claim traces to a verified model card / benchmark</div>
+    <hr class="rule">
+  </header>
+
+  <!-- All classes -->
+  <section style="margin-top:40px">
+    <div class="snum">00 · ALL CLASSES</div>
+    <h2>Best model for every class</h2>
+    <p class="sub">Deployment × mode × language — the whole grid. <span style="color:var(--open);font-weight:700">★</span> = what we'd actually ship for that class.</p>
+
+    <div class="grouphdr">▸ Self-hosted · open weights · $0 per minute</div>
+    <div class="tbl">
+      <table>
+        <thead><tr><th>Mode</th><th>🇷🇺 Russian</th><th>🇬🇧 English</th><th>🌍 Other / multilingual</th></tr></thead>
+        <tbody>
+          <tr>
+            <td class="scn">⚡ Live</td>
+            <td class="best"><span class="pn">★ <a href="https://huggingface.co/t-tech/T-one">T-one</a></span><div class="cellsub">71M · native streaming · telephony</div></td>
+            <td><span class="pn"><a href="https://huggingface.co/nvidia/nemotron-speech-streaming-en-0.6b">Nemotron 3 ASR</a></span><div class="cellsub">5.21% · best open real-time · $0</div></td>
+            <td class="best"><span class="pn">★ <a href="https://huggingface.co/mistralai/Voxtral-Mini-4B-Realtime-2602">Voxtral Realtime</a></span><div class="cellsub">13 langs incl. RU · &lt;500ms</div></td>
+          </tr>
+          <tr>
+            <td class="scn">📁 Async</td>
+            <td class="best"><span class="pn">★ <a href="https://huggingface.co/ai-sage/GigaAM-v3">GigaAM v3</a></span><div class="cellsub">2.6% · MIT · Russian SOTA</div></td>
+            <td class="best"><span class="pn">★ <a href="https://huggingface.co/mistralai/Voxtral-Small-24B-2602">Voxtral Small</a></span><div class="cellsub">2.77% · beats Deepgram</div></td>
+            <td class="best"><span class="pn">★ <a href="https://huggingface.co/Qwen/Qwen3-ASR-1.7B">Qwen3-ASR 1.7B</a></span><div class="cellsub">52 langs · Apache</div></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="grouphdr">▸ Cloud · managed API · per-minute</div>
+    <div class="tbl">
+      <table>
+        <thead><tr><th>Mode</th><th>🇷🇺 Russian</th><th>🇬🇧 English</th><th>🌍 Other / multilingual</th></tr></thead>
+        <tbody>
+          <tr>
+            <td class="scn">⚡ Live</td>
+            <td><span class="pn"><a href="https://www.tbank.ru/software/voicekit/">T-Bank VoiceKit</a></span><div class="cellsub">RU stream ₽0.72/min · open beats it</div></td>
+            <td class="best"><span class="pn">★ Cartesia Ink-2</span><div class="cellsub">3.60% @ 0.21s · accuracy frontier</div></td>
+            <td><span class="pn">ElevenLabs Scribe v2 RT</span><div class="cellsub">3.65% · 90+ langs · 150ms</div></td>
+          </tr>
+          <tr>
+            <td class="scn">📁 Async</td>
+            <td><span class="pn"><a href="https://www.tbank.ru/software/voicekit/">T-Bank VoiceKit</a></span><div class="cellsub">RU ₽0.18/min · open beats it</div></td>
+            <td><span class="pn">ElevenLabs Scribe v2</span><div class="cellsub">2.18% · best GA English</div></td>
+            <td><span class="pn">ElevenLabs Scribe v2</span><div class="cellsub">2.18% · 90+ langs</div></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p class="note"><strong><span style="color:var(--open)">★</span> = our pick per class.</strong> Self-host wins every class <em>except English real-time</em>, where a closed API (Cartesia / ElevenLabs) leads open by ~1.6pp. For <strong>Russian, don't pay a cloud</strong> — open GigaAM v3 / T-one beat every API; cloud RU (VoiceKit / Yandex) is a fallback only. English async is a near-tie (open Voxtral Small 2.77% vs ElevenLabs 2.18%) — self-host for privacy + $0 marginal.</p>
+  </section>
+
+  <!-- Quick-pick matrix -->
+  <section>
+    <div class="snum">01 · QUICK PICK</div>
+    <h2>Scenario → model</h2>
+    <p class="sub">Start here. <span class="lang">RU</span> Russian · <span class="lang en">EN</span> English · <span class="lang ml">ML</span> multilingual.</p>
+    <div class="tbl">
+      <table>
+        <thead><tr><th>Your scenario</th><th>Use</th><th>Why</th></tr></thead>
+        <tbody>
+          <tr><td class="scn"><span class="lang">RU</span> Recordings / files / dictation (accuracy)</td><td class="pick"><a href="https://huggingface.co/ai-sage/GigaAM-v3">GigaAM v3</a></td><td>Russian SOTA, 2.6% WER, MIT, 240M</td></tr>
+          <tr><td class="scn"><span class="lang">RU</span> Live / real-time / telephony / calls</td><td class="pick"><a href="https://huggingface.co/t-tech/T-one">T-one</a></td><td>Native streaming CTC, 300ms, telephony-tuned, 71M</td></tr>
+          <tr><td class="scn"><span class="lang">RU</span> Long meetings — speakers + timestamps</td><td class="pick"><a href="https://huggingface.co/microsoft/VibeVoice-ASR">VibeVoice-ASR</a></td><td>60-min single pass + diarization, MIT</td></tr>
+          <tr><td class="scn"><span class="lang en">EN</span> Dictation (push-to-talk, low latency)</td><td class="pick"><a href="https://huggingface.co/openai/whisper-large-v3-turbo">whisper-turbo</a> + VAD</td><td>Light, mature, multilingual; chunk via <a href="https://github.com/snakers4/silero-vad">Silero VAD</a></td></tr>
+          <tr><td class="scn"><span class="lang en">EN</span> Batch at scale (throughput)</td><td class="pick"><a href="https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3">Parakeet-v3</a></td><td>Fastest open (~3,330 RTFx), 4.06% WER, $0</td></tr>
+          <tr><td class="scn"><span class="lang en">EN</span> Batch — max accuracy</td><td class="pick"><a href="https://huggingface.co/mistralai/Voxtral-Small-24B-2602">Voxtral Small</a> / <a href="https://huggingface.co/ibm-granite/granite-speech-4.1-2b">Granite 4.1</a></td><td>Best open batch 2.77% / English leaderboard #1</td></tr>
+          <tr><td class="scn"><span class="lang en">EN</span> Real-time — best accuracy</td><td class="pick">Cartesia / ElevenLabs <span class="spec">(API)</span></td><td>Open trails ~1.6pp; use a closed API here</td></tr>
+          <tr><td class="scn"><span class="lang ml">ML</span> One model, many languages incl. RU</td><td class="pick"><a href="https://huggingface.co/Qwen/Qwen3-ASR-1.7B">Qwen3-ASR</a> / <a href="https://huggingface.co/mistralai/Voxtral-Mini-4B-Realtime-2602">Voxtral RT</a></td><td>52 / 13 langs; Qwen batch, Voxtral streaming</td></tr>
+          <tr><td class="scn">💸 Lowest cost / spiky overflow</td><td class="pick"><a href="https://console.groq.com/docs/model/whisper-large-v3-turbo">Groq</a> whisper-turbo</td><td>$0.04/audio-hr hosted, zero ops</td></tr>
+          <tr><td class="scn">🖥 Cheapest self-host GPU</td><td class="pick"><a href="https://www.hetzner.com/dedicated-rootserver/gex44/">Hetzner GEX44</a> / RTX PRO 4500</td><td>€184/mo fixed · $0.24/hr cloud</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- The two you asked about -->
+  <section>
+    <div class="snum">02 · THE RUSSIAN PAIR</div>
+    <h2>GigaAM vs T-one — they don't compete, they split the job</h2>
+    <p class="sub">Both are open, Russian-only, and best-in-class — but at different things. Use <strong>both</strong>: GigaAM for accuracy, T-one for live.</p>
+    <div class="cards">
+      <div class="card feat">
+        <h3><a href="https://huggingface.co/ai-sage/GigaAM-v3">GigaAM v3</a> <span class="spec">Sber · MIT · 240M</span></h3>
+        <div class="role">Russian — accuracy</div>
+        <ul>
+          <li class="use"><strong>Recordings, files, async dictation</strong> where the transcript quality matters most (2.6% WER — beats every API on Russian).</li>
+          <li class="use"><strong>Noisy / far-field / call-center</strong> Russian — v3 added ~30% improvement on these hard domains.</li>
+          <li class="use">Small (240M) → runs on a modest GPU; RNN-T or CTC decoders, with e2e variants that add punctuation.</li>
+          <li class="skip">Not for sub-300ms <strong>live</strong> streaming — the card doesn't claim native streaming → use T-one.</li>
+          <li class="skip">Russian-only — no English / other languages.</li>
+        </ul>
+        <div class="nb">Note: <strong>GigaAM</strong> is Sber's open <em>ASR</em> model — not <strong>GigaChat</strong> (Sber's LLM). Different product, same lab.</div>
+      </div>
+      <div class="card feat">
+        <h3><a href="https://huggingface.co/t-tech/T-one">T-one</a> <span class="spec">T-Bank · Apache-2.0 · 71M</span></h3>
+        <div class="role">Russian — live / streaming</div>
+        <ul>
+          <li class="use"><strong>Real-time Russian</strong>: live captioning, voice agents, streaming dictation — native CTC streaming in 300ms chunks.</li>
+          <li class="use"><strong>Telephony / call-center / phone audio</strong> — purpose-built and tuned for it (best open WER on call data).</li>
+          <li class="use">Tiny (71M) → many concurrent streams per GPU, low latency, cheap to serve.</li>
+          <li class="skip">Not the top pick for <strong>clean read-speech accuracy</strong> — GigaAM wins there.</li>
+          <li class="skip">Russian-only — no English / other languages.</li>
+        </ul>
+        <div class="nb">Trained from scratch (modified Conformer, NeMo) — <em>not</em> a Whisper fine-tune.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Others -->
+  <section>
+    <div class="snum">03 · THE OTHERS</div>
+    <h2>Where to use everything else</h2>
+    <div class="cards">
+      <div class="card">
+        <h3><a href="https://huggingface.co/microsoft/VibeVoice-ASR">VibeVoice-ASR</a> <span class="spec">Microsoft · MIT · 9B</span></h3>
+        <div class="role">Long-form + diarization</div>
+        <ul>
+          <li class="use"><strong>Long meetings / interviews</strong> needing speakers + timestamps — 60 min in one pass, incl. Russian. The best open fit for a recordings product.</li>
+          <li class="skip">Not real-time; 9B → needs a real GPU (not edge).</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3><a href="https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3">Parakeet-tdt-0.6b-v3</a> <span class="spec">NVIDIA · CC-BY · 600M</span></h3>
+        <div class="role">English / multilingual batch — speed</div>
+        <ul>
+          <li class="use"><strong>High-volume English/EU batch</strong> — fastest open model (~30–40× Whisper), $0 marginal. Handles 25 langs incl. Russian as a fallback.</li>
+          <li class="skip">Not the primary Russian pick (trails GigaAM); not low-latency streaming.</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3><a href="https://huggingface.co/openai/whisper-large-v3-turbo">whisper-large-v3-turbo</a> <span class="spec">OpenAI · MIT · 809M</span></h3>
+        <div class="role">English dictation + broad fallback</div>
+        <ul>
+          <li class="use"><strong>English push-to-talk</strong> (with Silero VAD), and any of 99 languages where you have no specialist — the safe, mature default.</li>
+          <li class="skip">Russian accuracy → use GigaAM; no true streaming (chunked only).</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3><a href="https://huggingface.co/Qwen/Qwen3-ASR-1.7B">Qwen3-ASR 1.7B</a> <span class="spec">Alibaba · Apache · 1.7B</span></h3>
+        <div class="role">Broad multilingual, one model</div>
+        <ul>
+          <li class="use"><strong>EN + RU + 50 more in one model</strong>, with code-switching and streaming — when you don't want to run a per-language stack.</li>
+          <li class="skip">Beaten on pure Russian (GigaAM) and pure English accuracy (Granite).</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3><a href="https://huggingface.co/ibm-granite/granite-speech-4.1-2b">Granite Speech 4.1 2B</a> <span class="spec">IBM · Apache · 2B</span></h3>
+        <div class="role">English — top accuracy</div>
+        <ul>
+          <li class="use"><strong>Most accurate open English</strong> (Open ASR Leaderboard #1, 5.33%) for quality-first English batch.</li>
+          <li class="skip">No Russian (6 langs); offline only, no streaming.</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>Managed APIs <span class="spec">Groq · Cartesia · ElevenLabs · Deepgram</span></h3>
+        <div class="role">When not to self-host</div>
+        <ul>
+          <li class="use"><strong>Groq</strong> whisper-turbo ($0.04/hr) — cheap burst/overflow + fallback.</li>
+          <li class="use"><strong>Cartesia Ink-2 / ElevenLabs Scribe v2 RT</strong> — best real-time English (open trails ~1.6pp).</li>
+          <li class="skip">Skip when you need data residency, cost-at-scale, or Russian SOTA — self-host instead.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- WaiComputer routing -->
+  <section>
+    <div class="snum">04 · FOR WAICOMPUTER</div>
+    <h2>The routing we'd ship</h2>
+    <div class="callout">
+      <div class="k">Language + mode router</div>
+      <div class="flow">
+        <b>Russian recording/file</b> <span class="arr">→</span> GigaAM v3<br>
+        <b>Russian live / dictation</b> <span class="arr">→</span> T-one<br>
+        <b>Russian long meeting</b> <span class="arr">→</span> VibeVoice-ASR (speakers + timestamps)<br>
+        <b>English recording/batch</b> <span class="arr">→</span> Voxtral Small / Parakeet-v3<br>
+        <b>English dictation</b> <span class="arr">→</span> whisper-turbo + Silero VAD<br>
+        <b>Best English real-time</b> <span class="arr">→</span> <mark>managed API (Cartesia / ElevenLabs)</mark><br>
+        <b>Overflow / spikes</b> <span class="arr">→</span> Groq whisper-turbo
+      </div>
+    </div>
+    <p class="sub" style="margin-top:16px">Net: <strong>self-host for Russian (open is SOTA), recordings/batch (open beats Deepgram), and long-form+diarization</strong>; lean on a managed API only for best-in-class English real-time. One cheap 24–32&nbsp;GB GPU (<a href="https://www.hetzner.com/dedicated-rootserver/gex44/">Hetzner GEX44</a> €184/mo, or RTX PRO 4500 ~$0.24/hr) covers the self-hosted models for ~1,000–3,000 daily users.</p>
+  </section>
+
+  <!-- Hardware -->
+  <section>
+    <div class="snum">05 · HARDWARE</div>
+    <h2>What it runs on — and what to rent</h2>
+
+    <div class="callout">
+      <div class="k">Minimum to go live</div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:12px">
+        <div><div class="mh">Hardware</div><div class="mv">1× NVIDIA L4 · 24&nbsp;GB</div><div class="ms">or Hetzner GEX44 / RTX PRO 4500</div></div>
+        <div><div class="mh">Serves</div><div class="mv">~1,000–3,000<span style="font-size:13px;font-weight:400"> users/day</span></div><div class="ms">≈ 20–40 simultaneous live streams</div></div>
+        <div><div class="mh">Price</div><div class="mv">$175–285<span style="font-size:13px;font-weight:400">/mo</span></div><div class="ms">Russia: from ₽18k/mo (~$200)</div></div>
+      </div>
+    </div>
+
+    <h3>Per-model — minimum · medium · recommended</h3>
+    <div class="tbl">
+      <table>
+        <caption>Self-hostable models, smallest first. Minimum = single stream (int8/4-bit); Recommended = production serving.</caption>
+        <thead><tr><th>Model · params</th><th>Minimum</th><th>Medium</th><th>Recommended</th></tr></thead>
+        <tbody>
+          <tr><td><a href="https://huggingface.co/t-tech/T-one">T-one</a> · 71M</td><td>CPU / any 8&nbsp;GB GPU</td><td>L4 (24&nbsp;GB)</td><td class="win">L4 (24&nbsp;GB)</td></tr>
+          <tr><td><a href="https://huggingface.co/ai-sage/GigaAM-v3">GigaAM v3</a> · 240M</td><td>CPU / 8&nbsp;GB GPU</td><td>L4 (24&nbsp;GB)</td><td class="win">L4 (24&nbsp;GB)</td></tr>
+          <tr><td><a href="https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3">Parakeet-tdt-v3</a> · 600M</td><td>8&nbsp;GB GPU</td><td>L4 (24&nbsp;GB)</td><td class="win">L4 (24&nbsp;GB)</td></tr>
+          <tr><td><a href="https://huggingface.co/nvidia/nemotron-speech-streaming-en-0.6b">Nemotron 3 ASR</a> · 600M</td><td>8&nbsp;GB GPU</td><td>L4 (24&nbsp;GB)</td><td class="win">L4 / A10 (24&nbsp;GB)</td></tr>
+          <tr><td><a href="https://huggingface.co/openai/whisper-large-v3-turbo">whisper-turbo</a> · 809M</td><td>6&nbsp;GB (int8)</td><td>L4 (24&nbsp;GB)</td><td class="win">L4 (24&nbsp;GB)</td></tr>
+          <tr><td><a href="https://huggingface.co/openai/whisper-large-v3">Whisper large-v3</a> · 1.55B</td><td>8&nbsp;GB (int8)</td><td>L4 / 4090 (24&nbsp;GB)</td><td class="win">RTX 4090 / L40S</td></tr>
+          <tr><td><a href="https://huggingface.co/Qwen/Qwen3-ASR-1.7B">Qwen3-ASR</a> · 1.7B</td><td>8&nbsp;GB</td><td>RTX 4090 (24&nbsp;GB)</td><td class="win">RTX 4090 / L40S</td></tr>
+          <tr><td><a href="https://huggingface.co/ibm-granite/granite-speech-4.1-2b">Granite Speech 4.1</a> · 2B</td><td>8–12&nbsp;GB</td><td>RTX 4090 (24&nbsp;GB)</td><td class="win">L40S (48&nbsp;GB)</td></tr>
+          <tr><td><a href="https://huggingface.co/mistralai/Voxtral-Mini-4B-Realtime-2602">Voxtral Realtime</a> · 4B</td><td>8&nbsp;GB (4-bit)</td><td>RTX 4090 / A10</td><td class="win">L40S / A100</td></tr>
+          <tr><td><a href="https://huggingface.co/microsoft/VibeVoice-ASR">VibeVoice-ASR</a> · 9B</td><td>RTX 4090 (int8)</td><td>A100 40GB</td><td class="win">A100 80GB</td></tr>
+          <tr><td><a href="https://huggingface.co/mistralai/Voxtral-Small-24B-2602">Voxtral Small</a> · 24B</td><td>A100 80GB (int8)</td><td>H100 80GB</td><td class="win">H100 / 2× A100</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="note">Core picks (GigaAM v3, T-one, Parakeet, Nemotron, whisper-turbo, Qwen3) all fit <strong>one L4 (24&nbsp;GB)</strong>; only Voxtral Small (24B) and VibeVoice-ASR (9B) need an A100/H100.</p>
+
+    <h3>Where to rent</h3>
+    <p class="note"><strong>Global:</strong> <a href="https://www.hetzner.com/dedicated-rootserver/gex44/">Hetzner GEX44</a> €184/mo · <a href="https://vast.ai/pricing/gpu/RTX-PRO-4500">RTX PRO 4500</a> $0.24/hr · <a href="https://www.runpod.io/gpu-models/l4">RunPod L4</a> $0.39/hr · A100 $1.39/hr · H100 $2.89/hr.<br>
+    <strong>Russia (152-ФЗ residency):</strong> <a href="https://intelion.cloud/prices/">Intelion</a> A10 24GB ₽18k/mo (~$200) · <a href="https://hostkey.ru/gpu-dedicated-servers/">HOSTKEY</a> RTX 4090 ₽27k · <a href="https://immers.cloud/prices/">immers.cloud</a> T4 ₽14.5k · <a href="https://selectel.ru/services/gpu/">Selectel</a> 4090 from ₽22k · A100 ~₽120–135k/mo.<br>
+    Full tables — serverless, managed-API pricing, all providers — in the <a href="whisper-gpu-research.html">report → §04–05</a>.</p>
+  </section>
+
+  <footer>
+    Picks synthesize the verified benchmarks in the <a href="stt-benchmarks-2026.html">companion infographic</a> and the <a href="whisper-gpu-research.html">full report</a>. GigaAM streaming / on-device specifics were checked against its <a href="https://huggingface.co/ai-sage/GigaAM-v3">model card</a> and only claimed where stated. Verified 2026-06-01; the real-time-English gap and leaderboard ranks move as new models ship.
+  </footer>
+
+</div>
+</body>
+</html>

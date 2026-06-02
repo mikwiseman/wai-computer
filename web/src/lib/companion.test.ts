@@ -8,16 +8,58 @@ import {
   patchChat,
   streamMessage,
 } from "./companion";
+import { tryRefreshAuthSession } from "./http";
+
+// Keep every real ./http export (ApiError, apiFetch, getApiBaseUrl, …) so the
+// existing CRUD + parser tests keep exercising production code paths. Only
+// tryRefreshAuthSession is replaced with a spy so the 401-refresh branch can be
+// driven deterministically without hitting the network.
+vi.mock("./http", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./http")>();
+  return { ...actual, tryRefreshAuthSession: vi.fn(actual.tryRefreshAuthSession) };
+});
+
+const mockedRefresh = vi.mocked(tryRefreshAuthSession);
 
 const originalFetch = global.fetch;
 
 beforeEach(() => {
   global.fetch = vi.fn();
+  // Default: no refresh happens unless a test opts in. Real tryRefreshAuthSession
+  // would call fetch("/api/auth/refresh"); the explicit default keeps the 401
+  // path inert for the streams that never expect a retry.
+  mockedRefresh.mockReset();
+  mockedRefresh.mockResolvedValue(false);
 });
 
 afterEach(() => {
   global.fetch = originalFetch;
 });
+
+function sseStream(frames: string[]): ReadableStream<Uint8Array> {
+  return new ReadableStream<Uint8Array>({
+    start(controller) {
+      const encoder = new TextEncoder();
+      for (const f of frames) controller.enqueue(encoder.encode(f));
+      controller.close();
+    },
+  });
+}
+
+function sseResponse(frames: string[]): Response {
+  return new Response(sseStream(frames), {
+    status: 200,
+    headers: { "Content-Type": "text/event-stream" },
+  });
+}
+
+async function collectTypes(
+  gen: AsyncGenerator<{ type: string }, void, unknown>,
+): Promise<string[]> {
+  const types: string[] = [];
+  for await (const evt of gen) types.push(evt.type);
+  return types;
+}
 
 function fakeJsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -163,5 +205,328 @@ describe("streamMessage SSE parser", () => {
         // unreachable
       }
     }).rejects.toMatchObject({ status: 404 });
+  });
+});
+
+describe("streamMessage 401 refresh-and-retry", () => {
+  it("cancels the body, refreshes once, then replays the original POST", async () => {
+    const cancel = vi.fn().mockResolvedValue(undefined);
+    const unauthorized = {
+      status: 401,
+      ok: false,
+      body: { cancel },
+    } as unknown as Response;
+    mockedRefresh.mockResolvedValueOnce(true);
+    (global.fetch as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce(unauthorized)
+      .mockResolvedValueOnce(sseResponse(["event: done\ndata: {\"message_id\":\"a1\"}\n\n"]));
+
+    const types = await collectTypes(streamMessage("c1", "hi"));
+
+    expect(types).toEqual(["done"]);
+    expect(cancel).toHaveBeenCalledTimes(1);
+    expect(mockedRefresh).toHaveBeenCalledTimes(1);
+    expect((global.fetch as ReturnType<typeof vi.fn>).mock.calls).toHaveLength(2);
+    // Both attempts target the same messages endpoint with identical body.
+    const [, secondInit] = (global.fetch as ReturnType<typeof vi.fn>).mock.calls[1];
+    expect(JSON.parse(secondInit.body as string)).toEqual({ content: "hi" });
+  });
+
+  it("swallows a body.cancel() rejection and still retries after refresh", async () => {
+    const unauthorized = {
+      status: 401,
+      ok: false,
+      body: { cancel: vi.fn().mockRejectedValue(new Error("already locked")) },
+    } as unknown as Response;
+    mockedRefresh.mockResolvedValueOnce(true);
+    (global.fetch as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce(unauthorized)
+      .mockResolvedValueOnce(sseResponse(["event: token\ndata: {\"text\":\"ok\"}\n\n"]));
+
+    const types = await collectTypes(streamMessage("c1", "hi"));
+
+    expect(types).toEqual(["token"]);
+    expect((global.fetch as ReturnType<typeof vi.fn>).mock.calls).toHaveLength(2);
+  });
+
+  it("treats a thrown tryRefreshAuthSession as a failed refresh and surfaces the 401", async () => {
+    const unauthorized = {
+      status: 401,
+      ok: false,
+      body: { cancel: vi.fn().mockResolvedValue(undefined) },
+      json: vi.fn().mockResolvedValue({ detail: "Session expired" }),
+    } as unknown as Response;
+    mockedRefresh.mockRejectedValueOnce(new Error("refresh endpoint down"));
+    (global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce(unauthorized);
+
+    await expect(collectTypes(streamMessage("c1", "hi"))).rejects.toMatchObject({
+      status: 401,
+      message: "Session expired",
+    });
+    // No retry — refresh threw, so the second openStream is never attempted.
+    expect((global.fetch as ReturnType<typeof vi.fn>).mock.calls).toHaveLength(1);
+  });
+
+  it("does not retry when refresh returns false and re-reads the 401 body for detail", async () => {
+    const unauthorized = {
+      status: 401,
+      ok: false,
+      body: { cancel: vi.fn().mockResolvedValue(undefined) },
+      json: vi.fn().mockResolvedValue({ detail: "Not authenticated" }),
+    } as unknown as Response;
+    mockedRefresh.mockResolvedValueOnce(false);
+    (global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce(unauthorized);
+
+    await expect(collectTypes(streamMessage("c1", "hi"))).rejects.toMatchObject({
+      status: 401,
+      message: "Not authenticated",
+    });
+    expect((global.fetch as ReturnType<typeof vi.fn>).mock.calls).toHaveLength(1);
+  });
+});
+
+describe("streamMessage error-body parsing", () => {
+  it("falls back to response.text() when the error body is not JSON", async () => {
+    const errorResponse = {
+      status: 500,
+      ok: false,
+      body: {},
+      json: vi.fn().mockRejectedValue(new SyntaxError("Unexpected token")),
+      text: vi.fn().mockResolvedValue("upstream exploded"),
+    } as unknown as Response;
+    (global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce(errorResponse);
+
+    await expect(collectTypes(streamMessage("c1", "hi"))).rejects.toMatchObject({
+      status: 500,
+      message: "upstream exploded",
+    });
+  });
+
+  it("uses the status fallback message when JSON and text both yield nothing", async () => {
+    const errorResponse = {
+      status: 503,
+      ok: false,
+      body: {},
+      json: vi.fn().mockRejectedValue(new SyntaxError("bad json")),
+      text: vi.fn().mockResolvedValue(""),
+    } as unknown as Response;
+    (global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce(errorResponse);
+
+    await expect(collectTypes(streamMessage("c1", "hi"))).rejects.toMatchObject({
+      status: 503,
+      message: "Request failed with status 503",
+    });
+  });
+
+  it("uses the status fallback message when even response.text() throws", async () => {
+    const errorResponse = {
+      status: 502,
+      ok: false,
+      body: {},
+      json: vi.fn().mockRejectedValue(new SyntaxError("bad json")),
+      text: vi.fn().mockRejectedValue(new Error("stream consumed")),
+    } as unknown as Response;
+    (global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce(errorResponse);
+
+    await expect(collectTypes(streamMessage("c1", "hi"))).rejects.toMatchObject({
+      status: 502,
+      message: "Request failed with status 502",
+    });
+  });
+
+  it("throws when an ok response carries no stream body", async () => {
+    const noBody = {
+      status: 200,
+      ok: true,
+      body: null,
+    } as unknown as Response;
+    (global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce(noBody);
+
+    await expect(collectTypes(streamMessage("c1", "hi"))).rejects.toMatchObject({
+      status: 0,
+      message: "No stream body in response",
+    });
+  });
+});
+
+describe("streamMessage abort handling", () => {
+  it("cancels the reader and stops iterating when the signal aborts mid-stream", async () => {
+    const controller = new AbortController();
+    let readCount = 0;
+    let cancelReject: ((reason?: unknown) => void) | undefined;
+    const reader = {
+      read: vi.fn().mockImplementation(() => {
+        readCount += 1;
+        if (readCount === 1) {
+          const encoder = new TextEncoder();
+          return Promise.resolve({
+            value: encoder.encode("event: token\ndata: {\"text\":\"a\"}\n\n"),
+            done: false,
+          });
+        }
+        // After the first frame the consumer aborts; this read never resolves
+        // until cancel() rejects it, mirroring a real ReadableStream reader.
+        return new Promise((_resolve, reject) => {
+          cancelReject = reject;
+        });
+      }),
+      cancel: vi.fn().mockImplementation(() => {
+        cancelReject?.(new DOMException("aborted", "AbortError"));
+        return Promise.resolve();
+      }),
+      releaseLock: vi.fn(),
+    };
+    const response = {
+      status: 200,
+      ok: true,
+      body: { getReader: () => reader },
+    } as unknown as Response;
+    (global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce(response);
+
+    const gen = streamMessage("c1", "hi", controller.signal);
+    const first = await gen.next();
+    expect(first.value).toMatchObject({ type: "token", text: "a" });
+
+    // Kick off the next pull so read() #2 is pending, THEN abort. The abort
+    // handler cancels the reader, which rejects the in-flight read and unwinds
+    // the generator through its finally block.
+    const pending = gen.next();
+    await Promise.resolve();
+    controller.abort();
+    await pending.catch(() => undefined);
+
+    expect(reader.cancel).toHaveBeenCalled();
+    expect(reader.releaseLock).toHaveBeenCalled();
+  });
+
+  it("removes the abort listener and releases the lock after a clean finish", async () => {
+    const controller = new AbortController();
+    const removeSpy = vi.spyOn(controller.signal, "removeEventListener");
+    (global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+      sseResponse(["event: done\ndata: {\"message_id\":\"a1\"}\n\n"]),
+    );
+
+    const types = await collectTypes(streamMessage("c1", "hi", controller.signal));
+
+    expect(types).toEqual(["done"]);
+    expect(removeSpy).toHaveBeenCalledWith("abort", expect.any(Function));
+  });
+});
+
+describe("streamMessage SSE frame edge cases", () => {
+  it("skips heartbeat comments and id/retry lines, returning only the typed event", async () => {
+    // A heartbeat comment plus id/retry metadata wrap a single real token event.
+    const frame =
+      ": keepalive\nid: 42\nretry: 3000\nevent: token\ndata: {\"text\":\"hi\"}\n\n";
+    (global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce(sseResponse([frame]));
+
+    const events: Array<{ type: string; text?: string }> = [];
+    for await (const evt of streamMessage("c1", "hi")) {
+      events.push(evt as { type: string; text?: string });
+    }
+    expect(events).toEqual([{ type: "token", text: "hi" }]);
+  });
+
+  it("strips CR endings and skips a blank line inside a CRLF trailing frame", async () => {
+    // No "\n\n" anywhere (CRLF uses "\r\n\r\n"), so the whole frame reaches the
+    // trailing-buffer flush. The middle "\r\n\r\n" leaves an empty line after the
+    // "\r$" strip, which parseFrame must skip rather than reject.
+    const frame =
+      "event: token\r\n\r\ndata: {\"text\":\"crlf\"}\r\n";
+    (global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce(sseResponse([frame]));
+
+    const events: Array<{ type: string; text?: string }> = [];
+    for await (const evt of streamMessage("c1", "hi")) {
+      events.push(evt as { type: string; text?: string });
+    }
+    expect(events).toEqual([{ type: "token", text: "crlf" }]);
+  });
+
+  it("ignores pure-comment frames that contain no real content lines", async () => {
+    // A heartbeat-only frame yields null (sawContentLine === false), then a real one follows.
+    (global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+      sseResponse([
+        ": ping\n\n",
+        "event: token\ndata: {\"text\":\"after-ping\"}\n\n",
+      ]),
+    );
+
+    const events: Array<{ type: string; text?: string }> = [];
+    for await (const evt of streamMessage("c1", "hi")) {
+      events.push(evt as { type: string; text?: string });
+    }
+    expect(events).toEqual([{ type: "token", text: "after-ping" }]);
+  });
+
+  it("joins multi-line data: fields into one JSON document", async () => {
+    // SSE allows data to span several lines; they rejoin with \n before JSON.parse.
+    const frame =
+      'event: tool_result\ndata: {"call_id":"t1",\ndata: "summary":"two\\nlines"}\n\n';
+    (global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce(sseResponse([frame]));
+
+    const events: Array<Record<string, unknown>> = [];
+    for await (const evt of streamMessage("c1", "hi")) {
+      events.push(evt as Record<string, unknown>);
+    }
+    expect(events).toEqual([
+      { type: "tool_result", call_id: "t1", summary: "two\nlines" },
+    ]);
+  });
+
+  it("parses a trailing frame that has no terminating blank line", async () => {
+    // The final chunk lacks "\n\n"; streamMessage flushes the trimmed buffer.
+    (global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+      sseResponse([
+        "event: token\ndata: {\"text\":\"one\"}\n\n",
+        "event: done\ndata: {\"message_id\":\"a1\"}",
+      ]),
+    );
+
+    const types = await collectTypes(streamMessage("c1", "hi"));
+    expect(types).toEqual(["token", "done"]);
+  });
+
+  it("rejects a frame line that is neither event/data/id/retry/comment", async () => {
+    (global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+      sseResponse(["event: token\nweirdfield: nope\ndata: {}\n\n"]),
+    );
+
+    await expect(collectTypes(streamMessage("c1", "hi"))).rejects.toMatchObject({
+      status: 0,
+      message: "Malformed SSE frame line: weirdfield: nope",
+    });
+  });
+
+  it("rejects a content frame missing the event: field", async () => {
+    (global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+      sseResponse(["data: {\"text\":\"orphan\"}\n\n"]),
+    );
+
+    await expect(collectTypes(streamMessage("c1", "hi"))).rejects.toMatchObject({
+      status: 0,
+      message: "SSE frame missing event: field",
+    });
+  });
+
+  it("rejects an event frame missing any data: line", async () => {
+    (global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+      sseResponse(["event: token\n\n"]),
+    );
+
+    await expect(collectTypes(streamMessage("c1", "hi"))).rejects.toMatchObject({
+      status: 0,
+      message: "SSE frame for 'token' has no data: line",
+    });
+  });
+
+  it("rejects a frame whose data: payload is not valid JSON", async () => {
+    (global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+      sseResponse(["event: token\ndata: {not json}\n\n"]),
+    );
+
+    await expect(collectTypes(streamMessage("c1", "hi"))).rejects.toMatchObject({
+      status: 0,
+      message: expect.stringContaining("SSE frame for 'token' is not valid JSON:"),
+    });
   });
 });

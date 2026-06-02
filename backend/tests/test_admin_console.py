@@ -24,6 +24,7 @@ from app.models.billing import (
     Subscription,
     UsageWeek,
 )
+from app.models.companion import ChatMessage, Conversation
 from app.models.dictation import DictationEntry
 from app.models.recording import Recording, Segment
 from app.models.refresh_token import RefreshToken
@@ -372,6 +373,22 @@ async def test_admin_user_detail_billing_audit_and_deactivation_revocation(
     await db_session.flush()
     db_session.add_all(
         [
+            Recording(
+                user_id=user_id,
+                title="Detail recording",
+                type="meeting",
+                status="ready",
+                duration_seconds=7200,
+                billed_word_count=1500,
+            ),
+            DictationEntry(
+                user_id=user_id,
+                client_entry_id=uuid4(),
+                raw_text="hello from dictation",
+                duration_seconds=120.5,
+                word_count=3,
+                occurred_at=now,
+            ),
             BillingPromoRedemption(
                 promo_code_id=promo.id,
                 user_id=user_id,
@@ -404,6 +421,19 @@ async def test_admin_user_detail_billing_audit_and_deactivation_revocation(
                 scopes=["read"],
             ),
         ]
+    )
+    conversation = Conversation(user_id=user_id, title="Detail chat")
+    db_session.add(conversation)
+    await db_session.flush()
+    db_session.add(
+        ChatMessage(
+            conversation_id=conversation.id,
+            role="assistant",
+            content=[],
+            input_tokens=100,
+            output_tokens=40,
+            cached_tokens=25,
+        )
     )
     await db_session.flush()
 
@@ -443,6 +473,14 @@ async def test_admin_user_detail_billing_audit_and_deactivation_revocation(
     assert detail.json()["subscriptions"][0]["id"] == str(sub.id)
     assert detail.json()["promo_redemptions"][0]["promo_note"] == "detail promo"
     assert detail.json()["weekly_usage"][0]["words_used"] == 123
+    assert detail.json()["recording_duration_seconds"] == 7200
+    assert detail.json()["dictation_duration_seconds"] == 120.5
+    assert detail.json()["transcription_duration_seconds"] == 7320.5
+    assert detail.json()["companion_input_tokens"] == 100
+    assert detail.json()["companion_output_tokens"] == 40
+    assert detail.json()["companion_cached_tokens"] == 25
+    assert detail.json()["companion_total_tokens"] == 140
+    assert detail.json()["revenue_by_currency"] == {"USD": 12.0}
     assert missing_detail.status_code == 404
     assert billing.status_code == 200
     assert billing.json()["items"][0]["invoices"][0]["provider_payment_id"] == "pi_detail"

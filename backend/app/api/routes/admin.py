@@ -34,6 +34,7 @@ from app.models.billing import (
     SubscriptionStatus,
     UsageWeek,
 )
+from app.models.companion import ChatMessage, Conversation
 from app.models.dictation import DictationEntry
 from app.models.mcp_oauth import McpOAuthToken
 from app.models.recording import Recording, Segment
@@ -248,6 +249,14 @@ class AdminUserSummary(BaseModel):
     dictation_words: int
     recording_words: int
     recording_count: int
+    dictation_duration_seconds: float
+    recording_duration_seconds: int
+    transcription_duration_seconds: float
+    companion_input_tokens: int
+    companion_output_tokens: int
+    companion_cached_tokens: int
+    companion_total_tokens: int
+    revenue_by_currency: dict[str, float]
 
 
 class AdminUserListResponse(BaseModel):
@@ -942,14 +951,51 @@ async def _user_summary(user: User, db: Database) -> AdminUserSummary:
             )
         ).scalar_one()
     )
+    dictation_duration = float(
+        (
+            await db.execute(
+                select(func.coalesce(func.sum(DictationEntry.duration_seconds), 0)).where(
+                    DictationEntry.user_id == user.id
+                )
+            )
+        ).scalar_one()
+    )
     recording_stats = (
         await db.execute(
             select(
                 func.coalesce(func.sum(Recording.billed_word_count), 0),
+                func.coalesce(func.sum(Recording.duration_seconds), 0),
                 func.count(Recording.id),
             ).where(Recording.user_id == user.id)
         )
     ).one()
+    token_stats = (
+        await db.execute(
+            select(
+                func.coalesce(func.sum(ChatMessage.input_tokens), 0),
+                func.coalesce(func.sum(ChatMessage.output_tokens), 0),
+                func.coalesce(func.sum(ChatMessage.cached_tokens), 0),
+            )
+            .join(Conversation, Conversation.id == ChatMessage.conversation_id)
+            .where(Conversation.user_id == user.id)
+        )
+    ).one()
+    revenue_by_currency = dict(
+        (currency, float(amount or 0))
+        for currency, amount in (
+            await db.execute(
+                select(Invoice.currency, func.coalesce(func.sum(Invoice.amount), 0))
+                .join(Subscription, Subscription.id == Invoice.subscription_id)
+                .where(
+                    Subscription.user_id == user.id,
+                    Invoice.status == "paid",
+                )
+                .group_by(Invoice.currency)
+            )
+        ).all()
+    )
+    input_tokens = int(token_stats[0] or 0)
+    output_tokens = int(token_stats[1] or 0)
     return AdminUserSummary(
         id=str(user.id),
         email=user.email,
@@ -961,7 +1007,15 @@ async def _user_summary(user: User, db: Database) -> AdminUserSummary:
         current_subscription_provider=sub.provider if sub is not None else None,
         dictation_words=dictation_words,
         recording_words=int(recording_stats[0] or 0),
-        recording_count=int(recording_stats[1] or 0),
+        recording_count=int(recording_stats[2] or 0),
+        dictation_duration_seconds=dictation_duration,
+        recording_duration_seconds=int(recording_stats[1] or 0),
+        transcription_duration_seconds=dictation_duration + int(recording_stats[1] or 0),
+        companion_input_tokens=input_tokens,
+        companion_output_tokens=output_tokens,
+        companion_cached_tokens=int(token_stats[2] or 0),
+        companion_total_tokens=input_tokens + output_tokens,
+        revenue_by_currency=revenue_by_currency,
     )
 
 

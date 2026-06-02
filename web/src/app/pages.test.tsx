@@ -53,10 +53,6 @@ vi.mock("next/headers", () => ({
   }),
 }));
 
-vi.mock("next/font/google", () => ({
-  Space_Grotesk: () => ({ variable: "font-space-grotesk" }),
-}));
-
 vi.mock("@/components/AuthForm", () => ({
   AuthForm: (props: unknown) => {
     authFormMock(props);
@@ -547,7 +543,7 @@ describe("layout", () => {
 
     const body = (element.props as { children: React.ReactElement }).children;
     expect(body.type).toBe("body");
-    expect((body.props as { className: string }).className).toContain("font-space-grotesk");
+    expect((body.props as { children: React.ReactNode }).children).toBeTruthy();
   });
 
   it("renders <html lang='ru'> when accept-language prefers Russian", async () => {

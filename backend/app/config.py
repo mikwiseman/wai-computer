@@ -108,6 +108,11 @@ class Settings(BaseSettings):
     # production Celery audio worker enables it explicitly with a single-task
     # concurrency and a persistent model cache.
     voice_identification_enabled: bool = False
+    # Voice identification decodes the full source audio to compute embeddings.
+    # Long compressed recordings can fit upload limits while expanding beyond
+    # worker memory, so keep speaker matching off above these explicit caps.
+    voice_identification_max_audio_seconds: int = 3600
+    voice_identification_max_audio_bytes: int = 30 * 1024 * 1024
     recording_processing_stale_after_minutes: int = 15
 
     # Telegram bot integration. Token and webhook secret are backend-only.

@@ -100,7 +100,9 @@ describe("SharedRecordingClient", () => {
 
     expect(screen.getByText("The team reviewed public sharing.")).toBeInTheDocument();
     expect(screen.getByText("Open shared notes on web")).toBeInTheDocument();
-    expect(screen.getByText("Add the Mac share button")).toBeInTheDocument();
+    // The shared note page intentionally omits the Action Items section (Mac parity),
+    // so action item tasks must not render even when present in the payload.
+    expect(screen.queryByText("Add the Mac share button")).not.toBeInTheDocument();
     expect(screen.getByText("Open the shared note in the web app.")).toBeInTheDocument();
     expect(screen.getByText("Mik")).toBeInTheDocument();
     expect(screen.getByText("2 min 5 sec")).toBeInTheDocument();

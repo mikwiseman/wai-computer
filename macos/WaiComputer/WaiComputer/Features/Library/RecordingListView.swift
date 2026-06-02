@@ -109,6 +109,7 @@ struct RecordingRowView: View {
                     .font(Typography.headingMedium)
                     .lineLimit(1)
                     .truncationMode(.tail)
+                    .layoutPriority(1)
 
                 Spacer(minLength: Spacing.sm)
 
@@ -123,7 +124,8 @@ struct RecordingRowView: View {
                         .lineLimit(1)
                         .minimumScaleFactor(0.85)
                         .truncationMode(.tail)
-                        .layoutPriority(1)
+                        .fixedSize(horizontal: true, vertical: false)
+                        .layoutPriority(2)
                 }
             }
 
@@ -157,6 +159,18 @@ struct RecordingRowView: View {
             }
         }
         .padding(.vertical, Spacing.xs)
+        .frame(
+            maxWidth: .infinity,
+            minHeight: rowMinHeight,
+            alignment: .leading
+        )
+    }
+
+    private var rowMinHeight: CGFloat {
+        if recording.failurePreviewText != nil, recording.isFailedUpload {
+            return MacMainLayoutMetrics.recordingRowFailureMinHeight
+        }
+        return MacMainLayoutMetrics.recordingRowMinHeight
     }
 
     private func formatDuration(_ seconds: Int) -> String {
