@@ -16,6 +16,7 @@ from app.core.observability import (
 )
 from app.db.session import get_db_context
 from app.tasks.celery_app import celery_app
+from app.tasks.retry_policy import is_retryable_exception
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +33,10 @@ async def _generate(*, comparison_id: str, intent: str | None) -> None:
     reject_on_worker_lost=True,
     soft_time_limit=600,
     time_limit=660,
+    max_retries=3,
+    retry_backoff=True,
+    retry_backoff_max=600,
+    retry_jitter=True,
 )
 def generate_comparison_task(self, *, comparison_id: str, intent: str | None = None) -> None:
     try:
@@ -55,4 +60,7 @@ def generate_comparison_task(self, *, comparison_id: str, intent: str | None = N
             type(exc).__name__,
             fingerprint_text(str(exc)),
         )
+        retry_count = int(getattr(self.request, "retries", 0) or 0)
+        if is_retryable_exception(exc) and retry_count < int(self.max_retries or 0):
+            raise self.retry(exc=exc)
         raise

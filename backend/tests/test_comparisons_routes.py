@@ -173,3 +173,68 @@ async def test_rebuild_comparison_re_enqueues_with_stored_intent(client, auth_he
 async def test_rebuild_comparison_404_for_unknown(client, auth_headers) -> None:
     resp = await client.post(f"/api/comparisons/{uuid4()}/rebuild", headers=auth_headers)
     assert resp.status_code == 404
+
+
+async def test_build_fails_when_too_few_items_survive(db_session) -> None:
+    from datetime import datetime, timezone
+
+    user = User(email=f"cmpd-{uuid4().hex}@example.com", password_hash="x")
+    db_session.add(user)
+    await db_session.flush()
+    items = []
+    for i in range(2):
+        it, _ = await ingest_item(
+            db_session, user.id, source="paste", title=f"D{i}", body=f"c{i}",
+            embedder=_embedder,
+        )
+        items.append(it)
+    cs = ComparisonSet(
+        user_id=user.id, item_ids=[str(it.id) for it in items], status="generating"
+    )
+    db_session.add(cs)
+    await db_session.flush()
+    # Soft-delete one -> only 1 distinct item survives -> can't compare.
+    items[0].deleted_at = datetime.now(timezone.utc)
+    await db_session.flush()
+
+    result = await build_comparison_set(db_session, cs.id)
+    assert result is not None and result.status == "failed"
+    assert "available" in (result.schema_rationale or "").lower()
+
+
+async def test_build_excludes_deleted_items_and_notes_it(db_session, monkeypatch) -> None:
+    from datetime import datetime, timezone
+
+    user = User(email=f"cmpx-{uuid4().hex}@example.com", password_hash="x")
+    db_session.add(user)
+    await db_session.flush()
+    items = []
+    for i in range(3):
+        it, _ = await ingest_item(
+            db_session, user.id, source="paste", title=f"X{i}", body=f"c{i}",
+            embedder=_embedder,
+        )
+        items.append(it)
+    cs = ComparisonSet(
+        user_id=user.id, item_ids=[str(it.id) for it in items], status="generating"
+    )
+    db_session.add(cs)
+    await db_session.flush()
+    items[1].deleted_at = datetime.now(timezone.utc)
+    await db_session.flush()
+
+    async def fake_build(items_arg, *, intent=None, **kwargs):
+        assert len(items_arg) == 2  # the deleted item is excluded, not silently kept
+        return ComparisonResult(
+            columns=[{"name": "Topic", "type": "text"}],
+            rows=[
+                {"item_id": items_arg[0].item_id, "title": items_arg[0].title,
+                 "values": {"Topic": "a"}},
+            ],
+            rationale="ok",
+        )
+
+    monkeypatch.setattr(comparison_build, "build_comparison", fake_build)
+    result = await build_comparison_set(db_session, cs.id)
+    assert result.status == "ready"
+    assert "excluded" in (result.schema_rationale or "").lower()

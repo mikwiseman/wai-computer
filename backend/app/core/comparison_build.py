@@ -37,13 +37,35 @@ async def build_comparison_set(
     if cs is None:
         return None
 
-    item_ids = [UUID(i) for i in (cs.item_ids or [])]
+    requested = list(dict.fromkeys(str(i) for i in (cs.item_ids or [])))
     items = (
-        await db.execute(select(Item).where(Item.id.in_(item_ids)))
+        await db.execute(
+            select(Item).where(
+                Item.id.in_([UUID(i) for i in requested]),
+                Item.deleted_at.is_(None),
+            )
+        )
     ).scalars().all()
-    # Preserve the requested order.
+    # Preserve the requested order; track items deleted since creation rather
+    # than silently dropping their rows (no-fallbacks).
     by_id = {str(it.id): it for it in items}
-    ordered = [by_id[i] for i in (cs.item_ids or []) if i in by_id]
+    ordered = [by_id[i] for i in requested if i in by_id]
+    dropped = [i for i in requested if i not in by_id]
+
+    if len(ordered) < 2:
+        cs.status = "failed"
+        cs.schema_rationale = (
+            f"Can't build: only {len(ordered)} of {len(requested)} items are still "
+            "available (the others were deleted)."
+        )
+        await db.flush()
+        logger.warning(
+            "comparison build aborted id=%s available=%s requested=%s",
+            comparison_id,
+            len(ordered),
+            len(requested),
+        )
+        return cs
 
     summaries = {
         str(s.item_id): s
@@ -74,7 +96,11 @@ async def build_comparison_set(
 
     cs.columns = result.columns
     cs.rows = result.rows
-    cs.schema_rationale = result.rationale
+    rationale = result.rationale or ""
+    if dropped:
+        rationale = (rationale + " ") if rationale else ""
+        rationale += f"Note: {len(dropped)} item(s) were excluded (deleted since creation)."
+    cs.schema_rationale = rationale or None
     cs.status = "ready"
     if not (cs.title or "").strip():
         cs.title = "Comparison of " + ", ".join(ci.title for ci in comparison_items[:3])

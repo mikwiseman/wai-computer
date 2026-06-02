@@ -391,3 +391,42 @@ def test_embedding_backfill_task_retries_retryable_errors(
 
 def test_task_retry_policy_reexport_matches_core_policy() -> None:
     assert task_is_retryable_exception(httpx.TimeoutException("timeout"))
+
+
+def test_comparison_task_retries_retryable_errors(monkeypatch: pytest.MonkeyPatch) -> None:
+    from app.tasks import comparison_generation as comparison_task_module
+
+    monkeypatch.setattr(
+        comparison_task_module,
+        "_generate",
+        AsyncMock(side_effect=httpx.TimeoutException("provider timeout")),
+    )
+
+    def fake_retry(*, exc):
+        raise RuntimeError(f"retry requested: {type(exc).__name__}")
+
+    monkeypatch.setattr(
+        comparison_task_module.generate_comparison_task, "retry", fake_retry
+    )
+
+    with pytest.raises(RuntimeError, match="retry requested: TimeoutException"):
+        comparison_task_module.generate_comparison_task.run(
+            comparison_id="00000000-0000-0000-0000-000000000009", intent=None
+        )
+
+
+def test_comparison_task_reraises_after_retry_exhaustion(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.tasks import comparison_generation as comparison_task_module
+
+    monkeypatch.setattr(
+        comparison_task_module,
+        "_generate",
+        AsyncMock(side_effect=httpx.TimeoutException("provider timeout")),
+    )
+    task = comparison_task_module.generate_comparison_task
+    monkeypatch.setattr(task.request, "retries", task.max_retries)
+
+    with pytest.raises(httpx.TimeoutException):
+        task.run(comparison_id="00000000-0000-0000-0000-000000000010", intent=None)
