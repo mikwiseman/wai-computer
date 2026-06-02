@@ -4775,3 +4775,28 @@ a.primary-button[aria-disabled="true"]:hover {
   color: var(--ink-soft);
   font-size: 0.85rem;
 }
+
+/* Connect-a-source — the ingestion form + per-row actions (Sync / Pause). */
+.mcp-source-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 0.6rem 0;
+}
+.mcp-source-form input {
+  flex: 1 1 160px;
+  min-width: 0;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel-soft, var(--panel));
+  font-size: var(--font-body-small-size);
+}
+.mcp-source-form button {
+  flex: 0 0 auto;
+}
+.mcp-source-actions {
+  display: flex;
+  gap: 0.4rem;
+  flex: 0 0 auto;
+}
