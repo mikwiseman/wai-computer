@@ -1435,4 +1435,47 @@ final class APIClientTests: XCTestCase {
         XCTAssertEqual(item.id, "itm-1")
         XCTAssertEqual(item.kind, "note")
     }
+
+    func testGetBrainGraphDecodes() async throws {
+        let client = makeClient()
+        MockURLProtocol.requestHandler = { request in
+            XCTAssertEqual(request.httpMethod, "GET")
+            XCTAssertEqual(request.url?.path, "/api/brain/graph")
+            let response = HTTPURLResponse(
+                url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil
+            )!
+            let payload = """
+            {"nodes":[{"id":"e1","label":"Anna","kind":"person","degree":2}],\
+            "edges":[{"source":"e1","target":"e2","type":"cooccurrence","weight":2.0}],\
+            "stats":{"entities":1,"people":1}}
+            """.data(using: .utf8)!
+            return (response, payload)
+        }
+        let g = try await client.getBrainGraph()
+        XCTAssertEqual(g.nodes.count, 1)
+        XCTAssertEqual(g.nodes[0].label, "Anna")
+        XCTAssertEqual(g.edges[0].type, "cooccurrence")
+        XCTAssertEqual(g.stats["people"], 1)
+    }
+
+    func testGetEntityPageDecodes() async throws {
+        let client = makeClient()
+        MockURLProtocol.requestHandler = { request in
+            XCTAssertEqual(request.url?.path, "/api/entities/abc/page")
+            let response = HTTPURLResponse(
+                url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil
+            )!
+            let payload = """
+            {"id":"abc","name":"GPU","type":"topic","mention_count":3,\
+            "sources":[{"source_kind":"item","source_id":"i1","title":"Note","context":"ctx"}],\
+            "related":[{"id":"e2","name":"Anna","type":"person","shared":2}]}
+            """.data(using: .utf8)!
+            return (response, payload)
+        }
+        let p = try await client.getEntityPage(id: "abc")
+        XCTAssertEqual(p.name, "GPU")
+        XCTAssertEqual(p.mentionCount, 3)
+        XCTAssertEqual(p.sources[0].title, "Note")
+        XCTAssertEqual(p.related[0].name, "Anna")
+    }
 }
