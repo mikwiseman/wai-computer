@@ -72,7 +72,14 @@ export function AddAnythingPanel({ onCreated, onError }: AddAnythingPanelProps) 
       setResult(null);
       setStatus(`Uploading ${file.name}…`);
       try {
-        const created = await uploadItem(file);
+        const outcome = await uploadItem(file);
+        if (outcome.kind === "recording") {
+          // Audio/video go to the transcription pipeline — no Item to poll;
+          // it surfaces under Recordings when ready.
+          setStatus("Transcribing — it'll appear in your recordings shortly.");
+          return;
+        }
+        const created = outcome.item;
         onCreated?.(created);
         setStatus("Summarizing…");
         const finished = await pollForSummary(created.id);
@@ -118,7 +125,7 @@ export function AddAnythingPanel({ onCreated, onError }: AddAnythingPanelProps) 
       <input
         ref={fileInputRef}
         type="file"
-        accept=".pdf,.txt,.md,application/pdf,text/plain,text/markdown"
+        accept=".pdf,.txt,.md,.mp3,.wav,.m4a,.aac,.ogg,.opus,.flac,.mp4,.mov,.mkv,.webm,application/pdf,text/plain,text/markdown,audio/*,video/*"
         style={{ display: "none" }}
         data-testid="add-anything-file"
         onChange={(e) => {
