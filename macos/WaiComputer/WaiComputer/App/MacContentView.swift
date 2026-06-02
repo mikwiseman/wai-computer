@@ -94,6 +94,10 @@ struct MacMainView: View {
     @EnvironmentObject private var languageManager: LanguageManager
     @StateObject private var libraryViewModel = MacLibraryViewModel()
     @StateObject private var importViewModel = MacImportViewModel()
+    // Computer-use (Mac-edge channel): opt-in, off by default. Runs only while
+    // the assistant surface is open so it never silently polls 24/7.
+    @StateObject private var desktopAgent = DesktopAgentRunner()
+    @AppStorage("desktopComputerUseEnabled") private var computerUseEnabled = false
     @State private var selectedSection: SidebarSection? = .allRecordings
     @State private var selectedRecordingIds: Set<String> = []
     @State private var prefetchedRecordingDetail: RecordingDetail?
@@ -469,11 +473,15 @@ struct MacMainView: View {
         }
         .task {
             await reloadLibrary()
+            syncDesktopAgent()
         }
         .onAppear {
             handleCompletedRecordingChange()
             handleSelectedRecordingFromMenu(appState.selectedRecordingFromMenu)
             handlePendingMainWindowAction(appState.pendingMainWindowAction)
+        }
+        .onDisappear {
+            desktopAgent.stop()
         }
         .onChangeCompat(of: selectedSection) { _, newSection in
             selectedRecordingIds.removeAll()
@@ -483,6 +491,10 @@ struct MacMainView: View {
                 selectedRecordingIds = [pendingSelection.recordingId]
                 pendingRecordingSelectionAfterSectionChange = nil
             }
+            syncDesktopAgent()
+        }
+        .onChangeCompat(of: computerUseEnabled) { _, _ in
+            syncDesktopAgent()
         }
         .onChangeCompat(of: hasListColumn) { _, _ in
             updateColumnVisibility(for: lastMeasuredLayoutWidth)
@@ -989,6 +1001,17 @@ struct MacMainView: View {
         }
 
         await libraryViewModel.loadLibrary(apiClient: appState.getAPIClient())
+    }
+
+    /// Run the Mac-edge computer-use channel only while the assistant surface is
+    /// open AND the user has opted in (default off) — never a silent 24/7 loop.
+    @MainActor
+    private func syncDesktopAgent() {
+        if computerUseEnabled, selectedSection == .wai {
+            desktopAgent.start(apiClient: appState.getAPIClient())
+        } else {
+            desktopAgent.stop()
+        }
     }
 
     // MARK: - Actions
