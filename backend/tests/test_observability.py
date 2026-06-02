@@ -65,6 +65,7 @@ def test_redact_text_removes_telegram_bot_tokens_and_secret_queries():
     redacted = observability.redact_text(
         "POST https://api.telegram.org/bot123456:ABC-SECRET/sendMessage "
         "GET https://api.telegram.org/file/bot123456:ABC-SECRET/voice/file.oga "
+        "POST http://telegram-bot-api:8081/bot123456:ABC-SECRET/getFile "
         "https://wai.computer/auth/app?token=secret&client=macos"
     )
 
@@ -72,6 +73,7 @@ def test_redact_text_removes_telegram_bot_tokens_and_secret_queries():
     assert "token=secret" not in redacted
     assert "https://api.telegram.org/bot[redacted-token]/sendMessage" in redacted
     assert "https://api.telegram.org/file/bot[redacted-token]/voice/file.oga" in redacted
+    assert "http://telegram-bot-api:8081/bot[redacted-token]/getFile" in redacted
     assert "token=[redacted-secret]" in redacted
 
 

@@ -43,6 +43,7 @@ from app.core.source_fetch import classify_url, find_first_url
 from app.core.telegram_client import (
     TelegramBotClient,
     TelegramClientError,
+    TelegramFileTooLargeError,
     telegram_chunks,
 )
 from app.db.session import get_db_context
@@ -365,6 +366,18 @@ def _safe_transcript_filename(title: str | None, *, media_kind: str | None = Non
 def _safe_display_filename(filename: str | None) -> str:
     base = (filename or "").strip().rsplit("/", 1)[-1].rsplit("\\", 1)[-1]
     return base[:120] if base else "файл"
+
+
+def _telegram_file_too_large_message() -> str:
+    limit_mb = max(1, settings.telegram_download_max_bytes // (1024 * 1024))
+    return f"Файл слишком большой для Telegram-импорта. Лимит бота — {limit_mb} MB."
+
+
+def _telegram_media_duration_seconds(media: dict[str, Any]) -> float | None:
+    duration = media.get("duration")
+    if isinstance(duration, int | float) and duration > 0:
+        return float(duration)
+    return None
 
 
 async def _send_unsupported_document_message(
@@ -1165,7 +1178,7 @@ async def _handle_document_message(
     if isinstance(file_size, int) and file_size > settings.telegram_download_max_bytes:
         await client.send_message(
             chat_id,
-            "Файл слишком большой для Telegram-импорта. Лимит бота — 20 MB.",
+            _telegram_file_too_large_message(),
             reply_to_message_id=message.get("message_id"),
         )
         return
@@ -1184,13 +1197,20 @@ async def _handle_document_message(
             tg_file.file_size is not None
             and tg_file.file_size > settings.telegram_download_max_bytes
         ):
-            await client.send_message(chat_id, "Файл слишком большой для Telegram-импорта.")
+            await client.send_message(chat_id, _telegram_file_too_large_message())
             return
-        data = await client.download_file(tg_file)
+        data = await client.download_file(tg_file, max_bytes=settings.telegram_download_max_bytes)
         if len(data) > settings.telegram_download_max_bytes:
-            await client.send_message(chat_id, "Файл слишком большой для Telegram-импорта.")
+            await client.send_message(chat_id, _telegram_file_too_large_message())
             return
         body = await extract_document_text(ext, data)
+    except TelegramFileTooLargeError:
+        await client.send_message(
+            chat_id,
+            _telegram_file_too_large_message(),
+            reply_to_message_id=message.get("message_id"),
+        )
+        return
     except DocumentExtractionError as exc:
         await client.send_message(
             chat_id,
@@ -1280,7 +1300,7 @@ async def _handle_media_message(
     if isinstance(file_size, int) and file_size > settings.telegram_download_max_bytes:
         await client.send_message(
             chat_id,
-            "Файл слишком большой для Telegram-импорта. Лимит бота — 20 MB.",
+            _telegram_file_too_large_message(),
             reply_to_message_id=message.get("message_id"),
         )
         return
@@ -1294,11 +1314,19 @@ async def _handle_media_message(
 
     tg_file = await client.get_file(file_id)
     if tg_file.file_size is not None and tg_file.file_size > settings.telegram_download_max_bytes:
-        await client.send_message(chat_id, "Файл слишком большой для Telegram-импорта.")
+        await client.send_message(chat_id, _telegram_file_too_large_message())
         return
-    data = await client.download_file(tg_file)
-    if len(data) > settings.telegram_download_max_bytes:
-        await client.send_message(chat_id, "Файл слишком большой для Telegram-импорта.")
+    try:
+        data = await client.download_file(tg_file, max_bytes=settings.telegram_download_max_bytes)
+        if len(data) > settings.telegram_download_max_bytes:
+            await client.send_message(chat_id, _telegram_file_too_large_message())
+            return
+    except TelegramFileTooLargeError:
+        await client.send_message(
+            chat_id,
+            _telegram_file_too_large_message(),
+            reply_to_message_id=message.get("message_id"),
+        )
         return
 
     user = await db.get(User, account.user_id)
@@ -1321,6 +1349,7 @@ async def _handle_media_message(
             title=title,
             source_label="telegram",
             language=user.default_language,
+            duration_seconds=_telegram_media_duration_seconds(media),
         )
     except RecordingImportError as exc:
         logger.warning(

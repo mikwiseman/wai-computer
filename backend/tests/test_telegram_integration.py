@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 from contextlib import asynccontextmanager
 from datetime import date, datetime, timedelta, timezone
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -26,6 +27,7 @@ from app.core.telegram_client import (
     TelegramBotClient,
     TelegramClientError,
     TelegramFile,
+    TelegramFileTooLargeError,
     telegram_chunks,
 )
 from app.core.transcript_utils import TranscriptResult
@@ -533,8 +535,10 @@ class _TelegramCapture:
         assert file_id == "file-id"
         return self.file
 
-    async def download_file(self, file: TelegramFile) -> bytes:
+    async def download_file(self, file: TelegramFile, *, max_bytes: int | None = None) -> bytes:
         assert file.file_path == self.file.file_path
+        if max_bytes is not None and len(self.data) > max_bytes:
+            raise TelegramFileTooLargeError("Telegram file exceeds configured limit")
         return self.data
 
 
@@ -974,6 +978,7 @@ async def test_handle_media_message_imports_and_replies(
     async def fake_import(**kwargs):
         assert kwargs["filename"] == "voice/file.ogg"
         assert kwargs["title"] is None
+        assert kwargs["duration_seconds"] is None
         assert kwargs["source_label"] == "telegram"
         for _ in range(20):
             if capture.actions:
@@ -1182,6 +1187,69 @@ async def test_handle_media_message_download_size_user_and_import_errors(
         media={"kind": "voice", "file_id": "file-id", "file_name": "voice.ogg"},
     )
     assert capture.messages[-1]["text"] == "Не удалось импортировать."
+
+
+@pytest.mark.asyncio
+async def test_handle_media_message_passes_telegram_duration_to_import(
+    db_session: AsyncSession,
+    monkeypatch,
+):
+    user = await _user(db_session, "media-duration@example.com")
+    account = TelegramAccount(user_id=user.id, telegram_user_id=51, telegram_chat_id=51)
+    db_session.add(account)
+    await db_session.commit()
+    capture = _TelegramCapture()
+    seen: dict[str, Any] = {}
+
+    async def fake_import(**kwargs):
+        seen.update(kwargs)
+        return SimpleNamespace(
+            recording=SimpleNamespace(title="Ready"),
+            summary=None,
+            transcript="",
+        )
+
+    monkeypatch.setattr(telegram_routes, "import_media_as_recording", fake_import)
+
+    await telegram_routes._handle_media_message(
+        db_session,
+        capture,
+        message={"message_id": 21, "chat": {"id": 51}},
+        account=account,
+        media={"kind": "audio", "file_id": "file-id", "duration": 3600},
+    )
+
+    assert seen["duration_seconds"] == 3600
+
+
+@pytest.mark.asyncio
+async def test_handle_document_message_reports_streaming_size_limit(
+    db_session: AsyncSession,
+):
+    user = await _user(db_session, "telegram-doc-large@example.com")
+    account = TelegramAccount(user_id=user.id, telegram_user_id=55, telegram_chat_id=55)
+    db_session.add(account)
+    await db_session.commit()
+    capture = _TelegramCapture()
+    capture.download_file = AsyncMock(
+        side_effect=TelegramFileTooLargeError("Telegram file exceeds configured limit")
+    )
+
+    await telegram_routes._handle_document_message(
+        db_session,
+        capture,
+        message={"message_id": 24, "chat": {"id": 55}},
+        account=account,
+        document={
+            "kind": "document",
+            "file_id": "file-id",
+            "file_unique_id": "unique-pdf",
+            "file_name": "large.pdf",
+            "mime_type": "application/pdf",
+        },
+    )
+
+    assert "слишком большой" in capture.messages[-1]["text"]
 
 
 @pytest.mark.asyncio
@@ -1784,7 +1852,24 @@ def _mock_response(status_code: int, body: Any, content: bytes = b"") -> MagicMo
     response.status_code = status_code
     response.json = MagicMock(return_value=body)
     response.content = content
+
+    async def aiter_bytes():
+        if content:
+            yield content
+
+    response.aiter_bytes = aiter_bytes
     return response
+
+
+class _MockHttpxStream:
+    def __init__(self, response: MagicMock) -> None:
+        self.response = response
+
+    async def __aenter__(self) -> MagicMock:
+        return self.response
+
+    async def __aexit__(self, *_args: object) -> None:
+        return None
 
 
 def _patch_telegram_httpx(
@@ -1795,7 +1880,7 @@ def _patch_telegram_httpx(
     client_mock = MagicMock()
     client_mock.post = AsyncMock(side_effect=post_responses)
     if get_response is not None:
-        client_mock.get = AsyncMock(return_value=get_response)
+        client_mock.stream = MagicMock(return_value=_MockHttpxStream(get_response))
     async_ctx = MagicMock()
     async_ctx.__aenter__ = AsyncMock(return_value=client_mock)
     async_ctx.__aexit__ = AsyncMock(return_value=None)
@@ -1833,7 +1918,64 @@ async def test_telegram_client_send_get_and_download():
     assert client_mock.post.await_args_list[0].args[0].endswith("/sendMessage")
     assert client_mock.post.await_args_list[0].kwargs["json"]["reply_to_message_id"] == 9
     assert client_mock.post.await_args_list[0].kwargs["json"]["parse_mode"] == "HTML"
-    assert client_mock.get.await_args.args[0].endswith("/voice/file.ogg")
+    assert client_mock.stream.call_args.args[1].endswith("/voice/file.ogg")
+
+
+@pytest.mark.asyncio
+async def test_telegram_client_uses_configurable_bot_api_base_urls():
+    patcher, client_mock = _patch_telegram_httpx(
+        post_responses=[
+            _mock_response(200, {"ok": True, "result": True}),
+        ],
+    )
+
+    with patcher:
+        client = TelegramBotClient(
+            "token",
+            bot_api_base_url="http://telegram-bot-api:8081",
+            file_base_url="http://telegram-bot-api:8081/file",
+        )
+        await client.send_message(123, "hello")
+
+    assert client_mock.post.await_args.args[0] == "http://telegram-bot-api:8081/bottoken/sendMessage"
+
+
+@pytest.mark.asyncio
+async def test_telegram_client_reads_local_bot_api_file_with_limit(tmp_path: Path):
+    token = "123456:ABC"
+    file_path = tmp_path / token / "voice" / "file.ogg"
+    file_path.parent.mkdir(parents=True)
+    file_path.write_bytes(b"local audio")
+
+    client = TelegramBotClient("123456:ABC", local_file_root=str(tmp_path))
+
+    data = await client.download_file(TelegramFile("file-id", "voice/file.ogg", None))
+
+    assert data == b"local audio"
+
+
+@pytest.mark.asyncio
+async def test_telegram_client_rejects_local_file_path_traversal(tmp_path: Path):
+    client = TelegramBotClient("123456:ABC", local_file_root=str(tmp_path))
+
+    with pytest.raises(TelegramClientError, match="invalid local file path"):
+        await client.download_file(TelegramFile("file-id", "../secret.txt", None))
+
+
+@pytest.mark.asyncio
+async def test_telegram_client_enforces_download_limit_for_local_files(tmp_path: Path):
+    token = "123456:ABC"
+    file_path = tmp_path / token / "documents" / "big.pdf"
+    file_path.parent.mkdir(parents=True)
+    file_path.write_bytes(b"abc")
+
+    client = TelegramBotClient(token, local_file_root=str(tmp_path))
+
+    with pytest.raises(TelegramFileTooLargeError):
+        await client.download_file(
+            TelegramFile("file-id", "documents/big.pdf", None),
+            max_bytes=2,
+        )
 
 
 @pytest.mark.asyncio
@@ -2007,7 +2149,7 @@ async def test_telegram_client_network_and_file_errors_do_not_include_token():
         )
 
     client_mock = MagicMock()
-    client_mock.get = AsyncMock(side_effect=httpx.ConnectError("network"))
+    client_mock.stream = MagicMock(side_effect=httpx.ConnectError("network"))
     async_ctx = MagicMock()
     async_ctx.__aenter__ = AsyncMock(return_value=client_mock)
     async_ctx.__aexit__ = AsyncMock(return_value=None)

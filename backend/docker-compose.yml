@@ -53,6 +53,28 @@ services:
         max-file: "3"
     restart: unless-stopped
 
+  telegram-bot-api:
+    image: aiogram/telegram-bot-api:latest
+    container_name: waicomputer-telegram-bot-api
+    environment:
+      TELEGRAM_API_ID: ${TELEGRAM_API_ID:-}
+      TELEGRAM_API_HASH: ${TELEGRAM_API_HASH:-}
+      TELEGRAM_LOCAL: "true"
+    volumes:
+      - telegram_bot_api_data:/var/lib/telegram-bot-api
+    networks:
+      - internal
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    restart: unless-stopped
+
   api:
     build:
       context: .
@@ -71,6 +93,7 @@ services:
       GIT_DIRTY: ${GIT_DIRTY:-false}
     volumes:
       - recording_uploads:/var/lib/waicomputer/uploads
+      - telegram_bot_api_data:/var/lib/telegram-bot-api:ro
     networks:
       - internal
       - web
@@ -242,6 +265,7 @@ volumes:
   caddy_config:
   recording_uploads:
   speechbrain_cache:
+  telegram_bot_api_data:
 
 networks:
   internal:

@@ -276,6 +276,7 @@ async def _transcribe(
     content_type: str,
     language: str,
     user: User,
+    audio_duration_seconds: float | None = None,
 ) -> list[TranscriptResult]:
     keyterms = await load_user_keyterms(db, user_id=user.id, purpose="recording")
     return await transcribe_audio_file(
@@ -284,6 +285,7 @@ async def _transcribe(
         content_type=content_type,
         keyterms=keyterms,
         user_id=str(user.id),
+        audio_duration_seconds=audio_duration_seconds,
     )
 
 
@@ -486,6 +488,7 @@ async def import_media_as_recording(
     title: str | None,
     source_label: str,
     language: str | None = None,
+    duration_seconds: float | None = None,
 ) -> ImportedRecordingResult:
     """Create a library recording from external media bytes and process it."""
     if not data:
@@ -542,6 +545,7 @@ async def import_media_as_recording(
             content_type=media_content_type,
             language=recording.language or "auto",
             user=user,
+            audio_duration_seconds=duration_seconds,
         )
         speech_results = [
             tr
