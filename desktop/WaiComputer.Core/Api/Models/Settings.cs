@@ -10,6 +10,15 @@ public enum SummaryStyle
     [JsonStringEnumMemberName("detailed")] Detailed,
 }
 
+[JsonConverter(typeof(JsonStringEnumConverter<DictationCleanupLevel>))]
+public enum DictationCleanupLevel
+{
+    [JsonStringEnumMemberName("none")] None,
+    [JsonStringEnumMemberName("light")] Light,
+    [JsonStringEnumMemberName("medium")] Medium,
+    [JsonStringEnumMemberName("high")] High,
+}
+
 public sealed record UserSettings(
     [property: JsonPropertyName("default_language")] string DefaultLanguage,
     [property: JsonPropertyName("summary_language")] string SummaryLanguage,
@@ -21,6 +30,7 @@ public sealed record UserSettings(
     [property: JsonPropertyName("file_stt_provider")] string FileSttProvider,
     [property: JsonPropertyName("file_stt_model")] string FileSttModel,
     [property: JsonPropertyName("dictation_post_filter_enabled")] bool DictationPostFilterEnabled,
+    [property: JsonPropertyName("dictation_cleanup_level")] DictationCleanupLevel DictationCleanupLevel,
     [property: JsonPropertyName("dictation_post_filter_provider")] string? DictationPostFilterProvider,
     [property: JsonPropertyName("dictation_post_filter_model")] string? DictationPostFilterModel);
 
@@ -35,6 +45,7 @@ public sealed record UpdateSettingsRequest(
     [property: JsonPropertyName("file_stt_provider")] string? FileSttProvider = null,
     [property: JsonPropertyName("file_stt_model")] string? FileSttModel = null,
     [property: JsonPropertyName("dictation_post_filter_enabled")] bool? DictationPostFilterEnabled = null,
+    [property: JsonPropertyName("dictation_cleanup_level")] DictationCleanupLevel? DictationCleanupLevel = null,
     [property: JsonPropertyName("dictation_post_filter_provider")] string? DictationPostFilterProvider = null,
     [property: JsonPropertyName("dictation_post_filter_model")] string? DictationPostFilterModel = null);
 

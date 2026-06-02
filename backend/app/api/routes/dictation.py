@@ -37,7 +37,8 @@ MAX_CLEANUP_TEXT_LENGTH = 100_000
 MAX_CLEANUP_VOCABULARY_ENTRIES = 200
 MAX_CLEANUP_VOCABULARY_ENTRY_CHARS = 60
 
-DICTATION_CLEANUP_INSTRUCTIONS = """\
+DICTATION_CLEANUP_INSTRUCTIONS_BY_LEVEL = {
+    "light": """\
 Lightly clean up dictated text.
 
 Rules:
@@ -53,7 +54,44 @@ Rules:
 - Do not summarize, add information, change the meaning, or make the text more
   formal unless it is clearly formal already.
 - Output only the cleaned text.
-"""
+""",
+    "medium": """\
+Clean up dictated text for clarity and conciseness.
+
+Rules:
+- Remove filler sounds and filler words in Russian and English, including э,
+  эээ, э-э-э, а, ааа, а-а-а, ну, вот, типа, как бы, значит, um, uh, like,
+  you know, I mean, basically, actually, so, and well.
+- Remove repeated filler-only loops and false starts while keeping the final
+  intended version.
+- Fix obvious grammar, capitalization, punctuation, paragraph breaks, and
+  awkward dictated phrasing.
+- Make sentences clearer and more concise when the same meaning can be
+  expressed directly.
+- Preserve the original language, meaning, tone, terminology, names, claims,
+  and important sentence order.
+- Do not summarize, add information, invent intent, or make the text formal
+  unless it is clearly formal already.
+- Output only the cleaned text.
+""",
+    "high": """\
+Rewrite dictated text for brevity and polish.
+
+Rules:
+- Remove filler sounds and filler words in Russian and English, including э,
+  эээ, э-э-э, а, ааа, а-а-а, ну, вот, типа, как бы, значит, um, uh, like,
+  you know, I mean, basically, actually, so, and well.
+- Remove repeated filler-only loops, false starts, rambling repetitions, and
+  redundant phrasing while preserving the final intended message.
+- Rewrite for polished, concise prose with clear paragraphing and natural
+  punctuation.
+- Preserve the original language, meaning, tone, terminology, names, claims,
+  decisions, and any concrete details.
+- Do not summarize away details, add information, invent intent, or change
+  commitments, numbers, names, or nuance.
+- Output only the cleaned text.
+""",
+}
 
 
 class CleanupRequest(BaseModel):
@@ -115,7 +153,8 @@ async def cleanup_dictation(request: CleanupRequest, user: CurrentUser):
     if not text:
         return CleanupResponse(text="")
 
-    if not user.dictation_post_filter_enabled:
+    cleanup_level = user.dictation_cleanup_level
+    if cleanup_level == "none":
         return CleanupResponse(text=text)
 
     if len(text) < 10:
@@ -139,13 +178,19 @@ async def cleanup_dictation(request: CleanupRequest, user: CurrentUser):
             detail=f"Unsupported dictation post-filter provider: {provider}",
         )
 
+    cleanup_instructions = DICTATION_CLEANUP_INSTRUCTIONS_BY_LEVEL.get(cleanup_level)
+    if cleanup_instructions is None:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Unsupported dictation cleanup level: {cleanup_level}",
+        )
     vocabulary_block = _build_vocabulary_block(request.vocabulary)
 
     try:
         client = get_openai_client()
         response = await client.responses.create(
             model=model,
-            instructions=DICTATION_CLEANUP_INSTRUCTIONS + vocabulary_block,
+            instructions=cleanup_instructions + vocabulary_block,
             input=(
                 "<dictated_text>\n"
                 f"{text}\n"

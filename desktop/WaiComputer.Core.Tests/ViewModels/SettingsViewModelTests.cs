@@ -35,10 +35,13 @@ public class SettingsViewModelTests : IAsyncLifetime
 
     private static string Json<T>(T value) => System.Text.Json.JsonSerializer.Serialize(value, WaiJson.Options);
 
-    private static UserSettings Settings(string defaultLanguage = "en", bool postFilter = false) =>
+    private static UserSettings Settings(
+        string defaultLanguage = "en",
+        bool postFilter = false,
+        DictationCleanupLevel cleanupLevel = DictationCleanupLevel.None) =>
         new(defaultLanguage, "en", SummaryStyle.Medium,
             "deepgram", "nova-3", "deepgram", "nova-3", "deepgram", "nova-3",
-            postFilter, null, null);
+            postFilter, cleanupLevel, null, null);
 
     private void StubGet(int status, UserSettings? body = null) => _server
         .Given(Request.Create().UsingGet().WithPath("/api/settings"))
@@ -55,12 +58,13 @@ public class SettingsViewModelTests : IAsyncLifetime
     [Fact]
     public async Task LoadPopulatesEditablePropsAndHasNoChanges()
     {
-        StubGet(200, Settings(defaultLanguage: "ru", postFilter: true));
+        StubGet(200, Settings(defaultLanguage: "ru", postFilter: true, cleanupLevel: DictationCleanupLevel.Light));
 
         await _vm.LoadAsync();
 
         _vm.DefaultLanguage.Should().Be("ru");
         _vm.DictationPostFilterEnabled.Should().BeTrue();
+        _vm.DictationCleanupLevel.Should().Be(DictationCleanupLevel.Light);
         _vm.HasChanges.Should().BeFalse();
         _vm.ErrorMessage.Should().BeNull();
     }
@@ -96,6 +100,24 @@ public class SettingsViewModelTests : IAsyncLifetime
         body.Should().NotContain("recording_live_stt");
         // Unchanged non-managed fields are omitted too (sparse PATCH).
         body.Should().NotContain("summary_language");
+    }
+
+    [Fact]
+    public async Task SaveSendsCleanupLevelWhenChangedAndOmitsLegacyBoolean()
+    {
+        StubGet(200, Settings(defaultLanguage: "en"));
+        await _vm.LoadAsync();
+
+        _vm.DictationCleanupLevel = DictationCleanupLevel.Medium;
+        StubPatch(200, Settings(defaultLanguage: "en", postFilter: true, cleanupLevel: DictationCleanupLevel.Medium));
+
+        await _vm.SaveAsync();
+
+        var patch = _server.LogEntries.Single(e => e.RequestMessage.Method == "PATCH");
+        var body = patch.RequestMessage.Body!;
+        body.Should().Contain("dictation_cleanup_level");
+        body.Should().Contain("medium");
+        body.Should().NotContain("dictation_post_filter_enabled");
     }
 
     [Fact]

@@ -154,6 +154,7 @@ const baseSettings = {
   file_stt_provider: "elevenlabs",
   file_stt_model: "scribe_v2",
   dictation_post_filter_enabled: false,
+  dictation_cleanup_level: "none",
   dictation_post_filter_provider: "openai",
   dictation_post_filter_model: "gpt-5.5",
 };
@@ -2049,13 +2050,14 @@ describe("DashboardClient", () => {
     });
   });
 
-  // --- Settings: dictation post-filter checkbox update ---
+  // --- Settings: dictation cleanup level update ---
 
-  it("toggles the dictation cleanup checkbox and persists the setting", async () => {
+  it("updates the dictation cleanup level and persists the setting", async () => {
     arrangeHappyPathMocks();
     mockUpdateSettings.mockResolvedValueOnce({
       ...baseSettings,
       dictation_post_filter_enabled: true,
+      dictation_cleanup_level: "medium",
     });
     const user = userEvent.setup();
 
@@ -2063,12 +2065,12 @@ describe("DashboardClient", () => {
     await waitForDashboardReady();
     await openSettingsView(user);
 
-    const checkbox = await screen.findByLabelText("Clean up dictated text before insertion");
-    expect(checkbox).not.toBeChecked();
+    const medium = await screen.findByRole("radio", { name: /medium/i });
+    expect(medium).not.toBeChecked();
 
-    await user.click(checkbox);
+    await user.click(medium);
     await waitFor(() => {
-      expect(mockUpdateSettings).toHaveBeenCalledWith({ dictation_post_filter_enabled: true });
+      expect(mockUpdateSettings).toHaveBeenCalledWith({ dictation_cleanup_level: "medium" });
       expect(screen.getByTestId("dashboard-message")).toHaveTextContent("Settings updated.");
     });
   });

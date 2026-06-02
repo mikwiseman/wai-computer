@@ -66,6 +66,7 @@ final class ModelTests: XCTestCase {
             "file_stt_provider": "elevenlabs",
             "file_stt_model": "scribe_v2",
             "dictation_post_filter_enabled": false,
+            "dictation_cleanup_level": "none",
             "dictation_post_filter_provider": "openai",
             "dictation_post_filter_model": "gpt-5.5"
         }
@@ -84,6 +85,7 @@ final class ModelTests: XCTestCase {
         XCTAssertEqual(settings.fileSTTProvider, "elevenlabs")
         XCTAssertEqual(settings.fileSTTModel, "scribe_v2")
         XCTAssertFalse(settings.dictationPostFilterEnabled)
+        XCTAssertEqual(settings.dictationCleanupLevel, "none")
         XCTAssertEqual(settings.dictationPostFilterProvider, "openai")
         XCTAssertEqual(settings.dictationPostFilterModel, "gpt-5.5")
     }

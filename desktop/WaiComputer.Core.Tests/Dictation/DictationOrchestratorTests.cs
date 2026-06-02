@@ -144,7 +144,7 @@ public class DictationOrchestratorTests : IAsyncLifetime
     {
         StubMint();
         StubCleanup(200, "Cleaned text.");
-        _settings.PostFilterEnabled = true;
+        _settings.CleanupLevel = DictationCleanupLevel.Light;
         _factory.AutoFinal = "cleaned text";
 
         DictationResult? completed = null;
@@ -162,7 +162,7 @@ public class DictationOrchestratorTests : IAsyncLifetime
     {
         StubMint();
         StubCleanup(500); // cleanup endpoint fails
-        _settings.PostFilterEnabled = true;
+        _settings.CleanupLevel = DictationCleanupLevel.Light;
         _factory.AutoFinal = "raw transcript";
 
         string? failure = null;
@@ -433,6 +433,7 @@ public class DictationOrchestratorTests : IAsyncLifetime
     private sealed class FakeSettings : IDictationSettings
     {
         public bool PostFilterEnabled { get; set; }
+        public DictationCleanupLevel CleanupLevel { get; set; } = DictationCleanupLevel.None;
     }
 
     private sealed class FakeClock : ISystemClock

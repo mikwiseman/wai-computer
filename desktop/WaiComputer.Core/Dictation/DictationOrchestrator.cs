@@ -26,6 +26,8 @@ public interface IDictationSettings
 {
     /// <summary>When on, the raw transcript is run through AI cleanup before insertion (no silent fallback to raw on failure).</summary>
     bool PostFilterEnabled { get; }
+    /// <summary>Account-wide cleanup intensity; None means raw insertion after dictionary replacements.</summary>
+    DictationCleanupLevel CleanupLevel { get; }
 }
 
 /// <summary>Outcome of a completed dictation turn (for the HUD/history surface).</summary>
@@ -321,7 +323,7 @@ public sealed class DictationOrchestrator : IDictationOrchestrator
             var replaced = _dictionary.ApplyReplacements(raw);
 
             string toInsert;
-            if (_settings.PostFilterEnabled)
+            if (_settings.CleanupLevel != DictationCleanupLevel.None)
             {
                 string? cleaned = null;
                 var cleanupFailed = false;

@@ -61,6 +61,15 @@ async def _enable_post_filter(client: AsyncClient, headers: dict) -> None:
     assert response.status_code == 200
 
 
+async def _set_cleanup_level(client: AsyncClient, headers: dict, level: str) -> None:
+    response = await client.patch(
+        "/api/settings",
+        headers=headers,
+        json={"dictation_cleanup_level": level},
+    )
+    assert response.status_code == 200
+
+
 def _fake_httpx_response(status_code: int = 429) -> httpx.Response:
     return httpx.Response(status_code=status_code, request=httpx.Request("POST", "https://test"))
 
@@ -111,6 +120,25 @@ async def test_cleanup_dictation_skips_when_post_filter_disabled(
 
 
 @pytest.mark.asyncio
+async def test_cleanup_dictation_skips_when_cleanup_level_none(
+    client: AsyncClient,
+    auth_headers: dict,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    _patch_settings(monkeypatch, api_key="")
+    await _set_cleanup_level(client, auth_headers, "none")
+
+    response = await client.post(
+        "/api/dictation/cleanup",
+        headers=auth_headers,
+        json={"text": "um this is raw dictated text"},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"text": "um this is raw dictated text"}
+
+
+@pytest.mark.asyncio
 async def test_cleanup_dictation_uses_fixed_post_filter_model(
     client: AsyncClient,
     auth_headers: dict,
@@ -136,7 +164,7 @@ async def test_cleanup_dictation_uses_fixed_post_filter_model(
 
     assert response.status_code == 200
     assert captured["model"] == "gpt-5.5"
-    assert "max_output_tokens" not in captured
+    assert captured["max_output_tokens"] == 256
     assert captured["reasoning"] == {"effort": "none"}
     assert captured["text"] == {"verbosity": "low"}
 
@@ -171,6 +199,91 @@ async def test_cleanup_dictation_prompt_targets_russian_fillers_and_false_starts
     assert "мы х-- мы предлагаем" in instructions
     assert "Do not summarize" in instructions
     assert "<dictated_text>" in captured["input"]
+
+
+@pytest.mark.asyncio
+async def test_cleanup_dictation_medium_level_targets_clarity_and_conciseness(
+    client: AsyncClient,
+    auth_headers: dict,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    captured: dict[str, object] = {}
+
+    async def _create(**kwargs: object):
+        captured.update(kwargs)
+        return _make_response("Clear concise text.")
+
+    mock_client = SimpleNamespace(responses=SimpleNamespace(create=_create))
+    _patch_settings(monkeypatch)
+    _patch_client(monkeypatch, mock_client)
+    await _set_cleanup_level(client, auth_headers, "medium")
+
+    response = await client.post(
+        "/api/dictation/cleanup",
+        headers=auth_headers,
+        json={"text": "um please clean up this dictated sentence"},
+    )
+
+    assert response.status_code == 200
+    instructions = captured["instructions"]
+    assert "clarity and conciseness" in instructions
+    assert "Do not summarize" in instructions
+
+
+@pytest.mark.asyncio
+async def test_cleanup_dictation_high_level_targets_brevity_and_polish(
+    client: AsyncClient,
+    auth_headers: dict,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    captured: dict[str, object] = {}
+
+    async def _create(**kwargs: object):
+        captured.update(kwargs)
+        return _make_response("Polished text.")
+
+    mock_client = SimpleNamespace(responses=SimpleNamespace(create=_create))
+    _patch_settings(monkeypatch)
+    _patch_client(monkeypatch, mock_client)
+    await _set_cleanup_level(client, auth_headers, "high")
+
+    response = await client.post(
+        "/api/dictation/cleanup",
+        headers=auth_headers,
+        json={"text": "um please clean up this dictated sentence"},
+    )
+
+    assert response.status_code == 200
+    instructions = captured["instructions"]
+    assert "brevity and polish" in instructions
+    assert "Do not summarize away details" in instructions
+
+
+@pytest.mark.asyncio
+async def test_cleanup_dictation_caps_large_output_token_budget(
+    client: AsyncClient,
+    auth_headers: dict,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    captured: dict[str, object] = {}
+
+    async def _create(**kwargs: object):
+        captured.update(kwargs)
+        return _make_response("Polished text.")
+
+    mock_client = SimpleNamespace(responses=SimpleNamespace(create=_create))
+    _patch_settings(monkeypatch)
+    _patch_client(monkeypatch, mock_client)
+    await _set_cleanup_level(client, auth_headers, "high")
+
+    response = await client.post(
+        "/api/dictation/cleanup",
+        headers=auth_headers,
+        json={"text": "word " * 20_000},
+    )
+
+    assert response.status_code == 200
+    assert captured["max_output_tokens"] == 8192
 
 
 @pytest.mark.asyncio
