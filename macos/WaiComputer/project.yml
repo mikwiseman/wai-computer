@@ -61,6 +61,7 @@ targets:
     platform: macOS
     sources:
       - path: WaiComputerTests
+      - path: WaiComputer/Core/AppVersionInfo.swift
       - path: WaiComputer/Core/DesignSystem.swift
       - path: WaiComputer/App/MacTestingSupport.swift
       - path: WaiComputer/App/Onboarding/OnboardingL10n.swift

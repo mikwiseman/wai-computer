@@ -576,6 +576,16 @@ struct MacMainView: View {
     // MARK: - Sidebar
 
     private var sidebar: some View {
+        VStack(spacing: 0) {
+            sidebarList
+                .frame(maxHeight: .infinity)
+
+            SidebarAppVersionFooter(versionInfo: .main)
+        }
+        .accessibilityIdentifier("sidebar")
+    }
+
+    private var sidebarList: some View {
         List {
             Section {
                 sidebarRow(t("All Recordings", "Все записи"), icon: "folder", section: .allRecordings, identifier: "all-recordings")
@@ -623,7 +633,6 @@ struct MacMainView: View {
             }
         }
         .listStyle(.sidebar)
-        .accessibilityIdentifier("sidebar")
     }
 
     private func sidebarRow(_ title: String, icon: String, section: SidebarSection, identifier: String) -> some View {
@@ -1152,6 +1161,26 @@ private struct SidebarRowLabel: View {
         .padding(.horizontal, MacMainLayoutMetrics.sidebarRowHorizontalPadding)
         .frame(maxWidth: .infinity, minHeight: MacMainLayoutMetrics.sidebarRowMinHeight, alignment: .leading)
         .contentShape(Rectangle())
+    }
+}
+
+private struct SidebarAppVersionFooter: View {
+    let versionInfo: AppVersionInfo
+
+    var body: some View {
+        HStack {
+            Text(versionInfo.displayText)
+                .font(Typography.caption)
+                .foregroundStyle(Palette.textTertiary)
+                .lineLimit(1)
+                .accessibilityIdentifier("sidebar-app-version")
+                .accessibilityLabel(versionInfo.accessibilityText)
+
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, MacMainLayoutMetrics.sidebarFooterHorizontalPadding)
+        .padding(.top, Spacing.xs)
+        .padding(.bottom, Spacing.md)
     }
 }
 

@@ -300,6 +300,7 @@ enum MacMainLayoutMetrics {
     static let speakerAssignmentPopoverWidth: CGFloat = 360
     static let sidebarRowMinHeight: CGFloat = 30
     static let sidebarRowHorizontalPadding: CGFloat = 8
+    static let sidebarFooterHorizontalPadding: CGFloat = 18
     static let searchContentMaxWidth: CGFloat = 880
     static let minimumReadableDetailWidth: CGFloat = 520
     static let allColumnsReadableWidth: CGFloat = sidebarIdealWidth + listMinWidth + minimumReadableDetailWidth
