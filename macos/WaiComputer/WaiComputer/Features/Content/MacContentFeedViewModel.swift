@@ -2,13 +2,13 @@ import Foundation
 import WaiComputerKit
 
 /// Drives the macOS Content feed: add-anything capture, kind filtering, list +
-/// selected-item detail. Polls briefly after a create so the background summary
+/// active-item detail. Polls briefly after a create so the background summary
 /// surfaces without a manual refresh.
 @MainActor
 final class MacContentFeedViewModel: ObservableObject {
     @Published var entries: [ItemListEntry] = []
-    @Published var selectedId: String?
-    @Published var selectedItem: Item?
+    @Published var activeItemId: String?
+    @Published var activeItem: Item?
     @Published var draft: String = ""
     @Published var kind: String?
     @Published var isLoading = false
@@ -17,42 +17,10 @@ final class MacContentFeedViewModel: ObservableObject {
     // Non-error notice (e.g. an audio/video upload now transcribing in the background).
     @Published var statusMessage: String?
 
-    // Multi-select -> compare
-    @Published var compareSelection: Set<String> = []
-    @Published var activeComparisonId: String?
-    @Published var isComparing = false
-
     let apiClient: APIClient
 
     init(apiClient: APIClient) {
         self.apiClient = apiClient
-    }
-
-    func toggleCompare(_ id: String) {
-        if compareSelection.contains(id) {
-            compareSelection.remove(id)
-        } else {
-            compareSelection.insert(id)
-        }
-    }
-
-    var canCompare: Bool { compareSelection.count >= 2 }
-
-    func compareSelected() async {
-        guard canCompare, !isComparing else { return }
-        isComparing = true
-        defer { isComparing = false }
-        do {
-            let set = try await apiClient.createComparison(itemIds: Array(compareSelection))
-            activeComparisonId = set.id
-        } catch {
-            errorMessage = error.localizedDescription
-        }
-    }
-
-    func clearComparison() {
-        activeComparisonId = nil
-        compareSelection.removeAll()
     }
 
     func load() async {
@@ -61,9 +29,9 @@ final class MacContentFeedViewModel: ObservableObject {
         do {
             let response = try await apiClient.listItems(kind: kind)
             entries = response.items
-            if let selectedId, !entries.contains(where: { $0.id == selectedId }) {
-                self.selectedId = nil
-                selectedItem = nil
+            if let activeItemId, !entries.contains(where: { $0.id == activeItemId }) {
+                self.activeItemId = nil
+                activeItem = nil
             }
         } catch {
             errorMessage = error.localizedDescription
@@ -72,8 +40,8 @@ final class MacContentFeedViewModel: ObservableObject {
 
     func setKind(_ newKind: String?) async {
         kind = newKind
-        selectedId = nil
-        selectedItem = nil
+        activeItemId = nil
+        activeItem = nil
         await load()
     }
 
@@ -96,8 +64,8 @@ final class MacContentFeedViewModel: ObservableObject {
             }
             draft = ""
             await load()
-            selectedId = created.id
-            await selectItem(created.id)
+            activeItemId = created.id
+            await openItem(created.id)
             // Poll in the background so the Add button frees up immediately
             // while the summary + key-moments land (honors the doc comment).
             let createdId = created.id
@@ -109,13 +77,13 @@ final class MacContentFeedViewModel: ObservableObject {
 
     /// After a create, poll the new item until its summary lands (or it needs
     /// input / failed) so the "add → instant summary" payoff surfaces without a
-    /// manual refresh. Capped at ~60s; bails if the user selects another item.
+    /// manual refresh. Capped at ~60s; bails if the user opens another item.
     private func pollUntilProcessed(_ id: String) async {
         for _ in 0..<30 {
             try? await Task.sleep(nanoseconds: 2_000_000_000)
-            guard selectedId == id else { return }
+            guard activeItemId == id else { return }
             guard let item = try? await apiClient.getItem(id: id) else { continue }
-            selectedItem = item
+            activeItem = item
             if item.summary?.summary != nil
                 || item.state == "needs_input"
                 || item.state == "failed" {
@@ -148,8 +116,8 @@ final class MacContentFeedViewModel: ObservableObject {
             case .item(let created):
                 statusMessage = nil
                 await load()
-                selectedId = created.id
-                await selectItem(created.id)
+                activeItemId = created.id
+                await openItem(created.id)
                 let createdId = created.id
                 Task { [weak self] in await self?.pollUntilProcessed(createdId) }
             }
@@ -158,20 +126,21 @@ final class MacContentFeedViewModel: ObservableObject {
         }
     }
 
-    func selectItem(_ id: String) async {
+    func openItem(_ id: String) async {
+        activeItemId = id
         do {
-            selectedItem = try await apiClient.getItem(id: id)
+            activeItem = try await apiClient.getItem(id: id)
         } catch {
             errorMessage = error.localizedDescription
         }
     }
 
-    func deleteSelected() async {
-        guard let id = selectedId else { return }
+    func deleteActiveItem() async {
+        guard let id = activeItemId else { return }
         do {
             try await apiClient.deleteItem(id: id)
-            selectedId = nil
-            selectedItem = nil
+            activeItemId = nil
+            activeItem = nil
             await load()
         } catch {
             errorMessage = error.localizedDescription
