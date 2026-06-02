@@ -97,6 +97,8 @@ require_env_key ELEVENLABS_API_KEY
 require_env_key AUTH_COOKIE_DOMAIN
 require_env_key SENTRY_DSN
 require_env_key SENTRY_AUTH_TOKEN
+require_env_key TELEGRAM_API_ID
+require_env_key TELEGRAM_API_HASH
 
 cd "$PROD_ROOT/backend"
 export WAICOMPUTER_ENV_FILE="$PROD_ENV_FILE"
@@ -120,7 +122,14 @@ docker_compose build web
 # schema during the brief window until `up -d` recreates the containers.
 docker_compose run --rm api alembic upgrade head
 
-docker_compose up -d --remove-orphans api web celery-worker caddy
+docker_compose up -d --remove-orphans telegram-bot-api api web celery-worker caddy
+
+wait_for_service \
+  "Telegram Bot API running" \
+  "[[ \"$(docker inspect --format '{{.State.Running}}' waicomputer-telegram-bot-api 2>/dev/null)\" == true ]]" \
+  12 \
+  2 \
+  "docker logs --tail 200 waicomputer-telegram-bot-api"
 
 wait_for_service \
   "API health check" \
