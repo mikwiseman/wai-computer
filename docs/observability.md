@@ -42,17 +42,19 @@ privacy-safe business failures should become Sentry events.
 
 All WaiComputer surfaces must point at WaiComputer Sentry projects in the `waiwai-diy` organization, not the older `waisay-*` projects.
 
-| Surface | Sentry project | Project ID |
-| --- | --- | --- |
-| Backend API and worker | `waicomputer-backend` | `<sentry-project-id>` |
-| Web | `waicomputer-web` | `<sentry-project-id>` |
-| iOS | `waicomputer-ios` | `<sentry-project-id>` |
-| macOS | `waicomputer-macos` | `<sentry-project-id>` |
-| Android | `waicomputer-android` | `<sentry-project-id>` |
-| Windows | `waicomputer-windows` | `<sentry-project-id>` |
-| Linux | `waicomputer-linux` | `<sentry-project-id>` |
+| Surface | Sentry project |
+| --- | --- |
+| Backend API and worker | `waicomputer-backend` |
+| Web | `waicomputer-web` |
+| iOS | `waicomputer-ios` |
+| macOS | `waicomputer-macos` |
+| Android | `waicomputer-android` |
+| Windows | `waicomputer-windows` |
+| Linux | `waicomputer-linux` |
 
-Production backend env must contain `SENTRY_DSN=<backend DSN ending in /<sentry-project-id>>`. Production builds also require `SENTRY_AUTH_TOKEN` so web source maps and native debug files are uploaded during release.
+Production backend env must contain `SENTRY_DSN`. Production builds also
+require `SENTRY_AUTH_TOKEN` so web source maps and native debug files are
+uploaded during release.
 
 Current alert codes:
 
@@ -138,9 +140,9 @@ Backend logs are JSON lines with these fields:
 Useful commands:
 
 ```bash
-ssh <release-user>@<release-host> 'cd <remote-root>/backend && docker compose --env-file <remote-env-file> logs --tail=200 api'
-ssh <release-user>@<release-host> 'cd <remote-root>/backend && docker compose --env-file <remote-env-file> ps'
-VPS_USER=<release-user> scripts/check-prod-observability.sh
+ssh "$VPS_USER@$VPS_HOST" "cd $REMOTE_ROOT/backend && docker compose --env-file $REMOTE_ENV_FILE logs --tail=200 api"
+ssh "$VPS_USER@$VPS_HOST" "cd $REMOTE_ROOT/backend && docker compose --env-file $REMOTE_ENV_FILE ps"
+scripts/check-prod-observability.sh
 ```
 
 ## Incident Triage

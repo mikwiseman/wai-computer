@@ -9,7 +9,7 @@
       2. dotnet publish -r win-x64
       3. vpk pack with Azure Trusted Signing
       4. Merge into wai.computer/releases/windows/releases.win[.beta].json
-      5. SCP to <release-user>@<release-host>:<remote-root>/releases/windows/
+      5. SCP to the private release host.
 
 .PARAMETER Channel
     "stable" or "beta". Required.
@@ -21,8 +21,9 @@
       WAI_AZURE_TRUSTED_SIGNING_ENDPOINT
       WAI_AZURE_TRUSTED_SIGNING_ACCOUNT
       WAI_AZURE_TRUSTED_SIGNING_CERTIFICATE_PROFILE
-      WAI_VPS_USER (default: root)
-      WAI_VPS_HOST (default: <release-host>)
+      WAI_VPS_USER
+      WAI_VPS_HOST
+      WAI_WINDOWS_REMOTE_RELEASE_ROOT
 #>
 param(
     [Parameter(Mandatory=$true)]
@@ -118,12 +119,16 @@ try {
 
     & vpk @packArgs
 
-    $vpsUser = if ($env:WAI_VPS_USER) { $env:WAI_VPS_USER } else { "root" }
-    $vpsHost = if ($env:WAI_VPS_HOST) { $env:WAI_VPS_HOST } else { "<release-host>" }
-    $remote = "${vpsUser}@${vpsHost}:<remote-root>/releases/windows/"
+    $vpsUser = $env:WAI_VPS_USER
+    $vpsHost = $env:WAI_VPS_HOST
+    $remoteRoot = $env:WAI_WINDOWS_REMOTE_RELEASE_ROOT
+    if (-not $vpsUser -or -not $vpsHost -or -not $remoteRoot) {
+        throw "WAI_VPS_USER, WAI_VPS_HOST, and WAI_WINDOWS_REMOTE_RELEASE_ROOT are required."
+    }
+    $remote = "${vpsUser}@${vpsHost}:$remoteRoot/"
 
     Write-Host "▶ Ensuring remote releases/windows directory exists" -ForegroundColor Cyan
-    ssh "${vpsUser}@${vpsHost}" "mkdir -p <remote-root>/releases/windows"
+    ssh "${vpsUser}@${vpsHost}" "mkdir -p '$remoteRoot'"
 
     Write-Host "▶ Uploading to $remote" -ForegroundColor Cyan
     scp -r Releases/* $remote

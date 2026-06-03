@@ -11,17 +11,17 @@ AI second brain for recordings, transcription, search, and summaries.
 
 - Canonical host: `https://wai.computer` (API at `/api/*`, health at `/health`). No separate API hostname.
 - In-app MCP connect instructions live in Settings → MCP on every platform; the displayed URL is the hardcoded prod canonical `https://wai.computer/mcp`.
-- Server: `<release-user>@<release-host>`, deploy root `<remote-root>`.
-- Runtime env: `<remote-env-file>` is the source of truth; `<remote-root>/backend/.env` is a symlink to it.
+- Server connection details, deploy root, and runtime env path live outside the repo.
+- Runtime env stays on the server and is supplied through deploy environment variables.
 - Keep aligned: `FRONTEND_URL=https://wai.computer`, `AUTH_COOKIE_DOMAIN=wai.computer`, `CORS_ORIGINS` includes `https://wai.computer`, `SENTRY_DSN` on the current project.
 
 ## Deploy
 
-- No CI deploys. Backend + web: `VPS_USER=<release-user> ./scripts/deploy-server.sh` (builds `api`/`web`/`celery-worker` on the VPS, waits for health).
-- Runtime env stays only on the server at `<remote-env-file>`; never rebuild it from secrets.
+- No CI deploys. Backend + web: set `VPS_HOST`, `VPS_USER`, `REMOTE_ROOT`, and `REMOTE_ENV_FILE`, then run `./scripts/deploy-server.sh`.
+- Runtime env stays only on the server; never rebuild it from secrets.
 - Pre-push hook: `git config core.hooksPath .git-hooks` once; runs `swift test` + unsigned macOS `xcodebuild build` on Apple-touching pushes. `--no-verify` to bypass.
 - Long-running gate: `scripts/qa-loop.sh` (backend + web + Swift + native). See `README.md`.
-- macOS release: `VPS_USER=<release-user> scripts/release-macos.sh stable|beta` from a Mac with Developer ID, Sparkle EdDSA, and notarization configured.
+- macOS release: set the release upload env vars, then run `scripts/release-macos.sh stable|beta` from a Mac with Developer ID, Sparkle EdDSA, and notarization configured.
 
 ## Local Dev
 
@@ -124,7 +124,7 @@ dotnet test WaiComputer.UITests
 - Session storage: freedesktop Secret Service via `secret-tool`; never store Linux auth tokens in plaintext files.
 - Magic link: `waicomputer://auth/verify?token=...` through `x-scheme-handler/waicomputer` in the `.desktop` file.
 - Auto-update: Velopack AppImage, channels `linux` (stable) and `linux-beta` (beta), feed root `https://wai.computer/releases/linux/`.
-- Release: `scripts/release-linux.sh stable|beta` on a Linux x64 host with .NET 9 SDK and Velopack CLI `0.0.1298`; set `LINUX_RELEASE_PUBLISH=1 VPS_USER=<release-user>` to upload to the VPS.
+- Release: `scripts/release-linux.sh stable|beta` on a Linux x64 host with .NET 9 SDK and Velopack CLI `0.0.1298`; set `LINUX_RELEASE_PUBLISH=1` plus the private upload env vars to publish.
 
 Native builds:
 ```bash
@@ -138,7 +138,7 @@ dotnet publish WaiComputer.Linux/WaiComputer.Linux.csproj -c Release -r linux-x6
 
 ```bash
 docker logs waicomputer-api
-docker compose --env-file <remote-env-file> ps   # in <remote-root>/backend
+docker compose --env-file "$REMOTE_ENV_FILE" ps   # in "$REMOTE_ROOT/backend"
 ```
 
 Prefer fixing recording/realtime issues in shared Swift + backend before touching the web dashboard.

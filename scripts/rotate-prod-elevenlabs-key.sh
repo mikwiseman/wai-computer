@@ -4,13 +4,21 @@
 
 set -euo pipefail
 
-VPS_HOST="${VPS_HOST:-<release-host>}"
+VPS_HOST="${VPS_HOST:-}"
 VPS_USER="${VPS_USER:-}"
 SSH_KEY_PATH="${SSH_KEY_PATH:-$HOME/.ssh/id_ed25519}"
-REMOTE_ENV_FILE="${REMOTE_ENV_FILE:-<remote-env-file>}"
+REMOTE_ENV_FILE="${REMOTE_ENV_FILE:-}"
 
 if [[ -z "${VPS_USER}" ]]; then
   echo "ERROR: VPS_USER is required" >&2
+  exit 1
+fi
+if [[ -z "${VPS_HOST}" ]]; then
+  echo "ERROR: VPS_HOST is required" >&2
+  exit 1
+fi
+if [[ -z "${REMOTE_ENV_FILE}" ]]; then
+  echo "ERROR: REMOTE_ENV_FILE is required" >&2
   exit 1
 fi
 

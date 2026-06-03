@@ -1,19 +1,17 @@
 #!/usr/bin/env bash
 # Sync source to the VPS and build API + web services on the server.
 # Usage:
-#   VPS_USER=<release-user> ./scripts/deploy-api.sh
+#   VPS_HOST=... VPS_USER=... REMOTE_ROOT=... REMOTE_ENV_FILE=... ./scripts/deploy-api.sh
 # Optional:
-#   VPS_HOST=<release-host>
 #   SSH_KEY_PATH=~/.ssh/id_ed25519
-#   REMOTE_ROOT=<remote-root>
 
 set -euo pipefail
 
-VPS_HOST="${VPS_HOST:-<release-host>}"
+VPS_HOST="${VPS_HOST:-}"
 VPS_USER="${VPS_USER:-}"
 SSH_KEY_PATH="${SSH_KEY_PATH:-$HOME/.ssh/id_ed25519}"
-REMOTE_ROOT="${REMOTE_ROOT:-<remote-root>}"
-REMOTE_ENV_FILE="${REMOTE_ENV_FILE:-<remote-env-file>}"
+REMOTE_ROOT="${REMOTE_ROOT:-}"
+REMOTE_ENV_FILE="${REMOTE_ENV_FILE:-}"
 GIT_SHA="${GIT_SHA:-$(git rev-parse HEAD)}"
 GIT_DIRTY="${GIT_DIRTY:-false}"
 if [[ -n "$(git status --porcelain)" ]]; then
@@ -22,6 +20,18 @@ fi
 
 if [[ -z "$VPS_USER" ]]; then
   echo "ERROR: VPS_USER is required" >&2
+  exit 1
+fi
+if [[ -z "$VPS_HOST" ]]; then
+  echo "ERROR: VPS_HOST is required" >&2
+  exit 1
+fi
+if [[ -z "$REMOTE_ROOT" ]]; then
+  echo "ERROR: REMOTE_ROOT is required" >&2
+  exit 1
+fi
+if [[ -z "$REMOTE_ENV_FILE" ]]; then
+  echo "ERROR: REMOTE_ENV_FILE is required" >&2
   exit 1
 fi
 

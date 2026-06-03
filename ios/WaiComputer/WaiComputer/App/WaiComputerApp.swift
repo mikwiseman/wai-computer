@@ -293,7 +293,8 @@ class AppState: ObservableObject {
 
     init() {
         #if !DEBUG
-        SentryHelper.start(dsn: "<SENTRY_DSN>")
+        let sentryDSN = Bundle.main.object(forInfoDictionaryKey: "SENTRY_DSN") as? String ?? ""
+        SentryHelper.start(dsn: sentryDSN)
         #endif
 
         // Configure API client

@@ -18,7 +18,7 @@ def test_configured_file_stt_options_returns_only_deepgram_when_configured(monke
         benchmarks,
         "get_settings",
         lambda: SimpleNamespace(
-            deepgram_api_key="deepgram-test-key", elevenlabs_api_key="", openai_api_key="openai-test-key"
+            deepgram_api_key="configured-for-test", elevenlabs_api_key="", openai_api_key="configured-for-test"
         ),
     )
 

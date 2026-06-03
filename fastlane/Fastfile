@@ -16,7 +16,7 @@ def strip_quarantine_attributes(*paths)
 end
 
 def waicomputer_app_store_connect_api_key
-  config_path = File.expand_path("$APPSTORECONNECT_CONFIG")
+  config_path = File.expand_path(ENV.fetch("APPSTORECONNECT_CONFIG"))
   config = JSON.parse(File.read(config_path))
 
   app_store_connect_api_key(
@@ -78,7 +78,7 @@ platform :android do
       package_name: "is.waiwai.computer",
       track: "internal",
       aab: "android/app/build/outputs/bundle/release/app-release.aab",
-      json_key: File.expand_path("$GOOGLE_PLAY_JSON_KEY"),
+      json_key: File.expand_path(ENV.fetch("GOOGLE_PLAY_JSON_KEY")),
       release_status: "draft",
       skip_upload_metadata: true,
       skip_upload_changelogs: true,

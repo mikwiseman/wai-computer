@@ -115,12 +115,20 @@ release_dir=$RELEASE_DIR
 EOF
 
 if [[ "${LINUX_RELEASE_PUBLISH:-0}" == "1" ]]; then
-  VPS_HOST=${VPS_HOST:-<release-host>}
+  VPS_HOST=${VPS_HOST:-}
   VPS_USER=${VPS_USER:-}
   SSH_KEY_PATH=${SSH_KEY_PATH:-$HOME/.ssh/id_ed25519}
-  REMOTE_RELEASE_ROOT=${LINUX_REMOTE_RELEASE_ROOT:-<remote-root>/releases/linux}
+  REMOTE_RELEASE_ROOT=${LINUX_REMOTE_RELEASE_ROOT:-}
   if [[ -z "$VPS_USER" ]]; then
     echo "ERROR: VPS_USER is required when LINUX_RELEASE_PUBLISH=1" >&2
+    exit 1
+  fi
+  if [[ -z "$VPS_HOST" ]]; then
+    echo "ERROR: VPS_HOST is required when LINUX_RELEASE_PUBLISH=1" >&2
+    exit 1
+  fi
+  if [[ -z "$REMOTE_RELEASE_ROOT" ]]; then
+    echo "ERROR: LINUX_REMOTE_RELEASE_ROOT is required when LINUX_RELEASE_PUBLISH=1" >&2
     exit 1
   fi
   if [[ ! -f "$SSH_KEY_PATH" ]]; then

@@ -145,14 +145,13 @@ after the CONFIRMED notification.
 
 ## After both rails are live
 
-Update production env at `<release-user>@<release-host>:<remote-env-file>`
-with the **live** (not test) values when ready. Test → Live cutover
-checklist:
+Update the private production env with the **live** (not test) values when
+ready. Test -> live cutover checklist:
 
 - [ ] Create live Stripe products + prices, set IDs on the prod
       `billing_plans.pro` row.
 - [ ] Register live Stripe webhook at `https://wai.computer/api/webhooks/stripe`.
 - [ ] Activate T-Bank prod terminal under ООО WaiWai.
-- [ ] Set live keys in `<remote-env-file>`.
-- [ ] `scripts/deploy-server.sh` to roll out.
+- [ ] Set live keys in the private production env file.
+- [ ] Run `scripts/deploy-server.sh` with the private deploy env vars set.
 - [ ] Subscribe a known dev account end-to-end on both rails.

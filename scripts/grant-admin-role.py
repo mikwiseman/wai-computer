@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import shlex
 import subprocess
 import sys
@@ -71,10 +72,10 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Grant a WaiComputer staff/admin role")
     parser.add_argument("--email", required=True)
     parser.add_argument("--role", choices=["owner", "admin", "support"], default="owner")
-    parser.add_argument("--vps-user", default="root")
-    parser.add_argument("--vps-host", default="<release-host>")
-    parser.add_argument("--remote-root", default="<remote-root>")
-    parser.add_argument("--remote-env-file", default="<remote-env-file>")
+    parser.add_argument("--vps-user", default=os.getenv("VPS_USER"))
+    parser.add_argument("--vps-host", default=os.getenv("VPS_HOST"))
+    parser.add_argument("--remote-root", default=os.getenv("REMOTE_ROOT"))
+    parser.add_argument("--remote-env-file", default=os.getenv("REMOTE_ENV_FILE"))
     parser.add_argument("--print-sql", action="store_true")
     args = parser.parse_args()
 
@@ -82,6 +83,18 @@ def main() -> None:
     if args.print_sql:
         print(sql)
         return
+    missing = [
+        name
+        for name, value in [
+            ("--vps-user/VPS_USER", args.vps_user),
+            ("--vps-host/VPS_HOST", args.vps_host),
+            ("--remote-root/REMOTE_ROOT", args.remote_root),
+            ("--remote-env-file/REMOTE_ENV_FILE", args.remote_env_file),
+        ]
+        if not value
+    ]
+    if missing:
+        raise SystemExit("Missing required deployment settings: " + ", ".join(missing))
     print(
         run_on_vps(
             sql,
