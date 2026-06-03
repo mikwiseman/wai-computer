@@ -1,0 +1,12 @@
+<Window
+    x:Class="WaiComputer.MainWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:features="using:WaiComputer.Features.App">
+    <Window.SystemBackdrop>
+        <MicaBackdrop />
+    </Window.SystemBackdrop>
+    <Grid>
+        <features:ContentView x:Name="ContentHost" />
+    </Grid>
+</Window>

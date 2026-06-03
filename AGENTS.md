@@ -11,17 +11,17 @@ AI second brain for recordings, transcription, search, and summaries.
 
 - Canonical host: `https://wai.computer` (API at `/api/*`, health at `/health`). No separate API hostname.
 - In-app MCP connect instructions live in Settings → MCP on every platform; the displayed URL is the hardcoded prod canonical `https://wai.computer/mcp`.
-- Server connection details, deploy root, and runtime env path live outside the repo.
-- Runtime env stays on the server and is supplied through deploy environment variables.
+- Server: `root@157.180.47.68`, deploy root `/opt/waicomputer`.
+- Runtime env: `/etc/waicomputer/backend.env` is the source of truth; `/opt/waicomputer/backend/.env` is a symlink to it.
 - Keep aligned: `FRONTEND_URL=https://wai.computer`, `AUTH_COOKIE_DOMAIN=wai.computer`, `CORS_ORIGINS` includes `https://wai.computer`, `SENTRY_DSN` on the current project.
 
 ## Deploy
 
-- No CI deploys. Backend + web: set `VPS_HOST`, `VPS_USER`, `REMOTE_ROOT`, and `REMOTE_ENV_FILE`, then run `./scripts/deploy-server.sh`.
-- Runtime env stays only on the server; never rebuild it from secrets.
+- No CI deploys. Backend + web: `VPS_USER=root ./scripts/deploy-server.sh` (builds `api`/`web`/`celery-worker` on the VPS, waits for health).
+- Runtime env stays only on the server at `/etc/waicomputer/backend.env`; never rebuild it from secrets.
 - Pre-push hook: `git config core.hooksPath .git-hooks` once; runs `swift test` + unsigned macOS `xcodebuild build` on Apple-touching pushes. `--no-verify` to bypass.
 - Long-running gate: `scripts/qa-loop.sh` (backend + web + Swift + native). See `README.md`.
-- macOS release: set the release upload env vars, then run `scripts/release-macos.sh stable|beta` from a Mac with Developer ID, Sparkle EdDSA, and notarization configured.
+- macOS release: `VPS_USER=root scripts/release-macos.sh stable|beta` from a Mac with Developer ID, Sparkle EdDSA, and notarization configured.
 
 ## Local Dev
 
@@ -88,11 +88,57 @@ cd android && ./gradlew --no-daemon connectedDebugAndroidTest
 - Guest recordings are local-first under `filesDir/recordings/`; successful auth must enqueue guest migration sync.
 - Before shipping Android work, run unit, lint, release assembly, and connected instrumentation tests.
 
+## Windows
+
+- Tech: `.NET 9` + `WinUI 3` (Windows App SDK 1.6+); targets Win10 1809+ and Win11; x64-only in v1.0.
+- Layout: `desktop/WaiComputer.Core/` (portable `net9.0` business logic — builds on any OS), `desktop/WaiComputer.Core.Tests/` (portable tests), and `windows/WaiComputer/` (the WinUI 3 app — Win-only). Native/UI tests remain under `windows/WaiComputer.{Native,UI}.Tests/`.
+- Local dev: macOS users run a Parallels Win 11 VM with VS 2022 + Windows App SDK workload; mount `windows/` via Parallels Shared Folders. See `windows/PARALLELS.md`.
+- Audio: `NAudio.Wasapi` for mic + `WasapiLoopbackCapture` for system audio; 16 kHz mono int16, frame size 1600 samples.
+- Hotkey: `SetWindowsHookEx WH_KEYBOARD_LL` for global push-to-talk (default RightAlt). No Accessibility-equivalent privacy permission required on Windows.
+- Text insertion: clipboard + `SendInput Ctrl+V`. Fallback message identical to macOS: "Text is on your clipboard — press Ctrl+V to paste manually."
+- Session storage: `%APPDATA%\WaiComputer\session.json`, encrypted via DPAPI (`CurrentUser` scope); file ACL trimmed to current user only.
+- Magic link: `waicomputer://auth/verify?token=...` registered in `HKCU\Software\Classes`; single-instance redirect via `AppInstance`.
+- Auto-update: Velopack, separate `releases.win.json` (stable) + `releases.win.beta.json` (beta) feeds at `https://wai.computer/releases/windows/`.
+- Code signing: Azure Trusted Signing — `vpk pack --azureTrustedSigning ...`. Sign `.exe`, `Setup.exe`, and `.nupkg`.
+- Release: `scripts/release-windows.ps1 stable|beta` (PowerShell, run inside the Win VM with Az credentials + SSH key to VPS).
+- Sentry: separate `waicomputer-windows` project; DSN in `windows/WaiComputer/appsettings.json`. Same PII sanitisation rules as Mac+Android (`Sanitizer.cs`).
+- Tests: TDD-first. `WaiComputer.Core.Tests` is portable and can run on macOS via `dotnet test`; `WaiComputer.Native.Tests` and `WaiComputer.UITests` need a Win host. Coverage gate ≥85% on `Core/`.
+
+Native builds:
+```powershell
+dotnet test desktop/WaiComputer.Core.Tests
+cd windows
+dotnet restore
+dotnet build -c Release
+dotnet test WaiComputer.Native.Tests
+dotnet test WaiComputer.UITests
+```
+
+## Linux
+
+- Tech: `.NET 9` + Avalonia; x64-only in v1.
+- Layout: `linux/WaiComputer.Linux/` (Avalonia app), `linux/WaiComputer.Linux.Tests/` (Linux platform tests), shared portable code in `desktop/WaiComputer.Core/`.
+- Audio: user-space PulseAudio protocol on PipeWire/PulseAudio via `pactl` and `parec`; system audio requires an exposed monitor source for the active sink.
+- Hotkey: Wayland requires `org.freedesktop.portal.GlobalShortcuts`; X11 uses the XGrabKey path. Unsupported sessions must show an explicit disabled state.
+- Text insertion: Wayland requires RemoteDesktop + Clipboard portals; X11 requires clipboard + XTest-compatible tools. Recovery copy message: "Text is on your clipboard - press Ctrl+V to paste manually."
+- Session storage: freedesktop Secret Service via `secret-tool`; never store Linux auth tokens in plaintext files.
+- Magic link: `waicomputer://auth/verify?token=...` through `x-scheme-handler/waicomputer` in the `.desktop` file.
+- Auto-update: Velopack AppImage, channels `linux` (stable) and `linux-beta` (beta), feed root `https://wai.computer/releases/linux/`.
+- Release: `scripts/release-linux.sh stable|beta` on a Linux x64 host with .NET 9 SDK and Velopack CLI `0.0.1298`; set `LINUX_RELEASE_PUBLISH=1 VPS_USER=root` to upload to the VPS.
+
+Native builds:
+```bash
+cd linux
+dotnet restore WaiComputer.Linux.sln
+dotnet test WaiComputer.Linux.Tests
+dotnet publish WaiComputer.Linux/WaiComputer.Linux.csproj -c Release -r linux-x64 --self-contained true
+```
+
 ## Debugging Production
 
 ```bash
 docker logs waicomputer-api
-docker compose --env-file "$REMOTE_ENV_FILE" ps   # in "$REMOTE_ROOT/backend"
+docker compose --env-file /etc/waicomputer/backend.env ps   # in /opt/waicomputer/backend
 ```
 
 Prefer fixing recording/realtime issues in shared Swift + backend before touching the web dashboard.

@@ -9,19 +9,6 @@ interface ItemDetailProps {
   onError?: (message: string) => void;
 }
 
-function displayTitle(title: string | null, url: string | null): string {
-  const cleaned = title?.trim();
-  if (
-    cleaned &&
-    !["untitled", "[untitled]", "без названия", "[без названия]"].includes(
-      cleaned.toLowerCase(),
-    )
-  ) {
-    return cleaned;
-  }
-  return url ?? "Untitled";
-}
-
 /** Detail view for a non-recording Item: summary, key-moments table, key points. */
 export function ItemDetail({ itemId, onError }: ItemDetailProps) {
   // Keyed by itemId: resetting to "loading" happens via the deps, and all
@@ -85,21 +72,13 @@ export function ItemDetail({ itemId, onError }: ItemDetailProps) {
     <article className="item-detail">
       <header className="item-detail__header">
         <span className="item-detail__kind">{item.kind}</span>
-        <h2 className="item-detail__title">{displayTitle(item.title, item.url)}</h2>
+        <h2 className="item-detail__title">{item.title ?? "Untitled"}</h2>
         {item.url ? (
           <a className="item-detail__source" href={item.url} target="_blank" rel="noreferrer">
             {item.url}
           </a>
         ) : null}
       </header>
-
-      {(item.status === "fetching" || item.status === "summarizing") && !summary?.summary ? (
-        <div className="item-detail__processing" data-testid="item-processing">
-          {item.status === "fetching"
-            ? "Fetching the source text…"
-            : "Extracted text is being summarized. This material will update automatically."}
-        </div>
-      ) : null}
 
       {(item.status === "needs_input" || item.status === "failed") && !summary?.summary ? (
         <div className="item-detail__recover" data-testid="item-recover">

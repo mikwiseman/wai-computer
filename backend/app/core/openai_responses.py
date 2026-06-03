@@ -63,26 +63,11 @@ def _iter_output_items(value: Any) -> Iterable[Any]:
 
 
 def response_output_text(response: Any) -> str:
-    """Return stripped response text or raise if the model returned no text."""
+    """Return stripped ``output_text`` or raise if the model returned no text."""
     text = _string_field(response, "output_text")
-    if text is None:
-        text = _nested_output_text(response)
     if text is None:
         raise OpenAIResponseError("OpenAI response did not include output_text")
     stripped = text.strip()
     if not stripped:
         raise OpenAIResponseError("OpenAI response returned empty text")
     return stripped
-
-
-def _nested_output_text(response: Any) -> str | None:
-    parts: list[str] = []
-    for item in _iter_output_items(_field(response, "output")):
-        for content in _iter_output_items(_field(item, "content")):
-            if _field(content, "type") == "output_text":
-                text = _field(content, "text")
-                if isinstance(text, str):
-                    parts.append(text)
-    if not parts:
-        return None
-    return "".join(parts)

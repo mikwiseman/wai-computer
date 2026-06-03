@@ -23,21 +23,13 @@ from pathlib import Path
 from typing import Any
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter, File, Form, HTTPException, Query, Response, UploadFile, status
+from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile, status
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
 from app.api.deps import CurrentUser, Database
-from app.core.document_extract import (
-    SUPPORTED_DOCUMENT_EXTENSIONS,
-    DocumentExtractionError,
-    document_kind_for_extension,
-    extract_document_text,
-    resolve_document_extension,
-)
 from app.core.item_ingest import ingest_item
-from app.core.item_titles import clean_title, title_from_filename
 from app.models.item import Item, ItemSummary
 from app.models.recording import Recording, RecordingStatus
 
@@ -242,10 +234,11 @@ async def create_item(
 
 
 # --- File upload: documents -> Item (sync), audio/video -> Recording (async) -
-# One "add anything" endpoint routes by type: readable documents are extracted
+# One "add anything" endpoint routes by type: PDF/text/markdown are extracted
 # inline into an Item; audio/video are staged to disk and handed to the
 # recording pipeline (import_media_as_recording: ffmpeg normalise + transcribe)
 # via a Celery task, since that work is too slow to run in the request.
+_DOC_EXTENSIONS = {"pdf", "txt", "md"}
 _UPLOAD_CHUNK = 1024 * 1024
 
 
@@ -356,6 +349,30 @@ async def _handle_media_upload(
     )
 
 
+def _upload_ext(filename: str | None, content_type: str | None) -> str:
+    """Resolve a supported document extension from the filename or MIME type."""
+    name = (filename or "").lower().rsplit("/", 1)[-1].rsplit("\\", 1)[-1]
+    if "." in name:
+        suffix = name.rsplit(".", 1)[1]
+        if suffix in _DOC_EXTENSIONS:
+            return suffix
+        if suffix == "markdown":
+            return "md"
+    ct = (content_type or "").split(";")[0].strip().lower()
+    return {
+        "application/pdf": "pdf",
+        "text/markdown": "md",
+        "text/x-markdown": "md",
+        "text/plain": "txt",
+    }.get(ct, "")
+
+
+def _title_from_filename(filename: str | None) -> str | None:
+    base = (filename or "").strip().rsplit("/", 1)[-1].rsplit("\\", 1)[-1]
+    stem = (base.rsplit(".", 1)[0] if "." in base else base).strip()
+    return stem[:500] if stem else None
+
+
 def _store_item_upload(user_id: Any, ext: str, data: bytes) -> Path:
     """Persist the original upload to local disk under a UUID key (never the
     user-supplied filename — path-traversal safe). Object storage swaps in
@@ -377,19 +394,18 @@ async def upload_item(
     folder_id: UUID | None = Form(default=None),
     title: str | None = Form(default=None),
 ) -> ItemResponse | JSONResponse:
-    """Add any supported document as an Item, or audio/video as a Recording."""
-    ext = resolve_document_extension(file.filename, file.content_type)
-    if ext not in SUPPORTED_DOCUMENT_EXTENSIONS:
+    """Add any file: PDF/text/Markdown become an Item (text extracted inline);
+    audio/video are staged and transcribed into a Recording in the background.
+    Documents return 201 with the Item; media return 202 (processing)."""
+    ext = _upload_ext(file.filename, file.content_type)
+    if ext not in _DOC_EXTENSIONS:
         media_ext = _media_upload_ext(file.filename, file.content_type)
         if media_ext:
             return await _handle_media_upload(user, db, media_ext, file, title)
         await file.close()
         raise HTTPException(
             status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
-            detail=(
-                "Upload a PDF, DOCX, DOC, HTML, text, Markdown, RTF, CSV, JSON, "
-                "PPTX, XLSX, audio, or video file."
-            ),
+            detail="Upload a PDF, text, Markdown, audio, or video file.",
         )
 
     from app.config import get_settings
@@ -412,21 +428,60 @@ async def upload_item(
     if not data:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Empty file.")
 
-    try:
-        body = (await extract_document_text(ext, data, usage_user_id=user.id)).strip()
-    except DocumentExtractionError as exc:
+    if ext == "pdf":
+        from app.core.source_fetch import SourceFetchError, _extract_pdf_text
+
+        try:
+            body = _extract_pdf_text(data)
+        except SourceFetchError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=exc.message
+            ) from exc
+        if not body.strip() and get_settings().ocr_enabled:
+            # Scanned/image PDF (no text layer) — OCR it via the vision LLM,
+            # bounded by a page cap so a huge scan can't run an unbounded call.
+            from app.core.ocr import OcrError, ocr_pdf
+            from app.core.source_fetch import _pdf_page_count
+
+            max_pages = get_settings().ocr_max_pages
+            pages = _pdf_page_count(data)
+            if pages > max_pages:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail=(
+                        f"This scanned PDF is too long to OCR ({pages} pages; max "
+                        f"{max_pages}). Split it or paste the text."
+                    ),
+                )
+            try:
+                body = await ocr_pdf(data)
+            except OcrError as exc:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+                ) from exc
+    else:
+        try:
+            body = data.decode("utf-8")
+        except UnicodeDecodeError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Couldn't read this text file (it isn't UTF-8).",
+            ) from exc
+
+    body = body.strip()
+    if not body:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=exc.message,
-        ) from exc
+            detail="No readable text found in this file.",
+        )
 
     stored = _store_item_upload(user.id, ext, data)
     item, created = await ingest_item(
         db,
         user.id,
         source="upload",
-        kind=document_kind_for_extension(ext),
-        title=clean_title(title) or title_from_filename(file.filename),
+        kind="pdf" if ext == "pdf" else "note",
+        title=(title or "").strip() or _title_from_filename(file.filename),
         body=body,
         folder_id=folder_id,
         metadata={"upload": {"ext": ext, "path": str(stored), "size": len(data)}},
@@ -587,16 +642,12 @@ async def reprocess_item(
     return _item_response(item, summary)
 
 
-@router.delete(
-    "/{item_id}",
-    status_code=status.HTTP_204_NO_CONTENT,
-    response_class=Response,
-)
+@router.delete("/{item_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_item(
     item_id: UUID,
     user: CurrentUser,
     db: Database,
-) -> Response:
+) -> None:
     """Soft-delete an item."""
     from datetime import datetime, timezone
 
@@ -611,4 +662,3 @@ async def delete_item(
         )
     item.deleted_at = datetime.now(timezone.utc)
     await db.flush()
-    return Response(status_code=status.HTTP_204_NO_CONTENT)

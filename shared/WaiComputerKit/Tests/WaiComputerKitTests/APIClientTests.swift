@@ -868,158 +868,6 @@ final class APIClientTests: XCTestCase {
         XCTAssertEqual(text, "Cleaned")
     }
 
-    func testCleanupDictationSendsContextWhenProvided() async throws {
-        let client = makeClient()
-
-        MockURLProtocol.requestHandler = { [self] request in
-            XCTAssertEqual(request.httpMethod, "POST")
-            XCTAssertEqual(request.url?.path, "/api/dictation/cleanup")
-            let body = bodyJSON(from: request)
-            let context = body?["context"] as? [String: Any]
-            let app = context?["app"] as? [String: Any]
-            let textbox = context?["textbox"] as? [String: Any]
-            XCTAssertEqual(app?["name"] as? String, "Cursor")
-            XCTAssertEqual(app?["bundle_id"] as? String, "com.todesktop.230313mzl4w4u92")
-            XCTAssertEqual(app?["category"] as? String, "engineering")
-            XCTAssertEqual(textbox?["before_text"] as? String, "func test() {")
-            XCTAssertEqual(textbox?["selected_text"] as? String, "TODO")
-            XCTAssertEqual(textbox?["after_text"] as? String, "}")
-
-            let response = HTTPURLResponse(
-                url: request.url!,
-                statusCode: 200,
-                httpVersion: nil,
-                headerFields: nil
-            )!
-            return (response, Data("{\"text\":\"Cleaned\"}".utf8))
-        }
-
-        let context = DictationCleanupContext(
-            app: DictationCleanupAppContext(
-                name: "Cursor",
-                bundleID: "com.todesktop.230313mzl4w4u92",
-                category: "engineering"
-            ),
-            textbox: DictationCleanupTextboxContext(
-                beforeText: "func test() {",
-                selectedText: "TODO",
-                afterText: "}"
-            )
-        )
-        let text = try await client.cleanupDictation(
-            text: "raw dictated text",
-            context: context
-        )
-        XCTAssertEqual(text, "Cleaned")
-    }
-
-    func testStreamCleanupDictationUsesStreamEndpoint() async throws {
-        let client = makeClient()
-
-        MockURLProtocol.requestHandler = { [self] request in
-            XCTAssertEqual(request.httpMethod, "POST")
-            XCTAssertEqual(request.url?.path, "/api/dictation/cleanup/stream")
-            XCTAssertEqual(request.value(forHTTPHeaderField: "Accept"), "text/event-stream")
-            XCTAssertEqual(request.value(forHTTPHeaderField: "Cache-Control"), "no-cache")
-            XCTAssertEqual(request.timeoutInterval, 60)
-            let body = bodyJSON(from: request)
-            XCTAssertEqual(body?["text"] as? String, "raw dictated text")
-            XCTAssertEqual(body?["vocabulary"] as? [String], ["WaiComputer"])
-            let context = body?["context"] as? [String: Any]
-            let app = context?["app"] as? [String: Any]
-            XCTAssertEqual(app?["name"] as? String, "Gmail")
-            XCTAssertEqual(app?["category"] as? String, "email")
-
-            let response = HTTPURLResponse(
-                url: request.url!,
-                statusCode: 200,
-                httpVersion: nil,
-                headerFields: ["Content-Type": "text/event-stream"]
-            )!
-            let streamBody = """
-            event: token
-            data: {"text":"Cleaned"}
-
-            event: token
-            data: {"text":" text."}
-
-            event: done
-            data: {"text":"Cleaned text.","model":"gpt-5.5","latency_ms":12,"input_tokens":111,"output_tokens":7,"cached_tokens":64}
-
-
-            """
-            return (response, Data(streamBody.utf8))
-        }
-
-        let context = DictationCleanupContext(
-            app: DictationCleanupAppContext(name: "Gmail", category: "email")
-        )
-        let stream = try await client.streamCleanupDictation(
-            text: "raw dictated text",
-            vocabulary: ["WaiComputer", "waicomputer", ""],
-            context: context
-        )
-
-        var events: [DictationCleanupStreamEvent] = []
-        for await event in stream {
-            events.append(event)
-        }
-
-        XCTAssertEqual(
-            events,
-            [
-                .token(text: "Cleaned"),
-                .token(text: " text."),
-                .done(
-                    text: "Cleaned text.",
-                    model: "gpt-5.5",
-                    latencyMs: 12,
-                    inputTokens: 111,
-                    outputTokens: 7,
-                    cachedTokens: 64
-                ),
-            ]
-        )
-    }
-
-    func testTranslateDictationUsesTranslationEndpoint() async throws {
-        let client = makeClient()
-
-        MockURLProtocol.requestHandler = { [self] request in
-            XCTAssertEqual(request.httpMethod, "POST")
-            XCTAssertEqual(request.url?.path, "/api/dictation/translate")
-            XCTAssertEqual(request.timeoutInterval, 60)
-            let body = bodyJSON(from: request)
-            XCTAssertEqual(body?["text"] as? String, "hello team")
-            XCTAssertEqual(body?["target_language_code"] as? String, "ru")
-            XCTAssertEqual(body?["target_language_name"] as? String, "Russian")
-            XCTAssertEqual(body?["vocabulary"] as? [String], ["WaiComputer"])
-            let context = body?["context"] as? [String: Any]
-            let app = context?["app"] as? [String: Any]
-            XCTAssertEqual(app?["name"] as? String, "Slack")
-            XCTAssertEqual(app?["category"] as? String, "chat")
-
-            let response = HTTPURLResponse(
-                url: request.url!,
-                statusCode: 200,
-                httpVersion: nil,
-                headerFields: nil
-            )!
-            return (response, Data("{\"text\":\"Привет, команда\"}".utf8))
-        }
-
-        let translated = try await client.translateDictation(
-            text: "hello team",
-            targetLanguageCode: "ru",
-            targetLanguageName: "Russian",
-            vocabulary: ["WaiComputer", "waiComputer", " "],
-            context: DictationCleanupContext(
-                app: DictationCleanupAppContext(name: "Slack", category: "chat")
-            )
-        )
-        XCTAssertEqual(translated, "Привет, команда")
-    }
-
     func testDeleteRecordingUsesDeleteMethod() async throws {
         let client = makeClient()
 
@@ -1618,8 +1466,7 @@ final class APIClientTests: XCTestCase {
             let payload = """
             {"id":"itm-1","source":"upload","source_ref":null,"url":null,"kind":"note",\
             "title":"wai-test","body":"hello upload body","occurred_at":null,"state":"raw",\
-            "status":"summarizing","error":null,"folder_id":null,\
-            "created_at":"2026-06-01T00:00:00Z","summary":null}
+            "folder_id":null,"created_at":"2026-06-01T00:00:00Z","summary":null}
             """.data(using: .utf8)!
             return (response, payload)
         }
@@ -1694,13 +1541,7 @@ final class APIClientTests: XCTestCase {
             let payload = """
             {"nodes":[{"id":"e1","label":"Anna","kind":"person","degree":2}],\
             "edges":[{"source":"e1","target":"e2","type":"cooccurrence","weight":2.0}],\
-            "stats":{"entities":1,"people":1},\
-            "overview":{"recordings":{"total":2,"summarized":1,"organized":1,"unorganized":1},\
-            "materials":{"total":1,"summarized":1,"organized":1,"unorganized":0},\
-            "pending_review_count":1,\
-            "top_entities":[{"id":"e1","name":"Anna","type":"person","source_count":2,"recording_count":1,"material_count":1}],\
-            "recent_sources":[{"id":"recording:r1","source_kind":"recording","source_id":"r1","title":"Launch sync","entity_count":2,"organized_at":null}],\
-            "llm_requests":0}}
+            "stats":{"entities":1,"people":1}}
             """.data(using: .utf8)!
             return (response, payload)
         }
@@ -1709,9 +1550,6 @@ final class APIClientTests: XCTestCase {
         XCTAssertEqual(g.nodes[0].label, "Anna")
         XCTAssertEqual(g.edges[0].type, "cooccurrence")
         XCTAssertEqual(g.stats["people"], 1)
-        XCTAssertEqual(g.overview?.recordings.unorganized, 1)
-        XCTAssertEqual(g.overview?.pendingReviewCount, 1)
-        XCTAssertEqual(g.overview?.topEntities.first?.recordingCount, 1)
     }
 
     func testGetEntityPageDecodes() async throws {
@@ -1723,16 +1561,8 @@ final class APIClientTests: XCTestCase {
             )!
             let payload = """
             {"id":"abc","name":"GPU","type":"topic","mention_count":3,\
-            "sources":[{"source_kind":"item","source_id":"i1","title":"Note","context":"ctx","occurred_at":null}],\
-            "related":[{"id":"e2","name":"Anna","type":"person","shared":2}],\
-            "overview":"GPU appears in 1 source.",\
-            "facts":[{"id":"fact-1","text":"GPU launch is owned by Anna.","citation_ids":["item:i1"]}],\
-            "citations":[{"id":"item:i1","source_kind":"item","source_id":"i1","title":"Note","context":"ctx","occurred_at":null}],\
-            "timeline":[{"id":"event-1","title":"GPU launch","description":"Anna owns it.","occurred_at":null,"citation_ids":["item:i1"]}],\
-            "related_explanations":[{"id":"e2","name":"Anna","type":"person","shared":2,"explanation":"Shares 2 sources.","citation_ids":["item:i1"]}],\
-            "questions":[{"id":"question-1","text":"What ships first?","citation_ids":["item:i1"]}],\
-            "actions":[{"id":"action-1","text":"Ask Anna","owner":"Mik","due_date":null,"status":"pending","citation_ids":["item:i1"]}],\
-            "cache_status":"hit"}
+            "sources":[{"source_kind":"item","source_id":"i1","title":"Note","context":"ctx"}],\
+            "related":[{"id":"e2","name":"Anna","type":"person","shared":2}]}
             """.data(using: .utf8)!
             return (response, payload)
         }
@@ -1741,12 +1571,5 @@ final class APIClientTests: XCTestCase {
         XCTAssertEqual(p.mentionCount, 3)
         XCTAssertEqual(p.sources[0].title, "Note")
         XCTAssertEqual(p.related[0].name, "Anna")
-        XCTAssertEqual(p.overview, "GPU appears in 1 source.")
-        XCTAssertEqual(p.facts[0].text, "GPU launch is owned by Anna.")
-        XCTAssertEqual(p.timeline[0].title, "GPU launch")
-        XCTAssertEqual(p.relatedExplanations[0].explanation, "Shares 2 sources.")
-        XCTAssertEqual(p.questions[0].text, "What ships first?")
-        XCTAssertEqual(p.actions[0].text, "Ask Anna")
-        XCTAssertEqual(p.cacheStatus, "hit")
     }
 }

@@ -4,7 +4,7 @@ from datetime import date
 from typing import Literal
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, Query, Response, status
+from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel
 from sqlalchemy import select
 
@@ -179,16 +179,12 @@ async def update_action_item(
     )
 
 
-@router.delete(
-    "/{item_id}",
-    status_code=status.HTTP_204_NO_CONTENT,
-    response_class=Response,
-)
+@router.delete("/{item_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_action_item(
     item_id: UUID,
     user: CurrentUser,
     db: Database,
-) -> Response:
+) -> None:
     """Delete an action item."""
     result = await db.execute(
         select(ActionItem)
@@ -208,4 +204,3 @@ async def delete_action_item(
         )
 
     await db.delete(item)
-    return Response(status_code=status.HTTP_204_NO_CONTENT)

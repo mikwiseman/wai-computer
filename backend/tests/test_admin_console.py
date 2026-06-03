@@ -11,11 +11,9 @@ from httpx import AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.routes import admin as admin_routes
 from app.api.routes.admin import AdminPromoCodeCreateRequest
 from app.billing.promo_codes import hash_promo_code
 from app.models.admin import AdminRole, StaffMember
-from app.models.ai_usage import AiUsageEvent
 from app.models.api_key import ApiKey
 from app.models.billing import (
     BillingEvent,
@@ -27,7 +25,6 @@ from app.models.billing import (
     UsageWeek,
 )
 from app.models.companion import ChatMessage, Conversation
-from app.models.deepgram_usage import DeepgramUsageEvent
 from app.models.dictation import DictationEntry
 from app.models.recording import Recording, Segment
 from app.models.refresh_token import RefreshToken
@@ -195,47 +192,6 @@ def test_admin_promo_code_create_request_normalizes_operator_input():
     assert payload.code is None
     assert payload.prefix == "SUPPORT"
     assert payload.note == "created by support"
-
-
-def test_admin_deepgram_usage_analysis_flags_uncaptured_risks():
-    payload = {
-        "captured": {
-            "events": 0,
-            "provider_402": 0,
-            "refused": 2,
-            "failed": 3,
-        },
-        "estimated": {
-            "total_seconds": 100.0,
-            "failed_recordings": 1,
-        },
-        "by_user": [
-            {
-                "email": None,
-                "user_id": "user-1",
-                "estimated_total_seconds": 75.0,
-            }
-        ],
-        "top_recordings": [],
-    }
-
-    analysis = admin_routes._deepgram_usage_analysis(payload)
-
-    assert {
-        "deepgram.ledger.empty",
-        "deepgram.guard.refused",
-        "deepgram.provider.failed",
-        "deepgram.usage.concentrated_user",
-        "deepgram.recordings.failed",
-    } == {item["code"] for item in analysis}
-
-
-def test_admin_deepgram_usage_scalar_helpers_handle_empty_and_datetime_values():
-    now = datetime(2026, 6, 3, 12, 30, tzinfo=timezone.utc)
-
-    assert admin_routes._num(None) == 0.0
-    assert admin_routes._int(None) == 0
-    assert admin_routes._day(now) == "2026-06-03"
 
 
 @pytest.mark.asyncio
@@ -747,193 +703,6 @@ async def test_admin_stats_are_privacy_safe_and_aggregated(
 
 
 @pytest.mark.asyncio
-async def test_admin_deepgram_usage_shows_detailed_burn_analysis(
-    client: AsyncClient,
-    db_session: AsyncSession,
-):
-    admin_payload, admin_headers = await _register(client, "admin-deepgram@example.com")
-    user_payload, _ = await _register(client, "deepgram-user@example.com")
-    await _grant_admin(db_session, admin_payload["user_id"])
-    user_id = user_payload["user_id"]
-    now = datetime.now(timezone.utc)
-
-    recording = Recording(
-        user_id=user_id,
-        title="Private recording title",
-        type="meeting",
-        status="failed",
-        failure_code="provider_unavailable",
-        uploaded_at=now,
-        duration_seconds=120,
-        billed_word_count=0,
-        created_at=now,
-    )
-    db_session.add(recording)
-    await db_session.flush()
-    db_session.add_all(
-        [
-            DictationEntry(
-                user_id=user_id,
-                client_entry_id=uuid4(),
-                raw_text="private dictation text",
-                duration_seconds=5,
-                word_count=2,
-                occurred_at=now,
-            ),
-            DeepgramUsageEvent(
-                user_id=user_id,
-                recording_id=recording.id,
-                operation="file_stt",
-                purpose="recording",
-                status="failed",
-                model="nova-3",
-                language="ru",
-                content_type="audio/mp4",
-                audio_seconds=120,
-                billable_seconds=0,
-                audio_bytes=36066,
-                provider_status_code=402,
-                provider_error_code="ASR_PAYMENT_REQUIRED",
-                created_at=now,
-            ),
-            DeepgramUsageEvent(
-                user_id=user_id,
-                recording_id=recording.id,
-                operation="file_stt",
-                purpose="recording",
-                status="refused",
-                model="nova-3",
-                language="ru",
-                content_type="audio/mp4",
-                audio_seconds=120,
-                billable_seconds=0,
-                audio_bytes=36066,
-                guard_code="provider_unavailable",
-                created_at=now,
-            ),
-        ]
-    )
-    await db_session.flush()
-
-    response = await client.get("/api/admin/deepgram-usage?days=7", headers=admin_headers)
-
-    assert response.status_code == 200
-    payload = response.json()
-    assert payload["captured"]["events"] == 2
-    assert payload["captured"]["failed"] == 1
-    assert payload["captured"]["refused"] == 1
-    assert payload["captured"]["provider_402"] == 1
-    assert payload["estimated"]["recording_seconds"] == 120
-    assert payload["estimated"]["dictation_seconds"] == 5
-    assert payload["by_user"][0]["email"] == "deepgram-user@example.com"
-    assert payload["top_recordings"][0]["captured_events"] == 2
-    assert {
-        "deepgram.provider.payment_required",
-        "deepgram.recording.repeated_attempts",
-    }.issubset({item["code"] for item in payload["analysis"]})
-    assert "Private recording title" not in str(payload)
-    assert "private dictation text" not in str(payload)
-
-
-@pytest.mark.asyncio
-async def test_admin_ai_usage_shows_model_provider_user_and_error_breakdowns(
-    client: AsyncClient,
-    db_session: AsyncSession,
-):
-    admin_payload, admin_headers = await _register(client, "admin-ai-usage@example.com")
-    user_a_payload, _ = await _register(client, "ai-usage-a@example.com")
-    user_b_payload, _ = await _register(client, "ai-usage-b@example.com")
-    await _grant_admin(db_session, admin_payload["user_id"])
-    now = datetime.now(timezone.utc)
-
-    db_session.add_all(
-        [
-            AiUsageEvent(
-                user_id=user_a_payload["user_id"],
-                provider="openai",
-                feature="companion",
-                operation="companion.turn",
-                status="succeeded",
-                model="gpt-5.5",
-                input_tokens=3_000,
-                output_tokens=2_000,
-                cached_tokens=500,
-                total_tokens=5_000,
-                estimated_cost_usd=0.12,
-                pricing_status="priced",
-                latency_ms=100,
-                created_at=now,
-            ),
-            AiUsageEvent(
-                user_id=user_a_payload["user_id"],
-                provider="deepgram",
-                feature="dictation",
-                operation="realtime.session_mint",
-                status="refused",
-                model="nova-3",
-                billable_seconds=0,
-                pricing_status="unpriced",
-                guard_code="realtime.session_mint.breaker_open",
-                latency_ms=5,
-                created_at=now,
-            ),
-            AiUsageEvent(
-                user_id=user_b_payload["user_id"],
-                provider="openai",
-                feature="materials",
-                operation="summary.content",
-                status="failed",
-                model="gpt-5.5",
-                input_tokens=100,
-                total_tokens=100,
-                estimated_cost_usd=0,
-                pricing_status="unpriced",
-                error_type="APIStatusError",
-                created_at=now,
-                details={"source": "test", "prompt": "private prompt must not leak"},
-            ),
-        ]
-    )
-    await db_session.flush()
-
-    response = await client.get("/api/admin/ai-usage?days=7", headers=admin_headers)
-
-    assert response.status_code == 200
-    payload = response.json()
-    assert payload["summary"]["events"] == 3
-    assert payload["summary"]["estimated_cost_usd"] == 0.12
-    assert payload["summary"]["total_tokens"] == 5_100
-    assert payload["summary"]["failed_events"] == 1
-    assert payload["summary"]["refused_events"] == 1
-    assert payload["summary"]["unpriced_events"] == 2
-    assert payload["by_provider"][0]["provider"] == "openai"
-    assert payload["by_provider"][0]["events"] == 2
-    assert {row["feature"] for row in payload["by_feature"]} == {
-        "companion",
-        "dictation",
-        "materials",
-    }
-    assert payload["by_user"][0]["email"] == "ai-usage-a@example.com"
-    assert payload["by_user"][0]["events"] == 2
-    assert payload["by_model"][0]["model"] == "gpt-5.5"
-    assert {
-        "ai_usage.unpriced_models",
-        "ai_usage.provider.deepgram.errors",
-    }.issubset({item["code"] for item in payload["analysis"]})
-    assert "private prompt" not in str(payload)
-
-    filtered = await client.get(
-        "/api/admin/ai-usage?days=7&q=ai-usage-a&provider=deepgram",
-        headers=admin_headers,
-    )
-    assert filtered.status_code == 200
-    filtered_payload = filtered.json()
-    assert filtered_payload["summary"]["events"] == 1
-    assert filtered_payload["by_user"][0]["email"] == "ai-usage-a@example.com"
-    assert filtered_payload["by_provider"][0]["provider"] == "deepgram"
-
-
-@pytest.mark.asyncio
 async def test_admin_observability_snapshot_flags_recording_pipeline_risks(
     client: AsyncClient,
     db_session: AsyncSession,
@@ -1070,53 +839,6 @@ async def test_admin_can_trigger_embedding_backfill(
     assert response.status_code == 200
     assert response.json()["filled"] == 2
     assert response.json()["remaining"] == 0
-
-
-@pytest.mark.asyncio
-async def test_admin_can_trigger_brain_backfill(
-    client: AsyncClient,
-    db_session: AsyncSession,
-    monkeypatch: pytest.MonkeyPatch,
-):
-    admin_payload, admin_headers = await _register(
-        client,
-        "admin-brain-backfill@example.com",
-    )
-    await _grant_admin(db_session, admin_payload["user_id"])
-
-    async def fake_backfill(db, *, user_id=None, limit=None):
-        del db, user_id, limit
-
-        class Result:
-            def as_dict(self) -> dict:
-                return {
-                    "recording_summaries_scanned": 2,
-                    "item_summaries_scanned": 1,
-                    "sources_with_entities": 3,
-                    "mentions_recorded": 5,
-                    "entity_mentions_before": 0,
-                    "entity_mentions_after": 5,
-                    "created_mentions": 5,
-                    "llm_requests": 0,
-                }
-
-        return Result()
-
-    monkeypatch.setattr(
-        "app.api.routes.admin.backfill_entity_mentions_from_existing_summaries",
-        fake_backfill,
-    )
-
-    response = await client.post(
-        "/api/admin/brain/backfill",
-        headers=admin_headers,
-        json={"limit": 10},
-    )
-
-    assert response.status_code == 200
-    payload = response.json()
-    assert payload["created_mentions"] == 5
-    assert payload["llm_requests"] == 0
 
 
 @pytest.mark.asyncio

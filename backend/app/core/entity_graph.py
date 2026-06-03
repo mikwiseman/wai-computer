@@ -10,44 +10,17 @@ silent merge. No fallbacks: a write failure propagates.
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.entity_reconcile import reconcile_person_entities
 from app.core.name_moderation import normalise_name
 from app.models.entity import Entity, EntityMention
-from app.models.item import Item, ItemSummary
-from app.models.recording import Recording, Summary
 
 logger = logging.getLogger(__name__)
-
-
-@dataclass
-class EntitySummaryBackfillResult:
-    recording_summaries_scanned: int
-    item_summaries_scanned: int
-    sources_with_entities: int
-    mentions_recorded: int
-    entity_mentions_before: int
-    entity_mentions_after: int
-    created_mentions: int
-    llm_requests: int = 0
-
-    def as_dict(self) -> dict[str, int]:
-        return {
-            "recording_summaries_scanned": self.recording_summaries_scanned,
-            "item_summaries_scanned": self.item_summaries_scanned,
-            "sources_with_entities": self.sources_with_entities,
-            "mentions_recorded": self.mentions_recorded,
-            "entity_mentions_before": self.entity_mentions_before,
-            "entity_mentions_after": self.entity_mentions_after,
-            "created_mentions": self.created_mentions,
-            "llm_requests": self.llm_requests,
-        }
 
 
 async def upsert_entity(
@@ -181,95 +154,3 @@ async def seed_entities_from_summary(
     if people:
         await reconcile_person_entities(db, user_id)
     return count
-
-
-async def _mention_count(db: AsyncSession, user_id: Any | None) -> int:
-    stmt = select(func.count()).select_from(EntityMention)
-    if user_id is not None:
-        stmt = stmt.where(EntityMention.user_id == user_id)
-    return int(await db.scalar(stmt) or 0)
-
-
-async def backfill_entity_mentions_from_existing_summaries(
-    db: AsyncSession,
-    user_id: Any | None = None,
-    *,
-    limit: int | None = None,
-) -> EntitySummaryBackfillResult:
-    """Repair source->entity provenance from already-generated summaries.
-
-    This is intentionally zero-LLM: it only replays stored ``people_mentioned``
-    and ``topics`` into the graph. Ready recordings without summaries are left
-    untouched so old content does not create surprise token spend.
-    """
-    before = await _mention_count(db, user_id)
-
-    recording_stmt = (
-        select(
-            Recording.user_id,
-            Summary.recording_id,
-            Summary.people_mentioned,
-            Summary.topics,
-        )
-        .join(Recording, Recording.id == Summary.recording_id)
-        .where(Recording.deleted_at.is_(None))
-        .order_by(Summary.updated_at.asc(), Summary.id.asc())
-    )
-    if user_id is not None:
-        recording_stmt = recording_stmt.where(Recording.user_id == user_id)
-    if limit is not None:
-        recording_stmt = recording_stmt.limit(limit)
-    recording_rows = (await db.execute(recording_stmt)).all()
-
-    remaining = None if limit is None else max(limit - len(recording_rows), 0)
-    item_stmt = (
-        select(Item.user_id, ItemSummary.item_id, ItemSummary.people_mentioned, ItemSummary.topics)
-        .join(Item, Item.id == ItemSummary.item_id)
-        .where(Item.deleted_at.is_(None))
-        .order_by(ItemSummary.updated_at.asc(), ItemSummary.id.asc())
-    )
-    if user_id is not None:
-        item_stmt = item_stmt.where(Item.user_id == user_id)
-    if remaining is not None:
-        item_stmt = item_stmt.limit(remaining)
-    item_rows = (await db.execute(item_stmt)).all()
-
-    mentions_recorded = 0
-    sources_with_entities = 0
-    for owner_id, source_id, people, topics in recording_rows:
-        recorded = await seed_entities_from_summary(
-            db,
-            owner_id,
-            source_kind="recording",
-            source_id=source_id,
-            people=people,
-            topics=topics,
-        )
-        mentions_recorded += recorded
-        if recorded > 0:
-            sources_with_entities += 1
-
-    for owner_id, source_id, people, topics in item_rows:
-        recorded = await seed_entities_from_summary(
-            db,
-            owner_id,
-            source_kind="item",
-            source_id=source_id,
-            people=people,
-            topics=topics,
-        )
-        mentions_recorded += recorded
-        if recorded > 0:
-            sources_with_entities += 1
-
-    await db.flush()
-    after = await _mention_count(db, user_id)
-    return EntitySummaryBackfillResult(
-        recording_summaries_scanned=len(recording_rows),
-        item_summaries_scanned=len(item_rows),
-        sources_with_entities=sources_with_entities,
-        mentions_recorded=mentions_recorded,
-        entity_mentions_before=before,
-        entity_mentions_after=after,
-        created_mentions=max(after - before, 0),
-    )

@@ -8,8 +8,6 @@ public enum SentryHelper {
     static let fingerprintDedupWindow: TimeInterval = 300
 
     public static func start(dsn: String, debug: Bool = false) {
-        guard !dsn.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
-
         SentrySDK.start { options in
             options.dsn = dsn
             options.debug = debug

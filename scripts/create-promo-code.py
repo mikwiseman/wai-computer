@@ -7,7 +7,6 @@ The plaintext code is printed once. The database stores only its SHA-256 hash.
 from __future__ import annotations
 
 import argparse
-import os
 import shlex
 import subprocess
 import sys
@@ -111,10 +110,10 @@ def main() -> None:
     parser.add_argument("--max-redemptions", type=int, default=1)
     parser.add_argument("--expires-days", type=int, default=30)
     parser.add_argument("--note")
-    parser.add_argument("--vps-user", default=os.getenv("VPS_USER"))
-    parser.add_argument("--vps-host", default=os.getenv("VPS_HOST"))
-    parser.add_argument("--remote-root", default=os.getenv("REMOTE_ROOT"))
-    parser.add_argument("--remote-env-file", default=os.getenv("REMOTE_ENV_FILE"))
+    parser.add_argument("--vps-user", default="root")
+    parser.add_argument("--vps-host", default="157.180.47.68")
+    parser.add_argument("--remote-root", default="/opt/waicomputer")
+    parser.add_argument("--remote-env-file", default="/etc/waicomputer/backend.env")
     parser.add_argument(
         "--print-sql",
         action="store_true",
@@ -136,18 +135,6 @@ def main() -> None:
         print(sql)
         print(f"\nPlaintext promo code: {code}")
         return
-    missing = [
-        name
-        for name, value in [
-            ("--vps-user/VPS_USER", args.vps_user),
-            ("--vps-host/VPS_HOST", args.vps_host),
-            ("--remote-root/REMOTE_ROOT", args.remote_root),
-            ("--remote-env-file/REMOTE_ENV_FILE", args.remote_env_file),
-        ]
-        if not value
-    ]
-    if missing:
-        raise SystemExit("Missing required deployment settings: " + ", ".join(missing))
 
     output = run_on_vps(
         sql,

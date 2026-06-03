@@ -29,7 +29,7 @@ class TestSanitizeFailureMessage:
             "/var/lib/waisay/uploads/foo",
             "/Users/mik/Documents/recording.wav",
             "/tmp/processing-9b4c62b8.wav",
-            "/srv/app/storage/error",
+            "/opt/waicomputer/storage/error",
             "[Errno 2] No such file or directory: '/tmp/x'",
             (
                 "Traceback (most recent call last):\n"

@@ -42,7 +42,7 @@ enum DictationCopy {
         case .listening:
             return text("Listening...", "Слушаем...", language: language)
         case .processing:
-            return text("Thinking...", "Думаем...", language: language)
+            return text("Processing...", "Обрабатываем...", language: language)
         case .inserting:
             return text("Inserting...", "Вставляем...", language: language)
         }

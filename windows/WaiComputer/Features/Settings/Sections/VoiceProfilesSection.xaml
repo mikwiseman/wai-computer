@@ -1,0 +1,11 @@
+<UserControl
+    x:Class="WaiComputer.Features.Settings.Sections.VoiceProfilesSection"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <StackPanel Spacing="12">
+        <TextBlock Text="VOICE PROFILES" Style="{StaticResource WaiSectionHeader}" />
+        <TextBlock Text="People you've assigned to speakers in your recordings."
+                   Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" />
+        <ListView x:Name="People" MinHeight="120" />
+    </StackPanel>
+</UserControl>

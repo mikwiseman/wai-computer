@@ -1104,53 +1104,6 @@ async def test_upload_success_with_mocked_services(
 
 
 @pytest.mark.asyncio
-async def test_upload_failed_audio_backed_recording_does_not_reenqueue(
-    client: AsyncClient,
-    auth_headers: dict,
-    db_session: AsyncSession,
-    monkeypatch: pytest.MonkeyPatch,
-):
-    """Duplicate uploads after a provider failure must not create new STT tasks."""
-    recording = await _create_recording(client, auth_headers, title=None)
-    enqueue_processing = AsyncMock()
-    monkeypatch.setattr(
-        "app.api.routes.recordings.enqueue_recording_audio_processing",
-        enqueue_processing,
-    )
-
-    first = await client.post(
-        f"/api/recordings/{recording['id']}/upload",
-        headers=auth_headers,
-        data={"client_duration_seconds": "3", "client_file_size_bytes": "13"},
-        files={"file": ("meeting.mp4", b"fake-mp4-data", "audio/mp4")},
-    )
-    assert first.status_code == 200
-    assert first.json()["status"] == "processing"
-
-    result = await db_session.execute(
-        select(Recording).where(Recording.id == UUID(recording["id"]))
-    )
-    db_recording = result.scalar_one()
-    db_recording.status = RecordingStatus.FAILED.value
-    db_recording.failure_code = "provider_unavailable"
-    db_recording.failure_message = "Transcription provider is temporarily unavailable."
-    await db_session.commit()
-
-    second = await client.post(
-        f"/api/recordings/{recording['id']}/upload",
-        headers=auth_headers,
-        data={"client_duration_seconds": "3", "client_file_size_bytes": "13"},
-        files={"file": ("meeting.mp4", b"fake-mp4-data", "audio/mp4")},
-    )
-
-    assert second.status_code == 200
-    payload = second.json()
-    assert payload["status"] == "failed"
-    assert payload["failure_code"] == "provider_unavailable"
-    enqueue_processing.assert_awaited_once()
-
-
-@pytest.mark.asyncio
 async def test_upload_size_mismatch_marks_failed_and_sends_sentry_message(
     client: AsyncClient,
     auth_headers: dict,

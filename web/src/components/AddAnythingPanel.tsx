@@ -13,45 +13,6 @@ interface AddAnythingPanelProps {
 const URL_RE = /^https?:\/\/\S+$/i;
 const POLL_INTERVAL_MS = 2000;
 const POLL_MAX_ATTEMPTS = 30; // ~60s for the background summary to land
-const ACCEPTED_FILE_TYPES = [
-  ".pdf",
-  ".txt",
-  ".md",
-  ".markdown",
-  ".html",
-  ".htm",
-  ".doc",
-  ".docx",
-  ".rtf",
-  ".csv",
-  ".json",
-  ".pptx",
-  ".xlsx",
-  ".mp3",
-  ".wav",
-  ".m4a",
-  ".aac",
-  ".ogg",
-  ".opus",
-  ".flac",
-  ".mp4",
-  ".mov",
-  ".mkv",
-  ".webm",
-  "application/pdf",
-  "text/plain",
-  "text/markdown",
-  "text/html",
-  "application/msword",
-  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-  "application/rtf",
-  "text/csv",
-  "application/json",
-  "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-  "audio/*",
-  "video/*",
-].join(",");
 
 /**
  * "Add anything" capture — paste a URL or text, it lands in the brain and
@@ -168,7 +129,7 @@ export function AddAnythingPanel({
       <input
         ref={fileInputRef}
         type="file"
-        accept={ACCEPTED_FILE_TYPES}
+        accept=".pdf,.txt,.md,.mp3,.wav,.m4a,.aac,.ogg,.opus,.flac,.mp4,.mov,.mkv,.webm,application/pdf,text/plain,text/markdown,audio/*,video/*"
         style={{ display: "none" }}
         data-testid="add-anything-file"
         onChange={(e) => {
@@ -212,7 +173,7 @@ export function AddAnythingPanel({
         </div>
       </div>
       <p className="add-anything__hint">
-        Drop a document, audio, or video file here, or paste a link above.
+        Drop a PDF or text file here, or paste a link above.
       </p>
 
       {status ? <p className="add-anything__status">{status}</p> : null}

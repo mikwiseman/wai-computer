@@ -22,18 +22,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import CurrentUser, Database
 from app.config import get_settings
 from app.core.companion import CompanionError, ErrorEvent, TokenEvent, TurnContext, run_turn
-from app.core.document_extract import (
-    SUPPORTED_DOCUMENT_EXTENSIONS,
-    DocumentExtractionError,
-    document_kind_for_extension,
-    extract_document_text,
-    resolve_document_extension,
-)
 from app.core.item_ingest import ingest_item
 from app.core.item_processing import process_item
-from app.core.item_summary import generate_item_summary
 from app.core.item_telegram import format_fetch_error_reply, format_item_reply
-from app.core.item_titles import clean_title, title_from_filename
 from app.core.mcp_tools import (
     list_recordings_for_mcp,
     search_recordings_for_mcp,
@@ -43,7 +34,6 @@ from app.core.source_fetch import classify_url, find_first_url
 from app.core.telegram_client import (
     TelegramBotClient,
     TelegramClientError,
-    TelegramFileTooLargeError,
     telegram_chunks,
 )
 from app.db.session import get_db_context
@@ -192,8 +182,7 @@ def _telegram_help_text(*, linked: bool) -> str:
         "/link — получить новый код привязки\n"
         "/settings — где управлять привязкой\n\n"
         "Можно без команд: «покажи последние встречи», «найди дорожная карта». "
-        "Голосовые, аудио и видео сохраняю как записи. PDF, DOCX, DOC, HTML, "
-        "TXT, Markdown, RTF, CSV, JSON, PPTX и XLSX добавляю в материалы."
+        "Голосовые, аудио и видео я сохраняю в библиотеку."
     )
 
 
@@ -363,40 +352,6 @@ def _safe_transcript_filename(title: str | None, *, media_kind: str | None = Non
     return f"{slug}.txt"
 
 
-def _safe_display_filename(filename: str | None) -> str:
-    base = (filename or "").strip().rsplit("/", 1)[-1].rsplit("\\", 1)[-1]
-    return base[:120] if base else "файл"
-
-
-def _telegram_file_too_large_message() -> str:
-    limit_mb = max(1, settings.telegram_download_max_bytes // (1024 * 1024))
-    return f"Файл слишком большой для Telegram-импорта. Лимит бота — {limit_mb} MB."
-
-
-def _telegram_media_duration_seconds(media: dict[str, Any]) -> float | None:
-    duration = media.get("duration")
-    if isinstance(duration, int | float) and duration > 0:
-        return float(duration)
-    return None
-
-
-async def _send_unsupported_document_message(
-    client: TelegramBotClient,
-    *,
-    chat_id: int,
-    reply_to_message_id: Any,
-) -> None:
-    await client.send_message(
-        chat_id,
-        (
-            "Не могу извлечь текст из этого типа файла. Поддерживаются PDF, "
-            "DOCX, DOC, HTML, TXT, Markdown, RTF, CSV, JSON, PPTX и XLSX. "
-            "Аудио и видео сохраняю как записи."
-        ),
-        reply_to_message_id=reply_to_message_id,
-    )
-
-
 def _format_import_summary_message(result: Any) -> str:
     title = str(getattr(result.recording, "title", "") or "").strip()
     summary = getattr(result, "summary", None)
@@ -504,11 +459,7 @@ async def start_link(user: CurrentUser, db: Database) -> TelegramPairingResponse
     )
 
 
-@router.delete(
-    "/link",
-    status_code=status.HTTP_204_NO_CONTENT,
-    response_class=Response,
-)
+@router.delete("/link", status_code=status.HTTP_204_NO_CONTENT)
 async def unlink(user: CurrentUser, db: Database) -> Response:
     result = await db.execute(select(TelegramAccount).where(TelegramAccount.user_id == user.id))
     account = result.scalar_one_or_none()
@@ -767,19 +718,6 @@ def _extract_media(message: dict[str, Any]) -> dict[str, Any] | None:
         ):
             return {"kind": "document", **document}
     return None
-
-
-def _extract_document(message: dict[str, Any]) -> dict[str, Any] | None:
-    document = message.get("document")
-    if not isinstance(document, dict) or not document.get("file_id"):
-        return None
-    ext = resolve_document_extension(
-        str(document.get("file_name") or ""),
-        str(document.get("mime_type") or ""),
-    )
-    if ext not in SUPPORTED_DOCUMENT_EXTENSIONS:
-        return None
-    return {"kind": "document", "document_ext": ext, **document}
 
 
 async def _handle_start_command(
@@ -1149,142 +1087,6 @@ async def _handle_text_message(
     )
 
 
-async def _handle_document_message(
-    db: AsyncSession,
-    client: TelegramBotClient,
-    *,
-    message: dict[str, Any],
-    account: TelegramAccount,
-    document: dict[str, Any],
-) -> None:
-    chat_id = _telegram_chat_id(message)
-    if chat_id is None:
-        return
-
-    file_id = document.get("file_id")
-    if not isinstance(file_id, str):
-        return
-    ext = str(document.get("document_ext") or "").lower()
-    if not ext:
-        ext = resolve_document_extension(
-            str(document.get("file_name") or ""),
-            str(document.get("mime_type") or ""),
-        )
-    if ext not in SUPPORTED_DOCUMENT_EXTENSIONS:
-        await _send_unsupported_document_message(
-            client,
-            chat_id=chat_id,
-            reply_to_message_id=message.get("message_id"),
-        )
-        return
-
-    file_size = document.get("file_size")
-    if isinstance(file_size, int) and file_size > settings.telegram_download_max_bytes:
-        await client.send_message(
-            chat_id,
-            _telegram_file_too_large_message(),
-            reply_to_message_id=message.get("message_id"),
-        )
-        return
-
-    filename = _safe_display_filename(str(document.get("file_name") or ""))
-    status_response = await client.send_message(
-        chat_id,
-        f"Принял {filename}. Извлекаю текст и делаю краткое содержание.",
-        reply_to_message_id=message.get("message_id"),
-    )
-    status_message_id = _sent_message_id(status_response)
-
-    try:
-        tg_file = await client.get_file(file_id)
-        if (
-            tg_file.file_size is not None
-            and tg_file.file_size > settings.telegram_download_max_bytes
-        ):
-            await client.send_message(chat_id, _telegram_file_too_large_message())
-            return
-        data = await client.download_file(tg_file, max_bytes=settings.telegram_download_max_bytes)
-        if len(data) > settings.telegram_download_max_bytes:
-            await client.send_message(chat_id, _telegram_file_too_large_message())
-            return
-        body = await extract_document_text(ext, data)
-    except TelegramFileTooLargeError:
-        await client.send_message(
-            chat_id,
-            _telegram_file_too_large_message(),
-            reply_to_message_id=message.get("message_id"),
-        )
-        return
-    except DocumentExtractionError as exc:
-        await client.send_message(
-            chat_id,
-            f"Не смог прочитать файл: {exc.message}",
-            reply_to_message_id=message.get("message_id"),
-        )
-        return
-    finally:
-        await _delete_status_message(client, chat_id=chat_id, message_id=status_message_id)
-
-    caption = str(message.get("caption") or "").strip()
-    source_ref = str(document.get("file_unique_id") or file_id)
-    try:
-        item, created = await ingest_item(
-            db,
-            account.user_id,
-            source="telegram",
-            source_ref=source_ref,
-            kind=document_kind_for_extension(ext),
-            title=clean_title(caption) or title_from_filename(str(document.get("file_name") or "")),
-            body=body,
-            metadata={
-                "telegram": {
-                    "file_unique_id": document.get("file_unique_id"),
-                    "mime_type": document.get("mime_type"),
-                    "ext": ext,
-                    "size": len(data),
-                }
-            },
-            embed=True,
-        )
-        await db.flush()
-    except Exception:  # noqa: BLE001 - failed import should be explicit to the sender.
-        logger.exception("telegram document ingest failed ext=%s", ext)
-        await client.send_message(
-            chat_id,
-            "Не смог сохранить файл в материалы. Попробуй позже.",
-            reply_to_message_id=message.get("message_id"),
-        )
-        return
-
-    summary = (
-        await db.execute(select(ItemSummary).where(ItemSummary.item_id == item.id))
-    ).scalar_one_or_none()
-    if created or summary is None:
-        action_task = asyncio.create_task(_send_chat_action_until_cancelled(client, chat_id))
-        try:
-            summary = await generate_item_summary(db, item)
-            await db.flush()
-        except Exception:  # noqa: BLE001 - keep the saved item and surface the failure.
-            logger.exception("telegram document processing failed ext=%s", ext)
-            await client.send_message(
-                chat_id,
-                "Сохранил файл в материалы, но не смог сделать краткое содержание. Попробуй позже.",
-                reply_to_message_id=message.get("message_id"),
-            )
-            return
-        finally:
-            await _stop_chat_action_task(action_task)
-
-    reply = format_item_reply(item, summary)
-    await _send_chunks(
-        client,
-        chat_id,
-        reply,
-        reply_to_message_id=message.get("message_id"),
-        parse_mode="HTML",
-    )
-
-
 async def _handle_media_message(
     db: AsyncSession,
     client: TelegramBotClient,
@@ -1304,7 +1106,7 @@ async def _handle_media_message(
     if isinstance(file_size, int) and file_size > settings.telegram_download_max_bytes:
         await client.send_message(
             chat_id,
-            _telegram_file_too_large_message(),
+            "Файл слишком большой для Telegram-импорта. Лимит бота — 20 MB.",
             reply_to_message_id=message.get("message_id"),
         )
         return
@@ -1318,19 +1120,11 @@ async def _handle_media_message(
 
     tg_file = await client.get_file(file_id)
     if tg_file.file_size is not None and tg_file.file_size > settings.telegram_download_max_bytes:
-        await client.send_message(chat_id, _telegram_file_too_large_message())
+        await client.send_message(chat_id, "Файл слишком большой для Telegram-импорта.")
         return
-    try:
-        data = await client.download_file(tg_file, max_bytes=settings.telegram_download_max_bytes)
-        if len(data) > settings.telegram_download_max_bytes:
-            await client.send_message(chat_id, _telegram_file_too_large_message())
-            return
-    except TelegramFileTooLargeError:
-        await client.send_message(
-            chat_id,
-            _telegram_file_too_large_message(),
-            reply_to_message_id=message.get("message_id"),
-        )
+    data = await client.download_file(tg_file)
+    if len(data) > settings.telegram_download_max_bytes:
+        await client.send_message(chat_id, "Файл слишком большой для Telegram-импорта.")
         return
 
     user = await db.get(User, account.user_id)
@@ -1353,7 +1147,6 @@ async def _handle_media_message(
             title=title,
             source_label="telegram",
             language=user.default_language,
-            duration_seconds=_telegram_media_duration_seconds(media),
         )
     except RecordingImportError as exc:
         logger.warning(
@@ -1471,20 +1264,6 @@ async def _handle_update(update: dict[str, Any]) -> None:
                     account=account,
                     media=media,
                 )
-            elif (document := _extract_document(message)) is not None:
-                await _handle_document_message(
-                    db,
-                    client,
-                    message=message,
-                    account=account,
-                    document=document,
-                )
-            elif isinstance(message.get("document"), dict):
-                await _send_unsupported_document_message(
-                    client,
-                    chat_id=chat_id,
-                    reply_to_message_id=message.get("message_id"),
-                )
             elif command:
                 intent = command[0].removeprefix("/")
                 arg = command[1]
@@ -1509,7 +1288,7 @@ async def _handle_update(update: dict[str, Any]) -> None:
                 if not text:
                     await client.send_message(
                         chat_id,
-                        "Пришли голосовое, видео, документ или вопрос текстом.",
+                        "Пришли голосовое, видео или вопрос текстом.",
                         reply_to_message_id=message.get("message_id"),
                     )
                 else:

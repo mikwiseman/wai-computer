@@ -20,7 +20,7 @@ The single target is `WaiComputer` in `macos/WaiComputer/project.yml`. It uses `
 1. Bump `CURRENT_PROJECT_VERSION` in `macos/WaiComputer/project.yml` (monotonic — Sparkle requires it).
 2. `cd macos/WaiComputer && xcodegen generate` to refresh `WaiComputer.xcodeproj/project.pbxproj`.
 3. Commit + push.
-4. From a Mac build host, set the private release upload env vars, then run `scripts/release-macos.sh stable` or `scripts/release-macos.sh beta`.
+4. From a Mac build host, run `VPS_USER=root scripts/release-macos.sh stable` or `VPS_USER=root scripts/release-macos.sh beta`.
 5. After publish completes, `curl https://wai.computer/releases/macos/appcast.xml` and verify the new `sparkle:version`.
 
 ## Script
@@ -47,7 +47,7 @@ The script:
 2. signs it with the configured `Developer ID Application` identity
 3. enables the hardened runtime for the archive build
 4. re-signs Sparkle nested helper code for Developer ID distribution
-5. notarizes the app payload when credentials are provided by env vars or `APPSTORECONNECT_CONFIG`
+5. notarizes the app payload when credentials are provided by env vars or `~/.appstoreconnect/config.json`
 6. creates a signed DMG with a minimal background and `Applications` drop link
 7. notarizes and staples the DMG when notarization credentials are available
 8. signs the DMG update with Sparkle EdDSA and writes `appcast.xml`
@@ -106,9 +106,7 @@ export NOTARY_KEY_ID='XXXXXXXXXX'
 export NOTARY_ISSUER='00000000-0000-0000-0000-000000000000' # omit for individual keys
 ```
 
-If neither mode is provided, the script reads the local App Store Connect config
-path and uses `key_filepath`, `key_id`, and `issuer_id` from that file. Set
-`APPSTORECONNECT_CONFIG=/absolute/path/config.json` to use a different config.
+If neither mode is provided, the script reads `~/.appstoreconnect/config.json` by default and uses `key_filepath`, `key_id`, and `issuer_id` from that file. Set `APPSTORECONNECT_CONFIG=/absolute/path/config.json` to use a different config.
 
 Strict-release controls:
 
@@ -160,20 +158,20 @@ Do not use `scripts/make-dmg.sh` for a release. It is intentionally guarded as a
 After building a strict release, publish the versioned DMG, checksum, release notes, and appcast to the production host:
 
 ```bash
-scripts/publish-macos-dmg.sh
+VPS_USER=root scripts/publish-macos-dmg.sh
 ```
 
 Fastlane can run the complete macOS release sequence on a Mac build host:
 
 ```bash
-fastlane mac upload_all
+VPS_USER=root fastlane mac upload_all
 ```
 
 ## Release automation
 
 GitHub Actions are intentionally not used for WaiComputer releases. macOS
 artifacts require a Mac build host with local Developer ID signing, Sparkle
-signing, and App Store Connect notarization credentials. The production
+signing, and App Store Connect notarization credentials. The Linux production
 VPS only serves the published DMG, checksum, release notes, and merged appcast.
 
 ## User Install Flow

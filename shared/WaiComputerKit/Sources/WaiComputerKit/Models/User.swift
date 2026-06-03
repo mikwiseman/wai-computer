@@ -238,7 +238,6 @@ public struct UserSettings: Codable, Sendable {
     public let fileSTTProvider: String
     public let fileSTTModel: String
     public let dictationPostFilterEnabled: Bool
-    public let dictationCleanupLevel: String
     public let dictationPostFilterProvider: String
     public let dictationPostFilterModel: String
     public let region: String
@@ -258,7 +257,6 @@ public struct UserSettings: Codable, Sendable {
         fileSTTProvider = try container.decode(String.self, forKey: .fileSTTProvider)
         fileSTTModel = try container.decode(String.self, forKey: .fileSTTModel)
         dictationPostFilterEnabled = try container.decode(Bool.self, forKey: .dictationPostFilterEnabled)
-        dictationCleanupLevel = try container.decode(String.self, forKey: .dictationCleanupLevel)
         dictationPostFilterProvider = try container.decode(String.self, forKey: .dictationPostFilterProvider)
         dictationPostFilterModel = try container.decode(String.self, forKey: .dictationPostFilterModel)
         region = try container.decodeIfPresent(String.self, forKey: .region) ?? "global"
@@ -276,7 +274,6 @@ public struct UserSettings: Codable, Sendable {
         case fileSTTProvider = "file_stt_provider"
         case fileSTTModel = "file_stt_model"
         case dictationPostFilterEnabled = "dictation_post_filter_enabled"
-        case dictationCleanupLevel = "dictation_cleanup_level"
         case dictationPostFilterProvider = "dictation_post_filter_provider"
         case dictationPostFilterModel = "dictation_post_filter_model"
         case region
@@ -296,7 +293,6 @@ public struct UpdateSettingsRequest: Codable, Sendable {
     public var fileSTTProvider: String?
     public var fileSTTModel: String?
     public var dictationPostFilterEnabled: Bool?
-    public var dictationCleanupLevel: String?
     public var dictationPostFilterProvider: String?
     public var dictationPostFilterModel: String?
     public var region: String?
@@ -313,7 +309,6 @@ public struct UpdateSettingsRequest: Codable, Sendable {
         fileSTTProvider: String? = nil,
         fileSTTModel: String? = nil,
         dictationPostFilterEnabled: Bool? = nil,
-        dictationCleanupLevel: String? = nil,
         dictationPostFilterProvider: String? = nil,
         dictationPostFilterModel: String? = nil,
         region: String? = nil
@@ -329,7 +324,6 @@ public struct UpdateSettingsRequest: Codable, Sendable {
         self.fileSTTProvider = fileSTTProvider
         self.fileSTTModel = fileSTTModel
         self.dictationPostFilterEnabled = dictationPostFilterEnabled
-        self.dictationCleanupLevel = dictationCleanupLevel
         self.dictationPostFilterProvider = dictationPostFilterProvider
         self.dictationPostFilterModel = dictationPostFilterModel
         self.region = region
@@ -347,7 +341,6 @@ public struct UpdateSettingsRequest: Codable, Sendable {
         case fileSTTProvider = "file_stt_provider"
         case fileSTTModel = "file_stt_model"
         case dictationPostFilterEnabled = "dictation_post_filter_enabled"
-        case dictationCleanupLevel = "dictation_cleanup_level"
         case dictationPostFilterProvider = "dictation_post_filter_provider"
         case dictationPostFilterModel = "dictation_post_filter_model"
         case region

@@ -2,10 +2,10 @@
 set -euo pipefail
 
 BASE_URL="${BASE_URL:-https://wai.computer}"
-VPS_USER="${VPS_USER:-}"
-VPS_HOST="${VPS_HOST:-}"
-REMOTE_ROOT="${REMOTE_ROOT:-}"
-REMOTE_ENV_FILE="${REMOTE_ENV_FILE:-}"
+VPS_USER="${VPS_USER:-root}"
+VPS_HOST="${VPS_HOST:-157.180.47.68}"
+REMOTE_ROOT="${REMOTE_ROOT:-/opt/waicomputer}"
+REMOTE_ENV_FILE="${REMOTE_ENV_FILE:-/etc/waicomputer/backend.env}"
 
 check_url() {
   local label="$1"
@@ -22,11 +22,6 @@ check_url() {
 
 check_url "health/live" "$BASE_URL/health/live" '"status":"alive"'
 check_url "health/ready" "$BASE_URL/health/ready" '"status":"healthy"'
-
-if [[ -z "$VPS_USER" || -z "$VPS_HOST" || -z "$REMOTE_ROOT" || -z "$REMOTE_ENV_FILE" ]]; then
-  echo "ERROR: VPS_USER, VPS_HOST, REMOTE_ROOT, and REMOTE_ENV_FILE are required for container checks" >&2
-  exit 1
-fi
 
 if [[ -n "${WAICOMPUTER_ACCESS_TOKEN:-}" ]]; then
   snapshot="$(

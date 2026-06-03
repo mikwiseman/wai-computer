@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { getEntityPage } from "@/lib/api";
-import type { EntityPage, EntityPageCitation } from "@/lib/types";
+import type { EntityPage } from "@/lib/types";
 
 interface EntityWikiViewProps {
   entityId: string;
@@ -11,29 +11,10 @@ interface EntityWikiViewProps {
   locale?: string;
 }
 
-function citationsFor(page: EntityPage): EntityPageCitation[] {
-  if (page.citations.length > 0) return page.citations;
-  return page.sources.map((source) => ({
-    id: `${source.source_kind}:${source.source_id}`,
-    source_kind: source.source_kind,
-    source_id: source.source_id,
-    title: source.title,
-    context: source.context,
-    occurred_at: source.occurred_at ?? null,
-  }));
-}
-
-function citationLabels(ids: string[], citations: Map<string, EntityPageCitation>): string {
-  return ids
-    .map((id) => citations.get(id)?.title)
-    .filter((title): title is string => Boolean(title))
-    .slice(0, 3)
-    .join(", ");
-}
-
 /**
- * Cached wiki page for one entity. The server owns compilation; this component
- * only renders the structured sections and keeps related navigation clickable.
+ * The "wiki style" page for one entity: an infobox, the related entities it
+ * co-occurs with (clickable → navigate the wiki), and the source backlinks (the
+ * items/recordings that mention it, with context). Honest loading/error/empty.
  */
 export function EntityWikiView({ entityId, onNavigate, onError, locale = "en" }: EntityWikiViewProps) {
   const t = useCallback(
@@ -78,16 +59,6 @@ export function EntityWikiView({ entityId, onNavigate, onError, locale = "en" }:
   }
   if (!page) return null;
 
-  const citations = citationsFor(page);
-  const citationMap = new Map(citations.map((citation) => [citation.id, citation]));
-  const relatedExplanations = page.related_explanations.length > 0
-    ? page.related_explanations
-    : page.related.map((related) => ({
-        ...related,
-        explanation: `${related.shared} ${t("shared sources", "общих источников")}`,
-        citation_ids: [],
-      }));
-
   return (
     <article className="brain-wiki">
       <header className="brain-wiki__header">
@@ -98,125 +69,37 @@ export function EntityWikiView({ entityId, onNavigate, onError, locale = "en" }:
         </p>
       </header>
 
-      <section className="brain-wiki__section brain-wiki__overview">
-        <p>{page.overview}</p>
-      </section>
-
-      <section className="brain-wiki__section">
-        <h4 className="brain-wiki__h4">{t("Facts", "Факты")}</h4>
-        {page.facts.length === 0 ? (
-          <p className="brain-wiki__empty">{t("No extracted facts yet.", "Пока нет фактов.")}</p>
-        ) : (
-          <ul className="brain-wiki__list">
-            {page.facts.map((fact) => (
-              <li key={fact.id}>
-                <span>{fact.text}</span>
-                {citationLabels(fact.citation_ids, citationMap) ? (
-                  <em>{citationLabels(fact.citation_ids, citationMap)}</em>
-                ) : null}
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-
-      <section className="brain-wiki__section">
-        <h4 className="brain-wiki__h4">{t("Timeline", "Хронология")}</h4>
-        {page.timeline.length === 0 ? (
-          <p className="brain-wiki__empty">
-            {t("No timeline events yet.", "Пока нет событий.")}
-          </p>
-        ) : (
-          <ol className="brain-wiki__timeline">
-            {page.timeline.map((event) => (
-              <li key={event.id}>
-                <span>{event.title}</span>
-                {event.description ? <p>{event.description}</p> : null}
-                {citationLabels(event.citation_ids, citationMap) ? (
-                  <em>{citationLabels(event.citation_ids, citationMap)}</em>
-                ) : null}
-              </li>
-            ))}
-          </ol>
-        )}
-      </section>
-
-      <section className="brain-wiki__section">
-        <h4 className="brain-wiki__h4">{t("Related", "Связанные")}</h4>
-        {relatedExplanations.length === 0 ? (
-          <p className="brain-wiki__empty">
-            {t("No related entities yet.", "Пока нет связанных сущностей.")}
-          </p>
-        ) : (
+      {page.related.length > 0 ? (
+        <section className="brain-wiki__section">
+          <h4 className="brain-wiki__h4">{t("Related", "Связанные")}</h4>
           <ul className="brain-wiki__related">
-            {relatedExplanations.map((related) => (
-              <li key={related.id}>
+            {page.related.map((r) => (
+              <li key={r.id}>
                 <button
                   type="button"
-                  className="brain-wiki__related-card"
-                  onClick={() => onNavigate(related.id, related.name)}
+                  className="brain-wiki__related-chip"
+                  title={`${r.shared} ${t("shared sources", "общих источников")}`}
+                  onClick={() => onNavigate(r.id, r.name)}
                 >
-                  <span>{related.name}</span>
-                  <p>{related.explanation}</p>
+                  <span>{r.name}</span>
+                  <em>{r.shared}</em>
                 </button>
               </li>
             ))}
           </ul>
-        )}
-      </section>
+        </section>
+      ) : null}
 
       <section className="brain-wiki__section">
-        <h4 className="brain-wiki__h4">{t("Questions", "Вопросы")}</h4>
-        {page.questions.length === 0 ? (
-          <p className="brain-wiki__empty">
-            {t("No open questions found.", "Открытых вопросов не найдено.")}
-          </p>
-        ) : (
-          <ul className="brain-wiki__list">
-            {page.questions.map((question) => (
-              <li key={question.id}>
-                <span>{question.text}</span>
-                {citationLabels(question.citation_ids, citationMap) ? (
-                  <em>{citationLabels(question.citation_ids, citationMap)}</em>
-                ) : null}
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-
-      <section className="brain-wiki__section">
-        <h4 className="brain-wiki__h4">{t("Actions", "Действия")}</h4>
-        {page.actions.length === 0 ? (
-          <p className="brain-wiki__empty">
-            {t("No action items found.", "Действий не найдено.")}
-          </p>
-        ) : (
-          <ul className="brain-wiki__list">
-            {page.actions.map((action) => (
-              <li key={action.id}>
-                <span>{action.text}</span>
-                <em>
-                  {[action.owner, action.status, citationLabels(action.citation_ids, citationMap)]
-                    .filter(Boolean)
-                    .join(" · ")}
-                </em>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-
-      <section className="brain-wiki__section">
-        <h4 className="brain-wiki__h4">{t("Citations", "Цитаты")}</h4>
-        {citations.length === 0 ? (
+        <h4 className="brain-wiki__h4">{t("Sources", "Источники")}</h4>
+        {page.sources.length === 0 ? (
           <p className="brain-wiki__empty">
             {t("Nothing mentions this yet.", "Пока ничего не упоминает это.")}
           </p>
         ) : (
           <ul className="brain-wiki__sources">
-            {citations.map((s) => (
-              <li key={s.id} className="brain-wiki__source">
+            {page.sources.map((s, i) => (
+              <li key={`${s.source_kind}:${s.source_id}:${i}`} className="brain-wiki__source">
                 <span className="brain-wiki__source-kind">{s.source_kind}</span>
                 <span className="brain-wiki__source-title">{s.title}</span>
                 {s.context ? (

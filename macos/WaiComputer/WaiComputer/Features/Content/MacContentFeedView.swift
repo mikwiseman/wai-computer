@@ -23,9 +23,6 @@ struct MacContentFeedView: View {
         ("video", "Videos"),
         ("pdf", "PDFs"),
         ("note", "Notes"),
-        ("document", "Docs"),
-        ("presentation", "Slides"),
-        ("spreadsheet", "Sheets"),
         ("mcp_resource", "Connected"),
     ]
 
@@ -33,13 +30,8 @@ struct MacContentFeedView: View {
         // Documents extract inline into an Item; audio/video are transcribed into
         // a Recording. `.audio`/`.movie` cover the common cases; the explicit
         // extensions catch containers that don't conform to them (mkv/webm/opus).
-        var types: [UTType] = [
-            .pdf, .plainText, .html, .rtf, .commaSeparatedText, .json, .audio, .movie
-        ]
-        for ext in [
-            "md", "doc", "docx", "pptx", "xlsx",
-            "mkv", "webm", "opus", "ogg"
-        ] {
+        var types: [UTType] = [.pdf, .plainText, .audio, .movie]
+        for ext in ["md", "mkv", "webm", "opus", "ogg"] {
             if let t = UTType(filenameExtension: ext) { types.append(t) }
         }
         return types
@@ -78,6 +70,19 @@ struct MacContentFeedView: View {
                 Task { await model.uploadFile(url) }
             }
         }
+        .sheet(isPresented: Binding(
+            get: { model.activeComparisonId != nil },
+            set: { if !$0 { model.clearComparison() } }
+        )) {
+            if let comparisonId = model.activeComparisonId {
+                MacComparisonView(
+                    apiClient: model.apiClient,
+                    comparisonId: comparisonId,
+                    onClose: { model.clearComparison() }
+                )
+                .frame(minWidth: 640, minHeight: 480)
+            }
+        }
     }
 
     private var header: some View {
@@ -114,8 +119,7 @@ struct MacContentFeedView: View {
             }
             .buttonStyle(.bordered)
             .disabled(model.isAdding)
-            .help(t("Attach a document, audio, or video file",
-                    "Прикрепить документ, аудио или видео"))
+            .help(t("Attach a PDF or text file", "Прикрепить PDF или текстовый файл"))
 
             Button {
                 Task { await model.addDraft() }
@@ -203,6 +207,23 @@ struct MacContentFeedView: View {
                 )
             }
             Spacer()
+            if model.canCompare {
+                Button {
+                    Task { await model.compareSelected() }
+                } label: {
+                    if model.isComparing {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Label(
+                            t("Compare (\(model.compareSelection.count))",
+                              "Сравнить (\(model.compareSelection.count))"),
+                            systemImage: "tablecells"
+                        )
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+            }
         }
         .padding(.horizontal, Spacing.xl)
         .padding(.vertical, Spacing.sm)
@@ -220,108 +241,71 @@ struct MacContentFeedView: View {
                                         "Добавьте ссылку или текст выше, либо подключите источник."))
                 )
             } else {
-                ScrollView {
-                    LazyVStack(spacing: 0) {
-                        ForEach(model.entries) { entry in
-                            Button {
-                                Task { await model.openItem(entry.id) }
-                            } label: {
-                                contentRow(entry, isActive: model.activeItemId == entry.id)
-                            }
-                            .buttonStyle(.plain)
-                            .accessibilityLabel(displayTitle(title: entry.title, url: entry.url))
-                            Divider()
+                List(selection: Binding(
+                    get: { model.selectedId },
+                    set: { newValue in
+                        model.selectedId = newValue
+                        if let newValue {
+                            Task { await model.selectItem(newValue) }
+                        } else {
+                            model.selectedItem = nil
                         }
                     }
+                )) {
+                    ForEach(model.entries) { entry in
+                        contentRow(entry).tag(entry.id)
+                    }
                 }
+                .listStyle(.inset)
             }
         }
     }
 
-    private func contentRow(_ entry: ItemListEntry, isActive: Bool) -> some View {
+    private func contentRow(_ entry: ItemListEntry) -> some View {
         HStack(alignment: .top, spacing: Spacing.sm) {
+            Button {
+                model.toggleCompare(entry.id)
+            } label: {
+                Image(systemName: model.compareSelection.contains(entry.id)
+                      ? "checkmark.circle.fill" : "circle")
+                    .foregroundStyle(model.compareSelection.contains(entry.id)
+                                     ? Palette.accent : Palette.textTertiary)
+            }
+            .buttonStyle(.plain)
+            .help(t("Select to compare", "Выбрать для сравнения"))
+
             VStack(alignment: .leading, spacing: Spacing.xxs) {
-                Text(displayTitle(title: entry.title, url: entry.url))
+                Text(entry.title ?? entry.url ?? t("Untitled", "Без названия"))
                     .font(Typography.bodySmall.weight(.medium))
                     .lineLimit(2)
                 HStack(spacing: Spacing.xs) {
-                    Text(kindLabel(entry.kind))
+                    Text(entry.kind.uppercased())
                         .font(Typography.labelSmall)
                         .foregroundStyle(Palette.textTertiary)
-                    if let label = statusLabel(entry.status) {
-                        Text(label)
+                    if !entry.hasSummary {
+                        Text(t("summarizing…", "обработка…"))
                             .font(Typography.labelSmall)
-                            .foregroundStyle(statusColor(entry.status))
-                            .help(entry.error?.message ?? "")
+                            .foregroundStyle(Palette.accent)
                     }
                 }
             }
-            Spacer(minLength: 0)
         }
-        .padding(.horizontal, Spacing.xl)
-        .padding(.vertical, Spacing.sm)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .contentShape(Rectangle())
-        .background(isActive ? Palette.surfaceSubtle : Color.clear)
+        .padding(.vertical, Spacing.xxs)
     }
 
     private func t(_ english: String, _ russian: String) -> String {
         OnboardingL10n.text(english, russian, language: languageManager.current)
     }
 
-    private func displayTitle(title: String?, url: String?) -> String {
-        let trimmed = (title ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-        if !isPlaceholderTitle(trimmed) {
-            return trimmed
-        }
-        return url ?? t("Untitled", "Без названия")
-    }
-
-    private func isPlaceholderTitle(_ value: String) -> Bool {
-        let normalized = value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        return normalized.isEmpty
-            || normalized == "untitled"
-            || normalized == "[untitled]"
-            || normalized == "без названия"
-            || normalized == "[без названия]"
-    }
-
-    private func kindLabel(_ kind: String) -> String {
-        switch kind {
-        case "pdf": return "PDF"
-        case "doc", "docx", "document": return t("DOC", "ДОК")
-        case "presentation": return t("SLIDES", "СЛАЙДЫ")
-        case "spreadsheet": return t("SHEET", "ТАБЛИЦА")
-        default: return kind.uppercased()
-        }
-    }
-
-    private func statusLabel(_ status: String) -> String? {
-        switch status {
-        case "fetching": return t("fetching…", "загрузка…")
-        case "summarizing": return t("summarizing…", "обработка…")
-        case "needs_input": return t("needs input", "нужен текст")
-        case "failed": return t("failed", "ошибка")
-        default: return nil
-        }
-    }
-
-    private func statusColor(_ status: String) -> Color {
-        switch status {
-        case "needs_input", "failed": return .red
-        default: return Palette.accent
-        }
-    }
-
     @ViewBuilder
     private var detailColumn: some View {
-        if let item = model.activeItem {
+        if let item = model.selectedItem {
             MacItemDetailView(item: item, onDelete: {
-                Task { await model.deleteActiveItem() }
+                Task { await model.deleteSelected() }
             })
         } else {
             ContentUnavailableViewCompat(
-                t("Open a material", "Откройте материал"),
+                t("Select an item", "Выберите материал"),
                 systemImage: "doc.text.magnifyingglass",
                 description: Text(t("See its summary and key moments.",
                                     "Посмотрите краткое содержание и ключевые моменты."))

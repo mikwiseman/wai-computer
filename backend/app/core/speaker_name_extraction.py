@@ -16,7 +16,6 @@ loop in the audio processing pipeline gets the right person_id.
 from __future__ import annotations
 
 import logging
-import time
 import uuid
 from collections.abc import Iterable
 from dataclasses import dataclass
@@ -27,13 +26,6 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
-from app.core.ai_usage import (
-    FEATURE_RECORDING,
-    OPENAI_PROVIDER,
-    STATUS_FAILED,
-    STATUS_SUCCEEDED,
-    record_ai_usage_event_standalone,
-)
 from app.core.openai_client import get_openai_client
 from app.core.openai_responses import ensure_response_completed
 from app.models.person import Person
@@ -129,8 +121,6 @@ async def extract_speaker_names(
     *,
     transcript_results: list["TranscriptResult"],
     raw_labels: Iterable[str],
-    usage_user_id: uuid.UUID | str | None = None,
-    usage_recording_id: uuid.UUID | str | None = None,
 ) -> dict[str, _NameAssignment]:
     """Ask the LLM which raw_label corresponds to which name.
 
@@ -166,8 +156,6 @@ async def extract_speaker_names(
     transcript_lower = transcript_text.lower()
 
     client = get_openai_client()
-    started = time.perf_counter()
-    response = None
     try:
         response = await client.responses.parse(
             model=settings.openai_llm_model,
@@ -179,48 +167,12 @@ async def extract_speaker_names(
         )
         ensure_response_completed(response, operation="Speaker name extraction")
     except Exception as exc:  # noqa: BLE001 -- name extraction is best-effort
-        await record_ai_usage_event_standalone(
-            provider=OPENAI_PROVIDER,
-            feature=FEATURE_RECORDING,
-            operation="speaker_names.extract",
-            status=STATUS_FAILED,
-            user_id=usage_user_id,
-            recording_id=usage_recording_id,
-            model=settings.openai_llm_model,
-            response=response,
-            latency_ms=round((time.perf_counter() - started) * 1000),
-            error_type=type(exc).__name__,
-        )
         logger.warning("speaker name extraction failed: %s", exc)
         return {}
 
     parsed = response.output_parsed
     if parsed is None:
-        await record_ai_usage_event_standalone(
-            provider=OPENAI_PROVIDER,
-            feature=FEATURE_RECORDING,
-            operation="speaker_names.extract",
-            status=STATUS_FAILED,
-            user_id=usage_user_id,
-            recording_id=usage_recording_id,
-            model=settings.openai_llm_model,
-            response=response,
-            latency_ms=round((time.perf_counter() - started) * 1000),
-            error_type="empty_parsed_payload",
-        )
         return {}
-
-    await record_ai_usage_event_standalone(
-        provider=OPENAI_PROVIDER,
-        feature=FEATURE_RECORDING,
-        operation="speaker_names.extract",
-        status=STATUS_SUCCEEDED,
-        user_id=usage_user_id,
-        recording_id=usage_recording_id,
-        model=settings.openai_llm_model,
-        response=response,
-        latency_ms=round((time.perf_counter() - started) * 1000),
-    )
 
     high_confidence: dict[str, _NameAssignment] = {}
     seen_names_lower: dict[str, str] = {}  # lowered name -> first speaker label

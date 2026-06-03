@@ -42,7 +42,6 @@ class MessageResponse(BaseModel):
 
 
 VALID_SUMMARY_STYLES = {"brief", "medium", "detailed"}
-VALID_DICTATION_CLEANUP_LEVELS = {"none", "light", "medium", "high"}
 
 VALID_THEMES = {"system", "light", "dark"}
 VALID_ACCENTS = {"teal", "amber", "blue", "green", "violet", "rose", "graphite"}
@@ -62,7 +61,6 @@ class SettingsResponse(BaseModel):
     file_stt_provider: str
     file_stt_model: str
     dictation_post_filter_enabled: bool
-    dictation_cleanup_level: str
     dictation_post_filter_provider: str
     dictation_post_filter_model: str
     region: str
@@ -96,7 +94,6 @@ class UpdateSettingsRequest(BaseModel):
     file_stt_provider: str | None = None
     file_stt_model: str | None = None
     dictation_post_filter_enabled: bool | None = None
-    dictation_cleanup_level: str | None = None
     dictation_post_filter_provider: str | None = None
     dictation_post_filter_model: str | None = None
     region: str | None = None
@@ -140,17 +137,6 @@ class UpdateSettingsRequest(BaseModel):
         if normalized not in VALID_SUMMARY_STYLES:
             valid = ", ".join(sorted(VALID_SUMMARY_STYLES))
             raise ValueError(f"summary_style must be one of: {valid}")
-        return normalized
-
-    @field_validator("dictation_cleanup_level")
-    @classmethod
-    def validate_dictation_cleanup_level(cls, value: str | None) -> str | None:
-        if value is None:
-            return None
-        normalized = value.strip().lower()
-        if normalized not in VALID_DICTATION_CLEANUP_LEVELS:
-            valid = ", ".join(sorted(VALID_DICTATION_CLEANUP_LEVELS))
-            raise ValueError(f"dictation_cleanup_level must be one of: {valid}")
         return normalized
 
     @field_validator(
@@ -206,14 +192,6 @@ class UpdateSettingsRequest(BaseModel):
         for group, provider, model in pairs:
             if (provider is None) != (model is None):
                 raise ValueError(f"{group} provider and model must be updated together")
-        if (
-            self.dictation_cleanup_level is not None
-            and self.dictation_post_filter_enabled is not None
-            and (self.dictation_cleanup_level != "none") != self.dictation_post_filter_enabled
-        ):
-            raise ValueError(
-                "dictation_cleanup_level and dictation_post_filter_enabled conflict"
-            )
         return self
 
     @property
@@ -251,8 +229,7 @@ def _settings_response(user: CurrentUser) -> SettingsResponse:
         recording_live_stt_model=DEFAULT_RECORDING_LIVE_STT_MODEL,
         file_stt_provider=DEFAULT_FILE_STT_PROVIDER,
         file_stt_model=DEFAULT_FILE_STT_MODEL,
-        dictation_post_filter_enabled=user.dictation_cleanup_level != "none",
-        dictation_cleanup_level=user.dictation_cleanup_level,
+        dictation_post_filter_enabled=user.dictation_post_filter_enabled,
         dictation_post_filter_provider=DEFAULT_DICTATION_POST_FILTER_PROVIDER,
         dictation_post_filter_model=DEFAULT_DICTATION_POST_FILTER_MODEL,
         region=user.region,
@@ -296,12 +273,8 @@ async def update_settings(
     # summary_instructions: allow explicit empty string to clear
     if request.summary_instructions is not None:
         user.summary_instructions = request.summary_instructions or None
-    if request.dictation_cleanup_level is not None:
-        user.dictation_cleanup_level = request.dictation_cleanup_level
-        user.dictation_post_filter_enabled = request.dictation_cleanup_level != "none"
-    elif request.dictation_post_filter_enabled is not None:
+    if request.dictation_post_filter_enabled is not None:
         user.dictation_post_filter_enabled = request.dictation_post_filter_enabled
-        user.dictation_cleanup_level = "light" if request.dictation_post_filter_enabled else "none"
     if request.region is not None:
         user.region = request.region
     await db.flush()

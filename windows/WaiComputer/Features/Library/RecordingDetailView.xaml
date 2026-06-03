@@ -1,0 +1,14 @@
+<Page
+    x:Class="WaiComputer.Features.Library.RecordingDetailView"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <Grid Padding="24" RowDefinitions="Auto,Auto,*">
+        <TextBlock Grid.Row="0" x:Name="TitleText" Style="{ThemeResource TitleTextBlockStyle}" Text="Recording" />
+        <TextBlock Grid.Row="1" x:Name="MetaText" Style="{ThemeResource CaptionTextBlockStyle}" Margin="0,4,0,16" />
+        <Pivot Grid.Row="2">
+            <PivotItem Header="Transcript"><ScrollViewer><ItemsRepeater x:Name="SegmentsRepeater" /></ScrollViewer></PivotItem>
+            <PivotItem Header="Summary"><TextBlock x:Name="SummaryText" TextWrapping="Wrap" /></PivotItem>
+            <PivotItem Header="Action items"><ListView x:Name="ActionItemsList" /></PivotItem>
+        </Pivot>
+    </Grid>
+</Page>

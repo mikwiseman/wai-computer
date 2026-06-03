@@ -35,7 +35,6 @@ from app.api.routes import (
     recordings,
     search,
     sentry_webhook,
-    system,
     telegram,
     voice_enrollment,
 )
@@ -191,8 +190,6 @@ app.include_router(recordings.router, prefix="/api")
 app.include_router(search.router, prefix="/api")
 app.include_router(telegram.router, prefix="/api")
 app.include_router(sentry_webhook.router, prefix="/api")
-app.include_router(system.router, prefix="/api")
-app.include_router(system.self_host_router, prefix="/api")
 app.include_router(settings_routes.router, prefix="/api")
 app.include_router(action_items.router, prefix="/api")
 app.include_router(admin.router, prefix="/api")

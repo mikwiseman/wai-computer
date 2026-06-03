@@ -28,9 +28,6 @@ const mockGetTelegramLinkStatus = vi.fn();
 const mockStartTelegramLink = vi.fn();
 const mockClaimTelegramLinkCode = vi.fn();
 const mockUnlinkTelegram = vi.fn();
-const mockGetSystemInfo = vi.fn();
-const mockGetDataOwnershipMap = vi.fn();
-const mockStartSelfHostProvision = vi.fn();
 const mockLogout = vi.fn();
 const mockListMcpConnections = vi.fn();
 const mockRevokeMcpConnection = vi.fn();
@@ -88,9 +85,6 @@ vi.mock("@/lib/api", () => ({
   startTelegramLink: (...args: unknown[]) => mockStartTelegramLink(...args),
   claimTelegramLinkCode: (...args: unknown[]) => mockClaimTelegramLinkCode(...args),
   unlinkTelegram: (...args: unknown[]) => mockUnlinkTelegram(...args),
-  getSystemInfo: (...args: unknown[]) => mockGetSystemInfo(...args),
-  getDataOwnershipMap: (...args: unknown[]) => mockGetDataOwnershipMap(...args),
-  startSelfHostProvision: (...args: unknown[]) => mockStartSelfHostProvision(...args),
   logout: (...args: unknown[]) => mockLogout(...args),
   listMcpConnections: (...args: unknown[]) => mockListMcpConnections(...args),
   revokeMcpConnection: (...args: unknown[]) => mockRevokeMcpConnection(...args),
@@ -174,7 +168,6 @@ const baseSettings = {
   file_stt_provider: "elevenlabs",
   file_stt_model: "scribe_v2",
   dictation_post_filter_enabled: false,
-  dictation_cleanup_level: "none",
   dictation_post_filter_provider: "openai",
   dictation_post_filter_model: "gpt-5.5",
 };
@@ -187,43 +180,6 @@ const baseTelegramStatus = {
   first_name: null,
   last_name: null,
   linked_at: null,
-};
-
-const baseSystemInfo = {
-  app_name: "WaiComputer",
-  deployment_mode: "wai_cloud",
-  public_base_url: "https://wai.computer",
-  cloud_base_url: "https://wai.computer",
-  mcp_url: "https://wai.computer/mcp",
-  git_sha: null,
-  git_dirty: false,
-  audio_retention_policy: "delete_after_processing",
-  self_hosting_available: true,
-  billing_mode: "cloud",
-};
-
-const baseDataOwnershipMap = {
-  audio_retention_policy: "delete_after_processing",
-  tables: [
-    {
-      name: "recordings",
-      table: "recordings",
-      classification: "owned_exportable",
-      reason: "Recording metadata and lifecycle state.",
-      contains_user_content: true,
-      requires_reconnect: false,
-    },
-  ],
-  artifacts: [
-    {
-      name: "document_uploads",
-      classification: "owned_exportable",
-      reason: "Original document uploads move with the user's data.",
-      contains_user_content: true,
-      requires_reconnect: false,
-      path_hint: "${UPLOAD_STAGING_DIR}/items/<user_id>/*",
-    },
-  ],
 };
 
 function arrangeHappyPathMocks() {
@@ -262,16 +218,6 @@ function arrangeHappyPathMocks() {
     linked_at: "2026-05-22T09:00:00Z",
   });
   mockUnlinkTelegram.mockResolvedValue(undefined);
-  mockGetSystemInfo.mockResolvedValue(baseSystemInfo);
-  mockGetDataOwnershipMap.mockResolvedValue(baseDataOwnershipMap);
-  mockStartSelfHostProvision.mockResolvedValue({
-    job_id: "selfhost_demo",
-    status: "manual_review_required",
-    hostname: "demo.self.wai.computer",
-    vps_ip: "203.0.113.10",
-    message: "Provisioning inputs are valid.",
-    steps: [],
-  });
   mockLogout.mockResolvedValue({ message: "Logged out" });
   mockListMcpConnections.mockResolvedValue([]);
   mockRevokeMcpConnection.mockResolvedValue(undefined);
@@ -358,9 +304,6 @@ describe("DashboardClient", () => {
       mockStartTelegramLink,
       mockClaimTelegramLinkCode,
       mockUnlinkTelegram,
-      mockGetSystemInfo,
-      mockGetDataOwnershipMap,
-      mockStartSelfHostProvision,
       mockLogout,
       mockListMcpConnections,
       mockRevokeMcpConnection,
@@ -815,21 +758,6 @@ describe("DashboardClient", () => {
     });
 
     expect(screen.getByTestId("current-password")).toBeInTheDocument();
-  });
-
-  it("opens Server & Data settings from the self-host migration deep link", async () => {
-    arrangeHappyPathMocks();
-    window.history.pushState({}, "", "/dashboard?view=settings#server-data");
-
-    render(<DashboardClient />);
-    await waitForDashboardReady();
-
-    await waitFor(() => {
-      expect(screen.getByTestId("server-data-section")).toBeInTheDocument();
-    });
-    expect(screen.getByRole("button", { name: "Check setup" })).toBeInTheDocument();
-    expect(mockGetSystemInfo).toHaveBeenCalled();
-    expect(mockGetDataOwnershipMap).toHaveBeenCalled();
   });
 
   it("claims Telegram bot link code from settings (RU locale)", async () => {
@@ -2145,14 +2073,13 @@ describe("DashboardClient", () => {
     });
   });
 
-  // --- Settings: dictation cleanup level update ---
+  // --- Settings: dictation post-filter checkbox update ---
 
-  it("updates the dictation cleanup level and persists the setting", async () => {
+  it("toggles the dictation cleanup checkbox and persists the setting", async () => {
     arrangeHappyPathMocks();
     mockUpdateSettings.mockResolvedValueOnce({
       ...baseSettings,
       dictation_post_filter_enabled: true,
-      dictation_cleanup_level: "medium",
     });
     const user = userEvent.setup();
 
@@ -2160,12 +2087,12 @@ describe("DashboardClient", () => {
     await waitForDashboardReady();
     await openSettingsView(user);
 
-    const medium = await screen.findByRole("radio", { name: /medium/i });
-    expect(medium).not.toBeChecked();
+    const checkbox = await screen.findByLabelText("Clean up dictated text before insertion");
+    expect(checkbox).not.toBeChecked();
 
-    await user.click(medium);
+    await user.click(checkbox);
     await waitFor(() => {
-      expect(mockUpdateSettings).toHaveBeenCalledWith({ dictation_cleanup_level: "medium" });
+      expect(mockUpdateSettings).toHaveBeenCalledWith({ dictation_post_filter_enabled: true });
       expect(screen.getByTestId("dashboard-message")).toHaveTextContent("Settings updated.");
     });
   });

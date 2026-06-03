@@ -21,7 +21,6 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import time
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -32,13 +31,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import get_settings
 from app.core import memory_proposal as memory_proposal_module
 from app.core import user_memory as user_memory_module
-from app.core.ai_usage import (
-    FEATURE_MEMORY,
-    OPENAI_PROVIDER,
-    STATUS_FAILED,
-    STATUS_SUCCEEDED,
-    record_ai_usage_event,
-)
 from app.core.openai_client import get_openai_client
 from app.db.session import get_db_context
 from app.models.companion import ChatMessage, Conversation
@@ -240,64 +232,24 @@ async def _consolidate_one_user(
         "new_material": material,
     }
 
-    started = time.perf_counter()
-    response = None
-    try:
-        response = await client.responses.create(
-            model=settings.openai_llm_model,
-            instructions=CONSOLIDATOR_SYSTEM_PROMPT,
-            input=[{"role": "user", "content": json.dumps(user_payload)}],
-            text={
-                "format": {
-                    "type": "json_schema",
-                    **_consolidator_schema(),
-                }
-            },
-            prompt_cache_key=f"wai-consolidator-{user_id}",
-        )
-    except Exception as exc:
-        await record_ai_usage_event(
-            db,
-            provider=OPENAI_PROVIDER,
-            feature=FEATURE_MEMORY,
-            operation="memory.consolidate",
-            status=STATUS_FAILED,
-            user_id=user_id,
-            model=settings.openai_llm_model,
-            response=response,
-            latency_ms=round((time.perf_counter() - started) * 1000),
-            error_type=type(exc).__name__,
-        )
-        raise
+    response = await client.responses.create(
+        model=settings.openai_llm_model,
+        instructions=CONSOLIDATOR_SYSTEM_PROMPT,
+        input=[{"role": "user", "content": json.dumps(user_payload)}],
+        text={
+            "format": {
+                "type": "json_schema",
+                **_consolidator_schema(),
+            }
+        },
+        prompt_cache_key=f"wai-consolidator-{user_id}",
+    )
     text = _first_output_text(response)
     try:
         parsed = json.loads(text)
     except (TypeError, ValueError) as exc:
-        await record_ai_usage_event(
-            db,
-            provider=OPENAI_PROVIDER,
-            feature=FEATURE_MEMORY,
-            operation="memory.consolidate",
-            status=STATUS_FAILED,
-            user_id=user_id,
-            model=settings.openai_llm_model,
-            response=response,
-            latency_ms=round((time.perf_counter() - started) * 1000),
-            error_type=type(exc).__name__,
-        )
         logger.warning("consolidator parse failure user=%s: %s", user_id, exc)
         return {"auto_applied": 0, "queued": 0, "parse_error": True}
-    await record_ai_usage_event(
-        db,
-        provider=OPENAI_PROVIDER,
-        feature=FEATURE_MEMORY,
-        operation="memory.consolidate",
-        status=STATUS_SUCCEEDED,
-        user_id=user_id,
-        model=settings.openai_llm_model,
-        response=response,
-        latency_ms=round((time.perf_counter() - started) * 1000),
-    )
 
     updates = parsed.get("updates") or []
     counts = await _apply_updates(db, user_id, updates)

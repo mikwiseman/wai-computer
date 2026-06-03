@@ -16,12 +16,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
 from app.core import user_memory as user_memory_module
-from app.core.ai_usage import (
-    FEATURE_COMPANION,
-    OPENAI_PROVIDER,
-    STATUS_SUCCEEDED,
-    record_ai_usage_event,
-)
 from app.core.companion_actions import propose_action
 from app.core.mcp_oauth import issue_companion_mcp_access_token
 from app.core.openai_client import get_openai_client
@@ -50,9 +44,8 @@ SNIPPET_CHAR_CAP = 400
 _IDENTITY_SECTION = (
     "<identity>\n"
     "You are Wai — a calm, precise partner. Not an assistant, not a "
-    "chatbot. You answer questions about the user's recorded conversations, "
-    "notes, and reflections when they are relevant, and answer general "
-    "questions normally.\n"
+    "chatbot. You answer over the user's recorded conversations, notes, "
+    "and reflections.\n"
     "</identity>"
 )
 
@@ -61,9 +54,6 @@ _TOOL_GUIDANCE_SECTION = (
     "Use the WaiComputer MCP server whenever the user asks about their "
     "recordings, folders, transcript content, summaries, decisions, or "
     "action items. Treat MCP as the only source of truth for library data.\n"
-    "For general questions, answer directly from general knowledge. Use web "
-    "search when the question depends on current, external, or internet "
-    "information.\n"
     "- search — use for content questions and specific topics.\n"
     "- fetch — use after search/list_recordings when one recording needs "
     "closer reading.\n"
@@ -85,8 +75,7 @@ _ANSWER_FORMAT_SECTION = (
     "- Do not start with 'Sure!', 'I'd be happy to', or any "
     "acknowledgement. Do not narrate your reasoning or say 'based on the "
     "transcripts'. Do not use emojis unless the user does first.\n"
-    "- When the user asks about their Wai data and the corpus is silent, say "
-    "that directly. For general questions, answer normally.\n"
+    "- When the corpus is silent, say so in one sentence and stop.\n"
     "</answer_format>"
 )
 
@@ -1519,7 +1508,6 @@ async def run_turn(
     turn_context: TurnContext | None = None,
     openai_client=None,
     enable_actions: bool = False,
-    enable_web_search: bool = True,
 ) -> AsyncIterator[CompanionEvent]:
     settings = get_settings()
     client = openai_client if openai_client is not None else get_openai_client()
@@ -1585,14 +1573,11 @@ async def run_turn(
     assistant_text = ""
     usage: Any = None
     completed_response_obj: Any = None
-    tools: list[dict[str, Any]] = [mcp_tool]
-    if enable_web_search:
-        tools.append({"type": "web_search"})
     stream = await client.responses.create(
         model=settings.openai_llm_model,
         instructions=instructions,
         input=response_input,
-        tools=tools,
+        tools=[mcp_tool],
         prompt_cache_key=f"wai-companion-{user_id}",
         stream=True,
     )
@@ -1668,23 +1653,6 @@ async def run_turn(
 
     conv.last_message_at = datetime.now(timezone.utc)
     await db.flush()
-
-    await record_ai_usage_event(
-        db,
-        provider=OPENAI_PROVIDER,
-        feature=FEATURE_COMPANION,
-        operation="companion.turn",
-        status=STATUS_SUCCEEDED,
-        user_id=user_id,
-        conversation_id=conv.id,
-        message_id=assistant_msg.id,
-        model=settings.openai_llm_model,
-        response=completed_response_obj,
-        input_tokens=input_tokens or None,
-        output_tokens=output_tokens or None,
-        cached_tokens=cached_tokens or None,
-        latency_ms=latency_ms,
-    )
 
     yield DoneEvent(
         message_id=str(assistant_msg.id),
@@ -1874,22 +1842,6 @@ async def _run_actions_loop(
     await db.refresh(assistant_msg)
     conv.last_message_at = datetime.now(timezone.utc)
     await db.flush()
-    await record_ai_usage_event(
-        db,
-        provider=OPENAI_PROVIDER,
-        feature=FEATURE_COMPANION,
-        operation="companion.action_turn",
-        status=STATUS_SUCCEEDED,
-        user_id=user_id,
-        conversation_id=conv.id,
-        message_id=assistant_msg.id,
-        model=settings.openai_llm_model,
-        input_tokens=input_tokens or None,
-        output_tokens=output_tokens or None,
-        cached_tokens=cached_tokens or None,
-        latency_ms=latency_ms,
-        details={"step_count": step},
-    )
     yield DoneEvent(
         message_id=str(assistant_msg.id),
         input_tokens=input_tokens or None,

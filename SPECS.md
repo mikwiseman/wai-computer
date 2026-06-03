@@ -408,7 +408,7 @@ Borrowed from Claude Code / OpenCode, but adapted for non-technical users:
 ### 4.1 Backend API
 
 **Stack:** Python 3.12, FastAPI, SQLAlchemy async, PostgreSQL 16 + pgvector, Redis, Celery
-**Server:** production infrastructure details live outside the public repository
+**Server:** Hetzner VPS (157.180.47.68), 4GB RAM, 75GB disk
 **Domain:** wai.computer
 **Proxy:** Caddy 2 (auto-TLS)
 

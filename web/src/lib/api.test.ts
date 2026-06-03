@@ -143,30 +143,6 @@ describe("api client wrappers", () => {
     expect(mockedApiFetch).toHaveBeenNthCalledWith(3, "/api/auth/me");
   });
 
-  it("calls system and self-host setup endpoints", async () => {
-    const provisionInput = {
-      hostname: "demo.self.wai.computer",
-      vps_ip: "203.0.113.10",
-      ssh_username: "root",
-      auth_method: "ssh_key" as const,
-      ssh_public_key: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITest demo",
-      ssh_password: null,
-    };
-
-    await api.getSystemInfo();
-    await api.getDataOwnershipMap();
-    await api.getSelfHostMigrationPreflight();
-    await api.startSelfHostProvision(provisionInput);
-
-    expect(mockedApiFetch).toHaveBeenNthCalledWith(1, "/api/system/info");
-    expect(mockedApiFetch).toHaveBeenNthCalledWith(2, "/api/system/data-map");
-    expect(mockedApiFetch).toHaveBeenNthCalledWith(3, "/api/self-host/migration/preflight");
-    expect(mockedApiFetch).toHaveBeenNthCalledWith(4, "/api/self-host/provision", {
-      method: "POST",
-      body: JSON.stringify(provisionInput),
-    });
-  });
-
   it("mirrors auth tokens into the localhost cookie", async () => {
     mockedApiFetch.mockResolvedValueOnce({
       access_token: "local-token",

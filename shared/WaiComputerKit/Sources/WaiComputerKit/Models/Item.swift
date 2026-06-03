@@ -48,11 +48,6 @@ public struct ItemSummary: Codable, Sendable {
     }
 }
 
-public struct ItemError: Codable, Sendable {
-    public let code: String
-    public let message: String
-}
-
 /// Any non-recording piece of content in the second brain (article, link,
 /// note, PDF, MCP-pulled resource).
 public struct Item: Codable, Identifiable, Sendable {
@@ -65,8 +60,6 @@ public struct Item: Codable, Identifiable, Sendable {
     public let body: String?
     public let occurredAt: String?
     public let state: String
-    public let status: String
-    public let error: ItemError?
     public let folderId: String?
     public let createdAt: String
     public let summary: ItemSummary?
@@ -81,8 +74,6 @@ public struct Item: Codable, Identifiable, Sendable {
         case body
         case occurredAt = "occurred_at"
         case state
-        case status
-        case error
         case folderId = "folder_id"
         case createdAt = "created_at"
         case summary
@@ -97,8 +88,6 @@ public struct ItemListEntry: Codable, Identifiable, Sendable {
     public let kind: String
     public let title: String?
     public let state: String
-    public let status: String
-    public let error: ItemError?
     public let folderId: String?
     public let occurredAt: String?
     public let createdAt: String
@@ -111,8 +100,6 @@ public struct ItemListEntry: Codable, Identifiable, Sendable {
         case kind
         case title
         case state
-        case status
-        case error
         case folderId = "folder_id"
         case occurredAt = "occurred_at"
         case createdAt = "created_at"

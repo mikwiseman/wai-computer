@@ -152,7 +152,6 @@ final class UserEntityDictationModelsTests: XCTestCase {
           "file_stt_provider":"elevenlabs",
           "file_stt_model":"scribe_v2",
           "dictation_post_filter_enabled":true,
-          "dictation_cleanup_level":"light",
           "dictation_post_filter_provider":"openai",
           "dictation_post_filter_model":"gpt-5.5"
         }
@@ -165,7 +164,6 @@ final class UserEntityDictationModelsTests: XCTestCase {
         XCTAssertEqual(s.dictationLiveSTTProvider, "deepgram")
         XCTAssertEqual(s.dictationLiveSTTModel, "nova-3")
         XCTAssertTrue(s.dictationPostFilterEnabled)
-        XCTAssertEqual(s.dictationCleanupLevel, "light")
     }
 
     func testUserSettingsAllowsNullSummaryInstructions() throws {
@@ -177,7 +175,6 @@ final class UserEntityDictationModelsTests: XCTestCase {
           "recording_live_stt_provider":"deepgram", "recording_live_stt_model":"nova-3",
           "file_stt_provider":"elevenlabs", "file_stt_model":"scribe_v2",
           "dictation_post_filter_enabled":false,
-          "dictation_cleanup_level":"none",
           "dictation_post_filter_provider":"o", "dictation_post_filter_model":"m"
         }
         """.data(using: .utf8)!
@@ -194,20 +191,17 @@ final class UserEntityDictationModelsTests: XCTestCase {
         let decoded = try decoder.decode(UpdateSettingsRequest.self, from: data)
         XCTAssertNil(decoded.defaultLanguage)
         XCTAssertNil(decoded.dictationPostFilterEnabled)
-        XCTAssertNil(decoded.dictationCleanupLevel)
     }
 
     func testUpdateSettingsRequestPartial() throws {
         let req = UpdateSettingsRequest(
             defaultLanguage: "de",
-            dictationPostFilterEnabled: true,
-            dictationCleanupLevel: "light"
+            dictationPostFilterEnabled: true
         )
         let data = try encoder.encode(req)
         let json = try XCTUnwrap(String(data: data, encoding: .utf8))
         XCTAssertTrue(json.contains("\"default_language\":\"de\""))
         XCTAssertTrue(json.contains("\"dictation_post_filter_enabled\":true"))
-        XCTAssertTrue(json.contains("\"dictation_cleanup_level\":\"light\""))
     }
 
     // MARK: - TranscriptionModelOption + Options

@@ -284,11 +284,7 @@ async def list_connections(user: CurrentUser, db: Database) -> list[McpConnectio
     ]
 
 
-@router.post(
-    "/connections/{client_id}/revoke",
-    status_code=status.HTTP_204_NO_CONTENT,
-    response_class=Response,
-)
+@router.post("/connections/{client_id}/revoke", status_code=status.HTTP_204_NO_CONTENT)
 async def revoke_connection(client_id: str, user: CurrentUser, db: Database) -> Response:
     """Revoke a connected MCP client: cut its consent and all of its tokens."""
     result = await db.execute(

@@ -8,7 +8,6 @@ import httpx
 
 from app.config import get_settings
 from app.core.deepgram import transcribe_audio_file as deepgram_transcribe_audio_file
-from app.core.deepgram_usage import deepgram_usage_tags, provider_error_code
 from app.core.observability import (
     add_sentry_breadcrumb,
     capture_sentry_anomaly,
@@ -55,6 +54,28 @@ def _latency_per_audio_second(
     return round((latency_ms / 1000) / audio_duration_seconds, 4)
 
 
+def _provider_error_code(error: httpx.HTTPStatusError) -> str | None:
+    try:
+        payload = error.response.json()
+    except ValueError:
+        return None
+    if not isinstance(payload, dict):
+        return None
+    openai_error = payload.get("error")
+    if isinstance(openai_error, dict):
+        for key in ("code", "type"):
+            value = openai_error.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+    detail = payload.get("detail")
+    if isinstance(detail, dict):
+        for key in ("code", "type", "status"):
+            value = detail.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+    return None
+
+
 async def transcribe_audio_file(
     audio_data: bytes,
     language: str = "en",
@@ -66,7 +87,6 @@ async def transcribe_audio_file(
     audio_duration_seconds: float | None = None,
     keyterms: list[str] | None = None,
     user_id: str | None = None,
-    usage_purpose: str = "recording",
 ) -> list[TranscriptResult]:
     """Transcribe audio using the active speech-to-text runtime.
 
@@ -129,11 +149,10 @@ async def transcribe_audio_file(
             model=selected_model,
             keyterms=keyterms,
             max_channels=settings.deepgram_max_channels,
-            tags=deepgram_usage_tags(operation="file_stt", purpose=usage_purpose),
         )
     except httpx.HTTPStatusError as exc:
         await record_provider_result(success=False, status_code=exc.response.status_code)
-        error_code = provider_error_code(exc) or "unknown"
+        error_code = _provider_error_code(exc) or "unknown"
         latency_ms = round((perf_counter() - started_at) * 1000)
         logger.warning(
             "file STT failed provider=%s model=%s latency_ms=%s status_code=%s "

@@ -34,11 +34,7 @@ class FakeMediaRecorder {
     if (options?.mimeType) {
       this.mimeType = options.mimeType;
     }
-    FakeMediaRecorder.remember(this);
-  }
-
-  private static remember(recorder: FakeMediaRecorder) {
-    lastRecorder = recorder;
+    lastRecorder = this;
   }
 
   start() {

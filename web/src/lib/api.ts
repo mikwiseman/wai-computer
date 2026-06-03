@@ -24,7 +24,6 @@ import type {
   DictationBenchmarkVoteResponse,
   DictationDictionaryWord,
   DictationEntry,
-  DataOwnershipMap,
   ExportFormat,
   ExportLocale,
   Folder,
@@ -33,8 +32,6 @@ import type {
   InboxStatusFilter,
   KeywordsResponse,
   McpConnection,
-  MemoryProposal,
-  MemoryProposalList,
   MessageResponse,
   Person,
   PersonalizationImportJob,
@@ -50,15 +47,11 @@ import type {
   RecordingShareLink,
   RematchSpeakersResponse,
   SearchResponse,
-  SelfHostMigrationPreflight,
-  SelfHostProvisionRequest,
-  SelfHostProvisionResponse,
   TranscriptSegmentInput,
   SpeakerStatsResponse,
   SharedRecording,
   Summary,
   SummaryGeneration,
-  SystemInfo,
   TelegramLinkStatus,
   TelegramPairing,
   TokenResponse,
@@ -210,27 +203,6 @@ export async function logout(): Promise<MessageResponse> {
 
 export function getCurrentUser(): Promise<User> {
   return apiFetch<User>("/api/auth/me");
-}
-
-export function getSystemInfo(): Promise<SystemInfo> {
-  return apiFetch<SystemInfo>("/api/system/info");
-}
-
-export function getDataOwnershipMap(): Promise<DataOwnershipMap> {
-  return apiFetch<DataOwnershipMap>("/api/system/data-map");
-}
-
-export function getSelfHostMigrationPreflight(): Promise<SelfHostMigrationPreflight> {
-  return apiFetch<SelfHostMigrationPreflight>("/api/self-host/migration/preflight");
-}
-
-export function startSelfHostProvision(
-  input: SelfHostProvisionRequest,
-): Promise<SelfHostProvisionResponse> {
-  return apiFetch<SelfHostProvisionResponse>("/api/self-host/provision", {
-    method: "POST",
-    body: JSON.stringify(input),
-  });
 }
 
 export function deleteAccount(): Promise<MessageResponse> {
@@ -628,31 +600,6 @@ export function getBrainGraph(params?: {
 
 export function getEntityPage(entityId: string): Promise<EntityPage> {
   return apiFetch<EntityPage>(`/api/entities/${entityId}/page`);
-}
-
-export function listMemoryProposals(params?: {
-  status?: string;
-  limit?: number;
-}): Promise<MemoryProposalList> {
-  return apiFetch<MemoryProposalList>(
-    `/api/memory/proposals${asQuery({ status: "pending", limit: 50, ...(params ?? {}) })}`,
-  );
-}
-
-export function acceptMemoryProposal(id: string): Promise<MemoryProposal> {
-  return apiFetch<MemoryProposal>(`/api/memory/proposals/${id}/accept`, {
-    method: "POST",
-  });
-}
-
-export function rejectMemoryProposal(
-  id: string,
-  reason?: string | null,
-): Promise<MemoryProposal> {
-  return apiFetch<MemoryProposal>(`/api/memory/proposals/${id}/reject`, {
-    method: "POST",
-    body: JSON.stringify({ reason: reason ?? null }),
-  });
 }
 
 // --- Second brain: comparison sets ---

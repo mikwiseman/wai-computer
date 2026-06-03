@@ -17,7 +17,6 @@ public struct MemoryProposal: Codable, Identifiable, Sendable {
     public let summary: String
     public let confidence: Double
     public let authority: String
-    public let evidence: [JSONValue]?
     public let status: String
     public let decisionReason: String?
     public let createdAt: String?
@@ -37,7 +36,6 @@ public struct MemoryProposal: Codable, Identifiable, Sendable {
         case summary
         case confidence
         case authority
-        case evidence
         case status
         case decisionReason = "decision_reason"
         case createdAt = "created_at"

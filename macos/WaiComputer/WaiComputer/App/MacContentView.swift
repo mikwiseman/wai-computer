@@ -196,7 +196,7 @@ struct MacMainView: View {
         case .brain:
             return t("Brain", "Мозг")
         case .review:
-            return t("Brain", "Мозг")
+            return t("Review", "На проверку")
         case .search:
             return t("Search", "Поиск")
         case .history:
@@ -525,7 +525,7 @@ struct MacMainView: View {
             case "allRecordings": selectedSection = .allRecordings
             case "content": selectedSection = .content
             case "brain": selectedSection = .brain
-            case "review": selectedSection = .brain
+            case "review": selectedSection = .review
             case "history": selectedSection = .history
             case "dictionary": selectedSection = .dictionary
             case "search": selectedSection = .search
@@ -621,6 +621,7 @@ struct MacMainView: View {
                 sidebarRow(t("All Recordings", "Все записи"), icon: "folder", section: .allRecordings, identifier: "all-recordings")
                 sidebarRow(t("Content", "Материалы"), icon: "square.stack.3d.up", section: .content, identifier: "content")
                 sidebarRow(t("Brain", "Мозг"), icon: "brain", section: .brain, identifier: "brain")
+                sidebarRow(t("Review", "На проверку"), icon: "tray.full", section: .review, identifier: "review")
                 sidebarRow(t("Trash", "Корзина"), icon: "trash", section: .trash, identifier: "trash")
             } header: {
                 Text(t("Library", "Библиотека"))
@@ -902,7 +903,7 @@ struct MacMainView: View {
             MacBrainView(apiClient: appState.getAPIClient())
                 .environment(\.locale, MacDateFormatting.locale(for: languageManager.current))
         case .review:
-            MacBrainView(apiClient: appState.getAPIClient())
+            MacReviewView(apiClient: appState.getAPIClient())
                 .environment(\.locale, MacDateFormatting.locale(for: languageManager.current))
         case .search:
             MacSearchView { recordingId in

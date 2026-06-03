@@ -5,8 +5,6 @@ task's ``.delay`` (the route imports it lazily), so we assert the synchronous
 capture + feed + detail behaviour without a broker or OpenAI.
 """
 
-import zipfile
-from io import BytesIO
 from unittest.mock import patch
 from uuid import UUID
 
@@ -18,21 +16,6 @@ from app.models.item import Item
 from app.models.recording import Recording
 
 pytestmark = pytest.mark.asyncio
-
-
-def _docx_bytes(text: str) -> bytes:
-    buf = BytesIO()
-    with zipfile.ZipFile(buf, "w") as zf:
-        zf.writestr("[Content_Types].xml", "")
-        zf.writestr(
-            "word/document.xml",
-            f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-            <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
-              <w:body><w:p><w:r><w:t>{text}</w:t></w:r></w:p></w:body>
-            </w:document>
-            """,
-        )
-    return buf.getvalue()
 
 
 async def test_create_item_requires_body_or_url(client, auth_headers) -> None:
@@ -240,7 +223,7 @@ async def test_upload_markdown_creates_note_item(client, auth_headers) -> None:
 
 async def test_upload_pdf_extracts_text(client, auth_headers) -> None:
     with patch("app.tasks.item_summary_generation.generate_item_summary_task.delay"), patch(
-        "app.core.document_extract._extract_pdf_text",
+        "app.core.source_fetch._extract_pdf_text",
         return_value="Extracted PDF body about GPUs and inference cost.",
     ):
         resp = await client.post(
@@ -254,31 +237,11 @@ async def test_upload_pdf_extracts_text(client, auth_headers) -> None:
     assert data["title"] == "GPU Paper"
 
 
-async def test_upload_docx_uses_filename_when_title_is_placeholder(client, auth_headers) -> None:
-    with patch("app.tasks.item_summary_generation.generate_item_summary_task.delay"):
-        resp = await client.post(
-            "/api/items/upload",
-            data={"title": "[Untitled]"},
-            files={
-                "file": (
-                    "Service Agreement.docx",
-                    _docx_bytes("Service agreement body for route extraction."),
-                    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                )
-            },
-            headers=auth_headers,
-        )
-    assert resp.status_code == 201, resp.text
-    data = resp.json()
-    assert data["kind"] == "document"
-    assert data["title"] == "Service Agreement"
-
-
 async def test_upload_scanned_pdf_without_text_is_422(client, auth_headers) -> None:
     from app.core.source_fetch import SourceFetchError
 
     with patch(
-        "app.core.document_extract._extract_pdf_text",
+        "app.core.source_fetch._extract_pdf_text",
         side_effect=SourceFetchError("This PDF has no extractable text.", code="pdf_no_text"),
     ):
         resp = await client.post(
@@ -295,8 +258,8 @@ async def test_upload_scanned_pdf_ocrs_via_vision(client, auth_headers) -> None:
     from unittest.mock import AsyncMock
 
     with patch("app.tasks.item_summary_generation.generate_item_summary_task.delay"), patch(
-        "app.core.document_extract._extract_pdf_text", return_value=""
-    ), patch("app.core.document_extract._pdf_page_count", return_value=2), patch(
+        "app.core.source_fetch._extract_pdf_text", return_value=""
+    ), patch("app.core.source_fetch._pdf_page_count", return_value=2), patch(
         "app.core.ocr.ocr_pdf", new=AsyncMock(return_value="OCR'd scanned text about GPUs.")
     ):
         resp = await client.post(
@@ -309,8 +272,8 @@ async def test_upload_scanned_pdf_ocrs_via_vision(client, auth_headers) -> None:
 
 
 async def test_upload_scanned_pdf_too_long_is_422(client, auth_headers) -> None:
-    with patch("app.core.document_extract._extract_pdf_text", return_value=""), patch(
-        "app.core.document_extract._pdf_page_count", return_value=999
+    with patch("app.core.source_fetch._extract_pdf_text", return_value=""), patch(
+        "app.core.source_fetch._pdf_page_count", return_value=999
     ):
         resp = await client.post(
             "/api/items/upload",
@@ -324,8 +287,8 @@ async def test_upload_scanned_pdf_too_long_is_422(client, auth_headers) -> None:
 async def test_upload_scanned_pdf_ocr_yields_nothing_is_422(client, auth_headers) -> None:
     from unittest.mock import AsyncMock
 
-    with patch("app.core.document_extract._extract_pdf_text", return_value=""), patch(
-        "app.core.document_extract._pdf_page_count", return_value=1
+    with patch("app.core.source_fetch._extract_pdf_text", return_value=""), patch(
+        "app.core.source_fetch._pdf_page_count", return_value=1
     ), patch("app.core.ocr.ocr_pdf", new=AsyncMock(return_value="")):
         resp = await client.post(
             "/api/items/upload",
@@ -461,7 +424,7 @@ async def test_upload_resolves_type_from_content_type_and_markdown_ext(
 ) -> None:
     # No filename extension -> resolved via content-type.
     with patch("app.tasks.item_summary_generation.generate_item_summary_task.delay"), patch(
-        "app.core.document_extract._extract_pdf_text", return_value="body from ct-detected pdf"
+        "app.core.source_fetch._extract_pdf_text", return_value="body from ct-detected pdf"
     ):
         ct_resp = await client.post(
             "/api/items/upload",

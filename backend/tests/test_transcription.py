@@ -6,16 +6,10 @@ import httpx
 import pytest
 
 DEEPGRAM_FILE_STT_MODEL = "nova-3"
-DEEPGRAM_USAGE_TAGS = [
-    "app:wai-computer",
-    "env:prod",
-    "operation:file_stt",
-    "purpose:recording",
-]
 
 
 def test_provider_error_code_reads_openai_error_shape():
-    from app.core.deepgram_usage import provider_error_code
+    from app.core.transcription import _provider_error_code
 
     request = httpx.Request("POST", "https://provider.example/transcribe")
     response = httpx.Response(
@@ -25,7 +19,7 @@ def test_provider_error_code_reads_openai_error_shape():
     )
     error = httpx.HTTPStatusError("bad request", request=request, response=response)
 
-    assert provider_error_code(error) == "invalid_audio"
+    assert _provider_error_code(error) == "invalid_audio"
 
 
 @pytest.mark.asyncio
@@ -47,7 +41,6 @@ async def test_transcription_dispatches_to_deepgram_file_stt():
         model=DEEPGRAM_FILE_STT_MODEL,
         keyterms=None,
         max_channels=2,
-        tags=DEEPGRAM_USAGE_TAGS,
     )
 
 
@@ -81,7 +74,6 @@ async def test_transcription_ignores_removed_user_file_stt_choice():
         model=DEEPGRAM_FILE_STT_MODEL,
         keyterms=None,
         max_channels=2,
-        tags=DEEPGRAM_USAGE_TAGS,
     )
 
 
@@ -337,7 +329,7 @@ async def test_transcription_does_not_fallback_for_deepgram_bad_request():
 
 
 def test_provider_error_code_handles_unstructured_error_payloads():
-    from app.core.deepgram_usage import provider_error_code
+    from app.core.transcription import _provider_error_code
 
     invalid_json_response = httpx.Response(
         503,
@@ -349,7 +341,7 @@ def test_provider_error_code_handles_unstructured_error_payloads():
         request=invalid_json_response.request,
         response=invalid_json_response,
     )
-    assert provider_error_code(invalid_json_error) is None
+    assert _provider_error_code(invalid_json_error) is None
 
     list_response = httpx.Response(
         401,
@@ -361,7 +353,7 @@ def test_provider_error_code_handles_unstructured_error_payloads():
         request=list_response.request,
         response=list_response,
     )
-    assert provider_error_code(list_error) is None
+    assert _provider_error_code(list_error) is None
 
     error_response = httpx.Response(
         429,
@@ -373,7 +365,7 @@ def test_provider_error_code_handles_unstructured_error_payloads():
         request=error_response.request,
         response=error_response,
     )
-    assert provider_error_code(error) == "quota_exceeded"
+    assert _provider_error_code(error) == "quota_exceeded"
 
 
 @pytest.mark.asyncio

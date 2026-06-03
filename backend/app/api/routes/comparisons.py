@@ -202,16 +202,12 @@ async def rebuild_comparison(
     return _response(cs)
 
 
-@router.delete(
-    "/{comparison_id}",
-    status_code=status.HTTP_204_NO_CONTENT,
-    response_class=Response,
-)
+@router.delete("/{comparison_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_comparison(
     comparison_id: UUID,
     user: CurrentUser,
     db: Database,
-) -> Response:
+) -> None:
     cs = (
         await db.execute(
             select(ComparisonSet).where(
@@ -223,7 +219,6 @@ async def delete_comparison(
     if cs is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
     await db.delete(cs)
-    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 def _to_csv(columns: list | None, rows: list | None) -> str:
