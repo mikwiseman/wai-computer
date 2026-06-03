@@ -48,8 +48,10 @@ MAX_CLEANUP_CONTEXT_AROUND_CHARS = 800
 MAX_CLEANUP_CONTEXT_SELECTED_CHARS = 2000
 MAX_TRANSLATION_LANGUAGE_CODE_CHARS = 16
 MAX_TRANSLATION_LANGUAGE_NAME_CHARS = 80
-MIN_CLEANUP_OUTPUT_TOKENS = 256
-MAX_CLEANUP_OUTPUT_TOKENS = 8192
+MIN_CLEANUP_OUTPUT_TOKENS = 1536
+MAX_CLEANUP_OUTPUT_TOKENS = 65_536
+CLEANUP_REASONING_TOKEN_RESERVE = 1024
+CLEANUP_OUTPUT_TOKEN_QUANTUM = 256
 
 DICTATION_CLEANUP_INSTRUCTIONS_BY_LEVEL = {
     "light": """\
@@ -329,16 +331,46 @@ def _build_context_block(context: DictationCleanupContext | None) -> str:
 
 
 def _cleanup_output_token_cap(text: str) -> int:
-    """Bound cleanup spend while allowing the output to remain near input length."""
-    estimated_tokens = (len(text) // 3) + 128
+    """Bound cleanup spend while allowing near-input output plus reasoning tokens."""
+    estimated_tokens = (
+        (len(text) // 3)
+        + CLEANUP_REASONING_TOKEN_RESERVE
+    )
+    rounded_tokens = (
+        (estimated_tokens + CLEANUP_OUTPUT_TOKEN_QUANTUM - 1)
+        // CLEANUP_OUTPUT_TOKEN_QUANTUM
+    ) * CLEANUP_OUTPUT_TOKEN_QUANTUM
     return max(
         MIN_CLEANUP_OUTPUT_TOKENS,
-        min(MAX_CLEANUP_OUTPUT_TOKENS, estimated_tokens),
+        min(MAX_CLEANUP_OUTPUT_TOKENS, rounded_tokens),
     )
 
 
 def _dictation_cleanup_prompt_cache_key(user_id: UUID) -> str:
     return f"wai-dictation-cleanup-{user_id}"
+
+
+def _dictation_cleanup_text_config() -> dict[str, Any]:
+    return {"format": {"type": "text"}, "verbosity": "low"}
+
+
+def _event_field(event: Any, name: str, default: Any = None) -> Any:
+    if isinstance(event, dict):
+        return event.get(name, default)
+    return getattr(event, name, default)
+
+
+def _event_output_text(event: Any) -> str:
+    event_type = _event_field(event, "type")
+    if event_type == "response.output_text.done":
+        text = _event_field(event, "text", "")
+        return text if isinstance(text, str) else ""
+    if event_type == "response.content_part.done":
+        part = _event_field(event, "part")
+        part_type = _event_field(part, "type")
+        text = _event_field(part, "text", "")
+        return text if part_type == "output_text" and isinstance(text, str) else ""
+    return ""
 
 
 def _prepare_cleanup_openai_request(
@@ -482,29 +514,32 @@ async def _stream_cleanup_events(
             instructions=prepared.instructions,
             input=prepared.input,
             reasoning={"effort": "low"},
-            text={"verbosity": "low"},
+            text=_dictation_cleanup_text_config(),
             max_output_tokens=prepared.max_output_tokens,
             prompt_cache_key=prepared.prompt_cache_key,
+            prompt_cache_retention="24h",
             stream=True,
             store=False,
         )
 
         async for event in stream:
-            event_type = getattr(event, "type", None) or (
-                event.get("type") if isinstance(event, dict) else None
-            )
+            event_type = _event_field(event, "type")
             if event_type == "response.output_text.delta":
-                delta = getattr(event, "delta", None)
-                if delta is None and isinstance(event, dict):
-                    delta = event.get("delta", "")
+                delta = _event_field(event, "delta", "")
                 delta = delta or ""
                 assistant_text += delta
                 if delta:
                     yield _sse_frame("token", {"text": delta})
+            elif event_type in (
+                "response.output_text.done",
+                "response.content_part.done",
+            ):
+                text = _event_output_text(event)
+                if text and not assistant_text:
+                    assistant_text = text
+                    yield _sse_frame("token", {"text": text})
             elif event_type in ("response.completed", "response.done"):
-                response_obj = getattr(event, "response", None)
-                if response_obj is None and isinstance(event, dict):
-                    response_obj = event.get("response")
+                response_obj = _event_field(event, "response")
                 completed_response_obj = response_obj
                 if response_obj is not None:
                     ensure_response_completed(
@@ -521,9 +556,7 @@ async def _stream_cleanup_events(
                         if assistant_text:
                             yield _sse_frame("token", {"text": assistant_text})
             elif event_type in ("response.error", "error"):
-                error_obj = getattr(event, "error", None)
-                if error_obj is None and isinstance(event, dict):
-                    error_obj = event.get("error")
+                error_obj = _event_field(event, "error")
                 message = "AI service error. Please try again later."
                 if isinstance(error_obj, dict):
                     message = str(error_obj.get("message") or message)
@@ -625,9 +658,10 @@ async def cleanup_dictation(request: CleanupRequest, user: CurrentUser):
             instructions=prepared.instructions,
             input=prepared.input,
             reasoning={"effort": "low"},
-            text={"verbosity": "low"},
+            text=_dictation_cleanup_text_config(),
             max_output_tokens=prepared.max_output_tokens,
             prompt_cache_key=prepared.prompt_cache_key,
+            prompt_cache_retention="24h",
             store=False,
         )
 
@@ -744,7 +778,7 @@ async def translate_dictation(request: TranslationRequest, user: CurrentUser):
                 "</dictated_text>"
             ),
             reasoning={"effort": "low"},
-            text={"verbosity": "low"},
+            text=_dictation_cleanup_text_config(),
             max_output_tokens=_cleanup_output_token_cap(text),
             store=False,
         )

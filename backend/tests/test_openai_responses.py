@@ -194,6 +194,21 @@ def test_response_output_text_attr_form() -> None:
     assert response_output_text(obj) == "from attr"
 
 
+def test_response_output_text_reads_nested_response_output() -> None:
+    payload = {
+        "output": [
+            {
+                "type": "message",
+                "content": [
+                    {"type": "output_text", "text": "hello"},
+                    {"type": "output_text", "text": " world"},
+                ],
+            }
+        ]
+    }
+    assert response_output_text(payload) == "hello world"
+
+
 def test_response_output_text_missing_field_raises() -> None:
     with pytest.raises(OpenAIResponseError, match="did not include output_text"):
         response_output_text({})
