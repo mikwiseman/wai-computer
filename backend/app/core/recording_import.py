@@ -417,6 +417,8 @@ async def _persist_segments(
         extracted_names = await extract_speaker_names(
             transcript_results=transcript_results,
             raw_labels=speaker_assignments.keys(),
+            usage_user_id=user_id,
+            usage_recording_id=recording.id,
         )
         if extracted_names:
             await apply_extracted_names(
@@ -439,7 +441,13 @@ async def _persist_segments(
         max_end_ms = max(max_end_ms, tr.end_ms)
         embedding = None
         try:
-            embedding = await generate_embedding(text)
+            embedding = await generate_embedding(
+                text,
+                usage_user_id=user_id,
+                usage_recording_id=recording.id,
+                usage_feature="recording",
+                usage_operation="embedding.segment",
+            )
         except Exception:
             logger.warning("failed to generate imported segment embedding")
 
@@ -677,6 +685,8 @@ async def import_media_as_recording(
                     user_id=user.id,
                 ),
             ),
+            usage_user_id=user.id,
+            usage_recording_id=recording.id,
         )
         if not explicit_title:
             generated_title = summary_result.title.strip()

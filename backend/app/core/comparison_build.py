@@ -86,7 +86,11 @@ async def build_comparison_set(
     ]
 
     try:
-        result = await build_comparison(comparison_items, intent=intent)
+        result = await build_comparison(
+            comparison_items,
+            intent=intent,
+            usage_user_id=cs.user_id,
+        )
     except Exception as exc:  # noqa: BLE001 — record failure, don't crash the worker
         cs.status = "failed"
         cs.schema_rationale = f"Comparison failed: {type(exc).__name__}"

@@ -388,7 +388,7 @@ async def upload_item(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Empty file.")
 
     try:
-        body = (await extract_document_text(ext, data)).strip()
+        body = (await extract_document_text(ext, data, usage_user_id=user.id)).strip()
     except DocumentExtractionError as exc:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,

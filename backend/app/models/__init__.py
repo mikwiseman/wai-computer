@@ -2,6 +2,7 @@
 
 from app.models.admin import AdminAuditLog, AdminRole, StaffMember
 from app.models.agent import Agent, AgentRun, AgentStep
+from app.models.ai_usage import AiUsageEvent
 from app.models.api_key import ApiKey
 from app.models.base import Base
 from app.models.benchmark import DictationBenchmarkVote
@@ -99,6 +100,7 @@ __all__ = [
     "ItemChunk",
     "ItemSummary",
     "ComparisonSet",
+    "AiUsageEvent",
     "McpConnection",
     "McpIngestionRun",
     "MemoryProposal",

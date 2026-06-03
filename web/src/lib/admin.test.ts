@@ -3,6 +3,7 @@ import {
   archiveAdminPromoCode,
   cancelAdminSubscription,
   createAdminPromoCode,
+  getAdminAiUsage,
   getAdminDeepgramUsage,
   getAdminObservability,
   getAdminStats,
@@ -39,6 +40,7 @@ describe("admin api wrappers", () => {
     await getAdminStats();
     await getAdminObservability();
     await getAdminDeepgramUsage();
+    await getAdminAiUsage();
     await listAdminPromoCodes();
     await listAdminUsers();
     await listAdminUsers("  test+admin@example.com  ");
@@ -48,14 +50,32 @@ describe("admin api wrappers", () => {
     expect(mockedApiFetch).toHaveBeenNthCalledWith(1, "/api/admin/stats");
     expect(mockedApiFetch).toHaveBeenNthCalledWith(2, "/api/admin/observability");
     expect(mockedApiFetch).toHaveBeenNthCalledWith(3, "/api/admin/deepgram-usage?days=7");
-    expect(mockedApiFetch).toHaveBeenNthCalledWith(4, "/api/admin/promo-codes");
-    expect(mockedApiFetch).toHaveBeenNthCalledWith(5, "/api/admin/users");
+    expect(mockedApiFetch).toHaveBeenNthCalledWith(4, "/api/admin/ai-usage?days=7");
+    expect(mockedApiFetch).toHaveBeenNthCalledWith(5, "/api/admin/promo-codes");
+    expect(mockedApiFetch).toHaveBeenNthCalledWith(6, "/api/admin/users");
     expect(mockedApiFetch).toHaveBeenNthCalledWith(
-      6,
+      7,
       "/api/admin/users?q=test%2Badmin%40example.com",
     );
-    expect(mockedApiFetch).toHaveBeenNthCalledWith(7, "/api/admin/billing");
-    expect(mockedApiFetch).toHaveBeenNthCalledWith(8, "/api/admin/audit");
+    expect(mockedApiFetch).toHaveBeenNthCalledWith(8, "/api/admin/billing");
+    expect(mockedApiFetch).toHaveBeenNthCalledWith(9, "/api/admin/audit");
+  });
+
+  it("builds AI usage filter URLs", async () => {
+    await getAdminAiUsage({
+      days: 30,
+      provider: " openai ",
+      feature: " companion ",
+      model: " gpt-5.5 ",
+      status: " failed ",
+      user_id: " user-1 ",
+      q: " user@example.com ",
+      limit: 250,
+    });
+
+    expect(mockedApiFetch).toHaveBeenCalledWith(
+      "/api/admin/ai-usage?days=30&provider=openai&feature=companion&model=gpt-5.5&status=failed&user_id=user-1&q=user%40example.com&limit=250",
+    );
   });
 
   it("calls promo mutation endpoints", async () => {

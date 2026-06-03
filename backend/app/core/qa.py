@@ -39,7 +39,12 @@ async def retrieve_context(
     limit: int = 15,
 ) -> list:
     """Retrieve relevant transcript segments using hybrid search (RRF)."""
-    query_embedding_list = await generate_embedding(question)
+    query_embedding_list = await generate_embedding(
+        question,
+        usage_user_id=user_id,
+        usage_feature="companion",
+        usage_operation="embedding.qa",
+    )
     query_embedding = format_embedding(query_embedding_list)
 
     recording_filter = ""

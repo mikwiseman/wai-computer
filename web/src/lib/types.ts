@@ -5,6 +5,7 @@ export type EntityType = "person" | "organization" | "project" | "topic";
 export type ExportFormat = "markdown" | "txt" | "srt";
 export type ExportLocale = "en" | "ru";
 export type RealtimeVoiceMode = "conversation" | "recording";
+export type DeploymentMode = "wai_cloud" | "self_host" | "provisioning";
 
 export type SummaryStyle = "brief" | "medium" | "detailed";
 export type DictationCleanupLevel = "none" | "light" | "medium" | "high";
@@ -24,6 +25,75 @@ export interface UserSettings {
   dictation_cleanup_level: DictationCleanupLevel;
   dictation_post_filter_provider: string;
   dictation_post_filter_model: string;
+}
+
+export interface SystemInfo {
+  app_name: string;
+  deployment_mode: DeploymentMode;
+  public_base_url: string;
+  cloud_base_url: string;
+  mcp_url: string;
+  git_sha: string | null;
+  git_dirty: boolean;
+  audio_retention_policy: "delete_after_processing";
+  self_hosting_available: boolean;
+  billing_mode: "cloud" | "self_host";
+}
+
+export type OwnershipClassification =
+  | "owned_exportable"
+  | "self_host_local"
+  | "hosted_control_plane"
+  | "reconnect_required"
+  | "excluded_with_reason";
+
+export interface OwnershipEntry {
+  name: string;
+  table?: string;
+  classification: OwnershipClassification;
+  reason: string;
+  contains_user_content: boolean;
+  requires_reconnect: boolean;
+  path_hint?: string | null;
+}
+
+export interface DataOwnershipMap {
+  audio_retention_policy: "delete_after_processing";
+  tables: OwnershipEntry[];
+  artifacts: OwnershipEntry[];
+}
+
+export interface SelfHostProvisionRequest {
+  hostname: string;
+  vps_ip: string;
+  ssh_username: string;
+  auth_method: "ssh_key" | "password";
+  ssh_public_key?: string | null;
+  ssh_password?: string | null;
+}
+
+export interface SelfHostProvisionStep {
+  id: string;
+  label: string;
+  status: "pending" | "manual_review_required" | "blocked";
+}
+
+export interface SelfHostProvisionResponse {
+  job_id: string;
+  status: "manual_review_required";
+  hostname: string;
+  vps_ip: string;
+  steps: SelfHostProvisionStep[];
+  message: string;
+}
+
+export interface SelfHostMigrationPreflight {
+  status: "ready";
+  owned_exportable: string[];
+  reconnect_required: string[];
+  server_local: string[];
+  excluded: string[];
+  data_map: DataOwnershipMap;
 }
 
 export interface TelegramLinkStatus {

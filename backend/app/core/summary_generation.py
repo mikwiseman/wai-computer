@@ -285,6 +285,8 @@ async def generate_summary_for_payload(payload: SummaryGenerationPayload) -> Sum
         language=payload.language,
         style=payload.style,
         instructions=payload.instructions,
+        usage_user_id=payload.user_id,
+        usage_recording_id=payload.recording_id,
     )
 
 

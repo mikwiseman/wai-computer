@@ -10,6 +10,11 @@ import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
+from app.core.ai_usage import (
+    DEEPGRAM_PROVIDER,
+    FEATURE_TRANSCRIPTION,
+    record_ai_usage_event,
+)
 from app.db.session import get_db_context
 from app.models.deepgram_usage import DeepgramUsageEvent
 
@@ -120,6 +125,32 @@ async def record_deepgram_usage_event(
             details=details,
         )
         db.add(event)
+        await record_ai_usage_event(
+            db,
+            provider=DEEPGRAM_PROVIDER,
+            feature=_feature_for_purpose(purpose),
+            operation=operation,
+            status=status,
+            user_id=user_id,
+            recording_id=recording_id,
+            model=model,
+            audio_seconds=audio_seconds,
+            billable_seconds=billable_seconds,
+            channel_count=channel_count,
+            audio_bytes=audio_bytes,
+            latency_ms=latency_ms,
+            provider_status_code=provider_status_code,
+            provider_error_code=provider_error_code,
+            guard_code=guard_code,
+            error_type=error_type,
+            request_id=request_id,
+            task_id=task_id,
+            details={
+                "source": "deepgram_usage_events",
+                "purpose": purpose,
+                "content_type": content_type,
+            },
+        )
         if commit:
             await db.commit()
         else:
@@ -156,6 +187,13 @@ def effective_billable_seconds(
 def _tag_value(value: str) -> str:
     normalized = value.strip().lower().replace(" ", "-")
     return normalized[:DEEPGRAM_TAG_LIMIT]
+
+
+def _feature_for_purpose(purpose: str) -> str:
+    normalized = purpose.strip().lower()
+    if normalized in {"recording", "dictation", "materials", "telegram"}:
+        return normalized
+    return FEATURE_TRANSCRIPTION
 
 
 def _uuid_or_none(value: UUID | str | None) -> UUID | None:

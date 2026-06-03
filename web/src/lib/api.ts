@@ -24,6 +24,7 @@ import type {
   DictationBenchmarkVoteResponse,
   DictationDictionaryWord,
   DictationEntry,
+  DataOwnershipMap,
   ExportFormat,
   ExportLocale,
   Folder,
@@ -46,11 +47,15 @@ import type {
   RecordingShareLink,
   RematchSpeakersResponse,
   SearchResponse,
+  SelfHostMigrationPreflight,
+  SelfHostProvisionRequest,
+  SelfHostProvisionResponse,
   TranscriptSegmentInput,
   SpeakerStatsResponse,
   SharedRecording,
   Summary,
   SummaryGeneration,
+  SystemInfo,
   TelegramLinkStatus,
   TelegramPairing,
   TokenResponse,
@@ -202,6 +207,27 @@ export async function logout(): Promise<MessageResponse> {
 
 export function getCurrentUser(): Promise<User> {
   return apiFetch<User>("/api/auth/me");
+}
+
+export function getSystemInfo(): Promise<SystemInfo> {
+  return apiFetch<SystemInfo>("/api/system/info");
+}
+
+export function getDataOwnershipMap(): Promise<DataOwnershipMap> {
+  return apiFetch<DataOwnershipMap>("/api/system/data-map");
+}
+
+export function getSelfHostMigrationPreflight(): Promise<SelfHostMigrationPreflight> {
+  return apiFetch<SelfHostMigrationPreflight>("/api/self-host/migration/preflight");
+}
+
+export function startSelfHostProvision(
+  input: SelfHostProvisionRequest,
+): Promise<SelfHostProvisionResponse> {
+  return apiFetch<SelfHostProvisionResponse>("/api/self-host/provision", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
 }
 
 export function deleteAccount(): Promise<MessageResponse> {

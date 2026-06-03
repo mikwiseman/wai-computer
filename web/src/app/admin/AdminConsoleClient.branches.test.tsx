@@ -5,6 +5,7 @@ import {
   archiveAdminPromoCode,
   cancelAdminSubscription,
   createAdminPromoCode,
+  getAdminAiUsage,
   getAdminDeepgramUsage,
   getAdminObservability,
   getAdminUser,
@@ -20,6 +21,7 @@ import {
   updateAdminPromoCode,
   updateAdminSubscription,
   updateAdminUserStatus,
+  type AdminAiUsage,
   type AdminBillingSubscription,
   type AdminDeepgramUsage,
   type AdminPromoCode,
@@ -44,6 +46,7 @@ vi.mock("@/lib/admin", () => ({
   archiveAdminPromoCode: vi.fn(),
   cancelAdminSubscription: vi.fn(),
   createAdminPromoCode: vi.fn(),
+  getAdminAiUsage: vi.fn(),
   getAdminDeepgramUsage: vi.fn(),
   getAdminObservability: vi.fn(),
   getAdminStats: vi.fn(),
@@ -62,6 +65,7 @@ vi.mock("@/lib/admin", () => ({
 }));
 
 const mockedStats = vi.mocked(getAdminStats);
+const mockedAiUsage = vi.mocked(getAdminAiUsage);
 const mockedDeepgramUsage = vi.mocked(getAdminDeepgramUsage);
 const mockedObservability = vi.mocked(getAdminObservability);
 const mockedPromos = vi.mocked(listAdminPromoCodes);
@@ -217,6 +221,42 @@ const DEEPGRAM_USAGE: AdminDeepgramUsage = {
   ],
 };
 
+const AI_USAGE: AdminAiUsage = {
+  generated_at: "2026-06-03T09:00:00Z",
+  window_days: 7,
+  filters: { days: 7 },
+  summary: {
+    events: 0,
+    estimated_cost_usd: 0,
+    input_tokens: 0,
+    output_tokens: 0,
+    cached_tokens: 0,
+    reasoning_tokens: 0,
+    total_tokens: 0,
+    billable_seconds: 0,
+    audio_seconds: 0,
+    failed_events: 0,
+    refused_events: 0,
+    unpriced_events: 0,
+    avg_latency_ms: 0,
+    p95_latency_ms: null,
+  },
+  by_day: [],
+  by_provider: [],
+  by_feature: [],
+  by_model: [],
+  by_user: [],
+  recent_events: [],
+  analysis: [
+    {
+      severity: "info",
+      code: "ai_usage.ledger.empty",
+      title: "No AI usage captured in this window",
+      detail: "The unified ledger starts after this deployment.",
+    },
+  ],
+};
+
 const ACCESS_PROMO: AdminPromoCode = {
   id: "promo-access",
   code: "WAI-LAUNCH-30",
@@ -309,6 +349,7 @@ const TINKOFF_SUB: AdminBillingSubscription = {
 
 function setupMocks() {
   mockedStats.mockResolvedValue(structuredClone(STATS));
+  mockedAiUsage.mockResolvedValue(structuredClone(AI_USAGE));
   mockedDeepgramUsage.mockResolvedValue(structuredClone(DEEPGRAM_USAGE));
   mockedObservability.mockResolvedValue(structuredClone(OBSERVABILITY));
   mockedPromos.mockResolvedValue([structuredClone(ACCESS_PROMO), structuredClone(DISCOUNT_PROMO)]);

@@ -144,7 +144,12 @@ async def hybrid_search(
     )
     like_query = f"%{_escape_like_term(q)}%"
     # Generate embedding for semantic search
-    query_embedding_list = await generate_embedding(q)
+    query_embedding_list = await generate_embedding(
+        q,
+        usage_user_id=user.id,
+        usage_feature="search",
+        usage_operation="embedding.query",
+    )
     query_embedding = format_embedding(query_embedding_list)
 
     # Prefer direct lexical matches. Semantic-only rows are useful for broad conceptual
@@ -436,7 +441,12 @@ async def semantic_search(
         message="Semantic search",
         data={**safe_query_metadata(q), "limit": limit, "threshold": threshold},
     )
-    query_embedding_list = await generate_embedding(q)
+    query_embedding_list = await generate_embedding(
+        q,
+        usage_user_id=user.id,
+        usage_feature="search",
+        usage_operation="embedding.query",
+    )
     query_embedding = format_embedding(query_embedding_list)
 
     # Semantic search query

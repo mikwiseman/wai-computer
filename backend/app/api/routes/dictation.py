@@ -24,6 +24,13 @@ from sqlalchemy import select
 from app.api.deps import CurrentUser, Database, PaymentModeOverride
 from app.billing.quota import WordQuota, count_words
 from app.config import get_settings
+from app.core.ai_usage import (
+    FEATURE_DICTATION,
+    OPENAI_PROVIDER,
+    STATUS_FAILED,
+    STATUS_SUCCEEDED,
+    record_ai_usage_event_standalone,
+)
 from app.core.openai_client import get_openai_client
 from app.core.openai_responses import (
     OpenAIResponseError,
@@ -498,6 +505,31 @@ def _cleanup_error_frame(code: str, message: str) -> bytes:
     return _sse_frame("error", {"code": code, "message": message})
 
 
+async def _record_dictation_ai_usage(
+    *,
+    operation: str,
+    status_value: str,
+    user_id: UUID,
+    model: str | None,
+    response: Any,
+    started: float,
+    error: Exception | None = None,
+    streamed: bool = False,
+) -> None:
+    await record_ai_usage_event_standalone(
+        provider=OPENAI_PROVIDER,
+        feature=FEATURE_DICTATION,
+        operation=operation,
+        status=status_value,
+        user_id=user_id,
+        model=model,
+        response=response,
+        latency_ms=round((time.monotonic() - started) * 1000),
+        error_type=type(error).__name__ if error is not None else None,
+        details={"streamed": streamed},
+    )
+
+
 async def _stream_cleanup_events(
     prepared: CleanupOpenAIRequest,
     user_id: UUID,
@@ -578,32 +610,91 @@ async def _stream_cleanup_events(
             len(cleaned),
             user_id,
         )
+        await _record_dictation_ai_usage(
+            operation="dictation.cleanup",
+            status_value=STATUS_SUCCEEDED,
+            user_id=user_id,
+            model=_model_from_response(completed_response_obj, prepared.model),
+            response=completed_response_obj,
+            started=started,
+            streamed=True,
+        )
         yield _cleanup_done_frame(
             text=cleaned,
             model=_model_from_response(completed_response_obj, prepared.model),
             latency_ms=int((time.monotonic() - started) * 1000),
             usage=usage,
         )
-    except openai.APIConnectionError:
+    except openai.APIConnectionError as exc:
+        await _record_dictation_ai_usage(
+            operation="dictation.cleanup",
+            status_value=STATUS_FAILED,
+            user_id=user_id,
+            model=prepared.model,
+            response=completed_response_obj,
+            started=started,
+            error=exc,
+            streamed=True,
+        )
         yield _cleanup_error_frame("connection_error", "Unable to connect to AI service")
-    except openai.RateLimitError:
+    except openai.RateLimitError as exc:
+        await _record_dictation_ai_usage(
+            operation="dictation.cleanup",
+            status_value=STATUS_FAILED,
+            user_id=user_id,
+            model=prepared.model,
+            response=completed_response_obj,
+            started=started,
+            error=exc,
+            streamed=True,
+        )
         yield _cleanup_error_frame(
             "rate_limit",
             "AI service rate limit exceeded. Please try again later.",
         )
     except openai.APIStatusError as exc:
+        await _record_dictation_ai_usage(
+            operation="dictation.cleanup",
+            status_value=STATUS_FAILED,
+            user_id=user_id,
+            model=prepared.model,
+            response=completed_response_obj,
+            started=started,
+            error=exc,
+            streamed=True,
+        )
         logger.warning("Dictation cleanup stream upstream error: %s", exc)
         yield _cleanup_error_frame(
             "upstream_error",
             "AI service error. Please try again later.",
         )
     except OpenAIResponseError as exc:
+        await _record_dictation_ai_usage(
+            operation="dictation.cleanup",
+            status_value=STATUS_FAILED,
+            user_id=user_id,
+            model=prepared.model,
+            response=completed_response_obj,
+            started=started,
+            error=exc,
+            streamed=True,
+        )
         logger.warning("Dictation cleanup stream incomplete response: %s", exc)
         yield _cleanup_error_frame(
             "incomplete_response",
             "AI service returned an incomplete cleanup response.",
         )
-    except Exception:
+    except Exception as exc:
+        await _record_dictation_ai_usage(
+            operation="dictation.cleanup",
+            status_value=STATUS_FAILED,
+            user_id=user_id,
+            model=prepared.model,
+            response=completed_response_obj,
+            started=started,
+            error=exc,
+            streamed=True,
+        )
         logger.exception("Dictation cleanup stream failed")
         yield _cleanup_error_frame("cleanup_failed", "Dictation cleanup failed")
 
@@ -651,6 +742,10 @@ async def cleanup_dictation(request: CleanupRequest, user: CurrentUser):
     if isinstance(prepared, CleanupResponse):
         return prepared
 
+    started = time.monotonic()
+    response = None
+    started = time.monotonic()
+    response = None
     try:
         client = get_openai_client()
         response = await client.responses.create(
@@ -674,33 +769,86 @@ async def cleanup_dictation(request: CleanupRequest, user: CurrentUser):
             len(cleaned),
             user.id,
         )
+        await _record_dictation_ai_usage(
+            operation="dictation.cleanup",
+            status_value=STATUS_SUCCEEDED,
+            user_id=user.id,
+            model=_model_from_response(response, prepared.model),
+            response=response,
+            started=started,
+        )
         return CleanupResponse(text=cleaned)
 
     except HTTPException:
         raise
-    except openai.APIConnectionError:
+    except openai.APIConnectionError as exc:
+        await _record_dictation_ai_usage(
+            operation="dictation.cleanup",
+            status_value=STATUS_FAILED,
+            user_id=user.id,
+            model=prepared.model,
+            response=response,
+            started=started,
+            error=exc,
+        )
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail="Unable to connect to AI service",
         ) from None
-    except openai.RateLimitError:
+    except openai.RateLimitError as exc:
+        await _record_dictation_ai_usage(
+            operation="dictation.cleanup",
+            status_value=STATUS_FAILED,
+            user_id=user.id,
+            model=prepared.model,
+            response=response,
+            started=started,
+            error=exc,
+        )
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail="AI service rate limit exceeded. Please try again later.",
         ) from None
     except openai.APIStatusError as exc:
+        await _record_dictation_ai_usage(
+            operation="dictation.cleanup",
+            status_value=STATUS_FAILED,
+            user_id=user.id,
+            model=prepared.model,
+            response=response,
+            started=started,
+            error=exc,
+        )
         logger.warning("Dictation cleanup upstream error: %s", exc)
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail="AI service error. Please try again later.",
         ) from exc
     except OpenAIResponseError as exc:
+        await _record_dictation_ai_usage(
+            operation="dictation.cleanup",
+            status_value=STATUS_FAILED,
+            user_id=user.id,
+            model=prepared.model,
+            response=response,
+            started=started,
+            error=exc,
+        )
         logger.warning("Dictation cleanup incomplete response: %s", exc)
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail="AI service returned an incomplete cleanup response.",
         ) from exc
-    except Exception:
+    except Exception as exc:
+        await _record_dictation_ai_usage(
+            operation="dictation.cleanup",
+            status_value=STATUS_FAILED,
+            user_id=user.id,
+            model=prepared.model,
+            response=response,
+            started=started,
+            error=exc,
+        )
         logger.exception("Dictation cleanup failed")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -762,6 +910,8 @@ async def translate_dictation(request: TranslationRequest, user: CurrentUser):
             detail=f"Unsupported dictation post-filter provider: {provider}",
         )
 
+    response = None
+    started = time.monotonic()
     try:
         client = get_openai_client()
         response = await client.responses.create(
@@ -792,33 +942,86 @@ async def translate_dictation(request: TranslationRequest, user: CurrentUser):
             len(translated),
             user.id,
         )
+        await _record_dictation_ai_usage(
+            operation="dictation.translate",
+            status_value=STATUS_SUCCEEDED,
+            user_id=user.id,
+            model=_model_from_response(response, model),
+            response=response,
+            started=started,
+        )
         return CleanupResponse(text=translated)
 
     except HTTPException:
         raise
-    except openai.APIConnectionError:
+    except openai.APIConnectionError as exc:
+        await _record_dictation_ai_usage(
+            operation="dictation.translate",
+            status_value=STATUS_FAILED,
+            user_id=user.id,
+            model=model,
+            response=response,
+            started=started,
+            error=exc,
+        )
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail="Unable to connect to AI service",
         ) from None
-    except openai.RateLimitError:
+    except openai.RateLimitError as exc:
+        await _record_dictation_ai_usage(
+            operation="dictation.translate",
+            status_value=STATUS_FAILED,
+            user_id=user.id,
+            model=model,
+            response=response,
+            started=started,
+            error=exc,
+        )
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail="AI service rate limit exceeded. Please try again later.",
         ) from None
     except openai.APIStatusError as exc:
+        await _record_dictation_ai_usage(
+            operation="dictation.translate",
+            status_value=STATUS_FAILED,
+            user_id=user.id,
+            model=model,
+            response=response,
+            started=started,
+            error=exc,
+        )
         logger.warning("Dictation translation upstream error: %s", exc)
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail="AI service error. Please try again later.",
         ) from exc
     except OpenAIResponseError as exc:
+        await _record_dictation_ai_usage(
+            operation="dictation.translate",
+            status_value=STATUS_FAILED,
+            user_id=user.id,
+            model=model,
+            response=response,
+            started=started,
+            error=exc,
+        )
         logger.warning("Dictation translation incomplete response: %s", exc)
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail="AI service returned an incomplete translation response.",
         ) from exc
-    except Exception:
+    except Exception as exc:
+        await _record_dictation_ai_usage(
+            operation="dictation.translate",
+            status_value=STATUS_FAILED,
+            user_id=user.id,
+            model=model,
+            response=response,
+            started=started,
+            error=exc,
+        )
         logger.exception("Dictation translation failed")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

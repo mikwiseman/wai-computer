@@ -939,7 +939,13 @@ async def _persist_client_segments(
         text = segment.text.strip()
         embedding = None
         try:
-            embedding = await generate_embedding(text)
+            embedding = await generate_embedding(
+                text,
+                usage_user_id=recording.user_id,
+                usage_recording_id=recording.id,
+                usage_feature="recording",
+                usage_operation="embedding.segment",
+            )
         except Exception as error:
             logger.warning("Failed to generate embedding: %s", error)
 
@@ -972,6 +978,8 @@ async def _persist_client_segments(
             recording.title = await generate_title(
                 transcript_text,
                 language=recording.language or "auto",
+                usage_user_id=recording.user_id,
+                usage_recording_id=recording.id,
             )
         except Exception as error:
             logger.warning("Title generation failed: %s", error)
@@ -2828,6 +2836,8 @@ async def generate_summary(
                     user_id=user.id,
                 ),
             ),
+            usage_user_id=user.id,
+            usage_recording_id=recording.id,
         )
 
         await apply_summary_result(db, recording=recording, summary_result=summary_result)

@@ -9,6 +9,11 @@ vi.mock("@/lib/api", () => ({
 }));
 
 let clipboardWriteText: ReturnType<typeof vi.fn>;
+const endpointUrl = "https://demo.self.wai.computer/mcp";
+
+function renderSection() {
+  render(<McpConnectSection endpointUrl={endpointUrl} />);
+}
 
 describe("McpConnectSection", () => {
   beforeEach(() => {
@@ -28,14 +33,14 @@ describe("McpConnectSection", () => {
     vi.restoreAllMocks();
   });
 
-  it("renders the canonical production MCP endpoint URL", () => {
-    render(<McpConnectSection />);
+  it("renders the active MCP endpoint URL", () => {
+    renderSection();
     const url = screen.getByTestId("mcp-endpoint-url");
-    expect(url.textContent).toBe("https://wai.computer/mcp");
+    expect(url.textContent).toBe(endpointUrl);
   });
 
   it("defaults to the Claude.ai guide and exposes the external link", () => {
-    render(<McpConnectSection />);
+    renderSection();
     expect(screen.getByTestId("mcp-guide-claudeai")).toBeTruthy();
     const link = screen.getByRole("link", { name: /Open Connectors in Claude\.ai/i }) as HTMLAnchorElement;
     expect(link.href).toBe("https://claude.ai/customize/connectors");
@@ -43,44 +48,46 @@ describe("McpConnectSection", () => {
   });
 
   it("switches to the Cursor guide and shows the JSON snippet", () => {
-    render(<McpConnectSection />);
+    renderSection();
     fireEvent.click(screen.getByRole("tab", { name: "Cursor" }));
     expect(screen.getByTestId("mcp-guide-cursor")).toBeTruthy();
     const snippet = screen.getByText(/"mcpServers"/);
-    expect(snippet.textContent).toContain("https://wai.computer/mcp");
+    expect(snippet.textContent).toContain(endpointUrl);
   });
 
   it("copies the endpoint URL to the clipboard and shows confirmation", async () => {
-    render(<McpConnectSection />);
+    renderSection();
     fireEvent.click(screen.getByTestId("mcp-copy-endpoint"));
     await waitFor(() => {
-      expect(clipboardWriteText).toHaveBeenCalledWith("https://wai.computer/mcp");
+      expect(clipboardWriteText).toHaveBeenCalledWith(endpointUrl);
     });
     expect(screen.getByTestId("mcp-copy-endpoint").textContent).toBe("Copied");
   });
 
   it("copies the active client snippet when present", async () => {
-    render(<McpConnectSection />);
+    renderSection();
     fireEvent.click(screen.getByRole("tab", { name: "Codex CLI" }));
     fireEvent.click(screen.getByTestId("mcp-copy-snippet"));
     await waitFor(() => {
       const lastCall = clipboardWriteText.mock.calls.at(-1);
-      expect(lastCall?.[0]).toContain("codex mcp add waicomputer --url https://wai.computer/mcp");
+      expect(lastCall?.[0]).toContain(`codex mcp add waicomputer --url ${endpointUrl}`);
     });
   });
 
   it("uses --transport http in the Claude Code CLI snippet so it is treated as HTTP, not stdio", async () => {
-    render(<McpConnectSection />);
+    renderSection();
     fireEvent.click(screen.getByRole("tab", { name: "Claude Code" }));
     fireEvent.click(screen.getByTestId("mcp-copy-snippet"));
     await waitFor(() => {
       const lastCall = clipboardWriteText.mock.calls.at(-1);
-      expect(lastCall?.[0]).toContain("claude mcp add --transport http waicomputer https://wai.computer/mcp");
+      expect(lastCall?.[0]).toContain(
+        `claude mcp add --transport http waicomputer ${endpointUrl}`,
+      );
     });
   });
 
   it("documents the headless bot recipe: API token via Bearer on REST + MCP", () => {
-    render(<McpConnectSection />);
+    renderSection();
     fireEvent.click(screen.getByRole("tab", { name: "Custom / bot" }));
     const guide = screen.getByTestId("mcp-guide-bot");
     expect(guide.textContent).toMatch(/API token/i);

@@ -94,11 +94,18 @@ async def ingest_item(
     doc_embedding: list[float] | None = None
     chunk_vectors: list[list[float] | None] = [None] * len(chunks)
     if embed:
-        embed_fn = embedder or generate_embeddings
         doc_text = _doc_embed_text(title, body, url)
         to_embed = [doc_text, *chunks] if doc_text else list(chunks)
         if to_embed:
-            vectors = await embed_fn(to_embed)
+            if embedder is None:
+                vectors = await generate_embeddings(
+                    to_embed,
+                    usage_user_id=user_id,
+                    usage_feature="materials",
+                    usage_operation="embedding.item",
+                )
+            else:
+                vectors = await embedder(to_embed)
             if doc_text:
                 doc_embedding = vectors[0]
                 chunk_vectors = vectors[1:]
