@@ -39,7 +39,7 @@ class ProvisionStep(BaseModel):
 class ProvisionRequest(BaseModel):
     model_config = ConfigDict(validate_default=True)
 
-    hostname: str = Field(min_length=3, max_length=253)
+    hostname: str | None = Field(default=None, max_length=253)
     vps_ip: str = Field(min_length=3, max_length=64)
     ssh_username: str = Field(default="root", min_length=1, max_length=64)
     auth_method: Literal["ssh_key", "password"]
@@ -48,8 +48,14 @@ class ProvisionRequest(BaseModel):
 
     @field_validator("hostname")
     @classmethod
-    def validate_hostname(cls, value: str) -> str:
+    def validate_hostname(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
         normalized = value.strip().lower().rstrip(".")
+        if not normalized:
+            return None
+        if len(normalized) < 3:
+            raise ValueError("hostname must be a valid DNS name")
         labels = normalized.split(".")
         if any(not label or len(label) > 63 for label in labels):
             raise ValueError("hostname must be a valid DNS name")
@@ -106,7 +112,7 @@ class ProvisionRequest(BaseModel):
 class ProvisionResponse(BaseModel):
     job_id: str
     status: Literal["manual_review_required"]
-    hostname: str
+    hostname: str | None
     vps_ip: str
     steps: list[ProvisionStep]
     message: str
@@ -180,12 +186,12 @@ async def start_provisioning(
     the API returns an explicit manual-review status that the UI can surface.
     """
     fingerprint = hashlib.sha256(
-        f"{user.id}:{payload.hostname}:{payload.vps_ip}".encode("utf-8")
+        f"{user.id}:{payload.hostname or ''}:{payload.vps_ip}".encode("utf-8")
     ).hexdigest()[:24]
     steps = [
         ProvisionStep(
             id="validate_inputs",
-            label="Validate server address and SSH access",
+            label="Validate VPS address and SSH access",
             status="manual_review_required",
         ),
         ProvisionStep(
@@ -203,7 +209,7 @@ async def start_provisioning(
         ),
         ProvisionStep(
             id="configure_dns_https",
-            label="Point DNS and issue HTTPS certificate",
+            label="Connect optional domain and issue HTTPS certificate",
             status="pending",
         ),
         ProvisionStep(

@@ -171,10 +171,17 @@ describe("AddAnythingPanel", () => {
     await waitFor(() => expect(screen.getByText("Uploaded Doc")).toBeInTheDocument());
   });
 
-  it("routes an audio/video upload to transcription (no item to poll)", async () => {
-    mockUploadItem.mockResolvedValue({ kind: "recording", status: "processing" });
+  it("routes an audio/video upload to a concrete recording row", async () => {
+    const onRecordingQueued = vi.fn();
+    mockUploadItem.mockResolvedValue({
+      kind: "recording",
+      status: "processing",
+      recording_id: "rec-upload",
+    });
 
-    const { container } = render(<AddAnythingPanel />);
+    const { container } = render(
+      <AddAnythingPanel onRecordingQueued={onRecordingQueued} />,
+    );
     const input = container.querySelector(
       '[data-testid="add-anything-file"]',
     ) as HTMLInputElement;
@@ -183,8 +190,9 @@ describe("AddAnythingPanel", () => {
 
     await waitFor(() => expect(mockUploadItem).toHaveBeenCalledWith(file));
     await waitFor(() =>
-      expect(screen.getByText(/appear in your recordings shortly/i)).toBeInTheDocument(),
+      expect(screen.getByText(/recording is now in your Inbox/i)).toBeInTheDocument(),
     );
+    expect(onRecordingQueued).toHaveBeenCalledWith("rec-upload");
     // Media has no Item — we must NOT try to poll a summary.
     expect(mockGetItem).not.toHaveBeenCalled();
   });

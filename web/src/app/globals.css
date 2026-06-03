@@ -1856,7 +1856,8 @@ a.primary-button[aria-disabled="true"]:hover {
 
 .server-data-provision h4,
 .server-data-provision .primary-button,
-.server-data-wide {
+.server-data-wide,
+.server-data-advanced {
   grid-column: 1 / -1;
 }
 
@@ -1871,6 +1872,30 @@ a.primary-button[aria-disabled="true"]:hover {
   display: flex;
   flex-wrap: wrap;
   gap: 0.55rem;
+}
+
+.server-data-help {
+  color: var(--ink-soft);
+  font-size: var(--font-label-size);
+  line-height: 1.35;
+}
+
+.server-data-advanced {
+  display: grid;
+  gap: 0.55rem;
+  min-width: 0;
+  padding: 0.55rem 0;
+}
+
+.server-data-advanced summary {
+  cursor: pointer;
+  color: var(--ink);
+  font-size: var(--font-body-small-size);
+  font-weight: 700;
+}
+
+.server-data-advanced label {
+  margin-top: 0.55rem;
 }
 
 .server-data-result p {

@@ -1,11 +1,11 @@
 import Foundation
 
 /// Result of `POST /api/items/upload`. Documents extract inline into an `Item`
-/// (201); audio/video are staged and transcribed into a Recording in the
-/// background (202) — there is no `Item` to poll, it surfaces under Recordings.
+/// (201); audio/video create a processing Recording immediately (202) and
+/// continue through the background media-import pipeline.
 public enum ItemUploadOutcome: Sendable {
     case item(Item)
-    case recording(status: String)
+    case recording(status: String, recordingId: String)
 }
 
 /// One row of an item's key-moments table (the hero "forward → table" output).

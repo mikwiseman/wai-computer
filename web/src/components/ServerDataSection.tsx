@@ -43,11 +43,15 @@ const COPY = {
       "The VPS check is tied to your account so we can show progress, migration status, and reconnect steps safely.",
     createAccount: "Create account",
     signIn: "Sign in",
-    hostname: "Server address",
+    hostname: "Public domain (optional)",
+    hostnameHelp: "Use this only if DNS is already pointed to the VPS. You can add it later.",
+    optionalDomain: "Optional public domain",
     ip: "VPS IP address",
+    ipHelp: "This is the server IP address from your VPS provider. Wai uses it for the SSH check.",
     user: "SSH user",
     method: "SSH method",
     publicKey: "SSH public key",
+    publicKeyHelp: "Use a public key that already has access to the VPS.",
     password: "Temporary password",
     start: "Check setup",
     starting: "Checking...",
@@ -75,11 +79,15 @@ const COPY = {
       "Проверка VPS привязана к аккаунту, чтобы безопасно показать прогресс, статус миграции и шаги переподключения.",
     createAccount: "Создать аккаунт",
     signIn: "Войти",
-    hostname: "Адрес сервера",
+    hostname: "Публичный домен (необязательно)",
+    hostnameHelp: "Укажите, только если DNS уже направлен на VPS. Домен можно добавить позже.",
+    optionalDomain: "Необязательный публичный домен",
     ip: "IP VPS",
+    ipHelp: "Это IP-адрес сервера от провайдера VPS. Wai использует его для проверки SSH.",
     user: "SSH пользователь",
     method: "Метод SSH",
     publicKey: "Публичный SSH ключ",
+    publicKeyHelp: "Используйте публичный ключ, у которого уже есть доступ к VPS.",
     password: "Временный пароль",
     start: "Проверить настройку",
     starting: "Проверяем...",
@@ -114,9 +122,9 @@ export function ServerDataSection({
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<SelfHostProvisionResponse | null>(null);
-  const [authMethod, setAuthMethod] = useState<AuthMethod>("ssh_key");
+  const [authMethod, setAuthMethod] = useState<AuthMethod>("password");
   const [form, setForm] = useState({
-    hostname: "my-server.self.wai.computer",
+    hostname: "",
     vps_ip: "",
     ssh_username: "root",
     ssh_public_key: "",
@@ -160,12 +168,13 @@ export function ServerDataSection({
     setError(null);
     setResult(null);
     try {
+      const trimmedHostname = form.hostname.trim();
       const response = await startSelfHostProvision({
-        hostname: form.hostname,
-        vps_ip: form.vps_ip,
-        ssh_username: form.ssh_username,
+        hostname: trimmedHostname ? trimmedHostname : null,
+        vps_ip: form.vps_ip.trim(),
+        ssh_username: form.ssh_username.trim(),
         auth_method: authMethod,
-        ssh_public_key: authMethod === "ssh_key" ? form.ssh_public_key : null,
+        ssh_public_key: authMethod === "ssh_key" ? form.ssh_public_key.trim() : null,
         ssh_password: authMethod === "password" ? form.ssh_password : null,
       });
       setResult(response);
@@ -251,18 +260,9 @@ export function ServerDataSection({
         <form className="server-data-provision" onSubmit={submitProvision}>
           <h4>{copy.provisionTitle}</h4>
           <label>
-            <span>{copy.hostname}</span>
-            <input
-              value={form.hostname}
-              onChange={(event) =>
-                setForm((current) => ({ ...current, hostname: event.target.value }))
-              }
-              required
-            />
-          </label>
-          <label>
             <span>{copy.ip}</span>
             <input
+              aria-label={copy.ip}
               value={form.vps_ip}
               onChange={(event) =>
                 setForm((current) => ({ ...current, vps_ip: event.target.value }))
@@ -271,10 +271,12 @@ export function ServerDataSection({
               inputMode="numeric"
               placeholder="203.0.113.10"
             />
+            <small className="server-data-help">{copy.ipHelp}</small>
           </label>
           <label>
             <span>{copy.user}</span>
             <input
+              aria-label={copy.user}
               value={form.ssh_username}
               onChange={(event) =>
                 setForm((current) => ({ ...current, ssh_username: event.target.value }))
@@ -285,17 +287,19 @@ export function ServerDataSection({
           <label>
             <span>{copy.method}</span>
             <select
+              aria-label={copy.method}
               value={authMethod}
               onChange={(event) => setAuthMethod(event.target.value as AuthMethod)}
             >
-              <option value="ssh_key">SSH key</option>
               <option value="password">Password</option>
+              <option value="ssh_key">SSH key</option>
             </select>
           </label>
           {authMethod === "ssh_key" ? (
             <label className="server-data-wide">
               <span>{copy.publicKey}</span>
               <textarea
+                aria-label={copy.publicKey}
                 value={form.ssh_public_key}
                 onChange={(event) =>
                   setForm((current) => ({ ...current, ssh_public_key: event.target.value }))
@@ -304,11 +308,13 @@ export function ServerDataSection({
                 required
                 rows={3}
               />
+              <small className="server-data-help">{copy.publicKeyHelp}</small>
             </label>
           ) : (
             <label>
               <span>{copy.password}</span>
               <input
+                aria-label={copy.password}
                 type="password"
                 value={form.ssh_password}
                 onChange={(event) =>
@@ -319,6 +325,21 @@ export function ServerDataSection({
               />
             </label>
           )}
+          <details className="server-data-advanced">
+            <summary>{copy.optionalDomain}</summary>
+            <label>
+              <span>{copy.hostname}</span>
+              <input
+                aria-label={copy.hostname}
+                value={form.hostname}
+                onChange={(event) =>
+                  setForm((current) => ({ ...current, hostname: event.target.value }))
+                }
+                placeholder="demo.example.com"
+              />
+              <small className="server-data-help">{copy.hostnameHelp}</small>
+            </label>
+          </details>
           <button type="submit" className="primary-button" disabled={submitting}>
             {submitting ? copy.starting : copy.start}
           </button>
@@ -327,7 +348,7 @@ export function ServerDataSection({
 
       {result ? (
         <div className="server-data-result" data-testid="server-provision-result">
-          <strong>{result.hostname}</strong>
+          <strong>{result.hostname ?? result.vps_ip}</strong>
           <p>{result.message}</p>
           <ol>
             {result.steps.map((step) => (

@@ -6,7 +6,7 @@ import type { Item, KeyMoment } from "@/lib/types";
 
 interface AddAnythingPanelProps {
   onCreated?: (item: Item) => void;
-  onRecordingQueued?: () => void;
+  onRecordingQueued?: (recordingId: string) => void;
   onError?: (message: string) => void;
 }
 
@@ -118,10 +118,8 @@ export function AddAnythingPanel({
       try {
         const outcome = await uploadItem(file);
         if (outcome.kind === "recording") {
-          // Audio/video go to the transcription pipeline — no Item to poll;
-          // it surfaces under Recordings when ready.
-          setStatus("Transcribing — it'll appear in your recordings shortly.");
-          onRecordingQueued?.();
+          setStatus("Transcribing — the recording is now in your Inbox.");
+          onRecordingQueued?.(outcome.recording_id);
           return;
         }
         const created = outcome.item;

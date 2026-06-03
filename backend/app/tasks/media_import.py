@@ -27,6 +27,7 @@ from app.core.observability import (
 )
 from app.core.recording_import import import_media_as_recording
 from app.db.session import get_db_context
+from app.models.recording import Recording
 from app.models.user import User
 from app.tasks.celery_app import celery_app
 from app.tasks.retry_policy import is_retryable_exception
@@ -38,6 +39,7 @@ async def _import(
     *,
     user_id: str,
     staged_path: str,
+    recording_id: str | None = None,
     filename: str | None,
     content_type: str | None,
     title: str | None,
@@ -52,6 +54,20 @@ async def _import(
             # Account vanished between upload and processing — nothing to attach to.
             logger.warning("media import: user gone, dropping staged upload")
             return
+        recording = None
+        if recording_id is not None:
+            recording = (
+                await db.execute(
+                    select(Recording).where(
+                        Recording.id == UUID(recording_id),
+                        Recording.user_id == user.id,
+                        Recording.deleted_at.is_(None),
+                    )
+                )
+            ).scalar_one_or_none()
+            if recording is None:
+                logger.warning("media import: recording gone, dropping staged upload")
+                return
         await import_media_as_recording(
             db=db,
             user=user,
@@ -61,6 +77,7 @@ async def _import(
             title=title,
             source_label="upload",
             language=language,
+            recording=recording,
         )
 
 
@@ -81,6 +98,7 @@ def import_uploaded_media_task(
     *,
     user_id: str,
     staged_path: str,
+    recording_id: str | None = None,
     filename: str | None = None,
     content_type: str | None = None,
     title: str | None = None,
@@ -91,6 +109,7 @@ def import_uploaded_media_task(
         asyncio.run(
             _import(
                 user_id=user_id,
+                recording_id=recording_id,
                 staged_path=staged_path,
                 filename=filename,
                 content_type=content_type,

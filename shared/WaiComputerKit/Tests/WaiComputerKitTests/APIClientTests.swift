@@ -1606,15 +1606,41 @@ final class APIClientTests: XCTestCase {
             let response = HTTPURLResponse(
                 url: request.url!, statusCode: 202, httpVersion: nil, headerFields: nil
             )!
-            let payload = #"{"kind":"recording","status":"processing"}"#.data(using: .utf8)!
+            let payload = #"{"kind":"recording","status":"processing","recording_id":"rec-media"}"#.data(using: .utf8)!
             return (response, payload)
         }
 
         let outcome = try await client.uploadItem(fileURL: tmp)
-        guard case let .recording(status) = outcome else {
+        guard case let .recording(status: status, recordingId: recordingId) = outcome else {
             return XCTFail("expected .recording outcome for an audio/video upload")
         }
         XCTAssertEqual(status, "processing")
+        XCTAssertEqual(recordingId, "rec-media")
+    }
+
+    func testUploadMediaRequiresRecordingId() async throws {
+        let client = makeClient()
+        let tmp = FileManager.default.temporaryDirectory
+            .appendingPathComponent("wai-test-\(UUID().uuidString).mp4")
+        try Data("fake video bytes".utf8).write(to: tmp)
+        defer { try? FileManager.default.removeItem(at: tmp) }
+
+        MockURLProtocol.requestHandler = { request in
+            let response = HTTPURLResponse(
+                url: request.url!, statusCode: 202, httpVersion: nil, headerFields: nil
+            )!
+            let payload = #"{"kind":"recording","status":"processing"}"#.data(using: .utf8)!
+            return (response, payload)
+        }
+
+        do {
+            _ = try await client.uploadItem(fileURL: tmp)
+            XCTFail("Expected media upload decoding to require recording_id")
+        } catch APIError.decodingError {
+            return
+        } catch {
+            XCTFail("Expected decodingError, got \(error)")
+        }
     }
 
     func testGetBrainGraphDecodes() async throws {

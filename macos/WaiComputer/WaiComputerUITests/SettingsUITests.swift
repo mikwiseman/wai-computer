@@ -89,10 +89,19 @@ final class SettingsUITests: XCTestCase {
         revealElementIfNeeded(serverDataHeader, in: app)
         XCTAssertTrue(waitForElement(serverDataHeader, in: app, timeout: 3))
 
-        let moveToServerButton = app.buttons
-            .matching(identifier: "settings-server-data-move-button")
+        let vpsIPField = app.textFields
+            .matching(identifier: "settings-server-data-vps-ip-field")
             .firstMatch
-        XCTAssertTrue(waitForElement(moveToServerButton, in: app, timeout: 3))
+        XCTAssertTrue(waitForElement(vpsIPField, in: app, timeout: 3))
+
+        let setupButton = app.buttons
+            .matching(identifier: "settings-server-data-check-button")
+            .firstMatch
+        XCTAssertTrue(waitForElement(setupButton, in: app, timeout: 3))
+        XCTAssertFalse(
+            app.buttons.matching(identifier: "settings-server-data-move-button").firstMatch.exists,
+            "Mac self-host setup must stay native instead of opening the web dashboard."
+        )
 
         // Sign out button
         let signOutButton = app.buttons.matching(identifier: "settings-sign-out-button").firstMatch

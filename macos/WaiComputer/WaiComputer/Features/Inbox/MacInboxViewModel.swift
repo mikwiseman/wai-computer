@@ -112,15 +112,38 @@ final class MacInboxViewModel: ObservableObject {
                 statusMessage = nil
                 await load()
                 return rows.first { $0.id == "item:\(item.id)" }
-            case .recording:
+            case .recording(status: _, recordingId: let recordingId):
                 errorMessage = nil
                 statusMessage = OnboardingL10n.text(
-                    "Transcribing — it'll appear in Inbox shortly.",
-                    "Расшифровываем — скоро появится в Инбоксе.",
+                    "Transcribing — the recording is now in Inbox.",
+                    "Расшифровываем — запись уже в Инбоксе.",
                     language: LanguageManager.shared.current
                 )
                 await load()
-                return nil
+                return rows.first { $0.id == "recording:\(recordingId)" } ?? InboxRow(
+                    id: "recording:\(recordingId)",
+                    sourceKind: .recording,
+                    sourceId: recordingId,
+                    detail: InboxDetailRef(kind: .recording, id: recordingId),
+                    title: url.deletingPathExtension().lastPathComponent,
+                    sourceLabel: "Recording",
+                    sublabel: "note",
+                    activityAt: Date(),
+                    createdAt: Date(),
+                    updatedAt: nil,
+                    occurredAt: Date(),
+                    status: .processing,
+                    sourceStatus: "processing",
+                    error: nil,
+                    folderId: nil,
+                    durationSeconds: nil,
+                    language: nil,
+                    hasSummary: false,
+                    isStarred: false,
+                    isPinned: false,
+                    isArchived: false,
+                    isTrashed: false
+                )
             }
         } catch {
             errorMessage = error.localizedDescription

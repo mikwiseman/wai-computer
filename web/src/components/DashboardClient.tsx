@@ -3095,6 +3095,20 @@ function UniversalInboxPanel({
     setShowCreate(false);
   }
 
+  async function handleRecordingQueued(recordingId: string) {
+    await onRefreshRecordings();
+    await loadInbox("replace");
+    try {
+      const detail = await getRecording(recordingId);
+      setSelectedRecording(detail);
+      setSelectedRow(recordingRowFromDetail(detail));
+      onRecordingUpdate(detail);
+      setShowCreate(false);
+    } catch (error: unknown) {
+      onError(formatError(error));
+    }
+  }
+
   async function handleNewChat() {
     onError(null);
     try {
@@ -3319,7 +3333,7 @@ function UniversalInboxPanel({
                   onItemsChanged();
                   void loadInbox("replace");
                 }}
-                onRecordingQueued={() => void loadInbox("replace")}
+                onRecordingQueued={(recordingId) => void handleRecordingQueued(recordingId)}
                 onError={onError}
               />
             </div>

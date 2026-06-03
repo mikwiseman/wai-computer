@@ -110,11 +110,12 @@ describe("ServerDataSection", () => {
     render(<ServerDataSection />);
 
     await screen.findByText("https://demo.self.wai.computer");
-    fireEvent.change(screen.getByLabelText("Server address"), {
-      target: { value: "demo.self.wai.computer" },
-    });
+    expect(screen.queryByLabelText("Server address")).toBeNull();
     fireEvent.change(screen.getByLabelText("VPS IP address"), {
       target: { value: "203.0.113.10" },
+    });
+    fireEvent.change(screen.getByLabelText("SSH method"), {
+      target: { value: "ssh_key" },
     });
     fireEvent.change(screen.getByLabelText("SSH public key"), {
       target: { value: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITest demo" },
@@ -123,7 +124,7 @@ describe("ServerDataSection", () => {
 
     await waitFor(() => {
       expect(mockStartSelfHostProvision).toHaveBeenCalledWith({
-        hostname: "demo.self.wai.computer",
+        hostname: null,
         vps_ip: "203.0.113.10",
         ssh_username: "root",
         auth_method: "ssh_key",
@@ -134,6 +135,34 @@ describe("ServerDataSection", () => {
     expect(await screen.findByTestId("server-provision-result")).toHaveTextContent(
       "manual_review_required",
     );
+  });
+
+  it("keeps the public domain optional behind an advanced section", async () => {
+    render(<ServerDataSection />);
+
+    await screen.findByText("https://demo.self.wai.computer");
+    fireEvent.change(screen.getByLabelText("VPS IP address"), {
+      target: { value: "203.0.113.10" },
+    });
+    fireEvent.change(screen.getByLabelText("Temporary password"), {
+      target: { value: "bootstrap-password" },
+    });
+    fireEvent.click(screen.getByText("Optional public domain"));
+    fireEvent.change(screen.getByLabelText("Public domain (optional)"), {
+      target: { value: "demo.self.wai.computer" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Check setup" }));
+
+    await waitFor(() => {
+      expect(mockStartSelfHostProvision).toHaveBeenCalledWith({
+        hostname: "demo.self.wai.computer",
+        vps_ip: "203.0.113.10",
+        ssh_username: "root",
+        auth_method: "password",
+        ssh_public_key: null,
+        ssh_password: "bootstrap-password",
+      });
+    });
   });
 
   it("shows account actions instead of the provisioning form in public setup mode", async () => {

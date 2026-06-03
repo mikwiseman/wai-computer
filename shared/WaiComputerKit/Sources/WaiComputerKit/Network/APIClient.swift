@@ -524,6 +524,22 @@ public actor APIClient {
         }
     }
 
+    // MARK: - System & Self-hosting
+
+    public func getSystemInfo() async throws -> SystemInfo {
+        return try await request(.GET, path: "/api/system/info")
+    }
+
+    public func getDataOwnershipMap() async throws -> DataOwnershipMap {
+        return try await request(.GET, path: "/api/system/data-map")
+    }
+
+    public func startSelfHostProvision(
+        _ request: SelfHostProvisionRequest
+    ) async throws -> SelfHostProvisionResponse {
+        return try await self.request(.POST, path: "/api/self-host/provision", body: request)
+    }
+
     // MARK: - Devices / Mac-edge channel
 
     /// Advertise this device's presence (and register it on first call).
@@ -1122,6 +1138,12 @@ public actor APIClient {
     /// than holding it all in memory in the request.
     private struct MediaProcessingMarker: Decodable {
         let status: String
+        let recordingId: String
+
+        private enum CodingKeys: String, CodingKey {
+            case status
+            case recordingId = "recording_id"
+        }
     }
 
     public func uploadItem(
@@ -1155,9 +1177,13 @@ public actor APIClient {
 
         // Audio/video are accepted as 202 (staged + transcribed in the background);
         // documents come back as a 201 Item.
-        if (response as? HTTPURLResponse)?.statusCode == 202 {
-            let marker = try? decoder.decode(MediaProcessingMarker.self, from: data)
-            return .recording(status: marker?.status ?? "processing")
+        if response.statusCode == 202 {
+            do {
+                let marker = try decoder.decode(MediaProcessingMarker.self, from: data)
+                return .recording(status: marker.status, recordingId: marker.recordingId)
+            } catch {
+                throw APIError.decodingError(error)
+            }
         }
         do {
             return .item(try decoder.decode(Item.self, from: data))

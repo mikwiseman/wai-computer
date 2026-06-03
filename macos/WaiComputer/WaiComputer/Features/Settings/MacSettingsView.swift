@@ -122,6 +122,19 @@ struct MacSettingsView: View {
     @State private var telegramError: String?
     @State private var telegramLinkPollTask: Task<Void, Never>?
     @State private var telegramShowCodeEntry = false
+    @State private var serverDataInfo: SystemInfo?
+    @State private var serverDataMap: DataOwnershipMap?
+    @State private var serverDataLoading = false
+    @State private var serverDataSubmitting = false
+    @State private var serverDataError: String?
+    @State private var serverDataResult: SelfHostProvisionResponse?
+    @State private var serverDataVPSAddress = ""
+    @State private var serverDataSSHUser = "root"
+    @State private var serverDataPublicDomain = ""
+    @State private var serverDataAuthMethod: SelfHostAuthMethod = .password
+    @State private var serverDataSSHPassword = ""
+    @State private var serverDataSSHPublicKey = ""
+    @State private var serverDataShowAdvancedDomain = false
     @State private var billingRefreshID = 0
     @State private var billingReturnRefreshTask: Task<Void, Never>?
     @AppStorage(PaymentModeStore.userDefaultsKey) private var paymentModeEnabled = false
@@ -587,6 +600,7 @@ struct MacSettingsView: View {
         .task {
             await loadSummarySettings()
             await loadTelegramStatus()
+            await loadServerDataStatus()
         }
         .onAppear(perform: refreshPermissions)
         .onDisappear {
@@ -598,6 +612,7 @@ struct MacSettingsView: View {
             if newPhase == .active {
                 refreshPermissions()
                 Task { await loadTelegramStatus() }
+                Task { await loadServerDataStatus(silent: true) }
                 refreshBillingOnReturnIfNeeded()
             }
         }
@@ -663,6 +678,20 @@ struct MacSettingsView: View {
                 Text(t("Current server", "Текущий сервер"))
             }
 
+            if serverDataLoading && serverDataMap == nil {
+                HStack(spacing: Spacing.sm) {
+                    ProgressView()
+                        .controlSize(.small)
+                    Text(t("Loading data map...", "Загружаем карту данных..."))
+                        .font(Typography.body)
+                        .foregroundStyle(Palette.textSecondary)
+                }
+            }
+
+            if serverDataMap != nil {
+                serverDataMetricsView
+            }
+
             Text(t(
                 "Move recordings, transcripts, uploads, memories, settings, usage history, API keys, and MCP metadata to a server you own. Sessions and OAuth connections are recreated after migration.",
                 "Перенесите записи, расшифровки, загрузки, память, настройки, историю использования, API-ключи и MCP-метаданные на свой сервер. Сессии и OAuth-подключения пересоздаются после миграции."
@@ -671,25 +700,191 @@ struct MacSettingsView: View {
             .foregroundStyle(Palette.textTertiary)
             .fixedSize(horizontal: false, vertical: true)
 
-            Button {
-                openServerDataSettings()
-            } label: {
-                Text(serverDataActionTitle)
+            serverDataSetupForm
+
+            if let serverDataResult {
+                serverDataResultView(serverDataResult)
             }
-            .font(Typography.body)
-            .accessibilityIdentifier("settings-server-data-move-button")
+
+            if let serverDataError {
+                Text(serverDataError)
+                    .font(Typography.caption)
+                    .foregroundStyle(.red)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         } header: {
             Text(t("Server & Data", "Сервер и данные"))
                 .waiSectionHeader()
                 .accessibilityIdentifier("settings-server-data-header")
         } footer: {
             Text(t(
-                "The web migration flow checks your VPS and shows export, import, and reconnect steps from one place.",
-                "Веб-мастер миграции проверит VPS и покажет экспорт, импорт и переподключение в одном месте."
+                "Set up and check your server here in the Mac app. Use the web dashboard only when you are already working in the browser.",
+                "Настройте и проверьте сервер здесь, в Mac-приложении. Веб-дашборд нужен только если вы уже работаете в браузере."
             ))
             .font(Typography.caption)
             .foregroundStyle(Palette.textTertiary)
         }
+    }
+
+    private var serverDataMetricsView: some View {
+        Grid(alignment: .leading, horizontalSpacing: Spacing.lg, verticalSpacing: Spacing.xs) {
+            GridRow {
+                serverDataMetric(
+                    title: t("Owned data", "Ваши данные"),
+                    value: "\(serverDataOwnedCount)"
+                )
+                serverDataMetric(
+                    title: t("Files", "Файлы"),
+                    value: "\(serverDataArtifactCount)"
+                )
+                serverDataMetric(
+                    title: t("Reconnect", "Переподключить"),
+                    value: "\(serverDataReconnectCount)"
+                )
+            }
+        }
+        .accessibilityIdentifier("settings-server-data-metrics")
+    }
+
+    private func serverDataMetric(title: String, value: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(value)
+                .font(Typography.body.weight(.semibold))
+                .foregroundStyle(Palette.textPrimary)
+            Text(title)
+                .font(Typography.caption)
+                .foregroundStyle(Palette.textSecondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var serverDataSetupForm: some View {
+        VStack(alignment: .leading, spacing: Spacing.sm) {
+            Text(t("Move to my server", "Перенести на мой сервер"))
+                .font(Typography.body.weight(.semibold))
+
+            LabeledContent {
+                TextField("203.0.113.10", text: $serverDataVPSAddress)
+                    .textFieldStyle(.roundedBorder)
+                    .disabled(serverDataSubmitting)
+                    .accessibilityIdentifier("settings-server-data-vps-ip-field")
+            } label: {
+                Text(t("VPS IP address", "IP VPS"))
+            }
+
+            LabeledContent {
+                TextField("root", text: $serverDataSSHUser)
+                    .textFieldStyle(.roundedBorder)
+                    .disabled(serverDataSubmitting)
+                    .accessibilityIdentifier("settings-server-data-ssh-user-field")
+            } label: {
+                Text(t("SSH user", "SSH пользователь"))
+            }
+
+            Picker(selection: $serverDataAuthMethod) {
+                Text(t("Temporary password", "Временный пароль"))
+                    .tag(SelfHostAuthMethod.password)
+                Text(t("SSH key", "SSH ключ"))
+                    .tag(SelfHostAuthMethod.sshKey)
+            } label: {
+                Text(t("SSH method", "Метод SSH"))
+            }
+            .pickerStyle(.segmented)
+            .disabled(serverDataSubmitting)
+            .accessibilityIdentifier("settings-server-data-auth-method-picker")
+
+            if serverDataAuthMethod == .password {
+                LabeledContent {
+                    SecureField(t("Temporary password", "Временный пароль"), text: $serverDataSSHPassword)
+                        .textFieldStyle(.roundedBorder)
+                        .disabled(serverDataSubmitting)
+                        .accessibilityIdentifier("settings-server-data-ssh-password-field")
+                } label: {
+                    Text(t("Temporary password", "Временный пароль"))
+                }
+            } else {
+                VStack(alignment: .leading, spacing: Spacing.xs) {
+                    Text(t("SSH public key installed on the VPS", "Публичный SSH ключ на VPS"))
+                        .font(Typography.caption.weight(.semibold))
+                    TextEditor(text: $serverDataSSHPublicKey)
+                        .font(.system(.body, design: .monospaced))
+                        .frame(minHeight: 76)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 6)
+                                .stroke(Palette.border, lineWidth: 1)
+                        )
+                        .disabled(serverDataSubmitting)
+                        .accessibilityIdentifier("settings-server-data-ssh-public-key-field")
+                }
+            }
+
+            DisclosureGroup(isExpanded: $serverDataShowAdvancedDomain) {
+                VStack(alignment: .leading, spacing: Spacing.xs) {
+                    LabeledContent {
+                        TextField("demo.example.com", text: $serverDataPublicDomain)
+                            .textFieldStyle(.roundedBorder)
+                            .disabled(serverDataSubmitting)
+                            .accessibilityIdentifier("settings-server-data-public-domain-field")
+                    } label: {
+                        Text(t("Public domain", "Публичный домен"))
+                    }
+
+                    Text(t(
+                        "Optional. Use this only if DNS already points to the VPS; otherwise add it later.",
+                        "Необязательно. Укажите, только если DNS уже направлен на VPS; иначе добавите позже."
+                    ))
+                    .font(Typography.caption)
+                    .foregroundStyle(Palette.textTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(.top, Spacing.xs)
+            } label: {
+                Text(t("Optional public domain", "Необязательный публичный домен"))
+                    .font(Typography.caption.weight(.semibold))
+            }
+            .accessibilityIdentifier("settings-server-data-domain-disclosure")
+
+            HStack(spacing: Spacing.sm) {
+                Button {
+                    Task { await startServerDataSetupCheck() }
+                } label: {
+                    Text(serverDataSubmitting ? t("Checking...", "Проверяем...") : t("Check setup", "Проверить настройку"))
+                }
+                .disabled(!serverDataCanSubmit || serverDataSubmitting)
+                .accessibilityIdentifier("settings-server-data-check-button")
+
+                if serverDataSubmitting {
+                    ProgressView()
+                        .controlSize(.small)
+                }
+            }
+        }
+    }
+
+    private func serverDataResultView(_ result: SelfHostProvisionResponse) -> some View {
+        VStack(alignment: .leading, spacing: Spacing.sm) {
+            Text(serverDataProvisionTarget(result))
+                .font(Typography.body.weight(.semibold))
+                .foregroundStyle(Palette.textPrimary)
+            Text(result.message)
+                .font(Typography.caption)
+                .foregroundStyle(Palette.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            ForEach(result.steps) { step in
+                HStack(alignment: .firstTextBaseline, spacing: Spacing.sm) {
+                    Text(step.label)
+                        .font(Typography.caption)
+                        .foregroundStyle(Palette.textSecondary)
+                    Spacer()
+                    Text(serverDataStepStatusLabel(step.status))
+                        .font(Typography.caption.monospacedDigit())
+                        .foregroundStyle(step.status == "manual_review_required" ? .orange : Palette.textTertiary)
+                }
+            }
+        }
+        .padding(.vertical, Spacing.xs)
+        .accessibilityIdentifier("settings-server-data-result")
     }
 
     private var telegramSection: some View {
@@ -821,6 +1016,14 @@ struct MacSettingsView: View {
     }
 
     private var serverDataCurrentServerLabel: String {
+        if let serverDataInfo {
+            if serverDataInfo.deploymentMode == .selfHost {
+                return t("My server", "Мой сервер")
+            }
+            if serverDataInfo.deploymentMode == .provisioning {
+                return t("Provisioning", "Настройка")
+            }
+        }
         guard let host = appState.serviceBaseURL.host, !host.isEmpty else {
             return appState.serviceBaseURL.absoluteString
         }
@@ -830,25 +1033,52 @@ struct MacSettingsView: View {
         return host
     }
 
-    private var serverDataActionTitle: String {
-        if appState.serviceBaseURL.host == "wai.computer" {
-            return t("Move to my server", "Перенести на мой сервер")
+    private var serverDataOwnedCount: Int {
+        serverDataOwnershipCount(.ownedExportable)
+    }
+
+    private var serverDataArtifactCount: Int {
+        serverDataMap?.artifacts.count ?? 0
+    }
+
+    private var serverDataReconnectCount: Int {
+        serverDataOwnershipCount(.reconnectRequired)
+    }
+
+    private var serverDataCanSubmit: Bool {
+        let hasVPS = !serverDataVPSAddress.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        let hasUser = !serverDataSSHUser.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        let hasAuth = switch serverDataAuthMethod {
+        case .password:
+            !serverDataSSHPassword.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        case .sshKey:
+            !serverDataSSHPublicKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         }
-        return t("Open server settings", "Открыть настройки сервера")
+        return hasVPS && hasUser && hasAuth
     }
 
-    private var serverDataSettingsURL: URL {
-        var components = URLComponents(
-            url: appState.serviceBaseURL.appendingPathComponent("/dashboard"),
-            resolvingAgainstBaseURL: false
-        )
-        components?.queryItems = [URLQueryItem(name: "view", value: "settings")]
-        components?.fragment = "server-data"
-        return components?.url ?? URL(string: "https://wai.computer/dashboard?view=settings#server-data")!
+    private func serverDataOwnershipCount(_ classification: OwnershipClassification) -> Int {
+        guard let serverDataMap else { return 0 }
+        return (serverDataMap.tables + serverDataMap.artifacts)
+            .filter { $0.classification == classification }
+            .count
     }
 
-    private func openServerDataSettings() {
-        NSWorkspace.shared.open(serverDataSettingsURL)
+    private func serverDataProvisionTarget(_ result: SelfHostProvisionResponse) -> String {
+        result.hostname ?? result.vpsIP
+    }
+
+    private func serverDataStepStatusLabel(_ status: String) -> String {
+        switch status {
+        case "manual_review_required":
+            return t("review", "проверка")
+        case "pending":
+            return t("pending", "ожидает")
+        case "blocked":
+            return t("blocked", "блок")
+        default:
+            return status
+        }
     }
 
     private var telegramDisplayName: String {
@@ -1487,6 +1717,66 @@ struct MacSettingsView: View {
                 "Не удалось загрузить настройки аккаунта: \(error.localizedDescription)"
             )
             return
+        }
+    }
+
+    private func loadServerDataStatus(silent: Bool = false) async {
+        guard !serverDataLoading || silent else { return }
+        if !silent {
+            serverDataLoading = true
+        }
+        do {
+            async let info = appState.getAPIClient().getSystemInfo()
+            async let ownership = appState.getAPIClient().getDataOwnershipMap()
+            serverDataInfo = try await info
+            serverDataMap = try await ownership
+            if !silent {
+                serverDataError = nil
+            }
+        } catch {
+            if !silent {
+                serverDataError = t(
+                    "Couldn't load server data: \(error.localizedDescription)",
+                    "Не удалось загрузить данные сервера: \(error.localizedDescription)"
+                )
+            }
+        }
+        if !silent {
+            serverDataLoading = false
+        }
+    }
+
+    private func startServerDataSetupCheck() async {
+        guard serverDataCanSubmit, !serverDataSubmitting else { return }
+        let trimmedDomain = serverDataPublicDomain.trimmingCharacters(in: .whitespacesAndNewlines)
+        let request = SelfHostProvisionRequest(
+            hostname: trimmedDomain.isEmpty ? nil : trimmedDomain,
+            vpsIP: serverDataVPSAddress.trimmingCharacters(in: .whitespacesAndNewlines),
+            sshUsername: serverDataSSHUser.trimmingCharacters(in: .whitespacesAndNewlines),
+            authMethod: serverDataAuthMethod,
+            sshPublicKey: serverDataAuthMethod == .sshKey
+                ? serverDataSSHPublicKey.trimmingCharacters(in: .whitespacesAndNewlines)
+                : nil,
+            sshPassword: serverDataAuthMethod == .password ? serverDataSSHPassword : nil
+        )
+
+        serverDataSubmitting = true
+        serverDataError = nil
+        serverDataResult = nil
+        defer {
+            if serverDataAuthMethod == .password {
+                serverDataSSHPassword = ""
+            }
+            serverDataSubmitting = false
+        }
+
+        do {
+            serverDataResult = try await appState.getAPIClient().startSelfHostProvision(request)
+        } catch {
+            serverDataError = t(
+                "Couldn't check this server: \(error.localizedDescription)",
+                "Не удалось проверить сервер: \(error.localizedDescription)"
+            )
         }
     }
 

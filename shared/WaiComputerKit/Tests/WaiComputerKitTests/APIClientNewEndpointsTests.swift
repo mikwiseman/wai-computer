@@ -36,6 +36,100 @@ final class APIClientNewEndpointsTests: XCTestCase {
         return try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
     }
 
+    // MARK: - System & Self-hosting
+
+    func testGetSystemInfoUsesSystemEndpoint() async throws {
+        let client = makeClient()
+
+        MockURLProtocol.requestHandler = { request in
+            XCTAssertEqual(request.httpMethod, "GET")
+            XCTAssertEqual(request.url?.path, "/api/system/info")
+
+            let response = HTTPURLResponse(
+                url: request.url!,
+                statusCode: 200,
+                httpVersion: nil,
+                headerFields: nil
+            )!
+            let payload = """
+            {
+              "app_name": "WaiComputer",
+              "deployment_mode": "wai_cloud",
+              "public_base_url": "https://wai.computer",
+              "cloud_base_url": "https://wai.computer",
+              "mcp_url": "https://wai.computer/mcp",
+              "git_sha": null,
+              "git_dirty": false,
+              "audio_retention_policy": "delete_after_processing",
+              "self_hosting_available": true,
+              "billing_mode": "cloud"
+            }
+            """.data(using: .utf8)!
+            return (response, payload)
+        }
+
+        let info = try await client.getSystemInfo()
+
+        XCTAssertEqual(info.deploymentMode, .waiCloud)
+        XCTAssertEqual(info.publicBaseURL, "https://wai.computer")
+        XCTAssertTrue(info.selfHostingAvailable)
+    }
+
+    func testStartSelfHostProvisionSendsOptionalDomainAndPassword() async throws {
+        let client = makeClient()
+
+        MockURLProtocol.requestHandler = { [self] request in
+            XCTAssertEqual(request.httpMethod, "POST")
+            XCTAssertEqual(request.url?.path, "/api/self-host/provision")
+
+            let body = try jsonBody(from: request)
+            XCTAssertEqual(body["vps_ip"] as? String, "203.0.113.10")
+            XCTAssertEqual(body["ssh_username"] as? String, "root")
+            XCTAssertEqual(body["auth_method"] as? String, "password")
+            XCTAssertEqual(body["ssh_password"] as? String, "temporary-bootstrap-password")
+            XCTAssertFalse(body.keys.contains("hostname"))
+
+            let response = HTTPURLResponse(
+                url: request.url!,
+                statusCode: 202,
+                httpVersion: nil,
+                headerFields: nil
+            )!
+            let payload = """
+            {
+              "job_id": "selfhost_demo",
+              "status": "manual_review_required",
+              "hostname": null,
+              "vps_ip": "203.0.113.10",
+              "message": "Provisioning inputs are valid.",
+              "steps": [
+                {
+                  "id": "validate_inputs",
+                  "label": "Validate VPS address and SSH access",
+                  "status": "manual_review_required"
+                }
+              ]
+            }
+            """.data(using: .utf8)!
+            return (response, payload)
+        }
+
+        let result = try await client.startSelfHostProvision(
+            SelfHostProvisionRequest(
+                hostname: nil,
+                vpsIP: "203.0.113.10",
+                sshUsername: "root",
+                authMethod: .password,
+                sshPublicKey: nil,
+                sshPassword: "temporary-bootstrap-password"
+            )
+        )
+
+        XCTAssertNil(result.hostname)
+        XCTAssertEqual(result.vpsIP, "203.0.113.10")
+        XCTAssertEqual(result.steps.first?.label, "Validate VPS address and SSH access")
+    }
+
     // MARK: - Recordings
 
     func testStartSummaryGenerationUsesDurableEndpoint() async throws {

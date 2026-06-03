@@ -18,6 +18,7 @@ paste is rejected.
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 from uuid import UUID, uuid4
@@ -38,6 +39,7 @@ from app.core.document_extract import (
 from app.core.item_ingest import ingest_item
 from app.core.item_titles import clean_title, title_from_filename
 from app.models.item import Item, ItemSummary
+from app.models.recording import Recording, RecordingStatus
 
 router = APIRouter(prefix="/items", tags=["items"])
 
@@ -289,10 +291,10 @@ async def _stage_media_upload(
 
 
 async def _handle_media_upload(
-    user: Any, ext: str, file: UploadFile, title: str | None
+    user: Any, db: Database, ext: str, file: UploadFile, title: str | None
 ) -> JSONResponse:
     """Stage an audio/video upload and enqueue background transcription. Returns
-    202 — the Recording appears in the library once the task finishes."""
+    202 with the Recording id so clients can select the processing row immediately."""
     from app.config import get_settings
 
     filename, content_type, language = file.filename, file.content_type, user.default_language
@@ -306,28 +308,51 @@ async def _handle_media_upload(
         staged.unlink(missing_ok=True)
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Empty file.")
 
+    display_title = clean_title(title) or title_from_filename(filename)
+    recording = Recording(
+        user_id=user.id,
+        title=display_title,
+        type="note",
+        status=RecordingStatus.PROCESSING.value,
+        uploaded_at=datetime.now(timezone.utc),
+        language=language,
+    )
+    db.add(recording)
+    await db.flush()
+    recording_id = str(recording.id)
+
     try:
         from app.tasks.media_import import import_uploaded_media_task
 
         import_uploaded_media_task.delay(
             user_id=str(user.id),
+            recording_id=recording_id,
             staged_path=str(staged),
             filename=filename,
             content_type=content_type,
-            title=(title or "").strip() or None,
+            title=clean_title(title),
             language=language,
         )
     except Exception as exc:  # noqa: BLE001 — broker down: surface, don't silently drop the file
         staged.unlink(missing_ok=True)
+        recording.status = RecordingStatus.FAILED.value
+        recording.failure_code = "processing_enqueue_failed"
+        recording.failure_message = "Couldn't queue media processing. Please retry."
+        await db.commit()
         logger.warning("media upload enqueue failed: %s", type(exc).__name__)
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Couldn't queue media processing. Please retry.",
         ) from exc
+    await db.commit()
 
     return JSONResponse(
         status_code=status.HTTP_202_ACCEPTED,
-        content={"kind": "recording", "status": "processing"},
+        content={
+            "kind": "recording",
+            "status": "processing",
+            "recording_id": recording_id,
+        },
     )
 
 
@@ -357,7 +382,7 @@ async def upload_item(
     if ext not in SUPPORTED_DOCUMENT_EXTENSIONS:
         media_ext = _media_upload_ext(file.filename, file.content_type)
         if media_ext:
-            return await _handle_media_upload(user, media_ext, file, title)
+            return await _handle_media_upload(user, db, media_ext, file, title)
         await file.close()
         raise HTTPException(
             status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,

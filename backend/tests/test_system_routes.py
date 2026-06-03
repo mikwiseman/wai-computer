@@ -50,6 +50,30 @@ async def test_self_host_provision_rejects_invalid_ip(client, auth_headers) -> N
 
 
 @pytest.mark.asyncio
+async def test_self_host_provision_accepts_vps_ip_without_public_domain(
+    client,
+    auth_headers,
+) -> None:
+    response = await client.post(
+        "/api/self-host/provision",
+        headers=auth_headers,
+        json={
+            "vps_ip": "203.0.113.10",
+            "ssh_username": "root",
+            "auth_method": "password",
+            "ssh_password": "temporary-bootstrap-password",
+        },
+    )
+
+    assert response.status_code == 202
+    payload = response.json()
+    assert payload["hostname"] is None
+    assert payload["vps_ip"] == "203.0.113.10"
+    assert payload["steps"][0]["label"] == "Validate VPS address and SSH access"
+    assert "temporary-bootstrap-password" not in response.text
+
+
+@pytest.mark.asyncio
 async def test_self_host_provision_validation_does_not_echo_password(
     client,
     auth_headers,

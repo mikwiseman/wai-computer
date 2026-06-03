@@ -559,12 +559,12 @@ export function createItem(input: {
 
 /**
  * Result of "add any file": documents extract inline into an Item (201);
- * audio/video are staged + transcribed into a Recording in the background (202),
- * so there's no Item to poll — they surface under Recordings when ready.
+ * audio/video create a processing Recording immediately (202), then continue
+ * through the background media import pipeline.
  */
 export type UploadOutcome =
   | { kind: "item"; item: Item }
-  | { kind: "recording"; status: string };
+  | { kind: "recording"; status: string; recording_id: string };
 
 export async function uploadItem(
   file: File,
@@ -574,14 +574,19 @@ export async function uploadItem(
   formData.append("file", file);
   if (opts?.folderId) formData.append("folder_id", opts.folderId);
   if (opts?.title) formData.append("title", opts.title);
-  const payload = await apiUpload<Item | { kind: "recording"; status: string }>(
+  const payload = await apiUpload<Item | { kind: "recording"; status: string; recording_id?: string }>(
     "/api/items/upload",
     formData,
   );
-  // Documents come back as a full Item (has `id`); media come back as a
-  // lightweight processing marker with no `id`.
   if ("id" in payload) return { kind: "item", item: payload };
-  return { kind: "recording", status: payload.status ?? "processing" };
+  if (!payload.recording_id) {
+    throw new Error("Media upload response missing recording_id.");
+  }
+  return {
+    kind: "recording",
+    status: payload.status,
+    recording_id: payload.recording_id,
+  };
 }
 
 export function listItems(params?: {

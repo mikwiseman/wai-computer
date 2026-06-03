@@ -105,12 +105,12 @@ final class MacContentFeedViewModel: ObservableObject {
         do {
             let outcome = try await apiClient.uploadItem(fileURL: url)
             switch outcome {
-            case .recording:
-                // Audio/video → background transcription; it surfaces under Recordings.
+            case .recording(status: _, recordingId: _):
+                // Audio/video creates a processing Recording immediately.
                 errorMessage = nil
                 statusMessage = OnboardingL10n.text(
-                    "Transcribing — it'll appear in your recordings shortly.",
-                    "Расшифровываем — скоро появится в ваших записях.",
+                    "Transcribing — the recording is now in your Inbox.",
+                    "Расшифровываем — запись уже в Инбоксе.",
                     language: LanguageManager.shared.current
                 )
             case .item(let created):

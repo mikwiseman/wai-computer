@@ -593,46 +593,60 @@ async def import_media_as_recording(
     source_label: str,
     language: str | None = None,
     duration_seconds: float | None = None,
+    recording: Recording | None = None,
 ) -> ImportedRecordingResult:
     """Create a library recording from external media bytes and process it."""
     if not data:
         raise RecordingImportError("empty_file", "Файл пустой.")
     logger.info("external recording import started source=%s", source_label)
 
-    ext = resolve_import_extension(filename, content_type)
-    explicit_title = bool((title or "").strip())
-    normalized_content_type = (
-        (content_type or "").split(";")[0].strip().lower()
-        or EXTENSION_TO_CONTENT_TYPE.get(ext, "application/octet-stream")
-    )
-    media_data, media_content_type, media_ext = await _normalize_media_for_transcription(
-        data,
-        ext=ext,
-        content_type=normalized_content_type,
-    )
-    now = datetime.now(timezone.utc)
-    recording = Recording(
-        user_id=user.id,
-        title=title,
-        type="note",
-        status=RecordingStatus.PROCESSING.value,
-        uploaded_at=now,
-        language=_resolve_language(user, language),
-        audio_url=None,
-    )
-    db.add(recording)
-    await db.flush()
-    recording_id = recording.id
-
-    staged_path = await _write_staged_file(
-        user_id=user.id,
-        recording_id=recording_id,
-        data=media_data,
-        ext=media_ext,
-    )
-    await db.commit()
+    recording_id: UUID | None = recording.id if recording is not None else None
+    staged_path: Path | None = None
 
     try:
+        ext = resolve_import_extension(filename, content_type)
+        explicit_title = bool((title or "").strip())
+        normalized_content_type = (
+            (content_type or "").split(";")[0].strip().lower()
+            or EXTENSION_TO_CONTENT_TYPE.get(ext, "application/octet-stream")
+        )
+        media_data, media_content_type, media_ext = await _normalize_media_for_transcription(
+            data,
+            ext=ext,
+            content_type=normalized_content_type,
+        )
+        now = datetime.now(timezone.utc)
+        if recording is None:
+            recording = Recording(
+                user_id=user.id,
+                title=title,
+                type="note",
+                status=RecordingStatus.PROCESSING.value,
+                uploaded_at=now,
+                language=_resolve_language(user, language),
+                audio_url=None,
+            )
+            db.add(recording)
+        else:
+            if title is not None:
+                recording.title = title
+            recording.status = RecordingStatus.PROCESSING.value
+            recording.uploaded_at = now
+            recording.language = _resolve_language(user, language)
+            recording.audio_url = None
+            recording.failure_code = None
+            recording.failure_message = None
+        await db.flush()
+        recording_id = recording.id
+
+        staged_path = await _write_staged_file(
+            user_id=user.id,
+            recording_id=recording_id,
+            data=media_data,
+            ext=media_ext,
+        )
+        await db.commit()
+
         await db.execute(delete(Summary).where(Summary.recording_id == recording.id))
         await db.execute(delete(Segment).where(Segment.recording_id == recording.id))
         await db.execute(
@@ -712,50 +726,55 @@ async def import_media_as_recording(
         )
     except RecordingImportError as exc:
         await db.rollback()
-        await _mark_failed(
-            db=db,
-            recording_id=recording_id,
-            code=exc.code,
-            message=exc.message,
-        )
+        if recording_id is not None:
+            await _mark_failed(
+                db=db,
+                recording_id=recording_id,
+                code=exc.code,
+                message=exc.message,
+            )
         raise RecordingImportError(exc.code, exc.message) from exc
     except asyncio.CancelledError:
         logger.warning("external recording import cancelled")
         await db.rollback()
-        failed = await _mark_failed(
-            db=db,
-            recording_id=recording_id,
-            code="processing_cancelled",
-            message="Обработка была прервана. Отправь файл ещё раз.",
-        )
-        if failed is not None:
-            recording = failed
+        if recording_id is not None:
+            failed = await _mark_failed(
+                db=db,
+                recording_id=recording_id,
+                code="processing_cancelled",
+                message="Обработка была прервана. Отправь файл ещё раз.",
+            )
+            if failed is not None:
+                recording = failed
         raise
     except TranscriptionGuardError as exc:
         logger.warning("external recording import refused by cost/abuse guard code=%s", exc.code)
         await db.rollback()
-        failed = await _mark_failed(
-            db=db,
-            recording_id=recording_id,
-            code=exc.code,
-            message="Транскрипция временно недоступна. Попробуй позже.",
-        )
-        if failed is not None:
-            recording = failed
+        if recording_id is not None:
+            failed = await _mark_failed(
+                db=db,
+                recording_id=recording_id,
+                code=exc.code,
+                message="Транскрипция временно недоступна. Попробуй позже.",
+            )
+            if failed is not None:
+                recording = failed
         raise RecordingImportError(
             exc.code, "Транскрипция временно недоступна. Попробуй позже."
         ) from exc
     except Exception as exc:
         logger.exception("external recording import failed")
         await db.rollback()
-        failed = await _mark_failed(
-            db=db,
-            recording_id=recording_id,
-            code="processing_failed",
-            message="Не получилось обработать файл.",
-        )
-        if failed is not None:
-            recording = failed
+        if recording_id is not None:
+            failed = await _mark_failed(
+                db=db,
+                recording_id=recording_id,
+                code="processing_failed",
+                message="Не получилось обработать файл.",
+            )
+            if failed is not None:
+                recording = failed
         raise RecordingImportError("processing_failed", "Не получилось обработать файл.") from exc
     finally:
-        await _delete_staged_file(staged_path)
+        if staged_path is not None:
+            await _delete_staged_file(staged_path)

@@ -64,7 +64,7 @@ export interface DataOwnershipMap {
 }
 
 export interface SelfHostProvisionRequest {
-  hostname: string;
+  hostname?: string | null;
   vps_ip: string;
   ssh_username: string;
   auth_method: "ssh_key" | "password";
@@ -81,7 +81,7 @@ export interface SelfHostProvisionStep {
 export interface SelfHostProvisionResponse {
   job_id: string;
   status: "manual_review_required";
-  hostname: string;
+  hostname: string | null;
   vps_ip: string;
   steps: SelfHostProvisionStep[];
   message: string;

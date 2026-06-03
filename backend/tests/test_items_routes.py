@@ -8,11 +8,14 @@ capture + feed + detail behaviour without a broker or OpenAI.
 import zipfile
 from io import BytesIO
 from unittest.mock import patch
+from uuid import UUID
 
 import pytest
+from sqlalchemy import select
 
 from app.api.routes.items import _derive_status, _item_error
 from app.models.item import Item
+from app.models.recording import Recording
 
 pytestmark = pytest.mark.asyncio
 
@@ -333,7 +336,7 @@ async def test_upload_scanned_pdf_ocr_yields_nothing_is_422(client, auth_headers
     assert "no readable text" in resp.json()["detail"].lower()
 
 
-async def test_upload_video_enqueues_recording(client, auth_headers) -> None:
+async def test_upload_video_enqueues_recording(client, auth_headers, db_session) -> None:
     # Video is no longer rejected — it's staged and handed to the recording pipeline.
     with patch("app.tasks.media_import.import_uploaded_media_task.delay") as delay:
         resp = await client.post(
@@ -342,12 +345,23 @@ async def test_upload_video_enqueues_recording(client, auth_headers) -> None:
             headers=auth_headers,
         )
     assert resp.status_code == 202, resp.text
-    assert resp.json() == {"kind": "recording", "status": "processing"}
+    data = resp.json()
+    assert data["kind"] == "recording"
+    assert data["status"] == "processing"
+    assert data["recording_id"]
     delay.assert_called_once()
     kwargs = delay.call_args.kwargs
+    assert kwargs["recording_id"] == data["recording_id"]
     assert kwargs["filename"] == "clip.mp4"
     assert kwargs["content_type"] == "video/mp4"
     assert kwargs["staged_path"].endswith(".mp4")
+    recording = (
+        await db_session.execute(
+            select(Recording).where(Recording.id == UUID(data["recording_id"]))
+        )
+    ).scalar_one()
+    assert recording.status == "processing"
+    assert recording.title == "clip"
 
 
 async def test_upload_audio_enqueues_recording(client, auth_headers) -> None:
@@ -358,7 +372,9 @@ async def test_upload_audio_enqueues_recording(client, auth_headers) -> None:
             headers=auth_headers,
         )
     assert resp.status_code == 202, resp.text
+    assert resp.json()["recording_id"]
     delay.assert_called_once()
+    assert delay.call_args.kwargs["recording_id"] == resp.json()["recording_id"]
     assert delay.call_args.kwargs["staged_path"].endswith(".mp3")
 
 

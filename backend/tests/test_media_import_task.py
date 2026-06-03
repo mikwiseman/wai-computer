@@ -12,6 +12,9 @@ from uuid import uuid4
 
 import pytest
 
+from app.core import recording_import
+from app.core.recording_import import RecordingImportError
+from app.models.recording import Recording
 from app.models.user import User
 from app.tasks import media_import
 
@@ -132,6 +135,94 @@ async def test_import_calls_recording_pipeline(db_session, monkeypatch, tmp_path
     assert captured["source_label"] == "upload"
     assert captured["title"] == "My clip"
     assert captured["user"].id == user.id
+
+
+@pytest.mark.asyncio
+async def test_import_uses_precreated_recording(db_session, monkeypatch, tmp_path) -> None:
+    user = User(email=f"media-existing-{uuid4().hex}@example.com", password_hash="x")
+    db_session.add(user)
+    await db_session.flush()
+    recording = Recording(
+        user_id=user.id,
+        title="clip",
+        type="note",
+        status="processing",
+    )
+    db_session.add(recording)
+    await db_session.flush()
+
+    staged = tmp_path / "clip.mp4"
+    staged.write_bytes(b"video-bytes")
+
+    @asynccontextmanager
+    async def fake_ctx():
+        yield db_session
+
+    captured: dict = {}
+
+    async def fake_import(**kwargs):
+        captured.update(kwargs)
+
+    monkeypatch.setattr(media_import, "get_db_context", fake_ctx)
+    monkeypatch.setattr(media_import, "import_media_as_recording", fake_import)
+
+    await media_import._import(
+        user_id=str(user.id),
+        recording_id=str(recording.id),
+        staged_path=str(staged),
+        filename="clip.mp4",
+        content_type="video/mp4",
+        title=None,
+        language="en",
+    )
+
+    assert captured["recording"].id == recording.id
+
+
+@pytest.mark.asyncio
+async def test_precreated_recording_is_failed_when_normalization_rejects_media(
+    db_session, monkeypatch
+) -> None:
+    user = User(email=f"media-normalize-{uuid4().hex}@example.com", password_hash="x")
+    db_session.add(user)
+    await db_session.flush()
+    recording = Recording(
+        user_id=user.id,
+        title="clip",
+        type="note",
+        status="processing",
+    )
+    db_session.add(recording)
+    await db_session.flush()
+    recording_id = recording.id
+    await db_session.commit()
+
+    async def reject_media(*args, **kwargs):
+        raise RecordingImportError("bad_media", "Bad media file.")
+
+    monkeypatch.setattr(
+        recording_import,
+        "_normalize_media_for_transcription",
+        reject_media,
+    )
+
+    with pytest.raises(RecordingImportError):
+        await recording_import.import_media_as_recording(
+            db=db_session,
+            user=user,
+            data=b"video-bytes",
+            filename="clip.mp4",
+            content_type="video/mp4",
+            title=None,
+            source_label="upload",
+            recording=recording,
+        )
+
+    failed = await db_session.get(Recording, recording_id)
+    assert failed is not None
+    assert failed.status == "failed"
+    assert failed.failure_code == "bad_media"
+    assert failed.failure_message == "Bad media file."
 
 
 @pytest.mark.asyncio

@@ -220,6 +220,33 @@ describe("api client wrappers", () => {
     });
   });
 
+  it("decodes media upload recording ids", async () => {
+    mockedApiUpload.mockResolvedValueOnce({
+      kind: "recording",
+      status: "processing",
+      recording_id: "rec-media",
+    } as never);
+
+    const result = await api.uploadItem(new File(["video"], "clip.mp4", { type: "video/mp4" }));
+
+    expect(result).toEqual({
+      kind: "recording",
+      status: "processing",
+      recording_id: "rec-media",
+    });
+  });
+
+  it("rejects media upload responses without a recording id", async () => {
+    mockedApiUpload.mockResolvedValueOnce({
+      kind: "recording",
+      status: "processing",
+    } as never);
+
+    await expect(
+      api.uploadItem(new File(["video"], "clip.mp4", { type: "video/mp4" })),
+    ).rejects.toThrow("Media upload response missing recording_id.");
+  });
+
   it("applies createRecording defaults", async () => {
     await api.createRecording({});
     expect(mockedApiFetch).toHaveBeenCalledWith("/api/recordings", {
