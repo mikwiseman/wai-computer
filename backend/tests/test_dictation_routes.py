@@ -149,7 +149,7 @@ async def test_translate_dictation_translates_to_selected_target_language(
     assert captured["reasoning"] == {"effort": "low"}
     assert captured["text"] == {"format": {"type": "text"}, "verbosity": "low"}
     assert captured["store"] is False
-    assert captured["max_output_tokens"] == 1536
+    assert captured["max_output_tokens"] == 512
     instructions = captured["instructions"]
     assert "Translate the dictated text into Russian (ru)." in instructions
     assert "Output only the translated text" in instructions
@@ -269,7 +269,7 @@ async def test_cleanup_dictation_uses_fixed_post_filter_model(
 
     assert response.status_code == 200
     assert captured["model"] == "gpt-5.5"
-    assert captured["max_output_tokens"] == 1536
+    assert captured["max_output_tokens"] == 512
     assert captured["reasoning"] == {"effort": "low"}
     assert captured["text"] == {"format": {"type": "text"}, "verbosity": "low"}
     assert captured["prompt_cache_key"].startswith("wai-dictation-cleanup-")
@@ -341,7 +341,7 @@ async def test_cleanup_dictation_stream_emits_tokens_and_done(
     assert captured["prompt_cache_key"].startswith("wai-dictation-cleanup-")
     assert captured["prompt_cache_retention"] == "24h"
     assert captured["store"] is False
-    assert "email: use complete, polished paragraphs" in captured["instructions"]
+    assert "email=polished paragraphs" in captured["instructions"]
 
 
 @pytest.mark.asyncio
@@ -826,12 +826,12 @@ async def test_cleanup_dictation_truncates_large_textbox_context(
 
     assert response.status_code == 200
     instructions = captured["instructions"]
-    assert "a" * 800 in instructions
-    assert "a" * 801 not in instructions
-    assert "b" * 2000 in instructions
-    assert "b" * 2001 not in instructions
-    assert "c" * 800 in instructions
-    assert "c" * 801 not in instructions
+    assert "a" * 400 in instructions
+    assert "a" * 401 not in instructions
+    assert "b" * 800 in instructions
+    assert "b" * 801 not in instructions
+    assert "c" * 400 in instructions
+    assert "c" * 401 not in instructions
 
 
 @pytest.mark.asyncio
@@ -858,7 +858,7 @@ async def test_cleanup_dictation_caps_large_output_token_budget(
     )
 
     assert response.status_code == 200
-    assert captured["max_output_tokens"] == 34560
+    assert captured["max_output_tokens"] == 33792
 
 
 @pytest.mark.asyncio
@@ -885,7 +885,7 @@ async def test_cleanup_dictation_reserves_tokens_for_reasoning(
     )
 
     assert response.status_code == 200
-    assert captured["max_output_tokens"] == 1792
+    assert captured["max_output_tokens"] == 1280
 
 
 @pytest.mark.asyncio
