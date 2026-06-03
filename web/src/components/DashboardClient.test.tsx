@@ -794,6 +794,21 @@ describe("DashboardClient", () => {
     expect(screen.getByTestId("current-password")).toBeInTheDocument();
   });
 
+  it("opens Server & Data settings from the self-host migration deep link", async () => {
+    arrangeHappyPathMocks();
+    window.history.pushState({}, "", "/dashboard?view=settings#server-data");
+
+    render(<DashboardClient />);
+    await waitForDashboardReady();
+
+    await waitFor(() => {
+      expect(screen.getByTestId("server-data-section")).toBeInTheDocument();
+    });
+    expect(screen.getByRole("button", { name: "Check setup" })).toBeInTheDocument();
+    expect(mockGetSystemInfo).toHaveBeenCalled();
+    expect(mockGetDataOwnershipMap).toHaveBeenCalled();
+  });
+
   it("claims Telegram bot link code from settings (RU locale)", async () => {
     arrangeHappyPathMocks();
     const originalLanguage = navigator.language;

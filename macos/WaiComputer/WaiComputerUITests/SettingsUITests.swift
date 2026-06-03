@@ -83,6 +83,17 @@ final class SettingsUITests: XCTestCase {
             .firstMatch
         XCTAssertTrue(waitForElement(dockIconToggle, in: app, timeout: 3))
 
+        let serverDataHeader = app.descendants(matching: .any)
+            .matching(identifier: "settings-server-data-header")
+            .firstMatch
+        revealElementIfNeeded(serverDataHeader, in: app)
+        XCTAssertTrue(waitForElement(serverDataHeader, in: app, timeout: 3))
+
+        let moveToServerButton = app.buttons
+            .matching(identifier: "settings-server-data-move-button")
+            .firstMatch
+        XCTAssertTrue(waitForElement(moveToServerButton, in: app, timeout: 3))
+
         // Sign out button
         let signOutButton = app.buttons.matching(identifier: "settings-sign-out-button").firstMatch
         XCTAssertTrue(waitForElement(signOutButton, in: app, timeout: 3))
