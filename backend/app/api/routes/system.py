@@ -7,7 +7,7 @@ from ipaddress import ip_address
 from typing import Literal
 
 from fastapi import APIRouter, status
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator
 
 from app.api.deps import SessionUser
 from app.config import get_settings
@@ -37,12 +37,14 @@ class ProvisionStep(BaseModel):
 
 
 class ProvisionRequest(BaseModel):
+    model_config = ConfigDict(validate_default=True)
+
     hostname: str = Field(min_length=3, max_length=253)
     vps_ip: str = Field(min_length=3, max_length=64)
     ssh_username: str = Field(default="root", min_length=1, max_length=64)
     auth_method: Literal["ssh_key", "password"]
     ssh_public_key: str | None = Field(default=None, max_length=4096)
-    ssh_password: str | None = Field(default=None, max_length=1024)
+    ssh_password: str | None = Field(default=None)
 
     @field_validator("hostname")
     @classmethod
@@ -72,11 +74,16 @@ class ProvisionRequest(BaseModel):
 
     @field_validator("ssh_public_key")
     @classmethod
-    def validate_public_key(cls, value: str | None) -> str | None:
+    def validate_public_key(cls, value: str | None, info: ValidationInfo) -> str | None:
+        auth_method = info.data.get("auth_method")
         if value is None:
+            if auth_method == "ssh_key":
+                raise ValueError("ssh_public_key is required for ssh_key auth")
             return None
         normalized = value.strip()
         if not normalized:
+            if auth_method == "ssh_key":
+                raise ValueError("ssh_public_key is required for ssh_key auth")
             return None
         if not (
             normalized.startswith("ssh-ed25519 ")
@@ -86,13 +93,14 @@ class ProvisionRequest(BaseModel):
             raise ValueError("ssh_public_key must be an OpenSSH public key")
         return normalized
 
-    @model_validator(mode="after")
-    def validate_auth_material(self) -> "ProvisionRequest":
-        if self.auth_method == "ssh_key" and not self.ssh_public_key:
-            raise ValueError("ssh_public_key is required for ssh_key auth")
-        if self.auth_method == "password" and not (self.ssh_password or "").strip():
+    @field_validator("ssh_password")
+    @classmethod
+    def validate_password(cls, value: str | None, info: ValidationInfo) -> str | None:
+        if info.data.get("auth_method") != "password":
+            return None
+        if not (value or "").strip():
             raise ValueError("ssh_password is required for password auth")
-        return self
+        return value
 
 
 class ProvisionResponse(BaseModel):

@@ -50,6 +50,27 @@ async def test_self_host_provision_rejects_invalid_ip(client, auth_headers) -> N
 
 
 @pytest.mark.asyncio
+async def test_self_host_provision_validation_does_not_echo_password(
+    client,
+    auth_headers,
+) -> None:
+    response = await client.post(
+        "/api/self-host/provision",
+        headers=auth_headers,
+        json={
+            "hostname": "demo.self.wai.computer",
+            "vps_ip": "203.0.113.10",
+            "ssh_username": "root",
+            "auth_method": "ssh_key",
+            "ssh_password": "super-secret-bootstrap-password",
+        },
+    )
+
+    assert response.status_code == 422
+    assert "super-secret-bootstrap-password" not in response.text
+
+
+@pytest.mark.asyncio
 async def test_self_host_migration_preflight_groups_owned_and_reconnect_data(
     client,
     auth_headers,

@@ -135,4 +135,16 @@ describe("ServerDataSection", () => {
       "manual_review_required",
     );
   });
+
+  it("shows account actions instead of the provisioning form in public setup mode", async () => {
+    render(<ServerDataSection provisioning="account_required" />);
+
+    await screen.findByText("https://demo.self.wai.computer");
+    expect(screen.queryByRole("button", { name: "Check setup" })).toBeNull();
+    expect(screen.getByRole("link", { name: "Create account" })).toHaveAttribute(
+      "href",
+      "/register",
+    );
+    expect(screen.getByRole("link", { name: "Sign in" })).toHaveAttribute("href", "/login");
+  });
 });
