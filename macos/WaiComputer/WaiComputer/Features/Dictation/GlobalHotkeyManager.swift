@@ -616,10 +616,9 @@ final class GlobalHotkeyManager: ObservableObject {
 
         // .keyDown so we can mark "another key was pressed during the hold"
         // and abort push-to-talk (user typed a real shortcut, not dictation).
-        globalKeyMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] _ in
+        globalKeyMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
             DispatchQueue.main.async {
-                guard let self, self.isHotkeyHeld else { return }
-                self.otherKeyPressed = true
+                self?.handleKeyDown(keyCode: event.keyCode)
             }
         }
 
@@ -637,12 +636,29 @@ final class GlobalHotkeyManager: ObservableObject {
         if localKeyMonitor == nil {
             localKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
                 DispatchQueue.main.async {
-                    guard let self, self.isHotkeyHeld else { return }
-                    self.otherKeyPressed = true
+                    self?.handleKeyDown(keyCode: event.keyCode)
                 }
                 return event
             }
         }
+    }
+
+    private func handleKeyDown(keyCode: UInt16) {
+        if keyCode == UInt16(kVK_Escape) {
+            lastTapTime = nil
+            holdTimer?.cancel()
+            holdTimer = nil
+            isHotkeyHeld = false
+            hotkeyDownTime = nil
+            otherKeyPressed = false
+            isInPushToTalk = false
+            log.info("Escape pressed — cancelling dictation")
+            onCancelled?()
+            return
+        }
+
+        guard isHotkeyHeld else { return }
+        otherKeyPressed = true
     }
 
     private func handleFlagsChanged(keyCode: UInt16, flags: NSEvent.ModifierFlags) {
@@ -830,6 +846,10 @@ final class GlobalHotkeyManager: ObservableObject {
 
     func testingHandleFlagsChanged(keyCode: UInt16, flags: NSEvent.ModifierFlags) {
         handleFlagsChanged(keyCode: keyCode, flags: flags)
+    }
+
+    func testingHandleKeyDown(keyCode: UInt16) {
+        handleKeyDown(keyCode: keyCode)
     }
     #endif
 

@@ -114,7 +114,7 @@ struct MacSettingsView: View {
     @State private var mcpCopiedField: String?
     @State private var settingsLoaded = false
     @State private var settingsError: String?
-    @State private var dictationCleanupLevel = "none"
+    @State private var dictationCleanupLevel = "light"
     @State private var telegramStatus: TelegramLinkStatus?
     @State private var telegramPairing: TelegramPairing?
     @State private var telegramLinkCode = ""
@@ -397,6 +397,25 @@ struct MacSettingsView: View {
                     }
 
                 Text(dictationCleanupDescription(dictationCleanupLevel))
+                    .font(Typography.caption)
+                    .foregroundStyle(Palette.textTertiary)
+
+                Toggle(isOn: $dictationManager.contextAwareFormattingEnabled) {
+                    Text(t("Context-aware formatting", "Контекстное форматирование"))
+                }
+                    .font(Typography.body)
+                    .disabled(
+                        !dictationManager.isFeatureEnabled
+                            || dictationCleanupLevel == "none"
+                    )
+                    .accessibilityIdentifier("settings-dictation-context-aware-toggle")
+
+                Text(
+                    t(
+                        "Uses the active app and nearby textbox text to format dictation for email, chat, code, and notes.",
+                        "Учитывает активное приложение и текст рядом с курсором, чтобы форматировать диктовку для почты, чатов, кода и заметок."
+                    )
+                )
                     .font(Typography.caption)
                     .foregroundStyle(Palette.textTertiary)
 
@@ -1071,6 +1090,12 @@ struct MacSettingsView: View {
 
     private var dictationPrivacyText: String {
         if dictationCleanupLevel != "none" {
+            if dictationManager.contextAwareFormattingEnabled {
+                return t(
+                    "Dictated text is cleaned up with app and textbox context before insertion.",
+                    "Перед вставкой текст очищается с учётом приложения и текста рядом с курсором."
+                )
+            }
             return t(
                 "Dictated text is cleaned up before insertion.",
                 "Перед вставкой текст проходит очистку."

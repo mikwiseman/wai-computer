@@ -1592,10 +1592,15 @@ public actor APIClient {
 
     // MARK: - Dictation Endpoints
 
-    public func cleanupDictation(text: String, vocabulary: [String] = []) async throws -> String {
+    public func cleanupDictation(
+        text: String,
+        vocabulary: [String] = [],
+        context: DictationCleanupContext? = nil
+    ) async throws -> String {
         struct CleanupRequest: Encodable {
             let text: String
             let vocabulary: [String]?
+            let context: DictationCleanupContext?
         }
         struct CleanupResponse: Decodable {
             let text: String
@@ -1613,7 +1618,8 @@ public actor APIClient {
         }
         let payload = CleanupRequest(
             text: text,
-            vocabulary: cleaned.isEmpty ? nil : cleaned
+            vocabulary: cleaned.isEmpty ? nil : cleaned,
+            context: context
         )
         let response: CleanupResponse = try await request(
             .POST,

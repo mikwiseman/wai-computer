@@ -9,8 +9,7 @@ struct DictationOverlayView: View {
 
     var body: some View {
         HStack(spacing: Spacing.md) {
-            // Recording indicator
-            recordingDot
+            stateIndicator
 
             // Status text
             VStack(alignment: .leading, spacing: 1) {
@@ -76,6 +75,15 @@ struct DictationOverlayView: View {
 
     // MARK: - Subviews
 
+    @ViewBuilder
+    private var stateIndicator: some View {
+        if manager.state == .processing {
+            ThinkingIndicator()
+        } else {
+            recordingDot
+        }
+    }
+
     private var recordingDot: some View {
         Circle()
             .fill(dotColor)
@@ -136,5 +144,37 @@ struct DictationOverlayView: View {
         let mins = seconds / 60
         let secs = seconds % 60
         return String(format: "%d:%02d", mins, secs)
+    }
+}
+
+private struct ThinkingIndicator: View {
+    @State private var active = false
+
+    var body: some View {
+        HStack(spacing: 3) {
+            ForEach(0..<3, id: \.self) { index in
+                Capsule()
+                    .fill(.white.opacity(active ? 0.92 : 0.42))
+                    .frame(width: 4, height: active ? 16 : 8)
+                    .animation(
+                        .easeInOut(duration: 0.62)
+                            .repeatForever(autoreverses: true)
+                            .delay(Double(index) * 0.12),
+                        value: active
+                    )
+            }
+        }
+        .frame(width: 28, height: 24)
+        .background(
+            Capsule()
+                .fill(Palette.accent.opacity(0.34))
+        )
+        .overlay(
+            Capsule()
+                .strokeBorder(.white.opacity(0.18), lineWidth: 0.5)
+        )
+        .onAppear {
+            active = true
+        }
     }
 }

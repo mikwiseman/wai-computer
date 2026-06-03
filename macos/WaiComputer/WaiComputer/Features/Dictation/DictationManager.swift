@@ -75,6 +75,7 @@ final class DictationManager: ObservableObject {
     static let handsFreeHotkeyDefaultsKey = "dictationHandsFreeHotkey"
     static let aiCleanupDefaultsKey = "dictationAICleanup"
     static let cleanupLevelDefaultsKey = "dictationCleanupLevel"
+    static let contextAwareFormattingDefaultsKey = "dictationContextAwareFormatting"
     static let enabledDefaultsKey = "dictationEnabled"
     private static let liveSTTProvider = "deepgram"
     private static let liveSTTModel = "nova-3"
@@ -99,6 +100,16 @@ final class DictationManager: ObservableObject {
         didSet {
             guard cleanupLevel != oldValue else { return }
             UserDefaults.standard.set(cleanupLevel, forKey: Self.cleanupLevelDefaultsKey)
+        }
+    }
+
+    @Published var contextAwareFormattingEnabled: Bool {
+        didSet {
+            guard contextAwareFormattingEnabled != oldValue else { return }
+            UserDefaults.standard.set(
+                contextAwareFormattingEnabled,
+                forKey: Self.contextAwareFormattingDefaultsKey
+            )
         }
     }
 
@@ -157,6 +168,7 @@ final class DictationManager: ObservableObject {
     // MARK: - Target App (for restoring focus before paste in direct builds)
 
     private var targetApp: NSRunningApplication?
+    private var dictationContext: DictationCleanupContext?
 
     // MARK: - Dictation pipeline
 
@@ -199,9 +211,16 @@ final class DictationManager: ObservableObject {
         if let storedCleanupLevel = defaults.string(forKey: Self.cleanupLevelDefaultsKey) {
             self.cleanupLevel = storedCleanupLevel
         } else if defaults.object(forKey: Self.aiCleanupDefaultsKey) == nil {
-            self.cleanupLevel = "none"
+            self.cleanupLevel = "light"
         } else {
             self.cleanupLevel = defaults.bool(forKey: Self.aiCleanupDefaultsKey) ? "light" : "none"
+        }
+        if defaults.object(forKey: Self.contextAwareFormattingDefaultsKey) == nil {
+            self.contextAwareFormattingEnabled = true
+        } else {
+            self.contextAwareFormattingEnabled = defaults.bool(
+                forKey: Self.contextAwareFormattingDefaultsKey
+            )
         }
         // Same idiom: default ON for fresh installs so the onboarding sandbox
         // (build 74+) can actually fire the hotkey, and so first-launch users
@@ -451,6 +470,10 @@ final class DictationManager: ObservableObject {
 
         // Remember the target app so we can re-focus it before pasting
         targetApp = NSWorkspace.shared.frontmostApplication
+        dictationContext = DictationContextCollector.collect(
+            targetApp: targetApp,
+            includeTextbox: contextAwareFormattingEnabled && cleanupLevel != "none"
+        )
 
         // Check microphone permission — use the canonical macOS API.
         // `AVAudioApplication.requestRecordPermission` silently fails on
@@ -757,7 +780,8 @@ final class DictationManager: ObservableObject {
                     let vocabulary = dictionaryStore?.vocabularyList ?? []
                     cleanedText = try await apiClient.cleanupDictation(
                         text: rawText,
-                        vocabulary: vocabulary
+                        vocabulary: vocabulary,
+                        context: contextAwareFormattingEnabled ? dictationContext : nil
                     )
                     log.info("AI cleanup: \(rawText.count) → \(cleanedText?.count ?? 0) chars (vocab=\(vocabulary.count))")
                 } catch {
@@ -1067,6 +1091,7 @@ final class DictationManager: ObservableObject {
         firstTokenReported = false
 
         targetApp = nil
+        dictationContext = nil
         setState(.idle)
         setHandsFree(false)
         hideOverlay()

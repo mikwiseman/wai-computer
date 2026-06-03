@@ -165,7 +165,7 @@ async def test_cleanup_dictation_uses_fixed_post_filter_model(
     assert response.status_code == 200
     assert captured["model"] == "gpt-5.5"
     assert captured["max_output_tokens"] == 256
-    assert captured["reasoning"] == {"effort": "none"}
+    assert captured["reasoning"] == {"effort": "low"}
     assert captured["text"] == {"verbosity": "low"}
 
 
@@ -257,6 +257,113 @@ async def test_cleanup_dictation_high_level_targets_brevity_and_polish(
     instructions = captured["instructions"]
     assert "brevity and polish" in instructions
     assert "Do not summarize away details" in instructions
+
+
+@pytest.mark.asyncio
+async def test_cleanup_dictation_includes_context_for_formatting(
+    client: AsyncClient,
+    auth_headers: dict,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    captured: dict[str, object] = {}
+
+    async def _create(**kwargs: object):
+        captured.update(kwargs)
+        return _make_response("Cleaned text.")
+
+    mock_client = SimpleNamespace(responses=SimpleNamespace(create=_create))
+    _patch_settings(monkeypatch)
+    _patch_client(monkeypatch, mock_client)
+    await _set_cleanup_level(client, auth_headers, "light")
+
+    response = await client.post(
+        "/api/dictation/cleanup",
+        headers=auth_headers,
+        json={
+            "text": "um remind me about bug one two three",
+            "context": {
+                "app": {
+                    "name": "Cursor",
+                    "bundle_id": "com.todesktop.230313mzl4w4u92",
+                    "category": "engineering",
+                },
+                "textbox": {
+                    "before_text": "Fix failing test in backend/app/api/routes/dictation.py\n",
+                    "selected_text": "TODO",
+                    "after_text": "\nThen run pytest.",
+                },
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    instructions = captured["instructions"]
+    assert "<dictation_context>" in instructions
+    assert "<app_category>engineering</app_category>" in instructions
+    assert "<app_name>Cursor</app_name>" in instructions
+    assert "preserve code-like tokens" in instructions
+    assert "Fix failing test" in instructions
+    assert "<selected_text>TODO</selected_text>" in instructions
+    assert "Then run pytest." in instructions
+
+
+@pytest.mark.asyncio
+async def test_cleanup_dictation_rejects_unknown_context_category(
+    client: AsyncClient,
+    auth_headers: dict,
+):
+    response = await client.post(
+        "/api/dictation/cleanup",
+        headers=auth_headers,
+        json={
+            "text": "please clean up this dictated sentence",
+            "context": {"app": {"category": "finance"}},
+        },
+    )
+
+    assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_cleanup_dictation_truncates_large_textbox_context(
+    client: AsyncClient,
+    auth_headers: dict,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    captured: dict[str, object] = {}
+
+    async def _create(**kwargs: object):
+        captured.update(kwargs)
+        return _make_response("Cleaned text.")
+
+    mock_client = SimpleNamespace(responses=SimpleNamespace(create=_create))
+    _patch_settings(monkeypatch)
+    _patch_client(monkeypatch, mock_client)
+    await _set_cleanup_level(client, auth_headers, "medium")
+
+    response = await client.post(
+        "/api/dictation/cleanup",
+        headers=auth_headers,
+        json={
+            "text": "please clean up this dictated sentence",
+            "context": {
+                "textbox": {
+                    "before_text": "a" * 900,
+                    "selected_text": "b" * 2100,
+                    "after_text": "c" * 900,
+                },
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    instructions = captured["instructions"]
+    assert "a" * 800 in instructions
+    assert "a" * 801 not in instructions
+    assert "b" * 2000 in instructions
+    assert "b" * 2001 not in instructions
+    assert "c" * 800 in instructions
+    assert "c" * 801 not in instructions
 
 
 @pytest.mark.asyncio
