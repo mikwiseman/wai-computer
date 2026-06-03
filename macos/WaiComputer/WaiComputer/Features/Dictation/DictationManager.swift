@@ -48,9 +48,16 @@ final class DictationManager: ObservableObject {
         case inserting
     }
 
+    enum Mode: Equatable {
+        case dictation
+        case translation
+        case askAnything
+    }
+
     // MARK: - Published State
 
     @Published private(set) var state: State = .idle
+    @Published private(set) var activeMode: Mode = .dictation
     @Published private(set) var interimTranscript = ""
     @Published private(set) var dictationDuration: TimeInterval = 0
     @Published private(set) var isHandsFree = false
@@ -59,6 +66,9 @@ final class DictationManager: ObservableObject {
     /// now" slide) display the result without depending on paste-into-focused-
     /// field, which is fragile when the dictation overlay grabs window focus.
     @Published private(set) var lastFinalTranscript: String?
+    @Published private(set) var askAnythingQuestion = ""
+    @Published private(set) var askAnythingAnswer = ""
+    @Published private(set) var isAskAnythingStreaming = false
     @Published var isEnabled = false
     @Published var error: String?
 
@@ -153,6 +163,7 @@ final class DictationManager: ObservableObject {
     var historyStore: DictationHistoryStore?
     var dictionaryStore: DictationDictionaryStore?
     var languageStore: DictationLanguageStore?
+    let translationLanguageStore = TranslationLanguageStore()
     let hotkeyManager = GlobalHotkeyManager()
 
     // MARK: - Instrumentation
@@ -164,6 +175,7 @@ final class DictationManager: ObservableObject {
     // MARK: - Overlay
 
     private var overlayPanel: DictationOverlayPanel?
+    private var askAnythingPanel: AskAnythingPanel?
 
     // MARK: - Target App (for restoring focus before paste in direct builds)
 
@@ -337,69 +349,32 @@ final class DictationManager: ObservableObject {
     private func setupHotkeyCallbacks() {
         hotkeyManager.onPushToTalkStart = { [weak self] in
             guard let self else { return }
-            guard self.isEnabled else {
-                log.warning("Dictation hotkey pressed but not enabled (not authenticated?)")
-                SentryHelper.addBreadcrumb(
-                    category: "dictation.session",
-                    message: "hotkey start ignored",
-                    level: .warning,
-                    data: ["reason": "disabled"]
-                )
-                return
-            }
-            guard self.canBeginExternalDictation() else { return }
-            guard self.state == .idle else {
-                SentryHelper.addBreadcrumb(
-                    category: "dictation.session",
-                    message: "hotkey start ignored",
-                    level: .warning,
-                    data: ["reason": "busy", "state": String(describing: self.state)]
-                )
-                SentryHelper.captureErrorOnce(
-                    DictationInstrumentationError.unknown("hotkey start ignored while busy"),
-                    fingerprint: "dictation.hotkey_start_ignored.\(String(describing: self.state))",
-                    extras: [
-                        "stage": "hotkey.start",
-                        "state": String(describing: self.state),
-                    ]
-                )
-                return
-            }
-            // Clear any stale deferred-stop SYNCHRONOUSLY before we Task the
-            // start. A subsequent onPushToTalkStop (fired before startDictation
-            // executes setState(.connecting)) is then free to set the flag
-            // again and have it honoured at the .listening transition.
-            self.deferredStop = false
-            self.setHandsFree(false)
-            Task { await self.startDictation() }
+            self.beginDictationMode(.dictation, handsFree: false)
         }
 
         hotkeyManager.onPushToTalkStop = { [weak self] in
             guard let self else { return }
-            let policyState: PushToTalkStopState
-            switch self.state {
-            case .idle: policyState = .idle
-            case .connecting: policyState = .connecting
-            case .listening: policyState = .listening
-            case .processing, .inserting: policyState = .finalizing
-            }
-            switch PushToTalkStopPolicy.resolve(state: policyState, isHandsFree: self.isHandsFree) {
-            case .finishNow:
-                Task { await self.stopAndInsert() }
-            case .deferUntilReady:
-                // .idle: onPushToTalkStart Task hasn't yet executed
-                // setState(.connecting). .connecting: WS handshake / REST
-                // mint in flight. Either way the start path picks this up
-                // the moment state transitions to .listening.
-                self.deferredStop = true
-                SentryHelper.addBreadcrumb(
-                    category: "dictation.session",
-                    message: "stop deferred until provider ready",
-                    data: ["state": String(describing: self.state)]
-                )
-            case .doNothing:
-                break
-            }
+            self.stopPushMode()
+        }
+
+        hotkeyManager.onTranslationStart = { [weak self] in
+            guard let self else { return }
+            self.beginDictationMode(.translation, handsFree: false)
+        }
+
+        hotkeyManager.onTranslationStop = { [weak self] in
+            guard let self else { return }
+            self.stopPushMode()
+        }
+
+        hotkeyManager.onAskAnythingStart = { [weak self] in
+            guard let self else { return }
+            self.beginDictationMode(.askAnything, handsFree: false)
+        }
+
+        hotkeyManager.onAskAnythingStop = { [weak self] in
+            guard let self else { return }
+            self.stopPushMode()
         }
 
         hotkeyManager.onHandsFreeToggle = { [weak self] in
@@ -411,8 +386,7 @@ final class DictationManager: ObservableObject {
                 Task { await self.stopAndInsert() }
             } else if self.state == .idle, self.canBeginExternalDictation() {
                 // Start hands-free
-                self.setHandsFree(true)
-                Task { await self.startDictation() }
+                self.beginDictationMode(.dictation, handsFree: true)
             }
         }
 
@@ -428,9 +402,76 @@ final class DictationManager: ObservableObject {
         }
     }
 
+    private func beginDictationMode(_ mode: Mode, handsFree: Bool) {
+        guard isEnabled else {
+            log.warning("Dictation hotkey pressed but not enabled (not authenticated?)")
+            SentryHelper.addBreadcrumb(
+                category: "dictation.session",
+                message: "hotkey start ignored",
+                level: .warning,
+                data: ["reason": "disabled", "mode": String(describing: mode)]
+            )
+            return
+        }
+        guard canBeginExternalDictation() else { return }
+        guard state == .idle else {
+            SentryHelper.addBreadcrumb(
+                category: "dictation.session",
+                message: "hotkey start ignored",
+                level: .warning,
+                data: [
+                    "reason": "busy",
+                    "state": String(describing: state),
+                    "mode": String(describing: mode),
+                ]
+            )
+            SentryHelper.captureErrorOnce(
+                DictationInstrumentationError.unknown("hotkey start ignored while busy"),
+                fingerprint: "dictation.hotkey_start_ignored.\(String(describing: state))",
+                extras: [
+                    "stage": "hotkey.start",
+                    "state": String(describing: state),
+                    "mode": String(describing: mode),
+                ]
+            )
+            return
+        }
+        // Clear any stale deferred-stop synchronously before we Task the start.
+        deferredStop = false
+        setHandsFree(handsFree)
+        Task { await self.startDictation(mode: mode) }
+    }
+
+    private func stopPushMode() {
+        let policyState: PushToTalkStopState
+        switch state {
+        case .idle: policyState = .idle
+        case .connecting: policyState = .connecting
+        case .listening: policyState = .listening
+        case .processing, .inserting: policyState = .finalizing
+        }
+        switch PushToTalkStopPolicy.resolve(state: policyState, isHandsFree: isHandsFree) {
+        case .finishNow:
+            Task { await self.stopAndInsert() }
+        case .deferUntilReady:
+            // .idle: onPushToTalkStart Task hasn't yet executed
+            // setState(.connecting). .connecting: WS handshake / REST
+            // mint in flight. Either way the start path picks this up
+            // the moment state transitions to .listening.
+            deferredStop = true
+            SentryHelper.addBreadcrumb(
+                category: "dictation.session",
+                message: "stop deferred until provider ready",
+                data: ["state": String(describing: state)]
+            )
+        case .doNothing:
+            break
+        }
+    }
+
     // MARK: - Dictation Flow
 
-    func startDictation() async {
+    func startDictation(mode: Mode = .dictation) async {
         guard state == .idle else {
             log.warning("Cannot start dictation — state is \(String(describing: self.state))")
             SentryHelper.addBreadcrumb(
@@ -456,10 +497,20 @@ final class DictationManager: ObservableObject {
         }
         guard canBeginExternalDictation() else { return }
 
+        activeMode = mode
+        if mode == .askAnything {
+            askAnythingQuestion = ""
+            askAnythingAnswer = ""
+            isAskAnythingStreaming = false
+        }
+
         SentryHelper.addBreadcrumb(
             category: "dictation.session",
             message: "starting dictation",
-            data: ["isHandsFree": isHandsFree]
+            data: [
+                "isHandsFree": isHandsFree,
+                "mode": String(describing: mode),
+            ]
         )
 
         // Begin instrumentation as the very first step so every subsequent
@@ -472,7 +523,9 @@ final class DictationManager: ObservableObject {
         targetApp = NSWorkspace.shared.frontmostApplication
         dictationContext = DictationContextCollector.collect(
             targetApp: targetApp,
-            includeTextbox: contextAwareFormattingEnabled && cleanupLevel != "none"
+            includeTextbox: contextAwareFormattingEnabled && (
+                cleanupLevel != "none" || mode == .translation
+            )
         )
 
         // Check microphone permission — use the canonical macOS API.
@@ -764,6 +817,19 @@ final class DictationManager: ObservableObject {
         // Apply dictionary replacements
         let rawText = dictionaryStore?.applyReplacements(to: trimmedText) ?? trimmedText
 
+        switch activeMode {
+        case .dictation:
+            await cleanupAndInsert(rawText: rawText)
+        case .translation:
+            await translateAndInsert(rawText: rawText)
+        case .askAnything:
+            await answerAskAnything(question: rawText)
+        }
+
+        await cleanup()
+    }
+
+    private func cleanupAndInsert(rawText: String) async {
         // AI cleanup (optional). If enabled, cleanup is part of the requested
         // output contract: failure is surfaced instead of silently inserting
         // raw text that the user explicitly asked us to post-process.
@@ -816,10 +882,127 @@ final class DictationManager: ObservableObject {
                 "context": "dictation.cleanup",
                 "rawChars": rawText.count,
             ])
-            await cleanup()
             return
         }
 
+        await insertFinalText(
+            textToInsert,
+            rawText: rawText,
+            cleanedText: textToInsert != rawText ? textToInsert : nil
+        )
+    }
+
+    private func translateAndInsert(rawText: String) async {
+        guard let apiClient else {
+            let unavailable = NSError(
+                domain: "is.waiwai.computer.dictation.translation",
+                code: 1,
+                userInfo: [NSLocalizedDescriptionKey: "AI translation is unavailable because the API client is not configured."]
+            )
+            self.error = unavailable.userFacingMessage(context: .dictation)
+            instrumentationSession?.failure(unavailable, extras: ["stage": "translation"])
+            instrumentationSession = nil
+            return
+        }
+
+        let target = translationLanguageStore.selectedEntry
+        do {
+            let vocabulary = dictionaryStore?.vocabularyList ?? []
+            let translated = try await apiClient.translateDictation(
+                text: rawText,
+                targetLanguageCode: target.code,
+                targetLanguageName: target.englishName,
+                vocabulary: vocabulary,
+                context: contextAwareFormattingEnabled ? dictationContext : nil
+            )
+            log.info("AI translation: \(rawText.count) → \(translated.count) chars target=\(target.code, privacy: .public) vocab=\(vocabulary.count)")
+            await insertFinalText(
+                translated,
+                rawText: rawText,
+                cleanedText: translated != rawText ? translated : nil
+            )
+        } catch {
+            log.error("AI translation failed")
+            self.error = error.userFacingMessage(context: .dictation)
+            instrumentationSession?.failure(error, extras: [
+                "stage": "translation",
+                "rawChars": rawText.count,
+                "target": target.code,
+            ])
+            instrumentationSession = nil
+            SentryHelper.captureError(error, extras: [
+                "context": "dictation.translation",
+                "rawChars": rawText.count,
+                "target": target.code,
+            ])
+        }
+    }
+
+    private func answerAskAnything(question: String) async {
+        guard let apiClient else {
+            let unavailable = NSError(
+                domain: "is.waiwai.computer.dictation.ask",
+                code: 1,
+                userInfo: [NSLocalizedDescriptionKey: "Ask Anything is unavailable because the API client is not configured."]
+            )
+            self.error = unavailable.userFacingMessage(context: .dictation)
+            instrumentationSession?.failure(unavailable, extras: ["stage": "ask_anything"])
+            instrumentationSession = nil
+            return
+        }
+
+        askAnythingQuestion = question
+        askAnythingAnswer = ""
+        isAskAnythingStreaming = true
+        showAskAnythingPanel()
+        hideOverlay()
+
+        do {
+            let chat = try await apiClient.createCompanionChat()
+            let stream = try await apiClient.streamCompanionMessage(
+                chatId: chat.id,
+                content: question
+            )
+            for await event in stream {
+                if Task.isCancelled { return }
+                switch event {
+                case .token(let text):
+                    askAnythingAnswer += text
+                    refreshAskAnythingPanel()
+                case .error(let code, let message):
+                    throw NSError(
+                        domain: "is.waiwai.computer.dictation.ask",
+                        code: 2,
+                        userInfo: [NSLocalizedDescriptionKey: "\(code): \(message)"]
+                    )
+                case .done:
+                    isAskAnythingStreaming = false
+                    refreshAskAnythingPanel()
+                    return
+                default:
+                    break
+                }
+            }
+            isAskAnythingStreaming = false
+            refreshAskAnythingPanel()
+        } catch {
+            isAskAnythingStreaming = false
+            if askAnythingAnswer.isEmpty {
+                askAnythingAnswer = error.userFacingMessage(context: .dictation)
+            }
+            self.error = error.userFacingMessage(context: .dictation)
+            instrumentationSession?.failure(error, extras: ["stage": "ask_anything"])
+            instrumentationSession = nil
+            SentryHelper.captureError(error, extras: ["context": "dictation.ask_anything"])
+            refreshAskAnythingPanel()
+        }
+    }
+
+    private func insertFinalText(
+        _ textToInsert: String,
+        rawText: String,
+        cleanedText: String?
+    ) async {
         // Publish the final text so observers (onboarding sandbox, future
         // analytics surfaces) receive it independent of TextInserter success.
         // Re-set on every dictation so SwiftUI .onChange fires even when the
@@ -859,11 +1042,9 @@ final class DictationManager: ObservableObject {
         // Save to history
         historyStore?.add(
             rawText: rawText,
-            cleanedText: textToInsert != rawText ? textToInsert : nil,
+            cleanedText: cleanedText,
             durationSeconds: dictationDuration
         )
-
-        await cleanup()
     }
 
     func cancelDictation() async {
@@ -1093,6 +1274,7 @@ final class DictationManager: ObservableObject {
         targetApp = nil
         dictationContext = nil
         setState(.idle)
+        activeMode = .dictation
         setHandsFree(false)
         hideOverlay()
 
@@ -1373,5 +1555,38 @@ final class DictationManager: ObservableObject {
     private func hideOverlay() {
         overlayPanel?.hideAnimated()
         overlayPanel = nil
+    }
+
+    private func showAskAnythingPanel() {
+        if askAnythingPanel == nil {
+            askAnythingPanel = AskAnythingPanel()
+        }
+        refreshAskAnythingPanel()
+        askAnythingPanel?.showAnimated()
+    }
+
+    private func refreshAskAnythingPanel() {
+        let view = AskAnythingAnswerView(manager: self)
+        askAnythingPanel?.setContent(view)
+    }
+
+    func closeAskAnythingAnswer() {
+        askAnythingPanel?.hideAnimated()
+        askAnythingPanel = nil
+    }
+
+    func copyAskAnythingQuestion() {
+        copyToPasteboard(askAnythingQuestion)
+    }
+
+    func copyAskAnythingAnswer() {
+        copyToPasteboard(askAnythingAnswer)
+    }
+
+    private func copyToPasteboard(_ text: String) {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(trimmed, forType: .string)
     }
 }

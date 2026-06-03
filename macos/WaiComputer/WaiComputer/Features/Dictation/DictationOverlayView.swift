@@ -106,6 +106,38 @@ struct DictationOverlayView: View {
     // MARK: - Computed
 
     private var statusText: String {
+        switch manager.activeMode {
+        case .translation:
+            let target = manager.translationLanguageStore.selectedEntry.englishName
+            switch manager.state {
+            case .listening:
+                return t("Translating to \(target)", "Перевод на \(target)")
+            case .processing:
+                return t("Translating...", "Перевожу...")
+            case .inserting:
+                return t("Inserting translation...", "Вставляю перевод...")
+            case .connecting:
+                return DictationCopy.overlayStatus(.connecting, language: languageManager.current)
+            case .idle:
+                return DictationCopy.overlayStatus(.idle, language: languageManager.current)
+            }
+        case .askAnything:
+            switch manager.state {
+            case .listening:
+                return t("Ask anything", "Спросить что угодно")
+            case .processing:
+                return t("Asking Wai...", "Спрашиваю Wai...")
+            case .inserting:
+                return t("Answering...", "Отвечаю...")
+            case .connecting:
+                return DictationCopy.overlayStatus(.connecting, language: languageManager.current)
+            case .idle:
+                return DictationCopy.overlayStatus(.idle, language: languageManager.current)
+            }
+        case .dictation:
+            break
+        }
+
         let status: DictationCopy.OverlayStatus
         switch manager.state {
         case .idle:
@@ -144,6 +176,10 @@ struct DictationOverlayView: View {
         let mins = seconds / 60
         let secs = seconds % 60
         return String(format: "%d:%02d", mins, secs)
+    }
+
+    private func t(_ english: String, _ russian: String) -> String {
+        OnboardingL10n.text(english, russian, language: languageManager.current)
     }
 }
 
