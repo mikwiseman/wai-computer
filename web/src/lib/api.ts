@@ -279,14 +279,24 @@ export function createRecording(input: {
   title?: string | null;
   type?: RecordingType;
   language?: string;
+  folder_id?: string | null;
 }): Promise<Recording> {
+  const body: {
+    title: string | null;
+    type: RecordingType;
+    language: string;
+    folder_id?: string | null;
+  } = {
+    title: input.title ?? null,
+    type: input.type ?? "note",
+    language: input.language ?? "multi",
+  };
+  if (input.folder_id !== undefined) {
+    body.folder_id = input.folder_id;
+  }
   return apiFetch<Recording>("/api/recordings", {
     method: "POST",
-    body: JSON.stringify({
-      title: input.title ?? null,
-      type: input.type ?? "note",
-      language: input.language ?? "multi",
-    }),
+    body: JSON.stringify(body),
   });
 }
 

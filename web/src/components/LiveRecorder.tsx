@@ -49,9 +49,15 @@ interface LiveRecorderProps {
   onRecordingComplete: (detail: RecordingDetail) => void;
   onError: (message: string) => void;
   locale?: Locale;
+  folderId?: string | null;
 }
 
-export function LiveRecorder({ onRecordingComplete, onError, locale = "en" }: LiveRecorderProps) {
+export function LiveRecorder({
+  onRecordingComplete,
+  onError,
+  locale = "en",
+  folderId = null,
+}: LiveRecorderProps) {
   const copy = COPY[locale];
   const [state, setState] = useState<RealtimeState>("idle");
   const [seconds, setSeconds] = useState(0);
@@ -147,7 +153,11 @@ export function LiveRecorder({ onRecordingComplete, onError, locale = "en" }: Li
       return;
     }
     try {
-      const recording = await createRecording({ title: copy.defaultTitle(), type: "note" });
+      const recording = await createRecording({
+        title: copy.defaultTitle(),
+        type: "note",
+        ...(folderId ? { folder_id: folderId } : {}),
+      });
       const detail = await saveTranscript(recording.id, segments);
       onRecordingComplete(detail);
     } catch (error) {
@@ -158,7 +168,7 @@ export function LiveRecorder({ onRecordingComplete, onError, locale = "en" }: Li
       setCommitted("");
       setInterim("");
     }
-  }, [clearTimer, copy, onError, onRecordingComplete]);
+  }, [clearTimer, copy, folderId, onError, onRecordingComplete]);
 
   const isActive = state === "connecting" || state === "recording" || state === "stopping";
 

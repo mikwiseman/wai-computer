@@ -39,11 +39,27 @@ from app.core.document_extract import (
 from app.core.item_ingest import ingest_item
 from app.core.item_titles import clean_title, title_from_filename
 from app.models.item import Item, ItemSummary
-from app.models.recording import Recording, RecordingStatus
+from app.models.recording import Folder, Recording, RecordingStatus
 
 router = APIRouter(prefix="/items", tags=["items"])
 
 logger = logging.getLogger(__name__)
+
+
+async def _require_folder(
+    folder_id: UUID | None,
+    user_id: UUID,
+    db: Database,
+) -> Folder | None:
+    if folder_id is None:
+        return None
+    result = await db.execute(
+        select(Folder).where(Folder.id == folder_id, Folder.user_id == user_id)
+    )
+    folder = result.scalar_one_or_none()
+    if folder is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Folder not found")
+    return folder
 
 
 class CreateItemRequest(BaseModel):
@@ -213,6 +229,7 @@ async def create_item(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Provide body text or a URL.",
         )
+    folder = await _require_folder(request.folder_id, user.id, db)
 
     # Stable dedup key: prefer the URL (stable before/after fetch), else body.
     dedup_key = request.url if has_url else request.body
@@ -225,7 +242,7 @@ async def create_item(
         title=request.title,
         body=request.body,
         url=request.url,
-        folder_id=request.folder_id,
+        folder_id=folder.id if folder else None,
         dedup_key=dedup_key,
         embed=has_body,
     )
@@ -291,7 +308,12 @@ async def _stage_media_upload(
 
 
 async def _handle_media_upload(
-    user: Any, db: Database, ext: str, file: UploadFile, title: str | None
+    user: Any,
+    db: Database,
+    ext: str,
+    file: UploadFile,
+    title: str | None,
+    folder_id: UUID | None,
 ) -> JSONResponse:
     """Stage an audio/video upload and enqueue background transcription. Returns
     202 with the Recording id so clients can select the processing row immediately."""
@@ -316,6 +338,7 @@ async def _handle_media_upload(
         status=RecordingStatus.PROCESSING.value,
         uploaded_at=datetime.now(timezone.utc),
         language=language,
+        folder_id=folder_id,
     )
     db.add(recording)
     await db.flush()
@@ -378,11 +401,21 @@ async def upload_item(
     title: str | None = Form(default=None),
 ) -> ItemResponse | JSONResponse:
     """Add any supported document as an Item, or audio/video as a Recording."""
+    folder = await _require_folder(folder_id, user.id, db)
+    validated_folder_id = folder.id if folder else None
+
     ext = resolve_document_extension(file.filename, file.content_type)
     if ext not in SUPPORTED_DOCUMENT_EXTENSIONS:
         media_ext = _media_upload_ext(file.filename, file.content_type)
         if media_ext:
-            return await _handle_media_upload(user, db, media_ext, file, title)
+            return await _handle_media_upload(
+                user,
+                db,
+                media_ext,
+                file,
+                title,
+                validated_folder_id,
+            )
         await file.close()
         raise HTTPException(
             status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
@@ -428,7 +461,7 @@ async def upload_item(
         kind=document_kind_for_extension(ext),
         title=clean_title(title) or title_from_filename(file.filename),
         body=body,
-        folder_id=folder_id,
+        folder_id=validated_folder_id,
         metadata={"upload": {"ext": ext, "path": str(stored), "size": len(data)}},
         embed=True,
     )
@@ -462,7 +495,8 @@ async def list_items(
     if kind:
         base = base.where(Item.kind == kind)
     if folder_id is not None:
-        base = base.where(Item.folder_id == folder_id)
+        folder = await _require_folder(folder_id, user.id, db)
+        base = base.where(Item.folder_id == folder.id)
 
     rows = (
         await db.execute(

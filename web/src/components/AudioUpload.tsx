@@ -7,6 +7,7 @@ import type { RecordingDetail } from "@/lib/types";
 interface AudioUploadProps {
   onUploadComplete: (detail: RecordingDetail) => void;
   onError: (message: string) => void;
+  folderId?: string | null;
 }
 
 const ACCEPTED_TYPES = [
@@ -17,7 +18,7 @@ const ACCEPTED_FILE_EXTENSIONS = ["mp3", "m4a", "wav", "webm", "ogg", "opus", "f
 const ACCEPTED_FILE_INPUT = ".mp3,.m4a,.wav,.webm,.ogg,.opus,.flac";
 const UNSUPPORTED_FORMAT_MESSAGE = "Unsupported format. Use MP3, M4A, WAV, WebM, OGG, OPUS, or FLAC.";
 
-export function AudioUpload({ onUploadComplete, onError }: AudioUploadProps) {
+export function AudioUpload({ onUploadComplete, onError, folderId = null }: AudioUploadProps) {
   const [isDragging, setIsDragging] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [progress, setProgress] = useState("");
@@ -52,7 +53,12 @@ export function AudioUpload({ onUploadComplete, onError }: AudioUploadProps) {
         setProgress(`${prefix}Creating recording...`);
         // Pass an empty title so the backend auto-generates one from the
         // transcript content instead of using the filename verbatim.
-        const recording = await createRecording({ title: "", type: "note", language: "multi" });
+        const recording = await createRecording({
+          title: "",
+          type: "note",
+          language: "multi",
+          ...(folderId ? { folder_id: folderId } : {}),
+        });
 
         setProgress(`${prefix}Uploading audio...`);
         const detail = await uploadAudio(recording.id, file);
@@ -66,7 +72,7 @@ export function AudioUpload({ onUploadComplete, onError }: AudioUploadProps) {
       setUploading(false);
       setProgress("");
     }
-  }, [onUploadComplete, onError, validateFile]);
+  }, [folderId, onUploadComplete, onError, validateFile]);
 
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();

@@ -592,7 +592,7 @@ describe("CompanionPanel", () => {
 
     // Phase 1: before any token, the searching hint + tool-call progress show.
     const bubble = await screen.findByTestId("companion-streaming");
-    expect(within(bubble).getByText("Searching recordings…")).toBeInTheDocument();
+    expect(within(bubble).getByText("Searching your Inbox...")).toBeInTheDocument();
     await waitFor(() => {
       expect(within(bubble).getByText(/search → 3 hits/)).toBeInTheDocument();
     });

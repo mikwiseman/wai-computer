@@ -9,6 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from app.api.deps import CurrentUser, Database
+from app.models.item import Item
 from app.models.recording import Folder
 
 router = APIRouter(prefix="/folders", tags=["folders"])
@@ -99,7 +100,7 @@ async def delete_folder(
     user: CurrentUser,
     db: Database,
 ) -> Response:
-    """Delete a folder and unassign its recordings."""
+    """Delete a folder and unassign every inbox object in it."""
     result = await db.execute(
         select(Folder)
         .where(Folder.id == folder_id, Folder.user_id == user.id)
@@ -112,6 +113,12 @@ async def delete_folder(
 
     for recording in folder.recordings:
         recording.folder_id = None
+
+    item_result = await db.execute(
+        select(Item).where(Item.user_id == user.id, Item.folder_id == folder.id)
+    )
+    for item in item_result.scalars().all():
+        item.folder_id = None
 
     await db.delete(folder)
     await db.flush()
