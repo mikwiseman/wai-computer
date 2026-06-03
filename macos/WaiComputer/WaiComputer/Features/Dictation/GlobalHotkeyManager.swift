@@ -410,6 +410,21 @@ enum DictationCleanupPolicy {
     }
 }
 
+enum DictationCleanupSpeculationPolicy {
+    enum Decision: Equatable {
+        case reuseSpeculative
+        case restartWithFinal
+    }
+
+    static func decision(preliminaryRawText: String?, finalRawText: String) -> Decision {
+        guard let preliminaryRawText,
+              !preliminaryRawText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return .restartWithFinal
+        }
+        return preliminaryRawText == finalRawText ? .reuseSpeculative : .restartWithFinal
+    }
+}
+
 enum DictationHotkey: String, CaseIterable, Identifiable {
     case rightOption = "right_option"
     case leftOption = "left_option"

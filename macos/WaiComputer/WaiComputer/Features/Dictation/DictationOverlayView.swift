@@ -17,7 +17,7 @@ struct DictationOverlayView: View {
                     .font(Typography.headingSmall)
                     .foregroundStyle(.white)
 
-                if !manager.interimTranscript.isEmpty {
+                if !previewText.isEmpty {
                     Text(transcriptPreview)
                         .font(Typography.caption)
                         .foregroundStyle(.white.opacity(0.7))
@@ -164,11 +164,19 @@ struct DictationOverlayView: View {
     }
 
     private var transcriptPreview: String {
-        let text = manager.interimTranscript
+        let text = previewText
         if text.count > 60 {
             return "..." + String(text.suffix(57))
         }
         return text
+    }
+
+    private var previewText: String {
+        if manager.state == .processing,
+           !manager.cleanupPreview.isEmpty {
+            return manager.cleanupPreview
+        }
+        return manager.interimTranscript
     }
 
     private var formattedDuration: String {

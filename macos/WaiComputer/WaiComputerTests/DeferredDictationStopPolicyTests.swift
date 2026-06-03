@@ -72,6 +72,36 @@ final class DeferredDictationStopPolicyTests: XCTestCase {
         )
     }
 
+    func testCleanupSpeculationReusesOnlyExactFinalTranscriptMatch() {
+        XCTAssertEqual(
+            DictationCleanupSpeculationPolicy.decision(
+                preliminaryRawText: "Clean this transcript.",
+                finalRawText: "Clean this transcript."
+            ),
+            .reuseSpeculative
+        )
+    }
+
+    func testCleanupSpeculationRestartsWhenFinalTranscriptDiffers() {
+        XCTAssertEqual(
+            DictationCleanupSpeculationPolicy.decision(
+                preliminaryRawText: "Clean this transcript.",
+                finalRawText: "Clean this transcript better."
+            ),
+            .restartWithFinal
+        )
+    }
+
+    func testCleanupSpeculationRestartsWithoutPreliminaryTranscript() {
+        XCTAssertEqual(
+            DictationCleanupSpeculationPolicy.decision(
+                preliminaryRawText: " ",
+                finalRawText: "Clean this transcript."
+            ),
+            .restartWithFinal
+        )
+    }
+
     // MARK: - PushToTalkStopPolicy
 
     func testListeningHotkeyReleaseFinishesNow() {

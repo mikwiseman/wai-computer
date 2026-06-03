@@ -6,13 +6,18 @@ Two concerns share this module:
   survive logout/login and sync across Macs.
 """
 
+import json
 import logging
+import time
+from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
+from typing import Any, AsyncIterator
 from uuid import UUID
 
 import openai
 from fastapi import APIRouter, HTTPException, Response, status
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import select
 
@@ -177,6 +182,18 @@ class CleanupResponse(BaseModel):
     text: str
 
 
+@dataclass(frozen=True)
+class CleanupOpenAIRequest:
+    """Prepared Responses API request for dictation cleanup."""
+
+    text: str
+    model: str
+    instructions: str
+    input: str
+    max_output_tokens: int
+    prompt_cache_key: str
+
+
 class TranslationRequest(BaseModel):
     """Request to translate dictated text after realtime capture completes."""
 
@@ -320,6 +337,244 @@ def _cleanup_output_token_cap(text: str) -> int:
     )
 
 
+def _dictation_cleanup_prompt_cache_key(user_id: UUID) -> str:
+    return f"wai-dictation-cleanup-{user_id}"
+
+
+def _prepare_cleanup_openai_request(
+    request: CleanupRequest,
+    user: CurrentUser,
+) -> CleanupOpenAIRequest | CleanupResponse:
+    text = request.text.strip()
+    if not text:
+        return CleanupResponse(text="")
+
+    cleanup_level = user.dictation_cleanup_level
+    if cleanup_level == "none":
+        return CleanupResponse(text=text)
+
+    if len(text) < 10:
+        return CleanupResponse(text=text)
+
+    settings = get_settings()
+    if not settings.openai_api_key:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="AI cleanup is not configured (missing OPENAI_API_KEY).",
+        )
+
+    provider, model = validate_option(
+        "dictation_post_filter",
+        DEFAULT_DICTATION_POST_FILTER_PROVIDER,
+        DEFAULT_DICTATION_POST_FILTER_MODEL,
+    )
+    if provider != "openai":
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"Unsupported dictation post-filter provider: {provider}",
+        )
+
+    cleanup_instructions = DICTATION_CLEANUP_INSTRUCTIONS_BY_LEVEL.get(cleanup_level)
+    if cleanup_instructions is None:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Unsupported dictation cleanup level: {cleanup_level}",
+        )
+
+    return CleanupOpenAIRequest(
+        text=text,
+        model=model,
+        instructions=(
+            cleanup_instructions
+            + _build_context_block(request.context)
+            + _build_vocabulary_block(request.vocabulary)
+        ),
+        input=(
+            "<dictated_text>\n"
+            f"{text}\n"
+            "</dictated_text>"
+        ),
+        max_output_tokens=_cleanup_output_token_cap(text),
+        prompt_cache_key=_dictation_cleanup_prompt_cache_key(user.id),
+    )
+
+
+def _jsonable_usage_value(value: Any, key: str) -> int | None:
+    if value is None:
+        return None
+    if isinstance(value, dict):
+        raw = value.get(key)
+    else:
+        raw = getattr(value, key, None)
+    return raw if isinstance(raw, int) else None
+
+
+def _cached_tokens_from_usage(usage: Any) -> int | None:
+    if usage is None:
+        return None
+    if isinstance(usage, dict):
+        details = (
+            usage.get("input_tokens_details")
+            or usage.get("prompt_tokens_details")
+        )
+    else:
+        details = (
+            getattr(usage, "input_tokens_details", None)
+            or getattr(usage, "prompt_tokens_details", None)
+        )
+    return _jsonable_usage_value(details, "cached_tokens")
+
+
+def _model_from_response(response: Any, fallback: str | None) -> str | None:
+    if response is None:
+        return fallback
+    if isinstance(response, dict):
+        model = response.get("model")
+    else:
+        model = getattr(response, "model", None)
+    return model if isinstance(model, str) and model else fallback
+
+
+def _sse_frame(event_type: str, payload: dict[str, Any]) -> bytes:
+    return (
+        f"event: {event_type}\n"
+        f"data: {json.dumps(payload)}\n\n"
+    ).encode("utf-8")
+
+
+def _cleanup_done_frame(
+    *,
+    text: str,
+    model: str | None,
+    latency_ms: int,
+    usage: Any = None,
+) -> bytes:
+    return _sse_frame(
+        "done",
+        {
+            "text": text,
+            "model": model,
+            "latency_ms": latency_ms,
+            "input_tokens": _jsonable_usage_value(usage, "input_tokens"),
+            "output_tokens": _jsonable_usage_value(usage, "output_tokens"),
+            "cached_tokens": _cached_tokens_from_usage(usage),
+        },
+    )
+
+
+def _cleanup_error_frame(code: str, message: str) -> bytes:
+    return _sse_frame("error", {"code": code, "message": message})
+
+
+async def _stream_cleanup_events(
+    prepared: CleanupOpenAIRequest,
+    user_id: UUID,
+) -> AsyncIterator[bytes]:
+    started = time.monotonic()
+    assistant_text = ""
+    completed_response_obj: Any = None
+    usage: Any = None
+
+    try:
+        client = get_openai_client()
+        stream = await client.responses.create(
+            model=prepared.model,
+            instructions=prepared.instructions,
+            input=prepared.input,
+            reasoning={"effort": "low"},
+            text={"verbosity": "low"},
+            max_output_tokens=prepared.max_output_tokens,
+            prompt_cache_key=prepared.prompt_cache_key,
+            stream=True,
+            store=False,
+        )
+
+        async for event in stream:
+            event_type = getattr(event, "type", None) or (
+                event.get("type") if isinstance(event, dict) else None
+            )
+            if event_type == "response.output_text.delta":
+                delta = getattr(event, "delta", None)
+                if delta is None and isinstance(event, dict):
+                    delta = event.get("delta", "")
+                delta = delta or ""
+                assistant_text += delta
+                if delta:
+                    yield _sse_frame("token", {"text": delta})
+            elif event_type in ("response.completed", "response.done"):
+                response_obj = getattr(event, "response", None)
+                if response_obj is None and isinstance(event, dict):
+                    response_obj = event.get("response")
+                completed_response_obj = response_obj
+                if response_obj is not None:
+                    ensure_response_completed(
+                        response_obj,
+                        operation="Dictation cleanup",
+                    )
+                    usage = (
+                        response_obj.get("usage")
+                        if isinstance(response_obj, dict)
+                        else getattr(response_obj, "usage", None)
+                    )
+                    if not assistant_text:
+                        assistant_text = response_output_text(response_obj)
+                        if assistant_text:
+                            yield _sse_frame("token", {"text": assistant_text})
+            elif event_type in ("response.error", "error"):
+                error_obj = getattr(event, "error", None)
+                if error_obj is None and isinstance(event, dict):
+                    error_obj = event.get("error")
+                message = "AI service error. Please try again later."
+                if isinstance(error_obj, dict):
+                    message = str(error_obj.get("message") or message)
+                elif error_obj is not None:
+                    message = str(getattr(error_obj, "message", None) or message)
+                raise OpenAIResponseError(message)
+
+        ensure_response_completed(
+            completed_response_obj,
+            operation="Dictation cleanup",
+        )
+        cleaned = assistant_text.strip()
+        if not cleaned:
+            raise OpenAIResponseError("Dictation cleanup returned empty text.")
+
+        logger.info(
+            "Dictation cleanup stream: %d chars → %d chars for user %s",
+            len(prepared.text),
+            len(cleaned),
+            user_id,
+        )
+        yield _cleanup_done_frame(
+            text=cleaned,
+            model=_model_from_response(completed_response_obj, prepared.model),
+            latency_ms=int((time.monotonic() - started) * 1000),
+            usage=usage,
+        )
+    except openai.APIConnectionError:
+        yield _cleanup_error_frame("connection_error", "Unable to connect to AI service")
+    except openai.RateLimitError:
+        yield _cleanup_error_frame(
+            "rate_limit",
+            "AI service rate limit exceeded. Please try again later.",
+        )
+    except openai.APIStatusError as exc:
+        logger.warning("Dictation cleanup stream upstream error: %s", exc)
+        yield _cleanup_error_frame(
+            "upstream_error",
+            "AI service error. Please try again later.",
+        )
+    except OpenAIResponseError as exc:
+        logger.warning("Dictation cleanup stream incomplete response: %s", exc)
+        yield _cleanup_error_frame(
+            "incomplete_response",
+            "AI service returned an incomplete cleanup response.",
+        )
+    except Exception:
+        logger.exception("Dictation cleanup stream failed")
+        yield _cleanup_error_frame("cleanup_failed", "Dictation cleanup failed")
+
+
 def _translation_instructions(
     *,
     target_language_code: str,
@@ -359,57 +614,21 @@ async def cleanup_dictation(request: CleanupRequest, user: CurrentUser):
     Removes filler words, fixes grammar, adds proper punctuation, and formats
     the text while preserving the original meaning.
     """
-    text = request.text.strip()
-    if not text:
-        return CleanupResponse(text="")
-
-    cleanup_level = user.dictation_cleanup_level
-    if cleanup_level == "none":
-        return CleanupResponse(text=text)
-
-    if len(text) < 10:
-        return CleanupResponse(text=text)
-
-    settings = get_settings()
-    if not settings.openai_api_key:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="AI cleanup is not configured (missing OPENAI_API_KEY).",
-        )
-
-    provider, model = validate_option(
-        "dictation_post_filter",
-        DEFAULT_DICTATION_POST_FILTER_PROVIDER,
-        DEFAULT_DICTATION_POST_FILTER_MODEL,
-    )
-    if provider != "openai":
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=f"Unsupported dictation post-filter provider: {provider}",
-        )
-
-    cleanup_instructions = DICTATION_CLEANUP_INSTRUCTIONS_BY_LEVEL.get(cleanup_level)
-    if cleanup_instructions is None:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Unsupported dictation cleanup level: {cleanup_level}",
-        )
-    context_block = _build_context_block(request.context)
-    vocabulary_block = _build_vocabulary_block(request.vocabulary)
+    prepared = _prepare_cleanup_openai_request(request, user)
+    if isinstance(prepared, CleanupResponse):
+        return prepared
 
     try:
         client = get_openai_client()
         response = await client.responses.create(
-            model=model,
-            instructions=cleanup_instructions + context_block + vocabulary_block,
-            input=(
-                "<dictated_text>\n"
-                f"{text}\n"
-                "</dictated_text>"
-            ),
+            model=prepared.model,
+            instructions=prepared.instructions,
+            input=prepared.input,
             reasoning={"effort": "low"},
             text={"verbosity": "low"},
-            max_output_tokens=_cleanup_output_token_cap(text),
+            max_output_tokens=prepared.max_output_tokens,
+            prompt_cache_key=prepared.prompt_cache_key,
+            store=False,
         )
 
         ensure_response_completed(response, operation="Dictation cleanup")
@@ -417,7 +636,7 @@ async def cleanup_dictation(request: CleanupRequest, user: CurrentUser):
 
         logger.info(
             "Dictation cleanup: %d chars → %d chars for user %s",
-            len(text),
+            len(prepared.text),
             len(cleaned),
             user.id,
         )
@@ -453,6 +672,35 @@ async def cleanup_dictation(request: CleanupRequest, user: CurrentUser):
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Dictation cleanup failed",
         ) from None
+
+
+@router.post("/cleanup/stream")
+async def cleanup_dictation_stream(request: CleanupRequest, user: CurrentUser):
+    """Stream AI cleanup deltas as server-sent events."""
+    prepared = _prepare_cleanup_openai_request(request, user)
+    if isinstance(prepared, CleanupResponse):
+        text = prepared.text
+
+        async def _short_circuit() -> AsyncIterator[bytes]:
+            if text:
+                yield _sse_frame("token", {"text": text})
+            yield _cleanup_done_frame(
+                text=text,
+                model=None,
+                latency_ms=0,
+            )
+
+        return StreamingResponse(
+            _short_circuit(),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        )
+
+    return StreamingResponse(
+        _stream_cleanup_events(prepared, user.id),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @router.post("/translate", response_model=CleanupResponse)
