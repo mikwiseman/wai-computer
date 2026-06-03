@@ -476,6 +476,10 @@ final class GlobalHotkeyManager: ObservableObject {
     /// Callbacks
     var onPushToTalkStart: (() -> Void)?
     var onPushToTalkStop: (() -> Void)?
+    var onTranslationStart: (() -> Void)?
+    var onTranslationStop: (() -> Void)?
+    var onAskAnythingStart: (() -> Void)?
+    var onAskAnythingStop: (() -> Void)?
     var onHandsFreeToggle: (() -> Void)?
     var onSingleTap: (() -> Void)?
     var onCancelled: (() -> Void)?
@@ -524,6 +528,11 @@ final class GlobalHotkeyManager: ObservableObject {
     private var otherKeyPressed = false
     private var isInPushToTalk = false
     private var holdTimer: DispatchWorkItem?
+    private enum SpecialMode {
+        case translation
+        case askAnything
+    }
+    private var activeSpecialMode: SpecialMode?
 
     // Double-tap detection
     private var lastTapTime: Date?
@@ -652,16 +661,42 @@ final class GlobalHotkeyManager: ObservableObject {
             hotkeyDownTime = nil
             otherKeyPressed = false
             isInPushToTalk = false
+            activeSpecialMode = nil
             log.info("Escape pressed — cancelling dictation")
             onCancelled?()
             return
         }
 
         guard isHotkeyHeld else { return }
+        if keyCode == UInt16(kVK_Space),
+           activeSpecialMode == nil,
+           !isInPushToTalk {
+            startSpecialMode(.askAnything)
+            return
+        }
+        if activeSpecialMode != nil {
+            return
+        }
         otherKeyPressed = true
     }
 
     private func handleFlagsChanged(keyCode: UInt16, flags: NSEvent.ModifierFlags) {
+        if let activeSpecialMode {
+            let clean = flags.intersection(.deviceIndependentFlagsMask)
+            let primaryStillDown = flagsContainHotkey(clean, hotkey: hotkey)
+            switch activeSpecialMode {
+            case .translation:
+                if !primaryStillDown || !clean.contains(.shift) {
+                    stopSpecialMode(.translation)
+                }
+            case .askAnything:
+                if !primaryStillDown {
+                    stopSpecialMode(.askAnything)
+                }
+            }
+            return
+        }
+
         // 1. If a dedicated hands-free hotkey is configured and is being
         //    pressed, fire onHandsFreeToggle on the press (not on hold).
         //    Distinct from push-to-talk: single press = toggle.
@@ -718,6 +753,21 @@ final class GlobalHotkeyManager: ObservableObject {
             }
         }
 
+        let clean = flags.intersection(.deviceIndependentFlagsMask)
+        if isHotkeyHeld,
+           !isInPushToTalk,
+           flagsContainHotkey(clean, hotkey: hotkey),
+           clean.contains(.shift) {
+            startSpecialMode(.translation)
+            return
+        }
+
+        if isInPushToTalk,
+           !isTargetKey,
+           flagsContainHotkey(clean, hotkey: hotkey) {
+            return
+        }
+
         // 3. Push-to-talk hotkey
         if isTargetKey && !isHotkeyHeld {
             hotkeyDown()
@@ -756,6 +806,61 @@ final class GlobalHotkeyManager: ObservableObject {
             return keyCode == hotkey.keyCode
         case .controlOption:
             return keyCode == hotkey.keyCode || keyCode == UInt16(kVK_Control)
+        }
+    }
+
+    private func flagsContainHotkey(
+        _ clean: NSEvent.ModifierFlags,
+        hotkey: DictationHotkey
+    ) -> Bool {
+        switch hotkey {
+        case .rightOption, .leftOption:
+            return clean.contains(.option)
+        case .rightCommand:
+            return clean.contains(.command)
+        case .fn:
+            return clean.contains(.function)
+        case .controlOption:
+            return clean.contains(.control) && clean.contains(.option)
+        }
+    }
+
+    private func startSpecialMode(_ mode: SpecialMode) {
+        holdTimer?.cancel()
+        holdTimer = nil
+        activeSpecialMode = mode
+        isInPushToTalk = false
+        otherKeyPressed = false
+        lastTapTime = nil
+
+        switch mode {
+        case .translation:
+            log.info("Translation dictation started")
+            onTranslationStart?()
+        case .askAnything:
+            log.info("Ask Anything dictation started")
+            onAskAnythingStart?()
+        }
+    }
+
+    private func stopSpecialMode(_ mode: SpecialMode) {
+        guard activeSpecialMode == mode else { return }
+        activeSpecialMode = nil
+        holdTimer?.cancel()
+        holdTimer = nil
+        isHotkeyHeld = false
+        hotkeyDownTime = nil
+        otherKeyPressed = false
+        isInPushToTalk = false
+        lastTapTime = nil
+
+        switch mode {
+        case .translation:
+            log.info("Translation dictation stopped")
+            onTranslationStop?()
+        case .askAnything:
+            log.info("Ask Anything dictation stopped")
+            onAskAnythingStop?()
         }
     }
 
