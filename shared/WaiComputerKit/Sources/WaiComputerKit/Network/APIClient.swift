@@ -1859,6 +1859,10 @@ public actor APIClient {
         clientDurationSeconds: Int? = nil,
         clientFileSizeBytes: Int64? = nil
     ) async throws -> RecordingDetail {
+        // `clientFileSizeBytes` is retained for source compatibility. The
+        // multipart field is populated from the bytes actually copied into the
+        // request body so a file-size race during finalization cannot poison
+        // the server-side upload.
         let fileSize = try fileSize(at: fileURL)
         if fileSize > Int64(Self.maxRecordingUploadSizeBytes) {
             throw APIError.httpError(
@@ -1894,15 +1898,21 @@ public actor APIClient {
         default: mimeType = "application/octet-stream"
         }
 
-        let multipartFileURL = try createUploadRequestFile(
+        let uploadRequestFile = try createUploadRequestFile(
             sourceFileURL: fileURL,
             filename: filename,
             mimeType: mimeType,
             boundary: boundary,
-            clientDurationSeconds: clientDurationSeconds,
-            clientFileSizeBytes: clientFileSizeBytes ?? fileSize
+            clientDurationSeconds: clientDurationSeconds
         )
-        defer { try? FileManager.default.removeItem(at: multipartFileURL) }
+        defer { try? FileManager.default.removeItem(at: uploadRequestFile.url) }
+
+        if uploadRequestFile.copiedFileSizeBytes > Int64(Self.maxRecordingUploadSizeBytes) {
+            throw APIError.httpError(
+                statusCode: 413,
+                message: "File too large. Maximum size is \(Self.maxRecordingUploadSizeBytes / (1024 * 1024))MB."
+            )
+        }
 
         let (data, _) = try await performWithAuthRetry(
             &request,
@@ -1910,7 +1920,7 @@ public actor APIClient {
             method: "POST",
             extras: ["recordingId": recordingId]
         ) { req in
-            try await self.session.upload(for: req, fromFile: multipartFileURL)
+            try await self.session.upload(for: req, fromFile: uploadRequestFile.url)
         }
 
         do {
@@ -1930,9 +1940,8 @@ public actor APIClient {
         filename: String,
         mimeType: String,
         boundary: String,
-        clientDurationSeconds: Int?,
-        clientFileSizeBytes: Int64
-    ) throws -> URL {
+        clientDurationSeconds: Int?
+    ) throws -> (url: URL, copiedFileSizeBytes: Int64) {
         let uploadURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("wai-upload-\(UUID().uuidString).multipart")
         FileManager.default.createFile(atPath: uploadURL.path, contents: nil)
@@ -1956,10 +1965,6 @@ public actor APIClient {
                 value: String(clientDurationSeconds)
             )
         }
-        try writeField(
-            name: "client_file_size_bytes",
-            value: String(clientFileSizeBytes)
-        )
 
         try writeString("--\(boundary)\r\n")
         try writeString(
@@ -1970,18 +1975,25 @@ public actor APIClient {
         let input = try FileHandle(forReadingFrom: sourceFileURL)
         defer { try? input.close() }
 
+        var copiedFileSizeBytes: Int64 = 0
         while true {
             let chunk = try input.read(upToCount: 64 * 1024) ?? Data()
             if chunk.isEmpty {
                 break
             }
+            copiedFileSizeBytes += Int64(chunk.count)
             try output.write(contentsOf: chunk)
         }
 
         try writeString("\r\n")
 
+        try writeField(
+            name: "client_file_size_bytes",
+            value: String(copiedFileSizeBytes)
+        )
+
         try writeString("--\(boundary)--\r\n")
-        return uploadURL
+        return (uploadURL, copiedFileSizeBytes)
     }
 }
 
