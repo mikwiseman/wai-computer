@@ -9,59 +9,73 @@ namespace WaiComputer.Core.ViewModels;
 
 /// <summary>
 /// Portable user-settings ViewModel shared by the Windows (WinUI) and Linux
-/// (Avalonia) clients. Exposes only the user-editable, NON-managed settings
-/// (default/summary language, summary style, dictation post-filter). The six
-/// transcription-provider/model fields are managed by the server and the backend
-/// returns HTTP 400 on any PATCH that includes them, so they are deliberately not
-/// editable here. Save sends a SPARSE <see cref="UpdateSettingsRequest"/> — only
-/// the fields the user actually changed — mirroring the macOS sparse-PATCH
-/// contract. Failures surface on <see cref="ErrorMessage"/>; edits are preserved
-/// on a failed save (no silent loss).
+/// (Avalonia) settings surfaces. Binds <see cref="IApiClient.GetSettingsAsync"/>
+/// for load and <see cref="IApiClient.UpdateSettingsAsync"/> for save, mirroring
+/// every field of <see cref="UserSettings"/> as an editable observable property.
+/// <see cref="LoadAsync"/> populates the props from the server; <see cref="SaveCommand"/>
+/// builds an <see cref="UpdateSettingsRequest"/> from the current props, PATCHes it,
+/// and refreshes from the response. Errors surface on <see cref="ErrorMessage"/> —
+/// no silent degradation, no fabricated defaults that mask a failure.
 /// </summary>
 public sealed partial class SettingsViewModel : ObservableObject
 {
     private readonly IApiClient _api;
     private readonly ILogger<SettingsViewModel> _logger;
-    private UserSettings? _loaded;
 
-    [ObservableProperty] [NotifyPropertyChangedFor(nameof(HasChanges))] private string _defaultLanguage = string.Empty;
-    [ObservableProperty] [NotifyPropertyChangedFor(nameof(HasChanges))] private string _summaryLanguage = string.Empty;
-    [ObservableProperty] [NotifyPropertyChangedFor(nameof(HasChanges))] private SummaryStyle _summaryStyle = SummaryStyle.Medium;
-    [ObservableProperty] [NotifyPropertyChangedFor(nameof(HasChanges))] private bool _dictationPostFilterEnabled;
+    // Snapshot of the last loaded/saved server state, used to compute HasChanges
+    // and to rebuild the full UpdateSettingsRequest from the current props.
+    private UserSettings? _loaded;
 
     [ObservableProperty] private bool _isLoading;
     [ObservableProperty] private bool _isSaving;
     [ObservableProperty] private string? _errorMessage;
+    [ObservableProperty] private bool _hasChanges;
 
+    [ObservableProperty] private string _defaultLanguage = string.Empty;
+    [ObservableProperty] private string _summaryLanguage = string.Empty;
+    [ObservableProperty] private SummaryStyle _summaryStyle = SummaryStyle.Medium;
+    [ObservableProperty] private string _dictationLiveSttProvider = string.Empty;
+    [ObservableProperty] private string _dictationLiveSttModel = string.Empty;
+    [ObservableProperty] private string _recordingLiveSttProvider = string.Empty;
+    [ObservableProperty] private string _recordingLiveSttModel = string.Empty;
+    [ObservableProperty] private string _fileSttProvider = string.Empty;
+    [ObservableProperty] private string _fileSttModel = string.Empty;
+    [ObservableProperty] private bool _dictationPostFilterEnabled;
+    [ObservableProperty] private string? _dictationPostFilterProvider;
+    [ObservableProperty] private string? _dictationPostFilterModel;
+
+    public IAsyncRelayCommand LoadCommand { get; }
     public IAsyncRelayCommand SaveCommand { get; }
 
     public SettingsViewModel(IApiClient api, ILogger<SettingsViewModel>? logger = null)
     {
         _api = api;
         _logger = logger ?? NullLogger<SettingsViewModel>.Instance;
-        SaveCommand = new AsyncRelayCommand(() => SaveAsync(CancellationToken.None), () => HasChanges && !IsSaving);
+
+        LoadCommand = new AsyncRelayCommand(() => LoadAsync(CancellationToken.None), () => !IsLoading && !IsSaving);
+        SaveCommand = new AsyncRelayCommand(() => SaveAsync(CancellationToken.None), () => CanSave);
     }
 
-    /// <summary>True when an editable field differs from the last loaded/saved snapshot.</summary>
-    public bool HasChanges =>
-        _loaded is not null && (
-            DefaultLanguage != _loaded.DefaultLanguage ||
-            SummaryLanguage != _loaded.SummaryLanguage ||
-            SummaryStyle != _loaded.SummaryStyle ||
-            DictationPostFilterEnabled != _loaded.DictationPostFilterEnabled);
+    /// <summary>True once settings have loaded at least once.</summary>
+    public bool IsLoaded => _loaded is not null;
 
+    /// <summary>Save is allowed only when loaded, not busy, and there are pending edits.</summary>
+    public bool CanSave => IsLoaded && !IsLoading && !IsSaving && HasChanges;
+
+    /// <summary>Fetch the user's settings and populate the editable properties.</summary>
     public async Task LoadAsync(CancellationToken ct = default)
     {
-        if (IsLoading)
+        if (IsLoading || IsSaving)
         {
             return;
         }
+
         IsLoading = true;
         ErrorMessage = null;
         try
         {
             var settings = await _api.GetSettingsAsync(ct).ConfigureAwait(false);
-            ApplyLoaded(settings);
+            ApplySettings(settings);
         }
         catch (OperationCanceledException)
         {
@@ -78,27 +92,27 @@ public sealed partial class SettingsViewModel : ObservableObject
         }
     }
 
+    /// <summary>Persist the current edits, then refresh from the server response.</summary>
     public async Task SaveAsync(CancellationToken ct = default)
     {
-        if (IsSaving || _loaded is null || !HasChanges)
+        if (IsLoading || IsSaving)
         {
             return;
         }
+        if (_loaded is null)
+        {
+            // Never invent a payload before a real load — surface the misuse instead of masking it.
+            ErrorMessage = "Load your settings before saving.";
+            return;
+        }
+
         IsSaving = true;
         ErrorMessage = null;
         try
         {
-            // Sparse PATCH: only the changed, non-managed fields. The six managed STT
-            // provider/model fields are left null (WhenWritingNull omits them), so the
-            // backend's managed-field guard never trips.
-            var request = new UpdateSettingsRequest(
-                DefaultLanguage: DefaultLanguage != _loaded.DefaultLanguage ? DefaultLanguage : null,
-                SummaryLanguage: SummaryLanguage != _loaded.SummaryLanguage ? SummaryLanguage : null,
-                SummaryStyle: SummaryStyle != _loaded.SummaryStyle ? SummaryStyle : null,
-                DictationPostFilterEnabled: DictationPostFilterEnabled != _loaded.DictationPostFilterEnabled ? DictationPostFilterEnabled : null);
-
+            var request = BuildRequest();
             var updated = await _api.UpdateSettingsAsync(request, ct).ConfigureAwait(false);
-            ApplyLoaded(updated);
+            ApplySettings(updated);
         }
         catch (OperationCanceledException)
         {
@@ -106,7 +120,6 @@ public sealed partial class SettingsViewModel : ObservableObject
         }
         catch (Exception ex)
         {
-            // Keep the user's edits so they can retry; surface the failure.
             _logger.LogWarning(ex, "Saving settings failed");
             ErrorMessage = "Couldn't save your settings. Try again.";
         }
@@ -116,20 +129,98 @@ public sealed partial class SettingsViewModel : ObservableObject
         }
     }
 
-    private void ApplyLoaded(UserSettings settings)
+    /// <summary>Discard unsaved edits, restoring the last loaded/saved server state.</summary>
+    public void ResetChanges()
+    {
+        if (_loaded is not null)
+        {
+            ApplySettings(_loaded);
+        }
+    }
+
+    private void ApplySettings(UserSettings settings)
     {
         _loaded = settings;
         DefaultLanguage = settings.DefaultLanguage;
         SummaryLanguage = settings.SummaryLanguage;
         SummaryStyle = settings.SummaryStyle;
+        DictationLiveSttProvider = settings.DictationLiveSttProvider;
+        DictationLiveSttModel = settings.DictationLiveSttModel;
+        RecordingLiveSttProvider = settings.RecordingLiveSttProvider;
+        RecordingLiveSttModel = settings.RecordingLiveSttModel;
+        FileSttProvider = settings.FileSttProvider;
+        FileSttModel = settings.FileSttModel;
         DictationPostFilterEnabled = settings.DictationPostFilterEnabled;
-        OnPropertyChanged(nameof(HasChanges));
-        SaveCommand.NotifyCanExecuteChanged();
+        DictationPostFilterProvider = settings.DictationPostFilterProvider;
+        DictationPostFilterModel = settings.DictationPostFilterModel;
+        OnPropertyChanged(nameof(IsLoaded));
+        RecomputeHasChanges();
     }
 
-    partial void OnDefaultLanguageChanged(string value) => SaveCommand.NotifyCanExecuteChanged();
-    partial void OnSummaryLanguageChanged(string value) => SaveCommand.NotifyCanExecuteChanged();
-    partial void OnSummaryStyleChanged(SummaryStyle value) => SaveCommand.NotifyCanExecuteChanged();
-    partial void OnDictationPostFilterEnabledChanged(bool value) => SaveCommand.NotifyCanExecuteChanged();
-    partial void OnIsSavingChanged(bool value) => SaveCommand.NotifyCanExecuteChanged();
+    private UpdateSettingsRequest BuildRequest() => new(
+        DefaultLanguage: DefaultLanguage,
+        SummaryLanguage: SummaryLanguage,
+        SummaryStyle: SummaryStyle,
+        DictationLiveSttProvider: DictationLiveSttProvider,
+        DictationLiveSttModel: DictationLiveSttModel,
+        RecordingLiveSttProvider: RecordingLiveSttProvider,
+        RecordingLiveSttModel: RecordingLiveSttModel,
+        FileSttProvider: FileSttProvider,
+        FileSttModel: FileSttModel,
+        DictationPostFilterEnabled: DictationPostFilterEnabled,
+        DictationPostFilterProvider: DictationPostFilterProvider,
+        DictationPostFilterModel: DictationPostFilterModel);
+
+    private void RecomputeHasChanges()
+    {
+        var loaded = _loaded;
+        HasChanges = loaded is not null && (
+            DefaultLanguage != loaded.DefaultLanguage ||
+            SummaryLanguage != loaded.SummaryLanguage ||
+            SummaryStyle != loaded.SummaryStyle ||
+            DictationLiveSttProvider != loaded.DictationLiveSttProvider ||
+            DictationLiveSttModel != loaded.DictationLiveSttModel ||
+            RecordingLiveSttProvider != loaded.RecordingLiveSttProvider ||
+            RecordingLiveSttModel != loaded.RecordingLiveSttModel ||
+            FileSttProvider != loaded.FileSttProvider ||
+            FileSttModel != loaded.FileSttModel ||
+            DictationPostFilterEnabled != loaded.DictationPostFilterEnabled ||
+            DictationPostFilterProvider != loaded.DictationPostFilterProvider ||
+            DictationPostFilterModel != loaded.DictationPostFilterModel);
+    }
+
+    // ----- CommunityToolkit source-generated change hooks -------------------
+
+    partial void OnIsLoadingChanged(bool value)
+    {
+        LoadCommand.NotifyCanExecuteChanged();
+        SaveCommand.NotifyCanExecuteChanged();
+        OnPropertyChanged(nameof(CanSave));
+    }
+
+    partial void OnIsSavingChanged(bool value)
+    {
+        LoadCommand.NotifyCanExecuteChanged();
+        SaveCommand.NotifyCanExecuteChanged();
+        OnPropertyChanged(nameof(CanSave));
+    }
+
+    partial void OnHasChangesChanged(bool value)
+    {
+        SaveCommand.NotifyCanExecuteChanged();
+        OnPropertyChanged(nameof(CanSave));
+    }
+
+    partial void OnDefaultLanguageChanged(string value) => RecomputeHasChanges();
+    partial void OnSummaryLanguageChanged(string value) => RecomputeHasChanges();
+    partial void OnSummaryStyleChanged(SummaryStyle value) => RecomputeHasChanges();
+    partial void OnDictationLiveSttProviderChanged(string value) => RecomputeHasChanges();
+    partial void OnDictationLiveSttModelChanged(string value) => RecomputeHasChanges();
+    partial void OnRecordingLiveSttProviderChanged(string value) => RecomputeHasChanges();
+    partial void OnRecordingLiveSttModelChanged(string value) => RecomputeHasChanges();
+    partial void OnFileSttProviderChanged(string value) => RecomputeHasChanges();
+    partial void OnFileSttModelChanged(string value) => RecomputeHasChanges();
+    partial void OnDictationPostFilterEnabledChanged(bool value) => RecomputeHasChanges();
+    partial void OnDictationPostFilterProviderChanged(string? value) => RecomputeHasChanges();
+    partial void OnDictationPostFilterModelChanged(string? value) => RecomputeHasChanges();
 }
