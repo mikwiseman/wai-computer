@@ -168,6 +168,64 @@ final class CompanionStreamTests: XCTestCase {
     }
 }
 
+final class DictationCleanupStreamTests: XCTestCase {
+    private let parser = DictationCleanupStreamParser()
+
+    func testParsesCleanupTokenDoneAndErrorFrames() throws {
+        let token = try parser.parse("event: token\ndata: {\"text\":\"Cleaned\"}")
+        XCTAssertEqual(token, .token(text: "Cleaned"))
+
+        let done = try parser.parse("""
+        event: done
+        data: {"text":"Cleaned text.","model":"gpt-5.5","latency_ms":123,"input_tokens":111,"output_tokens":7,"cached_tokens":64}
+        """)
+        XCTAssertEqual(
+            done,
+            .done(
+                text: "Cleaned text.",
+                model: "gpt-5.5",
+                latencyMs: 123,
+                inputTokens: 111,
+                outputTokens: 7,
+                cachedTokens: 64
+            )
+        )
+
+        let error = try parser.parse("event: error\ndata: {\"code\":\"boom\",\"message\":\"bad\"}")
+        XCTAssertEqual(error, .error(code: "boom", message: "bad"))
+    }
+
+    func testCleanupStreamReassemblesFrames() async {
+        let raw = """
+        event: token
+        data: {"text":"Привет"}
+
+        event: done
+        data: {"text":"Привет.","model":"gpt-5.5","latency_ms":42,"input_tokens":null,"output_tokens":null,"cached_tokens":null}
+
+
+        """
+        var collected: [DictationCleanupStreamEvent] = []
+        for await event in dictationCleanupEvents(bytes: AsyncByteSequence(string: raw)) {
+            collected.append(event)
+        }
+
+        XCTAssertEqual(collected.count, 2)
+        XCTAssertEqual(collected[0], .token(text: "Привет"))
+        XCTAssertEqual(
+            collected[1],
+            .done(
+                text: "Привет.",
+                model: "gpt-5.5",
+                latencyMs: 42,
+                inputTokens: nil,
+                outputTokens: nil,
+                cachedTokens: nil
+            )
+        )
+    }
+}
+
 /// Minimal byte-emitting async sequence used to drive companionEvents().
 private struct AsyncByteSequence: AsyncSequence {
     typealias Element = UInt8

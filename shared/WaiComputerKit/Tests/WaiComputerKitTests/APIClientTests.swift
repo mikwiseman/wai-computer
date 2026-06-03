@@ -873,6 +873,75 @@ final class APIClientTests: XCTestCase {
         XCTAssertEqual(text, "Cleaned")
     }
 
+    func testStreamCleanupDictationUsesStreamEndpoint() async throws {
+        let client = makeClient()
+
+        MockURLProtocol.requestHandler = { [self] request in
+            XCTAssertEqual(request.httpMethod, "POST")
+            XCTAssertEqual(request.url?.path, "/api/dictation/cleanup/stream")
+            XCTAssertEqual(request.value(forHTTPHeaderField: "Accept"), "text/event-stream")
+            XCTAssertEqual(request.value(forHTTPHeaderField: "Cache-Control"), "no-cache")
+            XCTAssertEqual(request.timeoutInterval, 60)
+            let body = bodyJSON(from: request)
+            XCTAssertEqual(body?["text"] as? String, "raw dictated text")
+            XCTAssertEqual(body?["vocabulary"] as? [String], ["WaiComputer"])
+            let context = body?["context"] as? [String: Any]
+            let app = context?["app"] as? [String: Any]
+            XCTAssertEqual(app?["name"] as? String, "Gmail")
+            XCTAssertEqual(app?["category"] as? String, "email")
+
+            let response = HTTPURLResponse(
+                url: request.url!,
+                statusCode: 200,
+                httpVersion: nil,
+                headerFields: ["Content-Type": "text/event-stream"]
+            )!
+            let streamBody = """
+            event: token
+            data: {"text":"Cleaned"}
+
+            event: token
+            data: {"text":" text."}
+
+            event: done
+            data: {"text":"Cleaned text.","model":"gpt-5.5","latency_ms":12,"input_tokens":111,"output_tokens":7,"cached_tokens":64}
+
+
+            """
+            return (response, Data(streamBody.utf8))
+        }
+
+        let context = DictationCleanupContext(
+            app: DictationCleanupAppContext(name: "Gmail", category: "email")
+        )
+        let stream = try await client.streamCleanupDictation(
+            text: "raw dictated text",
+            vocabulary: ["WaiComputer", "waicomputer", ""],
+            context: context
+        )
+
+        var events: [DictationCleanupStreamEvent] = []
+        for await event in stream {
+            events.append(event)
+        }
+
+        XCTAssertEqual(
+            events,
+            [
+                .token(text: "Cleaned"),
+                .token(text: " text."),
+                .done(
+                    text: "Cleaned text.",
+                    model: "gpt-5.5",
+                    latencyMs: 12,
+                    inputTokens: 111,
+                    outputTokens: 7,
+                    cachedTokens: 64
+                ),
+            ]
+        )
+    }
+
     func testTranslateDictationUsesTranslationEndpoint() async throws {
         let client = makeClient()
 

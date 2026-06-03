@@ -1592,6 +1592,17 @@ public actor APIClient {
 
     // MARK: - Dictation Endpoints
 
+    private func normalizedDictationVocabulary(_ vocabulary: [String]) -> [String] {
+        var seen = Set<String>()
+        return vocabulary.compactMap { raw -> String? in
+            let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { return nil }
+            let key = trimmed.lowercased()
+            guard seen.insert(key).inserted else { return nil }
+            return trimmed
+        }
+    }
+
     public func cleanupDictation(
         text: String,
         vocabulary: [String] = [],
@@ -1608,14 +1619,7 @@ public actor APIClient {
         // Trim + dedupe (case-insensitive, preserving first-seen order) before
         // sending. Empty vocab is sent as nil so older backends parsing the
         // request stay happy with the existing schema.
-        var seen = Set<String>()
-        let cleaned = vocabulary.compactMap { raw -> String? in
-            let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !trimmed.isEmpty else { return nil }
-            let key = trimmed.lowercased()
-            guard seen.insert(key).inserted else { return nil }
-            return trimmed
-        }
+        let cleaned = normalizedDictationVocabulary(vocabulary)
         let payload = CleanupRequest(
             text: text,
             vocabulary: cleaned.isEmpty ? nil : cleaned,
@@ -1628,6 +1632,107 @@ public actor APIClient {
             timeoutInterval: 60
         )
         return response.text
+    }
+
+    public func streamCleanupDictation(
+        text: String,
+        vocabulary: [String] = [],
+        context: DictationCleanupContext? = nil
+    ) async throws -> AsyncStream<DictationCleanupStreamEvent> {
+        struct CleanupRequest: Encodable {
+            let text: String
+            let vocabulary: [String]?
+            let context: DictationCleanupContext?
+        }
+        let cleaned = normalizedDictationVocabulary(vocabulary)
+        let payload = CleanupRequest(
+            text: text,
+            vocabulary: cleaned.isEmpty ? nil : cleaned,
+            context: context
+        )
+        let path = "/api/dictation/cleanup/stream"
+
+        func buildRequest() throws -> URLRequest {
+            var request = try buildJSONRequest(
+                method: .POST,
+                path: path,
+                body: payload,
+                queryItems: nil,
+                timeoutInterval: 60
+            )
+            request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
+            request.setValue("no-cache", forHTTPHeaderField: "Cache-Control")
+            return request
+        }
+
+        func openStream(with request: URLRequest) async throws -> (URLSession.AsyncBytes, HTTPURLResponse) {
+            Log.api.info("→ POST \(path)")
+            let bytes: URLSession.AsyncBytes
+            let response: URLResponse
+            do {
+                (bytes, response) = try await session.bytes(for: request)
+            } catch {
+                SentryHelper.captureRequestFailure(
+                    APIError.networkError(error),
+                    method: "POST",
+                    path: path
+                )
+                Log.api.error("✗ POST \(path) failed")
+                throw APIError.networkError(error)
+            }
+            guard let httpResponse = response as? HTTPURLResponse else {
+                throw APIError.networkError(URLError(.badServerResponse))
+            }
+            Log.api.info("← POST \(path) (\(httpResponse.statusCode))")
+            SentryHelper.addBreadcrumb(
+                category: "api",
+                message: "POST \(path)",
+                data: ["statusCode": httpResponse.statusCode]
+            )
+            return (bytes, httpResponse)
+        }
+
+        let initialRequest = try buildRequest()
+        var (bytes, response) = try await openStream(with: initialRequest)
+
+        if response.statusCode == 401 {
+            SentryHelper.addBreadcrumb(
+                category: "auth",
+                message: "token refresh triggered",
+                data: ["path": path]
+            )
+            for try await _ in bytes {}
+            let newToken: String
+            do {
+                newToken = try await handleUnauthorized(path: path)
+                SentryHelper.addBreadcrumb(category: "auth", message: "token refreshed")
+            } catch {
+                SentryHelper.addBreadcrumb(category: "auth", message: "auth failed", level: .error)
+                throw error
+            }
+            var retryRequest = try buildRequest()
+            retryRequest.setValue("Bearer \(newToken)", forHTTPHeaderField: "Authorization")
+            let retried = try await openStream(with: retryRequest)
+            if retried.1.statusCode == 401 {
+                SentryHelper.addBreadcrumb(
+                    category: "auth",
+                    message: "auth failed after refresh",
+                    level: .error
+                )
+                onAuthenticationFailed?()
+                throw APIError.unauthorized
+            }
+            bytes = retried.0
+            response = retried.1
+        }
+
+        guard (200..<300).contains(response.statusCode) else {
+            let bodyData = await Self.collectBody(bytes)
+            let error = apiError(from: bodyData, response: response)
+            SentryHelper.captureRequestFailure(error, method: "POST", path: path)
+            throw error
+        }
+        return dictationCleanupEvents(bytes: bytes)
     }
 
     public func translateDictation(
@@ -1655,14 +1760,7 @@ public actor APIClient {
         struct TranslationResponse: Decodable {
             let text: String
         }
-        var seen = Set<String>()
-        let cleaned = vocabulary.compactMap { raw -> String? in
-            let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !trimmed.isEmpty else { return nil }
-            let key = trimmed.lowercased()
-            guard seen.insert(key).inserted else { return nil }
-            return trimmed
-        }
+        let cleaned = normalizedDictationVocabulary(vocabulary)
         let payload = TranslationRequest(
             text: text,
             targetLanguageCode: targetLanguageCode,
