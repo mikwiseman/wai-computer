@@ -97,6 +97,36 @@ type DetailMode = "active" | "trash";
 type Locale = "en" | "ru";
 
 const LIST_LIMIT = 100;
+const DASHBOARD_VIEW_KEYS = [
+  "wai",
+  "add",
+  "content",
+  "brain",
+  "library",
+  "trash",
+  "search",
+  "dictate",
+  "history",
+  "dictionary",
+  "settings",
+] as const;
+
+function isDashboardView(value: string | null): value is DashboardView {
+  return DASHBOARD_VIEW_KEYS.includes(value as (typeof DASHBOARD_VIEW_KEYS)[number]);
+}
+
+function viewFromCurrentLocation(): DashboardView | null {
+  if (typeof window === "undefined") return null;
+
+  const params = new URLSearchParams(window.location.search);
+  const requested = params.get("view") ?? params.get("tab");
+  if (isDashboardView(requested)) return requested;
+
+  const hash = window.location.hash.replace(/^#/, "");
+  if (hash === "server-data" || hash === "settings") return "settings";
+  if (isDashboardView(hash)) return hash;
+  return null;
+}
 
 interface DashboardCopy {
   loadingDashboard: string;
@@ -837,6 +867,21 @@ export function DashboardClient() {
   useEffect(() => {
     setLocale(detectLocale());
   }, []);
+
+  useEffect(() => {
+    const requestedView = viewFromCurrentLocation();
+    if (!requestedView) return;
+    setActiveFolderId(null);
+    setSelectedRecording(null);
+    setView(requestedView);
+  }, []);
+
+  useEffect(() => {
+    if (view !== "settings" || window.location.hash !== "#server-data") return;
+    window.requestAnimationFrame(() => {
+      document.getElementById("server-data")?.scrollIntoView({ block: "start" });
+    });
+  }, [view]);
 
   const accountHasPassword = user?.has_password !== false;
 

@@ -194,6 +194,8 @@ struct MacSettingsView: View {
                     .accessibilityIdentifier("settings-account-header")
             }
 
+            serverDataSection
+
             telegramSection
 
             Section {
@@ -651,6 +653,45 @@ struct MacSettingsView: View {
         }
     }
 
+    private var serverDataSection: some View {
+        Section {
+            LabeledContent {
+                Text(serverDataCurrentServerLabel)
+                    .font(Typography.body)
+                    .foregroundStyle(Palette.textPrimary)
+            } label: {
+                Text(t("Current server", "Текущий сервер"))
+            }
+
+            Text(t(
+                "Move recordings, transcripts, uploads, memories, settings, usage history, API keys, and MCP metadata to a server you own. Sessions and OAuth connections are recreated after migration.",
+                "Перенесите записи, расшифровки, загрузки, память, настройки, историю использования, API-ключи и MCP-метаданные на свой сервер. Сессии и OAuth-подключения пересоздаются после миграции."
+            ))
+            .font(Typography.caption)
+            .foregroundStyle(Palette.textTertiary)
+            .fixedSize(horizontal: false, vertical: true)
+
+            Button {
+                openServerDataSettings()
+            } label: {
+                Text(serverDataActionTitle)
+            }
+            .font(Typography.body)
+            .accessibilityIdentifier("settings-server-data-move-button")
+        } header: {
+            Text(t("Server & Data", "Сервер и данные"))
+                .waiSectionHeader()
+                .accessibilityIdentifier("settings-server-data-header")
+        } footer: {
+            Text(t(
+                "The web migration flow checks your VPS and shows export, import, and reconnect steps from one place.",
+                "Веб-мастер миграции проверит VPS и покажет экспорт, импорт и переподключение в одном месте."
+            ))
+            .font(Typography.caption)
+            .foregroundStyle(Palette.textTertiary)
+        }
+    }
+
     private var telegramSection: some View {
         Section {
             if telegramLoading && telegramStatus == nil {
@@ -777,6 +818,37 @@ struct MacSettingsView: View {
             .font(Typography.caption)
             .foregroundStyle(Palette.textTertiary)
         }
+    }
+
+    private var serverDataCurrentServerLabel: String {
+        guard let host = appState.serviceBaseURL.host, !host.isEmpty else {
+            return appState.serviceBaseURL.absoluteString
+        }
+        if host == "wai.computer" {
+            return t("Wai Cloud (wai.computer)", "Wai Cloud (wai.computer)")
+        }
+        return host
+    }
+
+    private var serverDataActionTitle: String {
+        if appState.serviceBaseURL.host == "wai.computer" {
+            return t("Move to my server", "Перенести на мой сервер")
+        }
+        return t("Open server settings", "Открыть настройки сервера")
+    }
+
+    private var serverDataSettingsURL: URL {
+        var components = URLComponents(
+            url: appState.serviceBaseURL.appendingPathComponent("/dashboard"),
+            resolvingAgainstBaseURL: false
+        )
+        components?.queryItems = [URLQueryItem(name: "view", value: "settings")]
+        components?.fragment = "server-data"
+        return components?.url ?? URL(string: "https://wai.computer/dashboard?view=settings#server-data")!
+    }
+
+    private func openServerDataSettings() {
+        NSWorkspace.shared.open(serverDataSettingsURL)
     }
 
     private var telegramDisplayName: String {

@@ -180,7 +180,11 @@ export function ServerDataSection({
   }
 
   return (
-    <section className="settings-form server-data-section" data-testid="server-data-section">
+    <section
+      id="server-data"
+      className="settings-form server-data-section"
+      data-testid="server-data-section"
+    >
       <div className="server-data-head">
         <div>
           <h3>{copy.title}</h3>
