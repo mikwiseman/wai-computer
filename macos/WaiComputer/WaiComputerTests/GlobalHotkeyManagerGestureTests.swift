@@ -57,6 +57,63 @@ final class GlobalHotkeyManagerGestureTests: XCTestCase {
         XCTAssertEqual(stops, 1)
     }
 
+    func testRightCommandShiftStartsAndStopsTranslationWithoutPushToTalk() async throws {
+        let manager = GlobalHotkeyManager()
+        var pushStarts = 0
+        var translationStarts = 0
+        var translationStops = 0
+        manager.onPushToTalkStart = { pushStarts += 1 }
+        manager.onTranslationStart = { translationStarts += 1 }
+        manager.onTranslationStop = { translationStops += 1 }
+
+        manager.testingHandleFlagsChanged(
+            keyCode: UInt16(kVK_RightCommand),
+            flags: [.command]
+        )
+        try await Task.sleep(for: .milliseconds(40))
+        manager.testingHandleFlagsChanged(
+            keyCode: UInt16(kVK_Shift),
+            flags: [.command, .shift]
+        )
+
+        XCTAssertEqual(translationStarts, 1)
+        try await Task.sleep(for: .milliseconds(220))
+        XCTAssertEqual(pushStarts, 0)
+
+        manager.testingHandleFlagsChanged(
+            keyCode: UInt16(kVK_Shift),
+            flags: [.command]
+        )
+        XCTAssertEqual(translationStops, 1)
+    }
+
+    func testRightCommandSpaceStartsAndStopsAskAnythingWithoutPushToTalk() async throws {
+        let manager = GlobalHotkeyManager()
+        var pushStarts = 0
+        var askStarts = 0
+        var askStops = 0
+        manager.onPushToTalkStart = { pushStarts += 1 }
+        manager.onAskAnythingStart = { askStarts += 1 }
+        manager.onAskAnythingStop = { askStops += 1 }
+
+        manager.testingHandleFlagsChanged(
+            keyCode: UInt16(kVK_RightCommand),
+            flags: [.command]
+        )
+        try await Task.sleep(for: .milliseconds(40))
+        manager.testingHandleKeyDown(keyCode: UInt16(kVK_Space))
+
+        XCTAssertEqual(askStarts, 1)
+        try await Task.sleep(for: .milliseconds(220))
+        XCTAssertEqual(pushStarts, 0)
+
+        manager.testingHandleFlagsChanged(
+            keyCode: UInt16(kVK_RightCommand),
+            flags: []
+        )
+        XCTAssertEqual(askStops, 1)
+    }
+
     func testDoubleTapTogglesHandsFreeWithoutPushToTalkStart() async throws {
         let manager = GlobalHotkeyManager()
         var starts = 0
