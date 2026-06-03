@@ -56,6 +56,13 @@ def test_estimate_cost_prices_known_models_and_marks_unknown_models_unpriced() -
         output_tokens=10_000,
     ) == (4.85, "priced")
     assert estimate_cost_usd(
+        provider=OPENAI_PROVIDER,
+        model="gpt-5.5-2026-04-23",
+        input_tokens=1_000_000,
+        cached_tokens=100_000,
+        output_tokens=10_000,
+    ) == (4.85, "priced")
+    assert estimate_cost_usd(
         provider=DEEPGRAM_PROVIDER,
         model="nova-3",
         billable_seconds=60,
