@@ -842,6 +842,53 @@ async def test_admin_can_trigger_embedding_backfill(
 
 
 @pytest.mark.asyncio
+async def test_admin_can_trigger_brain_backfill(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    admin_payload, admin_headers = await _register(
+        client,
+        "admin-brain-backfill@example.com",
+    )
+    await _grant_admin(db_session, admin_payload["user_id"])
+
+    async def fake_backfill(db, *, user_id=None, limit=None):
+        del db, user_id, limit
+
+        class Result:
+            def as_dict(self) -> dict:
+                return {
+                    "recording_summaries_scanned": 2,
+                    "item_summaries_scanned": 1,
+                    "sources_with_entities": 3,
+                    "mentions_recorded": 5,
+                    "entity_mentions_before": 0,
+                    "entity_mentions_after": 5,
+                    "created_mentions": 5,
+                    "llm_requests": 0,
+                }
+
+        return Result()
+
+    monkeypatch.setattr(
+        "app.api.routes.admin.backfill_entity_mentions_from_existing_summaries",
+        fake_backfill,
+    )
+
+    response = await client.post(
+        "/api/admin/brain/backfill",
+        headers=admin_headers,
+        json={"limit": 10},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["created_mentions"] == 5
+    assert payload["llm_requests"] == 0
+
+
+@pytest.mark.asyncio
 async def test_admin_subscription_provider_actions_are_audited(
     client: AsyncClient,
     db_session: AsyncSession,

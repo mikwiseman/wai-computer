@@ -1630,6 +1630,55 @@ public actor APIClient {
         return response.text
     }
 
+    public func translateDictation(
+        text: String,
+        targetLanguageCode: String,
+        targetLanguageName: String,
+        vocabulary: [String] = [],
+        context: DictationCleanupContext? = nil
+    ) async throws -> String {
+        struct TranslationRequest: Encodable {
+            let text: String
+            let targetLanguageCode: String
+            let targetLanguageName: String
+            let vocabulary: [String]?
+            let context: DictationCleanupContext?
+
+            enum CodingKeys: String, CodingKey {
+                case text
+                case targetLanguageCode = "target_language_code"
+                case targetLanguageName = "target_language_name"
+                case vocabulary
+                case context
+            }
+        }
+        struct TranslationResponse: Decodable {
+            let text: String
+        }
+        var seen = Set<String>()
+        let cleaned = vocabulary.compactMap { raw -> String? in
+            let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { return nil }
+            let key = trimmed.lowercased()
+            guard seen.insert(key).inserted else { return nil }
+            return trimmed
+        }
+        let payload = TranslationRequest(
+            text: text,
+            targetLanguageCode: targetLanguageCode,
+            targetLanguageName: targetLanguageName,
+            vocabulary: cleaned.isEmpty ? nil : cleaned,
+            context: context
+        )
+        let response: TranslationResponse = try await request(
+            .POST,
+            path: "/api/dictation/translate",
+            body: payload,
+            timeoutInterval: 60
+        )
+        return response.text
+    }
+
     // MARK: - Realtime Voice Endpoints
 
     public func createRealtimeTranscriptionSession(

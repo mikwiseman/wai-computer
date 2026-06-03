@@ -23,12 +23,13 @@ from dataclasses import dataclass
 from datetime import date, datetime, timezone
 from typing import Any
 
-from sqlalchemy import select, tuple_
+from sqlalchemy import desc, func, select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.entity import Entity, EntityMention, EntityPageSnapshot
 from app.models.highlight import Highlight
 from app.models.item import Item, ItemSummary
+from app.models.memory_proposal import MemoryProposal
 from app.models.recording import ActionItem, Recording, Summary
 
 
@@ -53,6 +54,240 @@ class BrainGraph:
     nodes: list[GraphNode]
     edges: list[GraphEdge]
     stats: dict[str, int]
+
+
+@dataclass
+class BrainSourceCoverage:
+    total: int
+    summarized: int
+    organized: int
+    unorganized: int
+
+
+@dataclass
+class BrainOverviewEntity:
+    id: str
+    name: str
+    type: str
+    source_count: int
+    recording_count: int
+    material_count: int
+
+
+@dataclass
+class BrainOverviewSource:
+    id: str
+    source_kind: str
+    source_id: str
+    title: str
+    entity_count: int
+    organized_at: str | None
+
+
+@dataclass
+class BrainOverview:
+    recordings: BrainSourceCoverage
+    materials: BrainSourceCoverage
+    pending_review_count: int
+    top_entities: list[BrainOverviewEntity]
+    recent_sources: list[BrainOverviewSource]
+    llm_requests: int = 0
+
+
+async def _count_scalar(db: AsyncSession, stmt: Any) -> int:
+    return int(await db.scalar(stmt) or 0)
+
+
+async def _source_coverage(db: AsyncSession, user_id: Any) -> tuple[
+    BrainSourceCoverage,
+    BrainSourceCoverage,
+]:
+    total_recordings = await _count_scalar(
+        db,
+        select(func.count()).select_from(Recording).where(
+            Recording.user_id == user_id,
+            Recording.deleted_at.is_(None),
+        ),
+    )
+    summarized_recordings = await _count_scalar(
+        db,
+        select(func.count(func.distinct(Summary.recording_id)))
+        .select_from(Summary)
+        .join(Recording, Recording.id == Summary.recording_id)
+        .where(
+            Recording.user_id == user_id,
+            Recording.deleted_at.is_(None),
+        ),
+    )
+    organized_recordings = await _count_scalar(
+        db,
+        select(func.count(func.distinct(EntityMention.source_id))).where(
+            EntityMention.user_id == user_id,
+            EntityMention.source_kind == "recording",
+        ),
+    )
+
+    total_items = await _count_scalar(
+        db,
+        select(func.count()).select_from(Item).where(
+            Item.user_id == user_id,
+            Item.deleted_at.is_(None),
+        ),
+    )
+    summarized_items = await _count_scalar(
+        db,
+        select(func.count(func.distinct(ItemSummary.item_id)))
+        .select_from(ItemSummary)
+        .join(Item, Item.id == ItemSummary.item_id)
+        .where(
+            Item.user_id == user_id,
+            Item.deleted_at.is_(None),
+        ),
+    )
+    organized_items = await _count_scalar(
+        db,
+        select(func.count(func.distinct(EntityMention.source_id))).where(
+            EntityMention.user_id == user_id,
+            EntityMention.source_kind == "item",
+        ),
+    )
+    return (
+        BrainSourceCoverage(
+            total=total_recordings,
+            summarized=summarized_recordings,
+            organized=organized_recordings,
+            unorganized=max(total_recordings - organized_recordings, 0),
+        ),
+        BrainSourceCoverage(
+            total=total_items,
+            summarized=summarized_items,
+            organized=organized_items,
+            unorganized=max(total_items - organized_items, 0),
+        ),
+    )
+
+
+async def build_brain_overview(db: AsyncSession, user_id: Any) -> BrainOverview:
+    """Cheap, cached-signal overview for the Brain home.
+
+    It reads only stored summaries, mentions, and pending proposals. Opening the
+    Brain never creates an LLM request; missing old summaries are reported as
+    unorganized coverage instead of being queued automatically.
+    """
+    recordings, materials = await _source_coverage(db, user_id)
+    pending_review_count = await _count_scalar(
+        db,
+        select(func.count()).select_from(MemoryProposal).where(
+            MemoryProposal.user_id == user_id,
+            MemoryProposal.status == "pending",
+        ),
+    )
+
+    mention_rows = (
+        await db.execute(
+            select(
+                Entity.id,
+                Entity.name,
+                Entity.type,
+                EntityMention.source_kind,
+                EntityMention.source_id,
+                EntityMention.updated_at,
+            )
+            .join(Entity, Entity.id == EntityMention.entity_id)
+            .where(EntityMention.user_id == user_id)
+            .order_by(desc(EntityMention.updated_at), desc(EntityMention.created_at))
+        )
+    ).all()
+
+    entity_sources: dict[str, dict[str, Any]] = {}
+    source_entities: dict[tuple[str, Any], set[str]] = {}
+    source_latest: dict[tuple[str, Any], datetime | None] = {}
+    for eid, name, etype, source_kind, source_id, updated_at in mention_rows:
+        key = str(eid)
+        bucket = entity_sources.setdefault(
+            key,
+            {
+                "id": key,
+                "name": name,
+                "type": etype,
+                "sources": set(),
+                "recordings": set(),
+                "materials": set(),
+            },
+        )
+        source_key = (source_kind, source_id)
+        bucket["sources"].add(source_key)
+        if source_kind == "recording":
+            bucket["recordings"].add(source_id)
+        elif source_kind == "item":
+            bucket["materials"].add(source_id)
+        source_entities.setdefault(source_key, set()).add(key)
+        if source_key not in source_latest:
+            source_latest[source_key] = updated_at
+
+    top_entities = [
+        BrainOverviewEntity(
+            id=data["id"],
+            name=data["name"],
+            type=data["type"],
+            source_count=len(data["sources"]),
+            recording_count=len(data["recordings"]),
+            material_count=len(data["materials"]),
+        )
+        for data in entity_sources.values()
+    ]
+    top_entities.sort(key=lambda entity: (-entity.source_count, entity.name.casefold()))
+    top_entities = top_entities[:12]
+
+    recent_keys = sorted(
+        source_entities.keys(),
+        key=lambda key: source_latest.get(key) or datetime.min.replace(tzinfo=timezone.utc),
+        reverse=True,
+    )[:8]
+    item_ids = [source_id for kind, source_id in recent_keys if kind == "item"]
+    recording_ids = [source_id for kind, source_id in recent_keys if kind == "recording"]
+    titles: dict[tuple[str, Any], str] = {}
+    if item_ids:
+        for item_id, title, url in (
+            await db.execute(
+                select(Item.id, Item.title, Item.url).where(
+                    Item.id.in_(item_ids),
+                    Item.deleted_at.is_(None),
+                )
+            )
+        ).all():
+            titles[("item", item_id)] = title or url or "Untitled"
+    if recording_ids:
+        for recording_id, title in (
+            await db.execute(
+                select(Recording.id, Recording.title).where(
+                    Recording.id.in_(recording_ids),
+                    Recording.deleted_at.is_(None),
+                )
+            )
+        ).all():
+            titles[("recording", recording_id)] = title or "Recording"
+
+    recent_sources = [
+        BrainOverviewSource(
+            id=f"{kind}:{source_id}",
+            source_kind=kind,
+            source_id=str(source_id),
+            title=titles.get((kind, source_id), "Untitled"),
+            entity_count=len(source_entities[(kind, source_id)]),
+            organized_at=_iso(source_latest.get((kind, source_id))),
+        )
+        for kind, source_id in recent_keys
+        if (kind, source_id) in titles
+    ]
+
+    return BrainOverview(
+        recordings=recordings,
+        materials=materials,
+        pending_review_count=pending_review_count,
+        top_entities=top_entities,
+        recent_sources=recent_sources,
+    )
 
 
 async def build_brain_graph(

@@ -154,7 +154,7 @@ class TestRunTurn:
         assert call["model"] == "gpt-5.5"
         assert call["stream"] is True
         assert call["prompt_cache_key"] == f"wai-companion-{s['user'].id}"
-        assert len(call["tools"]) == 1
+        assert len(call["tools"]) == 2
 
         tool = call["tools"][0]
         assert tool["type"] == "mcp"
@@ -170,6 +170,7 @@ class TestRunTurn:
         ]
         assert tool["authorization"]
         assert not tool["authorization"].startswith("Bearer ")
+        assert call["tools"][1] == {"type": "web_search"}
 
         tokens = (
             await db_session.execute(
@@ -398,6 +399,8 @@ class TestRunTurn:
         assert "search_transcripts" not in prompt
         assert "get_recording_summary" not in prompt
         assert "Match the language" in prompt
+        assert "general questions" in prompt
+        assert "When the corpus is silent, say so in one sentence and stop" not in prompt
 
 
 @pytest_asyncio.fixture

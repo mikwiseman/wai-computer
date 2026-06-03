@@ -19,6 +19,7 @@ from app.billing.providers.stripe_provider import StripeProvider
 from app.billing.providers.tinkoff_provider import TinkoffProvider
 from app.config import get_settings
 from app.core.embedding_backfill import backfill_missing_segment_embeddings
+from app.core.entity_graph import backfill_entity_mentions_from_existing_summaries
 from app.core.observability import get_release_version, get_sentry_runtime
 from app.models.admin import AdminAuditLog, AdminRole, StaffMember
 from app.models.api_key import ApiKey
@@ -366,6 +367,22 @@ class AdminEmbeddingBackfillResponse(BaseModel):
     remaining: int
     batches: int
     isolated_failures: int
+
+
+class AdminBrainBackfillRequest(BaseModel):
+    user_id: UUID | None = None
+    limit: int | None = Field(default=None, ge=1, le=100_000)
+
+
+class AdminBrainBackfillResponse(BaseModel):
+    recording_summaries_scanned: int
+    item_summaries_scanned: int
+    sources_with_entities: int
+    mentions_recorded: int
+    entity_mentions_before: int
+    entity_mentions_after: int
+    created_mentions: int
+    llm_requests: int
 
 
 class AdminBillingInvoiceResponse(BaseModel):
@@ -1895,6 +1912,30 @@ async def run_admin_embedding_backfill(
     )
     await db.commit()
     return AdminEmbeddingBackfillResponse(**payload)
+
+
+@router.post("/brain/backfill", response_model=AdminBrainBackfillResponse)
+async def run_admin_brain_backfill(
+    request: AdminBrainBackfillRequest,
+    db: Database,
+    admin: CurrentAdmin,
+) -> AdminBrainBackfillResponse:
+    result = await backfill_entity_mentions_from_existing_summaries(
+        db,
+        user_id=request.user_id,
+        limit=request.limit,
+    )
+    payload = result.as_dict()
+    await _audit(
+        db,
+        admin,
+        action="brain.backfill",
+        target_type="brain",
+        target_id=str(request.user_id) if request.user_id else None,
+        details=payload,
+    )
+    await db.commit()
+    return AdminBrainBackfillResponse(**payload)
 
 
 @router.get("/audit")
