@@ -29,6 +29,8 @@ import type {
   Folder,
   KeywordsResponse,
   McpConnection,
+  MemoryProposal,
+  MemoryProposalList,
   MessageResponse,
   Person,
   PersonalizationImportJob,
@@ -574,6 +576,31 @@ export function getBrainGraph(params?: {
 
 export function getEntityPage(entityId: string): Promise<EntityPage> {
   return apiFetch<EntityPage>(`/api/entities/${entityId}/page`);
+}
+
+export function listMemoryProposals(params?: {
+  status?: string;
+  limit?: number;
+}): Promise<MemoryProposalList> {
+  return apiFetch<MemoryProposalList>(
+    `/api/memory/proposals${asQuery({ status: "pending", limit: 50, ...(params ?? {}) })}`,
+  );
+}
+
+export function acceptMemoryProposal(id: string): Promise<MemoryProposal> {
+  return apiFetch<MemoryProposal>(`/api/memory/proposals/${id}/accept`, {
+    method: "POST",
+  });
+}
+
+export function rejectMemoryProposal(
+  id: string,
+  reason?: string | null,
+): Promise<MemoryProposal> {
+  return apiFetch<MemoryProposal>(`/api/memory/proposals/${id}/reject`, {
+    method: "POST",
+    body: JSON.stringify({ reason: reason ?? null }),
+  });
 }
 
 // --- Second brain: comparison sets ---

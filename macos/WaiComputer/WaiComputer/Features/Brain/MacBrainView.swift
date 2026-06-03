@@ -2,15 +2,15 @@ import SwiftUI
 import WaiComputerKit
 
 enum MacBrainTab: String, CaseIterable {
+    case overview
     case index
     case wiki
     case graph
 }
 
 /// The macOS "Brain" view: a knowledge graph of the people / topics / projects
-/// across everything captured. Mirrors the web tri-view — Index (scannable
-/// categorized list), Wiki (entity pages with backlinks + related), and a
-/// force-directed Graph (Obsidian-style). Honest empty / error+retry states.
+/// across everything captured. Overview is the product surface; Index, Wiki,
+/// and Graph are secondary inspection views. Honest empty / error+retry states.
 struct MacBrainView: View {
     let apiClient: APIClient
 
@@ -47,6 +47,7 @@ struct MacBrainView: View {
 
     private var tabBar: some View {
         HStack(spacing: Spacing.sm) {
+            tabButton(.overview, t("Overview", "Обзор"))
             tabButton(.index, t("Index", "Индекс"))
             tabButton(.wiki, t("Wiki", "Вики"))
             tabButton(.graph, t("Graph", "Граф"))
@@ -91,9 +92,308 @@ struct MacBrainView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
             switch model.tab {
+            case .overview: overviewView
             case .index: indexView
             case .wiki: wikiView
             case .graph: graphView
+            }
+        }
+    }
+
+    // MARK: - Overview
+
+    @ViewBuilder
+    private var overviewView: some View {
+        if let graph = model.graph {
+            ScrollView {
+                VStack(alignment: .leading, spacing: Spacing.xl) {
+                    coverageSection(graph)
+                    reviewSection(graph)
+                    topEntitiesSection(graph)
+                    recentSourcesSection(graph)
+                }
+                .padding(Spacing.xl)
+                .frame(maxWidth: 860, alignment: .leading)
+                .frame(maxWidth: .infinity, alignment: .topLeading)
+            }
+        } else {
+            emptyBrain
+        }
+    }
+
+    private func coverageSection(_ graph: BrainGraph) -> some View {
+        let recordings = graph.overview?.recordings
+        let materials = graph.overview?.materials
+        return VStack(alignment: .leading, spacing: Spacing.sm) {
+            Text(t("Coverage", "Покрытие")).font(Typography.headingSmall)
+            HStack(spacing: Spacing.sm) {
+                coverageTile(
+                    title: t("Recordings", "Записи"),
+                    coverage: recordings,
+                    fallbackTotal: graph.stats["recordings"] ?? 0,
+                    icon: "waveform"
+                )
+                coverageTile(
+                    title: t("Materials", "Материалы"),
+                    coverage: materials,
+                    fallbackTotal: graph.stats["items"] ?? 0,
+                    icon: "doc.text"
+                )
+                metricTile(
+                    title: t("Needs review", "На проверку"),
+                    value: "\(max(model.pendingReviewCount, graph.overview?.pendingReviewCount ?? 0))",
+                    detail: t("memory changes", "изменений памяти"),
+                    icon: "checkmark.seal"
+                )
+            }
+        }
+    }
+
+    private func coverageTile(
+        title: String,
+        coverage: BrainSourceCoverage?,
+        fallbackTotal: Int,
+        icon: String
+    ) -> some View {
+        let total = coverage?.total ?? fallbackTotal
+        let organized = coverage?.organized ?? fallbackTotal
+        let unorganized = coverage?.unorganized ?? max(total - organized, 0)
+        let summarized = coverage?.summarized ?? organized
+        return VStack(alignment: .leading, spacing: Spacing.xs) {
+            HStack(spacing: Spacing.xs) {
+                Image(systemName: icon)
+                    .font(.system(size: 12))
+                    .foregroundStyle(Palette.accent)
+                Text(title).font(Typography.label)
+            }
+            Text("\(organized) / \(total)")
+                .font(Typography.headingSmall)
+            Text(
+                t(
+                    "\(summarized) summarized · \(unorganized) not organized",
+                    "\(summarized) с саммари · \(unorganized) не организовано"
+                )
+            )
+            .font(Typography.labelSmall)
+            .foregroundStyle(Palette.textSecondary)
+            .lineLimit(2)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(Spacing.md)
+        .background(Palette.surfaceSubtle)
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+
+    private func metricTile(title: String, value: String, detail: String, icon: String) -> some View {
+        VStack(alignment: .leading, spacing: Spacing.xs) {
+            HStack(spacing: Spacing.xs) {
+                Image(systemName: icon)
+                    .font(.system(size: 12))
+                    .foregroundStyle(Palette.accent)
+                Text(title).font(Typography.label)
+            }
+            Text(value).font(Typography.headingSmall)
+            Text(detail)
+                .font(Typography.labelSmall)
+                .foregroundStyle(Palette.textSecondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(Spacing.md)
+        .background(Palette.surfaceSubtle)
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+
+    @ViewBuilder
+    private func reviewSection(_ graph: BrainGraph) -> some View {
+        let pending = max(model.pendingReviewCount, graph.overview?.pendingReviewCount ?? 0)
+        if pending > 0 || model.reviewError != nil {
+            VStack(alignment: .leading, spacing: Spacing.sm) {
+                HStack {
+                    Text(t("Needs review", "На проверку")).font(Typography.headingSmall)
+                    Spacer()
+                    Text("\(pending)")
+                        .font(Typography.labelSmall)
+                        .foregroundStyle(Palette.textTertiary)
+                }
+                if let reviewError = model.reviewError {
+                    Text(reviewErrorText(reviewError))
+                        .font(Typography.bodySmall)
+                        .foregroundStyle(.red)
+                }
+                if model.proposals.isEmpty && model.reviewError == nil {
+                    wikiEmpty(t("No memory changes need review.", "Нет изменений памяти на проверку."))
+                } else {
+                    VStack(alignment: .leading, spacing: Spacing.sm) {
+                        ForEach(model.proposals) { proposal in
+                            proposalRow(proposal)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private func proposalRow(_ proposal: MemoryProposal) -> some View {
+        let acting = model.actingProposalIds.contains(proposal.id)
+        return HStack(alignment: .top, spacing: Spacing.md) {
+            VStack(alignment: .leading, spacing: Spacing.xxs) {
+                HStack(spacing: Spacing.xs) {
+                    Text(proposal.isHighRisk ? t("Correction", "Исправление") : t("New fact", "Новый факт"))
+                        .font(Typography.labelSmall)
+                        .padding(.horizontal, Spacing.xs)
+                        .padding(.vertical, 2)
+                        .background(Palette.accentSubtle)
+                        .clipShape(Capsule())
+                    Text(sectionTitle(proposal.blockLabel))
+                        .font(Typography.labelSmall)
+                        .foregroundStyle(Palette.textTertiary)
+                    Text("\(Int((proposal.confidence * 100).rounded()))%")
+                        .font(Typography.labelSmall)
+                        .foregroundStyle(Palette.textTertiary)
+                }
+                Text(proposal.content)
+                    .font(Typography.bodySmall)
+                    .foregroundStyle(Palette.textPrimary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .textSelection(.enabled)
+                if proposal.operation == "replace_line", let target = proposal.targetLine,
+                   !target.isEmpty {
+                    Text(t("Replaces: ", "Заменяет: ") + target)
+                        .font(Typography.labelSmall)
+                        .foregroundStyle(Palette.textTertiary)
+                }
+                if let evidence = evidenceLabel(proposal), !evidence.isEmpty {
+                    Text(evidence)
+                        .font(Typography.labelSmall)
+                        .foregroundStyle(Palette.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            Spacer(minLength: Spacing.sm)
+            HStack(spacing: Spacing.sm) {
+                Button {
+                    Task { await model.rejectProposal(proposal.id) }
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(Palette.textSecondary)
+                        .frame(width: 30, height: 30)
+                        .background(Palette.surfaceSubtle)
+                        .clipShape(Circle())
+                }
+                .buttonStyle(.plain)
+                .help(t("Reject", "Отклонить"))
+                .disabled(acting)
+
+                Button {
+                    Task { await model.acceptProposal(proposal.id) }
+                } label: {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .frame(width: 30, height: 30)
+                        .background(Palette.accent)
+                        .clipShape(Circle())
+                }
+                .buttonStyle(.plain)
+                .help(t("Accept", "Принять"))
+                .disabled(acting)
+            }
+            .opacity(acting ? 0.5 : 1)
+        }
+        .padding(Spacing.md)
+        .background(Palette.surfaceSubtle)
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+
+    @ViewBuilder
+    private func topEntitiesSection(_ graph: BrainGraph) -> some View {
+        let top = graph.overview?.topEntities ?? []
+        if top.isEmpty {
+            VStack(alignment: .leading, spacing: Spacing.sm) {
+                Text(t("Top entities", "Главное")).font(Typography.headingSmall)
+                if model.entityGroups.isEmpty {
+                    wikiEmpty(t("No organized entities yet.", "Пока нет организованных сущностей."))
+                } else {
+                    ForEach(model.entityGroups, id: \.kind) { group in
+                        ForEach(group.nodes.prefix(4)) { node in
+                            entityRow(node)
+                        }
+                    }
+                }
+            }
+        } else {
+            VStack(alignment: .leading, spacing: Spacing.sm) {
+                Text(t("Top entities", "Главное")).font(Typography.headingSmall)
+                VStack(alignment: .leading, spacing: Spacing.xs) {
+                    ForEach(top) { entity in
+                        Button {
+                            model.openEntity(id: entity.id, name: entity.name)
+                        } label: {
+                            HStack(spacing: Spacing.sm) {
+                                Image(systemName: entityIcon(entity.type))
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(Palette.accent)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(entity.name).font(Typography.bodySmall.weight(.medium))
+                                    Text(
+                                        t(
+                                            "\(entity.recordingCount) recordings · \(entity.materialCount) materials",
+                                            "\(entity.recordingCount) записей · \(entity.materialCount) материалов"
+                                        )
+                                    )
+                                    .font(Typography.labelSmall)
+                                    .foregroundStyle(Palette.textSecondary)
+                                }
+                                Spacer()
+                                Text("\(entity.sourceCount)")
+                                    .font(Typography.labelSmall)
+                                    .foregroundStyle(Palette.textTertiary)
+                            }
+                            .padding(Spacing.sm)
+                            .background(Palette.surfaceSubtle)
+                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func recentSourcesSection(_ graph: BrainGraph) -> some View {
+        let sources = graph.overview?.recentSources ?? []
+        if !sources.isEmpty {
+            VStack(alignment: .leading, spacing: Spacing.sm) {
+                Text(t("Recently organized", "Недавно организовано"))
+                    .font(Typography.headingSmall)
+                VStack(alignment: .leading, spacing: Spacing.xs) {
+                    ForEach(sources) { source in
+                        HStack(spacing: Spacing.sm) {
+                            Image(systemName: source.sourceKind == "recording" ? "waveform" : "doc.text")
+                                .font(.system(size: 11))
+                                .foregroundStyle(Palette.accent)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(source.title)
+                                    .font(Typography.bodySmall.weight(.medium))
+                                    .lineLimit(1)
+                                Text(
+                                    t(
+                                        "\(source.entityCount) entities · \(sourceKindLabel(source.sourceKind))",
+                                        "\(source.entityCount) сущностей · \(sourceKindLabel(source.sourceKind))"
+                                    )
+                                )
+                                .font(Typography.labelSmall)
+                                .foregroundStyle(Palette.textSecondary)
+                            }
+                            Spacer()
+                        }
+                        .padding(Spacing.sm)
+                        .background(Palette.surfaceSubtle)
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                    }
+                }
             }
         }
     }
@@ -403,6 +703,50 @@ struct MacBrainView: View {
         return detail.isEmpty ? nil : detail
     }
 
+    private func evidenceLabel(_ proposal: MemoryProposal) -> String? {
+        guard let evidence = proposal.evidence else { return nil }
+        for value in evidence {
+            guard let object = value.objectValue else { continue }
+            if let title = object["title"]?.stringValue, !title.isEmpty {
+                return t("Evidence: ", "Источник: ") + title
+            }
+            if let sourceKind = object["source_kind"]?.stringValue,
+               let sourceId = object["source_id"]?.stringValue,
+               !sourceKind.isEmpty, !sourceId.isEmpty {
+                return t("Evidence: ", "Источник: ") + "\(sourceKind):\(sourceId)"
+            }
+        }
+        return nil
+    }
+
+    private func reviewErrorText(_ error: MacBrainViewModel.ReviewError) -> String {
+        switch error {
+        case .load:
+            return t("Couldn't load memory changes for review.",
+                     "Не удалось загрузить изменения памяти на проверку.")
+        case .action:
+            return t("That review action didn't go through.",
+                     "Действие проверки не выполнилось.")
+        }
+    }
+
+    private func sectionTitle(_ label: String) -> String {
+        switch label {
+        case "human": return t("About you", "О вас")
+        case "topics": return t("Recurring topics", "Повторяющиеся темы")
+        case "preferences": return t("Preferences", "Предпочтения")
+        default: return label.capitalized
+        }
+    }
+
+    private func sourceKindLabel(_ kind: String) -> String {
+        switch kind {
+        case "recording": return t("recording", "запись")
+        case "item": return t("material", "материал")
+        default: return kind
+        }
+    }
+
     // MARK: - Shared
 
     private var emptyBrain: some View {
@@ -454,13 +798,22 @@ final class MacBrainViewModel: ObservableObject {
     @Published var graph: BrainGraph?
     @Published var loading = true
     @Published var errorMessage: String?
-    @Published var tab: MacBrainTab = .index
+    @Published var tab: MacBrainTab = .overview
     @Published var selectedEntity: SelectedEntity?
     @Published var entityPage: EntityPage?
     @Published var pageLoading = false
     @Published var pageError: String?
+    @Published var proposals: [MemoryProposal] = []
+    @Published var pendingReviewCount = 0
+    @Published var actingProposalIds: Set<String> = []
+    @Published var reviewError: ReviewError?
 
     private let apiClient: APIClient
+
+    enum ReviewError {
+        case load
+        case action
+    }
 
     init(apiClient: APIClient) {
         self.apiClient = apiClient
@@ -475,6 +828,15 @@ final class MacBrainViewModel: ObservableObject {
             graph = try await apiClient.getBrainGraph()
         } catch {
             errorMessage = error.localizedDescription
+            return
+        }
+        do {
+            let review = try await apiClient.listMemoryProposals(status: "pending")
+            proposals = review.proposals
+            pendingReviewCount = review.pendingCount
+            reviewError = nil
+        } catch {
+            reviewError = .load
         }
     }
 
@@ -505,6 +867,31 @@ final class MacBrainViewModel: ObservableObject {
             entityPage = try await apiClient.getEntityPage(id: id)
         } catch {
             pageError = error.localizedDescription
+        }
+    }
+
+    func acceptProposal(_ id: String) async {
+        await decideProposal(id) { try await self.apiClient.acceptMemoryProposal(id: id) }
+    }
+
+    func rejectProposal(_ id: String) async {
+        await decideProposal(id) { try await self.apiClient.rejectMemoryProposal(id: id) }
+    }
+
+    private func decideProposal(
+        _ id: String,
+        action: @escaping () async throws -> MemoryProposal
+    ) async {
+        guard !actingProposalIds.contains(id) else { return }
+        actingProposalIds.insert(id)
+        defer { actingProposalIds.remove(id) }
+        do {
+            _ = try await action()
+            proposals.removeAll { $0.id == id }
+            pendingReviewCount = max(0, pendingReviewCount - 1)
+            reviewError = nil
+        } catch {
+            reviewError = .action
         }
     }
 }

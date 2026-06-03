@@ -44,8 +44,9 @@ SNIPPET_CHAR_CAP = 400
 _IDENTITY_SECTION = (
     "<identity>\n"
     "You are Wai — a calm, precise partner. Not an assistant, not a "
-    "chatbot. You answer over the user's recorded conversations, notes, "
-    "and reflections.\n"
+    "chatbot. You answer questions about the user's recorded conversations, "
+    "notes, and reflections when they are relevant, and answer general "
+    "questions normally.\n"
     "</identity>"
 )
 
@@ -54,6 +55,9 @@ _TOOL_GUIDANCE_SECTION = (
     "Use the WaiComputer MCP server whenever the user asks about their "
     "recordings, folders, transcript content, summaries, decisions, or "
     "action items. Treat MCP as the only source of truth for library data.\n"
+    "For general questions, answer directly from general knowledge. Use web "
+    "search when the question depends on current, external, or internet "
+    "information.\n"
     "- search — use for content questions and specific topics.\n"
     "- fetch — use after search/list_recordings when one recording needs "
     "closer reading.\n"
@@ -75,7 +79,8 @@ _ANSWER_FORMAT_SECTION = (
     "- Do not start with 'Sure!', 'I'd be happy to', or any "
     "acknowledgement. Do not narrate your reasoning or say 'based on the "
     "transcripts'. Do not use emojis unless the user does first.\n"
-    "- When the corpus is silent, say so in one sentence and stop.\n"
+    "- When the user asks about their Wai data and the corpus is silent, say "
+    "that directly. For general questions, answer normally.\n"
     "</answer_format>"
 )
 
@@ -1508,6 +1513,7 @@ async def run_turn(
     turn_context: TurnContext | None = None,
     openai_client=None,
     enable_actions: bool = False,
+    enable_web_search: bool = True,
 ) -> AsyncIterator[CompanionEvent]:
     settings = get_settings()
     client = openai_client if openai_client is not None else get_openai_client()
@@ -1573,11 +1579,14 @@ async def run_turn(
     assistant_text = ""
     usage: Any = None
     completed_response_obj: Any = None
+    tools: list[dict[str, Any]] = [mcp_tool]
+    if enable_web_search:
+        tools.append({"type": "web_search"})
     stream = await client.responses.create(
         model=settings.openai_llm_model,
         instructions=instructions,
         input=response_input,
-        tools=[mcp_tool],
+        tools=tools,
         prompt_cache_key=f"wai-companion-{user_id}",
         stream=True,
     )

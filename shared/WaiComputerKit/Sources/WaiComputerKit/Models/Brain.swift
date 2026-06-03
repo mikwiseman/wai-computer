@@ -69,10 +69,70 @@ public struct BrainGraphEdge: Codable, Sendable {
     public let weight: Double
 }
 
+public struct BrainSourceCoverage: Codable, Sendable {
+    public let total: Int
+    public let summarized: Int
+    public let organized: Int
+    public let unorganized: Int
+}
+
+public struct BrainOverviewEntity: Codable, Identifiable, Sendable {
+    public let id: String
+    public let name: String
+    public let type: String
+    public let sourceCount: Int
+    public let recordingCount: Int
+    public let materialCount: Int
+
+    private enum CodingKeys: String, CodingKey {
+        case id, name, type
+        case sourceCount = "source_count"
+        case recordingCount = "recording_count"
+        case materialCount = "material_count"
+    }
+}
+
+public struct BrainOverviewSource: Codable, Identifiable, Sendable {
+    public let id: String
+    public let sourceKind: String
+    public let sourceId: String
+    public let title: String
+    public let entityCount: Int
+    public let organizedAt: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case sourceKind = "source_kind"
+        case sourceId = "source_id"
+        case title
+        case entityCount = "entity_count"
+        case organizedAt = "organized_at"
+    }
+}
+
+public struct BrainOverview: Codable, Sendable {
+    public let recordings: BrainSourceCoverage
+    public let materials: BrainSourceCoverage
+    public let pendingReviewCount: Int
+    public let topEntities: [BrainOverviewEntity]
+    public let recentSources: [BrainOverviewSource]
+    public let llmRequests: Int
+
+    private enum CodingKeys: String, CodingKey {
+        case recordings
+        case materials
+        case pendingReviewCount = "pending_review_count"
+        case topEntities = "top_entities"
+        case recentSources = "recent_sources"
+        case llmRequests = "llm_requests"
+    }
+}
+
 public struct BrainGraph: Codable, Sendable {
     public let nodes: [BrainGraphNode]
     public let edges: [BrainGraphEdge]
     public let stats: [String: Int]
+    public let overview: BrainOverview?
 }
 
 // MARK: - Entity wiki page (GET /api/entities/{id}/page)

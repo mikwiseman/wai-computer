@@ -6,15 +6,21 @@ from uuid import uuid4
 import pytest
 from sqlalchemy import select
 
+from app.core import memory_proposal as memory_proposal_core
 from app.core.brain_graph import (
     _compile_overview,
     _compile_snapshot_payload,
     _snapshot_sections_to_dataclasses,
     _SourceMaterial,
     build_brain_graph,
+    build_brain_overview,
     build_entity_page,
 )
-from app.core.entity_graph import record_mention, upsert_entity
+from app.core.entity_graph import (
+    backfill_entity_mentions_from_existing_summaries,
+    record_mention,
+    upsert_entity,
+)
 from app.core.item_ingest import ingest_item
 from app.models.entity import Entity, EntityPageSnapshot
 from app.models.item import ItemSummary
@@ -99,6 +105,127 @@ async def test_graph_includes_item_and_recording_source_nodes(db_session) -> Non
     assert g.stats["recordings"] == 1
 
 
+async def test_backfill_entity_mentions_from_existing_summaries_is_zero_token_and_idempotent(
+    db_session,
+) -> None:
+    user = await _make_user(db_session)
+    recording = Recording(
+        user_id=user.id,
+        title="Launch sync",
+        type="meeting",
+        status=RecordingStatus.READY.value,
+    )
+    db_session.add(recording)
+    item, _ = await ingest_item(
+        db_session,
+        user.id,
+        source="paste",
+        title="Launch memo",
+        body="Anna owns the GPU launch.",
+        embed=False,
+    )
+    await db_session.flush()
+    db_session.add(
+        Summary(
+            recording_id=recording.id,
+            summary="Anna discussed GPU launch work.",
+            topics=["GPU launch"],
+            people_mentioned=["Anna"],
+        )
+    )
+    db_session.add(
+        ItemSummary(
+            item_id=item.id,
+            summary="Anna owns GPU launch work.",
+            topics=["GPU launch"],
+            people_mentioned=["Anna"],
+        )
+    )
+    await db_session.flush()
+
+    first = await backfill_entity_mentions_from_existing_summaries(db_session, user.id)
+    second = await backfill_entity_mentions_from_existing_summaries(db_session, user.id)
+
+    assert first.recording_summaries_scanned == 1
+    assert first.item_summaries_scanned == 1
+    assert first.created_mentions == 4
+    assert first.llm_requests == 0
+    assert second.created_mentions == 0
+    assert second.llm_requests == 0
+
+    g = await build_brain_graph(db_session, user.id, include_sources=True)
+    assert g.stats["recordings"] == 1
+    assert g.stats["items"] == 1
+    assert g.stats["mentions"] == 4
+
+
+async def test_brain_overview_exposes_coverage_and_pending_review(db_session) -> None:
+    user = await _make_user(db_session)
+    organized = Recording(
+        user_id=user.id,
+        title="Organized sync",
+        type="meeting",
+        status=RecordingStatus.READY.value,
+    )
+    unorganized = Recording(
+        user_id=user.id,
+        title="Not summarized yet",
+        type="meeting",
+        status=RecordingStatus.READY.value,
+    )
+    db_session.add_all([organized, unorganized])
+    item, _ = await ingest_item(
+        db_session,
+        user.id,
+        source="paste",
+        title="GPU memo",
+        body="Anna owns GPU launch work.",
+        embed=False,
+    )
+    await db_session.flush()
+    db_session.add(
+        Summary(
+            recording_id=organized.id,
+            summary="Anna discussed GPU launch work.",
+            topics=["GPU launch"],
+            people_mentioned=["Anna"],
+        )
+    )
+    db_session.add(
+        ItemSummary(
+            item_id=item.id,
+            summary="Anna owns GPU launch work.",
+            topics=["GPU launch"],
+            people_mentioned=["Anna"],
+        )
+    )
+    await db_session.flush()
+    await backfill_entity_mentions_from_existing_summaries(db_session, user.id)
+    await memory_proposal_core.propose_block_update(
+        db_session,
+        user.id,
+        block_label="human",
+        operation="rewrite",
+        content="Anna is the launch owner.",
+        confidence=0.95,
+        evidence=[{"source_kind": "recording", "source_id": str(organized.id)}],
+    )
+
+    overview = await build_brain_overview(db_session, user.id)
+
+    assert overview.recordings.total == 2
+    assert overview.recordings.summarized == 1
+    assert overview.recordings.organized == 1
+    assert overview.recordings.unorganized == 1
+    assert overview.materials.total == 1
+    assert overview.materials.summarized == 1
+    assert overview.materials.organized == 1
+    assert overview.materials.unorganized == 0
+    assert overview.pending_review_count == 1
+    assert overview.llm_requests == 0
+    assert {entity.name for entity in overview.top_entities} >= {"Anna", "GPU launch"}
+
+
 async def test_focus_returns_only_the_ego_graph(db_session) -> None:
     user = await _make_user(db_session)
     shared = uuid4()
@@ -127,8 +254,11 @@ async def test_brain_graph_route_smoke(client, auth_headers) -> None:
     resp = await client.get("/api/brain/graph", headers=auth_headers)
     assert resp.status_code == 200, resp.text
     data = resp.json()
-    assert {"nodes", "edges", "stats"} <= set(data)
+    assert {"nodes", "edges", "stats", "overview"} <= set(data)
     assert data["stats"]["entities"] == 0  # fresh user -> honest empty graph
+    assert data["overview"]["recordings"]["total"] == 0
+    assert data["overview"]["materials"]["total"] == 0
+    assert data["overview"]["pending_review_count"] == 0
 
 
 async def test_build_entity_page_sources_and_related(db_session) -> None:

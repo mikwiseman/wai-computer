@@ -95,6 +95,96 @@ async def test_cleanup_dictation_returns_cleaned_text(
 
 
 @pytest.mark.asyncio
+async def test_translate_dictation_translates_to_selected_target_language(
+    client: AsyncClient,
+    auth_headers: dict,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    captured: dict[str, object] = {}
+
+    async def _create(**kwargs: object):
+        captured.update(kwargs)
+        return _make_response("Привет, команда.")
+
+    mock_client = SimpleNamespace(responses=SimpleNamespace(create=_create))
+    _patch_settings(monkeypatch)
+    _patch_client(monkeypatch, mock_client)
+
+    response = await client.post(
+        "/api/dictation/translate",
+        headers=auth_headers,
+        json={
+            "text": "Hello team.",
+            "target_language_code": "ru",
+            "target_language_name": "Russian",
+            "vocabulary": ["WaiComputer", "OpenAI"],
+            "context": {
+                "app": {
+                    "name": "Slack",
+                    "bundle_id": "com.tinyspeck.slackmacgap",
+                    "category": "chat",
+                }
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"text": "Привет, команда."}
+    assert captured["model"] == "gpt-5.5"
+    assert captured["reasoning"] == {"effort": "low"}
+    assert captured["text"] == {"verbosity": "low"}
+    assert captured["store"] is False
+    assert captured["max_output_tokens"] == 256
+    instructions = captured["instructions"]
+    assert "Translate the dictated text into Russian (ru)." in instructions
+    assert "Output only the translated text" in instructions
+    assert "<preserve_exact>" in instructions
+    assert "WaiComputer" in instructions
+    assert "<dictation_context>" in instructions
+    assert captured["input"] == "<dictated_text>\nHello team.\n</dictated_text>"
+
+
+@pytest.mark.asyncio
+async def test_translate_dictation_rejects_blank_target_language(
+    client: AsyncClient,
+    auth_headers: dict,
+):
+    response = await client.post(
+        "/api/dictation/translate",
+        headers=auth_headers,
+        json={
+            "text": "Hello team.",
+            "target_language_code": " ",
+            "target_language_name": "Russian",
+        },
+    )
+
+    assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_translate_dictation_whitespace_only_text_returns_empty(
+    client: AsyncClient,
+    auth_headers: dict,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    _patch_settings(monkeypatch)
+
+    response = await client.post(
+        "/api/dictation/translate",
+        headers=auth_headers,
+        json={
+            "text": "   \n\t  ",
+            "target_language_code": "ru",
+            "target_language_name": "Russian",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"text": ""}
+
+
+@pytest.mark.asyncio
 async def test_cleanup_dictation_skips_when_post_filter_disabled(
     client: AsyncClient,
     auth_headers: dict,

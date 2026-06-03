@@ -556,10 +556,68 @@ export interface BrainGraphEdge {
   weight: number;
 }
 
+export interface BrainSourceCoverage {
+  total: number;
+  summarized: number;
+  organized: number;
+  unorganized: number;
+}
+
+export interface BrainOverviewEntity {
+  id: string;
+  name: string;
+  type: string;
+  source_count: number;
+  recording_count: number;
+  material_count: number;
+}
+
+export interface BrainOverviewSource {
+  id: string;
+  source_kind: string;
+  source_id: string;
+  title: string;
+  entity_count: number;
+  organized_at: string | null;
+}
+
+export interface BrainOverview {
+  recordings: BrainSourceCoverage;
+  materials: BrainSourceCoverage;
+  pending_review_count: number;
+  top_entities: BrainOverviewEntity[];
+  recent_sources: BrainOverviewSource[];
+  llm_requests: number;
+}
+
 export interface BrainGraph {
   nodes: BrainGraphNode[];
   edges: BrainGraphEdge[];
   stats: Record<string, number>;
+  overview?: BrainOverview;
+}
+
+export interface MemoryProposal {
+  id: string;
+  kind: string;
+  risk: string;
+  block_label: string;
+  operation: string;
+  content: string;
+  target_line: string | null;
+  summary: string;
+  confidence: number;
+  authority: string;
+  evidence: unknown[] | null;
+  status: string;
+  decision_reason: string | null;
+  created_at: string | null;
+  decided_at: string | null;
+}
+
+export interface MemoryProposalList {
+  proposals: MemoryProposal[];
+  pending_count: number;
 }
 
 export interface EntityPageSource {

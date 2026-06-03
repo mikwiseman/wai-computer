@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict
+from typing import Any
 from uuid import UUID
 
 from fastapi import APIRouter, Query
@@ -10,7 +11,7 @@ from pydantic import BaseModel
 
 from app.api.deps import CurrentUser, Database
 from app.core.brain import compile_brain
-from app.core.brain_graph import build_brain_graph
+from app.core.brain_graph import build_brain_graph, build_brain_overview
 
 router = APIRouter(prefix="/brain", tags=["brain"])
 
@@ -89,6 +90,7 @@ class BrainGraphResponse(BaseModel):
     nodes: list[GraphNodeResponse]
     edges: list[GraphEdgeResponse]
     stats: dict[str, int]
+    overview: dict[str, Any]
 
 
 @router.get("/graph", response_model=BrainGraphResponse)
@@ -108,8 +110,10 @@ async def get_brain_graph(
     graph = await build_brain_graph(
         db, user.id, focus=focus, include_sources=include_sources, limit=limit
     )
+    overview = await build_brain_overview(db, user.id)
     return BrainGraphResponse(
         nodes=[GraphNodeResponse(**asdict(n)) for n in graph.nodes],
         edges=[GraphEdgeResponse(**asdict(e)) for e in graph.edges],
         stats=graph.stats,
+        overview=asdict(overview),
     )
