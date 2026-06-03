@@ -18,6 +18,8 @@ final class ItemModelTests: XCTestCase {
           "body": "full text",
           "occurred_at": null,
           "state": "raw",
+          "status": "ready",
+          "error": null,
           "folder_id": null,
           "created_at": "2026-06-01T00:00:00Z",
           "summary": {
@@ -58,7 +60,8 @@ final class ItemModelTests: XCTestCase {
         {
           "id": "i2", "source": "paste", "source_ref": null, "url": null,
           "kind": "note", "title": null, "body": "x", "occurred_at": null,
-          "state": "raw", "folder_id": null, "created_at": "2026-06-01T00:00:00Z",
+          "state": "raw", "status": "ready", "error": null,
+          "folder_id": null, "created_at": "2026-06-01T00:00:00Z",
           "summary": null
         }
         """.data(using: .utf8)!
@@ -74,6 +77,7 @@ final class ItemModelTests: XCTestCase {
             {
               "id": "i1", "source": "url", "url": "https://x", "kind": "article",
               "title": "T", "state": "raw", "folder_id": null, "occurred_at": null,
+              "status": "ready", "error": null,
               "created_at": "2026-06-01T00:00:00Z", "has_summary": true
             }
           ],

@@ -152,6 +152,7 @@ final class UserEntityDictationModelsTests: XCTestCase {
           "file_stt_provider":"elevenlabs",
           "file_stt_model":"scribe_v2",
           "dictation_post_filter_enabled":true,
+          "dictation_cleanup_level":"light",
           "dictation_post_filter_provider":"openai",
           "dictation_post_filter_model":"gpt-5.5"
         }
@@ -164,6 +165,7 @@ final class UserEntityDictationModelsTests: XCTestCase {
         XCTAssertEqual(s.dictationLiveSTTProvider, "deepgram")
         XCTAssertEqual(s.dictationLiveSTTModel, "nova-3")
         XCTAssertTrue(s.dictationPostFilterEnabled)
+        XCTAssertEqual(s.dictationCleanupLevel, "light")
     }
 
     func testUserSettingsAllowsNullSummaryInstructions() throws {
@@ -175,12 +177,14 @@ final class UserEntityDictationModelsTests: XCTestCase {
           "recording_live_stt_provider":"deepgram", "recording_live_stt_model":"nova-3",
           "file_stt_provider":"elevenlabs", "file_stt_model":"scribe_v2",
           "dictation_post_filter_enabled":false,
+          "dictation_cleanup_level":"none",
           "dictation_post_filter_provider":"o", "dictation_post_filter_model":"m"
         }
         """.data(using: .utf8)!
         let s = try decoder.decode(UserSettings.self, from: json)
         XCTAssertNil(s.summaryInstructions)
         XCTAssertFalse(s.dictationPostFilterEnabled)
+        XCTAssertEqual(s.dictationCleanupLevel, "none")
     }
 
     // MARK: - UpdateSettingsRequest

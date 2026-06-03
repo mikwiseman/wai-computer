@@ -624,6 +624,7 @@ class MacAppState: ObservableObject {
     let recordingViewModel: MacRecordingViewModel
     let dictationManager: DictationManager
     let testingMode: MacTestingMode
+    let serviceBaseURL: URL
 
     private let apiClient: APIClient
     private var hasAttemptedStoredSessionRestore = false
@@ -646,6 +647,7 @@ class MacAppState: ObservableObject {
         } else {
             baseURL = URL(string: "https://wai.computer")!
         }
+        serviceBaseURL = baseURL
         apiClient = APIClient(baseURL: baseURL)
 
         // Resolve onboarding flags honoring env-var overrides used by tests/dev.
