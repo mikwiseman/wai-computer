@@ -380,6 +380,20 @@ struct MacSettingsView: View {
                 .disabled(!dictationManager.isFeatureEnabled)
                 .accessibilityIdentifier("settings-hands-free-picker")
 
+                Picker(selection: Binding(
+                    get: { dictationManager.translationLanguageStore.selectedLanguageCode },
+                    set: { dictationManager.translationLanguageStore.selectLanguage($0) }
+                )) {
+                    ForEach(TranslationLanguageCatalog.all) { language in
+                        Text(language.displayName).tag(language.code)
+                    }
+                } label: {
+                    Text(t("Translation target", "Язык перевода"))
+                }
+                .font(Typography.body)
+                .disabled(!dictationManager.isFeatureEnabled)
+                .accessibilityIdentifier("settings-dictation-translation-target-picker")
+
                 Picker(selection: $dictationCleanupLevel) {
                     ForEach(dictationCleanupOptions, id: \.value) { option in
                         Text(option.label).tag(option.value)

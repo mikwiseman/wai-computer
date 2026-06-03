@@ -1,5 +1,6 @@
 import Cocoa
 import SwiftUI
+import WaiComputerKit
 
 final class AskAnythingPanel: NSPanel {
     override var canBecomeKey: Bool { true }
