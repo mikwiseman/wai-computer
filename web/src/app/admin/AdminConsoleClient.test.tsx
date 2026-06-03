@@ -5,6 +5,7 @@ import {
   archiveAdminPromoCode,
   cancelAdminSubscription,
   createAdminPromoCode,
+  getAdminAiUsage,
   getAdminDeepgramUsage,
   getAdminObservability,
   getAdminUser,
@@ -39,6 +40,7 @@ vi.mock("@/lib/admin", () => ({
   archiveAdminPromoCode: vi.fn(),
   cancelAdminSubscription: vi.fn(),
   createAdminPromoCode: vi.fn(),
+  getAdminAiUsage: vi.fn(),
   getAdminDeepgramUsage: vi.fn(),
   getAdminObservability: vi.fn(),
   getAdminStats: vi.fn(),
@@ -57,6 +59,7 @@ vi.mock("@/lib/admin", () => ({
 }));
 
 const mockedStats = vi.mocked(getAdminStats);
+const mockedAiUsage = vi.mocked(getAdminAiUsage);
 const mockedDeepgramUsage = vi.mocked(getAdminDeepgramUsage);
 const mockedObservability = vi.mocked(getAdminObservability);
 const mockedPromos = vi.mocked(listAdminPromoCodes);
@@ -128,6 +131,162 @@ function setupMocks() {
       revenue_by_currency: { USD: 12 },
       monthly_revenue: [{ period: "2026-05", currency: "USD", amount: 12 }],
     },
+  });
+  mockedAiUsage.mockResolvedValue({
+    generated_at: "2026-06-03T09:00:00Z",
+    window_days: 7,
+    filters: { days: 7 },
+    summary: {
+      events: 4,
+      estimated_cost_usd: 1.25,
+      input_tokens: 3000,
+      output_tokens: 1200,
+      cached_tokens: 500,
+      reasoning_tokens: 100,
+      total_tokens: 4200,
+      billable_seconds: 120,
+      audio_seconds: 120,
+      failed_events: 1,
+      refused_events: 1,
+      unpriced_events: 2,
+      avg_latency_ms: 240,
+      p95_latency_ms: 900,
+    },
+    by_day: [
+      {
+        date: "2026-06-03",
+        events: 4,
+        estimated_cost_usd: 1.25,
+        total_tokens: 4200,
+        billable_seconds: 120,
+        failed_events: 1,
+        refused_events: 1,
+      },
+    ],
+    by_provider: [
+      {
+        provider: "openai",
+        events: 3,
+        estimated_cost_usd: 1.25,
+        total_tokens: 4200,
+        input_tokens: 3000,
+        output_tokens: 1200,
+        billable_seconds: 0,
+        failed_events: 1,
+        refused_events: 0,
+        unpriced_events: 1,
+        last_event_at: "2026-06-03T09:00:00Z",
+      },
+      {
+        provider: "deepgram",
+        events: 1,
+        estimated_cost_usd: 0,
+        total_tokens: 0,
+        input_tokens: 0,
+        output_tokens: 0,
+        billable_seconds: 120,
+        failed_events: 0,
+        refused_events: 1,
+        unpriced_events: 1,
+        last_event_at: "2026-06-03T09:00:00Z",
+      },
+    ],
+    by_feature: [
+      {
+        feature: "companion",
+        events: 2,
+        estimated_cost_usd: 1.2,
+        total_tokens: 4000,
+        input_tokens: 2900,
+        output_tokens: 1100,
+        billable_seconds: 0,
+        failed_events: 0,
+        refused_events: 0,
+        unpriced_events: 1,
+        last_event_at: "2026-06-03T09:00:00Z",
+      },
+      {
+        feature: "dictation",
+        events: 1,
+        estimated_cost_usd: 0,
+        total_tokens: 0,
+        input_tokens: 0,
+        output_tokens: 0,
+        billable_seconds: 120,
+        failed_events: 0,
+        refused_events: 1,
+        unpriced_events: 1,
+        last_event_at: "2026-06-03T09:00:00Z",
+      },
+    ],
+    by_model: [
+      {
+        provider: "openai",
+        model: "gpt-5.5",
+        events: 2,
+        estimated_cost_usd: 1.2,
+        total_tokens: 4000,
+        input_tokens: 2900,
+        output_tokens: 1100,
+        billable_seconds: 0,
+        failed_events: 0,
+        refused_events: 0,
+        unpriced_events: 1,
+        last_event_at: "2026-06-03T09:00:00Z",
+      },
+    ],
+    by_user: [
+      {
+        user_id: "user-1",
+        email: "user@example.com",
+        events: 4,
+        estimated_cost_usd: 1.25,
+        total_tokens: 4200,
+        billable_seconds: 120,
+        failed_events: 1,
+        refused_events: 1,
+        unpriced_events: 2,
+        last_event_at: "2026-06-03T09:00:00Z",
+      },
+    ],
+    recent_events: [
+      {
+        id: "ai-event-1",
+        created_at: "2026-06-03T09:00:00Z",
+        user_id: "user-1",
+        email: "user@example.com",
+        recording_id: null,
+        item_id: null,
+        conversation_id: "conversation-1",
+        message_id: "message-1",
+        provider: "openai",
+        feature: "companion",
+        operation: "companion.turn",
+        status: "succeeded",
+        model: "gpt-5.5",
+        input_tokens: 3000,
+        output_tokens: 1200,
+        cached_tokens: 500,
+        reasoning_tokens: 100,
+        total_tokens: 4200,
+        billable_seconds: null,
+        estimated_cost_usd: 1.25,
+        pricing_status: "priced",
+        latency_ms: 240,
+        provider_status_code: null,
+        provider_error_code: null,
+        guard_code: null,
+        error_type: null,
+      },
+    ],
+    analysis: [
+      {
+        severity: "warning",
+        code: "ai_usage.unpriced_models",
+        title: "Some model calls cannot be costed yet",
+        detail: "2 events have usage metrics but no configured provider/model price.",
+      },
+    ],
   });
   mockedDeepgramUsage.mockResolvedValue({
     generated_at: "2026-06-03T09:00:00Z",
@@ -484,6 +643,35 @@ describe("AdminConsoleClient", () => {
     expect(screen.getByText("Deepgram is refusing requests with 402")).toBeInTheDocument();
     expect(screen.getByText("Users by Deepgram usage")).toBeInTheDocument();
     expect(screen.getAllByText("file_stt/recording").length).toBeGreaterThan(0);
+  });
+
+  it("shows unified AI usage analysis and applies filters", async () => {
+    render(<AdminConsoleClient />);
+
+    await screen.findByText("Total users");
+    await userEvent.click(screen.getByRole("button", { name: "AI usage" }));
+
+    expect(await screen.findByText("Daily AI usage")).toBeInTheDocument();
+    expect(screen.getByText("Spend analysis")).toBeInTheDocument();
+    expect(screen.getByText("Some model calls cannot be costed yet")).toBeInTheDocument();
+    expect(screen.getByText("Users by AI usage")).toBeInTheDocument();
+    expect(screen.getByText("Recent AI events")).toBeInTheDocument();
+    expect(screen.getAllByText("gpt-5.5").length).toBeGreaterThan(0);
+
+    await userEvent.type(screen.getByPlaceholderText("email or id"), "user@example.com");
+    await userEvent.click(screen.getByRole("button", { name: "Apply" }));
+
+    await waitFor(() =>
+      expect(mockedAiUsage).toHaveBeenLastCalledWith({
+        days: 7,
+        provider: "",
+        feature: "",
+        model: "",
+        status: "",
+        q: "user@example.com",
+        limit: 100,
+      }),
+    );
   });
 
   it("creates a promo code and shows plaintext once", async () => {

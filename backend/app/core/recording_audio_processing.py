@@ -798,6 +798,8 @@ async def process_staged_recording_upload(
             extracted_names = await extract_speaker_names(
                 transcript_results=speech_transcript_results,
                 raw_labels=speaker_assignments.keys(),
+                usage_user_id=user_id,
+                usage_recording_id=recording_id,
             )
             if extracted_names:
                 applied = await apply_extracted_names(
@@ -824,7 +826,13 @@ async def process_staged_recording_upload(
             embedding = None
             if text:
                 try:
-                    embedding = await generate_embedding(text)
+                    embedding = await generate_embedding(
+                        text,
+                        usage_user_id=user_id,
+                        usage_recording_id=recording_id,
+                        usage_feature="recording",
+                        usage_operation="embedding.segment",
+                    )
                 except Exception as exc:
                     embedding_failure_count += 1
                     logger.warning(
@@ -874,6 +882,8 @@ async def process_staged_recording_upload(
                 recording.title = await generate_title(
                     transcript_text,
                     language=recording.language or "auto",
+                    usage_user_id=user_id,
+                    usage_recording_id=recording_id,
                 )
             except Exception as exc:
                 logger.warning("Title generation failed: %s", exc)

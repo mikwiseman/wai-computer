@@ -15,6 +15,7 @@ from app.api.routes import admin as admin_routes
 from app.api.routes.admin import AdminPromoCodeCreateRequest
 from app.billing.promo_codes import hash_promo_code
 from app.models.admin import AdminRole, StaffMember
+from app.models.ai_usage import AiUsageEvent
 from app.models.api_key import ApiKey
 from app.models.billing import (
     BillingEvent,
@@ -832,6 +833,104 @@ async def test_admin_deepgram_usage_shows_detailed_burn_analysis(
     }.issubset({item["code"] for item in payload["analysis"]})
     assert "Private recording title" not in str(payload)
     assert "private dictation text" not in str(payload)
+
+
+@pytest.mark.asyncio
+async def test_admin_ai_usage_shows_model_provider_user_and_error_breakdowns(
+    client: AsyncClient,
+    db_session: AsyncSession,
+):
+    admin_payload, admin_headers = await _register(client, "admin-ai-usage@example.com")
+    user_a_payload, _ = await _register(client, "ai-usage-a@example.com")
+    user_b_payload, _ = await _register(client, "ai-usage-b@example.com")
+    await _grant_admin(db_session, admin_payload["user_id"])
+    now = datetime.now(timezone.utc)
+
+    db_session.add_all(
+        [
+            AiUsageEvent(
+                user_id=user_a_payload["user_id"],
+                provider="openai",
+                feature="companion",
+                operation="companion.turn",
+                status="succeeded",
+                model="gpt-5.5",
+                input_tokens=3_000,
+                output_tokens=2_000,
+                cached_tokens=500,
+                total_tokens=5_000,
+                estimated_cost_usd=0.12,
+                pricing_status="priced",
+                latency_ms=100,
+                created_at=now,
+            ),
+            AiUsageEvent(
+                user_id=user_a_payload["user_id"],
+                provider="deepgram",
+                feature="dictation",
+                operation="realtime.session_mint",
+                status="refused",
+                model="nova-3",
+                billable_seconds=0,
+                pricing_status="unpriced",
+                guard_code="realtime.session_mint.breaker_open",
+                latency_ms=5,
+                created_at=now,
+            ),
+            AiUsageEvent(
+                user_id=user_b_payload["user_id"],
+                provider="openai",
+                feature="materials",
+                operation="summary.content",
+                status="failed",
+                model="gpt-5.5",
+                input_tokens=100,
+                total_tokens=100,
+                estimated_cost_usd=0,
+                pricing_status="unpriced",
+                error_type="APIStatusError",
+                created_at=now,
+                details={"source": "test", "prompt": "private prompt must not leak"},
+            ),
+        ]
+    )
+    await db_session.flush()
+
+    response = await client.get("/api/admin/ai-usage?days=7", headers=admin_headers)
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["summary"]["events"] == 3
+    assert payload["summary"]["estimated_cost_usd"] == 0.12
+    assert payload["summary"]["total_tokens"] == 5_100
+    assert payload["summary"]["failed_events"] == 1
+    assert payload["summary"]["refused_events"] == 1
+    assert payload["summary"]["unpriced_events"] == 2
+    assert payload["by_provider"][0]["provider"] == "openai"
+    assert payload["by_provider"][0]["events"] == 2
+    assert {row["feature"] for row in payload["by_feature"]} == {
+        "companion",
+        "dictation",
+        "materials",
+    }
+    assert payload["by_user"][0]["email"] == "ai-usage-a@example.com"
+    assert payload["by_user"][0]["events"] == 2
+    assert payload["by_model"][0]["model"] == "gpt-5.5"
+    assert {
+        "ai_usage.unpriced_models",
+        "ai_usage.provider.deepgram.errors",
+    }.issubset({item["code"] for item in payload["analysis"]})
+    assert "private prompt" not in str(payload)
+
+    filtered = await client.get(
+        "/api/admin/ai-usage?days=7&q=ai-usage-a&provider=deepgram",
+        headers=admin_headers,
+    )
+    assert filtered.status_code == 200
+    filtered_payload = filtered.json()
+    assert filtered_payload["summary"]["events"] == 1
+    assert filtered_payload["by_user"][0]["email"] == "ai-usage-a@example.com"
+    assert filtered_payload["by_provider"][0]["provider"] == "deepgram"
 
 
 @pytest.mark.asyncio

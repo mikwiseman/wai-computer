@@ -22,6 +22,7 @@ from app.core.embedding_backfill import backfill_missing_segment_embeddings
 from app.core.entity_graph import backfill_entity_mentions_from_existing_summaries
 from app.core.observability import get_release_version, get_sentry_runtime
 from app.models.admin import AdminAuditLog, AdminRole, StaffMember
+from app.models.ai_usage import AiUsageEvent
 from app.models.api_key import ApiKey
 from app.models.billing import (
     BillingEvent,
@@ -364,6 +365,20 @@ class AdminDeepgramUsageResponse(BaseModel):
     by_operation: list[dict]
     by_day: list[dict]
     top_recordings: list[dict]
+    recent_events: list[dict]
+    analysis: list[dict]
+
+
+class AdminAiUsageResponse(BaseModel):
+    generated_at: datetime
+    window_days: int
+    filters: dict
+    summary: dict
+    by_day: list[dict]
+    by_provider: list[dict]
+    by_feature: list[dict]
+    by_model: list[dict]
+    by_user: list[dict]
     recent_events: list[dict]
     analysis: list[dict]
 
@@ -759,6 +774,403 @@ def _day(value: object) -> str:
     if isinstance(value, datetime):
         return value.date().isoformat()
     return str(value)
+
+
+def _ai_usage_conditions(
+    *,
+    since: datetime,
+    provider: str | None = None,
+    feature: str | None = None,
+    model: str | None = None,
+    status_filter: str | None = None,
+    user_id: UUID | None = None,
+    q: str | None = None,
+) -> list:
+    conditions = [AiUsageEvent.created_at >= since]
+    if provider:
+        conditions.append(AiUsageEvent.provider == provider)
+    if feature:
+        conditions.append(AiUsageEvent.feature == feature)
+    if model:
+        conditions.append(AiUsageEvent.model == model)
+    if status_filter:
+        conditions.append(AiUsageEvent.status == status_filter)
+    if user_id is not None:
+        conditions.append(AiUsageEvent.user_id == user_id)
+    if q and q.strip():
+        pattern = f"%{q.strip()}%"
+        conditions.append(
+            or_(
+                User.email.ilike(pattern),
+                AiUsageEvent.user_id.cast(String).ilike(pattern),
+            )
+        )
+    return conditions
+
+
+async def _ai_usage_rows(
+    db: Database,
+    *,
+    since: datetime,
+    detail_limit: int,
+    provider: str | None = None,
+    feature: str | None = None,
+    model: str | None = None,
+    status_filter: str | None = None,
+    user_id: UUID | None = None,
+    q: str | None = None,
+) -> dict:
+    conditions = _ai_usage_conditions(
+        since=since,
+        provider=provider,
+        feature=feature,
+        model=model,
+        status_filter=status_filter,
+        user_id=user_id,
+        q=q,
+    )
+    base_join = AiUsageEvent.__table__.outerjoin(User, User.id == AiUsageEvent.user_id)
+    summary_row = (
+        await db.execute(
+            select(
+                func.count(AiUsageEvent.id),
+                func.coalesce(func.sum(AiUsageEvent.estimated_cost_usd), 0),
+                func.coalesce(func.sum(AiUsageEvent.input_tokens), 0),
+                func.coalesce(func.sum(AiUsageEvent.output_tokens), 0),
+                func.coalesce(func.sum(AiUsageEvent.cached_tokens), 0),
+                func.coalesce(func.sum(AiUsageEvent.reasoning_tokens), 0),
+                func.coalesce(func.sum(AiUsageEvent.total_tokens), 0),
+                func.coalesce(func.sum(AiUsageEvent.billable_seconds), 0),
+                func.coalesce(func.sum(AiUsageEvent.audio_seconds), 0),
+                func.coalesce(func.sum(case((AiUsageEvent.status == "failed", 1), else_=0)), 0),
+                func.coalesce(func.sum(case((AiUsageEvent.status == "refused", 1), else_=0)), 0),
+                func.coalesce(
+                    func.sum(case((AiUsageEvent.pricing_status != "priced", 1), else_=0)),
+                    0,
+                ),
+                func.avg(AiUsageEvent.latency_ms),
+            )
+            .select_from(base_join)
+            .where(*conditions)
+        )
+    ).one()
+    latency_values = [
+        _int(value)
+        for value in (
+            await db.execute(
+                select(AiUsageEvent.latency_ms)
+                .select_from(base_join)
+                .where(*conditions, AiUsageEvent.latency_ms.is_not(None))
+            )
+        ).scalars()
+    ]
+    latency_values.sort()
+    p95_latency = (
+        latency_values[min(len(latency_values) - 1, int(len(latency_values) * 0.95))]
+        if latency_values
+        else None
+    )
+    summary = {
+        "events": _int(summary_row[0]),
+        "estimated_cost_usd": round(_num(summary_row[1]), 6),
+        "input_tokens": _int(summary_row[2]),
+        "output_tokens": _int(summary_row[3]),
+        "cached_tokens": _int(summary_row[4]),
+        "reasoning_tokens": _int(summary_row[5]),
+        "total_tokens": _int(summary_row[6]),
+        "billable_seconds": round(_num(summary_row[7]), 3),
+        "audio_seconds": round(_num(summary_row[8]), 3),
+        "failed_events": _int(summary_row[9]),
+        "refused_events": _int(summary_row[10]),
+        "unpriced_events": _int(summary_row[11]),
+        "avg_latency_ms": round(_num(summary_row[12])),
+        "p95_latency_ms": p95_latency,
+    }
+
+    async def grouped_rows(*, group_fields: tuple, labels: tuple[str, ...]) -> list[dict]:
+        rows = (
+            await db.execute(
+                select(
+                    *group_fields,
+                    func.count(AiUsageEvent.id),
+                    func.coalesce(func.sum(AiUsageEvent.estimated_cost_usd), 0),
+                    func.coalesce(func.sum(AiUsageEvent.total_tokens), 0),
+                    func.coalesce(func.sum(AiUsageEvent.input_tokens), 0),
+                    func.coalesce(func.sum(AiUsageEvent.output_tokens), 0),
+                    func.coalesce(func.sum(AiUsageEvent.billable_seconds), 0),
+                    func.coalesce(func.sum(case((AiUsageEvent.status == "failed", 1), else_=0)), 0),
+                    func.coalesce(
+                        func.sum(case((AiUsageEvent.status == "refused", 1), else_=0)),
+                        0,
+                    ),
+                    func.coalesce(
+                        func.sum(case((AiUsageEvent.pricing_status != "priced", 1), else_=0)),
+                        0,
+                    ),
+                    func.max(AiUsageEvent.created_at),
+                )
+                .select_from(base_join)
+                .where(*conditions)
+                .group_by(*group_fields)
+                .order_by(
+                    func.coalesce(func.sum(AiUsageEvent.estimated_cost_usd), 0).desc(),
+                    func.coalesce(func.sum(AiUsageEvent.total_tokens), 0).desc(),
+                    func.count(AiUsageEvent.id).desc(),
+                )
+                .limit(detail_limit)
+            )
+        ).all()
+        output: list[dict] = []
+        for row in rows:
+            prefix = {label: row[index] for index, label in enumerate(labels)}
+            offset = len(labels)
+            output.append(
+                {
+                    **prefix,
+                    "events": _int(row[offset]),
+                    "estimated_cost_usd": round(_num(row[offset + 1]), 6),
+                    "total_tokens": _int(row[offset + 2]),
+                    "input_tokens": _int(row[offset + 3]),
+                    "output_tokens": _int(row[offset + 4]),
+                    "billable_seconds": round(_num(row[offset + 5]), 3),
+                    "failed_events": _int(row[offset + 6]),
+                    "refused_events": _int(row[offset + 7]),
+                    "unpriced_events": _int(row[offset + 8]),
+                    "last_event_at": row[offset + 9].isoformat()
+                    if row[offset + 9]
+                    else None,
+                }
+            )
+        return output
+
+    day_rows = [
+        {
+            "date": _day(day),
+            "events": _int(events),
+            "estimated_cost_usd": round(_num(cost), 6),
+            "total_tokens": _int(tokens),
+            "billable_seconds": round(_num(seconds), 3),
+            "failed_events": _int(failed),
+            "refused_events": _int(refused),
+        }
+        for day, events, cost, tokens, seconds, failed, refused in (
+            await db.execute(
+                select(
+                    func.date(AiUsageEvent.created_at),
+                    func.count(AiUsageEvent.id),
+                    func.coalesce(func.sum(AiUsageEvent.estimated_cost_usd), 0),
+                    func.coalesce(func.sum(AiUsageEvent.total_tokens), 0),
+                    func.coalesce(func.sum(AiUsageEvent.billable_seconds), 0),
+                    func.coalesce(func.sum(case((AiUsageEvent.status == "failed", 1), else_=0)), 0),
+                    func.coalesce(
+                        func.sum(case((AiUsageEvent.status == "refused", 1), else_=0)),
+                        0,
+                    ),
+                )
+                .select_from(base_join)
+                .where(*conditions)
+                .group_by(func.date(AiUsageEvent.created_at))
+                .order_by(func.date(AiUsageEvent.created_at))
+            )
+        ).all()
+    ]
+    by_user_rows = (
+        await db.execute(
+            select(
+                AiUsageEvent.user_id,
+                User.email,
+                func.count(AiUsageEvent.id),
+                func.coalesce(func.sum(AiUsageEvent.estimated_cost_usd), 0),
+                func.coalesce(func.sum(AiUsageEvent.total_tokens), 0),
+                func.coalesce(func.sum(AiUsageEvent.billable_seconds), 0),
+                func.coalesce(func.sum(case((AiUsageEvent.status == "failed", 1), else_=0)), 0),
+                func.coalesce(func.sum(case((AiUsageEvent.status == "refused", 1), else_=0)), 0),
+                func.coalesce(
+                    func.sum(case((AiUsageEvent.pricing_status != "priced", 1), else_=0)),
+                    0,
+                ),
+                func.max(AiUsageEvent.created_at),
+            )
+            .select_from(base_join)
+            .where(*conditions)
+            .group_by(AiUsageEvent.user_id, User.email)
+            .order_by(
+                func.coalesce(func.sum(AiUsageEvent.estimated_cost_usd), 0).desc(),
+                func.coalesce(func.sum(AiUsageEvent.total_tokens), 0).desc(),
+                func.coalesce(func.sum(AiUsageEvent.billable_seconds), 0).desc(),
+            )
+            .limit(detail_limit)
+        )
+    ).all()
+    recent_events = [
+        {
+            "id": str(event.id),
+            "created_at": event.created_at.isoformat(),
+            "user_id": str(event.user_id) if event.user_id else None,
+            "email": email,
+            "recording_id": str(event.recording_id) if event.recording_id else None,
+            "item_id": str(event.item_id) if event.item_id else None,
+            "conversation_id": str(event.conversation_id) if event.conversation_id else None,
+            "message_id": str(event.message_id) if event.message_id else None,
+            "provider": event.provider,
+            "feature": event.feature,
+            "operation": event.operation,
+            "status": event.status,
+            "model": event.model,
+            "input_tokens": event.input_tokens,
+            "output_tokens": event.output_tokens,
+            "cached_tokens": event.cached_tokens,
+            "reasoning_tokens": event.reasoning_tokens,
+            "total_tokens": event.total_tokens,
+            "billable_seconds": event.billable_seconds,
+            "estimated_cost_usd": event.estimated_cost_usd,
+            "pricing_status": event.pricing_status,
+            "latency_ms": event.latency_ms,
+            "provider_status_code": event.provider_status_code,
+            "provider_error_code": event.provider_error_code,
+            "guard_code": event.guard_code,
+            "error_type": event.error_type,
+        }
+        for event, email in (
+            await db.execute(
+                select(AiUsageEvent, User.email)
+                .outerjoin(User, User.id == AiUsageEvent.user_id)
+                .where(*conditions)
+                .order_by(AiUsageEvent.created_at.desc())
+                .limit(detail_limit)
+            )
+        ).all()
+    ]
+    payload = {
+        "summary": summary,
+        "by_day": day_rows,
+        "by_provider": await grouped_rows(
+            group_fields=(AiUsageEvent.provider,),
+            labels=("provider",),
+        ),
+        "by_feature": await grouped_rows(
+            group_fields=(AiUsageEvent.feature,),
+            labels=("feature",),
+        ),
+        "by_model": await grouped_rows(
+            group_fields=(AiUsageEvent.provider, AiUsageEvent.model),
+            labels=("provider", "model"),
+        ),
+        "by_user": [
+            {
+                "user_id": str(user_id) if user_id else "unknown",
+                "email": email,
+                "events": _int(events),
+                "estimated_cost_usd": round(_num(cost), 6),
+                "total_tokens": _int(tokens),
+                "billable_seconds": round(_num(seconds), 3),
+                "failed_events": _int(failed),
+                "refused_events": _int(refused),
+                "unpriced_events": _int(unpriced),
+                "last_event_at": last_at.isoformat() if last_at else None,
+            }
+            for (
+                user_id,
+                email,
+                events,
+                cost,
+                tokens,
+                seconds,
+                failed,
+                refused,
+                unpriced,
+                last_at,
+            ) in by_user_rows
+        ],
+        "recent_events": recent_events,
+    }
+    return payload
+
+
+def _ai_usage_analysis(payload: dict) -> list[dict]:
+    summary = payload["summary"]
+    by_user = payload["by_user"]
+    by_feature = payload["by_feature"]
+    by_provider = payload["by_provider"]
+    analysis: list[dict] = []
+    if summary["events"] == 0:
+        analysis.append(
+            {
+                "severity": "info",
+                "code": "ai_usage.ledger.empty",
+                "title": "No AI usage captured in this window",
+                "detail": "The unified ledger starts after this deployment.",
+            }
+        )
+        return analysis
+    if summary["unpriced_events"] > 0:
+        analysis.append(
+            {
+                "severity": "warning",
+                "code": "ai_usage.unpriced_models",
+                "title": "Some model calls cannot be costed yet",
+                "detail": (
+                    f"{summary['unpriced_events']} events have usage metrics but no "
+                    "configured provider/model price."
+                ),
+            }
+        )
+    failed_total = summary["failed_events"] + summary["refused_events"]
+    if summary["events"] >= 5 and failed_total / summary["events"] >= 0.2:
+        analysis.append(
+            {
+                "severity": "critical",
+                "code": "ai_usage.failure_ratio.high",
+                "title": "High failed/refused AI event ratio",
+                "detail": f"{failed_total} of {summary['events']} events failed or were refused.",
+            }
+        )
+    total_cost = float(summary["estimated_cost_usd"] or 0)
+    if total_cost > 0 and by_user:
+        top_user = max(by_user, key=lambda item: item["estimated_cost_usd"])
+        share = top_user["estimated_cost_usd"] / total_cost
+        if share >= 0.5:
+            analysis.append(
+                {
+                    "severity": "warning",
+                    "code": "ai_usage.cost.concentrated_user",
+                    "title": "AI cost is concentrated in one user",
+                    "detail": (
+                        f"{top_user['email'] or top_user['user_id']} accounts for "
+                        f"{round(share * 100)}% of estimated AI cost."
+                    ),
+                }
+            )
+    total_tokens = int(summary["total_tokens"] or 0)
+    if total_tokens > 0 and by_feature:
+        top_feature = max(by_feature, key=lambda item: item["total_tokens"])
+        share = top_feature["total_tokens"] / total_tokens
+        if share >= 0.6:
+            analysis.append(
+                {
+                    "severity": "info",
+                    "code": "ai_usage.tokens.concentrated_feature",
+                    "title": "Token usage is concentrated in one feature",
+                    "detail": (
+                        f"{top_feature['feature']} accounts for "
+                        f"{round(share * 100)}% of total tokens."
+                    ),
+                }
+            )
+    for provider_row in by_provider:
+        if provider_row["failed_events"] or provider_row["refused_events"]:
+            analysis.append(
+                {
+                    "severity": "warning",
+                    "code": f"ai_usage.provider.{provider_row['provider']}.errors",
+                    "title": f"{provider_row['provider']} has failed/refused events",
+                    "detail": (
+                        f"{provider_row['failed_events']} failed and "
+                        f"{provider_row['refused_events']} refused events."
+                    ),
+                }
+            )
+    return analysis
 
 
 def _new_deepgram_user_row(user_id: str, email: str | None) -> dict:
@@ -2521,6 +2933,56 @@ async def get_admin_deepgram_usage(
         top_recordings=payload["top_recordings"],
         recent_events=payload["recent_events"],
         analysis=_deepgram_usage_analysis(payload),
+    )
+
+
+@router.get("/ai-usage", response_model=AdminAiUsageResponse)
+async def get_admin_ai_usage(
+    db: Database,
+    admin: CurrentAdmin,
+    days: int = Query(default=7, ge=1, le=90),
+    provider: str | None = Query(default=None, min_length=1, max_length=32),
+    feature: str | None = Query(default=None, min_length=1, max_length=64),
+    model: str | None = Query(default=None, min_length=1, max_length=120),
+    status_filter: str | None = Query(default=None, alias="status", min_length=1, max_length=32),
+    user_id: UUID | None = None,
+    q: str | None = Query(default=None, max_length=200),
+    limit: int = Query(default=100, ge=10, le=500),
+) -> AdminAiUsageResponse:
+    del admin
+    now = datetime.now(timezone.utc)
+    since = now - timedelta(days=days)
+    payload = await _ai_usage_rows(
+        db,
+        since=since,
+        detail_limit=limit,
+        provider=provider,
+        feature=feature,
+        model=model,
+        status_filter=status_filter,
+        user_id=user_id,
+        q=q,
+    )
+    return AdminAiUsageResponse(
+        generated_at=now,
+        window_days=days,
+        filters={
+            "provider": provider,
+            "feature": feature,
+            "model": model,
+            "status": status_filter,
+            "user_id": str(user_id) if user_id else None,
+            "q": q,
+            "limit": limit,
+        },
+        summary=payload["summary"],
+        by_day=payload["by_day"],
+        by_provider=payload["by_provider"],
+        by_feature=payload["by_feature"],
+        by_model=payload["by_model"],
+        by_user=payload["by_user"],
+        recent_events=payload["recent_events"],
+        analysis=_ai_usage_analysis(payload),
     )
 
 

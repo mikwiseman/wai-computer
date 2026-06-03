@@ -48,6 +48,7 @@ import { AudioUpload } from "@/components/AudioUpload";
 import { LiveRecorder } from "@/components/LiveRecorder";
 import { McpConnectSection } from "@/components/McpConnectSection";
 import { ApiKeysSection } from "@/components/ApiKeysSection";
+import { ServerDataSection } from "@/components/ServerDataSection";
 import { IdentityAndVoicePanel } from "@/components/IdentityAndVoicePanel";
 import { ThemeAccentPicker } from "@/components/ThemeAccentPicker";
 import { TranscriptionSettingsPanel } from "@/components/TranscriptionSettingsPanel";
@@ -290,7 +291,7 @@ const COPY: Record<Locale, DashboardCopy> = {
       search: { label: "Search", detail: "Find a moment across transcripts" },
       history: { label: "Dictation History", detail: "Voice to text inserts" },
       dictionary: { label: "Dictionary", detail: "Custom dictation replacements" },
-      settings: { label: "Settings", detail: "Account, dictation, and integrations" },
+      settings: { label: "Settings", detail: "Account, data, and integrations" },
     },
     folders: {
       addAriaLabel: "New folder",
@@ -491,7 +492,7 @@ const COPY: Record<Locale, DashboardCopy> = {
       search: { label: "Поиск", detail: "Найти момент по всем расшифровкам" },
       history: { label: "История диктовки", detail: "Голос превращённый в текст" },
       dictionary: { label: "Словарь", detail: "Свои замены для диктовки" },
-      settings: { label: "Настройки", detail: "Аккаунт, диктовка и интеграции" },
+      settings: { label: "Настройки", detail: "Аккаунт, данные и интеграции" },
     },
     folders: {
       addAriaLabel: "Новая папка",
@@ -2605,6 +2606,8 @@ export function DashboardClient() {
   function renderSettingsView() {
     return (
       <section className="tool-panel settings-panel">
+        <ServerDataSection locale={locale} />
+
         <section className="settings-form" data-testid="appearance-settings">
           <h3>{locale === "ru" ? "Внешний вид" : "Appearance"}</h3>
           <ThemeAccentPicker locale={locale} />

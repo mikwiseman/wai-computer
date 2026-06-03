@@ -67,9 +67,16 @@ async def generate_item_summary(
         language=language,
         style=style,
         instructions=instructions,
+        usage_user_id=item.user_id,
+        usage_item_id=item.id,
     )
 
-    moments = await moments_fn(text, language=language)
+    moments = await moments_fn(
+        text,
+        language=language,
+        usage_user_id=item.user_id,
+        usage_item_id=item.id,
+    )
     # If the item carries time-coded segments (e.g. a transcribed video), map
     # moments to millisecond ranges so the UI can deep-link into playback.
     segments = _segments_from_metadata(item)

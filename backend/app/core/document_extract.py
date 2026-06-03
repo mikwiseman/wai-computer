@@ -18,7 +18,7 @@ import tempfile
 import zipfile
 from html import unescape
 from html.parser import HTMLParser
-from typing import Iterable
+from typing import Any, Iterable
 from unicodedata import category
 from xml.etree import ElementTree
 
@@ -100,7 +100,12 @@ def document_kind_for_extension(ext: str) -> str:
     return "note"
 
 
-async def extract_document_text(ext: str, data: bytes) -> str:
+async def extract_document_text(
+    ext: str,
+    data: bytes,
+    *,
+    usage_user_id: Any | None = None,
+) -> str:
     """Extract text for a supported document extension."""
     if ext not in SUPPORTED_DOCUMENT_EXTENSIONS:
         raise DocumentExtractionError(
@@ -109,7 +114,7 @@ async def extract_document_text(ext: str, data: bytes) -> str:
         )
 
     if ext == "pdf":
-        return await _extract_pdf(data)
+        return await _extract_pdf(data, usage_user_id=usage_user_id)
     if ext in {"txt", "md"}:
         return _decode_text(data)
     if ext == "html":
@@ -131,7 +136,7 @@ async def extract_document_text(ext: str, data: bytes) -> str:
     raise AssertionError(f"unhandled document extension: {ext}")
 
 
-async def _extract_pdf(data: bytes) -> str:
+async def _extract_pdf(data: bytes, *, usage_user_id: Any | None = None) -> str:
     try:
         body = _extract_pdf_text(data)
     except SourceFetchError as exc:
@@ -156,7 +161,7 @@ async def _extract_pdf(data: bytes) -> str:
             f"This scanned PDF is too long to OCR ({pages} pages; max {max_pages}).",
         )
     try:
-        text = await ocr_pdf(data)
+        text = await ocr_pdf(data, usage_user_id=usage_user_id)
     except OcrError as exc:
         raise DocumentExtractionError("ocr_failed", str(exc)) from exc
     return _require_text(text, "No readable text found in this PDF.")

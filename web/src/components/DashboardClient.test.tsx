@@ -27,6 +27,9 @@ const mockGetTelegramLinkStatus = vi.fn();
 const mockStartTelegramLink = vi.fn();
 const mockClaimTelegramLinkCode = vi.fn();
 const mockUnlinkTelegram = vi.fn();
+const mockGetSystemInfo = vi.fn();
+const mockGetDataOwnershipMap = vi.fn();
+const mockStartSelfHostProvision = vi.fn();
 const mockLogout = vi.fn();
 const mockListMcpConnections = vi.fn();
 const mockRevokeMcpConnection = vi.fn();
@@ -80,6 +83,9 @@ vi.mock("@/lib/api", () => ({
   startTelegramLink: (...args: unknown[]) => mockStartTelegramLink(...args),
   claimTelegramLinkCode: (...args: unknown[]) => mockClaimTelegramLinkCode(...args),
   unlinkTelegram: (...args: unknown[]) => mockUnlinkTelegram(...args),
+  getSystemInfo: (...args: unknown[]) => mockGetSystemInfo(...args),
+  getDataOwnershipMap: (...args: unknown[]) => mockGetDataOwnershipMap(...args),
+  startSelfHostProvision: (...args: unknown[]) => mockStartSelfHostProvision(...args),
   logout: (...args: unknown[]) => mockLogout(...args),
   listMcpConnections: (...args: unknown[]) => mockListMcpConnections(...args),
   revokeMcpConnection: (...args: unknown[]) => mockRevokeMcpConnection(...args),
@@ -169,6 +175,43 @@ const baseTelegramStatus = {
   linked_at: null,
 };
 
+const baseSystemInfo = {
+  app_name: "WaiComputer",
+  deployment_mode: "wai_cloud",
+  public_base_url: "https://wai.computer",
+  cloud_base_url: "https://wai.computer",
+  mcp_url: "https://wai.computer/mcp",
+  git_sha: null,
+  git_dirty: false,
+  audio_retention_policy: "delete_after_processing",
+  self_hosting_available: true,
+  billing_mode: "cloud",
+};
+
+const baseDataOwnershipMap = {
+  audio_retention_policy: "delete_after_processing",
+  tables: [
+    {
+      name: "recordings",
+      table: "recordings",
+      classification: "owned_exportable",
+      reason: "Recording metadata and lifecycle state.",
+      contains_user_content: true,
+      requires_reconnect: false,
+    },
+  ],
+  artifacts: [
+    {
+      name: "document_uploads",
+      classification: "owned_exportable",
+      reason: "Original document uploads move with the user's data.",
+      contains_user_content: true,
+      requires_reconnect: false,
+      path_hint: "${UPLOAD_STAGING_DIR}/items/<user_id>/*",
+    },
+  ],
+};
+
 function arrangeHappyPathMocks() {
   mockGetCurrentUser.mockResolvedValue(baseUser);
   mockListRecordings.mockResolvedValue([baseRecording]);
@@ -204,6 +247,16 @@ function arrangeHappyPathMocks() {
     linked_at: "2026-05-22T09:00:00Z",
   });
   mockUnlinkTelegram.mockResolvedValue(undefined);
+  mockGetSystemInfo.mockResolvedValue(baseSystemInfo);
+  mockGetDataOwnershipMap.mockResolvedValue(baseDataOwnershipMap);
+  mockStartSelfHostProvision.mockResolvedValue({
+    job_id: "selfhost_demo",
+    status: "manual_review_required",
+    hostname: "demo.self.wai.computer",
+    vps_ip: "203.0.113.10",
+    message: "Provisioning inputs are valid.",
+    steps: [],
+  });
   mockLogout.mockResolvedValue({ message: "Logged out" });
   mockListMcpConnections.mockResolvedValue([]);
   mockRevokeMcpConnection.mockResolvedValue(undefined);
@@ -286,6 +339,9 @@ describe("DashboardClient", () => {
       mockStartTelegramLink,
       mockClaimTelegramLinkCode,
       mockUnlinkTelegram,
+      mockGetSystemInfo,
+      mockGetDataOwnershipMap,
+      mockStartSelfHostProvision,
       mockLogout,
       mockListMcpConnections,
       mockRevokeMcpConnection,

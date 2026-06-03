@@ -97,6 +97,127 @@ export interface AdminDeepgramUsage {
   analysis: AdminDeepgramAnalysisItem[];
 }
 
+export interface AdminAiUsage {
+  generated_at: string;
+  window_days: number;
+  filters: Record<string, string | number | null>;
+  summary: AdminAiUsageSummary;
+  by_day: AdminAiUsageDay[];
+  by_provider: AdminAiUsageGroup[];
+  by_feature: AdminAiUsageGroup[];
+  by_model: AdminAiUsageModel[];
+  by_user: AdminAiUsageUser[];
+  recent_events: AdminAiUsageEvent[];
+  analysis: AdminAiUsageAnalysisItem[];
+}
+
+export interface AdminAiUsageSummary {
+  events: number;
+  estimated_cost_usd: number;
+  input_tokens: number;
+  output_tokens: number;
+  cached_tokens: number;
+  reasoning_tokens: number;
+  total_tokens: number;
+  billable_seconds: number;
+  audio_seconds: number;
+  failed_events: number;
+  refused_events: number;
+  unpriced_events: number;
+  avg_latency_ms: number;
+  p95_latency_ms: number | null;
+}
+
+export interface AdminAiUsageAnalysisItem {
+  severity: "critical" | "warning" | "info";
+  code: string;
+  title: string;
+  detail: string;
+}
+
+export interface AdminAiUsageDay {
+  date: string;
+  events: number;
+  estimated_cost_usd: number;
+  total_tokens: number;
+  billable_seconds: number;
+  failed_events: number;
+  refused_events: number;
+}
+
+export interface AdminAiUsageGroup {
+  provider?: string;
+  feature?: string;
+  events: number;
+  estimated_cost_usd: number;
+  total_tokens: number;
+  input_tokens: number;
+  output_tokens: number;
+  billable_seconds: number;
+  failed_events: number;
+  refused_events: number;
+  unpriced_events: number;
+  last_event_at: string | null;
+}
+
+export interface AdminAiUsageModel extends AdminAiUsageGroup {
+  provider: string;
+  model: string | null;
+}
+
+export interface AdminAiUsageUser {
+  user_id: string;
+  email: string | null;
+  events: number;
+  estimated_cost_usd: number;
+  total_tokens: number;
+  billable_seconds: number;
+  failed_events: number;
+  refused_events: number;
+  unpriced_events: number;
+  last_event_at: string | null;
+}
+
+export interface AdminAiUsageEvent {
+  id: string;
+  created_at: string;
+  user_id: string | null;
+  email: string | null;
+  recording_id: string | null;
+  item_id: string | null;
+  conversation_id: string | null;
+  message_id: string | null;
+  provider: string;
+  feature: string;
+  operation: string;
+  status: string;
+  model: string | null;
+  input_tokens: number | null;
+  output_tokens: number | null;
+  cached_tokens: number | null;
+  reasoning_tokens: number | null;
+  total_tokens: number | null;
+  billable_seconds: number | null;
+  estimated_cost_usd: number | null;
+  pricing_status: string;
+  latency_ms: number | null;
+  provider_status_code: number | null;
+  provider_error_code: string | null;
+  guard_code: string | null;
+  error_type: string | null;
+}
+
+export interface AdminAiUsageFilters {
+  days?: number;
+  provider?: string;
+  feature?: string;
+  model?: string;
+  status?: string;
+  user_id?: string;
+  q?: string;
+  limit?: number;
+}
+
 export interface AdminDeepgramAnalysisItem {
   severity: "critical" | "warning" | "info";
   code: string;
@@ -350,6 +471,19 @@ export function getAdminObservability(): Promise<AdminObservability> {
 
 export function getAdminDeepgramUsage(days = 7): Promise<AdminDeepgramUsage> {
   return apiFetch<AdminDeepgramUsage>(`/api/admin/deepgram-usage?days=${days}`);
+}
+
+export function getAdminAiUsage(filters: AdminAiUsageFilters = {}): Promise<AdminAiUsage> {
+  const params = new URLSearchParams();
+  params.set("days", String(filters.days ?? 7));
+  if (filters.provider?.trim()) params.set("provider", filters.provider.trim());
+  if (filters.feature?.trim()) params.set("feature", filters.feature.trim());
+  if (filters.model?.trim()) params.set("model", filters.model.trim());
+  if (filters.status?.trim()) params.set("status", filters.status.trim());
+  if (filters.user_id?.trim()) params.set("user_id", filters.user_id.trim());
+  if (filters.q?.trim()) params.set("q", filters.q.trim());
+  if (filters.limit) params.set("limit", String(filters.limit));
+  return apiFetch<AdminAiUsage>(`/api/admin/ai-usage?${params.toString()}`);
 }
 
 export async function createAdminPromoCode(
