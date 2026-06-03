@@ -343,6 +343,52 @@ async def test_cleanup_dictation_stream_emits_tokens_and_done(
 
 
 @pytest.mark.asyncio
+async def test_cleanup_dictation_stream_extracts_text_from_done_event_dict(
+    client: AsyncClient,
+    auth_headers: dict,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    async def _create(**_: object):
+        return _AsyncStream(
+            [
+                {
+                    "type": "response.completed",
+                    "response": {
+                        "status": "completed",
+                        "error": None,
+                        "incomplete_details": None,
+                        "output_text": "Cleaned from done.",
+                        "output": [],
+                        "model": "gpt-5.5",
+                        "usage": {
+                            "input_tokens": 123,
+                            "output_tokens": 8,
+                            "input_tokens_details": {"cached_tokens": 96},
+                        },
+                    },
+                }
+            ]
+        )
+
+    mock_client = SimpleNamespace(responses=SimpleNamespace(create=_create))
+    _patch_settings(monkeypatch)
+    _patch_client(monkeypatch, mock_client)
+    await _set_cleanup_level(client, auth_headers, "light")
+
+    response = await client.post(
+        "/api/dictation/cleanup/stream",
+        headers=auth_headers,
+        json={"text": "please clean up this dictated sentence"},
+    )
+
+    assert response.status_code == 200
+    assert 'event: token\ndata: {"text": "Cleaned from done."}' in response.text
+    assert '"input_tokens": 123' in response.text
+    assert '"output_tokens": 8' in response.text
+    assert '"cached_tokens": 96' in response.text
+
+
+@pytest.mark.asyncio
 async def test_cleanup_dictation_stream_skips_when_cleanup_level_none(
     client: AsyncClient,
     auth_headers: dict,
@@ -367,6 +413,27 @@ async def test_cleanup_dictation_stream_skips_when_cleanup_level_none(
 
 
 @pytest.mark.asyncio
+async def test_cleanup_dictation_stream_whitespace_only_text_returns_done_without_token(
+    client: AsyncClient,
+    auth_headers: dict,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    _patch_settings(monkeypatch, api_key="")
+
+    response = await client.post(
+        "/api/dictation/cleanup/stream",
+        headers=auth_headers,
+        json={"text": "   \n\t  "},
+    )
+
+    assert response.status_code == 200
+    assert response.text == (
+        'event: done\ndata: {"text": "", "model": null, "latency_ms": 0, '
+        '"input_tokens": null, "output_tokens": null, "cached_tokens": null}\n\n'
+    )
+
+
+@pytest.mark.asyncio
 async def test_cleanup_dictation_stream_maps_upstream_error_to_sse_error(
     client: AsyncClient,
     auth_headers: dict,
@@ -387,6 +454,81 @@ async def test_cleanup_dictation_stream_maps_upstream_error_to_sse_error(
 
     assert response.status_code == 200
     assert 'event: error\ndata: {"code": "connection_error"' in response.text
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("upstream_error", "code"),
+    [
+        (
+            openai.RateLimitError(
+                message="rate limited",
+                response=_fake_httpx_response(429),
+                body=None,
+            ),
+            "rate_limit",
+        ),
+        (
+            openai.APIStatusError(
+                message="upstream failure",
+                response=_fake_httpx_response(500),
+                body=None,
+            ),
+            "upstream_error",
+        ),
+        (RuntimeError("unexpected"), "cleanup_failed"),
+    ],
+)
+async def test_cleanup_dictation_stream_maps_upstream_failures_to_sse_errors(
+    client: AsyncClient,
+    auth_headers: dict,
+    monkeypatch: pytest.MonkeyPatch,
+    upstream_error: Exception,
+    code: str,
+):
+    _patch_settings(monkeypatch)
+    _patch_client(monkeypatch, _make_mock_client(error=upstream_error))
+    await _enable_post_filter(client, auth_headers)
+
+    response = await client.post(
+        "/api/dictation/cleanup/stream",
+        headers=auth_headers,
+        json={"text": "please clean up this long dictated sentence"},
+    )
+
+    assert response.status_code == 200
+    assert f'event: error\ndata: {{"code": "{code}"' in response.text
+
+
+@pytest.mark.asyncio
+async def test_cleanup_dictation_stream_maps_model_error_event_to_sse_error(
+    client: AsyncClient,
+    auth_headers: dict,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    async def _create(**_: object):
+        return _AsyncStream(
+            [
+                {
+                    "type": "response.error",
+                    "error": {"message": "model stopped"},
+                }
+            ]
+        )
+
+    mock_client = SimpleNamespace(responses=SimpleNamespace(create=_create))
+    _patch_settings(monkeypatch)
+    _patch_client(monkeypatch, mock_client)
+    await _set_cleanup_level(client, auth_headers, "light")
+
+    response = await client.post(
+        "/api/dictation/cleanup/stream",
+        headers=auth_headers,
+        json={"text": "please clean up this dictated sentence"},
+    )
+
+    assert response.status_code == 200
+    assert 'event: error\ndata: {"code": "incomplete_response"' in response.text
 
 
 @pytest.mark.asyncio
