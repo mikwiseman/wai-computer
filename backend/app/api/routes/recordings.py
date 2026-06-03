@@ -788,7 +788,10 @@ def _has_canonical_audio_processing(recording: Recording) -> bool:
         RecordingStatus.PROCESSING.value,
     }:
         return True
-    return recording.uploaded_at is not None and recording.status == RecordingStatus.READY.value
+    return recording.uploaded_at is not None and recording.status in {
+        RecordingStatus.READY.value,
+        RecordingStatus.FAILED.value,
+    }
 
 
 async def _claim_audio_upload(
@@ -810,7 +813,12 @@ async def _claim_audio_upload(
             ),
             ~(
                 (Recording.uploaded_at.is_not(None))
-                & (Recording.status == RecordingStatus.READY.value)
+                & (Recording.status.in_(
+                    [
+                        RecordingStatus.READY.value,
+                        RecordingStatus.FAILED.value,
+                    ]
+                ))
             ),
         )
         .values(

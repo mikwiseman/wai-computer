@@ -67,6 +67,126 @@ export interface AdminObservability {
   alerts: AdminObservabilityAlert[];
 }
 
+export interface AdminDeepgramUsage {
+  generated_at: string;
+  window_days: number;
+  captured: {
+    events: number;
+    audio_seconds: number;
+    billable_seconds: number;
+    succeeded: number;
+    failed: number;
+    refused: number;
+    provider_402: number;
+  };
+  estimated: {
+    recording_seconds: number;
+    recording_words: number;
+    recording_count: number;
+    failed_recordings: number;
+    dictation_seconds: number;
+    dictation_words: number;
+    dictation_entries: number;
+    total_seconds: number;
+  };
+  by_user: AdminDeepgramUserUsage[];
+  by_operation: AdminDeepgramOperationUsage[];
+  by_day: AdminDeepgramDayUsage[];
+  top_recordings: AdminDeepgramRecordingUsage[];
+  recent_events: AdminDeepgramUsageEvent[];
+  analysis: AdminDeepgramAnalysisItem[];
+}
+
+export interface AdminDeepgramAnalysisItem {
+  severity: "critical" | "warning" | "info";
+  code: string;
+  title: string;
+  detail: string;
+}
+
+export interface AdminDeepgramUserUsage {
+  user_id: string;
+  email: string | null;
+  captured_events: number;
+  captured_billable_seconds: number;
+  captured_audio_seconds: number;
+  captured_failed_events: number;
+  captured_refused_events: number;
+  provider_402_events: number;
+  recording_count: number;
+  failed_recordings: number;
+  estimated_recording_seconds: number;
+  estimated_recording_words: number;
+  dictation_entries: number;
+  estimated_dictation_seconds: number;
+  estimated_dictation_words: number;
+  estimated_total_seconds: number;
+  last_event_at: string | null;
+}
+
+export interface AdminDeepgramOperationUsage {
+  operation: string;
+  purpose: string;
+  status: string;
+  events: number;
+  audio_seconds: number;
+  billable_seconds: number;
+  provider_402: number;
+}
+
+export interface AdminDeepgramDayUsage {
+  date: string;
+  captured_events: number;
+  captured_audio_seconds: number;
+  captured_billable_seconds: number;
+  captured_failed_events: number;
+  captured_refused_events: number;
+  estimated_recordings: number;
+  estimated_recording_seconds: number;
+  estimated_dictation_entries: number;
+  estimated_dictation_seconds: number;
+}
+
+export interface AdminDeepgramRecordingUsage {
+  recording_id: string;
+  user_id: string;
+  email: string | null;
+  status: string;
+  failure_code: string | null;
+  created_at: string | null;
+  duration_seconds: number;
+  billed_word_count: number;
+  captured_events: number;
+  captured_billable_seconds: number;
+  failed_events: number;
+  refused_events: number;
+  provider_402_events: number;
+  last_event_at: string | null;
+}
+
+export interface AdminDeepgramUsageEvent {
+  id: string;
+  created_at: string;
+  user_id: string | null;
+  email: string | null;
+  recording_id: string | null;
+  operation: string;
+  purpose: string;
+  status: string;
+  model: string | null;
+  language: string | null;
+  content_type: string | null;
+  audio_seconds: number | null;
+  billable_seconds: number | null;
+  channel_count: number | null;
+  audio_bytes: number | null;
+  latency_ms: number | null;
+  provider_status_code: number | null;
+  provider_error_code: string | null;
+  guard_code: string | null;
+  error_type: string | null;
+}
+
 export interface AdminUsageBucket {
   period: string;
   recording_words: number;
@@ -226,6 +346,10 @@ export function getAdminStats(): Promise<AdminStats> {
 
 export function getAdminObservability(): Promise<AdminObservability> {
   return apiFetch<AdminObservability>("/api/admin/observability");
+}
+
+export function getAdminDeepgramUsage(days = 7): Promise<AdminDeepgramUsage> {
+  return apiFetch<AdminDeepgramUsage>(`/api/admin/deepgram-usage?days=${days}`);
 }
 
 export async function createAdminPromoCode(

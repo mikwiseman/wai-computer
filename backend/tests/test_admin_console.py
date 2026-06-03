@@ -25,6 +25,7 @@ from app.models.billing import (
     UsageWeek,
 )
 from app.models.companion import ChatMessage, Conversation
+from app.models.deepgram_usage import DeepgramUsageEvent
 from app.models.dictation import DictationEntry
 from app.models.recording import Recording, Segment
 from app.models.refresh_token import RefreshToken
@@ -700,6 +701,95 @@ async def test_admin_stats_are_privacy_safe_and_aggregated(
     assert monthly_redemptions["2026-05"] == 1
     assert "Private filename" not in str(payload)
     assert "secret raw dictation" not in str(payload)
+
+
+@pytest.mark.asyncio
+async def test_admin_deepgram_usage_shows_detailed_burn_analysis(
+    client: AsyncClient,
+    db_session: AsyncSession,
+):
+    admin_payload, admin_headers = await _register(client, "admin-deepgram@example.com")
+    user_payload, _ = await _register(client, "deepgram-user@example.com")
+    await _grant_admin(db_session, admin_payload["user_id"])
+    user_id = user_payload["user_id"]
+    now = datetime.now(timezone.utc)
+
+    recording = Recording(
+        user_id=user_id,
+        title="Private recording title",
+        type="meeting",
+        status="failed",
+        failure_code="provider_unavailable",
+        uploaded_at=now,
+        duration_seconds=120,
+        billed_word_count=0,
+        created_at=now,
+    )
+    db_session.add(recording)
+    await db_session.flush()
+    db_session.add_all(
+        [
+            DictationEntry(
+                user_id=user_id,
+                client_entry_id=uuid4(),
+                raw_text="private dictation text",
+                duration_seconds=5,
+                word_count=2,
+                occurred_at=now,
+            ),
+            DeepgramUsageEvent(
+                user_id=user_id,
+                recording_id=recording.id,
+                operation="file_stt",
+                purpose="recording",
+                status="failed",
+                model="nova-3",
+                language="ru",
+                content_type="audio/mp4",
+                audio_seconds=120,
+                billable_seconds=0,
+                audio_bytes=36066,
+                provider_status_code=402,
+                provider_error_code="ASR_PAYMENT_REQUIRED",
+                created_at=now,
+            ),
+            DeepgramUsageEvent(
+                user_id=user_id,
+                recording_id=recording.id,
+                operation="file_stt",
+                purpose="recording",
+                status="refused",
+                model="nova-3",
+                language="ru",
+                content_type="audio/mp4",
+                audio_seconds=120,
+                billable_seconds=0,
+                audio_bytes=36066,
+                guard_code="provider_unavailable",
+                created_at=now,
+            ),
+        ]
+    )
+    await db_session.flush()
+
+    response = await client.get("/api/admin/deepgram-usage?days=7", headers=admin_headers)
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["captured"]["events"] == 2
+    assert payload["captured"]["failed"] == 1
+    assert payload["captured"]["refused"] == 1
+    assert payload["captured"]["provider_402"] == 1
+    assert payload["estimated"]["recording_seconds"] == 120
+    assert payload["estimated"]["dictation_seconds"] == 5
+    assert payload["by_user"][0]["email"] == "deepgram-user@example.com"
+    assert payload["top_recordings"][0]["captured_events"] == 2
+    assert {
+        "deepgram.provider.payment_required",
+        "deepgram.recording.repeated_attempts",
+    }.issubset({item["code"] for item in payload["analysis"]})
+    assert "Private recording title" not in str(payload)
+    assert "private dictation text" not in str(payload)
 
 
 @pytest.mark.asyncio

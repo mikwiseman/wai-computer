@@ -5,6 +5,7 @@ import {
   archiveAdminPromoCode,
   cancelAdminSubscription,
   createAdminPromoCode,
+  getAdminDeepgramUsage,
   getAdminObservability,
   getAdminUser,
   getAdminStats,
@@ -38,6 +39,7 @@ vi.mock("@/lib/admin", () => ({
   archiveAdminPromoCode: vi.fn(),
   cancelAdminSubscription: vi.fn(),
   createAdminPromoCode: vi.fn(),
+  getAdminDeepgramUsage: vi.fn(),
   getAdminObservability: vi.fn(),
   getAdminStats: vi.fn(),
   getAdminUser: vi.fn(),
@@ -55,6 +57,7 @@ vi.mock("@/lib/admin", () => ({
 }));
 
 const mockedStats = vi.mocked(getAdminStats);
+const mockedDeepgramUsage = vi.mocked(getAdminDeepgramUsage);
 const mockedObservability = vi.mocked(getAdminObservability);
 const mockedPromos = vi.mocked(listAdminPromoCodes);
 const mockedUsers = vi.mocked(listAdminUsers);
@@ -125,6 +128,125 @@ function setupMocks() {
       revenue_by_currency: { USD: 12 },
       monthly_revenue: [{ period: "2026-05", currency: "USD", amount: 12 }],
     },
+  });
+  mockedDeepgramUsage.mockResolvedValue({
+    generated_at: "2026-06-03T09:00:00Z",
+    window_days: 7,
+    captured: {
+      events: 3,
+      audio_seconds: 180,
+      billable_seconds: 120,
+      succeeded: 1,
+      failed: 1,
+      refused: 1,
+      provider_402: 1,
+    },
+    estimated: {
+      recording_seconds: 600,
+      recording_words: 120,
+      recording_count: 4,
+      failed_recordings: 1,
+      dictation_seconds: 12,
+      dictation_words: 30,
+      dictation_entries: 2,
+      total_seconds: 612,
+    },
+    by_user: [
+      {
+        user_id: "user-1",
+        email: "user@example.com",
+        captured_events: 3,
+        captured_billable_seconds: 120,
+        captured_audio_seconds: 180,
+        captured_failed_events: 1,
+        captured_refused_events: 1,
+        provider_402_events: 1,
+        recording_count: 4,
+        failed_recordings: 1,
+        estimated_recording_seconds: 600,
+        estimated_recording_words: 120,
+        dictation_entries: 2,
+        estimated_dictation_seconds: 12,
+        estimated_dictation_words: 30,
+        estimated_total_seconds: 612,
+        last_event_at: "2026-06-03T09:00:00Z",
+      },
+    ],
+    by_operation: [
+      {
+        operation: "file_stt",
+        purpose: "recording",
+        status: "failed",
+        events: 1,
+        audio_seconds: 120,
+        billable_seconds: 0,
+        provider_402: 1,
+      },
+    ],
+    by_day: [
+      {
+        date: "2026-06-03",
+        captured_events: 3,
+        captured_audio_seconds: 180,
+        captured_billable_seconds: 120,
+        captured_failed_events: 1,
+        captured_refused_events: 1,
+        estimated_recordings: 4,
+        estimated_recording_seconds: 600,
+        estimated_dictation_entries: 2,
+        estimated_dictation_seconds: 12,
+      },
+    ],
+    top_recordings: [
+      {
+        recording_id: "recording-1",
+        user_id: "user-1",
+        email: "user@example.com",
+        status: "failed",
+        failure_code: "provider_unavailable",
+        created_at: "2026-06-03T08:00:00Z",
+        duration_seconds: 120,
+        billed_word_count: 0,
+        captured_events: 2,
+        captured_billable_seconds: 0,
+        failed_events: 1,
+        refused_events: 1,
+        provider_402_events: 1,
+        last_event_at: "2026-06-03T09:00:00Z",
+      },
+    ],
+    recent_events: [
+      {
+        id: "event-1",
+        created_at: "2026-06-03T09:00:00Z",
+        user_id: "user-1",
+        email: "user@example.com",
+        recording_id: "recording-1",
+        operation: "file_stt",
+        purpose: "recording",
+        status: "failed",
+        model: "nova-3",
+        language: "ru",
+        content_type: "audio/mp4",
+        audio_seconds: 120,
+        billable_seconds: 0,
+        channel_count: 1,
+        audio_bytes: 36066,
+        latency_ms: 900,
+        provider_status_code: 402,
+        provider_error_code: "ASR_PAYMENT_REQUIRED",
+        guard_code: null,
+        error_type: "HTTPStatusError",
+      },
+    ],
+    analysis: [
+      {
+        severity: "critical",
+        code: "deepgram.provider.payment_required",
+        title: "Deepgram is refusing requests with 402",
+        detail: "1 provider attempts returned payment-required.",
+      },
+    ],
   });
   mockedObservability.mockResolvedValue({
     generated_at: "2026-05-25T12:00:00Z",
@@ -350,6 +472,18 @@ describe("AdminConsoleClient", () => {
     expect(screen.getByText("configured")).toBeInTheDocument();
     expect(screen.getByText("Stuck processing recordings")).toBeInTheDocument();
     expect(screen.getByText("recording.processing.stuck")).toBeInTheDocument();
+  });
+
+  it("shows Deepgram usage analysis in the admin console", async () => {
+    render(<AdminConsoleClient />);
+
+    await screen.findByText("Total users");
+    await userEvent.click(screen.getByRole("button", { name: "Deepgram" }));
+
+    expect(await screen.findByText("Burn analysis")).toBeInTheDocument();
+    expect(screen.getByText("Deepgram is refusing requests with 402")).toBeInTheDocument();
+    expect(screen.getByText("Users by Deepgram usage")).toBeInTheDocument();
+    expect(screen.getAllByText("file_stt/recording").length).toBeGreaterThan(0);
   });
 
   it("creates a promo code and shows plaintext once", async () => {

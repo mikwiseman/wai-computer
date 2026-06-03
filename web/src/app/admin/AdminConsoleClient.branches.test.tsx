@@ -5,6 +5,7 @@ import {
   archiveAdminPromoCode,
   cancelAdminSubscription,
   createAdminPromoCode,
+  getAdminDeepgramUsage,
   getAdminObservability,
   getAdminUser,
   getAdminStats,
@@ -20,6 +21,7 @@ import {
   updateAdminSubscription,
   updateAdminUserStatus,
   type AdminBillingSubscription,
+  type AdminDeepgramUsage,
   type AdminPromoCode,
   type AdminUserDetail,
   type AdminUserSummary,
@@ -42,6 +44,7 @@ vi.mock("@/lib/admin", () => ({
   archiveAdminPromoCode: vi.fn(),
   cancelAdminSubscription: vi.fn(),
   createAdminPromoCode: vi.fn(),
+  getAdminDeepgramUsage: vi.fn(),
   getAdminObservability: vi.fn(),
   getAdminStats: vi.fn(),
   getAdminUser: vi.fn(),
@@ -59,6 +62,7 @@ vi.mock("@/lib/admin", () => ({
 }));
 
 const mockedStats = vi.mocked(getAdminStats);
+const mockedDeepgramUsage = vi.mocked(getAdminDeepgramUsage);
 const mockedObservability = vi.mocked(getAdminObservability);
 const mockedPromos = vi.mocked(listAdminPromoCodes);
 const mockedUsers = vi.mocked(listAdminUsers);
@@ -156,6 +160,63 @@ const OBSERVABILITY = {
   alerts: [],
 };
 
+const DEEPGRAM_USAGE: AdminDeepgramUsage = {
+  generated_at: "2026-06-03T09:00:00Z",
+  window_days: 7,
+  captured: {
+    events: 1,
+    audio_seconds: 60,
+    billable_seconds: 60,
+    succeeded: 1,
+    failed: 0,
+    refused: 0,
+    provider_402: 0,
+  },
+  estimated: {
+    recording_seconds: 600,
+    recording_words: 120,
+    recording_count: 4,
+    failed_recordings: 1,
+    dictation_seconds: 12,
+    dictation_words: 30,
+    dictation_entries: 1,
+    total_seconds: 612,
+  },
+  by_user: [
+    {
+      user_id: "user-1",
+      email: "user@example.com",
+      captured_events: 1,
+      captured_billable_seconds: 60,
+      captured_audio_seconds: 60,
+      captured_failed_events: 0,
+      captured_refused_events: 0,
+      provider_402_events: 0,
+      recording_count: 4,
+      failed_recordings: 1,
+      estimated_recording_seconds: 600,
+      estimated_recording_words: 120,
+      dictation_entries: 1,
+      estimated_dictation_seconds: 12,
+      estimated_dictation_words: 30,
+      estimated_total_seconds: 612,
+      last_event_at: "2026-06-03T09:00:00Z",
+    },
+  ],
+  by_operation: [],
+  by_day: [],
+  top_recordings: [],
+  recent_events: [],
+  analysis: [
+    {
+      severity: "info",
+      code: "deepgram.test",
+      title: "Deepgram fixture",
+      detail: "Fixture row.",
+    },
+  ],
+};
+
 const ACCESS_PROMO: AdminPromoCode = {
   id: "promo-access",
   code: "WAI-LAUNCH-30",
@@ -248,6 +309,7 @@ const TINKOFF_SUB: AdminBillingSubscription = {
 
 function setupMocks() {
   mockedStats.mockResolvedValue(structuredClone(STATS));
+  mockedDeepgramUsage.mockResolvedValue(structuredClone(DEEPGRAM_USAGE));
   mockedObservability.mockResolvedValue(structuredClone(OBSERVABILITY));
   mockedPromos.mockResolvedValue([structuredClone(ACCESS_PROMO), structuredClone(DISCOUNT_PROMO)]);
   mockedUsers.mockResolvedValue([structuredClone(USER_SUMMARY)]);
