@@ -23,6 +23,7 @@ from app.core.deepgram import (
     require_deepgram_api_key,
     validate_deepgram_language,
 )
+from app.core.deepgram_usage import deepgram_usage_tags
 from app.core.transcription_options import (
     DEFAULT_DICTATION_LIVE_STT_MODEL,
     DEFAULT_DICTATION_LIVE_STT_PROVIDER,
@@ -247,4 +248,5 @@ def build_deepgram_realtime_url_from_proxy_claims(
         purpose=claims.purpose,
         model=claims.model,
         keyterms=claims.keyterms,
+        tags=deepgram_usage_tags(operation="realtime_stream", purpose=claims.purpose),
     )

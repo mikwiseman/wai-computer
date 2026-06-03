@@ -6,6 +6,7 @@ import {
   archiveAdminPromoCode,
   cancelAdminSubscription,
   createAdminPromoCode,
+  getAdminDeepgramUsage,
   getAdminObservability,
   getAdminStats,
   getAdminUser,
@@ -22,6 +23,7 @@ import {
   updateAdminUserStatus,
   type AdminAuditLog,
   type AdminBillingSubscription,
+  type AdminDeepgramUsage,
   type AdminSubscriptionPatchInput,
   type AdminObservability,
   type AdminPromoCode,
@@ -34,7 +36,7 @@ import {
 } from "@/lib/admin";
 import { logout } from "@/lib/api";
 
-type AdminTab = "overview" | "promos" | "users" | "billing" | "observability" | "audit";
+type AdminTab = "overview" | "promos" | "users" | "billing" | "deepgram" | "observability" | "audit";
 type PromoDraft = {
   note: string;
   duration_days: number | null;
@@ -48,6 +50,7 @@ const TABS: Array<{ id: AdminTab; label: string }> = [
   { id: "promos", label: "Promo codes" },
   { id: "users", label: "Users" },
   { id: "billing", label: "Billing" },
+  { id: "deepgram", label: "Deepgram" },
   { id: "observability", label: "Observability" },
   { id: "audit", label: "Audit" },
 ];
@@ -60,6 +63,13 @@ function fmtHours(valueSeconds: number): string {
   return `${(valueSeconds / 3600).toLocaleString("en-US", {
     maximumFractionDigits: 1,
   })} h`;
+}
+
+function fmtMinutes(valueSeconds: number | null | undefined): string {
+  const value = valueSeconds ?? 0;
+  return `${(value / 60).toLocaleString("en-US", {
+    maximumFractionDigits: 1,
+  })} min`;
 }
 
 function fmtMoneyByCurrency(value: Record<string, number>): string {
@@ -76,6 +86,17 @@ function fmtDate(value: string | null): string {
     year: "numeric",
     month: "short",
     day: "numeric",
+  });
+}
+
+function fmtDateTime(value: string | null): string {
+  if (!value) return "-";
+  return new Date(value).toLocaleString("en-US", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
   });
 }
 
@@ -128,6 +149,7 @@ export function AdminConsoleClient() {
   const [users, setUsers] = useState<AdminUserSummary[]>([]);
   const [selectedUser, setSelectedUser] = useState<AdminUserDetail | null>(null);
   const [billing, setBilling] = useState<AdminBillingSubscription[]>([]);
+  const [deepgramUsage, setDeepgramUsage] = useState<AdminDeepgramUsage | null>(null);
   const [observability, setObservability] = useState<AdminObservability | null>(null);
   const [audit, setAudit] = useState<AdminAuditLog[]>([]);
   const [userQuery, setUserQuery] = useState("");
@@ -155,12 +177,21 @@ export function AdminConsoleClient() {
 
   async function refreshAll() {
     setError(null);
-    const [freshStats, freshPromos, freshUsers, freshBilling, freshObservability, freshAudit] =
+    const [
+      freshStats,
+      freshPromos,
+      freshUsers,
+      freshBilling,
+      freshDeepgramUsage,
+      freshObservability,
+      freshAudit,
+    ] =
       await Promise.all([
         getAdminStats(),
         listAdminPromoCodes(),
         listAdminUsers(userQuery),
         listAdminBilling(),
+        getAdminDeepgramUsage(),
         getAdminObservability(),
         listAdminAudit(),
       ]);
@@ -182,6 +213,7 @@ export function AdminConsoleClient() {
     );
     setUsers(freshUsers);
     setBilling(freshBilling);
+    setDeepgramUsage(freshDeepgramUsage);
     setObservability(freshObservability);
     setAudit(freshAudit);
   }
@@ -548,6 +580,82 @@ export function AdminConsoleClient() {
           </div>
         ) : null}
 
+        {tab === "deepgram" && deepgramUsage ? (
+          <div className="admin-section">
+            <div className="admin-metrics">
+              <div>
+                <span>Estimated audio 7d</span>
+                <strong>{fmtMinutes(deepgramUsage.estimated.total_seconds)}</strong>
+              </div>
+              <div>
+                <span>Captured billable</span>
+                <strong>{fmtMinutes(deepgramUsage.captured.billable_seconds)}</strong>
+              </div>
+              <div>
+                <span>Provider failures</span>
+                <strong>{fmtNumber(deepgramUsage.captured.failed)}</strong>
+              </div>
+              <div>
+                <span>Guard refusals</span>
+                <strong>{fmtNumber(deepgramUsage.captured.refused)}</strong>
+              </div>
+            </div>
+            <div className="admin-grid admin-grid--wide">
+              <section className="admin-metric-table">
+                <h3>Burn analysis</h3>
+                <table className="admin-mini-table">
+                  <thead>
+                    <tr>
+                      <th>Severity</th>
+                      <th>Finding</th>
+                      <th>Detail</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {deepgramUsage.analysis.map((item) => (
+                      <tr key={item.code}>
+                        <td>{item.severity}</td>
+                        <td>{item.title}</td>
+                        <td>{item.detail}</td>
+                      </tr>
+                    ))}
+                    {deepgramUsage.analysis.length === 0 ? (
+                      <tr>
+                        <td colSpan={3}>No Deepgram burn risks detected in this window.</td>
+                      </tr>
+                    ) : null}
+                  </tbody>
+                </table>
+              </section>
+              <MetricTable
+                title="Captured ledger"
+                rows={[
+                  ["events", deepgramUsage.captured.events],
+                  ["succeeded", deepgramUsage.captured.succeeded],
+                  ["failed", deepgramUsage.captured.failed],
+                  ["refused", deepgramUsage.captured.refused],
+                  ["provider_402", deepgramUsage.captured.provider_402],
+                ]}
+              />
+              <MetricTable
+                title="Historical estimate"
+                rows={[
+                  ["recordings", deepgramUsage.estimated.recording_count],
+                  ["failed_recordings", deepgramUsage.estimated.failed_recordings],
+                  ["dictation_entries", deepgramUsage.estimated.dictation_entries],
+                  ["recording_words", deepgramUsage.estimated.recording_words],
+                  ["dictation_words", deepgramUsage.estimated.dictation_words],
+                ]}
+              />
+              <DeepgramUserTable rows={deepgramUsage.by_user.slice(0, 20)} />
+              <DeepgramOperationTable rows={deepgramUsage.by_operation} />
+              <DeepgramDayTable rows={deepgramUsage.by_day} />
+              <DeepgramRecordingTable rows={deepgramUsage.top_recordings} />
+              <DeepgramEventTable rows={deepgramUsage.recent_events} />
+            </div>
+          </div>
+        ) : null}
+
         {tab === "observability" && observability ? (
           <div className="admin-section">
             <div className="admin-grid">
@@ -680,6 +788,160 @@ function UsageBucketTable({ title, rows }: { title: string; rows: AdminUsageBuck
               <td>{row.period}</td>
               <td>{fmtNumber(row.total_words)}</td>
               <td>{fmtNumber(row.recording_count)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </section>
+  );
+}
+
+function DeepgramUserTable({ rows }: { rows: AdminDeepgramUsage["by_user"] }) {
+  return (
+    <section className="admin-metric-table admin-metric-table--wide">
+      <h3>Users by Deepgram usage</h3>
+      <table className="admin-mini-table">
+        <thead>
+          <tr>
+            <th>User</th>
+            <th>Estimated</th>
+            <th>Captured</th>
+            <th>Recordings</th>
+            <th>Dictation</th>
+            <th>Failures</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => (
+            <tr key={row.user_id}>
+              <td>{row.email ?? row.user_id}</td>
+              <td>{fmtMinutes(row.estimated_total_seconds)}</td>
+              <td>{fmtMinutes(row.captured_billable_seconds)}</td>
+              <td>{fmtNumber(row.recording_count)}</td>
+              <td>{fmtNumber(row.dictation_entries)}</td>
+              <td>{fmtNumber(row.captured_failed_events + row.captured_refused_events + row.failed_recordings)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </section>
+  );
+}
+
+function DeepgramOperationTable({ rows }: { rows: AdminDeepgramUsage["by_operation"] }) {
+  return (
+    <section className="admin-metric-table">
+      <h3>Operations</h3>
+      <table className="admin-mini-table">
+        <thead>
+          <tr>
+            <th>Operation</th>
+            <th>Status</th>
+            <th>Events</th>
+            <th>Billable</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => (
+            <tr key={`${row.operation}:${row.purpose}:${row.status}`}>
+              <td>{row.operation}/{row.purpose}</td>
+              <td>{row.status}</td>
+              <td>{fmtNumber(row.events)}</td>
+              <td>{fmtMinutes(row.billable_seconds)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </section>
+  );
+}
+
+function DeepgramDayTable({ rows }: { rows: AdminDeepgramUsage["by_day"] }) {
+  return (
+    <section className="admin-metric-table">
+      <h3>Daily usage</h3>
+      <table className="admin-mini-table">
+        <thead>
+          <tr>
+            <th>Date</th>
+            <th>Estimated</th>
+            <th>Captured</th>
+            <th>Failed/refused</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => (
+            <tr key={row.date}>
+              <td>{row.date}</td>
+              <td>{fmtMinutes(row.estimated_recording_seconds + row.estimated_dictation_seconds)}</td>
+              <td>{fmtMinutes(row.captured_billable_seconds)}</td>
+              <td>{fmtNumber(row.captured_failed_events + row.captured_refused_events)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </section>
+  );
+}
+
+function DeepgramRecordingTable({ rows }: { rows: AdminDeepgramUsage["top_recordings"] }) {
+  return (
+    <section className="admin-metric-table admin-metric-table--wide">
+      <h3>Top recordings</h3>
+      <table className="admin-mini-table">
+        <thead>
+          <tr>
+            <th>Recording</th>
+            <th>User</th>
+            <th>Status</th>
+            <th>Duration</th>
+            <th>Events</th>
+            <th>Failure</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => (
+            <tr key={row.recording_id}>
+              <td>{row.recording_id.slice(0, 8)}</td>
+              <td>{row.email ?? row.user_id}</td>
+              <td>{row.status}</td>
+              <td>{fmtMinutes(row.duration_seconds)}</td>
+              <td>{fmtNumber(row.captured_events)}</td>
+              <td>{row.failure_code ?? "-"}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </section>
+  );
+}
+
+function DeepgramEventTable({ rows }: { rows: AdminDeepgramUsage["recent_events"] }) {
+  return (
+    <section className="admin-metric-table admin-metric-table--wide">
+      <h3>Recent Deepgram events</h3>
+      <table className="admin-mini-table">
+        <thead>
+          <tr>
+            <th>Time</th>
+            <th>User</th>
+            <th>Operation</th>
+            <th>Status</th>
+            <th>Billable</th>
+            <th>Provider</th>
+            <th>Guard</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => (
+            <tr key={row.id}>
+              <td>{fmtDateTime(row.created_at)}</td>
+              <td>{row.email ?? row.user_id ?? "-"}</td>
+              <td>{row.operation}/{row.purpose}</td>
+              <td>{row.status}</td>
+              <td>{fmtMinutes(row.billable_seconds)}</td>
+              <td>{row.provider_status_code ?? row.provider_error_code ?? "-"}</td>
+              <td>{row.guard_code ?? "-"}</td>
             </tr>
           ))}
         </tbody>

@@ -4,17 +4,24 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
 from io import BytesIO
 from pathlib import Path
 from uuid import UUID
 
+import httpx
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.billing.quota import record_recording_transcript_words
 from app.config import get_settings
+from app.core.deepgram_usage import (
+    effective_billable_seconds,
+    provider_error_code,
+    record_deepgram_usage_event,
+)
 from app.core.embeddings import generate_embedding
 from app.core.error_sanitizer import sanitize_failure_message
 from app.core.personalization import load_user_keyterms, summary_personalization_instructions
@@ -35,6 +42,7 @@ from app.core.summary_generation import combine_summary_instructions
 from app.core.transcript_utils import TranscriptResult
 from app.core.transcription import transcribe_audio_file
 from app.core.transcription_guard import TranscriptionGuardError
+from app.core.transcription_options import DEFAULT_FILE_STT_MODEL
 from app.core.voice_identification import identify_speakers_for_recording
 from app.models.highlight import Highlight
 from app.models.person import RecordingSpeakerEmbedding
@@ -277,16 +285,104 @@ async def _transcribe(
     language: str,
     user: User,
     audio_duration_seconds: float | None = None,
+    recording_id: UUID | None = None,
+    source_label: str = "upload",
 ) -> list[TranscriptResult]:
     keyterms = await load_user_keyterms(db, user_id=user.id, purpose="recording")
-    return await transcribe_audio_file(
-        data,
+    started_at = time.perf_counter()
+    try:
+        results = await transcribe_audio_file(
+            data,
+            language=language,
+            content_type=content_type,
+            keyterms=keyterms,
+            user_id=str(user.id),
+            audio_duration_seconds=audio_duration_seconds,
+            usage_purpose=source_label,
+        )
+    except TranscriptionGuardError as exc:
+        await record_deepgram_usage_event(
+            db,
+            user_id=user.id,
+            recording_id=recording_id,
+            operation="file_stt",
+            purpose=source_label,
+            status="refused",
+            model=DEFAULT_FILE_STT_MODEL,
+            language=language,
+            content_type=content_type,
+            audio_seconds=audio_duration_seconds,
+            billable_seconds=0,
+            channel_count=1,
+            audio_bytes=len(data),
+            latency_ms=round((time.perf_counter() - started_at) * 1000),
+            guard_code=exc.code,
+            commit=True,
+        )
+        raise
+    except httpx.HTTPStatusError as exc:
+        await record_deepgram_usage_event(
+            db,
+            user_id=user.id,
+            recording_id=recording_id,
+            operation="file_stt",
+            purpose=source_label,
+            status="failed",
+            model=DEFAULT_FILE_STT_MODEL,
+            language=language,
+            content_type=content_type,
+            audio_seconds=audio_duration_seconds,
+            billable_seconds=0,
+            channel_count=1,
+            audio_bytes=len(data),
+            latency_ms=round((time.perf_counter() - started_at) * 1000),
+            provider_status_code=exc.response.status_code,
+            provider_error_code=provider_error_code(exc),
+            error_type=type(exc).__name__,
+            commit=True,
+        )
+        raise
+    except Exception as exc:
+        await record_deepgram_usage_event(
+            db,
+            user_id=user.id,
+            recording_id=recording_id,
+            operation="file_stt",
+            purpose=source_label,
+            status="failed",
+            model=DEFAULT_FILE_STT_MODEL,
+            language=language,
+            content_type=content_type,
+            audio_seconds=audio_duration_seconds,
+            billable_seconds=0,
+            channel_count=1,
+            audio_bytes=len(data),
+            latency_ms=round((time.perf_counter() - started_at) * 1000),
+            error_type=type(exc).__name__,
+            commit=True,
+        )
+        raise
+    await record_deepgram_usage_event(
+        db,
+        user_id=user.id,
+        recording_id=recording_id,
+        operation="file_stt",
+        purpose=source_label,
+        status="succeeded",
+        model=DEFAULT_FILE_STT_MODEL,
         language=language,
         content_type=content_type,
-        keyterms=keyterms,
-        user_id=str(user.id),
-        audio_duration_seconds=audio_duration_seconds,
+        audio_seconds=audio_duration_seconds,
+        billable_seconds=effective_billable_seconds(
+            audio_seconds=audio_duration_seconds,
+            channel_count=1,
+        ),
+        channel_count=1,
+        audio_bytes=len(data),
+        latency_ms=round((time.perf_counter() - started_at) * 1000),
+        commit=True,
     )
+    return results
 
 
 async def _persist_segments(
@@ -546,6 +642,8 @@ async def import_media_as_recording(
             language=recording.language or "auto",
             user=user,
             audio_duration_seconds=duration_seconds,
+            recording_id=recording_id,
+            source_label=source_label,
         )
         speech_results = [
             tr

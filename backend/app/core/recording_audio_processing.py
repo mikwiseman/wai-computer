@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import math
 import re
+import time
 import wave
 from pathlib import Path
 from time import perf_counter
@@ -16,6 +17,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.billing.quota import record_recording_transcript_words
 from app.config import get_settings
+from app.core.deepgram_usage import (
+    effective_billable_seconds,
+    provider_error_code,
+    record_deepgram_usage_event,
+)
 from app.core.embeddings import generate_embedding
 from app.core.error_sanitizer import sanitize_failure_message
 from app.core.observability import (
@@ -34,6 +40,7 @@ from app.core.summarizer import generate_title
 from app.core.transcript_utils import TranscriptResult
 from app.core.transcription import transcribe_audio_file
 from app.core.transcription_guard import TranscriptionGuardError
+from app.core.transcription_options import DEFAULT_FILE_STT_MODEL
 from app.core.voice_identification import identify_speakers_for_recording
 from app.models.highlight import Highlight
 from app.models.person import RecordingSpeakerEmbedding
@@ -214,6 +221,18 @@ def _effective_duration_seconds(
         return client_duration_seconds
     if transcript_end_ms is not None and transcript_end_ms > 0:
         return transcript_end_ms / 1000
+    return None
+
+
+def _provider_audio_seconds(
+    *,
+    audio_duration_seconds: float | None,
+    client_duration_seconds: int | None,
+) -> float | None:
+    if audio_duration_seconds is not None and audio_duration_seconds > 0:
+        return audio_duration_seconds
+    if client_duration_seconds is not None and client_duration_seconds > 0:
+        return float(client_duration_seconds)
     return None
 
 
@@ -570,18 +589,105 @@ async def process_staged_recording_upload(
                 },
             )
             keyterms = await load_user_keyterms(db, user_id=user_id, purpose="recording")
-            transcript_results = await transcribe_audio_file(
-                staged_file.read(),
-                language=recording_language,
-                content_type=content_type,
-                audio_duration_seconds=(
-                    audio_duration_seconds
-                    if audio_duration_seconds is not None
-                    else client_duration_seconds
-                ),
-                keyterms=keyterms,
-                user_id=str(user_id),
+            audio_data = staged_file.read()
+            provider_audio_seconds = _provider_audio_seconds(
+                audio_duration_seconds=audio_duration_seconds,
+                client_duration_seconds=client_duration_seconds,
             )
+            file_stt_started_at = time.perf_counter()
+            try:
+                transcript_results = await transcribe_audio_file(
+                    audio_data,
+                    language=recording_language,
+                    content_type=content_type,
+                    audio_duration_seconds=provider_audio_seconds,
+                    keyterms=keyterms,
+                    user_id=str(user_id),
+                    usage_purpose="recording",
+                )
+            except TranscriptionGuardError as exc:
+                await record_deepgram_usage_event(
+                    db,
+                    user_id=user_id,
+                    recording_id=recording_id,
+                    operation="file_stt",
+                    purpose="recording",
+                    status="refused",
+                    model=DEFAULT_FILE_STT_MODEL,
+                    language=recording_language,
+                    content_type=content_type,
+                    audio_seconds=provider_audio_seconds,
+                    billable_seconds=0,
+                    channel_count=1,
+                    audio_bytes=len(audio_data),
+                    latency_ms=round((time.perf_counter() - file_stt_started_at) * 1000),
+                    guard_code=exc.code,
+                    commit=True,
+                )
+                raise
+            except httpx.HTTPStatusError as exc:
+                await record_deepgram_usage_event(
+                    db,
+                    user_id=user_id,
+                    recording_id=recording_id,
+                    operation="file_stt",
+                    purpose="recording",
+                    status="failed",
+                    model=DEFAULT_FILE_STT_MODEL,
+                    language=recording_language,
+                    content_type=content_type,
+                    audio_seconds=provider_audio_seconds,
+                    billable_seconds=0,
+                    channel_count=1,
+                    audio_bytes=len(audio_data),
+                    latency_ms=round((time.perf_counter() - file_stt_started_at) * 1000),
+                    provider_status_code=exc.response.status_code,
+                    provider_error_code=provider_error_code(exc),
+                    error_type=type(exc).__name__,
+                    commit=True,
+                )
+                raise
+            except Exception as exc:
+                await record_deepgram_usage_event(
+                    db,
+                    user_id=user_id,
+                    recording_id=recording_id,
+                    operation="file_stt",
+                    purpose="recording",
+                    status="failed",
+                    model=DEFAULT_FILE_STT_MODEL,
+                    language=recording_language,
+                    content_type=content_type,
+                    audio_seconds=provider_audio_seconds,
+                    billable_seconds=0,
+                    channel_count=1,
+                    audio_bytes=len(audio_data),
+                    latency_ms=round((time.perf_counter() - file_stt_started_at) * 1000),
+                    error_type=type(exc).__name__,
+                    commit=True,
+                )
+                raise
+            else:
+                await record_deepgram_usage_event(
+                    db,
+                    user_id=user_id,
+                    recording_id=recording_id,
+                    operation="file_stt",
+                    purpose="recording",
+                    status="succeeded",
+                    model=DEFAULT_FILE_STT_MODEL,
+                    language=recording_language,
+                    content_type=content_type,
+                    audio_seconds=provider_audio_seconds,
+                    billable_seconds=effective_billable_seconds(
+                        audio_seconds=provider_audio_seconds,
+                        channel_count=1,
+                    ),
+                    channel_count=1,
+                    audio_bytes=len(audio_data),
+                    latency_ms=round((time.perf_counter() - file_stt_started_at) * 1000),
+                    commit=True,
+                )
         _recording_lifecycle_breadcrumb(
             "Recording file transcription completed",
             recording_id=recording_id,
