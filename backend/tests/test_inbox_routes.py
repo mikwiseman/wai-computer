@@ -219,10 +219,13 @@ async def test_inbox_filters_by_source_status_and_folder(
         params={"folder_id": str(seeded["folder"].id)},
     )
     assert folder_resp.status_code == 200
-    assert {row["id"] for row in folder_resp.json()["rows"]} == {
+    folder_rows = folder_resp.json()["rows"]
+    assert {row["id"] for row in folder_rows} == {
         f"recording:{seeded['recording'].id}",
         f"item:{seeded['item'].id}",
     }
+    assert {row["source_kind"] for row in folder_rows} == {"recording", "item"}
+    assert all(row["folder_id"] == str(seeded["folder"].id) for row in folder_rows)
 
 
 async def test_inbox_ready_status_includes_summaries_and_chats(

@@ -8,7 +8,7 @@ capture + feed + detail behaviour without a broker or OpenAI.
 import zipfile
 from io import BytesIO
 from unittest.mock import patch
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import pytest
 from sqlalchemy import select
@@ -16,6 +16,7 @@ from sqlalchemy import select
 from app.api.routes.items import _derive_status, _item_error
 from app.models.item import Item
 from app.models.recording import Recording
+from tests.conftest import LEGAL_ACCEPTANCE
 
 pytestmark = pytest.mark.asyncio
 
@@ -35,9 +36,58 @@ def _docx_bytes(text: str) -> bytes:
     return buf.getvalue()
 
 
+async def _register_headers(client) -> dict[str, str]:
+    response = await client.post(
+        "/api/auth/register",
+        json={
+            "email": f"items-folder-{uuid4().hex}@example.com",
+            "password": "testpassword123",
+            **LEGAL_ACCEPTANCE,
+        },
+    )
+    assert response.status_code in (200, 201), response.text
+    return {"Authorization": f"Bearer {response.json()['access_token']}"}
+
+
+async def _create_folder(client, headers: dict[str, str], name: str = "Materials") -> dict:
+    response = await client.post("/api/folders", headers=headers, json={"name": name})
+    assert response.status_code == 201, response.text
+    return response.json()
+
+
+async def _fake_embeddings(texts: list[str], **_: object) -> list[list[float]]:
+    return [[0.0] * 1536 for _ in texts]
+
+
 async def test_create_item_requires_body_or_url(client, auth_headers) -> None:
     resp = await client.post("/api/items", json={"source": "paste"}, headers=auth_headers)
     assert resp.status_code == 400
+
+
+@pytest.mark.parametrize("target", ["missing", "other_user"])
+async def test_create_item_rejects_unknown_or_other_user_folder_id(
+    client, auth_headers, target: str
+) -> None:
+    if target == "missing":
+        folder_id = str(uuid4())
+    else:
+        other_headers = await _register_headers(client)
+        folder_id = (await _create_folder(client, other_headers, name="Other User"))["id"]
+
+    with patch("app.tasks.item_summary_generation.generate_item_summary_task.delay"):
+        resp = await client.post(
+            "/api/items",
+            json={
+                "source": "url",
+                "kind": "article",
+                "url": "https://example.com/private-folder-contract",
+                "folder_id": folder_id,
+            },
+            headers=auth_headers,
+        )
+
+    assert resp.status_code == 404, resp.text
+    assert resp.json()["detail"] == "Folder not found"
 
 
 async def test_create_item_paste_and_fetch_detail(client, auth_headers) -> None:
@@ -238,6 +288,35 @@ async def test_upload_markdown_creates_note_item(client, auth_headers) -> None:
     assert data["status"] == "summarizing"
 
 
+@pytest.mark.parametrize("target", ["missing", "other_user"])
+async def test_upload_item_rejects_unknown_or_other_user_folder_id(
+    client, auth_headers, monkeypatch, target: str
+) -> None:
+    if target == "missing":
+        folder_id = str(uuid4())
+    else:
+        other_headers = await _register_headers(client)
+        folder_id = (await _create_folder(client, other_headers, name="Other Uploads"))["id"]
+
+    monkeypatch.setattr("app.core.item_ingest.generate_embeddings", _fake_embeddings)
+    with patch("app.tasks.item_summary_generation.generate_item_summary_task.delay"):
+        resp = await client.post(
+            "/api/items/upload",
+            data={"folder_id": folder_id},
+            files={
+                "file": (
+                    "foldered.md",
+                    b"# Foldered\n\nThis item must not land in an invalid folder.",
+                    "text/markdown",
+                )
+            },
+            headers=auth_headers,
+        )
+
+    assert resp.status_code == 404, resp.text
+    assert resp.json()["detail"] == "Folder not found"
+
+
 async def test_upload_pdf_extracts_text(client, auth_headers) -> None:
     with patch("app.tasks.item_summary_generation.generate_item_summary_task.delay"), patch(
         "app.core.document_extract._extract_pdf_text",
@@ -362,6 +441,28 @@ async def test_upload_video_enqueues_recording(client, auth_headers, db_session)
     ).scalar_one()
     assert recording.status == "processing"
     assert recording.title == "clip"
+
+
+async def test_upload_media_with_valid_folder_creates_foldered_recording(
+    client, auth_headers, db_session
+) -> None:
+    folder = await _create_folder(client, auth_headers, name="Media Imports")
+
+    with patch("app.tasks.media_import.import_uploaded_media_task.delay") as delay:
+        resp = await client.post(
+            "/api/items/upload",
+            data={"folder_id": folder["id"]},
+            files={"file": ("memo.mp3", b"ID3\x03\x00\x00\x00 audio bytes", "audio/mpeg")},
+            headers=auth_headers,
+        )
+
+    assert resp.status_code == 202, resp.text
+    recording_id = resp.json()["recording_id"]
+    delay.assert_called_once()
+    recording = (
+        await db_session.execute(select(Recording).where(Recording.id == UUID(recording_id)))
+    ).scalar_one()
+    assert str(recording.folder_id) == folder["id"]
 
 
 async def test_upload_audio_enqueues_recording(client, auth_headers) -> None:
