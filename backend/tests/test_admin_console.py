@@ -11,6 +11,7 @@ from httpx import AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.routes import admin as admin_routes
 from app.api.routes.admin import AdminPromoCodeCreateRequest
 from app.billing.promo_codes import hash_promo_code
 from app.models.admin import AdminRole, StaffMember
@@ -193,6 +194,47 @@ def test_admin_promo_code_create_request_normalizes_operator_input():
     assert payload.code is None
     assert payload.prefix == "SUPPORT"
     assert payload.note == "created by support"
+
+
+def test_admin_deepgram_usage_analysis_flags_uncaptured_risks():
+    payload = {
+        "captured": {
+            "events": 0,
+            "provider_402": 0,
+            "refused": 2,
+            "failed": 3,
+        },
+        "estimated": {
+            "total_seconds": 100.0,
+            "failed_recordings": 1,
+        },
+        "by_user": [
+            {
+                "email": None,
+                "user_id": "user-1",
+                "estimated_total_seconds": 75.0,
+            }
+        ],
+        "top_recordings": [],
+    }
+
+    analysis = admin_routes._deepgram_usage_analysis(payload)
+
+    assert {
+        "deepgram.ledger.empty",
+        "deepgram.guard.refused",
+        "deepgram.provider.failed",
+        "deepgram.usage.concentrated_user",
+        "deepgram.recordings.failed",
+    } == {item["code"] for item in analysis}
+
+
+def test_admin_deepgram_usage_scalar_helpers_handle_empty_and_datetime_values():
+    now = datetime(2026, 6, 3, 12, 30, tzinfo=timezone.utc)
+
+    assert admin_routes._num(None) == 0.0
+    assert admin_routes._int(None) == 0
+    assert admin_routes._day(now) == "2026-06-03"
 
 
 @pytest.mark.asyncio

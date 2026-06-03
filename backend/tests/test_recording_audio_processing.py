@@ -749,7 +749,7 @@ async def test_process_staged_recording_upload_alerts_when_processing_is_slow(
             confidence=0.94,
         )
     ]
-    tick = iter([0.0, 301.0])
+    tick = iter([0.0, 301.0, 301.0])
     sentry_anomalies: list[dict[str, object]] = []
     sentry_breadcrumbs: list[dict[str, object]] = []
 
