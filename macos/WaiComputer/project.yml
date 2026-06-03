@@ -67,6 +67,7 @@ targets:
       - path: WaiComputer/App/Onboarding/OnboardingL10n.swift
       - path: WaiComputer/App/Onboarding/MacOnboardingDefaultsSnapshot.swift
       - path: WaiComputer/Features/Dictation/DictationCopy.swift
+      - path: WaiComputer/Features/Dictation/DictationContextCollector.swift
       - path: WaiComputer/Features/Dictation/DictationLanguageStore.swift
       - path: WaiComputer/Features/Dictation/DictationOverlayPanel.swift
       - path: WaiComputer/Features/Dictation/DictationStartupAudioBuffer.swift

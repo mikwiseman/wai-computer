@@ -196,4 +196,14 @@ final class GlobalHotkeyManagerGestureTests: XCTestCase {
 
         XCTAssertEqual(toggles, 1)
     }
+
+    func testEscapeCancelsDictation() {
+        let manager = GlobalHotkeyManager()
+        var cancels = 0
+        manager.onCancelled = { cancels += 1 }
+
+        manager.testingHandleKeyDown(keyCode: UInt16(kVK_Escape))
+
+        XCTAssertEqual(cancels, 1)
+    }
 }

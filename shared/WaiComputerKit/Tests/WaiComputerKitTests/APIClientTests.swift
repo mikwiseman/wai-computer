@@ -828,6 +828,51 @@ final class APIClientTests: XCTestCase {
         XCTAssertEqual(text, "Cleaned")
     }
 
+    func testCleanupDictationSendsContextWhenProvided() async throws {
+        let client = makeClient()
+
+        MockURLProtocol.requestHandler = { [self] request in
+            XCTAssertEqual(request.httpMethod, "POST")
+            XCTAssertEqual(request.url?.path, "/api/dictation/cleanup")
+            let body = bodyJSON(from: request)
+            let context = body?["context"] as? [String: Any]
+            let app = context?["app"] as? [String: Any]
+            let textbox = context?["textbox"] as? [String: Any]
+            XCTAssertEqual(app?["name"] as? String, "Cursor")
+            XCTAssertEqual(app?["bundle_id"] as? String, "com.todesktop.230313mzl4w4u92")
+            XCTAssertEqual(app?["category"] as? String, "engineering")
+            XCTAssertEqual(textbox?["before_text"] as? String, "func test() {")
+            XCTAssertEqual(textbox?["selected_text"] as? String, "TODO")
+            XCTAssertEqual(textbox?["after_text"] as? String, "}")
+
+            let response = HTTPURLResponse(
+                url: request.url!,
+                statusCode: 200,
+                httpVersion: nil,
+                headerFields: nil
+            )!
+            return (response, Data("{\"text\":\"Cleaned\"}".utf8))
+        }
+
+        let context = DictationCleanupContext(
+            app: DictationCleanupAppContext(
+                name: "Cursor",
+                bundleID: "com.todesktop.230313mzl4w4u92",
+                category: "engineering"
+            ),
+            textbox: DictationCleanupTextboxContext(
+                beforeText: "func test() {",
+                selectedText: "TODO",
+                afterText: "}"
+            )
+        )
+        let text = try await client.cleanupDictation(
+            text: "raw dictated text",
+            context: context
+        )
+        XCTAssertEqual(text, "Cleaned")
+    }
+
     func testDeleteRecordingUsesDeleteMethod() async throws {
         let client = makeClient()
 
