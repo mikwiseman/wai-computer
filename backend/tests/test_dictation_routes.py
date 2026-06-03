@@ -147,9 +147,9 @@ async def test_translate_dictation_translates_to_selected_target_language(
     assert response.json() == {"text": "Привет, команда."}
     assert captured["model"] == "gpt-5.5"
     assert captured["reasoning"] == {"effort": "low"}
-    assert captured["text"] == {"verbosity": "low"}
+    assert captured["text"] == {"format": {"type": "text"}, "verbosity": "low"}
     assert captured["store"] is False
-    assert captured["max_output_tokens"] == 256
+    assert captured["max_output_tokens"] == 1536
     instructions = captured["instructions"]
     assert "Translate the dictated text into Russian (ru)." in instructions
     assert "Output only the translated text" in instructions
@@ -269,10 +269,11 @@ async def test_cleanup_dictation_uses_fixed_post_filter_model(
 
     assert response.status_code == 200
     assert captured["model"] == "gpt-5.5"
-    assert captured["max_output_tokens"] == 256
+    assert captured["max_output_tokens"] == 1536
     assert captured["reasoning"] == {"effort": "low"}
-    assert captured["text"] == {"verbosity": "low"}
+    assert captured["text"] == {"format": {"type": "text"}, "verbosity": "low"}
     assert captured["prompt_cache_key"].startswith("wai-dictation-cleanup-")
+    assert captured["prompt_cache_retention"] == "24h"
     assert captured["store"] is False
 
 
@@ -336,8 +337,9 @@ async def test_cleanup_dictation_stream_emits_tokens_and_done(
     assert captured["model"] == "gpt-5.5"
     assert captured["stream"] is True
     assert captured["reasoning"] == {"effort": "low"}
-    assert captured["text"] == {"verbosity": "low"}
+    assert captured["text"] == {"format": {"type": "text"}, "verbosity": "low"}
     assert captured["prompt_cache_key"].startswith("wai-dictation-cleanup-")
+    assert captured["prompt_cache_retention"] == "24h"
     assert captured["store"] is False
     assert "email: use complete, polished paragraphs" in captured["instructions"]
 
@@ -386,6 +388,110 @@ async def test_cleanup_dictation_stream_extracts_text_from_done_event_dict(
     assert '"input_tokens": 123' in response.text
     assert '"output_tokens": 8' in response.text
     assert '"cached_tokens": 96' in response.text
+
+
+@pytest.mark.asyncio
+async def test_cleanup_dictation_stream_uses_output_text_done_when_completed_lacks_output_text(
+    client: AsyncClient,
+    auth_headers: dict,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    async def _create(**_: object):
+        return _AsyncStream(
+            [
+                {
+                    "type": "response.output_text.done",
+                    "text": "Cleaned from output text done.",
+                },
+                {
+                    "type": "response.completed",
+                    "response": {
+                        "status": "completed",
+                        "error": None,
+                        "incomplete_details": None,
+                        "output": [
+                            {
+                                "type": "message",
+                                "status": "completed",
+                                "content": [
+                                    {
+                                        "type": "output_text",
+                                        "text": "Cleaned from output text done.",
+                                    }
+                                ],
+                            }
+                        ],
+                        "model": "gpt-5.5",
+                    },
+                },
+            ]
+        )
+
+    mock_client = SimpleNamespace(responses=SimpleNamespace(create=_create))
+    _patch_settings(monkeypatch)
+    _patch_client(monkeypatch, mock_client)
+    await _set_cleanup_level(client, auth_headers, "light")
+
+    response = await client.post(
+        "/api/dictation/cleanup/stream",
+        headers=auth_headers,
+        json={"text": "please clean up this dictated sentence"},
+    )
+
+    assert response.status_code == 200
+    assert (
+        'event: token\ndata: {"text": "Cleaned from output text done."}'
+        in response.text
+    )
+    assert '"text": "Cleaned from output text done."' in response.text
+
+
+@pytest.mark.asyncio
+async def test_cleanup_dictation_stream_uses_content_part_done_text(
+    client: AsyncClient,
+    auth_headers: dict,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    async def _create(**_: object):
+        return _AsyncStream(
+            [
+                {
+                    "type": "response.content_part.done",
+                    "part": {
+                        "type": "output_text",
+                        "text": "Cleaned from content part done.",
+                    },
+                },
+                {
+                    "type": "response.completed",
+                    "response": {
+                        "status": "completed",
+                        "error": None,
+                        "incomplete_details": None,
+                        "output": [],
+                        "model": "gpt-5.5",
+                    },
+                },
+            ]
+        )
+
+    mock_client = SimpleNamespace(responses=SimpleNamespace(create=_create))
+    _patch_settings(monkeypatch)
+    _patch_client(monkeypatch, mock_client)
+    await _set_cleanup_level(client, auth_headers, "light")
+
+    response = await client.post(
+        "/api/dictation/cleanup/stream",
+        headers=auth_headers,
+        json={"text": "please clean up this dictated sentence"},
+    )
+
+    assert response.status_code == 200
+    assert (
+        'event: token\ndata: {"text": "Cleaned from content part done."}'
+        in response.text
+    )
+    assert '"text": "Cleaned from content part done."' in response.text
 
 
 @pytest.mark.asyncio
@@ -752,7 +858,34 @@ async def test_cleanup_dictation_caps_large_output_token_budget(
     )
 
     assert response.status_code == 200
-    assert captured["max_output_tokens"] == 8192
+    assert captured["max_output_tokens"] == 34560
+
+
+@pytest.mark.asyncio
+async def test_cleanup_dictation_reserves_tokens_for_reasoning(
+    client: AsyncClient,
+    auth_headers: dict,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    captured: dict[str, object] = {}
+
+    async def _create(**kwargs: object):
+        captured.update(kwargs)
+        return _make_response("Polished text.")
+
+    mock_client = SimpleNamespace(responses=SimpleNamespace(create=_create))
+    _patch_settings(monkeypatch)
+    _patch_client(monkeypatch, mock_client)
+    await _set_cleanup_level(client, auth_headers, "medium")
+
+    response = await client.post(
+        "/api/dictation/cleanup",
+        headers=auth_headers,
+        json={"text": "word " * 400},
+    )
+
+    assert response.status_code == 200
+    assert captured["max_output_tokens"] == 1792
 
 
 @pytest.mark.asyncio
