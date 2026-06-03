@@ -26,7 +26,7 @@ class Device(Base, UUIDMixin, TimestampMixin):
         nullable=False,
         index=True,
     )
-    # 'macos' | 'ios' | 'windows' | 'linux'
+    # 'macos' | 'ios' | 'android'
     platform: Mapped[str] = mapped_column(String(20), nullable=False)
     name: Mapped[str | None] = mapped_column(String(200))
     last_seen_at: Mapped[datetime | None] = mapped_column(

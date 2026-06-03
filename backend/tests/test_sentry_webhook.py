@@ -121,7 +121,10 @@ async def test_webhook_forwards_client_issue_to_telegram(webhook_client):
 
 @pytest.mark.asyncio
 async def test_webhook_ignores_backend_and_unknown_projects(webhook_client):
-    for slug in ("waicomputer-backend", "some-other-project"):
+    for slug in (
+        "waicomputer-backend",
+        "some-other-project",
+    ):
         body = json.dumps(_issue_payload(slug=slug)).encode()
         with patch(
             "app.api.routes.sentry_webhook.get_settings",

@@ -348,9 +348,9 @@ const COPY: Record<Locale, DashboardCopy> = {
     },
     history: {
       title: "Dictation History",
-      subtitle: "Every voice-to-text insert from Mac, Windows, and Linux.",
+      subtitle: "Every voice-to-text insert from Mac and web.",
       emptyTitle: "No Dictation Yet",
-      emptyBody: "Open WaiComputer on Mac or Windows to start dictating.",
+      emptyBody: "Open WaiComputer on Mac or web to start dictating.",
       notAvailableTitle: "Dictation History Unavailable",
       notAvailableBody:
         "Couldn't reach the dictation service. Try refreshing in a moment.",
@@ -361,7 +361,7 @@ const COPY: Record<Locale, DashboardCopy> = {
       clearAllConfirm: "Clear all dictation history?",
       clearAllCancel: "Cancel",
       clearAllPrompt:
-        "Every insert from your Mac, Windows, and Linux clients will be removed. This cannot be undone.",
+        "Every insert from your Mac and web clients will be removed. This cannot be undone.",
       deleted: "Entry removed.",
       deleteEntry: "Delete entry",
     },
@@ -549,9 +549,9 @@ const COPY: Record<Locale, DashboardCopy> = {
     },
     history: {
       title: "История диктовки",
-      subtitle: "Каждый текст, продиктованный голосом, из Mac, Windows и Linux.",
+      subtitle: "Каждый текст, продиктованный голосом, из Mac и Web.",
       emptyTitle: "Истории пока нет",
-      emptyBody: "Откройте WaiComputer на Mac или Windows, чтобы начать.",
+      emptyBody: "Откройте WaiComputer на Mac или в Web, чтобы начать.",
       notAvailableTitle: "История диктовки недоступна",
       notAvailableBody:
         "Не удалось загрузить историю. Попробуйте обновить через минуту.",
@@ -563,7 +563,7 @@ const COPY: Record<Locale, DashboardCopy> = {
       clearAllConfirm: "Очистить всю историю диктовки?",
       clearAllCancel: "Отмена",
       clearAllPrompt:
-        "Все записи из приложений Mac, Windows и Linux будут удалены. Это нельзя отменить.",
+        "Все записи из приложений Mac и Web будут удалены. Это нельзя отменить.",
       deleted: "Запись удалена.",
       deleteEntry: "Удалить запись",
     },

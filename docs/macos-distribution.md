@@ -173,7 +173,7 @@ fastlane mac upload_all
 
 GitHub Actions are intentionally not used for WaiComputer releases. macOS
 artifacts require a Mac build host with local Developer ID signing, Sparkle
-signing, and App Store Connect notarization credentials. The Linux production
+signing, and App Store Connect notarization credentials. The production
 VPS only serves the published DMG, checksum, release notes, and merged appcast.
 
 ## User Install Flow

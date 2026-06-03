@@ -525,17 +525,16 @@ final class GlobalHotkeyManager: ObservableObject {
     ///   - Karabiner-Elements `to_if_alone_timeout_milliseconds` default = 1000 ms
     ///   - obra/swift-macos-tap-detection `holdDuration` default = 800 ms
     ///   - VoiceInk `holdDetectionDelay` = 200 ms
-    ///   - Our own Windows port (`desktop/WaiComputer.Core/Hotkey/HotkeyStateMachine.cs`) = 150 ms
-    ///     and the C# docstring claims it "mirrors the Swift GlobalHotkeyManager".
+    ///   - A 150 ms threshold matches the lower bound of typical human
+    ///     "fast tap" dwell time.
     ///
     /// The previous value (0.08 = 80 ms) was 2-12× tighter than every reviewed
     /// production reference, and 2× tighter than the typical human "fast tap"
     /// dwell time (~100-150 ms). Any vigorous double-tap of Right Command had
     /// each press exceed 80 ms wall-clock, which promoted both presses to PTT
     /// instead of routing them to `registerTap()` — `lastTapTime` was never
-    /// seeded, so the double-tap could NEVER fire. Raising to 0.15 s matches
-    /// our Windows code and gives users the headroom every other dictation
-    /// app already gives them.
+    /// seeded, so the double-tap could NEVER fire. Raising to 0.15 s gives
+    /// users the headroom other dictation apps already give them.
     private let holdThreshold: TimeInterval = 0.15
 
     // State tracking

@@ -44,14 +44,6 @@ EXPECTED_STRINGS = {
         "waicomputer-macos",
         "sentry-upload-debug-files.sh",
     ],
-    "scripts/release-linux.sh": [
-        "waicomputer-linux",
-        "sentry-upload-debug-files.sh",
-    ],
-    "windows/scripts/release-windows.ps1": [
-        "waicomputer-windows",
-        "debug-files",
-    ],
 }
 
 
@@ -77,7 +69,6 @@ def main() -> None:
         "ios/WaiComputer/WaiComputer/App/WaiComputerApp.swift",
         "macos/WaiComputer/WaiComputer/App/WaiComputerMacApp.swift",
         "android/gradle.properties",
-        "linux/WaiComputer.Linux/appsettings.json",
     ]:
         assert_no_waisay_project_ids(relative)
 

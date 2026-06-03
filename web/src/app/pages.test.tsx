@@ -1,5 +1,5 @@
 import type React from "react";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import DashboardPage from "./dashboard/page";
 import LoginPage from "./login/page";
@@ -279,14 +279,19 @@ describe("app pages", () => {
     expect(iosLink).toHaveTextContent("TestFlight");
     expect(iosLink).not.toHaveAttribute("target");
 
-    // Coming-soon platforms are surfaced as labeled cards (not download links).
+    // Android remains a labeled coming-soon card; Windows/Linux are removed.
     expect(screen.queryByTestId("download-windows")).not.toBeInTheDocument();
     expect(screen.queryByTestId("download-linux")).not.toBeInTheDocument();
     expect(screen.queryByTestId("download-android")).not.toBeInTheDocument();
-    expect(screen.getByText("Android")).toBeInTheDocument();
-    expect(screen.getByText("Windows")).toBeInTheDocument();
-    expect(screen.getByText("Linux")).toBeInTheDocument();
-    expect(screen.getAllByText(/Coming soon/i).length).toBeGreaterThanOrEqual(3);
+    const platformSection = screen
+      .getByRole("heading", { level: 2, name: "Mac, web, iPhone, and Android." })
+      .closest("section");
+    expect(platformSection).not.toBeNull();
+    const platforms = within(platformSection!);
+    expect(platforms.getByText("Android")).toBeInTheDocument();
+    expect(platforms.queryByText("Windows")).not.toBeInTheDocument();
+    expect(platforms.queryByText("Linux")).not.toBeInTheDocument();
+    expect(platforms.getAllByText(/Coming soon/i)).toHaveLength(1);
 
     expect(screen.getByRole("link", { name: "Benchmark" })).toHaveAttribute(
       "href",
@@ -357,10 +362,15 @@ describe("app pages", () => {
     expect(screen.queryByTestId("download-windows-ru")).not.toBeInTheDocument();
     expect(screen.queryByTestId("download-linux-ru")).not.toBeInTheDocument();
     expect(screen.queryByTestId("download-android-ru")).not.toBeInTheDocument();
-    expect(screen.getByText("Android")).toBeInTheDocument();
-    expect(screen.getByText("Windows")).toBeInTheDocument();
-    expect(screen.getByText("Linux")).toBeInTheDocument();
-    expect(screen.getAllByText(/Скоро/i).length).toBeGreaterThanOrEqual(3);
+    const platformSection = screen
+      .getByRole("heading", { level: 2, name: "Mac, Web, iPhone и Android." })
+      .closest("section");
+    expect(platformSection).not.toBeNull();
+    const platforms = within(platformSection!);
+    expect(platforms.getByText("Android")).toBeInTheDocument();
+    expect(platforms.queryByText("Windows")).not.toBeInTheDocument();
+    expect(platforms.queryByText("Linux")).not.toBeInTheDocument();
+    expect(platforms.getAllByText(/Скоро/i)).toHaveLength(1);
     expect(screen.getByTestId("platform-web-ru")).toHaveAttribute(
       "href",
       "/dashboard",

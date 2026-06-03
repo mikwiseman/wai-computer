@@ -49,8 +49,6 @@ All WaiComputer surfaces must point at WaiComputer Sentry projects in the `waiwa
 | iOS | `waicomputer-ios` |
 | macOS | `waicomputer-macos` |
 | Android | `waicomputer-android` |
-| Windows | `waicomputer-windows` |
-| Linux | `waicomputer-linux` |
 
 Production backend env must contain `SENTRY_DSN`. Production builds also
 require `SENTRY_AUTH_TOKEN` so web source maps and native debug files are
@@ -106,7 +104,7 @@ Create or verify these rules in every production Sentry project:
 - Dictation latency: `alert_code:dictation.first_token.slow OR alert_code:dictation.total_latency.slow environment:production`
 - Realtime session mint failures: `alert_code:realtime.session_mint.failed environment:production`
 - Companion/search latency: `alert_code:companion.turn.slow OR alert_code:search.query.slow environment:production`
-- Native crash-free sessions below target for macOS, iOS, Android, Windows when those projects are active.
+- Native crash-free sessions below target for macOS, iOS, and Android when those projects are active.
 
 Notification target should be a team channel first. Page only on critical recording ingestion or sustained API errors.
 
