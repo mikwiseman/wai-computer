@@ -592,15 +592,15 @@
 				LastUpgradeCheck = 1600;
 				TargetAttributes = {
 					002E17216F14CA6B6083D143 = {
-						DevelopmentTeam = <apple-team-id>;
+						DevelopmentTeam = "<apple-team-id>";
 						TestTargetID = 0950F2D4CFDE46D8C8A41CC6;
 					};
 					0950F2D4CFDE46D8C8A41CC6 = {
-						DevelopmentTeam = <apple-team-id>;
+						DevelopmentTeam = "<apple-team-id>";
 						ProvisioningStyle = Automatic;
 					};
 					8BAEE8AFC4F372FB0D443CFD = {
-						DevelopmentTeam = <apple-team-id>;
+						DevelopmentTeam = "<apple-team-id>";
 					};
 				};
 			};
@@ -801,7 +801,7 @@
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				COMBINE_HIDPI_IMAGES = YES;
-				DEVELOPMENT_TEAM = <apple-team-id>;
+				DEVELOPMENT_TEAM = "<apple-team-id>";
 				GENERATE_INFOPLIST_FILE = YES;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -819,7 +819,7 @@
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				COMBINE_HIDPI_IMAGES = YES;
-				DEVELOPMENT_TEAM = <apple-team-id>;
+				DEVELOPMENT_TEAM = "<apple-team-id>";
 				GENERATE_INFOPLIST_FILE = YES;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -840,8 +840,8 @@
 				CODE_SIGN_ENTITLEMENTS = WaiComputer/WaiComputer.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 176;
-				DEVELOPMENT_TEAM = <apple-team-id>;
+				CURRENT_PROJECT_VERSION = 177;
+				DEVELOPMENT_TEAM = "<apple-team-id>";
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
 				INFOPLIST_FILE = WaiComputer/Info.plist;
@@ -927,7 +927,7 @@
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				COMBINE_HIDPI_IMAGES = YES;
-				DEVELOPMENT_TEAM = <apple-team-id>;
+				DEVELOPMENT_TEAM = "<apple-team-id>";
 				GENERATE_INFOPLIST_FILE = YES;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -1004,8 +1004,8 @@
 				CODE_SIGN_ENTITLEMENTS = WaiComputer/WaiComputer.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 176;
-				DEVELOPMENT_TEAM = <apple-team-id>;
+				CURRENT_PROJECT_VERSION = 177;
+				DEVELOPMENT_TEAM = "<apple-team-id>";
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
 				INFOPLIST_FILE = WaiComputer/Info.plist;
@@ -1029,7 +1029,7 @@
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				COMBINE_HIDPI_IMAGES = YES;
-				DEVELOPMENT_TEAM = <apple-team-id>;
+				DEVELOPMENT_TEAM = "<apple-team-id>";
 				GENERATE_INFOPLIST_FILE = YES;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
