@@ -831,7 +831,7 @@ async def test_search_route_direct_paths(db_session: AsyncSession, monkeypatch: 
     )
     await db_session.flush()
 
-    async def fake_generate_embedding(_: str) -> list[float]:
+    async def fake_generate_embedding(_: str, **__: object) -> list[float]:
         return _vector_list(0)
 
     monkeypatch.setattr(search, "generate_embedding", fake_generate_embedding)

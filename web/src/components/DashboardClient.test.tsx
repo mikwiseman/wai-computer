@@ -5,6 +5,7 @@ import { ApiError } from "@/lib/http";
 import { DashboardClient } from "./DashboardClient";
 
 const mockGetCurrentUser = vi.fn();
+const mockListInbox = vi.fn();
 const mockListRecordings = vi.fn();
 const mockCreateRecording = vi.fn();
 const mockDeleteRecording = vi.fn();
@@ -53,6 +54,9 @@ const mockImportPersonalizationText = vi.fn();
 const mockImportPersonalizationFile = vi.fn();
 const mockReplace = vi.fn();
 const mockUnifiedSearch = vi.fn();
+const mockCreateItem = vi.fn();
+const mockGetItem = vi.fn();
+const mockUploadItem = vi.fn();
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ replace: mockReplace }),
@@ -60,6 +64,7 @@ vi.mock("next/navigation", () => ({
 
 vi.mock("@/lib/api", () => ({
   getCurrentUser: (...args: unknown[]) => mockGetCurrentUser(...args),
+  listInbox: (...args: unknown[]) => mockListInbox(...args),
   listRecordings: (...args: unknown[]) => mockListRecordings(...args),
   createRecording: (...args: unknown[]) => mockCreateRecording(...args),
   deleteRecording: (...args: unknown[]) => mockDeleteRecording(...args),
@@ -107,6 +112,9 @@ vi.mock("@/lib/api", () => ({
   deletePersonalizationTerm: (...args: unknown[]) => mockDeletePersonalizationTerm(...args),
   importPersonalizationText: (...args: unknown[]) => mockImportPersonalizationText(...args),
   importPersonalizationFile: (...args: unknown[]) => mockImportPersonalizationFile(...args),
+  createItem: (...args: unknown[]) => mockCreateItem(...args),
+  getItem: (...args: unknown[]) => mockGetItem(...args),
+  uploadItem: (...args: unknown[]) => mockUploadItem(...args),
 }));
 
 const baseUser = {
@@ -146,6 +154,12 @@ const baseRecordingDetail = {
   },
   action_items: [{ id: "a1", recording_id: "r1", task: "Task", owner: null, due_date: null, priority: "medium", status: "pending", source: "auto", created_at: "2026-02-27T00:00:00Z" }],
   highlights: [],
+};
+
+const baseInboxResponse = {
+  rows: [],
+  next_cursor: null,
+  has_more: false,
 };
 
 const baseSettings = {
@@ -214,6 +228,7 @@ const baseDataOwnershipMap = {
 
 function arrangeHappyPathMocks() {
   mockGetCurrentUser.mockResolvedValue(baseUser);
+  mockListInbox.mockResolvedValue(baseInboxResponse);
   mockListRecordings.mockResolvedValue([baseRecording]);
   mockCreateRecording.mockResolvedValue(baseRecording);
   mockDeleteRecording.mockResolvedValue(undefined);
@@ -285,6 +300,9 @@ function arrangeHappyPathMocks() {
     occurred_at: "2026-05-27T00:00:00Z",
   }));
   mockDeleteDictionaryWord.mockResolvedValue(undefined);
+  mockCreateItem.mockResolvedValue({});
+  mockGetItem.mockResolvedValue({});
+  mockUploadItem.mockResolvedValue({ kind: "item", item: {} });
 }
 
 function createDeferred<T>() {
@@ -319,6 +337,7 @@ describe("DashboardClient", () => {
   beforeEach(() => {
     [
       mockGetCurrentUser,
+      mockListInbox,
       mockListRecordings,
       mockCreateRecording,
       mockDeleteRecording,
@@ -363,8 +382,12 @@ describe("DashboardClient", () => {
       mockDeletePersonalizationTerm,
       mockImportPersonalizationText,
       mockImportPersonalizationFile,
+      mockCreateItem,
+      mockGetItem,
+      mockUploadItem,
       mockReplace,
     ].forEach((fn) => fn.mockReset());
+    mockListInbox.mockResolvedValue(baseInboxResponse);
     mockListFolders.mockResolvedValue([]);
     mockListDictationEntries.mockResolvedValue([]);
     mockListDictionaryWords.mockResolvedValue([]);
@@ -2065,7 +2088,8 @@ describe("DashboardClient", () => {
     await waitFor(() => expect(screen.getByTestId("workspace-title")).toHaveTextContent("Dictate"));
 
     await user.keyboard("l");
-    await waitFor(() => expect(screen.getByTestId("recording-list")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByTestId("workspace-title")).toHaveTextContent("Inbox"));
+    expect(screen.getByRole("button", { name: "+ Add" })).toBeInTheDocument();
 
     await user.keyboard("w");
     await waitFor(() => expect(screen.getByTestId("workspace-title")).toHaveTextContent("Wai"));

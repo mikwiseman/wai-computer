@@ -1051,6 +1051,33 @@ public actor APIClient {
         return try await request(.GET, path: "/api/search/all", queryItems: queryItems)
     }
 
+    // MARK: - Universal Inbox
+
+    public func listInbox(
+        sourceKind: InboxSourceKind? = nil,
+        status: InboxStatusFilter? = nil,
+        folderId: String? = nil,
+        limit: Int = 50,
+        cursor: String? = nil
+    ) async throws -> InboxResponse {
+        var queryItems: [URLQueryItem] = [
+            URLQueryItem(name: "limit", value: "\(limit)")
+        ]
+        if let sourceKind {
+            queryItems.append(URLQueryItem(name: "source_kind", value: sourceKind.rawValue))
+        }
+        if let status {
+            queryItems.append(URLQueryItem(name: "status", value: status.rawValue))
+        }
+        if let folderId {
+            queryItems.append(URLQueryItem(name: "folder_id", value: folderId))
+        }
+        if let cursor {
+            queryItems.append(URLQueryItem(name: "cursor", value: cursor))
+        }
+        return try await request(.GET, path: "/api/inbox", queryItems: queryItems)
+    }
+
     // MARK: - Items (universal "add anything") Endpoints
 
     public func createItem(

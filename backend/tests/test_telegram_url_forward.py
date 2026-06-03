@@ -68,7 +68,7 @@ def _stub_llm(monkeypatch) -> None:
                       why_it_matters="frames it", quote=None, importance="high"),
         ]
 
-    async def fake_embed(texts):
+    async def fake_embed(texts, **_):
         return [[0.01] * 1536 for _ in texts]
 
     monkeypatch.setattr(item_summary_module, "summarize_content", fake_summarize)

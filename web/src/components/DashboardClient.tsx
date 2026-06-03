@@ -27,6 +27,7 @@ import {
   getSettings,
   getTelegramLinkStatus,
   getTranscriptionOptions,
+  listInbox,
   listDictationEntries,
   listDictionaryWords,
   listFolders,
@@ -44,6 +45,7 @@ import {
 } from "@/lib/api";
 import { CompanionPanel } from "@/components/CompanionPanel";
 import { RecordingDetailPanel } from "@/components/RecordingDetailPanel";
+import { ItemDetail } from "@/components/ItemDetail";
 import { AudioUpload } from "@/components/AudioUpload";
 import { LiveRecorder } from "@/components/LiveRecorder";
 import { McpConnectSection } from "@/components/McpConnectSection";
@@ -61,12 +63,16 @@ import { DictatePanel } from "@/components/DictatePanel";
 import { PasswordField } from "@/components/PasswordField";
 import { Skeleton } from "@/components/Skeleton";
 import { ApiError } from "@/lib/http";
+import { createChat } from "@/lib/companion";
 import type {
   BulkAction,
   DictationCleanupLevel,
   DictationDictionaryWord,
   DictationEntry,
   Folder,
+  InboxRow,
+  InboxSourceKind,
+  InboxStatusFilter,
   Recording,
   RecordingDetail,
   RecordingType,
@@ -81,6 +87,7 @@ import type {
 
 type SearchMode = "hybrid" | "semantic" | "fts" | "everything";
 type DashboardView =
+  | "inbox"
   | "wai"
   | "add"
   | "content"
@@ -98,6 +105,7 @@ type Locale = "en" | "ru";
 
 const LIST_LIMIT = 100;
 const DASHBOARD_VIEW_KEYS = [
+  "inbox",
   "wai",
   "add",
   "content",
@@ -139,6 +147,7 @@ interface DashboardCopy {
   retryLoadSettings: string;
   // Sidebar nav (label + one-line value prop subtitle)
   nav: {
+    inbox: { label: string; detail: string };
     wai: { label: string; detail: string };
     library: { label: string; detail: string };
     folders: { label: string };
@@ -314,6 +323,7 @@ const COPY: Record<Locale, DashboardCopy> = {
     fallbackTitle: "WaiComputer",
     retryLoadSettings: "Retry loading account settings",
     nav: {
+      inbox: { label: "Inbox", detail: "Recordings, materials, and chats" },
       wai: { label: "Wai", detail: "Ask anything about what you said" },
       library: { label: "All Recordings", detail: "Every note, meeting, and reflection" },
       folders: { label: "Folders" },
@@ -515,6 +525,7 @@ const COPY: Record<Locale, DashboardCopy> = {
     fallbackTitle: "WaiComputer",
     retryLoadSettings: "Повторить загрузку настроек",
     nav: {
+      inbox: { label: "Инбокс", detail: "Записи, материалы и чаты" },
       wai: { label: "Wai", detail: "Спросите о чём угодно из ваших записей" },
       library: { label: "Все записи", detail: "Все заметки, встречи и размышления" },
       folders: { label: "Папки" },
@@ -851,7 +862,7 @@ export function DashboardClient() {
 
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
-  const [view, setView] = useState<DashboardView>("wai");
+  const [view, setView] = useState<DashboardView>("inbox");
   const [accountSettings, setAccountSettings] = useState<UserSettings | null>(null);
   const [transcriptionOptions, setTranscriptionOptions] = useState<TranscriptionOptions | null>(
     null,
@@ -1589,7 +1600,7 @@ export function DashboardClient() {
     "/": focusSearchInput,
     n: focusRecorder,
     d: () => goToView("dictate"),
-    l: () => goToView("library"),
+    l: () => goToView("inbox"),
     w: () => goToView("wai"),
     Escape: clearAll,
     "?": toggleCheatsheet,
@@ -1638,6 +1649,11 @@ export function DashboardClient() {
     {
       header: locale === "ru" ? "Библиотека" : "Library",
       items: [
+        {
+          key: "inbox",
+          label: copy.nav.inbox.label,
+          count: null,
+        },
         {
           key: "add",
           label: locale === "ru" ? "Добавить" : "Add anything",
@@ -1918,6 +1934,24 @@ export function DashboardClient() {
           </p>
         ) : null}
 
+        {view === "inbox" ? (
+          <UniversalInboxPanel
+            locale={locale}
+            copy={copy}
+            recordings={recordings}
+            folders={folders}
+            recordingTitle={recordingTitle}
+            recordingType={recordingType}
+            onRecordingTitleChange={setRecordingTitle}
+            onRecordingTypeChange={setRecordingType}
+            onRecordingUpdate={handleRecordingDetailUpdate}
+            onAssignRecordingToFolder={handleAssignRecordingToFolder}
+            onDeleteRecording={handleDeleteRecording}
+            onRefreshRecordings={loadRecordingsState}
+            onItemsChanged={() => setItemsReloadKey((k) => k + 1)}
+            onError={setMessage}
+          />
+        ) : null}
         {view === "wai" ? <WaiView recordings={recordings} locale={locale} /> : null}
         {view === "library" ? renderLibrary("active", recordings) : null}
         {view === "folder"
@@ -2829,6 +2863,507 @@ function WaiView({ recordings, locale }: { recordings: Recording[]; locale: Loca
   return (
     <div className="wai-panel">
       <CompanionPanel recordings={recordings} locale={locale} />
+    </div>
+  );
+}
+
+type InboxFilterKind = "all" | InboxSourceKind;
+type InboxFilterStatus = "all" | InboxStatusFilter;
+
+function inboxTitle(row: InboxRow, locale: Locale): string {
+  const title = row.title?.trim();
+  if (title) return title;
+  if (row.source_kind === "recording") {
+    return locale === "ru" ? "Без названия" : "Untitled recording";
+  }
+  if (row.source_kind === "chat") {
+    return locale === "ru" ? "Новый чат" : "New chat";
+  }
+  return locale === "ru" ? "Без названия" : "Untitled material";
+}
+
+function inboxStatusLabel(row: InboxRow, locale: Locale): string | null {
+  if (row.status === "ready") return null;
+  if (locale === "ru") {
+    if (row.status === "processing") return "обработка";
+    if (row.status === "needs_input") return "нужен ввод";
+    if (row.status === "failed") return "ошибка";
+    return "архив";
+  }
+  if (row.status === "processing") return "processing";
+  if (row.status === "needs_input") return "needs input";
+  if (row.status === "failed") return "failed";
+  return "archived";
+}
+
+function sourceLabel(kind: InboxSourceKind, locale: Locale): string {
+  if (locale === "ru") {
+    if (kind === "recording") return "Запись";
+    if (kind === "item") return "Материал";
+    return "Чат";
+  }
+  if (kind === "recording") return "Recording";
+  if (kind === "item") return "Material";
+  return "Chat";
+}
+
+function UniversalInboxPanel({
+  locale,
+  copy,
+  recordings,
+  folders,
+  recordingTitle,
+  recordingType,
+  onRecordingTitleChange,
+  onRecordingTypeChange,
+  onRecordingUpdate,
+  onAssignRecordingToFolder,
+  onDeleteRecording,
+  onRefreshRecordings,
+  onItemsChanged,
+  onError,
+}: {
+  locale: Locale;
+  copy: DashboardCopy;
+  recordings: Recording[];
+  folders: Folder[];
+  recordingTitle: string;
+  recordingType: RecordingType;
+  onRecordingTitleChange: (value: string) => void;
+  onRecordingTypeChange: (value: RecordingType) => void;
+  onRecordingUpdate: (detail: RecordingDetail) => void;
+  onAssignRecordingToFolder: (
+    recordingId: string,
+    folderId: string | null,
+  ) => Promise<void>;
+  onDeleteRecording: (
+    recordingId: string,
+    options?: { permanent?: boolean },
+  ) => Promise<void>;
+  onRefreshRecordings: () => Promise<void>;
+  onItemsChanged: () => void;
+  onError: (message: string | null) => void;
+}) {
+  const [rows, setRows] = useState<InboxRow[]>([]);
+  const [selectedRow, setSelectedRow] = useState<InboxRow | null>(null);
+  const [selectedRecording, setSelectedRecording] = useState<RecordingDetail | null>(
+    null,
+  );
+  const [sourceKind, setSourceKind] = useState<InboxFilterKind>("all");
+  const [statusFilter, setStatusFilter] = useState<InboxFilterStatus>("all");
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [showCreate, setShowCreate] = useState(false);
+
+  const loadInbox = useCallback(
+    async (mode: "replace" | "append" = "replace") => {
+      if (mode === "append") {
+        if (!nextCursor || loadingMore) return;
+        setLoadingMore(true);
+      } else {
+        setLoading(true);
+      }
+      try {
+        const response = await listInbox({
+          limit: 50,
+          cursor: mode === "append" ? nextCursor : null,
+          source_kind: sourceKind === "all" ? undefined : sourceKind,
+          status: statusFilter === "all" ? undefined : statusFilter,
+        });
+        setRows((current) =>
+          mode === "append" ? [...current, ...response.rows] : response.rows,
+        );
+        setNextCursor(response.next_cursor);
+      } catch (error: unknown) {
+        onError(formatError(error));
+      } finally {
+        setLoading(false);
+        setLoadingMore(false);
+      }
+    },
+    [loadingMore, nextCursor, onError, sourceKind, statusFilter],
+  );
+
+  useEffect(() => {
+    setSelectedRow(null);
+    setSelectedRecording(null);
+    setShowCreate(false);
+    void loadInbox("replace");
+  // The first page reloads when filters change. Cursor changes are driven by
+  // explicit "Load more" clicks and must not restart the list.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sourceKind, statusFilter]);
+
+  useEffect(() => {
+    if (selectedRow?.source_kind !== "recording") {
+      setSelectedRecording(null);
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      try {
+        const detail = await getRecording(selectedRow.source_id);
+        if (cancelled) return;
+        setSelectedRecording(detail);
+        onRecordingUpdate(detail);
+      } catch (error: unknown) {
+        if (!cancelled) onError(formatError(error));
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [onError, onRecordingUpdate, selectedRow]);
+
+  const hasProcessing = useMemo(
+    () => rows.some((row) => row.status === "processing"),
+    [rows],
+  );
+
+  useEffect(() => {
+    if (!hasProcessing) return undefined;
+    const id = window.setInterval(() => void loadInbox("replace"), 5000);
+    return () => window.clearInterval(id);
+  }, [hasProcessing, loadInbox]);
+
+  function recordingRowFromDetail(detail: RecordingDetail): InboxRow {
+    return {
+      id: `recording:${detail.id}`,
+      source_kind: "recording",
+      source_id: detail.id,
+      detail: { kind: "recording", id: detail.id },
+      title: detail.title,
+      source_label: "Recording",
+      sublabel: detail.type,
+      activity_at: detail.created_at,
+      created_at: detail.created_at,
+      updated_at: detail.updated_at ?? detail.created_at,
+      occurred_at: detail.uploaded_at,
+      status:
+        detail.status === "ready"
+          ? "ready"
+          : detail.status === "failed"
+            ? "failed"
+            : "processing",
+      source_status: detail.status,
+      error: detail.failure_code
+        ? {
+            code: detail.failure_code,
+            message: detail.failure_message ?? "",
+          }
+        : null,
+      folder_id: detail.folder_id,
+      duration_seconds: detail.duration_seconds,
+      language: detail.language,
+      has_summary: detail.summary !== null,
+      is_starred: detail.starred_at !== null,
+      is_pinned: false,
+      is_archived: false,
+      is_trashed: false,
+    };
+  }
+
+  async function handleCreateInboxRecording(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    onError(null);
+    try {
+      const created = await createRecording({
+        title: recordingTitle.length > 0 ? recordingTitle : null,
+        type: recordingType,
+        language: "multi",
+      });
+      onRecordingTitleChange("");
+      await onRefreshRecordings();
+      await loadInbox("replace");
+      const detail = await getRecording(created.id);
+      setSelectedRecording(detail);
+      setSelectedRow(recordingRowFromDetail(detail));
+      onRecordingUpdate(detail);
+      setShowCreate(false);
+    } catch (error: unknown) {
+      onError(formatError(error));
+    }
+  }
+
+  async function handleRecordingComplete(detail: RecordingDetail) {
+    onRecordingUpdate(detail);
+    await onRefreshRecordings();
+    await loadInbox("replace");
+    setSelectedRow(recordingRowFromDetail(detail));
+    setSelectedRecording(detail);
+    setShowCreate(false);
+  }
+
+  async function handleNewChat() {
+    onError(null);
+    try {
+      const chat = await createChat();
+      await loadInbox("replace");
+      setSelectedRow({
+        id: `chat:${chat.id}`,
+        source_kind: "chat",
+        source_id: chat.id,
+        detail: { kind: "chat", id: chat.id },
+        title: chat.title,
+        source_label: "Wai chat",
+        sublabel: "Chat",
+        activity_at: chat.last_message_at ?? chat.created_at,
+        created_at: chat.created_at,
+        updated_at: chat.updated_at,
+        occurred_at: chat.last_message_at,
+        status: "ready",
+        source_status: null,
+        error: null,
+        folder_id: null,
+        duration_seconds: null,
+        language: null,
+        has_summary: null,
+        is_starred: false,
+        is_pinned: chat.pinned_at !== null,
+        is_archived: false,
+        is_trashed: false,
+      });
+      setShowCreate(false);
+    } catch (error: unknown) {
+      onError(formatError(error));
+    }
+  }
+
+  const sourceFilters: Array<{ key: InboxFilterKind; label: string }> = [
+    { key: "all", label: locale === "ru" ? "Все" : "All" },
+    { key: "recording", label: locale === "ru" ? "Записи" : "Recordings" },
+    { key: "item", label: locale === "ru" ? "Материалы" : "Materials" },
+    { key: "chat", label: locale === "ru" ? "Чаты" : "Chats" },
+  ];
+  const statusFilters: Array<{ key: InboxFilterStatus; label: string }> = [
+    { key: "all", label: locale === "ru" ? "Любой статус" : "Any status" },
+    { key: "ready", label: locale === "ru" ? "Готово" : "Ready" },
+    { key: "processing", label: locale === "ru" ? "В работе" : "Processing" },
+    {
+      key: "needs_attention",
+      label: locale === "ru" ? "Нужно внимание" : "Needs attention",
+    },
+  ];
+
+  return (
+    <div className="inbox-grid">
+      <section className="inbox-list-panel" aria-label={copy.nav.inbox.label}>
+        <header className="panel-header inbox-panel-header">
+          <div>
+            <h3>{copy.nav.inbox.label}</h3>
+            <p>
+              {loading
+                ? locale === "ru"
+                  ? "Загрузка..."
+                  : "Loading..."
+                : locale === "ru"
+                  ? `${rows.length} объектов`
+                  : `${rows.length} items`}
+            </p>
+          </div>
+          <button
+            type="button"
+            className="ghost-button compact-button"
+            onClick={() => {
+              setSelectedRow(null);
+              setSelectedRecording(null);
+              setShowCreate(true);
+            }}
+          >
+            {locale === "ru" ? "+ Добавить" : "+ Add"}
+          </button>
+        </header>
+
+        <div className="inbox-filters" aria-label={locale === "ru" ? "Фильтры" : "Filters"}>
+          <div className="inbox-segmented" role="tablist">
+            {sourceFilters.map((filter) => (
+              <button
+                key={filter.key}
+                type="button"
+                role="tab"
+                aria-selected={sourceKind === filter.key}
+                onClick={() => setSourceKind(filter.key)}
+              >
+                {filter.label}
+              </button>
+            ))}
+          </div>
+          <select
+            aria-label={locale === "ru" ? "Фильтр статуса" : "Status filter"}
+            value={statusFilter}
+            onChange={(event) => setStatusFilter(event.target.value as InboxFilterStatus)}
+          >
+            {statusFilters.map((filter) => (
+              <option key={filter.key} value={filter.key}>
+                {filter.label}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {loading ? (
+          <div className="inbox-loading">
+            <Skeleton height="0.8rem" lines={6} />
+          </div>
+        ) : rows.length === 0 ? (
+          <div className="empty-state">
+            <h3>{locale === "ru" ? "Пока пусто" : "Nothing here yet"}</h3>
+            <p>
+              {locale === "ru"
+                ? "Добавьте запись, файл, ссылку, текст или чат."
+                : "Add a recording, file, link, text, or chat."}
+            </p>
+          </div>
+        ) : (
+          <ul className="inbox-list">
+            {rows.map((row) => {
+              const statusLabel = inboxStatusLabel(row, locale);
+              return (
+                <li key={row.id}>
+                  <button
+                    type="button"
+                    className="inbox-row"
+                    aria-current={selectedRow?.id === row.id ? "true" : undefined}
+                    onClick={() => {
+                      setShowCreate(false);
+                      setSelectedRow(row);
+                    }}
+                  >
+                    <span className="inbox-row__icon" data-kind={row.source_kind}>
+                      {row.source_kind === "recording"
+                        ? "R"
+                        : row.source_kind === "item"
+                          ? "M"
+                          : "C"}
+                    </span>
+                    <span className="inbox-row__main">
+                      <strong>{inboxTitle(row, locale)}</strong>
+                      <small>
+                        {sourceLabel(row.source_kind, locale)}
+                        {row.sublabel ? ` / ${row.sublabel}` : ""} /{" "}
+                        {formatDate(row.activity_at, locale)}
+                        {row.duration_seconds
+                          ? ` / ${formatDuration(row.duration_seconds)}`
+                          : ""}
+                      </small>
+                    </span>
+                    {statusLabel ? (
+                      <span
+                        className={`inbox-status inbox-status--${row.status}`}
+                        title={row.error?.message ?? undefined}
+                      >
+                        {statusLabel}
+                      </span>
+                    ) : null}
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+
+        {nextCursor ? (
+          <div className="inbox-load-more">
+            <button
+              type="button"
+              className="ghost-button compact-button"
+              disabled={loadingMore}
+              onClick={() => void loadInbox("append")}
+            >
+              {loadingMore
+                ? locale === "ru"
+                  ? "Загрузка..."
+                  : "Loading..."
+                : locale === "ru"
+                  ? "Показать ещё"
+                  : "Load more"}
+            </button>
+          </div>
+        ) : null}
+      </section>
+
+      <section className="inbox-detail-area" aria-label="Inbox detail">
+        {showCreate || !selectedRow ? (
+          <div className="inbox-create">
+            <div className="inbox-create__top">
+              <button
+                type="button"
+                className="ghost-button compact-button"
+                onClick={() => void handleNewChat()}
+              >
+                {locale === "ru" ? "+ Новый чат" : "+ New Wai chat"}
+              </button>
+              <button
+                type="button"
+                className="ghost-button compact-button"
+                onClick={() => void loadInbox("replace")}
+              >
+                {locale === "ru" ? "Обновить" : "Refresh"}
+              </button>
+            </div>
+            <NewRecordingPane
+              title={recordingTitle}
+              type={recordingType}
+              copy={copy}
+              locale={locale}
+              onTitleChange={onRecordingTitleChange}
+              onTypeChange={onRecordingTypeChange}
+              onSubmit={handleCreateInboxRecording}
+              onComplete={(detail) => void handleRecordingComplete(detail)}
+              onError={onError}
+            />
+            <div className="inbox-add-material">
+              <AddAnythingPanel
+                onCreated={() => {
+                  onItemsChanged();
+                  void loadInbox("replace");
+                }}
+                onRecordingQueued={() => void loadInbox("replace")}
+                onError={onError}
+              />
+            </div>
+          </div>
+        ) : selectedRow.source_kind === "recording" ? (
+          selectedRecording ? (
+            <RecordingDetailPanel
+              recording={selectedRecording}
+              mode="active"
+              folders={folders}
+              locale={locale}
+              onAssignFolder={(recordingId, folderId) =>
+                void onAssignRecordingToFolder(recordingId, folderId)
+              }
+              onRecordingUpdate={(detail) => {
+                setSelectedRecording(detail);
+                onRecordingUpdate(detail);
+              }}
+              onRestore={() => undefined}
+              onDelete={(recordingId) => {
+                void (async () => {
+                  await onDeleteRecording(recordingId);
+                  setSelectedRow(null);
+                  setSelectedRecording(null);
+                  await loadInbox("replace");
+                })();
+              }}
+            />
+          ) : (
+            <div className="inbox-loading">
+              <Skeleton height="0.8rem" lines={6} />
+            </div>
+          )
+        ) : selectedRow.source_kind === "item" ? (
+          <ItemDetail itemId={selectedRow.source_id} onError={onError} />
+        ) : (
+          <CompanionPanel
+            recordings={recordings}
+            locale={locale}
+            initialChatId={selectedRow.source_id}
+            onChatCreated={() => void loadInbox("replace")}
+          />
+        )}
+      </section>
     </div>
   );
 }

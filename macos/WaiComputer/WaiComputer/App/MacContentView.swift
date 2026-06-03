@@ -99,7 +99,7 @@ struct MacMainView: View {
     // the assistant surface is open so it never silently polls 24/7.
     @StateObject private var desktopAgent = DesktopAgentRunner()
     @AppStorage("desktopComputerUseEnabled") private var computerUseEnabled = false
-    @State private var selectedSection: SidebarSection? = .allRecordings
+    @State private var selectedSection: SidebarSection? = .inbox
     @State private var selectedRecordingIds: Set<String> = []
     @State private var prefetchedRecordingDetail: RecordingDetail?
     @State private var pendingTitleEditId: String?
@@ -120,6 +120,7 @@ struct MacMainView: View {
     @State private var pendingRecordingSelectionAfterSectionChange: PendingRecordingSelection?
 
     enum SidebarSection: Hashable {
+        case inbox
         case allRecordings
         case folder(String)
         case trash
@@ -142,7 +143,7 @@ struct MacMainView: View {
         switch selectedSection {
         case .allRecordings, .folder(_), .trash, .none:
             return true
-        case .content, .brain, .review, .search, .history, .dictionary, .wai, .settings:
+        case .inbox, .content, .brain, .review, .search, .history, .dictionary, .wai, .settings:
             return false
         }
     }
@@ -182,6 +183,8 @@ struct MacMainView: View {
 
     private var currentListTitle: String {
         switch selectedSection {
+        case .inbox:
+            return t("Inbox", "Инбокс")
         case .allRecordings:
             return t("All Recordings", "Все записи")
         case .folder(let folderId):
@@ -518,6 +521,7 @@ struct MacMainView: View {
         .onReceive(NotificationCenter.default.publisher(for: .init("navigateTo"))) { notification in
             guard let target = notification.object as? String else { return }
             switch target {
+            case "inbox": selectedSection = .inbox
             case "allRecordings": selectedSection = .allRecordings
             case "content": selectedSection = .content
             case "brain": selectedSection = .brain
@@ -534,7 +538,7 @@ struct MacMainView: View {
             selectedRecordingIds.removeAll()
             prefetchedRecordingDetail = nil
             if !hasListColumn {
-                selectedSection = .allRecordings
+                selectedSection = .inbox
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .pendingRecordingSyncDidFinish)) { _ in
@@ -613,6 +617,7 @@ struct MacMainView: View {
     private var sidebarList: some View {
         List {
             Section {
+                sidebarRow(t("Inbox", "Инбокс"), icon: "tray.full", section: .inbox, identifier: "inbox")
                 sidebarRow(t("All Recordings", "Все записи"), icon: "folder", section: .allRecordings, identifier: "all-recordings")
                 sidebarRow(t("Content", "Материалы"), icon: "square.stack.3d.up", section: .content, identifier: "content")
                 sidebarRow(t("Brain", "Мозг"), icon: "brain", section: .brain, identifier: "brain")
@@ -810,6 +815,23 @@ struct MacMainView: View {
     @ViewBuilder
     private var detailContentView: some View {
         switch selectedSection {
+        case .inbox:
+            MacInboxView(
+                apiClient: appState.getAPIClient(),
+                recordings: libraryViewModel.recordings,
+                folders: libraryViewModel.folders,
+                isImporting: importViewModel.isImporting,
+                onStartRecording: {
+                    startRecording(type: .meeting, inputSource: .dual, folderId: nil)
+                },
+                onImportAudio: {
+                    importAudioFile()
+                },
+                onLibraryChanged: {
+                    await libraryViewModel.loadLibrary(apiClient: appState.getAPIClient())
+                }
+            )
+            .environment(\.locale, MacDateFormatting.locale(for: languageManager.current))
         case .allRecordings, .folder(_), .trash, .none:
             if selectedRecordingIds.count > 1 {
                 BulkSelectionDetailView(

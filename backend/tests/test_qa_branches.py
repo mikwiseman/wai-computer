@@ -70,7 +70,7 @@ async def test_retrieve_context_with_recording_ids_filter(
     await db_session.commit()
 
     # Stub embedding generation to avoid real API calls
-    async def fake_embedding(text: str) -> list[float]:
+    async def fake_embedding(text: str, **_: object) -> list[float]:
         return [0.1] * 384
 
     monkeypatch.setattr("app.core.qa.generate_embedding", fake_embedding)
@@ -97,7 +97,7 @@ async def test_retrieve_context_without_recording_ids(
     db_session.add(user)
     await db_session.flush()
 
-    async def fake_embedding(text: str) -> list[float]:
+    async def fake_embedding(text: str, **_: object) -> list[float]:
         return [0.1] * 384
 
     monkeypatch.setattr("app.core.qa.generate_embedding", fake_embedding)

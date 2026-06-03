@@ -735,7 +735,7 @@ async def test_search_logs_do_not_expose_query(
     caplog: pytest.LogCaptureFixture,
     monkeypatch: pytest.MonkeyPatch,
 ):
-    async def fake_generate_embedding(_query: str) -> list[float]:
+    async def fake_generate_embedding(_query: str, **_: object) -> list[float]:
         return [0.0, 0.0, 0.0]
 
     monkeypatch.setattr(search_routes, "generate_embedding", fake_generate_embedding)

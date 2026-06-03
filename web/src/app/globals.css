@@ -1142,8 +1142,17 @@ a.primary-button[aria-disabled="true"]:hover {
   gap: 1rem;
 }
 
+.inbox-grid {
+  display: grid;
+  min-height: calc(100dvh - 104px);
+  grid-template-columns: minmax(320px, 420px) minmax(0, 1fr);
+  gap: 1rem;
+}
+
 .recording-list-panel,
 .recording-detail-area,
+.inbox-list-panel,
+.inbox-detail-area,
 .tool-panel,
 .wai-panel,
 .detail-panel {
@@ -1154,11 +1163,193 @@ a.primary-button[aria-disabled="true"]:hover {
   box-shadow: none;
 }
 
+.inbox-list-panel,
 .recording-list-panel {
   display: flex;
   min-height: 0;
   flex-direction: column;
   overflow: hidden;
+}
+
+.inbox-detail-area {
+  overflow: auto;
+}
+
+.inbox-panel-header {
+  gap: 0.75rem;
+}
+
+.inbox-filters {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  border-bottom: 1px solid var(--border);
+  padding: 0.55rem;
+}
+
+.inbox-filters select {
+  min-width: 132px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--ink);
+  padding: 0.4rem 0.55rem;
+  font-size: var(--font-label-size);
+}
+
+.inbox-segmented {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  gap: 0.25rem;
+  overflow-x: auto;
+}
+
+.inbox-segmented button {
+  flex: 0 0 auto;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ink-soft);
+  padding: 0.38rem 0.55rem;
+  font-size: var(--font-label-size);
+}
+
+.inbox-segmented button:hover {
+  background: var(--surface-hover);
+  color: var(--ink);
+}
+
+.inbox-segmented button[aria-selected="true"] {
+  border-color: var(--surface-hairline);
+  background: var(--accent-soft);
+  color: var(--ink);
+}
+
+.inbox-list {
+  overflow: auto;
+  padding: 0.45rem;
+}
+
+.inbox-list li + li {
+  margin-top: 0.25rem;
+}
+
+.inbox-row {
+  display: grid;
+  grid-template-columns: 2rem minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.65rem;
+  width: 100%;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ink);
+  padding: 0.68rem;
+  text-align: left;
+  transition: background var(--motion-duration-fast) var(--motion-ease-standard);
+}
+
+.inbox-row:hover {
+  background: var(--surface-hover);
+}
+
+.inbox-row[aria-current="true"] {
+  background: var(--accent-soft);
+}
+
+.inbox-row__icon {
+  display: grid;
+  width: 1.75rem;
+  height: 1.75rem;
+  place-items: center;
+  border: 1px solid var(--surface-hairline);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--ink-soft);
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.inbox-row__icon[data-kind="recording"] {
+  color: var(--accent);
+}
+
+.inbox-row__icon[data-kind="item"] {
+  color: var(--success);
+}
+
+.inbox-row__icon[data-kind="chat"] {
+  color: var(--warning);
+}
+
+.inbox-row__main {
+  min-width: 0;
+}
+
+.inbox-row__main strong,
+.inbox-row__main small {
+  display: block;
+}
+
+.inbox-row__main strong {
+  overflow: hidden;
+  font: var(--font-heading-medium);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.inbox-row__main small {
+  margin-top: 0.2rem;
+  overflow: hidden;
+  color: var(--ink-soft);
+  font-size: var(--font-label-size);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.inbox-status {
+  align-self: start;
+  border: 1px solid var(--surface-hairline);
+  border-radius: 999px;
+  padding: 0.16rem 0.42rem;
+  color: var(--ink-soft);
+  font-size: var(--font-label-small-size);
+  white-space: nowrap;
+}
+
+.inbox-status--processing {
+  color: var(--warning);
+}
+
+.inbox-status--needs_input,
+.inbox-status--failed {
+  color: var(--danger);
+}
+
+.inbox-loading,
+.inbox-load-more {
+  padding: 0.75rem;
+}
+
+.inbox-load-more {
+  border-top: 1px solid var(--border);
+}
+
+.inbox-create {
+  display: grid;
+  gap: 1rem;
+  padding: 1rem;
+}
+
+.inbox-create__top {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
+.inbox-add-material {
+  border-top: 1px solid var(--border);
+  padding-top: 1rem;
 }
 
 .panel-header {
@@ -3363,6 +3554,7 @@ a.primary-button[aria-disabled="true"]:hover {
 
 @media (max-width: 960px) {
   .web-app-shell,
+  .inbox-grid,
   .library-grid {
     grid-template-columns: 1fr;
   }
@@ -3385,12 +3577,15 @@ a.primary-button[aria-disabled="true"]:hover {
     min-width: 0;
   }
 
+  .inbox-grid,
   .library-grid {
     min-height: auto;
   }
 
   .recording-list-panel,
   .recording-detail-area,
+  .inbox-list-panel,
+  .inbox-detail-area,
   .tool-panel,
   .wai-panel {
     min-height: auto;

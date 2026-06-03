@@ -68,6 +68,7 @@ public struct CompanionView: View {
     /// Optional voice-input hook (macOS): starts the host's dictation, which
     /// transcribes speech into the focused composer field. nil hides the mic.
     private let onVoiceInput: (() -> Void)?
+    private let initialChatId: String?
     @Environment(\.locale) private var locale
     @Environment(\.companionAccentColor) private var companionAccentColor
 
@@ -105,10 +106,12 @@ public struct CompanionView: View {
     public init(
         apiClient: APIClient,
         recordings: [Recording],
+        initialChatId: String? = nil,
         onVoiceInput: (() -> Void)? = nil
     ) {
         self.apiClient = apiClient
         self.recordings = recordings
+        self.initialChatId = initialChatId
         self.onVoiceInput = onVoiceInput
     }
 
@@ -121,6 +124,10 @@ public struct CompanionView: View {
         .background(Color.primary.opacity(0.025))
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .task { await initialLoad() }
+        .onChange(of: initialChatId) { chatId in
+            guard let chatId else { return }
+            Task { await loadChat(chatId) }
+        }
         .onDisappear { turnTask?.cancel() }
         .sheet(item: $renamingChat) { chat in
             renameSheet(for: chat)
@@ -633,11 +640,17 @@ public struct CompanionView: View {
             let list = try await apiClient.listCompanionChats()
             await MainActor.run {
                 self.chats = list.chats
-                if let first = list.chats.first {
+                if let initialChatId,
+                   list.chats.contains(where: { $0.id == initialChatId }) {
+                    self.activeChatId = initialChatId
+                } else if let first = list.chats.first {
                     self.activeChatId = first.id
                 }
             }
-            if let chatId = list.chats.first?.id {
+            if let initialChatId,
+               list.chats.contains(where: { $0.id == initialChatId }) {
+                await loadChat(initialChatId)
+            } else if let chatId = list.chats.first?.id {
                 await loadChat(chatId)
             }
         } catch {

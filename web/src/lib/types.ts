@@ -186,6 +186,7 @@ export interface Recording {
   deleted_at: string | null;
   starred_at: string | null;
   created_at: string;
+  updated_at?: string;
 }
 
 export interface Segment {
@@ -311,6 +312,51 @@ export interface RecordingDetail extends Recording {
   summary_generation?: SummaryGeneration | null;
   action_items: ActionItem[];
   highlights: Highlight[];
+}
+
+export type InboxSourceKind = "recording" | "item" | "chat";
+export type InboxStatus = "ready" | "processing" | "needs_input" | "failed" | "archived";
+export type InboxStatusFilter = "ready" | "processing" | "needs_attention";
+
+export interface InboxDetailRef {
+  kind: InboxSourceKind;
+  id: string;
+}
+
+export interface InboxError {
+  code: string;
+  message: string;
+}
+
+export interface InboxRow {
+  id: string;
+  source_kind: InboxSourceKind;
+  source_id: string;
+  detail: InboxDetailRef;
+  title: string | null;
+  source_label: string;
+  sublabel: string | null;
+  activity_at: string;
+  created_at: string;
+  updated_at: string | null;
+  occurred_at: string | null;
+  status: InboxStatus;
+  source_status: string | null;
+  error: InboxError | null;
+  folder_id: string | null;
+  duration_seconds: number | null;
+  language: string | null;
+  has_summary: boolean | null;
+  is_starred: boolean;
+  is_pinned: boolean;
+  is_archived: boolean;
+  is_trashed: boolean;
+}
+
+export interface InboxResponse {
+  rows: InboxRow[];
+  next_cursor: string | null;
+  has_more: boolean;
 }
 
 export interface RematchSpeakersResponse {

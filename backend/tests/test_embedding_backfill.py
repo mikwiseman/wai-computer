@@ -73,7 +73,12 @@ async def test_backfill_missing_segment_embeddings_fills_only_null_non_empty_seg
         "batches": 1,
         "isolated_failures": 0,
     }
-    generate.assert_awaited_once_with(["repairable segment"])
+    generate.assert_awaited_once_with(
+        ["repairable segment"],
+        usage_user_id=None,
+        usage_feature="embeddings",
+        usage_operation="embedding.backfill",
+    )
     assert list(needs_embedding.embedding) == [0.7] * 1536
     assert list(already_filled.embedding) == [0.2] * 1536
     assert blank.embedding is None
@@ -115,7 +120,7 @@ async def test_backfill_missing_segment_embeddings_isolates_poison_rows(
     db_session.add_all([first, second])
     await db_session.commit()
 
-    async def fake_generate(texts: list[str]) -> list[list[float]]:
+    async def fake_generate(texts: list[str], **_: object) -> list[list[float]]:
         if len(texts) > 1:
             raise RuntimeError("batch failed")
         if texts == ["poison segment"]:

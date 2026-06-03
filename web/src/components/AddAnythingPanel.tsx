@@ -6,6 +6,7 @@ import type { Item, KeyMoment } from "@/lib/types";
 
 interface AddAnythingPanelProps {
   onCreated?: (item: Item) => void;
+  onRecordingQueued?: () => void;
   onError?: (message: string) => void;
 }
 
@@ -57,7 +58,11 @@ const ACCEPTED_FILE_TYPES = [
  * (for content with a body) shows the summary + key-moments table once the
  * background job finishes. The web counterpart to the Telegram forward flow.
  */
-export function AddAnythingPanel({ onCreated, onError }: AddAnythingPanelProps) {
+export function AddAnythingPanel({
+  onCreated,
+  onRecordingQueued,
+  onError,
+}: AddAnythingPanelProps) {
   const [value, setValue] = useState("");
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState("");
@@ -116,6 +121,7 @@ export function AddAnythingPanel({ onCreated, onError }: AddAnythingPanelProps) 
           // Audio/video go to the transcription pipeline — no Item to poll;
           // it surfaces under Recordings when ready.
           setStatus("Transcribing — it'll appear in your recordings shortly.");
+          onRecordingQueued?.();
           return;
         }
         const created = outcome.item;
@@ -131,7 +137,7 @@ export function AddAnythingPanel({ onCreated, onError }: AddAnythingPanelProps) 
         setBusy(false);
       }
     },
-    [busy, onCreated, onError, pollForSummary],
+    [busy, onCreated, onRecordingQueued, onError, pollForSummary],
   );
 
   const keyMoments: KeyMoment[] = result?.summary?.key_moments ?? [];

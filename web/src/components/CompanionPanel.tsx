@@ -136,6 +136,8 @@ function detectLocale(): Locale {
 interface CompanionPanelProps {
   recordings: Recording[];
   locale?: Locale;
+  initialChatId?: string | null;
+  onChatCreated?: (chat: CompanionConversation) => void;
 }
 
 interface StreamingCitation {
@@ -190,7 +192,12 @@ function plainText(content: unknown): string {
   return "";
 }
 
-export function CompanionPanel({ recordings, locale: localeProp }: CompanionPanelProps) {
+export function CompanionPanel({
+  recordings,
+  locale: localeProp,
+  initialChatId,
+  onChatCreated,
+}: CompanionPanelProps) {
   const [locale, setLocale] = useState<Locale>(localeProp ?? "en");
   const copy = COPY[locale];
 
@@ -225,14 +232,21 @@ export function CompanionPanel({ recordings, locale: localeProp }: CompanionPane
       try {
         const data = await listChats();
         setChats(data.chats);
-        if (data.chats.length > 0) {
+        if (initialChatId && data.chats.some((chat) => chat.id === initialChatId)) {
+          setActiveChatId(initialChatId);
+        } else if (data.chats.length > 0) {
           setActiveChatId(data.chats[0].id);
         }
       } catch (e) {
         setError(formatError(e, COPY[detectLocale()]));
       }
     })();
-  }, []);
+  }, [initialChatId]);
+
+  useEffect(() => {
+    if (!initialChatId) return;
+    setActiveChatId(initialChatId);
+  }, [initialChatId]);
 
   useEffect(() => {
     if (!activeChatId) {
@@ -270,6 +284,7 @@ export function CompanionPanel({ recordings, locale: localeProp }: CompanionPane
       const chat = await createChat();
       setChats((prev) => [chat, ...prev]);
       setActiveChatId(chat.id);
+      onChatCreated?.(chat);
     } catch (e) {
       setError(formatError(e, copy));
     }
@@ -334,6 +349,7 @@ export function CompanionPanel({ recordings, locale: localeProp }: CompanionPane
         setChats((prev) => [chat, ...prev]);
         setActiveChatId(chat.id);
         setMessages([]);
+        onChatCreated?.(chat);
         chatId = chat.id;
       } catch (e) {
         setError(formatError(e, copy));

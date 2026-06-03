@@ -204,7 +204,7 @@ async def test_import_media_as_recording_persists_transcript_and_summary(
             )
         ]
 
-    async def fake_embedding(text: str):
+    async def fake_embedding(text: str, **_: object):
         raise RuntimeError("embedding offline")
 
     async def fake_identify(**kwargs):
@@ -1048,7 +1048,7 @@ async def test_handle_document_message_imports_html_material_and_replies(
     )
     capture.file = TelegramFile("file-id", "documents/stt-benchmarks-2026.html", len(capture.data))
 
-    async def fake_embeddings(texts: list[str]) -> list[list[float]]:
+    async def fake_embeddings(texts: list[str], **_: object) -> list[list[float]]:
         return [[0.03] * 1536 for _ in texts]
 
     async def fake_summarize(text, **kwargs):

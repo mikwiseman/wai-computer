@@ -28,6 +28,9 @@ import type {
   ExportFormat,
   ExportLocale,
   Folder,
+  InboxResponse,
+  InboxSourceKind,
+  InboxStatusFilter,
   KeywordsResponse,
   McpConnection,
   MemoryProposal,
@@ -250,6 +253,24 @@ export function listRecordings(params?: {
       folder_id: params?.folder_id,
       trashed: params?.trashed,
       starred: params?.starred,
+    })}`,
+  );
+}
+
+export function listInbox(params?: {
+  source_kind?: InboxSourceKind;
+  status?: InboxStatusFilter;
+  folder_id?: string | null;
+  limit?: number;
+  cursor?: string | null;
+}): Promise<InboxResponse> {
+  return apiFetch<InboxResponse>(
+    `/api/inbox${asQuery({
+      source_kind: params?.source_kind,
+      status: params?.status,
+      folder_id: params?.folder_id,
+      limit: params?.limit,
+      cursor: params?.cursor,
     })}`,
   );
 }
