@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import secrets
 import shlex
 import subprocess
@@ -122,10 +123,10 @@ def main() -> None:
     parser.add_argument("--role", choices=["owner", "admin", "support"], default="owner")
     parser.add_argument("--password")
     parser.add_argument("--reset-existing-password", action="store_true")
-    parser.add_argument("--vps-user", default="root")
-    parser.add_argument("--vps-host", default="157.180.47.68")
-    parser.add_argument("--remote-root", default="/opt/waicomputer")
-    parser.add_argument("--remote-env-file", default="/etc/waicomputer/backend.env")
+    parser.add_argument("--vps-user", default=os.getenv("VPS_USER"))
+    parser.add_argument("--vps-host", default=os.getenv("VPS_HOST"))
+    parser.add_argument("--remote-root", default=os.getenv("REMOTE_ROOT"))
+    parser.add_argument("--remote-env-file", default=os.getenv("REMOTE_ENV_FILE"))
     parser.add_argument("--print-sql", action="store_true")
     args = parser.parse_args()
 
@@ -145,6 +146,18 @@ def main() -> None:
         print(f"\nAdmin login: {email}")
         print(f"Admin password: {password}")
         return
+    missing = [
+        name
+        for name, value in [
+            ("--vps-user/VPS_USER", args.vps_user),
+            ("--vps-host/VPS_HOST", args.vps_host),
+            ("--remote-root/REMOTE_ROOT", args.remote_root),
+            ("--remote-env-file/REMOTE_ENV_FILE", args.remote_env_file),
+        ]
+        if not value
+    ]
+    if missing:
+        raise SystemExit("Missing required deployment settings: " + ", ".join(missing))
 
     print(
         run_on_vps(

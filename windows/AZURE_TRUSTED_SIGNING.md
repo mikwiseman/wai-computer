@@ -23,8 +23,8 @@ Azure portal → **Trusted Signing Accounts** → **+ Create**:
 |---|---|
 | Subscription | (your sub) |
 | Resource group | `rg-waicomputer-signing` (create new) |
-| Region | West Europe — closest to Hetzner backend |
-| Account name | `waicomputer-signing` |
+| Region | Choose the closest supported region |
+| Account name | Choose a private account name |
 | SKU | **Basic** (~$9.99/mo, includes 5,000 signatures) |
 
 Wait for deployment (~2 min).
@@ -36,8 +36,8 @@ Inside the Trusted Signing account → **Identity Validation** → **+ New**:
 | Field | Value |
 |---|---|
 | Type | Private (your organisation) |
-| Organisation name | **WaiWai** (must match what shows in SmartScreen) |
-| Address | Mik's business address |
+| Organisation name | Your publisher organisation name |
+| Address | Your business address |
 | Website | https://wai.computer |
 | Email | hi@mikwiseman.com |
 
@@ -53,29 +53,29 @@ Profiles** → **+ Create**:
 
 | Field | Value |
 |---|---|
-| Profile name | `waicomputer-release` |
+| Profile name | Choose a private profile name |
 | Type | Public Trust |
 | Identity validation | (the one you created in step 3) |
 
 Capture:
 - **Endpoint** (top of profile page, looks like `https://weu.codesigning.azure.net/`)
-- **Account name** (`waicomputer-signing`)
-- **Profile name** (`waicomputer-release`)
+- **Account name**
+- **Profile name**
 
 ### 5. Federated identity for GitHub Actions
 
 So the CI workflow can sign without storing long-lived secrets:
 
 Azure portal → **App registrations** → **+ New registration**:
-- Name: `waicomputer-github-signing`
+- Name: choose a private app registration name
 - Supported account types: Single tenant
 - Redirect URI: (leave blank)
 
 After creation → the app → **Certificates & secrets** → **Federated
 credentials** → **+ Add**:
 - Federated credential scenario: GitHub Actions deploying Azure resources
-- Organization: `mikwiseman`
-- Repository: `waicomputer`
+- Organization: your GitHub owner
+- Repository: your repository
 - Entity type: Branch
 - Branch name: `main` (and add a second for `windows-*` tags if you tag-trigger)
 - Audience: `api://AzureADTokenExchange` (default)
@@ -83,7 +83,7 @@ credentials** → **+ Add**:
 Now grant the app the **Trusted Signing Certificate Profile Signer** role:
 Trusted Signing account → **Access control (IAM)** → **+ Add role
 assignment** → role `Trusted Signing Certificate Profile Signer` →
-assign to the `waicomputer-github-signing` service principal.
+assign to the GitHub signing service principal.
 
 Capture:
 - **Application (client) ID** of the app registration
@@ -93,14 +93,15 @@ Capture:
 ```
 gh secret set AZURE_TENANT_ID --body "<tenant-id>"
 gh secret set AZURE_CLIENT_ID --body "<application-client-id>"
-gh secret set AZURE_TRUSTED_SIGNING_ENDPOINT --body "https://weu.codesigning.azure.net/"
-gh secret set AZURE_TRUSTED_SIGNING_ACCOUNT --body "waicomputer-signing"
-gh secret set AZURE_TRUSTED_SIGNING_CERTIFICATE_PROFILE --body "waicomputer-release"
+gh secret set AZURE_TRUSTED_SIGNING_ENDPOINT --body "<trusted-signing-endpoint>"
+gh secret set AZURE_TRUSTED_SIGNING_ACCOUNT --body "<trusted-signing-account>"
+gh secret set AZURE_TRUSTED_SIGNING_CERTIFICATE_PROFILE --body "<certificate-profile>"
 
-# VPS upload (re-use same SSH key the macOS release flow uses)
-gh secret set VPS_SSH_PRIVATE_KEY < ~/.ssh/wai_vps_ed25519
-gh secret set VPS_HOST --body "157.180.47.68"
-gh secret set VPS_USER --body "root"
+# Release upload
+gh secret set VPS_SSH_PRIVATE_KEY < /path/to/release-upload-key
+gh secret set VPS_HOST --body "<release-host>"
+gh secret set VPS_USER --body "<release-user>"
+gh secret set WINDOWS_RELEASE_REMOTE_ROOT --body "<remote-release-directory>"
 ```
 
 ## Make a signed release

@@ -1,15 +1,23 @@
 #!/bin/bash
 # Database backup script for WaiComputer
 # Usage: Run via cron at 3 AM UTC daily
-# Crontab: 0 3 * * * /opt/waicomputer/scripts/backup-db.sh
 
 set -euo pipefail
 
-PROD_ENV_FILE="${PROD_ENV_FILE:-/etc/waicomputer/backend.env}"
-BACKUP_DIR="/opt/waicomputer/backups"
+PROD_ENV_FILE="${PROD_ENV_FILE:-}"
+BACKUP_DIR="${BACKUP_DIR:-}"
 RETENTION_DAYS=14
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 BACKUP_FILE="${BACKUP_DIR}/waicomputer_${TIMESTAMP}.sql.gz"
+
+if [[ -z "${PROD_ENV_FILE}" ]]; then
+    echo "ERROR: PROD_ENV_FILE is required" >&2
+    exit 1
+fi
+if [[ -z "${BACKUP_DIR}" ]]; then
+    echo "ERROR: BACKUP_DIR is required" >&2
+    exit 1
+fi
 
 # Ensure backup directory exists
 mkdir -p "${BACKUP_DIR}"

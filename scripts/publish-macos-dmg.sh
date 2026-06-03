@@ -3,13 +3,21 @@ set -euo pipefail
 
 ROOT_DIR=$(cd "$(dirname "$0")/.." && pwd)
 RELEASE_ROOT=${MACOS_RELEASE_ROOT:-"$ROOT_DIR/artifacts/releases/macos"}
-REMOTE_RELEASE_ROOT=${MACOS_REMOTE_RELEASE_ROOT:-/opt/waicomputer/releases/macos}
-VPS_HOST=${VPS_HOST:-157.180.47.68}
+REMOTE_RELEASE_ROOT=${MACOS_REMOTE_RELEASE_ROOT:-}
+VPS_HOST=${VPS_HOST:-}
 VPS_USER=${VPS_USER:-}
 SSH_KEY_PATH=${SSH_KEY_PATH:-$HOME/.ssh/id_ed25519}
 
 if [[ -z "$VPS_USER" ]]; then
   echo "ERROR: VPS_USER is required" >&2
+  exit 1
+fi
+if [[ -z "$VPS_HOST" ]]; then
+  echo "ERROR: VPS_HOST is required" >&2
+  exit 1
+fi
+if [[ -z "$REMOTE_RELEASE_ROOT" ]]; then
+  echo "ERROR: MACOS_REMOTE_RELEASE_ROOT is required" >&2
   exit 1
 fi
 

@@ -129,7 +129,7 @@ services:
         API_BASE_URL: http://api:8000
         NEXT_PUBLIC_API_BASE_URL: ""
         # NEXT_PUBLIC_* must be present at BUILD time — Next inlines them into the
-        # client bundle. WEB_SENTRY_DSN lives in /etc/waicomputer/backend.env.
+        # client bundle. WEB_SENTRY_DSN lives in the private runtime env file.
         NEXT_PUBLIC_SENTRY_DSN: ${WEB_SENTRY_DSN:-}
         NEXT_PUBLIC_SENTRY_ENVIRONMENT: ${WEB_SENTRY_ENVIRONMENT:-production}
         SENTRY_RELEASE: waicomputer-web@${GIT_SHA:-local}

@@ -54,4 +54,4 @@ scripts/release-linux.sh stable
 scripts/release-linux.sh beta
 ```
 
-By default the script stages packages under `artifacts/releases/linux/<version>-<channel>/packages`. To publish to the VPS release directory, set `LINUX_RELEASE_PUBLISH=1 VPS_USER=root`.
+By default the script stages packages under `artifacts/releases/linux/<version>-<channel>/packages`. To publish to the release server, set `LINUX_RELEASE_PUBLISH=1` plus the private upload env vars.
