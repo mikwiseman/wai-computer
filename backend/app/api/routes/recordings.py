@@ -788,6 +788,12 @@ def _has_canonical_audio_processing(recording: Recording) -> bool:
         RecordingStatus.PROCESSING.value,
     }:
         return True
+    if (
+        recording.uploaded_at is not None
+        and recording.status == RecordingStatus.FAILED.value
+        and recording.failure_code == "upload_size_mismatch"
+    ):
+        return False
     return recording.uploaded_at is not None and recording.status in {
         RecordingStatus.READY.value,
         RecordingStatus.FAILED.value,
@@ -813,12 +819,16 @@ async def _claim_audio_upload(
             ),
             ~(
                 (Recording.uploaded_at.is_not(None))
-                & (Recording.status.in_(
-                    [
-                        RecordingStatus.READY.value,
-                        RecordingStatus.FAILED.value,
-                    ]
-                ))
+                & (
+                    (Recording.status == RecordingStatus.READY.value)
+                    | (
+                        (Recording.status == RecordingStatus.FAILED.value)
+                        & (
+                            Recording.failure_code.is_(None)
+                            | (Recording.failure_code != "upload_size_mismatch")
+                        )
+                    )
+                )
             ),
         )
         .values(
