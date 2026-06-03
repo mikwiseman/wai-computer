@@ -43,6 +43,11 @@ _PRICE_BY_PROVIDER_MODEL: dict[tuple[str, str], dict[str, float]] = {
         "cached_input_per_1m": 0.50,
         "output_per_1m": 30.00,
     },
+    (OPENAI_PROVIDER, "gpt-5.5-2026-04-23"): {
+        "input_per_1m": 5.00,
+        "cached_input_per_1m": 0.50,
+        "output_per_1m": 30.00,
+    },
     (OPENAI_PROVIDER, "text-embedding-3-large"): {"input_per_1m": 0.13},
 }
 
