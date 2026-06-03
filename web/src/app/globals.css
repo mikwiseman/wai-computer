@@ -1627,6 +1627,7 @@ a.primary-button[aria-disabled="true"]:hover {
 
 .server-data-grid > div,
 .server-data-metrics > div,
+.server-data-account-required,
 .server-data-result,
 .server-data-export {
   display: grid;
@@ -1669,9 +1670,16 @@ a.primary-button[aria-disabled="true"]:hover {
 }
 
 .server-data-provision h4,
+.server-data-account-required h4,
 .server-data-export h4 {
   margin: 0;
   font-size: var(--font-body-size);
+}
+
+.server-data-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
 }
 
 .server-data-result p {

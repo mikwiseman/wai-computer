@@ -68,7 +68,7 @@ export function SetupClient() {
           </div>
         </section>
       ) : (
-        <ServerDataSection />
+        <ServerDataSection provisioning="account_required" />
       )}
     </main>
   );

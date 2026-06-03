@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 
 import {
@@ -18,6 +19,7 @@ type AuthMethod = "ssh_key" | "password";
 
 interface ServerDataSectionProps {
   locale?: Locale;
+  provisioning?: "active" | "account_required";
 }
 
 const COPY = {
@@ -36,6 +38,11 @@ const COPY = {
     artifacts: "Files and artifacts",
     reconnect: "Needs reconnect",
     provisionTitle: "Move to my server",
+    accountRequiredTitle: "Create an account first",
+    accountRequiredBody:
+      "The VPS check is tied to your account so we can show progress, migration status, and reconnect steps safely.",
+    createAccount: "Create account",
+    signIn: "Sign in",
     hostname: "Server address",
     ip: "VPS IP address",
     user: "SSH user",
@@ -63,6 +70,11 @@ const COPY = {
     artifacts: "Файлы и артефакты",
     reconnect: "Нужно переподключить",
     provisionTitle: "Перенести на мой сервер",
+    accountRequiredTitle: "Сначала создайте аккаунт",
+    accountRequiredBody:
+      "Проверка VPS привязана к аккаунту, чтобы безопасно показать прогресс, статус миграции и шаги переподключения.",
+    createAccount: "Создать аккаунт",
+    signIn: "Войти",
     hostname: "Адрес сервера",
     ip: "IP VPS",
     user: "SSH пользователь",
@@ -91,7 +103,10 @@ function serverLabel(info: SystemInfo | null, locale: Locale): string {
   return COPY[locale].cloud;
 }
 
-export function ServerDataSection({ locale = "en" }: ServerDataSectionProps) {
+export function ServerDataSection({
+  locale = "en",
+  provisioning = "active",
+}: ServerDataSectionProps) {
   const copy = COPY[locale];
   const [info, setInfo] = useState<SystemInfo | null>(null);
   const [dataMap, setDataMap] = useState<DataOwnershipMap | null>(null);
@@ -215,81 +230,96 @@ export function ServerDataSection({ locale = "en" }: ServerDataSectionProps) {
         </div>
       ) : null}
 
-      <form className="server-data-provision" onSubmit={submitProvision}>
-        <h4>{copy.provisionTitle}</h4>
-        <label>
-          <span>{copy.hostname}</span>
-          <input
-            value={form.hostname}
-            onChange={(event) =>
-              setForm((current) => ({ ...current, hostname: event.target.value }))
-            }
-            required
-          />
-        </label>
-        <label>
-          <span>{copy.ip}</span>
-          <input
-            value={form.vps_ip}
-            onChange={(event) =>
-              setForm((current) => ({ ...current, vps_ip: event.target.value }))
-            }
-            required
-            inputMode="numeric"
-            placeholder="203.0.113.10"
-          />
-        </label>
-        <label>
-          <span>{copy.user}</span>
-          <input
-            value={form.ssh_username}
-            onChange={(event) =>
-              setForm((current) => ({ ...current, ssh_username: event.target.value }))
-            }
-            required
-          />
-        </label>
-        <label>
-          <span>{copy.method}</span>
-          <select
-            value={authMethod}
-            onChange={(event) => setAuthMethod(event.target.value as AuthMethod)}
-          >
-            <option value="ssh_key">SSH key</option>
-            <option value="password">Password</option>
-          </select>
-        </label>
-        {authMethod === "ssh_key" ? (
-          <label className="server-data-wide">
-            <span>{copy.publicKey}</span>
-            <textarea
-              value={form.ssh_public_key}
-              onChange={(event) =>
-                setForm((current) => ({ ...current, ssh_public_key: event.target.value }))
-              }
-              placeholder="ssh-ed25519 AAAA..."
-              required
-              rows={3}
-            />
-          </label>
-        ) : (
+      {provisioning === "account_required" ? (
+        <div className="server-data-account-required">
+          <h4>{copy.accountRequiredTitle}</h4>
+          <p className="settings-note">{copy.accountRequiredBody}</p>
+          <div className="server-data-actions">
+            <Link href="/register" className="primary-button">
+              {copy.createAccount}
+            </Link>
+            <Link href="/login" className="ghost-button">
+              {copy.signIn}
+            </Link>
+          </div>
+        </div>
+      ) : (
+        <form className="server-data-provision" onSubmit={submitProvision}>
+          <h4>{copy.provisionTitle}</h4>
           <label>
-            <span>{copy.password}</span>
+            <span>{copy.hostname}</span>
             <input
-              type="password"
-              value={form.ssh_password}
+              value={form.hostname}
               onChange={(event) =>
-                setForm((current) => ({ ...current, ssh_password: event.target.value }))
+                setForm((current) => ({ ...current, hostname: event.target.value }))
               }
-              autoComplete="off"
               required
             />
           </label>
-        )}
-        <button type="submit" className="primary-button" disabled={submitting}>
-          {submitting ? copy.starting : copy.start}
-        </button>
-      </form>
+          <label>
+            <span>{copy.ip}</span>
+            <input
+              value={form.vps_ip}
+              onChange={(event) =>
+                setForm((current) => ({ ...current, vps_ip: event.target.value }))
+              }
+              required
+              inputMode="numeric"
+              placeholder="203.0.113.10"
+            />
+          </label>
+          <label>
+            <span>{copy.user}</span>
+            <input
+              value={form.ssh_username}
+              onChange={(event) =>
+                setForm((current) => ({ ...current, ssh_username: event.target.value }))
+              }
+              required
+            />
+          </label>
+          <label>
+            <span>{copy.method}</span>
+            <select
+              value={authMethod}
+              onChange={(event) => setAuthMethod(event.target.value as AuthMethod)}
+            >
+              <option value="ssh_key">SSH key</option>
+              <option value="password">Password</option>
+            </select>
+          </label>
+          {authMethod === "ssh_key" ? (
+            <label className="server-data-wide">
+              <span>{copy.publicKey}</span>
+              <textarea
+                value={form.ssh_public_key}
+                onChange={(event) =>
+                  setForm((current) => ({ ...current, ssh_public_key: event.target.value }))
+                }
+                placeholder="ssh-ed25519 AAAA..."
+                required
+                rows={3}
+              />
+            </label>
+          ) : (
+            <label>
+              <span>{copy.password}</span>
+              <input
+                type="password"
+                value={form.ssh_password}
+                onChange={(event) =>
+                  setForm((current) => ({ ...current, ssh_password: event.target.value }))
+                }
+                autoComplete="off"
+                required
+              />
+            </label>
+          )}
+          <button type="submit" className="primary-button" disabled={submitting}>
+            {submitting ? copy.starting : copy.start}
+          </button>
+        </form>
+      )}
 
       {result ? (
         <div className="server-data-result" data-testid="server-provision-result">
