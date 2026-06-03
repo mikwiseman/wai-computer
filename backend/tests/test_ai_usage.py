@@ -7,6 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.ai_usage import (
+    DEEPGRAM_PROVIDER,
     FEATURE_SEARCH,
     OPENAI_PROVIDER,
     STATUS_SUCCEEDED,
@@ -47,6 +48,18 @@ def test_estimate_cost_prices_known_models_and_marks_unknown_models_unpriced() -
         model="text-embedding-3-large",
         input_tokens=1_000,
     ) == (0.00013, "priced")
+    assert estimate_cost_usd(
+        provider=OPENAI_PROVIDER,
+        model="gpt-5.5",
+        input_tokens=1_000_000,
+        cached_tokens=100_000,
+        output_tokens=10_000,
+    ) == (4.85, "priced")
+    assert estimate_cost_usd(
+        provider=DEEPGRAM_PROVIDER,
+        model="nova-3",
+        billable_seconds=60,
+    ) == (0.0058, "priced")
     assert estimate_cost_usd(
         provider=OPENAI_PROVIDER,
         model="gpt-unknown",

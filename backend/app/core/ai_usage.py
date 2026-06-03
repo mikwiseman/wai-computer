@@ -34,8 +34,15 @@ STATUS_FAILED = "failed"
 STATUS_REFUSED = "refused"
 
 _PRICE_BY_PROVIDER_MODEL: dict[tuple[str, str], dict[str, float]] = {
-    # OpenAI official list price as of the currently configured embedding model.
-    # Unknown aliases such as gpt-5.5 intentionally stay unpriced unless added.
+    # Official standard API rates, encoded only for models WaiComputer uses.
+    # Deepgram Nova-3 uses the multilingual PAYG rate because WaiComputer sends
+    # RU/multi-capable STT traffic through the generic "nova-3" model slot.
+    (DEEPGRAM_PROVIDER, "nova-3"): {"audio_per_min": 0.0058},
+    (OPENAI_PROVIDER, "gpt-5.5"): {
+        "input_per_1m": 5.00,
+        "cached_input_per_1m": 0.50,
+        "output_per_1m": 30.00,
+    },
     (OPENAI_PROVIDER, "text-embedding-3-large"): {"input_per_1m": 0.13},
 }
 
@@ -176,15 +183,19 @@ def estimate_cost_usd(
     cached_tokens: int | None = None,
     billable_seconds: float | None = None,
 ) -> tuple[float | None, str]:
-    del cached_tokens, billable_seconds
     if not model:
         return None, "unpriced"
     price = _PRICE_BY_PROVIDER_MODEL.get((provider, model))
     if not price:
         return None, "unpriced"
     total = 0.0
+    if billable_seconds is not None and (rate := price.get("audio_per_min")):
+        total += billable_seconds / 60 * rate
     if input_tokens and (rate := price.get("input_per_1m")):
-        total += input_tokens * rate / 1_000_000
+        cached = min(max(cached_tokens or 0, 0), input_tokens)
+        total += (input_tokens - cached) * rate / 1_000_000
+        if cached and (cached_rate := price.get("cached_input_per_1m")):
+            total += cached * cached_rate / 1_000_000
     if output_tokens and (rate := price.get("output_per_1m")):
         total += output_tokens * rate / 1_000_000
     return round(total, 8), "priced"
