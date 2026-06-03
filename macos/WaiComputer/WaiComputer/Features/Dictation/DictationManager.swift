@@ -204,7 +204,10 @@ final class DictationManager: ObservableObject {
     private var providerAudioTask: Task<Void, Never>?
     private var sessionEventTask: Task<Void, Never>?
     private var cleanupStreamTask: Task<String, Error>?
+    private var stopAndInsertTask: Task<Void, Never>?
     private var visibleCleanupStreamID: UUID?
+    private var cleanupStreamSnapshots: [UUID: String] = [:]
+    private var dictationCancellationRequested = false
 
     private var timerTask: Task<Void, Never>?
     private var sessionConfigPrefetchRefreshTask: Task<Void, Never>?
@@ -393,7 +396,7 @@ final class DictationManager: ObservableObject {
 
             if self.state == .listening && self.isHandsFree {
                 // Currently in hands-free — stop
-                Task { await self.stopAndInsert() }
+                self.requestStopAndInsert()
             } else if self.state == .idle, self.canBeginExternalDictation() {
                 // Start hands-free
                 self.beginDictationMode(.dictation, handsFree: true)
@@ -462,7 +465,7 @@ final class DictationManager: ObservableObject {
         }
         switch PushToTalkStopPolicy.resolve(state: policyState, isHandsFree: isHandsFree) {
         case .finishNow:
-            Task { await self.stopAndInsert() }
+            requestStopAndInsert()
         case .deferUntilReady:
             // .idle: onPushToTalkStart Task hasn't yet executed
             // setState(.connecting). .connecting: WS handshake / REST
@@ -476,6 +479,13 @@ final class DictationManager: ObservableObject {
             )
         case .doNothing:
             break
+        }
+    }
+
+    private func requestStopAndInsert() {
+        guard stopAndInsertTask == nil else { return }
+        stopAndInsertTask = Task { [weak self] in
+            await self?.stopAndInsert()
         }
     }
 
@@ -569,6 +579,8 @@ final class DictationManager: ObservableObject {
         interimTranscript = ""
         cleanupPreview = ""
         visibleCleanupStreamID = nil
+        cleanupStreamSnapshots = [:]
+        dictationCancellationRequested = false
         dictationDuration = 0
         // NOTE: do NOT reset `deferredStop` here. The onPushToTalkStart
         // callback already cleared it synchronously before scheduling this
@@ -741,7 +753,7 @@ final class DictationManager: ObservableObject {
 
             // Hotkey released during connect — apply now.
             if consumeDeferredStopAction() == .finishAfterReady {
-                await stopAndInsert()
+                requestStopAndInsert()
             }
         } catch {
             log.error("Failed to start dictation")
@@ -753,6 +765,7 @@ final class DictationManager: ObservableObject {
     }
 
     func stopAndInsert() async {
+        defer { stopAndInsertTask = nil }
         guard state == .listening else {
             SentryHelper.addBreadcrumb(
                 category: "dictation.session",
@@ -775,11 +788,12 @@ final class DictationManager: ObservableObject {
 
         // Drain the active provider before choosing the best final transcript.
         await finishProviderAudioPumpBeforeFinalizing()
+        guard shouldContinueFinalization() else { return }
         let speculativeCleanup = startSpeculativeCleanupIfPossible()
         let providerSegments = (try? await providerSession?.close(timeout: .seconds(4))) ?? []
 
         // If cancelDictation ran during finalization, bail out cleanly.
-        guard state == .processing else { return }
+        guard shouldContinueFinalization() else { return }
 
         sessionEventTask?.cancel()
         sessionEventTask = nil
@@ -847,6 +861,21 @@ final class DictationManager: ObservableObject {
         await cleanup()
     }
 
+    private func shouldContinueFinalization() -> Bool {
+        let policyState: PushToTalkStopState
+        switch state {
+        case .idle: policyState = .idle
+        case .connecting: policyState = .connecting
+        case .listening: policyState = .listening
+        case .processing, .inserting: policyState = .finalizing
+        }
+        return DictationFinalizationContinuationPolicy.shouldContinue(
+            state: policyState,
+            cancellationRequested: dictationCancellationRequested,
+            taskCancelled: Task.isCancelled
+        )
+    }
+
     private func startSpeculativeCleanupIfPossible() -> DictationCleanupStreamWork? {
         guard activeMode == .dictation,
               cleanupLevel != "none",
@@ -879,6 +908,7 @@ final class DictationManager: ObservableObject {
         speculative: Bool
     ) -> DictationCleanupStreamWork {
         let id = UUID()
+        cleanupStreamSnapshots[id] = ""
         if publishImmediately {
             visibleCleanupStreamID = id
             cleanupPreview = ""
@@ -923,6 +953,7 @@ final class DictationManager: ObservableObject {
             switch event {
             case .token(let text):
                 accumulated += text
+                cleanupStreamSnapshots[id] = accumulated
                 if visibleCleanupStreamID == id {
                     cleanupPreview = accumulated
                 }
@@ -934,6 +965,7 @@ final class DictationManager: ObservableObject {
                 let outputTokens,
                 let cachedTokens
             ):
+                cleanupStreamSnapshots[id] = text
                 if visibleCleanupStreamID == id {
                     cleanupPreview = text
                 }
@@ -994,6 +1026,9 @@ final class DictationManager: ObservableObject {
                     case .reuseSpeculative:
                         cleanupWork = speculativeCleanup!
                         visibleCleanupStreamID = cleanupWork.id
+                        cleanupPreview = DictationCleanupSpeculationPreviewPolicy.visiblePreviewOnReuse(
+                            storedPreview: cleanupStreamSnapshots[cleanupWork.id]
+                        )
                     case .restartWithFinal:
                         speculativeCleanup?.task.cancel()
                         cleanupWork = startCleanupStream(
@@ -1006,6 +1041,7 @@ final class DictationManager: ObservableObject {
                         )
                     }
                     cleanedText = try await cleanupWork.task.value
+                    guard shouldContinueFinalization() else { return }
                     cleanupStreamTask = nil
                     cleanupPreview = cleanedText ?? ""
                     log.info("AI cleanup: \(rawText.count) → \(cleanedText?.count ?? 0) chars (vocab=\(vocabulary.count))")
@@ -1165,6 +1201,7 @@ final class DictationManager: ObservableObject {
         rawText: String,
         cleanedText: String?
     ) async {
+        guard shouldContinueFinalization() else { return }
         // Publish the final text so observers (onboarding sandbox, future
         // analytics surfaces) receive it independent of TextInserter success.
         // Re-set on every dictation so SwiftUI .onChange fires even when the
@@ -1211,6 +1248,9 @@ final class DictationManager: ObservableObject {
 
     func cancelDictation() async {
         guard state != .idle else { return }
+        dictationCancellationRequested = true
+        stopAndInsertTask?.cancel()
+        stopAndInsertTask = nil
         log.info("Dictation cancelled")
         if let session = instrumentationSession {
             session.cancel(reason: "user_or_system")
@@ -1221,6 +1261,7 @@ final class DictationManager: ObservableObject {
         cleanupStreamTask?.cancel()
         cleanupStreamTask = nil
         visibleCleanupStreamID = nil
+        cleanupStreamSnapshots = [:]
         await providerSession?.cancel()
         sessionEventTask?.cancel()
         sessionEventTask = nil
@@ -1422,6 +1463,7 @@ final class DictationManager: ObservableObject {
         timerTask = nil
         sessionConfigPrefetchRefreshTask?.cancel()
         sessionConfigPrefetchRefreshTask = nil
+        stopAndInsertTask = nil
 
         let activeProviderSession = providerSession
         providerSession = nil
@@ -1430,6 +1472,7 @@ final class DictationManager: ObservableObject {
         cleanupStreamTask?.cancel()
         cleanupStreamTask = nil
         visibleCleanupStreamID = nil
+        cleanupStreamSnapshots = [:]
         cleanupPreview = ""
         await activeProviderSession?.cancel()
         if let lease = activeAudioLease {
@@ -1438,6 +1481,7 @@ final class DictationManager: ObservableObject {
         }
 
         deferredStop = false
+        dictationCancellationRequested = false
         firstTokenReported = false
 
         targetApp = nil

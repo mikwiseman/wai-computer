@@ -425,6 +425,22 @@ enum DictationCleanupSpeculationPolicy {
     }
 }
 
+enum DictationCleanupSpeculationPreviewPolicy {
+    static func visiblePreviewOnReuse(storedPreview: String?) -> String {
+        storedPreview ?? ""
+    }
+}
+
+enum DictationFinalizationContinuationPolicy {
+    static func shouldContinue(
+        state: PushToTalkStopState,
+        cancellationRequested: Bool,
+        taskCancelled: Bool
+    ) -> Bool {
+        state == .finalizing && !cancellationRequested && !taskCancelled
+    }
+}
+
 enum DictationHotkey: String, CaseIterable, Identifiable {
     case rightOption = "right_option"
     case leftOption = "left_option"
