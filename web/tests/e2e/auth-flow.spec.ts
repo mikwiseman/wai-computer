@@ -448,7 +448,7 @@ test.describe("Auth flow", () => {
     await page.goto("/auth/verify?token=valid-token");
 
     await expect(page).toHaveURL(/\/onboarding/);
-    await expect(page.getByRole("heading", { name: "Teach Wai your voice" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Set up your universal Inbox" })).toBeVisible();
   });
 
   test("magic link verification with invalid token shows error", async ({ page }) => {
