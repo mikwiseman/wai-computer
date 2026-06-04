@@ -25,6 +25,9 @@ export interface ForceGraphNode {
   degree: number;
   val: number;
   color: string;
+  showLabel: boolean;
+  x?: number;
+  y?: number;
 }
 
 export interface ForceGraphLink {
@@ -41,16 +44,23 @@ export function buildForceGraph(
   showSources: boolean,
 ): { nodes: ForceGraphNode[]; links: ForceGraphLink[] } {
   const keep = (kind: string) => showSources || (kind !== "item" && kind !== "recording");
-  const nodes: ForceGraphNode[] = graph.nodes
-    .filter((n) => keep(n.kind))
-    .map((n) => ({
-      id: n.id,
-      label: n.label,
-      kind: n.kind,
-      degree: n.degree,
-      val: 1 + Math.log2(n.degree + 1),
-      color: KIND_COLOR[n.kind] ?? KIND_COLOR.item,
-    }));
+  const visibleNodes = graph.nodes.filter((n) => keep(n.kind));
+  const labeledIds = new Set(
+    [...visibleNodes]
+      .filter((n) => ENTITY_KINDS.has(n.kind))
+      .sort((a, b) => b.degree - a.degree || a.label.localeCompare(b.label))
+      .slice(0, 24)
+      .map((n) => n.id),
+  );
+  const nodes: ForceGraphNode[] = visibleNodes.map((n) => ({
+    id: n.id,
+    label: n.label,
+    kind: n.kind,
+    degree: n.degree,
+    val: 1 + Math.log2(n.degree + 1),
+    color: KIND_COLOR[n.kind] ?? KIND_COLOR.item,
+    showLabel: labeledIds.has(n.id),
+  }));
   const present = new Set(nodes.map((n) => n.id));
   const links: ForceGraphLink[] = graph.edges
     .filter((e) => present.has(e.source) && present.has(e.target))
@@ -121,6 +131,23 @@ export function BrainGraphView({
     [onFocusEntity, onOpenSource],
   );
 
+  const paintNodeLabel = useCallback(
+    (node: ForceGraphNode, ctx: CanvasRenderingContext2D, globalScale: number) => {
+      if (!node.showLabel || typeof node.x !== "number" || typeof node.y !== "number") return;
+      const fontSize = Math.max(9, Math.min(13, 11 / globalScale));
+      const radius = 4 * (node.val || 1);
+      ctx.font = `${fontSize}px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif`;
+      const textWidth = ctx.measureText(node.label).width;
+      const x = node.x - textWidth / 2;
+      const y = node.y + radius + fontSize + 3;
+      ctx.fillStyle = "rgba(30, 32, 28, 0.78)";
+      ctx.fillRect(x - 4, y - fontSize + 1, textWidth + 8, fontSize + 5);
+      ctx.fillStyle = "rgba(244, 242, 234, 0.95)";
+      ctx.fillText(node.label, x, y);
+    },
+    [],
+  );
+
   return (
     <div className="brain-graph">
       <div className="brain-graph__toolbar">
@@ -150,6 +177,10 @@ export function BrainGraphView({
           nodeColor={(node) => node.color}
           nodeVal={(node) => node.val}
           nodeRelSize={4}
+          nodeCanvasObjectMode={() => "after"}
+          nodeCanvasObject={(node, ctx, globalScale) =>
+            paintNodeLabel(node as ForceGraphNode, ctx, globalScale)
+          }
           linkColor={() => "rgba(140,140,150,0.28)"}
           linkWidth={(link) => Math.min(3, 0.5 + (link.weight ?? 1) * 0.5)}
           onNodeClick={handleNodeClick}

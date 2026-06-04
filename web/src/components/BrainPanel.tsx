@@ -4,6 +4,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   acceptBrainReviewPack,
   acceptMemoryProposal,
+  addBrainSpaceMember,
+  buildBrainContext,
   exportBrainSpace,
   getBrainGraph,
   getBrainSpaceHome,
@@ -65,6 +67,13 @@ export function BrainPanel({ locale = "en", onError, onOpenSource }: BrainPanelP
   const [spaceError, setSpaceError] = useState<string | null>(null);
   const [actingReviewPackIds, setActingReviewPackIds] = useState<Set<string>>(new Set());
   const [exportMessage, setExportMessage] = useState<string | null>(null);
+  const [shareEmail, setShareEmail] = useState("");
+  const [shareRole, setShareRole] = useState<"viewer" | "editor">("viewer");
+  const [shareMessage, setShareMessage] = useState<string | null>(null);
+  const [sharing, setSharing] = useState(false);
+  const [contextLoading, setContextLoading] = useState(false);
+  const [contextMessage, setContextMessage] = useState<string | null>(null);
+  const [contextPreview, setContextPreview] = useState<string | null>(null);
   const [selectedEntity, setSelectedEntity] = useState<{ id: string; name: string } | null>(
     null,
   );
@@ -243,6 +252,53 @@ export function BrainPanel({ locale = "en", onError, onOpenSource }: BrainPanelP
     [onError, selectedSpaceId, t],
   );
 
+  const prepareContext = useCallback(async () => {
+    if (!selectedSpaceId || contextLoading) return;
+    setContextLoading(true);
+    setContextMessage(null);
+    try {
+      const context = await buildBrainContext(selectedSpaceId, {
+        task: "Use this Space as the source of truth.",
+        limit: 80,
+      });
+      setContextPreview(context.markdown);
+      setContextMessage(
+        t(
+          `${context.claim_count} claims ready for assistant context.`,
+          `${context.claim_count} утверждений готовы для контекста ассистента.`,
+        ),
+      );
+      setSpaceError(null);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Couldn't prepare Space context.";
+      setSpaceError(message);
+      onError?.(message);
+    } finally {
+      setContextLoading(false);
+    }
+  }, [contextLoading, onError, selectedSpaceId, t]);
+
+  const shareSpace = useCallback(async () => {
+    const email = shareEmail.trim();
+    if (!selectedSpaceId || !email || sharing) return;
+    setSharing(true);
+    setShareMessage(null);
+    try {
+      await addBrainSpaceMember(selectedSpaceId, { email, role: shareRole });
+      setShareEmail("");
+      setShareMessage(
+        t(`Shared with ${email} as ${shareRole}.`, `Открыт доступ для ${email}: ${shareRole}.`),
+      );
+      setSpaceError(null);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Couldn't share this Space.";
+      setSpaceError(message);
+      onError?.(message);
+    } finally {
+      setSharing(false);
+    }
+  }, [onError, selectedSpaceId, shareEmail, shareRole, sharing, t]);
+
   const evidenceLabel = useCallback(
     (proposal: MemoryProposal) => {
       for (const value of proposal.evidence ?? []) {
@@ -347,7 +403,7 @@ export function BrainPanel({ locale = "en", onError, onOpenSource }: BrainPanelP
   const spaceCockpitBody = (
     <section className="brain-panel__section">
       <div className="brain-panel__section-head">
-        <h3>{t("Spaces", "Пространства")}</h3>
+        <h3>{t("Space", "Пространство")}</h3>
         <span>{spaces.length}</span>
       </div>
       {spaceError ? <p className="brain-panel__error-detail">{spaceError}</p> : null}
@@ -361,6 +417,9 @@ export function BrainPanel({ locale = "en", onError, onOpenSource }: BrainPanelP
                 onChange={(event) => {
                   setSelectedSpaceId(event.target.value || null);
                   setExportMessage(null);
+                  setShareMessage(null);
+                  setContextMessage(null);
+                  setContextPreview(null);
                 }}
               >
                 {spaces.map((space) => (
@@ -382,29 +441,67 @@ export function BrainPanel({ locale = "en", onError, onOpenSource }: BrainPanelP
             <div className="brain-panel__coverage-block">
               <span>{t("Pages", "Страницы")}</span>
               <strong>{spaceHome?.page_count ?? 0}</strong>
-              <em>{t("canonical Markdown", "канонический Markdown")}</em>
+              <em>{t("living wiki pages", "страницы вики")}</em>
             </div>
             <div className="brain-panel__coverage-block">
               <span>{t("Sources", "Источники")}</span>
               <strong>{spaceHome?.source_count ?? 0}</strong>
-              <em>{Object.keys(spaceHome?.source_counts ?? {}).join(" · ") || "none"}</em>
+              <em>{Object.keys(spaceHome?.source_counts ?? {}).join(" · ") || t("none", "нет")}</em>
             </div>
             <div className="brain-panel__coverage-block">
-              <span>{t("Claims", "Утверждения")}</span>
+              <span>{t("Knowledge", "Знания")}</span>
               <strong>
                 {Object.values(spaceHome?.claim_counts ?? {}).reduce((sum, count) => sum + count, 0)}
               </strong>
               <em>
                 {Object.entries(spaceHome?.claim_counts ?? {})
                   .map(([kind, count]) => `${kind} ${count}`)
-                  .join(" · ") || "none"}
+                  .join(" · ") || t("none", "нет")}
               </em>
             </div>
             <div className="brain-panel__coverage-block">
-              <span>{t("Review packs", "Пакеты проверки")}</span>
+              <span>{t("Review", "Проверка")}</span>
               <strong>{spaceReviewCount}</strong>
-              <em>{t("Space governance", "управление пространством")}</em>
+              <em>{t("pending decisions", "ожидают решения")}</em>
             </div>
+          </div>
+          <div className="brain-panel__workflow">
+            <div className="brain-panel__workflow-card">
+              <span>{t("Use", "Использовать")}</span>
+              <strong>{t("Prepare context", "Подготовить контекст")}</strong>
+              <button type="button" disabled={contextLoading} onClick={() => void prepareContext()}>
+                {contextLoading ? t("Preparing", "Готовлю") : t("Prepare", "Подготовить")}
+              </button>
+              {contextMessage ? <em>{contextMessage}</em> : null}
+            </div>
+            <form
+              className="brain-panel__workflow-card"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void shareSpace();
+              }}
+            >
+              <span>{t("Share", "Поделиться")}</span>
+              <div className="brain-panel__share-row">
+                <input
+                  type="email"
+                  value={shareEmail}
+                  placeholder={t("teammate@example.com", "email@example.com")}
+                  onChange={(event) => setShareEmail(event.target.value)}
+                />
+                <select
+                  value={shareRole}
+                  onChange={(event) => setShareRole(event.target.value as "viewer" | "editor")}
+                >
+                  <option value="viewer">{t("Viewer", "Читатель")}</option>
+                  <option value="editor">{t("Editor", "Редактор")}</option>
+                </select>
+                <button type="submit" disabled={sharing || shareEmail.trim().length === 0}>
+                  {sharing ? t("Sharing", "Открываю") : t("Share", "Поделиться")}
+                </button>
+              </div>
+              {shareMessage ? <em>{shareMessage}</em> : null}
+            </form>
           </div>
           {reviewPacks.length > 0 ? (
             <div className="brain-panel__rows brain-panel__rows--spaced">
@@ -464,6 +561,12 @@ export function BrainPanel({ locale = "en", onError, onOpenSource }: BrainPanelP
           </div>
           {exportMessage ? (
             <p className="brain-panel__proposal-detail">{exportMessage}</p>
+          ) : null}
+          {contextPreview ? (
+            <details className="brain-panel__context-preview">
+              <summary>{t("Context preview", "Предпросмотр контекста")}</summary>
+              <pre>{contextPreview}</pre>
+            </details>
           ) : null}
         </>
       ) : (

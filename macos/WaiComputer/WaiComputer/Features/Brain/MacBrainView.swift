@@ -17,6 +17,8 @@ struct MacBrainView: View {
 
     @EnvironmentObject private var languageManager: LanguageManager
     @StateObject private var model: MacBrainViewModel
+    @State private var shareEmail = ""
+    @State private var shareRole = "viewer"
 
     init(apiClient: APIClient, onOpenSource: @escaping (InboxDetailRef) -> Void = { _ in }) {
         self.apiClient = apiClient
@@ -33,6 +35,10 @@ struct MacBrainView: View {
             content
         }
         .task { await model.load() }
+        .onChangeCompat(of: model.selectedSpaceId) { _, _ in
+            guard !model.loading else { return }
+            Task { await model.loadSelectedSpace() }
+        }
     }
 
     private var header: some View {
@@ -109,6 +115,7 @@ struct MacBrainView: View {
         if let graph = model.graph {
             ScrollView {
                 VStack(alignment: .leading, spacing: Spacing.xl) {
+                    spaceSection
                     coverageSection(graph)
                     reviewSection(graph)
                     topEntitiesSection(graph)
@@ -149,6 +156,241 @@ struct MacBrainView: View {
                 )
             }
         }
+    }
+
+    @ViewBuilder
+    private var spaceSection: some View {
+        VStack(alignment: .leading, spacing: Spacing.sm) {
+            HStack {
+                Text(t("Space", "Пространство")).font(Typography.headingSmall)
+                Spacer()
+                if !model.spaces.isEmpty {
+                    Picker("", selection: $model.selectedSpaceId) {
+                        ForEach(model.spaces) { space in
+                            Text(space.name).tag(space.id)
+                        }
+                    }
+                    .labelsHidden()
+                    .frame(width: 220)
+                }
+            }
+
+            if let error = model.spaceError {
+                Text(error)
+                    .font(Typography.bodySmall)
+                    .foregroundStyle(.red)
+            }
+
+            if let home = model.spaceHome {
+                HStack(spacing: Spacing.sm) {
+                    metricTile(
+                        title: t("Pages", "Страницы"),
+                        value: "\(home.pageCount)",
+                        detail: t("living wiki pages", "страницы вики"),
+                        icon: "doc.text"
+                    )
+                    metricTile(
+                        title: t("Sources", "Источники"),
+                        value: "\(home.sourceCount)",
+                        detail: sourceCountsLabel(home),
+                        icon: "tray.full"
+                    )
+                    metricTile(
+                        title: t("Knowledge", "Знания"),
+                        value: "\(home.claimCounts.values.reduce(0, +))",
+                        detail: claimCountsLabel(home),
+                        icon: "checklist"
+                    )
+                    metricTile(
+                        title: t("Review", "Проверка"),
+                        value: "\(model.spaceReviewPacks.count)",
+                        detail: t("pending decisions", "ожидают решения"),
+                        icon: "checkmark.seal"
+                    )
+                }
+
+                HStack(alignment: .top, spacing: Spacing.sm) {
+                    spaceActionCard(
+                        eyebrow: t("Use", "Использовать"),
+                        title: t("Prepare context", "Подготовить контекст"),
+                        systemImage: "text.badge.checkmark"
+                    ) {
+                        Button {
+                            Task { await model.prepareSpaceContext() }
+                        } label: {
+                            Text(model.contextLoading ? t("Preparing", "Готовлю") : t("Prepare", "Подготовить"))
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.bordered)
+                        .disabled(model.contextLoading)
+                        if let message = model.contextMessage {
+                            Text(message)
+                                .font(Typography.labelSmall)
+                                .foregroundStyle(Palette.textSecondary)
+                        }
+                    }
+
+                    spaceActionCard(
+                        eyebrow: t("Share", "Поделиться"),
+                        title: t("Give access", "Открыть доступ"),
+                        systemImage: "person.badge.plus"
+                    ) {
+                        TextField(t("teammate@example.com", "email@example.com"), text: $shareEmail)
+                            .textFieldStyle(.roundedBorder)
+                        HStack(spacing: Spacing.xs) {
+                            Picker("", selection: $shareRole) {
+                                Text(t("Viewer", "Читатель")).tag("viewer")
+                                Text(t("Editor", "Редактор")).tag("editor")
+                            }
+                            .labelsHidden()
+                            Button {
+                                Task {
+                                    await model.shareSelectedSpace(email: shareEmail, role: shareRole)
+                                    if model.shareMessage != nil {
+                                        shareEmail = ""
+                                    }
+                                }
+                            } label: {
+                                Text(model.sharing ? t("Sharing", "Открываю") : t("Share", "Поделиться"))
+                                    .frame(maxWidth: .infinity)
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .disabled(model.sharing || shareEmail.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        }
+                        if let message = model.shareMessage {
+                            Text(message)
+                                .font(Typography.labelSmall)
+                                .foregroundStyle(Palette.textSecondary)
+                        }
+                    }
+                }
+
+                HStack(spacing: Spacing.xs) {
+                    ForEach(home.engineProfiles, id: \.self) { profile in
+                        Button(profile) {
+                            Task { await model.exportSelectedSpace(profile: profile) }
+                        }
+                        .buttonStyle(.bordered)
+                    }
+                    if let message = model.exportMessage {
+                        Text(message)
+                            .font(Typography.labelSmall)
+                            .foregroundStyle(Palette.textSecondary)
+                    }
+                }
+
+                if !model.spaceReviewPacks.isEmpty {
+                    VStack(alignment: .leading, spacing: Spacing.xs) {
+                        ForEach(model.spaceReviewPacks) { pack in
+                            spaceReviewPackRow(pack)
+                        }
+                    }
+                }
+
+                if let preview = model.contextPreview {
+                    DisclosureGroup(t("Context preview", "Предпросмотр контекста")) {
+                        ScrollView {
+                            Text(preview)
+                                .font(.system(.caption, design: .monospaced))
+                                .foregroundStyle(Palette.textSecondary)
+                                .textSelection(.enabled)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(.top, Spacing.xs)
+                        }
+                        .frame(maxHeight: 180)
+                    }
+                    .font(Typography.bodySmall)
+                }
+            } else if model.spaces.isEmpty {
+                wikiEmpty(t("No Spaces yet.", "Пространств пока нет."))
+            } else {
+                ProgressView()
+            }
+        }
+    }
+
+    private func spaceActionCard<Content: View>(
+        eyebrow: String,
+        title: String,
+        systemImage: String,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        VStack(alignment: .leading, spacing: Spacing.xs) {
+            HStack(spacing: Spacing.xs) {
+                Image(systemName: systemImage)
+                    .font(.system(size: 12))
+                    .foregroundStyle(Palette.accent)
+                Text(eyebrow)
+                    .font(Typography.labelSmall)
+                    .foregroundStyle(Palette.textSecondary)
+            }
+            Text(title).font(Typography.bodySmall.weight(.semibold))
+            content()
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(Spacing.md)
+        .background(Palette.surfaceSubtle)
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+
+    private func spaceReviewPackRow(_ pack: BrainReviewPack) -> some View {
+        let acting = model.actingSpaceReviewPackIds.contains(pack.id)
+        return HStack(alignment: .top, spacing: Spacing.md) {
+            VStack(alignment: .leading, spacing: Spacing.xxs) {
+                HStack(spacing: Spacing.xs) {
+                    Text(pack.kind)
+                        .font(Typography.labelSmall)
+                        .padding(.horizontal, Spacing.xs)
+                        .padding(.vertical, 2)
+                        .background(Palette.accentSubtle)
+                        .clipShape(Capsule())
+                    Text(pack.risk)
+                        .font(Typography.labelSmall)
+                        .foregroundStyle(Palette.textTertiary)
+                }
+                Text(pack.title)
+                    .font(Typography.bodySmall.weight(.medium))
+                Text(pack.summary)
+                    .font(Typography.labelSmall)
+                    .foregroundStyle(Palette.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer()
+            HStack(spacing: Spacing.xs) {
+                Button {
+                    Task { await model.rejectSpaceReviewPack(pack.id) }
+                } label: {
+                    Image(systemName: "xmark")
+                        .frame(width: 26, height: 26)
+                }
+                .buttonStyle(.plain)
+                .disabled(acting)
+                .help(t("Reject", "Отклонить"))
+
+                Button {
+                    Task { await model.acceptSpaceReviewPack(pack.id) }
+                } label: {
+                    Image(systemName: "checkmark")
+                        .frame(width: 26, height: 26)
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(acting)
+                .help(t("Accept", "Принять"))
+            }
+        }
+        .padding(Spacing.md)
+        .background(Palette.surfaceSubtle)
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+
+    private func sourceCountsLabel(_ home: BrainSpaceHome) -> String {
+        let parts = home.sourceCounts.sorted(by: { $0.key < $1.key }).map { "\($0.key) \($0.value)" }
+        return parts.isEmpty ? t("none", "нет") : parts.joined(separator: " · ")
+    }
+
+    private func claimCountsLabel(_ home: BrainSpaceHome) -> String {
+        let parts = home.claimCounts.sorted(by: { $0.key < $1.key }).map { "\($0.key) \($0.value)" }
+        return parts.isEmpty ? t("none", "нет") : parts.joined(separator: " · ")
     }
 
     private func coverageTile(
@@ -829,6 +1071,18 @@ final class MacBrainViewModel: ObservableObject {
     @Published var pendingReviewCount = 0
     @Published var actingProposalIds: Set<String> = []
     @Published var reviewError: ReviewError?
+    @Published var spaces: [BrainSpace] = []
+    @Published var selectedSpaceId = ""
+    @Published var spaceHome: BrainSpaceHome?
+    @Published var spaceReviewPacks: [BrainReviewPack] = []
+    @Published var spaceError: String?
+    @Published var contextLoading = false
+    @Published var contextMessage: String?
+    @Published var contextPreview: String?
+    @Published var sharing = false
+    @Published var shareMessage: String?
+    @Published var exportMessage: String?
+    @Published var actingSpaceReviewPackIds: Set<String> = []
 
     private let apiClient: APIClient
 
@@ -852,6 +1106,8 @@ final class MacBrainViewModel: ObservableObject {
             errorMessage = error.localizedDescription
             return
         }
+        await loadSpaces()
+        await loadSelectedSpace()
         do {
             let review = try await apiClient.listMemoryProposals(status: "pending")
             proposals = review.proposals
@@ -859,6 +1115,88 @@ final class MacBrainViewModel: ObservableObject {
             reviewError = nil
         } catch {
             reviewError = .load
+        }
+    }
+
+    func loadSpaces() async {
+        do {
+            let response = try await apiClient.listBrainSpaces()
+            spaces = response.spaces
+            if selectedSpaceId.isEmpty || !response.spaces.contains(where: { $0.id == selectedSpaceId }) {
+                selectedSpaceId = response.spaces.first?.id ?? ""
+            }
+            spaceError = nil
+        } catch {
+            spaceError = error.localizedDescription
+        }
+    }
+
+    func loadSelectedSpace() async {
+        guard !selectedSpaceId.isEmpty else {
+            spaceHome = nil
+            spaceReviewPacks = []
+            return
+        }
+        do {
+            async let homeRequest = apiClient.getBrainSpaceHome(spaceId: selectedSpaceId)
+            async let packsRequest = apiClient.listBrainReviewPacks(spaceId: selectedSpaceId)
+            let loadedHome = try await homeRequest
+            let loadedPacks = try await packsRequest
+            spaceHome = loadedHome
+            spaceReviewPacks = loadedPacks.reviewPacks
+            spaceError = nil
+        } catch {
+            spaceError = error.localizedDescription
+        }
+    }
+
+    func prepareSpaceContext() async {
+        guard !selectedSpaceId.isEmpty, !contextLoading else { return }
+        contextLoading = true
+        contextMessage = nil
+        defer { contextLoading = false }
+        do {
+            let context = try await apiClient.buildBrainContext(
+                spaceId: selectedSpaceId,
+                task: "Use this Space as the source of truth.",
+                limit: 80
+            )
+            contextPreview = context.markdown
+            contextMessage = "\(context.claimCount) claims ready for assistant context."
+            spaceError = nil
+        } catch {
+            spaceError = error.localizedDescription
+        }
+    }
+
+    func shareSelectedSpace(email: String, role: String) async {
+        let trimmedEmail = email.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !selectedSpaceId.isEmpty, !trimmedEmail.isEmpty, !sharing else { return }
+        sharing = true
+        shareMessage = nil
+        defer { sharing = false }
+        do {
+            _ = try await apiClient.addBrainSpaceMember(
+                spaceId: selectedSpaceId,
+                email: trimmedEmail,
+                role: role
+            )
+            shareMessage = "Shared with \(trimmedEmail) as \(role)."
+            spaceError = nil
+        } catch {
+            spaceError = error.localizedDescription
+        }
+    }
+
+    func exportSelectedSpace(profile: String) async {
+        guard !selectedSpaceId.isEmpty else { return }
+        exportMessage = nil
+        do {
+            let export = try await apiClient.exportBrainSpace(spaceId: selectedSpaceId, profile: profile)
+            exportMessage = "\(export.profile) export ready: \(export.files.count) files."
+            spaceError = nil
+        } catch {
+            spaceError = error.localizedDescription
         }
     }
 
@@ -900,6 +1238,18 @@ final class MacBrainViewModel: ObservableObject {
         await decideProposal(id) { try await self.apiClient.rejectMemoryProposal(id: id) }
     }
 
+    func acceptSpaceReviewPack(_ id: String) async {
+        await decideSpaceReviewPack(id) {
+            try await self.apiClient.acceptBrainReviewPack(spaceId: self.selectedSpaceId, packId: id)
+        }
+    }
+
+    func rejectSpaceReviewPack(_ id: String) async {
+        await decideSpaceReviewPack(id) {
+            try await self.apiClient.rejectBrainReviewPack(spaceId: self.selectedSpaceId, packId: id)
+        }
+    }
+
     private func decideProposal(
         _ id: String,
         action: @escaping () async throws -> MemoryProposal
@@ -914,6 +1264,22 @@ final class MacBrainViewModel: ObservableObject {
             reviewError = nil
         } catch {
             reviewError = .action
+        }
+    }
+
+    private func decideSpaceReviewPack(
+        _ id: String,
+        action: @escaping () async throws -> BrainReviewPack
+    ) async {
+        guard !selectedSpaceId.isEmpty, !actingSpaceReviewPackIds.contains(id) else { return }
+        actingSpaceReviewPackIds.insert(id)
+        defer { actingSpaceReviewPackIds.remove(id) }
+        do {
+            _ = try await action()
+            spaceReviewPacks.removeAll { $0.id == id }
+            await loadSelectedSpace()
+        } catch {
+            spaceError = error.localizedDescription
         }
     }
 }

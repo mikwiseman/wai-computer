@@ -976,6 +976,16 @@ export interface BrainSpacesResponse {
   spaces: BrainSpace[];
 }
 
+export interface BrainSpaceMember {
+  id: string;
+  space_id: string;
+  user_id: string;
+  role: string;
+  status: string;
+  invited_by_user_id?: string | null;
+  created_at?: string | null;
+}
+
 export interface BrainClaim {
   id: string;
   space_id: string;

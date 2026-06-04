@@ -171,6 +171,36 @@ public struct BrainSpacesResponse: Codable, Sendable, Equatable {
     public let spaces: [BrainSpace]
 }
 
+public struct BrainSpaceMember: Codable, Identifiable, Sendable, Equatable {
+    public let id: String
+    public let spaceId: String
+    public let userId: String
+    public let role: String
+    public let status: String
+    public let invitedByUserId: String?
+    public let createdAt: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case spaceId = "space_id"
+        case userId = "user_id"
+        case role
+        case status
+        case invitedByUserId = "invited_by_user_id"
+        case createdAt = "created_at"
+    }
+}
+
+public struct BrainSpaceMemberAddRequest: Codable, Sendable, Equatable {
+    public let email: String
+    public let role: String
+
+    public init(email: String, role: String) {
+        self.email = email
+        self.role = role
+    }
+}
+
 public struct BrainSpaceCreateRequest: Codable, Sendable, Equatable {
     public let name: String
     public let kind: String?

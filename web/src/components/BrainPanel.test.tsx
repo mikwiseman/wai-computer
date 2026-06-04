@@ -6,6 +6,8 @@ const mockGetBrainGraph = vi.fn();
 const mockListBrainSpaces = vi.fn();
 const mockGetBrainSpaceHome = vi.fn();
 const mockListBrainReviewPacks = vi.fn();
+const mockAddBrainSpaceMember = vi.fn();
+const mockBuildBrainContext = vi.fn();
 const mockAcceptBrainReviewPack = vi.fn();
 const mockRejectBrainReviewPack = vi.fn();
 const mockExportBrainSpace = vi.fn();
@@ -15,6 +17,8 @@ const mockRejectMemoryProposal = vi.fn();
 
 vi.mock("@/lib/api", () => ({
   acceptBrainReviewPack: (...a: unknown[]) => mockAcceptBrainReviewPack(...a),
+  addBrainSpaceMember: (...a: unknown[]) => mockAddBrainSpaceMember(...a),
+  buildBrainContext: (...a: unknown[]) => mockBuildBrainContext(...a),
   getBrainGraph: (...a: unknown[]) => mockGetBrainGraph(...a),
   getBrainSpaceHome: (...a: unknown[]) => mockGetBrainSpaceHome(...a),
   listBrainReviewPacks: (...a: unknown[]) => mockListBrainReviewPacks(...a),
@@ -201,6 +205,18 @@ describe("BrainPanel", () => {
     mockListBrainSpaces.mockResolvedValue(spaces());
     mockGetBrainSpaceHome.mockResolvedValue(spaceHome());
     mockListBrainReviewPacks.mockResolvedValue(reviewPacks());
+    mockAddBrainSpaceMember.mockResolvedValue({
+      id: "m1",
+      space_id: "s1",
+      user_id: "u2",
+      role: "viewer",
+      status: "active",
+    });
+    mockBuildBrainContext.mockResolvedValue({
+      space: spaces().spaces[0],
+      markdown: "# Wai School context\n\n- Use 40 minute intro sessions.",
+      claim_count: 2,
+    });
     mockAcceptBrainReviewPack.mockResolvedValue({});
     mockRejectBrainReviewPack.mockResolvedValue({});
     mockExportBrainSpace.mockResolvedValue({
@@ -216,8 +232,10 @@ describe("BrainPanel", () => {
   it("renders the overview with coverage, top entities, and review evidence", async () => {
     render(<BrainPanel />);
     await waitFor(() => expect(screen.getByText("Coverage")).toBeInTheDocument());
-    expect(screen.getByText("Spaces")).toBeInTheDocument();
+    expect(screen.getAllByText("Space").length).toBeGreaterThan(0);
     expect(screen.getByDisplayValue("Wai School")).toBeInTheDocument();
+    expect(screen.getByText("Prepare context")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Share" })).toBeDisabled();
     expect(screen.getByText("Customer stage rules")).toBeInTheDocument();
     expect(screen.getByText("Bridge from Mik Personal")).toBeInTheDocument();
     expect(screen.getByText("1 / 2")).toBeInTheDocument();
@@ -247,6 +265,34 @@ describe("BrainPanel", () => {
     fireEvent.click(screen.getByRole("button", { name: "obsidian" }));
     await waitFor(() => expect(mockExportBrainSpace).toHaveBeenCalledWith("s1", "obsidian"));
     expect(screen.getByText(/obsidian export ready/i)).toBeInTheDocument();
+  });
+
+  it("shares a Space and prepares assistant context", async () => {
+    render(<BrainPanel />);
+    await waitFor(() => expect(screen.getByText("Prepare context")).toBeInTheDocument());
+
+    fireEvent.click(screen.getByRole("button", { name: "Prepare" }));
+    await waitFor(() =>
+      expect(mockBuildBrainContext).toHaveBeenCalledWith("s1", {
+        task: "Use this Space as the source of truth.",
+        limit: 80,
+      }),
+    );
+    expect(screen.getByText(/2 claims ready/i)).toBeInTheDocument();
+    expect(screen.getByText("Context preview")).toBeInTheDocument();
+
+    fireEvent.change(screen.getByPlaceholderText("teammate@example.com"), {
+      target: { value: "teammate@example.com" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Share" }));
+
+    await waitFor(() =>
+      expect(mockAddBrainSpaceMember).toHaveBeenCalledWith("s1", {
+        email: "teammate@example.com",
+        role: "viewer",
+      }),
+    );
+    expect(screen.getByText(/Shared with teammate@example.com as viewer/i)).toBeInTheDocument();
   });
 
   it("renders categorized entities sorted by degree (sources excluded)", async () => {

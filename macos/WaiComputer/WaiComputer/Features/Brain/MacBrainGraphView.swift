@@ -46,6 +46,10 @@ struct MacBrainGraphView: View {
         return presentation.details(for: selectedNodeId)
     }
 
+    private var labelNodeIds: Set<String> {
+        Set(presentation.topEntityNodes.prefix(24).map(\.id))
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             graphToolbar
@@ -451,7 +455,7 @@ struct MacBrainGraphView: View {
         if selectedNodeId == node.id { return true }
         if !filters.normalizedQuery.isEmpty { return true }
         if presentation.visibleNodes.count <= 36 { return MacBrainGraphPresentation.isEntity(node.kind) }
-        return node.degree >= 2 && MacBrainGraphPresentation.isEntity(node.kind)
+        return labelNodeIds.contains(node.id)
     }
 
     private func nodeColor(_ kind: String) -> Color {

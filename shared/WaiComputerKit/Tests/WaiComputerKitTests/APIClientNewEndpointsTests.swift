@@ -451,6 +451,16 @@ final class APIClientNewEndpointsTests: XCTestCase {
                 return (response, payload)
             }
 
+            if path == "/api/brain/spaces/space-1/members" {
+                let body = try jsonBody(from: request)
+                XCTAssertEqual(body["email"] as? String, "teammate@example.com")
+                XCTAssertEqual(body["role"] as? String, "viewer")
+                let payload = """
+                {"id":"member-1","space_id":"space-1","user_id":"user-2","role":"viewer","status":"active","invited_by_user_id":"user-1","created_at":"2026-06-04T09:00:00Z"}
+                """.data(using: .utf8)!
+                return (response, payload)
+            }
+
             if path == "/api/brain/spaces/space-1/home" {
                 let payload = """
                 {"space":{"id":"space-1","owner_user_id":"user-1","name":"Wai School","slug":"wai-school","kind":"work","engine_profile":"waibrain","visibility":"private","description":null,"metadata":{},"role":"owner","created_at":"2026-06-04T09:00:00Z","updated_at":"2026-06-04T09:00:00Z"},"page_count":1,"source_count":1,"claim_counts":{"workflow_rule":1},"source_counts":{"item":1},"pending_review_count":1,"recent_pages":[{"id":"page-1","space_id":"space-1","title":"Customer stage rules","slug":"customer-stage-rules","kind":"workflow","status":"active","markdown":"---\\nwai_type: brain_page\\n---","frontmatter":{},"version":1,"claims":[{"id":"claim-1","space_id":"space-1","page_id":"page-1","kind":"workflow_rule","status":"active","text":"Use 40 minute intro sessions.","confidence":0.9,"authority":"self","salience":null,"evidence":[],"source_refs":[],"metadata":{}}],"created_at":"2026-06-04T09:00:00Z","updated_at":"2026-06-04T09:00:00Z"}],"engine_profiles":["waibrain","obsidian","gbrain","mempalace"]}
@@ -535,6 +545,13 @@ final class APIClientNewEndpointsTests: XCTestCase {
         )
         XCTAssertEqual(created.slug, "wai-school")
 
+        let member = try await client.addBrainSpaceMember(
+            spaceId: "space-1",
+            email: "teammate@example.com",
+            role: "viewer"
+        )
+        XCTAssertEqual(member.userId, "user-2")
+
         let home = try await client.getBrainSpaceHome(spaceId: "space-1")
         XCTAssertEqual(home.recentPages.first?.claims.first?.text, "Use 40 minute intro sessions.")
 
@@ -578,6 +595,7 @@ final class APIClientNewEndpointsTests: XCTestCase {
             [
                 "/api/brain/spaces",
                 "/api/brain/spaces",
+                "/api/brain/spaces/space-1/members",
                 "/api/brain/spaces/space-1/home",
                 "/api/brain/spaces/space-1/pages",
                 "/api/brain/spaces/space-1/pages",

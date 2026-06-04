@@ -38,6 +38,13 @@ describe("buildForceGraph", () => {
     expect(anna?.val).toBeCloseTo(1 + Math.log2(4)); // 1 + log2(degree + 1)
   });
 
+  it("marks connected entities for persistent canvas labels", () => {
+    const { nodes } = buildForceGraph(graph(), true);
+    expect(nodes.find((n) => n.id === "p1")?.showLabel).toBe(true);
+    expect(nodes.find((n) => n.id === "t1")?.showLabel).toBe(true);
+    expect(nodes.find((n) => n.id === "item:i1")?.showLabel).toBe(false);
+  });
+
   it("extracts source ids from graph source nodes", () => {
     expect(sourceRefFromGraphNode({ id: "item:i1", kind: "item" })).toEqual({
       sourceKind: "item",

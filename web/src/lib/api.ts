@@ -27,6 +27,7 @@ import type {
 	  BrainReviewPack,
 	  BrainReviewPacksResponse,
 	  BrainSpace,
+	  BrainSpaceMember,
 	  BrainSpaceHome,
 	  BrainSpacesResponse,
 	  ComparisonListEntry,
@@ -839,6 +840,16 @@ export function createBrainSpace(input: {
   description?: string | null;
 }): Promise<BrainSpace> {
   return apiFetch<BrainSpace>("/api/brain/spaces", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function addBrainSpaceMember(
+  spaceId: string,
+  input: { email: string; role: "viewer" | "editor" },
+): Promise<BrainSpaceMember> {
+  return apiFetch<BrainSpaceMember>(`/api/brain/spaces/${spaceId}/members`, {
     method: "POST",
     body: JSON.stringify(input),
   });

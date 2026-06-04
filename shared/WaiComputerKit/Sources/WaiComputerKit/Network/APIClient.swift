@@ -1509,6 +1509,18 @@ public actor APIClient {
         return try await request(.POST, path: "/api/brain/spaces", body: input)
     }
 
+    public func addBrainSpaceMember(
+        spaceId: String,
+        email: String,
+        role: String
+    ) async throws -> BrainSpaceMember {
+        return try await request(
+            .POST,
+            path: "/api/brain/spaces/\(spaceId)/members",
+            body: BrainSpaceMemberAddRequest(email: email, role: role)
+        )
+    }
+
     public func getBrainSpaceHome(spaceId: String) async throws -> BrainSpaceHome {
         return try await request(.GET, path: "/api/brain/spaces/\(spaceId)/home")
     }
