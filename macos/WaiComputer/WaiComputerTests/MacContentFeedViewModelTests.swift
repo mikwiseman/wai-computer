@@ -49,6 +49,50 @@ final class MacContentFeedViewModelTests: XCTestCase {
         XCTAssertFalse(source.contains("setStatusFilter"))
     }
 
+    func testInboxFileImporterStagesFileBeforeUpload() throws {
+        let viewSource = try macSource("WaiComputer/Features/Inbox/MacInboxView.swift")
+        let modelSource = try macSource("WaiComputer/Features/Inbox/MacInboxViewModel.swift")
+
+        XCTAssertTrue(viewSource.contains("model.selectUploadFile(url)"))
+        XCTAssertTrue(viewSource.contains("uploadPendingFile()"))
+        XCTAssertTrue(modelSource.contains("selectedUploadFile"))
+        XCTAssertTrue(modelSource.contains("submitSelectedUploadFile()"))
+        XCTAssertTrue(modelSource.contains("selectedUploadFileHasScopedAccess"))
+        XCTAssertTrue(modelSource.contains("releaseSelectedUploadAccess()"))
+        XCTAssertFalse(viewSource.contains("if let row = await model.uploadFile(url)"))
+    }
+
+    func testInboxCreatePaneShowsExplicitFileUploadState() throws {
+        let source = try macSource("WaiComputer/Features/Inbox/MacInboxView.swift")
+
+        XCTAssertTrue(source.contains("MacInboxFileComposer("))
+        XCTAssertTrue(source.contains("Upload File to Inbox"))
+        XCTAssertTrue(source.contains("mac-inbox-selected-file"))
+        XCTAssertTrue(source.contains("mac-inbox-upload-primary-button"))
+        XCTAssertTrue(source.contains("mac-inbox-upload-progress"))
+        XCTAssertFalse(source.contains("Attach File"))
+        XCTAssertFalse(source.contains("Прикрепить файл"))
+    }
+
+    func testInboxTableDisablesHorizontalScrollingAndGridLines() throws {
+        let source = try macSource("WaiComputer/Features/Inbox/MacInboxView.swift")
+
+        XCTAssertTrue(source.contains("scrollView.hasHorizontalScroller = false"))
+        XCTAssertTrue(source.contains("tableView.gridStyleMask = []"))
+        XCTAssertTrue(source.contains("column.width = scrollView.contentView.bounds.width"))
+        XCTAssertTrue(source.contains("tableView.columnAutoresizingStyle = .uniformColumnAutoresizingStyle"))
+    }
+
+    func testInboxUsesAutomaticPaginationInsteadOfManualLoadMoreFooter() throws {
+        let source = try macSource("WaiComputer/Features/Inbox/MacInboxView.swift")
+
+        XCTAssertTrue(source.contains("onLoadMore:"))
+        XCTAssertTrue(source.contains("contentView.postsBoundsChangedNotifications = true"))
+        XCTAssertTrue(source.contains("maybeLoadMoreIfNeeded()"))
+        XCTAssertFalse(source.contains("Load More"))
+        XCTAssertFalse(source.contains("Показать ещё"))
+    }
+
     func testInboxLayoutPinsPanesAndMakesCreatePaneScrollable() throws {
         let source = try macSource("WaiComputer/Features/Inbox/MacInboxView.swift")
 
