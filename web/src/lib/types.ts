@@ -269,6 +269,35 @@ export interface ResolveAgentActionResponse {
   recipient?: string | null;
 }
 
+export type ReminderStatus = "pending" | "sent" | "failed" | "cancelled";
+export type ReminderSource = "api" | "web" | "mac" | "telegram";
+
+export interface Reminder {
+  id: string;
+  text: string;
+  due_at: string;
+  status: ReminderStatus;
+  source: ReminderSource | string;
+  source_ref: string | null;
+  sent_at: string | null;
+  failed_at: string | null;
+  error: string | null;
+  metadata: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ReminderListResponse {
+  reminders: Reminder[];
+}
+
+export interface ReminderCreateRequest {
+  text: string;
+  due_at: string;
+  source?: "api" | "web" | "mac";
+  metadata?: Record<string, unknown>;
+}
+
 export interface TelegramLinkStatus {
   linked: boolean;
   bot_username: string;

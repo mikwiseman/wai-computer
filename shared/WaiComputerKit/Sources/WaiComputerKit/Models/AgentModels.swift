@@ -229,6 +229,7 @@ public struct AgentStepListResponse: Codable, Sendable, Equatable {
 
 public struct AgentAction: Codable, Sendable, Equatable, Identifiable {
     public let id: String
+    public let agentId: String?
     public let runId: String?
     public let stepIdx: Int?
     public let kind: String
@@ -242,6 +243,7 @@ public struct AgentAction: Codable, Sendable, Equatable, Identifiable {
 
     private enum CodingKeys: String, CodingKey {
         case id
+        case agentId = "agent_id"
         case runId = "run_id"
         case stepIdx = "step_idx"
         case kind

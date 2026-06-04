@@ -251,6 +251,28 @@ describe("api client wrappers", () => {
     });
   });
 
+  it("calls shared reminder endpoints", async () => {
+    const input = {
+      text: "Check launch metrics",
+      due_at: "2026-06-04T18:30:00Z",
+      source: "web" as const,
+      metadata: { origin: "dashboard" },
+    };
+
+    await api.listReminders({ status: "pending", limit: 5 });
+    await api.createReminder(input);
+    await api.cancelReminder("reminder-1");
+
+    expect(mockedApiFetch).toHaveBeenNthCalledWith(1, "/api/reminders?status=pending&limit=5");
+    expect(mockedApiFetch).toHaveBeenNthCalledWith(2, "/api/reminders", {
+      method: "POST",
+      body: JSON.stringify(input),
+    });
+    expect(mockedApiFetch).toHaveBeenNthCalledWith(3, "/api/reminders/reminder-1/cancel", {
+      method: "POST",
+    });
+  });
+
   it("mirrors auth tokens into the localhost cookie", async () => {
     mockedApiFetch.mockResolvedValueOnce({
       access_token: "local-token",

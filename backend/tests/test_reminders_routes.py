@@ -32,7 +32,12 @@ async def test_reminder_routes_create_list_and_cancel(
     created = await client.post(
         "/api/reminders",
         headers=auth_headers,
-        json={"text": "Check launch metrics", "due_at": due_at.isoformat(), "source": "web"},
+        json={
+            "text": "Check launch metrics",
+            "due_at": due_at.isoformat(),
+            "source": "web",
+            "metadata": {"origin": "dashboard"},
+        },
     )
     assert created.status_code == 201, created.text
     created_body = created.json()
@@ -41,6 +46,7 @@ async def test_reminder_routes_create_list_and_cancel(
     assert created_body["status"] == "pending"
     assert created_body["source"] == "web"
     assert created_body["due_at"] == due_at.isoformat().replace("+00:00", "Z")
+    assert created_body["metadata"] == {"origin": "dashboard"}
     assert created_body["error"] is None
 
     listed = await client.get("/api/reminders", headers=auth_headers)
@@ -66,6 +72,81 @@ async def test_reminder_routes_create_list_and_cancel(
     assert reminder is not None
     assert reminder.status == "cancelled"
     assert reminder.text == "Check launch metrics"
+    assert reminder.metadata_ == {"origin": "dashboard"}
+
+
+async def test_reminder_routes_filter_order_limit_and_terminal_cancel(
+    client: AsyncClient,
+    auth_headers: dict,
+    db_session: AsyncSession,
+) -> None:
+    user_id = UUID(await _current_user_id(client, auth_headers))
+    now = datetime.now(timezone.utc).replace(microsecond=0)
+    earlier = UserReminder(
+        user_id=user_id,
+        source="api",
+        text="Earlier pending",
+        due_at=now + timedelta(hours=1),
+        status="pending",
+        metadata_={"rank": "early"},
+    )
+    sent = UserReminder(
+        user_id=user_id,
+        source="web",
+        text="Already sent",
+        due_at=now + timedelta(hours=2),
+        status="sent",
+        sent_at=now,
+    )
+    later = UserReminder(
+        user_id=user_id,
+        source="mac",
+        text="Later pending",
+        due_at=now + timedelta(hours=3),
+        status="pending",
+        metadata_={"rank": "late"},
+    )
+    cancelled = UserReminder(
+        user_id=user_id,
+        source="api",
+        text="Already cancelled",
+        due_at=now + timedelta(hours=4),
+        status="cancelled",
+    )
+    db_session.add_all([later, sent, earlier, cancelled])
+    await db_session.commit()
+
+    unsupported = await client.get("/api/reminders?status=unknown", headers=auth_headers)
+    assert unsupported.status_code == 422, unsupported.text
+    assert unsupported.json()["detail"] == "Unsupported reminder status."
+
+    pending = await client.get("/api/reminders?status=pending&limit=1", headers=auth_headers)
+    assert pending.status_code == 200, pending.text
+    pending_rows = pending.json()["reminders"]
+    assert [row["id"] for row in pending_rows] == [str(earlier.id)]
+    assert pending_rows[0]["metadata"] == {"rank": "early"}
+
+    all_rows = await client.get("/api/reminders?status=all&limit=3", headers=auth_headers)
+    assert all_rows.status_code == 200, all_rows.text
+    assert [row["id"] for row in all_rows.json()["reminders"]] == [
+        str(earlier.id),
+        str(sent.id),
+        str(later.id),
+    ]
+
+    idempotent_cancel = await client.post(
+        f"/api/reminders/{cancelled.id}/cancel",
+        headers=auth_headers,
+    )
+    assert idempotent_cancel.status_code == 200, idempotent_cancel.text
+    assert idempotent_cancel.json()["status"] == "cancelled"
+
+    terminal_cancel = await client.post(
+        f"/api/reminders/{sent.id}/cancel",
+        headers=auth_headers,
+    )
+    assert terminal_cancel.status_code == 409, terminal_cancel.text
+    assert terminal_cancel.json()["detail"] == "Reminder is already sent."
 
 
 async def test_reminder_routes_validate_time_and_user_ownership(

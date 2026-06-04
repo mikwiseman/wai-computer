@@ -8,6 +8,7 @@ from typing import Any
 from uuid import uuid4
 
 import pytest
+from sqlalchemy.dialects import postgresql
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.telegram_client import TelegramClientError
@@ -53,7 +54,14 @@ async def test_dispatch_due_telegram_reminders_sends_once(db_session: AsyncSessi
         due_at=now + timedelta(minutes=1),
         status="pending",
     )
-    db_session.add_all([due, future])
+    app_surface = UserReminder(
+        user_id=user.id,
+        source="web",
+        text="app-only",
+        due_at=now - timedelta(seconds=30),
+        status="pending",
+    )
+    db_session.add_all([due, future, app_surface])
     await db_session.commit()
     capture = _ReminderCapture()
 
@@ -65,12 +73,66 @@ async def test_dispatch_due_telegram_reminders_sends_once(db_session: AsyncSessi
 
     await db_session.refresh(due)
     await db_session.refresh(future)
-    assert counts == {"sent": 1, "failed": 0, "skipped": 0}
+    await db_session.refresh(app_surface)
+    assert counts == {"sent": 2, "failed": 0, "skipped": 0}
     assert due.status == "sent"
     assert due.sent_at == now
     assert due.metadata_["sent_message_id"] == 1
     assert future.status == "pending"
-    assert capture.messages == [{"chat_id": 701, "text": "Напоминание: stand up"}]
+    assert app_surface.status == "sent"
+    assert app_surface.sent_at == now
+    assert app_surface.metadata_["sent_message_id"] == 2
+    assert capture.messages == [
+        {"chat_id": 701, "text": "Напоминание: stand up"},
+        {"chat_id": 701, "text": "Напоминание: app-only"},
+    ]
+
+
+def test_due_telegram_reminders_query_locks_all_due_pending_reminders() -> None:
+    now = datetime(2026, 6, 4, 12, 0, tzinfo=timezone.utc)
+    compiled = str(
+        telegram_reminders_module._due_telegram_reminders_query(now, 10).compile(
+            dialect=postgresql.dialect()
+        )
+    )
+
+    assert "WHERE user_reminders.status = " in compiled
+    assert "AND user_reminders.source = " not in compiled
+    assert "FOR UPDATE SKIP LOCKED" in compiled
+
+
+@pytest.mark.asyncio
+async def test_dispatch_due_telegram_reminders_prefers_original_chat(
+    db_session: AsyncSession,
+) -> None:
+    now = datetime(2026, 6, 4, 12, 0, tzinfo=timezone.utc)
+    user = User(email="reminder-chat-precedence@example.com", password_hash="hash")
+    db_session.add(user)
+    await db_session.flush()
+    db_session.add(TelegramAccount(user_id=user.id, telegram_user_id=900, telegram_chat_id=901))
+    reminder = UserReminder(
+        user_id=user.id,
+        source="telegram",
+        text="same chat",
+        due_at=now - timedelta(minutes=1),
+        status="pending",
+        telegram_chat_id=777,
+    )
+    db_session.add(reminder)
+    await db_session.commit()
+    capture = _ReminderCapture()
+
+    counts = await dispatch_due_telegram_reminders(
+        db_session=db_session,
+        client=capture,
+        now=now,
+    )
+
+    await db_session.refresh(reminder)
+    assert counts == {"sent": 1, "failed": 0, "skipped": 0}
+    assert reminder.status == "sent"
+    assert reminder.telegram_chat_id == 777
+    assert capture.messages == [{"chat_id": 777, "text": "Напоминание: same chat"}]
 
 
 @pytest.mark.asyncio
@@ -103,6 +165,38 @@ async def test_dispatch_due_telegram_reminders_uses_context_session(
     assert counts == {"sent": 0, "failed": 1, "skipped": 0}
     assert due.status == "failed"
     assert due.error == "telegram_not_linked"
+
+
+@pytest.mark.asyncio
+async def test_dispatch_due_telegram_reminders_handles_unavailable_client(
+    db_session: AsyncSession,
+    monkeypatch,
+) -> None:
+    now = datetime(2026, 6, 4, 12, 0, tzinfo=timezone.utc)
+    user = User(email="reminder-no-client@example.com", password_hash="hash")
+    db_session.add(user)
+    await db_session.flush()
+    due = UserReminder(
+        user_id=user.id,
+        source="web",
+        text="needs Telegram config",
+        due_at=now - timedelta(minutes=1),
+        status="pending",
+    )
+    db_session.add(due)
+    await db_session.commit()
+
+    class BrokenClient:
+        def __init__(self) -> None:
+            raise TelegramClientError("Telegram bot token is not configured")
+
+    monkeypatch.setattr(telegram_reminders_module, "TelegramBotClient", BrokenClient)
+    counts = await dispatch_due_telegram_reminders(db_session=db_session, now=now)
+
+    await db_session.refresh(due)
+    assert counts == {"sent": 0, "failed": 1, "skipped": 0}
+    assert due.status == "failed"
+    assert due.error == "TelegramClientError"
 
 
 @pytest.mark.asyncio

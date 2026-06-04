@@ -9,6 +9,7 @@ from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.sql import Select
 
 from app.core.telegram_client import TelegramBotClient, TelegramClientError
 from app.db.session import get_db_context
@@ -60,7 +61,7 @@ async def _send_one(
         reminder.error = "telegram_not_linked"
         return "failed"
 
-    chat_id = account.telegram_chat_id or account.telegram_user_id
+    chat_id = reminder.telegram_chat_id or account.telegram_chat_id or account.telegram_user_id
     try:
         receipt = await client.send_message(chat_id, f"Напоминание: {reminder.text}")
     except TelegramClientError as exc:
@@ -102,6 +103,19 @@ async def dispatch_due_telegram_reminders(
         return await _dispatch_due_in_session(db, client=client, limit=limit, now=now)
 
 
+def _due_telegram_reminders_query(now: datetime, limit: int) -> Select[tuple[UserReminder]]:
+    return (
+        select(UserReminder)
+        .where(
+            UserReminder.status == "pending",
+            UserReminder.due_at <= now,
+        )
+        .order_by(UserReminder.due_at, UserReminder.created_at)
+        .limit(limit)
+        .with_for_update(skip_locked=True)
+    )
+
+
 async def _dispatch_due_in_session(
     db: AsyncSession,
     *,
@@ -111,18 +125,29 @@ async def _dispatch_due_in_session(
 ) -> dict[str, int]:
     rows = list(
         (
-            await db.execute(
-                select(UserReminder)
-                .where(UserReminder.status == "pending", UserReminder.due_at <= now)
-                .order_by(UserReminder.due_at, UserReminder.created_at)
-                .limit(limit)
-            )
+            await db.execute(_due_telegram_reminders_query(now, limit))
         )
         .scalars()
         .all()
     )
-    telegram_client = client or TelegramBotClient()
     counts = {"sent": 0, "failed": 0, "skipped": 0}
+    if not rows:
+        return counts
+    try:
+        telegram_client = client or TelegramBotClient()
+    except TelegramClientError as exc:
+        logger.error(
+            "telegram reminder delivery unavailable count=%s error=%s",
+            len(rows),
+            type(exc).__name__,
+        )
+        for reminder in rows:
+            reminder.status = "failed"
+            reminder.failed_at = now
+            reminder.error = type(exc).__name__
+        await db.flush()
+        counts["failed"] = len(rows)
+        return counts
     for reminder in rows:
         result = await _send_one(db, reminder, client=telegram_client, now=now)
         counts[result] += 1

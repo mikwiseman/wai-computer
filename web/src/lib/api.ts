@@ -66,6 +66,10 @@ import type {
   RelatedRecordingsResponse,
   RealtimeSessionResponse,
   RecordingShareLink,
+  Reminder,
+  ReminderCreateRequest,
+  ReminderListResponse,
+  ReminderStatus,
   RematchSpeakersResponse,
   ResolveAgentActionResponse,
   SearchResponse,
@@ -367,6 +371,28 @@ export function resolveAgentAction(
       body: JSON.stringify(input),
     },
   );
+}
+
+export function listReminders(params?: {
+  status?: ReminderStatus | "all";
+  limit?: number;
+}): Promise<ReminderListResponse> {
+  return apiFetch<ReminderListResponse>(
+    `/api/reminders${asQuery({ status: params?.status, limit: params?.limit })}`,
+  );
+}
+
+export function createReminder(input: ReminderCreateRequest): Promise<Reminder> {
+  return apiFetch<Reminder>("/api/reminders", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function cancelReminder(reminderId: string): Promise<Reminder> {
+  return apiFetch<Reminder>(`/api/reminders/${reminderId}/cancel`, {
+    method: "POST",
+  });
 }
 
 export function listRecordings(params?: {

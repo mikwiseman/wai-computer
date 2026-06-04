@@ -252,6 +252,14 @@ final class APIClientNewEndpointsTests: XCTestCase {
                 return (response, #"{"runs":[]}"#.data(using: .utf8)!)
             }
 
+            if path == "/api/agents/actions" && request.httpMethod == "GET" {
+                XCTAssertEqual(request.url?.query, "status=pending&limit=3")
+                let payload = """
+                {"actions":[{"id":"action-1","agent_id":"agent-1","run_id":"run-1","step_idx":2,"kind":"approval","tool":"desktop_open","status":"pending","preview":"Open Mail","recipient":null,"expires_at":"2026-06-03T12:15:00Z","resolved_at":null,"receipt":null}]}
+                """.data(using: .utf8)!
+                return (response, payload)
+            }
+
             if path == "/api/agents/agent-1/runs/run-1/actions/action-1/resolve" {
                 let body = try jsonBody(from: request)
                 XCTAssertEqual(body["decision"] as? String, "once")
@@ -281,6 +289,8 @@ final class APIClientNewEndpointsTests: XCTestCase {
         )
         XCTAssertEqual(run.id, "run-1")
         _ = try await client.listAgentRuns(agentId: "agent-1", status: "pending", limit: 5)
+        let actions = try await client.listAgentActions(status: "pending", limit: 3)
+        XCTAssertEqual(actions.actions.first?.agentId, "agent-1")
         let resolved = try await client.resolveAgentAction(
             agentId: "agent-1",
             runId: "run-1",
@@ -298,8 +308,74 @@ final class APIClientNewEndpointsTests: XCTestCase {
                 "/api/agents",
                 "/api/agents/agent-1/runs",
                 "/api/agents/agent-1/runs",
+                "/api/agents/actions",
                 "/api/agents/agent-1/runs/run-1/actions/action-1/resolve",
                 "/api/agents/agent-1"
+            ]
+        )
+    }
+
+    func testReminderEndpoints() async throws {
+        let client = makeClient()
+        let seenPaths = RequestPathRecorder()
+
+        MockURLProtocol.requestHandler = { [self] request in
+            let path = request.url?.path ?? ""
+            seenPaths.append(path)
+            let response = HTTPURLResponse(
+                url: request.url!,
+                statusCode: path.hasSuffix("/cancel") ? 200 : 200,
+                httpVersion: nil,
+                headerFields: nil
+            )!
+
+            if path == "/api/reminders" && request.httpMethod == "GET" {
+                XCTAssertEqual(request.url?.query, "status=pending&limit=5")
+                let payload = """
+                {"reminders":[{"id":"reminder-1","text":"Check launch metrics","due_at":"2026-06-04T18:30:00Z","status":"pending","source":"web","source_ref":null,"sent_at":null,"failed_at":null,"error":null,"metadata":{"origin":"dashboard"},"created_at":"2026-06-04T12:00:00Z","updated_at":"2026-06-04T12:00:00Z"}]}
+                """.data(using: .utf8)!
+                return (response, payload)
+            }
+
+            if path == "/api/reminders" && request.httpMethod == "POST" {
+                let body = try jsonBody(from: request)
+                XCTAssertEqual(body["text"] as? String, "Check launch metrics")
+                XCTAssertEqual(body["due_at"] as? String, "2026-06-04T18:30:00Z")
+                XCTAssertEqual(body["source"] as? String, "mac")
+                let payload = """
+                {"id":"reminder-1","text":"Check launch metrics","due_at":"2026-06-04T18:30:00Z","status":"pending","source":"mac","source_ref":null,"sent_at":null,"failed_at":null,"error":null,"metadata":{},"created_at":"2026-06-04T12:00:00Z","updated_at":"2026-06-04T12:00:00Z"}
+                """.data(using: .utf8)!
+                return (response, payload)
+            }
+
+            if path == "/api/reminders/reminder-1/cancel" && request.httpMethod == "POST" {
+                let payload = """
+                {"id":"reminder-1","text":"Check launch metrics","due_at":"2026-06-04T18:30:00Z","status":"cancelled","source":"mac","source_ref":null,"sent_at":null,"failed_at":null,"error":null,"metadata":{},"created_at":"2026-06-04T12:00:00Z","updated_at":"2026-06-04T12:01:00Z"}
+                """.data(using: .utf8)!
+                return (response, payload)
+            }
+
+            return (response, Data("{}".utf8))
+        }
+
+        let reminders = try await client.listReminders(status: "pending", limit: 5)
+        XCTAssertEqual(reminders.reminders.first?.metadata["origin"]?.stringValue, "dashboard")
+
+        let dueAt = Date(timeIntervalSince1970: 1_780_597_800)
+        let created = try await client.createReminder(
+            ReminderCreateRequest(text: "Check launch metrics", dueAt: dueAt)
+        )
+        XCTAssertEqual(created.source, "mac")
+
+        let cancelled = try await client.cancelReminder(reminderId: "reminder-1")
+        XCTAssertEqual(cancelled.status, "cancelled")
+
+        XCTAssertEqual(
+            seenPaths.values(),
+            [
+                "/api/reminders",
+                "/api/reminders",
+                "/api/reminders/reminder-1/cancel"
             ]
         )
     }

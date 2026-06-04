@@ -666,6 +666,31 @@ public actor APIClient {
         )
     }
 
+    // MARK: - Reminders
+
+    public func listReminders(status: String? = "pending", limit: Int? = nil) async throws -> ReminderListResponse {
+        var queryItems: [URLQueryItem] = []
+        if let status {
+            queryItems.append(URLQueryItem(name: "status", value: status))
+        }
+        if let limit {
+            queryItems.append(URLQueryItem(name: "limit", value: "\(limit)"))
+        }
+        return try await request(
+            .GET,
+            path: "/api/reminders",
+            queryItems: queryItems.isEmpty ? nil : queryItems
+        )
+    }
+
+    public func createReminder(_ request: ReminderCreateRequest) async throws -> Reminder {
+        return try await self.request(.POST, path: "/api/reminders", body: request)
+    }
+
+    public func cancelReminder(reminderId: String) async throws -> Reminder {
+        return try await request(.POST, path: "/api/reminders/\(reminderId)/cancel")
+    }
+
     // MARK: - Devices / Mac-edge channel
 
     /// Advertise this device's presence (and register it on first call).

@@ -151,15 +151,8 @@ docker_compose_timeout build web
 # schema during the brief window until `up -d` recreates the containers.
 docker_compose_timeout run --rm api alembic upgrade head
 
-docker_compose up -d --remove-orphans telegram-bot-api api web celery-worker caddy
+docker_compose up -d --remove-orphans api web celery-worker caddy
 CELERY_STOPPED_FOR_BUILD=false
-
-wait_for_service \
-  "Telegram Bot API running" \
-  "[[ \"$(docker inspect --format '{{.State.Running}}' waicomputer-telegram-bot-api 2>/dev/null)\" == true ]]" \
-  12 \
-  2 \
-  "docker logs --tail 200 waicomputer-telegram-bot-api"
 
 wait_for_service \
   "API health check" \
