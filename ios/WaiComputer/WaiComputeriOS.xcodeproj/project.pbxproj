@@ -314,7 +314,7 @@
 				LastUpgradeCheck = 1600;
 				TargetAttributes = {
 					30E2AFDA9828B99101834041 = {
-						DevelopmentTeam = <apple-team-id>;
+						DevelopmentTeam = "<apple-team-id>";
 						ProvisioningStyle = Automatic;
 					};
 				};
@@ -411,7 +411,7 @@
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 43;
-				DEVELOPMENT_TEAM = <apple-team-id>;
+				DEVELOPMENT_TEAM = "<apple-team-id>";
 				INFOPLIST_FILE = WaiComputer/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -433,7 +433,7 @@
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 43;
-				DEVELOPMENT_TEAM = <apple-team-id>;
+				DEVELOPMENT_TEAM = "<apple-team-id>";
 				INFOPLIST_FILE = WaiComputer/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				LD_RUNPATH_SEARCH_PATHS = (
