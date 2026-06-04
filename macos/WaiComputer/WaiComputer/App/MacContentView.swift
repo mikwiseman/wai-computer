@@ -118,6 +118,7 @@ struct MacMainView: View {
     @State private var recordingStartFolderId: String?
     @State private var lastMeasuredLayoutWidth: CGFloat = 0
     @State private var pendingRecordingSelectionAfterSectionChange: PendingRecordingSelection?
+    @State private var pendingInboxDetail: InboxDetailRef?
 
     enum SidebarSection: Hashable {
         case inbox
@@ -141,9 +142,9 @@ struct MacMainView: View {
 
     private var hasListColumn: Bool {
         switch selectedSection {
-        case .allRecordings, .folder(_), .trash, .none:
+        case .trash, .none:
             return true
-        case .inbox, .content, .brain, .review, .search, .history, .dictionary, .wai, .settings:
+        case .inbox, .allRecordings, .folder(_), .content, .brain, .review, .search, .history, .dictionary, .wai, .settings:
             return false
         }
     }
@@ -186,13 +187,13 @@ struct MacMainView: View {
         case .inbox:
             return t("Inbox", "Инбокс")
         case .allRecordings:
-            return t("All Recordings", "Все записи")
+            return t("Inbox", "Инбокс")
         case .folder(let folderId):
             return libraryViewModel.folders.first(where: { $0.id == folderId })?.name ?? t("Folder", "Папка")
         case .trash:
             return t("Trash", "Корзина")
         case .content:
-            return t("Content", "Материалы")
+            return t("Inbox", "Инбокс")
         case .brain:
             return t("Brain", "Мозг")
         case .review:
@@ -204,11 +205,11 @@ struct MacMainView: View {
         case .dictionary:
             return t("Dictionary", "Словарь")
         case .wai:
-            return "Wai"
+            return t("Inbox", "Инбокс")
         case .settings:
             return t("Settings", "Настройки")
         case .none:
-            return t("Library", "Библиотека")
+            return t("Workspace", "Рабочее")
         }
     }
 
@@ -471,8 +472,8 @@ struct MacMainView: View {
             }
         } message: {
             Text(t(
-                "Recordings stay in All Recordings. Only the folder is removed.",
-                "Записи останутся во всех записях. Удалится только папка."
+                "Inbox items stay in Inbox. Only the folder is removed.",
+                "Объекты останутся в Инбоксе. Удалится только папка."
             ))
         }
         .task {
@@ -522,15 +523,15 @@ struct MacMainView: View {
             guard let target = notification.object as? String else { return }
             switch target {
             case "inbox": selectedSection = .inbox
-            case "allRecordings": selectedSection = .allRecordings
-            case "content": selectedSection = .content
+            case "allRecordings": selectedSection = .inbox
+            case "content": selectedSection = .inbox
             case "brain": selectedSection = .brain
             case "review": selectedSection = .review
             case "history": selectedSection = .history
             case "dictionary": selectedSection = .dictionary
             case "search": selectedSection = .search
             case "trash": selectedSection = .trash
-            case "wai": selectedSection = .wai
+            case "wai": selectedSection = .inbox
             default: break
             }
         }
@@ -618,13 +619,11 @@ struct MacMainView: View {
         List {
             Section {
                 sidebarRow(t("Inbox", "Инбокс"), icon: "tray.full", section: .inbox, identifier: "inbox")
-                sidebarRow(t("All Recordings", "Все записи"), icon: "folder", section: .allRecordings, identifier: "all-recordings")
-                sidebarRow(t("Content", "Материалы"), icon: "square.stack.3d.up", section: .content, identifier: "content")
                 sidebarRow(t("Brain", "Мозг"), icon: "brain", section: .brain, identifier: "brain")
                 sidebarRow(t("Review", "На проверку"), icon: "tray.full", section: .review, identifier: "review")
                 sidebarRow(t("Trash", "Корзина"), icon: "trash", section: .trash, identifier: "trash")
             } header: {
-                Text(t("Library", "Библиотека"))
+                Text(t("Workspace", "Рабочее"))
                     .waiSectionHeader()
             }
 
@@ -657,11 +656,10 @@ struct MacMainView: View {
             }
 
             Section {
-                sidebarRow("Wai", icon: "sparkles", section: .wai, identifier: "wai")
                 sidebarRow(t("Search", "Поиск"), icon: "magnifyingglass", section: .search, identifier: "search")
                 sidebarRow(t("Settings", "Настройки"), icon: "gear", section: .settings, identifier: "settings")
             } header: {
-                Text("Wai")
+                Text(t("Tools", "Инструменты"))
                     .waiSectionHeader()
             }
         }
@@ -816,24 +814,30 @@ struct MacMainView: View {
     @ViewBuilder
     private var detailContentView: some View {
         switch selectedSection {
-        case .inbox:
+        case .inbox, .allRecordings, .folder(_), .content, .wai:
             MacInboxView(
                 apiClient: appState.getAPIClient(),
                 recordings: libraryViewModel.recordings,
                 folders: libraryViewModel.folders,
                 isImporting: importViewModel.isImporting,
+                initialSourceKind: inboxInitialSourceKind,
+                folderId: currentFolderId,
+                pendingDetail: pendingInboxDetail,
                 onStartRecording: {
-                    startRecording(type: .meeting, inputSource: .dual, folderId: nil)
+                    startRecording(type: .meeting, inputSource: .dual, folderId: currentFolderId)
                 },
                 onImportAudio: {
                     importAudioFile()
                 },
                 onLibraryChanged: {
                     await libraryViewModel.loadLibrary(apiClient: appState.getAPIClient())
+                },
+                onPendingDetailConsumed: {
+                    pendingInboxDetail = nil
                 }
             )
             .environment(\.locale, MacDateFormatting.locale(for: languageManager.current))
-        case .allRecordings, .folder(_), .trash, .none:
+        case .trash, .none:
             if selectedRecordingIds.count > 1 {
                 BulkSelectionDetailView(
                     selectionCount: selectedRecordingIds.count,
@@ -896,9 +900,6 @@ struct MacMainView: View {
                     isImporting: importViewModel.isImporting
                 )
             }
-        case .content:
-            MacContentFeedView(apiClient: appState.getAPIClient())
-                .environment(\.locale, MacDateFormatting.locale(for: languageManager.current))
         case .brain:
             MacBrainView(apiClient: appState.getAPIClient())
                 .environment(\.locale, MacDateFormatting.locale(for: languageManager.current))
@@ -913,26 +914,21 @@ struct MacMainView: View {
             DictationHistoryView()
         case .dictionary:
             DictationDictionaryView()
-        case .wai:
-            CompanionView(
-                apiClient: appState.getAPIClient(),
-                recordings: libraryViewModel.recordings,
-                onVoiceInput: {
-                    // Tap to start / tap to stop, reusing the existing dictation
-                    // pipeline — the transcript pastes into the focused composer.
-                    Task {
-                        if dictationManager.state == .listening {
-                            await dictationManager.stopAndInsert()
-                        } else {
-                            await dictationManager.startDictation()
-                        }
-                    }
-                }
-            )
-            .environment(\.locale, MacDateFormatting.locale(for: languageManager.current))
-            .companionAccentColor(Palette.accent)
         case .settings:
             MacSettingsView()
+        }
+    }
+
+    private var inboxInitialSourceKind: InboxSourceKind? {
+        switch selectedSection {
+        case .allRecordings:
+            return .recording
+        case .content:
+            return .item
+        case .wai:
+            return .chat
+        default:
+            return nil
         }
     }
 
@@ -941,7 +937,7 @@ struct MacMainView: View {
     ///
     /// We pre-select the recording immediately so the user lands on its
     /// detail view (with a loading state if needed) instead of a blank
-    /// All Recordings list while the upload + summary pipeline finishes.
+    /// Inbox while the upload + summary pipeline finishes.
     private func handleCompletedRecordingChange() {
         completionTask?.cancel()
 
@@ -951,7 +947,7 @@ struct MacMainView: View {
         // Immediate selection — the detail view shows a loading state until
         // resolveCompletedRecording returns. This avoids the "where did my
         // recording go?" moment from WW-50 #2.
-        selectRecording(completedContext.recordingId, in: completedFolderId.map(SidebarSection.folder) ?? .allRecordings)
+        selectRecording(completedContext.recordingId, in: completedFolderId.map(SidebarSection.folder) ?? .inbox)
 
         completionTask = Task {
             // Wait for the upload to finish (phase goes idle when cleanup completes)
@@ -1046,15 +1042,15 @@ struct MacMainView: View {
         await libraryViewModel.loadLibrary(apiClient: appState.getAPIClient())
     }
 
-    /// Run the Mac-edge computer-use channel only while the assistant surface is
+    /// Run the Mac-edge computer-use channel only while the main Wai workspace is
     /// open AND the user has opted in (default off) — never a silent 24/7 loop.
     @MainActor
     private func syncDesktopAgent() {
-        if computerUseEnabled, selectedSection == .wai {
-            desktopAgent.start(apiClient: appState.getAPIClient())
-        } else {
+        guard computerUseEnabled, selectedSection == .inbox else {
             desktopAgent.stop()
+            return
         }
+        desktopAgent.start(apiClient: appState.getAPIClient())
     }
 
     // MARK: - Actions
@@ -1082,16 +1078,23 @@ struct MacMainView: View {
     private func handleSelectedRecordingFromMenu(_ id: String?) {
         guard let id else { return }
 
-        selectRecording(id, in: .allRecordings)
+        selectRecording(id, in: .inbox)
         appState.selectedRecordingFromMenu = nil
     }
 
     private func openSearchResult(_ recordingId: String) {
-        selectRecording(recordingId, in: .allRecordings)
+        selectRecording(recordingId, in: .inbox)
     }
 
     private func selectRecording(_ recordingId: String, in section: SidebarSection) {
         prefetchedRecordingDetail = nil
+        if section == .inbox || currentSectionIsFolder(section) {
+            pendingRecordingSelectionAfterSectionChange = nil
+            selectedRecordingIds.removeAll()
+            pendingInboxDetail = InboxDetailRef(kind: .recording, id: recordingId)
+            selectedSection = section
+            return
+        }
         if selectedSection == section {
             pendingRecordingSelectionAfterSectionChange = nil
             selectedRecordingIds = [recordingId]
@@ -1102,6 +1105,13 @@ struct MacMainView: View {
             )
             selectedSection = section
         }
+    }
+
+    private func currentSectionIsFolder(_ section: SidebarSection) -> Bool {
+        if case .folder = section {
+            return true
+        }
+        return false
     }
 
     private func handlePendingMainWindowAction(_ action: MacMainWindowAction?) {
@@ -1173,7 +1183,7 @@ struct MacMainView: View {
     private func deleteFolder(_ folder: Folder) async {
         if await libraryViewModel.deleteFolder(id: folder.id, apiClient: appState.getAPIClient()) {
             if selectedSection == .folder(folder.id) {
-                selectedSection = .allRecordings
+                selectedSection = .inbox
             }
             selectedRecordingIds.removeAll()
             prefetchedRecordingDetail = nil

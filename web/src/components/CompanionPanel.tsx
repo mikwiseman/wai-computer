@@ -59,15 +59,15 @@ const COPY: Record<Locale, CompanionCopy> = {
     newChat: "+ New chat",
     noChatsYet: "No chats yet.",
     emptyHeading: "What do you want to know?",
-    emptyBody: "Wai answers from your recordings.",
+    emptyBody: "Wai answers from your Inbox: recordings, materials, and chats.",
     starterPrompts: [
       "What did I commit to this week?",
       "Summarize my last meeting.",
       "What patterns show up in my reflections?",
       "When did I first mention pricing?",
     ],
-    searchingRecordings: "Searching recordings…",
-    composerPlaceholder: "Ask about your recordings…",
+    searchingRecordings: "Searching your Inbox...",
+    composerPlaceholder: "Ask Wai about your Inbox...",
     composerAriaLabel: "Ask Wai a question",
     stop: "Stop",
     ask: "Ask",
@@ -94,15 +94,15 @@ const COPY: Record<Locale, CompanionCopy> = {
     newChat: "+ Новый чат",
     noChatsYet: "Чатов пока нет.",
     emptyHeading: "Что хотите узнать?",
-    emptyBody: "Wai отвечает по вашим записям.",
+    emptyBody: "Wai отвечает по Инбоксу: записям, материалам и чатам.",
     starterPrompts: [
       "О чём я договорился на этой неделе?",
       "Суммируй мою последнюю встречу.",
       "Какие закономерности видны в моих размышлениях?",
       "Когда я впервые упомянул цены?",
     ],
-    searchingRecordings: "Ищем по записям…",
-    composerPlaceholder: "Спросите о ваших записях…",
+    searchingRecordings: "Ищем по Инбоксу...",
+    composerPlaceholder: "Спросите Wai по Инбоксу...",
     composerAriaLabel: "Задать вопрос Wai",
     stop: "Стоп",
     ask: "Спросить",
@@ -138,6 +138,7 @@ interface CompanionPanelProps {
   locale?: Locale;
   initialChatId?: string | null;
   onChatCreated?: (chat: CompanionConversation) => void;
+  embedded?: boolean;
 }
 
 interface StreamingCitation {
@@ -197,6 +198,7 @@ export function CompanionPanel({
   locale: localeProp,
   initialChatId,
   onChatCreated,
+  embedded = false,
 }: CompanionPanelProps) {
   const [locale, setLocale] = useState<Locale>(localeProp ?? "en");
   const copy = COPY[locale];
@@ -503,6 +505,7 @@ export function CompanionPanel({
     <section className="qa-panel">
       <header className="qa-panel__header">
         <h2>{copy.heading}</h2>
+        {!embedded ? (
         <div style={{ display: "flex", gap: 8 }}>
           <button
             type="button"
@@ -522,9 +525,10 @@ export function CompanionPanel({
             {copy.newChat}
           </button>
         </div>
+        ) : null}
       </header>
 
-      {!sidebarCollapsed ? (
+      {!embedded && !sidebarCollapsed ? (
         <aside
           className="qa-scope"
           aria-label="Chat history"

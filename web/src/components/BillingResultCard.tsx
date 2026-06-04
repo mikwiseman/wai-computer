@@ -4,10 +4,7 @@ import Link from "next/link";
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 
-import type {
-  BillingResultLocale,
-  BillingResultSearchParams,
-} from "@/lib/billing-result-locale";
+import type { BillingResultLocale } from "@/lib/billing-result-locale";
 
 export type { BillingResultLocale, BillingResultSearchParams } from "@/lib/billing-result-locale";
 export type BillingResultKind = "success" | "cancel";

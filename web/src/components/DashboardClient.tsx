@@ -37,7 +37,6 @@ import {
   restoreRecording,
   search,
   semanticSearch,
-  startSummaryGeneration,
   startTelegramLink,
   unifiedSearch,
   updateSettings,
@@ -57,7 +56,6 @@ import { TranscriptionSettingsPanel } from "@/components/TranscriptionSettingsPa
 import { DictationStatsHeader } from "@/components/DictationStatsHeader";
 import { DeleteAccountSection } from "@/components/DeleteAccountSection";
 import { AddAnythingPanel } from "@/components/AddAnythingPanel";
-import { ItemsFeed } from "@/components/ItemsFeed";
 import { BrainPanel } from "@/components/BrainPanel";
 import { DictatePanel } from "@/components/DictatePanel";
 import { PasswordField } from "@/components/PasswordField";
@@ -123,16 +121,28 @@ function isDashboardView(value: string | null): value is DashboardView {
   return DASHBOARD_VIEW_KEYS.includes(value as (typeof DASHBOARD_VIEW_KEYS)[number]);
 }
 
+function canonicalDashboardView(value: DashboardView): DashboardView {
+  if (
+    value === "add"
+    || value === "content"
+    || value === "library"
+    || value === "wai"
+  ) {
+    return "inbox";
+  }
+  return value;
+}
+
 function viewFromCurrentLocation(): DashboardView | null {
   if (typeof window === "undefined") return null;
 
   const params = new URLSearchParams(window.location.search);
   const requested = params.get("view") ?? params.get("tab");
-  if (isDashboardView(requested)) return requested;
+  if (isDashboardView(requested)) return canonicalDashboardView(requested);
 
   const hash = window.location.hash.replace(/^#/, "");
   if (hash === "server-data" || hash === "settings") return "settings";
-  if (isDashboardView(hash)) return hash;
+  if (isDashboardView(hash)) return canonicalDashboardView(hash);
   return null;
 }
 
@@ -233,7 +243,7 @@ interface DashboardCopy {
     rows: Array<{ keys: string; description: string }>;
     notice: string;
   };
-  // Library
+  // Recording archive and trash copy
   library: {
     title: string;
     trashTitle: string;
@@ -271,6 +281,14 @@ interface DashboardCopy {
   };
   // Settings
   settings: {
+    workspaceGroupTitle: string;
+    workspaceGroupBody: string;
+    voiceGroupTitle: string;
+    voiceGroupBody: string;
+    accountGroupTitle: string;
+    accountGroupBody: string;
+    developerGroupTitle: string;
+    developerGroupBody: string;
     dictationHeading: string;
     loadingSettings: string;
     cleanupLevel: string;
@@ -304,7 +322,6 @@ interface DashboardCopy {
   // Misc dashboard messages
   msg: {
     recordingCreated: string;
-    summaryGenerated: string;
     summaryQueued: string;
     recordingTrashed: string;
     recordingDeletedPermanently: string;
@@ -324,8 +341,8 @@ const COPY: Record<Locale, DashboardCopy> = {
     retryLoadSettings: "Retry loading account settings",
     nav: {
       inbox: { label: "Inbox", detail: "Recordings, materials, and chats" },
-      wai: { label: "Wai", detail: "Ask anything about what you said" },
-      library: { label: "All Recordings", detail: "Every note, meeting, and reflection" },
+      wai: { label: "Inbox", detail: "Recordings, materials, and chats" },
+      library: { label: "Inbox", detail: "Recordings, materials, and chats" },
       folders: { label: "Folders" },
       trash: { label: "Trash", detail: "Restore or delete forever" },
       search: { label: "Search", detail: "Find a moment across transcripts" },
@@ -343,7 +360,7 @@ const COPY: Record<Locale, DashboardCopy> = {
       delete: "Delete",
       deleteConfirmTitle: (name) => `Delete folder “${name}”?`,
       deleteConfirmBody:
-        "Recordings inside this folder will be moved out of it. The recordings themselves are kept.",
+        "Inbox items inside this folder will be moved out of it. The items themselves are kept.",
       deleteConfirmAction: "Delete folder",
       deleteConfirmCancel: "Cancel",
       renameTitle: (name) => `Rename “${name}”`,
@@ -352,9 +369,9 @@ const COPY: Record<Locale, DashboardCopy> = {
       created: "Folder created.",
       renamed: "Folder renamed.",
       deleted: "Folder deleted.",
-      emptyHint: "No folders yet — create one to organize recordings.",
-      folderEmptyTitle: "No Recordings in This Folder",
-      folderEmptyBody: "Move a recording into this folder from the recording detail view.",
+      emptyHint: "No folders yet — create one to organize Inbox items.",
+      folderEmptyTitle: "No Items in This Folder",
+      folderEmptyBody: "Add a recording, file, link, text, or chat to this folder.",
     },
     history: {
       title: "Dictation History",
@@ -411,17 +428,17 @@ const COPY: Record<Locale, DashboardCopy> = {
       close: "Close",
       rows: [
         { keys: "/", description: "Focus search" },
-        { keys: "n", description: "New recording" },
+        { keys: "n", description: "Add to Inbox" },
         { keys: "d", description: "Dictate" },
-        { keys: "l", description: "Library" },
-        { keys: "w", description: "Ask Wai" },
+        { keys: "l", description: "Inbox" },
+        { keys: "w", description: "Inbox" },
         { keys: "Esc", description: "Clear selection / close dialogs" },
         { keys: "?", description: "Show this cheatsheet" },
       ],
       notice: "Shortcuts are disabled while typing in inputs.",
     },
     library: {
-      title: "All Recordings",
+      title: "Inbox",
       trashTitle: "Trash",
       recordingsCount: (n) => `${n} ${n === 1 ? "recording" : "recordings"}`,
       newButton: "New",
@@ -455,6 +472,17 @@ const COPY: Record<Locale, DashboardCopy> = {
       open: "Open",
     },
     settings: {
+      workspaceGroupTitle: "Inbox & sources",
+      workspaceGroupBody:
+        "Choose where WaiComputer runs, connect sources, and keep every recording, material, and chat flowing into Inbox.",
+      voiceGroupTitle: "Voice, summaries & appearance",
+      voiceGroupBody:
+        "Tune language, voice identity, dictation cleanup, summaries, and the visual theme.",
+      accountGroupTitle: "Account",
+      accountGroupBody: "Password and account controls live here so everyday setup stays focused.",
+      developerGroupTitle: "Developer access",
+      developerGroupBody:
+        "Connect AI tools through MCP or create read-only tokens for automation.",
       dictationHeading: "Dictation",
       loadingSettings: "Loading account settings...",
       cleanupLevel: "Cleanup level",
@@ -488,7 +516,7 @@ const COPY: Record<Locale, DashboardCopy> = {
     telegram: {
       heading: "Telegram",
       intro:
-        "Link @waicomputer_bot to send voice, video, and text questions. Media is transcribed, summarized, and saved to your Library.",
+        "Link @waicomputer_bot to send voice, video, and text questions. Media is transcribed, summarized, and saved to your Inbox.",
       linkedAs: "Linked as",
       disconnect: "Disconnect",
       instructions:
@@ -508,7 +536,6 @@ const COPY: Record<Locale, DashboardCopy> = {
     },
     msg: {
       recordingCreated: "Recording created.",
-      summaryGenerated: "Summary generated.",
       summaryQueued: "Summary generation queued.",
       recordingTrashed: "Recording moved to trash.",
       recordingDeletedPermanently: "Recording permanently deleted.",
@@ -526,8 +553,8 @@ const COPY: Record<Locale, DashboardCopy> = {
     retryLoadSettings: "Повторить загрузку настроек",
     nav: {
       inbox: { label: "Инбокс", detail: "Записи, материалы и чаты" },
-      wai: { label: "Wai", detail: "Спросите о чём угодно из ваших записей" },
-      library: { label: "Все записи", detail: "Все заметки, встречи и размышления" },
+      wai: { label: "Инбокс", detail: "Записи, материалы и чаты" },
+      library: { label: "Инбокс", detail: "Записи, материалы и чаты" },
       folders: { label: "Папки" },
       trash: { label: "Корзина", detail: "Восстановить или удалить навсегда" },
       search: { label: "Поиск", detail: "Найти момент по всем расшифровкам" },
@@ -545,7 +572,7 @@ const COPY: Record<Locale, DashboardCopy> = {
       delete: "Удалить",
       deleteConfirmTitle: (name) => `Удалить папку «${name}»?`,
       deleteConfirmBody:
-        "Записи из этой папки останутся, но будут вынесены за её пределы.",
+        "Объекты Инбокса из этой папки останутся, но будут вынесены за её пределы.",
       deleteConfirmAction: "Удалить папку",
       deleteConfirmCancel: "Отмена",
       renameTitle: (name) => `Переименовать «${name}»`,
@@ -554,9 +581,9 @@ const COPY: Record<Locale, DashboardCopy> = {
       created: "Папка создана.",
       renamed: "Папка переименована.",
       deleted: "Папка удалена.",
-      emptyHint: "Папок пока нет — создайте, чтобы упорядочить записи.",
-      folderEmptyTitle: "В этой папке записей нет",
-      folderEmptyBody: "Перенесите запись в эту папку из карточки записи.",
+      emptyHint: "Папок пока нет — создайте, чтобы упорядочить объекты Инбокса.",
+      folderEmptyTitle: "В этой папке пока нет объектов",
+      folderEmptyBody: "Добавьте запись, файл, ссылку, текст или чат в эту папку.",
     },
     history: {
       title: "История диктовки",
@@ -614,17 +641,17 @@ const COPY: Record<Locale, DashboardCopy> = {
       close: "Закрыть",
       rows: [
         { keys: "/", description: "Сфокусировать поиск" },
-        { keys: "n", description: "Новая запись" },
+        { keys: "n", description: "Добавить в Инбокс" },
         { keys: "d", description: "Диктовка" },
-        { keys: "l", description: "Библиотека" },
-        { keys: "w", description: "Спросить Wai" },
+        { keys: "l", description: "Инбокс" },
+        { keys: "w", description: "Инбокс" },
         { keys: "Esc", description: "Сбросить выбор / закрыть диалоги" },
         { keys: "?", description: "Показать этот список" },
       ],
       notice: "Горячие клавиши не срабатывают, когда вы печатаете в полях.",
     },
     library: {
-      title: "Все записи",
+      title: "Инбокс",
       trashTitle: "Корзина",
       recordingsCount: (n) =>
         `${n} ${n === 1 ? "запись" : n >= 2 && n <= 4 ? "записи" : "записей"}`,
@@ -660,6 +687,18 @@ const COPY: Record<Locale, DashboardCopy> = {
       open: "Открыть",
     },
     settings: {
+      workspaceGroupTitle: "Инбокс и источники",
+      workspaceGroupBody:
+        "Выберите, где работает WaiComputer, подключите источники и отправляйте записи, материалы и чаты в Инбокс.",
+      voiceGroupTitle: "Голос, саммари и внешний вид",
+      voiceGroupBody:
+        "Настройте язык, голосовой профиль, очистку диктовки, саммари и тему.",
+      accountGroupTitle: "Аккаунт",
+      accountGroupBody:
+        "Пароль и управление аккаунтом собраны отдельно, чтобы основная настройка не распухала.",
+      developerGroupTitle: "Доступ для разработчиков",
+      developerGroupBody:
+        "Подключите AI-инструменты через MCP или создайте read-only токены для автоматизации.",
       dictationHeading: "Диктовка",
       loadingSettings: "Загружаем настройки аккаунта...",
       cleanupLevel: "Уровень очистки",
@@ -693,7 +732,7 @@ const COPY: Record<Locale, DashboardCopy> = {
     telegram: {
       heading: "Telegram",
       intro:
-        "Привяжите @waicomputer_bot, чтобы отправлять голосовые, видео и вопросы текстом. Медиа расшифровываются, суммаризируются и сохраняются в Библиотеку.",
+        "Привяжите @waicomputer_bot, чтобы отправлять голосовые, видео и вопросы текстом. Медиа расшифровываются, суммаризируются и сохраняются в Инбокс.",
       linkedAs: "Привязан как",
       disconnect: "Отключить",
       instructions:
@@ -712,7 +751,6 @@ const COPY: Record<Locale, DashboardCopy> = {
     },
     msg: {
       recordingCreated: "Запись создана.",
-      summaryGenerated: "Саммари сгенерировано.",
       summaryQueued: "Саммари поставлено в очередь.",
       recordingTrashed: "Запись перемещена в корзину.",
       recordingDeletedPermanently: "Запись удалена навсегда.",
@@ -812,8 +850,6 @@ export function DashboardClient() {
   const [initializing, setInitializing] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
-  // Bumped after "Add anything" creates an item, to refresh the Content feed.
-  const [itemsReloadKey, setItemsReloadKey] = useState(0);
   const [user, setUser] = useState<User | null>(null);
 
   const [recordings, setRecordings] = useState<Recording[]>([]);
@@ -859,6 +895,7 @@ export function DashboardClient() {
   const [isShortcutCheatsheetOpen, setIsShortcutCheatsheetOpen] = useState(false);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const recorderPaneRef = useRef<HTMLDivElement | null>(null);
+  const [, setItemsReloadKey] = useState(0);
 
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -1037,6 +1074,29 @@ export function DashboardClient() {
     }
   }
 
+  const handleRefreshTelegramStatus = useCallback(
+    async (options: { silent?: boolean } = {}) => {
+      if (!options.silent) setTelegramLoading(true);
+      if (!options.silent) setMessage(null);
+      try {
+        const status = await getTelegramLinkStatus();
+        setTelegramStatus(status);
+        if (status.linked || !options.silent) {
+          setTelegramPairing(null);
+          if (status.linked) {
+            setTelegramLinkCode("");
+            setMessage(copy.telegram.linked);
+          }
+        }
+      } catch (error: unknown) {
+        if (!options.silent) setMessage(formatError(error));
+      } finally {
+        if (!options.silent) setTelegramLoading(false);
+      }
+    },
+    [copy.telegram.linked],
+  );
+
   useEffect(() => {
     void initialize();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1060,7 +1120,7 @@ export function DashboardClient() {
       window.removeEventListener("focus", refreshTelegramStatus);
       document.removeEventListener("visibilitychange", refreshTelegramStatus);
     };
-  }, [view, telegramStatus?.linked, telegramPairing]);
+  }, [handleRefreshTelegramStatus, view, telegramStatus?.linked, telegramPairing]);
 
   useEffect(() => {
     if (view !== "history" || dictationEntriesLoadedOnce || dictationEntriesLoading) return;
@@ -1127,7 +1187,9 @@ export function DashboardClient() {
       });
       setRecordingTitle("");
       await loadRecordingsState();
-      setView("library");
+      setSelectedRecording(null);
+      setSelectedMode("active");
+      setView("inbox");
       setMessage(copy.msg.recordingCreated);
     } catch (error: unknown) {
       setMessage(formatError(error));
@@ -1140,7 +1202,7 @@ export function DashboardClient() {
       const detail = await getRecording(recordingId);
       handleRecordingDetailUpdate(detail);
       setSelectedMode(mode);
-      setView(mode === "trash" ? "trash" : "library");
+      setView(mode === "trash" ? "trash" : "inbox");
     } catch (error: unknown) {
       setMessage(formatError(error));
     }
@@ -1199,19 +1261,6 @@ export function DashboardClient() {
       }
       await Promise.all([loadRecordingsState(), loadTrashRecordingsState()]);
       setMessage(copy.msg.recordingRestored);
-    } catch (error: unknown) {
-      setMessage(formatError(error));
-    }
-  }
-
-  async function handleGenerateSummary(recordingId: string) {
-    setMessage(null);
-    try {
-      await startSummaryGeneration(recordingId, { instructions: null });
-      const detail = await getRecording(recordingId);
-      handleRecordingDetailUpdate(detail);
-      setSelectedMode("active");
-      setMessage(copy.msg.summaryGenerated);
     } catch (error: unknown) {
       setMessage(formatError(error));
     }
@@ -1288,26 +1337,6 @@ export function DashboardClient() {
       setMessage(formatError(error));
     } finally {
       setTelegramLoading(false);
-    }
-  }
-
-  async function handleRefreshTelegramStatus(options: { silent?: boolean } = {}) {
-    if (!options.silent) setTelegramLoading(true);
-    if (!options.silent) setMessage(null);
-    try {
-      const status = await getTelegramLinkStatus();
-      setTelegramStatus(status);
-      if (status.linked || !options.silent) {
-        setTelegramPairing(null);
-        if (status.linked) {
-          setTelegramLinkCode("");
-          setMessage(copy.telegram.linked);
-        }
-      }
-    } catch (error: unknown) {
-      if (!options.silent) setMessage(formatError(error));
-    } finally {
-      if (!options.silent) setTelegramLoading(false);
     }
   }
 
@@ -1413,7 +1442,7 @@ export function DashboardClient() {
       );
       if (activeFolderId === folderDeleteTarget.id) {
         setActiveFolderId(null);
-        setView("library");
+        setView("inbox");
       }
       await loadRecordingsState();
       setFolderDeleteTarget(null);
@@ -1547,7 +1576,7 @@ export function DashboardClient() {
   }, []);
 
   const focusRecorder = useCallback(() => {
-    setView("library");
+    setView("inbox");
     setSelectedRecording(null);
     setSelectedMode("active");
     setIsShortcutCheatsheetOpen(false);
@@ -1591,7 +1620,7 @@ export function DashboardClient() {
   }, []);
 
   const goToView = useCallback((next: DashboardView) => {
-    setView(next);
+    setView(canonicalDashboardView(next));
     setSelectedRecording(null);
     setIsShortcutCheatsheetOpen(false);
   }, []);
@@ -1601,13 +1630,13 @@ export function DashboardClient() {
     n: focusRecorder,
     d: () => goToView("dictate"),
     l: () => goToView("inbox"),
-    w: () => goToView("wai"),
+    w: () => goToView("inbox"),
     Escape: clearAll,
     "?": toggleCheatsheet,
   });
 
-  // Count active recordings per folder. Drag-and-drop and optimistic detail
-  // updates both flow through `recordings`, so this only depends on local state.
+  // Count active local recordings per folder; uploaded material counts arrive
+  // through the folder-scoped Inbox once it refreshes.
   const folderCounts = useMemo(() => {
     const counts: Record<string, number> = {};
     for (const folder of folders) counts[folder.id] = 0;
@@ -1638,8 +1667,8 @@ export function DashboardClient() {
     );
   }
 
-  // Sidebar sections mirror MacContentView's grouped layout:
-  // Library / Recording Folders / Dictation / Wai.
+  // Sidebar sections mirror MacContentView's simplified grouped layout:
+  // Workspace / Folders / Dictation / Tools.
   type NavItem = {
     key: Exclude<DashboardView, "folder">;
     label: string;
@@ -1647,7 +1676,7 @@ export function DashboardClient() {
   };
   const navSections: Array<{ header: string; items: NavItem[] }> = [
     {
-      header: locale === "ru" ? "Библиотека" : "Library",
+      header: locale === "ru" ? "Рабочее" : "Workspace",
       items: [
         {
           key: "inbox",
@@ -1655,24 +1684,9 @@ export function DashboardClient() {
           count: null,
         },
         {
-          key: "add",
-          label: locale === "ru" ? "Добавить" : "Add anything",
-          count: null,
-        },
-        {
-          key: "content",
-          label: locale === "ru" ? "Материалы" : "Content",
-          count: null,
-        },
-        {
           key: "brain",
           label: locale === "ru" ? "Мозг" : "Brain",
           count: null,
-        },
-        {
-          key: "library",
-          label: copy.nav.library.label,
-          count: displayCount(recordings.length),
         },
         {
           key: "trash",
@@ -1690,9 +1704,8 @@ export function DashboardClient() {
       ],
     },
     {
-      header: "Wai",
+      header: locale === "ru" ? "Инструменты" : "Tools",
       items: [
-        { key: "wai", label: copy.nav.wai.label, count: null },
         { key: "search", label: copy.nav.search.label, count: null },
         { key: "settings", label: copy.nav.settings.label, count: null },
       ],
@@ -1703,9 +1716,6 @@ export function DashboardClient() {
   const currentFolder = activeFolderId
     ? folders.find((folder) => folder.id === activeFolderId) ?? null
     : null;
-  const folderFilteredRecordings = recordings.filter(
-    (recording) => recording.folder_id === activeFolderId,
-  );
   const workspaceTitle =
     view === "folder" && currentFolder
       ? currentFolder.name
@@ -1735,7 +1745,9 @@ export function DashboardClient() {
                   aria-current={view === item.key ? "page" : undefined}
                   onClick={() => {
                     setActiveFolderId(null);
-                    setView(item.key);
+                    setSelectedRecording(null);
+                    setSelectedMode("active");
+                    setView(canonicalDashboardView(item.key));
                     if (item.key === "trash") {
                       void loadTrashRecordingsState();
                     }
@@ -1748,7 +1760,7 @@ export function DashboardClient() {
                 </button>
               ))}
 
-              {/* Folders block lives right after the Library section. */}
+              {/* Folders block lives right after the Workspace section. */}
               {index === 0 ? (
                 <div className="sidebar-folder-group">
                   <div className="sidebar-folder-group__header">
@@ -1938,6 +1950,9 @@ export function DashboardClient() {
           <UniversalInboxPanel
             locale={locale}
             copy={copy}
+            folderId={null}
+            folderName={null}
+            initialRecording={selectedRecording}
             recordings={recordings}
             folders={folders}
             recordingTitle={recordingTitle}
@@ -1948,30 +1963,53 @@ export function DashboardClient() {
             onAssignRecordingToFolder={handleAssignRecordingToFolder}
             onDeleteRecording={handleDeleteRecording}
             onRefreshRecordings={loadRecordingsState}
-            onItemsChanged={() => setItemsReloadKey((k) => k + 1)}
+            onItemsChanged={() => setItemsReloadKey((key) => key + 1)}
             onError={setMessage}
           />
         ) : null}
-        {view === "wai" ? <WaiView recordings={recordings} locale={locale} /> : null}
-        {view === "library" ? renderLibrary("active", recordings) : null}
-        {view === "folder"
-          ? renderLibrary("active", folderFilteredRecordings, { isFolder: true })
-          : null}
+        {view === "library" || view === "wai" || view === "add" || view === "content" ? (
+          <UniversalInboxPanel
+            locale={locale}
+            copy={copy}
+            folderId={null}
+            folderName={null}
+            initialRecording={selectedRecording}
+            recordings={recordings}
+            folders={folders}
+            recordingTitle={recordingTitle}
+            recordingType={recordingType}
+            onRecordingTitleChange={setRecordingTitle}
+            onRecordingTypeChange={setRecordingType}
+            onRecordingUpdate={handleRecordingDetailUpdate}
+            onAssignRecordingToFolder={handleAssignRecordingToFolder}
+            onDeleteRecording={handleDeleteRecording}
+            onRefreshRecordings={loadRecordingsState}
+            onItemsChanged={() => setItemsReloadKey((key) => key + 1)}
+            onError={setMessage}
+          />
+        ) : null}
+        {view === "folder" && currentFolder ? (
+          <UniversalInboxPanel
+            locale={locale}
+            copy={copy}
+            folderId={currentFolder.id}
+            folderName={currentFolder.name}
+            recordings={recordings}
+            folders={folders}
+            recordingTitle={recordingTitle}
+            recordingType={recordingType}
+            onRecordingTitleChange={setRecordingTitle}
+            onRecordingTypeChange={setRecordingType}
+            onRecordingUpdate={handleRecordingDetailUpdate}
+            onAssignRecordingToFolder={handleAssignRecordingToFolder}
+            onDeleteRecording={handleDeleteRecording}
+            onRefreshRecordings={loadRecordingsState}
+            onItemsChanged={() => setItemsReloadKey((key) => key + 1)}
+            onError={setMessage}
+          />
+        ) : null}
         {view === "trash" ? renderLibrary("trash", trashRecordings) : null}
         {view === "search" ? renderSearchView() : null}
-        {view === "add" ? (
-          <section className="tool-panel">
-            <AddAnythingPanel
-              onCreated={() => setItemsReloadKey((k) => k + 1)}
-              onError={setMessage}
-            />
-          </section>
-        ) : null}
-        {view === "content" ? (
-          <section className="tool-panel">
-            <ItemsFeed onError={setMessage} reloadKey={itemsReloadKey} />
-          </section>
-        ) : null}
         {view === "brain" ? (
           <section className="tool-panel">
             <BrainPanel locale={locale} onError={setMessage} />
@@ -2086,28 +2124,11 @@ export function DashboardClient() {
     </div>
   );
 
-  function renderLibrary(
-    mode: DetailMode,
-    items: Recording[],
-    options?: { isFolder?: boolean },
-  ) {
+  function renderLibrary(mode: DetailMode, items: Recording[]) {
     const isTrash = mode === "trash";
-    const isFolder = options?.isFolder ?? false;
-    const title = isFolder
-      ? currentFolder?.name ?? copy.library.title
-      : isTrash
-        ? copy.library.trashTitle
-        : copy.library.title;
-    const emptyTitle = isFolder
-      ? copy.folders.folderEmptyTitle
-      : isTrash
-        ? copy.library.trashEmptyTitle
-        : copy.library.emptyTitle;
-    const emptyBody = isFolder
-      ? copy.folders.folderEmptyBody
-      : isTrash
-        ? copy.library.trashEmptyBody
-        : copy.library.emptyBody;
+    const title = isTrash ? copy.library.trashTitle : copy.library.title;
+    const emptyTitle = isTrash ? copy.library.trashEmptyTitle : copy.library.emptyTitle;
+    const emptyBody = isTrash ? copy.library.trashEmptyBody : copy.library.emptyBody;
 
     return (
       <div className="library-grid">
@@ -2294,6 +2315,7 @@ export function DashboardClient() {
                 type={recordingType}
                 copy={copy}
                 locale={locale}
+                folderId={null}
                 onTitleChange={setRecordingTitle}
                 onTypeChange={setRecordingType}
                 onSubmit={handleCreateRecording}
@@ -2367,7 +2389,7 @@ export function DashboardClient() {
                         if (hit.source_kind === "recording") {
                           void handleSelectRecording(hit.parent_id);
                         } else {
-                          setView("content");
+                          setView("inbox");
                         }
                       }}
                     >
@@ -2685,186 +2707,199 @@ export function DashboardClient() {
   function renderSettingsView() {
     return (
       <section className="tool-panel settings-panel">
-        <ServerDataSection locale={locale} />
-
-        <section className="settings-form" data-testid="appearance-settings">
-          <h3>{locale === "ru" ? "Внешний вид" : "Appearance"}</h3>
-          <ThemeAccentPicker locale={locale} />
-        </section>
-
-        <IdentityAndVoicePanel locale={locale} />
-
-        {accountSettings ? (
-          <TranscriptionSettingsPanel
-            settings={accountSettings}
-            transcriptionOptions={transcriptionOptions}
-            onUpdate={(patch) => void handleUpdateAccountSettings(patch)}
-            busy={settingsSaving}
-            locale={locale}
-          />
-        ) : null}
-
-        <div className="settings-form">
-          <h3>{copy.settings.dictationHeading}</h3>
-          {settingsLoading ? (
-            <p className="settings-note">{copy.settings.loadingSettings}</p>
-          ) : null}
-          {accountSettings ? (
-            <div className="settings-field cleanup-level-field">
-              <span>{copy.settings.cleanupLevel}</span>
-              <div
-                className="cleanup-level-options"
-                role="radiogroup"
-                aria-label={copy.settings.cleanupLevel}
-              >
-                {(["none", "light", "medium", "high"] as const).map((level) => (
-                  <label
-                    key={level}
-                    className={`cleanup-level-option${
-                      accountSettings.dictation_cleanup_level === level ? " selected" : ""
-                    }`}
-                  >
-                    <input
-                      type="radio"
-                      name="dictation-cleanup-level"
-                      value={level}
-                      checked={accountSettings.dictation_cleanup_level === level}
-                      disabled={settingsSaving}
-                      onChange={() =>
-                        void handleUpdateAccountSettings({
-                          dictation_cleanup_level: level,
-                        })
-                      }
-                    />
-                    <strong>{copy.settings.cleanupLevels[level].label}</strong>
-                    <small>{copy.settings.cleanupLevels[level].description}</small>
-                  </label>
-                ))}
+        <div className="settings-group" data-testid="settings-group-workspace">
+          <header className="settings-group__header">
+            <h2>{copy.settings.workspaceGroupTitle}</h2>
+            <p>{copy.settings.workspaceGroupBody}</p>
+          </header>
+          <ServerDataSection locale={locale} />
+          <div className="settings-form">
+            <h3>{copy.telegram.heading}</h3>
+            <p className="settings-note">{copy.telegram.intro}</p>
+            {telegramStatus?.linked ? (
+              <div className="telegram-link-card">
+                <p>
+                  {copy.telegram.linkedAs}{" "}
+                  <strong>
+                    {telegramStatus.username
+                      ? `@${telegramStatus.username}`
+                      : [telegramStatus.first_name, telegramStatus.last_name]
+                          .filter(Boolean)
+                          .join(" ") || "Telegram"}
+                  </strong>
+                </p>
+                <button
+                  type="button"
+                  className="ghost-button compact-button danger-button"
+                  disabled={telegramLoading}
+                  onClick={() => void handleUnlinkTelegram()}
+                >
+                  {copy.telegram.disconnect}
+                </button>
               </div>
-            </div>
-          ) : settingsLoadedOnce && !settingsLoading ? (
-            <button
-              type="button"
-              className="ghost-button compact-button"
-              onClick={() => void loadAccountSettings()}
-            >
-              {copy.retryLoadSettings}
-            </button>
-          ) : null}
+            ) : (
+              <div className="telegram-link-card">
+                <p className="settings-note">{copy.telegram.instructions}</p>
+                <button
+                  type="button"
+                  className="ghost-button compact-button"
+                  disabled={telegramLoading}
+                  onClick={() => void handleStartTelegramLink()}
+                >
+                  {telegramLoading ? copy.telegram.linkOpening : copy.telegram.linkButton}
+                </button>
+                {telegramPairing ? (
+                  <p className="settings-note">{copy.telegram.awaitingStart}</p>
+                ) : null}
+                <details className="settings-disclosure">
+                  <summary>{copy.telegram.codeHelp}</summary>
+                  <form className="telegram-code-form" onSubmit={handleClaimTelegramLinkCode}>
+                    <label>
+                      <span>{copy.telegram.codeLabel}</span>
+                      <input
+                        type="text"
+                        value={telegramLinkCode}
+                        onChange={(event) => setTelegramLinkCode(event.target.value)}
+                        placeholder={copy.telegram.codePlaceholder}
+                        autoComplete="one-time-code"
+                        disabled={telegramLoading}
+                      />
+                    </label>
+                    <button
+                      type="submit"
+                      className="ghost-button compact-button"
+                      disabled={telegramLoading}
+                    >
+                      {copy.telegram.linkByCodeButton}
+                    </button>
+                  </form>
+                </details>
+              </div>
+            )}
+          </div>
         </div>
 
-        <form className="settings-form" onSubmit={handleChangePassword}>
-          <h3>{copy.settings.accountHeading}</h3>
-          {!accountHasPassword ? (
-            <p className="settings-note" data-testid="set-password-note">
-              {copy.settings.magicLinkNote}
-            </p>
-          ) : (
-            <PasswordField
-              id="settings-current-password"
-              data-testid="current-password"
-              label={copy.settings.currentPassword}
-              value={currentPassword}
-              onChange={setCurrentPassword}
+        <div className="settings-group" data-testid="settings-group-voice">
+          <header className="settings-group__header">
+            <h2>{copy.settings.voiceGroupTitle}</h2>
+            <p>{copy.settings.voiceGroupBody}</p>
+          </header>
+          <section className="settings-form" data-testid="appearance-settings">
+            <h3>{locale === "ru" ? "Внешний вид" : "Appearance"}</h3>
+            <ThemeAccentPicker locale={locale} />
+          </section>
+          <IdentityAndVoicePanel locale={locale} />
+          {accountSettings ? (
+            <TranscriptionSettingsPanel
+              settings={accountSettings}
+              transcriptionOptions={transcriptionOptions}
+              onUpdate={(patch) => void handleUpdateAccountSettings(patch)}
+              busy={settingsSaving}
               locale={locale}
-              required
-              autoComplete="current-password"
             />
-          )}
-          <PasswordField
-            id="settings-new-password"
-            data-testid="new-password"
-            label={copy.settings.newPassword}
-            value={newPassword}
-            onChange={setNewPassword}
-            locale={locale}
-            showStrength
-            required
-            autoComplete="new-password"
-          />
-          <button data-testid="change-password" type="submit">
-            {accountHasPassword ? copy.settings.changePassword : copy.settings.setPassword}
-          </button>
-        </form>
-
-        <DeleteAccountSection onDeleted={() => router.replace("/login")} locale={locale} />
-
-        <div className="settings-form">
-          <h3>{copy.telegram.heading}</h3>
-          <p className="settings-note">{copy.telegram.intro}</p>
-          {telegramStatus?.linked ? (
-            <div className="telegram-link-card">
-              <p>
-                {copy.telegram.linkedAs}{" "}
-                <strong>
-                  {telegramStatus.username
-                    ? `@${telegramStatus.username}`
-                    : [telegramStatus.first_name, telegramStatus.last_name]
-                        .filter(Boolean)
-                        .join(" ") || "Telegram"}
-                </strong>
-              </p>
-              <button
-                type="button"
-                className="ghost-button compact-button danger-button"
-                disabled={telegramLoading}
-                onClick={() => void handleUnlinkTelegram()}
-              >
-                {copy.telegram.disconnect}
-              </button>
-            </div>
-          ) : (
-            <div className="telegram-link-card">
-              <p className="settings-note">{copy.telegram.instructions}</p>
+          ) : null}
+          <div className="settings-form">
+            <h3>{copy.settings.dictationHeading}</h3>
+            {settingsLoading ? (
+              <p className="settings-note">{copy.settings.loadingSettings}</p>
+            ) : null}
+            {accountSettings ? (
+              <div className="settings-field cleanup-level-field">
+                <span>{copy.settings.cleanupLevel}</span>
+                <div
+                  className="cleanup-level-options"
+                  role="radiogroup"
+                  aria-label={copy.settings.cleanupLevel}
+                >
+                  {(["none", "light", "medium", "high"] as const).map((level) => (
+                    <label
+                      key={level}
+                      className={`cleanup-level-option${
+                        accountSettings.dictation_cleanup_level === level ? " selected" : ""
+                      }`}
+                    >
+                      <input
+                        type="radio"
+                        name="dictation-cleanup-level"
+                        value={level}
+                        checked={accountSettings.dictation_cleanup_level === level}
+                        disabled={settingsSaving}
+                        onChange={() =>
+                          void handleUpdateAccountSettings({
+                            dictation_cleanup_level: level,
+                          })
+                        }
+                      />
+                      <strong>{copy.settings.cleanupLevels[level].label}</strong>
+                      <small>{copy.settings.cleanupLevels[level].description}</small>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            ) : settingsLoadedOnce && !settingsLoading ? (
               <button
                 type="button"
                 className="ghost-button compact-button"
-                disabled={telegramLoading}
-                onClick={() => void handleStartTelegramLink()}
+                onClick={() => void loadAccountSettings()}
               >
-                {telegramLoading ? copy.telegram.linkOpening : copy.telegram.linkButton}
+                {copy.retryLoadSettings}
               </button>
-              {telegramPairing ? (
-                <p className="settings-note">{copy.telegram.awaitingStart}</p>
-              ) : null}
-              <form className="telegram-code-form" onSubmit={handleClaimTelegramLinkCode}>
-                <label>
-                  <span>{copy.telegram.codeLabel}</span>
-                  <small>{copy.telegram.codeHelp}</small>
-                  <input
-                    type="text"
-                    value={telegramLinkCode}
-                    onChange={(event) => setTelegramLinkCode(event.target.value)}
-                    placeholder={copy.telegram.codePlaceholder}
-                    autoComplete="one-time-code"
-                    disabled={telegramLoading}
-                  />
-                </label>
-                <button
-                  type="submit"
-                  className="ghost-button compact-button"
-                  disabled={telegramLoading}
-                >
-                  {copy.telegram.linkByCodeButton}
-                </button>
-              </form>
-            </div>
-          )}
+            ) : null}
+          </div>
         </div>
 
-        <McpConnectSection />
-        <ApiKeysSection />
+        <div className="settings-group" data-testid="settings-group-account">
+          <header className="settings-group__header">
+            <h2>{copy.settings.accountGroupTitle}</h2>
+            <p>{copy.settings.accountGroupBody}</p>
+          </header>
+          <form className="settings-form" onSubmit={handleChangePassword}>
+            <h3>{copy.settings.accountHeading}</h3>
+            {!accountHasPassword ? (
+              <p className="settings-note" data-testid="set-password-note">
+                {copy.settings.magicLinkNote}
+              </p>
+            ) : (
+              <PasswordField
+                id="settings-current-password"
+                data-testid="current-password"
+                label={copy.settings.currentPassword}
+                value={currentPassword}
+                onChange={setCurrentPassword}
+                locale={locale}
+                required
+                autoComplete="current-password"
+              />
+            )}
+            <PasswordField
+              id="settings-new-password"
+              data-testid="new-password"
+              label={copy.settings.newPassword}
+              value={newPassword}
+              onChange={setNewPassword}
+              locale={locale}
+              showStrength
+              required
+              autoComplete="new-password"
+            />
+            <button data-testid="change-password" type="submit">
+              {accountHasPassword ? copy.settings.changePassword : copy.settings.setPassword}
+            </button>
+          </form>
+          <DeleteAccountSection onDeleted={() => router.replace("/login")} locale={locale} />
+        </div>
+
+        <div className="settings-group" data-testid="settings-group-developer">
+          <header className="settings-group__header">
+            <h2>{copy.settings.developerGroupTitle}</h2>
+            <p>{copy.settings.developerGroupBody}</p>
+          </header>
+          <McpConnectSection />
+          <ApiKeysSection />
+        </div>
       </section>
     );
   }
-}
-
-function WaiView({ recordings, locale }: { recordings: Recording[]; locale: Locale }) {
-  return (
-    <div className="wai-panel">
-      <CompanionPanel recordings={recordings} locale={locale} />
-    </div>
-  );
 }
 
 type InboxFilterKind = "all" | InboxSourceKind;
@@ -2907,9 +2942,80 @@ function sourceLabel(kind: InboxSourceKind, locale: Locale): string {
   return "Chat";
 }
 
+function recordingRowFromDetail(detail: RecordingDetail): InboxRow {
+  return {
+    id: `recording:${detail.id}`,
+    source_kind: "recording",
+    source_id: detail.id,
+    detail: { kind: "recording", id: detail.id },
+    title: detail.title,
+    source_label: "Recording",
+    sublabel: detail.type,
+    activity_at: detail.created_at,
+    created_at: detail.created_at,
+    updated_at: detail.updated_at ?? detail.created_at,
+    occurred_at: detail.uploaded_at,
+    status:
+      detail.status === "ready"
+        ? "ready"
+        : detail.status === "failed"
+          ? "failed"
+          : "processing",
+    source_status: detail.status,
+    error: detail.failure_code
+      ? {
+          code: detail.failure_code,
+          message: detail.failure_message ?? "",
+        }
+      : null,
+    folder_id: detail.folder_id,
+    duration_seconds: detail.duration_seconds,
+    language: detail.language,
+    has_summary: detail.summary !== null,
+    is_starred: detail.starred_at !== null,
+    is_pinned: false,
+    is_archived: false,
+    is_trashed: false,
+  };
+}
+
+function InboxKindIcon({ kind }: { kind: InboxSourceKind }) {
+  if (kind === "recording") {
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M4 12v-2" />
+        <path d="M8 17V7" />
+        <path d="M12 20V4" />
+        <path d="M16 17V7" />
+        <path d="M20 14v-4" />
+      </svg>
+    );
+  }
+  if (kind === "item") {
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M7 3h7l4 4v14H7z" />
+        <path d="M14 3v5h5" />
+        <path d="M9 13h6" />
+        <path d="M9 17h4" />
+      </svg>
+    );
+  }
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M5 6.5h14v9H9l-4 3z" />
+      <path d="M8 10h8" />
+      <path d="M8 13h5" />
+    </svg>
+  );
+}
+
 function UniversalInboxPanel({
   locale,
   copy,
+  folderId,
+  folderName,
+  initialRecording,
   recordings,
   folders,
   recordingTitle,
@@ -2925,6 +3031,9 @@ function UniversalInboxPanel({
 }: {
   locale: Locale;
   copy: DashboardCopy;
+  folderId?: string | null;
+  folderName?: string | null;
+  initialRecording?: RecordingDetail | null;
   recordings: Recording[];
   folders: Folder[];
   recordingTitle: string;
@@ -2954,7 +3063,9 @@ function UniversalInboxPanel({
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
+  const inboxRequestId = useRef(0);
 
   const loadInbox = useCallback(
     async (mode: "replace" | "append" = "replace") => {
@@ -2964,36 +3075,55 @@ function UniversalInboxPanel({
       } else {
         setLoading(true);
       }
+      const requestId = inboxRequestId.current + 1;
+      inboxRequestId.current = requestId;
       try {
         const response = await listInbox({
           limit: 50,
           cursor: mode === "append" ? nextCursor : null,
           source_kind: sourceKind === "all" ? undefined : sourceKind,
           status: statusFilter === "all" ? undefined : statusFilter,
+          folder_id: folderId ?? undefined,
         });
+        if (requestId !== inboxRequestId.current) return;
+        setLoadError(null);
         setRows((current) =>
           mode === "append" ? [...current, ...response.rows] : response.rows,
         );
         setNextCursor(response.next_cursor);
       } catch (error: unknown) {
-        onError(formatError(error));
+        if (requestId === inboxRequestId.current) {
+          const message = formatError(error);
+          setLoadError(message);
+          onError(message);
+        }
       } finally {
-        setLoading(false);
-        setLoadingMore(false);
+        if (requestId === inboxRequestId.current) {
+          setLoading(false);
+          setLoadingMore(false);
+        }
       }
     },
-    [loadingMore, nextCursor, onError, sourceKind, statusFilter],
+    [folderId, loadingMore, nextCursor, onError, sourceKind, statusFilter],
   );
 
   useEffect(() => {
     setSelectedRow(null);
     setSelectedRecording(null);
     setShowCreate(false);
+    setLoadError(null);
     void loadInbox("replace");
   // The first page reloads when filters change. Cursor changes are driven by
   // explicit "Load more" clicks and must not restart the list.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sourceKind, statusFilter]);
+  }, [folderId, sourceKind, statusFilter]);
+
+  useEffect(() => {
+    if (!initialRecording || initialRecording.deleted_at) return;
+    setSelectedRecording(initialRecording);
+    setSelectedRow(recordingRowFromDetail(initialRecording));
+    setShowCreate(false);
+  }, [initialRecording]);
 
   useEffect(() => {
     if (selectedRow?.source_kind !== "recording") {
@@ -3027,43 +3157,6 @@ function UniversalInboxPanel({
     return () => window.clearInterval(id);
   }, [hasProcessing, loadInbox]);
 
-  function recordingRowFromDetail(detail: RecordingDetail): InboxRow {
-    return {
-      id: `recording:${detail.id}`,
-      source_kind: "recording",
-      source_id: detail.id,
-      detail: { kind: "recording", id: detail.id },
-      title: detail.title,
-      source_label: "Recording",
-      sublabel: detail.type,
-      activity_at: detail.created_at,
-      created_at: detail.created_at,
-      updated_at: detail.updated_at ?? detail.created_at,
-      occurred_at: detail.uploaded_at,
-      status:
-        detail.status === "ready"
-          ? "ready"
-          : detail.status === "failed"
-            ? "failed"
-            : "processing",
-      source_status: detail.status,
-      error: detail.failure_code
-        ? {
-            code: detail.failure_code,
-            message: detail.failure_message ?? "",
-          }
-        : null,
-      folder_id: detail.folder_id,
-      duration_seconds: detail.duration_seconds,
-      language: detail.language,
-      has_summary: detail.summary !== null,
-      is_starred: detail.starred_at !== null,
-      is_pinned: false,
-      is_archived: false,
-      is_trashed: false,
-    };
-  }
-
   async function handleCreateInboxRecording(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     onError(null);
@@ -3072,6 +3165,7 @@ function UniversalInboxPanel({
         title: recordingTitle.length > 0 ? recordingTitle : null,
         type: recordingType,
         language: "multi",
+        folder_id: folderId ?? undefined,
       });
       onRecordingTitleChange("");
       await onRefreshRecordings();
@@ -3171,6 +3265,10 @@ function UniversalInboxPanel({
                 ? locale === "ru"
                   ? "Загрузка..."
                   : "Loading..."
+                : folderName
+                  ? locale === "ru"
+                    ? `${folderName} / ${rows.length} объектов`
+                    : `${folderName} / ${rows.length} items`
                 : locale === "ru"
                   ? `${rows.length} объектов`
                   : `${rows.length} items`}
@@ -3190,13 +3288,16 @@ function UniversalInboxPanel({
         </header>
 
         <div className="inbox-filters" aria-label={locale === "ru" ? "Фильтры" : "Filters"}>
-          <div className="inbox-segmented" role="tablist">
+          <div
+            className="inbox-segmented"
+            role="group"
+            aria-label={locale === "ru" ? "Тип объектов" : "Item type"}
+          >
             {sourceFilters.map((filter) => (
               <button
                 key={filter.key}
                 type="button"
-                role="tab"
-                aria-selected={sourceKind === filter.key}
+                aria-pressed={sourceKind === filter.key}
                 onClick={() => setSourceKind(filter.key)}
               >
                 {filter.label}
@@ -3216,7 +3317,19 @@ function UniversalInboxPanel({
           </select>
         </div>
 
-        {loading ? (
+        {loadError ? (
+          <div className="inbox-error" role="alert">
+            <h3>{locale === "ru" ? "Не удалось загрузить Инбокс" : "Could not load Inbox"}</h3>
+            <p>{loadError}</p>
+            <button
+              type="button"
+              className="ghost-button compact-button"
+              onClick={() => void loadInbox("replace")}
+            >
+              {locale === "ru" ? "Повторить" : "Retry"}
+            </button>
+          </div>
+        ) : loading ? (
           <div className="inbox-loading">
             <Skeleton height="0.8rem" lines={6} />
           </div>
@@ -3239,17 +3352,18 @@ function UniversalInboxPanel({
                     type="button"
                     className="inbox-row"
                     aria-current={selectedRow?.id === row.id ? "true" : undefined}
+                    data-testid={
+                      row.source_kind === "recording"
+                        ? `select-recording-${row.source_id}`
+                        : undefined
+                    }
                     onClick={() => {
                       setShowCreate(false);
                       setSelectedRow(row);
                     }}
-                  >
+                    >
                     <span className="inbox-row__icon" data-kind={row.source_kind}>
-                      {row.source_kind === "recording"
-                        ? "R"
-                        : row.source_kind === "item"
-                          ? "M"
-                          : "C"}
+                      <InboxKindIcon kind={row.source_kind} />
                     </span>
                     <span className="inbox-row__main">
                       <strong>{inboxTitle(row, locale)}</strong>
@@ -3300,14 +3414,16 @@ function UniversalInboxPanel({
       <section className="inbox-detail-area" aria-label="Inbox detail">
         {showCreate || !selectedRow ? (
           <div className="inbox-create">
-            <div className="inbox-create__top">
-              <button
-                type="button"
-                className="ghost-button compact-button"
-                onClick={() => void handleNewChat()}
-              >
-                {locale === "ru" ? "+ Новый чат" : "+ New Wai chat"}
-              </button>
+            <header className="inbox-create__header">
+              <div className="inbox-create__glyph" aria-hidden="true" />
+              <div>
+                <h3>{locale === "ru" ? "Добавить в Инбокс" : "Add to Inbox"}</h3>
+                <p>
+                  {locale === "ru"
+                    ? "Запишите, загрузите файл, вставьте ссылку или начните чат Wai."
+                    : "Record, upload a file, paste a link, or start a Wai chat."}
+                </p>
+              </div>
               <button
                 type="button"
                 className="ghost-button compact-button"
@@ -3315,28 +3431,82 @@ function UniversalInboxPanel({
               >
                 {locale === "ru" ? "Обновить" : "Refresh"}
               </button>
+            </header>
+
+            <div className="inbox-create__grid">
+              <section className="inbox-command-card">
+                <div>
+                  <h4>{locale === "ru" ? "Записать" : "Record"}</h4>
+                  <p>
+                    {locale === "ru"
+                      ? "Быстрая запись из браузера."
+                      : "Quick browser recording."}
+                  </p>
+                </div>
+                <LiveRecorder
+                  onRecordingComplete={(detail) => void handleRecordingComplete(detail)}
+                  onError={onError}
+                  locale={locale}
+                  folderId={folderId}
+                />
+              </section>
+
+              <section className="inbox-command-card inbox-command-card--wide">
+                <div>
+                  <h4>{locale === "ru" ? "Файл, ссылка или текст" : "File, link, or text"}</h4>
+                  <p>
+                    {locale === "ru"
+                      ? "PDF, DOCX, аудио, видео, ссылка или заметка."
+                      : "PDF, DOCX, audio, video, link, or note."}
+                  </p>
+                </div>
+                <AddAnythingPanel
+                  locale={locale}
+                  captureMode="inbox"
+                  folderId={folderId}
+                  onCreated={() => {
+                    onItemsChanged();
+                    void loadInbox("replace");
+                  }}
+                  onRecordingQueued={(recordingId) => void handleRecordingQueued(recordingId)}
+                  onError={onError}
+                />
+              </section>
+
+              <section className="inbox-command-card">
+                <div>
+                  <h4>{locale === "ru" ? "Чат Wai" : "Wai chat"}</h4>
+                  <p>
+                    {locale === "ru"
+                      ? "Спросите Wai по записям, материалам и чатам."
+                      : "Ask Wai about recordings, materials, and chats."}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  className="wai-primary-button"
+                  onClick={() => void handleNewChat()}
+                >
+                  {locale === "ru" ? "Новый чат" : "New chat"}
+                </button>
+              </section>
             </div>
-            <NewRecordingPane
-              title={recordingTitle}
-              type={recordingType}
-              copy={copy}
-              locale={locale}
-              onTitleChange={onRecordingTitleChange}
-              onTypeChange={onRecordingTypeChange}
-              onSubmit={handleCreateInboxRecording}
-              onComplete={(detail) => void handleRecordingComplete(detail)}
-              onError={onError}
-            />
-            <div className="inbox-add-material">
-              <AddAnythingPanel
-                onCreated={() => {
-                  onItemsChanged();
-                  void loadInbox("replace");
-                }}
-                onRecordingQueued={(recordingId) => void handleRecordingQueued(recordingId)}
+
+            <details className="inbox-manual-recording">
+              <summary>{locale === "ru" ? "Создать пустую запись" : "Create empty recording"}</summary>
+              <NewRecordingPane
+                title={recordingTitle}
+                type={recordingType}
+                copy={copy}
+                locale={locale}
+                folderId={folderId}
+                onTitleChange={onRecordingTitleChange}
+                onTypeChange={onRecordingTypeChange}
+                onSubmit={handleCreateInboxRecording}
+                onComplete={(detail) => void handleRecordingComplete(detail)}
                 onError={onError}
               />
-            </div>
+            </details>
           </div>
         ) : selectedRow.source_kind === "recording" ? (
           selectedRecording ? (
@@ -3355,7 +3525,7 @@ function UniversalInboxPanel({
               onRestore={() => undefined}
               onDelete={(recordingId) => {
                 void (async () => {
-                  await onDeleteRecording(recordingId);
+                  await onDeleteRecording(recordingId, { permanent: false });
                   setSelectedRow(null);
                   setSelectedRecording(null);
                   await loadInbox("replace");
@@ -3375,6 +3545,7 @@ function UniversalInboxPanel({
             locale={locale}
             initialChatId={selectedRow.source_id}
             onChatCreated={() => void loadInbox("replace")}
+            embedded
           />
         )}
       </section>
@@ -3387,6 +3558,7 @@ function NewRecordingPane({
   type,
   copy,
   locale,
+  folderId,
   onTitleChange,
   onTypeChange,
   onSubmit,
@@ -3397,6 +3569,7 @@ function NewRecordingPane({
   type: RecordingType;
   copy: DashboardCopy;
   locale: "en" | "ru";
+  folderId?: string | null;
   onTitleChange: (value: string) => void;
   onTypeChange: (value: RecordingType) => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
@@ -3411,8 +3584,13 @@ function NewRecordingPane({
       </div>
 
       <div className="recording-options">
-        <LiveRecorder onRecordingComplete={onComplete} onError={onError} locale={locale} />
-        <AudioUpload onUploadComplete={onComplete} onError={onError} />
+        <LiveRecorder
+          onRecordingComplete={onComplete}
+          onError={onError}
+          locale={locale}
+          folderId={folderId}
+        />
+        <AudioUpload onUploadComplete={onComplete} onError={onError} folderId={folderId} />
       </div>
 
       <form className="manual-note-form" onSubmit={onSubmit}>

@@ -34,6 +34,7 @@ class FakeMediaRecorder {
     if (options?.mimeType) {
       this.mimeType = options.mimeType;
     }
+    // eslint-disable-next-line @typescript-eslint/no-this-alias -- test double exposes the active recorder instance.
     lastRecorder = this;
   }
 

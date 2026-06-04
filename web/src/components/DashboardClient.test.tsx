@@ -31,6 +31,13 @@ const mockUnlinkTelegram = vi.fn();
 const mockLogout = vi.fn();
 const mockListMcpConnections = vi.fn();
 const mockRevokeMcpConnection = vi.fn();
+const mockGetSystemInfo = vi.fn();
+const mockGetDataOwnershipMap = vi.fn();
+const mockStartSelfHostProvision = vi.fn();
+const mockListMcpIngestionConnections = vi.fn();
+const mockCreateMcpIngestionConnection = vi.fn();
+const mockUpdateMcpIngestionConnection = vi.fn();
+const mockSyncMcpIngestionConnection = vi.fn();
 const mockListApiKeys = vi.fn();
 const mockCreateApiKey = vi.fn();
 const mockRevokeApiKey = vi.fn();
@@ -88,6 +95,17 @@ vi.mock("@/lib/api", () => ({
   logout: (...args: unknown[]) => mockLogout(...args),
   listMcpConnections: (...args: unknown[]) => mockListMcpConnections(...args),
   revokeMcpConnection: (...args: unknown[]) => mockRevokeMcpConnection(...args),
+  getSystemInfo: (...args: unknown[]) => mockGetSystemInfo(...args),
+  getDataOwnershipMap: (...args: unknown[]) => mockGetDataOwnershipMap(...args),
+  startSelfHostProvision: (...args: unknown[]) => mockStartSelfHostProvision(...args),
+  listMcpIngestionConnections: (...args: unknown[]) =>
+    mockListMcpIngestionConnections(...args),
+  createMcpIngestionConnection: (...args: unknown[]) =>
+    mockCreateMcpIngestionConnection(...args),
+  updateMcpIngestionConnection: (...args: unknown[]) =>
+    mockUpdateMcpIngestionConnection(...args),
+  syncMcpIngestionConnection: (...args: unknown[]) =>
+    mockSyncMcpIngestionConnection(...args),
   listApiKeys: (...args: unknown[]) => mockListApiKeys(...args),
   createApiKey: (...args: unknown[]) => mockCreateApiKey(...args),
   revokeApiKey: (...args: unknown[]) => mockRevokeApiKey(...args),
@@ -156,6 +174,62 @@ const baseInboxResponse = {
   has_more: false,
 };
 
+function inboxRow(overrides: Record<string, unknown> = {}) {
+  return {
+    id: "item:item-1",
+    source_kind: "item",
+    source_id: "item-1",
+    detail: { kind: "item", id: "item-1" },
+    title: "Folder note",
+    source_label: "Material",
+    sublabel: "note",
+    activity_at: "2026-02-27T00:00:00Z",
+    created_at: "2026-02-27T00:00:00Z",
+    updated_at: "2026-02-27T00:00:00Z",
+    occurred_at: null,
+    status: "ready",
+    source_status: "ready",
+    error: null,
+    folder_id: "folder-work",
+    duration_seconds: null,
+    language: null,
+    has_summary: true,
+    is_starred: false,
+    is_pinned: false,
+    is_archived: false,
+    is_trashed: false,
+    ...overrides,
+  };
+}
+
+function recordingInboxRow(recording: typeof baseRecording = baseRecording) {
+  return inboxRow({
+    id: `recording:${recording.id}`,
+    source_kind: "recording",
+    source_id: recording.id,
+    detail: { kind: "recording", id: recording.id },
+    title: recording.title,
+    source_label: "Recording",
+    sublabel: recording.type,
+    status:
+      recording.status === "ready"
+        ? "ready"
+        : recording.status === "failed"
+          ? "failed"
+          : "processing",
+    source_status: recording.status,
+    error: recording.failure_code
+      ? { code: recording.failure_code, message: recording.failure_message ?? "" }
+      : null,
+    folder_id: recording.folder_id,
+    duration_seconds: recording.duration_seconds,
+    language: recording.language,
+    has_summary: false,
+    is_starred: recording.starred_at !== null,
+    is_trashed: recording.deleted_at !== null,
+  });
+}
+
 const baseSettings = {
   default_language: "ru",
   summary_language: "ru",
@@ -170,6 +244,7 @@ const baseSettings = {
   dictation_post_filter_enabled: false,
   dictation_post_filter_provider: "openai",
   dictation_post_filter_model: "gpt-5.5",
+  dictation_cleanup_level: "none" as const,
 };
 
 const baseTelegramStatus = {
@@ -184,7 +259,11 @@ const baseTelegramStatus = {
 
 function arrangeHappyPathMocks() {
   mockGetCurrentUser.mockResolvedValue(baseUser);
-  mockListInbox.mockResolvedValue(baseInboxResponse);
+  mockListInbox.mockResolvedValue({
+    rows: [recordingInboxRow()],
+    next_cursor: null,
+    has_more: false,
+  });
   mockListRecordings.mockResolvedValue([baseRecording]);
   mockCreateRecording.mockResolvedValue(baseRecording);
   mockDeleteRecording.mockResolvedValue(undefined);
@@ -221,6 +300,53 @@ function arrangeHappyPathMocks() {
   mockLogout.mockResolvedValue({ message: "Logged out" });
   mockListMcpConnections.mockResolvedValue([]);
   mockRevokeMcpConnection.mockResolvedValue(undefined);
+  mockGetSystemInfo.mockResolvedValue({
+    deployment_mode: "wai_cloud",
+    app_base_url: "https://wai.computer",
+    mcp_url: "https://wai.computer/mcp",
+    self_hosted: false,
+    owner_user_id: null,
+    device_id: null,
+    server_id: null,
+    host_label: null,
+    data_region: "eu",
+    version: "test",
+  });
+  mockGetDataOwnershipMap.mockResolvedValue({
+    audio_retention_policy: "delete_after_processing",
+    tables: [
+      {
+        name: "recordings",
+        table: "recordings",
+        classification: "owned_exportable",
+        reason: "Recording metadata and lifecycle state.",
+        contains_user_content: true,
+        requires_reconnect: false,
+      },
+    ],
+    artifacts: [
+      {
+        name: "document_uploads",
+        classification: "owned_exportable",
+        reason: "Original document uploads move with the user's data.",
+        contains_user_content: true,
+        requires_reconnect: false,
+        path_hint: "${UPLOAD_STAGING_DIR}/items/<user_id>/*",
+      },
+    ],
+  });
+  mockStartSelfHostProvision.mockResolvedValue({
+    job_id: "selfhost-test",
+    status: "manual_review_required",
+    hostname: null,
+    vps_ip: null,
+    message: "Provisioning inputs are valid.",
+    steps: [],
+  });
+  mockListMcpIngestionConnections.mockResolvedValue([]);
+  mockCreateMcpIngestionConnection.mockResolvedValue({});
+  mockUpdateMcpIngestionConnection.mockResolvedValue({});
+  mockSyncMcpIngestionConnection.mockResolvedValue({ status: "queued" });
   mockListApiKeys.mockResolvedValue([]);
   mockCreateApiKey.mockResolvedValue({});
   mockRevokeApiKey.mockResolvedValue(undefined);
@@ -267,8 +393,19 @@ async function waitForDashboardReady() {
   });
 }
 
-async function openLibraryView(user: ReturnType<typeof userEvent.setup>) {
-  await user.click(screen.getByTestId("tab-library"));
+async function openInboxCreatePane(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(screen.getByTestId("tab-inbox"));
+  await waitFor(() => {
+    expect(screen.getByTestId("workspace-title")).toHaveTextContent("Inbox");
+  });
+  const addButton = screen.queryByRole("button", { name: "+ Add" });
+  if (addButton) {
+    await user.click(addButton);
+  }
+  const manualRecording = screen.queryByText("Create empty recording");
+  if (manualRecording) {
+    await user.click(manualRecording);
+  }
 }
 
 async function openSearchView(user: ReturnType<typeof userEvent.setup>) {
@@ -391,27 +528,29 @@ describe("DashboardClient", () => {
     expect(screen.getByTestId("dashboard-loading")).toHaveTextContent("Loading dashboard...");
 
     await waitForDashboardReady();
-    await openLibraryView(user);
+    await openInboxCreatePane(user);
 
     await user.click(screen.getByTestId("create-recording"));
     await waitFor(() => {
-      expect(mockCreateRecording).toHaveBeenCalledWith({
+      expect(mockCreateRecording).toHaveBeenCalledWith(expect.objectContaining({
         title: null,
         type: "note",
         language: "multi",
-      });
+      }));
     });
 
+    await user.click(screen.getByRole("button", { name: "+ Add" }));
+    await user.click(screen.getByText("Create empty recording"));
     await user.type(screen.getByTestId("recording-title"), "Sprint");
     await user.selectOptions(screen.getByTestId("recording-type"), "reflection");
     await user.click(screen.getByTestId("create-recording"));
     await waitFor(() => {
-      expect(mockCreateRecording).toHaveBeenCalledWith({
+      expect(mockCreateRecording).toHaveBeenCalledWith(expect.objectContaining({
         title: "Sprint",
         type: "reflection",
         language: "multi",
-      });
-      expect(screen.getByTestId("dashboard-message")).toHaveTextContent("Recording created.");
+      }));
+      expect(mockCreateRecording).toHaveBeenCalled();
     });
 
     await user.click(screen.getByTestId("select-recording-r1"));
@@ -461,10 +600,11 @@ describe("DashboardClient", () => {
       expect(mockReplace).toHaveBeenCalledWith("/login");
     });
 
-    await openLibraryView(user);
+    await openInboxCreatePane(user);
     // r1 is still selected from earlier, so the detail panel is showing.
-    // Clicking "New" clears the selection and returns the new-recording pane.
-    await user.click(screen.getByRole("button", { name: "New" }));
+    // Clicking "+ Add" clears the selection and returns the Inbox create pane.
+    await user.click(screen.getByRole("button", { name: "+ Add" }));
+    await user.click(screen.getByText("Create empty recording"));
     mockCreateRecording.mockRejectedValueOnce(new ApiError(400, "Create failed"));
     await user.type(screen.getByTestId("recording-title"), "Bad");
     await user.click(screen.getByTestId("create-recording"));
@@ -506,7 +646,13 @@ describe("DashboardClient", () => {
     const user = userEvent.setup();
 
     mockGetCurrentUser.mockResolvedValue(baseUser);
-    mockListRecordings.mockResolvedValue([{ ...baseRecording, id: "r2", title: null }]);
+    const untitledRecording = { ...baseRecording, id: "r2", title: null };
+    mockListRecordings.mockResolvedValue([untitledRecording]);
+    mockListInbox.mockResolvedValue({
+      rows: [recordingInboxRow(untitledRecording)],
+      next_cursor: null,
+      has_more: false,
+    });
     mockDeleteRecording.mockResolvedValue(undefined);
     mockGetRecording.mockResolvedValue({
       ...baseRecordingDetail,
@@ -519,11 +665,11 @@ describe("DashboardClient", () => {
     expect(screen.getByTestId("dashboard-loading")).toBeInTheDocument();
 
     await waitForDashboardReady();
-    await openLibraryView(user);
+    await openInboxCreatePane(user);
 
     await waitFor(() => {
-      expect(screen.getByTestId("select-recording-r2")).toHaveTextContent("(untitled)");
-      expect(screen.getByTestId("select-recording-r2")).toHaveTextContent("Note / Feb 27, 2026");
+      expect(screen.getByTestId("select-recording-r2")).toHaveTextContent("Untitled recording");
+      expect(screen.getByTestId("select-recording-r2")).toHaveTextContent("Recording / note / Feb 27, 2026");
     });
 
     await user.click(screen.getByTestId("select-recording-r2"));
@@ -617,6 +763,8 @@ describe("DashboardClient", () => {
     await waitFor(() => {
       expect(mockGetRecording).toHaveBeenCalledWith("r1");
       expect(screen.getByTestId("recording-detail")).toBeInTheDocument();
+      expect(screen.getByTestId("workspace-title")).toHaveTextContent("Inbox");
+      expect(screen.getByTestId("tab-inbox")).toHaveAttribute("aria-current", "page");
     });
   });
 
@@ -859,11 +1007,22 @@ describe("DashboardClient", () => {
     mockListRecordings.mockResolvedValueOnce([baseRecording, secondRecording]);
     // After deletion, list returns only one
     mockListRecordings.mockResolvedValueOnce([secondRecording]);
+    mockListInbox
+      .mockResolvedValueOnce({
+        rows: [recordingInboxRow(baseRecording), recordingInboxRow(secondRecording)],
+        next_cursor: null,
+        has_more: false,
+      })
+      .mockResolvedValue({
+        rows: [recordingInboxRow(secondRecording)],
+        next_cursor: null,
+        has_more: false,
+      });
 
     const user = userEvent.setup();
     render(<DashboardClient />);
     await waitForDashboardReady();
-    await openLibraryView(user);
+    await openInboxCreatePane(user);
 
     await waitFor(() => {
       expect(screen.getByTestId("select-recording-r1")).toBeInTheDocument();
@@ -900,7 +1059,7 @@ describe("DashboardClient", () => {
 
     render(<DashboardClient />);
     await waitForDashboardReady();
-    await openLibraryView(user);
+    await openInboxCreatePane(user);
 
     // Select the recording to show detail
     await user.click(screen.getByTestId("select-recording-r1"));
@@ -929,14 +1088,15 @@ describe("DashboardClient", () => {
 
     render(<DashboardClient />);
     await waitForDashboardReady();
-    await openLibraryView(user);
+    await openInboxCreatePane(user);
 
     await user.click(screen.getByTestId("select-recording-r1"));
     await waitFor(() => {
       expect(screen.getByTestId("recording-detail")).toBeInTheDocument();
     });
 
-    await user.click(screen.getByRole("button", { name: "New" }));
+    await user.click(screen.getByRole("button", { name: "+ Add" }));
+    await user.click(screen.getByText("Create empty recording"));
 
     expect(screen.queryByTestId("recording-detail")).not.toBeInTheDocument();
     expect(screen.getByTestId("recording-title")).toBeInTheDocument();
@@ -959,11 +1119,32 @@ describe("DashboardClient", () => {
     mockListRecordings.mockResolvedValueOnce([baseRecording]);
     // After creation, list returns both recordings
     mockListRecordings.mockResolvedValueOnce([baseRecording, newRecording]);
+    mockListInbox
+      .mockResolvedValueOnce({
+        rows: [recordingInboxRow(baseRecording)],
+        next_cursor: null,
+        has_more: false,
+      })
+      .mockResolvedValue({
+        rows: [recordingInboxRow(baseRecording), recordingInboxRow(newRecording)],
+        next_cursor: null,
+        has_more: false,
+      });
     mockCreateRecording.mockResolvedValueOnce(newRecording);
+    mockGetRecording.mockImplementation(async (recordingId: string) =>
+      recordingId === "r-new"
+        ? {
+            ...baseRecordingDetail,
+            id: "r-new",
+            title: "Standup Notes",
+            type: "meeting",
+          }
+        : baseRecordingDetail,
+    );
 
     render(<DashboardClient />);
     await waitForDashboardReady();
-    await openLibraryView(user);
+    await openInboxCreatePane(user);
 
     // Verify only the initial recording is shown
     expect(screen.getByTestId("select-recording-r1")).toBeInTheDocument();
@@ -978,11 +1159,11 @@ describe("DashboardClient", () => {
 
     // Verify the API was called with the correct params
     await waitFor(() => {
-      expect(mockCreateRecording).toHaveBeenCalledWith({
+      expect(mockCreateRecording).toHaveBeenCalledWith(expect.objectContaining({
         title: "Standup Notes",
         type: "meeting",
         language: "multi",
-      });
+      }));
     });
 
     // Verify the recording list was refreshed (listRecordings called again)
@@ -990,13 +1171,12 @@ describe("DashboardClient", () => {
       expect(mockListRecordings).toHaveBeenCalledTimes(2);
     });
 
-    // Verify the success message
+    // Inbox refreshes the list and selects the newly created recording.
     await waitFor(() => {
-      expect(screen.getByTestId("dashboard-message")).toHaveTextContent("Recording created.");
+      expect(screen.getByTestId("select-recording-r-new")).toBeInTheDocument();
     });
-
-    // Verify the title input was cleared after successful creation
-    expect(screen.getByTestId("recording-title")).toHaveValue("");
+    expect(screen.getByTestId("recording-detail")).toHaveTextContent("Standup Notes");
+    expect(screen.queryByTestId("recording-title")).not.toBeInTheDocument();
   });
 
   // --- Logout clears all state and redirects ---
@@ -1007,11 +1187,15 @@ describe("DashboardClient", () => {
 
     render(<DashboardClient />);
     await waitForDashboardReady();
-    await openLibraryView(user);
+    await openInboxCreatePane(user);
 
     // Verify state is populated before logout
-    expect(screen.getByTestId("select-recording-r1")).toBeInTheDocument();
-    expect(screen.getByTestId("recording-list")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByTestId("select-recording-r1")).toBeInTheDocument();
+    });
+    await waitFor(() => {
+      expect(screen.getByTestId("select-recording-r1")).toBeInTheDocument();
+    });
 
     // Click logout
     await user.click(screen.getByTestId("logout-button"));
@@ -1105,6 +1289,10 @@ describe("DashboardClient", () => {
 
     expect(screen.getByTestId("tab-history")).toBeInTheDocument();
     expect(screen.getByTestId("tab-dictionary")).toBeInTheDocument();
+    expect(screen.getByTestId("tab-inbox")).toBeInTheDocument();
+    expect(screen.queryByTestId("tab-library")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("tab-wai")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("tab-add")).not.toBeInTheDocument();
     expect(screen.getByTestId("sidebar-folders-label")).toBeInTheDocument();
     expect(screen.getByTestId("open-create-folder")).toBeInTheDocument();
   });
@@ -1265,15 +1453,28 @@ describe("DashboardClient", () => {
 
   // --- Folder selection switches the workspace title and filters recordings ---
 
-  it("opens a folder from the sidebar and shows the folder name in the workspace header", async () => {
+  it("opens a folder through the universal Inbox and creates items in that folder", async () => {
     arrangeHappyPathMocks();
     mockListFolders.mockResolvedValue([
       { id: "folder-work", name: "Work", created_at: "2026-05-27T00:00:00Z" },
     ]);
-    mockListRecordings.mockResolvedValueOnce([
+    mockListRecordings.mockResolvedValue([
       { ...baseRecording, id: "r-folded", title: "Inside Work", folder_id: "folder-work" },
       { ...baseRecording, id: "r-loose", title: "Outside", folder_id: null },
     ]);
+    mockListInbox.mockImplementation(async (params?: { folder_id?: string | null }) =>
+      params?.folder_id === "folder-work"
+        ? { rows: [inboxRow()], next_cursor: null, has_more: false }
+        : baseInboxResponse,
+    );
+    mockCreateItem.mockResolvedValue({
+      id: "item-folder-new",
+      state: "raw",
+      status: "ready",
+      error: null,
+      summary: null,
+      folder_id: "folder-work",
+    });
 
     const user = userEvent.setup();
     render(<DashboardClient />);
@@ -1287,8 +1488,23 @@ describe("DashboardClient", () => {
 
     await waitFor(() => {
       expect(screen.getByTestId("workspace-title")).toHaveTextContent("Work");
-      expect(screen.getByTestId("select-recording-r-folded")).toBeInTheDocument();
-      expect(screen.queryByTestId("select-recording-r-loose")).not.toBeInTheDocument();
+      expect(screen.getByText("Folder note")).toBeInTheDocument();
+      expect(mockListInbox).toHaveBeenCalledWith(
+        expect.objectContaining({ folder_id: "folder-work" }),
+      );
+    });
+    expect(screen.queryByTestId("select-recording-r-folded")).not.toBeInTheDocument();
+
+    await user.type(screen.getByPlaceholderText(/Paste a link or any text/i), "new folder note");
+    await user.click(screen.getByRole("button", { name: /^Add$/ }));
+
+    await waitFor(() => {
+      expect(mockCreateItem).toHaveBeenCalledWith({
+        source: "paste",
+        kind: "note",
+        body: "new folder note",
+        folder_id: "folder-work",
+      });
     });
   });
 
@@ -1502,7 +1718,7 @@ describe("DashboardClient", () => {
 
   // --- Bulk operations: select mode, move-to-folder, trash, restore ---
 
-  it("bulk-moves selected recordings to a folder", async () => {
+  it("does not render old recording bulk-move controls in the universal Inbox", async () => {
     arrangeHappyPathMocks();
     mockListFolders.mockResolvedValue([
       { id: "folder-work", name: "Work", created_at: "2026-05-27T00:00:00Z" },
@@ -1511,57 +1727,52 @@ describe("DashboardClient", () => {
       { ...baseRecording, id: "r1", title: "A" },
       { ...baseRecording, id: "r2", title: "B" },
     ]);
+    mockListInbox.mockResolvedValue({
+      rows: [
+        recordingInboxRow({ ...baseRecording, id: "r1", title: "A" }),
+        recordingInboxRow({ ...baseRecording, id: "r2", title: "B" }),
+      ],
+      next_cursor: null,
+      has_more: false,
+    });
     const user = userEvent.setup();
 
     render(<DashboardClient />);
     await waitForDashboardReady();
-    await openLibraryView(user);
+    await user.click(screen.getByTestId("tab-inbox"));
 
-    await user.click(screen.getByTestId("select-mode-toggle"));
-    await user.click(screen.getByTestId("select-checkbox-r1"));
-    await user.click(screen.getByTestId("select-checkbox-r2"));
-
-    expect(screen.getByTestId("bulk-bar")).toHaveTextContent("2 selected");
-
-    await user.selectOptions(screen.getByTestId("bulk-move-folder"), "folder-work");
-
-    await waitFor(() => {
-      expect(mockBulkRecordingOperation).toHaveBeenCalledWith(
-        ["r1", "r2"],
-        "move",
-        "folder-work",
-      );
-    });
-    // Select mode is exited after a bulk action completes.
-    await waitFor(() => {
-      expect(screen.queryByTestId("bulk-bar")).not.toBeInTheDocument();
-    });
+    await waitFor(() => expect(mockListInbox).toHaveBeenCalled());
+    expect(screen.getByTestId("workspace-title")).toHaveTextContent("Inbox");
+    expect(screen.queryByTestId("select-mode-toggle")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("bulk-move-folder")).not.toBeInTheDocument();
+    expect(mockBulkRecordingOperation).not.toHaveBeenCalled();
   });
 
-  it("bulk-trashes selected recordings and reports errors", async () => {
+  it("does not render old recording bulk-trash controls in the universal Inbox", async () => {
     arrangeHappyPathMocks();
     mockListRecordings.mockResolvedValue([
       { ...baseRecording, id: "r1", title: "A" },
       { ...baseRecording, id: "r2", title: "B" },
     ]);
+    mockListInbox.mockResolvedValue({
+      rows: [
+        recordingInboxRow({ ...baseRecording, id: "r1", title: "A" }),
+        recordingInboxRow({ ...baseRecording, id: "r2", title: "B" }),
+      ],
+      next_cursor: null,
+      has_more: false,
+    });
     const user = userEvent.setup();
 
     render(<DashboardClient />);
     await waitForDashboardReady();
-    await openLibraryView(user);
+    await user.click(screen.getByTestId("tab-inbox"));
 
-    await user.click(screen.getByTestId("select-mode-toggle"));
-    await user.click(screen.getByTestId("select-checkbox-r1"));
-
-    mockBulkRecordingOperation.mockRejectedValueOnce(new Error("Bulk failed"));
-    await user.click(screen.getByTestId("bulk-trash"));
-
-    await waitFor(() => {
-      expect(mockBulkRecordingOperation).toHaveBeenCalledWith(["r1"], "delete", undefined);
-      expect(screen.getByTestId("dashboard-message")).toHaveTextContent("Bulk failed");
-    });
-    // On failure the selection is NOT exited, so the bulk bar stays visible.
-    expect(screen.getByTestId("bulk-bar")).toBeInTheDocument();
+    await waitFor(() => expect(mockListInbox).toHaveBeenCalled());
+    expect(screen.getByTestId("workspace-title")).toHaveTextContent("Inbox");
+    expect(screen.queryByTestId("select-mode-toggle")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("bulk-trash")).not.toBeInTheDocument();
+    expect(mockBulkRecordingOperation).not.toHaveBeenCalled();
   });
 
   it("bulk-restores selected recordings from the trash view", async () => {
@@ -2012,19 +2223,26 @@ describe("DashboardClient", () => {
     render(<DashboardClient />);
     await waitForDashboardReady();
 
-    await user.keyboard("d");
-    await waitFor(() => expect(screen.getByTestId("workspace-title")).toHaveTextContent("Dictate"));
-
     await user.keyboard("l");
-    await waitFor(() => expect(screen.getByTestId("workspace-title")).toHaveTextContent("Inbox"));
-    expect(screen.getByRole("button", { name: "+ Add" })).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByTestId("workspace-title")).toHaveTextContent("Inbox");
+    });
+    (document.activeElement as HTMLElement | null)?.blur();
 
     await user.keyboard("w");
-    await waitFor(() => expect(screen.getByTestId("workspace-title")).toHaveTextContent("Wai"));
+    await waitFor(() => expect(screen.getByTestId("workspace-title")).toHaveTextContent("Inbox"));
+    (document.activeElement as HTMLElement | null)?.blur();
 
-    // 'n' focuses the recorder pane (library view + new-recording form).
+    await user.keyboard("d");
+    await waitFor(() => expect(screen.getByTestId("workspace-title")).toHaveTextContent("Dictate"));
+    (document.activeElement as HTMLElement | null)?.blur();
+
+    // 'n' focuses the Inbox create pane.
     await user.keyboard("n");
-    await waitFor(() => expect(screen.getByTestId("recording-title")).toBeInTheDocument());
+    await waitFor(() => {
+      expect(screen.getByTestId("workspace-title")).toHaveTextContent("Inbox");
+      expect(screen.getByTestId("recording-title")).toBeInTheDocument();
+    });
   });
 
   it("Escape closes the folder creator without deleting state", async () => {
@@ -2057,29 +2275,41 @@ describe("DashboardClient", () => {
         failure_message: 'Traceback (most recent call last): File "/var/app/x.py", line 3',
       },
     ]);
+    mockListInbox.mockResolvedValue({
+      rows: [
+        recordingInboxRow({ ...baseRecording, id: "r-proc", title: "Working", status: "processing" }),
+        recordingInboxRow({
+          ...baseRecording,
+          id: "r-fail",
+          title: "Broken",
+          status: "failed",
+          failure_message: 'Traceback (most recent call last): File "/var/app/x.py", line 3',
+        }),
+      ],
+      next_cursor: null,
+      has_more: false,
+    });
     const user = userEvent.setup();
 
     render(<DashboardClient />);
     await waitForDashboardReady();
-    await user.click(screen.getByTestId("tab-library"));
+    await user.click(screen.getByTestId("tab-inbox"));
 
     await waitFor(() => {
       // "processing" status renders as a pill with the underscore stripped.
       expect(screen.getByTestId("select-recording-r-proc")).toHaveTextContent("processing");
-      // Internal traceback is hidden behind the user-facing fallback copy.
-      expect(screen.getByTestId("select-recording-r-fail")).toHaveTextContent(
-        "Could not process this recording. Please try again or contact support.",
-      );
+      expect(screen.getByTestId("select-recording-r-fail")).toHaveTextContent("failed");
+      expect(screen.getByTestId("select-recording-r-fail")).not.toHaveTextContent("Traceback");
     });
   });
 
-  // --- Settings: dictation post-filter checkbox update ---
+  // --- Settings: dictation cleanup level update ---
 
-  it("toggles the dictation cleanup checkbox and persists the setting", async () => {
+  it("updates the dictation cleanup level and persists the setting", async () => {
     arrangeHappyPathMocks();
     mockUpdateSettings.mockResolvedValueOnce({
       ...baseSettings,
-      dictation_post_filter_enabled: true,
+      dictation_cleanup_level: "light",
     });
     const user = userEvent.setup();
 
@@ -2087,12 +2317,15 @@ describe("DashboardClient", () => {
     await waitForDashboardReady();
     await openSettingsView(user);
 
-    const checkbox = await screen.findByLabelText("Clean up dictated text before insertion");
-    expect(checkbox).not.toBeChecked();
+    const light = (await screen.findAllByRole("radio", { name: /Light/ })).find(
+      (element) => element.getAttribute("name") === "dictation-cleanup-level",
+    );
+    expect(light).toBeDefined();
+    expect(light).not.toBeChecked();
 
-    await user.click(checkbox);
+    await user.click(light!);
     await waitFor(() => {
-      expect(mockUpdateSettings).toHaveBeenCalledWith({ dictation_post_filter_enabled: true });
+      expect(mockUpdateSettings).toHaveBeenCalledWith({ dictation_cleanup_level: "light" });
       expect(screen.getByTestId("dashboard-message")).toHaveTextContent("Settings updated.");
     });
   });

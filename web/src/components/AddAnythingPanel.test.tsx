@@ -94,6 +94,40 @@ describe("AddAnythingPanel", () => {
     });
   });
 
+  it("creates pasted text and uploads files into the current folder", async () => {
+    mockCreateItem.mockResolvedValue({ id: "item-folder", state: "raw", summary: null });
+    mockUploadItem.mockResolvedValue({
+      kind: "item",
+      item: { id: "up-folder", state: "raw", status: "ready", error: null, summary: null },
+    });
+
+    const { container } = render(<AddAnythingPanel captureMode="inbox" folderId="folder-work" />);
+    fireEvent.change(screen.getByPlaceholderText(/Paste a link or any text/i), {
+      target: { value: "folder note" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Add" }));
+
+    await waitFor(() => {
+      expect(mockCreateItem).toHaveBeenCalledWith({
+        source: "paste",
+        kind: "note",
+        body: "folder note",
+        folder_id: "folder-work",
+      });
+    });
+    expect(mockGetItem).not.toHaveBeenCalled();
+
+    const input = container.querySelector(
+      '[data-testid="add-anything-file"]',
+    ) as HTMLInputElement;
+    const file = new File(["pdf bytes"], "folder-doc.pdf", { type: "application/pdf" });
+    fireEvent.change(input, { target: { files: [file] } });
+
+    await waitFor(() => {
+      expect(mockUploadItem).toHaveBeenCalledWith(file, { folderId: "folder-work" });
+    });
+  });
+
   it("shows a share-the-file message when a link needs input", async () => {
     mockCreateItem.mockResolvedValue({ id: "item-3", state: "raw", summary: null });
     mockGetItem.mockResolvedValue(

@@ -298,6 +298,9 @@
   --border: #dcdfdf;
   --border-strong: #c9cecf;
   --danger: #ba3d37;
+  --danger-contrast: #ffffff;
+  --warning: #b86f2e;
+  --warning-contrast: #1f1300;
   --success: #17765a;
 
   /* Active shadow alias — defaults to the medium step which matches the
@@ -388,6 +391,9 @@
   --border: #30383b;
   --border-strong: #495458;
   --danger: #ff8a82;
+  --danger-contrast: #2a0907;
+  --warning: #ffb35b;
+  --warning-contrast: #271400;
   --success: #80d8ba;
 
   --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4),
@@ -524,6 +530,9 @@
     --border: #30383b;
     --border-strong: #495458;
     --danger: #ff8a82;
+    --danger-contrast: #2a0907;
+    --warning: #ffb35b;
+    --warning-contrast: #271400;
     --success: #80d8ba;
 
     --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4),

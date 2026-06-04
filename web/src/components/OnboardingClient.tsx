@@ -17,6 +17,7 @@ const COPY: Record<
     step: string;
     heading: string;
     lead: string;
+    setupItems: Array<{ title: string; body: string }>;
     prompt: string;
     record: string;
     stop: string;
@@ -35,10 +36,25 @@ const COPY: Record<
 > = {
   en: {
     step: "Step 1 of 1",
-    heading: "Teach Wai your voice",
-    lead: "Read the prompt for ~20 seconds. Wai will recognise you in future meetings automatically.",
+    heading: "Set up your universal Inbox",
+    lead:
+      "WaiComputer keeps recordings, files, links, notes, and Wai chats in one Inbox. Add anything, filter by type, and ask Wai when you need an answer.",
+    setupItems: [
+      {
+        title: "Add anything",
+        body: "Record, upload a PDF or audio file, paste a link, or start a chat.",
+      },
+      {
+        title: "Organize once",
+        body: "Use folders for recordings and materials; filters keep the full Inbox simple.",
+      },
+      {
+        title: "Teach your voice",
+        body: "Optional voice setup helps Wai label you in future meetings.",
+      },
+    ],
     prompt:
-      "Hi, I'm setting up WaiComputer. It records meetings, calls, and ideas through my day so I don't have to remember them all. Wai listens, transcribes the people I talk to, and keeps the moments that matter.",
+      "Hi, I'm setting up WaiComputer. It keeps my recordings, materials, notes, and chats in one Inbox so I can find the important moments later. Wai listens, summarizes, and helps me ask better questions about everything I saved.",
     record: "Record",
     stop: "Stop",
     use: "Use this take",
@@ -56,10 +72,25 @@ const COPY: Record<
   },
   ru: {
     step: "Шаг 1 из 1",
-    heading: "Научите Wai вашему голосу",
-    lead: "Прочитайте текст примерно за 20 секунд. Wai будет узнавать вас на будущих встречах автоматически.",
+    heading: "Настройте универсальный Инбокс",
+    lead:
+      "WaiComputer собирает записи, файлы, ссылки, заметки и чаты Wai в одном Инбоксе. Добавляйте всё, фильтруйте по типу и спрашивайте Wai, когда нужен ответ.",
+    setupItems: [
+      {
+        title: "Добавляйте всё",
+        body: "Запишите голос, загрузите PDF или аудио, вставьте ссылку или начните чат.",
+      },
+      {
+        title: "Разложите один раз",
+        body: "Папки работают для записей и материалов, а фильтры сохраняют Инбокс простым.",
+      },
+      {
+        title: "Научите голосу",
+        body: "Необязательная настройка голоса помогает Wai узнавать вас на встречах.",
+      },
+    ],
     prompt:
-      "Привет, я настраиваю WaiComputer. Он записывает встречи, звонки и идеи в течение дня, чтобы мне не приходилось всё держать в голове. Wai слушает, расшифровывает речь собеседников и сохраняет важные моменты.",
+      "Привет, я настраиваю WaiComputer. Он хранит мои записи, материалы, заметки и чаты в одном Инбоксе, чтобы я мог быстро найти важные моменты. Wai слушает, делает саммари и помогает задавать вопросы по всему, что я сохранил.",
     record: "Записать",
     stop: "Остановить",
     use: "Использовать запись",
@@ -238,6 +269,15 @@ export function OnboardingClient({ initialLocale }: OnboardingClientProps) {
       <p className="onboarding-step">{copy.step}</p>
       <h1>{copy.heading}</h1>
       <p className="onboarding-lead">{copy.lead}</p>
+
+      <div className="onboarding-setup-grid">
+        {copy.setupItems.map((item) => (
+          <section key={item.title} className="onboarding-setup-item">
+            <strong>{item.title}</strong>
+            <span>{item.body}</span>
+          </section>
+        ))}
+      </div>
 
       <article className="onboarding-prompt-card">
         <p>{copy.prompt}</p>

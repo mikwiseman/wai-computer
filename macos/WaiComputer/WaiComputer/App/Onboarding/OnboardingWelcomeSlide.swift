@@ -25,8 +25,8 @@ struct OnboardingWelcomeSlide: View {
                     .foregroundStyle(Palette.textPrimary)
                     .accessibilityIdentifier("onboarding-welcome-title")
                 Text(t(
-                    "Voice-type into any app and capture meetings — set up in 90 seconds.",
-                    "Диктуй текст в любом приложении и записывай встречи — настройка займет около 90 секунд."
+                    "Record, upload, save links, and chat with Wai from one Inbox — set up in 90 seconds.",
+                    "Записывайте, загружайте файлы, сохраняйте ссылки и общайтесь с Wai из одного Инбокса — настройка займет около 90 секунд."
                 ))
                     .font(.system(size: 15))
                     .foregroundStyle(Palette.textSecondary)

@@ -1,33 +1,51 @@
 import { expect, test, Route, Page } from "@playwright/test";
 
+interface Recording {
+  id: string;
+  title: string | null;
+  type: "meeting" | "note" | "reflection";
+  audio_url: string | null;
+  duration_seconds: number | null;
+  language: string | null;
+  status: string;
+  folder_id: string | null;
+  deleted_at: string | null;
+  starred_at: string | null;
+  failure_code: string | null;
+  failure_message: string | null;
+  created_at: string;
+  updated_at: string | null;
+  uploaded_at: string | null;
+}
+
+interface InboxRow {
+  id: string;
+  source_kind: "recording" | "item" | "chat";
+  source_id: string;
+  detail: { kind: "recording" | "item" | "chat"; id: string };
+  title: string | null;
+  source_label: string;
+  sublabel: string | null;
+  activity_at: string;
+  created_at: string;
+  updated_at: string | null;
+  occurred_at: string | null;
+  status: "ready" | "processing" | "needs_input" | "failed" | "archived";
+  source_status: string | null;
+  error: { code: string; message: string } | null;
+  folder_id: string | null;
+  duration_seconds: number | null;
+  language: string | null;
+  has_summary: boolean | null;
+  is_starred: boolean;
+  is_pinned: boolean;
+  is_archived: boolean;
+  is_trashed: boolean;
+}
+
 interface MockState {
-  recordings: Array<{
-    id: string;
-    title: string | null;
-    type: "meeting" | "note" | "reflection";
-    audio_url: string | null;
-    duration_seconds: number | null;
-    language: string | null;
-    created_at: string;
-  }>;
-  actionItems: Array<{
-    id: string;
-    recording_id: string;
-    task: string;
-    owner: string | null;
-    due_date: string | null;
-    priority: "high" | "medium" | "low" | null;
-    status: "pending" | "in_progress" | "completed" | "cancelled";
-    source: string;
-    created_at: string;
-  }>;
-  entities: Array<{
-    id: string;
-    type: "person" | "topic" | "project" | "organization";
-    name: string;
-    metadata: Record<string, unknown> | null;
-    created_at: string;
-  }>;
+  recordings: Recording[];
+  inboxRows: InboxRow[];
 }
 
 const corsHeaders = {
@@ -38,6 +56,122 @@ const corsHeaders = {
   "content-type": "application/json",
 };
 
+const baseTimestamp = "2026-02-26T00:00:00Z";
+
+function makeRecording(overrides: Partial<Recording>): Recording {
+  return {
+    id: "rec-1",
+    title: "Existing recording",
+    type: "note",
+    audio_url: null,
+    duration_seconds: 120,
+    language: "multi",
+    status: "ready",
+    folder_id: null,
+    deleted_at: null,
+    starred_at: null,
+    failure_code: null,
+    failure_message: null,
+    created_at: baseTimestamp,
+    updated_at: baseTimestamp,
+    uploaded_at: baseTimestamp,
+    ...overrides,
+  };
+}
+
+function recordingRow(recording: Recording): InboxRow {
+  return {
+    id: `recording:${recording.id}`,
+    source_kind: "recording",
+    source_id: recording.id,
+    detail: { kind: "recording", id: recording.id },
+    title: recording.title,
+    source_label: "Recording",
+    sublabel: recording.type,
+    activity_at: recording.uploaded_at ?? recording.created_at,
+    created_at: recording.created_at,
+    updated_at: recording.updated_at,
+    occurred_at: recording.uploaded_at,
+    status: "ready",
+    source_status: recording.status,
+    error: null,
+    folder_id: recording.folder_id,
+    duration_seconds: recording.duration_seconds,
+    language: recording.language,
+    has_summary: true,
+    is_starred: false,
+    is_pinned: false,
+    is_archived: false,
+    is_trashed: false,
+  };
+}
+
+const materialRow: InboxRow = {
+  id: "item:item-1",
+  source_kind: "item",
+  source_id: "item-1",
+  detail: { kind: "item", id: "item-1" },
+  title: "Launch PDF",
+  source_label: "Material",
+  sublabel: "pdf",
+  activity_at: baseTimestamp,
+  created_at: baseTimestamp,
+  updated_at: baseTimestamp,
+  occurred_at: null,
+  status: "ready",
+  source_status: "ready",
+  error: null,
+  folder_id: "folder-work",
+  duration_seconds: null,
+  language: null,
+  has_summary: true,
+  is_starred: false,
+  is_pinned: false,
+  is_archived: false,
+  is_trashed: false,
+};
+
+const chatRow: InboxRow = {
+  id: "chat:chat-1",
+  source_kind: "chat",
+  source_id: "chat-1",
+  detail: { kind: "chat", id: "chat-1" },
+  title: "Chat with Wai",
+  source_label: "Wai chat",
+  sublabel: "Chat",
+  activity_at: baseTimestamp,
+  created_at: baseTimestamp,
+  updated_at: baseTimestamp,
+  occurred_at: baseTimestamp,
+  status: "ready",
+  source_status: null,
+  error: null,
+  folder_id: null,
+  duration_seconds: null,
+  language: null,
+  has_summary: null,
+  is_starred: false,
+  is_pinned: false,
+  is_archived: false,
+  is_trashed: false,
+};
+
+function settingsPayload() {
+  return {
+    default_language: "ru",
+    summary_language: "ru",
+    summary_instructions: null,
+    dictation_cleanup_level: "medium",
+    dictation_auto_paste: true,
+    dictation_global_shortcut: "fn",
+    voice_profile_prompt: null,
+    ui_language: "en",
+    theme: "system",
+    accent_color: "teal",
+    mcp_enabled: true,
+  };
+}
+
 async function installApiMock(page: Page, state: MockState) {
   const handler = async (route: Route) => {
     const request = route.request();
@@ -46,11 +180,7 @@ async function installApiMock(page: Page, state: MockState) {
     const method = request.method();
 
     if (method === "OPTIONS") {
-      await route.fulfill({
-        status: 204,
-        headers: corsHeaders,
-        body: "",
-      });
+      await route.fulfill({ status: 204, headers: corsHeaders, body: "" });
       return;
     }
 
@@ -85,81 +215,72 @@ async function installApiMock(page: Page, state: MockState) {
         body: JSON.stringify({
           id: "user-1",
           email: "qa@example.com",
-          created_at: "2026-02-26T00:00:00Z",
+          created_at: baseTimestamp,
+          has_password: true,
         }),
       });
       return;
     }
 
-    if (path === "/api/auth/register" && method === "POST") {
-      await route.fulfill({
-        status: 200,
-        headers: {
-          ...corsHeaders,
-          "set-cookie": "wai_access_token=token; Path=/; SameSite=Lax",
-        },
-        body: JSON.stringify({ access_token: "token", token_type: "bearer" }),
-      });
-      return;
-    }
-
-    if (path === "/api/auth/magic-link" && method === "POST") {
+    if (path === "/api/folders" && method === "GET") {
       await route.fulfill({
         status: 200,
         headers: corsHeaders,
-        body: JSON.stringify({ message: "Magic link sent to your email" }),
+        body: JSON.stringify([
+          { id: "folder-work", name: "Work", created_at: baseTimestamp },
+        ]),
       });
       return;
     }
 
     if (path === "/api/recordings" && method === "GET") {
+      const trashed = url.searchParams.get("trashed") === "true";
       await route.fulfill({
         status: 200,
         headers: corsHeaders,
-        body: JSON.stringify(state.recordings),
+        body: JSON.stringify(
+          trashed
+            ? []
+            : state.recordings.filter((recording) => recording.deleted_at === null),
+        ),
+      });
+      return;
+    }
+
+    if (path === "/api/inbox" && method === "GET") {
+      const sourceKind = url.searchParams.get("source_kind");
+      const folderId = url.searchParams.get("folder_id");
+      const rows = state.inboxRows.filter((row) => {
+        if (sourceKind && row.source_kind !== sourceKind) return false;
+        if (folderId && row.folder_id !== folderId) return false;
+        return true;
+      });
+      await route.fulfill({
+        status: 200,
+        headers: corsHeaders,
+        body: JSON.stringify({ rows, next_cursor: null, has_more: false }),
       });
       return;
     }
 
     if (path === "/api/recordings" && method === "POST") {
-      const payload = request.postDataJSON() as { title?: string | null; type: "meeting" | "note" | "reflection" };
-      const created = {
+      const payload = request.postDataJSON() as {
+        title?: string | null;
+        type?: "meeting" | "note" | "reflection";
+        folder_id?: string | null;
+      };
+      const created = makeRecording({
         id: `rec-${state.recordings.length + 1}`,
         title: payload.title ?? null,
-        type: payload.type,
-        audio_url: null,
-        duration_seconds: null,
-        language: "multi",
-        created_at: "2026-02-26T00:00:00Z",
-      };
+        type: payload.type ?? "note",
+        folder_id: payload.folder_id ?? null,
+      });
       state.recordings.unshift(created);
+      state.inboxRows.unshift(recordingRow(created));
       await route.fulfill({
         status: 201,
         headers: corsHeaders,
         body: JSON.stringify(created),
-      });
-      return;
-    }
-
-    if (path.startsWith("/api/recordings/") && method === "DELETE") {
-      const recordingId = path.split("/")[3];
-      state.recordings = state.recordings.filter((recording) => recording.id !== recordingId);
-      await route.fulfill({ status: 204, headers: corsHeaders, body: "" });
-      return;
-    }
-
-    if (path.startsWith("/api/recordings/") && path.endsWith("/generate-summary") && method === "POST") {
-      await route.fulfill({
-        status: 200,
-        headers: corsHeaders,
-        body: JSON.stringify({
-          summary: "Generated summary",
-          key_points: ["One"],
-          decisions: [],
-          topics: ["topic"],
-          people_mentioned: [],
-          sentiment: "positive",
-        }),
       });
       return;
     }
@@ -181,7 +302,7 @@ async function installApiMock(page: Page, state: MockState) {
         headers: corsHeaders,
         body: JSON.stringify({
           ...recording,
-          segments: [],
+          segments: [{ id: "seg-1", speaker: "A", start_ms: 0, end_ms: 1000, content: "Hello" }],
           summary: {
             summary: "Generated summary",
             key_points: ["One"],
@@ -190,7 +311,9 @@ async function installApiMock(page: Page, state: MockState) {
             people_mentioned: [],
             sentiment: "positive",
           },
-          action_items: state.actionItems.filter((item) => item.recording_id === recording.id),
+          summary_generation: null,
+          action_items: [],
+          highlights: [],
         }),
       });
       return;
@@ -205,64 +328,21 @@ async function installApiMock(page: Page, state: MockState) {
       return;
     }
 
-    if (path === "/api/action-items" && method === "GET") {
+    if (path === "/api/settings" && method === "GET") {
       await route.fulfill({
         status: 200,
         headers: corsHeaders,
-        body: JSON.stringify(state.actionItems),
+        body: JSON.stringify(settingsPayload()),
       });
       return;
     }
 
-    if (path.startsWith("/api/action-items/") && method === "PATCH") {
-      const itemId = path.split("/")[3];
-      const payload = request.postDataJSON() as { status?: "pending" | "in_progress" | "completed" | "cancelled" };
-      state.actionItems = state.actionItems.map((item) =>
-        item.id === itemId ? { ...item, status: payload.status ?? item.status } : item,
-      );
-      const updated = state.actionItems.find((item) => item.id === itemId);
+    if (path === "/api/settings/transcription-options" && method === "GET") {
       await route.fulfill({
         status: 200,
         headers: corsHeaders,
-        body: JSON.stringify(updated),
+        body: JSON.stringify({ providers: [], defaults: {} }),
       });
-      return;
-    }
-
-    if (path === "/api/entities" && method === "GET") {
-      await route.fulfill({
-        status: 200,
-        headers: corsHeaders,
-        body: JSON.stringify(state.entities),
-      });
-      return;
-    }
-
-    if (path === "/api/entities" && method === "POST") {
-      const payload = request.postDataJSON() as {
-        type: "person" | "topic" | "project" | "organization";
-        name: string;
-      };
-      const entity = {
-        id: `ent-${state.entities.length + 1}`,
-        type: payload.type,
-        name: payload.name,
-        metadata: null,
-        created_at: "2026-02-26T00:00:00Z",
-      };
-      state.entities.push(entity);
-      await route.fulfill({
-        status: 201,
-        headers: corsHeaders,
-        body: JSON.stringify(entity),
-      });
-      return;
-    }
-
-    if (path.startsWith("/api/entities/") && method === "DELETE") {
-      const entityId = path.split("/")[3];
-      state.entities = state.entities.filter((entity) => entity.id !== entityId);
-      await route.fulfill({ status: 204, headers: corsHeaders, body: "" });
       return;
     }
 
@@ -271,6 +351,15 @@ async function installApiMock(page: Page, state: MockState) {
         status: 200,
         headers: corsHeaders,
         body: JSON.stringify({ message: "Password changed successfully" }),
+      });
+      return;
+    }
+
+    if (path === "/api/telegram/link" && method === "GET") {
+      await route.fulfill({
+        status: 200,
+        headers: corsHeaders,
+        body: JSON.stringify({ linked: false, telegram_user: null }),
       });
       return;
     }
@@ -285,33 +374,11 @@ async function installApiMock(page: Page, state: MockState) {
   await page.route("**/api/**", handler);
 }
 
-test("web dashboard flow covers core features", async ({ page }) => {
+test("web dashboard uses the universal Inbox shell", async ({ page }) => {
+  const firstRecording = makeRecording({ id: "rec-1", title: "Existing recording" });
   const state: MockState = {
-    recordings: [
-      {
-        id: "rec-1",
-        title: "Existing recording",
-        type: "note",
-        audio_url: null,
-        duration_seconds: null,
-        language: "multi",
-        created_at: "2026-02-26T00:00:00Z",
-      },
-    ],
-    actionItems: [
-      {
-        id: "ai-1",
-        recording_id: "rec-1",
-        task: "Follow up",
-        owner: null,
-        due_date: null,
-        priority: "medium",
-        status: "pending",
-        source: "generated",
-        created_at: "2026-02-26T00:00:00Z",
-      },
-    ],
-    entities: [],
+    recordings: [firstRecording],
+    inboxRows: [recordingRow(firstRecording), materialRow, chatRow],
   };
 
   await installApiMock(page, state);
@@ -323,25 +390,24 @@ test("web dashboard flow covers core features", async ({ page }) => {
   await page.getByTestId("auth-submit").click();
 
   await expect(page.getByTestId("user-email")).toContainText("qa@example.com");
-  await page.getByTestId("tab-library").click();
+  await expect(page.getByTestId("workspace-title")).toContainText("Inbox");
+  await expect(page.getByTestId("tab-library")).toHaveCount(0);
+  await expect(page.getByTestId("tab-wai")).toHaveCount(0);
+  await expect(page.getByTestId("select-recording-rec-1")).toContainText("Existing recording");
+  await expect(page.getByText("Launch PDF")).toBeVisible();
+  await expect(page.getByText("Chat with Wai")).toBeVisible();
 
+  await page.getByRole("button", { name: "+ Add" }).click();
+  await page.getByText("Create empty recording").click();
   await page.getByTestId("recording-title").fill("New recording");
   await page.getByTestId("create-recording").click();
-  await expect(page.getByTestId("dashboard-message")).toContainText("Recording created");
+  await expect(page.getByTestId("select-recording-rec-2")).toContainText("New recording");
+  await expect(page.getByTestId("recording-detail")).toContainText("New recording");
 
   await page.getByTestId("tab-search").click();
   await page.getByTestId("search-query").fill("roadmap");
   await page.getByTestId("search-submit").click();
   await expect(page.getByTestId("search-total")).toContainText("0");
-
-  await page.getByTestId("tab-topics").click();
-  await page.getByTestId("entity-name").fill("Roadmap");
-  await page.getByTestId("create-entity").click();
-  await expect(page.getByTestId("dashboard-message")).toContainText("Entity created");
-
-  await page.getByTestId("tab-actions").click();
-  await page.getByTestId("set-complete-ai-1").click();
-  await expect(page.getByTestId("dashboard-message")).toContainText("Action item updated");
 
   await page.getByTestId("tab-settings").click();
   await page.getByTestId("current-password").fill("old-pass");

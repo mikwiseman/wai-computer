@@ -84,12 +84,21 @@ private let mcpClientGuides: [McpClient: McpClientGuide] = [
     ),
 ]
 
+private enum MacSettingsCategory: String, CaseIterable, Identifiable {
+    case workspace
+    case voice
+    case account
+
+    var id: String { rawValue }
+}
+
 struct MacSettingsView: View {
     @EnvironmentObject var appState: MacAppState
     @EnvironmentObject var dictationManager: DictationManager
     @EnvironmentObject var languageManager: LanguageManager
     @Environment(\.scenePhase) private var scenePhase
     @State private var showSignOutConfirmation = false
+    @State private var selectedSettingsCategory: MacSettingsCategory = .workspace
     @State private var showDeleteAccountConfirmation = false
     @State private var isDeletingAccount = false
     @State private var deleteAccountError: String?
@@ -181,419 +190,15 @@ struct MacSettingsView: View {
 
     var body: some View {
         Form {
-            Section {
-                if let user = appState.currentUser {
-                    LabeledContent {
-                        Text(user.email)
-                    } label: {
-                        Text("settings.account.email", bundle: .main)
-                    }
-                    .font(Typography.body)
-                    LabeledContent {
-                        Text(MacDateFormatting.string(
-                            from: user.createdAt,
-                            dateStyle: .long,
-                            timeStyle: .none,
-                            language: languageManager.current
-                        ))
-                    } label: {
-                        Text("settings.account.memberSince", bundle: .main)
-                    }
-                    .font(Typography.body)
-                }
-            } header: {
-                Text("settings.account.title", bundle: .main)
-                    .waiSectionHeader()
-                    .accessibilityIdentifier("settings-account-header")
-            }
+            settingsCategorySection
 
-            serverDataSection
-
-            telegramSection
-
-            Section {
-                Toggle(isOn: $computerUseEnabled) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(t("Let Wai control this Mac", "Разрешить Wai управлять этим Mac"))
-                        Text(t(
-                            "Experimental. While the assistant is open, Wai can open the apps and links you approve. Off by default.",
-                            "Экспериментально. Пока ассистент открыт, Wai может открывать приложения и ссылки, которые вы одобрили. По умолчанию выключено."
-                        ))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    }
-                }
-                .accessibilityIdentifier("settings-computer-use-toggle")
-            } header: {
-                Text(t("Computer Use", "Управление компьютером"))
-                    .waiSectionHeader()
-                    .accessibilityIdentifier("settings-computer-use-header")
-            }
-
-            #if DEBUG
-                Section {
-                    PaymentModeToggle()
-                } header: {
-                    Text("settings.payments.title", bundle: .main)
-                        .waiSectionHeader()
-                        .accessibilityIdentifier("settings-payment-mode-header")
-                }
-
-                BillingSection(mode: paymentModeEnabled ? .fullManagement : .statusOnly)
-                    .id(billingRefreshID)
-            #else
-                BillingSection(mode: .fullManagement)
-                    .id(billingRefreshID)
-            #endif
-
-            Section {
-                AppLanguagePicker()
-            } header: {
-                Text("settings.language.title", bundle: .main)
-                    .waiSectionHeader()
-                    .accessibilityIdentifier("settings-app-language-header")
-            }
-
-            IdentityAndVoiceSection()
-
-            appearanceSection
-
-            Section {
-                LanguagePickerView(
-                    store: languageStore,
-                    onSelectionChanged: {
-                        dictationManager.prefetchSessionConfigForCurrentLanguage(reason: "settings_language_changed")
-                    }
-                )
-                .padding(.vertical, 4)
-            } header: {
-                Text("settings.dictationLanguages.title", bundle: .main)
-                    .waiSectionHeader()
-                    .accessibilityIdentifier("settings-transcription-header")
-            } footer: {
-                Text("settings.dictationLanguages.footer", bundle: .main)
-                    .font(Typography.caption)
-                    .foregroundStyle(Palette.textTertiary)
-            }
-
-            Section {
-                Toggle(isOn: $showDockIconWhenMainWindowClosed) {
-                    Text("settings.appBehavior.showDockIcon", bundle: .main)
-                }
-                    .font(Typography.body)
-                    .accessibilityIdentifier("settings-show-dock-icon-when-closed-toggle")
-                    .onChangeCompat(of: showDockIconWhenMainWindowClosed) { _, _ in
-                        MacPresentationCoordinator.shared.updateActivationPolicyForCurrentWindowState()
-                    }
-
-                Text("settings.appBehavior.dockHint", bundle: .main)
-                    .font(Typography.caption)
-                    .foregroundStyle(Palette.textTertiary)
-            } header: {
-                Text("settings.appBehavior.title", bundle: .main)
-                    .waiSectionHeader()
-                    .accessibilityIdentifier("settings-app-behavior-header")
-            }
-
-            // MARK: - Summary Settings
-
-            Section {
-                Picker(selection: $summaryLanguage) {
-                    ForEach(summaryLanguageOptions, id: \.value) { option in
-                        Text(option.label).tag(option.value)
-                    }
-                } label: {
-                    Text("settings.summary.language", bundle: .main)
-                }
-                .font(Typography.body)
-                .onChangeCompat(of: summaryLanguage) { _, newValue in
-                    Task { await saveSummarySettings(language: newValue) }
-                }
-
-                Picker(selection: $summaryStyle) {
-                    ForEach(summaryStyleOptions, id: \.value) { option in
-                        Text(option.label).tag(option.value)
-                    }
-                } label: {
-                    Text("settings.summary.detailLevel", bundle: .main)
-                }
-                .font(Typography.body)
-                .onChangeCompat(of: summaryStyle) { _, newValue in
-                    Task { await saveSummarySettings(style: newValue) }
-                }
-
-                VStack(alignment: .leading, spacing: Spacing.xs) {
-                    Text("settings.summary.customInstructions", bundle: .main)
-                        .font(Typography.label)
-                        .foregroundStyle(Palette.textSecondary)
-                    TextEditor(text: $summaryInstructions)
-                        .font(Typography.body)
-                        .frame(height: 60)
-                        .scrollContentBackground(.hidden)
-                        .background(Palette.surfaceSubtle)
-                        .cornerRadius(6)
-                        .onChangeCompat(of: summaryInstructions) { _, _ in
-                            Task { await saveSummarySettings(instructions: summaryInstructions) }
-                        }
-                    Text("settings.summary.customExample", bundle: .main)
-                        .font(Typography.caption)
-                        .foregroundStyle(Palette.textTertiary)
-                }
-
-                if let settingsError {
-                    Text(settingsError)
-                        .font(Typography.caption)
-                        .foregroundStyle(.red)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            } header: {
-                Text("settings.summary.title", bundle: .main)
-                    .waiSectionHeader()
-                    .accessibilityIdentifier("settings-summary-header")
-            }
-
-            // MARK: - Dictation Settings
-
-            Section {
-                Toggle(isOn: $dictationManager.isFeatureEnabled) {
-                    Text("settings.dictation.enable", bundle: .main)
-                }
-                    .font(Typography.body)
-                    .onChangeCompat(of: dictationManager.isFeatureEnabled) { _, enabled in
-                        refreshPermissions()
-                        if enabled, !dictationPermissionsReady {
-                            startPermissionPolling()
-                        }
-                    }
-
-                Picker(selection: Binding(
-                    get: { dictationManager.selectedHotkey },
-                    set: { dictationManager.updateHotkey($0) }
-                )) {
-                    ForEach(DictationHotkey.allCases) { hotkey in
-                        Text(dictationHotkeyLabel(hotkey)).tag(hotkey)
-                    }
-                } label: {
-                    Text("settings.dictation.pushToTalk", bundle: .main)
-                }
-                .font(Typography.body)
-                .disabled(!dictationManager.isFeatureEnabled)
-                .accessibilityIdentifier("settings-push-to-talk-picker")
-
-                Picker(selection: Binding<DictationHotkey?>(
-                    get: { dictationManager.selectedHandsFreeHotkey },
-                    set: { dictationManager.updateHandsFreeHotkey($0) }
-                )) {
-                    Text("settings.dictation.handsFreeDoubleTap", bundle: .main).tag(DictationHotkey?.none)
-                    ForEach(DictationHotkey.allCases) { hotkey in
-                        Text(dictationHotkeyLabel(hotkey)).tag(DictationHotkey?.some(hotkey))
-                    }
-                } label: {
-                    Text("settings.dictation.handsFree", bundle: .main)
-                }
-                .font(Typography.body)
-                .disabled(!dictationManager.isFeatureEnabled)
-                .accessibilityIdentifier("settings-hands-free-picker")
-
-                Picker(selection: Binding(
-                    get: { dictationManager.translationLanguageStore.selectedLanguageCode },
-                    set: { dictationManager.translationLanguageStore.selectLanguage($0) }
-                )) {
-                    ForEach(TranslationLanguageCatalog.all) { language in
-                        Text(language.displayName).tag(language.code)
-                    }
-                } label: {
-                    Text(t("Translation target", "Язык перевода"))
-                }
-                .font(Typography.body)
-                .disabled(!dictationManager.isFeatureEnabled)
-                .accessibilityIdentifier("settings-dictation-translation-target-picker")
-
-                Picker(selection: $dictationCleanupLevel) {
-                    ForEach(dictationCleanupOptions, id: \.value) { option in
-                        Text(option.label).tag(option.value)
-                    }
-                } label: {
-                    Text(t("Cleanup level", "Уровень очистки"))
-                }
-                    .pickerStyle(.segmented)
-                    .font(Typography.body)
-                    .disabled(!dictationManager.isFeatureEnabled)
-                    .accessibilityIdentifier("settings-dictation-cleanup-level-picker")
-                    .onChangeCompat(of: dictationCleanupLevel) { _, level in
-                        guard settingsLoaded else { return }
-                        Task { await saveDictationCleanupLevel(level) }
-                    }
-
-                Text(dictationCleanupDescription(dictationCleanupLevel))
-                    .font(Typography.caption)
-                    .foregroundStyle(Palette.textTertiary)
-
-                Toggle(isOn: $dictationManager.contextAwareFormattingEnabled) {
-                    Text(t("Context-aware formatting", "Контекстное форматирование"))
-                }
-                    .font(Typography.body)
-                    .disabled(
-                        !dictationManager.isFeatureEnabled
-                            || dictationCleanupLevel == "none"
-                    )
-                    .accessibilityIdentifier("settings-dictation-context-aware-toggle")
-
-                Text(
-                    t(
-                        "Uses the active app and nearby textbox text to format dictation for email, chat, code, and notes.",
-                        "Учитывает активное приложение и текст рядом с курсором, чтобы форматировать диктовку для почты, чатов, кода и заметок."
-                    )
-                )
-                    .font(Typography.caption)
-                    .foregroundStyle(Palette.textTertiary)
-
-                permissionRow(
-                    title: String(localized: "settings.dictation.permission.microphone", bundle: .main),
-                    status: hasMicrophonePermission ? .granted : .denied,
-                    identifierBase: "settings-permission-microphone",
-                    grantAction: requestMicrophonePermission,
-                    settingsAction: nil,
-                    restartAction: nil
-                )
-
-                permissionRow(
-                    title: String(localized: "settings.dictation.permission.accessibility", bundle: .main),
-                    status: accessibilityStatus,
-                    identifierBase: "settings-permission-accessibility",
-                    grantAction: openAccessibilitySettings,
-                    settingsAction: { MacPrivacySettings.openAccessibility() },
-                    restartAction: MacPrivacySettings.restartForPermissionRefresh
-                )
-
-                if SystemAudioGate.isSupported {
-                    permissionRow(
-                        title: t("System Audio", "Звук Mac"),
-                        status: SystemAudioReadinessPolicy.permissionStatus(for: systemAudioReadiness),
-                        identifierBase: "settings-permission-system-audio",
-                        grantLabel: isRequestingSystemAudioPermission
-                            ? t("Testing...", "Проверяем...")
-                            : t("Test System Audio", "Проверить звук Mac"),
-                        grantAction: requestSystemAudioPermission,
-                        settingsAction: { MacPrivacySettings.openSystemAudio() },
-                        restartAction: MacPrivacySettings.restartForPermissionRefresh
-                    )
-                } else {
-                    // System audio capture (Core Audio process taps) requires macOS 14.2+.
-                    // Surface the gate explicitly instead of a dead "Test System Audio"
-                    // button — no silent degradation (matches the onboarding treatment).
-                    HStack(alignment: .firstTextBaseline) {
-                        Text(t("System Audio", "Звук Mac"))
-                            .foregroundStyle(.secondary)
-                        Spacer(minLength: 12)
-                        Text(t("Requires macOS 14.2 or later", "Требуется macOS 14.2 или новее"))
-                            .font(.caption)
-                            .foregroundStyle(.tertiary)
-                            .multilineTextAlignment(.trailing)
-                    }
-                    .accessibilityIdentifier("settings-permission-system-audio-unsupported")
-                }
-
-                // Usage hint
-                VStack(alignment: .leading, spacing: Spacing.xs) {
-                    Text("settings.dictation.howToUse", bundle: .main)
-                        .font(Typography.label)
-                        .foregroundStyle(Palette.textSecondary)
-                    Text(dictationUsageText)
-                        .font(Typography.caption)
-                        .foregroundStyle(Palette.textTertiary)
-                    Text(dictationPrivacyText)
-                        .font(Typography.caption)
-                        .foregroundStyle(Palette.textTertiary)
-                }
-
-                // Recovery actions for permission state drift after updates
-                HStack(spacing: Spacing.sm) {
-                    Button {
-                        appState.resetOnboardingForSetupRerun()
-                    } label: {
-                        Text("settings.dictation.rerunSetup", bundle: .main)
-                    }
-                    .font(Typography.bodySmall)
-                    .accessibilityIdentifier("settings-rerun-setup-button")
-
-                    Button {
-                        MacInputPermission.revealAppInFinder()
-                    } label: {
-                        Text("settings.dictation.revealInFinder", bundle: .main)
-                    }
-                    .font(Typography.bodySmall)
-                    .accessibilityIdentifier("settings-reveal-app-button")
-
-                    Button {
-                        MacInputPermission.resetTCCEntries()
-                        MacPrivacySettings.restartForPermissionRefresh()
-                    } label: {
-                        Text("settings.dictation.resetPermissions", bundle: .main)
-                    }
-                    .font(Typography.bodySmall)
-                    .accessibilityIdentifier("settings-reset-permissions-button")
-                }
-            } header: {
-                Text("settings.dictation.title", bundle: .main)
-                    .waiSectionHeader()
-            }
-
-            mcpConnectSection
-
-            McpIngestionSection()
-
-            Section {
-                LabeledContent {
-                    Text(AppVersionInfo.main.displayText)
-                        .font(Typography.mono)
-                } label: {
-                    Text("settings.about.version", bundle: .main)
-                }
-                updateControls
-            } header: {
-                Text("settings.about.title", bundle: .main)
-                    .waiSectionHeader()
-                    .accessibilityIdentifier("settings-about-header")
-            }
-
-            Section {
-                Button {
-                    showSignOutConfirmation = true
-                } label: {
-                    Text("settings.signOut", bundle: .main)
-                }
-                .font(Typography.body)
-                .foregroundStyle(Palette.textSecondary)
-                .accessibilityIdentifier("settings-sign-out-button")
-            }
-
-            // Required by App Store guideline 5.1.1(v): apps that support
-            // account creation must also offer in-app account deletion.
-            Section {
-                HStack {
-                    Button {
-                        showDeleteAccountConfirmation = true
-                    } label: {
-                        Text("settings.dangerZone.deleteAccount", bundle: .main)
-                    }
-                    .font(Typography.body)
-                    .foregroundStyle(.red)
-                    .disabled(isDeletingAccount)
-                    .accessibilityIdentifier("settings-delete-account-button")
-
-                    if isDeletingAccount {
-                        ProgressView()
-                            .controlSize(.small)
-                    }
-                }
-                Text("settings.dangerZone.deleteHint", bundle: .main)
-                    .font(Typography.caption)
-                    .foregroundStyle(Palette.textSecondary)
-            } header: {
-                Text("settings.dangerZone.title", bundle: .main)
-                    .waiSectionHeader()
-                    .accessibilityIdentifier("settings-danger-zone-header")
+            switch selectedSettingsCategory {
+            case .workspace:
+                workspaceSettingsSections
+            case .voice:
+                voiceSettingsSections
+            case .account:
+                accountSettingsSections
             }
         }
         .formStyle(.grouped)
@@ -665,6 +270,492 @@ struct MacSettingsView: View {
             }
         } message: {
             Text(deleteAccountError ?? "")
+        }
+    }
+
+    private var settingsCategorySection: some View {
+        Section {
+            Picker(selection: $selectedSettingsCategory) {
+                ForEach(MacSettingsCategory.allCases) { category in
+                    Text(settingsCategoryTitle(category)).tag(category)
+                }
+            } label: {
+                Text(t("Settings area", "Раздел настроек"))
+            }
+            .pickerStyle(.segmented)
+            .accessibilityIdentifier("settings-category-picker")
+
+            Text(settingsCategoryDescription(selectedSettingsCategory))
+                .font(Typography.caption)
+                .foregroundStyle(Palette.textTertiary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    @ViewBuilder
+    private var workspaceSettingsSections: some View {
+        serverDataSection
+        telegramSection
+        mcpConnectSection
+        McpIngestionSection()
+    }
+
+    @ViewBuilder
+    private var voiceSettingsSections: some View {
+        Section {
+            AppLanguagePicker()
+        } header: {
+            Text("settings.language.title", bundle: .main)
+                .waiSectionHeader()
+                .accessibilityIdentifier("settings-app-language-header")
+        }
+
+        IdentityAndVoiceSection()
+
+        Section {
+            LanguagePickerView(
+                store: languageStore,
+                onSelectionChanged: {
+                    dictationManager.prefetchSessionConfigForCurrentLanguage(reason: "settings_language_changed")
+                }
+            )
+            .padding(.vertical, 4)
+        } header: {
+            Text("settings.dictationLanguages.title", bundle: .main)
+                .waiSectionHeader()
+                .accessibilityIdentifier("settings-transcription-header")
+        } footer: {
+            Text("settings.dictationLanguages.footer", bundle: .main)
+                .font(Typography.caption)
+                .foregroundStyle(Palette.textTertiary)
+        }
+
+        summarySettingsSection
+        dictationSettingsSection
+    }
+
+    @ViewBuilder
+    private var accountSettingsSections: some View {
+        accountInfoSection
+        appearanceSection
+        appBehaviorSection
+        computerUseSection
+
+        #if DEBUG
+            Section {
+                PaymentModeToggle()
+            } header: {
+                Text("settings.payments.title", bundle: .main)
+                    .waiSectionHeader()
+                    .accessibilityIdentifier("settings-payment-mode-header")
+            }
+
+            BillingSection(mode: paymentModeEnabled ? .fullManagement : .statusOnly)
+                .id(billingRefreshID)
+        #else
+            BillingSection(mode: .fullManagement)
+                .id(billingRefreshID)
+        #endif
+
+        aboutSection
+        signOutSection
+        dangerZoneSection
+    }
+
+    private var accountInfoSection: some View {
+        Section {
+            if let user = appState.currentUser {
+                LabeledContent {
+                    Text(user.email)
+                } label: {
+                    Text("settings.account.email", bundle: .main)
+                }
+                .font(Typography.body)
+                LabeledContent {
+                    Text(MacDateFormatting.string(
+                        from: user.createdAt,
+                        dateStyle: .long,
+                        timeStyle: .none,
+                        language: languageManager.current
+                    ))
+                } label: {
+                    Text("settings.account.memberSince", bundle: .main)
+                }
+                .font(Typography.body)
+            }
+        } header: {
+            Text("settings.account.title", bundle: .main)
+                .waiSectionHeader()
+                .accessibilityIdentifier("settings-account-header")
+        }
+    }
+
+    private var computerUseSection: some View {
+        Section {
+            Toggle(isOn: $computerUseEnabled) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(t("Let Wai control this Mac", "Разрешить Wai управлять этим Mac"))
+                    Text(t(
+                        "Experimental. While the assistant is open, Wai can open the apps and links you approve. Off by default.",
+                        "Экспериментально. Пока ассистент открыт, Wai может открывать приложения и ссылки, которые вы одобрили. По умолчанию выключено."
+                    ))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                }
+            }
+            .accessibilityIdentifier("settings-computer-use-toggle")
+        } header: {
+            Text(t("Computer Use", "Управление компьютером"))
+                .waiSectionHeader()
+                .accessibilityIdentifier("settings-computer-use-header")
+        }
+    }
+
+    private var appBehaviorSection: some View {
+        Section {
+            Toggle(isOn: $showDockIconWhenMainWindowClosed) {
+                Text("settings.appBehavior.showDockIcon", bundle: .main)
+            }
+                .font(Typography.body)
+                .accessibilityIdentifier("settings-show-dock-icon-when-closed-toggle")
+                .onChangeCompat(of: showDockIconWhenMainWindowClosed) { _, _ in
+                    MacPresentationCoordinator.shared.updateActivationPolicyForCurrentWindowState()
+                }
+
+            Text("settings.appBehavior.dockHint", bundle: .main)
+                .font(Typography.caption)
+                .foregroundStyle(Palette.textTertiary)
+        } header: {
+            Text("settings.appBehavior.title", bundle: .main)
+                .waiSectionHeader()
+                .accessibilityIdentifier("settings-app-behavior-header")
+        }
+    }
+
+    private var summarySettingsSection: some View {
+        Section {
+            Picker(selection: $summaryLanguage) {
+                ForEach(summaryLanguageOptions, id: \.value) { option in
+                    Text(option.label).tag(option.value)
+                }
+            } label: {
+                Text("settings.summary.language", bundle: .main)
+            }
+            .font(Typography.body)
+            .onChangeCompat(of: summaryLanguage) { _, newValue in
+                Task { await saveSummarySettings(language: newValue) }
+            }
+
+            Picker(selection: $summaryStyle) {
+                ForEach(summaryStyleOptions, id: \.value) { option in
+                    Text(option.label).tag(option.value)
+                }
+            } label: {
+                Text("settings.summary.detailLevel", bundle: .main)
+            }
+            .font(Typography.body)
+            .onChangeCompat(of: summaryStyle) { _, newValue in
+                Task { await saveSummarySettings(style: newValue) }
+            }
+
+            VStack(alignment: .leading, spacing: Spacing.xs) {
+                Text("settings.summary.customInstructions", bundle: .main)
+                    .font(Typography.label)
+                    .foregroundStyle(Palette.textSecondary)
+                TextEditor(text: $summaryInstructions)
+                    .font(Typography.body)
+                    .frame(height: 60)
+                    .scrollContentBackground(.hidden)
+                    .background(Palette.surfaceSubtle)
+                    .cornerRadius(6)
+                    .onChangeCompat(of: summaryInstructions) { _, _ in
+                        Task { await saveSummarySettings(instructions: summaryInstructions) }
+                    }
+                Text("settings.summary.customExample", bundle: .main)
+                    .font(Typography.caption)
+                    .foregroundStyle(Palette.textTertiary)
+            }
+
+            if let settingsError {
+                Text(settingsError)
+                    .font(Typography.caption)
+                    .foregroundStyle(.red)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        } header: {
+            Text("settings.summary.title", bundle: .main)
+                .waiSectionHeader()
+                .accessibilityIdentifier("settings-summary-header")
+        }
+    }
+
+    private var dictationSettingsSection: some View {
+        Section {
+            Toggle(isOn: $dictationManager.isFeatureEnabled) {
+                Text("settings.dictation.enable", bundle: .main)
+            }
+                .font(Typography.body)
+                .onChangeCompat(of: dictationManager.isFeatureEnabled) { _, enabled in
+                    refreshPermissions()
+                    if enabled, !dictationPermissionsReady {
+                        startPermissionPolling()
+                    }
+                }
+
+            Picker(selection: Binding(
+                get: { dictationManager.selectedHotkey },
+                set: { dictationManager.updateHotkey($0) }
+            )) {
+                ForEach(DictationHotkey.allCases) { hotkey in
+                    Text(dictationHotkeyLabel(hotkey)).tag(hotkey)
+                }
+            } label: {
+                Text("settings.dictation.pushToTalk", bundle: .main)
+            }
+            .font(Typography.body)
+            .disabled(!dictationManager.isFeatureEnabled)
+            .accessibilityIdentifier("settings-push-to-talk-picker")
+
+            Picker(selection: Binding<DictationHotkey?>(
+                get: { dictationManager.selectedHandsFreeHotkey },
+                set: { dictationManager.updateHandsFreeHotkey($0) }
+            )) {
+                Text("settings.dictation.handsFreeDoubleTap", bundle: .main).tag(DictationHotkey?.none)
+                ForEach(DictationHotkey.allCases) { hotkey in
+                    Text(dictationHotkeyLabel(hotkey)).tag(DictationHotkey?.some(hotkey))
+                }
+            } label: {
+                Text("settings.dictation.handsFree", bundle: .main)
+            }
+            .font(Typography.body)
+            .disabled(!dictationManager.isFeatureEnabled)
+            .accessibilityIdentifier("settings-hands-free-picker")
+
+            Picker(selection: Binding(
+                get: { dictationManager.translationLanguageStore.selectedLanguageCode },
+                set: { dictationManager.translationLanguageStore.selectLanguage($0) }
+            )) {
+                ForEach(TranslationLanguageCatalog.all) { language in
+                    Text(language.displayName).tag(language.code)
+                }
+            } label: {
+                Text(t("Translation target", "Язык перевода"))
+            }
+            .font(Typography.body)
+            .disabled(!dictationManager.isFeatureEnabled)
+            .accessibilityIdentifier("settings-dictation-translation-target-picker")
+
+            Picker(selection: $dictationCleanupLevel) {
+                ForEach(dictationCleanupOptions, id: \.value) { option in
+                    Text(option.label).tag(option.value)
+                }
+            } label: {
+                Text(t("Cleanup level", "Уровень очистки"))
+            }
+                .pickerStyle(.segmented)
+                .font(Typography.body)
+                .disabled(!dictationManager.isFeatureEnabled)
+                .accessibilityIdentifier("settings-dictation-cleanup-level-picker")
+                .onChangeCompat(of: dictationCleanupLevel) { _, level in
+                    guard settingsLoaded else { return }
+                    Task { await saveDictationCleanupLevel(level) }
+                }
+
+            Text(dictationCleanupDescription(dictationCleanupLevel))
+                .font(Typography.caption)
+                .foregroundStyle(Palette.textTertiary)
+
+            Toggle(isOn: $dictationManager.contextAwareFormattingEnabled) {
+                Text(t("Context-aware formatting", "Контекстное форматирование"))
+            }
+                .font(Typography.body)
+                .disabled(
+                    !dictationManager.isFeatureEnabled
+                        || dictationCleanupLevel == "none"
+                )
+                .accessibilityIdentifier("settings-dictation-context-aware-toggle")
+
+            Text(
+                t(
+                    "Uses the active app and nearby textbox text to format dictation for email, chat, code, and notes.",
+                    "Учитывает активное приложение и текст рядом с курсором, чтобы форматировать диктовку для почты, чатов, кода и заметок."
+                )
+            )
+                .font(Typography.caption)
+                .foregroundStyle(Palette.textTertiary)
+
+            permissionRow(
+                title: String(localized: "settings.dictation.permission.microphone", bundle: .main),
+                status: hasMicrophonePermission ? .granted : .denied,
+                identifierBase: "settings-permission-microphone",
+                grantAction: requestMicrophonePermission,
+                settingsAction: nil,
+                restartAction: nil
+            )
+
+            permissionRow(
+                title: String(localized: "settings.dictation.permission.accessibility", bundle: .main),
+                status: accessibilityStatus,
+                identifierBase: "settings-permission-accessibility",
+                grantAction: openAccessibilitySettings,
+                settingsAction: { MacPrivacySettings.openAccessibility() },
+                restartAction: MacPrivacySettings.restartForPermissionRefresh
+            )
+
+            if SystemAudioGate.isSupported {
+                permissionRow(
+                    title: t("System Audio", "Звук Mac"),
+                    status: SystemAudioReadinessPolicy.permissionStatus(for: systemAudioReadiness),
+                    identifierBase: "settings-permission-system-audio",
+                    grantLabel: isRequestingSystemAudioPermission
+                        ? t("Testing...", "Проверяем...")
+                        : t("Test System Audio", "Проверить звук Mac"),
+                    grantAction: requestSystemAudioPermission,
+                    settingsAction: { MacPrivacySettings.openSystemAudio() },
+                    restartAction: MacPrivacySettings.restartForPermissionRefresh
+                )
+            } else {
+                HStack(alignment: .firstTextBaseline) {
+                    Text(t("System Audio", "Звук Mac"))
+                        .foregroundStyle(.secondary)
+                    Spacer(minLength: 12)
+                    Text(t("Requires macOS 14.2 or later", "Требуется macOS 14.2 или новее"))
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                        .multilineTextAlignment(.trailing)
+                }
+                .accessibilityIdentifier("settings-permission-system-audio-unsupported")
+            }
+
+            VStack(alignment: .leading, spacing: Spacing.xs) {
+                Text("settings.dictation.howToUse", bundle: .main)
+                    .font(Typography.label)
+                    .foregroundStyle(Palette.textSecondary)
+                Text(dictationUsageText)
+                    .font(Typography.caption)
+                    .foregroundStyle(Palette.textTertiary)
+                Text(dictationPrivacyText)
+                    .font(Typography.caption)
+                    .foregroundStyle(Palette.textTertiary)
+            }
+
+            HStack(spacing: Spacing.sm) {
+                Button {
+                    appState.resetOnboardingForSetupRerun()
+                } label: {
+                    Text("settings.dictation.rerunSetup", bundle: .main)
+                }
+                .font(Typography.bodySmall)
+                .accessibilityIdentifier("settings-rerun-setup-button")
+
+                Button {
+                    MacInputPermission.revealAppInFinder()
+                } label: {
+                    Text("settings.dictation.revealInFinder", bundle: .main)
+                }
+                .font(Typography.bodySmall)
+                .accessibilityIdentifier("settings-reveal-app-button")
+
+                Button {
+                    MacInputPermission.resetTCCEntries()
+                    MacPrivacySettings.restartForPermissionRefresh()
+                } label: {
+                    Text("settings.dictation.resetPermissions", bundle: .main)
+                }
+                .font(Typography.bodySmall)
+                .accessibilityIdentifier("settings-reset-permissions-button")
+            }
+        } header: {
+            Text("settings.dictation.title", bundle: .main)
+                .waiSectionHeader()
+        }
+    }
+
+    private var aboutSection: some View {
+        Section {
+            LabeledContent {
+                Text(AppVersionInfo.main.displayText)
+                    .font(Typography.mono)
+            } label: {
+                Text("settings.about.version", bundle: .main)
+            }
+            updateControls
+        } header: {
+            Text("settings.about.title", bundle: .main)
+                .waiSectionHeader()
+                .accessibilityIdentifier("settings-about-header")
+        }
+    }
+
+    private var signOutSection: some View {
+        Section {
+            Button {
+                showSignOutConfirmation = true
+            } label: {
+                Text("settings.signOut", bundle: .main)
+            }
+            .font(Typography.body)
+            .foregroundStyle(Palette.textSecondary)
+            .accessibilityIdentifier("settings-sign-out-button")
+        }
+    }
+
+    private var dangerZoneSection: some View {
+        Section {
+            HStack {
+                Button {
+                    showDeleteAccountConfirmation = true
+                } label: {
+                    Text("settings.dangerZone.deleteAccount", bundle: .main)
+                }
+                .font(Typography.body)
+                .foregroundStyle(.red)
+                .disabled(isDeletingAccount)
+                .accessibilityIdentifier("settings-delete-account-button")
+
+                if isDeletingAccount {
+                    ProgressView()
+                        .controlSize(.small)
+                }
+            }
+            Text("settings.dangerZone.deleteHint", bundle: .main)
+                .font(Typography.caption)
+                .foregroundStyle(Palette.textSecondary)
+        } header: {
+            Text("settings.dangerZone.title", bundle: .main)
+                .waiSectionHeader()
+                .accessibilityIdentifier("settings-danger-zone-header")
+        }
+    }
+
+    private func settingsCategoryTitle(_ category: MacSettingsCategory) -> String {
+        switch category {
+        case .workspace:
+            return t("Inbox & Sources", "Инбокс и источники")
+        case .voice:
+            return t("Voice & AI", "Голос и AI")
+        case .account:
+            return t("App & Account", "Приложение и аккаунт")
+        }
+    }
+
+    private func settingsCategoryDescription(_ category: MacSettingsCategory) -> String {
+        switch category {
+        case .workspace:
+            return t(
+                "Server, Telegram, MCP, and source connections that feed Inbox.",
+                "Сервер, Telegram, MCP и источники, которые наполняют Инбокс."
+            )
+        case .voice:
+            return t(
+                "Language, voice identity, summaries, dictation, and permissions.",
+                "Язык, голосовой профиль, саммари, диктовка и разрешения."
+            )
+        case .account:
+            return t(
+                "Theme, billing, updates, account status, sign out, and account deletion.",
+                "Тема, оплата, обновления, статус аккаунта, выход и удаление аккаунта."
+            )
         }
     }
 
@@ -1007,8 +1098,8 @@ struct MacSettingsView: View {
                 .accessibilityIdentifier("settings-telegram-header")
         } footer: {
             Text(t(
-                "Media sent to the bot is transcribed, summarized, and saved to your Library. Text messages are handled as Wai questions.",
-                "Медиа из бота расшифровываются, суммаризируются и сохраняются в Библиотеку. Текстовые сообщения обрабатываются как вопросы Wai."
+                "Media sent to the bot is transcribed, summarized, and saved to your Inbox. Text messages are handled as Wai questions.",
+                "Медиа из бота расшифровываются, суммаризируются и сохраняются в Инбокс. Текстовые сообщения обрабатываются как вопросы Wai."
             ))
             .font(Typography.caption)
             .foregroundStyle(Palette.textTertiary)

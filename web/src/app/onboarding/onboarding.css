@@ -38,6 +38,34 @@
   line-height: 1.55;
 }
 
+.onboarding-setup-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.65rem;
+}
+
+.onboarding-setup-item {
+  display: grid;
+  gap: 0.3rem;
+  min-width: 0;
+  padding: 0.75rem 0.8rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel-subtle);
+}
+
+.onboarding-setup-item strong {
+  color: var(--ink);
+  font-size: 0.88rem;
+  line-height: 1.25;
+}
+
+.onboarding-setup-item span {
+  color: var(--ink-soft);
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
+
 .onboarding-prompt-card {
   position: relative;
   padding: 1.1rem 1.2rem 1.1rem 1.4rem;
@@ -235,6 +263,10 @@
 }
 
 @media (max-width: 540px) {
+  .onboarding-setup-grid {
+    grid-template-columns: 1fr;
+  }
+
   .onboarding-controls {
     flex-direction: column;
     align-items: stretch;

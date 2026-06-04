@@ -31,11 +31,14 @@ describe("OnboardingClient", () => {
     });
   });
 
-  it("renders the voice prompt and allows skipping onboarding", () => {
+  it("renders the Inbox setup prompt and allows skipping onboarding", () => {
     render(<OnboardingClient />);
 
-    expect(screen.getByRole("heading", { level: 1, name: "Teach Wai your voice" })).toBeInTheDocument();
-    expect(screen.getByText(/Read the prompt for ~20 seconds/i)).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 1, name: "Set up your universal Inbox" })).toBeInTheDocument();
+    expect(screen.getByText(/recordings, files, links, notes, and Wai chats/i)).toBeInTheDocument();
+    expect(screen.getByText("Add anything")).toBeInTheDocument();
+    expect(screen.getByText("Organize once")).toBeInTheDocument();
+    expect(screen.getByText("Teach your voice")).toBeInTheDocument();
     expect(localStorageValues.voice_onboarding_complete).toBe("true");
 
     fireEvent.click(screen.getByRole("button", { name: "Skip for now" }));
@@ -47,7 +50,7 @@ describe("OnboardingClient", () => {
   it("marks onboarding seen as soon as the user sees the screen", () => {
     render(<OnboardingClient />);
 
-    expect(screen.getByRole("heading", { level: 1, name: "Teach Wai your voice" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 1, name: "Set up your universal Inbox" })).toBeInTheDocument();
     expect(localStorageValues.voice_onboarding_complete).toBe("true");
     expect(mockReplace).not.toHaveBeenCalled();
   });

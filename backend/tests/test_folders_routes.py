@@ -1,7 +1,13 @@
 """Tests for folder endpoints and folder-aware recording filters."""
 
+from uuid import UUID
+
 import pytest
 from httpx import AsyncClient
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models.item import Item
 
 
 async def _create_folder(client: AsyncClient, headers: dict, name: str = "Projects") -> dict:
@@ -50,10 +56,25 @@ async def test_folder_create_list_and_filter_recordings(client: AsyncClient, aut
 
 
 @pytest.mark.asyncio
-async def test_delete_folder_clears_recording_folder_id(client: AsyncClient, auth_headers: dict):
-    """Deleting a folder should keep recordings but clear their folder assignment."""
+async def test_delete_folder_clears_recording_and_item_folder_id(
+    client: AsyncClient, auth_headers: dict, db_session: AsyncSession
+) -> None:
+    """Deleting a folder should keep content but clear every folder assignment."""
     folder = await _create_folder(client, auth_headers, name="Archive")
     recording = await _create_recording(client, auth_headers, folder_id=folder["id"])
+    item_response = await client.post(
+        "/api/items",
+        headers=auth_headers,
+        json={
+            "source": "url",
+            "kind": "article",
+            "title": "Foldered note",
+            "url": "https://example.com/foldered-note",
+            "folder_id": folder["id"],
+        },
+    )
+    assert item_response.status_code == 201, item_response.text
+    item_id = item_response.json()["id"]
 
     delete_response = await client.delete(f"/api/folders/{folder['id']}", headers=auth_headers)
     assert delete_response.status_code == 204
@@ -61,6 +82,9 @@ async def test_delete_folder_clears_recording_folder_id(client: AsyncClient, aut
     detail_response = await client.get(f"/api/recordings/{recording['id']}", headers=auth_headers)
     assert detail_response.status_code == 200
     assert detail_response.json()["folder_id"] is None
+
+    item = (await db_session.execute(select(Item).where(Item.id == UUID(item_id)))).scalar_one()
+    assert item.folder_id is None
 
 
 @pytest.mark.asyncio

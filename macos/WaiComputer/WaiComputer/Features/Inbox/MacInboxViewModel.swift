@@ -16,9 +16,21 @@ final class MacInboxViewModel: ObservableObject {
     @Published var statusMessage: String?
 
     let apiClient: APIClient
+    private var folderId: String?
 
-    init(apiClient: APIClient) {
+    init(apiClient: APIClient, sourceKind: InboxSourceKind? = nil, folderId: String? = nil) {
         self.apiClient = apiClient
+        self.sourceKind = sourceKind
+        self.folderId = folderId
+    }
+
+    func configureScope(sourceKind: InboxSourceKind?, folderId: String?) async {
+        guard self.sourceKind != sourceKind || self.folderId != folderId else { return }
+        self.sourceKind = sourceKind
+        self.folderId = folderId
+        statusFilter = nil
+        nextCursor = nil
+        await load()
     }
 
     func load() async {
@@ -28,6 +40,7 @@ final class MacInboxViewModel: ObservableObject {
             let response = try await apiClient.listInbox(
                 sourceKind: sourceKind,
                 status: statusFilter,
+                folderId: folderId,
                 limit: 50
             )
             rows = response.rows
@@ -45,6 +58,7 @@ final class MacInboxViewModel: ObservableObject {
             let response = try await apiClient.listInbox(
                 sourceKind: sourceKind,
                 status: statusFilter,
+                folderId: folderId,
                 limit: 50,
                 cursor: nextCursor
             )
@@ -79,13 +93,15 @@ final class MacInboxViewModel: ObservableObject {
                 created = try await apiClient.createItem(
                     source: "url",
                     kind: "article",
-                    url: trimmed
+                    url: trimmed,
+                    folderId: folderId
                 )
             } else {
                 created = try await apiClient.createItem(
                     source: "paste",
                     kind: "note",
-                    body: trimmed
+                    body: trimmed,
+                    folderId: folderId
                 )
             }
             draft = ""
@@ -106,7 +122,7 @@ final class MacInboxViewModel: ObservableObject {
         defer { if scoped { url.stopAccessingSecurityScopedResource() } }
 
         do {
-            let outcome = try await apiClient.uploadItem(fileURL: url)
+            let outcome = try await apiClient.uploadItem(fileURL: url, folderId: folderId)
             switch outcome {
             case .item(let item):
                 statusMessage = nil
@@ -135,7 +151,7 @@ final class MacInboxViewModel: ObservableObject {
                     status: .processing,
                     sourceStatus: "processing",
                     error: nil,
-                    folderId: nil,
+                    folderId: folderId,
                     durationSeconds: nil,
                     language: nil,
                     hasSummary: false,
