@@ -8,6 +8,7 @@ import re
 import secrets
 import string
 from contextlib import suppress
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from hashlib import sha256
 from html import escape
@@ -25,7 +26,13 @@ from app.api.deps import CurrentUser, Database
 from app.config import get_settings
 from app.core import user_memory as user_memory_module
 from app.core.agent_dispatch import AgentDispatchError, enqueue_agent_run
-from app.core.agent_runtime import cancel_run, execute_agent_step, run_job, static_config_planner
+from app.core.agent_runtime import (
+    TERMINAL_STATUSES,
+    cancel_run,
+    execute_agent_step,
+    run_job,
+    static_config_planner,
+)
 from app.core.companion import (
     ActionProposedEvent,
     CompanionError,
@@ -1236,39 +1243,59 @@ def _short_uuid(value: Any) -> str:
     return str(value)[:8]
 
 
-async def _load_agent_ref(
+@dataclass(frozen=True)
+class AgentRefResolution:
+    agent: Agent | None
+    ambiguous_matches: tuple[Agent, ...] = ()
+
+
+async def _resolve_agent_ref(
     db: AsyncSession,
     *,
     user_id: Any,
     ref: str,
-) -> Agent | None:
+) -> AgentRefResolution:
     clean = ref.strip()
     if not clean:
-        return None
+        return AgentRefResolution(None)
     try:
         agent_id = UUID(clean)
     except ValueError:
         agent_id = None
     if agent_id is not None:
-        return (
+        agent = (
             await db.execute(
                 select(Agent).where(Agent.id == agent_id, Agent.user_id == user_id)
             )
         ).scalar_one_or_none()
+        return AgentRefResolution(agent)
 
     result = await db.execute(
         select(Agent).where(Agent.user_id == user_id).order_by(Agent.created_at.desc())
     )
     normalized = clean.casefold()
     agents = list(result.scalars().all())
-    for agent in agents:
-        if agent.name.casefold() == normalized:
-            return agent
+    exact_matches = tuple(agent for agent in agents if agent.name.casefold() == normalized)
+    if len(exact_matches) == 1:
+        return AgentRefResolution(exact_matches[0])
+    if len(exact_matches) > 1:
+        return AgentRefResolution(None, ambiguous_matches=exact_matches)
     if len(clean) >= 8:
-        matches = [agent for agent in agents if str(agent.id).startswith(clean)]
-        if len(matches) == 1:
-            return matches[0]
-    return None
+        prefix_matches = tuple(agent for agent in agents if str(agent.id).startswith(clean))
+        if len(prefix_matches) == 1:
+            return AgentRefResolution(prefix_matches[0])
+        if len(prefix_matches) > 1:
+            return AgentRefResolution(None, ambiguous_matches=prefix_matches)
+    return AgentRefResolution(None)
+
+
+async def _load_agent_ref(
+    db: AsyncSession,
+    *,
+    user_id: Any,
+    ref: str,
+) -> Agent | None:
+    return (await _resolve_agent_ref(db, user_id=user_id, ref=ref)).agent
 
 
 async def _load_run_ref(
@@ -1361,7 +1388,21 @@ async def _handle_run_command(
             reply_to_message_id=message.get("message_id"),
         )
         return
-    agent = await _load_agent_ref(db, user_id=account.user_id, ref=agent_ref)
+    resolution = await _resolve_agent_ref(db, user_id=account.user_id, ref=agent_ref)
+    if resolution.ambiguous_matches:
+        lines = [
+            "Несколько агентов совпадают с этим именем. Запусти по id из /agents:",
+        ]
+        for match in resolution.ambiguous_matches[:5]:
+            state = "on" if match.enabled else "off"
+            lines.append(f"{_short_uuid(match.id)} · {match.name} · {match.kind} · {state}")
+        await client.send_message(
+            chat_id,
+            "\n".join(lines),
+            reply_to_message_id=message.get("message_id"),
+        )
+        return
+    agent = resolution.agent
     if agent is None:
         await client.send_message(
             chat_id,
@@ -1594,6 +1635,30 @@ async def _resume_agent_after_telegram_action(
     )
 
 
+async def _telegram_agent_action_guard_message(
+    db: AsyncSession,
+    *,
+    action_id: UUID,
+    user_id: Any,
+) -> str | None:
+    action = (
+        await db.execute(
+            select(CompanionPendingAction).where(
+                CompanionPendingAction.id == action_id,
+                CompanionPendingAction.user_id == user_id,
+            )
+        )
+    ).scalar_one_or_none()
+    if action is None or action.agent_run_id is None:
+        return None
+    run = await db.get(AgentRun, action.agent_run_id)
+    if run is None or run.user_id != user_id:
+        return "Не смог обработать подтверждение: запуск для действия не найден."
+    if run.status in TERMINAL_STATUSES:
+        return "Не смог обработать подтверждение: запуск уже завершен."
+    return None
+
+
 async def _handle_approval_decision_command(
     db: AsyncSession,
     client: TelegramBotClient,
@@ -1612,6 +1677,18 @@ async def _handle_approval_decision_command(
         await client.send_message(
             chat_id,
             "Нужен action_id. Посмотри /approvals.",
+            reply_to_message_id=message.get("message_id"),
+        )
+        return
+    guard_message = await _telegram_agent_action_guard_message(
+        db,
+        action_id=action_id,
+        user_id=account.user_id,
+    )
+    if guard_message is not None:
+        await client.send_message(
+            chat_id,
+            guard_message,
             reply_to_message_id=message.get("message_id"),
         )
         return
