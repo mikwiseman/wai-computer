@@ -27,6 +27,15 @@ enum InboxUploadPhase: Equatable {
         }
     }
 
+    var isError: Bool {
+        switch self {
+        case .failed:
+            return true
+        case .idle, .selected, .preparing, .uploading, .processing, .added:
+            return false
+        }
+    }
+
     var message: String? {
         switch self {
         case .idle, .selected:

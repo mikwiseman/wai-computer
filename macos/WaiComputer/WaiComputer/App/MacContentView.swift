@@ -821,15 +821,11 @@ struct MacMainView: View {
                 apiClient: appState.getAPIClient(),
                 recordings: libraryViewModel.recordings,
                 folders: libraryViewModel.folders,
-                isImporting: importViewModel.isImporting,
                 initialSourceKind: inboxInitialSourceKind,
                 folderId: currentFolderId,
                 pendingDetail: pendingInboxDetail,
                 onStartRecording: {
                     startRecording(type: .meeting, inputSource: .dual, folderId: currentFolderId)
-                },
-                onImportAudio: {
-                    importAudioFile()
                 },
                 onLibraryChanged: {
                     await libraryViewModel.loadLibrary(apiClient: appState.getAPIClient())
