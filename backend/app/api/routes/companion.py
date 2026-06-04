@@ -21,10 +21,10 @@ from app.core.companion_actions import (
     get_pending,
     mark_executed,
     mark_failed,
-    resolve_action,
     verify_committable,
 )
-from app.core.companion_actuators import ActuationError, execute_action
+from app.core.companion_actuators import ActuationError
+from app.core.companion_resolve import resolve_action_for_user
 from app.core.device_presence import get_owned_device
 from app.core.observability import (
     add_sentry_breadcrumb,
@@ -669,8 +669,10 @@ async def resolve_chat_action(
             detail="Pending action not found for this chat",
         )
 
+    # One shared resolve→execute path (also used by Telegram) so approval
+    # semantics can't drift between surfaces. The helper does not commit.
     try:
-        row = await resolve_action(
+        outcome = await resolve_action_for_user(
             db,
             action_id=action_id,
             user_id=user.id,
@@ -678,52 +680,24 @@ async def resolve_chat_action(
             edited_args=request.edited_args,
         )
     except ApprovalError as exc:
-        await db.commit()  # persist any expired-on-read transition
+        await db.commit()  # persist any expired-on-read / fail-closed transition
         raise HTTPException(
             status_code=_APPROVAL_HTTP_STATUS.get(
                 exc.code, status.HTTP_400_BAD_REQUEST
             ),
             detail=exc.message,
         ) from exc
-
-    if request.decision == "reject":
-        await db.commit()
-        return ResolveActionResponse(
-            action_id=str(action_id),
-            status="rejected",
-            recipient=row.recipient_display,
-        )
-
-    # Approved → re-verify the locked payload, then execute exactly once.
-    try:
-        verify_committable(row)
-        if row.kind == "desktop_action":
-            # Dispatched to the Mac edge — NOT run server-side. It stays
-            # "approved" in the device drain queue and is marked executed only
-            # when the Mac reports back via /desktop_result.
-            await db.commit()
-            return ResolveActionResponse(
-                action_id=str(action_id),
-                status="dispatched",
-                recipient=row.recipient_display,
-            )
-        args = (row.action_manifest or {}).get("args") or {}
-        receipt = await execute_action(
-            db, user_id=user.id, tool_name=row.tool_name, args=args
-        )
-        await mark_executed(db, row=row, receipt=receipt)
-        await db.commit()
-    except (ApprovalError, ActuationError) as exc:
-        await mark_failed(db, row=row, detail=exc.message)
-        await db.commit()
+    except ActuationError as exc:
+        await db.commit()  # persist the fail-closed mark
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail=exc.message
         ) from exc
 
+    await db.commit()
     return ResolveActionResponse(
         action_id=str(action_id),
-        status="executed",
-        recipient=row.recipient_display,
+        status=outcome.status,
+        recipient=outcome.recipient,
     )
 
 

@@ -51,6 +51,7 @@ from app.core.companion_actions import (
     verify_committable,
 )
 from app.core.companion_actuators import ActuationError, execute_action
+from app.core.companion_resolve import resolve_action_for_user
 from app.core.document_extract import (
     SUPPORTED_DOCUMENT_EXTENSIONS,
     DocumentExtractionError,
@@ -2006,19 +2007,129 @@ async def _handle_url_message(
     )
 
 
-def _format_action_proposals_for_telegram(actions: list[ActionProposedEvent]) -> str:
-    if not actions:
-        return ""
-    lines = ["Нужно подтверждение:"]
-    for action in actions:
-        preview = action.preview.strip() or action.tool
-        recipient = f" · {action.recipient}" if action.recipient else ""
-        lines.append(
-            f"{action.action_id}\n{action.tool} · {action.kind}{recipient}\n"
-            f"{preview}\n/approve {action.action_id}\n"
-            f"/approve_always {action.action_id}\n/reject {action.action_id}"
+_ACTION_CALLBACK_PREFIX = "act"
+
+
+def _action_inline_keyboard(action_id: str) -> dict[str, Any]:
+    """Inline Approve / Always / Reject buttons. callback_data is
+    'act:<decision>:<uuid>' (~47 bytes, under Telegram's 64-byte cap)."""
+
+    def cb(decision: str) -> str:
+        return f"{_ACTION_CALLBACK_PREFIX}:{decision}:{action_id}"
+
+    return {
+        "inline_keyboard": [
+            [
+                {"text": "✅ Подтвердить", "callback_data": cb("once")},
+                {"text": "🔁 Всегда", "callback_data": cb("always")},
+                {"text": "✕ Отклонить", "callback_data": cb("reject")},
+            ]
+        ]
+    }
+
+
+async def _send_action_proposal(
+    client: TelegramBotClient, chat_id: int, action: ActionProposedEvent
+) -> None:
+    preview = action.preview.strip() or action.tool
+    await client.send_message(
+        chat_id,
+        f"Нужно подтверждение:\n{preview}",
+        reply_markup=_action_inline_keyboard(action.action_id),
+    )
+
+
+def _parse_action_callback(data: str) -> tuple[str, str] | None:
+    """Parse 'act:<decision>:<action_id>' → (decision, action_id)."""
+    parts = data.split(":", 2)
+    if len(parts) != 3 or parts[0] != _ACTION_CALLBACK_PREFIX:
+        return None
+    decision, action_id = parts[1], parts[2]
+    if decision not in {"once", "always", "reject"}:
+        return None
+    return decision, action_id
+
+
+async def _resolve_action_for_telegram(
+    db: AsyncSession,
+    *,
+    account: TelegramAccount,
+    action_id: UUID,
+    decision: str,
+) -> tuple[str, str]:
+    """Resolve a tapped action via the shared helper (same path as the web
+    route), resume any linked agent run, and return (toast, edited-message)."""
+    guard = await _telegram_agent_action_guard_message(
+        db, action_id=action_id, user_id=account.user_id
+    )
+    if guard is not None:
+        return ("Не удалось", guard)
+    try:
+        outcome = await resolve_action_for_user(
+            db, action_id=action_id, user_id=account.user_id, decision=decision
         )
-    return "\n\n".join(lines)
+    except ApprovalError as exc:
+        await db.commit()
+        return ("Не удалось", f"Не смог обработать: {exc.message}")
+    except ActuationError as exc:
+        await db.commit()
+        return ("Ошибка", f"Действие не выполнено: {exc.message}")
+    await _resume_agent_after_telegram_action(db, outcome.row)
+    await db.commit()
+    if decision == "reject":
+        return ("Отклонено", "✕ Отклонено.")
+    if outcome.status == "dispatched":
+        return ("Отправлено на Mac", "✅ Отправлено на ваш Mac.")
+    return ("Готово", "✅ Готово.")
+
+
+async def _handle_callback_query(
+    db: AsyncSession,
+    client: TelegramBotClient,
+    *,
+    callback_query: dict[str, Any],
+) -> None:
+    callback_id = callback_query.get("id")
+    if not isinstance(callback_id, str):
+        return
+    from_user = callback_query.get("from")
+    telegram_user_id = from_user.get("id") if isinstance(from_user, dict) else None
+    data = callback_query.get("data")
+    cb_message = callback_query.get("message")
+    chat_id = _telegram_chat_id(cb_message) if isinstance(cb_message, dict) else None
+    message_id = (
+        cb_message.get("message_id") if isinstance(cb_message, dict) else None
+    )
+
+    if not isinstance(telegram_user_id, int) or not isinstance(data, str):
+        await client.answer_callback_query(callback_id)
+        return
+    account = await _load_account(db, telegram_user_id)
+    if account is None:
+        await client.answer_callback_query(
+            callback_id, text="Сначала привяжи Telegram."
+        )
+        return
+    parsed = _parse_action_callback(data)
+    if parsed is None:
+        await client.answer_callback_query(callback_id)
+        return
+    decision, action_id_raw = parsed
+    try:
+        action_id = UUID(action_id_raw)
+    except ValueError:
+        await client.answer_callback_query(callback_id)
+        return
+
+    short, full = await _resolve_action_for_telegram(
+        db, account=account, action_id=action_id, decision=decision
+    )
+    await client.answer_callback_query(callback_id, text=short)
+    if chat_id is not None and isinstance(message_id, int):
+        try:
+            await client.edit_message_text(chat_id, message_id, full)
+        except TelegramClientError:
+            pass  # best-effort; the message may be too old to edit
 
 
 async def _handle_text_message(
@@ -2065,17 +2176,19 @@ async def _handle_text_message(
         await _stop_chat_action_task(action_task)
 
     answer = "".join(chunks).strip()
-    approval_text = _format_action_proposals_for_telegram(proposed_actions)
-    if approval_text:
-        answer = f"{answer}\n\n{approval_text}".strip()
-    if not answer:
+    if not answer and not proposed_actions:
         answer = "Wai не вернул ответ."
-    await _send_chunks(
-        client,
-        chat_id,
-        answer,
-        reply_to_message_id=message.get("message_id"),
-    )
+    if answer:
+        await _send_chunks(
+            client,
+            chat_id,
+            answer,
+            reply_to_message_id=message.get("message_id"),
+        )
+    # Surface each proposed action as a tap-to-approve card (inline buttons)
+    # rather than a "/approve <uuid>" command the user must copy-paste.
+    for action in proposed_actions:
+        await _send_action_proposal(client, chat_id, action)
 
 
 async def _handle_document_message(
@@ -2334,6 +2447,14 @@ async def _handle_update(update: dict[str, Any]) -> None:
     client = TelegramBotClient()
     async with get_db_context() as db:
         try:
+            callback_query = update.get("callback_query")
+            if isinstance(callback_query, dict):
+                await _handle_callback_query(
+                    db, client, callback_query=callback_query
+                )
+                await _mark_update(db, update_id, "completed")
+                return
+
             message = update.get("message")
             if not isinstance(message, dict):
                 await _mark_update(db, update_id, "completed")

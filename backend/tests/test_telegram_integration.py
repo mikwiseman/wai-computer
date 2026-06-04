@@ -593,6 +593,8 @@ class _TelegramCapture:
         self.actions: list[dict[str, Any]] = []
         self.documents: list[dict[str, Any]] = []
         self.deleted_messages: list[dict[str, Any]] = []
+        self.callback_answers: list[dict[str, Any]] = []
+        self.edited_messages: list[dict[str, Any]] = []
         self.file = TelegramFile("file-id", "voice/file.ogg", 12)
         self.data = b"telegram audio"
 
@@ -603,6 +605,7 @@ class _TelegramCapture:
         *,
         reply_to_message_id: int | None = None,
         parse_mode: str | None = None,
+        reply_markup: dict[str, Any] | None = None,
     ) -> None:
         message_id = len(self.messages) + 1
         self.messages.append(
@@ -612,6 +615,31 @@ class _TelegramCapture:
                 "text": text,
                 "reply_to_message_id": reply_to_message_id,
                 "parse_mode": parse_mode,
+                "reply_markup": reply_markup,
+            }
+        )
+        return {"message_id": message_id}
+
+    async def answer_callback_query(
+        self, callback_query_id: str, *, text: str | None = None
+    ) -> None:
+        self.callback_answers.append({"id": callback_query_id, "text": text})
+
+    async def edit_message_text(
+        self,
+        chat_id: int,
+        message_id: int,
+        text: str,
+        *,
+        reply_markup: dict[str, Any] | None = None,
+        parse_mode: str | None = None,
+    ) -> None:
+        self.edited_messages.append(
+            {
+                "chat_id": chat_id,
+                "message_id": message_id,
+                "text": text,
+                "reply_markup": reply_markup,
             }
         )
         return {"message_id": message_id}
@@ -1854,12 +1882,133 @@ async def test_handle_text_message_renders_action_proposals(
         text="отправь сообщение",
     )
 
-    text = capture.messages[-1]["text"]
-    assert "Могу сделать это." in text
-    assert "Нужно подтверждение" in text
-    assert f"/approve {action_id}" in text
-    assert f"/approve_always {action_id}" in text
-    assert f"/reject {action_id}" in text
+    # The answer is sent first, then the action arrives as an inline-button card
+    # (no copy-paste "/approve <uuid>" command).
+    assert "Могу сделать это." in capture.messages[0]["text"]
+    proposal = capture.messages[-1]
+    assert "Нужно подтверждение" in proposal["text"]
+    assert "Send to you: hello" in proposal["text"]
+    callbacks = {
+        button["callback_data"]
+        for button in proposal["reply_markup"]["inline_keyboard"][0]
+    }
+    assert callbacks == {
+        f"act:once:{action_id}",
+        f"act:always:{action_id}",
+        f"act:reject:{action_id}",
+    }
+
+
+def test_action_callback_parse_and_keyboard_roundtrip():
+    aid = str(uuid4())
+    keyboard = telegram_routes._action_inline_keyboard(aid)
+    row = keyboard["inline_keyboard"][0]
+    assert {b["callback_data"] for b in row} == {
+        f"act:once:{aid}",
+        f"act:always:{aid}",
+        f"act:reject:{aid}",
+    }
+    # callback_data must stay under Telegram's 64-byte cap.
+    for button in row:
+        assert len(button["callback_data"].encode("utf-8")) <= 64
+    assert telegram_routes._parse_action_callback(f"act:once:{aid}") == ("once", aid)
+    assert telegram_routes._parse_action_callback(f"act:reject:{aid}") == ("reject", aid)
+    assert telegram_routes._parse_action_callback("act:bogus:x") is None
+    assert telegram_routes._parse_action_callback("nope:once:x") is None
+    assert telegram_routes._parse_action_callback("act:once") is None
+
+
+@pytest.mark.asyncio
+async def test_handle_callback_query_approves_action(db_session: AsyncSession, monkeypatch):
+    from app.core import companion_actuators
+    from app.core.companion_actions import propose_action
+    from app.models.companion import Conversation
+
+    class _FakeTG:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def send_message(self, chat_id, text, **kwargs):
+            return {"message_id": 1}
+
+    monkeypatch.setattr(companion_actuators, "TelegramBotClient", _FakeTG)
+
+    user = await _user(db_session, "telegram-callback-approve@example.com")
+    account = TelegramAccount(user_id=user.id, telegram_user_id=991, telegram_chat_id=991)
+    db_session.add(account)
+    conv = Conversation(user_id=user.id)
+    db_session.add(conv)
+    await db_session.flush()
+    row = await propose_action(
+        db_session,
+        user_id=user.id,
+        conversation_id=conv.id,
+        kind="send",
+        tool_name="send_message_telegram",
+        args={"text": "ping"},
+        preview="Send to you: ping",
+        idempotency_key=f"cb-{uuid4().hex}",
+        recipient_display="you",
+    )
+    await db_session.flush()
+
+    capture = _TelegramCapture()
+    await telegram_routes._handle_callback_query(
+        db_session,
+        capture,
+        callback_query={
+            "id": "cbq-1",
+            "from": {"id": 991},
+            "data": f"act:once:{row.id}",
+            "message": {"message_id": 55, "chat": {"id": 991}},
+        },
+    )
+
+    assert capture.callback_answers[-1]["text"] == "Готово"
+    assert "Готово" in capture.edited_messages[-1]["text"]
+    await db_session.refresh(row)
+    assert row.status == "executed"
+
+
+@pytest.mark.asyncio
+async def test_handle_callback_query_rejects_action(db_session: AsyncSession):
+    from app.core.companion_actions import propose_action
+    from app.models.companion import Conversation
+
+    user = await _user(db_session, "telegram-callback-reject@example.com")
+    account = TelegramAccount(user_id=user.id, telegram_user_id=992, telegram_chat_id=992)
+    db_session.add(account)
+    conv = Conversation(user_id=user.id)
+    db_session.add(conv)
+    await db_session.flush()
+    row = await propose_action(
+        db_session,
+        user_id=user.id,
+        conversation_id=conv.id,
+        kind="send",
+        tool_name="send_message_telegram",
+        args={"text": "x"},
+        preview="Send to you: x",
+        idempotency_key=f"cbr-{uuid4().hex}",
+        recipient_display="you",
+    )
+    await db_session.flush()
+
+    capture = _TelegramCapture()
+    await telegram_routes._handle_callback_query(
+        db_session,
+        capture,
+        callback_query={
+            "id": "cbq-2",
+            "from": {"id": 992},
+            "data": f"act:reject:{row.id}",
+            "message": {"message_id": 56, "chat": {"id": 992}},
+        },
+    )
+
+    assert capture.callback_answers[-1]["text"] == "Отклонено"
+    await db_session.refresh(row)
+    assert row.status == "rejected"
 
 
 @pytest.mark.asyncio
