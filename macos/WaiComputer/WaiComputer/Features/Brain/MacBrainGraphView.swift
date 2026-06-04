@@ -8,6 +8,7 @@ import WaiComputerKit
 struct MacBrainGraphView: View {
     let graph: BrainGraph
     var onOpenEntity: (BrainGraphNode) -> Void
+    var onOpenSource: (InboxDetailRef) -> Void = { _ in }
 
     @EnvironmentObject private var languageManager: LanguageManager
     @State private var layout: [String: CGPoint] = [:]
@@ -281,6 +282,16 @@ struct MacBrainGraphView: View {
                 .buttonStyle(.borderedProminent)
             }
 
+            if let source = sourceDetail(for: details.node) {
+                Button {
+                    onOpenSource(source)
+                } label: {
+                    Label(t("Open source", "Открыть источник"), systemImage: "arrow.up.right.square")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+            }
+
             metricGrid(summary: MacBrainGraphSummary(
                 entities: details.entityNeighbors.count,
                 sources: details.sourceNeighbors.count,
@@ -352,6 +363,15 @@ struct MacBrainGraphView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+    }
+
+    private func sourceDetail(for node: BrainGraphNode) -> InboxDetailRef? {
+        guard node.kind == "recording" || node.kind == "item",
+              let sourceKind = InboxSourceKind(rawValue: node.kind)
+        else { return nil }
+        let prefix = "\(node.kind):"
+        let sourceId = node.id.hasPrefix(prefix) ? String(node.id.dropFirst(prefix.count)) : node.id
+        return InboxDetailRef(kind: sourceKind, id: sourceId)
     }
 
     private func metricGrid(summary: MacBrainGraphSummary) -> some View {

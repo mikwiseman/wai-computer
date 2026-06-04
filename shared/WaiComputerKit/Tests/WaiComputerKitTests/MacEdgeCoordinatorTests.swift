@@ -9,7 +9,13 @@ private final class FakeTransport: MacEdgeTransport, @unchecked Sendable {
     var queue = DesktopActionQueue(actions: [])
     var reports:
         [(
-            chatId: String, actionId: String, status: DesktopResultStatus,
+            chatId: String, actionId: String, deviceId: String, status: DesktopResultStatus,
+            payload: [String: CompanionJSONValue]?
+        )] = []
+    var agentReports:
+        [(
+            agentId: String, runId: String, actionId: String, deviceId: String,
+            status: DesktopResultStatus,
             payload: [String: CompanionJSONValue]?
         )] = []
     var failReports = false
@@ -22,17 +28,27 @@ private final class FakeTransport: MacEdgeTransport, @unchecked Sendable {
     }
     func drainDesktopActions(deviceId: String) async throws -> DesktopActionQueue { queue }
     func reportDesktopResult(
-        chatId: String, actionId: String, status: DesktopResultStatus,
+        chatId: String, actionId: String, deviceId: String, status: DesktopResultStatus,
         payload: [String: CompanionJSONValue]?
     ) async throws -> DesktopResultResponse {
         if failReports { throw URLError(.notConnectedToInternet) }
-        reports.append((chatId, actionId, status, payload))
+        reports.append((chatId, actionId, deviceId, status, payload))
+        return DesktopResultResponse(actionId: actionId, status: status.rawValue)
+    }
+    func reportAgentDesktopResult(
+        agentId: String, runId: String, actionId: String, deviceId: String,
+        status: DesktopResultStatus,
+        payload: [String: CompanionJSONValue]?
+    ) async throws -> DesktopResultResponse {
+        if failReports { throw URLError(.notConnectedToInternet) }
+        agentReports.append((agentId, runId, actionId, deviceId, status, payload))
         return DesktopResultResponse(actionId: actionId, status: status.rawValue)
     }
 }
 
 private final class CountingActuator: DesktopActuator, @unchecked Sendable {
     var openURLCount = 0
+    func frontmostBundleId() async throws -> String? { "com.apple.TextEdit" }
     func openURL(_ url: URL) async throws { openURLCount += 1 }
     func openApp(name: String) async throws {}
     func typeText(_ text: String) async throws {}
@@ -73,6 +89,7 @@ final class MacEdgeCoordinatorTests: XCTestCase {
         XCTAssertEqual(actuator.openURLCount, 1)
         XCTAssertEqual(transport.reports.count, 1)
         XCTAssertEqual(transport.reports[0].chatId, "c1")
+        XCTAssertEqual(transport.reports[0].deviceId, "dev-1")
         XCTAssertEqual(transport.reports[0].status, .executed)
         // The first heartbeat has no device id yet.
         XCTAssertEqual(transport.heartbeatCalls, [nil])
@@ -118,6 +135,28 @@ final class MacEdgeCoordinatorTests: XCTestCase {
         XCTAssertNotNil(transport.reports[0].payload?["snapshot"])
     }
 
+    func testAgentActionReportsToAgentEndpoint() async throws {
+        let (transport, actuator, coord) = make()
+        transport.queue = DesktopActionQueue(actions: [
+            DesktopActionItem(
+                actionId: "a1",
+                agentId: "agent-1",
+                agentRunId: "run-1",
+                tool: "desktop_open",
+                args: ["target": .string("mailto:a@x.com")],
+                preview: "p"
+            )
+        ])
+        let outcomes = try await coord.pollOnce()
+        XCTAssertEqual(outcomes, [.executed])
+        XCTAssertEqual(actuator.openURLCount, 1)
+        XCTAssertEqual(transport.reports.count, 0)
+        XCTAssertEqual(transport.agentReports.count, 1)
+        XCTAssertEqual(transport.agentReports[0].agentId, "agent-1")
+        XCTAssertEqual(transport.agentReports[0].runId, "run-1")
+        XCTAssertEqual(transport.agentReports[0].deviceId, "dev-1")
+    }
+
     func testRefusalIsReportedAndSkipsActuator() async throws {
         let (transport, actuator, coord) = make()
         // Missing target → router refuses.
@@ -131,5 +170,24 @@ final class MacEdgeCoordinatorTests: XCTestCase {
         XCTAssertEqual(actuator.openURLCount, 0)
         XCTAssertEqual(transport.reports.count, 1)
         XCTAssertEqual(transport.reports[0].status, .refused)
+    }
+
+    func testMalformedActionWithoutReportTargetNeverExecutesSideEffect() async throws {
+        let (transport, actuator, coord) = make()
+        transport.queue = DesktopActionQueue(actions: [
+            DesktopActionItem(
+                actionId: "bad-target",
+                tool: "desktop_open",
+                args: ["target": .string("mailto:a@x.com")],
+                preview: "p"
+            )
+        ])
+
+        let outcomes = try await coord.pollOnce()
+
+        XCTAssertEqual(outcomes.map(\.status), [.refused])
+        XCTAssertEqual(actuator.openURLCount, 0)
+        XCTAssertEqual(transport.reports.count, 0)
+        XCTAssertEqual(transport.agentReports.count, 0)
     }
 }

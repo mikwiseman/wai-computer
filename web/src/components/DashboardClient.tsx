@@ -100,6 +100,12 @@ type DashboardView =
   | "settings";
 type DetailMode = "active" | "trash";
 type Locale = "en" | "ru";
+type OpenableInboxSourceKind = Extract<InboxSourceKind, "recording" | "item">;
+type PendingInboxSource = {
+  sourceKind: OpenableInboxSourceKind;
+  sourceId: string;
+  nonce: number;
+};
 
 const LIST_LIMIT = 100;
 const DASHBOARD_VIEW_KEYS = [
@@ -900,6 +906,9 @@ export function DashboardClient() {
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [view, setView] = useState<DashboardView>("inbox");
+  const [pendingInboxSource, setPendingInboxSource] = useState<PendingInboxSource | null>(
+    null,
+  );
   const [accountSettings, setAccountSettings] = useState<UserSettings | null>(null);
   const [transcriptionOptions, setTranscriptionOptions] = useState<TranscriptionOptions | null>(
     null,
@@ -1625,6 +1634,10 @@ export function DashboardClient() {
     setIsShortcutCheatsheetOpen(false);
   }, []);
 
+  const handlePendingInboxSourceConsumed = useCallback(() => {
+    setPendingInboxSource(null);
+  }, []);
+
   useKeyboardShortcuts({
     "/": focusSearchInput,
     n: focusRecorder,
@@ -1952,6 +1965,8 @@ export function DashboardClient() {
             copy={copy}
             folderId={null}
             folderName={null}
+            pendingSource={pendingInboxSource}
+            onPendingSourceConsumed={handlePendingInboxSourceConsumed}
             initialRecording={selectedRecording}
             recordings={recordings}
             folders={folders}
@@ -2012,7 +2027,21 @@ export function DashboardClient() {
         {view === "search" ? renderSearchView() : null}
         {view === "brain" ? (
           <section className="tool-panel">
-            <BrainPanel locale={locale} onError={setMessage} />
+            <BrainPanel
+              locale={locale}
+              onError={setMessage}
+              onOpenSource={(sourceKind, sourceId) => {
+                setActiveFolderId(null);
+                setSelectedRecording(null);
+                setSelectedMode("active");
+                setPendingInboxSource({
+                  sourceKind,
+                  sourceId,
+                  nonce: Date.now(),
+                });
+                setView("inbox");
+              }}
+            />
           </section>
         ) : null}
         {view === "dictate" ? <DictatePanel locale={locale} /> : null}
@@ -3015,6 +3044,8 @@ function UniversalInboxPanel({
   copy,
   folderId,
   folderName,
+  pendingSource,
+  onPendingSourceConsumed,
   initialRecording,
   recordings,
   folders,
@@ -3033,6 +3064,8 @@ function UniversalInboxPanel({
   copy: DashboardCopy;
   folderId?: string | null;
   folderName?: string | null;
+  pendingSource?: PendingInboxSource | null;
+  onPendingSourceConsumed?: () => void;
   initialRecording?: RecordingDetail | null;
   recordings: Recording[];
   folders: Folder[];
@@ -3067,10 +3100,69 @@ function UniversalInboxPanel({
   const [showCreate, setShowCreate] = useState(false);
   const inboxRequestId = useRef(0);
 
+  const selectInboxSource = useCallback(
+    async (source: PendingInboxSource) => {
+      setLoading(true);
+      setLoadError(null);
+      setShowCreate(false);
+      const requestId = inboxRequestId.current + 1;
+      inboxRequestId.current = requestId;
+      try {
+        let cursor: string | null = null;
+        const collected: InboxRow[] = [];
+        for (let page = 0; page < 5; page += 1) {
+          const response = await listInbox({
+            limit: 100,
+            cursor,
+            source_kind: source.sourceKind,
+            folder_id: folderId ?? undefined,
+          });
+          collected.push(...response.rows);
+          const row = response.rows.find(
+            (candidate) =>
+              candidate.source_kind === source.sourceKind &&
+              candidate.source_id === source.sourceId,
+          );
+          if (row) {
+            if (requestId !== inboxRequestId.current) return;
+            setRows(collected);
+            setNextCursor(response.next_cursor);
+            setSelectedRow(row);
+            setSelectedRecording(null);
+            return;
+          }
+          cursor = response.next_cursor;
+          if (!cursor) break;
+        }
+        if (requestId !== inboxRequestId.current) return [];
+        setRows(collected);
+        setNextCursor(cursor);
+        const message =
+          locale === "ru"
+            ? "Источник больше не найден в Инбоксе."
+            : "Source is no longer available in the Inbox.";
+        setLoadError(message);
+        onError(message);
+      } catch (error: unknown) {
+        if (requestId === inboxRequestId.current) {
+          const message = formatError(error);
+          setLoadError(message);
+          onError(message);
+        }
+      } finally {
+        if (requestId === inboxRequestId.current) {
+          setLoading(false);
+          setLoadingMore(false);
+        }
+      }
+    },
+    [folderId, locale, onError],
+  );
+
   const loadInbox = useCallback(
     async (mode: "replace" | "append" = "replace") => {
       if (mode === "append") {
-        if (!nextCursor || loadingMore) return;
+        if (!nextCursor || loadingMore) return rows;
         setLoadingMore(true);
       } else {
         setLoading(true);
@@ -3085,12 +3177,13 @@ function UniversalInboxPanel({
           status: statusFilter === "all" ? undefined : statusFilter,
           folder_id: folderId ?? undefined,
         });
-        if (requestId !== inboxRequestId.current) return;
+        if (requestId !== inboxRequestId.current) return rows;
         setLoadError(null);
         setRows((current) =>
           mode === "append" ? [...current, ...response.rows] : response.rows,
         );
         setNextCursor(response.next_cursor);
+        return response.rows;
       } catch (error: unknown) {
         if (requestId === inboxRequestId.current) {
           const message = formatError(error);
@@ -3103,8 +3196,9 @@ function UniversalInboxPanel({
           setLoadingMore(false);
         }
       }
+      return rows;
     },
-    [folderId, loadingMore, nextCursor, onError, sourceKind, statusFilter],
+    [folderId, loadingMore, nextCursor, onError, rows, sourceKind, statusFilter],
   );
 
   useEffect(() => {
@@ -3124,6 +3218,11 @@ function UniversalInboxPanel({
     setSelectedRow(recordingRowFromDetail(initialRecording));
     setShowCreate(false);
   }, [initialRecording]);
+
+  useEffect(() => {
+    if (!pendingSource) return;
+    void selectInboxSource(pendingSource).finally(() => onPendingSourceConsumed?.());
+  }, [onPendingSourceConsumed, pendingSource, selectInboxSource]);
 
   useEffect(() => {
     if (selectedRow?.source_kind !== "recording") {
@@ -3464,9 +3563,20 @@ function UniversalInboxPanel({
                   locale={locale}
                   captureMode="inbox"
                   folderId={folderId}
-                  onCreated={() => {
+                  onCreated={(item) => {
                     onItemsChanged();
-                    void loadInbox("replace");
+                    void (async () => {
+                      const refreshedRows = await loadInbox("replace");
+                      const row = refreshedRows.find(
+                        (candidate) =>
+                          candidate.source_kind === "item" &&
+                          candidate.source_id === item.id,
+                      );
+                      if (row) {
+                        setSelectedRow(row);
+                        setShowCreate(false);
+                      }
+                    })();
                   }}
                   onRecordingQueued={(recordingId) => void handleRecordingQueued(recordingId)}
                   onError={onError}
@@ -3538,7 +3648,16 @@ function UniversalInboxPanel({
             </div>
           )
         ) : selectedRow.source_kind === "item" ? (
-          <ItemDetail itemId={selectedRow.source_id} onError={onError} />
+          <ItemDetail
+            itemId={selectedRow.source_id}
+            onError={onError}
+            onDeleted={() => {
+              setSelectedRow(null);
+              onItemsChanged();
+              void loadInbox("replace");
+            }}
+            onItemChange={() => void loadInbox("replace")}
+          />
         ) : (
           <CompanionPanel
             recordings={recordings}

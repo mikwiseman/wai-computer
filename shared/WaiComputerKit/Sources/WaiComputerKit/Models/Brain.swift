@@ -135,6 +135,308 @@ public struct BrainGraph: Codable, Sendable {
     public let overview: BrainOverview?
 }
 
+// MARK: - WaiBrain Spaces (GET /api/brain/spaces)
+
+public struct BrainSpace: Codable, Identifiable, Sendable, Equatable {
+    public let id: String
+    public let ownerUserId: String
+    public let name: String
+    public let slug: String
+    public let kind: String
+    public let engineProfile: String
+    public let visibility: String
+    public let description: String?
+    public let metadata: [String: JSONValue]?
+    public let role: String?
+    public let createdAt: String?
+    public let updatedAt: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case ownerUserId = "owner_user_id"
+        case name
+        case slug
+        case kind
+        case engineProfile = "engine_profile"
+        case visibility
+        case description
+        case metadata
+        case role
+        case createdAt = "created_at"
+        case updatedAt = "updated_at"
+    }
+}
+
+public struct BrainSpacesResponse: Codable, Sendable, Equatable {
+    public let spaces: [BrainSpace]
+}
+
+public struct BrainSpaceCreateRequest: Codable, Sendable, Equatable {
+    public let name: String
+    public let kind: String?
+    public let engineProfile: String?
+    public let visibility: String?
+    public let description: String?
+
+    public init(
+        name: String,
+        kind: String? = nil,
+        engineProfile: String? = nil,
+        visibility: String? = nil,
+        description: String? = nil
+    ) {
+        self.name = name
+        self.kind = kind
+        self.engineProfile = engineProfile
+        self.visibility = visibility
+        self.description = description
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case name
+        case kind
+        case engineProfile = "engine_profile"
+        case visibility
+        case description
+    }
+}
+
+public struct BrainClaimInput: Codable, Sendable, Equatable {
+    public let kind: String
+    public let text: String
+    public let confidence: Double?
+    public let authority: String?
+    public let evidence: [JSONValue]?
+    public let salience: Double?
+    public let sourceRefs: [JSONValue]?
+    public let metadata: [String: JSONValue]?
+
+    public init(
+        kind: String,
+        text: String,
+        confidence: Double? = nil,
+        authority: String? = nil,
+        evidence: [JSONValue]? = nil,
+        salience: Double? = nil,
+        sourceRefs: [JSONValue]? = nil,
+        metadata: [String: JSONValue]? = nil
+    ) {
+        self.kind = kind
+        self.text = text
+        self.confidence = confidence
+        self.authority = authority
+        self.evidence = evidence
+        self.salience = salience
+        self.sourceRefs = sourceRefs
+        self.metadata = metadata
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case kind
+        case text
+        case confidence
+        case authority
+        case evidence
+        case salience
+        case sourceRefs = "source_refs"
+        case metadata
+    }
+}
+
+public struct BrainClaim: Codable, Identifiable, Sendable, Equatable {
+    public let id: String
+    public let spaceId: String
+    public let pageId: String?
+    public let kind: String
+    public let status: String
+    public let text: String
+    public let confidence: Double
+    public let authority: String
+    public let salience: Double?
+    public let evidence: [JSONValue]
+    public let sourceRefs: [JSONValue]
+    public let metadata: [String: JSONValue]?
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case spaceId = "space_id"
+        case pageId = "page_id"
+        case kind
+        case status
+        case text
+        case confidence
+        case authority
+        case salience
+        case evidence
+        case sourceRefs = "source_refs"
+        case metadata
+    }
+}
+
+public struct BrainPage: Codable, Identifiable, Sendable, Equatable {
+    public let id: String
+    public let spaceId: String
+    public let title: String
+    public let slug: String
+    public let kind: String
+    public let status: String
+    public let markdown: String
+    public let frontmatter: [String: JSONValue]
+    public let version: Int
+    public let claims: [BrainClaim]
+    public let createdAt: String?
+    public let updatedAt: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case spaceId = "space_id"
+        case title
+        case slug
+        case kind
+        case status
+        case markdown
+        case frontmatter
+        case version
+        case claims
+        case createdAt = "created_at"
+        case updatedAt = "updated_at"
+    }
+}
+
+public struct BrainPagesResponse: Codable, Sendable, Equatable {
+    public let pages: [BrainPage]
+}
+
+public struct BrainSpacePageCreateRequest: Codable, Sendable, Equatable {
+    public let title: String
+    public let kind: String?
+    public let markdown: String?
+    public let claims: [BrainClaimInput]
+
+    public init(
+        title: String,
+        kind: String? = nil,
+        markdown: String? = nil,
+        claims: [BrainClaimInput] = []
+    ) {
+        self.title = title
+        self.kind = kind
+        self.markdown = markdown
+        self.claims = claims
+    }
+}
+
+public struct BrainReviewPack: Codable, Identifiable, Sendable, Equatable {
+    public let id: String
+    public let spaceId: String
+    public let kind: String
+    public let risk: String
+    public let status: String
+    public let title: String
+    public let summary: String
+    public let proposals: [JSONValue]
+    public let evidence: [JSONValue]?
+    public let createdByUserId: String?
+    public let decidedByUserId: String?
+    public let decisionReason: String?
+    public let createdAt: String?
+    public let decidedAt: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case spaceId = "space_id"
+        case kind
+        case risk
+        case status
+        case title
+        case summary
+        case proposals
+        case evidence
+        case createdByUserId = "created_by_user_id"
+        case decidedByUserId = "decided_by_user_id"
+        case decisionReason = "decision_reason"
+        case createdAt = "created_at"
+        case decidedAt = "decided_at"
+    }
+}
+
+public struct BrainReviewPacksResponse: Codable, Sendable, Equatable {
+    public let reviewPacks: [BrainReviewPack]
+    public let pendingCount: Int
+
+    private enum CodingKeys: String, CodingKey {
+        case reviewPacks = "review_packs"
+        case pendingCount = "pending_count"
+    }
+}
+
+public struct BrainSpaceHome: Codable, Sendable, Equatable {
+    public let space: BrainSpace
+    public let pageCount: Int
+    public let sourceCount: Int
+    public let claimCounts: [String: Int]
+    public let sourceCounts: [String: Int]
+    public let pendingReviewCount: Int
+    public let recentPages: [BrainPage]
+    public let engineProfiles: [String]
+
+    private enum CodingKeys: String, CodingKey {
+        case space
+        case pageCount = "page_count"
+        case sourceCount = "source_count"
+        case claimCounts = "claim_counts"
+        case sourceCounts = "source_counts"
+        case pendingReviewCount = "pending_review_count"
+        case recentPages = "recent_pages"
+        case engineProfiles = "engine_profiles"
+    }
+}
+
+public struct BrainSpaceMatchRequest: Codable, Sendable, Equatable {
+    public let otherSpaceId: String
+
+    public init(otherSpaceId: String) {
+        self.otherSpaceId = otherSpaceId
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case otherSpaceId = "other_space_id"
+    }
+}
+
+public struct BrainSpaceContextRequest: Codable, Sendable, Equatable {
+    public let task: String?
+    public let limit: Int?
+
+    public init(task: String? = nil, limit: Int? = nil) {
+        self.task = task
+        self.limit = limit
+    }
+}
+
+public struct BrainContextResponse: Codable, Sendable, Equatable {
+    public let space: BrainSpace
+    public let markdown: String
+    public let claimCount: Int
+
+    private enum CodingKeys: String, CodingKey {
+        case space
+        case markdown
+        case claimCount = "claim_count"
+    }
+}
+
+public struct BrainExportFile: Codable, Sendable, Equatable {
+    public let path: String
+    public let markdown: String
+}
+
+public struct BrainExportResponse: Codable, Sendable, Equatable {
+    public let space: BrainSpace
+    public let profile: String
+    public let files: [BrainExportFile]
+}
+
 // MARK: - Entity wiki page (GET /api/entities/{id}/page)
 
 /// A source backlink on an entity's wiki page.

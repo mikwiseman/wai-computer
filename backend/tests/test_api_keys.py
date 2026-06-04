@@ -90,6 +90,27 @@ async def test_api_key_authenticates_get_requests(
 
 
 @pytest.mark.asyncio
+async def test_api_key_cannot_access_agent_or_mac_edge_surfaces(
+    client: AsyncClient, auth_headers: dict
+) -> None:
+    token = (await _create_key(client, auth_headers))["token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    capabilities = await client.get("/api/agents/capabilities", headers=headers)
+    assert capabilities.status_code == 403, capabilities.text
+
+    heartbeat = await client.post(
+        "/api/devices/heartbeat",
+        headers=auth_headers,
+        json={"platform": "macos", "name": "Owner Mac"},
+    )
+    assert heartbeat.status_code == 200, heartbeat.text
+    device_id = heartbeat.json()["device_id"]
+    drain = await client.get(f"/api/devices/{device_id}/desktop-actions", headers=headers)
+    assert drain.status_code == 403, drain.text
+
+
+@pytest.mark.asyncio
 async def test_api_key_is_read_only(client: AsyncClient, auth_headers: dict) -> None:
     token = (await _create_key(client, auth_headers))["token"]
     response = await client.post(

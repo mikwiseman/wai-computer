@@ -176,7 +176,7 @@ async def get_current_session_user(request: Request, user: CurrentUser) -> User:
     if getattr(request.state, "auth_via_api_key", False):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="API tokens cannot manage API tokens",
+            detail="API tokens cannot access this endpoint",
         )
     return user
 

@@ -589,6 +589,9 @@ async def process_staged_recording_upload(
                 },
             )
             keyterms = await load_user_keyterms(db, user_id=user_id, purpose="recording")
+            deepgram_addons = ["speaker_diarization"]
+            if keyterms:
+                deepgram_addons.append("keyterm_prompting")
             audio_data = staged_file.read()
             provider_audio_seconds = _provider_audio_seconds(
                 audio_duration_seconds=audio_duration_seconds,
@@ -622,6 +625,9 @@ async def process_staged_recording_upload(
                     audio_bytes=len(audio_data),
                     latency_ms=round((time.perf_counter() - file_stt_started_at) * 1000),
                     guard_code=exc.code,
+                    billing_mode="pre_recorded",
+                    language_mode="multilingual",
+                    addons=deepgram_addons,
                     commit=True,
                 )
                 raise
@@ -644,6 +650,9 @@ async def process_staged_recording_upload(
                     provider_status_code=exc.response.status_code,
                     provider_error_code=provider_error_code(exc),
                     error_type=type(exc).__name__,
+                    billing_mode="pre_recorded",
+                    language_mode="multilingual",
+                    addons=deepgram_addons,
                     commit=True,
                 )
                 raise
@@ -664,6 +673,9 @@ async def process_staged_recording_upload(
                     audio_bytes=len(audio_data),
                     latency_ms=round((time.perf_counter() - file_stt_started_at) * 1000),
                     error_type=type(exc).__name__,
+                    billing_mode="pre_recorded",
+                    language_mode="multilingual",
+                    addons=deepgram_addons,
                     commit=True,
                 )
                 raise
@@ -686,6 +698,9 @@ async def process_staged_recording_upload(
                     channel_count=1,
                     audio_bytes=len(audio_data),
                     latency_ms=round((time.perf_counter() - file_stt_started_at) * 1000),
+                    billing_mode="pre_recorded",
+                    language_mode="multilingual",
+                    addons=deepgram_addons,
                     commit=True,
                 )
         _recording_lifecycle_breadcrumb(

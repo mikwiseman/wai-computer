@@ -135,8 +135,20 @@ async def _record_realtime_mint_event(
         latency_ms=latency_ms,
         guard_code=guard_code,
         error_type=error_type,
+        billing_mode="streaming",
+        language_mode="multilingual",
+        addons=_realtime_deepgram_addons(purpose=purpose, keyterms=[]),
         commit=True,
     )
+
+
+def _realtime_deepgram_addons(*, purpose: str, keyterms: list[str]) -> list[str]:
+    addons: list[str] = []
+    if purpose == "recording":
+        addons.append("speaker_diarization")
+    if keyterms:
+        addons.append("keyterm_prompting")
+    return addons
 
 
 @router.post("/session", response_model=RealtimeTranscriptionSessionResponse)
@@ -504,6 +516,12 @@ async def stream_realtime_transcription(websocket: WebSocket) -> None:
             billable_seconds=0,
             channel_count=claims.channels,
             guard_code="missing_api_key",
+            billing_mode="streaming",
+            language_mode="multilingual",
+            addons=_realtime_deepgram_addons(
+                purpose=claims.purpose,
+                keyterms=claims.keyterms,
+            ),
         )
         await websocket.accept()
         await _send_error_payload(websocket, PROXY_ERROR_MISSING_API_KEY)
@@ -535,6 +553,12 @@ async def stream_realtime_transcription(websocket: WebSocket) -> None:
             billable_seconds=0,
             channel_count=claims.channels,
             guard_code="transcription_halted",
+            billing_mode="streaming",
+            language_mode="multilingual",
+            addons=_realtime_deepgram_addons(
+                purpose=claims.purpose,
+                keyterms=claims.keyterms,
+            ),
         )
         await _send_error_payload(websocket, PROXY_ERROR_HALTED)
         await _close_websocket_with_telemetry(
@@ -567,6 +591,12 @@ async def stream_realtime_transcription(websocket: WebSocket) -> None:
             billable_seconds=0,
             channel_count=claims.channels,
             guard_code="too_many_streams",
+            billing_mode="streaming",
+            language_mode="multilingual",
+            addons=_realtime_deepgram_addons(
+                purpose=claims.purpose,
+                keyterms=claims.keyterms,
+            ),
         )
         capture_sentry_anomaly(
             "realtime.stream.too_many_concurrent",
@@ -740,6 +770,23 @@ async def stream_realtime_transcription(websocket: WebSocket) -> None:
         # toward the daily ceilings, on every exit path (normal, disconnect,
         # error, or duration cap).
         elapsed_seconds = perf_counter() - stream_started
+        billable_seconds = effective_billable_seconds(
+            audio_seconds=elapsed_seconds,
+            channel_count=claims.channels,
+            provider_opened=provider_opened,
+        )
+        try:
+            await release_stream_slot(claims.subject, stream_token)
+        except Exception as exc:  # noqa: BLE001 - keep minute accounting and usage logging moving
+            logger.warning("realtime stream slot release failed error_type=%s", type(exc).__name__)
+        if provider_opened:
+            try:
+                await record_minutes(claims.subject, elapsed_seconds / 60.0)
+            except Exception as exc:  # noqa: BLE001 - analytics should still record the provider usage
+                logger.warning(
+                    "realtime minute accounting failed error_type=%s",
+                    type(exc).__name__,
+                )
         await record_deepgram_usage_event_standalone(
             user_id=claims.subject,
             operation="realtime_stream",
@@ -748,21 +795,20 @@ async def stream_realtime_transcription(websocket: WebSocket) -> None:
             model=claims.model,
             language=claims.language,
             audio_seconds=elapsed_seconds,
-            billable_seconds=effective_billable_seconds(
-                audio_seconds=elapsed_seconds,
-                channel_count=claims.channels,
-                provider_opened=provider_opened,
-            ),
+            billable_seconds=billable_seconds,
             channel_count=claims.channels,
             latency_ms=round(elapsed_seconds * 1000),
             provider_status_code=stream_provider_status_code,
             guard_code=stream_guard_code,
             error_type=stream_error_type,
+            billing_mode="streaming",
+            language_mode="multilingual",
+            addons=_realtime_deepgram_addons(
+                purpose=claims.purpose,
+                keyterms=claims.keyterms,
+            ),
             details={"provider_opened": provider_opened},
         )
-        await release_stream_slot(claims.subject, stream_token)
-        if provider_opened:
-            await record_minutes(claims.subject, elapsed_seconds / 60.0)
 
 
 async def _client_to_provider(websocket: WebSocket, provider) -> None:

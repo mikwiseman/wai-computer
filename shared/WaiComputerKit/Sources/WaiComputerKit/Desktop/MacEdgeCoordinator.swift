@@ -9,7 +9,12 @@ public protocol MacEdgeTransport: Sendable {
     ) async throws -> DeviceHeartbeatResponse
     func drainDesktopActions(deviceId: String) async throws -> DesktopActionQueue
     func reportDesktopResult(
-        chatId: String, actionId: String, status: DesktopResultStatus,
+        chatId: String, actionId: String, deviceId: String, status: DesktopResultStatus,
+        payload: [String: CompanionJSONValue]?
+    ) async throws -> DesktopResultResponse
+    func reportAgentDesktopResult(
+        agentId: String, runId: String, actionId: String, deviceId: String,
+        status: DesktopResultStatus,
         payload: [String: CompanionJSONValue]?
     ) async throws -> DesktopResultResponse
 }
@@ -59,6 +64,10 @@ public actor MacEdgeCoordinator {
         let queue = try await transport.drainDesktopActions(deviceId: heartbeat.deviceId)
         var outcomes: [DesktopActuationOutcome] = []
         for action in queue.actions {
+            if let refusal = Self.refusalForMalformedTarget(action) {
+                outcomes.append(refusal)
+                continue
+            }
             // Execute at most once: reuse a prior outcome if the side effect
             // already ran but its report has not yet been accepted.
             let outcome: DesktopActuationOutcome
@@ -71,12 +80,7 @@ public actor MacEdgeCoordinator {
             outcomes.append(outcome)
 
             do {
-                _ = try await transport.reportDesktopResult(
-                    chatId: action.chatId,
-                    actionId: action.actionId,
-                    status: outcome.status,
-                    payload: Self.reportPayload(for: outcome)
-                )
+                try await report(outcome, for: action, deviceId: heartbeat.deviceId)
                 // Server is now authoritative; the action leaves the queue.
                 unreported[action.actionId] = nil
             } catch {
@@ -85,6 +89,46 @@ public actor MacEdgeCoordinator {
             }
         }
         return outcomes
+    }
+
+    private static func refusalForMalformedTarget(
+        _ action: DesktopActionItem
+    ) -> DesktopActuationOutcome? {
+        if action.chatId != nil {
+            return nil
+        }
+        guard action.agentId != nil, action.agentRunId != nil else {
+            return .refused(reason: "action report target missing")
+        }
+        return nil
+    }
+
+    private func report(
+        _ outcome: DesktopActuationOutcome,
+        for action: DesktopActionItem,
+        deviceId: String
+    ) async throws {
+        if let chatId = action.chatId {
+            _ = try await transport.reportDesktopResult(
+                chatId: chatId,
+                actionId: action.actionId,
+                deviceId: deviceId,
+                status: outcome.status,
+                payload: Self.reportPayload(for: outcome)
+            )
+            return
+        }
+        guard let agentId = action.agentId, let runId = action.agentRunId else {
+            throw URLError(.badServerResponse)
+        }
+        _ = try await transport.reportAgentDesktopResult(
+            agentId: agentId,
+            runId: runId,
+            actionId: action.actionId,
+            deviceId: deviceId,
+            status: outcome.status,
+            payload: Self.reportPayload(for: outcome)
+        )
     }
 
     /// The result payload to report: the captured UI for an observe, a generic

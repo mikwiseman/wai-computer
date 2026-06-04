@@ -1,17 +1,26 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  acceptBrainReviewPack,
   acceptMemoryProposal,
+  exportBrainSpace,
   getBrainGraph,
+  getBrainSpaceHome,
+  listBrainReviewPacks,
+  listBrainSpaces,
   listMemoryProposals,
+  rejectBrainReviewPack,
   rejectMemoryProposal,
 } from "@/lib/api";
 import type {
   BrainGraph,
   BrainGraphNode,
   BrainOverviewEntity,
+  BrainReviewPack,
   BrainSourceCoverage,
+  BrainSpace,
+  BrainSpaceHome,
   MemoryProposal,
 } from "@/lib/types";
 import { BrainGraphView } from "@/components/BrainGraphView";
@@ -20,6 +29,7 @@ import { EntityWikiView } from "@/components/EntityWikiView";
 interface BrainPanelProps {
   locale?: string;
   onError?: (message: string) => void;
+  onOpenSource?: (sourceKind: "recording" | "item", sourceId: string) => void;
 }
 
 type BrainTab = "overview" | "index" | "wiki" | "graph";
@@ -37,7 +47,7 @@ const ENTITY_KINDS: Array<{ key: string; en: string; ru: string }> = [
  * refetches the backend ego graph around a clicked entity. Honest empty + error
  * states (no silent fallback).
  */
-export function BrainPanel({ locale = "en", onError }: BrainPanelProps) {
+export function BrainPanel({ locale = "en", onError, onOpenSource }: BrainPanelProps) {
   const [graph, setGraph] = useState<BrainGraph | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -48,9 +58,17 @@ export function BrainPanel({ locale = "en", onError }: BrainPanelProps) {
   const [pendingReviewCount, setPendingReviewCount] = useState(0);
   const [reviewError, setReviewError] = useState<string | null>(null);
   const [actingProposalIds, setActingProposalIds] = useState<Set<string>>(new Set());
+  const [spaces, setSpaces] = useState<BrainSpace[]>([]);
+  const [selectedSpaceId, setSelectedSpaceId] = useState<string | null>(null);
+  const [spaceHome, setSpaceHome] = useState<BrainSpaceHome | null>(null);
+  const [reviewPacks, setReviewPacks] = useState<BrainReviewPack[]>([]);
+  const [spaceError, setSpaceError] = useState<string | null>(null);
+  const [actingReviewPackIds, setActingReviewPackIds] = useState<Set<string>>(new Set());
+  const [exportMessage, setExportMessage] = useState<string | null>(null);
   const [selectedEntity, setSelectedEntity] = useState<{ id: string; name: string } | null>(
     null,
   );
+  const hasLoadedRef = useRef(false);
 
   const openWiki = useCallback((id: string, name: string) => {
     setSelectedEntity({ id, name });
@@ -63,7 +81,8 @@ export function BrainPanel({ locale = "en", onError }: BrainPanelProps) {
   );
 
   const load = useCallback(async () => {
-    setLoading(true);
+    const showFullLoading = !hasLoadedRef.current;
+    if (showFullLoading) setLoading(true);
     setError(null);
     try {
       setGraph(
@@ -77,8 +96,34 @@ export function BrainPanel({ locale = "en", onError }: BrainPanelProps) {
       const message = err instanceof Error ? err.message : "Couldn't load your brain.";
       setError(message);
       onError?.(message);
+      hasLoadedRef.current = true;
       setLoading(false);
       return;
+    }
+    try {
+      const spaceList = await listBrainSpaces();
+      setSpaces(spaceList.spaces);
+      const nextSpaceId =
+        selectedSpaceId && spaceList.spaces.some((space) => space.id === selectedSpaceId)
+          ? selectedSpaceId
+          : (spaceList.spaces[0]?.id ?? null);
+      setSelectedSpaceId(nextSpaceId);
+      if (nextSpaceId) {
+        const [home, packs] = await Promise.all([
+          getBrainSpaceHome(nextSpaceId),
+          listBrainReviewPacks(nextSpaceId, { status: "pending" }),
+        ]);
+        setSpaceHome(home);
+        setReviewPacks(packs.review_packs);
+      } else {
+        setSpaceHome(null);
+        setReviewPacks([]);
+      }
+      setSpaceError(null);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Couldn't load Brain spaces.";
+      setSpaceError(message);
+      onError?.(message);
     }
     try {
       const review = await listMemoryProposals({ status: "pending", limit: 50 });
@@ -91,9 +136,10 @@ export function BrainPanel({ locale = "en", onError }: BrainPanelProps) {
       setReviewError(message);
       onError?.(message);
     } finally {
+      hasLoadedRef.current = true;
       setLoading(false);
     }
-  }, [focus, onError]);
+  }, [focus, onError, selectedSpaceId]);
 
   useEffect(() => {
     void load();
@@ -112,6 +158,8 @@ export function BrainPanel({ locale = "en", onError }: BrainPanelProps) {
   const stats = graph?.stats ?? {};
   const isEmpty = (graph?.nodes.length ?? 0) === 0;
   const overview = graph?.overview;
+  const selectedSpace = spaces.find((space) => space.id === selectedSpaceId) ?? null;
+  const spaceReviewCount = spaceHome?.pending_review_count ?? reviewPacks.length;
 
   const decideProposal = useCallback(
     async (id: string, action: (id: string) => Promise<MemoryProposal>) => {
@@ -136,6 +184,63 @@ export function BrainPanel({ locale = "en", onError }: BrainPanelProps) {
       }
     },
     [actingProposalIds, onError],
+  );
+
+  const decideReviewPack = useCallback(
+    async (id: string, decision: "accept" | "reject") => {
+      if (!selectedSpaceId || actingReviewPackIds.has(id)) return;
+      setActingReviewPackIds((current) => new Set(current).add(id));
+      try {
+        if (decision === "accept") {
+          await acceptBrainReviewPack(selectedSpaceId, id);
+        } else {
+          await rejectBrainReviewPack(selectedSpaceId, id);
+        }
+        setReviewPacks((current) => current.filter((pack) => pack.id !== id));
+        setSpaceHome((current) =>
+          current
+            ? {
+                ...current,
+                pending_review_count: Math.max(0, current.pending_review_count - 1),
+              }
+            : current,
+        );
+        setSpaceError(null);
+      } catch (err) {
+        const message =
+          err instanceof Error ? err.message : "Couldn't update the Space review pack.";
+        setSpaceError(message);
+        onError?.(message);
+      } finally {
+        setActingReviewPackIds((current) => {
+          const next = new Set(current);
+          next.delete(id);
+          return next;
+        });
+      }
+    },
+    [actingReviewPackIds, onError, selectedSpaceId],
+  );
+
+  const runExport = useCallback(
+    async (profile: string) => {
+      if (!selectedSpaceId) return;
+      setExportMessage(null);
+      try {
+        const exported = await exportBrainSpace(selectedSpaceId, profile);
+        setExportMessage(
+          t(
+            `${exported.profile} export ready: ${exported.files.length} files.`,
+            `Экспорт ${exported.profile}: ${exported.files.length} файлов.`,
+          ),
+        );
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Couldn't export this Space.";
+        setSpaceError(message);
+        onError?.(message);
+      }
+    },
+    [onError, selectedSpaceId, t],
   );
 
   const evidenceLabel = useCallback(
@@ -185,6 +290,14 @@ export function BrainPanel({ locale = "en", onError }: BrainPanelProps) {
     [t],
   );
 
+  const openSource = useCallback(
+    (sourceKind: string, sourceId: string) => {
+      if (sourceKind !== "recording" && sourceKind !== "item") return;
+      onOpenSource?.(sourceKind, sourceId);
+    },
+    [onOpenSource],
+  );
+
   const coverageBlock = (
     title: string,
     coverage: BrainSourceCoverage | undefined,
@@ -229,6 +342,134 @@ export function BrainPanel({ locale = "en", onError }: BrainPanelProps) {
       </span>
       <small>{entity.source_count}</small>
     </button>
+  );
+
+  const spaceCockpitBody = (
+    <section className="brain-panel__section">
+      <div className="brain-panel__section-head">
+        <h3>{t("Spaces", "Пространства")}</h3>
+        <span>{spaces.length}</span>
+      </div>
+      {spaceError ? <p className="brain-panel__error-detail">{spaceError}</p> : null}
+      {spaces.length > 0 ? (
+        <>
+          <div className="brain-panel__space-toolbar">
+            <label>
+              <span>{t("Space", "Пространство")}</span>
+              <select
+                value={selectedSpaceId ?? ""}
+                onChange={(event) => {
+                  setSelectedSpaceId(event.target.value || null);
+                  setExportMessage(null);
+                }}
+              >
+                {spaces.map((space) => (
+                  <option key={space.id} value={space.id}>
+                    {space.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {selectedSpace ? (
+              <div className="brain-panel__space-meta">
+                <strong>{selectedSpace.engine_profile}</strong>
+                <span>{selectedSpace.role}</span>
+                <span>{selectedSpace.kind}</span>
+              </div>
+            ) : null}
+          </div>
+          <div className="brain-panel__coverage">
+            <div className="brain-panel__coverage-block">
+              <span>{t("Pages", "Страницы")}</span>
+              <strong>{spaceHome?.page_count ?? 0}</strong>
+              <em>{t("canonical Markdown", "канонический Markdown")}</em>
+            </div>
+            <div className="brain-panel__coverage-block">
+              <span>{t("Sources", "Источники")}</span>
+              <strong>{spaceHome?.source_count ?? 0}</strong>
+              <em>{Object.keys(spaceHome?.source_counts ?? {}).join(" · ") || "none"}</em>
+            </div>
+            <div className="brain-panel__coverage-block">
+              <span>{t("Claims", "Утверждения")}</span>
+              <strong>
+                {Object.values(spaceHome?.claim_counts ?? {}).reduce((sum, count) => sum + count, 0)}
+              </strong>
+              <em>
+                {Object.entries(spaceHome?.claim_counts ?? {})
+                  .map(([kind, count]) => `${kind} ${count}`)
+                  .join(" · ") || "none"}
+              </em>
+            </div>
+            <div className="brain-panel__coverage-block">
+              <span>{t("Review packs", "Пакеты проверки")}</span>
+              <strong>{spaceReviewCount}</strong>
+              <em>{t("Space governance", "управление пространством")}</em>
+            </div>
+          </div>
+          {reviewPacks.length > 0 ? (
+            <div className="brain-panel__rows brain-panel__rows--spaced">
+              {reviewPacks.map((pack) => {
+                const acting = actingReviewPackIds.has(pack.id);
+                return (
+                  <article key={pack.id} className="brain-panel__proposal">
+                    <div>
+                      <p className="brain-panel__proposal-meta">
+                        <span>{pack.kind}</span>
+                        <span>{pack.risk}</span>
+                      </p>
+                      <p className="brain-panel__proposal-content">{pack.title}</p>
+                      <p className="brain-panel__proposal-detail">{pack.summary}</p>
+                    </div>
+                    <div className="brain-panel__proposal-actions">
+                      <button
+                        type="button"
+                        aria-label={t("Reject review pack", "Отклонить пакет")}
+                        disabled={acting}
+                        onClick={() => void decideReviewPack(pack.id, "reject")}
+                      >
+                        ×
+                      </button>
+                      <button
+                        type="button"
+                        aria-label={t("Accept review pack", "Принять пакет")}
+                        disabled={acting}
+                        onClick={() => void decideReviewPack(pack.id, "accept")}
+                      >
+                        ✓
+                      </button>
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          ) : null}
+          {spaceHome?.recent_pages.length ? (
+            <div className="brain-panel__rows brain-panel__rows--spaced">
+              {spaceHome.recent_pages.map((page) => (
+                <div key={page.id} className="brain-panel__source-row">
+                  <strong>{page.title}</strong>
+                  <em>
+                    {page.kind} · {page.claims.length} {t("claims", "утверждений")}
+                  </em>
+                </div>
+              ))}
+            </div>
+          ) : null}
+          <div className="brain-panel__export-row">
+            {(spaceHome?.engine_profiles ?? ["obsidian", "gbrain", "mempalace"]).map((profile) => (
+              <button key={profile} type="button" onClick={() => void runExport(profile)}>
+                {profile}
+              </button>
+            ))}
+          </div>
+          {exportMessage ? (
+            <p className="brain-panel__proposal-detail">{exportMessage}</p>
+          ) : null}
+        </>
+      ) : (
+        <p className="brain-panel__empty">{t("No Spaces yet.", "Пространств пока нет.")}</p>
+      )}
+    </section>
   );
 
   const reviewBody = (
@@ -290,6 +531,7 @@ export function BrainPanel({ locale = "en", onError }: BrainPanelProps) {
 
   const overviewBody = (
     <>
+      {spaceCockpitBody}
       <section className="brain-panel__section">
         <h3>{t("Coverage", "Покрытие")}</h3>
         <div className="brain-panel__coverage">
@@ -322,7 +564,12 @@ export function BrainPanel({ locale = "en", onError }: BrainPanelProps) {
           <h3>{t("Recently organized", "Недавно организовано")}</h3>
           <div className="brain-panel__rows">
             {overview.recent_sources.map((source) => (
-              <div key={source.id} className="brain-panel__source-row">
+              <button
+                key={source.id}
+                type="button"
+                className="brain-panel__source-row brain-panel__source-row--button"
+                onClick={() => openSource(source.source_kind, source.source_id)}
+              >
                 <strong>{source.title}</strong>
                 <em>
                   {t(
@@ -330,7 +577,7 @@ export function BrainPanel({ locale = "en", onError }: BrainPanelProps) {
                     `${source.entity_count} сущностей · ${sourceKindLabel(source.source_kind)}`,
                   )}
                 </em>
-              </div>
+              </button>
             ))}
           </div>
         </section>
@@ -456,6 +703,7 @@ export function BrainPanel({ locale = "en", onError }: BrainPanelProps) {
             entityId={selectedEntity.id}
             onNavigate={(id, name) => setSelectedEntity({ id, name })}
             onError={onError}
+            onOpenSource={openSource}
             locale={locale}
           />
         ) : (
@@ -472,6 +720,7 @@ export function BrainPanel({ locale = "en", onError }: BrainPanelProps) {
           showSources={showSources}
           onToggleSources={setShowSources}
           onFocusEntity={(id) => setFocus(id)}
+          onOpenSource={openSource}
           focused={focus !== null}
           onResetFocus={() => setFocus(null)}
           locale={locale}

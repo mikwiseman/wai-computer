@@ -534,10 +534,136 @@ public actor APIClient {
         return try await request(.GET, path: "/api/system/data-map")
     }
 
+    public func getSelfHostMigrationContract() async throws -> SelfHostMigrationContract {
+        return try await request(.GET, path: "/api/self-host/migration/contract")
+    }
+
     public func startSelfHostProvision(
         _ request: SelfHostProvisionRequest
     ) async throws -> SelfHostProvisionResponse {
         return try await self.request(.POST, path: "/api/self-host/provision", body: request)
+    }
+
+    // MARK: - Agents
+
+    public func getAgentCapabilities() async throws -> AgentCapabilitiesResponse {
+        return try await request(.GET, path: "/api/agents/capabilities")
+    }
+
+    public func listAgents(limit: Int? = nil) async throws -> AgentListResponse {
+        let queryItems = limit.map { [URLQueryItem(name: "limit", value: "\($0)")] }
+        return try await request(.GET, path: "/api/agents", queryItems: queryItems)
+    }
+
+    public func createAgent(_ request: AgentCreateRequest) async throws -> AgentDefinition {
+        return try await self.request(.POST, path: "/api/agents", body: request)
+    }
+
+    public func updateAgent(
+        agentId: String,
+        _ request: AgentUpdateRequest
+    ) async throws -> AgentDefinition {
+        return try await self.request(.PATCH, path: "/api/agents/\(agentId)", body: request)
+    }
+
+    public func deleteAgent(agentId: String) async throws {
+        try await requestNoContent(.DELETE, path: "/api/agents/\(agentId)")
+    }
+
+    public func startAgentRun(
+        agentId: String,
+        _ request: StartAgentRunRequest = StartAgentRunRequest()
+    ) async throws -> AgentRun {
+        return try await self.request(.POST, path: "/api/agents/\(agentId)/runs", body: request)
+    }
+
+    public func listAgentRuns(
+        agentId: String,
+        status: String? = nil,
+        limit: Int? = nil
+    ) async throws -> AgentRunListResponse {
+        var queryItems: [URLQueryItem] = []
+        if let status {
+            queryItems.append(URLQueryItem(name: "status", value: status))
+        }
+        if let limit {
+            queryItems.append(URLQueryItem(name: "limit", value: "\(limit)"))
+        }
+        return try await request(
+            .GET,
+            path: "/api/agents/\(agentId)/runs",
+            queryItems: queryItems.isEmpty ? nil : queryItems
+        )
+    }
+
+    public func listAllAgentRuns(status: String? = nil, limit: Int? = nil) async throws -> AgentRunListResponse {
+        var queryItems: [URLQueryItem] = []
+        if let status {
+            queryItems.append(URLQueryItem(name: "status", value: status))
+        }
+        if let limit {
+            queryItems.append(URLQueryItem(name: "limit", value: "\(limit)"))
+        }
+        return try await request(
+            .GET,
+            path: "/api/agents/runs",
+            queryItems: queryItems.isEmpty ? nil : queryItems
+        )
+    }
+
+    public func getAgentRun(agentId: String, runId: String) async throws -> AgentRun {
+        return try await request(.GET, path: "/api/agents/\(agentId)/runs/\(runId)")
+    }
+
+    public func listAgentRunSteps(agentId: String, runId: String) async throws -> AgentStepListResponse {
+        return try await request(.GET, path: "/api/agents/\(agentId)/runs/\(runId)/steps")
+    }
+
+    public func cancelAgentRun(
+        agentId: String,
+        runId: String,
+        reason: String? = nil
+    ) async throws -> AgentRun {
+        struct CancelBody: Codable {
+            let reason: String?
+        }
+        return try await request(
+            .POST,
+            path: "/api/agents/\(agentId)/runs/\(runId)/cancel",
+            body: CancelBody(reason: reason)
+        )
+    }
+
+    public func listAgentActions(status: String? = "pending", limit: Int? = nil) async throws -> AgentActionListResponse {
+        var queryItems: [URLQueryItem] = []
+        if let status {
+            queryItems.append(URLQueryItem(name: "status", value: status))
+        }
+        if let limit {
+            queryItems.append(URLQueryItem(name: "limit", value: "\(limit)"))
+        }
+        return try await request(
+            .GET,
+            path: "/api/agents/actions",
+            queryItems: queryItems.isEmpty ? nil : queryItems
+        )
+    }
+
+    public func listAgentRunActions(agentId: String, runId: String) async throws -> AgentActionListResponse {
+        return try await request(.GET, path: "/api/agents/\(agentId)/runs/\(runId)/actions")
+    }
+
+    public func resolveAgentAction(
+        agentId: String,
+        runId: String,
+        actionId: String,
+        _ request: ResolveAgentActionRequest
+    ) async throws -> ResolveAgentActionResponse {
+        return try await self.request(
+            .POST,
+            path: "/api/agents/\(agentId)/runs/\(runId)/actions/\(actionId)/resolve",
+            body: request
+        )
     }
 
     // MARK: - Devices / Mac-edge channel
@@ -561,13 +687,31 @@ public actor APIClient {
     public func reportDesktopResult(
         chatId: String,
         actionId: String,
+        deviceId: String,
         status: DesktopResultStatus,
         payload: [String: CompanionJSONValue]? = nil
     ) async throws -> DesktopResultResponse {
-        let body = DesktopResultRequest(status: status, payload: payload)
+        let body = DesktopResultRequest(deviceId: deviceId, status: status, payload: payload)
         return try await request(
             .POST,
             path: "/api/companion/chats/\(chatId)/actions/\(actionId)/desktop_result",
+            body: body
+        )
+    }
+
+    /// Report the outcome of an agent-originated desktop action back to the cloud.
+    public func reportAgentDesktopResult(
+        agentId: String,
+        runId: String,
+        actionId: String,
+        deviceId: String,
+        status: DesktopResultStatus,
+        payload: [String: CompanionJSONValue]? = nil
+    ) async throws -> DesktopResultResponse {
+        let body = DesktopResultRequest(deviceId: deviceId, status: status, payload: payload)
+        return try await request(
+            .POST,
+            path: "/api/agents/\(agentId)/runs/\(runId)/actions/\(actionId)/desktop_result",
             body: body
         )
     }
@@ -1282,6 +1426,99 @@ public actor APIClient {
             queryItems.append(URLQueryItem(name: "focus", value: focus))
         }
         return try await request(.GET, path: "/api/brain/graph", queryItems: queryItems)
+    }
+
+    // MARK: - WaiBrain Spaces
+
+    public func listBrainSpaces() async throws -> BrainSpacesResponse {
+        return try await request(.GET, path: "/api/brain/spaces")
+    }
+
+    public func createBrainSpace(_ input: BrainSpaceCreateRequest) async throws -> BrainSpace {
+        return try await request(.POST, path: "/api/brain/spaces", body: input)
+    }
+
+    public func getBrainSpaceHome(spaceId: String) async throws -> BrainSpaceHome {
+        return try await request(.GET, path: "/api/brain/spaces/\(spaceId)/home")
+    }
+
+    public func listBrainSpacePages(spaceId: String) async throws -> BrainPagesResponse {
+        return try await request(.GET, path: "/api/brain/spaces/\(spaceId)/pages")
+    }
+
+    public func createBrainSpacePage(
+        spaceId: String,
+        _ input: BrainSpacePageCreateRequest
+    ) async throws -> BrainPage {
+        return try await request(.POST, path: "/api/brain/spaces/\(spaceId)/pages", body: input)
+    }
+
+    public func listBrainReviewPacks(
+        spaceId: String,
+        status: String? = "pending"
+    ) async throws -> BrainReviewPacksResponse {
+        let queryItems = status.map { [URLQueryItem(name: "status", value: $0)] }
+        return try await request(
+            .GET,
+            path: "/api/brain/spaces/\(spaceId)/review-packs",
+            queryItems: queryItems
+        )
+    }
+
+    public func acceptBrainReviewPack(
+        spaceId: String,
+        packId: String
+    ) async throws -> BrainReviewPack {
+        return try await request(
+            .POST,
+            path: "/api/brain/spaces/\(spaceId)/review-packs/\(packId)/accept"
+        )
+    }
+
+    public func rejectBrainReviewPack(
+        spaceId: String,
+        packId: String,
+        reason: String? = nil
+    ) async throws -> BrainReviewPack {
+        return try await request(
+            .POST,
+            path: "/api/brain/spaces/\(spaceId)/review-packs/\(packId)/reject",
+            body: ["reason": reason.map(JSONValue.string) ?? .null]
+        )
+    }
+
+    public func matchBrainSpaces(
+        spaceId: String,
+        otherSpaceId: String
+    ) async throws -> BrainReviewPack {
+        return try await request(
+            .POST,
+            path: "/api/brain/spaces/\(spaceId)/match",
+            body: BrainSpaceMatchRequest(otherSpaceId: otherSpaceId)
+        )
+    }
+
+    public func buildBrainContext(
+        spaceId: String,
+        task: String? = nil,
+        limit: Int? = nil
+    ) async throws -> BrainContextResponse {
+        return try await request(
+            .POST,
+            path: "/api/brain/spaces/\(spaceId)/context",
+            body: BrainSpaceContextRequest(task: task, limit: limit)
+        )
+    }
+
+    public func exportBrainSpace(
+        spaceId: String,
+        profile: String = "obsidian"
+    ) async throws -> BrainExportResponse {
+        return try await request(
+            .GET,
+            path: "/api/brain/spaces/\(spaceId)/export",
+            queryItems: [URLQueryItem(name: "profile", value: profile)]
+        )
     }
 
     /// The wiki page for one entity: source backlinks + related entities.

@@ -11,6 +11,7 @@ from datetime import datetime, timedelta, timezone
 from hashlib import sha256
 from html import escape
 from typing import Any
+from uuid import UUID, uuid4
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request, Response, status
 from pydantic import BaseModel, Field
@@ -21,7 +22,24 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import CurrentUser, Database
 from app.config import get_settings
-from app.core.companion import CompanionError, ErrorEvent, TokenEvent, TurnContext, run_turn
+from app.core.agent_dispatch import AgentDispatchError, enqueue_agent_run
+from app.core.agent_runtime import cancel_run, execute_agent_step, run_job, static_config_planner
+from app.core.companion import (
+    ActionProposedEvent,
+    CompanionError,
+    ErrorEvent,
+    TokenEvent,
+    TurnContext,
+    run_turn,
+)
+from app.core.companion_actions import (
+    ApprovalError,
+    mark_executed,
+    mark_failed,
+    resolve_action,
+    verify_committable,
+)
+from app.core.companion_actuators import ActuationError, execute_action
 from app.core.document_extract import (
     SUPPORTED_DOCUMENT_EXTENSIONS,
     DocumentExtractionError,
@@ -47,7 +65,9 @@ from app.core.telegram_client import (
     telegram_chunks,
 )
 from app.db.session import get_db_context
+from app.models.agent import Agent, AgentRun, AgentStep
 from app.models.companion import Conversation
+from app.models.companion_pending_action import CompanionPendingAction
 from app.models.item import ItemSummary
 from app.models.telegram import (
     TelegramAccount,
@@ -72,6 +92,14 @@ TELEGRAM_BOT_COMMANDS = [
     {"command": "start", "description": "Привязать Telegram и показать статус"},
     {"command": "help", "description": "Что умеет WaiComputer в Telegram"},
     {"command": "link", "description": "Получить новый код привязки"},
+    {"command": "agents", "description": "Показать доступных агентов"},
+    {"command": "run", "description": "Запустить агента"},
+    {"command": "runs", "description": "Последние запуски агентов"},
+    {"command": "run_status", "description": "Статус запуска агента"},
+    {"command": "cancel_run", "description": "Остановить запуск агента"},
+    {"command": "approvals", "description": "Действия, ожидающие подтверждения"},
+    {"command": "approve", "description": "Подтвердить действие один раз"},
+    {"command": "reject", "description": "Отклонить действие"},
     {"command": "meetings", "description": "Последние встречи"},
     {"command": "search", "description": "Поиск по записям и расшифровкам"},
     {"command": "settings", "description": "Статус привязки и настройки"},
@@ -187,6 +215,14 @@ def _telegram_help_text(*, linked: bool) -> str:
     return (
         f"{status_line}\n\n"
         "Что можно делать:\n"
+        "/agents — список агентов\n"
+        "/run <агент> <задача> — запустить агента\n"
+        "/runs — последние запуски\n"
+        "/run_status <run_id> — статус запуска\n"
+        "/cancel_run <run_id> — остановить запуск\n"
+        "/approvals — действия на подтверждение\n"
+        "/approve <action_id> — подтвердить один раз\n"
+        "/reject <action_id> — отклонить действие\n"
         "/meetings — последние встречи\n"
         "/search <запрос> — поиск по записям, саммари и расшифровкам\n"
         "/link — получить новый код привязки\n"
@@ -978,6 +1014,449 @@ async def _handle_settings_command(
     )
 
 
+def _short_uuid(value: Any) -> str:
+    return str(value)[:8]
+
+
+async def _load_agent_ref(
+    db: AsyncSession,
+    *,
+    user_id: Any,
+    ref: str,
+) -> Agent | None:
+    clean = ref.strip()
+    if not clean:
+        return None
+    try:
+        agent_id = UUID(clean)
+    except ValueError:
+        agent_id = None
+    if agent_id is not None:
+        return (
+            await db.execute(
+                select(Agent).where(Agent.id == agent_id, Agent.user_id == user_id)
+            )
+        ).scalar_one_or_none()
+
+    result = await db.execute(
+        select(Agent).where(Agent.user_id == user_id).order_by(Agent.created_at.desc())
+    )
+    normalized = clean.casefold()
+    agents = list(result.scalars().all())
+    for agent in agents:
+        if agent.name.casefold() == normalized:
+            return agent
+    if len(clean) >= 8:
+        matches = [agent for agent in agents if str(agent.id).startswith(clean)]
+        if len(matches) == 1:
+            return matches[0]
+    return None
+
+
+async def _load_run_ref(
+    db: AsyncSession,
+    *,
+    user_id: Any,
+    ref: str,
+) -> AgentRun | None:
+    clean = ref.strip()
+    try:
+        run_id = UUID(clean)
+    except ValueError:
+        run_id = None
+    if run_id is not None:
+        return (
+            await db.execute(
+                select(AgentRun).where(AgentRun.id == run_id, AgentRun.user_id == user_id)
+            )
+        ).scalar_one_or_none()
+    if len(clean) < 8:
+        return None
+    result = await db.execute(
+        select(AgentRun)
+        .where(AgentRun.user_id == user_id)
+        .order_by(AgentRun.created_at.desc())
+        .limit(100)
+    )
+    matches = [run for run in result.scalars().all() if str(run.id).startswith(clean)]
+    if len(matches) == 1:
+        return matches[0]
+    return None
+
+
+async def _handle_agents_command(
+    db: AsyncSession,
+    client: TelegramBotClient,
+    *,
+    message: dict[str, Any],
+    account: TelegramAccount,
+) -> None:
+    chat_id = _telegram_chat_id(message)
+    if chat_id is None:
+        return
+    if await _ensure_active_user(db, client, message=message, account=account) is None:
+        return
+    result = await db.execute(
+        select(Agent)
+        .where(Agent.user_id == account.user_id)
+        .order_by(Agent.created_at.desc())
+        .limit(20)
+    )
+    agents = list(result.scalars().all())
+    if not agents:
+        text = "Агентов пока нет. Создай агента в WaiComputer Web или Mac."
+    else:
+        lines = ["Агенты:"]
+        for agent in agents:
+            state = "on" if agent.enabled else "off"
+            lines.append(f"{_short_uuid(agent.id)} · {agent.name} · {agent.kind} · {state}")
+        text = "\n".join(lines)
+    await client.send_message(chat_id, text, reply_to_message_id=message.get("message_id"))
+
+
+def _split_agent_run_arg(arg: str) -> tuple[str, str]:
+    clean = arg.strip()
+    if not clean:
+        return "", ""
+    ref, _, objective = clean.partition(" ")
+    return ref.strip(), objective.strip()
+
+
+async def _handle_run_command(
+    db: AsyncSession,
+    client: TelegramBotClient,
+    *,
+    message: dict[str, Any],
+    account: TelegramAccount,
+    arg: str,
+) -> None:
+    chat_id = _telegram_chat_id(message)
+    if chat_id is None:
+        return
+    if await _ensure_active_user(db, client, message=message, account=account) is None:
+        return
+    agent_ref, objective = _split_agent_run_arg(arg)
+    if not agent_ref:
+        await client.send_message(
+            chat_id,
+            "Формат: /run <agent_id или имя> <задача>",
+            reply_to_message_id=message.get("message_id"),
+        )
+        return
+    agent = await _load_agent_ref(db, user_id=account.user_id, ref=agent_ref)
+    if agent is None:
+        await client.send_message(
+            chat_id,
+            "Агент не найден. Посмотри /agents.",
+            reply_to_message_id=message.get("message_id"),
+        )
+        return
+    if not agent.enabled:
+        await client.send_message(
+            chat_id,
+            "Агент выключен. Включи его в WaiComputer перед запуском.",
+            reply_to_message_id=message.get("message_id"),
+        )
+        return
+
+    message_id = message.get("message_id")
+    trigger_suffix = f"{chat_id}:{message_id}" if isinstance(message_id, int) else uuid4().hex
+    trigger_key = f"telegram:{agent.id}:{trigger_suffix}"
+    existing = (
+        await db.execute(
+            select(AgentRun).where(
+                AgentRun.user_id == account.user_id,
+                AgentRun.trigger_key == trigger_key,
+            )
+        )
+    ).scalar_one_or_none()
+    if existing is None:
+        existing = AgentRun(
+            agent_id=agent.id,
+            user_id=account.user_id,
+            trigger_key=trigger_key,
+            trigger_kind="telegram",
+            trigger_payload={
+                "source": "telegram",
+                "objective": objective,
+                "telegram_message_id": message_id,
+            },
+        )
+        db.add(existing)
+        await db.flush()
+        await db.commit()
+        try:
+            enqueue_agent_run(existing.id)
+        except AgentDispatchError as exc:
+            existing.status = "failed"
+            existing.error = exc.message
+            existing.finished_at = datetime.now(timezone.utc)
+            await db.flush()
+            await db.commit()
+            await client.send_message(
+                chat_id,
+                f"Не смог запустить агента: {exc.message}",
+                reply_to_message_id=message.get("message_id"),
+            )
+            return
+
+    await client.send_message(
+        chat_id,
+        (
+            f"Запустил: {agent.name}\n"
+            f"run_id: {existing.id}\n"
+            f"status: {existing.status}"
+        ),
+        reply_to_message_id=message.get("message_id"),
+    )
+
+
+async def _handle_runs_command(
+    db: AsyncSession,
+    client: TelegramBotClient,
+    *,
+    message: dict[str, Any],
+    account: TelegramAccount,
+) -> None:
+    chat_id = _telegram_chat_id(message)
+    if chat_id is None:
+        return
+    if await _ensure_active_user(db, client, message=message, account=account) is None:
+        return
+    result = await db.execute(
+        select(AgentRun)
+        .where(AgentRun.user_id == account.user_id)
+        .order_by(AgentRun.created_at.desc())
+        .limit(10)
+    )
+    runs = list(result.scalars().all())
+    if not runs:
+        text = "Запусков агентов пока нет."
+    else:
+        lines = ["Последние запуски:"]
+        for run in runs:
+            run_label = (
+                f"{_short_uuid(run.id)} · {run.status} · {run.trigger_kind} · "
+                f"agent {_short_uuid(run.agent_id)}"
+            )
+            lines.append(
+                run_label
+            )
+        text = "\n".join(lines)
+    await client.send_message(chat_id, text, reply_to_message_id=message.get("message_id"))
+
+
+async def _format_run_status(db: AsyncSession, run: AgentRun) -> str:
+    steps_count = (
+        await db.execute(select(AgentStep).where(AgentStep.run_id == run.id))
+    ).scalars().all()
+    pending_actions = (
+        await db.execute(
+            select(CompanionPendingAction).where(
+                CompanionPendingAction.agent_run_id == run.id,
+                CompanionPendingAction.status == "pending",
+            )
+        )
+    ).scalars().all()
+    lines = [
+        f"run_id: {run.id}",
+        f"status: {run.status}",
+        f"trigger: {run.trigger_kind}",
+        f"steps: {len(steps_count)}",
+        f"pending approvals: {len(pending_actions)}",
+    ]
+    if run.error:
+        lines.append(f"error: {run.error}")
+    return "\n".join(lines)
+
+
+async def _handle_run_status_command(
+    db: AsyncSession,
+    client: TelegramBotClient,
+    *,
+    message: dict[str, Any],
+    account: TelegramAccount,
+    arg: str,
+) -> None:
+    chat_id = _telegram_chat_id(message)
+    if chat_id is None:
+        return
+    run = await _load_run_ref(db, user_id=account.user_id, ref=arg)
+    if run is None:
+        await client.send_message(
+            chat_id,
+            "Запуск не найден. Посмотри /runs.",
+            reply_to_message_id=message.get("message_id"),
+        )
+        return
+    await client.send_message(
+        chat_id,
+        await _format_run_status(db, run),
+        reply_to_message_id=message.get("message_id"),
+    )
+
+
+async def _handle_cancel_run_command(
+    db: AsyncSession,
+    client: TelegramBotClient,
+    *,
+    message: dict[str, Any],
+    account: TelegramAccount,
+    arg: str,
+) -> None:
+    chat_id = _telegram_chat_id(message)
+    if chat_id is None:
+        return
+    run = await _load_run_ref(db, user_id=account.user_id, ref=arg)
+    if run is None:
+        await client.send_message(
+            chat_id,
+            "Запуск не найден. Посмотри /runs.",
+            reply_to_message_id=message.get("message_id"),
+        )
+        return
+    await cancel_run(db, run, reason="cancelled from Telegram")
+    await client.send_message(
+        chat_id,
+        f"Остановил запуск {run.id}. status: {run.status}",
+        reply_to_message_id=message.get("message_id"),
+    )
+
+
+async def _handle_approvals_command(
+    db: AsyncSession,
+    client: TelegramBotClient,
+    *,
+    message: dict[str, Any],
+    account: TelegramAccount,
+) -> None:
+    chat_id = _telegram_chat_id(message)
+    if chat_id is None:
+        return
+    result = await db.execute(
+        select(CompanionPendingAction)
+        .where(
+            CompanionPendingAction.user_id == account.user_id,
+            CompanionPendingAction.status == "pending",
+        )
+        .order_by(CompanionPendingAction.created_at)
+        .limit(10)
+    )
+    actions = list(result.scalars().all())
+    if not actions:
+        text = "Нет действий, ожидающих подтверждения."
+    else:
+        lines = ["Ожидают подтверждения:"]
+        for action in actions:
+            preview = str((action.action_manifest or {}).get("preview") or "").strip()
+            lines.append(
+                f"{action.id}\n{action.tool_name} · {action.kind}\n{preview}\n"
+                f"/approve {action.id}\n/reject {action.id}"
+            )
+        text = "\n\n".join(lines)
+    await _send_chunks(
+        client,
+        chat_id,
+        text,
+        reply_to_message_id=message.get("message_id"),
+    )
+
+
+async def _resume_agent_after_telegram_action(
+    db: AsyncSession,
+    action: CompanionPendingAction,
+) -> None:
+    if action.agent_run_id is None:
+        return
+    await run_job(
+        db,
+        action.agent_run_id,
+        planner=static_config_planner,
+        executor=execute_agent_step,
+    )
+
+
+async def _handle_approval_decision_command(
+    db: AsyncSession,
+    client: TelegramBotClient,
+    *,
+    message: dict[str, Any],
+    account: TelegramAccount,
+    arg: str,
+    decision: str,
+) -> None:
+    chat_id = _telegram_chat_id(message)
+    if chat_id is None:
+        return
+    try:
+        action_id = UUID(arg.strip())
+    except ValueError:
+        await client.send_message(
+            chat_id,
+            "Нужен action_id. Посмотри /approvals.",
+            reply_to_message_id=message.get("message_id"),
+        )
+        return
+    try:
+        row = await resolve_action(
+            db,
+            action_id=action_id,
+            user_id=account.user_id,
+            decision=decision,
+        )
+    except ApprovalError as exc:
+        await client.send_message(
+            chat_id,
+            f"Не смог обработать подтверждение: {exc.message}",
+            reply_to_message_id=message.get("message_id"),
+        )
+        return
+
+    if decision == "reject":
+        await _resume_agent_after_telegram_action(db, row)
+        await client.send_message(
+            chat_id,
+            f"Отклонил действие {action_id}.",
+            reply_to_message_id=message.get("message_id"),
+        )
+        return
+
+    try:
+        verify_committable(row)
+        if row.kind == "desktop_action":
+            await _resume_agent_after_telegram_action(db, row)
+            await client.send_message(
+                chat_id,
+                f"Подтвердил действие {action_id}. Оно отправлено на Mac edge.",
+                reply_to_message_id=message.get("message_id"),
+            )
+            return
+        args = (row.action_manifest or {}).get("args") or {}
+        receipt = await execute_action(
+            db,
+            user_id=account.user_id,
+            tool_name=row.tool_name,
+            args=args,
+        )
+        await mark_executed(db, row=row, receipt=receipt)
+        await _resume_agent_after_telegram_action(db, row)
+    except (ApprovalError, ActuationError) as exc:
+        await mark_failed(db, row=row, detail=exc.message)
+        await _resume_agent_after_telegram_action(db, row)
+        await client.send_message(
+            chat_id,
+            f"Действие не выполнено: {exc.message}",
+            reply_to_message_id=message.get("message_id"),
+        )
+        return
+
+    await client.send_message(
+        chat_id,
+        f"Выполнил действие {action_id}.",
+        reply_to_message_id=message.get("message_id"),
+    )
+
+
 async def _handle_account_command(
     db: AsyncSession,
     client: TelegramBotClient,
@@ -989,6 +1468,36 @@ async def _handle_account_command(
 ) -> bool:
     if intent == "help":
         await _handle_help_command(client, message=message, linked=True)
+        return True
+    if await _ensure_active_user(db, client, message=message, account=account) is None:
+        return True
+    if intent == "agents":
+        await _handle_agents_command(db, client, message=message, account=account)
+        return True
+    if intent == "run":
+        await _handle_run_command(db, client, message=message, account=account, arg=arg)
+        return True
+    if intent == "runs":
+        await _handle_runs_command(db, client, message=message, account=account)
+        return True
+    if intent == "run_status":
+        await _handle_run_status_command(db, client, message=message, account=account, arg=arg)
+        return True
+    if intent == "cancel_run":
+        await _handle_cancel_run_command(db, client, message=message, account=account, arg=arg)
+        return True
+    if intent == "approvals":
+        await _handle_approvals_command(db, client, message=message, account=account)
+        return True
+    if intent == "approve":
+        await _handle_approval_decision_command(
+            db, client, message=message, account=account, arg=arg, decision="once"
+        )
+        return True
+    if intent == "reject":
+        await _handle_approval_decision_command(
+            db, client, message=message, account=account, arg=arg, decision="reject"
+        )
         return True
     if intent == "meetings":
         await _handle_meetings_command(db, client, message=message, account=account)
@@ -1048,6 +1557,8 @@ async def _handle_url_message(
     chat_id = _telegram_chat_id(message)
     if chat_id is None:
         return
+    if await _ensure_active_user(db, client, message=message, account=account) is None:
+        return
 
     item, created = await ingest_item(
         db,
@@ -1101,6 +1612,20 @@ async def _handle_url_message(
     )
 
 
+def _format_action_proposals_for_telegram(actions: list[ActionProposedEvent]) -> str:
+    if not actions:
+        return ""
+    lines = ["Нужно подтверждение:"]
+    for action in actions:
+        preview = action.preview.strip() or action.tool
+        recipient = f" · {action.recipient}" if action.recipient else ""
+        lines.append(
+            f"{action.action_id}\n{action.tool} · {action.kind}{recipient}\n"
+            f"{preview}\n/approve {action.action_id}\n/reject {action.action_id}"
+        )
+    return "\n\n".join(lines)
+
+
 async def _handle_text_message(
     db: AsyncSession,
     client: TelegramBotClient,
@@ -1112,8 +1637,11 @@ async def _handle_text_message(
     chat_id = _telegram_chat_id(message)
     if chat_id is None:
         return
+    if await _ensure_active_user(db, client, message=message, account=account) is None:
+        return
     conversation = await _ensure_telegram_conversation(db, account)
     chunks: list[str] = []
+    proposed_actions: list[ActionProposedEvent] = []
     action_task = asyncio.create_task(_send_chat_action_until_cancelled(client, chat_id))
     try:
         async for event in run_turn(
@@ -1125,6 +1653,8 @@ async def _handle_text_message(
         ):
             if isinstance(event, TokenEvent):
                 chunks.append(event.text)
+            elif isinstance(event, ActionProposedEvent):
+                proposed_actions.append(event)
             elif isinstance(event, ErrorEvent):
                 raise CompanionError(event.code, event.message)
     except CompanionError as exc:
@@ -1139,6 +1669,9 @@ async def _handle_text_message(
         await _stop_chat_action_task(action_task)
 
     answer = "".join(chunks).strip()
+    approval_text = _format_action_proposals_for_telegram(proposed_actions)
+    if approval_text:
+        answer = f"{answer}\n\n{approval_text}".strip()
     if not answer:
         answer = "Wai не вернул ответ."
     await _send_chunks(
@@ -1159,6 +1692,8 @@ async def _handle_document_message(
 ) -> None:
     chat_id = _telegram_chat_id(message)
     if chat_id is None:
+        return
+    if await _ensure_active_user(db, client, message=message, account=account) is None:
         return
 
     file_id = document.get("file_id")
@@ -1295,6 +1830,8 @@ async def _handle_media_message(
 ) -> None:
     chat_id = _telegram_chat_id(message)
     if chat_id is None:
+        return
+    if await _ensure_active_user(db, client, message=message, account=account) is None:
         return
 
     file_id = media.get("file_id")

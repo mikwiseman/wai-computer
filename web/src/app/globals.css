@@ -2950,7 +2950,7 @@ a.primary-button[aria-disabled="true"]:hover {
 
 .brain-panel__coverage {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
   gap: 0.625rem;
 }
 
@@ -2991,6 +2991,66 @@ a.primary-button[aria-disabled="true"]:hover {
   gap: 0.5rem;
 }
 
+.brain-panel__rows--spaced {
+  margin-top: 0.25rem;
+}
+
+.brain-panel__space-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.brain-panel__space-toolbar label {
+  display: flex;
+  min-width: 12rem;
+  flex: 1;
+  flex-direction: column;
+  gap: 0.25rem;
+  color: var(--ink-soft);
+  font-size: var(--font-label-small-size);
+}
+
+.brain-panel__space-toolbar select {
+  min-height: 2.25rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0 0.625rem;
+  background: var(--panel);
+  color: var(--ink);
+  font: inherit;
+}
+
+.brain-panel__space-meta,
+.brain-panel__export-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  align-items: center;
+}
+
+.brain-panel__space-meta span,
+.brain-panel__space-meta strong,
+.brain-panel__export-row button {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0.2rem 0.55rem;
+  background: var(--panel);
+  color: var(--ink-soft);
+  font-size: var(--font-label-small-size);
+  font-weight: 500;
+}
+
+.brain-panel__export-row button {
+  cursor: pointer;
+}
+
+.brain-panel__export-row button:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
 .brain-panel__entity-row,
 .brain-panel__source-row,
 .brain-panel__proposal {
@@ -3011,7 +3071,15 @@ a.primary-button[aria-disabled="true"]:hover {
   cursor: pointer;
 }
 
-.brain-panel__entity-row:hover {
+.brain-panel__source-row--button {
+  width: 100%;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.brain-panel__entity-row:hover,
+.brain-panel__source-row--button:hover {
   border-color: var(--accent);
 }
 
@@ -3352,6 +3420,20 @@ a.primary-button[aria-disabled="true"]:hover {
   border-radius: 8px;
   padding: 0.5rem 0.75rem;
   background: var(--panel);
+}
+
+.brain-wiki__source-link {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.brain-wiki__source-link:hover .brain-wiki__source-title {
+  color: var(--accent);
 }
 
 .brain-wiki__source-kind {

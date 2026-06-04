@@ -4,8 +4,10 @@ import { ItemDetail } from "./ItemDetail";
 
 const mockGetItem = vi.fn();
 const mockReprocessItem = vi.fn();
+const mockDeleteItem = vi.fn();
 
 vi.mock("@/lib/api", () => ({
+  deleteItem: (...a: unknown[]) => mockDeleteItem(...a),
   getItem: (...a: unknown[]) => mockGetItem(...a),
   reprocessItem: (...a: unknown[]) => mockReprocessItem(...a),
 }));
@@ -99,6 +101,34 @@ describe("ItemDetail", () => {
     // Once reprocessing starts (no longer needs_input) the recovery box disappears.
     await waitFor(() =>
       expect(screen.queryByTestId("item-recover-input")).not.toBeInTheDocument(),
+    );
+  });
+
+  it("deletes the item and notifies the parent", async () => {
+    const onDeleted = vi.fn();
+    mockGetItem.mockResolvedValue(detail());
+    mockDeleteItem.mockResolvedValue(undefined);
+
+    render(<ItemDetail itemId="i1" onDeleted={onDeleted} />);
+
+    await waitFor(() => expect(screen.getByText("Solar Explainer")).toBeInTheDocument());
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+
+    await waitFor(() => expect(mockDeleteItem).toHaveBeenCalledWith("i1"));
+    expect(onDeleted).toHaveBeenCalledWith("i1");
+  });
+
+  it("refreshes processing items until the summary lands", async () => {
+    mockGetItem
+      .mockResolvedValueOnce(detail({ status: "summarizing", state: "raw", summary: null }))
+      .mockResolvedValueOnce(detail({ status: "ready", state: "raw" }));
+
+    render(<ItemDetail itemId="i1" pollIntervalMs={1} />);
+
+    await waitFor(() => expect(screen.getByTestId("item-processing")).toBeInTheDocument());
+    await waitFor(() => expect(mockGetItem).toHaveBeenCalledTimes(2));
+    await waitFor(() =>
+      expect(screen.getByText("A clear explainer about solar.")).toBeInTheDocument(),
     );
   });
 

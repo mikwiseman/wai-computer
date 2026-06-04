@@ -8,6 +8,7 @@ interface EntityWikiViewProps {
   entityId: string;
   onNavigate: (id: string, name: string) => void;
   onError?: (message: string) => void;
+  onOpenSource?: (sourceKind: "recording" | "item", sourceId: string) => void;
   locale?: string;
 }
 
@@ -35,7 +36,13 @@ function citationLabels(ids: string[], citations: Map<string, EntityPageCitation
  * Cached wiki page for one entity. The server owns compilation; this component
  * only renders the structured sections and keeps related navigation clickable.
  */
-export function EntityWikiView({ entityId, onNavigate, onError, locale = "en" }: EntityWikiViewProps) {
+export function EntityWikiView({
+  entityId,
+  onNavigate,
+  onError,
+  onOpenSource,
+  locale = "en",
+}: EntityWikiViewProps) {
   const t = useCallback(
     (en: string, ru: string) => (locale === "ru" ? ru : en),
     [locale],
@@ -217,8 +224,19 @@ export function EntityWikiView({ entityId, onNavigate, onError, locale = "en" }:
           <ul className="brain-wiki__sources">
             {citations.map((s) => (
               <li key={s.id} className="brain-wiki__source">
-                <span className="brain-wiki__source-kind">{s.source_kind}</span>
-                <span className="brain-wiki__source-title">{s.title}</span>
+                <button
+                  type="button"
+                  className="brain-wiki__source-link"
+                  aria-label={`${t("Open source", "Открыть источник")}: ${s.title}`}
+                  onClick={() => {
+                    if (s.source_kind === "recording" || s.source_kind === "item") {
+                      onOpenSource?.(s.source_kind, s.source_id);
+                    }
+                  }}
+                >
+                  <span className="brain-wiki__source-kind">{s.source_kind}</span>
+                  <span className="brain-wiki__source-title">{s.title}</span>
+                </button>
                 {s.context ? (
                   <p className="brain-wiki__source-context">{s.context}</p>
                 ) : null}

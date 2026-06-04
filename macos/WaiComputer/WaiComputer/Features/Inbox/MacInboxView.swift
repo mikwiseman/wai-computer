@@ -350,7 +350,22 @@ struct MacInboxView: View {
                 )
                 .id(selectedRow.id)
             case .item:
-                MacInboxItemDetail(apiClient: apiClient, itemId: selectedRow.sourceId)
+                MacInboxItemDetail(
+                    apiClient: apiClient,
+                    itemId: selectedRow.sourceId,
+                    onDeleted: {
+                        self.selectedRow = nil
+                        Task {
+                            await model.load()
+                            await onLibraryChanged()
+                        }
+                    },
+                    onUpdated: {
+                        Task {
+                            await model.load()
+                        }
+                    }
+                )
                     .id(selectedRow.id)
             case .chat:
                 CompanionView(
@@ -813,10 +828,13 @@ private struct MacInboxRowView: View {
 private struct MacInboxItemDetail: View {
     let apiClient: APIClient
     let itemId: String
+    let onDeleted: () -> Void
+    let onUpdated: () -> Void
     @EnvironmentObject private var languageManager: LanguageManager
     @State private var item: Item?
     @State private var errorMessage: String?
     @State private var isLoading = true
+    @State private var isDeleting = false
 
     var body: some View {
         Group {
@@ -824,7 +842,14 @@ private struct MacInboxItemDetail: View {
                 ProgressView()
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if let item {
-                MacItemDetailView(item: item, onDelete: {})
+                MacItemDetailView(
+                    item: item,
+                    onDelete: {
+                        Task {
+                            await deleteItem()
+                        }
+                    }
+                )
             } else {
                 ContentUnavailableViewCompat(
                     t("Item unavailable", "Материал недоступен"),
@@ -834,15 +859,43 @@ private struct MacInboxItemDetail: View {
             }
         }
         .task(id: itemId) {
-            await load()
+            await load(showLoading: true)
+            while !Task.isCancelled {
+                guard let item, item.status == "fetching" || item.status == "summarizing" else {
+                    break
+                }
+                try? await Task.sleep(nanoseconds: 2_000_000_000)
+                guard !Task.isCancelled else { break }
+                await load(showLoading: false)
+            }
         }
     }
 
-    private func load() async {
-        isLoading = true
-        defer { isLoading = false }
+    private func load(showLoading: Bool) async {
+        if showLoading {
+            isLoading = true
+        }
+        defer {
+            if showLoading {
+                isLoading = false
+            }
+        }
         do {
             item = try await apiClient.getItem(id: itemId)
+            errorMessage = nil
+            onUpdated()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    private func deleteItem() async {
+        guard !isDeleting else { return }
+        isDeleting = true
+        defer { isDeleting = false }
+        do {
+            try await apiClient.deleteItem(id: itemId)
+            onDeleted()
         } catch {
             errorMessage = error.localizedDescription
         }

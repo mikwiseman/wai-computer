@@ -156,14 +156,98 @@ describe("api client wrappers", () => {
     await api.getSystemInfo();
     await api.getDataOwnershipMap();
     await api.getSelfHostMigrationPreflight();
+    await api.getSelfHostMigrationContract();
     await api.startSelfHostProvision(provisionInput);
 
     expect(mockedApiFetch).toHaveBeenNthCalledWith(1, "/api/system/info");
     expect(mockedApiFetch).toHaveBeenNthCalledWith(2, "/api/system/data-map");
     expect(mockedApiFetch).toHaveBeenNthCalledWith(3, "/api/self-host/migration/preflight");
-    expect(mockedApiFetch).toHaveBeenNthCalledWith(4, "/api/self-host/provision", {
+    expect(mockedApiFetch).toHaveBeenNthCalledWith(4, "/api/self-host/migration/contract");
+    expect(mockedApiFetch).toHaveBeenNthCalledWith(5, "/api/self-host/provision", {
       method: "POST",
       body: JSON.stringify(provisionInput),
+    });
+  });
+
+  it("calls agent control-plane endpoints", async () => {
+    const createInput = {
+      name: "Daily brief",
+      kind: "brief",
+      trigger_type: "manual" as const,
+      config: { steps: [{ tool: "note", args: { text: "hi" } }] },
+      autonomy: "propose" as const,
+    };
+
+    await api.getAgentCapabilities();
+    await api.listAgents({ limit: 10 });
+    await api.createAgent(createInput);
+    await api.updateAgent("agent-1", { enabled: false });
+    await api.startAgentRun("agent-1", {
+      trigger_kind: "manual",
+      trigger_payload: { objective: "brief me" },
+      idempotency_key: "same",
+    });
+    await api.listAgentRuns("agent-1", { status: "pending", limit: 5 });
+    await api.listAllAgentRuns({ status: "awaiting_approval" });
+    await api.getAgentRun("agent-1", "run-1");
+    await api.listAgentRunSteps("agent-1", "run-1");
+    await api.cancelAgentRun("agent-1", "run-1", "stop");
+    await api.listAgentActions({ status: "pending", limit: 3 });
+    await api.listAgentRunActions("agent-1", "run-1");
+    await api.resolveAgentAction("agent-1", "run-1", "action-1", { decision: "always" });
+    await api.deleteAgent("agent-1");
+
+    expect(mockedApiFetch).toHaveBeenNthCalledWith(1, "/api/agents/capabilities");
+    expect(mockedApiFetch).toHaveBeenNthCalledWith(2, "/api/agents?limit=10");
+    expect(mockedApiFetch).toHaveBeenNthCalledWith(3, "/api/agents", {
+      method: "POST",
+      body: JSON.stringify(createInput),
+    });
+    expect(mockedApiFetch).toHaveBeenNthCalledWith(4, "/api/agents/agent-1", {
+      method: "PATCH",
+      body: JSON.stringify({ enabled: false }),
+    });
+    expect(mockedApiFetch).toHaveBeenNthCalledWith(5, "/api/agents/agent-1/runs", {
+      method: "POST",
+      body: JSON.stringify({
+        trigger_kind: "manual",
+        trigger_payload: { objective: "brief me" },
+        idempotency_key: "same",
+      }),
+    });
+    expect(mockedApiFetch).toHaveBeenNthCalledWith(
+      6,
+      "/api/agents/agent-1/runs?status=pending&limit=5",
+    );
+    expect(mockedApiFetch).toHaveBeenNthCalledWith(
+      7,
+      "/api/agents/runs?status=awaiting_approval",
+    );
+    expect(mockedApiFetch).toHaveBeenNthCalledWith(8, "/api/agents/agent-1/runs/run-1");
+    expect(mockedApiFetch).toHaveBeenNthCalledWith(9, "/api/agents/agent-1/runs/run-1/steps");
+    expect(mockedApiFetch).toHaveBeenNthCalledWith(
+      10,
+      "/api/agents/agent-1/runs/run-1/cancel",
+      {
+        method: "POST",
+        body: JSON.stringify({ reason: "stop" }),
+      },
+    );
+    expect(mockedApiFetch).toHaveBeenNthCalledWith(11, "/api/agents/actions?status=pending&limit=3");
+    expect(mockedApiFetch).toHaveBeenNthCalledWith(
+      12,
+      "/api/agents/agent-1/runs/run-1/actions",
+    );
+    expect(mockedApiFetch).toHaveBeenNthCalledWith(
+      13,
+      "/api/agents/agent-1/runs/run-1/actions/action-1/resolve",
+      {
+        method: "POST",
+        body: JSON.stringify({ decision: "always" }),
+      },
+    );
+    expect(mockedApiFetchResponse).toHaveBeenNthCalledWith(1, "/api/agents/agent-1", {
+      method: "DELETE",
     });
   });
 

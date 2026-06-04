@@ -4,7 +4,7 @@ import Foundation
 
 /// Drives the Mac-edge channel for this device: builds a ``MacEdgeCoordinator``
 /// (this app's API client as transport, the tiered ``DesktopActionExecutor``
-/// over the deterministic Tier-A actuator) and polls it on an interval —
+/// over the accessibility actuator) and polls it on an interval —
 /// heartbeat → drain approved desktop actions → execute → report.
 ///
 /// Opt-in and lifecycle live in the app: it should run only while the user is on
@@ -65,7 +65,7 @@ public final class DesktopAgentRunner: ObservableObject {
         let ownBundleId = Bundle.main.bundleIdentifier ?? "is.waiwai.computer"
         let executor = DesktopActionExecutor(
             router: DesktopActionRouter(safety: DesktopSafetyPolicy(ownBundleId: ownBundleId)),
-            actuator: DeterministicDesktopActuator()
+            actuator: AccessibilityDesktopActuator()
         )
         return MacEdgeCoordinator(
             transport: apiClient, executor: executor, deviceName: deviceName

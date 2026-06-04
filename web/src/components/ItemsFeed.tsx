@@ -252,7 +252,7 @@ export function ItemsFeed({ onError, reloadKey = 0 }: ItemsFeedProps) {
                   Delete
                 </button>
               </div>
-              <ItemDetail itemId={selected.id} onError={onError} />
+              <ItemDetail itemId={selected.id} onError={onError} showDelete={false} />
             </>
           ) : (
             <p className="items-feed__placeholder">Select an item to see its summary.</p>

@@ -16,6 +16,7 @@ const KIND_COLOR: Record<string, string> = {
 };
 
 const ENTITY_KINDS = new Set(["person", "topic", "project"]);
+const SOURCE_KINDS = new Set(["item", "recording"]);
 
 export interface ForceGraphNode {
   id: string;
@@ -57,11 +58,25 @@ export function buildForceGraph(
   return { nodes, links };
 }
 
+export function sourceRefFromGraphNode(
+  node: { id?: string | number; kind?: string },
+): { sourceKind: "item" | "recording"; sourceId: string } | null {
+  if (!node || typeof node.id !== "string" || !node.kind || !SOURCE_KINDS.has(node.kind)) {
+    return null;
+  }
+  const prefix = `${node.kind}:`;
+  return {
+    sourceKind: node.kind as "item" | "recording",
+    sourceId: node.id.startsWith(prefix) ? node.id.slice(prefix.length) : node.id,
+  };
+}
+
 interface BrainGraphViewProps {
   graph: BrainGraph;
   showSources: boolean;
   onToggleSources: (value: boolean) => void;
   onFocusEntity: (entityId: string) => void;
+  onOpenSource?: (sourceKind: "recording" | "item", sourceId: string) => void;
   focused: boolean;
   onResetFocus: () => void;
   locale?: string;
@@ -72,6 +87,7 @@ export function BrainGraphView({
   showSources,
   onToggleSources,
   onFocusEntity,
+  onOpenSource,
   focused,
   onResetFocus,
   locale = "en",
@@ -97,9 +113,12 @@ export function BrainGraphView({
     (node: { id?: string | number; kind?: string }) => {
       if (node && typeof node.id === "string" && node.kind && ENTITY_KINDS.has(node.kind)) {
         onFocusEntity(node.id);
+        return;
       }
+      const source = sourceRefFromGraphNode(node);
+      if (source) onOpenSource?.(source.sourceKind, source.sourceId);
     },
-    [onFocusEntity],
+    [onFocusEntity, onOpenSource],
   );
 
   return (

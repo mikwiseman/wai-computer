@@ -13,12 +13,14 @@ enum MacBrainTab: String, CaseIterable {
 /// and Graph are secondary inspection views. Honest empty / error+retry states.
 struct MacBrainView: View {
     let apiClient: APIClient
+    let onOpenSource: (InboxDetailRef) -> Void
 
     @EnvironmentObject private var languageManager: LanguageManager
     @StateObject private var model: MacBrainViewModel
 
-    init(apiClient: APIClient) {
+    init(apiClient: APIClient, onOpenSource: @escaping (InboxDetailRef) -> Void = { _ in }) {
         self.apiClient = apiClient
+        self.onOpenSource = onOpenSource
         _model = StateObject(wrappedValue: MacBrainViewModel(apiClient: apiClient))
     }
 
@@ -370,28 +372,33 @@ struct MacBrainView: View {
                     .font(Typography.headingSmall)
                 VStack(alignment: .leading, spacing: Spacing.xs) {
                     ForEach(sources) { source in
-                        HStack(spacing: Spacing.sm) {
-                            Image(systemName: source.sourceKind == "recording" ? "waveform" : "doc.text")
-                                .font(.system(size: 11))
-                                .foregroundStyle(Palette.accent)
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(source.title)
-                                    .font(Typography.bodySmall.weight(.medium))
-                                    .lineLimit(1)
-                                Text(
-                                    t(
-                                        "\(source.entityCount) entities · \(sourceKindLabel(source.sourceKind))",
-                                        "\(source.entityCount) сущностей · \(sourceKindLabel(source.sourceKind))"
+                        Button {
+                            openSource(kind: source.sourceKind, id: source.sourceId)
+                        } label: {
+                            HStack(spacing: Spacing.sm) {
+                                Image(systemName: source.sourceKind == "recording" ? "waveform" : "doc.text")
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(Palette.accent)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(source.title)
+                                        .font(Typography.bodySmall.weight(.medium))
+                                        .lineLimit(1)
+                                    Text(
+                                        t(
+                                            "\(source.entityCount) entities · \(sourceKindLabel(source.sourceKind))",
+                                            "\(source.entityCount) сущностей · \(sourceKindLabel(source.sourceKind))"
+                                        )
                                     )
-                                )
-                                .font(Typography.labelSmall)
-                                .foregroundStyle(Palette.textSecondary)
+                                    .font(Typography.labelSmall)
+                                    .foregroundStyle(Palette.textSecondary)
+                                }
+                                Spacer()
                             }
-                            Spacer()
+                            .padding(Spacing.sm)
+                            .background(Palette.surfaceSubtle)
+                            .clipShape(RoundedRectangle(cornerRadius: 8))
                         }
-                        .padding(Spacing.sm)
-                        .background(Palette.surfaceSubtle)
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                        .buttonStyle(.plain)
                     }
                 }
             }
@@ -403,13 +410,17 @@ struct MacBrainView: View {
     @ViewBuilder
     private var graphView: some View {
         if let graph = model.graph, !graph.nodes.isEmpty {
-            MacBrainGraphView(graph: graph) { node in
-                // Only entity nodes have wiki pages; source nodes (item/recording)
-                // are drawn but not navigable here (there's no page to open).
-                if node.kind == "person" || node.kind == "topic" || node.kind == "project" {
-                    model.openEntity(id: node.id, name: node.label)
+            MacBrainGraphView(
+                graph: graph,
+                onOpenEntity: { node in
+                    if node.kind == "person" || node.kind == "topic" || node.kind == "project" {
+                        model.openEntity(id: node.id, name: node.label)
+                    }
+                },
+                onOpenSource: { detail in
+                    onOpenSource(detail)
                 }
-            }
+            )
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
             emptyBrain
@@ -634,22 +645,27 @@ struct MacBrainView: View {
             } else {
                 VStack(alignment: .leading, spacing: Spacing.xs) {
                     ForEach(page.citations) { source in
-                        VStack(alignment: .leading, spacing: Spacing.xxs) {
-                            HStack(spacing: Spacing.xs) {
-                                Text(source.sourceKind.uppercased())
-                                    .font(Typography.labelSmall)
-                                    .foregroundStyle(Palette.textTertiary)
-                                Text(source.title).font(Typography.bodySmall.weight(.medium))
+                        Button {
+                            openSource(kind: source.sourceKind, id: source.sourceId)
+                        } label: {
+                            VStack(alignment: .leading, spacing: Spacing.xxs) {
+                                HStack(spacing: Spacing.xs) {
+                                    Text(source.sourceKind.uppercased())
+                                        .font(Typography.labelSmall)
+                                        .foregroundStyle(Palette.textTertiary)
+                                    Text(source.title).font(Typography.bodySmall.weight(.medium))
+                                }
+                                if let context = source.context, !context.isEmpty {
+                                    Text(context)
+                                        .font(Typography.labelSmall)
+                                        .foregroundStyle(Palette.textSecondary)
+                                }
                             }
-                            if let context = source.context, !context.isEmpty {
-                                Text(context)
-                                    .font(Typography.labelSmall)
-                                    .foregroundStyle(Palette.textSecondary)
-                            }
+                            .padding(Spacing.sm)
+                            .background(Palette.surfaceSubtle)
+                            .clipShape(RoundedRectangle(cornerRadius: 8))
                         }
-                        .padding(Spacing.sm)
-                        .background(Palette.surfaceSubtle)
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                        .buttonStyle(.plain)
                     }
                 }
             }
@@ -701,6 +717,12 @@ struct MacBrainView: View {
             .compactMap { $0 }
             .joined(separator: " · ")
         return detail.isEmpty ? nil : detail
+    }
+
+    private func openSource(kind: String, id: String) {
+        guard let sourceKind = InboxSourceKind(rawValue: kind) else { return }
+        guard sourceKind == .recording || sourceKind == .item else { return }
+        onOpenSource(InboxDetailRef(kind: sourceKind, id: id))
     }
 
     private func evidenceLabel(_ proposal: MemoryProposal) -> String? {

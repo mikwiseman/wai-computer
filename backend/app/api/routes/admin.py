@@ -1025,6 +1025,10 @@ async def _ai_usage_rows(
             "billable_seconds": event.billable_seconds,
             "estimated_cost_usd": event.estimated_cost_usd,
             "pricing_status": event.pricing_status,
+            "billing_mode": event.billing_mode,
+            "language_mode": event.language_mode,
+            "addons": event.addons or [],
+            "price_source": event.price_source,
             "latency_ms": event.latency_ms,
             "provider_status_code": event.provider_status_code,
             "provider_error_code": event.provider_error_code,
@@ -1178,10 +1182,12 @@ def _new_deepgram_user_row(user_id: str, email: str | None) -> dict:
         "user_id": user_id,
         "email": email,
         "captured_events": 0,
+        "captured_estimated_cost_usd": 0.0,
         "captured_billable_seconds": 0.0,
         "captured_audio_seconds": 0.0,
         "captured_failed_events": 0,
         "captured_refused_events": 0,
+        "captured_unpriced_events": 0,
         "provider_402_events": 0,
         "recording_count": 0,
         "failed_recordings": 0,
@@ -1208,6 +1214,7 @@ async def _deepgram_usage_rows(
         await db.execute(
             select(
                 func.count(DeepgramUsageEvent.id),
+                func.coalesce(func.sum(DeepgramUsageEvent.estimated_cost_usd), 0),
                 func.coalesce(func.sum(DeepgramUsageEvent.audio_seconds), 0),
                 func.coalesce(func.sum(DeepgramUsageEvent.billable_seconds), 0),
                 func.coalesce(
@@ -1228,17 +1235,25 @@ async def _deepgram_usage_rows(
                     ),
                     0,
                 ),
+                func.coalesce(
+                    func.sum(
+                        case((DeepgramUsageEvent.pricing_status != "priced", 1), else_=0)
+                    ),
+                    0,
+                ),
             ).where(DeepgramUsageEvent.created_at >= since)
         )
     ).one()
     captured = {
         "events": _int(captured_row[0]),
-        "audio_seconds": round(_num(captured_row[1]), 3),
-        "billable_seconds": round(_num(captured_row[2]), 3),
-        "succeeded": _int(captured_row[3]),
-        "failed": _int(captured_row[4]),
-        "refused": _int(captured_row[5]),
-        "provider_402": _int(captured_row[6]),
+        "estimated_cost_usd": round(_num(captured_row[1]), 6),
+        "audio_seconds": round(_num(captured_row[2]), 3),
+        "billable_seconds": round(_num(captured_row[3]), 3),
+        "succeeded": _int(captured_row[4]),
+        "failed": _int(captured_row[5]),
+        "refused": _int(captured_row[6]),
+        "provider_402": _int(captured_row[7]),
+        "unpriced_events": _int(captured_row[8]),
     }
 
     captured_user_rows = (
@@ -1247,6 +1262,7 @@ async def _deepgram_usage_rows(
                 DeepgramUsageEvent.user_id,
                 User.email,
                 func.count(DeepgramUsageEvent.id),
+                func.coalesce(func.sum(DeepgramUsageEvent.estimated_cost_usd), 0),
                 func.coalesce(func.sum(DeepgramUsageEvent.audio_seconds), 0),
                 func.coalesce(func.sum(DeepgramUsageEvent.billable_seconds), 0),
                 func.coalesce(
@@ -1263,6 +1279,12 @@ async def _deepgram_usage_rows(
                     ),
                     0,
                 ),
+                func.coalesce(
+                    func.sum(
+                        case((DeepgramUsageEvent.pricing_status != "priced", 1), else_=0)
+                    ),
+                    0,
+                ),
                 func.max(DeepgramUsageEvent.created_at),
             )
             .outerjoin(User, User.id == DeepgramUsageEvent.user_id)
@@ -1270,18 +1292,32 @@ async def _deepgram_usage_rows(
             .group_by(DeepgramUsageEvent.user_id, User.email)
         )
     ).all()
-    for user_id, email, events, audio_seconds, billable_seconds, failed, refused, p402, last_at in (
+    for (
+        user_id,
+        email,
+        events,
+        cost,
+        audio_seconds,
+        billable_seconds,
+        failed,
+        refused,
+        p402,
+        unpriced,
+        last_at,
+    ) in (
         captured_user_rows
     ):
         key = str(user_id) if user_id is not None else "unknown"
         item = user_rows.setdefault(key, _new_deepgram_user_row(key, email))
         item["email"] = email or item["email"]
         item["captured_events"] = _int(events)
+        item["captured_estimated_cost_usd"] = round(_num(cost), 6)
         item["captured_audio_seconds"] = round(_num(audio_seconds), 3)
         item["captured_billable_seconds"] = round(_num(billable_seconds), 3)
         item["captured_failed_events"] = _int(failed)
         item["captured_refused_events"] = _int(refused)
         item["provider_402_events"] = _int(p402)
+        item["captured_unpriced_events"] = _int(unpriced)
         item["last_event_at"] = last_at
 
     recording_rows = (
@@ -1365,8 +1401,15 @@ async def _deepgram_usage_rows(
                 DeepgramUsageEvent.purpose,
                 DeepgramUsageEvent.status,
                 func.count(DeepgramUsageEvent.id),
+                func.coalesce(func.sum(DeepgramUsageEvent.estimated_cost_usd), 0),
                 func.coalesce(func.sum(DeepgramUsageEvent.audio_seconds), 0),
                 func.coalesce(func.sum(DeepgramUsageEvent.billable_seconds), 0),
+                func.coalesce(
+                    func.sum(
+                        case((DeepgramUsageEvent.pricing_status != "priced", 1), else_=0)
+                    ),
+                    0,
+                ),
                 func.coalesce(
                     func.sum(
                         case(
@@ -1396,8 +1439,10 @@ async def _deepgram_usage_rows(
             "purpose": purpose,
             "status": status_value,
             "events": _int(count),
+            "estimated_cost_usd": round(_num(cost), 6),
             "audio_seconds": round(_num(audio_seconds), 3),
             "billable_seconds": round(_num(billable_seconds), 3),
+            "unpriced_events": _int(unpriced),
             "provider_402": _int(provider_402),
         }
         for (
@@ -1405,8 +1450,10 @@ async def _deepgram_usage_rows(
             purpose,
             status_value,
             count,
+            cost,
             audio_seconds,
             billable_seconds,
+            unpriced,
             provider_402,
         ) in operation_result_rows
     ]
@@ -1416,6 +1463,7 @@ async def _deepgram_usage_rows(
             select(
                 func.date(DeepgramUsageEvent.created_at),
                 func.count(DeepgramUsageEvent.id),
+                func.coalesce(func.sum(DeepgramUsageEvent.estimated_cost_usd), 0),
                 func.coalesce(func.sum(DeepgramUsageEvent.billable_seconds), 0),
                 func.coalesce(func.sum(DeepgramUsageEvent.audio_seconds), 0),
                 func.coalesce(
@@ -1426,20 +1474,30 @@ async def _deepgram_usage_rows(
                     func.sum(case((DeepgramUsageEvent.status == "refused", 1), else_=0)),
                     0,
                 ),
+                func.coalesce(
+                    func.sum(
+                        case((DeepgramUsageEvent.pricing_status != "priced", 1), else_=0)
+                    ),
+                    0,
+                ),
             )
             .where(DeepgramUsageEvent.created_at >= since)
             .group_by(func.date(DeepgramUsageEvent.created_at))
             .order_by(func.date(DeepgramUsageEvent.created_at))
         )
     ).all()
-    for day, events, billable_seconds, audio_seconds, failed, refused in captured_day_rows:
+    for day, events, cost, billable_seconds, audio_seconds, failed, refused, unpriced in (
+        captured_day_rows
+    ):
         key = _day(day)
         item = day_rows.setdefault(key, _new_deepgram_day_row(key))
         item["captured_events"] = _int(events)
+        item["captured_estimated_cost_usd"] = round(_num(cost), 6)
         item["captured_billable_seconds"] = round(_num(billable_seconds), 3)
         item["captured_audio_seconds"] = round(_num(audio_seconds), 3)
         item["captured_failed_events"] = _int(failed)
         item["captured_refused_events"] = _int(refused)
+        item["captured_unpriced_events"] = _int(unpriced)
 
     recording_day_rows = (
         await db.execute(
@@ -1485,6 +1543,9 @@ async def _deepgram_usage_rows(
         select(
             DeepgramUsageEvent.recording_id.label("recording_id"),
             func.count(DeepgramUsageEvent.id).label("event_count"),
+            func.coalesce(func.sum(DeepgramUsageEvent.estimated_cost_usd), 0).label(
+                "estimated_cost_usd"
+            ),
             func.coalesce(func.sum(DeepgramUsageEvent.billable_seconds), 0).label(
                 "billable_seconds"
             ),
@@ -1500,6 +1561,10 @@ async def _deepgram_usage_rows(
                 func.sum(case((DeepgramUsageEvent.provider_status_code == 402, 1), else_=0)),
                 0,
             ).label("provider_402_events"),
+            func.coalesce(
+                func.sum(case((DeepgramUsageEvent.pricing_status != "priced", 1), else_=0)),
+                0,
+            ).label("unpriced_events"),
             func.max(DeepgramUsageEvent.created_at).label("last_event_at"),
         )
         .where(
@@ -1520,10 +1585,12 @@ async def _deepgram_usage_rows(
             "duration_seconds": _int(duration_seconds),
             "billed_word_count": _int(billed_word_count),
             "captured_events": _int(event_count),
+            "estimated_cost_usd": round(_num(event_estimated_cost), 6),
             "captured_billable_seconds": round(_num(event_billable_seconds), 3),
             "failed_events": _int(failed_events),
             "refused_events": _int(refused_events),
             "provider_402_events": _int(provider_402_events),
+            "unpriced_events": _int(unpriced_events),
             "last_event_at": last_event_at.isoformat() if last_event_at else None,
         }
         for (
@@ -1536,10 +1603,12 @@ async def _deepgram_usage_rows(
             duration_seconds,
             billed_word_count,
             event_count,
+            event_estimated_cost,
             event_billable_seconds,
             failed_events,
             refused_events,
             provider_402_events,
+            unpriced_events,
             last_event_at,
         ) in (
             await db.execute(
@@ -1553,10 +1622,12 @@ async def _deepgram_usage_rows(
                     Recording.duration_seconds,
                     Recording.billed_word_count,
                     events_by_recording.c.event_count,
+                    events_by_recording.c.estimated_cost_usd,
                     events_by_recording.c.billable_seconds,
                     events_by_recording.c.failed_events,
                     events_by_recording.c.refused_events,
                     events_by_recording.c.provider_402_events,
+                    events_by_recording.c.unpriced_events,
                     events_by_recording.c.last_event_at,
                 )
                 .join(User, User.id == Recording.user_id)
@@ -1594,6 +1665,12 @@ async def _deepgram_usage_rows(
             "content_type": event.content_type,
             "audio_seconds": event.audio_seconds,
             "billable_seconds": event.billable_seconds,
+            "estimated_cost_usd": event.estimated_cost_usd,
+            "pricing_status": event.pricing_status,
+            "billing_mode": event.billing_mode,
+            "language_mode": event.language_mode,
+            "addons": event.addons or [],
+            "price_source": event.price_source,
             "channel_count": event.channel_count,
             "audio_bytes": event.audio_bytes,
             "latency_ms": event.latency_ms,
@@ -1626,6 +1703,7 @@ async def _deepgram_usage_rows(
     by_user = sorted(
         user_rows.values(),
         key=lambda item: (
+            item["captured_estimated_cost_usd"],
             item["captured_billable_seconds"],
             item["estimated_total_seconds"],
             item["captured_events"],
@@ -1648,9 +1726,11 @@ def _new_deepgram_day_row(day: str) -> dict:
         "date": day,
         "captured_events": 0,
         "captured_audio_seconds": 0.0,
+        "captured_estimated_cost_usd": 0.0,
         "captured_billable_seconds": 0.0,
         "captured_failed_events": 0,
         "captured_refused_events": 0,
+        "captured_unpriced_events": 0,
         "estimated_recordings": 0,
         "estimated_recording_seconds": 0.0,
         "estimated_dictation_entries": 0,
@@ -1671,6 +1751,18 @@ def _deepgram_usage_analysis(payload: dict) -> list[dict]:
                 "code": "deepgram.ledger.empty",
                 "title": "Exact Deepgram ledger starts after this deployment",
                 "detail": "Use estimates until new provider attempts are captured.",
+            }
+        )
+    if captured.get("unpriced_events", 0) > 0:
+        analysis.append(
+            {
+                "severity": "warning",
+                "code": "deepgram.pricing.partial",
+                "title": "Some Deepgram events cannot be fully priced",
+                "detail": (
+                    f"{captured['unpriced_events']} events are missing pricing metadata "
+                    "or use an unknown billing shape."
+                ),
             }
         )
     if captured["provider_402"] > 0:

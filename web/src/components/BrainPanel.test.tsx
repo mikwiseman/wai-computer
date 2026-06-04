@@ -3,12 +3,24 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { BrainPanel } from "./BrainPanel";
 
 const mockGetBrainGraph = vi.fn();
+const mockListBrainSpaces = vi.fn();
+const mockGetBrainSpaceHome = vi.fn();
+const mockListBrainReviewPacks = vi.fn();
+const mockAcceptBrainReviewPack = vi.fn();
+const mockRejectBrainReviewPack = vi.fn();
+const mockExportBrainSpace = vi.fn();
 const mockListMemoryProposals = vi.fn();
 const mockAcceptMemoryProposal = vi.fn();
 const mockRejectMemoryProposal = vi.fn();
 
 vi.mock("@/lib/api", () => ({
+  acceptBrainReviewPack: (...a: unknown[]) => mockAcceptBrainReviewPack(...a),
   getBrainGraph: (...a: unknown[]) => mockGetBrainGraph(...a),
+  getBrainSpaceHome: (...a: unknown[]) => mockGetBrainSpaceHome(...a),
+  listBrainReviewPacks: (...a: unknown[]) => mockListBrainReviewPacks(...a),
+  listBrainSpaces: (...a: unknown[]) => mockListBrainSpaces(...a),
+  rejectBrainReviewPack: (...a: unknown[]) => mockRejectBrainReviewPack(...a),
+  exportBrainSpace: (...a: unknown[]) => mockExportBrainSpace(...a),
   listMemoryProposals: (...a: unknown[]) => mockListMemoryProposals(...a),
   acceptMemoryProposal: (...a: unknown[]) => mockAcceptMemoryProposal(...a),
   rejectMemoryProposal: (...a: unknown[]) => mockRejectMemoryProposal(...a),
@@ -92,10 +104,110 @@ function proposals(overrides = {}) {
   };
 }
 
+function spaces(overrides = {}) {
+  return {
+    spaces: [
+      {
+        id: "s1",
+        owner_user_id: "u1",
+        name: "Wai School",
+        slug: "wai-school",
+        kind: "work",
+        engine_profile: "waibrain",
+        visibility: "private",
+        description: null,
+        role: "owner",
+        created_at: null,
+        updated_at: null,
+      },
+    ],
+    ...overrides,
+  };
+}
+
+function spaceHome(overrides = {}) {
+  return {
+    space: spaces().spaces[0],
+    page_count: 2,
+    source_count: 1,
+    claim_counts: { fact: 1, workflow_rule: 1 },
+    source_counts: { item: 1 },
+    pending_review_count: 1,
+    recent_pages: [
+      {
+        id: "pg1",
+        space_id: "s1",
+        title: "Customer stage rules",
+        slug: "customer-stage-rules",
+        kind: "workflow",
+        status: "active",
+        markdown: "# Customer stage rules",
+        frontmatter: {},
+        version: 1,
+        claims: [
+          {
+            id: "c1",
+            space_id: "s1",
+            page_id: "pg1",
+            kind: "workflow_rule",
+            status: "active",
+            text: "Use 40 minute intro sessions.",
+            confidence: 0.9,
+            authority: "self",
+            evidence: [],
+            source_refs: null,
+            created_at: null,
+            accepted_at: null,
+          },
+        ],
+        created_at: null,
+        updated_at: null,
+      },
+    ],
+    engine_profiles: ["waibrain", "obsidian", "gbrain", "mempalace"],
+    ...overrides,
+  };
+}
+
+function reviewPacks(overrides = {}) {
+  return {
+    review_packs: [
+      {
+        id: "rp1",
+        space_id: "s1",
+        kind: "bridge",
+        risk: "medium",
+        status: "pending",
+        title: "Bridge from Mik Personal",
+        summary: "Review pages: Customer stage rules from Mik Personal.",
+        proposals: [],
+        evidence: null,
+        created_by_user_id: "u1",
+        decided_by_user_id: null,
+        decision_reason: null,
+        created_at: null,
+        decided_at: null,
+      },
+    ],
+    pending_count: 1,
+    ...overrides,
+  };
+}
+
 describe("BrainPanel", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockGetBrainGraph.mockResolvedValue(graph());
+    mockListBrainSpaces.mockResolvedValue(spaces());
+    mockGetBrainSpaceHome.mockResolvedValue(spaceHome());
+    mockListBrainReviewPacks.mockResolvedValue(reviewPacks());
+    mockAcceptBrainReviewPack.mockResolvedValue({});
+    mockRejectBrainReviewPack.mockResolvedValue({});
+    mockExportBrainSpace.mockResolvedValue({
+      space: spaces().spaces[0],
+      profile: "obsidian",
+      files: [{ path: "Customer stage rules.md", markdown: "# Customer stage rules" }],
+    });
     mockListMemoryProposals.mockResolvedValue(proposals());
     mockAcceptMemoryProposal.mockResolvedValue({});
     mockRejectMemoryProposal.mockResolvedValue({});
@@ -104,6 +216,10 @@ describe("BrainPanel", () => {
   it("renders the overview with coverage, top entities, and review evidence", async () => {
     render(<BrainPanel />);
     await waitFor(() => expect(screen.getByText("Coverage")).toBeInTheDocument());
+    expect(screen.getByText("Spaces")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("Wai School")).toBeInTheDocument();
+    expect(screen.getByText("Customer stage rules")).toBeInTheDocument();
+    expect(screen.getByText("Bridge from Mik Personal")).toBeInTheDocument();
     expect(screen.getByText("1 / 2")).toBeInTheDocument();
     expect(screen.getAllByText("Needs review").length).toBeGreaterThan(0);
     expect(screen.getByText("Anna is the launch owner.")).toBeInTheDocument();
@@ -111,11 +227,33 @@ describe("BrainPanel", () => {
     expect(screen.getByText("1 recordings · 1 materials")).toBeInTheDocument();
   });
 
+  it("opens the source behind a recently organized row", async () => {
+    const onOpenSource = vi.fn();
+    render(<BrainPanel onOpenSource={onOpenSource} />);
+    await waitFor(() => expect(screen.getByText("Recently organized")).toBeInTheDocument());
+
+    fireEvent.click(screen.getByRole("button", { name: /Launch sync/i }));
+
+    expect(onOpenSource).toHaveBeenCalledWith("recording", "r1");
+  });
+
+  it("accepts a Space review pack and exports the selected Space", async () => {
+    render(<BrainPanel />);
+    await waitFor(() => expect(screen.getByText("Bridge from Mik Personal")).toBeInTheDocument());
+    fireEvent.click(screen.getByRole("button", { name: /Accept review pack/i }));
+    await waitFor(() => expect(mockAcceptBrainReviewPack).toHaveBeenCalledWith("s1", "rp1"));
+    expect(screen.queryByText("Bridge from Mik Personal")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "obsidian" }));
+    await waitFor(() => expect(mockExportBrainSpace).toHaveBeenCalledWith("s1", "obsidian"));
+    expect(screen.getByText(/obsidian export ready/i)).toBeInTheDocument();
+  });
+
   it("renders categorized entities sorted by degree (sources excluded)", async () => {
     render(<BrainPanel />);
     await waitFor(() => expect(screen.getByText("Anna")).toBeInTheDocument());
     fireEvent.click(screen.getByRole("tab", { name: "Index" }));
-    expect(screen.getByText("People")).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByText("People")).toBeInTheDocument());
     expect(screen.getByText("Topics")).toBeInTheDocument();
 
     const topics = screen.getByText("Topics").closest("section") as HTMLElement;

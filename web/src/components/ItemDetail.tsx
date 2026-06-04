@@ -1,12 +1,16 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { getItem, reprocessItem } from "@/lib/api";
+import { useCallback, useEffect, useState } from "react";
+import { deleteItem, getItem, reprocessItem } from "@/lib/api";
 import type { Item, KeyMoment } from "@/lib/types";
 
 interface ItemDetailProps {
   itemId: string;
   onError?: (message: string) => void;
+  onDeleted?: (itemId: string) => void | Promise<void>;
+  onItemChange?: (item: Item) => void;
+  pollIntervalMs?: number;
+  showDelete?: boolean;
 }
 
 function displayTitle(title: string | null, url: string | null): string {
@@ -23,7 +27,14 @@ function displayTitle(title: string | null, url: string | null): string {
 }
 
 /** Detail view for a non-recording Item: summary, key-moments table, key points. */
-export function ItemDetail({ itemId, onError }: ItemDetailProps) {
+export function ItemDetail({
+  itemId,
+  onError,
+  onDeleted,
+  onItemChange,
+  pollIntervalMs = 2000,
+  showDelete = true,
+}: ItemDetailProps) {
   // Keyed by itemId: resetting to "loading" happens via the deps, and all
   // state writes occur inside the async callbacks (not synchronously in the
   // effect body) to satisfy react-hooks/set-state-in-effect.
@@ -33,25 +44,27 @@ export function ItemDetail({ itemId, onError }: ItemDetailProps) {
     loading: true,
   });
 
-  useEffect(() => {
-    let cancelled = false;
-    getItem(itemId)
+  const loadItem = useCallback(() => {
+    return getItem(itemId)
       .then((value) => {
-        if (!cancelled) setState({ id: itemId, item: value, loading: false });
+        setState({ id: itemId, item: value, loading: false });
+        onItemChange?.(value);
       })
       .catch((err) => {
-        if (!cancelled) {
-          setState({ id: itemId, item: null, loading: false });
-          onError?.(err instanceof Error ? err.message : "Couldn't load item.");
-        }
+        setState({ id: itemId, item: null, loading: false });
+        onError?.(err instanceof Error ? err.message : "Couldn't load item.");
       });
-    return () => {
-      cancelled = true;
-    };
-  }, [itemId, onError]);
+  }, [itemId, onError, onItemChange]);
+
+  useEffect(() => {
+    void loadItem().catch(() => {
+      // Error is surfaced through loadItem's own catch path.
+    });
+  }, [loadItem]);
 
   const [pasteText, setPasteText] = useState("");
   const [recovering, setRecovering] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   const handleReprocess = async (body?: string) => {
     if (recovering) return;
@@ -59,6 +72,7 @@ export function ItemDetail({ itemId, onError }: ItemDetailProps) {
     try {
       const updated = await reprocessItem(itemId, body ? { body } : {});
       setState({ id: itemId, item: updated, loading: false });
+      onItemChange?.(updated);
       setPasteText("");
     } catch (err) {
       onError?.(err instanceof Error ? err.message : "Couldn't reprocess this item.");
@@ -69,6 +83,24 @@ export function ItemDetail({ itemId, onError }: ItemDetailProps) {
 
   const loading = state.loading || state.id !== itemId;
   const item = state.id === itemId ? state.item : null;
+
+  useEffect(() => {
+    if (!item || !["fetching", "summarizing"].includes(item.status)) return undefined;
+    const id = window.setTimeout(() => void loadItem(), pollIntervalMs);
+    return () => window.clearTimeout(id);
+  }, [item, loadItem, pollIntervalMs]);
+
+  const handleDelete = async () => {
+    if (deleting) return;
+    setDeleting(true);
+    try {
+      await deleteItem(itemId);
+      await onDeleted?.(itemId);
+    } catch (err) {
+      onError?.(err instanceof Error ? err.message : "Couldn't delete item.");
+      setDeleting(false);
+    }
+  };
 
   if (loading) {
     return <div className="item-detail item-detail--loading">Loading…</div>;
@@ -86,6 +118,16 @@ export function ItemDetail({ itemId, onError }: ItemDetailProps) {
       <header className="item-detail__header">
         <span className="item-detail__kind">{item.kind}</span>
         <h2 className="item-detail__title">{displayTitle(item.title, item.url)}</h2>
+        {showDelete ? (
+          <button
+            type="button"
+            className="ghost-button compact-button"
+            disabled={deleting}
+            onClick={() => void handleDelete()}
+          >
+            {deleting ? "Deleting..." : "Delete"}
+          </button>
+        ) : null}
         {item.url ? (
           <a className="item-detail__source" href={item.url} target="_blank" rel="noreferrer">
             {item.url}

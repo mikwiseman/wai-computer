@@ -11,11 +11,11 @@ worker can resume a run after an OOM/SIGKILL. The invariants it enforces:
 * **Skip-when-nothing-changed** — a wake whose input fingerprint matches the last
   success short-circuits with a journalled ``skip`` and does no model work.
 
-Plan-then-execute: a Haiku-class ``planner`` produces a plan + ``done_spec`` exactly
-once (journalled), execution appends ``tool_call`` / ``tool_result`` boundaries, and
-a verifier checks the ``done_spec`` before ``final``. Built in slices — this slice
-covers load + terminal-idempotency + skip + the journalled PLAN boundary with
-replay-without-refork; execute / approve / verify / final land next.
+Plan-then-execute: a planner produces a plan + ``done_spec`` exactly once
+(journalled), execution appends ``tool_call`` / ``tool_result`` boundaries, and a
+verifier checks the ``done_spec`` before ``final``. Mutating tools never run
+inline: they create a pending approval row and the runtime resumes only after the
+approval gate records a receipt.
 
 Privacy: plan/step payloads MAY carry recipient/body — they stay in Postgres and
 are NEVER logged raw (AGENTS.md).
@@ -23,6 +23,7 @@ are NEVER logged raw (AGENTS.md).
 
 from __future__ import annotations
 
+import hashlib
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -32,12 +33,18 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.companion_actions import expire_actions_for_run, propose_action
+from app.core.memory_proposal import propose_block_update
+from app.core.unified_search import unified_search
 from app.models.agent import Agent, AgentRun, AgentStep
+from app.models.companion_pending_action import CompanionPendingAction
+from app.models.item import Item, ItemChunk
 
 # A run in one of these states is finished — run_job is a no-op (safe re-delivery).
 TERMINAL_STATUSES: frozenset[str] = frozenset(
-    {"done", "failed", "expired", "skipped"}
+    {"done", "failed", "expired", "skipped", "cancelled"}
 )
+WAITING_APPROVAL_STATUSES: frozenset[str] = frozenset({"pending", "approved"})
 
 
 class AgentRuntimeError(Exception):
@@ -61,8 +68,25 @@ class AgentPlan:
     done_spec: dict[str, Any]
 
 
+@dataclass(frozen=True)
+class AgentStepResult:
+    """Result of executing one planned step.
+
+    ``status='awaiting_approval'`` means the side effect has not happened and
+    the runtime must stop until the approval ledger has a terminal receipt.
+    """
+
+    status: str
+    payload: dict[str, Any]
+
+
 # Injectable planner. Real impl = a bounded Haiku-class LLM call; tests pass a fake.
 Planner = Callable[[Agent, AgentRun], Awaitable[AgentPlan]]
+Executor = Callable[
+    [AsyncSession, Agent, AgentRun, dict[str, Any], int, str],
+    Awaitable[AgentStepResult],
+]
+Verifier = Callable[[AsyncSession, Agent, AgentRun], Awaitable[dict[str, Any]]]
 
 
 def _now() -> datetime:
@@ -70,9 +94,11 @@ def _now() -> datetime:
 
 
 async def _load_run(session: AsyncSession, run_id: UUID) -> AgentRun:
-    run = (
-        await session.execute(select(AgentRun).where(AgentRun.id == run_id))
-    ).scalar_one_or_none()
+    stmt = select(AgentRun).where(AgentRun.id == run_id)
+    bind = session.get_bind()
+    if getattr(getattr(bind, "dialect", None), "name", "") == "postgresql":
+        stmt = stmt.with_for_update()
+    run = (await session.execute(stmt)).scalar_one_or_none()
     if run is None:
         raise AgentRuntimeError("run_not_found", f"agent_run {run_id} does not exist")
     return run
@@ -88,18 +114,18 @@ async def _load_agent(session: AsyncSession, agent_id: UUID) -> Agent:
 
 
 async def _find_step(
-    session: AsyncSession, run_id: UUID, *, kind: str
+    session: AsyncSession,
+    run_id: UUID,
+    *,
+    kind: str,
+    idempotency_key: str | None = None,
 ) -> AgentStep | None:
     """The earliest journal boundary of ``kind`` for this run, or None — the
     replay primitive: 'has this boundary already happened?'."""
-    return (
-        await session.execute(
-            select(AgentStep)
-            .where(AgentStep.run_id == run_id, AgentStep.kind == kind)
-            .order_by(AgentStep.idx)
-            .limit(1)
-        )
-    ).scalar_one_or_none()
+    stmt = select(AgentStep).where(AgentStep.run_id == run_id, AgentStep.kind == kind)
+    if idempotency_key is not None:
+        stmt = stmt.where(AgentStep.idempotency_key == idempotency_key)
+    return (await session.execute(stmt.order_by(AgentStep.idx).limit(1))).scalar_one_or_none()
 
 
 async def _append_step(
@@ -135,8 +161,388 @@ def _should_skip(agent: Agent, run: AgentRun) -> bool:
     return run.content_hash is not None and run.content_hash == agent.content_hash
 
 
+def _step_tool_and_args(step: dict[str, Any], idx: int) -> tuple[str, dict[str, Any]]:
+    if not isinstance(step, dict):
+        raise AgentRuntimeError(
+            "invalid_plan_step", f"plan.steps[{idx}] must be an object"
+        )
+    tool = step.get("tool")
+    args = step.get("args") or {}
+    if not isinstance(tool, str) or not tool:
+        raise AgentRuntimeError(
+            "invalid_plan_step", f"plan.steps[{idx}].tool must be a non-empty string"
+        )
+    if not isinstance(args, dict):
+        raise AgentRuntimeError(
+            "invalid_plan_step", f"plan.steps[{idx}].args must be an object"
+        )
+    return tool, args
+
+
+def _plan_steps(plan: dict[str, Any]) -> list[dict[str, Any]]:
+    steps = plan.get("steps")
+    if steps is None:
+        return []
+    if not isinstance(steps, list):
+        raise AgentRuntimeError("invalid_plan", "plan.steps must be an array")
+    return steps
+
+
+def _tool_call_key(run: AgentRun, plan_step_idx: int) -> str:
+    return f"{run.id}:plan-step:{plan_step_idx}:tool_call"
+
+
+def _effect_key(run: AgentRun, tool_call_idx: int, tool_name: str) -> str:
+    return f"{run.id}:{tool_call_idx}:{tool_name}"
+
+
+async def static_config_planner(agent: Agent, run: AgentRun) -> AgentPlan:
+    """Plan from ``agent.config['steps']``.
+
+    This is the deterministic v1 planner used by API-created template agents and
+    tests. A future LLM planner can be swapped in without changing the journal,
+    approval, or execution safety boundary.
+    """
+    steps = (agent.config or {}).get("steps")
+    if not isinstance(steps, list):
+        raise AgentRuntimeError(
+            "missing_agent_steps",
+            "Agent config must include a steps array before it can run",
+        )
+    done_spec = (agent.config or {}).get("done_spec")
+    if done_spec is not None and not isinstance(done_spec, dict):
+        raise AgentRuntimeError("invalid_done_spec", "Agent done_spec must be an object")
+    return AgentPlan(
+        plan={"steps": steps},
+        done_spec=done_spec or {"mode": "all_steps_completed", "step_count": len(steps)},
+    )
+
+
+async def _find_pending_action_by_key(
+    session: AsyncSession, idempotency_key: str
+) -> CompanionPendingAction | None:
+    return (
+        await session.execute(
+            select(CompanionPendingAction).where(
+                CompanionPendingAction.idempotency_key == idempotency_key
+            )
+        )
+    ).scalar_one_or_none()
+
+
+async def _resume_approval_if_ready(
+    session: AsyncSession,
+    run: AgentRun,
+    *,
+    effect_key: str,
+) -> bool:
+    """Return True when this step already has/now gained a tool_result.
+
+    If the approval is still pending, set ``awaiting_approval`` and return
+    False. Rejection/expiry/failure is terminal and recorded as an error.
+    """
+    if await _find_step(session, run.id, kind="tool_result", idempotency_key=effect_key):
+        return True
+
+    approval = await _find_step(
+        session, run.id, kind="approval_request", idempotency_key=effect_key
+    )
+    if approval is None:
+        return False
+
+    row = await _find_pending_action_by_key(session, effect_key)
+    if row is None:
+        await _append_step(
+            session,
+            run,
+            kind="error",
+            payload={"code": "approval_row_missing", "idempotency_key": effect_key},
+            idempotency_key=effect_key,
+        )
+        run.status = "failed"
+        run.error = "Approval row missing"
+        run.finished_at = _now()
+        await session.flush()
+        return False
+
+    if row.status in WAITING_APPROVAL_STATUSES:
+        run.status = "awaiting_approval"
+        run.heartbeat_at = _now()
+        await session.flush()
+        return False
+
+    await _append_step(
+        session,
+        run,
+        kind="approval_result",
+        payload={"action_id": str(row.id), "status": row.status, "receipt": row.receipt},
+        idempotency_key=effect_key,
+    )
+    if row.status != "executed":
+        run.status = "failed"
+        run.error = f"Approval {row.status}"
+        run.finished_at = _now()
+        await _append_step(
+            session,
+            run,
+            kind="error",
+            payload={"code": "approval_not_executed", "status": row.status},
+            idempotency_key=effect_key,
+        )
+        await session.flush()
+        return False
+
+    run.status = "running"
+    run.heartbeat_at = _now()
+    await _append_step(
+        session,
+        run,
+        kind="tool_result",
+        payload={"status": "executed", "receipt": row.receipt or {}},
+        idempotency_key=effect_key,
+    )
+    return True
+
+
+async def _default_verifier(
+    session: AsyncSession, agent: Agent, run: AgentRun
+) -> dict[str, Any]:
+    steps = _plan_steps(run.plan or {})
+    tool_results = (
+        await session.execute(
+            select(AgentStep).where(
+                AgentStep.run_id == run.id,
+                AgentStep.kind == "tool_result",
+            )
+        )
+    ).scalars().all()
+    return {
+        "ok": len(tool_results) >= len(steps),
+        "expected_steps": len(steps),
+        "completed_steps": len(tool_results),
+    }
+
+
+def _content_hash(title: str, body: str, source_ref: str) -> str:
+    return hashlib.sha256(
+        f"agent\x00{source_ref}\x00{title}\x00{body}".encode("utf-8")
+    ).hexdigest()
+
+
+async def _create_artifact(
+    session: AsyncSession,
+    run: AgentRun,
+    *,
+    tool_call_idx: int,
+    args: dict[str, Any],
+) -> dict[str, Any]:
+    title = str(args.get("title") or "").strip()
+    body = str(args.get("body") or "").strip()
+    kind = str(args.get("kind") or "note").strip()
+    if not title:
+        raise AgentRuntimeError("invalid_tool_args", "create_artifact.title is required")
+    if not body:
+        raise AgentRuntimeError("invalid_tool_args", "create_artifact.body is required")
+    if not kind:
+        raise AgentRuntimeError("invalid_tool_args", "create_artifact.kind is required")
+    source_ref = f"agent_run:{run.id}:step:{tool_call_idx}"
+    existing = (
+        await session.execute(
+            select(Item).where(
+                Item.user_id == run.user_id,
+                Item.source == "agent",
+                Item.source_ref == source_ref,
+            )
+        )
+    ).scalar_one_or_none()
+    if existing is not None:
+        return {"item_id": str(existing.id), "created": False}
+
+    item = Item(
+        user_id=run.user_id,
+        source="agent",
+        source_ref=source_ref,
+        kind=kind,
+        title=title,
+        body=body,
+        content_hash=_content_hash(title, body, source_ref),
+        authority_score=0.7,
+        salience_score=0.5,
+        metadata_={"agent_run_id": str(run.id), "agent_step_idx": tool_call_idx},
+    )
+    session.add(item)
+    await session.flush()
+    session.add(ItemChunk(item_id=item.id, seq=0, content=f"{title}\n\n{body}"))
+    await session.flush()
+    return {"item_id": str(item.id), "created": True}
+
+
+async def execute_agent_step(
+    session: AsyncSession,
+    agent: Agent,
+    run: AgentRun,
+    step: dict[str, Any],
+    tool_call_idx: int,
+    idempotency_key: str,
+) -> AgentStepResult:
+    """Execute the small first-party v1 tool vocabulary.
+
+    External writes are represented only by ``propose_action``; the actual send
+    or desktop action remains owned by the approval/actuator pipeline.
+    """
+    tool, args = _step_tool_and_args(step, tool_call_idx)
+
+    if tool == "note":
+        text = str(args.get("text") or "").strip()
+        if not text:
+            raise AgentRuntimeError("invalid_tool_args", "note.text is required")
+        return AgentStepResult(status="done", payload={"text": text})
+
+    if tool == "create_artifact":
+        payload = await _create_artifact(
+            session, run, tool_call_idx=tool_call_idx, args=args
+        )
+        return AgentStepResult(status="done", payload=payload)
+
+    if tool == "search_wai":
+        query = str(args.get("query") or "").strip()
+        if not query:
+            raise AgentRuntimeError("invalid_tool_args", "search_wai.query is required")
+        limit = int(args.get("limit") or 10)
+        hits = await unified_search(session, run.user_id, query, limit=limit)
+        return AgentStepResult(
+            status="done",
+            payload={
+                "query": query,
+                "hits": [
+                    {
+                        "source_kind": h.source_kind,
+                        "parent_id": h.parent_id,
+                        "chunk_id": h.chunk_id,
+                        "title": h.title,
+                        "kind": h.kind,
+                        "snippet": h.snippet,
+                        "score": h.score,
+                        "created_at": h.created_at,
+                    }
+                    for h in hits
+                ],
+            },
+        )
+
+    if tool == "propose_memory":
+        content = str(args.get("content") or "").strip()
+        block = str(args.get("block") or "topics").strip()
+        operation = str(args.get("operation") or "append").strip()
+        if not content:
+            raise AgentRuntimeError("invalid_tool_args", "propose_memory.content is required")
+        outcome = await propose_block_update(
+            session,
+            run.user_id,
+            block_label=block,
+            operation=operation,
+            content=content,
+            target_line=args.get("target_line"),
+            confidence=float(args.get("confidence") or 0.6),
+            authority=str(args.get("authority") or "agent"),
+            summary=args.get("summary"),
+            evidence=args.get("evidence"),
+        )
+        if outcome is None:
+            return AgentStepResult(status="done", payload={"proposal": "duplicate"})
+        return AgentStepResult(
+            status="done",
+            payload={
+                "proposal_id": str(outcome.proposal.id),
+                "decision": outcome.decision,
+                "status": outcome.proposal.status,
+            },
+        )
+
+    if tool == "propose_action":
+        existing = await _find_pending_action_by_key(session, idempotency_key)
+        if existing is not None:
+            return AgentStepResult(
+                status="awaiting_approval",
+                payload={"action_id": str(existing.id), "status": existing.status},
+            )
+        tool_name = str(args.get("tool_name") or "").strip()
+        action_args = args.get("action_args") or {}
+        preview = str(args.get("preview") or "").strip()
+        kind = str(args.get("kind") or "mutate").strip()
+        if not tool_name:
+            raise AgentRuntimeError("invalid_tool_args", "propose_action.tool_name is required")
+        if not isinstance(action_args, dict):
+            raise AgentRuntimeError(
+                "invalid_tool_args",
+                "propose_action.action_args must be an object",
+            )
+        if not preview:
+            raise AgentRuntimeError("invalid_tool_args", "propose_action.preview is required")
+        device_target = args.get("device_target")
+        if tool_name.startswith("desktop_") and not device_target:
+            raise AgentRuntimeError(
+                "invalid_tool_args",
+                "propose_action.device_target is required for desktop actions",
+            )
+        row = await propose_action(
+            session,
+            user_id=run.user_id,
+            conversation_id=None,
+            agent_run_id=run.id,
+            agent_step_idx=tool_call_idx,
+            kind=kind,
+            tool_name=tool_name,
+            args=action_args,
+            preview=preview,
+            idempotency_key=idempotency_key,
+            recipient_display=args.get("recipient_display"),
+            device_target=device_target,
+            ttl_seconds=int(args.get("ttl_seconds") or 300),
+        )
+        return AgentStepResult(
+            status="awaiting_approval",
+            payload={
+                "action_id": str(row.id),
+                "tool": tool_name,
+                "expires_at": row.expires_at.isoformat(),
+            },
+        )
+
+    raise AgentRuntimeError("unknown_agent_tool", f"Unknown agent tool: {tool}")
+
+
+async def cancel_run(
+    session: AsyncSession,
+    run: AgentRun,
+    *,
+    reason: str | None = None,
+) -> AgentRun:
+    if run.status in TERMINAL_STATUSES:
+        return run
+    now = _now()
+    run.cancel_requested_at = now
+    await expire_actions_for_run(session, run_id=run.id, user_id=run.user_id, now=now)
+    if await _find_step(session, run.id, kind="cancel") is None:
+        await _append_step(
+            session,
+            run,
+            kind="cancel",
+            payload={"reason": reason or "cancelled"},
+        )
+    run.status = "cancelled"
+    run.finished_at = now
+    await session.flush()
+    return run
+
+
 async def run_job(
-    session: AsyncSession, run_id: UUID, *, planner: Planner
+    session: AsyncSession,
+    run_id: UUID,
+    *,
+    planner: Planner,
+    executor: Executor | None = None,
+    verifier: Verifier | None = None,
 ) -> AgentRun:
     """Replay + advance one agent run. Idempotent across re-delivery / resume.
 
@@ -152,6 +558,11 @@ async def run_job(
         return run
 
     agent = await _load_agent(session, run.agent_id)
+    run.error = None
+
+    if run.cancel_requested_at is not None:
+        await cancel_run(session, run, reason="cancel requested")
+        return run
 
     # Skip-when-nothing-changed — journal the decision, terminate as skipped.
     if _should_skip(agent, run):
@@ -166,22 +577,141 @@ async def run_job(
         await session.flush()
         return run
 
-    # PLAN — journalled exactly once. On a resume the plan boundary already exists,
-    # so we replay it instead of calling the planner again (never re-plan/fork).
-    if await _find_step(session, run.id, kind="plan") is None:
-        run.status = "planning"
-        if run.started_at is None:
-            run.started_at = _now()
-        plan = await planner(agent, run)
-        await _append_step(
-            session,
-            run,
-            kind="plan",
-            payload={"plan": plan.plan, "done_spec": plan.done_spec},
-        )
-        run.plan = plan.plan
-        run.done_spec = plan.done_spec
-        run.status = "running"
-        await session.flush()
+    try:
+        # PLAN — journalled exactly once. On a resume the plan boundary already
+        # exists, so we replay it instead of calling the planner again.
+        if await _find_step(session, run.id, kind="plan") is None:
+            run.status = "planning"
+            if run.started_at is None:
+                run.started_at = _now()
+            plan = await planner(agent, run)
+            await _append_step(
+                session,
+                run,
+                kind="plan",
+                payload={"plan": plan.plan, "done_spec": plan.done_spec},
+            )
+            run.plan = plan.plan
+            run.done_spec = plan.done_spec
+            run.status = "running"
+            await session.flush()
 
-    return run
+        # Existing callers/tests can still use the plan-only harness by omitting
+        # an executor.
+        if executor is None:
+            return run
+
+        for plan_step_idx, step in enumerate(_plan_steps(run.plan or {})):
+            tool_name, _ = _step_tool_and_args(step, plan_step_idx)
+            tool_key = _tool_call_key(run, plan_step_idx)
+            tool_call = await _find_step(
+                session, run.id, kind="tool_call", idempotency_key=tool_key
+            )
+            if tool_call is None:
+                tool_call = await _append_step(
+                    session,
+                    run,
+                    kind="tool_call",
+                    payload=step,
+                    idempotency_key=tool_key,
+                )
+            effect_key = _effect_key(run, tool_call.idx, tool_name)
+
+            if await _resume_approval_if_ready(session, run, effect_key=effect_key):
+                continue
+            if run.status in {"awaiting_approval", "failed"}:
+                return run
+            if await _find_step(
+                session, run.id, kind="tool_result", idempotency_key=effect_key
+            ):
+                continue
+
+            result = await executor(
+                session, agent, run, step, tool_call.idx, effect_key
+            )
+            if result.status == "awaiting_approval":
+                if await _find_step(
+                    session,
+                    run.id,
+                    kind="approval_request",
+                    idempotency_key=effect_key,
+                ) is None:
+                    await _append_step(
+                        session,
+                        run,
+                        kind="approval_request",
+                        payload=result.payload,
+                        idempotency_key=effect_key,
+                    )
+                run.status = "awaiting_approval"
+                await session.flush()
+                return run
+            if result.status != "done":
+                raise AgentRuntimeError(
+                    "invalid_executor_result",
+                    f"Executor returned unknown status {result.status}",
+                )
+            await _append_step(
+                session,
+                run,
+                kind="tool_result",
+                payload=result.payload,
+                idempotency_key=effect_key,
+            )
+
+        verifier = verifier or _default_verifier
+        verify_step = await _find_step(session, run.id, kind="verify")
+        if verify_step is None:
+            verdict = await verifier(session, agent, run)
+            verify_step = await _append_step(session, run, kind="verify", payload=verdict)
+        verdict = verify_step.payload or {}
+        if verdict.get("ok") is not True:
+            run.status = "failed"
+            run.error = "Agent verification failed"
+            run.finished_at = _now()
+            if await _find_step(session, run.id, kind="error") is None:
+                await _append_step(
+                    session,
+                    run,
+                    kind="error",
+                    payload={"code": "verification_failed", "verdict": verdict},
+                )
+            await session.flush()
+            return run
+        if await _find_step(session, run.id, kind="final") is None:
+            run.status = "done"
+            run.result = {
+                "status": "done",
+                "completed_at": _now().isoformat(),
+                "done_spec": run.done_spec or {},
+            }
+            run.finished_at = _now()
+            agent.last_run_at = run.finished_at
+            if run.content_hash:
+                agent.content_hash = run.content_hash
+            await _append_step(session, run, kind="final", payload=run.result)
+        await session.flush()
+        return run
+    except AgentRuntimeError as exc:
+        if await _find_step(session, run.id, kind="error") is None:
+            await _append_step(
+                session, run, kind="error", payload={"code": exc.code, "message": exc.message}
+            )
+        run.status = "failed"
+        run.error = exc.message
+        run.finished_at = _now()
+        await session.flush()
+        return run
+    except Exception as exc:
+        if await _find_step(session, run.id, kind="error") is None:
+            await _append_step(
+                session,
+                run,
+                kind="error",
+                payload={"code": "unexpected_error", "message": type(exc).__name__},
+            )
+        run.status = "failed"
+        run.error = f"Unexpected agent runtime error: {type(exc).__name__}"
+        run.finished_at = _now()
+        await session.flush()
+        return run

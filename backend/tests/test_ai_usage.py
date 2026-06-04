@@ -12,6 +12,7 @@ from app.core.ai_usage import (
     OPENAI_PROVIDER,
     STATUS_SUCCEEDED,
     estimate_cost_usd,
+    estimate_deepgram_usage_cost,
     record_ai_usage_event,
     usage_from_response,
 )
@@ -72,6 +73,21 @@ def test_estimate_cost_prices_known_models_and_marks_unknown_models_unpriced() -
         model="gpt-unknown",
         input_tokens=1_000,
     ) == (None, "unpriced")
+
+
+def test_estimate_deepgram_usage_cost_prices_mode_and_addons() -> None:
+    cost = estimate_deepgram_usage_cost(
+        model="nova-3",
+        billable_seconds=60,
+        billing_mode="pre_recorded",
+        language_mode="multilingual",
+        addons=["speaker_diarization", "keyterm_prompting"],
+    )
+
+    assert cost.amount_usd == 0.0125
+    assert cost.pricing_status == "priced"
+    assert cost.price_source == "deepgram-payg-2026-06-04"
+    assert cost.addons == ["keyterm_prompting", "speaker_diarization"]
 
 
 @pytest.mark.asyncio

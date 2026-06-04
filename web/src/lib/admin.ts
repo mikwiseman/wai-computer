@@ -72,12 +72,14 @@ export interface AdminDeepgramUsage {
   window_days: number;
   captured: {
     events: number;
+    estimated_cost_usd: number;
     audio_seconds: number;
     billable_seconds: number;
     succeeded: number;
     failed: number;
     refused: number;
     provider_402: number;
+    unpriced_events: number;
   };
   estimated: {
     recording_seconds: number;
@@ -200,6 +202,10 @@ export interface AdminAiUsageEvent {
   billable_seconds: number | null;
   estimated_cost_usd: number | null;
   pricing_status: string;
+  billing_mode: string | null;
+  language_mode: string | null;
+  addons: string[];
+  price_source: string | null;
   latency_ms: number | null;
   provider_status_code: number | null;
   provider_error_code: string | null;
@@ -229,10 +235,12 @@ export interface AdminDeepgramUserUsage {
   user_id: string;
   email: string | null;
   captured_events: number;
+  captured_estimated_cost_usd: number;
   captured_billable_seconds: number;
   captured_audio_seconds: number;
   captured_failed_events: number;
   captured_refused_events: number;
+  captured_unpriced_events: number;
   provider_402_events: number;
   recording_count: number;
   failed_recordings: number;
@@ -250,8 +258,10 @@ export interface AdminDeepgramOperationUsage {
   purpose: string;
   status: string;
   events: number;
+  estimated_cost_usd: number;
   audio_seconds: number;
   billable_seconds: number;
+  unpriced_events: number;
   provider_402: number;
 }
 
@@ -259,9 +269,11 @@ export interface AdminDeepgramDayUsage {
   date: string;
   captured_events: number;
   captured_audio_seconds: number;
+  captured_estimated_cost_usd: number;
   captured_billable_seconds: number;
   captured_failed_events: number;
   captured_refused_events: number;
+  captured_unpriced_events: number;
   estimated_recordings: number;
   estimated_recording_seconds: number;
   estimated_dictation_entries: number;
@@ -278,10 +290,12 @@ export interface AdminDeepgramRecordingUsage {
   duration_seconds: number;
   billed_word_count: number;
   captured_events: number;
+  estimated_cost_usd: number;
   captured_billable_seconds: number;
   failed_events: number;
   refused_events: number;
   provider_402_events: number;
+  unpriced_events: number;
   last_event_at: string | null;
 }
 
@@ -299,6 +313,12 @@ export interface AdminDeepgramUsageEvent {
   content_type: string | null;
   audio_seconds: number | null;
   billable_seconds: number | null;
+  estimated_cost_usd: number | null;
+  pricing_status: string;
+  billing_mode: string | null;
+  language_mode: string | null;
+  addons: string[];
+  price_source: string | null;
   channel_count: number | null;
   audio_bytes: number | null;
   latency_ms: number | null;
@@ -306,6 +326,11 @@ export interface AdminDeepgramUsageEvent {
   provider_error_code: string | null;
   guard_code: string | null;
   error_type: string | null;
+}
+
+export interface AdminDeepgramUsageFilters {
+  days?: number;
+  limit?: number;
 }
 
 export interface AdminUsageBucket {
@@ -469,8 +494,13 @@ export function getAdminObservability(): Promise<AdminObservability> {
   return apiFetch<AdminObservability>("/api/admin/observability");
 }
 
-export function getAdminDeepgramUsage(days = 7): Promise<AdminDeepgramUsage> {
-  return apiFetch<AdminDeepgramUsage>(`/api/admin/deepgram-usage?days=${days}`);
+export function getAdminDeepgramUsage(
+  filters: AdminDeepgramUsageFilters = {},
+): Promise<AdminDeepgramUsage> {
+  const params = new URLSearchParams();
+  params.set("days", String(filters.days ?? 7));
+  if (filters.limit) params.set("limit", String(filters.limit));
+  return apiFetch<AdminDeepgramUsage>(`/api/admin/deepgram-usage?${params.toString()}`);
 }
 
 export function getAdminAiUsage(filters: AdminAiUsageFilters = {}): Promise<AdminAiUsage> {

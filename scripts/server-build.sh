@@ -6,12 +6,19 @@
 # server and uses the private production runtime env file.
 set -euo pipefail
 
+DEPLOY_LOCK_FILE="${DEPLOY_LOCK_FILE:-/var/lock/waicomputer-deploy.lock}"
+if [[ "${WAICOMPUTER_DEPLOY_LOCK_HELD:-0}" != "1" ]]; then
+  exec flock -n "$DEPLOY_LOCK_FILE" env WAICOMPUTER_DEPLOY_LOCK_HELD=1 bash "$0" "$@"
+fi
+
 PROD_ROOT="${PROD_ROOT:-}"
 PROD_ENV_FILE="${PROD_ENV_FILE:-}"
 PROD_ENV_DIR=$(dirname "$PROD_ENV_FILE")
 LEGACY_ENV_FILE=""
 GIT_SHA="${GIT_SHA:-}"
 GIT_DIRTY="${GIT_DIRTY:-false}"
+DEPLOY_BUILD_TIMEOUT_SECONDS="${DEPLOY_BUILD_TIMEOUT_SECONDS:-1800}"
+MIN_FREE_DISK_MB="${MIN_FREE_DISK_MB:-4096}"
 
 if [[ -z "$GIT_SHA" ]]; then
   echo "ERROR: GIT_SHA is required for production builds" >&2
@@ -66,6 +73,19 @@ docker_compose() {
   docker compose --env-file "$PROD_ENV_FILE" "$@"
 }
 
+docker_compose_timeout() {
+  timeout "$DEPLOY_BUILD_TIMEOUT_SECONDS" docker compose --env-file "$PROD_ENV_FILE" "$@"
+}
+
+require_disk_headroom() {
+  local available_mb
+  available_mb="$(df -Pm "$PROD_ROOT" | awk 'NR == 2 {print $4}')"
+  if [[ -z "$available_mb" || "$available_mb" -lt "$MIN_FREE_DISK_MB" ]]; then
+    echo "ERROR: insufficient disk headroom on $PROD_ROOT (${available_mb:-unknown} MB available; need ${MIN_FREE_DISK_MB} MB)." >&2
+    exit 1
+  fi
+}
+
 legacy_db_container=$(docker ps -aq --filter label=com.docker.compose.project=backend --filter label=com.docker.compose.service=db | head -n 1 || true)
 if [[ -n "$legacy_db_container" ]]; then
   LEGACY_ENV_FILE=$(docker inspect -f '{{ index .Config.Labels "com.docker.compose.project.environment_file" }}' "$legacy_db_container" 2>/dev/null || true)
@@ -114,23 +134,35 @@ export SENTRY_AUTH_TOKEN
 SENTRY_AUTH_TOKEN=$(read_env_key SENTRY_AUTH_TOKEN)
 export SENTRY_UPLOAD_REQUIRED=1
 
+CELERY_STOPPED_FOR_BUILD=false
+restart_celery_on_exit() {
+  if [[ "$CELERY_STOPPED_FOR_BUILD" == "true" ]]; then
+    echo "Restarting celery-worker after interrupted deploy..."
+    docker_compose up -d celery-worker || true
+  fi
+}
+trap restart_celery_on_exit EXIT
+
 docker_compose config >/dev/null
+require_disk_headroom
 
 # Build ONE service at a time with Celery stopped. The 3.8 GB VPS OOMs when
 # building all images concurrently (BuildKit parallelism); stopping the worker
 # first frees ~1 GB of headroom for the heavy web (Next.js) build. Celery's
 # queue must already be drained before a deploy.
-docker_compose stop celery-worker || true
-docker_compose build api
-docker_compose build celery-worker
-docker_compose build web
+docker_compose stop celery-worker
+CELERY_STOPPED_FOR_BUILD=true
+docker_compose_timeout build api
+docker_compose_timeout build celery-worker
+docker_compose_timeout build web
 
 # Apply DB migrations with the freshly built image before swapping containers
 # in. Migrations are additive, so the still-running old API tolerates the new
 # schema during the brief window until `up -d` recreates the containers.
-docker_compose run --rm api alembic upgrade head
+docker_compose_timeout run --rm api alembic upgrade head
 
 docker_compose up -d --remove-orphans telegram-bot-api api web celery-worker caddy
+CELERY_STOPPED_FOR_BUILD=false
 
 wait_for_service \
   "Telegram Bot API running" \

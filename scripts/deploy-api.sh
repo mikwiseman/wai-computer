@@ -17,6 +17,7 @@ GIT_DIRTY="${GIT_DIRTY:-false}"
 if [[ -n "$(git status --porcelain)" ]]; then
   GIT_DIRTY=true
 fi
+ALLOW_DIRTY_DEPLOY="${ALLOW_DIRTY_DEPLOY:-0}"
 
 if [[ -z "$VPS_USER" ]]; then
   echo "ERROR: VPS_USER is required" >&2
@@ -45,6 +46,12 @@ if [[ -z "${SENTRY_AUTH_TOKEN:-}" ]]; then
   exit 1
 fi
 
+if [[ "$GIT_DIRTY" == "true" && "$ALLOW_DIRTY_DEPLOY" != "1" ]]; then
+  echo "ERROR: refusing to deploy a dirty worktree. Commit first or set ALLOW_DIRTY_DEPLOY=1 for an explicit emergency deploy." >&2
+  git status --short >&2
+  exit 1
+fi
+
 echo "Syncing source to ${VPS_USER}@${VPS_HOST}:${REMOTE_ROOT} ..."
 
 ssh \
@@ -62,6 +69,10 @@ rsync \
   --exclude '.git/' \
   --exclude '.github/' \
   --exclude '.codex/' \
+  --exclude '.claude/' \
+  --exclude '.playwright-mcp/' \
+  --exclude '.env' \
+  --exclude '.env.*' \
   --exclude '.venv/' \
   --exclude '.venv312/' \
   --exclude '.pytest_cache/' \
@@ -69,6 +80,7 @@ rsync \
   --exclude '.coverage' \
   --exclude '__pycache__/' \
   --exclude 'backend/.env' \
+  --exclude 'backend/.env.*' \
   --exclude 'backend/.venv/' \
   --exclude 'backend/.venv312/' \
   --exclude 'backend/.pytest_cache/' \
@@ -76,6 +88,8 @@ rsync \
   --exclude 'backend/htmlcov/' \
   --exclude 'backend/coverage.xml' \
   --exclude 'web/node_modules/' \
+  --exclude 'web/.env' \
+  --exclude 'web/.env.*' \
   --exclude 'web/.next/' \
   --exclude 'web/coverage/' \
   --exclude 'web/test-results/' \

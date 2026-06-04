@@ -88,6 +88,7 @@ def test_pending_action_table_registered():
     cols = set(table.columns.keys())
     assert {
         "id", "user_id", "conversation_id", "kind", "tool_name",
+        "agent_run_id", "agent_step_idx",
         "action_manifest", "payload_hmac", "idempotency_key", "status",
         "expires_at", "device_target", "recipient_display", "decision",
         "receipt", "resolved_at", "created_at", "updated_at",

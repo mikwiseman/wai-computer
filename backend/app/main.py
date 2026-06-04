@@ -14,10 +14,12 @@ from starlette.routing import Route
 from app.api.routes import (
     action_items,
     admin,
+    agents,
     api_keys,
     auth,
     benchmarks,
     brain,
+    brain_spaces,
     companion,
     comparisons,
     dictation,
@@ -195,6 +197,7 @@ app.include_router(system.router, prefix="/api")
 app.include_router(system.self_host_router, prefix="/api")
 app.include_router(settings_routes.router, prefix="/api")
 app.include_router(action_items.router, prefix="/api")
+app.include_router(agents.router, prefix="/api")
 app.include_router(admin.router, prefix="/api")
 app.include_router(entities.router, prefix="/api")
 app.include_router(folders.router, prefix="/api")
@@ -203,6 +206,7 @@ app.include_router(items.router, prefix="/api")
 app.include_router(comparisons.router, prefix="/api")
 app.include_router(mcp_connections.router, prefix="/api")
 app.include_router(memory_proposals.router, prefix="/api")
+app.include_router(brain_spaces.router, prefix="/api")
 app.include_router(brain.router, prefix="/api")
 app.include_router(people.router, prefix="/api")
 app.include_router(personalization.router, prefix="/api")

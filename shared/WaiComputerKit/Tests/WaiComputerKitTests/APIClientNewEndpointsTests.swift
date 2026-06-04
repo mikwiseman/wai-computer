@@ -36,6 +36,23 @@ final class APIClientNewEndpointsTests: XCTestCase {
         return try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
     }
 
+    private final class RequestPathRecorder: @unchecked Sendable {
+        private let lock = NSLock()
+        private var paths: [String] = []
+
+        func append(_ path: String) {
+            lock.lock()
+            paths.append(path)
+            lock.unlock()
+        }
+
+        func values() -> [String] {
+            lock.lock()
+            defer { lock.unlock() }
+            return paths
+        }
+    }
+
     // MARK: - System & Self-hosting
 
     func testGetSystemInfoUsesSystemEndpoint() async throws {
@@ -128,6 +145,336 @@ final class APIClientNewEndpointsTests: XCTestCase {
         XCTAssertNil(result.hostname)
         XCTAssertEqual(result.vpsIP, "203.0.113.10")
         XCTAssertEqual(result.steps.first?.label, "Validate VPS address and SSH access")
+    }
+
+    func testGetSelfHostMigrationContractUsesContractEndpoint() async throws {
+        let client = makeClient()
+
+        MockURLProtocol.requestHandler = { request in
+            XCTAssertEqual(request.httpMethod, "GET")
+            XCTAssertEqual(request.url?.path, "/api/self-host/migration/contract")
+            let response = HTTPURLResponse(
+                url: request.url!,
+                statusCode: 200,
+                httpVersion: nil,
+                headerFields: nil
+            )!
+            let payload = """
+            {
+              "schema_version": "2026-06-03",
+              "archive_format": "wai-self-host-export-v1",
+              "requires_same_alembic_head": true,
+              "preserve_user_ids": true,
+              "collision_policy": "reject",
+              "secret_policy": "reconnect_or_bring_your_own",
+              "owned_exportable": {"tables": [{"table":"agents"}], "artifacts": []},
+              "reconnect_required": {"tables": [], "artifacts": []},
+              "server_local": {"tables": [], "artifacts": []},
+              "excluded": {"tables": [], "artifacts": []}
+            }
+            """.data(using: .utf8)!
+            return (response, payload)
+        }
+
+        let contract = try await client.getSelfHostMigrationContract()
+
+        XCTAssertEqual(contract.schemaVersion, "2026-06-03")
+        XCTAssertEqual(contract.archiveFormat, "wai-self-host-export-v1")
+        XCTAssertEqual(contract.ownedExportable.tables.first?["table"]?.stringValue, "agents")
+    }
+
+    func testAgentControlPlaneEndpoints() async throws {
+        let client = makeClient()
+        let seenPaths = RequestPathRecorder()
+
+        MockURLProtocol.requestHandler = { [self] request in
+            seenPaths.append(request.url?.path ?? "")
+            let path = request.url?.path ?? ""
+            let response = HTTPURLResponse(
+                url: request.url!,
+                statusCode: path == "/api/agents/agent-1" && request.httpMethod == "DELETE" ? 204 : 200,
+                httpVersion: nil,
+                headerFields: nil
+            )!
+
+            if path == "/api/agents/capabilities" {
+                let payload = """
+                {
+                  "schema_version": "2026-06-03",
+                  "deployment_mode": "wai_cloud",
+                  "max_steps": 20,
+                  "runtime_modes": [{"id":"wai_cloud","label":"Wai Cloud","description":"cloud","available":true}],
+                  "capabilities": [{
+                    "id": "wai.search",
+                    "label": "Search Wai data",
+                    "category": "memory",
+                    "description": "Search",
+                    "availability": "available",
+                    "runtime_tool": "search_wai",
+                    "surfaces": ["web", "mac", "telegram"],
+                    "requires_approval": false,
+                    "cloud_supported": true,
+                    "self_host_supported": true,
+                    "local_gateway_required": false,
+                    "safety_notes": "Read-only"
+                  }]
+                }
+                """.data(using: .utf8)!
+                return (response, payload)
+            }
+
+            if path == "/api/agents" && request.httpMethod == "GET" {
+                let payload = """
+                {"agents":[{"id":"agent-1","name":"Daily","kind":"brief","trigger_type":"manual","config":{},"autonomy":"propose","enabled":true,"next_run_at":null,"last_run_at":null,"created_at":"2026-06-03T12:00:00Z","updated_at":"2026-06-03T12:00:00Z"}]}
+                """.data(using: .utf8)!
+                return (response, payload)
+            }
+
+            if path == "/api/agents" && request.httpMethod == "POST" {
+                let body = try jsonBody(from: request)
+                XCTAssertEqual(body["name"] as? String, "Daily")
+                let payload = """
+                {"id":"agent-1","name":"Daily","kind":"brief","trigger_type":"manual","config":{},"autonomy":"propose","enabled":true,"next_run_at":null,"last_run_at":null,"created_at":"2026-06-03T12:00:00Z","updated_at":"2026-06-03T12:00:00Z"}
+                """.data(using: .utf8)!
+                return (response, payload)
+            }
+
+            if path == "/api/agents/agent-1/runs" && request.httpMethod == "POST" {
+                let body = try jsonBody(from: request)
+                XCTAssertEqual(body["idempotency_key"] as? String, "same")
+                let payload = """
+                {"id":"run-1","agent_id":"agent-1","trigger_key":"manual:agent-1:same","trigger_kind":"manual","trigger_payload":{"objective":"brief"},"status":"pending","plan":null,"done_spec":null,"result":null,"content_hash":null,"error":null,"next_step_idx":0,"heartbeat_at":null,"started_at":null,"finished_at":null,"cancel_requested_at":null,"created_at":"2026-06-03T12:00:00Z","updated_at":"2026-06-03T12:00:00Z"}
+                """.data(using: .utf8)!
+                return (response, payload)
+            }
+
+            if path == "/api/agents/agent-1/runs" && request.httpMethod == "GET" {
+                return (response, #"{"runs":[]}"#.data(using: .utf8)!)
+            }
+
+            if path == "/api/agents/agent-1/runs/run-1/actions/action-1/resolve" {
+                let body = try jsonBody(from: request)
+                XCTAssertEqual(body["decision"] as? String, "once")
+                return (response, #"{"action_id":"action-1","status":"executed","run_status":"done","recipient":"you"}"#.data(using: .utf8)!)
+            }
+
+            if path == "/api/agents/agent-1" && request.httpMethod == "DELETE" {
+                return (response, Data())
+            }
+
+            return (response, Data("{}".utf8))
+        }
+
+        let caps = try await client.getAgentCapabilities()
+        XCTAssertEqual(caps.capabilities.first?.id, "wai.search")
+        let agents = try await client.listAgents(limit: 10)
+        XCTAssertEqual(agents.agents.first?.name, "Daily")
+        let created = try await client.createAgent(AgentCreateRequest(name: "Daily", kind: "brief"))
+        XCTAssertEqual(created.id, "agent-1")
+        let run = try await client.startAgentRun(
+            agentId: "agent-1",
+            StartAgentRunRequest(
+                triggerKind: .manual,
+                triggerPayload: ["objective": .string("brief")],
+                idempotencyKey: "same"
+            )
+        )
+        XCTAssertEqual(run.id, "run-1")
+        _ = try await client.listAgentRuns(agentId: "agent-1", status: "pending", limit: 5)
+        let resolved = try await client.resolveAgentAction(
+            agentId: "agent-1",
+            runId: "run-1",
+            actionId: "action-1",
+            ResolveAgentActionRequest(decision: "once")
+        )
+        XCTAssertEqual(resolved.runStatus, "done")
+        try await client.deleteAgent(agentId: "agent-1")
+
+        XCTAssertEqual(
+            seenPaths.values(),
+            [
+                "/api/agents/capabilities",
+                "/api/agents",
+                "/api/agents",
+                "/api/agents/agent-1/runs",
+                "/api/agents/agent-1/runs",
+                "/api/agents/agent-1/runs/run-1/actions/action-1/resolve",
+                "/api/agents/agent-1"
+            ]
+        )
+    }
+
+    // MARK: - WaiBrain Spaces
+
+    func testBrainSpaceEndpointsUseCanonicalSpaceRoutes() async throws {
+        let client = makeClient()
+        let seenPaths = RequestPathRecorder()
+
+        MockURLProtocol.requestHandler = { [self] request in
+            seenPaths.append(request.url?.path ?? "")
+            let path = request.url?.path ?? ""
+            let response = HTTPURLResponse(
+                url: request.url!,
+                statusCode: path == "/api/brain/spaces" && request.httpMethod == "POST" ? 201 : 200,
+                httpVersion: nil,
+                headerFields: nil
+            )!
+
+            if path == "/api/brain/spaces" && request.httpMethod == "GET" {
+                let payload = """
+                {"spaces":[{"id":"space-1","owner_user_id":"user-1","name":"Wai School","slug":"wai-school","kind":"work","engine_profile":"waibrain","visibility":"private","description":null,"metadata":{},"role":"owner","created_at":"2026-06-04T09:00:00Z","updated_at":"2026-06-04T09:00:00Z"}]}
+                """.data(using: .utf8)!
+                return (response, payload)
+            }
+
+            if path == "/api/brain/spaces" && request.httpMethod == "POST" {
+                let body = try jsonBody(from: request)
+                XCTAssertEqual(body["name"] as? String, "Wai School")
+                XCTAssertEqual(body["engine_profile"] as? String, "waibrain")
+                let payload = """
+                {"id":"space-1","owner_user_id":"user-1","name":"Wai School","slug":"wai-school","kind":"work","engine_profile":"waibrain","visibility":"private","description":null,"metadata":{},"role":"owner","created_at":"2026-06-04T09:00:00Z","updated_at":"2026-06-04T09:00:00Z"}
+                """.data(using: .utf8)!
+                return (response, payload)
+            }
+
+            if path == "/api/brain/spaces/space-1/home" {
+                let payload = """
+                {"space":{"id":"space-1","owner_user_id":"user-1","name":"Wai School","slug":"wai-school","kind":"work","engine_profile":"waibrain","visibility":"private","description":null,"metadata":{},"role":"owner","created_at":"2026-06-04T09:00:00Z","updated_at":"2026-06-04T09:00:00Z"},"page_count":1,"source_count":1,"claim_counts":{"workflow_rule":1},"source_counts":{"item":1},"pending_review_count":1,"recent_pages":[{"id":"page-1","space_id":"space-1","title":"Customer stage rules","slug":"customer-stage-rules","kind":"workflow","status":"active","markdown":"---\\nwai_type: brain_page\\n---","frontmatter":{},"version":1,"claims":[{"id":"claim-1","space_id":"space-1","page_id":"page-1","kind":"workflow_rule","status":"active","text":"Use 40 minute intro sessions.","confidence":0.9,"authority":"self","salience":null,"evidence":[],"source_refs":[],"metadata":{}}],"created_at":"2026-06-04T09:00:00Z","updated_at":"2026-06-04T09:00:00Z"}],"engine_profiles":["waibrain","obsidian","gbrain","mempalace"]}
+                """.data(using: .utf8)!
+                return (response, payload)
+            }
+
+            if path == "/api/brain/spaces/space-1/pages" && request.httpMethod == "GET" {
+                let payload = """
+                {"pages":[{"id":"page-1","space_id":"space-1","title":"Customer stage rules","slug":"customer-stage-rules","kind":"workflow","status":"active","markdown":"body","frontmatter":{},"version":1,"claims":[],"created_at":null,"updated_at":null}]}
+                """.data(using: .utf8)!
+                return (response, payload)
+            }
+
+            if path == "/api/brain/spaces/space-1/pages" && request.httpMethod == "POST" {
+                let body = try jsonBody(from: request)
+                XCTAssertEqual(body["title"] as? String, "Customer stage rules")
+                let payload = """
+                {"id":"page-1","space_id":"space-1","title":"Customer stage rules","slug":"customer-stage-rules","kind":"workflow","status":"active","markdown":"body","frontmatter":{},"version":1,"claims":[],"created_at":null,"updated_at":null}
+                """.data(using: .utf8)!
+                return (response, payload)
+            }
+
+            if path == "/api/brain/spaces/space-1/review-packs" {
+                XCTAssertEqual(request.url?.query, "status=pending")
+                let payload = """
+                {"review_packs":[{"id":"pack-1","space_id":"space-1","kind":"bridge","risk":"medium","status":"pending","title":"Bridge","summary":"Review customer rules.","proposals":[],"evidence":[],"created_by_user_id":"user-1","decided_by_user_id":null,"decision_reason":null,"created_at":"2026-06-04T09:00:00Z","decided_at":null}],"pending_count":1}
+                """.data(using: .utf8)!
+                return (response, payload)
+            }
+
+            if path == "/api/brain/spaces/space-1/review-packs/pack-1/accept" {
+                let payload = """
+                {"id":"pack-1","space_id":"space-1","kind":"bridge","risk":"medium","status":"accepted","title":"Bridge","summary":"Review customer rules.","proposals":[],"evidence":[],"created_by_user_id":"user-1","decided_by_user_id":"user-1","decision_reason":null,"created_at":"2026-06-04T09:00:00Z","decided_at":"2026-06-04T09:01:00Z"}
+                """.data(using: .utf8)!
+                return (response, payload)
+            }
+
+            if path == "/api/brain/spaces/space-1/review-packs/pack-1/reject" {
+                let body = try jsonBody(from: request)
+                XCTAssertEqual(body["reason"] as? String, "wrong space")
+                let payload = """
+                {"id":"pack-1","space_id":"space-1","kind":"bridge","risk":"medium","status":"rejected","title":"Bridge","summary":"Review customer rules.","proposals":[],"evidence":[],"created_by_user_id":"user-1","decided_by_user_id":"user-1","decision_reason":"wrong space","created_at":"2026-06-04T09:00:00Z","decided_at":"2026-06-04T09:01:00Z"}
+                """.data(using: .utf8)!
+                return (response, payload)
+            }
+
+            if path == "/api/brain/spaces/space-1/match" {
+                let body = try jsonBody(from: request)
+                XCTAssertEqual(body["other_space_id"] as? String, "space-2")
+                let payload = """
+                {"id":"pack-2","space_id":"space-1","kind":"bridge","risk":"medium","status":"pending","title":"Bridge","summary":"Matched space.","proposals":[],"evidence":[],"created_by_user_id":"user-1","decided_by_user_id":null,"decision_reason":null,"created_at":"2026-06-04T09:00:00Z","decided_at":null}
+                """.data(using: .utf8)!
+                return (response, payload)
+            }
+
+            if path == "/api/brain/spaces/space-1/context" {
+                let body = try jsonBody(from: request)
+                XCTAssertEqual(body["task"] as? String, "Write a parent call script.")
+                let payload = """
+                {"space":{"id":"space-1","owner_user_id":"user-1","name":"Wai School","slug":"wai-school","kind":"work","engine_profile":"waibrain","visibility":"private","description":null,"metadata":{},"role":"owner","created_at":null,"updated_at":null},"markdown":"# Wai School\\n\\nUse 40 minute intro sessions.","claim_count":1}
+                """.data(using: .utf8)!
+                return (response, payload)
+            }
+
+            if path == "/api/brain/spaces/space-1/export" {
+                XCTAssertEqual(request.url?.query, "profile=obsidian")
+                let payload = """
+                {"space":{"id":"space-1","owner_user_id":"user-1","name":"Wai School","slug":"wai-school","kind":"work","engine_profile":"waibrain","visibility":"private","description":null,"metadata":{},"role":"owner","created_at":null,"updated_at":null},"profile":"obsidian","files":[{"path":"Customer stage rules.md","markdown":"body"}]}
+                """.data(using: .utf8)!
+                return (response, payload)
+            }
+
+            return (response, Data("{}".utf8))
+        }
+
+        let spaces = try await client.listBrainSpaces()
+        XCTAssertEqual(spaces.spaces.first?.name, "Wai School")
+
+        let created = try await client.createBrainSpace(
+            BrainSpaceCreateRequest(name: "Wai School", kind: "work", engineProfile: "waibrain")
+        )
+        XCTAssertEqual(created.slug, "wai-school")
+
+        let home = try await client.getBrainSpaceHome(spaceId: "space-1")
+        XCTAssertEqual(home.recentPages.first?.claims.first?.text, "Use 40 minute intro sessions.")
+
+        let pages = try await client.listBrainSpacePages(spaceId: "space-1")
+        XCTAssertEqual(pages.pages.first?.title, "Customer stage rules")
+
+        let createdPage = try await client.createBrainSpacePage(
+            spaceId: "space-1",
+            BrainSpacePageCreateRequest(title: "Customer stage rules", kind: "workflow")
+        )
+        XCTAssertEqual(createdPage.slug, "customer-stage-rules")
+
+        let review = try await client.listBrainReviewPacks(spaceId: "space-1")
+        XCTAssertEqual(review.pendingCount, 1)
+
+        let accepted = try await client.acceptBrainReviewPack(spaceId: "space-1", packId: "pack-1")
+        XCTAssertEqual(accepted.status, "accepted")
+
+        let rejected = try await client.rejectBrainReviewPack(
+            spaceId: "space-1",
+            packId: "pack-1",
+            reason: "wrong space"
+        )
+        XCTAssertEqual(rejected.decisionReason, "wrong space")
+
+        let matched = try await client.matchBrainSpaces(spaceId: "space-1", otherSpaceId: "space-2")
+        XCTAssertEqual(matched.id, "pack-2")
+
+        let context = try await client.buildBrainContext(
+            spaceId: "space-1",
+            task: "Write a parent call script.",
+            limit: 40
+        )
+        XCTAssertEqual(context.claimCount, 1)
+
+        let exported = try await client.exportBrainSpace(spaceId: "space-1", profile: "obsidian")
+        XCTAssertEqual(exported.files.first?.path, "Customer stage rules.md")
+
+        XCTAssertEqual(
+            seenPaths.values(),
+            [
+                "/api/brain/spaces",
+                "/api/brain/spaces",
+                "/api/brain/spaces/space-1/home",
+                "/api/brain/spaces/space-1/pages",
+                "/api/brain/spaces/space-1/pages",
+                "/api/brain/spaces/space-1/review-packs",
+                "/api/brain/spaces/space-1/review-packs/pack-1/accept",
+                "/api/brain/spaces/space-1/review-packs/pack-1/reject",
+                "/api/brain/spaces/space-1/match",
+                "/api/brain/spaces/space-1/context",
+                "/api/brain/spaces/space-1/export"
+            ]
+        )
     }
 
     // MARK: - Recordings

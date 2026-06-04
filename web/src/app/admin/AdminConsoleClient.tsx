@@ -35,6 +35,7 @@ import {
   type AdminAiUsageFilters,
   type AdminBillingSubscription,
   type AdminDeepgramUsage,
+  type AdminDeepgramUsageFilters,
   type AdminSubscriptionPatchInput,
   type AdminObservability,
   type AdminPromoCode,
@@ -182,6 +183,11 @@ const DEFAULT_AI_USAGE_FILTERS: Required<
   limit: 100,
 };
 
+const DEFAULT_DEEPGRAM_USAGE_FILTERS: Required<Pick<AdminDeepgramUsageFilters, "days" | "limit">> = {
+  days: 7,
+  limit: 100,
+};
+
 export function AdminConsoleClient() {
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -196,6 +202,9 @@ export function AdminConsoleClient() {
   const [aiUsage, setAiUsage] = useState<AdminAiUsage | null>(null);
   const [aiUsageFilters, setAiUsageFilters] = useState(DEFAULT_AI_USAGE_FILTERS);
   const [deepgramUsage, setDeepgramUsage] = useState<AdminDeepgramUsage | null>(null);
+  const [deepgramUsageFilters, setDeepgramUsageFilters] = useState(
+    DEFAULT_DEEPGRAM_USAGE_FILTERS,
+  );
   const [observability, setObservability] = useState<AdminObservability | null>(null);
   const [audit, setAudit] = useState<AdminAuditLog[]>([]);
   const [userQuery, setUserQuery] = useState("");
@@ -239,7 +248,7 @@ export function AdminConsoleClient() {
         listAdminUsers(userQuery),
         listAdminBilling(),
         getAdminAiUsage(aiUsageFilters),
-        getAdminDeepgramUsage(),
+        getAdminDeepgramUsage(deepgramUsageFilters),
         getAdminObservability(),
         listAdminAudit(),
       ]);
@@ -367,6 +376,21 @@ export function AdminConsoleClient() {
       setMessage("AI usage loaded.");
     } catch (caught: unknown) {
       setError(caught instanceof Error ? caught.message : "AI usage failed to load.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function applyDeepgramUsageFilters(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setBusy(true);
+    setMessage(null);
+    setError(null);
+    try {
+      setDeepgramUsage(await getAdminDeepgramUsage(deepgramUsageFilters));
+      setMessage("Deepgram usage loaded.");
+    } catch (caught: unknown) {
+      setError(caught instanceof Error ? caught.message : "Deepgram usage failed to load.");
     } finally {
       setBusy(false);
     }
@@ -784,10 +808,51 @@ export function AdminConsoleClient() {
 
         {tab === "deepgram" && deepgramUsage ? (
           <div className="admin-section">
+            <form className="admin-inline-form" onSubmit={applyDeepgramUsageFilters}>
+              <label>
+                <span>Window</span>
+                <select
+                  value={deepgramUsageFilters.days}
+                  onChange={(event) =>
+                    setDeepgramUsageFilters((current) => ({
+                      ...current,
+                      days: Number(event.target.value),
+                    }))
+                  }
+                >
+                  <option value={1}>1d</option>
+                  <option value={7}>7d</option>
+                  <option value={30}>30d</option>
+                  <option value={90}>90d</option>
+                </select>
+              </label>
+              <label>
+                <span>Rows</span>
+                <select
+                  value={deepgramUsageFilters.limit}
+                  onChange={(event) =>
+                    setDeepgramUsageFilters((current) => ({
+                      ...current,
+                      limit: Number(event.target.value),
+                    }))
+                  }
+                >
+                  <option value={50}>50</option>
+                  <option value={100}>100</option>
+                  <option value={250}>250</option>
+                  <option value={500}>500</option>
+                </select>
+              </label>
+              <button type="submit" disabled={busy}>Apply</button>
+            </form>
             <div className="admin-metrics">
               <div>
-                <span>Estimated audio 7d</span>
+                <span>Estimated audio {deepgramUsage.window_days}d</span>
                 <strong>{fmtMinutes(deepgramUsage.estimated.total_seconds)}</strong>
+              </div>
+              <div>
+                <span>Estimated Deepgram cost</span>
+                <strong>{fmtUsd(deepgramUsage.captured.estimated_cost_usd)}</strong>
               </div>
               <div>
                 <span>Captured billable</span>
@@ -837,6 +902,7 @@ export function AdminConsoleClient() {
                   ["failed", deepgramUsage.captured.failed],
                   ["refused", deepgramUsage.captured.refused],
                   ["provider_402", deepgramUsage.captured.provider_402],
+                  ["unpriced_events", deepgramUsage.captured.unpriced_events],
                 ]}
               />
               <MetricTable
@@ -1228,22 +1294,26 @@ function DeepgramUserTable({ rows }: { rows: AdminDeepgramUsage["by_user"] }) {
         <thead>
           <tr>
             <th>User</th>
+            <th>Cost</th>
             <th>Estimated</th>
             <th>Captured</th>
             <th>Recordings</th>
             <th>Dictation</th>
             <th>Failures</th>
+            <th>Unpriced</th>
           </tr>
         </thead>
         <tbody>
           {rows.map((row) => (
             <tr key={row.user_id}>
               <td>{row.email ?? row.user_id}</td>
+              <td>{fmtUsd(row.captured_estimated_cost_usd)}</td>
               <td>{fmtMinutes(row.estimated_total_seconds)}</td>
               <td>{fmtMinutes(row.captured_billable_seconds)}</td>
               <td>{fmtNumber(row.recording_count)}</td>
               <td>{fmtNumber(row.dictation_entries)}</td>
               <td>{fmtNumber(row.captured_failed_events + row.captured_refused_events + row.failed_recordings)}</td>
+              <td>{fmtNumber(row.captured_unpriced_events)}</td>
             </tr>
           ))}
         </tbody>
@@ -1262,7 +1332,9 @@ function DeepgramOperationTable({ rows }: { rows: AdminDeepgramUsage["by_operati
             <th>Operation</th>
             <th>Status</th>
             <th>Events</th>
+            <th>Cost</th>
             <th>Billable</th>
+            <th>Unpriced</th>
           </tr>
         </thead>
         <tbody>
@@ -1271,7 +1343,9 @@ function DeepgramOperationTable({ rows }: { rows: AdminDeepgramUsage["by_operati
               <td>{row.operation}/{row.purpose}</td>
               <td>{row.status}</td>
               <td>{fmtNumber(row.events)}</td>
+              <td>{fmtUsd(row.estimated_cost_usd)}</td>
               <td>{fmtMinutes(row.billable_seconds)}</td>
+              <td>{fmtNumber(row.unpriced_events)}</td>
             </tr>
           ))}
         </tbody>
@@ -1289,8 +1363,10 @@ function DeepgramDayTable({ rows }: { rows: AdminDeepgramUsage["by_day"] }) {
           <tr>
             <th>Date</th>
             <th>Estimated</th>
+            <th>Cost</th>
             <th>Captured</th>
             <th>Failed/refused</th>
+            <th>Unpriced</th>
           </tr>
         </thead>
         <tbody>
@@ -1298,8 +1374,10 @@ function DeepgramDayTable({ rows }: { rows: AdminDeepgramUsage["by_day"] }) {
             <tr key={row.date}>
               <td>{row.date}</td>
               <td>{fmtMinutes(row.estimated_recording_seconds + row.estimated_dictation_seconds)}</td>
+              <td>{fmtUsd(row.captured_estimated_cost_usd)}</td>
               <td>{fmtMinutes(row.captured_billable_seconds)}</td>
               <td>{fmtNumber(row.captured_failed_events + row.captured_refused_events)}</td>
+              <td>{fmtNumber(row.captured_unpriced_events)}</td>
             </tr>
           ))}
         </tbody>
@@ -1319,8 +1397,10 @@ function DeepgramRecordingTable({ rows }: { rows: AdminDeepgramUsage["top_record
             <th>User</th>
             <th>Status</th>
             <th>Duration</th>
+            <th>Cost</th>
             <th>Events</th>
             <th>Failure</th>
+            <th>Unpriced</th>
           </tr>
         </thead>
         <tbody>
@@ -1330,8 +1410,10 @@ function DeepgramRecordingTable({ rows }: { rows: AdminDeepgramUsage["top_record
               <td>{row.email ?? row.user_id}</td>
               <td>{row.status}</td>
               <td>{fmtMinutes(row.duration_seconds)}</td>
+              <td>{fmtUsd(row.estimated_cost_usd)}</td>
               <td>{fmtNumber(row.captured_events)}</td>
               <td>{row.failure_code ?? "-"}</td>
+              <td>{fmtNumber(row.unpriced_events)}</td>
             </tr>
           ))}
         </tbody>
@@ -1351,6 +1433,9 @@ function DeepgramEventTable({ rows }: { rows: AdminDeepgramUsage["recent_events"
             <th>User</th>
             <th>Operation</th>
             <th>Status</th>
+            <th>Cost</th>
+            <th>Billing</th>
+            <th>Add-ons</th>
             <th>Billable</th>
             <th>Provider</th>
             <th>Guard</th>
@@ -1363,6 +1448,9 @@ function DeepgramEventTable({ rows }: { rows: AdminDeepgramUsage["recent_events"
               <td>{row.email ?? row.user_id ?? "-"}</td>
               <td>{row.operation}/{row.purpose}</td>
               <td>{row.status}</td>
+              <td>{row.pricing_status === "priced" ? fmtUsd(row.estimated_cost_usd ?? 0) : row.pricing_status}</td>
+              <td>{[row.billing_mode, row.language_mode].filter(Boolean).join("/") || "-"}</td>
+              <td>{row.addons.length ? row.addons.join(", ") : "-"}</td>
               <td>{fmtMinutes(row.billable_seconds)}</td>
               <td>{row.provider_status_code ?? row.provider_error_code ?? "-"}</td>
               <td>{row.guard_code ?? "-"}</td>

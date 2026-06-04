@@ -38,6 +38,15 @@ class CompanionPendingAction(Base, UUIDMixin, TimestampMixin):
         nullable=True,
         index=True,
     )
+    # Agent-originated actions link back to the run/step that proposed them.
+    # Chat-originated actions keep these null.
+    agent_run_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("agent_runs.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
+    )
+    agent_step_idx: Mapped[int | None] = mapped_column()
     # 'send' | 'mutate' | 'desktop_action'
     kind: Mapped[str] = mapped_column(String(20), nullable=False)
     tool_name: Mapped[str] = mapped_column(String(120), nullable=False)

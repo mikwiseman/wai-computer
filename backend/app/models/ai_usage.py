@@ -80,6 +80,10 @@ class AiUsageEvent(Base, UUIDMixin):
         default="unpriced",
         server_default="unpriced",
     )
+    billing_mode: Mapped[str | None] = mapped_column(String(32))
+    language_mode: Mapped[str | None] = mapped_column(String(32))
+    addons: Mapped[list | None] = mapped_column(JSONB)
+    price_source: Mapped[str | None] = mapped_column(String(120))
     provider_status_code: Mapped[int | None] = mapped_column(Integer)
     provider_error_code: Mapped[str | None] = mapped_column(String(128))
     guard_code: Mapped[str | None] = mapped_column(String(128))

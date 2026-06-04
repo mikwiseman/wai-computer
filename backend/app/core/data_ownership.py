@@ -203,6 +203,41 @@ DATA_OWNERSHIP: tuple[TableOwnershipEntry, ...] = (
         contains_user_content=True,
     ),
     TableOwnershipEntry(
+        "brain_spaces",
+        "owned_exportable",
+        "User-owned WaiBrain Space containers and descriptions.",
+        contains_user_content=True,
+    ),
+    TableOwnershipEntry(
+        "brain_space_members",
+        "owned_exportable",
+        "Space membership and collaboration metadata.",
+    ),
+    TableOwnershipEntry(
+        "brain_space_sources",
+        "owned_exportable",
+        "Sources linked into user-owned WaiBrain Spaces.",
+        contains_user_content=True,
+    ),
+    TableOwnershipEntry(
+        "brain_pages",
+        "owned_exportable",
+        "Canonical Markdown pages inside WaiBrain Spaces.",
+        contains_user_content=True,
+    ),
+    TableOwnershipEntry(
+        "brain_claims",
+        "owned_exportable",
+        "Structured claims extracted into WaiBrain Spaces.",
+        contains_user_content=True,
+    ),
+    TableOwnershipEntry(
+        "brain_review_packs",
+        "owned_exportable",
+        "Review packs for accepting shared WaiBrain knowledge.",
+        contains_user_content=True,
+    ),
+    TableOwnershipEntry(
         "commitments", "owned_exportable", "Tracked commitments.", contains_user_content=True
     ),
     TableOwnershipEntry(
@@ -221,8 +256,18 @@ DATA_OWNERSHIP: tuple[TableOwnershipEntry, ...] = (
         "User-approved or pending desktop actions.",
         contains_user_content=True,
     ),
-    TableOwnershipEntry("agents", "owned_exportable", "User agent definitions."),
-    TableOwnershipEntry("agent_runs", "owned_exportable", "Agent execution metadata."),
+    TableOwnershipEntry(
+        "agents",
+        "owned_exportable",
+        "User agent definitions.",
+        contains_user_content=True,
+    ),
+    TableOwnershipEntry(
+        "agent_runs",
+        "owned_exportable",
+        "Agent execution metadata.",
+        contains_user_content=True,
+    ),
     TableOwnershipEntry(
         "agent_steps",
         "owned_exportable",

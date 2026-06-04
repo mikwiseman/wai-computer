@@ -78,6 +78,14 @@ describe("admin api wrappers", () => {
     );
   });
 
+  it("builds Deepgram usage filter URLs", async () => {
+    await getAdminDeepgramUsage({ days: 30, limit: 250 });
+
+    expect(mockedApiFetch).toHaveBeenCalledWith(
+      "/api/admin/deepgram-usage?days=30&limit=250",
+    );
+  });
+
   it("calls promo mutation endpoints", async () => {
     await createAdminPromoCode({
       code: null,

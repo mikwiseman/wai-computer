@@ -8,9 +8,17 @@ private final class FakeActuator: DesktopActuator, @unchecked Sendable {
     var openedApps: [String] = []
     var typed: [String] = []
     var clicked: [Int] = []
+    var snapshotCalls = 0
     var shouldThrow = false
+    var shouldThrowOnFrontmost = false
+    var frontmostBundleIdValue: String? = "com.apple.TextEdit"
 
     struct Boom: Error { let target: String }
+
+    func frontmostBundleId() async throws -> String? {
+        if shouldThrowOnFrontmost { throw Boom(target: "frontmost") }
+        return frontmostBundleIdValue
+    }
 
     func openURL(_ url: URL) async throws {
         if shouldThrow { throw Boom(target: url.absoluteString) }
@@ -34,16 +42,18 @@ private final class FakeActuator: DesktopActuator, @unchecked Sendable {
     )
     func snapshot() async throws -> DesktopUISnapshot {
         if shouldThrow { throw Boom(target: "snapshot") }
+        snapshotCalls += 1
         return snapshotToReturn
     }
 }
 
 final class DesktopActionExecutorTests: XCTestCase {
-    private func makeExecutor(_ actuator: FakeActuator) -> DesktopActionExecutor {
+    private func makeExecutor(
+        _ actuator: FakeActuator,
+        safety: DesktopSafetyPolicy = DesktopSafetyPolicy(ownBundleId: "is.waiwai.computer")
+    ) -> DesktopActionExecutor {
         DesktopActionExecutor(
-            router: DesktopActionRouter(
-                safety: DesktopSafetyPolicy(ownBundleId: "is.waiwai.computer")
-            ),
+            router: DesktopActionRouter(safety: safety),
             actuator: actuator
         )
     }
@@ -80,6 +90,50 @@ final class DesktopActionExecutorTests: XCTestCase {
         _ = await makeExecutor(actuator)
             .execute(item("desktop_click", ["index": .int(7)]))
         XCTAssertEqual(actuator.clicked, [7])
+    }
+
+    func testTypeRefusesOwnFrontmostBundleBeforeActuating() async {
+        let actuator = FakeActuator()
+        actuator.frontmostBundleIdValue = "is.waiwai.computer"
+        let outcome = await makeExecutor(actuator)
+            .execute(item("desktop_type", ["text": .string("hi")]))
+        XCTAssertEqual(outcome.status, .refused)
+        XCTAssertTrue(actuator.typed.isEmpty)
+        XCTAssertEqual(outcome.reason, "own UI is excluded from actuation")
+    }
+
+    func testClickRefusesBlockedFrontmostBundleBeforeActuating() async {
+        let actuator = FakeActuator()
+        actuator.frontmostBundleIdValue = "com.apple.Terminal"
+        let outcome = await makeExecutor(
+            actuator,
+            safety: DesktopSafetyPolicy(
+                ownBundleId: "is.waiwai.computer",
+                blockedBundleIds: ["com.apple.Terminal"]
+            )
+        ).execute(item("desktop_click", ["index": .int(7)]))
+        XCTAssertEqual(outcome.status, .refused)
+        XCTAssertTrue(actuator.clicked.isEmpty)
+        XCTAssertEqual(outcome.reason, "target app is blocked")
+    }
+
+    func testSnapshotRefusesWhenFrontmostTargetCannotBeResolved() async {
+        let actuator = FakeActuator()
+        actuator.frontmostBundleIdValue = nil
+        let outcome = await makeExecutor(actuator).execute(item("desktop_snapshot", [:]))
+        XCTAssertEqual(outcome.status, .refused)
+        XCTAssertEqual(actuator.snapshotCalls, 0)
+        XCTAssertEqual(outcome.reason, "target app unavailable")
+    }
+
+    func testFrontmostInspectionFailureIsFailedBeforeActuating() async {
+        let actuator = FakeActuator()
+        actuator.shouldThrowOnFrontmost = true
+        let outcome = await makeExecutor(actuator)
+            .execute(item("desktop_type", ["text": .string("hi")]))
+        XCTAssertEqual(outcome.status, .failed)
+        XCTAssertTrue(actuator.typed.isEmpty)
+        XCTAssertEqual(outcome.reason, "could not verify target app")
     }
 
     func testRefusalSkipsActuator() async {

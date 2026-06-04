@@ -35,9 +35,11 @@ public struct DeviceHeartbeatResponse: Decodable, Sendable, Equatable {
 
 public struct DesktopActionItem: Decodable, Sendable, Equatable {
     public let actionId: String
-    /// The conversation this action belongs to; the result is reported back
-    /// to `/api/companion/chats/{chatId}/actions/{actionId}/desktop_result`.
-    public let chatId: String
+    /// Chat-originated actions report to `/api/companion/chats/{chatId}/...`.
+    public let chatId: String?
+    /// Agent-originated actions report to `/api/agents/{agentId}/runs/{agentRunId}/...`.
+    public let agentId: String?
+    public let agentRunId: String?
     public let tool: String
     public let args: [String: CompanionJSONValue]
     public let preview: String
@@ -45,6 +47,8 @@ public struct DesktopActionItem: Decodable, Sendable, Equatable {
     enum CodingKeys: String, CodingKey {
         case actionId = "action_id"
         case chatId = "chat_id"
+        case agentId = "agent_id"
+        case agentRunId = "agent_run_id"
         case tool
         case args
         case preview
@@ -52,13 +56,17 @@ public struct DesktopActionItem: Decodable, Sendable, Equatable {
 
     public init(
         actionId: String,
-        chatId: String,
+        chatId: String? = nil,
+        agentId: String? = nil,
+        agentRunId: String? = nil,
         tool: String,
         args: [String: CompanionJSONValue],
         preview: String
     ) {
         self.actionId = actionId
         self.chatId = chatId
+        self.agentId = agentId
+        self.agentRunId = agentRunId
         self.tool = tool
         self.args = args
         self.preview = preview
@@ -76,10 +84,22 @@ public enum DesktopResultStatus: String, Codable, Sendable {
 }
 
 public struct DesktopResultRequest: Encodable, Sendable {
+    public let deviceId: String
     public let status: DesktopResultStatus
     public let payload: [String: CompanionJSONValue]?
 
-    public init(status: DesktopResultStatus, payload: [String: CompanionJSONValue]? = nil) {
+    enum CodingKeys: String, CodingKey {
+        case deviceId = "device_id"
+        case status
+        case payload
+    }
+
+    public init(
+        deviceId: String,
+        status: DesktopResultStatus,
+        payload: [String: CompanionJSONValue]? = nil
+    ) {
+        self.deviceId = deviceId
         self.status = status
         self.payload = payload
     }
@@ -88,9 +108,17 @@ public struct DesktopResultRequest: Encodable, Sendable {
 public struct DesktopResultResponse: Decodable, Sendable, Equatable {
     public let actionId: String
     public let status: String
+    public let runStatus: String?
 
     enum CodingKeys: String, CodingKey {
         case actionId = "action_id"
         case status
+        case runStatus = "run_status"
+    }
+
+    public init(actionId: String, status: String, runStatus: String? = nil) {
+        self.actionId = actionId
+        self.status = status
+        self.runStatus = runStatus
     }
 }

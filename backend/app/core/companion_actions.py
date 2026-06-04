@@ -48,6 +48,32 @@ _FAILED = "failed"
 _VALID_DECISIONS = frozenset({"once", "always", "reject"})
 
 
+def _preview_value(value: Any, *, max_length: int = 240) -> str:
+    text = str(value or "").strip()
+    if len(text) <= max_length:
+        return text
+    return f"{text[: max_length - 1]}..."
+
+
+def canonical_action_preview(tool_name: str, args: dict[str, Any] | None) -> str:
+    """Build the approval text from the signed tool args, never model/config copy."""
+    args = args or {}
+    if tool_name in {"send_message_telegram", "reply_to_message_telegram"}:
+        text = _preview_value(args.get("text"))
+        return f"Send Telegram message to your linked chat: {text}"
+    if tool_name == "desktop_open":
+        target = _preview_value(args.get("target"))
+        return f"Open on your Mac: {target}"
+    if tool_name == "desktop_type":
+        text = _preview_value(args.get("text"))
+        return f"Type on your Mac: {text}"
+    if tool_name == "desktop_click":
+        return f"Click desktop element #{args.get('index')}"
+    if tool_name == "desktop_snapshot":
+        return "Capture a desktop UI snapshot"
+    return f"Run {tool_name} with approved arguments"
+
+
 class ApprovalError(Exception):
     """Raised when a pending action cannot be resolved/committed."""
 
@@ -82,6 +108,8 @@ async def propose_action(
     *,
     user_id: uuid.UUID,
     conversation_id: uuid.UUID | None,
+    agent_run_id: uuid.UUID | None = None,
+    agent_step_idx: int | None = None,
     kind: str,
     tool_name: str,
     args: dict[str, Any],
@@ -98,10 +126,16 @@ async def propose_action(
     is guaranteed to exist before the client can resolve it.
     """
     now = now or datetime.now(timezone.utc)
-    manifest = {"tool": tool_name, "args": args, "preview": preview}
+    manifest = {
+        "tool": tool_name,
+        "args": args,
+        "preview": canonical_action_preview(tool_name, args),
+    }
     row = CompanionPendingAction(
         user_id=user_id,
         conversation_id=conversation_id,
+        agent_run_id=agent_run_id,
+        agent_step_idx=agent_step_idx,
         kind=kind,
         tool_name=tool_name,
         action_manifest=manifest,
@@ -176,6 +210,7 @@ async def resolve_action(
     if edited_args is not None:
         manifest = dict(row.action_manifest or {})
         manifest["args"] = edited_args
+        manifest["preview"] = canonical_action_preview(row.tool_name, edited_args)
         row.action_manifest = manifest
         row.payload_hmac = sign_action(row.tool_name, edited_args, row.idempotency_key)
     row.status = _APPROVED
@@ -189,17 +224,19 @@ async def resolve_action(
 async def _cascade_reject(
     db: AsyncSession, rejected: CompanionPendingAction, now: datetime
 ) -> None:
-    """One 'no' rejects all other pending actions in the same conversation."""
-    if rejected.conversation_id is None:
+    """One 'no' rejects all sibling pending actions in the same chat or agent run."""
+    if rejected.conversation_id is None and rejected.agent_run_id is None:
         return
+    stmt = update(CompanionPendingAction).where(
+        CompanionPendingAction.status == _PENDING,
+        CompanionPendingAction.id != rejected.id,
+    )
+    if rejected.conversation_id is not None:
+        stmt = stmt.where(CompanionPendingAction.conversation_id == rejected.conversation_id)
+    else:
+        stmt = stmt.where(CompanionPendingAction.agent_run_id == rejected.agent_run_id)
     await db.execute(
-        update(CompanionPendingAction)
-        .where(
-            CompanionPendingAction.conversation_id == rejected.conversation_id,
-            CompanionPendingAction.status == _PENDING,
-            CompanionPendingAction.id != rejected.id,
-        )
-        .values(status=_REJECTED, decision="reject", resolved_at=now)
+        stmt.values(status=_REJECTED, decision="reject", resolved_at=now)
     )
 
 
@@ -218,6 +255,8 @@ async def mark_executed(
     redelivered commit cannot double-execute."""
     if row.status == _EXECUTED:
         return row
+    if row.status in {_FAILED, _REJECTED, _EXPIRED}:
+        raise ApprovalError("already_resolved", f"Action already {row.status}")
     row.status = _EXECUTED
     row.receipt = receipt
     await db.flush()
@@ -228,6 +267,10 @@ async def mark_executed(
 async def mark_failed(
     db: AsyncSession, *, row: CompanionPendingAction, detail: str
 ) -> CompanionPendingAction:
+    if row.status == _FAILED:
+        return row
+    if row.status == _EXECUTED:
+        raise ApprovalError("already_resolved", "Action already executed")
     row.status = _FAILED
     row.receipt = {"error": detail}
     await db.flush()
@@ -236,14 +279,44 @@ async def mark_failed(
 
 
 async def expire_due_actions(db: AsyncSession, *, now: datetime | None = None) -> int:
-    """Sweep pending rows past their TTL to expired (timeout == deny). Returns
-    the number expired. This is the unattended fail-closed backstop."""
+    """Sweep pending/approved rows past their TTL to expired (timeout == deny).
+
+    Approved desktop actions stay in the Mac offline queue until a device
+    reports them executed; their ``expires_at`` is still authoritative. Once the
+    queue TTL passes, they must fail closed instead of remaining executable.
+    Returns the number expired.
+    """
     now = now or datetime.now(timezone.utc)
     result = await db.execute(
         update(CompanionPendingAction)
         .where(
-            CompanionPendingAction.status == _PENDING,
+            CompanionPendingAction.status.in_([_PENDING, _APPROVED]),
             CompanionPendingAction.expires_at <= now,
+        )
+        .values(status=_EXPIRED, resolved_at=now)
+    )
+    return result.rowcount or 0
+
+
+async def expire_actions_for_run(
+    db: AsyncSession,
+    *,
+    run_id: uuid.UUID,
+    user_id: uuid.UUID,
+    now: datetime | None = None,
+) -> int:
+    """Expire all unresolved action rows for a run.
+
+    Used by cancellation: a cancelled agent run must not leave approved desktop
+    work drainable or pending sends approvable later.
+    """
+    now = now or datetime.now(timezone.utc)
+    result = await db.execute(
+        update(CompanionPendingAction)
+        .where(
+            CompanionPendingAction.user_id == user_id,
+            CompanionPendingAction.agent_run_id == run_id,
+            CompanionPendingAction.status.in_([_PENDING, _APPROVED]),
         )
         .values(status=_EXPIRED, resolved_at=now)
     )

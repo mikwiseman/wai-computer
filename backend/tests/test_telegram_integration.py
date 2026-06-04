@@ -17,6 +17,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.routes import telegram as telegram_routes
+from app.core import companion_actions as ca
+from app.core import companion_actuators
 from app.core.recording_import import (
     RecordingImportError,
     import_media_as_recording,
@@ -31,8 +33,10 @@ from app.core.telegram_client import (
     telegram_chunks,
 )
 from app.core.transcript_utils import TranscriptResult
+from app.models.agent import Agent, AgentRun
 from app.models.billing import UsageWeek
 from app.models.companion import Conversation
+from app.models.companion_pending_action import CompanionPendingAction
 from app.models.item import Item, ItemSummary
 from app.models.recording import ActionItem, Highlight, Recording, RecordingStatus, Segment, Summary
 from app.models.telegram import (
@@ -462,6 +466,51 @@ def test_telegram_import_response_helpers():
     assert "- Keep A &amp; B" in html
 
 
+def test_telegram_command_and_formatting_helpers_cover_edge_branches():
+    assert telegram_routes._is_private_chat({}) is False
+    assert telegram_routes._is_private_chat({"chat": {"type": "private"}}) is True
+    assert telegram_routes._format_duration(None) == "длительность неизвестна"
+    assert telegram_routes._format_duration(42) == "42 сек"
+    assert telegram_routes._format_duration(65) == "1:05"
+    assert telegram_routes._format_duration(3661) == "1:01:01"
+    assert telegram_routes._format_created_at(None) == "дата неизвестна"
+    assert telegram_routes._format_created_at("bad-date") == "bad-date"
+    assert telegram_routes._format_created_at("2026-06-04T10:11:12+00:00") == "2026-06-04 10:11"
+    assert telegram_routes._extract_search_query("поиск") == ""
+    assert telegram_routes._extract_search_query("find roadmap") == "roadmap"
+    assert telegram_routes._text_intent("") is None
+    assert telegram_routes._text_intent("помощь") == ("help", "")
+    assert telegram_routes._text_intent("what did we discuss launch") == (
+        "search",
+        "what did we discuss launch",
+    )
+    assert telegram_routes._text_intent("latest meetings") == ("meetings", "")
+    assert telegram_routes._format_recording_list([], empty_text="empty") == "empty"
+    assert telegram_routes._format_search_results([], query="roadmap") == (
+        "Ничего не нашел по запросу: roadmap"
+    )
+
+    recordings = telegram_routes._format_recording_list(
+        [
+            {
+                "title": "",
+                "metadata": {"created_at": "not-a-date", "duration_seconds": 61},
+                "url": "https://wai.computer/r/1",
+            }
+        ],
+        empty_text="empty",
+    )
+    assert "Без названия" in recordings
+    assert "1:01" in recordings
+
+    search_results = telegram_routes._format_search_results(
+        [{"title": "Roadmap", "text": "Launch plan", "metadata": {}, "url": ""}],
+        query="launch",
+    )
+    assert "Roadmap" in search_results
+    assert "Launch plan" in search_results
+
+
 @pytest.mark.asyncio
 async def test_delete_status_message_handles_missing_and_telegram_error(caplog):
     client = MagicMock()
@@ -475,6 +524,27 @@ async def test_delete_status_message_handles_missing_and_telegram_error(caplog):
 
     client.delete_message.assert_awaited_once_with(1, 2)
     assert "telegram status delete failed" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_chat_action_loop_handles_telegram_and_internal_errors(monkeypatch):
+    class TelegramErrorClient:
+        async def send_chat_action(self, chat_id: int, action: str = "typing") -> None:
+            raise TelegramClientError("blocked")
+
+    async def cancel_sleep(_seconds: float) -> None:
+        raise asyncio.CancelledError()
+
+    monkeypatch.setattr(telegram_routes.asyncio, "sleep", cancel_sleep)
+    with pytest.raises(asyncio.CancelledError):
+        await telegram_routes._send_chat_action_until_cancelled(TelegramErrorClient(), 1)
+
+    class BrokenClient:
+        async def send_chat_action(self, chat_id: int, action: str = "typing") -> None:
+            raise RuntimeError("boom")
+
+    await telegram_routes._send_chat_action_until_cancelled(BrokenClient(), 1)
+    await telegram_routes._stop_chat_action_task(None)
 
 
 class _TelegramCapture:
@@ -647,6 +717,484 @@ async def test_handle_update_routes_help_meetings_and_natural_search(
     assert "Roadmap Sync" in capture.messages[2]["text"]
     assert "запуск" in capture.messages[3]["text"]
     assert (await db_session.get(TelegramUpdate, 204)).status == "completed"
+
+
+@pytest.mark.asyncio
+async def test_telegram_agent_commands_start_list_status_cancel_and_approvals(
+    db_session: AsyncSession,
+    monkeypatch,
+):
+    user = await _user(db_session, "telegram-agents@example.com")
+    account = TelegramAccount(user_id=user.id, telegram_user_id=77, telegram_chat_id=77)
+    agent = Agent(
+        user_id=user.id,
+        name="Researcher",
+        kind="research",
+        trigger_type="manual",
+        config={"steps": [{"tool": "note", "args": {"text": "hello"}}]},
+    )
+    db_session.add_all([account, agent])
+    await db_session.commit()
+    capture = _TelegramCapture()
+    dispatched: list[str] = []
+    monkeypatch.setattr(
+        telegram_routes,
+        "enqueue_agent_run",
+        lambda run_id: dispatched.append(str(run_id)) or "task-telegram",
+    )
+
+    message = {"message_id": 301, "chat": {"id": 77}}
+    await telegram_routes._handle_account_command(
+        db_session,
+        capture,
+        message=message,
+        account=account,
+        intent="agents",
+    )
+    await telegram_routes._handle_account_command(
+        db_session,
+        capture,
+        message=message,
+        account=account,
+        intent="run",
+        arg="Researcher check today",
+    )
+    run = (
+        await db_session.execute(select(AgentRun).where(AgentRun.agent_id == agent.id))
+    ).scalar_one()
+    await telegram_routes._handle_account_command(
+        db_session,
+        capture,
+        message=message,
+        account=account,
+        intent="runs",
+    )
+    await telegram_routes._handle_account_command(
+        db_session,
+        capture,
+        message=message,
+        account=account,
+        intent="run_status",
+        arg=str(run.id)[:8],
+    )
+    await telegram_routes._handle_account_command(
+        db_session,
+        capture,
+        message=message,
+        account=account,
+        intent="cancel_run",
+        arg=str(run.id)[:8],
+    )
+
+    assert "Researcher" in capture.messages[0]["text"]
+    assert "Запустил" in capture.messages[1]["text"]
+    assert dispatched == [str(run.id)]
+    assert "Последние запуски" in capture.messages[2]["text"]
+    assert "pending approvals" in capture.messages[3]["text"]
+    assert "Остановил" in capture.messages[4]["text"]
+    await db_session.refresh(run)
+    assert run.status == "cancelled"
+
+
+@pytest.mark.asyncio
+async def test_telegram_agent_commands_empty_invalid_and_dispatch_failure(
+    db_session: AsyncSession,
+    monkeypatch,
+):
+    user = await _user(db_session, "telegram-agent-edges@example.com")
+    account = TelegramAccount(user_id=user.id, telegram_user_id=79, telegram_chat_id=79)
+    disabled = Agent(
+        user_id=user.id,
+        name="Disabled",
+        kind="research",
+        trigger_type="manual",
+        enabled=False,
+        config={"steps": [{"tool": "note", "args": {"text": "off"}}]},
+    )
+    brokered = Agent(
+        user_id=user.id,
+        name="Brokered",
+        kind="research",
+        trigger_type="manual",
+        config={"steps": [{"tool": "note", "args": {"text": "later"}}]},
+    )
+    db_session.add_all([account, disabled, brokered])
+    await db_session.commit()
+    capture = _TelegramCapture()
+    message = {"message_id": 401, "chat": {"id": 79}}
+
+    async def command(intent: str, arg: str = "") -> None:
+        await telegram_routes._handle_account_command(
+            db_session,
+            capture,
+            message=message,
+            account=account,
+            intent=intent,
+            arg=arg,
+        )
+
+    await command("agents")
+    await command("run")
+    await command("run", "missing-agent do it")
+    await command("run", "Disabled do it")
+    await command("runs")
+    await command("run_status", "missing-run")
+    await command("cancel_run", "missing-run")
+    await command("approvals")
+    await command("approve", "not-a-uuid")
+
+    def fail_dispatch(_run_id):
+        raise telegram_routes.AgentDispatchError("broker offline")
+
+    monkeypatch.setattr(telegram_routes, "enqueue_agent_run", fail_dispatch)
+    await command("run", "Brokered do it")
+    await command("run", "Brokered do it")
+
+    assert "Disabled" in capture.messages[0]["text"]
+    assert "Формат: /run" in capture.messages[1]["text"]
+    assert "Агент не найден" in capture.messages[2]["text"]
+    assert "Агент выключен" in capture.messages[3]["text"]
+    assert "Запусков агентов пока нет" in capture.messages[4]["text"]
+    assert "Запуск не найден" in capture.messages[5]["text"]
+    assert "Запуск не найден" in capture.messages[6]["text"]
+    assert "Нет действий" in capture.messages[7]["text"]
+    assert "Нужен action_id" in capture.messages[8]["text"]
+    assert "Не смог запустить агента: broker offline" in capture.messages[9]["text"]
+    assert "status: failed" in capture.messages[10]["text"]
+
+
+@pytest.mark.asyncio
+async def test_telegram_command_guards_missing_chat_inactive_user_and_short_refs(
+    db_session: AsyncSession,
+):
+    user = await _user(db_session, "telegram-command-guards@example.com")
+    account = TelegramAccount(user_id=user.id, telegram_user_id=83, telegram_chat_id=83)
+    agent = Agent(
+        user_id=user.id,
+        name="Lookup",
+        kind="research",
+        trigger_type="manual",
+        config={"steps": [{"tool": "note", "args": {"text": "lookup"}}]},
+    )
+    db_session.add_all([account, agent])
+    await db_session.flush()
+    run = AgentRun(
+        agent_id=agent.id,
+        user_id=user.id,
+        trigger_key=f"manual:{agent.id}:lookup",
+        trigger_kind="manual",
+    )
+    db_session.add(run)
+    await db_session.commit()
+    capture = _TelegramCapture()
+
+    missing_chat_message = {"message_id": 501}
+    await telegram_routes._handle_help_command(capture, message=missing_chat_message, linked=True)
+    await telegram_routes._handle_meetings_command(
+        db_session, capture, message=missing_chat_message, account=account
+    )
+    await telegram_routes._handle_search_command(
+        db_session, capture, message=missing_chat_message, account=account, query="roadmap"
+    )
+    await telegram_routes._handle_settings_command(
+        capture, message=missing_chat_message, linked=True
+    )
+    await telegram_routes._handle_agents_command(
+        db_session, capture, message=missing_chat_message, account=account
+    )
+    await telegram_routes._handle_run_command(
+        db_session, capture, message=missing_chat_message, account=account, arg="Lookup test"
+    )
+    await telegram_routes._handle_runs_command(
+        db_session, capture, message=missing_chat_message, account=account
+    )
+    await telegram_routes._handle_run_status_command(
+        db_session, capture, message=missing_chat_message, account=account, arg=str(run.id)
+    )
+    await telegram_routes._handle_cancel_run_command(
+        db_session, capture, message=missing_chat_message, account=account, arg=str(run.id)
+    )
+    await telegram_routes._handle_approvals_command(
+        db_session, capture, message=missing_chat_message, account=account
+    )
+    await telegram_routes._handle_approval_decision_command(
+        db_session,
+        capture,
+        message=missing_chat_message,
+        account=account,
+        arg=str(uuid4()),
+        decision="once",
+    )
+    await telegram_routes._handle_text_message(
+        db_session,
+        capture,
+        message=missing_chat_message,
+        account=account,
+        text="hello",
+    )
+    await telegram_routes._handle_document_message(
+        db_session,
+        capture,
+        message=missing_chat_message,
+        account=account,
+        document={"file_id": "file-id", "document_ext": "pdf"},
+    )
+    assert capture.messages == []
+
+    message = {"message_id": 502, "chat": {"id": 83}}
+    await telegram_routes._handle_account_command(
+        db_session, capture, message=message, account=account, intent="help"
+    )
+    await telegram_routes._handle_account_command(
+        db_session, capture, message=message, account=account, intent="settings"
+    )
+    assert "Telegram привязан" in capture.messages[-2]["text"]
+    assert "Управление привязкой" in capture.messages[-1]["text"]
+
+    user.account_status = "paused"
+    await db_session.flush()
+    await telegram_routes._handle_agents_command(
+        db_session, capture, message=message, account=account
+    )
+    assert "сейчас не активен" in capture.messages[-1]["text"]
+
+    user.account_status = "active"
+    await db_session.flush()
+    assert await telegram_routes._load_agent_ref(db_session, user_id=user.id, ref=" ") is None
+    assert await telegram_routes._load_agent_ref(
+        db_session, user_id=user.id, ref=str(agent.id)
+    ) == agent
+    assert await telegram_routes._load_agent_ref(
+        db_session, user_id=user.id, ref=str(agent.id)[:8]
+    ) == agent
+    assert await telegram_routes._load_run_ref(
+        db_session, user_id=user.id, ref=str(run.id)
+    ) == run
+    assert await telegram_routes._load_run_ref(
+        db_session, user_id=user.id, ref="short"
+    ) is None
+
+
+@pytest.mark.asyncio
+async def test_telegram_can_resolve_agent_pending_action(
+    db_session: AsyncSession,
+    monkeypatch,
+):
+    user = await _user(db_session, "telegram-agent-approval@example.com")
+    account = TelegramAccount(user_id=user.id, telegram_user_id=78, telegram_chat_id=78)
+    agent = Agent(
+        user_id=user.id,
+        name="Messenger",
+        kind="message",
+        trigger_type="manual",
+        config={
+            "steps": [
+                {
+                    "tool": "propose_action",
+                    "args": {
+                        "kind": "send",
+                        "tool_name": "send_message_telegram",
+                        "action_args": {"text": "hello"},
+                        "preview": "Send to you: hello",
+                        "recipient_display": "you",
+                    },
+                }
+            ]
+        },
+    )
+    db_session.add_all([account, agent])
+    await db_session.flush()
+    run = AgentRun(
+        agent_id=agent.id,
+        user_id=user.id,
+        trigger_key=f"manual:{agent.id}:telegram-approval",
+        trigger_kind="manual",
+    )
+    db_session.add(run)
+    await db_session.flush()
+    await telegram_routes.run_job(
+        db_session,
+        run.id,
+        planner=telegram_routes.static_config_planner,
+        executor=telegram_routes.execute_agent_step,
+    )
+    row = (
+        await db_session.execute(
+            select(CompanionPendingAction).where(CompanionPendingAction.agent_run_id == run.id)
+        )
+    ).scalar_one()
+    capture = _TelegramCapture()
+
+    class FakeTelegram:
+        async def send_message(self, chat_id, text, **_kwargs):
+            return {"message_id": 99, "chat_id": chat_id, "text": text}
+
+    monkeypatch.setattr(companion_actuators, "TelegramBotClient", FakeTelegram)
+    await telegram_routes._handle_account_command(
+        db_session,
+        capture,
+        message={"message_id": 302, "chat": {"id": 78}},
+        account=account,
+        intent="approvals",
+    )
+    await telegram_routes._handle_account_command(
+        db_session,
+        capture,
+        message={"message_id": 303, "chat": {"id": 78}},
+        account=account,
+        intent="approve",
+        arg=str(row.id),
+    )
+
+    assert str(row.id) in capture.messages[0]["text"]
+    assert "Выполнил действие" in capture.messages[1]["text"]
+    await db_session.refresh(row)
+    await db_session.refresh(run)
+    assert row.status == "executed"
+    assert run.status == "done"
+
+
+@pytest.mark.asyncio
+async def test_telegram_can_reject_agent_pending_action(
+    db_session: AsyncSession,
+):
+    user = await _user(db_session, "telegram-agent-reject@example.com")
+    account = TelegramAccount(user_id=user.id, telegram_user_id=80, telegram_chat_id=80)
+    agent = Agent(
+        user_id=user.id,
+        name="Messenger",
+        kind="message",
+        trigger_type="manual",
+        config={
+            "steps": [
+                {
+                    "tool": "propose_action",
+                    "args": {
+                        "kind": "send",
+                        "tool_name": "send_message_telegram",
+                        "action_args": {"text": "hello"},
+                        "preview": "Send to you: hello",
+                    },
+                }
+            ]
+        },
+    )
+    db_session.add_all([account, agent])
+    await db_session.flush()
+    run = AgentRun(
+        agent_id=agent.id,
+        user_id=user.id,
+        trigger_key=f"manual:{agent.id}:telegram-reject",
+        trigger_kind="manual",
+    )
+    db_session.add(run)
+    await db_session.flush()
+    await telegram_routes.run_job(
+        db_session,
+        run.id,
+        planner=telegram_routes.static_config_planner,
+        executor=telegram_routes.execute_agent_step,
+    )
+    row = (
+        await db_session.execute(
+            select(CompanionPendingAction).where(
+                CompanionPendingAction.agent_run_id == run.id
+            )
+        )
+    ).scalar_one()
+    capture = _TelegramCapture()
+
+    await telegram_routes._handle_account_command(
+        db_session,
+        capture,
+        message={"message_id": 304, "chat": {"id": 80}},
+        account=account,
+        intent="reject",
+        arg=str(row.id),
+    )
+
+    assert "Отклонил действие" in capture.messages[-1]["text"]
+    await db_session.refresh(row)
+    await db_session.refresh(run)
+    assert row.status == "rejected"
+    assert run.status == "failed"
+
+
+@pytest.mark.asyncio
+async def test_telegram_desktop_approval_dispatches_to_mac_edge(
+    db_session: AsyncSession,
+):
+    user = await _user(db_session, "telegram-desktop-approval@example.com")
+    account = TelegramAccount(user_id=user.id, telegram_user_id=81, telegram_chat_id=81)
+    db_session.add(account)
+    await db_session.flush()
+    row = await ca.propose_action(
+        db_session,
+        user_id=user.id,
+        conversation_id=None,
+        kind="desktop_action",
+        tool_name="desktop_open",
+        args={"target": "https://wai.computer"},
+        preview="Open WaiComputer",
+        idempotency_key=f"desktop:{uuid4().hex}",
+        device_target=str(uuid4()),
+    )
+    await db_session.flush()
+    capture = _TelegramCapture()
+
+    await telegram_routes._handle_account_command(
+        db_session,
+        capture,
+        message={"message_id": 305, "chat": {"id": 81}},
+        account=account,
+        intent="approve",
+        arg=str(row.id),
+    )
+
+    assert "Mac edge" in capture.messages[-1]["text"]
+    await db_session.refresh(row)
+    assert row.status == "approved"
+
+
+@pytest.mark.asyncio
+async def test_telegram_approval_reports_actuation_error(
+    db_session: AsyncSession,
+    monkeypatch,
+):
+    user = await _user(db_session, "telegram-actuation-error@example.com")
+    account = TelegramAccount(user_id=user.id, telegram_user_id=82, telegram_chat_id=82)
+    db_session.add(account)
+    await db_session.flush()
+    row = await ca.propose_action(
+        db_session,
+        user_id=user.id,
+        conversation_id=None,
+        kind="send",
+        tool_name="send_message_telegram",
+        args={"text": "hello"},
+        preview="Send hello",
+        idempotency_key=f"send:{uuid4().hex}",
+    )
+    await db_session.flush()
+    capture = _TelegramCapture()
+
+    async def fail_execute_action(*_args, **_kwargs):
+        raise telegram_routes.ActuationError("blocked", "telegram blocked")
+
+    monkeypatch.setattr(telegram_routes, "execute_action", fail_execute_action)
+
+    await telegram_routes._handle_account_command(
+        db_session,
+        capture,
+        message={"message_id": 306, "chat": {"id": 82}},
+        account=account,
+        intent="approve",
+        arg=str(row.id),
+    )
+
+    assert "Действие не выполнено: telegram blocked" in capture.messages[-1]["text"]
+    await db_session.refresh(row)
+    assert row.status == "failed"
 
 
 @pytest.mark.asyncio
@@ -902,6 +1450,47 @@ async def test_handle_text_message_reuses_wai_conversation(
     ).scalar_one()
     assert conversation.title == "Telegram"
     assert account.companion_conversation_id == conversation.id
+    reused = await telegram_routes._ensure_telegram_conversation(db_session, account)
+    assert reused.id == conversation.id
+
+
+@pytest.mark.asyncio
+async def test_handle_text_message_renders_action_proposals(
+    db_session: AsyncSession,
+    monkeypatch,
+):
+    user = await _user(db_session, "telegram-action-event@example.com")
+    account = TelegramAccount(user_id=user.id, telegram_user_id=67, telegram_chat_id=67)
+    db_session.add(account)
+    await db_session.commit()
+    capture = _TelegramCapture()
+    action_id = str(uuid4())
+
+    async def fake_run_turn(*args, **kwargs):
+        yield telegram_routes.TokenEvent(text="Могу сделать это.")
+        yield telegram_routes.ActionProposedEvent(
+            action_id=action_id,
+            kind="send",
+            tool="send_message_telegram",
+            preview="Send to you: hello",
+            recipient="you",
+        )
+
+    monkeypatch.setattr(telegram_routes, "run_turn", fake_run_turn)
+
+    await telegram_routes._handle_text_message(
+        db_session,
+        capture,
+        message={"message_id": 17, "chat": {"id": 67}},
+        account=account,
+        text="отправь сообщение",
+    )
+
+    text = capture.messages[-1]["text"]
+    assert "Могу сделать это." in text
+    assert "Нужно подтверждение" in text
+    assert f"/approve {action_id}" in text
+    assert f"/reject {action_id}" in text
 
 
 @pytest.mark.asyncio
@@ -962,6 +1551,98 @@ async def test_handle_text_message_reports_wai_errors(
     )
 
     assert "Не получилось обработать" in capture.messages[-1]["text"]
+
+
+@pytest.mark.asyncio
+async def test_handle_url_message_saves_links_and_reports_processing_edges(
+    db_session: AsyncSession,
+    monkeypatch,
+):
+    user = await _user(db_session, "telegram-url@example.com")
+    account = TelegramAccount(user_id=user.id, telegram_user_id=84, telegram_chat_id=84)
+    db_session.add(account)
+    await db_session.commit()
+
+    missing_chat_capture = _TelegramCapture()
+    await telegram_routes._handle_url_message(
+        db_session,
+        missing_chat_capture,
+        message={"message_id": 601},
+        account=account,
+        url="https://example.com/missing-chat",
+    )
+    assert missing_chat_capture.messages == []
+
+    async def fake_ingest_error(*_args, **_kwargs):
+        return (
+            SimpleNamespace(
+                id=uuid4(),
+                title="Broken link",
+                state="raw",
+                metadata_={},
+            ),
+            True,
+        )
+
+    async def fail_process(*_args, **_kwargs):
+        raise RuntimeError("processor unavailable")
+
+    capture = _TelegramCapture()
+    monkeypatch.setattr(telegram_routes, "ingest_item", fake_ingest_error)
+    monkeypatch.setattr(telegram_routes, "process_item", fail_process)
+    await telegram_routes._handle_url_message(
+        db_session,
+        capture,
+        message={"message_id": 602, "chat": {"id": 84}},
+        account=account,
+        url="https://example.com/broken",
+    )
+    assert "Сохранил ссылку, но не смог" in capture.messages[-1]["text"]
+
+    async def fake_ingest_fetch_error(*_args, **_kwargs):
+        return (
+            SimpleNamespace(
+                id=uuid4(),
+                title="Private link",
+                state="promoted",
+                metadata_={"fetch_error": {"message": "Private post"}},
+            ),
+            False,
+        )
+
+    capture = _TelegramCapture()
+    monkeypatch.setattr(telegram_routes, "ingest_item", fake_ingest_fetch_error)
+    await telegram_routes._handle_url_message(
+        db_session,
+        capture,
+        message={"message_id": 603, "chat": {"id": 84}},
+        account=account,
+        url="https://example.com/private",
+    )
+    assert capture.messages[-1]["text"] == "Private post"
+    assert capture.messages[-1]["parse_mode"] == "HTML"
+
+    async def fake_ingest_success(*_args, **_kwargs):
+        return (
+            SimpleNamespace(
+                id=uuid4(),
+                title="Saved link",
+                state="promoted",
+                metadata_={},
+            ),
+            False,
+        )
+
+    capture = _TelegramCapture()
+    monkeypatch.setattr(telegram_routes, "ingest_item", fake_ingest_success)
+    await telegram_routes._handle_url_message(
+        db_session,
+        capture,
+        message={"message_id": 604, "chat": {"id": 84}},
+        account=account,
+        url="https://example.com/saved",
+    )
+    assert "<b>Saved link</b>" in capture.messages[-1]["text"]
 
 
 @pytest.mark.asyncio
@@ -1204,7 +1885,7 @@ async def test_handle_media_message_passes_telegram_duration_to_import(
     async def fake_import(**kwargs):
         seen.update(kwargs)
         return SimpleNamespace(
-            recording=SimpleNamespace(title="Ready"),
+            recording=SimpleNamespace(title=""),
             summary=None,
             transcript="",
         )
@@ -1220,6 +1901,7 @@ async def test_handle_media_message_passes_telegram_duration_to_import(
     )
 
     assert seen["duration_seconds"] == 3600
+    assert "Готово. Запись сохранена" in capture.messages[-1]["text"]
 
 
 @pytest.mark.asyncio
@@ -1250,6 +1932,148 @@ async def test_handle_document_message_reports_streaming_size_limit(
     )
 
     assert "слишком большой" in capture.messages[-1]["text"]
+
+
+@pytest.mark.asyncio
+async def test_handle_document_message_reports_validation_extraction_and_processing_edges(
+    db_session: AsyncSession,
+    monkeypatch,
+):
+    user = await _user(db_session, "telegram-doc-edges@example.com")
+    account = TelegramAccount(user_id=user.id, telegram_user_id=56, telegram_chat_id=56)
+    db_session.add(account)
+    await db_session.commit()
+    message = {"message_id": 25, "chat": {"id": 56}}
+
+    capture = _TelegramCapture()
+    await telegram_routes._handle_document_message(
+        db_session,
+        capture,
+        message={"message_id": 26},
+        account=account,
+        document={"file_id": "file-id", "document_ext": "pdf"},
+    )
+    await telegram_routes._handle_document_message(
+        db_session,
+        capture,
+        message=message,
+        account=account,
+        document={"file_id": 42, "document_ext": "pdf"},
+    )
+    assert capture.messages == []
+
+    capture = _TelegramCapture()
+    await telegram_routes._handle_document_message(
+        db_session,
+        capture,
+        message=message,
+        account=account,
+        document={"file_id": "file-id", "document_ext": "zip", "file_name": "archive.zip"},
+    )
+    assert "Не могу извлечь текст" in capture.messages[-1]["text"]
+
+    capture = _TelegramCapture()
+    monkeypatch.setattr(telegram_routes.settings, "telegram_download_max_bytes", 2)
+    await telegram_routes._handle_document_message(
+        db_session,
+        capture,
+        message=message,
+        account=account,
+        document={
+            "file_id": "file-id",
+            "document_ext": "pdf",
+            "file_name": "large.pdf",
+            "file_size": 3,
+        },
+    )
+    assert "слишком большой" in capture.messages[-1]["text"]
+
+    capture = _TelegramCapture()
+    capture.file = TelegramFile("file-id", "large.pdf", 3)
+    await telegram_routes._handle_document_message(
+        db_session,
+        capture,
+        message=message,
+        account=account,
+        document={"file_id": "file-id", "document_ext": "pdf", "file_name": "large.pdf"},
+    )
+    assert "слишком большой" in capture.messages[-1]["text"]
+
+    capture = _TelegramCapture()
+    capture.file = TelegramFile("file-id", "large.pdf", 1)
+
+    async def over_limit_download(*_args, **_kwargs):
+        return b"abc"
+
+    capture.download_file = over_limit_download
+    await telegram_routes._handle_document_message(
+        db_session,
+        capture,
+        message=message,
+        account=account,
+        document={"file_id": "file-id", "document_ext": "pdf", "file_name": "large.pdf"},
+    )
+    assert "слишком большой" in capture.messages[-1]["text"]
+
+    monkeypatch.setattr(telegram_routes.settings, "telegram_download_max_bytes", 1_000)
+
+    async def fail_extract(_ext: str, _data: bytes) -> str:
+        raise telegram_routes.DocumentExtractionError("bad_pdf", "PDF is encrypted.")
+
+    capture = _TelegramCapture()
+    monkeypatch.setattr(telegram_routes, "extract_document_text", fail_extract)
+    await telegram_routes._handle_document_message(
+        db_session,
+        capture,
+        message=message,
+        account=account,
+        document={"file_id": "file-id", "document_ext": "pdf", "file_name": "locked.pdf"},
+    )
+    assert "PDF is encrypted" in capture.messages[-1]["text"]
+
+    async def extract_text(_ext: str, _data: bytes) -> str:
+        return "Readable document"
+
+    async def fail_ingest(*_args, **_kwargs):
+        raise RuntimeError("db unavailable")
+
+    capture = _TelegramCapture()
+    monkeypatch.setattr(telegram_routes, "extract_document_text", extract_text)
+    monkeypatch.setattr(telegram_routes, "ingest_item", fail_ingest)
+    await telegram_routes._handle_document_message(
+        db_session,
+        capture,
+        message=message,
+        account=account,
+        document={"file_id": "file-id", "document_ext": "pdf", "file_name": "save.pdf"},
+    )
+    assert "Не смог сохранить файл" in capture.messages[-1]["text"]
+
+    async def fake_ingest(*_args, **_kwargs):
+        return (
+            SimpleNamespace(
+                id=uuid4(),
+                title="Saved document",
+                state="raw",
+                metadata_={},
+            ),
+            True,
+        )
+
+    async def fail_summary(*_args, **_kwargs):
+        raise RuntimeError("summary unavailable")
+
+    capture = _TelegramCapture()
+    monkeypatch.setattr(telegram_routes, "ingest_item", fake_ingest)
+    monkeypatch.setattr(telegram_routes, "generate_item_summary", fail_summary)
+    await telegram_routes._handle_document_message(
+        db_session,
+        capture,
+        message=message,
+        account=account,
+        document={"file_id": "file-id", "document_ext": "pdf", "file_name": "summary.pdf"},
+    )
+    assert "не смог сделать краткое содержание" in capture.messages[-1]["text"]
 
 
 @pytest.mark.asyncio
