@@ -379,12 +379,33 @@ enum HotkeyReleasePolicy {
 }
 
 enum DictationFinalizationPolicy {
+    private static let minimumTailDelayMilliseconds = 150
+    private static let maximumTailDelayMilliseconds = 450
+    static let minimumTailDelay: Duration = .milliseconds(minimumTailDelayMilliseconds)
+    static let maximumTailDelay: Duration = .milliseconds(maximumTailDelayMilliseconds)
+    private static let tapSafetyMultiplier = 2.0
+    private static let extraSafetyMilliseconds = 80.0
+
     /// Keep capture alive briefly after the user releases push-to-talk.
     ///
     /// AVAudioEngine taps deliver audio in chunks. If we stop the engine
     /// immediately on key-up, the last syllables can still be sitting in the
     /// current tap buffer and never reach the realtime STT provider.
-    static let captureTailDelay: Duration = .milliseconds(450)
+    static func captureTailDelay(tapBufferFrames: Int, sampleRate: Double) -> Duration {
+        guard tapBufferFrames > 0, sampleRate > 0 else {
+            return minimumTailDelay
+        }
+        let tapMilliseconds = Double(tapBufferFrames) / sampleRate * 1_000
+        let targetMilliseconds = Int(
+            (tapMilliseconds * tapSafetyMultiplier + extraSafetyMilliseconds).rounded(.up)
+        )
+        return .milliseconds(
+            max(
+                minimumTailDelayMilliseconds,
+                min(maximumTailDelayMilliseconds, targetMilliseconds)
+            )
+        )
+    }
 }
 
 enum DictationCleanupPolicy {
@@ -421,7 +442,28 @@ enum DictationCleanupSpeculationPolicy {
               !preliminaryRawText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             return .restartWithFinal
         }
-        return preliminaryRawText == finalRawText ? .reuseSpeculative : .restartWithFinal
+        return normalized(preliminaryRawText) == normalized(finalRawText)
+            ? .reuseSpeculative
+            : .restartWithFinal
+    }
+
+    private static func normalized(_ text: String) -> String {
+        let folded = text.lowercased().map { character -> Character in
+            let scalars = String(character).unicodeScalars
+            return scalars.allSatisfy { CharacterSet.alphanumerics.contains($0) } ? character : " "
+        }
+        return String(folded)
+            .split(whereSeparator: \.isWhitespace)
+            .joined(separator: " ")
+    }
+}
+
+enum TextInsertionActivationPolicy {
+    static func shouldWaitAfterActivation(
+        targetWasActive: Bool,
+        activationReportedSuccessful: Bool
+    ) -> Bool {
+        !targetWasActive || !activationReportedSuccessful
     }
 }
 

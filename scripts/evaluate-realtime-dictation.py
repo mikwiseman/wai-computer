@@ -13,6 +13,7 @@ import argparse
 import asyncio
 import contextlib
 import json
+import math
 import shutil
 import subprocess
 import sys
@@ -53,6 +54,18 @@ class ModelCandidate:
 DEFAULT_CANDIDATES = (
     ModelCandidate("deepgram", "nova-3"),
 )
+GATE_THRESHOLDS = {
+    "prefetched": {
+        "p95_first_text_ms": 1_000,
+        "p95_wer": 0.08,
+        "p95_cer": 0.04,
+    },
+    "cold": {
+        "p95_first_text_ms": 1_300,
+        "p95_wer": 0.08,
+        "p95_cer": 0.04,
+    },
+}
 LEGAL_ACCEPTANCE = {
     "accepted_legal_terms": True,
     "legal_terms_version": "2026-05-22",
@@ -417,21 +430,33 @@ def summarize(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
         grouped.setdefault((result["mode"], result["provider"], result["model"]), []).append(result)
     summaries = []
     for (mode, provider, model), rows in grouped.items():
+        ok_rows = [row for row in rows if row.get("ok")]
+        first_text_values = metric_values(ok_rows, "first_text_ms")
+        final_values = metric_values(ok_rows, "final_ms")
+        connect_values = metric_values(ok_rows, "connect_ms")
+        mint_values = metric_values(ok_rows, "mint_ms")
+        wer_values = metric_values(ok_rows, "wer")
+        cer_values = metric_values(ok_rows, "cer")
         summaries.append(
             {
                 "mode": mode,
                 "provider": provider,
                 "model": model,
                 "runs": len(rows),
-                "ok_runs": sum(1 for row in rows if row["ok"]),
-                "median_first_text_ms": median(
-                    row["first_text_ms"] for row in rows if row["first_text_ms"] is not None
-                ),
-                "median_final_ms": median(row["final_ms"] for row in rows),
-                "median_connect_ms": median(row["connect_ms"] for row in rows),
-                "median_mint_ms": median(row["mint_ms"] for row in rows),
-                "median_wer": median_float(row["wer"] for row in rows if row["wer"] is not None),
-                "median_cer": median_float(row["cer"] for row in rows if row["cer"] is not None),
+                "ok_runs": len(ok_rows),
+                "error_runs": len(rows) - len(ok_rows),
+                "median_first_text_ms": median(first_text_values),
+                "p95_first_text_ms": percentile(first_text_values),
+                "median_final_ms": median(final_values),
+                "p95_final_ms": percentile(final_values),
+                "median_connect_ms": median(connect_values),
+                "p95_connect_ms": percentile(connect_values),
+                "median_mint_ms": median(mint_values),
+                "p95_mint_ms": percentile(mint_values),
+                "median_wer": median_float(wer_values),
+                "p95_wer": percentile_float(wer_values),
+                "median_cer": median_float(cer_values),
+                "p95_cer": percentile_float(cer_values),
             }
         )
     return sorted(
@@ -445,8 +470,12 @@ def summarize(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
     )
 
 
+def metric_values(rows: list[dict[str, Any]], metric: str) -> list[Any]:
+    return [row[metric] for row in rows if row.get(metric) is not None]
+
+
 def median(values_iter: Any) -> int | None:
-    values = sorted(int(value) for value in values_iter)
+    values = sorted(int(value) for value in values_iter if value is not None)
     if not values:
         return None
     midpoint = len(values) // 2
@@ -456,13 +485,46 @@ def median(values_iter: Any) -> int | None:
 
 
 def median_float(values_iter: Any) -> float | None:
-    values = sorted(float(value) for value in values_iter)
+    values = sorted(float(value) for value in values_iter if value is not None)
     if not values:
         return None
     midpoint = len(values) // 2
     if len(values) % 2:
         return values[midpoint]
     return round((values[midpoint - 1] + values[midpoint]) / 2, 4)
+
+
+def percentile(values_iter: Any, percentile_value: int = 95) -> int | None:
+    values = sorted(int(value) for value in values_iter if value is not None)
+    if not values:
+        return None
+    index = max(0, min(len(values) - 1, math.ceil(len(values) * percentile_value / 100) - 1))
+    return values[index]
+
+
+def percentile_float(values_iter: Any, percentile_value: int = 95) -> float | None:
+    values = sorted(float(value) for value in values_iter if value is not None)
+    if not values:
+        return None
+    index = max(0, min(len(values) - 1, math.ceil(len(values) * percentile_value / 100) - 1))
+    return round(values[index], 4)
+
+
+def gate_summary(summary: dict[str, Any]) -> list[str]:
+    label = f"{summary['mode']} {summary['provider']}:{summary['model']}"
+    failures: list[str] = []
+    error_runs = int(summary.get("error_runs") or 0)
+    if error_runs:
+        failures.append(f"{label} had {error_runs} error runs")
+
+    thresholds = GATE_THRESHOLDS.get(summary["mode"], {})
+    for metric, threshold in thresholds.items():
+        actual = summary.get(metric)
+        if actual is None or actual <= threshold:
+            continue
+        suffix = "ms" if metric.endswith("_ms") else ""
+        failures.append(f"{label} {metric}={actual}{suffix} > {threshold}{suffix}")
+    return failures
 
 
 async def async_main() -> None:
@@ -475,6 +537,7 @@ async def async_main() -> None:
         default=str(ROOT / "artifacts/benchmarks/realtime-dictation-eval.json"),
     )
     parser.add_argument("--fixture", default=str(ROOT / ".tmp/dictation-eval/ru-startup.wav"))
+    parser.add_argument("--enforce-gates", action="store_true")
     args = parser.parse_args()
 
     pcm = ensure_fixture(Path(args.fixture))
@@ -499,18 +562,27 @@ async def async_main() -> None:
                     printable_result = {k: v for k, v in result.items() if k != "transcript"}
                     print(json.dumps(printable_result, ensure_ascii=False), flush=True)
 
+    summary = summarize(results)
+    gate_failures = [failure for item in summary for failure in gate_summary(item)]
     payload = {
         "generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "base_url": args.base_url,
         "fixture_text": FIXTURE_TEXT_RU,
         "fixture_seconds": round(duration_seconds(pcm), 3),
-        "summary": summarize([row for row in results if "error" not in row]),
+        "summary": summary,
+        "gate_failures": gate_failures,
         "results": results,
     }
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print(f"wrote {output}")
+    if gate_failures:
+        print("gate failures:", flush=True)
+        for failure in gate_failures:
+            print(f"- {failure}", flush=True)
+        if args.enforce_gates:
+            raise SystemExit(1)
 
 
 if __name__ == "__main__":

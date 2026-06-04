@@ -23,7 +23,33 @@ final class DeferredDictationStopPolicyTests: XCTestCase {
     }
 
     func testFinalizationKeepsShortAudioTailBeforeStoppingCapture() {
-        XCTAssertEqual(DictationFinalizationPolicy.captureTailDelay, .milliseconds(450))
+        XCTAssertEqual(
+            DictationFinalizationPolicy.captureTailDelay(
+                tapBufferFrames: 2_048,
+                sampleRate: 48_000
+            ),
+            .milliseconds(166)
+        )
+    }
+
+    func testFinalizationTailIsBoundedForLargeTapBuffers() {
+        XCTAssertEqual(
+            DictationFinalizationPolicy.captureTailDelay(
+                tapBufferFrames: 16_384,
+                sampleRate: 16_000
+            ),
+            .milliseconds(450)
+        )
+    }
+
+    func testFinalizationTailKeepsMinimumSafetyWindow() {
+        XCTAssertEqual(
+            DictationFinalizationPolicy.captureTailDelay(
+                tapBufferFrames: 256,
+                sampleRate: 48_000
+            ),
+            .milliseconds(150)
+        )
     }
 
     func testCleanupDisabledUsesRawTranscript() throws {
@@ -72,11 +98,21 @@ final class DeferredDictationStopPolicyTests: XCTestCase {
         )
     }
 
-    func testCleanupSpeculationReusesOnlyExactFinalTranscriptMatch() {
+    func testCleanupSpeculationReusesExactFinalTranscriptMatch() {
         XCTAssertEqual(
             DictationCleanupSpeculationPolicy.decision(
                 preliminaryRawText: "Clean this transcript.",
                 finalRawText: "Clean this transcript."
+            ),
+            .reuseSpeculative
+        )
+    }
+
+    func testCleanupSpeculationReusesNormalizedFinalTranscriptMatch() {
+        XCTAssertEqual(
+            DictationCleanupSpeculationPolicy.decision(
+                preliminaryRawText: "Clean this transcript",
+                finalRawText: "clean this transcript."
             ),
             .reuseSpeculative
         )
@@ -99,6 +135,26 @@ final class DeferredDictationStopPolicyTests: XCTestCase {
                 finalRawText: "Clean this transcript."
             ),
             .restartWithFinal
+        )
+    }
+
+    // MARK: - TextInsertionActivationPolicy
+
+    func testInsertionSkipsActivationWaitWhenTargetAlreadyActive() {
+        XCTAssertFalse(
+            TextInsertionActivationPolicy.shouldWaitAfterActivation(
+                targetWasActive: true,
+                activationReportedSuccessful: true
+            )
+        )
+    }
+
+    func testInsertionWaitsAfterActivatingInactiveTarget() {
+        XCTAssertTrue(
+            TextInsertionActivationPolicy.shouldWaitAfterActivation(
+                targetWasActive: false,
+                activationReportedSuccessful: true
+            )
         )
     }
 
