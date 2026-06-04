@@ -79,6 +79,37 @@ _ANSWER_FORMAT_SECTION = (
     "</answer_format>"
 )
 
+# Used INSTEAD of _IDENTITY_SECTION on action-capable turns so the model stops
+# behaving like a read-only Q&A bot and actually reaches for its hands. Read-only
+# turns keep _IDENTITY_SECTION verbatim so their cacheable prefix never changes.
+_IDENTITY_SECTION_WITH_ACTIONS = (
+    "<identity>\n"
+    "You are Wai — a calm, precise partner. You answer over the user's "
+    "recorded conversations, notes, and reflections, and you can also take "
+    "actions on their behalf using the tools below.\n"
+    "</identity>"
+)
+
+# Injected ONLY on action-capable turns. States, in cacheable prose, the same
+# act-vs-ask contract that tool_safety.is_mutating_tool_call enforces in code:
+# reads + web_search are automatic; anything that leaves the device is proposed
+# for approval first. The code gate stays authoritative — this only aligns model
+# behaviour with it so the action path actually fires.
+_ACTION_POLICY_SECTION = (
+    "<action_policy>\n"
+    "You have hands, not just answers.\n"
+    "- Look things up freely, without asking: the WaiComputer MCP tools (the "
+    "user's own library) and web_search (the public internet). Never ask for "
+    "permission to search or read — do it, then answer.\n"
+    "- Acting in the world is gated: sending a message, writing to an external "
+    "service, or controlling the user's Mac is PROPOSED first and runs only "
+    "after the user approves it. Propose one concrete action and stop; never "
+    "claim an action is done before it has been approved.\n"
+    "- Prefer doing over describing how to do it. Cite the user's library for "
+    "their own data and the web for external facts.\n"
+    "</action_policy>"
+)
+
 
 def _render_user_profile(user: User | None) -> str:
     """Compact <user_profile> block. Empty when there's no user (tests)."""
@@ -120,16 +151,24 @@ def _render_memory_section(memory_strings: dict[str, str] | None) -> str:
 def system_prompt_for(
     user: User | None = None,
     memory_blocks: dict[str, UserMemoryBlock] | dict[str, str] | None = None,
+    *,
+    with_actions: bool = False,
 ) -> str:
     """Assemble the cacheable system prompt for a turn.
 
-    Order: identity → user_profile → memory → tool_guidance → answer_format.
-    The first three sections vary per user but rarely; the last two are
-    fully static. With `prompt_cache_key` keyed to user_id this keeps a
-    stable prefix that's well above the 1024-token cache warm threshold
-    once user_profile and memory accumulate.
+    Order: identity → user_profile → memory → tool_guidance → [action_policy] →
+    answer_format. The first three sections vary per user but rarely; the rest
+    are static. With `prompt_cache_key` keyed to user_id this keeps a stable
+    prefix that's well above the 1024-token cache warm threshold once
+    user_profile and memory accumulate.
+
+    `with_actions` swaps in the capability-aware identity and appends
+    <action_policy>. It is False for read-only turns so their cacheable prefix
+    stays byte-for-byte identical — the prompt cache for read turns is untouched,
+    and a client without the actions capability sees exactly the historical prompt.
     """
-    sections: list[str] = [_IDENTITY_SECTION]
+    identity = _IDENTITY_SECTION_WITH_ACTIONS if with_actions else _IDENTITY_SECTION
+    sections: list[str] = [identity]
     profile = _render_user_profile(user)
     if profile:
         sections.append(profile)
@@ -142,6 +181,8 @@ def system_prompt_for(
         if memory:
             sections.append(memory)
     sections.append(_TOOL_GUIDANCE_SECTION)
+    if with_actions:
+        sections.append(_ACTION_POLICY_SECTION)
     sections.append(_ANSWER_FORMAT_SECTION)
     return "\n\n".join(sections)
 
@@ -1544,7 +1585,9 @@ async def run_turn(
     conv = await _load_conversation_locked(db, user_id, conversation_id)
     user_row = await db.get(User, user_id)
     memory_blocks = await user_memory_module.get_or_seed_blocks(db, user_id)
-    instructions = system_prompt_for(user_row, memory_blocks=memory_blocks)
+    instructions = system_prompt_for(
+        user_row, memory_blocks=memory_blocks, with_actions=enable_actions
+    )
 
     if not (conv.title or "").strip() and not await _conversation_has_messages(
         db, conv.id
