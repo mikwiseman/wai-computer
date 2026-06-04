@@ -109,6 +109,15 @@ final class MacContentFeedViewModelTests: XCTestCase {
         XCTAssertBefore("summarySection(detail)", "transcriptSection(detail)", in: source)
     }
 
+    func testRecordingDetailExposesSummaryAudioInHeaderActions() throws {
+        let source = try macSource("WaiComputer/Features/Library/MacRecordingDetailView.swift")
+
+        XCTAssertTrue(source.contains("headerSummaryAudioButton(detail, showsLabel: showsLabels)"))
+        XCTAssertTrue(source.contains("recording-detail-summary-audio-create-button"))
+        XCTAssertTrue(source.contains("recording-detail-summary-audio-play-button"))
+        XCTAssertBefore("headerSummaryAudioButton(detail, showsLabel: showsLabels)", "moveToFolderMenu(detail", in: source)
+    }
+
     func testRecordingDetailViewModelDoesNotDefaultToTranscriptTab() throws {
         let source = try macSource("WaiComputer/Features/Library/MacRecordingDetailViewModel.swift")
 

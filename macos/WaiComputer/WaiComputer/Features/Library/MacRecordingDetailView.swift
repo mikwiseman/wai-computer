@@ -391,6 +391,10 @@ struct MacRecordingDetailView: View {
                 .help(t("Create a web share link", "Создать ссылку для просмотра"))
                 .disabled(isSharing)
 
+                if detail.summary != nil {
+                    headerSummaryAudioButton(detail, showsLabel: showsLabels)
+                }
+
                 moveToFolderMenu(detail, showsLabel: showsLabels)
             }
 
@@ -413,6 +417,63 @@ struct MacRecordingDetailView: View {
             deleteRecordingButton
         }
         .fixedSize(horizontal: true, vertical: false)
+    }
+
+    @ViewBuilder
+    private func headerSummaryAudioButton(_ detail: RecordingDetail, showsLabel: Bool) -> some View {
+        let state = detail.summaryAudio
+        let isGenerating = viewModel.isGeneratingSummaryAudio(for: detail.id) ||
+            state?.isActive == true
+        let isDownloading = viewModel.isDownloadingSummaryAudio(for: detail.id)
+        let isPlaying = viewModel.isPlayingSummaryAudio(for: detail.id)
+
+        if state?.isSucceeded == true {
+            Button {
+                Task {
+                    await viewModel.playOrStopSummaryAudio(
+                        recordingId: detail.id,
+                        apiClient: appState.getAPIClient()
+                    )
+                }
+            } label: {
+                if showsLabel {
+                    Label(
+                        summaryAudioPlaybackButtonTitle(isDownloading: isDownloading, isPlaying: isPlaying),
+                        systemImage: isPlaying ? "stop.fill" : "play.fill"
+                    )
+                } else {
+                    Image(systemName: isPlaying ? "stop.fill" : "play.fill")
+                }
+            }
+            .buttonStyle(WaiGhostButtonStyle())
+            .help(summaryAudioPlaybackButtonTitle(isDownloading: isDownloading, isPlaying: isPlaying))
+            .disabled(isDownloading)
+            .accessibilityIdentifier("recording-detail-summary-audio-play-button")
+            .accessibilityLabel(summaryAudioPlaybackButtonTitle(isDownloading: isDownloading, isPlaying: isPlaying))
+        } else {
+            Button {
+                Task {
+                    await viewModel.startSummaryAudioGeneration(
+                        recordingId: detail.id,
+                        apiClient: appState.getAPIClient()
+                    )
+                }
+            } label: {
+                if showsLabel {
+                    Label(
+                        summaryAudioButtonTitle(state: state, isGenerating: isGenerating),
+                        systemImage: state?.isFailed == true ? "arrow.clockwise" : "waveform"
+                    )
+                } else {
+                    Image(systemName: state?.isFailed == true ? "arrow.clockwise" : "waveform")
+                }
+            }
+            .buttonStyle(WaiGhostButtonStyle())
+            .help(summaryAudioButtonTitle(state: state, isGenerating: isGenerating))
+            .disabled(isGenerating)
+            .accessibilityIdentifier("recording-detail-summary-audio-create-button")
+            .accessibilityLabel(summaryAudioButtonTitle(state: state, isGenerating: isGenerating))
+        }
     }
 
     private func moveToFolderMenu(_ detail: RecordingDetail, showsLabel: Bool) -> some View {
@@ -547,8 +608,6 @@ struct MacRecordingDetailView: View {
         let audioState = detail.summaryAudio
         let isGeneratingAudio = viewModel.isGeneratingSummaryAudio(for: detail.id) ||
             audioState?.isActive == true
-        let isDownloadingAudio = viewModel.isDownloadingSummaryAudio(for: detail.id)
-        let isPlayingAudio = viewModel.isPlayingSummaryAudio(for: detail.id)
 
         VStack(alignment: .leading, spacing: Spacing.lg) {
             HStack(alignment: .center, spacing: Spacing.md) {
@@ -572,14 +631,6 @@ struct MacRecordingDetailView: View {
             }
 
             if let summary = detail.summary {
-                summaryAudioControls(
-                    detail: detail,
-                    state: audioState,
-                    isGenerating: isGeneratingAudio,
-                    isDownloading: isDownloadingAudio,
-                    isPlaying: isPlayingAudio
-                )
-
                 if isGeneratingAudio {
                     summaryAudioProgress(state: audioState)
                 } else if audioState?.isFailed == true {
@@ -856,59 +907,6 @@ struct MacRecordingDetailView: View {
             return t("Audio Ready", "Аудио готово")
         }
         return t("Create Audio", "Создать аудио")
-    }
-
-    @ViewBuilder
-    private func summaryAudioControls(
-        detail: RecordingDetail,
-        state: SummaryAudioState?,
-        isGenerating: Bool,
-        isDownloading: Bool,
-        isPlaying: Bool
-    ) -> some View {
-        HStack(alignment: .center, spacing: Spacing.sm) {
-            if state?.isSucceeded == true {
-                Button {
-                    Task {
-                        await viewModel.playOrStopSummaryAudio(
-                            recordingId: detail.id,
-                            apiClient: appState.getAPIClient()
-                        )
-                    }
-                } label: {
-                    Label(
-                        summaryAudioPlaybackButtonTitle(isDownloading: isDownloading, isPlaying: isPlaying),
-                        systemImage: isPlaying ? "stop.fill" : "play.fill"
-                    )
-                }
-                .buttonStyle(WaiGhostButtonStyle())
-                .disabled(isDownloading)
-                .accessibilityIdentifier("summary-audio-play-button")
-                .accessibilityLabel(summaryAudioPlaybackButtonTitle(isDownloading: isDownloading, isPlaying: isPlaying))
-
-                Text(isDownloading ? t("Loading audio...", "Загружаем аудио...") : t("Audio ready", "Аудио готово"))
-                    .font(Typography.bodySmall)
-                    .foregroundStyle(Palette.textSecondary)
-            } else {
-                Button {
-                    Task {
-                        await viewModel.startSummaryAudioGeneration(
-                            recordingId: detail.id,
-                            apiClient: appState.getAPIClient()
-                        )
-                    }
-                } label: {
-                    Label(
-                        summaryAudioButtonTitle(state: state, isGenerating: isGenerating),
-                        systemImage: state?.isFailed == true ? "arrow.clockwise" : "waveform"
-                    )
-                }
-                .buttonStyle(WaiGhostButtonStyle())
-                .disabled(isGenerating)
-                .accessibilityIdentifier("summary-audio-create-button")
-                .accessibilityLabel(summaryAudioButtonTitle(state: state, isGenerating: isGenerating))
-            }
-        }
     }
 
     private func summaryAudioPlaybackButtonTitle(isDownloading: Bool, isPlaying: Bool) -> String {
