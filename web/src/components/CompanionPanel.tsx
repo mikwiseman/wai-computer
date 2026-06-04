@@ -167,6 +167,10 @@ interface CompanionPanelProps {
   recordings: Recording[];
   locale?: Locale;
   initialChatId?: string | null;
+  // Type-and-go: a first message to auto-send once the thread is active, so the
+  // user's first keystroke in the inbox IS the turn (no extra click).
+  initialMessage?: string | null;
+  onInitialMessageConsumed?: () => void;
   onChatCreated?: (chat: CompanionConversation) => void;
   embedded?: boolean;
 }
@@ -239,6 +243,8 @@ export function CompanionPanel({
   recordings,
   locale: localeProp,
   initialChatId,
+  initialMessage,
+  onInitialMessageConsumed,
   onChatCreated,
   embedded = false,
 }: CompanionPanelProps) {
@@ -261,6 +267,7 @@ export function CompanionPanel({
   const abortRef = useRef<AbortController | null>(null);
   const threadEndRef = useRef<HTMLDivElement | null>(null);
   const initialized = useRef(false);
+  const initialSentRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (localeProp) {
@@ -317,6 +324,19 @@ export function CompanionPanel({
   useEffect(() => {
     return () => abortRef.current?.abort();
   }, []);
+
+  // Type-and-go: auto-send the handed-in first message once the thread is active.
+  // Keyed by chat+text so a re-render never re-sends, yet a later type-and-go
+  // (even with identical text in a different thread) still fires.
+  useEffect(() => {
+    const msg = initialMessage?.trim();
+    if (!msg || !activeChatId || loading) return;
+    const key = `${activeChatId}::${msg}`;
+    if (initialSentRef.current === key) return;
+    initialSentRef.current = key;
+    void handleSend(undefined, msg);
+    onInitialMessageConsumed?.();
+  }, [initialMessage, activeChatId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const recordingTitlesById = useMemo(() => {
     const m = new Map<string, string>();
@@ -375,9 +395,9 @@ export function CompanionPanel({
     }
   }
 
-  async function handleSend(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const question = input.trim();
+  async function handleSend(event?: FormEvent<HTMLFormElement>, overrideText?: string) {
+    event?.preventDefault();
+    const question = (overrideText ?? input).trim();
     if (!question || loading) return;
 
     // Abort any prior turn so two streams never overlap.

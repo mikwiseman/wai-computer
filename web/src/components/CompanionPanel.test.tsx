@@ -946,4 +946,44 @@ describe("CompanionPanel", () => {
       expect(screen.getByText("Ping reminder")).toBeInTheDocument();
     });
   });
+
+  it("auto-sends an initialMessage once the thread is active (type-and-go)", async () => {
+    const chat = makeChat("c1");
+    mockListChats.mockResolvedValue({ chats: [chat] });
+    mockGetChat.mockResolvedValue({ ...chat, messages: [] });
+    mockStreamMessage.mockImplementation(() =>
+      eventStream([
+        { type: "turn_start", message_id: "m1", conversation_id: "c1" },
+        { type: "token", text: "on it" },
+        {
+          type: "done",
+          message_id: "a1",
+          input_tokens: 1,
+          output_tokens: 1,
+          cached_tokens: null,
+          model: "gpt-5.5",
+          latency_ms: 1,
+        },
+      ]),
+    );
+    const onConsumed = vi.fn();
+
+    render(
+      <CompanionPanel
+        recordings={recordings}
+        initialChatId="c1"
+        initialMessage="ship it"
+        onInitialMessageConsumed={onConsumed}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(mockStreamMessage).toHaveBeenCalledWith(
+        "c1",
+        "ship it",
+        expect.any(AbortSignal),
+      );
+    });
+    expect(onConsumed).toHaveBeenCalled();
+  });
 });
