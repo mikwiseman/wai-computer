@@ -10,31 +10,40 @@ struct OnboardingValuePropsSlide: View {
             Spacer(minLength: 0)
 
             VStack(spacing: 8) {
-                Text(t("Two ways to use WaiComputer", "WaiComputer помогает в двух сценариях"))
+                Text(t("One Inbox for everything", "Один Инбокс для всего"))
                     .font(.system(size: 30, weight: .bold))
                     .foregroundStyle(Palette.textPrimary)
-                Text(t("Pick either or use both. You can change anytime.", "Можно включить один сценарий или оба. Настройки всегда можно изменить."))
+                Text(t("Capture, organize, and ask Wai without switching sections.", "Сохраняйте, раскладывайте и спрашивайте Wai без лишних разделов."))
                     .font(.system(size: 14))
                     .foregroundStyle(Palette.textSecondary)
             }
 
-            HStack(alignment: .top, spacing: 20) {
+            HStack(alignment: .top, spacing: 16) {
                 valueCard(
-                    icon: "keyboard.badge.eye",
-                    title: t("Dictate", "Диктовка"),
-                    primary: t("Voice-type into any app", "Пиши голосом в любом приложении"),
+                    icon: "tray.full",
+                    title: t("Inbox", "Инбокс"),
+                    primary: t("Recordings, files, notes, and chats", "Записи, файлы, заметки и чаты"),
                     detail: t(
-                        "Hold a hotkey, speak, release. Text appears at your cursor — in Slack, Notion, Mail, anywhere.",
-                        "Зажми горячую клавишу, произнеси фразу и отпусти. Текст появится там, где стоит курсор: в Slack, Notion, Mail и других приложениях."
+                        "Everything lands in one place first. Filter by type when you need focus.",
+                        "Всё сначала попадает в одно место. Фильтры помогают сфокусироваться по типу."
                     )
                 )
                 valueCard(
-                    icon: "waveform",
-                    title: t("Record", "Запись"),
-                    primary: t("Capture meetings & notes", "Сохраняй встречи и голосовые заметки"),
+                    icon: "folder",
+                    title: t("Folders", "Папки"),
+                    primary: t("Organize recordings and materials", "Разложите записи и материалы"),
                     detail: t(
-                        "Hit record in WaiComputer. Get a full transcript, AI summary, and action items when you're done.",
-                        "Нажми запись в WaiComputer. После встречи появятся расшифровка, краткая сводка и список задач."
+                        "Folders work across the Inbox, so projects are not split by media type.",
+                        "Папки работают поверх Инбокса, поэтому проекты не делятся по типу медиа."
+                    )
+                )
+                valueCard(
+                    icon: "bubble.left.and.bubble.right",
+                    title: t("Ask Wai", "Спросите Wai"),
+                    primary: t("Chat over what you saved", "Чат по тому, что сохранено"),
+                    detail: t(
+                        "Ask for summaries, decisions, repeated themes, or answers from your saved context.",
+                        "Спросите про саммари, решения, повторяющиеся темы или ответы из сохраненного контекста."
                     )
                 )
             }
@@ -76,7 +85,7 @@ struct OnboardingValuePropsSlide: View {
                 .lineSpacing(3)
                 .fixedSize(horizontal: false, vertical: true)
         }
-        .padding(20)
+        .padding(18)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: 16, style: .continuous)

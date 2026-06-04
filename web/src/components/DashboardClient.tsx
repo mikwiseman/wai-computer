@@ -281,6 +281,14 @@ interface DashboardCopy {
   };
   // Settings
   settings: {
+    workspaceGroupTitle: string;
+    workspaceGroupBody: string;
+    voiceGroupTitle: string;
+    voiceGroupBody: string;
+    accountGroupTitle: string;
+    accountGroupBody: string;
+    developerGroupTitle: string;
+    developerGroupBody: string;
     dictationHeading: string;
     loadingSettings: string;
     cleanupLevel: string;
@@ -464,6 +472,17 @@ const COPY: Record<Locale, DashboardCopy> = {
       open: "Open",
     },
     settings: {
+      workspaceGroupTitle: "Inbox & sources",
+      workspaceGroupBody:
+        "Choose where WaiComputer runs, connect sources, and keep every recording, material, and chat flowing into Inbox.",
+      voiceGroupTitle: "Voice, summaries & appearance",
+      voiceGroupBody:
+        "Tune language, voice identity, dictation cleanup, summaries, and the visual theme.",
+      accountGroupTitle: "Account",
+      accountGroupBody: "Password and account controls live here so everyday setup stays focused.",
+      developerGroupTitle: "Developer access",
+      developerGroupBody:
+        "Connect AI tools through MCP or create read-only tokens for automation.",
       dictationHeading: "Dictation",
       loadingSettings: "Loading account settings...",
       cleanupLevel: "Cleanup level",
@@ -668,6 +687,18 @@ const COPY: Record<Locale, DashboardCopy> = {
       open: "Открыть",
     },
     settings: {
+      workspaceGroupTitle: "Инбокс и источники",
+      workspaceGroupBody:
+        "Выберите, где работает WaiComputer, подключите источники и отправляйте записи, материалы и чаты в Инбокс.",
+      voiceGroupTitle: "Голос, саммари и внешний вид",
+      voiceGroupBody:
+        "Настройте язык, голосовой профиль, очистку диктовки, саммари и тему.",
+      accountGroupTitle: "Аккаунт",
+      accountGroupBody:
+        "Пароль и управление аккаунтом собраны отдельно, чтобы основная настройка не распухала.",
+      developerGroupTitle: "Доступ для разработчиков",
+      developerGroupBody:
+        "Подключите AI-инструменты через MCP или создайте read-only токены для автоматизации.",
       dictationHeading: "Диктовка",
       loadingSettings: "Загружаем настройки аккаунта...",
       cleanupLevel: "Уровень очистки",
@@ -1171,7 +1202,7 @@ export function DashboardClient() {
       const detail = await getRecording(recordingId);
       handleRecordingDetailUpdate(detail);
       setSelectedMode(mode);
-      setView(mode === "trash" ? "trash" : "library");
+      setView(mode === "trash" ? "trash" : "inbox");
     } catch (error: unknown) {
       setMessage(formatError(error));
     }
@@ -2676,175 +2707,196 @@ export function DashboardClient() {
   function renderSettingsView() {
     return (
       <section className="tool-panel settings-panel">
-        <ServerDataSection locale={locale} />
-
-        <section className="settings-form" data-testid="appearance-settings">
-          <h3>{locale === "ru" ? "Внешний вид" : "Appearance"}</h3>
-          <ThemeAccentPicker locale={locale} />
-        </section>
-
-        <IdentityAndVoicePanel locale={locale} />
-
-        {accountSettings ? (
-          <TranscriptionSettingsPanel
-            settings={accountSettings}
-            transcriptionOptions={transcriptionOptions}
-            onUpdate={(patch) => void handleUpdateAccountSettings(patch)}
-            busy={settingsSaving}
-            locale={locale}
-          />
-        ) : null}
-
-        <div className="settings-form">
-          <h3>{copy.settings.dictationHeading}</h3>
-          {settingsLoading ? (
-            <p className="settings-note">{copy.settings.loadingSettings}</p>
-          ) : null}
-          {accountSettings ? (
-            <div className="settings-field cleanup-level-field">
-              <span>{copy.settings.cleanupLevel}</span>
-              <div
-                className="cleanup-level-options"
-                role="radiogroup"
-                aria-label={copy.settings.cleanupLevel}
-              >
-                {(["none", "light", "medium", "high"] as const).map((level) => (
-                  <label
-                    key={level}
-                    className={`cleanup-level-option${
-                      accountSettings.dictation_cleanup_level === level ? " selected" : ""
-                    }`}
-                  >
-                    <input
-                      type="radio"
-                      name="dictation-cleanup-level"
-                      value={level}
-                      checked={accountSettings.dictation_cleanup_level === level}
-                      disabled={settingsSaving}
-                      onChange={() =>
-                        void handleUpdateAccountSettings({
-                          dictation_cleanup_level: level,
-                        })
-                      }
-                    />
-                    <strong>{copy.settings.cleanupLevels[level].label}</strong>
-                    <small>{copy.settings.cleanupLevels[level].description}</small>
-                  </label>
-                ))}
+        <div className="settings-group" data-testid="settings-group-workspace">
+          <header className="settings-group__header">
+            <h2>{copy.settings.workspaceGroupTitle}</h2>
+            <p>{copy.settings.workspaceGroupBody}</p>
+          </header>
+          <ServerDataSection locale={locale} />
+          <div className="settings-form">
+            <h3>{copy.telegram.heading}</h3>
+            <p className="settings-note">{copy.telegram.intro}</p>
+            {telegramStatus?.linked ? (
+              <div className="telegram-link-card">
+                <p>
+                  {copy.telegram.linkedAs}{" "}
+                  <strong>
+                    {telegramStatus.username
+                      ? `@${telegramStatus.username}`
+                      : [telegramStatus.first_name, telegramStatus.last_name]
+                          .filter(Boolean)
+                          .join(" ") || "Telegram"}
+                  </strong>
+                </p>
+                <button
+                  type="button"
+                  className="ghost-button compact-button danger-button"
+                  disabled={telegramLoading}
+                  onClick={() => void handleUnlinkTelegram()}
+                >
+                  {copy.telegram.disconnect}
+                </button>
               </div>
-            </div>
-          ) : settingsLoadedOnce && !settingsLoading ? (
-            <button
-              type="button"
-              className="ghost-button compact-button"
-              onClick={() => void loadAccountSettings()}
-            >
-              {copy.retryLoadSettings}
-            </button>
-          ) : null}
+            ) : (
+              <div className="telegram-link-card">
+                <p className="settings-note">{copy.telegram.instructions}</p>
+                <button
+                  type="button"
+                  className="ghost-button compact-button"
+                  disabled={telegramLoading}
+                  onClick={() => void handleStartTelegramLink()}
+                >
+                  {telegramLoading ? copy.telegram.linkOpening : copy.telegram.linkButton}
+                </button>
+                {telegramPairing ? (
+                  <p className="settings-note">{copy.telegram.awaitingStart}</p>
+                ) : null}
+                <details className="settings-disclosure">
+                  <summary>{copy.telegram.codeHelp}</summary>
+                  <form className="telegram-code-form" onSubmit={handleClaimTelegramLinkCode}>
+                    <label>
+                      <span>{copy.telegram.codeLabel}</span>
+                      <input
+                        type="text"
+                        value={telegramLinkCode}
+                        onChange={(event) => setTelegramLinkCode(event.target.value)}
+                        placeholder={copy.telegram.codePlaceholder}
+                        autoComplete="one-time-code"
+                        disabled={telegramLoading}
+                      />
+                    </label>
+                    <button
+                      type="submit"
+                      className="ghost-button compact-button"
+                      disabled={telegramLoading}
+                    >
+                      {copy.telegram.linkByCodeButton}
+                    </button>
+                  </form>
+                </details>
+              </div>
+            )}
+          </div>
         </div>
 
-        <form className="settings-form" onSubmit={handleChangePassword}>
-          <h3>{copy.settings.accountHeading}</h3>
-          {!accountHasPassword ? (
-            <p className="settings-note" data-testid="set-password-note">
-              {copy.settings.magicLinkNote}
-            </p>
-          ) : (
-            <PasswordField
-              id="settings-current-password"
-              data-testid="current-password"
-              label={copy.settings.currentPassword}
-              value={currentPassword}
-              onChange={setCurrentPassword}
+        <div className="settings-group" data-testid="settings-group-voice">
+          <header className="settings-group__header">
+            <h2>{copy.settings.voiceGroupTitle}</h2>
+            <p>{copy.settings.voiceGroupBody}</p>
+          </header>
+          <section className="settings-form" data-testid="appearance-settings">
+            <h3>{locale === "ru" ? "Внешний вид" : "Appearance"}</h3>
+            <ThemeAccentPicker locale={locale} />
+          </section>
+          <IdentityAndVoicePanel locale={locale} />
+          {accountSettings ? (
+            <TranscriptionSettingsPanel
+              settings={accountSettings}
+              transcriptionOptions={transcriptionOptions}
+              onUpdate={(patch) => void handleUpdateAccountSettings(patch)}
+              busy={settingsSaving}
               locale={locale}
-              required
-              autoComplete="current-password"
             />
-          )}
-          <PasswordField
-            id="settings-new-password"
-            data-testid="new-password"
-            label={copy.settings.newPassword}
-            value={newPassword}
-            onChange={setNewPassword}
-            locale={locale}
-            showStrength
-            required
-            autoComplete="new-password"
-          />
-          <button data-testid="change-password" type="submit">
-            {accountHasPassword ? copy.settings.changePassword : copy.settings.setPassword}
-          </button>
-        </form>
-
-        <DeleteAccountSection onDeleted={() => router.replace("/login")} locale={locale} />
-
-        <div className="settings-form">
-          <h3>{copy.telegram.heading}</h3>
-          <p className="settings-note">{copy.telegram.intro}</p>
-          {telegramStatus?.linked ? (
-            <div className="telegram-link-card">
-              <p>
-                {copy.telegram.linkedAs}{" "}
-                <strong>
-                  {telegramStatus.username
-                    ? `@${telegramStatus.username}`
-                    : [telegramStatus.first_name, telegramStatus.last_name]
-                        .filter(Boolean)
-                        .join(" ") || "Telegram"}
-                </strong>
-              </p>
-              <button
-                type="button"
-                className="ghost-button compact-button danger-button"
-                disabled={telegramLoading}
-                onClick={() => void handleUnlinkTelegram()}
-              >
-                {copy.telegram.disconnect}
-              </button>
-            </div>
-          ) : (
-            <div className="telegram-link-card">
-              <p className="settings-note">{copy.telegram.instructions}</p>
+          ) : null}
+          <div className="settings-form">
+            <h3>{copy.settings.dictationHeading}</h3>
+            {settingsLoading ? (
+              <p className="settings-note">{copy.settings.loadingSettings}</p>
+            ) : null}
+            {accountSettings ? (
+              <div className="settings-field cleanup-level-field">
+                <span>{copy.settings.cleanupLevel}</span>
+                <div
+                  className="cleanup-level-options"
+                  role="radiogroup"
+                  aria-label={copy.settings.cleanupLevel}
+                >
+                  {(["none", "light", "medium", "high"] as const).map((level) => (
+                    <label
+                      key={level}
+                      className={`cleanup-level-option${
+                        accountSettings.dictation_cleanup_level === level ? " selected" : ""
+                      }`}
+                    >
+                      <input
+                        type="radio"
+                        name="dictation-cleanup-level"
+                        value={level}
+                        checked={accountSettings.dictation_cleanup_level === level}
+                        disabled={settingsSaving}
+                        onChange={() =>
+                          void handleUpdateAccountSettings({
+                            dictation_cleanup_level: level,
+                          })
+                        }
+                      />
+                      <strong>{copy.settings.cleanupLevels[level].label}</strong>
+                      <small>{copy.settings.cleanupLevels[level].description}</small>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            ) : settingsLoadedOnce && !settingsLoading ? (
               <button
                 type="button"
                 className="ghost-button compact-button"
-                disabled={telegramLoading}
-                onClick={() => void handleStartTelegramLink()}
+                onClick={() => void loadAccountSettings()}
               >
-                {telegramLoading ? copy.telegram.linkOpening : copy.telegram.linkButton}
+                {copy.retryLoadSettings}
               </button>
-              {telegramPairing ? (
-                <p className="settings-note">{copy.telegram.awaitingStart}</p>
-              ) : null}
-              <form className="telegram-code-form" onSubmit={handleClaimTelegramLinkCode}>
-                <label>
-                  <span>{copy.telegram.codeLabel}</span>
-                  <small>{copy.telegram.codeHelp}</small>
-                  <input
-                    type="text"
-                    value={telegramLinkCode}
-                    onChange={(event) => setTelegramLinkCode(event.target.value)}
-                    placeholder={copy.telegram.codePlaceholder}
-                    autoComplete="one-time-code"
-                    disabled={telegramLoading}
-                  />
-                </label>
-                <button
-                  type="submit"
-                  className="ghost-button compact-button"
-                  disabled={telegramLoading}
-                >
-                  {copy.telegram.linkByCodeButton}
-                </button>
-              </form>
-            </div>
-          )}
+            ) : null}
+          </div>
         </div>
 
-        <McpConnectSection />
-        <ApiKeysSection />
+        <div className="settings-group" data-testid="settings-group-account">
+          <header className="settings-group__header">
+            <h2>{copy.settings.accountGroupTitle}</h2>
+            <p>{copy.settings.accountGroupBody}</p>
+          </header>
+          <form className="settings-form" onSubmit={handleChangePassword}>
+            <h3>{copy.settings.accountHeading}</h3>
+            {!accountHasPassword ? (
+              <p className="settings-note" data-testid="set-password-note">
+                {copy.settings.magicLinkNote}
+              </p>
+            ) : (
+              <PasswordField
+                id="settings-current-password"
+                data-testid="current-password"
+                label={copy.settings.currentPassword}
+                value={currentPassword}
+                onChange={setCurrentPassword}
+                locale={locale}
+                required
+                autoComplete="current-password"
+              />
+            )}
+            <PasswordField
+              id="settings-new-password"
+              data-testid="new-password"
+              label={copy.settings.newPassword}
+              value={newPassword}
+              onChange={setNewPassword}
+              locale={locale}
+              showStrength
+              required
+              autoComplete="new-password"
+            />
+            <button data-testid="change-password" type="submit">
+              {accountHasPassword ? copy.settings.changePassword : copy.settings.setPassword}
+            </button>
+          </form>
+          <DeleteAccountSection onDeleted={() => router.replace("/login")} locale={locale} />
+        </div>
+
+        <div className="settings-group" data-testid="settings-group-developer">
+          <header className="settings-group__header">
+            <h2>{copy.settings.developerGroupTitle}</h2>
+            <p>{copy.settings.developerGroupBody}</p>
+          </header>
+          <McpConnectSection />
+          <ApiKeysSection />
+        </div>
       </section>
     );
   }

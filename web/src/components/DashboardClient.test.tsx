@@ -754,6 +754,8 @@ describe("DashboardClient", () => {
     await waitFor(() => {
       expect(mockGetRecording).toHaveBeenCalledWith("r1");
       expect(screen.getByTestId("recording-detail")).toBeInTheDocument();
+      expect(screen.getByTestId("workspace-title")).toHaveTextContent("Inbox");
+      expect(screen.getByTestId("tab-inbox")).toHaveAttribute("aria-current", "page");
     });
   });
 

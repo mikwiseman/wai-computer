@@ -1041,11 +1041,11 @@ struct MacMainView: View {
         await libraryViewModel.loadLibrary(apiClient: appState.getAPIClient())
     }
 
-    /// Run the Mac-edge computer-use channel only while the assistant surface is
+    /// Run the Mac-edge computer-use channel only while the main Wai workspace is
     /// open AND the user has opted in (default off) — never a silent 24/7 loop.
     @MainActor
     private func syncDesktopAgent() {
-        guard computerUseEnabled, selectedSection == .wai else {
+        guard computerUseEnabled, selectedSection == .inbox else {
             desktopAgent.stop()
             return
         }
