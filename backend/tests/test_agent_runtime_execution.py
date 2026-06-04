@@ -9,7 +9,7 @@ Pins the v1 runtime beyond the plan-only slice:
 
 from datetime import datetime, timezone
 from types import SimpleNamespace
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 import pytest_asyncio
@@ -616,6 +616,154 @@ async def test_create_artifact_and_propose_action_are_idempotent(db_session, use
         "action_id": first_action.payload["action_id"],
         "status": "pending",
     }
+
+
+async def test_delegate_agent_creates_child_run_and_queues_after_commit(db_session, user):
+    agent, run = await _agent_run(db_session, user, config={"steps": []})
+    reviewer = Agent(
+        user_id=user.id,
+        name="Reviewer",
+        kind="review",
+        trigger_type="manual",
+        config={"steps": [{"tool": "note", "args": {"text": "reviewed"}}]},
+        autonomy="propose",
+    )
+    db_session.add(reviewer)
+    await db_session.flush()
+
+    result = await execute_agent_step(
+        db_session,
+        agent,
+        run,
+        {
+            "tool": "delegate_agent",
+            "args": {
+                "agent_name": "Reviewer",
+                "objective": "Review the implementation plan.",
+            },
+        },
+        10,
+        "delegate-key",
+    )
+
+    assert result.status == "done"
+    assert result.payload["created"] is True
+    assert result.payload["agent_id"] == str(reviewer.id)
+    child = (
+        await db_session.execute(
+            select(AgentRun).where(AgentRun.id == result.payload["child_run_id"])
+        )
+    ).scalar_one()
+    assert child.user_id == user.id
+    assert child.agent_id == reviewer.id
+    assert child.trigger_kind == "agent"
+    assert child.parent_run_id == run.id
+    assert child.parent_step_idx == 10
+    assert child.trigger_payload["objective"] == "Review the implementation plan."
+    assert db_session.sync_session.info["agent_runs_to_dispatch_after_commit"] == [child.id]
+
+
+async def test_delegate_agent_is_idempotent_and_does_not_requeue_existing_child(
+    db_session, user
+):
+    agent, run = await _agent_run(db_session, user, config={"steps": []})
+    reviewer = Agent(
+        user_id=user.id,
+        name="Reviewer",
+        kind="review",
+        trigger_type="manual",
+        config={"steps": [{"tool": "note", "args": {"text": "reviewed"}}]},
+    )
+    db_session.add(reviewer)
+    await db_session.flush()
+    step = {
+        "tool": "delegate_agent",
+        "args": {"agent_id": str(reviewer.id), "objective": "Review once."},
+    }
+
+    first = await execute_agent_step(db_session, agent, run, step, 11, "delegate-once")
+    second = await execute_agent_step(db_session, agent, run, step, 11, "delegate-once")
+
+    assert first.payload["created"] is True
+    assert second.payload == {
+        "child_run_id": first.payload["child_run_id"],
+        "agent_id": str(reviewer.id),
+        "status": "pending",
+        "created": False,
+    }
+    result = await db_session.execute(
+        select(AgentRun).where(AgentRun.parent_run_id == run.id)
+    )
+    assert len(list(result.scalars().all())) == 1
+    assert db_session.sync_session.info["agent_runs_to_dispatch_after_commit"] == [
+        UUID(first.payload["child_run_id"])
+    ]
+
+
+@pytest.mark.parametrize(
+    ("step", "message"),
+    [
+        (
+            {
+                "tool": "delegate_agent",
+                "args": {"agent_name": "Research agent", "objective": "Loop"},
+            },
+            "delegate_agent cannot target the current agent",
+        ),
+        (
+            {"tool": "delegate_agent", "args": {"agent_name": "Missing", "objective": "Review"}},
+            "delegate_agent target agent not found",
+        ),
+    ],
+)
+async def test_delegate_agent_rejects_invalid_targets(db_session, user, step, message):
+    agent, run = await _agent_run(db_session, user, config={"steps": []})
+
+    with pytest.raises(AgentRuntimeError) as exc:
+        await execute_agent_step(db_session, agent, run, step, 12, "delegate-bad")
+
+    assert exc.value.code == "invalid_tool_args"
+    assert message in exc.value.message
+
+
+async def test_delegate_agent_rejects_nested_delegation(db_session, user):
+    parent_agent, parent_run = await _agent_run(db_session, user, config={"steps": []})
+    child_agent = Agent(
+        user_id=user.id,
+        name="Child",
+        kind="manual",
+        trigger_type="manual",
+    )
+    db_session.add(child_agent)
+    await db_session.flush()
+    nested_run = AgentRun(
+        agent_id=child_agent.id,
+        user_id=user.id,
+        trigger_key=f"agent:{uuid4()}",
+        trigger_kind="agent",
+        parent_run_id=parent_run.id,
+        parent_step_idx=1,
+    )
+    db_session.add(nested_run)
+    reviewer = Agent(user_id=user.id, name="Reviewer", kind="review", trigger_type="manual")
+    db_session.add(reviewer)
+    await db_session.flush()
+
+    with pytest.raises(AgentRuntimeError) as exc:
+        await execute_agent_step(
+            db_session,
+            child_agent,
+            nested_run,
+            {
+                "tool": "delegate_agent",
+                "args": {"agent_name": "Reviewer", "objective": "Nested review"},
+            },
+            13,
+            "delegate-nested",
+        )
+
+    assert exc.value.code == "invalid_tool_args"
+    assert exc.value.message == "Nested delegate_agent calls are not enabled yet"
 
 
 async def test_desktop_action_defaults_to_desktop_action_kind(db_session, user):

@@ -143,3 +143,32 @@ async def test_step_idempotency_key_persists(db_session, user) -> None:
     await db_session.refresh(step)
     assert step.idempotency_key == key
     assert step.payload["tool"] == "send_message_telegram"
+
+
+async def test_child_run_links_to_parent_run(db_session, user) -> None:
+    agent = Agent(user_id=user.id, name="Parent", kind="manual", trigger_type="manual")
+    reviewer = Agent(user_id=user.id, name="Reviewer", kind="manual", trigger_type="manual")
+    db_session.add_all([agent, reviewer])
+    await db_session.flush()
+    parent = AgentRun(
+        agent_id=agent.id,
+        user_id=user.id,
+        trigger_key=f"manual:{uuid4()}",
+        trigger_kind="manual",
+    )
+    db_session.add(parent)
+    await db_session.flush()
+    child = AgentRun(
+        agent_id=reviewer.id,
+        user_id=user.id,
+        trigger_key=f"agent:{parent.id}:1",
+        trigger_kind="agent",
+        parent_run_id=parent.id,
+        parent_step_idx=3,
+    )
+    db_session.add(child)
+    await db_session.flush()
+    await db_session.refresh(child)
+
+    assert child.parent_run_id == parent.id
+    assert child.parent_step_idx == 3

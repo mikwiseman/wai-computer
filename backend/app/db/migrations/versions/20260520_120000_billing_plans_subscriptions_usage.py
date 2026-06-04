@@ -1,7 +1,7 @@
 """create billing tables and add billing columns to users
 
 Revision ID: 20260520_120000
-Revises: 20260519_120000
+Revises: 20260519_130000
 Create Date: 2026-05-20 12:00:00.000000+00:00
 
 Adds the billing layer:
@@ -29,7 +29,7 @@ from alembic import op
 from sqlalchemy.dialects import postgresql
 
 revision: str = "20260520_120000"
-down_revision: Union[str, None] = "20260519_120000"
+down_revision: Union[str, None] = "20260519_130000"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

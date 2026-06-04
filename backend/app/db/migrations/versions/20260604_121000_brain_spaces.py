@@ -1,6 +1,6 @@
 """brain spaces canonical markdown pages
 
-Revision ID: 20260604_120000
+Revision ID: 20260604_121000
 Revises: 20260603_170000
 Create Date: 2026-06-04 12:00:00.000000
 """
@@ -11,7 +11,7 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
-revision: str = "20260604_120000"
+revision: str = "20260604_121000"
 down_revision: Union[str, None] = "20260603_170000"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None

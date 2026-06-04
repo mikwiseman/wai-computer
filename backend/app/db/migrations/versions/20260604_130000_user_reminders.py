@@ -1,7 +1,7 @@
 """create user reminders
 
 Revision ID: 20260604_130000
-Revises: 20260604_120000
+Revises: 20260604_121000
 Create Date: 2026-06-04 13:00:00.000000
 """
 
@@ -12,7 +12,7 @@ from alembic import op
 from sqlalchemy.dialects import postgresql
 
 revision = "20260604_130000"
-down_revision = "20260604_120000"
+down_revision = "20260604_121000"
 branch_labels = None
 depends_on = None
 

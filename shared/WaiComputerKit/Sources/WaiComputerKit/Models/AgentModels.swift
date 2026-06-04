@@ -15,6 +15,7 @@ public enum AgentRunTriggerKind: String, Codable, Sendable, Equatable {
     case signal
     case chat
     case telegram
+    case agent
 }
 
 public struct AgentDefinition: Codable, Sendable, Equatable, Identifiable {
@@ -128,6 +129,8 @@ public struct AgentUpdateRequest: Codable, Sendable, Equatable {
 public struct AgentRun: Codable, Sendable, Equatable, Identifiable {
     public let id: String
     public let agentId: String
+    public let parentRunId: String?
+    public let parentStepIdx: Int?
     public let triggerKey: String
     public let triggerKind: AgentRunTriggerKind
     public let triggerPayload: [String: JSONValue]?
@@ -148,6 +151,8 @@ public struct AgentRun: Codable, Sendable, Equatable, Identifiable {
     private enum CodingKeys: String, CodingKey {
         case id
         case agentId = "agent_id"
+        case parentRunId = "parent_run_id"
+        case parentStepIdx = "parent_step_idx"
         case triggerKey = "trigger_key"
         case triggerKind = "trigger_kind"
         case triggerPayload = "trigger_payload"

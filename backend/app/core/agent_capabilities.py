@@ -184,14 +184,17 @@ AGENT_CAPABILITIES: tuple[AgentCapability, ...] = (
             "Spawn isolated child runs for review, research, consensus, "
             "or specialist work."
         ),
-        availability="planned",
-        runtime_tool=None,
+        availability="available",
+        runtime_tool="delegate_agent",
         surfaces=("web", "mac", "telegram", "api"),
         requires_approval=False,
         cloud_supported=True,
         self_host_supported=True,
         local_gateway_required=False,
-        safety_notes="Requires parent/child run schema and budgets before enabling.",
+        safety_notes=(
+            "Creates an owner-scoped child run with a parent edge; nested "
+            "delegation is blocked in v1."
+        ),
     ),
 )
 
@@ -322,4 +325,20 @@ def _validate_step_args(tool: str, args: dict[str, Any], idx: int) -> None:
                     f"Agent config.steps[{idx}].propose_action.device_target must be a UUID string"
                 ) from exc
         _require_text(args, "preview", idx, tool)
+        return
+    if tool == "delegate_agent":
+        has_agent_id = bool(str(args.get("agent_id") or "").strip())
+        has_agent_name = bool(str(args.get("agent_name") or "").strip())
+        if has_agent_id == has_agent_name:
+            raise ValueError(
+                "delegate_agent requires exactly one of agent_id or agent_name"
+            )
+        if has_agent_id:
+            try:
+                UUID(str(args.get("agent_id")).strip())
+            except ValueError as exc:
+                raise ValueError(
+                    f"Agent config.steps[{idx}].delegate_agent.agent_id must be a UUID string"
+                ) from exc
+        _require_text(args, "objective", idx, tool)
         return

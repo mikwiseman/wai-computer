@@ -12,6 +12,7 @@ from sqlalchemy import select
 from app.core import agent_guard
 from app.core.agent_runtime import (
     execute_agent_step,
+    pop_agent_runs_to_dispatch_after_commit,
     run_job,
     static_config_planner,
 )
@@ -37,7 +38,26 @@ async def _mark_failed(run: AgentRun, message: str) -> None:
     run.finished_at = _now()
 
 
+async def _dispatch_child_runs_after_commit(run_ids: list[UUID]) -> None:
+    for run_id in run_ids:
+        try:
+            run.delay(str(run_id))
+        except Exception as exc:  # noqa: BLE001
+            async with get_db_context() as db:
+                run_row = (
+                    await db.execute(select(AgentRun).where(AgentRun.id == run_id))
+                ).scalar_one_or_none()
+                if run_row is not None:
+                    await _mark_failed(
+                        run_row,
+                        f"Could not enqueue delegated agent run: {type(exc).__name__}",
+                    )
+                    await db.flush()
+
+
 async def _run_agent_async(run_id: str) -> str:
+    child_run_ids: list[UUID] = []
+    final_status = "failed"
     async with get_db_context() as db:
         run = (
             await db.execute(select(AgentRun).where(AgentRun.id == UUID(run_id)))
@@ -71,9 +91,12 @@ async def _run_agent_async(run_id: str) -> str:
                 planner=static_config_planner,
                 executor=execute_agent_step,
             )
-            return run.status
+            final_status = run.status
+            child_run_ids = pop_agent_runs_to_dispatch_after_commit(db)
         finally:
             await agent_guard.release_run_slot(str(run.user_id), lease)
+    await _dispatch_child_runs_after_commit(child_run_ids)
+    return final_status
 
 
 @celery_app.task(name="app.tasks.agents.run")
@@ -215,6 +238,7 @@ def recover_stale_agent_runs(limit: int = 50) -> int:
 
 
 async def _expire_due_actions_async() -> int:
+    child_run_ids: list[UUID] = []
     async with get_db_context() as db:
         now = _now()
         result = await db.execute(
@@ -244,7 +268,9 @@ async def _expire_due_actions_async() -> int:
                     planner=static_config_planner,
                     executor=execute_agent_step,
                 )
-        return count
+                child_run_ids.extend(pop_agent_runs_to_dispatch_after_commit(db))
+    await _dispatch_child_runs_after_commit(child_run_ids)
+    return count
 
 
 @celery_app.task(name="app.tasks.agents.expire_due_actions")

@@ -30,6 +30,7 @@ from app.core.agent_runtime import (
     TERMINAL_STATUSES,
     cancel_run,
     execute_agent_step,
+    pop_agent_runs_to_dispatch_after_commit,
     run_job,
     static_config_planner,
 )
@@ -1633,6 +1634,25 @@ async def _resume_agent_after_telegram_action(
         planner=static_config_planner,
         executor=execute_agent_step,
     )
+    run_ids = pop_agent_runs_to_dispatch_after_commit(db)
+    if not run_ids:
+        return
+    await db.flush()
+    await db.commit()
+    for run_id in run_ids:
+        try:
+            enqueue_agent_run(run_id)
+        except AgentDispatchError as exc:
+            child = (
+                await db.execute(select(AgentRun).where(AgentRun.id == run_id))
+            ).scalar_one_or_none()
+            if child is not None:
+                child.status = "failed"
+                child.error = exc.message
+                child.finished_at = datetime.now(timezone.utc)
+                await db.flush()
+                await db.commit()
+            raise
 
 
 async def _telegram_agent_action_guard_message(

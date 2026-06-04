@@ -25,6 +25,7 @@ from app.core.agent_runtime import (
     TERMINAL_STATUSES,
     cancel_run,
     execute_agent_step,
+    pop_agent_runs_to_dispatch_after_commit,
     run_job,
     static_config_planner,
 )
@@ -119,7 +120,9 @@ class AgentCapabilitiesResponse(BaseModel):
 
 
 class StartRunRequest(BaseModel):
-    trigger_kind: Literal["manual", "cron", "event", "signal", "chat", "telegram"] = "manual"
+    trigger_kind: Literal[
+        "manual", "cron", "event", "signal", "chat", "telegram", "agent"
+    ] = "manual"
     trigger_payload: dict[str, Any] = Field(default_factory=dict)
     content_hash: str | None = Field(default=None, max_length=64)
     idempotency_key: str | None = Field(default=None, max_length=120)
@@ -133,6 +136,8 @@ class CancelRunRequest(BaseModel):
 class AgentRunResponse(BaseModel):
     id: str
     agent_id: str
+    parent_run_id: str | None
+    parent_step_idx: int | None
     trigger_key: str
     trigger_kind: str
     trigger_payload: dict[str, Any] | None
@@ -233,6 +238,8 @@ def _run_response(run: AgentRun) -> AgentRunResponse:
     return AgentRunResponse(
         id=str(run.id),
         agent_id=str(run.agent_id),
+        parent_run_id=str(run.parent_run_id) if run.parent_run_id else None,
+        parent_step_idx=run.parent_step_idx,
         trigger_key=run.trigger_key,
         trigger_kind=run.trigger_kind,
         trigger_payload=run.trigger_payload,
@@ -368,6 +375,31 @@ async def _dispatch_run_or_fail(db: Database, run: AgentRun) -> None:
         ) from exc
 
 
+async def _dispatch_queued_child_runs_or_fail(db: Database) -> None:
+    run_ids = pop_agent_runs_to_dispatch_after_commit(db)
+    if not run_ids:
+        return
+    await db.flush()
+    await db.commit()
+    for run_id in run_ids:
+        try:
+            enqueue_agent_run(run_id)
+        except AgentDispatchError as exc:
+            child = (
+                await db.execute(select(AgentRun).where(AgentRun.id == run_id))
+            ).scalar_one_or_none()
+            if child is not None:
+                child.status = "failed"
+                child.error = exc.message
+                child.finished_at = _now()
+                await db.flush()
+                await db.commit()
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=exc.message,
+            ) from exc
+
+
 async def _run_inline(db: Database, run: AgentRun) -> AgentRun:
     if await agent_guard.agents_halted():
         raise HTTPException(
@@ -417,12 +449,14 @@ _APPROVAL_HTTP_STATUS = {
 
 
 async def _resume_after_action(db: Database, run: AgentRun) -> AgentRun:
-    return await run_job(
+    resumed = await run_job(
         db,
         run.id,
         planner=static_config_planner,
         executor=execute_agent_step,
     )
+    await _dispatch_queued_child_runs_or_fail(db)
+    return resumed
 
 
 @router.post("", response_model=AgentResponse, status_code=status.HTTP_201_CREATED)
@@ -608,6 +642,7 @@ async def start_agent_run(
 
     if request.run_inline:
         run = await _run_inline(db, run)
+        await _dispatch_queued_child_runs_or_fail(db)
     else:
         await _dispatch_run_or_fail(db, run)
     await db.refresh(run)

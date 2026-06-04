@@ -47,6 +47,8 @@ from app.models.agent import Agent, AgentRun, AgentStep
 from app.models.companion_pending_action import CompanionPendingAction
 from app.models.item import Item, ItemChunk
 
+AGENT_RUNS_TO_DISPATCH_SESSION_KEY = "agent_runs_to_dispatch_after_commit"
+
 # A run in one of these states is finished — run_job is a no-op (safe re-delivery).
 TERMINAL_STATUSES: frozenset[str] = frozenset(
     {"done", "failed", "expired", "skipped", "cancelled"}
@@ -98,6 +100,20 @@ Verifier = Callable[[AsyncSession, Agent, AgentRun], Awaitable[dict[str, Any]]]
 
 def _now() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def pop_agent_runs_to_dispatch_after_commit(session: AsyncSession) -> list[UUID]:
+    """Return and clear child run ids that must be enqueued after commit."""
+    values = session.sync_session.info.pop(AGENT_RUNS_TO_DISPATCH_SESSION_KEY, [])
+    return list(values)
+
+
+def _queue_agent_run_after_commit(session: AsyncSession, run_id: UUID) -> None:
+    queued = session.sync_session.info.setdefault(
+        AGENT_RUNS_TO_DISPATCH_SESSION_KEY, []
+    )
+    if run_id not in queued:
+        queued.append(run_id)
 
 
 async def _load_run(session: AsyncSession, run_id: UUID) -> AgentRun:
@@ -393,6 +409,155 @@ async def _create_artifact(
     return {"item_id": str(item.id), "created": True}
 
 
+def _delegate_trigger_key(idempotency_key: str) -> str:
+    return f"agent:{idempotency_key}"
+
+
+async def _load_delegate_target(
+    session: AsyncSession,
+    run: AgentRun,
+    *,
+    agent_id: str | None,
+    agent_name: str | None,
+) -> Agent:
+    if agent_id is not None:
+        try:
+            target_id = UUID(agent_id)
+        except ValueError as exc:
+            raise AgentRuntimeError(
+                "invalid_tool_args",
+                "delegate_agent.agent_id must be a UUID string",
+            ) from exc
+        target = (
+            await session.execute(
+                select(Agent).where(
+                    Agent.id == target_id,
+                    Agent.user_id == run.user_id,
+                )
+            )
+        ).scalar_one_or_none()
+        if target is None:
+            raise AgentRuntimeError(
+                "invalid_tool_args",
+                "delegate_agent target agent not found",
+            )
+        return target
+
+    if agent_name is None:
+        raise AgentRuntimeError(
+            "invalid_tool_args",
+            "delegate_agent requires exactly one of agent_id or agent_name",
+        )
+    matches = list(
+        (
+            await session.execute(
+                select(Agent)
+                .where(Agent.user_id == run.user_id, Agent.name == agent_name)
+                .order_by(Agent.created_at)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    if not matches:
+        raise AgentRuntimeError(
+            "invalid_tool_args",
+            "delegate_agent target agent not found",
+        )
+    if len(matches) > 1:
+        raise AgentRuntimeError(
+            "invalid_tool_args",
+            "delegate_agent target agent name is ambiguous",
+        )
+    return matches[0]
+
+
+async def _delegate_agent(
+    session: AsyncSession,
+    agent: Agent,
+    run: AgentRun,
+    *,
+    tool_call_idx: int,
+    args: dict[str, Any],
+    idempotency_key: str,
+) -> dict[str, Any]:
+    if run.parent_run_id is not None:
+        raise AgentRuntimeError(
+            "invalid_tool_args",
+            "Nested delegate_agent calls are not enabled yet",
+        )
+    objective = str(args.get("objective") or "").strip()
+    if not objective:
+        raise AgentRuntimeError(
+            "invalid_tool_args",
+            "delegate_agent.objective is required",
+        )
+    raw_agent_id = str(args.get("agent_id") or "").strip() or None
+    raw_agent_name = str(args.get("agent_name") or "").strip() or None
+    if (raw_agent_id is None) == (raw_agent_name is None):
+        raise AgentRuntimeError(
+            "invalid_tool_args",
+            "delegate_agent requires exactly one of agent_id or agent_name",
+        )
+    target = await _load_delegate_target(
+        session,
+        run,
+        agent_id=raw_agent_id,
+        agent_name=raw_agent_name,
+    )
+    if target.id == agent.id:
+        raise AgentRuntimeError(
+            "invalid_tool_args",
+            "delegate_agent cannot target the current agent",
+        )
+    if not target.enabled:
+        raise AgentRuntimeError(
+            "invalid_tool_args",
+            "delegate_agent target agent is disabled",
+        )
+
+    trigger_key = _delegate_trigger_key(idempotency_key)
+    existing = (
+        await session.execute(
+            select(AgentRun).where(
+                AgentRun.user_id == run.user_id,
+                AgentRun.trigger_key == trigger_key,
+            )
+        )
+    ).scalar_one_or_none()
+    if existing is not None:
+        return {
+            "child_run_id": str(existing.id),
+            "agent_id": str(target.id),
+            "status": existing.status,
+            "created": False,
+        }
+
+    child = AgentRun(
+        agent_id=target.id,
+        user_id=run.user_id,
+        trigger_key=trigger_key,
+        trigger_kind="agent",
+        trigger_payload={
+            "objective": objective,
+            "delegated_by_agent_id": str(agent.id),
+            "delegated_by_run_id": str(run.id),
+            "parent_step_idx": tool_call_idx,
+        },
+        parent_run_id=run.id,
+        parent_step_idx=tool_call_idx,
+    )
+    session.add(child)
+    await session.flush()
+    _queue_agent_run_after_commit(session, child.id)
+    return {
+        "child_run_id": str(child.id),
+        "agent_id": str(target.id),
+        "status": child.status,
+        "created": True,
+    }
+
+
 async def execute_agent_step(
     session: AsyncSession,
     agent: Agent,
@@ -555,6 +720,17 @@ async def execute_agent_step(
                 "expires_at": row.expires_at.isoformat(),
             },
         )
+
+    if tool == "delegate_agent":
+        payload = await _delegate_agent(
+            session,
+            agent,
+            run,
+            tool_call_idx=tool_call_idx,
+            args=args,
+            idempotency_key=idempotency_key,
+        )
+        return AgentStepResult(status="done", payload=payload)
 
     raise AgentRuntimeError("unknown_agent_tool", f"Unknown agent tool: {tool}")
 

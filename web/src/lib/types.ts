@@ -115,7 +115,7 @@ export interface SelfHostMigrationContract {
 }
 
 export type AgentTriggerType = "manual" | "cron" | "event" | "signal" | "chat";
-export type AgentRunTriggerKind = AgentTriggerType | "telegram";
+export type AgentRunTriggerKind = AgentTriggerType | "telegram" | "agent";
 export type AgentRunStatus =
   | "pending"
   | "planning"
@@ -168,6 +168,8 @@ export interface AgentUpdateRequest {
 export interface AgentRun {
   id: string;
   agent_id: string;
+  parent_run_id: string | null;
+  parent_step_idx: number | null;
   trigger_key: string;
   trigger_kind: AgentRunTriggerKind;
   trigger_payload: Record<string, unknown> | null;

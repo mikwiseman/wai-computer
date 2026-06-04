@@ -97,6 +97,13 @@ class AgentRun(Base, UUIDMixin, TimestampMixin):
         nullable=False,
         index=True,
     )
+    # Optional orchestration edge: a parent run can spawn isolated child runs.
+    parent_run_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("agent_runs.id", ondelete="SET NULL"),
+        index=True,
+    )
+    parent_step_idx: Mapped[int | None] = mapped_column(Integer)
     # Stable per-wake key: a redelivered trigger RESUMES this run, never forks.
     trigger_key: Mapped[str] = mapped_column(String(200), nullable=False)
     trigger_kind: Mapped[str] = mapped_column(String(20), nullable=False)
@@ -125,6 +132,7 @@ class AgentRun(Base, UUIDMixin, TimestampMixin):
 
     __table_args__ = (
         UniqueConstraint("trigger_key", name="uq_agent_runs_trigger_key"),
+        Index("ix_agent_runs_user_parent", "user_id", "parent_run_id"),
     )
 
 

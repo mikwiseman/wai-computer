@@ -46,6 +46,13 @@ def test_validate_agent_config_accepts_all_enabled_tools():
                         "device_target": "11111111-1111-4111-8111-111111111111",
                     },
                 },
+                {
+                    "tool": "delegate_agent",
+                    "args": {
+                        "agent_name": "Reviewer",
+                        "objective": "Review the proposed plan.",
+                    },
+                },
             ]
         }
     )
@@ -145,6 +152,14 @@ def test_validate_agent_config_accepts_all_enabled_tools():
                 ]
             },
             "propose_action.device_target must be a UUID string",
+        ),
+        (
+            {"steps": [{"tool": "delegate_agent", "args": {"objective": "x"}}]},
+            "delegate_agent requires exactly one of agent_id or agent_name",
+        ),
+        (
+            {"steps": [{"tool": "delegate_agent", "args": {"agent_name": "Reviewer"}}]},
+            "delegate_agent.objective is required",
         ),
     ],
 )
