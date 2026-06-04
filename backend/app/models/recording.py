@@ -126,6 +126,12 @@ class Recording(Base, UUIDMixin, TimestampMixin):
         cascade="all, delete-orphan",
         order_by="desc(SummaryGenerationJob.created_at)",
     )
+    summary_audio_artifacts: Mapped[list["SummaryAudioArtifact"]] = relationship(
+        "SummaryAudioArtifact",
+        back_populates="recording",
+        cascade="all, delete-orphan",
+        order_by="desc(SummaryAudioArtifact.created_at)",
+    )
     action_items: Mapped[list["ActionItem"]] = relationship(
         "ActionItem", back_populates="recording", cascade="all, delete-orphan"
     )
@@ -318,4 +324,5 @@ class ActionItem(Base, UUIDMixin, TimestampMixin):
 # Import at bottom to avoid circular imports
 from app.models.entity import RecordingTag  # noqa: E402
 from app.models.highlight import Highlight  # noqa: E402
+from app.models.summary_audio import SummaryAudioArtifact  # noqa: E402
 from app.models.user import User  # noqa: E402

@@ -3,15 +3,18 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   createRecordingShareLink,
+  downloadRecordingSummaryAudio,
   exportRecording,
   getRecording,
   rematchSpeakers,
+  startRecordingSummaryAudio,
   startSummaryGeneration,
   updateRecording,
 } from "@/lib/api";
 import { formatSpeakerLabel } from "@/lib/format";
-import type { Folder, RecordingDetail, Segment, Summary } from "@/lib/types";
+import type { Folder, RecordingDetail, Segment, Summary, SummaryAudio } from "@/lib/types";
 import { SpeakerChip } from "@/components/SpeakerChip";
+import { SummaryAudioControls } from "@/components/SummaryAudioControls";
 
 type DetailLocale = "en" | "ru";
 
@@ -131,6 +134,28 @@ export function RecordingDetailPanel({
       setError(formatError(e));
     } finally {
       setGenerating(false);
+    }
+  };
+
+  const handleCreateSummaryAudio = async () => {
+    setError(null);
+    setNotice(null);
+    try {
+      await startRecordingSummaryAudio(recording.id);
+      const updated = await getRecording(recording.id);
+      onRecordingUpdate?.(updated);
+      setNotice("Summary audio generation queued.");
+    } catch (e) {
+      setError(formatError(e));
+    }
+  };
+
+  const handleDownloadSummaryAudio = async () => {
+    try {
+      return await downloadRecordingSummaryAudio(recording.id);
+    } catch (e) {
+      setError(formatError(e));
+      throw e;
     }
   };
 
@@ -407,7 +432,15 @@ export function RecordingDetailPanel({
           />
         )}
         {tab === "summary" && (
-          <SummaryTab summary={recording.summary} onGenerate={handleGenerateSummary} generating={generating} />
+          <SummaryTab
+            recording={recording}
+            summary={recording.summary}
+            summaryAudio={recording.summary_audio}
+            onGenerate={handleGenerateSummary}
+            generating={generating}
+            onCreateAudio={handleCreateSummaryAudio}
+            onDownloadAudio={handleDownloadSummaryAudio}
+          />
         )}
       </div>
 
@@ -548,13 +581,21 @@ function isRecordingProcessing(status: string) {
 }
 
 function SummaryTab({
+  recording,
   summary,
+  summaryAudio,
   onGenerate,
   generating,
+  onCreateAudio,
+  onDownloadAudio,
 }: {
+  recording: RecordingDetail;
   summary: Summary | null;
+  summaryAudio: SummaryAudio | null | undefined;
   onGenerate: (instructions: string | null) => void;
   generating: boolean;
+  onCreateAudio: () => Promise<void>;
+  onDownloadAudio: () => Promise<Blob>;
 }) {
   if (!summary) {
     return (
@@ -588,6 +629,12 @@ function SummaryTab({
           <CopyButton text={fullSummaryText} label="Copy Summary" />
         </div>
       </div>
+      <SummaryAudioControls
+        state={summaryAudio}
+        onCreate={onCreateAudio}
+        onDownload={onDownloadAudio}
+        filename={`${(recording.title ?? "summary").replace(/[/\\]/g, "_")}-summary.mp3`}
+      />
 
       {summary.summary ? (
         <section className="note-section">

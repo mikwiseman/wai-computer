@@ -2,6 +2,23 @@ import Foundation
 import XCTest
 @testable import WaiComputerKit
 
+private final class NewEndpointRequestPathRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var paths: [String] = []
+
+    func append(_ path: String) {
+        lock.lock()
+        defer { lock.unlock() }
+        paths.append(path)
+    }
+
+    var snapshot: [String] {
+        lock.lock()
+        defer { lock.unlock() }
+        return paths
+    }
+}
+
 final class APIClientNewEndpointsTests: XCTestCase {
     override func setUp() {
         super.setUp()
@@ -117,6 +134,126 @@ final class APIClientNewEndpointsTests: XCTestCase {
         XCTAssertEqual(state.status, "failed")
         XCTAssertEqual(state.errorCode, "summarization_failed")
         XCTAssertTrue(state.isFailed)
+    }
+
+    func testRecordingSummaryAudioEndpointsUseDurableAudioPaths() async throws {
+        let client = makeClient()
+        let seenPaths = NewEndpointRequestPathRecorder()
+
+        MockURLProtocol.requestHandler = { request in
+            seenPaths.append(request.url?.path ?? "")
+            let isFile = request.url?.path.hasSuffix("/file") == true
+            let response = HTTPURLResponse(
+                url: request.url!,
+                statusCode: isFile ? 200 : 202,
+                httpVersion: nil,
+                headerFields: ["Content-Type": isFile ? "audio/mpeg" : "application/json"]
+            )!
+            if isFile {
+                return (response, Data("ID3".utf8))
+            }
+            let payload = """
+            {
+              "artifact_id": "audio-1",
+              "source_kind": "recording",
+              "source_id": "rec-1",
+              "status": "queued",
+              "stage": "queued",
+              "progress_percent": 5,
+              "message": "Summary audio generation is queued.",
+              "provider": "xai",
+              "model": "xai-text-to-speech",
+              "voice_id": "ara",
+              "language": "auto",
+              "content_type": null,
+              "byte_size": null,
+              "duration_seconds": null,
+              "audio_url": null,
+              "requested_at": "2026-06-04T09:00:00Z",
+              "started_at": null,
+              "completed_at": null,
+              "failed_at": null,
+              "error_code": null,
+              "error_message": null
+            }
+            """.data(using: .utf8)!
+            return (response, payload)
+        }
+
+        let state = try await client.startRecordingSummaryAudio(recordingId: "rec-1")
+        _ = try await client.getRecordingSummaryAudio(recordingId: "rec-1")
+        let audio = try await client.downloadRecordingSummaryAudio(recordingId: "rec-1")
+
+        XCTAssertEqual(state.artifactId, "audio-1")
+        XCTAssertEqual(state.sourceKind, "recording")
+        XCTAssertEqual(state.voiceId, "ara")
+        XCTAssertTrue(state.isActive)
+        XCTAssertEqual(audio, Data("ID3".utf8))
+        XCTAssertEqual(seenPaths.snapshot, [
+            "/api/recordings/rec-1/summary/audio",
+            "/api/recordings/rec-1/summary/audio",
+            "/api/recordings/rec-1/summary/audio/file"
+        ])
+    }
+
+    func testItemSummaryAudioEndpointsUseDurableAudioPaths() async throws {
+        let client = makeClient()
+        let seenPaths = NewEndpointRequestPathRecorder()
+
+        MockURLProtocol.requestHandler = { request in
+            seenPaths.append(request.url?.path ?? "")
+            let isFile = request.url?.path.hasSuffix("/file") == true
+            let response = HTTPURLResponse(
+                url: request.url!,
+                statusCode: isFile ? 200 : 202,
+                httpVersion: nil,
+                headerFields: ["Content-Type": isFile ? "audio/mpeg" : "application/json"]
+            )!
+            if isFile {
+                return (response, Data("ID3".utf8))
+            }
+            let payload = """
+            {
+              "artifact_id": "audio-1",
+              "source_kind": "item",
+              "source_id": "item-1",
+              "status": "succeeded",
+              "stage": "complete",
+              "progress_percent": 100,
+              "message": "Summary audio is ready.",
+              "provider": "xai",
+              "model": "xai-text-to-speech",
+              "voice_id": "ara",
+              "language": "auto",
+              "content_type": "audio/mpeg",
+              "byte_size": 3,
+              "duration_seconds": null,
+              "audio_url": "/api/items/item-1/summary/audio/file",
+              "requested_at": "2026-06-04T09:00:00Z",
+              "started_at": "2026-06-04T09:00:01Z",
+              "completed_at": "2026-06-04T09:00:02Z",
+              "failed_at": null,
+              "error_code": null,
+              "error_message": null
+            }
+            """.data(using: .utf8)!
+            return (response, payload)
+        }
+
+        let state = try await client.startItemSummaryAudio(itemId: "item-1")
+        _ = try await client.getItemSummaryAudio(itemId: "item-1")
+        let audio = try await client.downloadItemSummaryAudio(itemId: "item-1")
+
+        XCTAssertEqual(state.artifactId, "audio-1")
+        XCTAssertEqual(state.sourceKind, "item")
+        XCTAssertEqual(state.audioUrl, "/api/items/item-1/summary/audio/file")
+        XCTAssertFalse(state.isActive)
+        XCTAssertEqual(audio, Data("ID3".utf8))
+        XCTAssertEqual(seenPaths.snapshot, [
+            "/api/items/item-1/summary/audio",
+            "/api/items/item-1/summary/audio",
+            "/api/items/item-1/summary/audio/file"
+        ])
     }
 
     // MARK: - Companion

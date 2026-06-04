@@ -125,6 +125,7 @@ data class RecordingDetail(
     val segments: List<Segment> = emptyList(),
     val summary: Summary? = null,
     @SerialName("summary_generation") val summaryGeneration: SummaryGeneration? = null,
+    @SerialName("summary_audio") val summaryAudio: SummaryAudio? = null,
     @SerialName("action_items") val actionItems: List<ActionItem> = emptyList(),
     val highlights: List<RecordingHighlight> = emptyList(),
 )
@@ -137,6 +138,37 @@ data class SummaryGeneration(
     val stage: String = "idle",
     @SerialName("progress_percent") val progressPercent: Int = 0,
     val message: String = "",
+    @SerialName("requested_at") val requestedAt: String? = null,
+    @SerialName("started_at") val startedAt: String? = null,
+    @SerialName("completed_at") val completedAt: String? = null,
+    @SerialName("failed_at") val failedAt: String? = null,
+    @SerialName("error_code") val errorCode: String? = null,
+    @SerialName("error_message") val errorMessage: String? = null,
+) {
+    val isActive: Boolean
+        get() = status == "queued" || status == "running"
+
+    val isFailed: Boolean
+        get() = status == "failed"
+}
+
+@Serializable
+data class SummaryAudio(
+    @SerialName("artifact_id") val artifactId: String? = null,
+    @SerialName("source_kind") val sourceKind: String,
+    @SerialName("source_id") val sourceId: String,
+    val status: String,
+    val stage: String = "idle",
+    @SerialName("progress_percent") val progressPercent: Int = 0,
+    val message: String = "",
+    val provider: String? = null,
+    val model: String? = null,
+    @SerialName("voice_id") val voiceId: String? = null,
+    val language: String? = null,
+    @SerialName("content_type") val contentType: String? = null,
+    @SerialName("byte_size") val byteSize: Int? = null,
+    @SerialName("duration_seconds") val durationSeconds: Int? = null,
+    @SerialName("audio_url") val audioUrl: String? = null,
     @SerialName("requested_at") val requestedAt: String? = null,
     @SerialName("started_at") val startedAt: String? = null,
     @SerialName("completed_at") val completedAt: String? = null,

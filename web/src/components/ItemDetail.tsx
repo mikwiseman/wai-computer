@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { getItem, reprocessItem } from "@/lib/api";
+import { downloadItemSummaryAudio, getItem, reprocessItem, startItemSummaryAudio } from "@/lib/api";
+import { SummaryAudioControls } from "@/components/SummaryAudioControls";
 import type { Item, KeyMoment } from "@/lib/types";
 
 interface ItemDetailProps {
@@ -50,6 +51,29 @@ export function ItemDetail({ itemId, onError }: ItemDetailProps) {
     };
   }, [itemId, onError]);
 
+  useEffect(() => {
+    const audioStatus = state.id === itemId ? state.item?.summary_audio?.status : null;
+    if (audioStatus !== "queued" && audioStatus !== "running") return;
+
+    let cancelled = false;
+    const interval = window.setInterval(() => {
+      void getItem(itemId)
+        .then((value) => {
+          if (!cancelled) setState({ id: itemId, item: value, loading: false });
+        })
+        .catch((err) => {
+          if (!cancelled) {
+            onError?.(err instanceof Error ? err.message : "Couldn't refresh item.");
+          }
+        });
+    }, 2000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [itemId, onError, state.id, state.item?.summary_audio?.status]);
+
   const [pasteText, setPasteText] = useState("");
   const [recovering, setRecovering] = useState(false);
 
@@ -64,6 +88,30 @@ export function ItemDetail({ itemId, onError }: ItemDetailProps) {
       onError?.(err instanceof Error ? err.message : "Couldn't reprocess this item.");
     } finally {
       setRecovering(false);
+    }
+  };
+
+  const handleCreateAudio = async () => {
+    try {
+      const summaryAudio = await startItemSummaryAudio(itemId);
+      setState((current) => {
+        if (current.id !== itemId || !current.item) return current;
+        return {
+          ...current,
+          item: { ...current.item, summary_audio: summaryAudio },
+        };
+      });
+    } catch (err) {
+      onError?.(err instanceof Error ? err.message : "Couldn't create summary audio.");
+    }
+  };
+
+  const handleDownloadAudio = async () => {
+    try {
+      return await downloadItemSummaryAudio(itemId);
+    } catch (err) {
+      onError?.(err instanceof Error ? err.message : "Couldn't download summary audio.");
+      throw err;
     }
   };
 
@@ -139,6 +187,12 @@ export function ItemDetail({ itemId, onError }: ItemDetailProps) {
 
       {summary?.summary ? (
         <section className="item-detail__section">
+          <SummaryAudioControls
+            state={item.summary_audio}
+            onCreate={handleCreateAudio}
+            onDownload={handleDownloadAudio}
+            filename={`${displayTitle(item.title, item.url).replace(/[/\\]/g, "_")}-summary.mp3`}
+          />
           <p className="item-detail__summary">{summary.summary}</p>
         </section>
       ) : null}

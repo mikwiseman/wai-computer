@@ -15,6 +15,7 @@ logger = logging.getLogger(__name__)
 
 OPENAI_PROVIDER = "openai"
 DEEPGRAM_PROVIDER = "deepgram"
+XAI_PROVIDER = "xai"
 
 # Explicit, low-cardinality feature names used by the admin dashboard.
 FEATURE_COMPANION = "companion"
@@ -28,6 +29,7 @@ FEATURE_MEMORY = "memory"
 FEATURE_OCR = "ocr"
 FEATURE_EMBEDDINGS = "embeddings"
 FEATURE_TRANSCRIPTION = "transcription"
+FEATURE_SUMMARY_AUDIO = "summary_audio"
 
 STATUS_SUCCEEDED = "succeeded"
 STATUS_FAILED = "failed"
@@ -76,6 +78,8 @@ async def record_ai_usage_event(
     channel_count: int | None = None,
     audio_bytes: int | None = None,
     latency_ms: int | None = None,
+    estimated_cost_usd: float | None = None,
+    pricing_status: str | None = None,
     provider_status_code: int | None = None,
     provider_error_code: str | None = None,
     guard_code: str | None = None,
@@ -98,13 +102,17 @@ async def record_ai_usage_event(
             _sum_tokens(input_value, output_value),
         )
         resolved_model = _bounded(model or _string_field(response, "model"), 120)
-        cost, pricing_status = estimate_cost_usd(
-            provider=provider,
-            model=resolved_model,
-            input_tokens=input_value,
-            output_tokens=output_value,
-            cached_tokens=cached_value,
-            billable_seconds=_float_or_none(billable_seconds),
+        cost, resolved_pricing_status = (
+            (_float_or_none(estimated_cost_usd), _bounded(pricing_status, 32) or "priced")
+            if estimated_cost_usd is not None
+            else estimate_cost_usd(
+                provider=provider,
+                model=resolved_model,
+                input_tokens=input_value,
+                output_tokens=output_value,
+                cached_tokens=cached_value,
+                billable_seconds=_float_or_none(billable_seconds),
+            )
         )
         event = AiUsageEvent(
             user_id=_uuid_or_none(user_id),
@@ -128,7 +136,7 @@ async def record_ai_usage_event(
             audio_bytes=audio_bytes,
             latency_ms=latency_ms,
             estimated_cost_usd=cost,
-            pricing_status=pricing_status,
+            pricing_status=resolved_pricing_status,
             provider_status_code=provider_status_code,
             provider_error_code=_bounded(provider_error_code, 128),
             guard_code=_bounded(guard_code, 128),
@@ -301,6 +309,12 @@ def _safe_details(details: dict[str, Any] | None) -> dict[str, Any] | None:
             "dimensions",
             "streamed",
             "step_count",
+            "input_char_count",
+            "voice_id",
+            "language",
+            "codec",
+            "sample_rate",
+            "bit_rate",
         }:
             continue
         if isinstance(value, str | int | float | bool) or value is None:

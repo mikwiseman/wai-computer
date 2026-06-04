@@ -70,6 +70,7 @@ public struct Item: Codable, Identifiable, Sendable {
     public let folderId: String?
     public let createdAt: String
     public let summary: ItemSummary?
+    public let summaryAudio: SummaryAudioState?
 
     private enum CodingKeys: String, CodingKey {
         case id
@@ -86,6 +87,7 @@ public struct Item: Codable, Identifiable, Sendable {
         case folderId = "folder_id"
         case createdAt = "created_at"
         case summary
+        case summaryAudio = "summary_audio"
     }
 }
 

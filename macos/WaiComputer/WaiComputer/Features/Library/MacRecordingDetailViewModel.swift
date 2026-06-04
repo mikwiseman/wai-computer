@@ -43,6 +43,7 @@ class MacRecordingDetailViewModel: ObservableObject {
     @Published var selectedTab: Tab = .transcript
     @Published var localRecoveryManifest: RecordingBackupManifest?
     @Published private var generatingSummaryRecordingId: String?
+    @Published private var generatingSummaryAudioRecordingId: String?
 
     private var loadGeneration = 0
 
@@ -61,6 +62,10 @@ class MacRecordingDetailViewModel: ObservableObject {
 
     func isGeneratingSummary(for recordingId: String) -> Bool {
         generatingSummaryRecordingId == recordingId
+    }
+
+    func isGeneratingSummaryAudio(for recordingId: String) -> Bool {
+        generatingSummaryAudioRecordingId == recordingId
     }
 
     func load(
@@ -115,6 +120,7 @@ class MacRecordingDetailViewModel: ObservableObject {
               recordingDetail?.id == recordingId,
               shouldAutoRefresh(detail: recordingDetail) {
             let delay: Duration = recordingDetail?.summaryGeneration?.isActive == true
+                || recordingDetail?.summaryAudio?.isActive == true
                 ? .seconds(2)
                 : .seconds(recordingDetail?.status == .processing ? 4 : 2)
             try? await Task.sleep(for: delay)
@@ -140,6 +146,26 @@ class MacRecordingDetailViewModel: ObservableObject {
             let state = try await apiClient.startSummaryGeneration(recordingId: id)
             if recordingDetail?.id == id {
                 recordingDetail = recordingDetail?.withSummaryGeneration(state)
+                selectedTab = .summary
+            }
+            await refreshPendingDetailIfNeeded(recordingId: id, apiClient: apiClient)
+        } catch {
+            self.error = error.userFacingMessage(context: .library)
+        }
+    }
+
+    func startSummaryAudioGeneration(recordingId id: String, apiClient: APIClient) async {
+        generatingSummaryAudioRecordingId = id
+        defer {
+            if generatingSummaryAudioRecordingId == id {
+                generatingSummaryAudioRecordingId = nil
+            }
+        }
+
+        do {
+            let state = try await apiClient.startRecordingSummaryAudio(recordingId: id)
+            if recordingDetail?.id == id {
+                recordingDetail = recordingDetail?.withSummaryAudio(state)
                 selectedTab = .summary
             }
             await refreshPendingDetailIfNeeded(recordingId: id, apiClient: apiClient)
@@ -224,6 +250,9 @@ class MacRecordingDetailViewModel: ObservableObject {
         if detail?.summaryGeneration?.isActive == true {
             return true
         }
+        if detail?.summaryAudio?.isActive == true {
+            return true
+        }
 
         switch detail?.status {
         case .pendingUpload, .uploading, .processing:
@@ -285,6 +314,7 @@ class MacRecordingDetailViewModel: ObservableObject {
                     segments: segments,
                     summary: detail.summary,
                     summaryGeneration: detail.summaryGeneration,
+                    summaryAudio: detail.summaryAudio,
                     actionItems: detail.actionItems,
                     highlights: detail.highlights
                 ),

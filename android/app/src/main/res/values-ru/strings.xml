@@ -234,6 +234,11 @@
     <string name="detail_generate_summary">Сгенерировать саммари</string>
     <string name="detail_regenerate_summary">Перегенерировать саммари</string>
     <string name="detail_summary_generating">Генерирую саммари…</string>
+    <string name="detail_summary_audio_create">Создать аудио</string>
+    <string name="detail_summary_audio_creating">Создаю аудио…</string>
+    <string name="detail_summary_audio_retry">Повторить аудио</string>
+    <string name="detail_summary_audio_ready">Аудио готово</string>
+    <string name="detail_summary_audio_failed">Не удалось создать аудио.</string>
     <string name="common_cancel">Отмена</string>
     <string name="common_done">Готово</string>
     <string name="common_retry">Повторить</string>

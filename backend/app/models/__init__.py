@@ -56,6 +56,7 @@ from app.models.recording import (
     SummaryGenerationStatus,
 )
 from app.models.refresh_token import RefreshToken
+from app.models.summary_audio import SummaryAudioArtifact, SummaryAudioStatus
 from app.models.telegram import (
     TelegramAccount,
     TelegramBotLinkCode,
@@ -94,6 +95,8 @@ __all__ = [
     "Summary",
     "SummaryGenerationJob",
     "SummaryGenerationStatus",
+    "SummaryAudioArtifact",
+    "SummaryAudioStatus",
     "ActionItem",
     "Highlight",
     "Item",

@@ -87,12 +87,14 @@ services:
     environment:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
       UPLOAD_STAGING_DIR: /var/lib/waicomputer/uploads
+      SUMMARY_AUDIO_STORAGE_DIR: /var/lib/waicomputer/summary-audio
       REDIS_URL: redis://redis:6379/0
       VOICE_IDENTIFICATION_ENABLED: "false"
       GIT_SHA: ${GIT_SHA:-}
       GIT_DIRTY: ${GIT_DIRTY:-false}
     volumes:
       - recording_uploads:/var/lib/waicomputer/uploads
+      - summary_audio:/var/lib/waicomputer/summary-audio
       - telegram_bot_api_data:/var/lib/telegram-bot-api:ro
     networks:
       - internal
@@ -227,12 +229,14 @@ services:
     environment:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
       UPLOAD_STAGING_DIR: /var/lib/waicomputer/uploads
+      SUMMARY_AUDIO_STORAGE_DIR: /var/lib/waicomputer/summary-audio
       REDIS_URL: redis://redis:6379/0
       VOICE_IDENTIFICATION_ENABLED: "true"
       GIT_SHA: ${GIT_SHA:-}
       GIT_DIRTY: ${GIT_DIRTY:-false}
     volumes:
       - recording_uploads:/var/lib/waicomputer/uploads
+      - summary_audio:/var/lib/waicomputer/summary-audio
       - speechbrain_cache:/root/.cache/speechbrain
     networks:
       - internal
@@ -264,6 +268,7 @@ volumes:
   caddy_data:
   caddy_config:
   recording_uploads:
+  summary_audio:
   speechbrain_cache:
   telegram_bot_api_data:
 

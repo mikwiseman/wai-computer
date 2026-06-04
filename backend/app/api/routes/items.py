@@ -18,16 +18,33 @@ paste is rejected.
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter, File, Form, HTTPException, Query, Response, UploadFile, status
+from fastapi import (
+    APIRouter,
+    File,
+    Form,
+    HTTPException,
+    Query,
+    Request,
+    Response,
+    UploadFile,
+    status,
+)
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import inspect, select
+from sqlalchemy.orm import selectinload
 
 from app.api.deps import CurrentUser, Database
+from app.api.summary_audio import (
+    SummaryAudioResponse,
+    serialize_summary_audio,
+    summary_audio_file_response,
+)
 from app.core.document_extract import (
     SUPPORTED_DOCUMENT_EXTENSIONS,
     DocumentExtractionError,
@@ -37,7 +54,17 @@ from app.core.document_extract import (
 )
 from app.core.item_ingest import ingest_item
 from app.core.item_titles import clean_title, title_from_filename
+from app.core.summary_audio import (
+    SUMMARY_AUDIO_SOURCE_ITEM,
+    SummaryAudioError,
+    build_item_summary_audio_text,
+    latest_summary_audio_artifact_for_hash,
+    load_latest_summary_audio_artifact,
+    start_summary_audio_artifact,
+    summary_audio_hash,
+)
 from app.models.item import Item, ItemSummary
+from app.models.summary_audio import SummaryAudioStatus
 
 router = APIRouter(prefix="/items", tags=["items"])
 
@@ -90,6 +117,7 @@ class ItemResponse(BaseModel):
     folder_id: str | None
     created_at: str
     summary: ItemSummaryResponse | None = None
+    summary_audio: SummaryAudioResponse | None = None
 
 
 class ItemListEntry(BaseModel):
@@ -160,6 +188,21 @@ def _derive_status(item: Item, has_summary: bool) -> str:
 
 
 def _item_response(item: Item, summary: ItemSummary | None) -> ItemResponse:
+    audio_text = build_item_summary_audio_text(summary)
+    audio_hash = summary_audio_hash(audio_text) if audio_text else None
+    loaded_artifacts = (
+        []
+        if "summary_audio_artifacts" in inspect(item).unloaded
+        else list(getattr(item, "summary_audio_artifacts", []) or [])
+    )
+    audio_artifact = (
+        latest_summary_audio_artifact_for_hash(
+            loaded_artifacts,
+            audio_hash,
+        )
+        if audio_hash
+        else None
+    )
     return ItemResponse(
         id=str(item.id),
         source=item.source,
@@ -175,6 +218,12 @@ def _item_response(item: Item, summary: ItemSummary | None) -> ItemResponse:
         folder_id=str(item.folder_id) if item.folder_id else None,
         created_at=item.created_at.isoformat(),
         summary=_summary_response(summary),
+        summary_audio=serialize_summary_audio(
+            source_kind=SUMMARY_AUDIO_SOURCE_ITEM,
+            source_id=item.id,
+            artifact=audio_artifact,
+            audio_url=f"/api/items/{item.id}/summary/audio/file",
+        ),
     )
 
 
@@ -195,6 +244,16 @@ async def _enqueue_item_summary(db: Database, item: Item) -> None:
         item.metadata_ = meta
         item.state = "failed"
         await db.flush()
+
+
+def enqueue_summary_audio_generation(artifact_id: UUID) -> str:
+    from app.tasks.celery_app import celery_app
+
+    result = celery_app.send_task(
+        "app.tasks.summary_audio_generation.generate_summary_audio",
+        kwargs={"artifact_id": str(artifact_id)},
+    )
+    return str(result.id)
 
 
 @router.post("", response_model=ItemResponse, status_code=status.HTTP_201_CREATED)
@@ -498,6 +557,7 @@ async def get_item(
                 Item.user_id == user.id,
                 Item.deleted_at.is_(None),
             )
+            .options(selectinload(Item.summary_audio_artifacts))
         )
     ).scalar_one_or_none()
     if item is None:
@@ -508,6 +568,123 @@ async def get_item(
         await db.execute(select(ItemSummary).where(ItemSummary.item_id == item.id))
     ).scalar_one_or_none()
     return _item_response(item, summary)
+
+
+@router.get("/{item_id}/summary/audio", response_model=SummaryAudioResponse)
+async def get_item_summary_audio(
+    item_id: UUID,
+    user: CurrentUser,
+    db: Database,
+) -> SummaryAudioResponse:
+    """Get durable summary-audio state for an item."""
+    item = (
+        await db.execute(
+            select(Item)
+            .where(Item.id == item_id, Item.user_id == user.id, Item.deleted_at.is_(None))
+            .options(selectinload(Item.summary))
+        )
+    ).scalar_one_or_none()
+    if item is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Item not found")
+    text_value = build_item_summary_audio_text(item.summary)
+    if not text_value:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Summary not generated")
+    artifact = await load_latest_summary_audio_artifact(
+        db,
+        source_kind=SUMMARY_AUDIO_SOURCE_ITEM,
+        source_id=item.id,
+        user_id=user.id,
+        summary_hash=summary_audio_hash(text_value),
+    )
+    return serialize_summary_audio(
+        source_kind=SUMMARY_AUDIO_SOURCE_ITEM,
+        source_id=item.id,
+        artifact=artifact,
+        audio_url=f"/api/items/{item.id}/summary/audio/file",
+    )
+
+
+@router.post(
+    "/{item_id}/summary/audio",
+    response_model=SummaryAudioResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def start_item_summary_audio(
+    item_id: UUID,
+    user: CurrentUser,
+    db: Database,
+) -> SummaryAudioResponse:
+    """Start or reuse durable summary-audio generation for an item."""
+    try:
+        artifact = await start_summary_audio_artifact(
+            db,
+            source_kind=SUMMARY_AUDIO_SOURCE_ITEM,
+            source_id=item_id,
+            user_id=user.id,
+        )
+    except SummaryAudioError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+
+    await db.commit()
+    if artifact.status == SummaryAudioStatus.QUEUED.value and not artifact.task_id:
+        try:
+            artifact.task_id = enqueue_summary_audio_generation(artifact.id)
+        except Exception as exc:
+            logger.exception("Failed to enqueue summary audio for item %s", item_id)
+            artifact.status = SummaryAudioStatus.FAILED.value
+            artifact.stage = "failed"
+            artifact.progress_percent = 100
+            artifact.error_code = "summary_audio_enqueue_failed"
+            artifact.error_message = "Failed to start summary audio generation."
+            artifact.failed_at = datetime.now(timezone.utc)
+            await db.commit()
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Failed to start summary audio generation",
+            ) from exc
+        await db.commit()
+
+    return serialize_summary_audio(
+        source_kind=SUMMARY_AUDIO_SOURCE_ITEM,
+        source_id=item_id,
+        artifact=artifact,
+        audio_url=f"/api/items/{item_id}/summary/audio/file",
+    )
+
+
+@router.get("/{item_id}/summary/audio/file")
+async def get_item_summary_audio_file(
+    item_id: UUID,
+    request: Request,
+    user: CurrentUser,
+    db: Database,
+) -> Response:
+    """Stream authenticated generated summary audio for an item."""
+    item = (
+        await db.execute(
+            select(Item)
+            .where(Item.id == item_id, Item.user_id == user.id, Item.deleted_at.is_(None))
+            .options(selectinload(Item.summary))
+        )
+    ).scalar_one_or_none()
+    if item is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Item not found")
+    text_value = build_item_summary_audio_text(item.summary)
+    if not text_value:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Summary not generated")
+    artifact = await load_latest_summary_audio_artifact(
+        db,
+        source_kind=SUMMARY_AUDIO_SOURCE_ITEM,
+        source_id=item.id,
+        user_id=user.id,
+        summary_hash=summary_audio_hash(text_value),
+    )
+    if artifact is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Summary audio has not been created.",
+        )
+    return summary_audio_file_response(artifact=artifact, request=request)
 
 
 class ReprocessItemRequest(BaseModel):

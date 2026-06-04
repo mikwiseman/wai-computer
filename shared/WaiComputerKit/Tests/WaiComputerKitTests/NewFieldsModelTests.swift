@@ -370,6 +370,19 @@ final class NewFieldsModelTests: XCTestCase {
             createdAt: Date(timeIntervalSince1970: 1_772_000_000),
             segments: [],
             summary: nil,
+            summaryAudio: SummaryAudioState(
+                artifactId: "audio-rt-1",
+                sourceKind: "recording",
+                sourceId: "rec-rt-hl",
+                status: "queued",
+                stage: "queued",
+                progressPercent: 5,
+                message: "Summary audio generation is queued.",
+                provider: "xai",
+                model: "xai-text-to-speech",
+                voiceId: "ara",
+                language: "auto"
+            ),
             actionItems: [],
             highlights: [
                 RecordingHighlight(
@@ -400,6 +413,8 @@ final class NewFieldsModelTests: XCTestCase {
         XCTAssertEqual(decoded.highlights[0].endMs, 5000)
         XCTAssertEqual(decoded.highlights[0].importance, "high")
         XCTAssertNotNil(decoded.starredAt)
+        XCTAssertEqual(decoded.summaryAudio?.artifactId, "audio-rt-1")
+        XCTAssertTrue(decoded.summaryAudio?.isActive == true)
     }
 
 }

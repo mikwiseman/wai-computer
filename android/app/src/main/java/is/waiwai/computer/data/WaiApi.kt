@@ -277,6 +277,11 @@ class WaiApi(
         path = "/api/recordings/$id/generate-summary",
     )
 
+    suspend fun startRecordingSummaryAudio(id: String): SummaryAudio = authorizedRequest(
+        method = HttpMethod.Post,
+        path = "/api/recordings/$id/summary/audio",
+    )
+
     suspend fun createFolder(name: String): Folder = authorizedRequest(
         method = HttpMethod.Post,
         path = "/api/folders",

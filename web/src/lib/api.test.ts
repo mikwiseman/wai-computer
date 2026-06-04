@@ -233,6 +233,8 @@ describe("api client wrappers", () => {
     await api.generateSummary("rec");
     await api.getSummaryGeneration("rec");
     await api.startSummaryGeneration("rec", { instructions: "Focus on decisions" });
+    await api.getRecordingSummaryAudio("rec");
+    await api.startRecordingSummaryAudio("rec");
     expect(mockedApiFetch).toHaveBeenNthCalledWith(1, "/api/recordings/rec/summary");
     expect(mockedApiFetch).toHaveBeenNthCalledWith(2, "/api/recordings/rec/generate-summary", {
       method: "POST",
@@ -242,6 +244,48 @@ describe("api client wrappers", () => {
       method: "POST",
       body: JSON.stringify({ instructions: "Focus on decisions" }),
     });
+    expect(mockedApiFetch).toHaveBeenNthCalledWith(5, "/api/recordings/rec/summary/audio");
+    expect(mockedApiFetch).toHaveBeenNthCalledWith(6, "/api/recordings/rec/summary/audio", {
+      method: "POST",
+    });
+  });
+
+  it("downloads summary audio through authenticated response fetch", async () => {
+    const mockBlob = new Blob(["audio"], { type: "audio/mpeg" });
+    mockedApiFetchResponse.mockResolvedValueOnce({
+      blob: vi.fn().mockResolvedValue(mockBlob),
+    } as unknown as Response);
+
+    const result = await api.downloadRecordingSummaryAudio("rec");
+
+    expect(mockedApiFetchResponse).toHaveBeenCalledWith(
+      "/api/recordings/rec/summary/audio/file",
+    );
+    expect(result).toBe(mockBlob);
+  });
+
+  it("calls item summary audio endpoints", async () => {
+    await api.getItemSummaryAudio("item");
+    await api.startItemSummaryAudio("item");
+
+    expect(mockedApiFetch).toHaveBeenNthCalledWith(1, "/api/items/item/summary/audio");
+    expect(mockedApiFetch).toHaveBeenNthCalledWith(2, "/api/items/item/summary/audio", {
+      method: "POST",
+    });
+  });
+
+  it("downloads item summary audio through authenticated response fetch", async () => {
+    const mockBlob = new Blob(["audio"], { type: "audio/mpeg" });
+    mockedApiFetchResponse.mockResolvedValueOnce({
+      blob: vi.fn().mockResolvedValue(mockBlob),
+    } as unknown as Response);
+
+    const result = await api.downloadItemSummaryAudio("item");
+
+    expect(mockedApiFetchResponse).toHaveBeenCalledWith(
+      "/api/items/item/summary/audio/file",
+    );
+    expect(result).toBe(mockBlob);
   });
 
   it("calls Telegram link endpoints", async () => {

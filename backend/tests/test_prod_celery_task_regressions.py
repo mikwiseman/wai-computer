@@ -34,6 +34,13 @@ def test_mcp_sync_dispatch_task_registered():
     assert "app.tasks.mcp_sync.dispatch_due_mcp_syncs" in celery_app.tasks
 
 
+def test_summary_audio_generation_task_registered():
+    from app.tasks.celery_app import celery_app
+
+    celery_app.loader.import_default_modules()
+    assert "app.tasks.summary_audio_generation.generate_summary_audio" in celery_app.tasks
+
+
 def test_worker_runtime_uses_nullpool_api_keeps_pooling():
     """The Celery worker switches to NullPool (no connection survives a task's
     asyncio.run() loop → no cross-loop close → no MissingGreenlet). The default

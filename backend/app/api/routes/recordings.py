@@ -11,13 +11,29 @@ from typing import Literal
 from urllib.parse import quote
 from uuid import UUID
 
-from fastapi import APIRouter, Body, File, Form, HTTPException, Query, Response, UploadFile, status
+from fastapi import (
+    APIRouter,
+    Body,
+    File,
+    Form,
+    HTTPException,
+    Query,
+    Request,
+    Response,
+    UploadFile,
+    status,
+)
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import select, text, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
 
 from app.api.deps import CurrentUser, Database
+from app.api.summary_audio import (
+    SummaryAudioResponse,
+    serialize_summary_audio,
+    summary_audio_file_response,
+)
 from app.billing.quota import record_recording_transcript_words
 from app.config import get_settings
 from app.core.embeddings import generate_embedding
@@ -42,6 +58,15 @@ from app.core.summarizer import (
 )
 from app.core.summarizer import (
     resolve_highlight_timestamps as _resolve_highlight_timestamps,
+)
+from app.core.summary_audio import (
+    SUMMARY_AUDIO_SOURCE_RECORDING,
+    SummaryAudioError,
+    build_recording_summary_audio_text,
+    latest_summary_audio_artifact_for_hash,
+    load_latest_summary_audio_artifact,
+    start_summary_audio_artifact,
+    summary_audio_hash,
 )
 from app.core.summary_generation import (
     apply_summary_result,
@@ -70,6 +95,7 @@ from app.models.recording import (
     SummaryGenerationJob,
     SummaryGenerationStatus,
 )
+from app.models.summary_audio import SummaryAudioStatus
 
 logger = logging.getLogger(__name__)
 app_settings = get_settings()
@@ -291,6 +317,7 @@ class RecordingDetailResponse(RecordingResponse):
     segments: list[SegmentResponse]
     summary: SummaryResponse | None
     summary_generation: SummaryGenerationResponse
+    summary_audio: SummaryAudioResponse
     action_items: list[ActionItemResponse]
     highlights: list[HighlightResponse]
 
@@ -623,6 +650,18 @@ def _serialize_segment(segment: Segment) -> SegmentResponse:
 
 def _serialize_recording_detail(recording: Recording) -> RecordingDetailResponse:
     names = _assigned_speaker_names(recording)
+    summary_audio_text = build_recording_summary_audio_text(recording)
+    summary_audio_hash_value = (
+        summary_audio_hash(summary_audio_text) if summary_audio_text else None
+    )
+    summary_audio_artifact = (
+        latest_summary_audio_artifact_for_hash(
+            list(getattr(recording, "summary_audio_artifacts", []) or []),
+            summary_audio_hash_value,
+        )
+        if summary_audio_hash_value
+        else None
+    )
     return RecordingDetailResponse(
         **_serialize_recording(recording).model_dump(),
         segments=[
@@ -635,6 +674,12 @@ def _serialize_recording_detail(recording: Recording) -> RecordingDetailResponse
             summary=recording.summary,
             job=latest_summary_generation_job(recording),
         ),
+        summary_audio=serialize_summary_audio(
+            source_kind=SUMMARY_AUDIO_SOURCE_RECORDING,
+            source_id=recording.id,
+            artifact=summary_audio_artifact,
+            audio_url=f"/api/recordings/{recording.id}/summary/audio/file",
+        ),
         action_items=[_serialize_action_item(a) for a in recording.action_items],
         highlights=[_serialize_highlight(h, names) for h in recording.highlights],
     )
@@ -646,6 +691,7 @@ def _recording_detail_load_options():
         selectinload(Recording.segments).selectinload(Segment.person),
         selectinload(Recording.summary),
         selectinload(Recording.summary_generation_jobs),
+        selectinload(Recording.summary_audio_artifacts),
         selectinload(Recording.action_items),
         selectinload(Recording.highlights),
     )
@@ -1085,6 +1131,16 @@ def enqueue_summary_generation(job_id: UUID) -> str:
     result = celery_app.send_task(
         "app.tasks.summary_generation.generate_recording_summary",
         kwargs={"job_id": str(job_id)},
+    )
+    return str(result.id)
+
+
+def enqueue_summary_audio_generation(artifact_id: UUID) -> str:
+    from app.tasks.celery_app import celery_app
+
+    result = celery_app.send_task(
+        "app.tasks.summary_audio_generation.generate_summary_audio",
+        kwargs={"artifact_id": str(artifact_id)},
     )
     return str(result.id)
 
@@ -2531,6 +2587,127 @@ async def get_summary(
     if summary is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Summary not generated")
     return summary
+
+
+@router.get("/{recording_id}/summary/audio", response_model=SummaryAudioResponse)
+async def get_recording_summary_audio(
+    recording_id: UUID,
+    user: CurrentUser,
+    db: Database,
+) -> SummaryAudioResponse:
+    """Get durable summary-audio state for a recording."""
+    recording_result = await db.execute(
+        select(Recording)
+        .where(Recording.id == recording_id, Recording.user_id == user.id)
+        .options(
+            selectinload(Recording.summary),
+            selectinload(Recording.segments).selectinload(Segment.person),
+        )
+    )
+    recording = recording_result.scalar_one_or_none()
+    if recording is None or recording.deleted_at is not None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Recording not found")
+    text_value = build_recording_summary_audio_text(recording)
+    if not text_value:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Summary not generated")
+    artifact = await load_latest_summary_audio_artifact(
+        db,
+        source_kind=SUMMARY_AUDIO_SOURCE_RECORDING,
+        source_id=recording.id,
+        user_id=user.id,
+        summary_hash=summary_audio_hash(text_value),
+    )
+    return serialize_summary_audio(
+        source_kind=SUMMARY_AUDIO_SOURCE_RECORDING,
+        source_id=recording.id,
+        artifact=artifact,
+        audio_url=f"/api/recordings/{recording.id}/summary/audio/file",
+    )
+
+
+@router.post(
+    "/{recording_id}/summary/audio",
+    response_model=SummaryAudioResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def start_recording_summary_audio(
+    recording_id: UUID,
+    user: CurrentUser,
+    db: Database,
+) -> SummaryAudioResponse:
+    """Start or reuse durable summary-audio generation for a recording."""
+    try:
+        artifact = await start_summary_audio_artifact(
+            db,
+            source_kind=SUMMARY_AUDIO_SOURCE_RECORDING,
+            source_id=recording_id,
+            user_id=user.id,
+        )
+    except SummaryAudioError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+
+    await db.commit()
+    if artifact.status == SummaryAudioStatus.QUEUED.value and not artifact.task_id:
+        try:
+            artifact.task_id = enqueue_summary_audio_generation(artifact.id)
+        except Exception as exc:
+            logger.exception("Failed to enqueue summary audio for recording %s", recording_id)
+            artifact.status = SummaryAudioStatus.FAILED.value
+            artifact.stage = "failed"
+            artifact.progress_percent = 100
+            artifact.error_code = "summary_audio_enqueue_failed"
+            artifact.error_message = "Failed to start summary audio generation."
+            artifact.failed_at = datetime.now(timezone.utc)
+            await db.commit()
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Failed to start summary audio generation",
+            ) from exc
+        await db.commit()
+
+    return serialize_summary_audio(
+        source_kind=SUMMARY_AUDIO_SOURCE_RECORDING,
+        source_id=recording_id,
+        artifact=artifact,
+        audio_url=f"/api/recordings/{recording_id}/summary/audio/file",
+    )
+
+
+@router.get("/{recording_id}/summary/audio/file")
+async def get_recording_summary_audio_file(
+    recording_id: UUID,
+    request: Request,
+    user: CurrentUser,
+    db: Database,
+) -> Response:
+    """Stream authenticated generated summary audio for a recording."""
+    recording_result = await db.execute(
+        select(Recording)
+        .where(Recording.id == recording_id, Recording.user_id == user.id)
+        .options(
+            selectinload(Recording.summary),
+            selectinload(Recording.segments).selectinload(Segment.person),
+        )
+    )
+    recording = recording_result.scalar_one_or_none()
+    if recording is None or recording.deleted_at is not None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Recording not found")
+    text_value = build_recording_summary_audio_text(recording)
+    if not text_value:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Summary not generated")
+    artifact = await load_latest_summary_audio_artifact(
+        db,
+        source_kind=SUMMARY_AUDIO_SOURCE_RECORDING,
+        source_id=recording.id,
+        user_id=user.id,
+        summary_hash=summary_audio_hash(text_value),
+    )
+    if artifact is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Summary audio has not been created.",
+        )
+    return summary_audio_file_response(artifact=artifact, request=request)
 
 
 @router.get("/{recording_id}/summary-generation", response_model=SummaryGenerationResponse)

@@ -180,10 +180,20 @@ struct RecordingDetailView: View {
                 SummaryTabView(
                     summary: viewModel.detail?.summary,
                     generationState: viewModel.detail?.summaryGeneration,
+                    audioState: viewModel.detail?.summaryAudio,
                     isGenerating: isGeneratingSummary,
+                    isGeneratingAudio: isGeneratingSummaryAudio,
                     onGenerate: {
                         Task {
                             await viewModel.startSummaryGeneration(
+                                recordingId: recording.id,
+                                apiClient: appState.getAPIClient()
+                            )
+                        }
+                    },
+                    onGenerateAudio: {
+                        Task {
+                            await viewModel.startSummaryAudioGeneration(
                                 recordingId: recording.id,
                                 apiClient: appState.getAPIClient()
                             )
@@ -207,6 +217,11 @@ struct RecordingDetailView: View {
     private var isGeneratingSummary: Bool {
         viewModel.isGeneratingSummary(for: recording.id)
             || viewModel.detail?.summaryGeneration?.isActive == true
+    }
+
+    private var isGeneratingSummaryAudio: Bool {
+        viewModel.isGeneratingSummaryAudio(for: recording.id)
+            || viewModel.detail?.summaryAudio?.isActive == true
     }
 
     @ViewBuilder
@@ -380,7 +395,9 @@ struct RecordingDetailView: View {
         let status = viewModel.detail?.status.rawValue ?? "none"
         let summaryStatus = viewModel.detail?.summaryGeneration?.status ?? "none"
         let summaryStage = viewModel.detail?.summaryGeneration?.stage ?? "none"
-        return "\(recording.id)-\(status)-\(summaryStatus)-\(summaryStage)"
+        let audioStatus = viewModel.detail?.summaryAudio?.status ?? "none"
+        let audioStage = viewModel.detail?.summaryAudio?.stage ?? "none"
+        return "\(recording.id)-\(status)-\(summaryStatus)-\(summaryStage)-\(audioStatus)-\(audioStage)"
     }
 
     private var screenshotSelectedTab: Int {
@@ -440,8 +457,11 @@ private struct RecordingDetailInlineErrorBanner: View {
 struct SummaryTabView: View {
     let summary: Summary?
     var generationState: SummaryGenerationState?
+    var audioState: SummaryAudioState?
     var isGenerating: Bool = false
+    var isGeneratingAudio: Bool = false
     let onGenerate: () -> Void
+    let onGenerateAudio: () -> Void
     @EnvironmentObject private var languageManager: LanguageManager
     @State private var copiedSection: String?
 
@@ -469,6 +489,25 @@ struct SummaryTabView: View {
                             section: "summary-all",
                             copiedSection: $copiedSection
                         )
+                    }
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        Button(action: onGenerateAudio) {
+                            Text(summaryAudioButtonTitle)
+                        }
+                        .buttonStyle(WaiPrimaryButtonStyle(isDisabled: summaryAudioDisabled))
+                        .disabled(summaryAudioDisabled)
+
+                        if isGeneratingAudio {
+                            summaryAudioProgress
+                        } else if audioState?.isFailed == true {
+                            summaryAudioFailure
+                        } else if audioState?.status == "succeeded" {
+                            Text(t("Audio ready", "Аудио готово"))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .accessibilityIdentifier("summary-audio-ready")
+                        }
                     }
 
                     // Summary text
@@ -587,6 +626,47 @@ struct SummaryTabView: View {
             return t("Try Again", "Повторить")
         }
         return t("Generate Summary", "Сгенерировать сводку")
+    }
+
+    private var summaryAudioDisabled: Bool {
+        isGeneratingAudio || audioState?.status == "succeeded"
+    }
+
+    private var summaryAudioButtonTitle: String {
+        if isGeneratingAudio {
+            return t("Creating Audio", "Создаем аудио")
+        }
+        if audioState?.status == "failed" {
+            return t("Try Audio Again", "Повторить аудио")
+        }
+        if audioState?.status == "succeeded" {
+            return t("Audio Ready", "Аудио готово")
+        }
+        return t("Create Audio", "Создать аудио")
+    }
+
+    private var summaryAudioProgress: some View {
+        HStack(spacing: 8) {
+            ProgressView()
+                .controlSize(.small)
+            Text(audioState?.message ?? t("Creating summary audio...", "Создаем аудио сводки..."))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(Palette.recording.opacity(0.10))
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .accessibilityIdentifier("summary-audio-progress")
+    }
+
+    private var summaryAudioFailure: some View {
+        Text(audioState?.errorMessage ?? t("Summary audio generation failed.", "Не удалось создать аудио сводки."))
+            .font(.caption)
+            .foregroundStyle(Palette.recording)
+            .multilineTextAlignment(.leading)
+            .fixedSize(horizontal: false, vertical: true)
+            .accessibilityIdentifier("summary-audio-failure")
     }
 
     private var summaryGenerationProgress: some View {
