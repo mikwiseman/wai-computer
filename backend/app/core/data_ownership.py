@@ -95,6 +95,12 @@ DATA_OWNERSHIP: tuple[TableOwnershipEntry, ...] = (
         "summary_generation_jobs", "owned_exportable", "Durable summary job state."
     ),
     TableOwnershipEntry(
+        "summary_audio_artifacts",
+        "owned_exportable",
+        "Generated summary-audio metadata and file references.",
+        contains_user_content=True,
+    ),
+    TableOwnershipEntry(
         "action_items",
         "owned_exportable",
         "Generated and user-managed action items.",
@@ -393,6 +399,13 @@ ARTIFACT_OWNERSHIP: tuple[ArtifactOwnershipEntry, ...] = (
         "Original document uploads stored in item metadata must move with the user's data.",
         contains_user_content=True,
         path_hint="${UPLOAD_STAGING_DIR}/items/<user_id>/*",
+    ),
+    ArtifactOwnershipEntry(
+        "summary_audio_files",
+        "owned_exportable",
+        "Generated MP3 files for recording and item summaries are user-owned exports.",
+        contains_user_content=True,
+        path_hint="${SUMMARY_AUDIO_STORAGE_DIR}/<user_id>/*.mp3",
     ),
     ArtifactOwnershipEntry(
         "recording_audio_staging",

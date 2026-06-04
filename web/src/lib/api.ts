@@ -82,6 +82,7 @@ import type {
   SpeakerStatsResponse,
   SharedRecording,
   Summary,
+  SummaryAudio,
   SummaryGeneration,
   SystemInfo,
   TelegramLinkStatus,
@@ -680,6 +681,23 @@ export function startSummaryGeneration(
   });
 }
 
+export function getRecordingSummaryAudio(recordingId: string): Promise<SummaryAudio> {
+  return apiFetch<SummaryAudio>(`/api/recordings/${recordingId}/summary/audio`);
+}
+
+export function startRecordingSummaryAudio(recordingId: string): Promise<SummaryAudio> {
+  return apiFetch<SummaryAudio>(`/api/recordings/${recordingId}/summary/audio`, {
+    method: "POST",
+  });
+}
+
+export async function downloadRecordingSummaryAudio(recordingId: string): Promise<Blob> {
+  const response = await apiFetchResponse(
+    `/api/recordings/${recordingId}/summary/audio/file`,
+  );
+  return response.blob();
+}
+
 export function search(params: { q: string; limit?: number; offset?: number }): Promise<SearchResponse> {
   return apiFetch<SearchResponse>(`/api/search${asQuery(params)}`);
 }
@@ -769,6 +787,21 @@ export function listItems(params?: {
 
 export function getItem(itemId: string): Promise<Item> {
   return apiFetch<Item>(`/api/items/${itemId}`);
+}
+
+export function getItemSummaryAudio(itemId: string): Promise<SummaryAudio> {
+  return apiFetch<SummaryAudio>(`/api/items/${itemId}/summary/audio`);
+}
+
+export function startItemSummaryAudio(itemId: string): Promise<SummaryAudio> {
+  return apiFetch<SummaryAudio>(`/api/items/${itemId}/summary/audio`, {
+    method: "POST",
+  });
+}
+
+export async function downloadItemSummaryAudio(itemId: string): Promise<Blob> {
+  const response = await apiFetchResponse(`/api/items/${itemId}/summary/audio/file`);
+  return response.blob();
 }
 
 export function deleteItem(itemId: string): Promise<void> {

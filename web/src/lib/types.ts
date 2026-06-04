@@ -445,6 +445,30 @@ export interface SummaryGeneration {
   error_message: string | null;
 }
 
+export interface SummaryAudio {
+  artifact_id: string | null;
+  source_kind: "recording" | "item";
+  source_id: string;
+  status: "not_started" | "queued" | "running" | "succeeded" | "failed";
+  stage: string;
+  progress_percent: number;
+  message: string;
+  provider: string | null;
+  model: string | null;
+  voice_id: string | null;
+  language: string | null;
+  content_type: string | null;
+  byte_size: number | null;
+  duration_seconds: number | null;
+  audio_url: string | null;
+  requested_at: string | null;
+  started_at: string | null;
+  completed_at: string | null;
+  failed_at: string | null;
+  error_code: string | null;
+  error_message: string | null;
+}
+
 export type PersonalizationTermStatus = "active" | "candidate" | "rejected";
 
 export interface PersonalizationTerm {
@@ -512,6 +536,7 @@ export interface RecordingDetail extends Recording {
   segments: Segment[];
   summary: Summary | null;
   summary_generation?: SummaryGeneration | null;
+  summary_audio: SummaryAudio;
   action_items: ActionItem[];
   highlights: Highlight[];
 }
@@ -838,6 +863,7 @@ export interface Item {
   folder_id: string | null;
   created_at: string;
   summary: ItemSummary | null;
+  summary_audio: SummaryAudio | null;
 }
 
 export interface ItemListEntry {

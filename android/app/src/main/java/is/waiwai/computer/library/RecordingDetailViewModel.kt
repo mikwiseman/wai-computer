@@ -24,6 +24,7 @@ data class RecordingDetailUiState(
     val folders: List<Folder> = emptyList(),
     val isRetryingUpload: Boolean = false,
     val isGeneratingSummary: Boolean = false,
+    val isGeneratingSummaryAudio: Boolean = false,
     val error: String? = null,
 )
 
@@ -205,6 +206,29 @@ class RecordingDetailViewModel(
         }
     }
 
+    fun createSummaryAudio() {
+        if (localOnly) return
+        if (_uiState.value.isGeneratingSummaryAudio) return
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(isGeneratingSummaryAudio = true, error = null)
+            runCatching {
+                val summaryAudio = waiApi.startRecordingSummaryAudio(recordingId)
+                _uiState.value.detail?.copy(summaryAudio = summaryAudio)
+            }.onSuccess { merged ->
+                _uiState.value = _uiState.value.copy(
+                    detail = merged ?: _uiState.value.detail,
+                    isGeneratingSummaryAudio = false,
+                )
+                schedulePollingIfNeeded(_uiState.value.detail)
+            }.onFailure { error ->
+                _uiState.value = _uiState.value.copy(
+                    isGeneratingSummaryAudio = false,
+                    error = error.message,
+                )
+            }
+        }
+    }
+
     internal fun schedulePollingIfNeeded(detail: RecordingDetail?) {
         pollJob?.cancel()
         if (!detail.isInProgress()) return
@@ -239,7 +263,7 @@ class RecordingDetailViewModel(
         RecordingStatus.Uploading,
         RecordingStatus.Processing,
         -> true
-        else -> false
+        else -> this?.summaryGeneration?.isActive == true || this?.summaryAudio?.isActive == true
     }
 
     internal fun backoffMillis(attempt: Int): Long = when (attempt) {

@@ -38,6 +38,7 @@ class RecordingDetailViewModel: ObservableObject {
     @Published var error: String?
     @Published var localRecoveryManifest: RecordingBackupManifest?
     @Published private var generatingSummaryRecordingId: String?
+    @Published private var generatingSummaryAudioRecordingId: String?
 
     private var loadGeneration = 0
 
@@ -52,6 +53,10 @@ class RecordingDetailViewModel: ObservableObject {
 
     func isGeneratingSummary(for recordingId: String) -> Bool {
         generatingSummaryRecordingId == recordingId
+    }
+
+    func isGeneratingSummaryAudio(for recordingId: String) -> Bool {
+        generatingSummaryAudioRecordingId == recordingId
     }
 
     func loadDetail(recordingId: String, apiClient: APIClient, showLoading: Bool = true) async {
@@ -107,6 +112,24 @@ class RecordingDetailViewModel: ObservableObject {
         }
     }
 
+    func startSummaryAudioGeneration(recordingId id: String, apiClient: APIClient) async {
+        generatingSummaryAudioRecordingId = id
+        defer {
+            if generatingSummaryAudioRecordingId == id {
+                generatingSummaryAudioRecordingId = nil
+            }
+        }
+
+        do {
+            let state = try await apiClient.startRecordingSummaryAudio(recordingId: id)
+            if detail?.id == id {
+                detail = detail?.withSummaryAudio(state)
+            }
+        } catch {
+            self.error = error.userFacingMessage(context: .library)
+        }
+    }
+
     func refreshPendingDetailIfNeeded(recordingId: String, apiClient: APIClient) async {
         guard detail?.id == recordingId else { return }
         guard shouldAutoRefresh(for: detail) else { return }
@@ -115,6 +138,7 @@ class RecordingDetailViewModel: ObservableObject {
               detail?.id == recordingId,
               shouldAutoRefresh(for: detail) {
             let delay: Duration = detail?.summaryGeneration?.isActive == true
+                || detail?.summaryAudio?.isActive == true
                 ? .seconds(2)
                 : .seconds(detail?.status == .processing ? 4 : 2)
             try? await Task.sleep(for: delay)
@@ -180,6 +204,9 @@ class RecordingDetailViewModel: ObservableObject {
         if detail?.summaryGeneration?.isActive == true {
             return true
         }
+        if detail?.summaryAudio?.isActive == true {
+            return true
+        }
         switch detail?.status {
         case .pendingUpload, .uploading, .processing:
             return true
@@ -240,6 +267,7 @@ class RecordingDetailViewModel: ObservableObject {
                     segments: segments,
                     summary: detail.summary,
                     summaryGeneration: detail.summaryGeneration,
+                    summaryAudio: detail.summaryAudio,
                     actionItems: detail.actionItems,
                     highlights: detail.highlights
                 ),

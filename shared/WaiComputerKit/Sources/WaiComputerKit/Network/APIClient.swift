@@ -524,6 +524,27 @@ public actor APIClient {
         }
     }
 
+    /// Make an authenticated API request that returns raw response bytes.
+    public func requestData(
+        _ method: HTTPMethod,
+        path: String,
+        body: (any Encodable)? = nil,
+        queryItems: [URLQueryItem]? = nil,
+        timeoutInterval: TimeInterval? = nil
+    ) async throws -> Data {
+        var request = try buildJSONRequest(
+            method: method,
+            path: path,
+            body: body,
+            queryItems: queryItems,
+            timeoutInterval: timeoutInterval
+        )
+        let (data, _) = try await performWithAuthRetry(&request, path: path, method: method.rawValue) { req in
+            try await self.session.data(for: req)
+        }
+        return data
+    }
+
     // MARK: - System & Self-hosting
 
     public func getSystemInfo() async throws -> SystemInfo {
@@ -1116,6 +1137,18 @@ public actor APIClient {
         return try await request(.POST, path: "/api/recordings/\(recordingId)/summary-generation")
     }
 
+    public func getRecordingSummaryAudio(recordingId: String) async throws -> SummaryAudioState {
+        return try await request(.GET, path: "/api/recordings/\(recordingId)/summary/audio")
+    }
+
+    public func startRecordingSummaryAudio(recordingId: String) async throws -> SummaryAudioState {
+        return try await request(.POST, path: "/api/recordings/\(recordingId)/summary/audio")
+    }
+
+    public func downloadRecordingSummaryAudio(recordingId: String) async throws -> Data {
+        return try await requestData(.GET, path: "/api/recordings/\(recordingId)/summary/audio/file")
+    }
+
     /// Export recording transcript in the given format (markdown, txt, srt).
     /// Pass `locale` ("en"/"ru") so export headers follow the app UI language
     /// rather than the recording's detected audio language (126).
@@ -1428,6 +1461,18 @@ public actor APIClient {
 
     public func deleteItem(id: String) async throws {
         try await requestNoContent(.DELETE, path: "/api/items/\(id)")
+    }
+
+    public func getItemSummaryAudio(itemId: String) async throws -> SummaryAudioState {
+        return try await request(.GET, path: "/api/items/\(itemId)/summary/audio")
+    }
+
+    public func startItemSummaryAudio(itemId: String) async throws -> SummaryAudioState {
+        return try await request(.POST, path: "/api/items/\(itemId)/summary/audio")
+    }
+
+    public func downloadItemSummaryAudio(itemId: String) async throws -> Data {
+        return try await requestData(.GET, path: "/api/items/\(itemId)/summary/audio/file")
     }
 
     // MARK: - Brain (compiled-wiki projection of canonical memory)

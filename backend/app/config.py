@@ -119,6 +119,24 @@ class Settings(BaseSettings):
     elevenlabs_recording_agent_id: str = ""
     elevenlabs_environment: str = "production"
 
+    # xAI — server-side text-to-speech for generated summary audio.
+    xai_api_key: str = ""
+    xai_api_base_url: str = "https://api.x.ai"
+    summary_audio_enabled: bool = True
+    summary_audio_provider: str = "xai"
+    summary_audio_model: str = "xai-text-to-speech"
+    summary_audio_voice_id: str = "ara"
+    summary_audio_language: str = "auto"
+    summary_audio_storage_dir: str = f"{gettempdir()}/waicomputer/summary-audio"
+    summary_audio_max_chars: int = 12000
+    summary_audio_codec: str = "mp3"
+    summary_audio_user_daily_chars_cap: int = 100000
+    summary_audio_global_daily_chars_cap: int = 1000000
+    summary_audio_timeout_seconds: int = 60
+    summary_audio_output_sample_rate: int = 24000
+    summary_audio_output_bit_rate: int = 128000
+    summary_audio_text_normalization: bool = False
+
     upload_max_bytes: int = 200 * 1024 * 1024
     upload_staging_dir: str = f"{gettempdir()}/waicomputer/uploads"
     # Optional speaker-to-person matching is CPU/RAM heavy because it loads a

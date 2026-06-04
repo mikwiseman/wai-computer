@@ -16,6 +16,7 @@ logger = logging.getLogger(__name__)
 
 OPENAI_PROVIDER = "openai"
 DEEPGRAM_PROVIDER = "deepgram"
+XAI_PROVIDER = "xai"
 
 # Explicit, low-cardinality feature names used by the admin dashboard.
 FEATURE_COMPANION = "companion"
@@ -29,6 +30,7 @@ FEATURE_MEMORY = "memory"
 FEATURE_OCR = "ocr"
 FEATURE_EMBEDDINGS = "embeddings"
 FEATURE_TRANSCRIPTION = "transcription"
+FEATURE_SUMMARY_AUDIO = "summary_audio"
 
 STATUS_SUCCEEDED = "succeeded"
 STATUS_FAILED = "failed"
@@ -117,6 +119,8 @@ async def record_ai_usage_event(
     channel_count: int | None = None,
     audio_bytes: int | None = None,
     latency_ms: int | None = None,
+    estimated_cost_usd: float | None = None,
+    pricing_status: str | None = None,
     provider_status_code: int | None = None,
     provider_error_code: str | None = None,
     guard_code: str | None = None,
@@ -147,7 +151,11 @@ async def record_ai_usage_event(
         resolved_language_mode = _bounded(language_mode, 32)
         resolved_addons = normalize_deepgram_addons(addons)
         resolved_price_source = _bounded(price_source, 120)
-        if provider == DEEPGRAM_PROVIDER:
+        resolved_pricing_status = _bounded(pricing_status, 32)
+        if estimated_cost_usd is not None:
+            cost = _float_or_none(estimated_cost_usd)
+            resolved_pricing_status = resolved_pricing_status or "priced"
+        elif provider == DEEPGRAM_PROVIDER:
             deepgram_cost = estimate_deepgram_usage_cost(
                 model=resolved_model,
                 billable_seconds=_float_or_none(billable_seconds),
@@ -156,13 +164,13 @@ async def record_ai_usage_event(
                 addons=resolved_addons,
             )
             cost = deepgram_cost.amount_usd
-            pricing_status = deepgram_cost.pricing_status
+            resolved_pricing_status = deepgram_cost.pricing_status
             resolved_price_source = resolved_price_source or deepgram_cost.price_source
             resolved_billing_mode = deepgram_cost.billing_mode
             resolved_language_mode = deepgram_cost.language_mode
             resolved_addons = deepgram_cost.addons
         else:
-            cost, pricing_status = estimate_cost_usd(
+            cost, resolved_pricing_status = estimate_cost_usd(
                 provider=provider,
                 model=resolved_model,
                 input_tokens=input_value,
@@ -170,7 +178,7 @@ async def record_ai_usage_event(
                 cached_tokens=cached_value,
                 billable_seconds=_float_or_none(billable_seconds),
             )
-            if pricing_status == "priced":
+            if resolved_pricing_status == "priced":
                 resolved_price_source = resolved_price_source or OPENAI_PRICE_SOURCE
         event = AiUsageEvent(
             user_id=_uuid_or_none(user_id),
@@ -194,7 +202,7 @@ async def record_ai_usage_event(
             audio_bytes=audio_bytes,
             latency_ms=latency_ms,
             estimated_cost_usd=cost,
-            pricing_status=pricing_status,
+            pricing_status=resolved_pricing_status,
             billing_mode=resolved_billing_mode,
             language_mode=resolved_language_mode,
             addons=resolved_addons or None,
@@ -450,6 +458,12 @@ def _safe_details(details: dict[str, Any] | None) -> dict[str, Any] | None:
             "dimensions",
             "streamed",
             "step_count",
+            "input_char_count",
+            "voice_id",
+            "language",
+            "codec",
+            "sample_rate",
+            "bit_rate",
         }:
             continue
         if isinstance(value, str | int | float | bool) or value is None:

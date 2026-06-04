@@ -65,6 +65,11 @@
     <string name="detail_generate_summary">Generate summary</string>
     <string name="detail_regenerate_summary">Regenerate summary</string>
     <string name="detail_summary_generating">Generating summary…</string>
+    <string name="detail_summary_audio_create">Create audio</string>
+    <string name="detail_summary_audio_creating">Creating audio…</string>
+    <string name="detail_summary_audio_retry">Retry audio</string>
+    <string name="detail_summary_audio_ready">Audio ready</string>
+    <string name="detail_summary_audio_failed">Audio generation failed.</string>
     <string name="onboarding_title_1">Record, Wai transcribes</string>
     <string name="onboarding_title_2">Everything stays on your device</string>
     <string name="onboarding_title_3">Ask Wai — get answers from your recordings</string>

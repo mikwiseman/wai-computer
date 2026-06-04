@@ -535,6 +535,9 @@ struct MacRecordingDetailView: View {
         let isGeneratingSummary = viewModel.isGeneratingSummary(for: detail.id) ||
             generationState?.isActive == true
         let generationFailed = generationState?.isFailed == true
+        let audioState = detail.summaryAudio
+        let isGeneratingAudio = viewModel.isGeneratingSummaryAudio(for: detail.id) ||
+            audioState?.isActive == true
 
         if let summary = detail.summary {
             ScrollView {
@@ -553,6 +556,33 @@ struct MacRecordingDetailView: View {
                             text: fullSummaryText(summary),
                             section: "summary-all"
                         )
+                    }
+
+                    HStack(spacing: Spacing.sm) {
+                        Button {
+                            Task {
+                                await viewModel.startSummaryAudioGeneration(
+                                    recordingId: detail.id,
+                                    apiClient: appState.getAPIClient()
+                                )
+                            }
+                        } label: {
+                            Text(summaryAudioButtonTitle(state: audioState, isGenerating: isGeneratingAudio))
+                        }
+                        .buttonStyle(WaiGhostButtonStyle())
+                        .disabled(isGeneratingAudio || audioState?.status == "succeeded")
+
+                        if audioState?.status == "succeeded" {
+                            Text(t("Audio ready", "Аудио готово"))
+                                .font(Typography.bodySmall)
+                                .foregroundStyle(Palette.textSecondary)
+                        }
+                    }
+
+                    if isGeneratingAudio {
+                        summaryAudioProgress(state: audioState)
+                    } else if audioState?.isFailed == true {
+                        summaryAudioFailure(state: audioState)
                     }
 
                     if let text = summary.summary {
@@ -705,6 +735,42 @@ struct MacRecordingDetailView: View {
             .multilineTextAlignment(.center)
             .fixedSize(horizontal: false, vertical: true)
             .accessibilityIdentifier("summary-generation-failure")
+    }
+
+    private func summaryAudioButtonTitle(state: SummaryAudioState?, isGenerating: Bool) -> String {
+        if isGenerating {
+            return t("Creating Audio", "Создаем аудио")
+        }
+        if state?.status == "failed" {
+            return t("Try Audio Again", "Повторить аудио")
+        }
+        if state?.status == "succeeded" {
+            return t("Audio Ready", "Аудио готово")
+        }
+        return t("Create Audio", "Создать аудио")
+    }
+
+    private func summaryAudioProgress(state: SummaryAudioState?) -> some View {
+        HStack(alignment: .center, spacing: Spacing.sm) {
+            ProgressView()
+                .controlSize(.small)
+            Text(state?.message ?? t("Creating summary audio...", "Создаем аудио сводки..."))
+                .font(Typography.bodySmall)
+                .foregroundStyle(Palette.textSecondary)
+        }
+        .padding(.horizontal, Spacing.md)
+        .padding(.vertical, Spacing.sm)
+        .background(Palette.recording.opacity(0.10))
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .accessibilityIdentifier("summary-audio-progress")
+    }
+
+    private func summaryAudioFailure(state: SummaryAudioState?) -> some View {
+        Text(state?.errorMessage ?? t("Summary audio generation failed.", "Не удалось создать аудио сводки."))
+            .font(Typography.caption)
+            .foregroundStyle(Palette.recording)
+            .fixedSize(horizontal: false, vertical: true)
+            .accessibilityIdentifier("summary-audio-failure")
     }
 
     private func recordingTypeLabel(_ type: RecordingType) -> String {

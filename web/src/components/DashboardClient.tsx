@@ -850,7 +850,13 @@ function recordingNeedsRefresh(recording: RecordingDetail | null): boolean {
   if (!recording) return false;
   if (["pending_upload", "uploading", "processing"].includes(recording.status)) return true;
   const summaryStatus = recording.summary_generation?.status;
-  return summaryStatus === "queued" || summaryStatus === "running";
+  const audioStatus = recording.summary_audio?.status;
+  return (
+    summaryStatus === "queued" ||
+    summaryStatus === "running" ||
+    audioStatus === "queued" ||
+    audioStatus === "running"
+  );
 }
 
 export function DashboardClient() {
@@ -1189,6 +1195,7 @@ export function DashboardClient() {
     selectedRecording?.id,
     selectedRecording?.status,
     selectedRecording?.summary_generation?.status,
+    selectedRecording?.summary_audio?.status,
   ]);
 
   async function handleCreateRecording(event: FormEvent<HTMLFormElement>) {

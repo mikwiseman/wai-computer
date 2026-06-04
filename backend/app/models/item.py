@@ -129,6 +129,12 @@ class Item(Base, UUIDMixin, TimestampMixin):
         cascade="all, delete-orphan",
         uselist=False,
     )
+    summary_audio_artifacts: Mapped[list["SummaryAudioArtifact"]] = relationship(
+        "SummaryAudioArtifact",
+        back_populates="item",
+        cascade="all, delete-orphan",
+        order_by="desc(SummaryAudioArtifact.created_at)",
+    )
 
 
 class ItemSummary(Base, UUIDMixin, TimestampMixin):
@@ -188,3 +194,6 @@ class ItemChunk(Base, UUIDMixin):
 
     # Relationships
     item: Mapped["Item"] = relationship("Item", back_populates="chunks")
+
+
+from app.models.summary_audio import SummaryAudioArtifact  # noqa: E402

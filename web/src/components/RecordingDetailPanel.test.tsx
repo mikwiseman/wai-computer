@@ -8,6 +8,8 @@ import type { RecordingDetail } from "@/lib/types";
 vi.mock("@/lib/api", () => ({
   generateSummary: vi.fn(),
   startSummaryGeneration: vi.fn(),
+  startRecordingSummaryAudio: vi.fn(),
+  downloadRecordingSummaryAudio: vi.fn(),
   getRecording: vi.fn(),
   exportRecording: vi.fn(),
   createRecordingShareLink: vi.fn(),
@@ -18,6 +20,8 @@ vi.mock("@/lib/api", () => ({
 const {
   generateSummary,
   startSummaryGeneration,
+  startRecordingSummaryAudio,
+  downloadRecordingSummaryAudio,
   getRecording,
   exportRecording,
   createRecordingShareLink,
@@ -26,6 +30,8 @@ const {
 } = await import("@/lib/api");
 const mockGenerateSummary = vi.mocked(generateSummary);
 const mockStartSummaryGeneration = vi.mocked(startSummaryGeneration);
+const mockStartRecordingSummaryAudio = vi.mocked(startRecordingSummaryAudio);
+const mockDownloadRecordingSummaryAudio = vi.mocked(downloadRecordingSummaryAudio);
 const mockGetRecording = vi.mocked(getRecording);
 const mockExportRecording = vi.mocked(exportRecording);
 const mockCreateRecordingShareLink = vi.mocked(createRecordingShareLink);
@@ -51,6 +57,29 @@ function makeRecording(overrides?: Partial<RecordingDetail>): RecordingDetail {
     created_at: "2026-04-01T10:00:00Z",
     segments: [],
     summary: null,
+    summary_audio: {
+      artifact_id: null,
+      source_kind: "recording",
+      source_id: "rec-1",
+      status: "not_started",
+      stage: "idle",
+      progress_percent: 0,
+      message: "Summary audio has not been created.",
+      provider: null,
+      model: null,
+      voice_id: null,
+      language: null,
+      content_type: null,
+      byte_size: null,
+      duration_seconds: null,
+      audio_url: null,
+      requested_at: null,
+      started_at: null,
+      completed_at: null,
+      failed_at: null,
+      error_code: null,
+      error_message: null,
+    },
     action_items: [],
     highlights: [],
     ...overrides,
@@ -61,6 +90,8 @@ describe("RecordingDetailPanel", () => {
   beforeEach(() => {
     mockGenerateSummary.mockReset();
     mockStartSummaryGeneration.mockReset();
+    mockStartRecordingSummaryAudio.mockReset();
+    mockDownloadRecordingSummaryAudio.mockReset();
     mockGetRecording.mockReset();
     mockExportRecording.mockReset();
     mockCreateRecordingShareLink.mockReset();
@@ -235,6 +266,48 @@ describe("RecordingDetailPanel", () => {
 
     await waitFor(() => {
       expect(mockStartSummaryGeneration).toHaveBeenCalledWith("rec-1", { instructions: null });
+    });
+    await waitFor(() => {
+      expect(onUpdate).toHaveBeenCalledWith(updatedRecording);
+    });
+  });
+
+  it("starts summary audio generation from the summary tab", async () => {
+    const recording = makeRecording({
+      summary: {
+        summary: "Meeting covered Q2 budget allocation.",
+        key_points: ["Budget set at $50k"],
+        decisions: null,
+        topics: ["budget"],
+        people_mentioned: ["Alice"],
+        sentiment: "positive",
+      },
+    });
+    const updatedRecording = makeRecording({
+      ...recording,
+      summary_audio: {
+        ...recording.summary_audio,
+        artifact_id: "audio-1",
+        status: "queued",
+        progress_percent: 5,
+        provider: "xai",
+        model: "xai-text-to-speech",
+        voice_id: "ara",
+        language: "auto",
+      },
+    });
+    mockStartRecordingSummaryAudio.mockResolvedValue(updatedRecording.summary_audio);
+    mockGetRecording.mockResolvedValue(updatedRecording);
+
+    const onUpdate = vi.fn();
+    const user = userEvent.setup();
+    render(<RecordingDetailPanel recording={recording} onRecordingUpdate={onUpdate} />);
+
+    await user.click(screen.getByText("Summary"));
+    await user.click(screen.getByText("Create audio"));
+
+    await waitFor(() => {
+      expect(mockStartRecordingSummaryAudio).toHaveBeenCalledWith("rec-1");
     });
     await waitFor(() => {
       expect(onUpdate).toHaveBeenCalledWith(updatedRecording);

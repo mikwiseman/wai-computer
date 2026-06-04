@@ -229,11 +229,13 @@ fun RecordingDetailScreen(
                     editableTitle = editableTitle,
                     isRetryingUpload = uiState.isRetryingUpload,
                     isGeneratingSummary = uiState.isGeneratingSummary,
+                    isGeneratingSummaryAudio = uiState.isGeneratingSummaryAudio,
                     onTitleChange = { editableTitle = it },
                     onSaveTitle = { viewModel.updateTitle(editableTitle) },
                     onToggleActionItem = viewModel::toggleActionItem,
                     onRetryUpload = viewModel::retryUpload,
                     onGenerateSummary = viewModel::regenerateSummary,
+                    onGenerateSummaryAudio = viewModel::createSummaryAudio,
                     onAssignSpeaker = { rawLabel, personId, newName ->
                         viewModel.assignSpeaker(rawLabel, personId, newName)
                     },
@@ -362,11 +364,13 @@ private fun AuthenticatedRecordingDetailContent(
     editableTitle: String,
     isRetryingUpload: Boolean,
     isGeneratingSummary: Boolean,
+    isGeneratingSummaryAudio: Boolean,
     onTitleChange: (String) -> Unit,
     onSaveTitle: () -> Unit,
     onToggleActionItem: (String, `is`.waiwai.computer.data.ActionItemStatus) -> Unit,
     onRetryUpload: () -> Unit,
     onGenerateSummary: () -> Unit,
+    onGenerateSummaryAudio: () -> Unit,
     onAssignSpeaker: (rawLabel: String, personId: String?, newName: String?) -> Unit,
     loadPeople: suspend () -> List<`is`.waiwai.computer.data.Person>,
 ) {
@@ -445,7 +449,9 @@ private fun AuthenticatedRecordingDetailContent(
                 SummarySection(
                     detail = detail,
                     isGenerating = isGeneratingSummary,
+                    isGeneratingAudio = isGeneratingSummaryAudio,
                     onGenerate = onGenerateSummary,
+                    onGenerateAudio = onGenerateSummaryAudio,
                 )
             }
         }
@@ -654,7 +660,9 @@ private fun SpeakerChip(
 private fun SummarySection(
     detail: RecordingDetail,
     isGenerating: Boolean,
+    isGeneratingAudio: Boolean,
     onGenerate: () -> Unit,
+    onGenerateAudio: () -> Unit,
 ) {
     val summary = detail.summary
     if (summary == null) {
@@ -683,6 +691,34 @@ private fun SummarySection(
                     stringResource(R.string.detail_regenerate_summary)
                 },
             )
+        }
+        val summaryAudio = detail.summaryAudio
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            androidx.compose.material3.TextButton(
+                onClick = onGenerateAudio,
+                enabled = !isGeneratingAudio && summaryAudio?.status != "succeeded",
+            ) {
+                Text(
+                    when {
+                        isGeneratingAudio || summaryAudio?.isActive == true ->
+                            stringResource(R.string.detail_summary_audio_creating)
+                        summaryAudio?.isFailed == true ->
+                            stringResource(R.string.detail_summary_audio_retry)
+                        summaryAudio?.status == "succeeded" ->
+                            stringResource(R.string.detail_summary_audio_ready)
+                        else ->
+                            stringResource(R.string.detail_summary_audio_create)
+                    },
+                )
+            }
+            when {
+                isGeneratingAudio || summaryAudio?.isActive == true ->
+                    Text(summaryAudio?.message ?: stringResource(R.string.detail_summary_audio_creating))
+                summaryAudio?.isFailed == true ->
+                    Text(summaryAudio.errorMessage ?: stringResource(R.string.detail_summary_audio_failed))
+                summaryAudio?.status == "succeeded" ->
+                    Text(stringResource(R.string.detail_summary_audio_ready))
+            }
         }
         summary.keyPoints.orEmpty().forEach { point ->
             Text("• $point")

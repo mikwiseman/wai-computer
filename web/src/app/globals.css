@@ -3815,6 +3815,19 @@ a.primary-button[aria-disabled="true"]:hover {
   margin-top: 0.85rem;
 }
 
+.summary-audio {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.summary-audio__player {
+  width: min(100%, 420px);
+  height: 34px;
+}
+
 .item-detail__h3 {
   margin: 0 0 0.4rem;
   font-size: var(--font-heading-small-size);
