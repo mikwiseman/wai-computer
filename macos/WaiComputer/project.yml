@@ -78,6 +78,7 @@ targets:
       - path: WaiComputer/Features/Content/MacContentFeedViewModel.swift
       - path: WaiComputer/Features/Recording/MacRecordingViewModel.swift
       - path: WaiComputer/Features/Library/MacRecordingDetailViewModel.swift
+      - path: WaiComputer/Features/Agents/MacAgentsView.swift
       - path: WaiComputer/Features/Updates/BetaChannelStore.swift
     settings:
       base:
