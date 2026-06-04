@@ -116,99 +116,303 @@ final class MacAgentsViewModel: ObservableObject {
 }
 
 struct MacAgentsView: View {
+    @EnvironmentObject private var languageManager: LanguageManager
     @StateObject private var model: MacAgentsViewModel
+    @AppStorage("desktopComputerUseEnabled") private var computerUseEnabled = false
     @State private var agentName = ""
     @State private var agentNote = ""
     @State private var reminderText = ""
     @State private var runObjective = ""
+    @State private var reminderDueAt = Date().addingTimeInterval(3_600)
 
     init(apiClient: APIClient) {
         _model = StateObject(wrappedValue: MacAgentsViewModel(apiClient: apiClient))
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(spacing: 0) {
             header
-            if let error = model.errorMessage {
-                Text(error).foregroundStyle(.red)
-            }
-            if let status = model.statusMessage {
-                Text(status).foregroundStyle(.secondary)
-            }
-            forms
-            List {
-                Section("Agents") {
-                    ForEach(model.agents) { agent in
-                        HStack {
-                            Text(agent.name)
-                            Spacer()
-                            Button("Run") {
-                                Task { await model.startRun(agent: agent, objective: runObjective) }
-                            }
-                            .disabled(runObjective.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                        }
-                    }
+            WaiDivider()
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: Spacing.lg) {
+                    banners
+                    edgeControl
+                    forms
+                    agentsSection
+                    approvalsSection
+                    remindersSection
                 }
-                Section("Approvals") {
-                    ForEach(model.actions) { action in
-                        HStack {
-                            Text(action.preview)
-                            Spacer()
-                            Button("Once") {
-                                Task { await model.resolve(action: action, decision: "once") }
-                            }
-                        }
-                    }
-                }
-                Section("Reminders") {
-                    ForEach(model.reminders) { reminder in
-                        HStack {
-                            Text(reminder.text)
-                            Spacer()
-                            Button("Cancel") {
-                                Task { await model.cancel(reminder: reminder) }
-                            }
-                        }
-                    }
-                }
+                .frame(maxWidth: 920, alignment: .topLeading)
+                .padding(Spacing.lg)
+                .frame(maxWidth: .infinity, alignment: .topLeading)
             }
         }
-        .padding()
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .task { await model.load() }
     }
 
     private var header: some View {
         HStack {
-            Text("Agents").font(.title2).fontWeight(.semibold)
+            VStack(alignment: .leading, spacing: Spacing.xs) {
+                Text(t("Agents", "Агенты"))
+                    .font(Typography.displaySmall)
+
+                Text(t("Run tasks, approve actions, and schedule reminders.", "Запускай задачи, подтверждай действия и ставь напоминания."))
+                    .font(Typography.bodySmall)
+                    .foregroundStyle(Palette.textSecondary)
+            }
+
             Spacer()
-            Button("Refresh") {
+
+            Button(t("Refresh", "Обновить")) {
                 Task { await model.load() }
             }
+            .help(t("Refresh agents", "Обновить агентов"))
             .disabled(model.isLoading)
+        }
+        .padding(.horizontal, Spacing.lg)
+        .padding(.vertical, Spacing.md)
+    }
+
+    @ViewBuilder
+    private var banners: some View {
+        if let error = model.errorMessage {
+            InlineAgentBanner(message: error, systemImage: "exclamationmark.triangle", tint: Palette.recording)
+        }
+        if let status = model.statusMessage {
+            InlineAgentBanner(message: status, systemImage: "checkmark.circle", tint: Palette.accent)
         }
     }
 
-    private var forms: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            TextField("Agent name", text: $agentName)
-            TextField("Agent note", text: $agentNote)
-            Button("Create Agent") {
-                Task { await model.createAgent(name: agentName, note: agentNote) }
+    private var edgeControl: some View {
+        VStack(alignment: .leading, spacing: Spacing.sm) {
+            Toggle(isOn: $computerUseEnabled) {
+                Label(t("Mac edge agent", "Mac edge-агент"), systemImage: "desktopcomputer")
+                    .font(Typography.headingMedium)
             }
-            .disabled(agentName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            .toggleStyle(.switch)
+            .accessibilityIdentifier("mac-agents-edge-toggle")
 
-            TextField("Run objective", text: $runObjective)
-            TextField("Reminder", text: $reminderText)
-            Button("Create Reminder") {
-                Task {
-                    await model.createReminder(
-                        text: reminderText,
-                        dueAt: Date().addingTimeInterval(3_600)
-                    )
+            Text(t(
+                "When enabled, this Mac can execute approved desktop actions while Inbox or Agents is open.",
+                "Когда включено, этот Mac выполняет подтвержденные desktop-действия, пока открыт Инбокс или Агенты."
+            ))
+            .font(Typography.bodySmall)
+            .foregroundStyle(Palette.textSecondary)
+        }
+        .padding(Spacing.lg)
+        .background(Palette.accentSubtle)
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+
+    private var forms: some View {
+        HStack(alignment: .top, spacing: Spacing.lg) {
+            VStack(alignment: .leading, spacing: Spacing.sm) {
+                sectionTitle(t("Create agent", "Создать агента"), "plus.circle")
+                TextField(t("Agent name", "Название агента"), text: $agentName)
+                    .textFieldStyle(.roundedBorder)
+                TextField(t("First note or instruction", "Первая заметка или инструкция"), text: $agentNote)
+                    .textFieldStyle(.roundedBorder)
+                Button {
+                    Task { await model.createAgent(name: trimmedAgentName, note: trimmedAgentNote) }
+                } label: {
+                    Label(t("Create", "Создать"), systemImage: "plus")
+                }
+                .disabled(trimmedAgentName.isEmpty || trimmedAgentNote.isEmpty || model.isLoading)
+                .accessibilityIdentifier("mac-agents-create-button")
+            }
+            .padding(Spacing.lg)
+            .background(Palette.surfaceSubtle)
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+
+            VStack(alignment: .leading, spacing: Spacing.sm) {
+                sectionTitle(t("New reminder", "Новое напоминание"), "bell")
+                TextField(t("Reminder text", "Текст напоминания"), text: $reminderText)
+                    .textFieldStyle(.roundedBorder)
+                DatePicker(t("Due", "Когда"), selection: $reminderDueAt, displayedComponents: [.date, .hourAndMinute])
+                Button {
+                    Task { await model.createReminder(text: trimmedReminderText, dueAt: reminderDueAt) }
+                } label: {
+                    Label(t("Create Reminder", "Создать напоминание"), systemImage: "bell.badge")
+                }
+                .disabled(trimmedReminderText.isEmpty || model.isLoading)
+                .accessibilityIdentifier("mac-agents-create-reminder-button")
+            }
+            .padding(Spacing.lg)
+            .background(Palette.surfaceSubtle)
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+        }
+    }
+
+    private var agentsSection: some View {
+        VStack(alignment: .leading, spacing: Spacing.sm) {
+            sectionTitle(t("Agents", "Агенты"), "sparkles")
+
+            TextField(t("Objective for a manual run", "Цель ручного запуска"), text: $runObjective)
+                .textFieldStyle(.roundedBorder)
+                .accessibilityIdentifier("mac-agents-run-objective")
+
+            if model.agents.isEmpty {
+                emptyState(t("No agents yet.", "Агентов пока нет."))
+            } else {
+                ForEach(model.agents) { agent in
+                    HStack(spacing: Spacing.md) {
+                        VStack(alignment: .leading, spacing: Spacing.xs) {
+                            Text(agent.name)
+                                .font(Typography.headingMedium)
+                            Text("\(agent.kind) · \(agent.autonomy)")
+                                .font(Typography.caption)
+                                .foregroundStyle(Palette.textSecondary)
+                        }
+                        Spacer()
+                        Button {
+                            Task { await model.startRun(agent: agent, objective: trimmedRunObjective) }
+                        } label: {
+                            Label(t("Run", "Запустить"), systemImage: "play.fill")
+                        }
+                        .disabled(trimmedRunObjective.isEmpty || model.isLoading)
+                    }
+                    .padding(.vertical, Spacing.sm)
+                    WaiDivider()
                 }
             }
-            .disabled(reminderText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
         }
+        .padding(Spacing.lg)
+        .background(Palette.surfaceSubtle)
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+
+    private var approvalsSection: some View {
+        VStack(alignment: .leading, spacing: Spacing.sm) {
+            sectionTitle(t("Approvals", "Подтверждения"), "checkmark.shield")
+
+            if model.actions.isEmpty {
+                emptyState(t("No pending actions.", "Нет действий на подтверждение."))
+            } else {
+                ForEach(model.actions) { action in
+                    HStack(alignment: .top, spacing: Spacing.md) {
+                        VStack(alignment: .leading, spacing: Spacing.xs) {
+                            Text(action.preview)
+                                .font(Typography.headingMedium)
+                            Text(action.tool)
+                                .font(Typography.caption)
+                                .foregroundStyle(Palette.textSecondary)
+                        }
+                        Spacer()
+                        Button(t("Approve", "Подтвердить")) {
+                            Task { await model.resolve(action: action, decision: "once") }
+                        }
+                        .disabled(model.isLoading)
+
+                        Button(t("Reject", "Отклонить"), role: .destructive) {
+                            Task { await model.resolve(action: action, decision: "reject") }
+                        }
+                        .disabled(model.isLoading)
+                    }
+                    .padding(.vertical, Spacing.sm)
+                    WaiDivider()
+                }
+            }
+        }
+        .padding(Spacing.lg)
+        .background(Palette.surfaceSubtle)
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+
+    private var remindersSection: some View {
+        VStack(alignment: .leading, spacing: Spacing.sm) {
+            sectionTitle(t("Reminders", "Напоминания"), "bell")
+
+            if model.reminders.isEmpty {
+                emptyState(t("No pending reminders.", "Нет ожидающих напоминаний."))
+            } else {
+                ForEach(model.reminders) { reminder in
+                    HStack(alignment: .top, spacing: Spacing.md) {
+                        VStack(alignment: .leading, spacing: Spacing.xs) {
+                            Text(reminder.text)
+                                .font(Typography.headingMedium)
+                            Text(reminderDueText(reminder))
+                                .font(Typography.caption)
+                                .foregroundStyle(Palette.textSecondary)
+                        }
+                        Spacer()
+                        Button(t("Cancel", "Отменить"), role: .destructive) {
+                            Task { await model.cancel(reminder: reminder) }
+                        }
+                        .disabled(model.isLoading)
+                    }
+                    .padding(.vertical, Spacing.sm)
+                    WaiDivider()
+                }
+            }
+        }
+        .padding(Spacing.lg)
+        .background(Palette.surfaceSubtle)
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+
+    private func sectionTitle(_ title: String, _ systemImage: String) -> some View {
+        Label(title, systemImage: systemImage)
+            .font(Typography.headingMedium)
+            .foregroundStyle(Palette.textPrimary)
+    }
+
+    private func emptyState(_ text: String) -> some View {
+        Text(text)
+            .font(Typography.bodySmall)
+            .foregroundStyle(Palette.textSecondary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.vertical, Spacing.sm)
+    }
+
+    private func reminderDueText(_ reminder: Reminder) -> String {
+        MacDateFormatting.string(
+            from: reminder.dueAt,
+            dateStyle: .medium,
+            timeStyle: .short,
+            language: languageManager.current
+        )
+    }
+
+    private var trimmedAgentName: String {
+        agentName.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var trimmedAgentNote: String {
+        agentNote.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var trimmedReminderText: String {
+        reminderText.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var trimmedRunObjective: String {
+        runObjective.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func t(_ english: String, _ russian: String) -> String {
+        OnboardingL10n.text(english, russian, language: languageManager.current)
+    }
+}
+
+private struct InlineAgentBanner: View {
+    let message: String
+    let systemImage: String
+    let tint: Color
+
+    var body: some View {
+        HStack(spacing: Spacing.sm) {
+            Image(systemName: systemImage)
+                .foregroundStyle(tint)
+            Text(message)
+                .font(Typography.bodySmall)
+                .foregroundStyle(Palette.textPrimary)
+            Spacer()
+        }
+        .padding(Spacing.md)
+        .background(tint.opacity(0.12))
+        .clipShape(RoundedRectangle(cornerRadius: 8))
     }
 }
 
