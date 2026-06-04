@@ -100,7 +100,7 @@ type DashboardView =
   | "settings";
 type DetailMode = "active" | "trash";
 type Locale = "en" | "ru";
-type OpenableInboxSourceKind = Extract<InboxSourceKind, "recording" | "item">;
+type OpenableInboxSourceKind = Extract<InboxSourceKind, "recording" | "item" | "chat">;
 type PendingInboxSource = {
   sourceKind: OpenableInboxSourceKind;
   sourceId: string;
@@ -1645,6 +1645,24 @@ export function DashboardClient() {
 
   const handlePendingInboxSourceConsumed = useCallback(() => {
     setPendingInboxSource(null);
+  }, []);
+
+  const handleNewChat = useCallback(async () => {
+    setMessage(null);
+    try {
+      const chat = await createChat();
+      setActiveFolderId(null);
+      setSelectedRecording(null);
+      setSelectedMode("active");
+      setPendingInboxSource({
+        sourceKind: "chat",
+        sourceId: chat.id,
+        nonce: Date.now(),
+      });
+      setView("inbox");
+    } catch (error: unknown) {
+      setMessage(formatError(error));
+    }
   }, []);
 
   useKeyboardShortcuts({
@@ -3350,7 +3368,6 @@ function UniversalInboxPanel({
         is_archived: false,
         is_trashed: false,
       });
-      setView("inbox");
       setShowCreate(false);
     } catch (error: unknown) {
       onError(formatError(error));
