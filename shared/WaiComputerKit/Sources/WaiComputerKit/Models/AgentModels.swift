@@ -307,6 +307,8 @@ public struct AgentCapability: Codable, Sendable, Equatable, Identifiable {
     public let cloudSupported: Bool
     public let selfHostSupported: Bool
     public let localGatewayRequired: Bool
+    public let riskLevel: String
+    public let permissionScopes: [String]
     public let safetyNotes: String
 
     private enum CodingKeys: String, CodingKey {
@@ -321,7 +323,35 @@ public struct AgentCapability: Codable, Sendable, Equatable, Identifiable {
         case cloudSupported = "cloud_supported"
         case selfHostSupported = "self_host_supported"
         case localGatewayRequired = "local_gateway_required"
+        case riskLevel = "risk_level"
+        case permissionScopes = "permission_scopes"
         case safetyNotes = "safety_notes"
+    }
+}
+
+public struct AgentToolContract: Codable, Sendable, Equatable, Identifiable {
+    public var id: String { name }
+
+    public let name: String
+    public let capabilityId: String
+    public let kind: String
+    public let description: String
+    public let sideEffect: String
+    public let requiresApproval: Bool
+    public let argsSchema: [String: JSONValue]
+    public let resultSchema: [String: JSONValue]
+    public let permissionScopes: [String]
+
+    private enum CodingKeys: String, CodingKey {
+        case name
+        case capabilityId = "capability_id"
+        case kind
+        case description
+        case sideEffect = "side_effect"
+        case requiresApproval = "requires_approval"
+        case argsSchema = "args_schema"
+        case resultSchema = "result_schema"
+        case permissionScopes = "permission_scopes"
     }
 }
 
@@ -338,6 +368,7 @@ public struct AgentCapabilitiesResponse: Codable, Sendable, Equatable {
     public let maxSteps: Int
     public let runtimeModes: [AgentRuntimeMode]
     public let capabilities: [AgentCapability]
+    public let toolContracts: [AgentToolContract]
 
     private enum CodingKeys: String, CodingKey {
         case schemaVersion = "schema_version"
@@ -345,5 +376,6 @@ public struct AgentCapabilitiesResponse: Codable, Sendable, Equatable {
         case maxSteps = "max_steps"
         case runtimeModes = "runtime_modes"
         case capabilities
+        case toolContracts = "tool_contracts"
     }
 }

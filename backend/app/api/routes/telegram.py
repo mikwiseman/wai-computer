@@ -119,6 +119,7 @@ TELEGRAM_BOT_COMMANDS = [
     {"command": "cancel_run", "description": "Остановить запуск агента"},
     {"command": "approvals", "description": "Действия, ожидающие подтверждения"},
     {"command": "approve", "description": "Подтвердить действие один раз"},
+    {"command": "approve_always", "description": "Подтвердить действие всегда"},
     {"command": "reject", "description": "Отклонить действие"},
     {"command": "meetings", "description": "Последние встречи"},
     {"command": "search", "description": "Поиск по записям и расшифровкам"},
@@ -244,6 +245,7 @@ def _telegram_help_text(*, linked: bool) -> str:
         "/cancel_run <run_id> — остановить запуск\n"
         "/approvals — действия на подтверждение\n"
         "/approve <action_id> — подтвердить один раз\n"
+        "/approve_always <action_id> — подтвердить всегда\n"
         "/reject <action_id> — отклонить действие\n"
         "/meetings — последние встречи\n"
         "/search <запрос> — поиск по записям, саммари и расшифровкам\n"
@@ -1382,7 +1384,7 @@ async def _handle_run_command(
     if await _ensure_active_user(db, client, message=message, account=account) is None:
         return
     agent_ref, objective = _split_agent_run_arg(arg)
-    if not agent_ref:
+    if not agent_ref or not objective:
         await client.send_message(
             chat_id,
             "Формат: /run <agent_id или имя> <задача>",
@@ -1611,7 +1613,7 @@ async def _handle_approvals_command(
             preview = str((action.action_manifest or {}).get("preview") or "").strip()
             lines.append(
                 f"{action.id}\n{action.tool_name} · {action.kind}\n{preview}\n"
-                f"/approve {action.id}\n/reject {action.id}"
+                f"/approve {action.id}\n/approve_always {action.id}\n/reject {action.id}"
             )
         text = "\n\n".join(lines)
     await _send_chunks(
@@ -1815,6 +1817,11 @@ async def _handle_account_command(
             db, client, message=message, account=account, arg=arg, decision="once"
         )
         return True
+    if intent == "approve_always":
+        await _handle_approval_decision_command(
+            db, client, message=message, account=account, arg=arg, decision="always"
+        )
+        return True
     if intent == "reject":
         await _handle_approval_decision_command(
             db, client, message=message, account=account, arg=arg, decision="reject"
@@ -1942,7 +1949,8 @@ def _format_action_proposals_for_telegram(actions: list[ActionProposedEvent]) ->
         recipient = f" · {action.recipient}" if action.recipient else ""
         lines.append(
             f"{action.action_id}\n{action.tool} · {action.kind}{recipient}\n"
-            f"{preview}\n/approve {action.action_id}\n/reject {action.action_id}"
+            f"{preview}\n/approve {action.action_id}\n"
+            f"/approve_always {action.action_id}\n/reject {action.action_id}"
         )
     return "\n\n".join(lines)
 

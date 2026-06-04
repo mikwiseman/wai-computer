@@ -101,7 +101,21 @@ class AgentCapabilityResponse(BaseModel):
     cloud_supported: bool
     self_host_supported: bool
     local_gateway_required: bool
+    risk_level: str
+    permission_scopes: list[str]
     safety_notes: str
+
+
+class AgentToolContractResponse(BaseModel):
+    name: str
+    capability_id: str
+    kind: str
+    description: str
+    side_effect: str
+    requires_approval: bool
+    args_schema: dict[str, Any]
+    result_schema: dict[str, Any]
+    permission_scopes: list[str]
 
 
 class AgentRuntimeModeResponse(BaseModel):
@@ -117,6 +131,7 @@ class AgentCapabilitiesResponse(BaseModel):
     max_steps: int
     runtime_modes: list[AgentRuntimeModeResponse]
     capabilities: list[AgentCapabilityResponse]
+    tool_contracts: list[AgentToolContractResponse]
 
 
 class StartRunRequest(BaseModel):

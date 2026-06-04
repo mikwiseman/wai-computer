@@ -203,6 +203,9 @@ final class APIClientNewEndpointsTests: XCTestCase {
     func testAgentControlPlaneEndpoints() async throws {
         let client = makeClient()
         let seenPaths = RequestPathRecorder()
+        let nextRunAt = try XCTUnwrap(
+            ISO8601DateFormatter().date(from: "2026-06-04T08:15:00Z")
+        )
 
         MockURLProtocol.requestHandler = { [self] request in
             seenPaths.append(request.url?.path ?? "")
@@ -217,7 +220,7 @@ final class APIClientNewEndpointsTests: XCTestCase {
             if path == "/api/agents/capabilities" {
                 let payload = """
                 {
-                  "schema_version": "2026-06-03",
+                  "schema_version": "2026-06-04",
                   "deployment_mode": "wai_cloud",
                   "max_steps": 20,
                   "runtime_modes": [{"id":"wai_cloud","label":"Wai Cloud","description":"cloud","available":true}],
@@ -233,7 +236,20 @@ final class APIClientNewEndpointsTests: XCTestCase {
                     "cloud_supported": true,
                     "self_host_supported": true,
                     "local_gateway_required": false,
+                    "risk_level": "read_only",
+                    "permission_scopes": ["search:read"],
                     "safety_notes": "Read-only"
+                  }],
+                  "tool_contracts": [{
+                    "name": "search_wai",
+                    "capability_id": "wai.search",
+                    "kind": "runtime",
+                    "description": "Search",
+                    "side_effect": "none",
+                    "requires_approval": false,
+                    "args_schema": {"type":"object"},
+                    "result_schema": {"type":"object"},
+                    "permission_scopes": ["search:read"]
                   }]
                 }
                 """.data(using: .utf8)!
@@ -250,6 +266,7 @@ final class APIClientNewEndpointsTests: XCTestCase {
             if path == "/api/agents" && request.httpMethod == "POST" {
                 let body = try jsonBody(from: request)
                 XCTAssertEqual(body["name"] as? String, "Daily")
+                XCTAssertEqual(body["next_run_at"] as? String, "2026-06-04T08:15:00Z")
                 let payload = """
                 {"id":"agent-1","name":"Daily","kind":"brief","trigger_type":"manual","config":{},"autonomy":"propose","enabled":true,"next_run_at":null,"last_run_at":null,"created_at":"2026-06-03T12:00:00Z","updated_at":"2026-06-03T12:00:00Z"}
                 """.data(using: .utf8)!
@@ -260,7 +277,7 @@ final class APIClientNewEndpointsTests: XCTestCase {
                 let body = try jsonBody(from: request)
                 XCTAssertEqual(body["idempotency_key"] as? String, "same")
                 let payload = """
-                {"id":"run-1","agent_id":"agent-1","trigger_key":"manual:agent-1:same","trigger_kind":"manual","trigger_payload":{"objective":"brief"},"status":"pending","plan":null,"done_spec":null,"result":null,"content_hash":null,"error":null,"next_step_idx":0,"heartbeat_at":null,"started_at":null,"finished_at":null,"cancel_requested_at":null,"created_at":"2026-06-03T12:00:00Z","updated_at":"2026-06-03T12:00:00Z"}
+                {"id":"run-1","agent_id":"agent-1","parent_run_id":null,"parent_step_idx":null,"trigger_key":"manual:agent-1:same","trigger_kind":"manual","trigger_payload":{"objective":"brief"},"status":"pending","plan":null,"done_spec":null,"result":null,"content_hash":null,"error":null,"next_step_idx":0,"heartbeat_at":null,"started_at":null,"finished_at":null,"cancel_requested_at":null,"created_at":"2026-06-03T12:00:00Z","updated_at":"2026-06-03T12:00:00Z"}
                 """.data(using: .utf8)!
                 return (response, payload)
             }
@@ -292,9 +309,13 @@ final class APIClientNewEndpointsTests: XCTestCase {
 
         let caps = try await client.getAgentCapabilities()
         XCTAssertEqual(caps.capabilities.first?.id, "wai.search")
+        XCTAssertEqual(caps.capabilities.first?.permissionScopes, ["search:read"])
+        XCTAssertEqual(caps.toolContracts.first?.name, "search_wai")
         let agents = try await client.listAgents(limit: 10)
         XCTAssertEqual(agents.agents.first?.name, "Daily")
-        let created = try await client.createAgent(AgentCreateRequest(name: "Daily", kind: "brief"))
+        let created = try await client.createAgent(
+            AgentCreateRequest(name: "Daily", kind: "brief", nextRunAt: nextRunAt)
+        )
         XCTAssertEqual(created.id, "agent-1")
         let run = try await client.startAgentRun(
             agentId: "agent-1",

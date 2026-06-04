@@ -1050,6 +1050,45 @@ async def test_telegram_run_requires_id_for_duplicate_agent_names(
 
 
 @pytest.mark.asyncio
+async def test_telegram_run_requires_objective_after_agent_ref(
+    db_session: AsyncSession,
+    monkeypatch,
+):
+    user = await _user(db_session, "telegram-agent-objective-required@example.com")
+    account = TelegramAccount(user_id=user.id, telegram_user_id=76, telegram_chat_id=76)
+    agent = Agent(
+        user_id=user.id,
+        name="Researcher",
+        kind="research",
+        trigger_type="manual",
+        config={"steps": [{"tool": "note", "args": {"text": "first"}}]},
+    )
+    db_session.add_all([account, agent])
+    await db_session.commit()
+    capture = _TelegramCapture()
+    dispatched: list[str] = []
+    monkeypatch.setattr(
+        telegram_routes,
+        "enqueue_agent_run",
+        lambda run_id: dispatched.append(str(run_id)) or "task-objective",
+    )
+
+    await telegram_routes._handle_account_command(
+        db_session,
+        capture,
+        message={"message_id": 408, "chat": {"id": 76}},
+        account=account,
+        intent="run",
+        arg="Researcher",
+    )
+
+    assert "Формат: /run" in capture.messages[-1]["text"]
+    assert dispatched == []
+    runs = (await db_session.execute(select(AgentRun).where(AgentRun.user_id == user.id))).all()
+    assert runs == []
+
+
+@pytest.mark.asyncio
 async def test_telegram_command_guards_missing_chat_inactive_user_and_short_refs(
     db_session: AsyncSession,
 ):
@@ -1228,15 +1267,17 @@ async def test_telegram_can_resolve_agent_pending_action(
         capture,
         message={"message_id": 303, "chat": {"id": 78}},
         account=account,
-        intent="approve",
+        intent="approve_always",
         arg=str(row.id),
     )
 
     assert str(row.id) in capture.messages[0]["text"]
+    assert f"/approve_always {row.id}" in capture.messages[0]["text"]
     assert "Выполнил действие" in capture.messages[1]["text"]
     await db_session.refresh(row)
     await db_session.refresh(run)
     assert row.status == "executed"
+    assert row.decision == "always"
     assert run.status == "done"
 
 
@@ -1729,6 +1770,7 @@ async def test_handle_text_message_renders_action_proposals(
     assert "Могу сделать это." in text
     assert "Нужно подтверждение" in text
     assert f"/approve {action_id}" in text
+    assert f"/approve_always {action_id}" in text
     assert f"/reject {action_id}" in text
 
 

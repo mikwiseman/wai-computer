@@ -12,8 +12,23 @@ from uuid import UUID
 
 MAX_AGENT_STEPS = 20
 MAX_AGENT_SEARCH_LIMIT = 50
+MEMORY_OPERATIONS = frozenset({"append", "replace_line", "rewrite"})
+SERVER_ACTION_TOOL_NAMES = frozenset({"send_message_telegram"})
+DESKTOP_ACTION_TOOL_NAMES = frozenset(
+    {"desktop_open", "desktop_type", "desktop_click", "desktop_snapshot"}
+)
+ACTION_TOOL_NAMES = SERVER_ACTION_TOOL_NAMES | DESKTOP_ACTION_TOOL_NAMES
 
 CapabilityAvailability = Literal["available", "approval_required", "self_host_only", "planned"]
+ToolKind = Literal["runtime", "action"]
+SideEffect = Literal[
+    "none",
+    "user_content_write",
+    "approval_request",
+    "server_side_effect",
+    "local_desktop_effect",
+    "orchestration",
+]
 
 
 @dataclass(frozen=True)
@@ -29,11 +44,34 @@ class AgentCapability:
     cloud_supported: bool
     self_host_supported: bool
     local_gateway_required: bool
+    risk_level: str
+    permission_scopes: tuple[str, ...]
     safety_notes: str
 
     def to_response(self) -> dict[str, Any]:
         payload = asdict(self)
         payload["surfaces"] = list(self.surfaces)
+        payload["permission_scopes"] = list(self.permission_scopes)
+        return payload
+
+
+@dataclass(frozen=True)
+class AgentToolContract:
+    """Executable contract for one runtime tool or approval-gated action tool."""
+
+    name: str
+    capability_id: str
+    kind: ToolKind
+    description: str
+    side_effect: SideEffect
+    requires_approval: bool
+    args_schema: dict[str, Any]
+    result_schema: dict[str, Any]
+    permission_scopes: tuple[str, ...]
+
+    def to_response(self) -> dict[str, Any]:
+        payload = asdict(self)
+        payload["permission_scopes"] = list(self.permission_scopes)
         return payload
 
 
@@ -50,6 +88,8 @@ AGENT_CAPABILITIES: tuple[AgentCapability, ...] = (
         cloud_supported=True,
         self_host_supported=True,
         local_gateway_required=False,
+        risk_level="read_only",
+        permission_scopes=("agent:run:read",),
         safety_notes="Non-mutating journal entry.",
     ),
     AgentCapability(
@@ -64,6 +104,8 @@ AGENT_CAPABILITIES: tuple[AgentCapability, ...] = (
         cloud_supported=True,
         self_host_supported=True,
         local_gateway_required=False,
+        risk_level="user_content_write",
+        permission_scopes=("items:write",),
         safety_notes="Stores user-visible content in the user's Wai library.",
     ),
     AgentCapability(
@@ -78,6 +120,8 @@ AGENT_CAPABILITIES: tuple[AgentCapability, ...] = (
         cloud_supported=True,
         self_host_supported=True,
         local_gateway_required=False,
+        risk_level="read_only",
+        permission_scopes=("search:read", "recordings:read", "items:read"),
         safety_notes="Read-only and owner-scoped.",
     ),
     AgentCapability(
@@ -92,6 +136,8 @@ AGENT_CAPABILITIES: tuple[AgentCapability, ...] = (
         cloud_supported=True,
         self_host_supported=True,
         local_gateway_required=False,
+        risk_level="governed_write",
+        permission_scopes=("memory:propose",),
         safety_notes="Writes only to the proposal queue; human memory approval remains separate.",
     ),
     AgentCapability(
@@ -106,6 +152,8 @@ AGENT_CAPABILITIES: tuple[AgentCapability, ...] = (
         cloud_supported=True,
         self_host_supported=True,
         local_gateway_required=False,
+        risk_level="approval_required",
+        permission_scopes=("actions:propose",),
         safety_notes="Side effects execute only after the HMAC approval ledger records approval.",
     ),
     AgentCapability(
@@ -120,6 +168,8 @@ AGENT_CAPABILITIES: tuple[AgentCapability, ...] = (
         cloud_supported=True,
         self_host_supported=True,
         local_gateway_required=True,
+        risk_level="local_edge_approval",
+        permission_scopes=("actions:propose", "desktop:open"),
         safety_notes=(
             "Open actions are approval-gated and delivered only through a paired "
             "Mac edge device."
@@ -137,6 +187,8 @@ AGENT_CAPABILITIES: tuple[AgentCapability, ...] = (
         cloud_supported=True,
         self_host_supported=True,
         local_gateway_required=True,
+        risk_level="local_edge_approval",
+        permission_scopes=("actions:propose", "desktop:accessibility"),
         safety_notes=(
             "Requires explicit approval; native execution re-checks the frontmost "
             "application before typing, clicking, or snapshotting."
@@ -154,6 +206,8 @@ AGENT_CAPABILITIES: tuple[AgentCapability, ...] = (
         cloud_supported=False,
         self_host_supported=True,
         local_gateway_required=True,
+        risk_level="planned_high_risk",
+        permission_scopes=("shell:execute",),
         safety_notes=(
             "Blocked until command policies, leases, redaction, and "
             "rollback/checkpoint UX exist."
@@ -171,6 +225,8 @@ AGENT_CAPABILITIES: tuple[AgentCapability, ...] = (
         cloud_supported=True,
         self_host_supported=True,
         local_gateway_required=False,
+        risk_level="planned_connector_write",
+        permission_scopes=("mcp:call_tool",),
         safety_notes=(
             "Requires per-connection allowlists, schemas, and policy filtering "
             "before execution."
@@ -191,6 +247,8 @@ AGENT_CAPABILITIES: tuple[AgentCapability, ...] = (
         cloud_supported=True,
         self_host_supported=True,
         local_gateway_required=False,
+        risk_level="orchestration",
+        permission_scopes=("agents:run",),
         safety_notes=(
             "Creates an owner-scoped child run with a parent edge; nested "
             "delegation is blocked in v1."
@@ -198,21 +256,272 @@ AGENT_CAPABILITIES: tuple[AgentCapability, ...] = (
     ),
 )
 
-RUNTIME_TOOL_NAMES = frozenset(
-    capability.runtime_tool for capability in AGENT_CAPABILITIES if capability.runtime_tool
+AGENT_TOOL_CONTRACTS: tuple[AgentToolContract, ...] = (
+    AgentToolContract(
+        name="note",
+        capability_id="wai.note",
+        kind="runtime",
+        description="Append a non-mutating journal note to the run.",
+        side_effect="none",
+        requires_approval=False,
+        permission_scopes=("agent:run:read",),
+        args_schema={
+            "type": "object",
+            "required": ["text"],
+            "additionalProperties": False,
+            "properties": {"text": {"type": "string", "minLength": 1}},
+        },
+        result_schema={
+            "type": "object",
+            "required": ["text"],
+            "properties": {"text": {"type": "string"}},
+        },
+    ),
+    AgentToolContract(
+        name="create_artifact",
+        capability_id="wai.artifact.create",
+        kind="runtime",
+        description="Create an agent-provenanced Wai library item.",
+        side_effect="user_content_write",
+        requires_approval=False,
+        permission_scopes=("items:write",),
+        args_schema={
+            "type": "object",
+            "required": ["title", "body"],
+            "additionalProperties": False,
+            "properties": {
+                "title": {"type": "string", "minLength": 1},
+                "body": {"type": "string", "minLength": 1},
+                "kind": {"type": "string", "minLength": 1},
+            },
+        },
+        result_schema={
+            "type": "object",
+            "required": ["item_id", "created"],
+            "properties": {
+                "item_id": {"type": "string"},
+                "created": {"type": "boolean"},
+            },
+        },
+    ),
+    AgentToolContract(
+        name="search_wai",
+        capability_id="wai.search",
+        kind="runtime",
+        description="Owner-scoped search over recordings, transcripts, summaries, and items.",
+        side_effect="none",
+        requires_approval=False,
+        permission_scopes=("search:read", "recordings:read", "items:read"),
+        args_schema={
+            "type": "object",
+            "required": ["query"],
+            "additionalProperties": False,
+            "properties": {
+                "query": {"type": "string", "minLength": 1},
+                "limit": {"type": "integer", "minimum": 1, "maximum": MAX_AGENT_SEARCH_LIMIT},
+            },
+        },
+        result_schema={
+            "type": "object",
+            "required": ["query", "hits"],
+            "properties": {
+                "query": {"type": "string"},
+                "hits": {"type": "array", "items": {"type": "object"}},
+            },
+        },
+    ),
+    AgentToolContract(
+        name="propose_memory",
+        capability_id="wai.memory.propose",
+        kind="runtime",
+        description="Propose a governed long-term memory edit.",
+        side_effect="user_content_write",
+        requires_approval=False,
+        permission_scopes=("memory:propose",),
+        args_schema={
+            "type": "object",
+            "required": ["content"],
+            "additionalProperties": False,
+            "properties": {
+                "content": {"type": "string", "minLength": 1},
+                "block": {"type": "string", "minLength": 1},
+                "operation": {"type": "string", "enum": sorted(MEMORY_OPERATIONS)},
+                "target_line": {"type": ["integer", "null"]},
+                "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+                "authority": {"type": "string", "minLength": 1},
+                "summary": {"type": ["string", "null"]},
+                "evidence": {},
+            },
+        },
+        result_schema={"type": "object", "properties": {"proposal_id": {"type": "string"}}},
+    ),
+    AgentToolContract(
+        name="propose_action",
+        capability_id="wai.action.propose",
+        kind="runtime",
+        description="Queue one typed action tool for human approval.",
+        side_effect="approval_request",
+        requires_approval=True,
+        permission_scopes=("actions:propose",),
+        args_schema={
+            "type": "object",
+            "required": ["tool_name", "action_args", "preview"],
+            "additionalProperties": False,
+            "properties": {
+                "tool_name": {"type": "string", "enum": sorted(ACTION_TOOL_NAMES)},
+                "action_args": {"type": "object"},
+                "preview": {"type": "string", "minLength": 1},
+                "kind": {"type": "string"},
+                "recipient_display": {"type": ["string", "null"]},
+                "device_target": {"type": ["string", "null"], "format": "uuid"},
+                "ttl_seconds": {"type": "integer", "minimum": 1},
+            },
+        },
+        result_schema={
+            "type": "object",
+            "required": ["action_id", "tool", "expires_at"],
+            "properties": {
+                "action_id": {"type": "string"},
+                "tool": {"type": "string"},
+                "expires_at": {"type": "string", "format": "date-time"},
+            },
+        },
+    ),
+    AgentToolContract(
+        name="delegate_agent",
+        capability_id="agent.delegate",
+        kind="runtime",
+        description="Create an owner-scoped child run for another enabled agent.",
+        side_effect="orchestration",
+        requires_approval=False,
+        permission_scopes=("agents:run",),
+        args_schema={
+            "type": "object",
+            "required": ["objective"],
+            "additionalProperties": False,
+            "oneOf": [
+                {"required": ["agent_id"], "not": {"required": ["agent_name"]}},
+                {"required": ["agent_name"], "not": {"required": ["agent_id"]}},
+            ],
+            "properties": {
+                "agent_id": {"type": "string", "format": "uuid"},
+                "agent_name": {"type": "string", "minLength": 1},
+                "objective": {"type": "string", "minLength": 1},
+            },
+        },
+        result_schema={
+            "type": "object",
+            "required": ["child_run_id", "agent_id", "status", "created"],
+            "properties": {
+                "child_run_id": {"type": "string"},
+                "agent_id": {"type": "string"},
+                "status": {"type": "string"},
+                "created": {"type": "boolean"},
+            },
+        },
+    ),
+    AgentToolContract(
+        name="send_message_telegram",
+        capability_id="wai.action.propose",
+        kind="action",
+        description="After approval, send text to the user's own linked Telegram DM.",
+        side_effect="server_side_effect",
+        requires_approval=True,
+        permission_scopes=("telegram:send:self",),
+        args_schema={
+            "type": "object",
+            "required": ["text"],
+            "additionalProperties": False,
+            "properties": {"text": {"type": "string", "minLength": 1}},
+        },
+        result_schema={
+            "type": "object",
+            "required": ["channel", "chat_id"],
+            "properties": {
+                "channel": {"type": "string", "const": "telegram"},
+                "chat_id": {"type": "integer"},
+                "message_id": {"type": ["integer", "null"]},
+            },
+        },
+    ),
+    AgentToolContract(
+        name="desktop_open",
+        capability_id="local.desktop.open",
+        kind="action",
+        description="After approval, ask a paired Mac edge to open an app or allowed URL.",
+        side_effect="local_desktop_effect",
+        requires_approval=True,
+        permission_scopes=("desktop:open",),
+        args_schema={
+            "type": "object",
+            "required": ["target"],
+            "additionalProperties": False,
+            "properties": {"target": {"type": "string", "minLength": 1}},
+        },
+        result_schema={"type": "object", "properties": {"status": {"type": "string"}}},
+    ),
+    AgentToolContract(
+        name="desktop_type",
+        capability_id="local.desktop.accessibility",
+        kind="action",
+        description="After approval, ask a paired Mac edge to type into the current app.",
+        side_effect="local_desktop_effect",
+        requires_approval=True,
+        permission_scopes=("desktop:accessibility",),
+        args_schema={
+            "type": "object",
+            "required": ["text"],
+            "additionalProperties": False,
+            "properties": {"text": {"type": "string", "minLength": 1}},
+        },
+        result_schema={"type": "object", "properties": {"status": {"type": "string"}}},
+    ),
+    AgentToolContract(
+        name="desktop_click",
+        capability_id="local.desktop.accessibility",
+        kind="action",
+        description="After approval, ask a paired Mac edge to click a snapshot element index.",
+        side_effect="local_desktop_effect",
+        requires_approval=True,
+        permission_scopes=("desktop:accessibility",),
+        args_schema={
+            "type": "object",
+            "required": ["index"],
+            "additionalProperties": False,
+            "properties": {"index": {"type": "integer", "minimum": 0}},
+        },
+        result_schema={"type": "object", "properties": {"status": {"type": "string"}}},
+    ),
+    AgentToolContract(
+        name="desktop_snapshot",
+        capability_id="local.desktop.accessibility",
+        kind="action",
+        description="After approval, ask a paired Mac edge for a sanitized UI snapshot.",
+        side_effect="local_desktop_effect",
+        requires_approval=True,
+        permission_scopes=("desktop:accessibility",),
+        args_schema={
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {},
+        },
+        result_schema={"type": "object", "properties": {"snapshot": {"type": "object"}}},
+    ),
 )
-SERVER_ACTION_TOOL_NAMES = frozenset({"send_message_telegram"})
-DESKTOP_ACTION_TOOL_NAMES = frozenset(
-    {"desktop_open", "desktop_type", "desktop_click", "desktop_snapshot"}
-)
-ACTION_TOOL_NAMES = SERVER_ACTION_TOOL_NAMES | DESKTOP_ACTION_TOOL_NAMES
-MEMORY_OPERATIONS = frozenset({"append", "replace_line", "rewrite"})
+
+RUNTIME_TOOL_CONTRACTS = {
+    contract.name: contract for contract in AGENT_TOOL_CONTRACTS if contract.kind == "runtime"
+}
+ACTION_TOOL_CONTRACTS = {
+    contract.name: contract for contract in AGENT_TOOL_CONTRACTS if contract.kind == "action"
+}
+RUNTIME_TOOL_NAMES = frozenset(RUNTIME_TOOL_CONTRACTS)
 
 
 def capabilities_response(*, deployment_mode: str) -> dict[str, Any]:
     """Return the agent control-plane contract consumed by all clients."""
     return {
-        "schema_version": "2026-06-03",
+        "schema_version": "2026-06-04",
         "deployment_mode": deployment_mode,
         "max_steps": MAX_AGENT_STEPS,
         "runtime_modes": [
@@ -236,6 +545,7 @@ def capabilities_response(*, deployment_mode: str) -> dict[str, Any]:
             },
         ],
         "capabilities": [capability.to_response() for capability in AGENT_CAPABILITIES],
+        "tool_contracts": [contract.to_response() for contract in AGENT_TOOL_CONTRACTS],
     }
 
 
@@ -286,7 +596,12 @@ def _validate_step_args(tool: str, args: dict[str, Any], idx: int) -> None:
         _require_text(args, "query", idx, tool)
         if args.get("limit") is not None:
             limit = args.get("limit")
-            if not isinstance(limit, int) or limit < 1 or limit > MAX_AGENT_SEARCH_LIMIT:
+            if (
+                not isinstance(limit, int)
+                or isinstance(limit, bool)
+                or limit < 1
+                or limit > MAX_AGENT_SEARCH_LIMIT
+            ):
                 raise ValueError(
                     f"Agent config.steps[{idx}].search_wai.limit must be "
                     f"1..{MAX_AGENT_SEARCH_LIMIT}"
@@ -325,6 +640,7 @@ def _validate_step_args(tool: str, args: dict[str, Any], idx: int) -> None:
                     f"Agent config.steps[{idx}].propose_action.device_target must be a UUID string"
                 ) from exc
         _require_text(args, "preview", idx, tool)
+        _validate_action_args(tool_name, action_args, idx)
         return
     if tool == "delegate_agent":
         has_agent_id = bool(str(args.get("agent_id") or "").strip())
@@ -341,4 +657,54 @@ def _validate_step_args(tool: str, args: dict[str, Any], idx: int) -> None:
                     f"Agent config.steps[{idx}].delegate_agent.agent_id must be a UUID string"
                 ) from exc
         _require_text(args, "objective", idx, tool)
+        return
+
+
+def _reject_unknown_action_args(
+    args: dict[str, Any], allowed: set[str], idx: int, tool_name: str
+) -> None:
+    unknown = sorted(set(args) - allowed)
+    if unknown:
+        raise ValueError(
+            f"Agent config.steps[{idx}].propose_action.action_args for "
+            f"{tool_name} has unsupported fields: {', '.join(unknown)}"
+        )
+
+
+def _validate_action_args(tool_name: str, action_args: dict[str, Any], idx: int) -> None:
+    if tool_name == "send_message_telegram":
+        _reject_unknown_action_args(action_args, {"text"}, idx, tool_name)
+        value = action_args.get("text")
+        if not isinstance(value, str) or not value.strip():
+            raise ValueError(
+                f"Agent config.steps[{idx}].propose_action.action_args.text is required"
+            )
+        return
+    if tool_name == "desktop_open":
+        _reject_unknown_action_args(action_args, {"target"}, idx, tool_name)
+        value = action_args.get("target")
+        if not isinstance(value, str) or not value.strip():
+            raise ValueError(
+                f"Agent config.steps[{idx}].propose_action.action_args.target is required"
+            )
+        return
+    if tool_name == "desktop_type":
+        _reject_unknown_action_args(action_args, {"text"}, idx, tool_name)
+        value = action_args.get("text")
+        if not isinstance(value, str) or not value.strip():
+            raise ValueError(
+                f"Agent config.steps[{idx}].propose_action.action_args.text is required"
+            )
+        return
+    if tool_name == "desktop_click":
+        _reject_unknown_action_args(action_args, {"index"}, idx, tool_name)
+        value = action_args.get("index")
+        if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+            raise ValueError(
+                f"Agent config.steps[{idx}].propose_action.action_args.index must be "
+                "a non-negative integer"
+            )
+        return
+    if tool_name == "desktop_snapshot":
+        _reject_unknown_action_args(action_args, set(), idx, tool_name)
         return

@@ -238,7 +238,21 @@ export interface AgentCapability {
   cloud_supported: boolean;
   self_host_supported: boolean;
   local_gateway_required: boolean;
+  risk_level: string;
+  permission_scopes: string[];
   safety_notes: string;
+}
+
+export interface AgentToolContract {
+  name: string;
+  capability_id: string;
+  kind: "runtime" | "action";
+  description: string;
+  side_effect: string;
+  requires_approval: boolean;
+  args_schema: Record<string, unknown>;
+  result_schema: Record<string, unknown>;
+  permission_scopes: string[];
 }
 
 export interface AgentRuntimeMode {
@@ -254,6 +268,7 @@ export interface AgentCapabilitiesResponse {
   max_steps: number;
   runtime_modes: AgentRuntimeMode[];
   capabilities: AgentCapability[];
+  tool_contracts: AgentToolContract[];
 }
 
 export interface StartAgentRunRequest {

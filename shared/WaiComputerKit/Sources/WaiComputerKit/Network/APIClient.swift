@@ -102,6 +102,7 @@ public actor APIClient {
         }
 
         self.encoder = JSONEncoder()
+        self.encoder.dateEncodingStrategy = .iso8601
         self.decoder = JSONDecoder()
 
         // Configure date decoding

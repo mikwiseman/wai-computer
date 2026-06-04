@@ -95,6 +95,24 @@ async def test_health_endpoint_returns_healthy_when_db_ok(db_session: Any) -> No
     assert body["git_dirty"] is False
 
 
+def test_system_routes_are_registered_once() -> None:
+    from app import main
+
+    counts: dict[tuple[str, str], int] = {}
+    for route in main.app.routes:
+        path = getattr(route, "path", None)
+        methods = getattr(route, "methods", None)
+        if path is None or methods is None:
+            continue
+        for method in methods:
+            if method in {"HEAD", "OPTIONS"}:
+                continue
+            counts[(path, method)] = counts.get((path, method), 0) + 1
+
+    assert counts[("/api/system/info", "GET")] == 1
+    assert counts[("/api/self-host/migration/contract", "GET")] == 1
+
+
 # ---------------------------------------------------------------------------
 # Middleware
 # ---------------------------------------------------------------------------
