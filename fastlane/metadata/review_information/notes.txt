@@ -1,0 +1,21 @@
+Test account credentials:
+Use the current App Review credentials supplied directly in App Store Connect.
+Do not store review account passwords in this repository.
+
+Steps to access the app:
+1. Launch the app
+2. Enter the App Review email and password on the login screen
+3. Tap "Login"
+4. The app opens to the main recording screen
+
+To test recording:
+- iOS: Tap the record button and speak
+- macOS: Go to Settings > Dictation > enable it, then use the hotkey (Right Command by default)
+
+Account deletion:
+- Sign in with the test account
+- Open Settings
+- Use Delete Account in the account section and confirm deletion
+
+macOS App Store review notes:
+- The Developer ID distribution path is documented separately from App Store review metadata.
