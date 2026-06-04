@@ -38,7 +38,7 @@ RUN useradd --create-home --shell /bin/bash appuser
 
 # Pre-create writable runtime directories so Docker named volumes inherit
 # appuser ownership on first mount.
-RUN mkdir -p /var/lib/waicomputer/uploads
+RUN mkdir -p /var/lib/waicomputer/uploads /var/lib/waicomputer/summary-audio
 
 # Copy installed packages from builder
 COPY --from=builder /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages
