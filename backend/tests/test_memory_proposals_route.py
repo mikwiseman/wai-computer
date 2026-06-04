@@ -15,7 +15,8 @@ async def _authed_user_id(client, auth_headers) -> uuid.UUID:
 async def _seed_pending(db, user_id, content="Curated bio."):
     outcome = await gov.propose_block_update(
         db, user_id, block_label="human", operation="rewrite",
-        content=content, confidence=0.99,  # high risk → queued
+        content=content, confidence=0.99,  # high risk -> queued
+        evidence=[{"source_kind": "item", "source_id": "item-1"}],
     )
     return outcome.proposal
 
@@ -38,21 +39,7 @@ async def test_list_proposals_empty(client, auth_headers) -> None:
 
 async def test_list_returns_pending_and_count(client, auth_headers, db_session) -> None:
     user_id = await _authed_user_id(client, auth_headers)
-    await gov.propose_block_update(
-        db_session,
-        user_id,
-        block_label="human",
-        operation="rewrite",
-        content="Pending rewrite.",
-        confidence=0.99,
-        evidence=[
-            {
-                "source_kind": "recording",
-                "source_id": str(uuid.uuid4()),
-                "title": "Launch sync",
-            }
-        ],
-    )
+    await _seed_pending(db_session, user_id, content="Pending rewrite.")
     await _seed_accepted(db_session, user_id, content="Already accepted.")
 
     resp = await client.get("/api/memory/proposals", headers=auth_headers)
@@ -63,8 +50,9 @@ async def test_list_returns_pending_and_count(client, auth_headers, db_session) 
     assert data["pending_count"] == 1
     assert data["proposals"][0]["status"] == "pending"
     assert data["proposals"][0]["risk"] == "high"
-    assert data["proposals"][0]["evidence"][0]["source_kind"] == "recording"
-    assert data["proposals"][0]["evidence"][0]["title"] == "Launch sync"
+    assert data["proposals"][0]["evidence"] == [
+        {"source_kind": "item", "source_id": "item-1"}
+    ]
 
 
 async def test_list_all_status(client, auth_headers, db_session) -> None:

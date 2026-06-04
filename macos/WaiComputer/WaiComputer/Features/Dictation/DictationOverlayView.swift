@@ -9,7 +9,8 @@ struct DictationOverlayView: View {
 
     var body: some View {
         HStack(spacing: Spacing.md) {
-            stateIndicator
+            // Recording indicator
+            recordingDot
 
             // Status text
             VStack(alignment: .leading, spacing: 1) {
@@ -17,7 +18,7 @@ struct DictationOverlayView: View {
                     .font(Typography.headingSmall)
                     .foregroundStyle(.white)
 
-                if !previewText.isEmpty {
+                if !manager.interimTranscript.isEmpty {
                     Text(transcriptPreview)
                         .font(Typography.caption)
                         .foregroundStyle(.white.opacity(0.7))
@@ -75,15 +76,6 @@ struct DictationOverlayView: View {
 
     // MARK: - Subviews
 
-    @ViewBuilder
-    private var stateIndicator: some View {
-        if manager.state == .processing {
-            ThinkingIndicator()
-        } else {
-            recordingDot
-        }
-    }
-
     private var recordingDot: some View {
         Circle()
             .fill(dotColor)
@@ -106,38 +98,6 @@ struct DictationOverlayView: View {
     // MARK: - Computed
 
     private var statusText: String {
-        switch manager.activeMode {
-        case .translation:
-            let target = manager.translationLanguageStore.selectedEntry.englishName
-            switch manager.state {
-            case .listening:
-                return t("Translating to \(target)", "Перевод на \(target)")
-            case .processing:
-                return t("Translating...", "Перевожу...")
-            case .inserting:
-                return t("Inserting translation...", "Вставляю перевод...")
-            case .connecting:
-                return DictationCopy.overlayStatus(.connecting, language: languageManager.current)
-            case .idle:
-                return DictationCopy.overlayStatus(.idle, language: languageManager.current)
-            }
-        case .askAnything:
-            switch manager.state {
-            case .listening:
-                return t("Ask anything", "Спросить что угодно")
-            case .processing:
-                return t("Asking Wai...", "Спрашиваю Wai...")
-            case .inserting:
-                return t("Answering...", "Отвечаю...")
-            case .connecting:
-                return DictationCopy.overlayStatus(.connecting, language: languageManager.current)
-            case .idle:
-                return DictationCopy.overlayStatus(.idle, language: languageManager.current)
-            }
-        case .dictation:
-            break
-        }
-
         let status: DictationCopy.OverlayStatus
         switch manager.state {
         case .idle:
@@ -164,19 +124,11 @@ struct DictationOverlayView: View {
     }
 
     private var transcriptPreview: String {
-        let text = previewText
+        let text = manager.interimTranscript
         if text.count > 60 {
             return "..." + String(text.suffix(57))
         }
         return text
-    }
-
-    private var previewText: String {
-        if manager.state == .processing,
-           !manager.cleanupPreview.isEmpty {
-            return manager.cleanupPreview
-        }
-        return manager.interimTranscript
     }
 
     private var formattedDuration: String {
@@ -184,41 +136,5 @@ struct DictationOverlayView: View {
         let mins = seconds / 60
         let secs = seconds % 60
         return String(format: "%d:%02d", mins, secs)
-    }
-
-    private func t(_ english: String, _ russian: String) -> String {
-        OnboardingL10n.text(english, russian, language: languageManager.current)
-    }
-}
-
-private struct ThinkingIndicator: View {
-    @State private var active = false
-
-    var body: some View {
-        HStack(spacing: 3) {
-            ForEach(0..<3, id: \.self) { index in
-                Capsule()
-                    .fill(.white.opacity(active ? 0.92 : 0.42))
-                    .frame(width: 4, height: active ? 16 : 8)
-                    .animation(
-                        .easeInOut(duration: 0.62)
-                            .repeatForever(autoreverses: true)
-                            .delay(Double(index) * 0.12),
-                        value: active
-                    )
-            }
-        }
-        .frame(width: 28, height: 24)
-        .background(
-            Capsule()
-                .fill(Palette.accent.opacity(0.34))
-        )
-        .overlay(
-            Capsule()
-                .strokeBorder(.white.opacity(0.18), lineWidth: 0.5)
-        )
-        .onAppear {
-            active = true
-        }
     }
 }

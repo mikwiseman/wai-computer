@@ -30,8 +30,7 @@ struct WaiComputerMacApp: App {
 
     init() {
         #if !DEBUG
-        let sentryDSN = Bundle.main.object(forInfoDictionaryKey: "SENTRY_DSN") as? String ?? ""
-        SentryHelper.start(dsn: sentryDSN)
+        SentryHelper.start(dsn: "https://7d4dee467b0776baf21d5833aa953caa@o4508963132145664.ingest.us.sentry.io/4511116051939328")
         #endif
 
         let testingMode = MacTestingMode.current

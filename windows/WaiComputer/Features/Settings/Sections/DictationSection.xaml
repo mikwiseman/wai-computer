@@ -1,0 +1,16 @@
+<UserControl
+    x:Class="WaiComputer.Features.Settings.Sections.DictationSection"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <StackPanel Spacing="12">
+        <TextBlock Text="DICTATION" Style="{StaticResource WaiSectionHeader}" />
+        <ToggleSwitch Header="Dictation enabled" IsOn="True" />
+        <ComboBox Header="Push-to-talk hotkey" SelectedIndex="0">
+            <ComboBoxItem Content="Right Alt" /><ComboBoxItem Content="Left Alt" />
+            <ComboBoxItem Content="Right Ctrl" /><ComboBoxItem Content="Right Win" />
+            <ComboBoxItem Content="Caps Lock" /><ComboBoxItem Content="Ctrl + Alt" />
+        </ComboBox>
+        <TextBlock Text="Live transcription: Deepgram Nova-3" />
+        <ToggleSwitch Header="Post-filter dictated text" IsOn="False" />
+    </StackPanel>
+</UserControl>

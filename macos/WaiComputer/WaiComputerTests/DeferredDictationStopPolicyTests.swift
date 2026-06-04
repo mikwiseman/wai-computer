@@ -138,6 +138,53 @@ final class DeferredDictationStopPolicyTests: XCTestCase {
         )
     }
 
+    func testCleanupSpeculationBackfillsAlreadyAccumulatedPreviewOnReuse() {
+        XCTAssertEqual(
+            DictationCleanupSpeculationPreviewPolicy.visiblePreviewOnReuse(
+                storedPreview: "Cleaned text already streamed"
+            ),
+            "Cleaned text already streamed"
+        )
+    }
+
+    func testCleanupSpeculationUsesBlankPreviewWhenNoTokensHaveArrived() {
+        XCTAssertEqual(
+            DictationCleanupSpeculationPreviewPolicy.visiblePreviewOnReuse(storedPreview: nil),
+            ""
+        )
+    }
+
+    func testFinalizationContinuesOnlyWhenNotCancelled() {
+        XCTAssertTrue(
+            DictationFinalizationContinuationPolicy.shouldContinue(
+                state: .finalizing,
+                cancellationRequested: false,
+                taskCancelled: false
+            )
+        )
+        XCTAssertFalse(
+            DictationFinalizationContinuationPolicy.shouldContinue(
+                state: .finalizing,
+                cancellationRequested: true,
+                taskCancelled: false
+            )
+        )
+        XCTAssertFalse(
+            DictationFinalizationContinuationPolicy.shouldContinue(
+                state: .finalizing,
+                cancellationRequested: false,
+                taskCancelled: true
+            )
+        )
+        XCTAssertFalse(
+            DictationFinalizationContinuationPolicy.shouldContinue(
+                state: .idle,
+                cancellationRequested: false,
+                taskCancelled: false
+            )
+        )
+    }
+
     // MARK: - TextInsertionActivationPolicy
 
     func testInsertionSkipsActivationWaitWhenTargetAlreadyActive() {

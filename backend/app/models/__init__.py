@@ -2,7 +2,6 @@
 
 from app.models.admin import AdminAuditLog, AdminRole, StaffMember
 from app.models.agent import Agent, AgentRun, AgentStep
-from app.models.ai_usage import AiUsageEvent
 from app.models.api_key import ApiKey
 from app.models.base import Base
 from app.models.benchmark import DictationBenchmarkVote
@@ -31,10 +30,9 @@ from app.models.commitment import Commitment
 from app.models.companion import ChatMessage, Conversation, MessageCitation
 from app.models.companion_pending_action import CompanionPendingAction
 from app.models.comparison import ComparisonSet
-from app.models.deepgram_usage import DeepgramUsageEvent
 from app.models.device import Device
 from app.models.dictation import DictationDictionaryWord, DictationEntry
-from app.models.entity import Entity, EntityPageSnapshot, EntityRelation, RecordingTag, Tag
+from app.models.entity import Entity, EntityRelation, RecordingTag, Tag
 from app.models.highlight import Highlight
 from app.models.item import Item, ItemChunk, ItemSummary
 from app.models.mcp_connection import McpConnection, McpIngestionRun
@@ -114,7 +112,6 @@ __all__ = [
     "ItemChunk",
     "ItemSummary",
     "ComparisonSet",
-    "AiUsageEvent",
     "McpConnection",
     "McpIngestionRun",
     "MemoryProposal",
@@ -125,7 +122,6 @@ __all__ = [
     "PersonalizationImportJob",
     "PersonalizationTerm",
     "Entity",
-    "EntityPageSnapshot",
     "EntityRelation",
     "Tag",
     "RecordingTag",
@@ -140,7 +136,6 @@ __all__ = [
     "MessageCitation",
     "CompanionPendingAction",
     "Device",
-    "DeepgramUsageEvent",
     "DictationEntry",
     "DictationDictionaryWord",
     "McpOAuthClient",

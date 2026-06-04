@@ -9,23 +9,12 @@ shape it receives.
 
 import logging
 import re
-import time
 from dataclasses import dataclass
 from typing import Literal
-from uuid import UUID
 
 from pydantic import BaseModel, Field
 
 from app.config import get_settings
-from app.core.ai_usage import (
-    FEATURE_BRAIN,
-    FEATURE_MATERIALS,
-    FEATURE_RECORDING,
-    OPENAI_PROVIDER,
-    STATUS_FAILED,
-    STATUS_SUCCEEDED,
-    record_ai_usage_event_standalone,
-)
 from app.core.observability import (
     add_sentry_breadcrumb,
     capture_sentry_exception,
@@ -221,9 +210,6 @@ async def summarize_transcript(
     language: str = DEFAULT_SUMMARY_LANGUAGE,
     style: str = DEFAULT_SUMMARY_STYLE,
     instructions: str | None = None,
-    usage_user_id: UUID | str | None = None,
-    usage_recording_id: UUID | str | None = None,
-    usage_feature: str = FEATURE_RECORDING,
 ) -> SummaryResult:
     """Summarize a transcript via the OpenAI Responses API with structured outputs."""
     add_sentry_breadcrumb(
@@ -236,8 +222,6 @@ async def summarize_transcript(
 
     prompt = build_summary_prompt(language=language, style=style, instructions=instructions)
     client = get_openai_client()
-    started = time.perf_counter()
-    response = None
 
     try:
         response = await client.responses.parse(
@@ -249,42 +233,12 @@ async def summarize_transcript(
         )
         ensure_response_completed(response, operation="Summarization")
     except Exception as exc:  # noqa: BLE001 — capture for breadcrumbs then re-raise
-        await _record_openai_usage(
-            feature=usage_feature,
-            operation="summary.transcript",
-            status=STATUS_FAILED,
-            response=response,
-            started=started,
-            user_id=usage_user_id,
-            recording_id=usage_recording_id,
-            error=exc,
-        )
         capture_sentry_exception(exc)
         raise SummarizationError(f"Summarization failed: {exc}") from exc
 
     parsed = response.output_parsed
     if parsed is None:
-        await _record_openai_usage(
-            feature=usage_feature,
-            operation="summary.transcript",
-            status=STATUS_FAILED,
-            response=response,
-            started=started,
-            user_id=usage_user_id,
-            recording_id=usage_recording_id,
-            error=SummarizationError("OpenAI returned no parsed summary payload"),
-        )
         raise SummarizationError("OpenAI returned no parsed summary payload")
-
-    await _record_openai_usage(
-        feature=usage_feature,
-        operation="summary.transcript",
-        status=STATUS_SUCCEEDED,
-        response=response,
-        started=started,
-        user_id=usage_user_id,
-        recording_id=usage_recording_id,
-    )
 
     add_sentry_breadcrumb(category="summarizer", message="Summarization completed")
 
@@ -377,9 +331,6 @@ async def summarize_content(
     language: str = DEFAULT_SUMMARY_LANGUAGE,
     style: str = DEFAULT_SUMMARY_STYLE,
     instructions: str | None = None,
-    usage_user_id: UUID | str | None = None,
-    usage_item_id: UUID | str | None = None,
-    usage_feature: str = FEATURE_MATERIALS,
 ) -> SummaryResult:
     """Summarize any text content (article, note, transcript, ...).
 
@@ -399,8 +350,6 @@ async def summarize_content(
         content_kind=content_kind, language=language, style=style, instructions=instructions
     )
     client = get_openai_client()
-    started = time.perf_counter()
-    response = None
     try:
         response = await client.responses.parse(
             model=settings.openai_llm_model,
@@ -411,45 +360,12 @@ async def summarize_content(
         )
         ensure_response_completed(response, operation="Content summarization")
     except Exception as exc:  # noqa: BLE001 — capture for breadcrumbs then re-raise
-        await _record_openai_usage(
-            feature=usage_feature,
-            operation="summary.content",
-            status=STATUS_FAILED,
-            response=response,
-            started=started,
-            user_id=usage_user_id,
-            item_id=usage_item_id,
-            error=exc,
-            details={"source": content_kind},
-        )
         capture_sentry_exception(exc)
         raise SummarizationError(f"Content summarization failed: {exc}") from exc
 
     parsed = response.output_parsed
     if parsed is None:
-        await _record_openai_usage(
-            feature=usage_feature,
-            operation="summary.content",
-            status=STATUS_FAILED,
-            response=response,
-            started=started,
-            user_id=usage_user_id,
-            item_id=usage_item_id,
-            error=SummarizationError("OpenAI returned no parsed summary payload"),
-            details={"source": content_kind},
-        )
         raise SummarizationError("OpenAI returned no parsed summary payload")
-
-    await _record_openai_usage(
-        feature=usage_feature,
-        operation="summary.content",
-        status=STATUS_SUCCEEDED,
-        response=response,
-        started=started,
-        user_id=usage_user_id,
-        item_id=usage_item_id,
-        details={"source": content_kind},
-    )
 
     add_sentry_breadcrumb(category="summarizer", message="Content summarization completed")
     return SummaryResult(
@@ -483,9 +399,6 @@ async def extract_key_moments(
     text: str,
     *,
     language: str = DEFAULT_SUMMARY_LANGUAGE,
-    usage_user_id: UUID | str | None = None,
-    usage_item_id: UUID | str | None = None,
-    usage_feature: str = FEATURE_MATERIALS,
 ) -> list[KeyMoment]:
     """Extract a scannable key-moments table from any content via OpenAI.
 
@@ -508,8 +421,6 @@ async def extract_key_moments(
         else "\nWrite all text in the dominant language of the content."
     )
     client = get_openai_client()
-    started = time.perf_counter()
-    response = None
     try:
         response = await client.responses.parse(
             model=settings.openai_llm_model,
@@ -520,42 +431,12 @@ async def extract_key_moments(
         )
         ensure_response_completed(response, operation="Key moments extraction")
     except Exception as exc:  # noqa: BLE001 — capture for breadcrumbs then re-raise
-        await _record_openai_usage(
-            feature=usage_feature,
-            operation="summary.key_moments",
-            status=STATUS_FAILED,
-            response=response,
-            started=started,
-            user_id=usage_user_id,
-            item_id=usage_item_id,
-            error=exc,
-        )
         capture_sentry_exception(exc)
         raise SummarizationError(f"Key moments extraction failed: {exc}") from exc
 
     parsed = response.output_parsed
     if parsed is None:
-        await _record_openai_usage(
-            feature=usage_feature,
-            operation="summary.key_moments",
-            status=STATUS_FAILED,
-            response=response,
-            started=started,
-            user_id=usage_user_id,
-            item_id=usage_item_id,
-            error=SummarizationError("OpenAI returned no parsed key-moments payload"),
-        )
         raise SummarizationError("OpenAI returned no parsed key-moments payload")
-
-    await _record_openai_usage(
-        feature=usage_feature,
-        operation="summary.key_moments",
-        status=STATUS_SUCCEEDED,
-        response=response,
-        started=started,
-        user_id=usage_user_id,
-        item_id=usage_item_id,
-    )
 
     return [
         KeyMoment(
@@ -606,9 +487,6 @@ async def generate_title(
     transcript: str,
     *,
     language: str = DEFAULT_SUMMARY_LANGUAGE,
-    usage_user_id: UUID | str | None = None,
-    usage_recording_id: UUID | str | None = None,
-    usage_feature: str = FEATURE_RECORDING,
 ) -> str:
     """Generate a short descriptive title from transcript text via OpenAI."""
     add_sentry_breadcrumb(category="summarizer", message="Generating title")
@@ -626,58 +504,24 @@ async def generate_title(
         )
     )
     client = get_openai_client()
-    started = time.perf_counter()
-    response = None
+    response = await client.responses.create(
+        model=settings.openai_llm_model,
+        input=(
+            "Generate a short title (3-7 words) for this audio recording based on "
+            "its transcript. Return ONLY the plain title text — no markdown "
+            "formatting (no **bold**, no *italics*, no asterisks, no quotes, no #), "
+            f"nothing else. {language_instruction}\n\n"
+            f"Transcript:\n{snippet}"
+        ),
+        reasoning={"effort": "low"},
+        max_output_tokens=256,
+    )
     try:
-        response = await client.responses.create(
-            model=settings.openai_llm_model,
-            input=(
-                "Generate a short title (3-7 words) for this audio recording based on "
-                "its transcript. Return ONLY the plain title text — no markdown "
-                "formatting (no **bold**, no *italics*, no asterisks, no quotes, no #), "
-                f"nothing else. {language_instruction}\n\n"
-                f"Transcript:\n{snippet}"
-            ),
-            reasoning={"effort": "low"},
-            max_output_tokens=256,
-        )
         ensure_response_completed(response, operation="Title generation")
-        title = response_output_text(response)
-        await _record_openai_usage(
-            feature=usage_feature,
-            operation="title.generate",
-            status=STATUS_SUCCEEDED,
-            response=response,
-            started=started,
-            user_id=usage_user_id,
-            recording_id=usage_recording_id,
-        )
-        return title
+        return response_output_text(response)
     except OpenAIResponseError as exc:
-        await _record_openai_usage(
-            feature=usage_feature,
-            operation="title.generate",
-            status=STATUS_FAILED,
-            response=response,
-            started=started,
-            user_id=usage_user_id,
-            recording_id=usage_recording_id,
-            error=exc,
-        )
         capture_sentry_exception(exc)
         raise SummarizationError(f"Title generation failed: {exc}") from exc
-    except Exception as exc:
-        await _record_openai_usage(
-            feature=usage_feature,
-            operation="title.generate",
-            status=STATUS_FAILED,
-            response=response,
-            started=started,
-            user_id=usage_user_id,
-            recording_id=usage_recording_id,
-            error=exc,
-        )
-        raise
 
 
 def resolve_highlight_timestamps(
@@ -741,13 +585,7 @@ class EntityResult:
     relations: list[dict]
 
 
-async def extract_entities(
-    transcript: str,
-    *,
-    usage_user_id: UUID | str | None = None,
-    usage_recording_id: UUID | str | None = None,
-    usage_feature: str = FEATURE_BRAIN,
-) -> list[EntityResult]:
+async def extract_entities(transcript: str) -> list[EntityResult]:
     """Extract entities from a transcript via OpenAI with structured outputs."""
     add_sentry_breadcrumb(
         category="summarizer",
@@ -758,8 +596,6 @@ async def extract_entities(
         raise ValueError("OPENAI_API_KEY not configured")
 
     client = get_openai_client()
-    started = time.perf_counter()
-    response = None
 
     try:
         response = await client.responses.parse(
@@ -771,42 +607,12 @@ async def extract_entities(
         )
         ensure_response_completed(response, operation="Entity extraction")
     except Exception as exc:  # noqa: BLE001 — capture for breadcrumbs then re-raise
-        await _record_openai_usage(
-            feature=usage_feature,
-            operation="brain.entity_extraction",
-            status=STATUS_FAILED,
-            response=response,
-            started=started,
-            user_id=usage_user_id,
-            recording_id=usage_recording_id,
-            error=exc,
-        )
         capture_sentry_exception(exc)
         raise SummarizationError(f"Entity extraction failed: {exc}") from exc
 
     parsed = response.output_parsed
     if parsed is None:
-        await _record_openai_usage(
-            feature=usage_feature,
-            operation="brain.entity_extraction",
-            status=STATUS_FAILED,
-            response=response,
-            started=started,
-            user_id=usage_user_id,
-            recording_id=usage_recording_id,
-            error=SummarizationError("OpenAI returned no parsed entity payload"),
-        )
         raise SummarizationError("OpenAI returned no parsed entity payload")
-
-    await _record_openai_usage(
-        feature=usage_feature,
-        operation="brain.entity_extraction",
-        status=STATUS_SUCCEEDED,
-        response=response,
-        started=started,
-        user_id=usage_user_id,
-        recording_id=usage_recording_id,
-    )
 
     return [
         EntityResult(
@@ -817,32 +623,3 @@ async def extract_entities(
         )
         for entity in parsed.entities
     ]
-
-
-async def _record_openai_usage(
-    *,
-    feature: str,
-    operation: str,
-    status: str,
-    response: object | None,
-    started: float,
-    user_id: UUID | str | None = None,
-    recording_id: UUID | str | None = None,
-    item_id: UUID | str | None = None,
-    error: Exception | None = None,
-    details: dict | None = None,
-) -> None:
-    await record_ai_usage_event_standalone(
-        provider=OPENAI_PROVIDER,
-        feature=feature,
-        operation=operation,
-        status=status,
-        user_id=user_id,
-        recording_id=recording_id,
-        item_id=item_id,
-        model=settings.openai_llm_model,
-        response=response,
-        latency_ms=round((time.perf_counter() - started) * 1000),
-        error_type=type(error).__name__ if error is not None else None,
-        details=details,
-    )

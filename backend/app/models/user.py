@@ -90,7 +90,6 @@ class User(Base, UUIDMixin, TimestampMixin):
         String(20),
         default="light",
         server_default="light",
-        nullable=False,
     )
     dictation_post_filter_provider: Mapped[str] = mapped_column(
         String(40),

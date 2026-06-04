@@ -184,6 +184,7 @@ final class UserEntityDictationModelsTests: XCTestCase {
         let s = try decoder.decode(UserSettings.self, from: json)
         XCTAssertNil(s.summaryInstructions)
         XCTAssertFalse(s.dictationPostFilterEnabled)
+        XCTAssertEqual(s.dictationCleanupLevel, "none")
     }
 
     // MARK: - UpdateSettingsRequest
@@ -194,20 +195,17 @@ final class UserEntityDictationModelsTests: XCTestCase {
         let decoded = try decoder.decode(UpdateSettingsRequest.self, from: data)
         XCTAssertNil(decoded.defaultLanguage)
         XCTAssertNil(decoded.dictationPostFilterEnabled)
-        XCTAssertNil(decoded.dictationCleanupLevel)
     }
 
     func testUpdateSettingsRequestPartial() throws {
         let req = UpdateSettingsRequest(
             defaultLanguage: "de",
-            dictationPostFilterEnabled: true,
-            dictationCleanupLevel: "light"
+            dictationPostFilterEnabled: true
         )
         let data = try encoder.encode(req)
         let json = try XCTUnwrap(String(data: data, encoding: .utf8))
         XCTAssertTrue(json.contains("\"default_language\":\"de\""))
         XCTAssertTrue(json.contains("\"dictation_post_filter_enabled\":true"))
-        XCTAssertTrue(json.contains("\"dictation_cleanup_level\":\"light\""))
     }
 
     // MARK: - TranscriptionModelOption + Options

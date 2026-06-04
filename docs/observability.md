@@ -42,17 +42,17 @@ privacy-safe business failures should become Sentry events.
 
 All WaiComputer surfaces must point at WaiComputer Sentry projects in the `waiwai-diy` organization, not the older `waisay-*` projects.
 
-| Surface | Sentry project |
-| --- | --- |
-| Backend API and worker | `waicomputer-backend` |
-| Web | `waicomputer-web` |
-| iOS | `waicomputer-ios` |
-| macOS | `waicomputer-macos` |
-| Android | `waicomputer-android` |
+| Surface | Sentry project | Project ID |
+| --- | --- | --- |
+| Backend API and worker | `waicomputer-backend` | `4511116051873792` |
+| Web | `waicomputer-web` | `4511421057466368` |
+| iOS | `waicomputer-ios` | `4511116052070400` |
+| macOS | `waicomputer-macos` | `4511116051939328` |
+| Android | `waicomputer-android` | `4511455343214592` |
+| Windows | `waicomputer-windows` | `4511421057335296` |
+| Linux | `waicomputer-linux` | `4511455343738880` |
 
-Production backend env must contain `SENTRY_DSN`. Production builds also
-require `SENTRY_AUTH_TOKEN` so web source maps and native debug files are
-uploaded during release.
+Production backend env must contain `SENTRY_DSN=<backend DSN ending in /4511116051873792>`. Production builds also require `SENTRY_AUTH_TOKEN` so web source maps and native debug files are uploaded during release.
 
 Current alert codes:
 
@@ -104,7 +104,7 @@ Create or verify these rules in every production Sentry project:
 - Dictation latency: `alert_code:dictation.first_token.slow OR alert_code:dictation.total_latency.slow environment:production`
 - Realtime session mint failures: `alert_code:realtime.session_mint.failed environment:production`
 - Companion/search latency: `alert_code:companion.turn.slow OR alert_code:search.query.slow environment:production`
-- Native crash-free sessions below target for macOS, iOS, and Android when those projects are active.
+- Native crash-free sessions below target for macOS, iOS, Android, Windows when those projects are active.
 
 Notification target should be a team channel first. Page only on critical recording ingestion or sustained API errors.
 
@@ -138,9 +138,9 @@ Backend logs are JSON lines with these fields:
 Useful commands:
 
 ```bash
-ssh "$VPS_USER@$VPS_HOST" "cd $REMOTE_ROOT/backend && docker compose --env-file $REMOTE_ENV_FILE logs --tail=200 api"
-ssh "$VPS_USER@$VPS_HOST" "cd $REMOTE_ROOT/backend && docker compose --env-file $REMOTE_ENV_FILE ps"
-scripts/check-prod-observability.sh
+ssh root@157.180.47.68 'cd /opt/waicomputer/backend && docker compose --env-file /etc/waicomputer/backend.env logs --tail=200 api'
+ssh root@157.180.47.68 'cd /opt/waicomputer/backend && docker compose --env-file /etc/waicomputer/backend.env ps'
+VPS_USER=root scripts/check-prod-observability.sh
 ```
 
 ## Incident Triage

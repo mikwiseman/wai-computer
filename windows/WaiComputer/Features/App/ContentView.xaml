@@ -1,0 +1,26 @@
+<UserControl
+    x:Class="WaiComputer.Features.App.ContentView"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:lib="using:WaiComputer.Features.Library"
+    xmlns:rec="using:WaiComputer.Features.Recording"
+    xmlns:set="using:WaiComputer.Features.Settings"
+    xmlns:search="using:WaiComputer.Features.Search"
+    xmlns:dict="using:WaiComputer.Features.Dictation"
+    xmlns:comp="using:WaiComputer.Features.Companion">
+    <NavigationView x:Name="Nav"
+                    PaneDisplayMode="Left"
+                    IsBackButtonVisible="Collapsed"
+                    IsSettingsVisible="True"
+                    SelectionChanged="OnNavigationSelectionChanged">
+        <NavigationView.MenuItems>
+            <NavigationViewItem Tag="all" Content="All recordings" Icon="Library" />
+            <NavigationViewItem Tag="meetings" Content="Meetings" Icon="Microphone" />
+            <NavigationViewItem Tag="notes" Content="Notes" Icon="Edit" />
+            <NavigationViewItem Tag="search" Content="Search" Icon="Find" />
+            <NavigationViewItem Tag="companion" Content="Companion" Icon="Comment" />
+            <NavigationViewItem Tag="dictation" Content="Dictation" Icon="Keyboard" />
+        </NavigationView.MenuItems>
+        <Frame x:Name="ContentFrame" />
+    </NavigationView>
+</UserControl>

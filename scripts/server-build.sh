@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Build and restart WaiComputer production services on the release server.
+# Build and restart WaiComputer production services on the VPS.
 #
 # This script is intended to run on the production server after source has been
-# synced to the private deploy root. It keeps all Docker image builds on the
-# server and uses the private production runtime env file.
+# synced to /opt/waicomputer. It keeps all Docker image builds on the server and
+# uses /etc/waicomputer/backend.env as the only production runtime env file.
 set -euo pipefail
 
 DEPLOY_LOCK_FILE="${DEPLOY_LOCK_FILE:-/var/lock/waicomputer-deploy.lock}"
@@ -11,8 +11,8 @@ if [[ "${WAICOMPUTER_DEPLOY_LOCK_HELD:-0}" != "1" ]]; then
   exec flock -n "$DEPLOY_LOCK_FILE" env WAICOMPUTER_DEPLOY_LOCK_HELD=1 bash "$0" "$@"
 fi
 
-PROD_ROOT="${PROD_ROOT:-}"
-PROD_ENV_FILE="${PROD_ENV_FILE:-}"
+PROD_ROOT="${PROD_ROOT:-/opt/waicomputer}"
+PROD_ENV_FILE="${PROD_ENV_FILE:-/etc/waicomputer/backend.env}"
 PROD_ENV_DIR=$(dirname "$PROD_ENV_FILE")
 LEGACY_ENV_FILE=""
 GIT_SHA="${GIT_SHA:-}"
@@ -22,14 +22,6 @@ MIN_FREE_DISK_MB="${MIN_FREE_DISK_MB:-4096}"
 
 if [[ -z "$GIT_SHA" ]]; then
   echo "ERROR: GIT_SHA is required for production builds" >&2
-  exit 1
-fi
-if [[ -z "$PROD_ROOT" ]]; then
-  echo "ERROR: PROD_ROOT is required for production builds" >&2
-  exit 1
-fi
-if [[ -z "$PROD_ENV_FILE" ]]; then
-  echo "ERROR: PROD_ENV_FILE is required for production builds" >&2
   exit 1
 fi
 export GIT_SHA GIT_DIRTY
@@ -125,8 +117,6 @@ require_env_key ELEVENLABS_API_KEY
 require_env_key AUTH_COOKIE_DOMAIN
 require_env_key SENTRY_DSN
 require_env_key SENTRY_AUTH_TOKEN
-require_env_key TELEGRAM_API_ID
-require_env_key TELEGRAM_API_HASH
 
 cd "$PROD_ROOT/backend"
 export WAICOMPUTER_ENV_FILE="$PROD_ENV_FILE"

@@ -18,7 +18,6 @@ function makeSettings(overrides?: Partial<UserSettings>): UserSettings {
     file_stt_provider: "deepgram",
     file_stt_model: "nova-3",
     dictation_post_filter_enabled: true,
-    dictation_cleanup_level: "light",
     dictation_post_filter_provider: "openai",
     dictation_post_filter_model: "gpt-4o-mini",
     ...overrides,

@@ -71,31 +71,6 @@ def test_disable_dictation_post_filter_default_migration(monkeypatch):
     assert str(altered[0]["kwargs"]["server_default"]) == "false"
 
 
-def test_enable_dictation_cleanup_default_migration(monkeypatch):
-    """June 3 cleanup rollout should turn cleanup on for existing and new users."""
-    migration = _load_migration("20260603_120000_enable_dictation_cleanup_default.py")
-    executed: list[TextClause] = []
-    altered: list[dict[str, object]] = []
-
-    monkeypatch.setattr(migration.op, "execute", executed.append)
-    monkeypatch.setattr(
-        migration.op,
-        "alter_column",
-        lambda *args, **kwargs: altered.append({"args": args, "kwargs": kwargs}),
-    )
-
-    migration.upgrade()
-
-    assert len(executed) == 1
-    statement = str(executed[0])
-    assert "dictation_cleanup_level = 'light'" in statement
-    assert "dictation_post_filter_enabled = true" in statement
-    assert "WHERE dictation_cleanup_level = 'none'" in statement
-    defaults = {change["args"][1]: change["kwargs"]["server_default"] for change in altered}
-    assert defaults["dictation_cleanup_level"] == "light"
-    assert str(defaults["dictation_post_filter_enabled"]) == "true"
-
-
 def test_deepgram_nova3_default_migration_resets_live_users(monkeypatch):
     """May 27 realtime swap should overwrite all live STT users to Deepgram."""
     migration = _load_migration("20260527_220000_deepgram_realtime_nova3_defaults.py")

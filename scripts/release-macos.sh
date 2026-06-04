@@ -42,11 +42,34 @@ fi
 
 # Fail FAST on the missing-Sentry-token case. dSYM upload happens AFTER the
 # 5-10 min xcodebuild archive completes, so a missing token used to surface
-# only after the build had already burned 5+ minutes.
+# only after the build had already burned 5+ minutes — and worse, would
+# leave a notarized DMG without the appcast updated, so the release looked
+# successful but users never got the update. Try to self-load from
+# 1Password when the env var is empty AND `op` is available; otherwise
+# fail upfront with a copy-pasteable command.
 if [[ -z "${SENTRY_AUTH_TOKEN:-}" ]]; then
-  echo "ERROR: SENTRY_AUTH_TOKEN is required for the macOS release dSYM upload." >&2
-  echo "       Export it from the private secret store before running this script." >&2
-  exit 1
+  if command -v op >/dev/null 2>&1; then
+    echo "SENTRY_AUTH_TOKEN not set — attempting 1Password self-load…"
+    if SENTRY_AUTH_TOKEN_LOADED=$(op read "op://Development/Sentry WaiComputer/password" 2>/dev/null) \
+       && [[ -n "$SENTRY_AUTH_TOKEN_LOADED" ]]; then
+      export SENTRY_AUTH_TOKEN="$SENTRY_AUTH_TOKEN_LOADED"
+      unset SENTRY_AUTH_TOKEN_LOADED
+      echo "✓ Loaded SENTRY_AUTH_TOKEN from 1Password (op://Development/Sentry WaiComputer)"
+    fi
+  fi
+  if [[ -z "${SENTRY_AUTH_TOKEN:-}" ]]; then
+    echo "ERROR: SENTRY_AUTH_TOKEN is required for the macOS release dSYM upload." >&2
+    echo "       Without it, xcodebuild + notarization will succeed but" >&2
+    echo "       sentry-upload-debug-files.sh will fail mid-pipeline AFTER" >&2
+    echo "       ~5 minutes of compile time, and the appcast will NOT be updated." >&2
+    echo "" >&2
+    echo "       Set it before running this script:" >&2
+    echo "" >&2
+    echo "         export SENTRY_AUTH_TOKEN=\$(op read 'op://Development/Sentry WaiComputer/password')" >&2
+    echo "         VPS_USER=root scripts/release-macos.sh $CHANNEL" >&2
+    echo "" >&2
+    exit 1
+  fi
 fi
 
 VARIANTS=("global" "ru")

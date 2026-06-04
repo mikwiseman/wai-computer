@@ -12,11 +12,13 @@ The auth token is Fernet-encrypted at rest and never returned in any response.
 
 from __future__ import annotations
 
+import ipaddress
 from datetime import datetime, timezone
+from urllib.parse import urlparse
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Query, Response, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import select
 
 from app.api.deps import CurrentUser, Database
@@ -24,6 +26,10 @@ from app.core.secrets_crypto import encrypt_secret
 from app.models.mcp_connection import McpConnection
 
 router = APIRouter(prefix="/mcp-connections", tags=["mcp-connections"])
+
+VALID_MCP_TRANSPORTS = {"streamable_http"}
+VALID_MCP_AUTH_TYPES = {"none", "pat", "oauth"}
+LOCAL_HOSTNAMES = {"localhost", "localhost.localdomain"}
 
 
 class CreateConnectionRequest(BaseModel):
@@ -34,6 +40,26 @@ class CreateConnectionRequest(BaseModel):
     auth_token: str | None = None  # PAT or OAuth access token (write-only)
     sync_interval_minutes: int = Field(default=60, ge=5, le=1440)
     privacy_level: str = Field(default="internal", max_length=20)
+
+    @field_validator("transport")
+    @classmethod
+    def validate_transport(cls, value: str) -> str:
+        normalized = value.strip().lower()
+        if normalized not in VALID_MCP_TRANSPORTS:
+            raise ValueError(
+                f"transport must be one of: {', '.join(sorted(VALID_MCP_TRANSPORTS))}"
+            )
+        return normalized
+
+    @field_validator("auth_type")
+    @classmethod
+    def validate_auth_type(cls, value: str) -> str:
+        normalized = value.strip().lower()
+        if normalized not in VALID_MCP_AUTH_TYPES:
+            raise ValueError(
+                f"auth_type must be one of: {', '.join(sorted(VALID_MCP_AUTH_TYPES))}"
+            )
+        return normalized
 
 
 class UpdateConnectionRequest(BaseModel):
@@ -94,6 +120,44 @@ async def _get_owned(db, user, connection_id: UUID) -> McpConnection:
     return conn
 
 
+def _validate_safe_mcp_server_url(server_url: str) -> str:
+    value = server_url.strip()
+    parsed = urlparse(value)
+    if parsed.scheme != "https" or not parsed.hostname:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="MCP server_url must be an HTTPS URL.",
+        )
+    if parsed.username or parsed.password:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="MCP server_url must not include credentials.",
+        )
+    hostname = parsed.hostname.strip().lower()
+    if hostname in LOCAL_HOSTNAMES or hostname.endswith(".localhost"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="MCP server_url must not target local hosts.",
+        )
+    try:
+        ip = ipaddress.ip_address(hostname)
+    except ValueError:
+        return value
+    if (
+        ip.is_loopback
+        or ip.is_link_local
+        or ip.is_private
+        or ip.is_reserved
+        or ip.is_unspecified
+        or ip.is_multicast
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="MCP server_url must not target private or local networks.",
+        )
+    return value
+
+
 @router.post("", response_model=ConnectionResponse, status_code=status.HTTP_201_CREATED)
 async def create_connection(
     request: CreateConnectionRequest,
@@ -101,6 +165,7 @@ async def create_connection(
     db: Database,
 ) -> ConnectionResponse:
     """Connect a third-party MCP server. Token is encrypted; server introspected."""
+    server_url = _validate_safe_mcp_server_url(request.server_url)
     if request.auth_type != "none" and not (request.auth_token or "").strip():
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -111,7 +176,7 @@ async def create_connection(
         await db.execute(
             select(McpConnection).where(
                 McpConnection.user_id == user.id,
-                McpConnection.server_url == request.server_url,
+                McpConnection.server_url == server_url,
             )
         )
     ).scalar_one_or_none()
@@ -121,10 +186,21 @@ async def create_connection(
             detail="That server is already connected.",
         )
 
+    try:
+        from app.core.mcp_client import McpClient
+
+        token = request.auth_token if request.auth_type != "none" else None
+        intro = await McpClient(server_url, token).introspect()
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="MCP server introspection failed.",
+        ) from exc
+
     conn = McpConnection(
         user_id=user.id,
         server_label=request.server_label,
-        server_url=request.server_url,
+        server_url=server_url,
         transport=request.transport,
         auth_type=request.auth_type,
         auth_secret_encrypted=(
@@ -137,29 +213,13 @@ async def create_connection(
         enabled=True,
         next_sync_at=datetime.now(timezone.utc),  # sync ASAP on next beat
     )
+    conn.capabilities = {
+        "tools": intro.tools,
+        "resource_count": len(intro.resources),
+    }
+    conn.allowed_tools = []  # default: no tools allowed (resources-only)
     db.add(conn)
     await db.flush()
-
-    # Best-effort introspection so the UI can show what the server offers.
-    try:
-        from app.core.mcp_client import McpClient
-        from app.core.secrets_crypto import decrypt_secret
-
-        token = (
-            decrypt_secret(conn.auth_secret_encrypted)
-            if conn.auth_secret_encrypted
-            else None
-        )
-        intro = await McpClient(conn.server_url, token).introspect()
-        conn.capabilities = {
-            "tools": intro.tools,
-            "resource_count": len(intro.resources),
-        }
-        conn.allowed_tools = []  # default: no tools allowed (resources-only)
-        await db.flush()
-    except Exception:  # noqa: BLE001 — connection is saved; introspection can retry on sync
-        conn.last_error = "introspection_pending"
-        await db.flush()
 
     return _response(conn)
 
@@ -220,8 +280,11 @@ async def sync_now(
         from app.tasks.mcp_sync import sync_mcp_connection
 
         sync_mcp_connection.delay(connection_id=str(conn.id))
-    except Exception:  # noqa: BLE001 — broker optional
-        pass
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Could not enqueue MCP sync.",
+        ) from exc
     return {"status": "queued", "connection_id": str(conn.id)}
 
 

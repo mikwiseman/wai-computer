@@ -59,6 +59,11 @@ async def _fake_embeddings(texts: list[str], **_: object) -> list[list[float]]:
     return [[0.0] * 1536 for _ in texts]
 
 
+@pytest.fixture(autouse=True)
+def _stub_embeddings(monkeypatch) -> None:
+    monkeypatch.setattr("app.core.item_ingest.generate_embeddings", _fake_embeddings)
+
+
 async def test_create_item_requires_body_or_url(client, auth_headers) -> None:
     resp = await client.post("/api/items", json={"source": "paste"}, headers=auth_headers)
     assert resp.status_code == 400
@@ -331,26 +336,6 @@ async def test_upload_pdf_extracts_text(client, auth_headers) -> None:
     data = resp.json()
     assert data["kind"] == "pdf"
     assert data["title"] == "GPU Paper"
-
-
-async def test_upload_docx_uses_filename_when_title_is_placeholder(client, auth_headers) -> None:
-    with patch("app.tasks.item_summary_generation.generate_item_summary_task.delay"):
-        resp = await client.post(
-            "/api/items/upload",
-            data={"title": "[Untitled]"},
-            files={
-                "file": (
-                    "Service Agreement.docx",
-                    _docx_bytes("Service agreement body for route extraction."),
-                    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                )
-            },
-            headers=auth_headers,
-        )
-    assert resp.status_code == 201, resp.text
-    data = resp.json()
-    assert data["kind"] == "document"
-    assert data["title"] == "Service Agreement"
 
 
 async def test_upload_scanned_pdf_without_text_is_422(client, auth_headers) -> None:

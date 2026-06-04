@@ -9,7 +9,7 @@ import Foundation
 /// side-effect that matches the returned plan and surfaces any failure (no
 /// silent tier fallback).
 public enum DesktopExecutionPlan: Sendable, Equatable {
-    /// Tier A — open a URL (mailto/compose/https/file) with `NSWorkspace.open`.
+    /// Tier A — open a URL (mailto/compose/https) with `NSWorkspace.open`.
     case openURL(URL)
     /// Tier A — launch an app by name with `NSWorkspace`.
     case openApp(name: String)
@@ -32,11 +32,11 @@ public struct DesktopActionRouter: Sendable {
     public let safety: DesktopSafetyPolicy
     public let allowedURLSchemes: Set<String>
 
-    /// Tier-A deterministic surface: a Gmail/compose `mailto:`, a web URL, or a
-    /// local `file:`. Anything else (e.g. `javascript:`) is refused — opening it
-    /// is neither low-risk nor deterministic.
+    /// Tier-A deterministic surface: a Gmail/compose `mailto:` or a web URL.
+    /// Anything else (e.g. `javascript:` or local `file:`) is refused — opening
+    /// it is neither low-risk nor deterministic without a narrower policy.
     public static let defaultAllowedURLSchemes: Set<String> = [
-        "mailto", "http", "https", "file",
+        "mailto", "http", "https",
     ]
 
     public init(

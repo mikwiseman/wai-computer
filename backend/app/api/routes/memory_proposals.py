@@ -8,7 +8,6 @@ memory) or rejects (durable "no") with one tap.
 from __future__ import annotations
 
 import uuid
-from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel
@@ -33,7 +32,7 @@ class MemoryProposalResponse(BaseModel):
     summary: str
     confidence: float
     authority: str
-    evidence: list[Any] | None
+    evidence: list | None
     status: str
     decision_reason: str | None
     created_at: str | None

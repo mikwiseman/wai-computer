@@ -104,9 +104,6 @@ struct SettingsView: View {
                 // Dictation data (history + dictionary). Server-synced; the
                 // screens have meaning even before an iOS dictation pipeline.
                 Section(t("Dictation", "Диктовка")) {
-                    NavigationLink(destination: DictationCleanupSettingsView()) {
-                        Label(t("Cleanup Level", "Уровень очистки"), systemImage: "wand.and.stars")
-                    }
                     NavigationLink(destination: historyScreen) {
                         Label(t("History", "История"), systemImage: "clock.arrow.circlepath")
                     }
@@ -357,107 +354,6 @@ struct SettingsView: View {
     }
 }
 
-struct DictationCleanupSettingsView: View {
-    @EnvironmentObject var appState: AppState
-    @EnvironmentObject var languageManager: LanguageManager
-    @State private var cleanupLevel = "none"
-    @State private var settingsLoaded = false
-    @State private var settingsError: String?
-
-    private var cleanupOptions: [(label: String, value: String)] {
-        [
-            (t("None", "Нет"), "none"),
-            (t("Light", "Лёгкая"), "light"),
-            (t("Medium", "Средняя"), "medium"),
-            (t("High", "Сильная"), "high"),
-        ]
-    }
-
-    var body: some View {
-        List {
-            Section {
-                Picker(t("Cleanup level", "Уровень очистки"), selection: $cleanupLevel) {
-                    ForEach(cleanupOptions, id: \.value) { option in
-                        Text(option.label).tag(option.value)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .onChange(of: cleanupLevel) { _, level in
-                    guard settingsLoaded else { return }
-                    Task { await saveCleanupLevel(level) }
-                }
-
-                Text(cleanupDescription(cleanupLevel))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            } footer: {
-                Text(t(
-                    "Applies to future dictated text before insertion. Your original dictation stays in history.",
-                    "Применяется к будущей диктовке перед вставкой. Исходный текст остаётся в истории."
-                ))
-            }
-
-            if let settingsError {
-                Section {
-                    Text(settingsError)
-                        .font(.caption)
-                        .foregroundStyle(.red)
-                }
-            }
-        }
-        .navigationTitle(t("Cleanup Level", "Уровень очистки"))
-        .navigationBarTitleDisplayMode(.inline)
-        .task { await loadSettings() }
-    }
-
-    private func loadSettings() async {
-        guard !settingsLoaded else { return }
-        do {
-            let settings = try await appState.getAPIClient().getSettings()
-            cleanupLevel = settings.dictationCleanupLevel
-            settingsError = nil
-            settingsLoaded = true
-        } catch {
-            settingsError = t(
-                "Couldn't load account settings: \(error.localizedDescription)",
-                "Не удалось загрузить настройки аккаунта: \(error.localizedDescription)"
-            )
-        }
-    }
-
-    private func saveCleanupLevel(_ level: String) async {
-        do {
-            let settings = try await appState.getAPIClient().updateSettings(
-                UpdateSettingsRequest(dictationCleanupLevel: level)
-            )
-            cleanupLevel = settings.dictationCleanupLevel
-            settingsError = nil
-        } catch {
-            settingsError = t(
-                "Couldn't save account settings: \(error.localizedDescription)",
-                "Не удалось сохранить настройки аккаунта: \(error.localizedDescription)"
-            )
-        }
-    }
-
-    private func cleanupDescription(_ level: String) -> String {
-        switch level {
-        case "light":
-            return t("Removes filler words and fixes grammar.", "Убирает слова-паразиты и правит грамматику.")
-        case "medium":
-            return t("Edits for clarity and conciseness.", "Делает текст яснее и короче.")
-        case "high":
-            return t("Rewrites for brevity and polish.", "Переписывает текст кратко и гладко.")
-        default:
-            return t("No AI cleanup. Inserts text after dictionary replacements.", "Без AI-очистки. Вставляет текст после замен из словаря.")
-        }
-    }
-
-    private func t(_ english: String, _ russian: String) -> String {
-        OnboardingL10n.text(english, russian, language: languageManager.current)
-    }
-}
-
 // Placeholder views for settings sub-screens
 struct AudioSettingsView: View {
     @AppStorage("audioSampleRate") private var sampleRate = 16000
@@ -487,7 +383,7 @@ struct TranscriptionSettingsView: View {
     @AppStorage("enableDiarization") private var enableDiarization = true
     @State private var settingsLoaded = false
     @State private var settingsError: String?
-    @State private var dictationCleanupLevel = "none"
+    @State private var dictationPostFilterEnabled = true
 
     private let languageOptions: [(label: String, value: String)] = [
         ("Auto-detect (Multi-language)", "multi"),
@@ -513,17 +409,11 @@ struct TranscriptionSettingsView: View {
                 Toggle("Speaker Diarization", isOn: $enableDiarization)
             }
 
-            Section("Dictation cleanup") {
-                Picker("Cleanup level", selection: $dictationCleanupLevel) {
-                    Text("None").tag("none")
-                    Text("Light").tag("light")
-                    Text("Medium").tag("medium")
-                    Text("High").tag("high")
-                }
-                .pickerStyle(.segmented)
-                    .onChange(of: dictationCleanupLevel) { _, level in
+            Section("Dictation post-filter") {
+                Toggle("Enabled", isOn: $dictationPostFilterEnabled)
+                    .onChange(of: dictationPostFilterEnabled) { _, enabled in
                         guard settingsLoaded else { return }
-                        Task { await saveDictationCleanupLevel(level) }
+                        Task { await saveDictationPostFilterEnabled(enabled) }
                     }
 
                 if let settingsError {
@@ -540,7 +430,7 @@ struct TranscriptionSettingsView: View {
     }
 
     private func applySettings(_ settings: UserSettings) {
-        dictationCleanupLevel = settings.dictationCleanupLevel
+        dictationPostFilterEnabled = settings.dictationPostFilterEnabled
     }
 
     private func loadSettings() async {
@@ -556,8 +446,8 @@ struct TranscriptionSettingsView: View {
         }
     }
 
-    private func saveDictationCleanupLevel(_ level: String) async {
-        await saveTranscriptionSettings(UpdateSettingsRequest(dictationCleanupLevel: level))
+    private func saveDictationPostFilterEnabled(_ enabled: Bool) async {
+        await saveTranscriptionSettings(UpdateSettingsRequest(dictationPostFilterEnabled: enabled))
     }
 
     private func saveTranscriptionSettings(_ request: UpdateSettingsRequest) async {

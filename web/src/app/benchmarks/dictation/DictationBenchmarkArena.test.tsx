@@ -34,11 +34,8 @@ class FakeMediaRecorder {
     if (options?.mimeType) {
       this.mimeType = options.mimeType;
     }
-    FakeMediaRecorder.remember(this);
-  }
-
-  private static remember(recorder: FakeMediaRecorder) {
-    lastRecorder = recorder;
+    // eslint-disable-next-line @typescript-eslint/no-this-alias -- test double exposes the active recorder instance.
+    lastRecorder = this;
   }
 
   start() {

@@ -184,12 +184,6 @@ AUTH_COOKIE_DOMAIN=wai.computer
 TELEGRAM_BOT_TOKEN=your-telegram-bot-token
 TELEGRAM_BOT_USERNAME=waicomputer_bot
 TELEGRAM_WEBHOOK_SECRET_TOKEN=your-random-webhook-secret
-TELEGRAM_BOT_API_BASE_URL=http://telegram-bot-api:8081
-TELEGRAM_FILE_BASE_URL=http://telegram-bot-api:8081/file
-TELEGRAM_LOCAL_FILE_ROOT=/var/lib/telegram-bot-api
-TELEGRAM_DOWNLOAD_MAX_BYTES=209715200
-TELEGRAM_API_ID=your-my-telegram-org-api-id
-TELEGRAM_API_HASH=your-my-telegram-org-api-hash
 ```
 
 ## API Endpoints

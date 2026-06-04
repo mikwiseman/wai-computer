@@ -270,7 +270,7 @@ async def test_cleanup_dictation_uses_fixed_post_filter_model(
     assert response.status_code == 200
     assert captured["model"] == "gpt-5.5"
     assert captured["max_output_tokens"] == 512
-    assert captured["reasoning"] == {"effort": "low"}
+    assert captured["reasoning"] == {"effort": "none"}
     assert captured["text"] == {"format": {"type": "text"}, "verbosity": "low"}
     assert captured["prompt_cache_key"].startswith("wai-dictation-cleanup-")
     assert captured["prompt_cache_retention"] == "24h"
@@ -336,12 +336,39 @@ async def test_cleanup_dictation_stream_emits_tokens_and_done(
     assert '"cached_tokens": 64' in body
     assert captured["model"] == "gpt-5.5"
     assert captured["stream"] is True
-    assert captured["reasoning"] == {"effort": "low"}
+    assert captured["reasoning"] == {"effort": "none"}
     assert captured["text"] == {"format": {"type": "text"}, "verbosity": "low"}
     assert captured["prompt_cache_key"].startswith("wai-dictation-cleanup-")
     assert captured["prompt_cache_retention"] == "24h"
     assert captured["store"] is False
     assert "email=polished paragraphs" in captured["instructions"]
+
+
+@pytest.mark.asyncio
+async def test_cleanup_dictation_medium_keeps_low_reasoning_effort(
+    client: AsyncClient,
+    auth_headers: dict,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    captured: dict[str, object] = {}
+
+    async def _create(**kwargs: object):
+        captured.update(kwargs)
+        return _make_response("Cleaned text.")
+
+    mock_client = SimpleNamespace(responses=SimpleNamespace(create=_create))
+    _patch_settings(monkeypatch)
+    _patch_client(monkeypatch, mock_client)
+    await _set_cleanup_level(client, auth_headers, "medium")
+
+    response = await client.post(
+        "/api/dictation/cleanup",
+        headers=auth_headers,
+        json={"text": "please clean up this dictated sentence"},
+    )
+
+    assert response.status_code == 200
+    assert captured["reasoning"] == {"effort": "low"}
 
 
 @pytest.mark.asyncio

@@ -23,6 +23,14 @@ class _FakeClient:
         return _FakeIntro()
 
 
+class _FailingClient:
+    def __init__(self, *a, **k):
+        pass
+
+    async def introspect(self):
+        raise RuntimeError("server unavailable")
+
+
 async def test_create_connection_encrypts_token_and_introspects(client, auth_headers) -> None:
     with patch("app.core.mcp_client.McpClient", _FakeClient):
         resp = await client.post(
@@ -43,6 +51,71 @@ async def test_create_connection_encrypts_token_and_introspects(client, auth_hea
     assert "pat-secret-123" not in resp.text
     assert data["capabilities"]["tools"] == ["search", "fetch"]
     assert data["allowed_tools"] == []  # resources-only by default
+
+
+async def test_create_connection_surfaces_introspection_failure(
+    client, auth_headers
+) -> None:
+    with patch("app.core.mcp_client.McpClient", _FailingClient):
+        resp = await client.post(
+            "/api/mcp-connections",
+            json={
+                "server_label": "Broken",
+                "server_url": "https://broken.example.com/mcp",
+            },
+            headers=auth_headers,
+        )
+    assert resp.status_code == 502
+    assert resp.json()["detail"] == "MCP server introspection failed."
+
+
+@pytest.mark.parametrize(
+    "server_url",
+    [
+        "http://mcp.example.com/notes",
+        "file:///tmp/mcp",
+        "https://localhost/mcp",
+        "https://127.0.0.1/mcp",
+        "https://10.0.0.1/mcp",
+        "https://172.16.0.1/mcp",
+        "https://192.168.0.1/mcp",
+        "https://169.254.169.254/latest/meta-data",
+        "https://[::1]/mcp",
+    ],
+)
+async def test_create_connection_rejects_unsafe_server_urls(
+    client, auth_headers, server_url
+) -> None:
+    with patch("app.core.mcp_client.McpClient") as mcp_client:
+        resp = await client.post(
+            "/api/mcp-connections",
+            json={"server_label": "Unsafe", "server_url": server_url},
+            headers=auth_headers,
+        )
+    assert resp.status_code == 400
+    mcp_client.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"transport": "stdio"},
+        {"auth_type": "bearer"},
+    ],
+)
+async def test_create_connection_rejects_unknown_transport_and_auth_type(
+    client, auth_headers, payload
+) -> None:
+    resp = await client.post(
+        "/api/mcp-connections",
+        json={
+            "server_label": "Invalid",
+            "server_url": "https://mcp.example.com/notes",
+            **payload,
+        },
+        headers=auth_headers,
+    )
+    assert resp.status_code == 422
 
 
 async def test_create_requires_token_for_pat(client, auth_headers) -> None:
@@ -107,6 +180,16 @@ async def test_list_get_patch_delete_and_sync(client, auth_headers) -> None:
         synced = await client.post(f"/api/mcp-connections/{cid}/sync", headers=auth_headers)
     assert synced.status_code == 202
     delay.assert_called_once()
+
+    with patch(
+        "app.tasks.mcp_sync.sync_mcp_connection.delay",
+        side_effect=RuntimeError("broker offline"),
+    ):
+        enqueue_failed = await client.post(
+            f"/api/mcp-connections/{cid}/sync", headers=auth_headers
+        )
+    assert enqueue_failed.status_code == 503
+    assert enqueue_failed.json()["detail"] == "Could not enqueue MCP sync."
 
     deleted = await client.delete(f"/api/mcp-connections/{cid}", headers=auth_headers)
     assert deleted.status_code == 204

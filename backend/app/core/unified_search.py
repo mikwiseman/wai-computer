@@ -132,14 +132,7 @@ async def unified_search(
     """RRF search over recordings + items, recency-boosted. Empty query -> []."""
     if not query.strip():
         return []
-    embedding = format_embedding(
-        await generate_embedding(
-            query,
-            usage_user_id=user_id,
-            usage_feature="search",
-            usage_operation="embedding.query",
-        )
-    )
+    embedding = format_embedding(await generate_embedding(query))
     pool = max(limit * 3, 30)
     rows = (
         await db.execute(

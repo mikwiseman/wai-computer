@@ -198,16 +198,11 @@ AGENT_CAPABILITIES: tuple[AgentCapability, ...] = (
 RUNTIME_TOOL_NAMES = frozenset(
     capability.runtime_tool for capability in AGENT_CAPABILITIES if capability.runtime_tool
 )
-ACTION_TOOL_NAMES = frozenset(
-    {
-        "send_message_telegram",
-        "reply_to_message_telegram",
-        "desktop_open",
-        "desktop_type",
-        "desktop_click",
-        "desktop_snapshot",
-    }
+SERVER_ACTION_TOOL_NAMES = frozenset({"send_message_telegram"})
+DESKTOP_ACTION_TOOL_NAMES = frozenset(
+    {"desktop_open", "desktop_type", "desktop_click", "desktop_snapshot"}
 )
+ACTION_TOOL_NAMES = SERVER_ACTION_TOOL_NAMES | DESKTOP_ACTION_TOOL_NAMES
 MEMORY_OPERATIONS = frozenset({"append", "replace_line", "rewrite"})
 
 

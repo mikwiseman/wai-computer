@@ -20,7 +20,6 @@ final class MemoryProposalModelTests: XCTestCase {
               "summary": "rewrite → human: Curated bio.",
               "confidence": 0.95,
               "authority": "self",
-              "evidence": [{"source_kind": "recording", "title": "Launch sync"}],
               "status": "pending",
               "decision_reason": null,
               "created_at": "2026-06-01T13:00:00Z",
@@ -42,7 +41,6 @@ final class MemoryProposalModelTests: XCTestCase {
         XCTAssertNil(p.targetLine)
         XCTAssertEqual(p.confidence, 0.95, accuracy: 0.0001)
         XCTAssertEqual(p.authority, "self")
-        XCTAssertEqual(p.evidence?.first?.objectValue?["title"]?.stringValue, "Launch sync")
         XCTAssertNil(p.decisionReason)
         XCTAssertEqual(p.createdAt, "2026-06-01T13:00:00Z")
         XCTAssertNil(p.decidedAt)
@@ -63,7 +61,6 @@ final class MemoryProposalModelTests: XCTestCase {
           "summary": "append → topics: v0.2.0 in progress",
           "confidence": 0.9,
           "authority": "self",
-          "evidence": null,
           "status": "accepted",
           "decision_reason": "auto: low-risk, confidence 0.90 >= 0.8",
           "created_at": "2026-06-01T13:00:00Z",

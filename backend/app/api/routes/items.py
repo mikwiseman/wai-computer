@@ -23,8 +23,8 @@ from pathlib import Path
 from typing import Any
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter, File, Form, HTTPException, Query, Response, UploadFile, status
-from fastapi.responses import JSONResponse
+from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile, status
+from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
@@ -642,7 +642,7 @@ async def delete_item(
     if item is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Item not found"
-        )
+    )
     item.deleted_at = datetime.now(timezone.utc)
     await db.flush()
     return Response(status_code=status.HTTP_204_NO_CONTENT)

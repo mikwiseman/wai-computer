@@ -22,7 +22,6 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.entity_graph import seed_entities_from_summary
-from app.core.item_titles import is_placeholder_title
 from app.core.summarizer import (
     KeyMoment,
     SummaryResult,
@@ -67,16 +66,9 @@ async def generate_item_summary(
         language=language,
         style=style,
         instructions=instructions,
-        usage_user_id=item.user_id,
-        usage_item_id=item.id,
     )
 
-    moments = await moments_fn(
-        text,
-        language=language,
-        usage_user_id=item.user_id,
-        usage_item_id=item.id,
-    )
+    moments = await moments_fn(text, language=language)
     # If the item carries time-coded segments (e.g. a transcribed video), map
     # moments to millisecond ranges so the UI can deep-link into playback.
     segments = _segments_from_metadata(item)
@@ -102,7 +94,7 @@ async def generate_item_summary(
     summary.key_moments = [asdict(m) for m in moments]
 
     # Fill in a title if the item didn't have one yet.
-    if is_placeholder_title(item.title) and summary_result.title:
+    if not (item.title or "").strip() and summary_result.title:
         item.title = summary_result.title[:500]
 
     await db.flush()

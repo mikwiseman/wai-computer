@@ -12,22 +12,13 @@ LLM calls are injectable so unit tests don't hit OpenAI.
 from __future__ import annotations
 
 import logging
-import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Literal
-from uuid import UUID
 
 from pydantic import BaseModel, Field
 
 from app.config import get_settings
-from app.core.ai_usage import (
-    FEATURE_COMPARISON,
-    OPENAI_PROVIDER,
-    STATUS_FAILED,
-    STATUS_SUCCEEDED,
-    record_ai_usage_event_standalone,
-)
 from app.core.observability import add_sentry_breadcrumb, capture_sentry_exception
 from app.core.openai_client import get_openai_client
 from app.core.openai_responses import ensure_response_completed
@@ -93,12 +84,7 @@ def _digest(item: ComparisonItem) -> str:
     return f"[{item.item_id}] {item.title}\n{item.text[:_ITEM_DIGEST_CHARS]}"
 
 
-async def _induce_columns(
-    items: list[ComparisonItem],
-    intent: str | None,
-    *,
-    usage_user_id: UUID | str | None = None,
-) -> _ColumnSchema:
+async def _induce_columns(items: list[ComparisonItem], intent: str | None) -> _ColumnSchema:
     prompt = (
         "You are designing a comparison table across the items below. Propose "
         f"3-{MAX_COLUMNS} columns that best differentiate them, each with a type "
@@ -111,56 +97,20 @@ async def _induce_columns(
     prompt += "\nItems:\n" + "\n\n".join(_digest(it) for it in items)
 
     client = get_openai_client()
-    started = time.perf_counter()
-    response = None
-    try:
-        response = await client.responses.parse(
-            model=settings.openai_llm_model,
-            input=prompt,
-            text_format=_ColumnSchema,
-            reasoning={"effort": "medium"},
-            max_output_tokens=2048,
-        )
-        ensure_response_completed(response, operation="Comparison schema induction")
-    except Exception as exc:
-        await _record_comparison_usage(
-            operation="comparison.schema",
-            status=STATUS_FAILED,
-            response=response,
-            started=started,
-            user_id=usage_user_id,
-            error=exc,
-            input_count=len(items),
-        )
-        raise
-    if response.output_parsed is None:
-        await _record_comparison_usage(
-            operation="comparison.schema",
-            status=STATUS_FAILED,
-            response=response,
-            started=started,
-            user_id=usage_user_id,
-            error=ComparisonError("No parsed column schema"),
-            input_count=len(items),
-        )
-        raise ComparisonError("No parsed column schema")
-    await _record_comparison_usage(
-        operation="comparison.schema",
-        status=STATUS_SUCCEEDED,
-        response=response,
-        started=started,
-        user_id=usage_user_id,
-        input_count=len(items),
+    response = await client.responses.parse(
+        model=settings.openai_llm_model,
+        input=prompt,
+        text_format=_ColumnSchema,
+        reasoning={"effort": "medium"},
+        max_output_tokens=2048,
     )
+    ensure_response_completed(response, operation="Comparison schema induction")
+    if response.output_parsed is None:
+        raise ComparisonError("No parsed column schema")
     return response.output_parsed
 
 
-async def _extract_row(
-    item: ComparisonItem,
-    columns: list[_Column],
-    *,
-    usage_user_id: UUID | str | None = None,
-) -> _RowSchema:
+async def _extract_row(item: ComparisonItem, columns: list[_Column]) -> _RowSchema:
     col_lines = "\n".join(f"- {c.name} ({c.type})" for c in columns)
     prompt = (
         "Extract this item's value for EACH column below. If the item does not "
@@ -169,47 +119,16 @@ async def _extract_row(
         f"{col_lines}\n\nItem:\n{_digest(item)}"
     )
     client = get_openai_client()
-    started = time.perf_counter()
-    response = None
-    try:
-        response = await client.responses.parse(
-            model=settings.openai_llm_model,
-            input=prompt,
-            text_format=_RowSchema,
-            reasoning={"effort": "low"},
-            max_output_tokens=2048,
-        )
-        ensure_response_completed(response, operation="Comparison row extraction")
-    except Exception as exc:
-        await _record_comparison_usage(
-            operation="comparison.row",
-            status=STATUS_FAILED,
-            response=response,
-            started=started,
-            user_id=usage_user_id,
-            error=exc,
-            input_count=1,
-        )
-        raise
-    if response.output_parsed is None:
-        await _record_comparison_usage(
-            operation="comparison.row",
-            status=STATUS_FAILED,
-            response=response,
-            started=started,
-            user_id=usage_user_id,
-            error=ComparisonError("No parsed row for item " + item.item_id),
-            input_count=1,
-        )
-        raise ComparisonError("No parsed row for item " + item.item_id)
-    await _record_comparison_usage(
-        operation="comparison.row",
-        status=STATUS_SUCCEEDED,
-        response=response,
-        started=started,
-        user_id=usage_user_id,
-        input_count=1,
+    response = await client.responses.parse(
+        model=settings.openai_llm_model,
+        input=prompt,
+        text_format=_RowSchema,
+        reasoning={"effort": "low"},
+        max_output_tokens=2048,
     )
+    ensure_response_completed(response, operation="Comparison row extraction")
+    if response.output_parsed is None:
+        raise ComparisonError("No parsed row for item " + item.item_id)
     return response.output_parsed
 
 
@@ -219,7 +138,6 @@ async def build_comparison(
     intent: str | None = None,
     inducer: SchemaInducer | None = None,
     row_extractor: RowExtractor | None = None,
-    usage_user_id: UUID | str | None = None,
 ) -> ComparisonResult:
     """Induce columns, then extract each item's row. Needs >= 2 items."""
     if len(items) < 2:
@@ -234,10 +152,7 @@ async def build_comparison(
     extract = row_extractor or _extract_row
 
     try:
-        if inducer is None:
-            schema = await _induce_columns(items, intent, usage_user_id=usage_user_id)
-        else:
-            schema = await induce(items, intent)
+        schema = await induce(items, intent)
     except ComparisonError:
         raise
     except Exception as exc:  # noqa: BLE001
@@ -250,14 +165,7 @@ async def build_comparison(
     rows: list[dict] = []
     for item in items:
         try:
-            if row_extractor is None:
-                row = await _extract_row(
-                    item,
-                    columns,
-                    usage_user_id=usage_user_id,
-                )
-            else:
-                row = await extract(item, columns)
+            row = await extract(item, columns)
         except ComparisonError:
             raise
         except Exception as exc:  # noqa: BLE001
@@ -277,30 +185,6 @@ async def build_comparison(
         columns=[c.model_dump() for c in columns],
         rows=rows,
         rationale=schema.rationale,
-    )
-
-
-async def _record_comparison_usage(
-    *,
-    operation: str,
-    status: str,
-    response: object | None,
-    started: float,
-    user_id: UUID | str | None,
-    input_count: int,
-    error: Exception | None = None,
-) -> None:
-    await record_ai_usage_event_standalone(
-        provider=OPENAI_PROVIDER,
-        feature=FEATURE_COMPARISON,
-        operation=operation,
-        status=status,
-        user_id=user_id,
-        model=settings.openai_llm_model,
-        response=response,
-        latency_ms=round((time.perf_counter() - started) * 1000),
-        error_type=type(error).__name__ if error is not None else None,
-        details={"input_count": input_count},
     )
 
 

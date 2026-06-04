@@ -8,7 +8,6 @@ from urllib.parse import urlencode
 import httpx
 
 from app.config import get_settings
-from app.core.deepgram_usage import sanitize_deepgram_tags
 from app.core.personalization import sanitize_keyterms
 from app.core.transcript_utils import TranscriptResult, detect_wav_channels
 
@@ -192,7 +191,6 @@ def build_realtime_websocket_url(
     purpose: Literal["recording", "dictation"],
     model: str = DEEPGRAM_REALTIME_MODEL,
     keyterms: list[str] | None = None,
-    tags: list[str] | None = None,
 ) -> str:
     resolved_language = normalize_deepgram_language(language)
     endpointing_ms = (
@@ -230,7 +228,6 @@ def build_realtime_websocket_url(
     if supports_numerals(resolved_language):
         params.append(("numerals", "true"))
     params.extend(("keyterm", keyterm) for keyterm in sanitize_deepgram_keyterms(keyterms))
-    params.extend(("tag", tag) for tag in sanitize_deepgram_tags(tags))
     return f"{DEEPGRAM_REALTIME_WS_URL}?{urlencode(params)}"
 
 
@@ -261,7 +258,6 @@ def build_batch_url(
     channels: int = DEEPGRAM_REALTIME_CHANNELS,
     model: str = DEEPGRAM_BATCH_MODEL,
     keyterms: list[str] | None = None,
-    tags: list[str] | None = None,
 ) -> str:
     """Build the Deepgram pre-recorded transcription URL for file STT."""
     resolved_language = normalize_deepgram_language(language)
@@ -290,7 +286,6 @@ def build_batch_url(
     if supports_numerals(resolved_language):
         params.append(("numerals", "true"))
     params.extend(("keyterm", keyterm) for keyterm in sanitize_deepgram_keyterms(keyterms))
-    params.extend(("tag", tag) for tag in sanitize_deepgram_tags(tags))
     return f"{DEEPGRAM_BATCH_URL}?{urlencode(params)}"
 
 
@@ -350,7 +345,6 @@ async def transcribe_audio_file(
     model: str | None = None,
     keyterms: list[str] | None = None,
     max_channels: int | None = None,
-    tags: list[str] | None = None,
 ) -> list[TranscriptResult]:
     """Transcribe an uploaded audio file with Deepgram pre-recorded STT."""
     api_key = require_deepgram_api_key()
@@ -384,7 +378,6 @@ async def transcribe_audio_file(
         channels=channel_count,
         model=model or DEEPGRAM_BATCH_MODEL,
         keyterms=keyterms,
-        tags=tags,
     )
 
     async with httpx.AsyncClient(timeout=DEEPGRAM_BATCH_TIMEOUT_SECONDS) as client:

@@ -1,0 +1,29 @@
+## Build output
+bin/
+obj/
+out/
+Releases/
+publish/
+*.binlog
+
+## VS / Rider
+.vs/
+.idea/
+*.user
+*.suo
+
+## Velopack working dirs
+.velopack/
+
+## Coverage
+coverage/
+*.coverage
+TestResults/
+
+## Local config
+appsettings.user.json
+appsettings.Development.json
+
+## OS
+.DS_Store
+Thumbs.db

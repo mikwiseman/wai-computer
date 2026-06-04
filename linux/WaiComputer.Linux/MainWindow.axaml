@@ -1,0 +1,74 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="WaiComputer.Linux.MainWindow"
+        Width="1180"
+        Height="760"
+        MinWidth="960"
+        MinHeight="640"
+        Title="WaiComputer">
+  <Grid ColumnDefinitions="240,*" Background="#F5F7FA">
+    <Border Grid.Column="0" Background="#151A24" Padding="20">
+      <DockPanel>
+        <StackPanel DockPanel.Dock="Top" Spacing="4">
+          <TextBlock Text="WaiComputer" FontSize="22" FontWeight="SemiBold" Foreground="#FFFFFF" />
+          <TextBlock Text="{Binding StatusText}" TextWrapping="Wrap" FontSize="12" Foreground="#A8B3C7" />
+        </StackPanel>
+        <ItemsControl ItemsSource="{Binding Sections}" Margin="0,32,0,0">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate>
+              <Button Content="{Binding}"
+                      Command="{Binding DataContext.NavigateCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                      CommandParameter="{Binding}"
+                      HorizontalAlignment="Stretch"
+                      HorizontalContentAlignment="Left"
+                      Margin="0,0,0,8"
+                      Padding="12,10"
+                      Background="#222A38"
+                      Foreground="#F8FAFC" />
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </DockPanel>
+    </Border>
+
+    <ScrollViewer Grid.Column="1">
+      <StackPanel Margin="32" Spacing="24">
+        <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto">
+          <TextBlock Grid.Row="0" Grid.Column="0" Text="{Binding SelectedSection}" FontSize="30" FontWeight="SemiBold" Foreground="#111827" />
+          <StackPanel Grid.Row="0" Grid.Column="1" Orientation="Horizontal" Spacing="8">
+            <Button Content="Start recording" Command="{Binding StartRecordingCommand}" />
+            <Button Content="Stop" Command="{Binding StopRecordingCommand}" />
+          </StackPanel>
+          <TextBlock Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2" Text="{Binding SectionDetail}" FontSize="14" Foreground="#4B5563" TextWrapping="Wrap" Margin="0,8,0,0" />
+        </Grid>
+
+        <Border Background="#FFFFFF" BorderBrush="#E5E7EB" BorderThickness="1" CornerRadius="8" Padding="20">
+          <StackPanel Spacing="16">
+            <TextBlock Text="Linux capability check" FontSize="18" FontWeight="SemiBold" Foreground="#111827" />
+            <ItemsControl ItemsSource="{Binding CapabilityRows}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate>
+                  <Border BorderBrush="#E5E7EB" BorderThickness="0,0,0,1" Padding="0,10">
+                    <Grid ColumnDefinitions="180,120,*" RowDefinitions="Auto,Auto">
+                      <TextBlock Grid.Column="0" Text="{Binding Name}" FontWeight="SemiBold" Foreground="#111827" />
+                      <TextBlock Grid.Column="1" Text="{Binding State}" Foreground="{Binding StateBrush}" />
+                      <TextBlock Grid.Column="2" Text="{Binding Detail}" TextWrapping="Wrap" Foreground="#374151" />
+                      <TextBlock Grid.Row="1" Grid.Column="2" Text="{Binding RecoveryAction}" TextWrapping="Wrap" Foreground="#6B7280" FontSize="12" Margin="0,4,0,0" />
+                    </Grid>
+                  </Border>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </StackPanel>
+        </Border>
+
+        <Border Background="#FFFFFF" BorderBrush="#E5E7EB" BorderThickness="1" CornerRadius="8" Padding="20">
+          <StackPanel Spacing="12">
+            <TextBlock Text="{Binding WorkSurfaceTitle}" FontSize="18" FontWeight="SemiBold" Foreground="#111827" />
+            <TextBlock Text="{Binding WorkSurfaceBody}" TextWrapping="Wrap" Foreground="#374151" />
+          </StackPanel>
+        </Border>
+      </StackPanel>
+    </ScrollViewer>
+  </Grid>
+</Window>

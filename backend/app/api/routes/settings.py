@@ -206,14 +206,6 @@ class UpdateSettingsRequest(BaseModel):
         for group, provider, model in pairs:
             if (provider is None) != (model is None):
                 raise ValueError(f"{group} provider and model must be updated together")
-        if (
-            self.dictation_cleanup_level is not None
-            and self.dictation_post_filter_enabled is not None
-            and (self.dictation_cleanup_level != "none") != self.dictation_post_filter_enabled
-        ):
-            raise ValueError(
-                "dictation_cleanup_level and dictation_post_filter_enabled conflict"
-            )
         return self
 
     @property
@@ -251,7 +243,7 @@ def _settings_response(user: CurrentUser) -> SettingsResponse:
         recording_live_stt_model=DEFAULT_RECORDING_LIVE_STT_MODEL,
         file_stt_provider=DEFAULT_FILE_STT_PROVIDER,
         file_stt_model=DEFAULT_FILE_STT_MODEL,
-        dictation_post_filter_enabled=user.dictation_cleanup_level != "none",
+        dictation_post_filter_enabled=user.dictation_post_filter_enabled,
         dictation_cleanup_level=user.dictation_cleanup_level,
         dictation_post_filter_provider=DEFAULT_DICTATION_POST_FILTER_PROVIDER,
         dictation_post_filter_model=DEFAULT_DICTATION_POST_FILTER_MODEL,
@@ -296,12 +288,15 @@ async def update_settings(
     # summary_instructions: allow explicit empty string to clear
     if request.summary_instructions is not None:
         user.summary_instructions = request.summary_instructions or None
+    if request.dictation_post_filter_enabled is not None:
+        user.dictation_post_filter_enabled = request.dictation_post_filter_enabled
+        if request.dictation_cleanup_level is None:
+            user.dictation_cleanup_level = (
+                "light" if request.dictation_post_filter_enabled else "none"
+            )
     if request.dictation_cleanup_level is not None:
         user.dictation_cleanup_level = request.dictation_cleanup_level
         user.dictation_post_filter_enabled = request.dictation_cleanup_level != "none"
-    elif request.dictation_post_filter_enabled is not None:
-        user.dictation_post_filter_enabled = request.dictation_post_filter_enabled
-        user.dictation_cleanup_level = "light" if request.dictation_post_filter_enabled else "none"
     if request.region is not None:
         user.region = request.region
     await db.flush()

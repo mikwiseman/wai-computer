@@ -18,7 +18,6 @@ class Settings(BaseSettings):
     debug: bool = False
     git_sha: str | None = None
     git_dirty: bool = False
-    deployment_mode: str = "wai_cloud"  # wai_cloud | self_host | provisioning
 
     # Database
     database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/waicomputer"
@@ -148,8 +147,7 @@ class Settings(BaseSettings):
     # Chat that receives best-effort operational alerts (anomalies worth
     # attention). 0 disables. Defaults to the operator's linked Telegram chat.
     telegram_ops_chat_id: int = 0
-    # Hosted Bot API defaults to 20 MB; production raises this with the local
-    # telegram-bot-api service.
+    # Telegram Bot API file downloads are limited to 20 MB.
     telegram_download_max_bytes: int = 20 * 1024 * 1024
 
     # Email (Resend)
@@ -182,6 +180,7 @@ class Settings(BaseSettings):
     frontend_url: str = "http://localhost:3000"
     public_base_url: str | None = None
     cloud_base_url: str = "https://wai.computer"
+    deployment_mode: str = "wai_cloud"
 
     # Billing — Stripe (global rail)
     stripe_secret_key: str = ""
@@ -222,7 +221,7 @@ class Settings(BaseSettings):
         """Use secure cookies on HTTPS frontends unless explicitly overridden."""
         if self.auth_cookie_secure is not None:
             return self.auth_cookie_secure
-        return self.public_base_url_resolved.startswith("https://")
+        return self.frontend_url.startswith("https://")
 
     @property
     def auth_cookie_domain_resolved(self) -> str | None:
@@ -230,7 +229,7 @@ class Settings(BaseSettings):
         if self.auth_cookie_domain:
             return self.auth_cookie_domain
 
-        hostname = urlparse(self.public_base_url_resolved).hostname
+        hostname = urlparse(self.frontend_url).hostname
         if not hostname:
             return None
 
@@ -262,14 +261,11 @@ class Settings(BaseSettings):
     @property
     def mcp_resource_url_resolved(self) -> str:
         """Canonical MCP resource URL used for OAuth resource indicators."""
-        return (
-            self.mcp_resource_url
-            or f"{self.public_base_url_resolved.rstrip('/')}/mcp"
-        ).rstrip("/")
+        return (self.mcp_resource_url or f"{self.public_base_url_resolved}/mcp").rstrip("/")
 
     @property
     def public_base_url_resolved(self) -> str:
-        """Public origin for browser, MCP, share, and self-host URLs."""
+        """Public URL for this deployment, cloud or self-hosted."""
         return (self.public_base_url or self.frontend_url).rstrip("/")
 
 

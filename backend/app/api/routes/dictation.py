@@ -60,6 +60,13 @@ MAX_CLEANUP_OUTPUT_TOKENS = 65_536
 CLEANUP_REASONING_TOKEN_RESERVE = 384
 CLEANUP_OUTPUT_TOKEN_QUANTUM = 256
 
+
+def _dictation_cleanup_reasoning_effort(cleanup_level: str) -> str:
+    """Use no reasoning for default light cleanup; keep low effort for rewrites."""
+    if cleanup_level == "light":
+        return "none"
+    return "low"
+
 DICTATION_CLEANUP_INSTRUCTIONS_BY_LEVEL = {
     "light": """\
 Lightly clean up dictated text.
@@ -197,6 +204,7 @@ class CleanupOpenAIRequest:
 
     text: str
     model: str
+    reasoning_effort: str
     instructions: str
     input: str
     max_output_tokens: int
@@ -412,6 +420,7 @@ def _prepare_cleanup_openai_request(
     return CleanupOpenAIRequest(
         text=text,
         model=model,
+        reasoning_effort=_dictation_cleanup_reasoning_effort(cleanup_level),
         instructions=(
             cleanup_instructions
             + _build_context_block(request.context)
@@ -534,7 +543,7 @@ async def _stream_cleanup_events(
             model=prepared.model,
             instructions=prepared.instructions,
             input=prepared.input,
-            reasoning={"effort": "low"},
+            reasoning={"effort": prepared.reasoning_effort},
             text=_dictation_cleanup_text_config(),
             max_output_tokens=prepared.max_output_tokens,
             prompt_cache_key=prepared.prompt_cache_key,
@@ -741,7 +750,7 @@ async def cleanup_dictation(request: CleanupRequest, user: CurrentUser):
             model=prepared.model,
             instructions=prepared.instructions,
             input=prepared.input,
-            reasoning={"effort": "low"},
+            reasoning={"effort": prepared.reasoning_effort},
             text=_dictation_cleanup_text_config(),
             max_output_tokens=prepared.max_output_tokens,
             prompt_cache_key=prepared.prompt_cache_key,

@@ -227,8 +227,8 @@ async def update_personalization_term(
 @router.delete(
     "/terms/{term_id}",
     status_code=status.HTTP_204_NO_CONTENT,
-    response_model=None,
     response_class=Response,
+    response_model=None,
 )
 async def delete_personalization_term(
     term_id: UUID,

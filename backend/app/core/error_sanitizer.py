@@ -33,9 +33,7 @@ GENERIC_FAILURE_MESSAGE = (
 # request flow.
 _LEAK_PATTERNS: tuple[re.Pattern[str], ...] = (
     # Absolute POSIX paths under common system / app dirs.
-    re.compile(
-        r"(?:^|[\s'\"`(\[])(?:/var|/tmp|/opt|/etc|/root|/home|/Users|/private|/srv)/"
-    ),
+    re.compile(r"(?:^|[\s'\"`(\[])(?:/var|/tmp|/opt|/etc|/root|/home|/Users|/private)/"),
     # Windows paths (defensive — backend is Linux, but exceptions may bubble from
     # imported libraries on dev laptops).
     re.compile(r"[A-Za-z]:\\\\"),

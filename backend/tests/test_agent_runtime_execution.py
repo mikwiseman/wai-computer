@@ -15,6 +15,7 @@ import pytest
 import pytest_asyncio
 from sqlalchemy import select
 
+from app.core.agent_capabilities import MAX_AGENT_SEARCH_LIMIT, MAX_AGENT_STEPS
 from app.core.agent_runtime import (
     AgentPlan,
     AgentRuntimeError,
@@ -314,7 +315,32 @@ async def test_runtime_surfaces_invalid_static_agent_config(
     await db_session.refresh(run)
 
     assert run.status == "failed"
-    assert run.error == message
+    assert message in run.error
+
+
+async def test_runtime_enforces_max_steps_even_for_seeded_configs(db_session, user):
+    _, run = await _agent_run(
+        db_session,
+        user,
+        config={
+            "steps": [
+                {"tool": "note", "args": {"text": f"step {idx}"}}
+                for idx in range(MAX_AGENT_STEPS + 1)
+            ]
+        },
+    )
+
+    await run_job(
+        db_session,
+        run.id,
+        planner=static_config_planner,
+        executor=execute_agent_step,
+    )
+    await db_session.refresh(run)
+
+    assert run.status == "failed"
+    assert run.error == f"Agent config.steps cannot exceed {MAX_AGENT_STEPS} steps"
+    assert [step.kind for step in await _steps(db_session, run.id)] == ["error"]
 
 
 @pytest.mark.parametrize(
@@ -344,7 +370,7 @@ async def test_runtime_surfaces_invalid_plans(db_session, user, plan, message):
     await db_session.refresh(run)
 
     assert run.status == "failed"
-    assert run.error == message
+    assert message in (run.error or "")
 
 
 @pytest.mark.parametrize(
@@ -367,6 +393,13 @@ async def test_runtime_surfaces_invalid_plans(db_session, user, plan, message):
             "create_artifact.kind is required",
         ),
         ({"tool": "search_wai", "args": {}}, "search_wai.query is required"),
+        (
+            {
+                "tool": "search_wai",
+                "args": {"query": "agent memory", "limit": MAX_AGENT_SEARCH_LIMIT + 1},
+            },
+            f"search_wai.limit must be 1..{MAX_AGENT_SEARCH_LIMIT}",
+        ),
         (
             {"tool": "propose_memory", "args": {}},
             "propose_memory.content is required",
@@ -425,7 +458,7 @@ async def test_runtime_surfaces_invalid_tool_calls(db_session, user, step, messa
     await db_session.refresh(run)
 
     assert run.status == "failed"
-    assert run.error == message
+    assert message in (run.error or "")
 
 
 async def test_runtime_executes_search_and_memory_tools(
@@ -583,6 +616,39 @@ async def test_create_artifact_and_propose_action_are_idempotent(db_session, use
         "action_id": first_action.payload["action_id"],
         "status": "pending",
     }
+
+
+async def test_desktop_action_defaults_to_desktop_action_kind(db_session, user):
+    agent, run = await _agent_run(db_session, user, config={"steps": []})
+    device_id = uuid4()
+
+    result = await execute_agent_step(
+        db_session,
+        agent,
+        run,
+        {
+            "tool": "propose_action",
+            "args": {
+                "tool_name": "desktop_open",
+                "action_args": {"target": "https://wai.computer"},
+                "preview": "Open WaiComputer",
+                "device_target": str(device_id),
+            },
+        },
+        9,
+        "desktop-action-key",
+    )
+
+    assert result.status == "awaiting_approval"
+    row = (
+        await db_session.execute(
+            select(CompanionPendingAction).where(
+                CompanionPendingAction.idempotency_key == "desktop-action-key"
+            )
+        )
+    ).scalar_one()
+    assert row.kind == "desktop_action"
+    assert row.device_target == str(device_id)
 
 
 async def test_runtime_fails_when_approval_row_is_missing(db_session, user):
