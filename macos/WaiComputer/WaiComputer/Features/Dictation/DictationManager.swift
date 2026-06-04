@@ -37,7 +37,6 @@ private final class DictationAudioSendCounter: @unchecked Sendable {
 
 private struct DictationCleanupStreamWork {
     let id: UUID
-    let rawText: String
     let task: Task<String, Error>
 }
 
@@ -790,9 +789,6 @@ final class DictationManager: ObservableObject {
         await finishProviderAudioPumpBeforeFinalizing()
         guard shouldContinueFinalization() else { return }
 
-        // Start cleanup only after the audio tail is drained so finalization
-        // does not spend on a speculative cleanup call before final text exists.
-        let speculativeCleanup = startSpeculativeCleanupIfPossible()
         let providerSegments = (try? await providerSession?.close(timeout: .seconds(4))) ?? []
 
         // If cancelDictation ran during finalization, bail out cleanly.
@@ -849,15 +845,10 @@ final class DictationManager: ObservableObject {
 
         switch activeMode {
         case .dictation:
-            await cleanupAndInsert(
-                rawText: rawText,
-                speculativeCleanup: speculativeCleanup
-            )
+            await cleanupAndInsert(rawText: rawText)
         case .translation:
-            speculativeCleanup?.task.cancel()
             await translateAndInsert(rawText: rawText)
         case .askAnything:
-            speculativeCleanup?.task.cancel()
             await answerAskAnything(question: rawText)
         }
 
@@ -879,48 +870,20 @@ final class DictationManager: ObservableObject {
         )
     }
 
-    private func startSpeculativeCleanupIfPossible() -> DictationCleanupStreamWork? {
-        guard activeMode == .dictation,
-              cleanupLevel != "none",
-              let apiClient else {
-            return nil
-        }
-        let preliminaryText = buildTranscript()
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !preliminaryText.isEmpty else { return nil }
-        let rawText = dictionaryStore?.applyReplacements(to: preliminaryText) ?? preliminaryText
-        guard !rawText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            return nil
-        }
-        return startCleanupStream(
-            rawText: rawText,
-            apiClient: apiClient,
-            vocabulary: dictionaryStore?.vocabularyList ?? [],
-            context: contextAwareFormattingEnabled ? dictationContext : nil,
-            publishImmediately: false,
-            speculative: true
-        )
-    }
-
     private func startCleanupStream(
         rawText: String,
         apiClient: APIClient,
         vocabulary: [String],
-        context: DictationCleanupContext?,
-        publishImmediately: Bool,
-        speculative: Bool
+        context: DictationCleanupContext?
     ) -> DictationCleanupStreamWork {
         let id = UUID()
         cleanupStreamSnapshots[id] = ""
-        if publishImmediately {
-            visibleCleanupStreamID = id
-            cleanupPreview = ""
-        }
+        visibleCleanupStreamID = id
+        cleanupPreview = ""
         instrumentationSession?.event(.cleanupRequested, data: [
             "rawChars": rawText.count,
             "vocabularyCount": vocabulary.count,
             "streaming": true,
-            "speculative": speculative,
         ])
         let task = Task { @MainActor [weak self, apiClient, rawText, vocabulary, context] in
             guard let self else { throw CancellationError() }
@@ -929,12 +892,11 @@ final class DictationManager: ObservableObject {
                 rawText: rawText,
                 apiClient: apiClient,
                 vocabulary: vocabulary,
-                context: context,
-                speculative: speculative
+                context: context
             )
         }
         cleanupStreamTask = task
-        return DictationCleanupStreamWork(id: id, rawText: rawText, task: task)
+        return DictationCleanupStreamWork(id: id, task: task)
     }
 
     private func consumeCleanupStream(
@@ -942,8 +904,7 @@ final class DictationManager: ObservableObject {
         rawText: String,
         apiClient: APIClient,
         vocabulary: [String],
-        context: DictationCleanupContext?,
-        speculative: Bool
+        context: DictationCleanupContext?
     ) async throws -> String {
         let stream = try await apiClient.streamCleanupDictation(
             text: rawText,
@@ -981,7 +942,6 @@ final class DictationManager: ObservableObject {
                     "outputTokens": outputTokens ?? -1,
                     "cachedTokens": cachedTokens ?? -1,
                     "streaming": true,
-                    "speculative": speculative,
                 ])
                 return text
             case .error(let code, let message):
@@ -999,17 +959,11 @@ final class DictationManager: ObservableObject {
         )
     }
 
-    private func cleanupAndInsert(
-        rawText: String,
-        speculativeCleanup: DictationCleanupStreamWork? = nil
-    ) async {
+    private func cleanupAndInsert(rawText: String) async {
         // AI cleanup (optional). If enabled, cleanup is part of the requested
         // output contract: failure is surfaced instead of silently inserting
         // raw text that the user explicitly asked us to post-process.
         let cleanupEnabled = cleanupLevel != "none"
-        if !cleanupEnabled {
-            speculativeCleanup?.task.cancel()
-        }
         var cleanedText: String?
         var cleanupError: Error?
         if cleanupEnabled {
@@ -1021,28 +975,12 @@ final class DictationManager: ObservableObject {
                     // "correct" away).
                     let vocabulary = dictionaryStore?.vocabularyList ?? []
                     let context = contextAwareFormattingEnabled ? dictationContext : nil
-                    let cleanupWork: DictationCleanupStreamWork
-                    switch DictationCleanupSpeculationPolicy.decision(
-                        preliminaryRawText: speculativeCleanup?.rawText,
-                        finalRawText: rawText
-                    ) {
-                    case .reuseSpeculative:
-                        cleanupWork = speculativeCleanup!
-                        visibleCleanupStreamID = cleanupWork.id
-                        cleanupPreview = DictationCleanupSpeculationPreviewPolicy.visiblePreviewOnReuse(
-                            storedPreview: cleanupStreamSnapshots[cleanupWork.id]
-                        )
-                    case .restartWithFinal:
-                        speculativeCleanup?.task.cancel()
-                        cleanupWork = startCleanupStream(
-                            rawText: rawText,
-                            apiClient: apiClient,
-                            vocabulary: vocabulary,
-                            context: context,
-                            publishImmediately: true,
-                            speculative: false
-                        )
-                    }
+                    let cleanupWork = startCleanupStream(
+                        rawText: rawText,
+                        apiClient: apiClient,
+                        vocabulary: vocabulary,
+                        context: context
+                    )
                     cleanedText = try await cleanupWork.task.value
                     guard shouldContinueFinalization() else { return }
                     cleanupStreamTask = nil
@@ -1054,7 +992,6 @@ final class DictationManager: ObservableObject {
                     cleanupError = error
                 }
             } else {
-                speculativeCleanup?.task.cancel()
                 cleanupError = NSError(
                     domain: "is.waiwai.computer.dictation.cleanup",
                     code: 2,

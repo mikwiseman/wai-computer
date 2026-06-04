@@ -431,45 +431,12 @@ enum DictationCleanupPolicy {
     }
 }
 
-enum DictationCleanupSpeculationPolicy {
-    enum Decision: Equatable {
-        case reuseSpeculative
-        case restartWithFinal
-    }
-
-    static func decision(preliminaryRawText: String?, finalRawText: String) -> Decision {
-        guard let preliminaryRawText,
-              !preliminaryRawText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            return .restartWithFinal
-        }
-        return normalized(preliminaryRawText) == normalized(finalRawText)
-            ? .reuseSpeculative
-            : .restartWithFinal
-    }
-
-    private static func normalized(_ text: String) -> String {
-        let folded = text.lowercased().map { character -> Character in
-            let scalars = String(character).unicodeScalars
-            return scalars.allSatisfy { CharacterSet.alphanumerics.contains($0) } ? character : " "
-        }
-        return String(folded)
-            .split(whereSeparator: \.isWhitespace)
-            .joined(separator: " ")
-    }
-}
-
 enum TextInsertionActivationPolicy {
     static func shouldWaitAfterActivation(
         targetWasActive: Bool,
         activationReportedSuccessful: Bool
     ) -> Bool {
         !targetWasActive || !activationReportedSuccessful
-    }
-}
-
-enum DictationCleanupSpeculationPreviewPolicy {
-    static func visiblePreviewOnReuse(storedPreview: String?) -> String {
-        storedPreview ?? ""
     }
 }
 

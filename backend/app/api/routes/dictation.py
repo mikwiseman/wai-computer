@@ -6,6 +6,7 @@ Two concerns share this module:
   survive logout/login and sync across Macs.
 """
 
+import asyncio
 import json
 import logging
 import time
@@ -62,6 +63,7 @@ MIN_CLEANUP_OUTPUT_TOKENS = 512
 MAX_CLEANUP_OUTPUT_TOKENS = 65_536
 CLEANUP_REASONING_TOKEN_RESERVE = 384
 CLEANUP_OUTPUT_TOKEN_QUANTUM = 256
+CEREBRAS_RATE_LIMIT_RETRY_DELAYS_SECONDS = (1.0, 2.0)
 
 
 def _dictation_cleanup_reasoning_effort(cleanup_level: str) -> str:
@@ -421,6 +423,30 @@ def _prepare_cleanup_cerebras_request(
     )
 
 
+async def _create_dictation_cerebras_completion(
+    *,
+    operation: str,
+    **kwargs: Any,
+) -> Any:
+    """Create a Cerebras chat completion with bounded same-provider 429 backoff."""
+    client = get_cerebras_client()
+    retry_delays = (*CEREBRAS_RATE_LIMIT_RETRY_DELAYS_SECONDS, None)
+    for attempt, delay in enumerate(retry_delays, start=1):
+        try:
+            return await client.chat.completions.create(**kwargs)
+        except openai.RateLimitError:
+            if delay is None:
+                raise
+            logger.info(
+                "%s rate limited by Cerebras; retrying attempt=%d delay_seconds=%.1f",
+                operation,
+                attempt,
+                delay,
+            )
+            await asyncio.sleep(delay)
+    raise RuntimeError("unreachable Cerebras retry loop")
+
+
 def _jsonable_usage_value(value: Any, key: str) -> int | None:
     if value is None:
         return None
@@ -531,8 +557,8 @@ async def _stream_cleanup_events(
     response_model: str | None = prepared.model
 
     try:
-        client = get_cerebras_client()
-        stream = await client.chat.completions.create(
+        stream = await _create_dictation_cerebras_completion(
+            operation="dictation.cleanup.stream",
             model=prepared.model,
             messages=[
                 {"role": "system", "content": prepared.instructions},
@@ -711,8 +737,8 @@ async def cleanup_dictation(request: CleanupRequest, user: CurrentUser):
     started = time.monotonic()
     response = None
     try:
-        client = get_cerebras_client()
-        response = await client.chat.completions.create(
+        response = await _create_dictation_cerebras_completion(
+            operation="dictation.cleanup",
             model=prepared.model,
             messages=[
                 {"role": "system", "content": prepared.instructions},
@@ -885,8 +911,8 @@ async def translate_dictation(request: TranslationRequest, user: CurrentUser):
             f"{text}\n"
             "</dictated_text>"
         )
-        client = get_cerebras_client()
-        response = await client.chat.completions.create(
+        response = await _create_dictation_cerebras_completion(
+            operation="dictation.translation",
             model=model,
             messages=[
                 {"role": "system", "content": instructions},

@@ -850,6 +850,47 @@ async def test_cleanup_dictation_maps_upstream_connection_errors(
 
 
 @pytest.mark.asyncio
+async def test_cleanup_dictation_retries_same_cerebras_request_after_rate_limit(
+    client: AsyncClient,
+    auth_headers: dict,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    sleeps: list[float] = []
+    attempts = 0
+
+    async def _sleep(delay: float) -> None:
+        sleeps.append(delay)
+
+    async def _create(**_: object):
+        nonlocal attempts
+        attempts += 1
+        if attempts < 3:
+            raise openai.RateLimitError(
+                "rate limited",
+                response=_fake_httpx_response(),
+                body={"code": "queue_exceeded"},
+            )
+        return _make_response("Cleaned after retry.")
+
+    mock_client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=_create)))
+    monkeypatch.setattr("app.api.routes.dictation.asyncio.sleep", _sleep)
+    _patch_settings(monkeypatch)
+    _patch_client(monkeypatch, mock_client)
+    await _enable_post_filter(client, auth_headers)
+
+    response = await client.post(
+        "/api/dictation/cleanup",
+        headers=auth_headers,
+        json={"text": "please clean up this long dictated sentence"},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"text": "Cleaned after retry."}
+    assert attempts == 3
+    assert sleeps == [1.0, 2.0]
+
+
+@pytest.mark.asyncio
 async def test_cleanup_dictation_rejects_oversized_payload(
     client: AsyncClient,
     auth_headers: dict,
