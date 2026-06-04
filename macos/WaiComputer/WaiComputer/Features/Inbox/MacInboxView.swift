@@ -134,12 +134,11 @@ struct MacInboxView: View {
             allowsMultipleSelection: false
         ) { result in
             if case let .success(urls) = result, let url = urls.first {
-                Task {
-                    if let row = await model.uploadFile(url) {
-                        selectedDetail = row.detail
-                    }
-                    await onLibraryChanged()
-                }
+                selectedDetail = nil
+                focusedCreateMode = .file
+                model.selectUploadFile(url)
+            } else if case let .failure(error) = result {
+                model.errorMessage = error.localizedDescription
             }
         }
     }
@@ -152,21 +151,6 @@ struct MacInboxView: View {
             Divider()
             banners
             rows
-            if model.nextCursor != nil {
-                Divider()
-                Button {
-                    Task { await model.loadMore() }
-                } label: {
-                    if model.isLoadingMore {
-                        ProgressView().controlSize(.small)
-                    } else {
-                        Text(t("Load More", "Показать ещё"))
-                    }
-                }
-                .buttonStyle(.plain)
-                .padding(Spacing.md)
-                .disabled(model.isLoadingMore)
-            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
@@ -190,8 +174,7 @@ struct MacInboxView: View {
                     Label(t("Record Now", "Записать сейчас"), systemImage: "waveform")
                 }
                 Button {
-                    focusedCreateMode = .file
-                    showingImporter = true
+                    chooseFile()
                 } label: {
                     Label(t("Upload File", "Загрузить файл"), systemImage: "square.and.arrow.down")
                 }
@@ -203,8 +186,8 @@ struct MacInboxView: View {
                 }
                 Button {
                     Task {
-                        if let row = await model.newChat() {
-                            selectedDetail = row.detail
+                        if let detail = await model.newChat() {
+                            selectedDetail = detail
                         }
                     }
                 } label: {
@@ -293,15 +276,15 @@ struct MacInboxView: View {
                 MacInboxEmptyState(
                     sourceKind: model.sourceKind,
                     onRecord: onStartRecording,
-                    onUpload: { showingImporter = true },
+                    onUpload: chooseFile,
                     onPaste: {
                         selectedDetail = nil
                         focusedCreateMode = .paste
                     },
                     onChat: {
                         Task {
-                            if let row = await model.newChat() {
-                                selectedDetail = row.detail
+                            if let detail = await model.newChat() {
+                                selectedDetail = detail
                             }
                         }
                     }
@@ -311,9 +294,14 @@ struct MacInboxView: View {
                     rows: model.rows,
                     language: languageManager.current,
                     selectedRowID: selectedRowID,
-                    accentColor: MacThemePreferences.currentAccent.nsColor,
+                    accentChoice: MacThemePreferences.currentAccent,
+                    canLoadMore: model.nextCursor != nil,
+                    isLoadingMore: model.isLoadingMore,
                     onSelect: { row in
                         selectedDetail = row.detail
+                    },
+                    onLoadMore: {
+                        Task { await model.loadMore() }
                     }
                 )
             }
@@ -435,7 +423,7 @@ struct MacInboxView: View {
                             systemImage: "square.and.arrow.down",
                             accent: .green,
                             isActive: focusedCreateMode == .file,
-                            action: { showingImporter = true }
+                            action: { chooseFile() }
                         )
                         MacInboxCreateAction(
                             title: t("Paste", "Вставить"),
@@ -453,53 +441,53 @@ struct MacInboxView: View {
                             isActive: focusedCreateMode == .ask,
                             action: {
                                 focusedCreateMode = .ask
-                                Task {
-                                    if let row = await model.newChat() {
-                                        selectedDetail = row.detail
-                                    }
-                                }
                             }
                         )
                     }
 
-                    VStack(alignment: .leading, spacing: Spacing.sm) {
-                        Text(t("Paste link or text", "Вставить ссылку или текст"))
-                            .font(Typography.headingMedium)
-                        TextField(
-                            t("Paste a link, note, transcript, or any text...", "Вставьте ссылку, заметку, транскрипт или любой текст..."),
-                            text: $model.draft,
-                            axis: .vertical
+                    switch focusedCreateMode {
+                    case .record:
+                        MacInboxInlineActionComposer(
+                            systemImage: "waveform",
+                            title: t("Record into Inbox", "Записать в Инбокс"),
+                            message: t(
+                                "Start a new recording with microphone and system audio.",
+                                "Начните новую запись с микрофоном и звуком компьютера."
+                            ),
+                            primaryTitle: t("Start Recording", "Начать запись"),
+                            accent: Palette.accent,
+                            isWorking: false,
+                            action: onStartRecording
                         )
-                        .textFieldStyle(.roundedBorder)
-                        .lineLimit(3...7)
-
-                        HStack(spacing: Spacing.sm) {
-                            Button {
-                                Task {
-                                    if let row = await model.addDraft() {
-                                        selectedDetail = row.detail
-                                    }
-                                }
-                            } label: {
-                                if model.isAdding {
-                                    ProgressView().controlSize(.small)
-                                } else {
-                                    Text(t("Add to Inbox", "Добавить в Инбокс"))
-                                }
-                            }
-                            .buttonStyle(.borderedProminent)
-                            .disabled(model.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || model.isAdding)
-
-                            Button {
-                                showingImporter = true
-                            } label: {
-                                Label(t("Attach File", "Прикрепить файл"), systemImage: "paperclip")
-                            }
-                            .buttonStyle(.bordered)
-                            .disabled(model.isAdding)
-
-                            Spacer()
-                        }
+                    case .file:
+                        MacInboxFileComposer(
+                            selectedFile: model.selectedUploadFile,
+                            phase: model.uploadPhase,
+                            isAdding: model.isAdding,
+                            onChoose: chooseFile,
+                            onUpload: uploadPendingFile,
+                            onRemove: { model.clearSelectedUploadFile() }
+                        )
+                    case .paste:
+                        MacInboxPasteComposer(
+                            draft: $model.draft,
+                            isAdding: model.isAdding,
+                            submitTitle: pasteSubmitTitle,
+                            onSubmit: addDraft
+                        )
+                    case .ask:
+                        MacInboxInlineActionComposer(
+                            systemImage: "sparkles",
+                            title: t("Ask Wai", "Спросить Wai"),
+                            message: t(
+                                "Open a focused agent thread for search, memory, planning, or action.",
+                                "Откройте агентский диалог для поиска, памяти, планирования или действия."
+                            ),
+                            primaryTitle: t("Start Ask Wai Thread", "Начать диалог с Wai"),
+                            accent: .orange,
+                            isWorking: model.isAdding,
+                            action: startAskThread
+                        )
                     }
                 }
                 .padding(Spacing.xl)
@@ -507,7 +495,54 @@ struct MacInboxView: View {
                 .frame(maxWidth: .infinity, minHeight: proxy.size.height, alignment: .center)
             }
         }
+        .dropDestination(for: URL.self) { urls, _ in
+            guard let url = urls.first else { return false }
+            selectedDetail = nil
+            focusedCreateMode = .file
+            model.selectUploadFile(url)
+            return true
+        }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    private var pasteSubmitTitle: String {
+        let trimmed = model.draft.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if trimmed.hasPrefix("http://") || trimmed.hasPrefix("https://") {
+            return t("Save Link", "Сохранить ссылку")
+        }
+        return t("Save Text", "Сохранить текст")
+    }
+
+    private func chooseFile() {
+        selectedDetail = nil
+        focusedCreateMode = .file
+        showingImporter = true
+    }
+
+    private func uploadPendingFile() {
+        Task {
+            if let detail = await model.submitSelectedUploadFile() {
+                selectedDetail = detail
+            }
+            await onLibraryChanged()
+        }
+    }
+
+    private func addDraft() {
+        Task {
+            if let detail = await model.addDraft() {
+                selectedDetail = detail
+            }
+            await onLibraryChanged()
+        }
+    }
+
+    private func startAskThread() {
+        Task {
+            if let detail = await model.newChat() {
+                selectedDetail = detail
+            }
+        }
     }
 
     private func consumePendingDetailIfNeeded() {
@@ -525,6 +560,300 @@ struct MacInboxView: View {
 
     private func t(_ english: String, _ russian: String) -> String {
         OnboardingL10n.text(english, russian, language: languageManager.current)
+    }
+}
+
+private struct MacInboxFileComposer: View {
+    let selectedFile: PendingInboxUploadFile?
+    let phase: InboxUploadPhase
+    let isAdding: Bool
+    let onChoose: () -> Void
+    let onUpload: () -> Void
+    let onRemove: () -> Void
+
+    @EnvironmentObject private var languageManager: LanguageManager
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Spacing.md) {
+            HStack(alignment: .top, spacing: Spacing.sm) {
+                Image(systemName: "square.and.arrow.down")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundStyle(.green)
+                    .frame(width: 34, height: 34)
+                    .background(Color.green.opacity(0.12))
+                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                VStack(alignment: .leading, spacing: Spacing.xxs) {
+                    Text(t("Upload a file", "Загрузить файл"))
+                        .font(Typography.headingMedium)
+                    Text(t(
+                        "Choose a file first. Then upload it to Inbox from this panel.",
+                        "Сначала выберите файл. Затем загрузите его в Инбокс из этой панели."
+                    ))
+                    .font(Typography.bodySmall)
+                    .foregroundStyle(Palette.textSecondary)
+                }
+            }
+
+            if let selectedFile {
+                selectedFileRow(selectedFile)
+            } else {
+                emptyDropTarget
+            }
+
+            if let message = phase.message {
+                HStack(spacing: Spacing.xs) {
+                    if phase.isWorking {
+                        ProgressView()
+                            .controlSize(.small)
+                    } else {
+                        Image(systemName: phaseIconName)
+                    }
+                    Text(message)
+                        .font(Typography.bodySmall)
+                        .foregroundStyle(phaseColor)
+                        .lineLimit(2)
+                        .textSelection(.enabled)
+                    Spacer(minLength: 0)
+                }
+                .accessibilityIdentifier("mac-inbox-upload-progress")
+            }
+
+            HStack(spacing: Spacing.sm) {
+                Button(action: selectedFile == nil ? onChoose : onUpload) {
+                    if phase.isWorking {
+                        ProgressView()
+                            .controlSize(.small)
+                    } else {
+                        Text(selectedFile == nil
+                             ? t("Choose File...", "Выбрать файл...")
+                             : t("Upload File to Inbox", "Загрузить файл в Инбокс"))
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled((selectedFile != nil && phase.isWorking) || isAdding)
+                .accessibilityIdentifier("mac-inbox-upload-primary-button")
+
+                Button(action: onChoose) {
+                    Text(selectedFile == nil
+                         ? t("Browse...", "Обзор...")
+                         : t("Choose Another...", "Выбрать другой..."))
+                }
+                .buttonStyle(.bordered)
+                .disabled(isAdding)
+
+                Spacer()
+            }
+        }
+        .padding(Spacing.lg)
+        .background(Palette.surfaceSubtle)
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(Palette.border, lineWidth: 1)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+
+    private var emptyDropTarget: some View {
+        HStack(spacing: Spacing.sm) {
+            Image(systemName: "doc.badge.plus")
+                .foregroundStyle(.green)
+            Text(t("Drop a file here, or choose one below.", "Перетащите файл сюда или выберите ниже."))
+                .font(Typography.bodySmall)
+                .foregroundStyle(Palette.textSecondary)
+            Spacer()
+        }
+        .padding(Spacing.md)
+        .background(Palette.surfaceHover)
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(Palette.border, style: StrokeStyle(lineWidth: 1, dash: [5, 4]))
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+
+    private func selectedFileRow(_ file: PendingInboxUploadFile) -> some View {
+        HStack(spacing: Spacing.sm) {
+            Image(systemName: "doc.text")
+                .foregroundStyle(.green)
+                .frame(width: 28, height: 28)
+                .background(Color.green.opacity(0.12))
+                .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+            VStack(alignment: .leading, spacing: 2) {
+                Text(file.filename)
+                    .font(Typography.headingMedium)
+                    .foregroundStyle(Palette.textPrimary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Text(fileMetadata(file))
+                    .font(Typography.label)
+                    .foregroundStyle(Palette.textSecondary)
+                    .lineLimit(1)
+            }
+            Spacer(minLength: Spacing.sm)
+            Button(action: onRemove) {
+                Image(systemName: "xmark")
+            }
+            .buttonStyle(.plain)
+            .disabled(isAdding)
+            .help(t("Remove file", "Убрать файл"))
+        }
+        .padding(Spacing.md)
+        .background(Palette.surfaceHover)
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(Palette.border, lineWidth: 1)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .accessibilityIdentifier("mac-inbox-selected-file")
+    }
+
+    private func fileMetadata(_ file: PendingInboxUploadFile) -> String {
+        let parts = [
+            file.typeDescription,
+            file.byteCount.map { Self.byteFormatter.string(fromByteCount: $0) }
+        ].compactMap { $0 }.filter { !$0.isEmpty }
+        return parts.isEmpty ? t("Ready to upload", "Готово к загрузке") : parts.joined(separator: " / ")
+    }
+
+    private var phaseIconName: String {
+        switch phase {
+        case .failed:
+            return "exclamationmark.triangle.fill"
+        case .added, .processing:
+            return "checkmark.circle.fill"
+        case .idle, .selected, .preparing, .uploading:
+            return "info.circle"
+        }
+    }
+
+    private var phaseColor: Color {
+        switch phase {
+        case .failed:
+            return .red
+        case .added, .processing:
+            return .green
+        case .idle, .selected, .preparing, .uploading:
+            return Palette.textSecondary
+        }
+    }
+
+    private static let byteFormatter: ByteCountFormatter = {
+        let formatter = ByteCountFormatter()
+        formatter.allowedUnits = [.useKB, .useMB, .useGB]
+        formatter.countStyle = .file
+        return formatter
+    }()
+
+    private func t(_ english: String, _ russian: String) -> String {
+        OnboardingL10n.text(english, russian, language: languageManager.current)
+    }
+}
+
+private struct MacInboxPasteComposer: View {
+    @Binding var draft: String
+    let isAdding: Bool
+    let submitTitle: String
+    let onSubmit: () -> Void
+
+    @EnvironmentObject private var languageManager: LanguageManager
+
+    private var trimmedDraft: String {
+        draft.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Spacing.sm) {
+            Text(t("Paste link or text", "Вставить ссылку или текст"))
+                .font(Typography.headingMedium)
+            TextField(
+                t("Paste a link, note, transcript, or any text...", "Вставьте ссылку, заметку, транскрипт или любой текст..."),
+                text: $draft,
+                axis: .vertical
+            )
+            .textFieldStyle(.roundedBorder)
+            .lineLimit(4...8)
+            .onSubmit(onSubmit)
+            .accessibilityIdentifier("mac-inbox-paste-field")
+
+            HStack(spacing: Spacing.sm) {
+                Button(action: onSubmit) {
+                    if isAdding {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Text(submitTitle)
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(trimmedDraft.isEmpty || isAdding)
+                .accessibilityIdentifier("mac-inbox-paste-primary-button")
+
+                if trimmedDraft.isEmpty {
+                    Text(t("Paste text or a link to continue.", "Вставьте текст или ссылку, чтобы продолжить."))
+                        .font(Typography.label)
+                        .foregroundStyle(Palette.textSecondary)
+                }
+                Spacer()
+            }
+        }
+        .padding(Spacing.lg)
+        .background(Palette.surfaceSubtle)
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(Palette.border, lineWidth: 1)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+
+    private func t(_ english: String, _ russian: String) -> String {
+        OnboardingL10n.text(english, russian, language: languageManager.current)
+    }
+}
+
+private struct MacInboxInlineActionComposer: View {
+    let systemImage: String
+    let title: String
+    let message: String
+    let primaryTitle: String
+    let accent: Color
+    let isWorking: Bool
+    let action: () -> Void
+
+    var body: some View {
+        HStack(alignment: .top, spacing: Spacing.md) {
+            Image(systemName: systemImage)
+                .font(.system(size: 18, weight: .semibold))
+                .foregroundStyle(accent)
+                .frame(width: 34, height: 34)
+                .background(accent.opacity(0.12))
+                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            VStack(alignment: .leading, spacing: Spacing.sm) {
+                VStack(alignment: .leading, spacing: Spacing.xxs) {
+                    Text(title)
+                        .font(Typography.headingMedium)
+                    Text(message)
+                        .font(Typography.bodySmall)
+                        .foregroundStyle(Palette.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Button(action: action) {
+                    if isWorking {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Text(primaryTitle)
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(isWorking)
+            }
+            Spacer()
+        }
+        .padding(Spacing.lg)
+        .background(Palette.surfaceSubtle)
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(Palette.border, lineWidth: 1)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 }
 
@@ -811,11 +1140,14 @@ private struct MacInboxRowsTable: NSViewRepresentable {
     let rows: [InboxRow]
     let language: LanguageManager.SupportedLanguage
     let selectedRowID: String?
-    let accentColor: NSColor
+    let accentChoice: MacAccentChoice
+    let canLoadMore: Bool
+    let isLoadingMore: Bool
     let onSelect: (InboxRow) -> Void
+    let onLoadMore: () -> Void
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(onSelect: onSelect)
+        Coordinator(onSelect: onSelect, onLoadMore: onLoadMore)
     }
 
     func makeNSView(context: Context) -> NSScrollView {
@@ -824,24 +1156,24 @@ private struct MacInboxRowsTable: NSViewRepresentable {
         tableView.setAccessibilityIdentifier("mac-inbox-rows")
         tableView.headerView = nil
         tableView.backgroundColor = .clear
-        tableView.enclosingScrollView?.drawsBackground = false
         tableView.usesAlternatingRowBackgroundColors = false
         tableView.usesAutomaticRowHeights = false
         tableView.rowHeight = MacInboxTableMetrics.rowHeight
         tableView.intercellSpacing = .zero
-        tableView.gridStyleMask = [.solidHorizontalGridLineMask]
-        tableView.gridColor = NSColor.separatorColor.withAlphaComponent(0.45)
+        tableView.gridStyleMask = []
+        tableView.columnAutoresizingStyle = .uniformColumnAutoresizingStyle
         tableView.allowsMultipleSelection = false
         tableView.allowsEmptySelection = true
         tableView.selectionHighlightStyle = .none
         tableView.focusRingType = .none
+        tableView.autoresizingMask = [.width]
         tableView.dataSource = context.coordinator
         tableView.delegate = context.coordinator
         tableView.target = context.coordinator
         tableView.action = #selector(Coordinator.rowClicked(_:))
 
         let column = NSTableColumn(identifier: MacInboxTableMetrics.columnIdentifier)
-        column.minWidth = 180
+        column.minWidth = 0
         column.resizingMask = .autoresizingMask
         tableView.addTableColumn(column)
 
@@ -850,52 +1182,100 @@ private struct MacInboxRowsTable: NSViewRepresentable {
         scrollView.setAccessibilityIdentifier("mac-inbox-rows-scroll")
         scrollView.drawsBackground = false
         scrollView.hasVerticalScroller = true
+        scrollView.hasHorizontalScroller = false
         scrollView.autohidesScrollers = true
         scrollView.borderType = .noBorder
+        scrollView.contentView.postsBoundsChangedNotifications = true
         scrollView.documentView = tableView
 
         context.coordinator.tableView = tableView
+        context.coordinator.scrollView = scrollView
+        context.coordinator.observeScrollView(scrollView)
         return scrollView
     }
 
     func updateNSView(_ scrollView: NSScrollView, context: Context) {
         guard let tableView = scrollView.documentView as? NSTableView else { return }
         context.coordinator.onSelect = onSelect
+        context.coordinator.onLoadMore = onLoadMore
         context.coordinator.update(
             rows: rows,
             displayRows: rows.map { MacInboxDisplayRow(row: $0, language: language) },
             selectedRowID: selectedRowID,
-            accentColor: accentColor
+            accentChoice: accentChoice,
+            canLoadMore: canLoadMore,
+            isLoadingMore: isLoadingMore
         )
-        if tableView.bounds.width > 0, let column = tableView.tableColumns.first {
-            column.width = max(0, tableView.bounds.width)
+        if scrollView.contentView.bounds.width > 0, let column = tableView.tableColumns.first {
+            column.width = scrollView.contentView.bounds.width
+            tableView.frame.size.width = scrollView.contentView.bounds.width
         }
+        if scrollView.contentView.bounds.origin.x != 0 {
+            var origin = scrollView.contentView.bounds.origin
+            origin.x = 0
+            scrollView.contentView.scroll(to: origin)
+            scrollView.reflectScrolledClipView(scrollView.contentView)
+        }
+        context.coordinator.maybeLoadMoreIfNeeded()
     }
 
     final class Coordinator: NSObject, NSTableViewDataSource, NSTableViewDelegate {
         var onSelect: (InboxRow) -> Void
+        var onLoadMore: () -> Void
         weak var tableView: NSTableView?
+        weak var scrollView: NSScrollView?
         private var rows: [InboxRow] = []
         private var displayRows: [MacInboxDisplayRow] = []
         private var selectedRowID: String?
-        private var accentColor: NSColor = .controlAccentColor
+        private var accentChoice: MacAccentChoice = .system
+        private var canLoadMore = false
+        private var isLoadingMore = false
+        private var didRequestLoadMore = false
         private var isApplyingSelection = false
+        private var boundsObserver: NSObjectProtocol?
 
-        init(onSelect: @escaping (InboxRow) -> Void) {
+        init(onSelect: @escaping (InboxRow) -> Void, onLoadMore: @escaping () -> Void) {
             self.onSelect = onSelect
+            self.onLoadMore = onLoadMore
+        }
+
+        deinit {
+            if let boundsObserver {
+                NotificationCenter.default.removeObserver(boundsObserver)
+            }
+        }
+
+        func observeScrollView(_ scrollView: NSScrollView) {
+            if let boundsObserver {
+                NotificationCenter.default.removeObserver(boundsObserver)
+            }
+            boundsObserver = NotificationCenter.default.addObserver(
+                forName: NSView.boundsDidChangeNotification,
+                object: scrollView.contentView,
+                queue: .main
+            ) { [weak self] _ in
+                self?.maybeLoadMoreIfNeeded()
+            }
         }
 
         func update(
             rows: [InboxRow],
             displayRows: [MacInboxDisplayRow],
             selectedRowID: String?,
-            accentColor: NSColor
+            accentChoice: MacAccentChoice,
+            canLoadMore: Bool,
+            isLoadingMore: Bool
         ) {
-            let needsReload = self.displayRows != displayRows || !self.accentColor.isEqual(accentColor)
+            let needsReload = self.displayRows != displayRows || self.accentChoice != accentChoice
             self.rows = rows
             self.displayRows = displayRows
             self.selectedRowID = selectedRowID
-            self.accentColor = accentColor
+            self.accentChoice = accentChoice
+            self.canLoadMore = canLoadMore
+            self.isLoadingMore = isLoadingMore
+            if !isLoadingMore {
+                didRequestLoadMore = false
+            }
 
             if needsReload {
                 tableView?.reloadData()
@@ -919,7 +1299,7 @@ private struct MacInboxRowsTable: NSViewRepresentable {
             ) as? MacInboxTableCellView ?? MacInboxTableCellView(
                 identifier: MacInboxTableMetrics.cellIdentifier
             )
-            cell.configure(with: displayRows[row], accentColor: accentColor)
+            cell.configure(with: displayRows[row], accentColor: accentChoice.nsColor)
             return cell
         }
 
@@ -933,7 +1313,7 @@ private struct MacInboxRowsTable: NSViewRepresentable {
                 owner: self
             ) as? MacInboxTableRowView ?? MacInboxTableRowView()
             rowView.identifier = MacInboxTableMetrics.rowIdentifier
-            rowView.accentColor = accentColor
+            rowView.accentColor = accentChoice.nsColor
             return rowView
         }
 
@@ -960,6 +1340,9 @@ private struct MacInboxRowsTable: NSViewRepresentable {
             let nextIndex: Int? = selectedRowID.flatMap { id in
                 displayRows.firstIndex { $0.id == id }
             }
+            if tableView.selectedRow == (nextIndex ?? -1) {
+                return
+            }
             isApplyingSelection = true
             defer { isApplyingSelection = false }
             if let nextIndex {
@@ -968,11 +1351,24 @@ private struct MacInboxRowsTable: NSViewRepresentable {
                 tableView.deselectAll(nil)
             }
         }
+
+        func maybeLoadMoreIfNeeded() {
+            guard canLoadMore, !isLoadingMore, !didRequestLoadMore else { return }
+            guard let tableView, !displayRows.isEmpty else { return }
+            let visibleMaxY = tableView.visibleRect.maxY
+            let contentHeight = tableView.rect(ofRow: displayRows.count - 1).maxY
+            guard contentHeight > 0 else { return }
+            let distanceToBottom = contentHeight - visibleMaxY
+            guard distanceToBottom <= MacInboxTableMetrics.loadMoreThreshold else { return }
+            didRequestLoadMore = true
+            onLoadMore()
+        }
     }
 }
 
 private enum MacInboxTableMetrics {
     static let rowHeight: CGFloat = 64
+    static let loadMoreThreshold: CGFloat = 256
     static let columnIdentifier = NSUserInterfaceItemIdentifier("MacInboxRowsColumn")
     static let cellIdentifier = NSUserInterfaceItemIdentifier("MacInboxRowCell")
     static let rowIdentifier = NSUserInterfaceItemIdentifier("MacInboxTableRow")
