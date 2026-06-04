@@ -20,11 +20,6 @@ final class MacContentFeedViewModel: ObservableObject {
     @Published private var downloadingSummaryAudioItemId: String?
     @Published private var playingSummaryAudioItemId: String?
 
-    // Multi-select -> compare
-    @Published var compareSelection: Set<String> = []
-    @Published var activeComparisonId: String?
-    @Published var isComparing = false
-
     let apiClient: APIClient
     private let makeSummaryAudioPlayer: (Data) throws -> any MacSummaryAudioPlaying
     private var summaryAudioPlayer: (any MacSummaryAudioPlaying)?
@@ -36,33 +31,6 @@ final class MacContentFeedViewModel: ObservableObject {
     ) {
         self.apiClient = apiClient
         self.makeSummaryAudioPlayer = summaryAudioPlayerFactory
-    }
-
-    func toggleCompare(_ id: String) {
-        if compareSelection.contains(id) {
-            compareSelection.remove(id)
-        } else {
-            compareSelection.insert(id)
-        }
-    }
-
-    var canCompare: Bool { compareSelection.count >= 2 }
-
-    func compareSelected() async {
-        guard canCompare, !isComparing else { return }
-        isComparing = true
-        defer { isComparing = false }
-        do {
-            let set = try await apiClient.createComparison(itemIds: Array(compareSelection))
-            activeComparisonId = set.id
-        } catch {
-            errorMessage = error.localizedDescription
-        }
-    }
-
-    func clearComparison() {
-        activeComparisonId = nil
-        compareSelection.removeAll()
     }
 
     func load() async {

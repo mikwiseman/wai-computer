@@ -70,19 +70,6 @@ struct MacContentFeedView: View {
                 Task { await model.uploadFile(url) }
             }
         }
-        .sheet(isPresented: Binding(
-            get: { model.activeComparisonId != nil },
-            set: { if !$0 { model.clearComparison() } }
-        )) {
-            if let comparisonId = model.activeComparisonId {
-                MacComparisonView(
-                    apiClient: model.apiClient,
-                    comparisonId: comparisonId,
-                    onClose: { model.clearComparison() }
-                )
-                .frame(minWidth: 640, minHeight: 480)
-            }
-        }
     }
 
     private var header: some View {
@@ -207,23 +194,6 @@ struct MacContentFeedView: View {
                 )
             }
             Spacer()
-            if model.canCompare {
-                Button {
-                    Task { await model.compareSelected() }
-                } label: {
-                    if model.isComparing {
-                        ProgressView().controlSize(.small)
-                    } else {
-                        Label(
-                            t("Compare (\(model.compareSelection.count))",
-                              "Сравнить (\(model.compareSelection.count))"),
-                            systemImage: "tablecells"
-                        )
-                    }
-                }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.small)
-            }
         }
         .padding(.horizontal, Spacing.xl)
         .padding(.vertical, Spacing.sm)
@@ -241,19 +211,14 @@ struct MacContentFeedView: View {
                                         "Добавьте ссылку или текст выше, либо подключите источник."))
                 )
             } else {
-                List(selection: Binding(
-                    get: { model.selectedId },
-                    set: { newValue in
-                        model.selectedId = newValue
-                        if let newValue {
-                            Task { await model.selectItem(newValue) }
-                        } else {
-                            model.selectedItem = nil
-                        }
-                    }
-                )) {
+                List {
                     ForEach(model.entries) { entry in
-                        contentRow(entry).tag(entry.id)
+                        contentRow(entry)
+                            .contentShape(Rectangle())
+                            .onTapGesture {
+                                model.selectedId = entry.id
+                                Task { await model.selectItem(entry.id) }
+                            }
                     }
                 }
                 .listStyle(.inset)
@@ -263,17 +228,6 @@ struct MacContentFeedView: View {
 
     private func contentRow(_ entry: ItemListEntry) -> some View {
         HStack(alignment: .top, spacing: Spacing.sm) {
-            Button {
-                model.toggleCompare(entry.id)
-            } label: {
-                Image(systemName: model.compareSelection.contains(entry.id)
-                      ? "checkmark.circle.fill" : "circle")
-                    .foregroundStyle(model.compareSelection.contains(entry.id)
-                                     ? Palette.accent : Palette.textTertiary)
-            }
-            .buttonStyle(.plain)
-            .help(t("Select to compare", "Выбрать для сравнения"))
-
             VStack(alignment: .leading, spacing: Spacing.xxs) {
                 Text(entry.title ?? entry.url ?? t("Untitled", "Без названия"))
                     .font(Typography.bodySmall.weight(.medium))
