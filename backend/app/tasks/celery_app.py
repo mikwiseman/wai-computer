@@ -54,6 +54,7 @@ celery_app.conf.update(
     # Explicit imports: autodiscover_tasks only finds modules literally
     # named `tasks.py`; our task modules live under `app.tasks.<name>`.
     imports=[
+        "app.tasks.agents",
         "app.tasks.billing_renewals",
         "app.tasks.comparison_generation",
         "app.tasks.consolidate_user_memory",
@@ -95,6 +96,18 @@ celery_app.conf.beat_schedule = {
         # Enqueue ingestion for any connected MCP server whose sync is due.
         "task": "app.tasks.mcp_sync.dispatch_due_mcp_syncs",
         "schedule": timedelta(minutes=5),
+    },
+    "agent-dispatch-every-minute": {
+        "task": "app.tasks.agents.dispatch_due_agents",
+        "schedule": timedelta(minutes=1),
+    },
+    "agent-recovery-every-minute": {
+        "task": "app.tasks.agents.recover_stale_agent_runs",
+        "schedule": timedelta(minutes=1),
+    },
+    "agent-action-expiry-every-minute": {
+        "task": "app.tasks.agents.expire_due_actions",
+        "schedule": timedelta(minutes=1),
     },
 }
 

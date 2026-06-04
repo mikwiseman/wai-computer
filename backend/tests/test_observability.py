@@ -779,6 +779,7 @@ async def test_upload_logs_do_not_expose_filename(
 def _capture_forwarded(monkeypatch):
     """Patch notify_ops in the observability module and capture its calls."""
     calls: list[dict] = []
+    monkeypatch.setenv("OPS_FORWARD_GENERIC_ERRORS", "1")
 
     def _fake_notify_ops(**kwargs):
         calls.append(kwargs)

@@ -786,10 +786,13 @@ final class DictationManager: ObservableObject {
         setState(.processing)
         instrumentationSession?.event(.finalizingStarted, data: ["durationMs": Int(dictationDuration * 1000)])
 
+        // Start cleanup against the live transcript while the audio tail and
+        // provider close drain complete; reuse it when final text matches.
+        let speculativeCleanup = startSpeculativeCleanupIfPossible()
+
         // Drain the active provider before choosing the best final transcript.
         await finishProviderAudioPumpBeforeFinalizing()
         guard shouldContinueFinalization() else { return }
-        let speculativeCleanup = startSpeculativeCleanupIfPossible()
         let providerSegments = (try? await providerSession?.close(timeout: .seconds(4))) ?? []
 
         // If cancelDictation ran during finalization, bail out cleanly.
@@ -1212,10 +1215,22 @@ final class DictationManager: ObservableObject {
 
         // Insert text into target app
         setState(.inserting)
+        instrumentationSession?.event(.insertionStarted, data: [
+            "chars": textToInsert.count,
+            "hasTargetApp": targetApp != nil,
+        ])
         do {
             try await TextInserter.insert(textToInsert, targetApp: targetApp)
+            instrumentationSession?.event(.insertionCompleted, data: [
+                "chars": textToInsert.count,
+                "automaticPaste": true,
+            ])
             NSSound(named: NSSound.Name("Pop"))?.play()
         } catch {
+            instrumentationSession?.event(.insertionCompleted, data: [
+                "chars": textToInsert.count,
+                "automaticPaste": false,
+            ])
             let recoveryURL = try? saveRecoveryText(textToInsert)
             SentryHelper.captureError(
                 error,
@@ -1273,7 +1288,7 @@ final class DictationManager: ObservableObject {
 
     private func finishProviderAudioPumpBeforeFinalizing() async {
         if let lease = activeAudioLease {
-            await waitForFinalCaptureTail()
+            await waitForFinalCaptureTail(lease: lease)
             await AudioEngineHost.shared.release(lease)
             activeAudioLease = nil
         }
@@ -1281,9 +1296,13 @@ final class DictationManager: ObservableObject {
         providerAudioTask = nil
     }
 
-    private func waitForFinalCaptureTail() async {
+    private func waitForFinalCaptureTail(lease: AudioEngineHost.Lease) async {
         guard !Task.isCancelled else { return }
-        try? await Task.sleep(for: DictationFinalizationPolicy.captureTailDelay)
+        let delay = DictationFinalizationPolicy.captureTailDelay(
+            tapBufferFrames: Int(AudioEngineHost.tapBufferFrames),
+            sampleRate: lease.nativeInputFormat?.sampleRate ?? 16_000
+        )
+        try? await Task.sleep(for: delay)
     }
 
     private func currentDictationLanguage() -> String {
@@ -1423,6 +1442,11 @@ final class DictationManager: ObservableObject {
             )
         }
 
+        session.event(result.prefetched ? .tokenPrefetchHit : .tokenPrefetchMiss, data: [
+            "provider": result.config.provider,
+            "model": result.config.model,
+            "tokenAgeMs": result.tokenAgeMilliseconds,
+        ])
         session.event(.tokenMinted, data: [
             "provider": result.config.provider,
             "model": result.config.model,

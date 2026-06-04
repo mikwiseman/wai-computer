@@ -470,7 +470,10 @@ public actor WebSocketManager {
         case "UtteranceEnd":
             lastTranscriptReceivedAt = reconnectClock.now
         case "Metadata":
-            providerFinalizationReceived = true
+            if endOfStreamRequested && endOfStreamSent {
+                lastTranscriptReceivedAt = reconnectClock.now
+                providerFinalizationReceived = true
+            }
         case "Error", "error":
             let message = Self.deepgramProviderErrorMessage(json)
             let serverError = WebSocketConnectionError.serverError(message)
@@ -868,6 +871,11 @@ public actor WebSocketManager {
     func testingSetReconnectState(enabled: Bool, reconnecting: Bool) {
         reconnectEnabled = enabled
         isReconnecting = reconnecting
+    }
+
+    func testingSetEndOfStreamState(requested: Bool, sent: Bool) {
+        endOfStreamRequested = requested
+        endOfStreamSent = sent
     }
 
     func testingEndOfStreamRequested() -> Bool {

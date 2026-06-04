@@ -64,6 +64,24 @@ def test_data_map_response_exposes_document_uploads_and_audio_policy() -> None:
     assert response["audio_retention_policy"] == "delete_after_processing"
 
 
+def test_agent_tables_are_classified_as_content_bearing() -> None:
+    tables = {entry.name: entry for entry in DATA_OWNERSHIP}
+
+    assert tables["agents"].contains_user_content is True
+    assert tables["agent_runs"].contains_user_content is True
+    assert tables["agent_steps"].contains_user_content is True
+    assert tables["companion_pending_actions"].contains_user_content is True
+
+
+def test_brain_space_tables_are_classified_for_self_host_export() -> None:
+    tables = {entry.name: entry for entry in DATA_OWNERSHIP}
+
+    assert tables["brain_spaces"].classification == "owned_exportable"
+    assert tables["brain_pages"].contains_user_content is True
+    assert tables["brain_claims"].contains_user_content is True
+    assert tables["brain_review_packs"].contains_user_content is True
+
+
 @pytest.mark.asyncio
 async def test_system_data_map_route(client) -> None:
     response = await client.get("/api/system/data-map")

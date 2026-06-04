@@ -11,6 +11,10 @@ import Foundation
 public struct DeterministicDesktopActuator: DesktopActuator {
     public init() {}
 
+    public func frontmostBundleId() async throws -> String? {
+        NSWorkspace.shared.frontmostApplication?.bundleIdentifier
+    }
+
     public func openURL(_ url: URL) async throws {
         guard NSWorkspace.shared.open(url) else {
             throw DesktopActuationError.openFailed

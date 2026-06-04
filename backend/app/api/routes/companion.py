@@ -25,6 +25,7 @@ from app.core.companion_actions import (
     verify_committable,
 )
 from app.core.companion_actuators import ActuationError, execute_action
+from app.core.device_presence import get_owned_device
 from app.core.observability import (
     add_sentry_breadcrumb,
     capture_sentry_anomaly,
@@ -651,6 +652,12 @@ async def resolve_chat_action(
     carries only a recipient *display name*, never a raw id/body.
     """
     await _load_user_chat(db, user.id, chat_id)  # ownership (404 otherwise)
+    existing = await get_pending(db, action_id=action_id, user_id=user.id, lock=False)
+    if existing is None or existing.conversation_id != chat_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Pending action not found for this chat",
+        )
 
     try:
         row = await resolve_action(
@@ -711,6 +718,7 @@ async def resolve_chat_action(
 
 
 class DesktopResultRequest(BaseModel):
+    device_id: uuid.UUID
     status: Literal["executed", "failed", "refused"]
     payload: dict[str, Any] | None = None
 
@@ -737,11 +745,36 @@ async def desktop_action_result(
     (no approval bypass)."""
     await _load_user_chat(db, user.id, chat_id)
     row = await get_pending(db, action_id=action_id, user_id=user.id, lock=True)
-    if row is None or row.kind != "desktop_action":
+    if row is None or row.conversation_id != chat_id or row.kind != "desktop_action":
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Desktop action not found"
         )
-    if row.status not in ("approved", "executed", "failed"):
+    device = await get_owned_device(db, user_id=user.id, device_id=request.device_id)
+    if device is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Device not found",
+        )
+    if row.device_target is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Desktop action has no target device",
+        )
+    if row.device_target != str(request.device_id):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Desktop action is not targeted at this device",
+        )
+    if row.status in ("executed", "failed"):
+        duplicate_success = row.status == "executed" and request.status == "executed"
+        duplicate_failure = row.status == "failed" and request.status in ("failed", "refused")
+        if duplicate_success or duplicate_failure:
+            return DesktopResultResponse(action_id=str(action_id), status=row.status)
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Desktop action result already recorded",
+        )
+    if row.status != "approved":
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Desktop action is not dispatched",

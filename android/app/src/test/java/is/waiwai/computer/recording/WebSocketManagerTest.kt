@@ -113,6 +113,25 @@ class WebSocketManagerTest {
         assertEquals(1, manager.collectedSegments.size)
     }
 
+    @Test
+    fun `connect time Metadata does not mark provider finalization`() = runTest {
+        val manager = DeepgramRealtimeWebSocketManager(api, language = "en")
+
+        manager.handleDeepgramMessage("""{"type":"Metadata","request_id":"abc"}""")
+
+        assertFalse(manager.testingProviderFinalizationReceived())
+    }
+
+    @Test
+    fun `Metadata after Finalize marks provider finalization`() = runTest {
+        val manager = DeepgramRealtimeWebSocketManager(api, language = "en")
+        manager.testingSetEndOfStreamState(requested = true, sent = true)
+
+        manager.handleDeepgramMessage("""{"type":"Metadata","request_id":"abc"}""")
+
+        assertTrue(manager.testingProviderFinalizationReceived())
+    }
+
     private fun deepgramConfig(
         provider: String = "deepgram",
         language: String = "multi",

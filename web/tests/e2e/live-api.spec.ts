@@ -10,6 +10,11 @@ import { test, expect, type Page } from "@playwright/test";
 
 const LIVE = process.env.E2E_LIVE_API === "1";
 const API_URL = process.env.E2E_API_URL || "https://wai.computer";
+const LEGAL_ACCEPTANCE = {
+  accepted_legal_terms: true,
+  legal_terms_version: "2026-05-22",
+  legal_privacy_version: "2026-05-22",
+};
 
 /** Generate a unique email for each test run to avoid collisions. */
 function uniqueEmail(): string {
@@ -38,7 +43,7 @@ describeOrSkip("Live API", () => {
   test.beforeAll(async ({ request }) => {
     sharedEmail = uniqueEmail();
     const response = await request.post(`${API_URL}/api/auth/register`, {
-      data: { email: sharedEmail, password: sharedPassword },
+      data: { email: sharedEmail, password: sharedPassword, ...LEGAL_ACCEPTANCE },
     });
     expect(response.status()).toBe(200);
   });
@@ -50,6 +55,10 @@ describeOrSkip("Live API", () => {
     await page.getByTestId("auth-email").fill(email);
     await openPasswordModeIfNeeded(page);
     await page.getByTestId("auth-password").fill(sharedPassword);
+    const legalConsent = page.getByTestId("legal-consent-checkbox");
+    if (await legalConsent.count()) {
+      await legalConsent.check();
+    }
     await page.getByTestId("auth-submit").click();
 
     await expect(page).toHaveURL(/\/dashboard/, { timeout: 30_000 });
@@ -81,28 +90,24 @@ describeOrSkip("Live API", () => {
 
   test("create recording through dashboard UI", async ({ page }) => {
     await loginThroughWeb(page);
-    await page.getByTestId("tab-library").click();
+    await page.getByTestId("tab-inbox").click();
+    await page.getByRole("button", { name: "+ Add" }).click();
+    await page.getByText("Create empty recording").click();
 
-    // Create a new recording
     await page.getByTestId("recording-title").fill("Live test recording");
     await page.getByTestId("create-recording").click();
 
-    // Verify success message and the recording appears in the list
     await expect(page.getByTestId("dashboard-message")).toContainText("Recording created");
-    await expect(page.getByTestId("recording-list")).toContainText("Live test recording");
+    await expect(page.getByTestId("workspace-title")).toContainText("Inbox");
+    await expect(page.getByText("Live test recording")).toBeVisible();
   });
 
-  test("create entity through dashboard UI", async ({ page }) => {
+  test("search and brain surfaces load through dashboard UI", async ({ page }) => {
     await loginThroughWeb(page);
-    await page.getByTestId("tab-topics").click();
-
-    // Create a new entity
-    await page.getByTestId("entity-name").fill("Live test entity");
-    await page.getByTestId("create-entity").click();
-
-    // Verify success message and the entity appears in the list
-    await expect(page.getByTestId("dashboard-message")).toContainText("Entity created");
-    await expect(page.getByTestId("entity-list")).toContainText("Live test entity");
+    await page.getByTestId("tab-search").click();
+    await expect(page.getByTestId("search-query")).toBeVisible();
+    await page.getByTestId("tab-brain").click();
+    await expect(page.getByTestId("workspace-title")).toContainText(/Brain|Память/);
   });
 
   test("logout redirects to login", async ({ page }) => {

@@ -481,4 +481,29 @@ final class WebSocketManagerExtendedTests: XCTestCase {
         let finalized = await session.testingHasFinalizationMarker()
         XCTAssertTrue(finalized)
     }
+
+    func testWebSocketManagerConnectTimeMetadataDoesNotMarkFinalization() async {
+        let apiClient = APIClient(baseURL: URL(string: "https://example.com")!)
+        let manager = WebSocketManager(apiClient: apiClient)
+
+        await manager.testingHandleDeepgramMessage("""
+        {"type":"Metadata","request_id":"abc","model_info":{"name":"nova-3"}}
+        """)
+
+        let finalized = await manager.testingProviderFinalizationReceived()
+        XCTAssertFalse(finalized)
+    }
+
+    func testWebSocketManagerPostFinalizeMetadataMarksFinalization() async {
+        let apiClient = APIClient(baseURL: URL(string: "https://example.com")!)
+        let manager = WebSocketManager(apiClient: apiClient)
+        await manager.testingSetEndOfStreamState(requested: true, sent: true)
+
+        await manager.testingHandleDeepgramMessage("""
+        {"type":"Metadata","request_id":"abc","model_info":{"name":"nova-3"}}
+        """)
+
+        let finalized = await manager.testingProviderFinalizationReceived()
+        XCTAssertTrue(finalized)
+    }
 }

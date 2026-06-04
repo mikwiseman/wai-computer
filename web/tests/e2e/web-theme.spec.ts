@@ -110,7 +110,7 @@ test.describe("web-facing theme and responsive pass", () => {
       "/billing/cancel?provider=tinkoff&lang=ru",
       "/share/theme-token",
     ]) {
-      await page.goto(path, { waitUntil: "networkidle" });
+      await page.goto(path, { waitUntil: "load" });
       await expectNoViewportOverflow(page);
     }
   });
@@ -120,7 +120,7 @@ test.describe("web-facing theme and responsive pass", () => {
     await page.emulateMedia({ colorScheme: "dark" });
 
     for (const path of ["/login", "/billing/cancel?provider=tinkoff&lang=ru", "/share/theme-token"]) {
-      await page.goto(path, { waitUntil: "networkidle" });
+      await page.goto(path, { waitUntil: "load" });
       await expectDarkReadableSurface(page);
     }
   });

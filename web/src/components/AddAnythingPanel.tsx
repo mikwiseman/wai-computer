@@ -36,6 +36,7 @@ export function AddAnythingPanel({
   const [result, setResult] = useState<Item | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const busyRef = useRef(false);
 
   const pollForSummary = useCallback(async (itemId: string) => {
     for (let attempt = 0; attempt < POLL_MAX_ATTEMPTS; attempt += 1) {
@@ -53,7 +54,8 @@ export function AddAnythingPanel({
 
   const handleSubmit = useCallback(async () => {
     const trimmed = value.trim();
-    if (!trimmed) return;
+    if (!trimmed || busyRef.current) return;
+    busyRef.current = true;
     setBusy(true);
     setResult(null);
     const isUrl = URL_RE.test(trimmed);
@@ -100,13 +102,15 @@ export function AddAnythingPanel({
       setStatus("");
       onError?.(message);
     } finally {
+      busyRef.current = false;
       setBusy(false);
     }
   }, [captureMode, folderId, locale, value, onCreated, onError, pollForSummary]);
 
   const handleFile = useCallback(
     async (file: File) => {
-      if (busy) return;
+      if (busyRef.current) return;
+      busyRef.current = true;
       setBusy(true);
       setResult(null);
       setStatus(locale === "ru" ? `Загружаем ${file.name}...` : `Uploading ${file.name}...`);
@@ -137,10 +141,11 @@ export function AddAnythingPanel({
         setStatus("");
         onError?.(err instanceof Error ? err.message : "Couldn't upload that file.");
       } finally {
+        busyRef.current = false;
         setBusy(false);
       }
     },
-    [busy, captureMode, folderId, locale, onCreated, onRecordingQueued, onError, pollForSummary],
+    [captureMode, folderId, locale, onCreated, onRecordingQueued, onError, pollForSummary],
   );
 
   const keyMoments: KeyMoment[] = result?.summary?.key_moments ?? [];

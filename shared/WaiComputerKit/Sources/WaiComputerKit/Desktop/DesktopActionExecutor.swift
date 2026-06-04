@@ -7,6 +7,10 @@ import Foundation
 /// Mac, and so a failure in any tier surfaces as a thrown error (no silent
 /// fallback to another tier).
 public protocol DesktopActuator: Sendable {
+    /// Current frontmost app bundle id for UI-driving actions. The executor
+    /// checks this immediately before type/click/snapshot so a target switch
+    /// cannot bypass the safety policy after planning.
+    func frontmostBundleId() async throws -> String?
     func openURL(_ url: URL) async throws
     func openApp(name: String) async throws
     func typeText(_ text: String) async throws
@@ -70,15 +74,42 @@ public struct DesktopActionExecutor: Sendable {
         case .openApp(let name):
             return await perform("could not open app") { try await actuator.openApp(name: name) }
         case .typeText(let text):
+            if let outcome = await verifyFrontmostTarget(verb: "type") {
+                return outcome
+            }
             return await perform("could not type") { try await actuator.typeText(text) }
         case .click(let index):
+            if let outcome = await verifyFrontmostTarget(verb: "click") {
+                return outcome
+            }
             return await perform("could not click") { try await actuator.click(index: index) }
         case .snapshot:
+            if let outcome = await verifyFrontmostTarget(verb: "snapshot") {
+                return outcome
+            }
             do {
                 return .observed(try await actuator.snapshot())
             } catch {
                 return .failed(reason: "could not read the screen")
             }
+        }
+    }
+
+    private func verifyFrontmostTarget(verb: String) async -> DesktopActuationOutcome? {
+        let bundleId: String?
+        do {
+            bundleId = try await actuator.frontmostBundleId()
+        } catch {
+            return .failed(reason: "could not verify target app")
+        }
+        guard let bundleId, !bundleId.isEmpty else {
+            return .refused(reason: "target app unavailable")
+        }
+        switch router.safety.decide(DesktopCommandRequest(verb: verb, bundleId: bundleId)) {
+        case .allow:
+            return nil
+        case .refuse(let reason):
+            return .refused(reason: reason)
         }
     }
 

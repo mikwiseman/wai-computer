@@ -8,7 +8,7 @@ from statistics import median
 from typing import Annotated, Literal
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from pydantic import BaseModel, Field, field_validator, model_validator
 from sqlalchemy import String, case, desc, func, or_, select, text, update
 from sqlalchemy.exc import IntegrityError
@@ -19,8 +19,10 @@ from app.billing.providers.stripe_provider import StripeProvider
 from app.billing.providers.tinkoff_provider import TinkoffProvider
 from app.config import get_settings
 from app.core.embedding_backfill import backfill_missing_segment_embeddings
+from app.core.entity_graph import backfill_entity_mentions_from_existing_summaries
 from app.core.observability import get_release_version, get_sentry_runtime
 from app.models.admin import AdminAuditLog, AdminRole, StaffMember
+from app.models.ai_usage import AiUsageEvent
 from app.models.api_key import ApiKey
 from app.models.billing import (
     BillingEvent,
@@ -35,6 +37,7 @@ from app.models.billing import (
     UsageWeek,
 )
 from app.models.companion import ChatMessage, Conversation
+from app.models.deepgram_usage import DeepgramUsageEvent
 from app.models.dictation import DictationEntry
 from app.models.mcp_oauth import McpOAuthToken
 from app.models.recording import Recording, Segment
@@ -353,6 +356,33 @@ class AdminObservabilityResponse(BaseModel):
     alerts: list[dict]
 
 
+class AdminDeepgramUsageResponse(BaseModel):
+    generated_at: datetime
+    window_days: int
+    captured: dict
+    estimated: dict
+    by_user: list[dict]
+    by_operation: list[dict]
+    by_day: list[dict]
+    top_recordings: list[dict]
+    recent_events: list[dict]
+    analysis: list[dict]
+
+
+class AdminAiUsageResponse(BaseModel):
+    generated_at: datetime
+    window_days: int
+    filters: dict
+    summary: dict
+    by_day: list[dict]
+    by_provider: list[dict]
+    by_feature: list[dict]
+    by_model: list[dict]
+    by_user: list[dict]
+    recent_events: list[dict]
+    analysis: list[dict]
+
+
 class AdminEmbeddingBackfillRequest(BaseModel):
     user_id: UUID | None = None
     batch_size: int | None = Field(default=None, ge=1, le=2048)
@@ -366,6 +396,22 @@ class AdminEmbeddingBackfillResponse(BaseModel):
     remaining: int
     batches: int
     isolated_failures: int
+
+
+class AdminBrainBackfillRequest(BaseModel):
+    user_id: UUID | None = None
+    limit: int | None = Field(default=None, ge=1, le=100_000)
+
+
+class AdminBrainBackfillResponse(BaseModel):
+    recording_summaries_scanned: int
+    item_summaries_scanned: int
+    sources_with_entities: int
+    mentions_recorded: int
+    entity_mentions_before: int
+    entity_mentions_after: int
+    created_mentions: int
+    llm_requests: int
 
 
 class AdminBillingInvoiceResponse(BaseModel):
@@ -712,6 +758,1092 @@ def _observability_alerts(recording_pipeline: dict) -> list[dict]:
     return alerts
 
 
+def _num(value: object) -> float:
+    if value is None:
+        return 0.0
+    return float(value)
+
+
+def _int(value: object) -> int:
+    if value is None:
+        return 0
+    return int(value)
+
+
+def _day(value: object) -> str:
+    if isinstance(value, datetime):
+        return value.date().isoformat()
+    return str(value)
+
+
+def _ai_usage_conditions(
+    *,
+    since: datetime,
+    provider: str | None = None,
+    feature: str | None = None,
+    model: str | None = None,
+    status_filter: str | None = None,
+    user_id: UUID | None = None,
+    q: str | None = None,
+) -> list:
+    conditions = [AiUsageEvent.created_at >= since]
+    if provider:
+        conditions.append(AiUsageEvent.provider == provider)
+    if feature:
+        conditions.append(AiUsageEvent.feature == feature)
+    if model:
+        conditions.append(AiUsageEvent.model == model)
+    if status_filter:
+        conditions.append(AiUsageEvent.status == status_filter)
+    if user_id is not None:
+        conditions.append(AiUsageEvent.user_id == user_id)
+    if q and q.strip():
+        pattern = f"%{q.strip()}%"
+        conditions.append(
+            or_(
+                User.email.ilike(pattern),
+                AiUsageEvent.user_id.cast(String).ilike(pattern),
+            )
+        )
+    return conditions
+
+
+async def _ai_usage_rows(
+    db: Database,
+    *,
+    since: datetime,
+    detail_limit: int,
+    provider: str | None = None,
+    feature: str | None = None,
+    model: str | None = None,
+    status_filter: str | None = None,
+    user_id: UUID | None = None,
+    q: str | None = None,
+) -> dict:
+    conditions = _ai_usage_conditions(
+        since=since,
+        provider=provider,
+        feature=feature,
+        model=model,
+        status_filter=status_filter,
+        user_id=user_id,
+        q=q,
+    )
+    base_join = AiUsageEvent.__table__.outerjoin(User, User.id == AiUsageEvent.user_id)
+    summary_row = (
+        await db.execute(
+            select(
+                func.count(AiUsageEvent.id),
+                func.coalesce(func.sum(AiUsageEvent.estimated_cost_usd), 0),
+                func.coalesce(func.sum(AiUsageEvent.input_tokens), 0),
+                func.coalesce(func.sum(AiUsageEvent.output_tokens), 0),
+                func.coalesce(func.sum(AiUsageEvent.cached_tokens), 0),
+                func.coalesce(func.sum(AiUsageEvent.reasoning_tokens), 0),
+                func.coalesce(func.sum(AiUsageEvent.total_tokens), 0),
+                func.coalesce(func.sum(AiUsageEvent.billable_seconds), 0),
+                func.coalesce(func.sum(AiUsageEvent.audio_seconds), 0),
+                func.coalesce(func.sum(case((AiUsageEvent.status == "failed", 1), else_=0)), 0),
+                func.coalesce(func.sum(case((AiUsageEvent.status == "refused", 1), else_=0)), 0),
+                func.coalesce(
+                    func.sum(case((AiUsageEvent.pricing_status != "priced", 1), else_=0)),
+                    0,
+                ),
+                func.avg(AiUsageEvent.latency_ms),
+            )
+            .select_from(base_join)
+            .where(*conditions)
+        )
+    ).one()
+    latency_values = [
+        _int(value)
+        for value in (
+            await db.execute(
+                select(AiUsageEvent.latency_ms)
+                .select_from(base_join)
+                .where(*conditions, AiUsageEvent.latency_ms.is_not(None))
+            )
+        ).scalars()
+    ]
+    latency_values.sort()
+    p95_latency = (
+        latency_values[min(len(latency_values) - 1, int(len(latency_values) * 0.95))]
+        if latency_values
+        else None
+    )
+    summary = {
+        "events": _int(summary_row[0]),
+        "estimated_cost_usd": round(_num(summary_row[1]), 6),
+        "input_tokens": _int(summary_row[2]),
+        "output_tokens": _int(summary_row[3]),
+        "cached_tokens": _int(summary_row[4]),
+        "reasoning_tokens": _int(summary_row[5]),
+        "total_tokens": _int(summary_row[6]),
+        "billable_seconds": round(_num(summary_row[7]), 3),
+        "audio_seconds": round(_num(summary_row[8]), 3),
+        "failed_events": _int(summary_row[9]),
+        "refused_events": _int(summary_row[10]),
+        "unpriced_events": _int(summary_row[11]),
+        "avg_latency_ms": round(_num(summary_row[12])),
+        "p95_latency_ms": p95_latency,
+    }
+
+    async def grouped_rows(*, group_fields: tuple, labels: tuple[str, ...]) -> list[dict]:
+        rows = (
+            await db.execute(
+                select(
+                    *group_fields,
+                    func.count(AiUsageEvent.id),
+                    func.coalesce(func.sum(AiUsageEvent.estimated_cost_usd), 0),
+                    func.coalesce(func.sum(AiUsageEvent.total_tokens), 0),
+                    func.coalesce(func.sum(AiUsageEvent.input_tokens), 0),
+                    func.coalesce(func.sum(AiUsageEvent.output_tokens), 0),
+                    func.coalesce(func.sum(AiUsageEvent.billable_seconds), 0),
+                    func.coalesce(func.sum(case((AiUsageEvent.status == "failed", 1), else_=0)), 0),
+                    func.coalesce(
+                        func.sum(case((AiUsageEvent.status == "refused", 1), else_=0)),
+                        0,
+                    ),
+                    func.coalesce(
+                        func.sum(case((AiUsageEvent.pricing_status != "priced", 1), else_=0)),
+                        0,
+                    ),
+                    func.max(AiUsageEvent.created_at),
+                )
+                .select_from(base_join)
+                .where(*conditions)
+                .group_by(*group_fields)
+                .order_by(
+                    func.coalesce(func.sum(AiUsageEvent.estimated_cost_usd), 0).desc(),
+                    func.coalesce(func.sum(AiUsageEvent.total_tokens), 0).desc(),
+                    func.count(AiUsageEvent.id).desc(),
+                )
+                .limit(detail_limit)
+            )
+        ).all()
+        output: list[dict] = []
+        for row in rows:
+            prefix = {label: row[index] for index, label in enumerate(labels)}
+            offset = len(labels)
+            output.append(
+                {
+                    **prefix,
+                    "events": _int(row[offset]),
+                    "estimated_cost_usd": round(_num(row[offset + 1]), 6),
+                    "total_tokens": _int(row[offset + 2]),
+                    "input_tokens": _int(row[offset + 3]),
+                    "output_tokens": _int(row[offset + 4]),
+                    "billable_seconds": round(_num(row[offset + 5]), 3),
+                    "failed_events": _int(row[offset + 6]),
+                    "refused_events": _int(row[offset + 7]),
+                    "unpriced_events": _int(row[offset + 8]),
+                    "last_event_at": row[offset + 9].isoformat()
+                    if row[offset + 9]
+                    else None,
+                }
+            )
+        return output
+
+    day_rows = [
+        {
+            "date": _day(day),
+            "events": _int(events),
+            "estimated_cost_usd": round(_num(cost), 6),
+            "total_tokens": _int(tokens),
+            "billable_seconds": round(_num(seconds), 3),
+            "failed_events": _int(failed),
+            "refused_events": _int(refused),
+        }
+        for day, events, cost, tokens, seconds, failed, refused in (
+            await db.execute(
+                select(
+                    func.date(AiUsageEvent.created_at),
+                    func.count(AiUsageEvent.id),
+                    func.coalesce(func.sum(AiUsageEvent.estimated_cost_usd), 0),
+                    func.coalesce(func.sum(AiUsageEvent.total_tokens), 0),
+                    func.coalesce(func.sum(AiUsageEvent.billable_seconds), 0),
+                    func.coalesce(func.sum(case((AiUsageEvent.status == "failed", 1), else_=0)), 0),
+                    func.coalesce(
+                        func.sum(case((AiUsageEvent.status == "refused", 1), else_=0)),
+                        0,
+                    ),
+                )
+                .select_from(base_join)
+                .where(*conditions)
+                .group_by(func.date(AiUsageEvent.created_at))
+                .order_by(func.date(AiUsageEvent.created_at))
+            )
+        ).all()
+    ]
+    by_user_rows = (
+        await db.execute(
+            select(
+                AiUsageEvent.user_id,
+                User.email,
+                func.count(AiUsageEvent.id),
+                func.coalesce(func.sum(AiUsageEvent.estimated_cost_usd), 0),
+                func.coalesce(func.sum(AiUsageEvent.total_tokens), 0),
+                func.coalesce(func.sum(AiUsageEvent.billable_seconds), 0),
+                func.coalesce(func.sum(case((AiUsageEvent.status == "failed", 1), else_=0)), 0),
+                func.coalesce(func.sum(case((AiUsageEvent.status == "refused", 1), else_=0)), 0),
+                func.coalesce(
+                    func.sum(case((AiUsageEvent.pricing_status != "priced", 1), else_=0)),
+                    0,
+                ),
+                func.max(AiUsageEvent.created_at),
+            )
+            .select_from(base_join)
+            .where(*conditions)
+            .group_by(AiUsageEvent.user_id, User.email)
+            .order_by(
+                func.coalesce(func.sum(AiUsageEvent.estimated_cost_usd), 0).desc(),
+                func.coalesce(func.sum(AiUsageEvent.total_tokens), 0).desc(),
+                func.coalesce(func.sum(AiUsageEvent.billable_seconds), 0).desc(),
+            )
+            .limit(detail_limit)
+        )
+    ).all()
+    recent_events = [
+        {
+            "id": str(event.id),
+            "created_at": event.created_at.isoformat(),
+            "user_id": str(event.user_id) if event.user_id else None,
+            "email": email,
+            "recording_id": str(event.recording_id) if event.recording_id else None,
+            "item_id": str(event.item_id) if event.item_id else None,
+            "conversation_id": str(event.conversation_id) if event.conversation_id else None,
+            "message_id": str(event.message_id) if event.message_id else None,
+            "provider": event.provider,
+            "feature": event.feature,
+            "operation": event.operation,
+            "status": event.status,
+            "model": event.model,
+            "input_tokens": event.input_tokens,
+            "output_tokens": event.output_tokens,
+            "cached_tokens": event.cached_tokens,
+            "reasoning_tokens": event.reasoning_tokens,
+            "total_tokens": event.total_tokens,
+            "billable_seconds": event.billable_seconds,
+            "estimated_cost_usd": event.estimated_cost_usd,
+            "pricing_status": event.pricing_status,
+            "billing_mode": event.billing_mode,
+            "language_mode": event.language_mode,
+            "addons": event.addons or [],
+            "price_source": event.price_source,
+            "latency_ms": event.latency_ms,
+            "provider_status_code": event.provider_status_code,
+            "provider_error_code": event.provider_error_code,
+            "guard_code": event.guard_code,
+            "error_type": event.error_type,
+        }
+        for event, email in (
+            await db.execute(
+                select(AiUsageEvent, User.email)
+                .outerjoin(User, User.id == AiUsageEvent.user_id)
+                .where(*conditions)
+                .order_by(AiUsageEvent.created_at.desc())
+                .limit(detail_limit)
+            )
+        ).all()
+    ]
+    payload = {
+        "summary": summary,
+        "by_day": day_rows,
+        "by_provider": await grouped_rows(
+            group_fields=(AiUsageEvent.provider,),
+            labels=("provider",),
+        ),
+        "by_feature": await grouped_rows(
+            group_fields=(AiUsageEvent.feature,),
+            labels=("feature",),
+        ),
+        "by_model": await grouped_rows(
+            group_fields=(AiUsageEvent.provider, AiUsageEvent.model),
+            labels=("provider", "model"),
+        ),
+        "by_user": [
+            {
+                "user_id": str(user_id) if user_id else "unknown",
+                "email": email,
+                "events": _int(events),
+                "estimated_cost_usd": round(_num(cost), 6),
+                "total_tokens": _int(tokens),
+                "billable_seconds": round(_num(seconds), 3),
+                "failed_events": _int(failed),
+                "refused_events": _int(refused),
+                "unpriced_events": _int(unpriced),
+                "last_event_at": last_at.isoformat() if last_at else None,
+            }
+            for (
+                user_id,
+                email,
+                events,
+                cost,
+                tokens,
+                seconds,
+                failed,
+                refused,
+                unpriced,
+                last_at,
+            ) in by_user_rows
+        ],
+        "recent_events": recent_events,
+    }
+    return payload
+
+
+def _ai_usage_analysis(payload: dict) -> list[dict]:
+    summary = payload["summary"]
+    by_user = payload["by_user"]
+    by_feature = payload["by_feature"]
+    by_provider = payload["by_provider"]
+    analysis: list[dict] = []
+    if summary["events"] == 0:
+        analysis.append(
+            {
+                "severity": "info",
+                "code": "ai_usage.ledger.empty",
+                "title": "No AI usage captured in this window",
+                "detail": "The unified ledger starts after this deployment.",
+            }
+        )
+        return analysis
+    if summary["unpriced_events"] > 0:
+        analysis.append(
+            {
+                "severity": "warning",
+                "code": "ai_usage.unpriced_models",
+                "title": "Some model calls cannot be costed yet",
+                "detail": (
+                    f"{summary['unpriced_events']} events have usage metrics but no "
+                    "configured provider/model price."
+                ),
+            }
+        )
+    failed_total = summary["failed_events"] + summary["refused_events"]
+    if summary["events"] >= 5 and failed_total / summary["events"] >= 0.2:
+        analysis.append(
+            {
+                "severity": "critical",
+                "code": "ai_usage.failure_ratio.high",
+                "title": "High failed/refused AI event ratio",
+                "detail": f"{failed_total} of {summary['events']} events failed or were refused.",
+            }
+        )
+    total_cost = float(summary["estimated_cost_usd"] or 0)
+    if total_cost > 0 and by_user:
+        top_user = max(by_user, key=lambda item: item["estimated_cost_usd"])
+        share = top_user["estimated_cost_usd"] / total_cost
+        if share >= 0.5:
+            analysis.append(
+                {
+                    "severity": "warning",
+                    "code": "ai_usage.cost.concentrated_user",
+                    "title": "AI cost is concentrated in one user",
+                    "detail": (
+                        f"{top_user['email'] or top_user['user_id']} accounts for "
+                        f"{round(share * 100)}% of estimated AI cost."
+                    ),
+                }
+            )
+    total_tokens = int(summary["total_tokens"] or 0)
+    if total_tokens > 0 and by_feature:
+        top_feature = max(by_feature, key=lambda item: item["total_tokens"])
+        share = top_feature["total_tokens"] / total_tokens
+        if share >= 0.6:
+            analysis.append(
+                {
+                    "severity": "info",
+                    "code": "ai_usage.tokens.concentrated_feature",
+                    "title": "Token usage is concentrated in one feature",
+                    "detail": (
+                        f"{top_feature['feature']} accounts for "
+                        f"{round(share * 100)}% of total tokens."
+                    ),
+                }
+            )
+    for provider_row in by_provider:
+        if provider_row["failed_events"] or provider_row["refused_events"]:
+            analysis.append(
+                {
+                    "severity": "warning",
+                    "code": f"ai_usage.provider.{provider_row['provider']}.errors",
+                    "title": f"{provider_row['provider']} has failed/refused events",
+                    "detail": (
+                        f"{provider_row['failed_events']} failed and "
+                        f"{provider_row['refused_events']} refused events."
+                    ),
+                }
+            )
+    return analysis
+
+
+def _new_deepgram_user_row(user_id: str, email: str | None) -> dict:
+    return {
+        "user_id": user_id,
+        "email": email,
+        "captured_events": 0,
+        "captured_estimated_cost_usd": 0.0,
+        "captured_billable_seconds": 0.0,
+        "captured_audio_seconds": 0.0,
+        "captured_failed_events": 0,
+        "captured_refused_events": 0,
+        "captured_unpriced_events": 0,
+        "provider_402_events": 0,
+        "recording_count": 0,
+        "failed_recordings": 0,
+        "estimated_recording_seconds": 0.0,
+        "estimated_recording_words": 0,
+        "dictation_entries": 0,
+        "estimated_dictation_seconds": 0.0,
+        "estimated_dictation_words": 0,
+        "estimated_total_seconds": 0.0,
+        "last_event_at": None,
+    }
+
+
+async def _deepgram_usage_rows(
+    db: Database,
+    *,
+    since: datetime,
+    detail_limit: int,
+) -> dict:
+    user_rows: dict[str, dict] = {}
+    day_rows: dict[str, dict] = {}
+
+    captured_row = (
+        await db.execute(
+            select(
+                func.count(DeepgramUsageEvent.id),
+                func.coalesce(func.sum(DeepgramUsageEvent.estimated_cost_usd), 0),
+                func.coalesce(func.sum(DeepgramUsageEvent.audio_seconds), 0),
+                func.coalesce(func.sum(DeepgramUsageEvent.billable_seconds), 0),
+                func.coalesce(
+                    func.sum(case((DeepgramUsageEvent.status == "succeeded", 1), else_=0)),
+                    0,
+                ),
+                func.coalesce(
+                    func.sum(case((DeepgramUsageEvent.status == "failed", 1), else_=0)),
+                    0,
+                ),
+                func.coalesce(
+                    func.sum(case((DeepgramUsageEvent.status == "refused", 1), else_=0)),
+                    0,
+                ),
+                func.coalesce(
+                    func.sum(
+                        case((DeepgramUsageEvent.provider_status_code == 402, 1), else_=0)
+                    ),
+                    0,
+                ),
+                func.coalesce(
+                    func.sum(
+                        case((DeepgramUsageEvent.pricing_status != "priced", 1), else_=0)
+                    ),
+                    0,
+                ),
+            ).where(DeepgramUsageEvent.created_at >= since)
+        )
+    ).one()
+    captured = {
+        "events": _int(captured_row[0]),
+        "estimated_cost_usd": round(_num(captured_row[1]), 6),
+        "audio_seconds": round(_num(captured_row[2]), 3),
+        "billable_seconds": round(_num(captured_row[3]), 3),
+        "succeeded": _int(captured_row[4]),
+        "failed": _int(captured_row[5]),
+        "refused": _int(captured_row[6]),
+        "provider_402": _int(captured_row[7]),
+        "unpriced_events": _int(captured_row[8]),
+    }
+
+    captured_user_rows = (
+        await db.execute(
+            select(
+                DeepgramUsageEvent.user_id,
+                User.email,
+                func.count(DeepgramUsageEvent.id),
+                func.coalesce(func.sum(DeepgramUsageEvent.estimated_cost_usd), 0),
+                func.coalesce(func.sum(DeepgramUsageEvent.audio_seconds), 0),
+                func.coalesce(func.sum(DeepgramUsageEvent.billable_seconds), 0),
+                func.coalesce(
+                    func.sum(case((DeepgramUsageEvent.status == "failed", 1), else_=0)),
+                    0,
+                ),
+                func.coalesce(
+                    func.sum(case((DeepgramUsageEvent.status == "refused", 1), else_=0)),
+                    0,
+                ),
+                func.coalesce(
+                    func.sum(
+                        case((DeepgramUsageEvent.provider_status_code == 402, 1), else_=0)
+                    ),
+                    0,
+                ),
+                func.coalesce(
+                    func.sum(
+                        case((DeepgramUsageEvent.pricing_status != "priced", 1), else_=0)
+                    ),
+                    0,
+                ),
+                func.max(DeepgramUsageEvent.created_at),
+            )
+            .outerjoin(User, User.id == DeepgramUsageEvent.user_id)
+            .where(DeepgramUsageEvent.created_at >= since)
+            .group_by(DeepgramUsageEvent.user_id, User.email)
+        )
+    ).all()
+    for (
+        user_id,
+        email,
+        events,
+        cost,
+        audio_seconds,
+        billable_seconds,
+        failed,
+        refused,
+        p402,
+        unpriced,
+        last_at,
+    ) in (
+        captured_user_rows
+    ):
+        key = str(user_id) if user_id is not None else "unknown"
+        item = user_rows.setdefault(key, _new_deepgram_user_row(key, email))
+        item["email"] = email or item["email"]
+        item["captured_events"] = _int(events)
+        item["captured_estimated_cost_usd"] = round(_num(cost), 6)
+        item["captured_audio_seconds"] = round(_num(audio_seconds), 3)
+        item["captured_billable_seconds"] = round(_num(billable_seconds), 3)
+        item["captured_failed_events"] = _int(failed)
+        item["captured_refused_events"] = _int(refused)
+        item["provider_402_events"] = _int(p402)
+        item["captured_unpriced_events"] = _int(unpriced)
+        item["last_event_at"] = last_at
+
+    recording_rows = (
+        await db.execute(
+            select(
+                Recording.user_id,
+                User.email,
+                func.count(Recording.id),
+                func.coalesce(func.sum(Recording.duration_seconds), 0),
+                func.coalesce(func.sum(Recording.billed_word_count), 0),
+                func.coalesce(func.sum(case((Recording.status == "failed", 1), else_=0)), 0),
+            )
+            .join(User, User.id == Recording.user_id)
+            .where(
+                Recording.deleted_at.is_(None),
+                Recording.uploaded_at.is_not(None),
+                Recording.created_at >= since,
+            )
+            .group_by(Recording.user_id, User.email)
+        )
+    ).all()
+    estimated_recording_seconds = 0.0
+    estimated_recording_words = 0
+    estimated_recording_count = 0
+    estimated_failed_recordings = 0
+    for user_id, email, count, seconds, words, failed in recording_rows:
+        key = str(user_id)
+        item = user_rows.setdefault(key, _new_deepgram_user_row(key, email))
+        item["email"] = email
+        item["recording_count"] = _int(count)
+        item["estimated_recording_seconds"] = round(_num(seconds), 3)
+        item["estimated_recording_words"] = _int(words)
+        item["failed_recordings"] = _int(failed)
+        estimated_recording_seconds += _num(seconds)
+        estimated_recording_words += _int(words)
+        estimated_recording_count += _int(count)
+        estimated_failed_recordings += _int(failed)
+
+    dictation_rows = (
+        await db.execute(
+            select(
+                DictationEntry.user_id,
+                User.email,
+                func.count(DictationEntry.id),
+                func.coalesce(func.sum(DictationEntry.duration_seconds), 0),
+                func.coalesce(func.sum(DictationEntry.word_count), 0),
+            )
+            .join(User, User.id == DictationEntry.user_id)
+            .where(
+                DictationEntry.occurred_at >= since,
+            )
+            .group_by(DictationEntry.user_id, User.email)
+        )
+    ).all()
+    estimated_dictation_seconds = 0.0
+    estimated_dictation_words = 0
+    estimated_dictation_entries = 0
+    for user_id, email, count, seconds, words in dictation_rows:
+        key = str(user_id)
+        item = user_rows.setdefault(key, _new_deepgram_user_row(key, email))
+        item["email"] = email
+        item["dictation_entries"] = _int(count)
+        item["estimated_dictation_seconds"] = round(_num(seconds), 3)
+        item["estimated_dictation_words"] = _int(words)
+        estimated_dictation_seconds += _num(seconds)
+        estimated_dictation_words += _int(words)
+        estimated_dictation_entries += _int(count)
+
+    for item in user_rows.values():
+        item["estimated_total_seconds"] = round(
+            item["estimated_recording_seconds"] + item["estimated_dictation_seconds"],
+            3,
+        )
+        if isinstance(item["last_event_at"], datetime):
+            item["last_event_at"] = item["last_event_at"].isoformat()
+
+    operation_result_rows = (
+        await db.execute(
+            select(
+                DeepgramUsageEvent.operation,
+                DeepgramUsageEvent.purpose,
+                DeepgramUsageEvent.status,
+                func.count(DeepgramUsageEvent.id),
+                func.coalesce(func.sum(DeepgramUsageEvent.estimated_cost_usd), 0),
+                func.coalesce(func.sum(DeepgramUsageEvent.audio_seconds), 0),
+                func.coalesce(func.sum(DeepgramUsageEvent.billable_seconds), 0),
+                func.coalesce(
+                    func.sum(
+                        case((DeepgramUsageEvent.pricing_status != "priced", 1), else_=0)
+                    ),
+                    0,
+                ),
+                func.coalesce(
+                    func.sum(
+                        case(
+                            (DeepgramUsageEvent.provider_status_code == 402, 1),
+                            else_=0,
+                        )
+                    ),
+                    0,
+                ),
+            )
+            .where(DeepgramUsageEvent.created_at >= since)
+            .group_by(
+                DeepgramUsageEvent.operation,
+                DeepgramUsageEvent.purpose,
+                DeepgramUsageEvent.status,
+            )
+            .order_by(
+                DeepgramUsageEvent.operation,
+                DeepgramUsageEvent.purpose,
+                DeepgramUsageEvent.status,
+            )
+        )
+    ).all()
+    operation_rows = [
+        {
+            "operation": operation,
+            "purpose": purpose,
+            "status": status_value,
+            "events": _int(count),
+            "estimated_cost_usd": round(_num(cost), 6),
+            "audio_seconds": round(_num(audio_seconds), 3),
+            "billable_seconds": round(_num(billable_seconds), 3),
+            "unpriced_events": _int(unpriced),
+            "provider_402": _int(provider_402),
+        }
+        for (
+            operation,
+            purpose,
+            status_value,
+            count,
+            cost,
+            audio_seconds,
+            billable_seconds,
+            unpriced,
+            provider_402,
+        ) in operation_result_rows
+    ]
+
+    captured_day_rows = (
+        await db.execute(
+            select(
+                func.date(DeepgramUsageEvent.created_at),
+                func.count(DeepgramUsageEvent.id),
+                func.coalesce(func.sum(DeepgramUsageEvent.estimated_cost_usd), 0),
+                func.coalesce(func.sum(DeepgramUsageEvent.billable_seconds), 0),
+                func.coalesce(func.sum(DeepgramUsageEvent.audio_seconds), 0),
+                func.coalesce(
+                    func.sum(case((DeepgramUsageEvent.status == "failed", 1), else_=0)),
+                    0,
+                ),
+                func.coalesce(
+                    func.sum(case((DeepgramUsageEvent.status == "refused", 1), else_=0)),
+                    0,
+                ),
+                func.coalesce(
+                    func.sum(
+                        case((DeepgramUsageEvent.pricing_status != "priced", 1), else_=0)
+                    ),
+                    0,
+                ),
+            )
+            .where(DeepgramUsageEvent.created_at >= since)
+            .group_by(func.date(DeepgramUsageEvent.created_at))
+            .order_by(func.date(DeepgramUsageEvent.created_at))
+        )
+    ).all()
+    for day, events, cost, billable_seconds, audio_seconds, failed, refused, unpriced in (
+        captured_day_rows
+    ):
+        key = _day(day)
+        item = day_rows.setdefault(key, _new_deepgram_day_row(key))
+        item["captured_events"] = _int(events)
+        item["captured_estimated_cost_usd"] = round(_num(cost), 6)
+        item["captured_billable_seconds"] = round(_num(billable_seconds), 3)
+        item["captured_audio_seconds"] = round(_num(audio_seconds), 3)
+        item["captured_failed_events"] = _int(failed)
+        item["captured_refused_events"] = _int(refused)
+        item["captured_unpriced_events"] = _int(unpriced)
+
+    recording_day_rows = (
+        await db.execute(
+            select(
+                func.date(Recording.created_at),
+                func.count(Recording.id),
+                func.coalesce(func.sum(Recording.duration_seconds), 0),
+            )
+            .where(
+                Recording.deleted_at.is_(None),
+                Recording.uploaded_at.is_not(None),
+                Recording.created_at >= since,
+            )
+            .group_by(func.date(Recording.created_at))
+        )
+    ).all()
+    for day, count, seconds in recording_day_rows:
+        key = _day(day)
+        item = day_rows.setdefault(key, _new_deepgram_day_row(key))
+        item["estimated_recordings"] = _int(count)
+        item["estimated_recording_seconds"] = round(_num(seconds), 3)
+
+    dictation_day_rows = (
+        await db.execute(
+            select(
+                func.date(DictationEntry.occurred_at),
+                func.count(DictationEntry.id),
+                func.coalesce(func.sum(DictationEntry.duration_seconds), 0),
+            )
+            .where(
+                DictationEntry.occurred_at >= since,
+            )
+            .group_by(func.date(DictationEntry.occurred_at))
+        )
+    ).all()
+    for day, count, seconds in dictation_day_rows:
+        key = _day(day)
+        item = day_rows.setdefault(key, _new_deepgram_day_row(key))
+        item["estimated_dictation_entries"] = _int(count)
+        item["estimated_dictation_seconds"] = round(_num(seconds), 3)
+
+    events_by_recording = (
+        select(
+            DeepgramUsageEvent.recording_id.label("recording_id"),
+            func.count(DeepgramUsageEvent.id).label("event_count"),
+            func.coalesce(func.sum(DeepgramUsageEvent.estimated_cost_usd), 0).label(
+                "estimated_cost_usd"
+            ),
+            func.coalesce(func.sum(DeepgramUsageEvent.billable_seconds), 0).label(
+                "billable_seconds"
+            ),
+            func.coalesce(
+                func.sum(case((DeepgramUsageEvent.status == "failed", 1), else_=0)),
+                0,
+            ).label("failed_events"),
+            func.coalesce(
+                func.sum(case((DeepgramUsageEvent.status == "refused", 1), else_=0)),
+                0,
+            ).label("refused_events"),
+            func.coalesce(
+                func.sum(case((DeepgramUsageEvent.provider_status_code == 402, 1), else_=0)),
+                0,
+            ).label("provider_402_events"),
+            func.coalesce(
+                func.sum(case((DeepgramUsageEvent.pricing_status != "priced", 1), else_=0)),
+                0,
+            ).label("unpriced_events"),
+            func.max(DeepgramUsageEvent.created_at).label("last_event_at"),
+        )
+        .where(
+            DeepgramUsageEvent.created_at >= since,
+            DeepgramUsageEvent.recording_id.is_not(None),
+        )
+        .group_by(DeepgramUsageEvent.recording_id)
+        .subquery()
+    )
+    top_recordings = [
+        {
+            "recording_id": str(recording_id),
+            "user_id": str(user_id),
+            "email": email,
+            "status": status_value,
+            "failure_code": failure_code,
+            "created_at": created_at.isoformat() if created_at else None,
+            "duration_seconds": _int(duration_seconds),
+            "billed_word_count": _int(billed_word_count),
+            "captured_events": _int(event_count),
+            "estimated_cost_usd": round(_num(event_estimated_cost), 6),
+            "captured_billable_seconds": round(_num(event_billable_seconds), 3),
+            "failed_events": _int(failed_events),
+            "refused_events": _int(refused_events),
+            "provider_402_events": _int(provider_402_events),
+            "unpriced_events": _int(unpriced_events),
+            "last_event_at": last_event_at.isoformat() if last_event_at else None,
+        }
+        for (
+            recording_id,
+            user_id,
+            email,
+            status_value,
+            failure_code,
+            created_at,
+            duration_seconds,
+            billed_word_count,
+            event_count,
+            event_estimated_cost,
+            event_billable_seconds,
+            failed_events,
+            refused_events,
+            provider_402_events,
+            unpriced_events,
+            last_event_at,
+        ) in (
+            await db.execute(
+                select(
+                    Recording.id,
+                    Recording.user_id,
+                    User.email,
+                    Recording.status,
+                    Recording.failure_code,
+                    Recording.created_at,
+                    Recording.duration_seconds,
+                    Recording.billed_word_count,
+                    events_by_recording.c.event_count,
+                    events_by_recording.c.estimated_cost_usd,
+                    events_by_recording.c.billable_seconds,
+                    events_by_recording.c.failed_events,
+                    events_by_recording.c.refused_events,
+                    events_by_recording.c.provider_402_events,
+                    events_by_recording.c.unpriced_events,
+                    events_by_recording.c.last_event_at,
+                )
+                .join(User, User.id == Recording.user_id)
+                .outerjoin(events_by_recording, events_by_recording.c.recording_id == Recording.id)
+                .where(
+                    Recording.deleted_at.is_(None),
+                    Recording.uploaded_at.is_not(None),
+                    Recording.created_at >= since,
+                )
+                .order_by(
+                    func.coalesce(
+                        events_by_recording.c.billable_seconds,
+                        Recording.duration_seconds,
+                        0,
+                    ).desc(),
+                    Recording.created_at.desc(),
+                )
+                .limit(detail_limit)
+            )
+        ).all()
+    ]
+
+    recent_events = [
+        {
+            "id": str(event.id),
+            "created_at": event.created_at.isoformat(),
+            "user_id": str(event.user_id) if event.user_id else None,
+            "email": email,
+            "recording_id": str(event.recording_id) if event.recording_id else None,
+            "operation": event.operation,
+            "purpose": event.purpose,
+            "status": event.status,
+            "model": event.model,
+            "language": event.language,
+            "content_type": event.content_type,
+            "audio_seconds": event.audio_seconds,
+            "billable_seconds": event.billable_seconds,
+            "estimated_cost_usd": event.estimated_cost_usd,
+            "pricing_status": event.pricing_status,
+            "billing_mode": event.billing_mode,
+            "language_mode": event.language_mode,
+            "addons": event.addons or [],
+            "price_source": event.price_source,
+            "channel_count": event.channel_count,
+            "audio_bytes": event.audio_bytes,
+            "latency_ms": event.latency_ms,
+            "provider_status_code": event.provider_status_code,
+            "provider_error_code": event.provider_error_code,
+            "guard_code": event.guard_code,
+            "error_type": event.error_type,
+        }
+        for event, email in (
+            await db.execute(
+                select(DeepgramUsageEvent, User.email)
+                .outerjoin(User, User.id == DeepgramUsageEvent.user_id)
+                .where(DeepgramUsageEvent.created_at >= since)
+                .order_by(DeepgramUsageEvent.created_at.desc())
+                .limit(detail_limit)
+            )
+        ).all()
+    ]
+
+    estimated = {
+        "recording_seconds": round(estimated_recording_seconds, 3),
+        "recording_words": estimated_recording_words,
+        "recording_count": estimated_recording_count,
+        "failed_recordings": estimated_failed_recordings,
+        "dictation_seconds": round(estimated_dictation_seconds, 3),
+        "dictation_words": estimated_dictation_words,
+        "dictation_entries": estimated_dictation_entries,
+        "total_seconds": round(estimated_recording_seconds + estimated_dictation_seconds, 3),
+    }
+    by_user = sorted(
+        user_rows.values(),
+        key=lambda item: (
+            item["captured_estimated_cost_usd"],
+            item["captured_billable_seconds"],
+            item["estimated_total_seconds"],
+            item["captured_events"],
+        ),
+        reverse=True,
+    )
+    return {
+        "captured": captured,
+        "estimated": estimated,
+        "by_user": by_user,
+        "by_operation": operation_rows,
+        "by_day": [day_rows[key] for key in sorted(day_rows)],
+        "top_recordings": top_recordings,
+        "recent_events": recent_events,
+    }
+
+
+def _new_deepgram_day_row(day: str) -> dict:
+    return {
+        "date": day,
+        "captured_events": 0,
+        "captured_audio_seconds": 0.0,
+        "captured_estimated_cost_usd": 0.0,
+        "captured_billable_seconds": 0.0,
+        "captured_failed_events": 0,
+        "captured_refused_events": 0,
+        "captured_unpriced_events": 0,
+        "estimated_recordings": 0,
+        "estimated_recording_seconds": 0.0,
+        "estimated_dictation_entries": 0,
+        "estimated_dictation_seconds": 0.0,
+    }
+
+
+def _deepgram_usage_analysis(payload: dict) -> list[dict]:
+    captured = payload["captured"]
+    estimated = payload["estimated"]
+    by_user = payload["by_user"]
+    top_recordings = payload["top_recordings"]
+    analysis: list[dict] = []
+    if captured["events"] == 0:
+        analysis.append(
+            {
+                "severity": "info",
+                "code": "deepgram.ledger.empty",
+                "title": "Exact Deepgram ledger starts after this deployment",
+                "detail": "Use estimates until new provider attempts are captured.",
+            }
+        )
+    if captured.get("unpriced_events", 0) > 0:
+        analysis.append(
+            {
+                "severity": "warning",
+                "code": "deepgram.pricing.partial",
+                "title": "Some Deepgram events cannot be fully priced",
+                "detail": (
+                    f"{captured['unpriced_events']} events are missing pricing metadata "
+                    "or use an unknown billing shape."
+                ),
+            }
+        )
+    if captured["provider_402"] > 0:
+        analysis.append(
+            {
+                "severity": "critical",
+                "code": "deepgram.provider.payment_required",
+                "title": "Deepgram is refusing requests with 402",
+                "detail": (
+                    f"{captured['provider_402']} provider attempts returned "
+                    "payment-required."
+                ),
+            }
+        )
+    if captured["refused"] > 0:
+        analysis.append(
+            {
+                "severity": "warning",
+                "code": "deepgram.guard.refused",
+                "title": "Deepgram guard refused requests",
+                "detail": f"{captured['refused']} requests were blocked before provider billing.",
+            }
+        )
+    if captured["failed"] > 0:
+        analysis.append(
+            {
+                "severity": "warning",
+                "code": "deepgram.provider.failed",
+                "title": "Deepgram provider attempts failed",
+                "detail": (
+                    f"{captured['failed']} captured attempts failed after reaching "
+                    "the provider path."
+                ),
+            }
+        )
+    total_estimated = float(estimated["total_seconds"] or 0)
+    if total_estimated > 0 and by_user:
+        top_user = max(by_user, key=lambda item: item["estimated_total_seconds"])
+        share = top_user["estimated_total_seconds"] / total_estimated
+        if share >= 0.5:
+            analysis.append(
+                {
+                    "severity": "warning",
+                    "code": "deepgram.usage.concentrated_user",
+                    "title": "Deepgram usage is concentrated in one user",
+                    "detail": (
+                        f"{top_user['email'] or top_user['user_id']} accounts for "
+                        f"{round(share * 100)}% of estimated audio seconds."
+                    ),
+                }
+            )
+    repeated = [
+        item
+        for item in top_recordings
+        if item["captured_events"] > 1
+        and (item["failed_events"] > 0 or item["refused_events"] > 0)
+    ]
+    if repeated:
+        analysis.append(
+            {
+                "severity": "critical",
+                "code": "deepgram.recording.repeated_attempts",
+                "title": "Repeated attempts detected for the same recording",
+                "detail": (
+                    f"{len(repeated)} recordings have multiple failed/refused "
+                    "Deepgram events."
+                ),
+            }
+        )
+    if estimated["failed_recordings"] > 0:
+        analysis.append(
+            {
+                "severity": "warning",
+                "code": "deepgram.recordings.failed",
+                "title": "Audio-backed recordings failed in the selected window",
+                "detail": f"{estimated['failed_recordings']} uploaded recordings are failed.",
+            }
+        )
+    return analysis
+
+
 async def _promo_response(
     promo: BillingPromoCode,
     db: Database,
@@ -912,7 +2044,11 @@ async def patch_admin_promo_code(
     return await _promo_response(promo, db)
 
 
-@router.delete("/promo-codes/{promo_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete(
+    "/promo-codes/{promo_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    response_class=Response,
+)
 async def archive_admin_promo_code(
     promo_id: UUID,
     db: Database,
@@ -1867,6 +3003,81 @@ async def get_admin_observability(db: Database, admin: CurrentAdmin) -> AdminObs
     )
 
 
+@router.get("/deepgram-usage", response_model=AdminDeepgramUsageResponse)
+async def get_admin_deepgram_usage(
+    db: Database,
+    admin: CurrentAdmin,
+    days: int = Query(default=7, ge=1, le=90),
+    limit: int = Query(default=100, ge=10, le=500),
+) -> AdminDeepgramUsageResponse:
+    del admin
+    now = datetime.now(timezone.utc)
+    since = now - timedelta(days=days)
+    payload = await _deepgram_usage_rows(db, since=since, detail_limit=limit)
+    return AdminDeepgramUsageResponse(
+        generated_at=now,
+        window_days=days,
+        captured=payload["captured"],
+        estimated=payload["estimated"],
+        by_user=payload["by_user"],
+        by_operation=payload["by_operation"],
+        by_day=payload["by_day"],
+        top_recordings=payload["top_recordings"],
+        recent_events=payload["recent_events"],
+        analysis=_deepgram_usage_analysis(payload),
+    )
+
+
+@router.get("/ai-usage", response_model=AdminAiUsageResponse)
+async def get_admin_ai_usage(
+    db: Database,
+    admin: CurrentAdmin,
+    days: int = Query(default=7, ge=1, le=90),
+    provider: str | None = Query(default=None, min_length=1, max_length=32),
+    feature: str | None = Query(default=None, min_length=1, max_length=64),
+    model: str | None = Query(default=None, min_length=1, max_length=120),
+    status_filter: str | None = Query(default=None, alias="status", min_length=1, max_length=32),
+    user_id: UUID | None = None,
+    q: str | None = Query(default=None, max_length=200),
+    limit: int = Query(default=100, ge=10, le=500),
+) -> AdminAiUsageResponse:
+    del admin
+    now = datetime.now(timezone.utc)
+    since = now - timedelta(days=days)
+    payload = await _ai_usage_rows(
+        db,
+        since=since,
+        detail_limit=limit,
+        provider=provider,
+        feature=feature,
+        model=model,
+        status_filter=status_filter,
+        user_id=user_id,
+        q=q,
+    )
+    return AdminAiUsageResponse(
+        generated_at=now,
+        window_days=days,
+        filters={
+            "provider": provider,
+            "feature": feature,
+            "model": model,
+            "status": status_filter,
+            "user_id": str(user_id) if user_id else None,
+            "q": q,
+            "limit": limit,
+        },
+        summary=payload["summary"],
+        by_day=payload["by_day"],
+        by_provider=payload["by_provider"],
+        by_feature=payload["by_feature"],
+        by_model=payload["by_model"],
+        by_user=payload["by_user"],
+        recent_events=payload["recent_events"],
+        analysis=_ai_usage_analysis(payload),
+    )
+
+
 @router.post("/embeddings/backfill", response_model=AdminEmbeddingBackfillResponse)
 async def run_admin_embedding_backfill(
     request: AdminEmbeddingBackfillRequest,
@@ -1891,6 +3102,30 @@ async def run_admin_embedding_backfill(
     )
     await db.commit()
     return AdminEmbeddingBackfillResponse(**payload)
+
+
+@router.post("/brain/backfill", response_model=AdminBrainBackfillResponse)
+async def run_admin_brain_backfill(
+    request: AdminBrainBackfillRequest,
+    db: Database,
+    admin: CurrentAdmin,
+) -> AdminBrainBackfillResponse:
+    result = await backfill_entity_mentions_from_existing_summaries(
+        db,
+        user_id=request.user_id,
+        limit=request.limit,
+    )
+    payload = result.as_dict()
+    await _audit(
+        db,
+        admin,
+        action="brain.backfill",
+        target_type="brain",
+        target_id=str(request.user_id) if request.user_id else None,
+        details=payload,
+    )
+    await db.commit()
+    return AdminBrainBackfillResponse(**payload)
 
 
 @router.get("/audit")

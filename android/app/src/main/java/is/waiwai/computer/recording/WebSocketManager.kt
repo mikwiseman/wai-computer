@@ -152,7 +152,11 @@ class DeepgramRealtimeWebSocketManager(
         when (payload.string("type")) {
             "Results" -> handleDeepgramResults(payload)
             "UtteranceEnd" -> markTranscriptReceived()
-            "Metadata" -> markTranscriptReceived(finalizationMarker = true)
+            "Metadata" -> {
+                if (endOfStreamRequested && endOfStreamSent) {
+                    markTranscriptReceived(finalizationMarker = true)
+                }
+            }
             "Error",
             "error",
             -> {
@@ -313,6 +317,13 @@ class DeepgramRealtimeWebSocketManager(
     private fun JsonObject.double(key: String): Double? = this[key]?.jsonPrimitive?.doubleOrNull
     private fun Double?.toMilliseconds(): Int = ((this ?: 0.0) * 1_000.0).toInt()
     private fun String.normalizedTranscript(): String = trim().split(Regex("\\s+")).joinToString(" ")
+
+    internal fun testingSetEndOfStreamState(requested: Boolean, sent: Boolean) {
+        endOfStreamRequested = requested
+        endOfStreamSent = sent
+    }
+
+    internal fun testingProviderFinalizationReceived(): Boolean = providerFinalizationReceived
 
     companion object {
         private const val MAX_RECONNECT_ATTEMPTS = 10

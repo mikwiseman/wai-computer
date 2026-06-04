@@ -50,6 +50,17 @@ class DeepgramUsageEvent(Base, UUIDMixin):
     channel_count: Mapped[int | None] = mapped_column(Integer)
     audio_bytes: Mapped[int | None] = mapped_column(Integer)
     latency_ms: Mapped[int | None] = mapped_column(Integer)
+    estimated_cost_usd: Mapped[float | None] = mapped_column(Float)
+    pricing_status: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False,
+        default="unpriced",
+        server_default="unpriced",
+    )
+    billing_mode: Mapped[str | None] = mapped_column(String(32))
+    language_mode: Mapped[str | None] = mapped_column(String(32))
+    addons: Mapped[list | None] = mapped_column(JSONB)
+    price_source: Mapped[str | None] = mapped_column(String(120))
     provider_status_code: Mapped[int | None] = mapped_column(Integer)
     provider_error_code: Mapped[str | None] = mapped_column(String(128))
     guard_code: Mapped[str | None] = mapped_column(String(128))

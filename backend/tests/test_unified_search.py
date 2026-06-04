@@ -92,7 +92,10 @@ async def test_unified_search_empty_query_returns_empty(db_session) -> None:
 
 async def test_unified_search_route(client, auth_headers, db_session) -> None:
     # Seed an item via the API, then hit /search/all.
-    with patch("app.tasks.item_summary_generation.generate_item_summary_task.delay"):
+    with (
+        patch("app.core.item_ingest.generate_embeddings", _embedder),
+        patch("app.tasks.item_summary_generation.generate_item_summary_task.delay"),
+    ):
         await client.post(
             "/api/items",
             json={"source": "paste", "kind": "note", "title": "Note",

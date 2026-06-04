@@ -289,6 +289,9 @@ async def _transcribe(
     source_label: str = "upload",
 ) -> list[TranscriptResult]:
     keyterms = await load_user_keyterms(db, user_id=user.id, purpose="recording")
+    deepgram_addons = ["speaker_diarization"]
+    if keyterms:
+        deepgram_addons.append("keyterm_prompting")
     started_at = time.perf_counter()
     try:
         results = await transcribe_audio_file(
@@ -317,6 +320,9 @@ async def _transcribe(
             audio_bytes=len(data),
             latency_ms=round((time.perf_counter() - started_at) * 1000),
             guard_code=exc.code,
+            billing_mode="pre_recorded",
+            language_mode="multilingual",
+            addons=deepgram_addons,
             commit=True,
         )
         raise
@@ -339,6 +345,9 @@ async def _transcribe(
             provider_status_code=exc.response.status_code,
             provider_error_code=provider_error_code(exc),
             error_type=type(exc).__name__,
+            billing_mode="pre_recorded",
+            language_mode="multilingual",
+            addons=deepgram_addons,
             commit=True,
         )
         raise
@@ -359,6 +368,9 @@ async def _transcribe(
             audio_bytes=len(data),
             latency_ms=round((time.perf_counter() - started_at) * 1000),
             error_type=type(exc).__name__,
+            billing_mode="pre_recorded",
+            language_mode="multilingual",
+            addons=deepgram_addons,
             commit=True,
         )
         raise
@@ -380,6 +392,9 @@ async def _transcribe(
         channel_count=1,
         audio_bytes=len(data),
         latency_ms=round((time.perf_counter() - started_at) * 1000),
+        billing_mode="pre_recorded",
+        language_mode="multilingual",
+        addons=deepgram_addons,
         commit=True,
     )
     return results

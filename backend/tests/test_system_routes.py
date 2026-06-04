@@ -112,6 +112,38 @@ async def test_self_host_migration_preflight_groups_owned_and_reconnect_data(
 
 
 @pytest.mark.asyncio
+async def test_self_host_migration_contract_describes_agent_data_and_exclusions(
+    client,
+    auth_headers,
+) -> None:
+    response = await client.get("/api/self-host/migration/contract", headers=auth_headers)
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["schema_version"] == "2026-06-03"
+    assert payload["archive_format"] == "wai-self-host-export-v1"
+    assert payload["preserve_user_ids"] is True
+    assert payload["collision_policy"] == "reject"
+    owned_tables = {row["table"]: row for row in payload["owned_exportable"]["tables"]}
+    excluded_tables = {row["table"] for row in payload["excluded"]["tables"]}
+    reconnect_tables = {row["table"] for row in payload["reconnect_required"]["tables"]}
+    assert owned_tables["agents"]["scope_strategy"] == "owner_scoped_user_id"
+    assert owned_tables["agents"]["contains_user_content"] is True
+    assert owned_tables["agent_runs"]["scope_strategy"] == "owner_scoped_user_id"
+    assert owned_tables["agent_runs"]["contains_user_content"] is True
+    assert owned_tables["agent_steps"]["scope_strategy"] == "derived_owner_scoped"
+    assert owned_tables["agent_steps"]["contains_user_content"] is True
+    assert owned_tables["agent_steps"]["derived_owner_edge"] == {
+        "parent_table": "agent_runs",
+        "local_column": "run_id",
+        "parent_column": "id",
+        "owner_column": "user_id",
+    }
+    assert "billing_plans" in excluded_tables
+    assert "refresh_tokens" in reconnect_tables
+
+
+@pytest.mark.asyncio
 async def test_self_host_provision_surfaces_manual_review_status(client, auth_headers) -> None:
     response = await client.post(
         "/api/self-host/provision",

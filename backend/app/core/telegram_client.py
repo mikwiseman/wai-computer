@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -14,6 +16,10 @@ settings = get_settings()
 
 class TelegramClientError(Exception):
     """Raised when Telegram rejects or fails a Bot API request."""
+
+
+class TelegramFileTooLargeError(TelegramClientError):
+    """Raised when a Telegram file exceeds the configured import cap."""
 
 
 @dataclass(frozen=True)
@@ -30,12 +36,28 @@ class TelegramBotClient:
     the bot token.
     """
 
-    def __init__(self, token: str | None = None) -> None:
+    def __init__(
+        self,
+        token: str | None = None,
+        *,
+        bot_api_base_url: str | None = None,
+        file_base_url: str | None = None,
+        local_file_root: str | None = None,
+    ) -> None:
         self._token = token if token is not None else settings.telegram_bot_token
         if not self._token:
             raise TelegramClientError("Telegram bot token is not configured")
-        self._api_base = f"https://api.telegram.org/bot{self._token}"
-        self._file_base = f"https://api.telegram.org/file/bot{self._token}"
+        api_base = (bot_api_base_url or settings.telegram_bot_api_base_url).rstrip("/")
+        file_base = (file_base_url or settings.telegram_file_base_url).rstrip("/")
+        self._api_base = f"{api_base}/bot{self._token}"
+        self._file_base = f"{file_base}/bot{self._token}"
+        root = (
+            local_file_root
+            if local_file_root is not None
+            else settings.telegram_local_file_root
+        )
+        root = (root or "").strip()
+        self._local_file_root = Path(root).resolve() if root else None
 
     @staticmethod
     def _parse_response(method: str, response: httpx.Response) -> dict[str, Any]:
@@ -150,18 +172,68 @@ class TelegramBotClient:
             payload["language_code"] = language_code
         await self._post("setMyCommands", payload)
 
-    async def download_file(self, file: TelegramFile) -> bytes:
+    def _resolve_local_file_path(self, file: TelegramFile) -> Path:
+        if self._local_file_root is None:
+            raise TelegramClientError("Telegram local file root is not configured")
+
+        root = self._local_file_root
+        raw_path = Path(file.file_path)
+        if raw_path.is_absolute():
+            candidate = raw_path
+            allowed_root = root
+        else:
+            candidate = root / self._token / raw_path
+            allowed_root = root / self._token
+
+        resolved_root = allowed_root.resolve()
+        resolved_candidate = candidate.resolve(strict=False)
+        try:
+            resolved_candidate.relative_to(resolved_root)
+        except ValueError as exc:
+            raise TelegramClientError("Telegram returned invalid local file path") from exc
+        return resolved_candidate
+
+    @staticmethod
+    def _read_local_file(path: Path, max_bytes: int | None) -> bytes:
+        try:
+            stat = path.stat()
+        except OSError as exc:
+            raise TelegramClientError("Telegram local file is not available") from exc
+        if not path.is_file():
+            raise TelegramClientError("Telegram local file is not available")
+        if max_bytes is not None and stat.st_size > max_bytes:
+            raise TelegramFileTooLargeError("Telegram file exceeds configured limit")
+        data = path.read_bytes()
+        if max_bytes is not None and len(data) > max_bytes:
+            raise TelegramFileTooLargeError("Telegram file exceeds configured limit")
+        return data
+
+    async def _download_http_file(self, file: TelegramFile, max_bytes: int | None) -> bytes:
         try:
             async with httpx.AsyncClient(timeout=120.0) as client:
-                response = await client.get(f"{self._file_base}/{file.file_path}")
+                async with client.stream("GET", f"{self._file_base}/{file.file_path}") as response:
+                    if response.status_code >= 400:
+                        raise TelegramClientError(
+                            f"Telegram file download returned HTTP {response.status_code}"
+                        )
+                    chunks: list[bytes] = []
+                    total = 0
+                    async for chunk in response.aiter_bytes():
+                        total += len(chunk)
+                        if max_bytes is not None and total > max_bytes:
+                            raise TelegramFileTooLargeError(
+                                "Telegram file exceeds configured limit"
+                            )
+                        chunks.append(chunk)
         except httpx.HTTPError as exc:
             raise TelegramClientError("Telegram file download failed") from exc
+        return b"".join(chunks)
 
-        if response.status_code >= 400:
-            raise TelegramClientError(
-                f"Telegram file download returned HTTP {response.status_code}"
-            )
-        return response.content
+    async def download_file(self, file: TelegramFile, *, max_bytes: int | None = None) -> bytes:
+        if self._local_file_root is not None:
+            path = self._resolve_local_file_path(file)
+            return await asyncio.to_thread(self._read_local_file, path, max_bytes)
+        return await self._download_http_file(file, max_bytes)
 
 
 def telegram_chunks(text: str, *, limit: int = 3900) -> list[str]:

@@ -53,6 +53,22 @@ def test_build_realtime_websocket_url_includes_live_best_practice_params() -> No
     assert "diarize=true" in url
 
 
+def test_build_realtime_websocket_url_uses_faster_endpointing_for_dictation() -> None:
+    dictation = build_realtime_websocket_url(
+        language="multi",
+        channels=1,
+        purpose="dictation",
+    )
+    recording = build_realtime_websocket_url(
+        language="multi",
+        channels=1,
+        purpose="recording",
+    )
+
+    assert "endpointing=200" in dictation
+    assert "endpointing=300" in recording
+
+
 def test_build_realtime_websocket_url_omits_diarize_for_dictation() -> None:
     url = build_realtime_websocket_url(
         language="en-US",

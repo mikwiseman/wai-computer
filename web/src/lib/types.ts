@@ -96,6 +96,178 @@ export interface SelfHostMigrationPreflight {
   data_map: DataOwnershipMap;
 }
 
+export interface SelfHostMigrationContractGroup {
+  tables: Array<Record<string, unknown>>;
+  artifacts: Array<Record<string, unknown>>;
+}
+
+export interface SelfHostMigrationContract {
+  schema_version: string;
+  archive_format: string;
+  requires_same_alembic_head: boolean;
+  preserve_user_ids: boolean;
+  collision_policy: "reject";
+  secret_policy: string;
+  owned_exportable: SelfHostMigrationContractGroup;
+  reconnect_required: SelfHostMigrationContractGroup;
+  server_local: SelfHostMigrationContractGroup;
+  excluded: SelfHostMigrationContractGroup;
+}
+
+export type AgentTriggerType = "manual" | "cron" | "event" | "signal" | "chat";
+export type AgentRunTriggerKind = AgentTriggerType | "telegram";
+export type AgentRunStatus =
+  | "pending"
+  | "planning"
+  | "running"
+  | "awaiting_approval"
+  | "done"
+  | "failed"
+  | "expired"
+  | "skipped"
+  | "cancelled";
+
+export interface Agent {
+  id: string;
+  name: string;
+  kind: string;
+  trigger_type: AgentTriggerType;
+  config: Record<string, unknown>;
+  autonomy: "propose" | string;
+  enabled: boolean;
+  next_run_at: string | null;
+  last_run_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AgentListResponse {
+  agents: Agent[];
+}
+
+export interface AgentCreateRequest {
+  name: string;
+  kind?: string;
+  trigger_type?: AgentTriggerType;
+  config?: Record<string, unknown>;
+  autonomy?: "propose";
+  enabled?: boolean;
+  next_run_at?: string | null;
+}
+
+export interface AgentUpdateRequest {
+  name?: string;
+  kind?: string;
+  trigger_type?: AgentTriggerType;
+  config?: Record<string, unknown>;
+  autonomy?: "propose";
+  enabled?: boolean;
+  next_run_at?: string | null;
+}
+
+export interface AgentRun {
+  id: string;
+  agent_id: string;
+  trigger_key: string;
+  trigger_kind: AgentRunTriggerKind;
+  trigger_payload: Record<string, unknown> | null;
+  status: AgentRunStatus;
+  plan: Record<string, unknown> | null;
+  done_spec: Record<string, unknown> | null;
+  result: Record<string, unknown> | null;
+  content_hash: string | null;
+  error: string | null;
+  next_step_idx: number;
+  heartbeat_at: string | null;
+  started_at: string | null;
+  finished_at: string | null;
+  cancel_requested_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AgentRunListResponse {
+  runs: AgentRun[];
+}
+
+export interface AgentStep {
+  id: string;
+  run_id: string;
+  idx: number;
+  kind: string;
+  payload: Record<string, unknown>;
+  idempotency_key: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AgentStepListResponse {
+  steps: AgentStep[];
+}
+
+export interface AgentAction {
+  id: string;
+  run_id: string | null;
+  step_idx: number | null;
+  kind: string;
+  tool: string;
+  status: string;
+  preview: string;
+  recipient: string | null;
+  expires_at: string;
+  resolved_at: string | null;
+  receipt: Record<string, unknown> | null;
+}
+
+export interface AgentActionListResponse {
+  actions: AgentAction[];
+}
+
+export interface AgentCapability {
+  id: string;
+  label: string;
+  category: string;
+  description: string;
+  availability: "available" | "approval_required" | "self_host_only" | "planned";
+  runtime_tool: string | null;
+  surfaces: string[];
+  requires_approval: boolean;
+  cloud_supported: boolean;
+  self_host_supported: boolean;
+  local_gateway_required: boolean;
+  safety_notes: string;
+}
+
+export interface AgentRuntimeMode {
+  id: string;
+  label: string;
+  description: string;
+  available: boolean;
+}
+
+export interface AgentCapabilitiesResponse {
+  schema_version: string;
+  deployment_mode: DeploymentMode;
+  max_steps: number;
+  runtime_modes: AgentRuntimeMode[];
+  capabilities: AgentCapability[];
+}
+
+export interface StartAgentRunRequest {
+  trigger_kind?: AgentRunTriggerKind;
+  trigger_payload?: Record<string, unknown>;
+  content_hash?: string | null;
+  idempotency_key?: string | null;
+  run_inline?: boolean;
+}
+
+export interface ResolveAgentActionResponse {
+  action_id: string;
+  status: string;
+  run_status: AgentRunStatus;
+  recipient?: string | null;
+}
+
 export interface TelegramLinkStatus {
   linked: boolean;
   bot_username: string;
@@ -711,6 +883,108 @@ export interface BrainGraph {
   edges: BrainGraphEdge[];
   stats: Record<string, number>;
   overview?: BrainOverview;
+}
+
+export interface BrainSpace {
+  id: string;
+  owner_user_id: string;
+  name: string;
+  slug: string;
+  kind: string;
+  engine_profile: string;
+  visibility: string;
+  description: string | null;
+  role: string;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+export interface BrainSpacesResponse {
+  spaces: BrainSpace[];
+}
+
+export interface BrainClaim {
+  id: string;
+  space_id: string;
+  page_id: string | null;
+  kind: string;
+  status: string;
+  text: string;
+  confidence: number;
+  authority: string;
+  evidence: unknown[];
+  source_refs: unknown[] | null;
+  created_at: string | null;
+  accepted_at: string | null;
+}
+
+export interface BrainPage {
+  id: string;
+  space_id: string;
+  title: string;
+  slug: string;
+  kind: string;
+  status: string;
+  markdown: string;
+  frontmatter: Record<string, unknown>;
+  version: number;
+  claims: BrainClaim[];
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+export interface BrainPagesResponse {
+  pages: BrainPage[];
+}
+
+export interface BrainReviewPack {
+  id: string;
+  space_id: string;
+  kind: string;
+  risk: string;
+  status: string;
+  title: string;
+  summary: string;
+  proposals: unknown[];
+  evidence: unknown[] | null;
+  created_by_user_id: string | null;
+  decided_by_user_id: string | null;
+  decision_reason: string | null;
+  created_at: string | null;
+  decided_at: string | null;
+}
+
+export interface BrainReviewPacksResponse {
+  review_packs: BrainReviewPack[];
+  pending_count: number;
+}
+
+export interface BrainSpaceHome {
+  space: BrainSpace;
+  page_count: number;
+  source_count: number;
+  claim_counts: Record<string, number>;
+  source_counts: Record<string, number>;
+  pending_review_count: number;
+  recent_pages: BrainPage[];
+  engine_profiles: string[];
+}
+
+export interface BrainContextResponse {
+  space: BrainSpace;
+  markdown: string;
+  claim_count: number;
+}
+
+export interface BrainExportFile {
+  path: string;
+  markdown: string;
+}
+
+export interface BrainExportResponse {
+  space: BrainSpace;
+  profile: string;
+  files: BrainExportFile[];
 }
 
 export interface MemoryProposal {

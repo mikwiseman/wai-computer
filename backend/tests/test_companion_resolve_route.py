@@ -120,3 +120,22 @@ async def test_resolve_unknown_action_returns_404(client, auth_headers, db_sessi
         headers=auth_headers,
     )
     assert r.status_code == 404, r.text
+
+
+async def test_resolve_rejects_same_user_action_from_different_chat(
+    client, auth_headers, db_session
+):
+    uid = await _user_id(client, auth_headers)
+    conv_id = await _new_conv(db_session, uid)
+    other_conv_id = await _new_conv(db_session, uid)
+    row = await _pending(db_session, uid, conv_id)
+
+    r = await client.post(
+        f"/api/companion/chats/{other_conv_id}/actions/{row.id}/resolve",
+        json={"decision": "reject"},
+        headers=auth_headers,
+    )
+
+    assert r.status_code == 404, r.text
+    await db_session.refresh(row)
+    assert row.status == "pending"

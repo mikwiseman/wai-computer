@@ -42,7 +42,7 @@ _BREAKER_OPEN = "dg:breaker:open"
 _DAY_TTL_SECONDS = 172_800  # 2 days — keys are date-stamped; TTL is just cleanup.
 
 _client: aioredis.Redis | None = None
-_client_loop_id: int | None = None
+_client_loop: asyncio.AbstractEventLoop | None = None
 _client_from_tests = False
 
 # Throttle degradation anomalies so a Redis outage doesn't spam Sentry/Telegram.
@@ -70,16 +70,16 @@ def get_redis() -> aioredis.Redis:
     Short socket timeouts so a Redis hang degrades fast instead of stalling a
     request; ``decode_responses`` so we work with str keys/values.
     """
-    global _client, _client_loop_id
+    global _client, _client_loop
     if _client_from_tests:
         if _client is None:  # pragma: no cover - defensive misuse guard
             raise RuntimeError("test Redis client was cleared")
         return _client
     try:
-        loop_id = id(asyncio.get_running_loop())
+        loop = asyncio.get_running_loop()
     except RuntimeError:
-        loop_id = None
-    if _client is None or _client_loop_id != loop_id:
+        loop = None
+    if _client is None or _client_loop is not loop:
         settings = get_settings()
         _client = aioredis.from_url(
             settings.redis_url,
@@ -87,15 +87,15 @@ def get_redis() -> aioredis.Redis:
             socket_connect_timeout=2,
             decode_responses=True,
         )
-        _client_loop_id = loop_id
+        _client_loop = loop
     return _client
 
 
 def set_redis_for_tests(client: aioredis.Redis | None) -> None:
     """Inject a fake client (fakeredis) in tests; pass None to reset."""
-    global _client, _client_loop_id, _client_from_tests
+    global _client, _client_loop, _client_from_tests
     _client = client
-    _client_loop_id = None
+    _client_loop = None
     _client_from_tests = client is not None
     _last_alert.clear()
 

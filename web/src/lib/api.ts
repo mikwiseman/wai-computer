@@ -8,10 +8,28 @@ import {
 } from "./http";
 import type {
   AnalyticsResponse,
-  ApiKey,
-  ApiKeyCreated,
-  BrainGraph,
-  ComparisonListEntry,
+  Agent,
+  AgentActionListResponse,
+  AgentCapabilitiesResponse,
+  AgentCreateRequest,
+  AgentListResponse,
+  AgentRun,
+  AgentRunListResponse,
+  AgentStepListResponse,
+  AgentUpdateRequest,
+	  ApiKey,
+	  ApiKeyCreated,
+	  BrainContextResponse,
+	  BrainExportResponse,
+	  BrainGraph,
+	  BrainPage,
+	  BrainPagesResponse,
+	  BrainReviewPack,
+	  BrainReviewPacksResponse,
+	  BrainSpace,
+	  BrainSpaceHome,
+	  BrainSpacesResponse,
+	  ComparisonListEntry,
   EntityPage,
   ComparisonSet,
   Item,
@@ -24,6 +42,7 @@ import type {
   DictationBenchmarkVoteResponse,
   DictationDictionaryWord,
   DictationEntry,
+  DataOwnershipMap,
   ExportFormat,
   ExportLocale,
   Folder,
@@ -32,6 +51,8 @@ import type {
   InboxStatusFilter,
   KeywordsResponse,
   McpConnection,
+  MemoryProposal,
+  MemoryProposalList,
   MessageResponse,
   Person,
   PersonalizationImportJob,
@@ -46,12 +67,19 @@ import type {
   RealtimeSessionResponse,
   RecordingShareLink,
   RematchSpeakersResponse,
+  ResolveAgentActionResponse,
   SearchResponse,
+  SelfHostMigrationPreflight,
+  SelfHostMigrationContract,
+  SelfHostProvisionRequest,
+  SelfHostProvisionResponse,
+  StartAgentRunRequest,
   TranscriptSegmentInput,
   SpeakerStatsResponse,
   SharedRecording,
   Summary,
   SummaryGeneration,
+  SystemInfo,
   TelegramLinkStatus,
   TelegramPairing,
   TokenResponse,
@@ -205,8 +233,140 @@ export function getCurrentUser(): Promise<User> {
   return apiFetch<User>("/api/auth/me");
 }
 
+export function getSystemInfo(): Promise<SystemInfo> {
+  return apiFetch<SystemInfo>("/api/system/info");
+}
+
+export function getDataOwnershipMap(): Promise<DataOwnershipMap> {
+  return apiFetch<DataOwnershipMap>("/api/system/data-map");
+}
+
+export function getSelfHostMigrationPreflight(): Promise<SelfHostMigrationPreflight> {
+  return apiFetch<SelfHostMigrationPreflight>("/api/self-host/migration/preflight");
+}
+
+export function getSelfHostMigrationContract(): Promise<SelfHostMigrationContract> {
+  return apiFetch<SelfHostMigrationContract>("/api/self-host/migration/contract");
+}
+
+export function startSelfHostProvision(
+  input: SelfHostProvisionRequest,
+): Promise<SelfHostProvisionResponse> {
+  return apiFetch<SelfHostProvisionResponse>("/api/self-host/provision", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
 export function deleteAccount(): Promise<MessageResponse> {
   return apiFetch<MessageResponse>("/api/auth/me", { method: "DELETE" });
+}
+
+export function getAgentCapabilities(): Promise<AgentCapabilitiesResponse> {
+  return apiFetch<AgentCapabilitiesResponse>("/api/agents/capabilities");
+}
+
+export function listAgents(params?: { limit?: number }): Promise<AgentListResponse> {
+  return apiFetch<AgentListResponse>(`/api/agents${asQuery({ limit: params?.limit })}`);
+}
+
+export function createAgent(input: AgentCreateRequest): Promise<Agent> {
+  return apiFetch<Agent>("/api/agents", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function updateAgent(agentId: string, input: AgentUpdateRequest): Promise<Agent> {
+  return apiFetch<Agent>(`/api/agents/${agentId}`, {
+    method: "PATCH",
+    body: JSON.stringify(input),
+  });
+}
+
+export async function deleteAgent(agentId: string): Promise<void> {
+  await apiFetchResponse(`/api/agents/${agentId}`, { method: "DELETE" });
+}
+
+export function startAgentRun(
+  agentId: string,
+  input: StartAgentRunRequest = {},
+): Promise<AgentRun> {
+  return apiFetch<AgentRun>(`/api/agents/${agentId}/runs`, {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function listAgentRuns(
+  agentId: string,
+  params?: { status?: string; limit?: number },
+): Promise<AgentRunListResponse> {
+  return apiFetch<AgentRunListResponse>(
+    `/api/agents/${agentId}/runs${asQuery({ status: params?.status, limit: params?.limit })}`,
+  );
+}
+
+export function listAllAgentRuns(params?: {
+  status?: string;
+  limit?: number;
+}): Promise<AgentRunListResponse> {
+  return apiFetch<AgentRunListResponse>(
+    `/api/agents/runs${asQuery({ status: params?.status, limit: params?.limit })}`,
+  );
+}
+
+export function getAgentRun(agentId: string, runId: string): Promise<AgentRun> {
+  return apiFetch<AgentRun>(`/api/agents/${agentId}/runs/${runId}`);
+}
+
+export function listAgentRunSteps(
+  agentId: string,
+  runId: string,
+): Promise<AgentStepListResponse> {
+  return apiFetch<AgentStepListResponse>(`/api/agents/${agentId}/runs/${runId}/steps`);
+}
+
+export function cancelAgentRun(
+  agentId: string,
+  runId: string,
+  reason?: string | null,
+): Promise<AgentRun> {
+  return apiFetch<AgentRun>(`/api/agents/${agentId}/runs/${runId}/cancel`, {
+    method: "POST",
+    body: JSON.stringify({ reason: reason ?? null }),
+  });
+}
+
+export function listAgentActions(params?: {
+  status?: string;
+  limit?: number;
+}): Promise<AgentActionListResponse> {
+  return apiFetch<AgentActionListResponse>(
+    `/api/agents/actions${asQuery({ status: params?.status, limit: params?.limit })}`,
+  );
+}
+
+export function listAgentRunActions(
+  agentId: string,
+  runId: string,
+): Promise<AgentActionListResponse> {
+  return apiFetch<AgentActionListResponse>(`/api/agents/${agentId}/runs/${runId}/actions`);
+}
+
+export function resolveAgentAction(
+  agentId: string,
+  runId: string,
+  actionId: string,
+  input: { decision: "once" | "always" | "reject"; edited_args?: Record<string, unknown> | null },
+): Promise<ResolveAgentActionResponse> {
+  return apiFetch<ResolveAgentActionResponse>(
+    `/api/agents/${agentId}/runs/${runId}/actions/${actionId}/resolve`,
+    {
+      method: "POST",
+      body: JSON.stringify(input),
+    },
+  );
 }
 
 export function listRecordings(params?: {
@@ -608,8 +768,144 @@ export function getBrainGraph(params?: {
   return apiFetch<BrainGraph>(`/api/brain/graph${asQuery(params ?? {})}`);
 }
 
+export function listBrainSpaces(): Promise<BrainSpacesResponse> {
+  return apiFetch<BrainSpacesResponse>("/api/brain/spaces");
+}
+
+export function createBrainSpace(input: {
+  name: string;
+  kind?: string;
+  engine_profile?: string;
+  visibility?: string;
+  description?: string | null;
+}): Promise<BrainSpace> {
+  return apiFetch<BrainSpace>("/api/brain/spaces", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function getBrainSpaceHome(spaceId: string): Promise<BrainSpaceHome> {
+  return apiFetch<BrainSpaceHome>(`/api/brain/spaces/${spaceId}/home`);
+}
+
+export function listBrainSpacePages(spaceId: string): Promise<BrainPagesResponse> {
+  return apiFetch<BrainPagesResponse>(`/api/brain/spaces/${spaceId}/pages`);
+}
+
+export function createBrainSpacePage(
+  spaceId: string,
+  input: {
+    title: string;
+    kind?: string;
+    markdown?: string | null;
+    claims?: Array<{
+      kind: string;
+      text: string;
+      confidence?: number;
+      authority?: string;
+      evidence?: unknown[] | null;
+      source_refs?: unknown[] | null;
+      salience?: number | null;
+      metadata?: Record<string, unknown> | null;
+    }>;
+  },
+): Promise<BrainPage> {
+  return apiFetch<BrainPage>(`/api/brain/spaces/${spaceId}/pages`, {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function listBrainReviewPacks(
+  spaceId: string,
+  params?: { status?: string },
+): Promise<BrainReviewPacksResponse> {
+  return apiFetch<BrainReviewPacksResponse>(
+    `/api/brain/spaces/${spaceId}/review-packs${asQuery(params ?? {})}`,
+  );
+}
+
+export function acceptBrainReviewPack(
+  spaceId: string,
+  packId: string,
+): Promise<BrainReviewPack> {
+  return apiFetch<BrainReviewPack>(
+    `/api/brain/spaces/${spaceId}/review-packs/${packId}/accept`,
+    { method: "POST" },
+  );
+}
+
+export function rejectBrainReviewPack(
+  spaceId: string,
+  packId: string,
+  reason?: string | null,
+): Promise<BrainReviewPack> {
+  return apiFetch<BrainReviewPack>(
+    `/api/brain/spaces/${spaceId}/review-packs/${packId}/reject`,
+    {
+      method: "POST",
+      body: JSON.stringify({ reason: reason ?? null }),
+    },
+  );
+}
+
+export function matchBrainSpaces(
+  spaceId: string,
+  otherSpaceId: string,
+): Promise<BrainReviewPack> {
+  return apiFetch<BrainReviewPack>(`/api/brain/spaces/${spaceId}/match`, {
+    method: "POST",
+    body: JSON.stringify({ other_space_id: otherSpaceId }),
+  });
+}
+
+export function buildBrainContext(
+  spaceId: string,
+  input?: { task?: string | null; limit?: number },
+): Promise<BrainContextResponse> {
+  return apiFetch<BrainContextResponse>(`/api/brain/spaces/${spaceId}/context`, {
+    method: "POST",
+    body: JSON.stringify(input ?? {}),
+  });
+}
+
+export function exportBrainSpace(
+  spaceId: string,
+  profile = "obsidian",
+): Promise<BrainExportResponse> {
+  return apiFetch<BrainExportResponse>(
+    `/api/brain/spaces/${spaceId}/export${asQuery({ profile })}`,
+  );
+}
+
 export function getEntityPage(entityId: string): Promise<EntityPage> {
   return apiFetch<EntityPage>(`/api/entities/${entityId}/page`);
+}
+
+export function listMemoryProposals(params?: {
+  status?: string;
+  limit?: number;
+}): Promise<MemoryProposalList> {
+  return apiFetch<MemoryProposalList>(
+    `/api/memory/proposals${asQuery({ status: "pending", limit: 50, ...(params ?? {}) })}`,
+  );
+}
+
+export function acceptMemoryProposal(id: string): Promise<MemoryProposal> {
+  return apiFetch<MemoryProposal>(`/api/memory/proposals/${id}/accept`, {
+    method: "POST",
+  });
+}
+
+export function rejectMemoryProposal(
+  id: string,
+  reason?: string | null,
+): Promise<MemoryProposal> {
+  return apiFetch<MemoryProposal>(`/api/memory/proposals/${id}/reject`, {
+    method: "POST",
+    body: JSON.stringify({ reason: reason ?? null }),
+  });
 }
 
 // --- Second brain: comparison sets ---

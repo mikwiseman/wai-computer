@@ -18,6 +18,14 @@ from app.models.billing import (
     SubscriptionStatus,
     UsageWeek,
 )
+from app.models.brain_space import (
+    BrainClaim,
+    BrainPage,
+    BrainReviewPack,
+    BrainSpace,
+    BrainSpaceMember,
+    BrainSpaceSource,
+)
 from app.models.commitment import Commitment
 from app.models.companion import ChatMessage, Conversation, MessageCitation
 from app.models.companion_pending_action import CompanionPendingAction
@@ -84,6 +92,12 @@ __all__ = [
     "Subscription",
     "SubscriptionStatus",
     "UsageWeek",
+    "BrainClaim",
+    "BrainPage",
+    "BrainReviewPack",
+    "BrainSpace",
+    "BrainSpaceMember",
+    "BrainSpaceSource",
     "User",
     "Recording",
     "RecordingShare",

@@ -110,6 +110,8 @@ class AgentRun(Base, UUIDMixin, TimestampMixin):
     result: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     # This run's input fingerprint (skip if unchanged from the agent's).
     content_hash: Mapped[str | None] = mapped_column(String(64))
+    # The concrete wake payload: manual objective, event ids, webhook signal, etc.
+    trigger_payload: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     error: Mapped[str | None] = mapped_column(String(2000))
     # Replay cursor: the next journal index to execute.
     next_step_idx: Mapped[int] = mapped_column(
@@ -119,6 +121,7 @@ class AgentRun(Base, UUIDMixin, TimestampMixin):
     heartbeat_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    cancel_requested_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     __table_args__ = (
         UniqueConstraint("trigger_key", name="uq_agent_runs_trigger_key"),
@@ -139,7 +142,7 @@ class AgentStep(Base, UUIDMixin, TimestampMixin):
     # Monotonic position within the run; UNIQUE(run_id, idx) orders the journal.
     idx: Mapped[int] = mapped_column(Integer, nullable=False)
     # Journal-entry kind: plan, tool_call, tool_result, approval_request,
-    # approval_result, verify, final, skip, error.
+    # approval_result, verify, final, skip, cancel, error.
     kind: Mapped[str] = mapped_column(String(30), nullable=False)
     # Durable content of this boundary (tool+args, result, verdict, ...).
     payload: Mapped[dict[str, Any]] = mapped_column(

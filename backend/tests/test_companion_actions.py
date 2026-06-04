@@ -45,9 +45,26 @@ class TestProposeAndSign:
         row = await _propose(db_session, uid, cid)
         assert row.status == "pending"
         assert row.payload_hmac
-        assert row.action_manifest["preview"] == "Send to Anna: running late"
+        assert (
+            row.action_manifest["preview"]
+            == "Send Telegram message to your linked chat: running late"
+        )
         assert row.recipient_display == "Anna"
         assert row.expires_at is not None
+
+    async def test_preview_is_canonical_not_trusted_copy(self, db_session, user_conv):
+        uid, cid = user_conv
+        row = await _propose(
+            db_session,
+            uid,
+            cid,
+            preview="Harmless preview",
+            args={"text": "send the real payload"},
+        )
+        assert (
+            row.action_manifest["preview"]
+            == "Send Telegram message to your linked chat: send the real payload"
+        )
 
     async def test_verify_action_true_then_false_on_tamper(self, db_session, user_conv):
         uid, cid = user_conv
@@ -68,6 +85,24 @@ class TestResolve:
             db_session, action_id=row.id, user_id=uid, decision="once"
         )
         assert resolved.status == "approved"
+        assert resolved.decision == "once"
+        ca.verify_committable(resolved)  # must not raise
+
+    async def test_edited_args_refresh_canonical_preview(self, db_session, user_conv):
+        uid, cid = user_conv
+        row = await _propose(db_session, uid, cid)
+        resolved = await ca.resolve_action(
+            db_session,
+            action_id=row.id,
+            user_id=uid,
+            decision="once",
+            edited_args={"text": "updated text"},
+        )
+        assert resolved.action_manifest["args"] == {"text": "updated text"}
+        assert (
+            resolved.action_manifest["preview"]
+            == "Send Telegram message to your linked chat: updated text"
+        )
         assert resolved.decision == "once"
         ca.verify_committable(resolved)  # must not raise
 
@@ -160,6 +195,18 @@ class TestExecuteAndExpire:
         await db_session.refresh(fresh)
         assert old.status == "expired"
         assert fresh.status == "pending"
+
+    async def test_expire_due_actions_expires_approved_offline_queue_rows(
+        self, db_session, user_conv
+    ):
+        uid, cid = user_conv
+        row = await _propose(db_session, uid, cid, ttl_seconds=3600)
+        row.status = "approved"
+        row.expires_at = datetime.now(timezone.utc) - timedelta(seconds=1)
+        n = await ca.expire_due_actions(db_session)
+        assert n >= 1
+        await db_session.refresh(row)
+        assert row.status == "expired"
 
 
 class TestEdgeCases:

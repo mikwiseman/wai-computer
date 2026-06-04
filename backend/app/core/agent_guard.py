@@ -35,6 +35,7 @@ _client: aioredis.Redis | None = None
 # Throttle degradation anomalies so a Redis outage doesn't spam Sentry/Telegram.
 _last_alert: dict[str, float] = {}
 _ALERT_THROTTLE_SECONDS = 600.0
+_REDIS_DEGRADED_ERRORS = (RedisError, RuntimeError)
 
 
 class AgentGuardError(Exception):
@@ -119,7 +120,7 @@ async def agents_halted() -> bool:
         return True
     try:
         return bool(await get_redis().exists(_KILL_KEY))
-    except RedisError as exc:
+    except _REDIS_DEGRADED_ERRORS as exc:
         _degraded("agents.guard.killswitch_degraded", exc)
         return False
 
@@ -146,7 +147,7 @@ async def check_run_budget(user_id: str) -> None:
         pipe.get(f"agents:runs:global:{today}")
         pipe.get(f"agents:runs:user:{user_id}:{today}")
         used_global_raw, used_user_raw = await pipe.execute()
-    except RedisError as exc:
+    except _REDIS_DEGRADED_ERRORS as exc:
         _degraded("agents.guard.run_budget_degraded", exc)
         return
     used_global = int(used_global_raw or 0)
@@ -176,7 +177,7 @@ async def record_run(user_id: str) -> None:
         pipe.incr(f"agents:runs:user:{user_id}:{today}")
         pipe.expire(f"agents:runs:user:{user_id}:{today}", _DAY_TTL_SECONDS)
         await pipe.execute()
-    except RedisError as exc:
+    except _REDIS_DEGRADED_ERRORS as exc:
         _degraded("agents.guard.record_run_degraded", exc)
 
 
@@ -223,7 +224,7 @@ async def acquire_run_slot(user_id: str, *, lease_ttl_seconds: int) -> str | Non
         pipe.expire(global_key, ttl)
         await pipe.execute()
         return token
-    except RedisError as exc:
+    except _REDIS_DEGRADED_ERRORS as exc:
         _degraded("agents.guard.run_slot_degraded", exc)
         return token
 
@@ -238,5 +239,5 @@ async def release_run_slot(user_id: str, token: str | None) -> None:
         pipe.zrem(f"agents:run:user:{user_id}", token)
         pipe.zrem("agents:run:global", f"{user_id}:{token}")
         await pipe.execute()
-    except RedisError as exc:
+    except _REDIS_DEGRADED_ERRORS as exc:
         _degraded("agents.guard.run_release_degraded", exc)

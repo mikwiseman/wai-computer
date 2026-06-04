@@ -14,6 +14,8 @@ import AVFoundation
 /// resampled signal is a faithful representation of the band-limited input.
 public final class PCMResampler: @unchecked Sendable {
     private let target: AVAudioFormat
+    private let converter: AVAudioConverter
+    private let lock = NSLock()
     public let sourceFormat: AVAudioFormat
 
     public init?(
@@ -27,8 +29,11 @@ public final class PCMResampler: @unchecked Sendable {
             channels: targetChannelCount,
             interleaved: false
         ) else { return nil }
-        guard AVAudioConverter(from: source, to: target) != nil else { return nil }
+        guard let converter = AVAudioConverter(from: source, to: target) else { return nil }
+        // Mastering quality FIR — small CPU cost, big quality win on Russian.
+        converter.sampleRateConverterQuality = AVAudioQuality.max.rawValue
         self.target = target
+        self.converter = converter
         self.sourceFormat = source
     }
 
@@ -43,14 +48,12 @@ public final class PCMResampler: @unchecked Sendable {
         guard let out = AVAudioPCMBuffer(pcmFormat: target, frameCapacity: estOut) else {
             return nil
         }
-        guard let converter = AVAudioConverter(from: sourceFormat, to: target) else {
-            return nil
-        }
-        // Mastering quality FIR — small CPU cost, big quality win on Russian.
-        converter.sampleRateConverterQuality = AVAudioQuality.max.rawValue
 
         var error: NSError?
         var supplied = false
+        lock.lock()
+        defer { lock.unlock() }
+        converter.reset()
         let status = converter.convert(to: out, error: &error) { _, status in
             if supplied {
                 status.pointee = .endOfStream

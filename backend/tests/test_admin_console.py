@@ -11,9 +11,11 @@ from httpx import AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.routes import admin as admin_routes
 from app.api.routes.admin import AdminPromoCodeCreateRequest
 from app.billing.promo_codes import hash_promo_code
 from app.models.admin import AdminRole, StaffMember
+from app.models.ai_usage import AiUsageEvent
 from app.models.api_key import ApiKey
 from app.models.billing import (
     BillingEvent,
@@ -25,6 +27,7 @@ from app.models.billing import (
     UsageWeek,
 )
 from app.models.companion import ChatMessage, Conversation
+from app.models.deepgram_usage import DeepgramUsageEvent
 from app.models.dictation import DictationEntry
 from app.models.recording import Recording, Segment
 from app.models.refresh_token import RefreshToken
@@ -91,6 +94,440 @@ async def test_admin_principal_allows_multiple_staff_roles(
     response = await client.get("/api/admin/stats", headers=admin_headers)
 
     assert response.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_admin_ai_usage_rows_aggregate_filter_and_analyze(
+    db_session: AsyncSession,
+):
+    now = datetime.now(timezone.utc)
+    power_user = User(email="ai-usage-power@example.com", password_hash="x")
+    other_user = User(email="ai-usage-other@example.com", password_hash="x")
+    db_session.add_all([power_user, other_user])
+    await db_session.flush()
+
+    db_session.add_all(
+        [
+            AiUsageEvent(
+                created_at=now - timedelta(minutes=6),
+                user_id=power_user.id,
+                provider="openai",
+                feature="embeddings",
+                operation="embedding.batch",
+                status="succeeded",
+                model="text-embedding-3-large",
+                input_tokens=4_000,
+                output_tokens=0,
+                cached_tokens=50,
+                reasoning_tokens=0,
+                total_tokens=4_000,
+                latency_ms=20,
+                estimated_cost_usd=2.0,
+                pricing_status="priced",
+                price_source="openai-api-pricing-2026-06-04",
+                request_id="req-ai-usage-1",
+            ),
+            AiUsageEvent(
+                created_at=now - timedelta(minutes=5),
+                user_id=power_user.id,
+                provider="openai",
+                feature="embeddings",
+                operation="embedding.single",
+                status="succeeded",
+                model="text-embedding-3-large",
+                input_tokens=3_500,
+                output_tokens=0,
+                cached_tokens=25,
+                reasoning_tokens=0,
+                total_tokens=3_500,
+                latency_ms=35,
+                estimated_cost_usd=1.5,
+                pricing_status="priced",
+                price_source="openai-api-pricing-2026-06-04",
+                request_id="req-ai-usage-2",
+            ),
+            AiUsageEvent(
+                created_at=now - timedelta(minutes=4),
+                user_id=power_user.id,
+                provider="openai",
+                feature="embeddings",
+                operation="embedding.batch",
+                status="failed",
+                model="gpt-unpriced",
+                input_tokens=1_000,
+                output_tokens=0,
+                cached_tokens=0,
+                reasoning_tokens=0,
+                total_tokens=1_000,
+                latency_ms=80,
+                estimated_cost_usd=0.0,
+                pricing_status="unpriced",
+                provider_status_code=429,
+                provider_error_code="rate_limit",
+                error_type="ProviderRateLimit",
+            ),
+            AiUsageEvent(
+                created_at=now - timedelta(minutes=3),
+                user_id=power_user.id,
+                provider="openai",
+                feature="companion",
+                operation="chat.answer",
+                status="refused",
+                model="gpt-unpriced",
+                input_tokens=300,
+                output_tokens=50,
+                cached_tokens=0,
+                reasoning_tokens=10,
+                total_tokens=350,
+                latency_ms=120,
+                estimated_cost_usd=0.0,
+                pricing_status="unpriced",
+                guard_code="private_content",
+                error_type="GuardRefusal",
+            ),
+            AiUsageEvent(
+                created_at=now - timedelta(minutes=2),
+                user_id=other_user.id,
+                provider="deepgram",
+                feature="transcription",
+                operation="recording.transcribe",
+                status="failed",
+                model="nova-3",
+                billable_seconds=60,
+                audio_seconds=57.2,
+                latency_ms=250,
+                estimated_cost_usd=0.0058,
+                pricing_status="priced",
+                billing_mode="pre_recorded",
+                language_mode="multilingual",
+                addons=["speaker_diarization"],
+                provider_status_code=402,
+                provider_error_code="insufficient_credit",
+            ),
+            AiUsageEvent(
+                created_at=now - timedelta(minutes=1),
+                user_id=None,
+                provider="openai",
+                feature="embeddings",
+                operation="embedding.query",
+                status="succeeded",
+                model="text-embedding-3-large",
+                input_tokens=200,
+                output_tokens=0,
+                cached_tokens=0,
+                reasoning_tokens=0,
+                total_tokens=200,
+                latency_ms=10,
+                estimated_cost_usd=0.05,
+                pricing_status="priced",
+            ),
+        ]
+    )
+    await db_session.flush()
+
+    payload = await admin_routes._ai_usage_rows(
+        db_session,
+        since=now - timedelta(days=1),
+        detail_limit=10,
+    )
+
+    assert payload["summary"] == {
+        "events": 6,
+        "estimated_cost_usd": 3.5558,
+        "input_tokens": 9_000,
+        "output_tokens": 50,
+        "cached_tokens": 75,
+        "reasoning_tokens": 10,
+        "total_tokens": 9_050,
+        "billable_seconds": 60.0,
+        "audio_seconds": 57.2,
+        "failed_events": 2,
+        "refused_events": 1,
+        "unpriced_events": 2,
+        "avg_latency_ms": 86,
+        "p95_latency_ms": 250,
+    }
+    assert payload["by_day"] == [
+        {
+            "date": now.date().isoformat(),
+            "events": 6,
+            "estimated_cost_usd": 3.5558,
+            "total_tokens": 9_050,
+            "billable_seconds": 60.0,
+            "failed_events": 2,
+            "refused_events": 1,
+        }
+    ]
+    assert {row["provider"] for row in payload["by_provider"]} == {"openai", "deepgram"}
+    assert payload["by_user"][0]["email"] == "ai-usage-power@example.com"
+    assert any(row["user_id"] == "unknown" for row in payload["by_user"])
+    assert payload["recent_events"][0]["operation"] == "embedding.query"
+    assert payload["recent_events"][1]["addons"] == ["speaker_diarization"]
+
+    codes = {item["code"] for item in admin_routes._ai_usage_analysis(payload)}
+    assert {
+        "ai_usage.unpriced_models",
+        "ai_usage.failure_ratio.high",
+        "ai_usage.cost.concentrated_user",
+        "ai_usage.tokens.concentrated_feature",
+        "ai_usage.provider.openai.errors",
+        "ai_usage.provider.deepgram.errors",
+    } <= codes
+
+    filtered = await admin_routes._ai_usage_rows(
+        db_session,
+        since=now - timedelta(days=1),
+        detail_limit=10,
+        provider="openai",
+        feature="embeddings",
+        model="text-embedding-3-large",
+        status_filter="succeeded",
+        user_id=power_user.id,
+        q="power@example.com",
+    )
+
+    assert filtered["summary"]["events"] == 2
+    assert filtered["summary"]["estimated_cost_usd"] == 3.5
+    assert {row["model"] for row in filtered["by_model"]} == {"text-embedding-3-large"}
+    assert {event["email"] for event in filtered["recent_events"]} == {
+        "ai-usage-power@example.com"
+    }
+
+    empty = await admin_routes._ai_usage_rows(
+        db_session,
+        since=now + timedelta(days=1),
+        detail_limit=10,
+    )
+
+    assert empty["summary"]["events"] == 0
+    assert empty["summary"]["p95_latency_ms"] is None
+    assert admin_routes._ai_usage_analysis(empty)[0]["code"] == "ai_usage.ledger.empty"
+
+
+@pytest.mark.asyncio
+async def test_admin_deepgram_usage_rows_combine_ledger_estimates_and_analyze(
+    db_session: AsyncSession,
+):
+    now = datetime.now(timezone.utc)
+    power_user = User(email="deepgram-power@example.com", password_hash="x")
+    other_user = User(email="deepgram-other@example.com", password_hash="x")
+    db_session.add_all([power_user, other_user])
+    await db_session.flush()
+
+    long_recording = Recording(
+        user_id=power_user.id,
+        title="Long captured meeting",
+        type="meeting",
+        status="ready",
+        created_at=now - timedelta(minutes=8),
+        uploaded_at=now - timedelta(minutes=7),
+        duration_seconds=120,
+        billed_word_count=1_000,
+    )
+    failed_recording = Recording(
+        user_id=power_user.id,
+        title="Failed provider meeting",
+        type="meeting",
+        status="failed",
+        failure_code="deepgram_payment_required",
+        created_at=now - timedelta(minutes=7),
+        uploaded_at=now - timedelta(minutes=6),
+        duration_seconds=45,
+        billed_word_count=120,
+    )
+    other_recording = Recording(
+        user_id=other_user.id,
+        title="Short recording",
+        type="meeting",
+        status="ready",
+        created_at=now - timedelta(minutes=6),
+        uploaded_at=now - timedelta(minutes=5),
+        duration_seconds=20,
+        billed_word_count=80,
+    )
+    db_session.add_all([long_recording, failed_recording, other_recording])
+    await db_session.flush()
+
+    db_session.add_all(
+        [
+            DictationEntry(
+                user_id=power_user.id,
+                client_entry_id=uuid4(),
+                raw_text="hello wai",
+                cleaned_text="Hello Wai.",
+                duration_seconds=15.5,
+                word_count=30,
+                occurred_at=now - timedelta(minutes=4),
+            ),
+            DictationEntry(
+                user_id=other_user.id,
+                client_entry_id=uuid4(),
+                raw_text="short note",
+                cleaned_text="Short note.",
+                duration_seconds=5.0,
+                word_count=10,
+                occurred_at=now - timedelta(minutes=3),
+            ),
+            DeepgramUsageEvent(
+                created_at=now - timedelta(minutes=6),
+                user_id=power_user.id,
+                recording_id=long_recording.id,
+                operation="file_stt",
+                purpose="recording",
+                status="succeeded",
+                model="nova-3",
+                language="ru",
+                content_type="audio/mp4",
+                audio_seconds=120,
+                billable_seconds=120,
+                channel_count=1,
+                audio_bytes=1_200_000,
+                latency_ms=900,
+                estimated_cost_usd=0.0116,
+                pricing_status="priced",
+                billing_mode="pre_recorded",
+                language_mode="multilingual",
+                addons=["speaker_diarization"],
+                price_source="deepgram-payg-2026-06-04",
+            ),
+            DeepgramUsageEvent(
+                created_at=now - timedelta(minutes=5),
+                user_id=power_user.id,
+                recording_id=long_recording.id,
+                operation="file_stt",
+                purpose="recording",
+                status="failed",
+                model="nova-3",
+                language="ru",
+                content_type="audio/mp4",
+                audio_seconds=120,
+                billable_seconds=120,
+                channel_count=1,
+                audio_bytes=1_200_000,
+                latency_ms=1_100,
+                estimated_cost_usd=0.0,
+                pricing_status="unpriced",
+                billing_mode="pre_recorded",
+                language_mode="multilingual",
+                provider_status_code=402,
+                provider_error_code="payment_required",
+                error_type="DeepgramPaymentRequired",
+            ),
+            DeepgramUsageEvent(
+                created_at=now - timedelta(minutes=4),
+                user_id=power_user.id,
+                operation="realtime_stream",
+                purpose="dictation",
+                status="refused",
+                model="nova-3",
+                language="en",
+                content_type="audio/raw",
+                audio_seconds=15.5,
+                billable_seconds=0,
+                latency_ms=45,
+                estimated_cost_usd=0.0,
+                pricing_status="unpriced",
+                guard_code="silent_audio",
+                error_type="GuardRefusal",
+            ),
+            DeepgramUsageEvent(
+                created_at=now - timedelta(minutes=3),
+                user_id=other_user.id,
+                operation="realtime_stream",
+                purpose="dictation",
+                status="succeeded",
+                model="nova-3",
+                language="en",
+                content_type="audio/raw",
+                audio_seconds=5,
+                billable_seconds=5,
+                channel_count=1,
+                audio_bytes=80_000,
+                latency_ms=180,
+                estimated_cost_usd=0.00048,
+                pricing_status="priced",
+                billing_mode="streaming",
+                language_mode="monolingual",
+            ),
+        ]
+    )
+    await db_session.flush()
+
+    payload = await admin_routes._deepgram_usage_rows(
+        db_session,
+        since=now - timedelta(days=1),
+        detail_limit=10,
+    )
+
+    assert payload["captured"] == {
+        "events": 4,
+        "estimated_cost_usd": 0.01208,
+        "audio_seconds": 260.5,
+        "billable_seconds": 245.0,
+        "succeeded": 2,
+        "failed": 1,
+        "refused": 1,
+        "provider_402": 1,
+        "unpriced_events": 2,
+    }
+    assert payload["estimated"] == {
+        "recording_seconds": 185.0,
+        "recording_words": 1_200,
+        "recording_count": 3,
+        "failed_recordings": 1,
+        "dictation_seconds": 20.5,
+        "dictation_words": 40,
+        "dictation_entries": 2,
+        "total_seconds": 205.5,
+    }
+    assert payload["by_user"][0]["email"] == "deepgram-power@example.com"
+    assert payload["by_user"][0]["captured_events"] == 3
+    assert payload["by_user"][0]["estimated_total_seconds"] == 180.5
+    assert {row["operation"] for row in payload["by_operation"]} == {
+        "file_stt",
+        "realtime_stream",
+    }
+    assert payload["by_day"] == [
+        {
+            "date": now.date().isoformat(),
+            "captured_events": 4,
+            "captured_audio_seconds": 260.5,
+            "captured_estimated_cost_usd": 0.01208,
+            "captured_billable_seconds": 245.0,
+            "captured_failed_events": 1,
+            "captured_refused_events": 1,
+            "captured_unpriced_events": 2,
+            "estimated_recordings": 3,
+            "estimated_recording_seconds": 185.0,
+            "estimated_dictation_entries": 2,
+            "estimated_dictation_seconds": 20.5,
+        }
+    ]
+    assert payload["top_recordings"][0]["recording_id"] == str(long_recording.id)
+    assert payload["top_recordings"][0]["captured_events"] == 2
+    assert payload["top_recordings"][0]["failed_events"] == 1
+    assert payload["top_recordings"][0]["provider_402_events"] == 1
+    assert payload["recent_events"][0]["operation"] == "realtime_stream"
+    assert payload["recent_events"][0]["email"] == "deepgram-other@example.com"
+
+    codes = {item["code"] for item in admin_routes._deepgram_usage_analysis(payload)}
+    assert {
+        "deepgram.pricing.partial",
+        "deepgram.provider.payment_required",
+        "deepgram.guard.refused",
+        "deepgram.provider.failed",
+        "deepgram.usage.concentrated_user",
+        "deepgram.recording.repeated_attempts",
+        "deepgram.recordings.failed",
+    } <= codes
+
+    empty = await admin_routes._deepgram_usage_rows(
+        db_session,
+        since=now + timedelta(days=1),
+        detail_limit=10,
+    )
+    assert empty["captured"]["events"] == 0
+    assert admin_routes._deepgram_usage_analysis(empty)[0]["code"] == "deepgram.ledger.empty"
 
 
 @pytest.mark.asyncio

@@ -12,6 +12,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validat
 from app.api.deps import SessionUser
 from app.config import get_settings
 from app.core.data_ownership import ARTIFACT_OWNERSHIP, DATA_OWNERSHIP, ownership_map_response
+from app.core.self_host_migration import migration_contract_response
 
 router = APIRouter(prefix="/system", tags=["system"])
 self_host_router = APIRouter(prefix="/self-host", tags=["self-host"])
@@ -127,6 +128,19 @@ class MigrationPreflightResponse(BaseModel):
     data_map: dict[str, object]
 
 
+class MigrationContractResponse(BaseModel):
+    schema_version: str
+    archive_format: str
+    requires_same_alembic_head: bool
+    preserve_user_ids: bool
+    collision_policy: str
+    secret_policy: str
+    owned_exportable: dict[str, object]
+    reconnect_required: dict[str, object]
+    server_local: dict[str, object]
+    excluded: dict[str, object]
+
+
 @router.get("/info", response_model=SystemInfoResponse)
 async def system_info() -> SystemInfoResponse:
     settings = get_settings()
@@ -169,6 +183,11 @@ async def migration_preflight(user: SessionUser) -> MigrationPreflightResponse:
         ],
         data_map=ownership_map_response(),
     )
+
+
+@self_host_router.get("/migration/contract", response_model=MigrationContractResponse)
+async def migration_contract(user: SessionUser) -> MigrationContractResponse:
+    return MigrationContractResponse(**migration_contract_response())
 
 
 @self_host_router.post(

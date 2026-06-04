@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from typing import Any
 from uuid import UUID
 
@@ -51,6 +52,46 @@ _PRICE_BY_PROVIDER_MODEL: dict[tuple[str, str], dict[str, float]] = {
     (OPENAI_PROVIDER, "text-embedding-3-large"): {"input_per_1m": 0.13},
 }
 
+OPENAI_PRICE_SOURCE = "openai-api-pricing-2026-06-04"
+DEEPGRAM_PRICE_SOURCE = "deepgram-payg-2026-06-04"
+
+_DEEPGRAM_BASE_RATES_PER_MIN: dict[tuple[str, str, str], float] = {
+    ("nova-3", "streaming", "monolingual"): 0.0048,
+    ("nova-3", "streaming", "multilingual"): 0.0058,
+    ("nova-3", "pre_recorded", "monolingual"): 0.0077,
+    ("nova-3", "pre_recorded", "multilingual"): 0.0092,
+}
+
+_DEEPGRAM_ADDON_RATES_PER_MIN: dict[str, float] = {
+    "keyterm_prompting": 0.0013,
+    "speaker_diarization": 0.0020,
+    "redaction": 0.0020,
+    "smart_formatting": 0.0,
+}
+
+_DEEPGRAM_ADDON_ALIASES: dict[str, str] = {
+    "keyterm": "keyterm_prompting",
+    "keyterms": "keyterm_prompting",
+    "keyterm_prompting": "keyterm_prompting",
+    "speaker_diarization": "speaker_diarization",
+    "diarization": "speaker_diarization",
+    "diarize": "speaker_diarization",
+    "diarize_model": "speaker_diarization",
+    "redaction": "redaction",
+    "smart_format": "smart_formatting",
+    "smart_formatting": "smart_formatting",
+}
+
+
+@dataclass(frozen=True)
+class DeepgramUsageCost:
+    amount_usd: float | None
+    pricing_status: str
+    price_source: str | None
+    billing_mode: str
+    language_mode: str
+    addons: list[str]
+
 
 async def record_ai_usage_event(
     db: AsyncSession,
@@ -82,6 +123,10 @@ async def record_ai_usage_event(
     error_type: str | None = None,
     request_id: str | None = None,
     task_id: str | None = None,
+    billing_mode: str | None = None,
+    language_mode: str | None = None,
+    addons: list[str] | None = None,
+    price_source: str | None = None,
     details: dict[str, Any] | None = None,
     commit: bool = False,
 ) -> None:
@@ -98,14 +143,35 @@ async def record_ai_usage_event(
             _sum_tokens(input_value, output_value),
         )
         resolved_model = _bounded(model or _string_field(response, "model"), 120)
-        cost, pricing_status = estimate_cost_usd(
-            provider=provider,
-            model=resolved_model,
-            input_tokens=input_value,
-            output_tokens=output_value,
-            cached_tokens=cached_value,
-            billable_seconds=_float_or_none(billable_seconds),
-        )
+        resolved_billing_mode = _bounded(billing_mode, 32)
+        resolved_language_mode = _bounded(language_mode, 32)
+        resolved_addons = normalize_deepgram_addons(addons)
+        resolved_price_source = _bounded(price_source, 120)
+        if provider == DEEPGRAM_PROVIDER:
+            deepgram_cost = estimate_deepgram_usage_cost(
+                model=resolved_model,
+                billable_seconds=_float_or_none(billable_seconds),
+                billing_mode=resolved_billing_mode,
+                language_mode=resolved_language_mode,
+                addons=resolved_addons,
+            )
+            cost = deepgram_cost.amount_usd
+            pricing_status = deepgram_cost.pricing_status
+            resolved_price_source = resolved_price_source or deepgram_cost.price_source
+            resolved_billing_mode = deepgram_cost.billing_mode
+            resolved_language_mode = deepgram_cost.language_mode
+            resolved_addons = deepgram_cost.addons
+        else:
+            cost, pricing_status = estimate_cost_usd(
+                provider=provider,
+                model=resolved_model,
+                input_tokens=input_value,
+                output_tokens=output_value,
+                cached_tokens=cached_value,
+                billable_seconds=_float_or_none(billable_seconds),
+            )
+            if pricing_status == "priced":
+                resolved_price_source = resolved_price_source or OPENAI_PRICE_SOURCE
         event = AiUsageEvent(
             user_id=_uuid_or_none(user_id),
             recording_id=_uuid_or_none(recording_id),
@@ -129,6 +195,10 @@ async def record_ai_usage_event(
             latency_ms=latency_ms,
             estimated_cost_usd=cost,
             pricing_status=pricing_status,
+            billing_mode=resolved_billing_mode,
+            language_mode=resolved_language_mode,
+            addons=resolved_addons or None,
+            price_source=resolved_price_source,
             provider_status_code=provider_status_code,
             provider_error_code=_bounded(provider_error_code, 128),
             guard_code=_bounded(guard_code, 128),
@@ -188,6 +258,15 @@ def estimate_cost_usd(
     cached_tokens: int | None = None,
     billable_seconds: float | None = None,
 ) -> tuple[float | None, str]:
+    if provider == DEEPGRAM_PROVIDER:
+        cost = estimate_deepgram_usage_cost(
+            model=model,
+            billable_seconds=billable_seconds,
+            billing_mode="streaming",
+            language_mode="multilingual",
+            addons=[],
+        )
+        return cost.amount_usd, cost.pricing_status
     if not model:
         return None, "unpriced"
     price = _PRICE_BY_PROVIDER_MODEL.get((provider, model))
@@ -204,6 +283,76 @@ def estimate_cost_usd(
     if output_tokens and (rate := price.get("output_per_1m")):
         total += output_tokens * rate / 1_000_000
     return round(total, 8), "priced"
+
+
+def estimate_deepgram_usage_cost(
+    *,
+    model: str | None,
+    billable_seconds: float | None,
+    billing_mode: str | None = None,
+    language_mode: str | None = None,
+    addons: list[str] | None = None,
+) -> DeepgramUsageCost:
+    resolved_billing_mode = _deepgram_billing_mode(billing_mode)
+    resolved_language_mode = _deepgram_language_mode(language_mode)
+    resolved_addons = normalize_deepgram_addons(addons)
+    if not model:
+        return DeepgramUsageCost(
+            amount_usd=None,
+            pricing_status="unpriced",
+            price_source=None,
+            billing_mode=resolved_billing_mode,
+            language_mode=resolved_language_mode,
+            addons=resolved_addons,
+        )
+    seconds = _float_or_none(billable_seconds)
+    rate = _DEEPGRAM_BASE_RATES_PER_MIN.get(
+        (model, resolved_billing_mode, resolved_language_mode)
+    )
+    if seconds is None or rate is None:
+        return DeepgramUsageCost(
+            amount_usd=None,
+            pricing_status="unpriced",
+            price_source=None,
+            billing_mode=resolved_billing_mode,
+            language_mode=resolved_language_mode,
+            addons=resolved_addons,
+        )
+    per_minute = rate + sum(_DEEPGRAM_ADDON_RATES_PER_MIN[addon] for addon in resolved_addons)
+    return DeepgramUsageCost(
+        amount_usd=round(seconds / 60 * per_minute, 8),
+        pricing_status="priced",
+        price_source=DEEPGRAM_PRICE_SOURCE,
+        billing_mode=resolved_billing_mode,
+        language_mode=resolved_language_mode,
+        addons=resolved_addons,
+    )
+
+
+def normalize_deepgram_addons(addons: list[str] | None) -> list[str]:
+    if not addons:
+        return []
+    normalized: set[str] = set()
+    for addon in addons:
+        key = addon.strip().lower().replace("-", "_").replace(" ", "_")
+        resolved = _DEEPGRAM_ADDON_ALIASES.get(key)
+        if resolved is not None:
+            normalized.add(resolved)
+    return sorted(normalized)
+
+
+def _deepgram_billing_mode(value: str | None) -> str:
+    normalized = (value or "streaming").strip().lower().replace("-", "_").replace(" ", "_")
+    if normalized in {"pre_recorded", "prerecorded", "batch", "file"}:
+        return "pre_recorded"
+    return "streaming"
+
+
+def _deepgram_language_mode(value: str | None) -> str:
+    normalized = (value or "multilingual").strip().lower().replace("-", "_").replace(" ", "_")
+    if normalized in {"monolingual", "mono"}:
+        return "monolingual"
+    return "multilingual"
 
 
 def _field(value: Any, name: str) -> Any:

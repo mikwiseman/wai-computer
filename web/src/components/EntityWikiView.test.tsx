@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { EntityWikiView } from "./EntityWikiView";
 
@@ -47,6 +47,22 @@ describe("EntityWikiView", () => {
     await waitFor(() => expect(screen.getByText("GPU")).toBeInTheDocument());
     fireEvent.click(screen.getByText("GPU"));
     expect(onNavigate).toHaveBeenCalledWith("e2", "GPU");
+  });
+
+  it("opens a cited source from the page", async () => {
+    const onOpenSource = vi.fn();
+    render(
+      <EntityWikiView entityId="e1" onNavigate={() => {}} onOpenSource={onOpenSource} />,
+    );
+
+    await waitFor(() => expect(screen.getByText("Anna")).toBeInTheDocument());
+    const citations = screen.getByRole("heading", { name: "Citations" }).closest("section");
+    expect(citations).not.toBeNull();
+    fireEvent.click(
+      within(citations as HTMLElement).getByRole("button", { name: "Open source: GPU note" }),
+    );
+
+    expect(onOpenSource).toHaveBeenCalledWith("item", "i1");
   });
 
   it("shows an error with a working retry", async () => {

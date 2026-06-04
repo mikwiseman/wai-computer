@@ -54,8 +54,17 @@ async def _remaining_candidate_count(db: AsyncSession, *, user_id: UUID | None) 
     )
 
 
-async def _generate_checked_embeddings(texts: list[str]) -> list[list[float]]:
-    embeddings = await generate_embeddings(texts)
+async def _generate_checked_embeddings(
+    texts: list[str],
+    *,
+    user_id: UUID | None = None,
+) -> list[list[float]]:
+    embeddings = await generate_embeddings(
+        texts,
+        usage_user_id=user_id,
+        usage_feature="embeddings",
+        usage_operation="embedding.backfill",
+    )
     if len(embeddings) != len(texts):
         raise RuntimeError(
             f"embedding_count_mismatch expected={len(texts)} actual={len(embeddings)}"
@@ -114,7 +123,7 @@ async def backfill_missing_segment_embeddings(
         scanned += len(batch)
         batches += 1
         try:
-            embeddings = await _generate_checked_embeddings(texts)
+            embeddings = await _generate_checked_embeddings(texts, user_id=user_id)
         except Exception as exc:
             logger.warning(
                 "embedding backfill batch failed batch_size=%s error_type=%s "
@@ -125,7 +134,9 @@ async def backfill_missing_segment_embeddings(
             )
             for segment, text in zip(batch, texts, strict=True):
                 try:
-                    embedding = (await _generate_checked_embeddings([text]))[0]
+                    embedding = (
+                        await _generate_checked_embeddings([text], user_id=user_id)
+                    )[0]
                 except Exception as single_exc:
                     failed += 1
                     isolated_failures += 1

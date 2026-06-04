@@ -3,6 +3,7 @@ import {
   archiveAdminPromoCode,
   cancelAdminSubscription,
   createAdminPromoCode,
+  getAdminDeepgramUsage,
   getAdminObservability,
   getAdminStats,
   getAdminUser,
@@ -53,6 +54,14 @@ describe("admin api wrappers", () => {
     );
     expect(mockedApiFetch).toHaveBeenNthCalledWith(6, "/api/admin/billing");
     expect(mockedApiFetch).toHaveBeenNthCalledWith(7, "/api/admin/audit");
+  });
+
+  it("builds Deepgram usage filter URLs", async () => {
+    await getAdminDeepgramUsage({ days: 30, limit: 250 });
+
+    expect(mockedApiFetch).toHaveBeenCalledWith(
+      "/api/admin/deepgram-usage?days=30&limit=250",
+    );
   });
 
   it("calls promo mutation endpoints", async () => {

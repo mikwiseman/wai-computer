@@ -19,11 +19,11 @@ DEEPGRAM_REALTIME_ENCODING = "linear16"
 DEEPGRAM_KEEP_ALIVE_INTERVAL_SECONDS = 4
 DEEPGRAM_UTTERANCE_END_MS = 1_000
 # Silence (ms) before Deepgram finalizes a streaming segment (is_final=true).
-# Dictation commits each final immediately, so a longer value keeps a spoken
-# number sequence ("десять тридцать") in one segment — it formats together
-# (10:30) instead of splitting (10, 30). The multilingual path previously used
-# an aggressive 100ms; unified at 300ms.
-DEEPGRAM_ENDPOINTING_MS = 300
+# Meeting recording keeps a slightly longer value so spoken number sequences
+# stay together for formatting. Dictation optimizes for commit latency.
+DEEPGRAM_RECORDING_ENDPOINTING_MS = 300
+DEEPGRAM_DICTATION_ENDPOINTING_MS = 200
+DEEPGRAM_ENDPOINTING_MS = DEEPGRAM_RECORDING_ENDPOINTING_MS
 DEEPGRAM_MAX_KEYTERMS = 100
 DEEPGRAM_MAX_KEYTERM_CHARS = 100
 DEEPGRAM_KEYTERM_TOKEN_BUDGET = 500
@@ -193,6 +193,11 @@ def build_realtime_websocket_url(
     keyterms: list[str] | None = None,
 ) -> str:
     resolved_language = normalize_deepgram_language(language)
+    endpointing_ms = (
+        DEEPGRAM_DICTATION_ENDPOINTING_MS
+        if purpose == "dictation"
+        else DEEPGRAM_RECORDING_ENDPOINTING_MS
+    )
     params: list[tuple[str, str | int]] = [
         ("model", model),
         ("encoding", DEEPGRAM_REALTIME_ENCODING),
@@ -202,7 +207,7 @@ def build_realtime_websocket_url(
         ("interim_results", "true"),
         ("vad_events", "true"),
         ("utterance_end_ms", DEEPGRAM_UTTERANCE_END_MS),
-        ("endpointing", DEEPGRAM_ENDPOINTING_MS),
+        ("endpointing", endpointing_ms),
     ]
     if purpose == "recording":
         # smart_format optimizes meeting transcripts for human readability

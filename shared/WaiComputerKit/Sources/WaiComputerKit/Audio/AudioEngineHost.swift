@@ -29,6 +29,7 @@ public actor AudioEngineHost {
     private let preRoll: PCMRingBuffer
     /// 16 kHz mono Float32 — the format we emit to consumers.
     private let outputFormat: AVAudioFormat
+    private var nativeInputFormat: AVAudioFormat?
     private var resampler: PCMResampler?
     private var preWarmed = false
     private var activeLease: UUID?
@@ -36,6 +37,7 @@ public actor AudioEngineHost {
     private var configChangeObserver: NSObjectProtocol?
     /// Frames currently in the pre-roll ring at 16 kHz mono. Caps memory.
     public static let preRollFrames: AVAudioFrameCount = 8_000  // 500 ms @ 16 kHz
+    public static let tapBufferFrames: AVAudioFrameCount = 2_048
 
     private init() {
         self.engine = AVAudioEngine()
@@ -61,6 +63,7 @@ public actor AudioEngineHost {
             throw AudioCaptureError.invalidFormat
         }
         self.resampler = resampler
+        self.nativeInputFormat = nativeFormat
 
         // Defensive: remove any stale tap from a prior failed prewarm() so
         // a retry doesn't crash with "Already attached" (NSInvalidArgumentException
@@ -71,7 +74,7 @@ public actor AudioEngineHost {
         // Install a tap with `format: nil` (native format). On macOS this is
         // the only supported configuration — passing a different format
         // throws an exception. Resampling happens manually below.
-        input.installTap(onBus: 0, bufferSize: 4096, format: nil) { [weak self] buffer, _ in
+        input.installTap(onBus: 0, bufferSize: Self.tapBufferFrames, format: nil) { [weak self] buffer, _ in
             // The tap callback runs on a real-time audio thread. Hop into the
             // actor for state mutation. `Task` is fine because the buffer is
             // captured by reference; AVAudioEngine reuses the storage so we
@@ -88,6 +91,7 @@ public actor AudioEngineHost {
             // Roll back the tap so the next retry can install cleanly.
             input.removeTap(onBus: 0)
             self.resampler = nil
+            self.nativeInputFormat = nil
             hostLog.error("[Host] engine.start() failed — tap removed for retry safety")
             throw error
         }
@@ -157,6 +161,7 @@ public actor AudioEngineHost {
         liveContinuation = nil
         activeLease = nil
         preWarmed = false
+        nativeInputFormat = nil
         hostLog.info("[Host] Engine stopped")
     }
 
@@ -178,6 +183,7 @@ public actor AudioEngineHost {
             id: id,
             preRoll: preRollBuffers,
             buffers: stream,
+            nativeInputFormat: nativeInputFormat,
             outputFormat: outputFormat
         )
     }
@@ -247,6 +253,7 @@ public extension AudioEngineHost {
         public let preRoll: [AVAudioPCMBuffer]
         /// Live buffers captured AFTER the hotkey was pressed.
         public let buffers: AsyncStream<AVAudioPCMBuffer>
+        public let nativeInputFormat: AVAudioFormat?
         public let outputFormat: AVAudioFormat
     }
 }

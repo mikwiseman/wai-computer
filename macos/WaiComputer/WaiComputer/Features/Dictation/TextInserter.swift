@@ -75,13 +75,19 @@ enum TextInserter {
         // Re-focus the app that had focus when the hotkey was pressed.
         // If activation fails, we still fall through so the user ends up with
         // the text on their clipboard and a clear instruction to paste manually.
+        let targetWasActive = targetApp?.isActive ?? true
         let activated = activateTarget(targetApp)
         if !activated {
             log.warning("Target app activation reported unsuccessful; pasting into frontmost")
         }
 
-        // Give AppKit a beat to apply the activation before posting keystrokes.
-        try? await Task.sleep(for: .milliseconds(200))
+        if TextInsertionActivationPolicy.shouldWaitAfterActivation(
+            targetWasActive: targetWasActive,
+            activationReportedSuccessful: activated
+        ) {
+            // Give AppKit a beat to apply the activation before posting keystrokes.
+            try? await Task.sleep(for: .milliseconds(200))
+        }
 
         // Wait for the hotkey modifiers to release so ⌘V is interpreted as
         // plain ⌘V, not ⌥⌘V / ⇧⌘V / etc.

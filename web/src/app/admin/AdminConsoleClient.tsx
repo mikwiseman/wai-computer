@@ -1,11 +1,21 @@
 "use client";
 
-import { FormEvent, type Dispatch, type SetStateAction, useEffect, useMemo, useState } from "react";
+import {
+  FormEvent,
+  type CSSProperties,
+  type Dispatch,
+  type SetStateAction,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   archiveAdminPromoCode,
   cancelAdminSubscription,
   createAdminPromoCode,
+  getAdminAiUsage,
+  getAdminDeepgramUsage,
   getAdminObservability,
   getAdminStats,
   getAdminUser,
@@ -21,7 +31,11 @@ import {
   updateAdminSubscription,
   updateAdminUserStatus,
   type AdminAuditLog,
+  type AdminAiUsage,
+  type AdminAiUsageFilters,
   type AdminBillingSubscription,
+  type AdminDeepgramUsage,
+  type AdminDeepgramUsageFilters,
   type AdminSubscriptionPatchInput,
   type AdminObservability,
   type AdminPromoCode,
@@ -34,7 +48,15 @@ import {
 } from "@/lib/admin";
 import { logout } from "@/lib/api";
 
-type AdminTab = "overview" | "promos" | "users" | "billing" | "observability" | "audit";
+type AdminTab =
+  | "overview"
+  | "promos"
+  | "users"
+  | "billing"
+  | "ai-usage"
+  | "deepgram"
+  | "observability"
+  | "audit";
 type PromoDraft = {
   note: string;
   duration_days: number | null;
@@ -48,6 +70,8 @@ const TABS: Array<{ id: AdminTab; label: string }> = [
   { id: "promos", label: "Promo codes" },
   { id: "users", label: "Users" },
   { id: "billing", label: "Billing" },
+  { id: "ai-usage", label: "AI usage" },
+  { id: "deepgram", label: "Deepgram" },
   { id: "observability", label: "Observability" },
   { id: "audit", label: "Audit" },
 ];
@@ -60,6 +84,25 @@ function fmtHours(valueSeconds: number): string {
   return `${(valueSeconds / 3600).toLocaleString("en-US", {
     maximumFractionDigits: 1,
   })} h`;
+}
+
+function fmtMinutes(valueSeconds: number | null | undefined): string {
+  const value = valueSeconds ?? 0;
+  return `${(value / 60).toLocaleString("en-US", {
+    maximumFractionDigits: 1,
+  })} min`;
+}
+
+function fmtUsd(value: number | null | undefined): string {
+  return `$${(value ?? 0).toLocaleString("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 4,
+  })}`;
+}
+
+function fmtLatency(value: number | null | undefined): string {
+  if (value == null) return "-";
+  return `${value.toLocaleString("en-US")} ms`;
 }
 
 function fmtMoneyByCurrency(value: Record<string, number>): string {
@@ -76,6 +119,17 @@ function fmtDate(value: string | null): string {
     year: "numeric",
     month: "short",
     day: "numeric",
+  });
+}
+
+function fmtDateTime(value: string | null): string {
+  if (!value) return "-";
+  return new Date(value).toLocaleString("en-US", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
   });
 }
 
@@ -117,6 +171,23 @@ function promoMetricRows(stats: AdminStats["promo"]): Array<[string, number]> {
   ];
 }
 
+const DEFAULT_AI_USAGE_FILTERS: Required<
+  Pick<AdminAiUsageFilters, "days" | "provider" | "feature" | "model" | "status" | "q" | "limit">
+> = {
+  days: 7,
+  provider: "",
+  feature: "",
+  model: "",
+  status: "",
+  q: "",
+  limit: 100,
+};
+
+const DEFAULT_DEEPGRAM_USAGE_FILTERS: Required<Pick<AdminDeepgramUsageFilters, "days" | "limit">> = {
+  days: 7,
+  limit: 100,
+};
+
 export function AdminConsoleClient() {
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -128,6 +199,12 @@ export function AdminConsoleClient() {
   const [users, setUsers] = useState<AdminUserSummary[]>([]);
   const [selectedUser, setSelectedUser] = useState<AdminUserDetail | null>(null);
   const [billing, setBilling] = useState<AdminBillingSubscription[]>([]);
+  const [aiUsage, setAiUsage] = useState<AdminAiUsage | null>(null);
+  const [aiUsageFilters, setAiUsageFilters] = useState(DEFAULT_AI_USAGE_FILTERS);
+  const [deepgramUsage, setDeepgramUsage] = useState<AdminDeepgramUsage | null>(null);
+  const [deepgramUsageFilters, setDeepgramUsageFilters] = useState(
+    DEFAULT_DEEPGRAM_USAGE_FILTERS,
+  );
   const [observability, setObservability] = useState<AdminObservability | null>(null);
   const [audit, setAudit] = useState<AdminAuditLog[]>([]);
   const [userQuery, setUserQuery] = useState("");
@@ -155,12 +232,23 @@ export function AdminConsoleClient() {
 
   async function refreshAll() {
     setError(null);
-    const [freshStats, freshPromos, freshUsers, freshBilling, freshObservability, freshAudit] =
+    const [
+      freshStats,
+      freshPromos,
+      freshUsers,
+      freshBilling,
+      freshAiUsage,
+      freshDeepgramUsage,
+      freshObservability,
+      freshAudit,
+    ] =
       await Promise.all([
         getAdminStats(),
         listAdminPromoCodes(),
         listAdminUsers(userQuery),
         listAdminBilling(),
+        getAdminAiUsage(aiUsageFilters),
+        getAdminDeepgramUsage(deepgramUsageFilters),
         getAdminObservability(),
         listAdminAudit(),
       ]);
@@ -182,6 +270,8 @@ export function AdminConsoleClient() {
     );
     setUsers(freshUsers);
     setBilling(freshBilling);
+    setAiUsage(freshAiUsage);
+    setDeepgramUsage(freshDeepgramUsage);
     setObservability(freshObservability);
     setAudit(freshAudit);
   }
@@ -274,6 +364,36 @@ export function AdminConsoleClient() {
       setUsers(await listAdminUsers(userQuery));
       setSelectedUser(null);
     }, "Users loaded.");
+  }
+
+  async function applyAiUsageFilters(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setBusy(true);
+    setMessage(null);
+    setError(null);
+    try {
+      setAiUsage(await getAdminAiUsage(aiUsageFilters));
+      setMessage("AI usage loaded.");
+    } catch (caught: unknown) {
+      setError(caught instanceof Error ? caught.message : "AI usage failed to load.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function applyDeepgramUsageFilters(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setBusy(true);
+    setMessage(null);
+    setError(null);
+    try {
+      setDeepgramUsage(await getAdminDeepgramUsage(deepgramUsageFilters));
+      setMessage("Deepgram usage loaded.");
+    } catch (caught: unknown) {
+      setError(caught instanceof Error ? caught.message : "Deepgram usage failed to load.");
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function openUser(userId: string) {
@@ -548,6 +668,262 @@ export function AdminConsoleClient() {
           </div>
         ) : null}
 
+        {tab === "ai-usage" && aiUsage ? (
+          <div className="admin-section">
+            <form className="admin-inline-form" onSubmit={applyAiUsageFilters}>
+              <label>
+                <span>Window</span>
+                <select
+                  value={aiUsageFilters.days}
+                  onChange={(event) =>
+                    setAiUsageFilters((current) => ({
+                      ...current,
+                      days: Number(event.target.value),
+                    }))
+                  }
+                >
+                  <option value={1}>1d</option>
+                  <option value={7}>7d</option>
+                  <option value={30}>30d</option>
+                  <option value={90}>90d</option>
+                </select>
+              </label>
+              <label>
+                <span>Provider</span>
+                <input
+                  value={aiUsageFilters.provider}
+                  onChange={(event) =>
+                    setAiUsageFilters((current) => ({
+                      ...current,
+                      provider: event.target.value,
+                    }))
+                  }
+                  placeholder="openai, deepgram"
+                />
+              </label>
+              <label>
+                <span>Feature</span>
+                <input
+                  value={aiUsageFilters.feature}
+                  onChange={(event) =>
+                    setAiUsageFilters((current) => ({
+                      ...current,
+                      feature: event.target.value,
+                    }))
+                  }
+                  placeholder="companion, recording"
+                />
+              </label>
+              <label>
+                <span>Model</span>
+                <input
+                  value={aiUsageFilters.model}
+                  onChange={(event) =>
+                    setAiUsageFilters((current) => ({
+                      ...current,
+                      model: event.target.value,
+                    }))
+                  }
+                  placeholder="gpt-5.5"
+                />
+              </label>
+              <label>
+                <span>Status</span>
+                <select
+                  value={aiUsageFilters.status}
+                  onChange={(event) =>
+                    setAiUsageFilters((current) => ({
+                      ...current,
+                      status: event.target.value,
+                    }))
+                  }
+                >
+                  <option value="">all</option>
+                  <option value="succeeded">succeeded</option>
+                  <option value="failed">failed</option>
+                  <option value="refused">refused</option>
+                </select>
+              </label>
+              <label>
+                <span>User</span>
+                <input
+                  value={aiUsageFilters.q}
+                  onChange={(event) =>
+                    setAiUsageFilters((current) => ({
+                      ...current,
+                      q: event.target.value,
+                    }))
+                  }
+                  placeholder="email or id"
+                />
+              </label>
+              <button type="submit" disabled={busy}>Apply</button>
+            </form>
+            <div className="admin-metrics">
+              <div>
+                <span>Estimated cost</span>
+                <strong>{fmtUsd(aiUsage.summary.estimated_cost_usd)}</strong>
+              </div>
+              <div>
+                <span>Total tokens</span>
+                <strong>{fmtNumber(aiUsage.summary.total_tokens)}</strong>
+              </div>
+              <div>
+                <span>Billable audio</span>
+                <strong>{fmtMinutes(aiUsage.summary.billable_seconds)}</strong>
+              </div>
+              <div>
+                <span>Failed/refused</span>
+                <strong>{fmtNumber(aiUsage.summary.failed_events + aiUsage.summary.refused_events)}</strong>
+              </div>
+            </div>
+            <div className="admin-grid admin-grid--wide">
+              <AiUsageDailyBars rows={aiUsage.by_day} />
+              <AiUsageAnalysisTable rows={aiUsage.analysis} />
+              <MetricTable
+                title="Token shape"
+                rows={[
+                  ["input_tokens", aiUsage.summary.input_tokens],
+                  ["output_tokens", aiUsage.summary.output_tokens],
+                  ["cached_tokens", aiUsage.summary.cached_tokens],
+                  ["reasoning_tokens", aiUsage.summary.reasoning_tokens],
+                  ["unpriced_events", aiUsage.summary.unpriced_events],
+                ]}
+              />
+              <MetricTable
+                title="Latency"
+                rows={[
+                  ["avg_latency_ms", aiUsage.summary.avg_latency_ms],
+                  ["p95_latency_ms", aiUsage.summary.p95_latency_ms ?? 0],
+                ]}
+              />
+              <AiUsageGroupTable title="Providers" rows={aiUsage.by_provider} labelKey="provider" />
+              <AiUsageGroupTable title="Features" rows={aiUsage.by_feature} labelKey="feature" />
+              <AiUsageModelTable rows={aiUsage.by_model} />
+              <AiUsageUserTable rows={aiUsage.by_user} />
+              <AiUsageEventTable rows={aiUsage.recent_events} />
+            </div>
+          </div>
+        ) : null}
+
+        {tab === "deepgram" && deepgramUsage ? (
+          <div className="admin-section">
+            <form className="admin-inline-form" onSubmit={applyDeepgramUsageFilters}>
+              <label>
+                <span>Window</span>
+                <select
+                  value={deepgramUsageFilters.days}
+                  onChange={(event) =>
+                    setDeepgramUsageFilters((current) => ({
+                      ...current,
+                      days: Number(event.target.value),
+                    }))
+                  }
+                >
+                  <option value={1}>1d</option>
+                  <option value={7}>7d</option>
+                  <option value={30}>30d</option>
+                  <option value={90}>90d</option>
+                </select>
+              </label>
+              <label>
+                <span>Rows</span>
+                <select
+                  value={deepgramUsageFilters.limit}
+                  onChange={(event) =>
+                    setDeepgramUsageFilters((current) => ({
+                      ...current,
+                      limit: Number(event.target.value),
+                    }))
+                  }
+                >
+                  <option value={50}>50</option>
+                  <option value={100}>100</option>
+                  <option value={250}>250</option>
+                  <option value={500}>500</option>
+                </select>
+              </label>
+              <button type="submit" disabled={busy}>Apply</button>
+            </form>
+            <div className="admin-metrics">
+              <div>
+                <span>Estimated audio {deepgramUsage.window_days}d</span>
+                <strong>{fmtMinutes(deepgramUsage.estimated.total_seconds)}</strong>
+              </div>
+              <div>
+                <span>Estimated Deepgram cost</span>
+                <strong>{fmtUsd(deepgramUsage.captured.estimated_cost_usd)}</strong>
+              </div>
+              <div>
+                <span>Captured billable</span>
+                <strong>{fmtMinutes(deepgramUsage.captured.billable_seconds)}</strong>
+              </div>
+              <div>
+                <span>Provider failures</span>
+                <strong>{fmtNumber(deepgramUsage.captured.failed)}</strong>
+              </div>
+              <div>
+                <span>Guard refusals</span>
+                <strong>{fmtNumber(deepgramUsage.captured.refused)}</strong>
+              </div>
+            </div>
+            <div className="admin-grid admin-grid--wide">
+              <section className="admin-metric-table">
+                <h3>Burn analysis</h3>
+                <table className="admin-mini-table">
+                  <thead>
+                    <tr>
+                      <th>Severity</th>
+                      <th>Finding</th>
+                      <th>Detail</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {deepgramUsage.analysis.map((item) => (
+                      <tr key={item.code}>
+                        <td>{item.severity}</td>
+                        <td>{item.title}</td>
+                        <td>{item.detail}</td>
+                      </tr>
+                    ))}
+                    {deepgramUsage.analysis.length === 0 ? (
+                      <tr>
+                        <td colSpan={3}>No Deepgram burn risks detected in this window.</td>
+                      </tr>
+                    ) : null}
+                  </tbody>
+                </table>
+              </section>
+              <MetricTable
+                title="Captured ledger"
+                rows={[
+                  ["events", deepgramUsage.captured.events],
+                  ["succeeded", deepgramUsage.captured.succeeded],
+                  ["failed", deepgramUsage.captured.failed],
+                  ["refused", deepgramUsage.captured.refused],
+                  ["provider_402", deepgramUsage.captured.provider_402],
+                  ["unpriced_events", deepgramUsage.captured.unpriced_events],
+                ]}
+              />
+              <MetricTable
+                title="Historical estimate"
+                rows={[
+                  ["recordings", deepgramUsage.estimated.recording_count],
+                  ["failed_recordings", deepgramUsage.estimated.failed_recordings],
+                  ["dictation_entries", deepgramUsage.estimated.dictation_entries],
+                  ["recording_words", deepgramUsage.estimated.recording_words],
+                  ["dictation_words", deepgramUsage.estimated.dictation_words],
+                ]}
+              />
+              <DeepgramUserTable rows={deepgramUsage.by_user.slice(0, 20)} />
+              <DeepgramOperationTable rows={deepgramUsage.by_operation} />
+              <DeepgramDayTable rows={deepgramUsage.by_day} />
+              <DeepgramRecordingTable rows={deepgramUsage.top_recordings} />
+              <DeepgramEventTable rows={deepgramUsage.recent_events} />
+            </div>
+          </div>
+        ) : null}
+
         {tab === "observability" && observability ? (
           <div className="admin-section">
             <div className="admin-grid">
@@ -680,6 +1056,404 @@ function UsageBucketTable({ title, rows }: { title: string; rows: AdminUsageBuck
               <td>{row.period}</td>
               <td>{fmtNumber(row.total_words)}</td>
               <td>{fmtNumber(row.recording_count)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </section>
+  );
+}
+
+function AiUsageDailyBars({ rows }: { rows: AdminAiUsage["by_day"] }) {
+  const maxCost = Math.max(0, ...rows.map((row) => row.estimated_cost_usd));
+  const maxTokens = Math.max(0, ...rows.map((row) => row.total_tokens));
+  const maxAudio = Math.max(0, ...rows.map((row) => row.billable_seconds));
+  return (
+    <section className="admin-metric-table admin-metric-table--wide">
+      <h3>Daily AI usage</h3>
+      <div className="admin-usage-bars">
+        {rows.map((row) => (
+          <div key={row.date} className="admin-usage-bars__row">
+            <span>{row.date}</span>
+            <div className="admin-usage-bars__tracks" aria-label={`AI usage for ${row.date}`}>
+              <i
+                data-kind="cost"
+                style={{ "--bar-width": `${maxCost ? (row.estimated_cost_usd / maxCost) * 100 : 0}%` } as CSSProperties}
+              />
+              <i
+                data-kind="tokens"
+                style={{ "--bar-width": `${maxTokens ? (row.total_tokens / maxTokens) * 100 : 0}%` } as CSSProperties}
+              />
+              <i
+                data-kind="audio"
+                style={{ "--bar-width": `${maxAudio ? (row.billable_seconds / maxAudio) * 100 : 0}%` } as CSSProperties}
+              />
+            </div>
+            <strong>
+              {fmtUsd(row.estimated_cost_usd)} · {fmtNumber(row.total_tokens)} tok ·{" "}
+              {fmtMinutes(row.billable_seconds)}
+            </strong>
+          </div>
+        ))}
+        {rows.length === 0 ? <p className="muted-text">No AI usage in this window.</p> : null}
+      </div>
+    </section>
+  );
+}
+
+function AiUsageAnalysisTable({ rows }: { rows: AdminAiUsage["analysis"] }) {
+  return (
+    <section className="admin-metric-table admin-metric-table--wide">
+      <h3>Spend analysis</h3>
+      <table className="admin-mini-table">
+        <thead>
+          <tr>
+            <th>Severity</th>
+            <th>Finding</th>
+            <th>Detail</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => (
+            <tr key={row.code}>
+              <td>{row.severity}</td>
+              <td>{row.title}</td>
+              <td>{row.detail}</td>
+            </tr>
+          ))}
+          {rows.length === 0 ? (
+            <tr>
+              <td colSpan={3}>No AI spend risks detected in this window.</td>
+            </tr>
+          ) : null}
+        </tbody>
+      </table>
+    </section>
+  );
+}
+
+function AiUsageGroupTable({
+  title,
+  rows,
+  labelKey,
+}: {
+  title: string;
+  rows: AdminAiUsage["by_provider"];
+  labelKey: "provider" | "feature";
+}) {
+  return (
+    <section className="admin-metric-table">
+      <h3>{title}</h3>
+      <table className="admin-mini-table">
+        <thead>
+          <tr>
+            <th>{labelKey}</th>
+            <th>Events</th>
+            <th>Cost</th>
+            <th>Tokens</th>
+            <th>Audio</th>
+            <th>Errors</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => (
+            <tr key={row[labelKey] ?? "unknown"}>
+              <td>{row[labelKey] ?? "-"}</td>
+              <td>{fmtNumber(row.events)}</td>
+              <td>{fmtUsd(row.estimated_cost_usd)}</td>
+              <td>{fmtNumber(row.total_tokens)}</td>
+              <td>{fmtMinutes(row.billable_seconds)}</td>
+              <td>{fmtNumber(row.failed_events + row.refused_events)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </section>
+  );
+}
+
+function AiUsageModelTable({ rows }: { rows: AdminAiUsage["by_model"] }) {
+  return (
+    <section className="admin-metric-table admin-metric-table--wide">
+      <h3>Models</h3>
+      <table className="admin-mini-table">
+        <thead>
+          <tr>
+            <th>Provider</th>
+            <th>Model</th>
+            <th>Events</th>
+            <th>Cost</th>
+            <th>Tokens</th>
+            <th>Audio</th>
+            <th>Unpriced</th>
+            <th>Last</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => (
+            <tr key={`${row.provider}:${row.model ?? "unknown"}`}>
+              <td>{row.provider}</td>
+              <td>{row.model ?? "-"}</td>
+              <td>{fmtNumber(row.events)}</td>
+              <td>{fmtUsd(row.estimated_cost_usd)}</td>
+              <td>{fmtNumber(row.total_tokens)}</td>
+              <td>{fmtMinutes(row.billable_seconds)}</td>
+              <td>{fmtNumber(row.unpriced_events)}</td>
+              <td>{fmtDateTime(row.last_event_at)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </section>
+  );
+}
+
+function AiUsageUserTable({ rows }: { rows: AdminAiUsage["by_user"] }) {
+  return (
+    <section className="admin-metric-table admin-metric-table--wide">
+      <h3>Users by AI usage</h3>
+      <table className="admin-mini-table">
+        <thead>
+          <tr>
+            <th>User</th>
+            <th>Events</th>
+            <th>Cost</th>
+            <th>Tokens</th>
+            <th>Audio</th>
+            <th>Errors</th>
+            <th>Unpriced</th>
+            <th>Last</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => (
+            <tr key={row.user_id}>
+              <td>{row.email ?? row.user_id}</td>
+              <td>{fmtNumber(row.events)}</td>
+              <td>{fmtUsd(row.estimated_cost_usd)}</td>
+              <td>{fmtNumber(row.total_tokens)}</td>
+              <td>{fmtMinutes(row.billable_seconds)}</td>
+              <td>{fmtNumber(row.failed_events + row.refused_events)}</td>
+              <td>{fmtNumber(row.unpriced_events)}</td>
+              <td>{fmtDateTime(row.last_event_at)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </section>
+  );
+}
+
+function AiUsageEventTable({ rows }: { rows: AdminAiUsage["recent_events"] }) {
+  return (
+    <section className="admin-metric-table admin-metric-table--wide">
+      <h3>Recent AI events</h3>
+      <table className="admin-mini-table">
+        <thead>
+          <tr>
+            <th>Time</th>
+            <th>User</th>
+            <th>Feature</th>
+            <th>Operation</th>
+            <th>Model</th>
+            <th>Status</th>
+            <th>Cost</th>
+            <th>Usage</th>
+            <th>Latency</th>
+            <th>Error</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => (
+            <tr key={row.id}>
+              <td>{fmtDateTime(row.created_at)}</td>
+              <td>{row.email ?? row.user_id ?? "-"}</td>
+              <td>{row.feature}</td>
+              <td>{row.operation}</td>
+              <td>{row.model ?? "-"}</td>
+              <td>{row.status}</td>
+              <td>{row.pricing_status === "priced" ? fmtUsd(row.estimated_cost_usd) : row.pricing_status}</td>
+              <td>
+                {row.total_tokens ? `${fmtNumber(row.total_tokens)} tok` : fmtMinutes(row.billable_seconds)}
+              </td>
+              <td>{fmtLatency(row.latency_ms)}</td>
+              <td>{row.guard_code ?? row.provider_error_code ?? row.provider_status_code ?? row.error_type ?? "-"}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </section>
+  );
+}
+
+function DeepgramUserTable({ rows }: { rows: AdminDeepgramUsage["by_user"] }) {
+  return (
+    <section className="admin-metric-table admin-metric-table--wide">
+      <h3>Users by Deepgram usage</h3>
+      <table className="admin-mini-table">
+        <thead>
+          <tr>
+            <th>User</th>
+            <th>Cost</th>
+            <th>Estimated</th>
+            <th>Captured</th>
+            <th>Recordings</th>
+            <th>Dictation</th>
+            <th>Failures</th>
+            <th>Unpriced</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => (
+            <tr key={row.user_id}>
+              <td>{row.email ?? row.user_id}</td>
+              <td>{fmtUsd(row.captured_estimated_cost_usd)}</td>
+              <td>{fmtMinutes(row.estimated_total_seconds)}</td>
+              <td>{fmtMinutes(row.captured_billable_seconds)}</td>
+              <td>{fmtNumber(row.recording_count)}</td>
+              <td>{fmtNumber(row.dictation_entries)}</td>
+              <td>{fmtNumber(row.captured_failed_events + row.captured_refused_events + row.failed_recordings)}</td>
+              <td>{fmtNumber(row.captured_unpriced_events)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </section>
+  );
+}
+
+function DeepgramOperationTable({ rows }: { rows: AdminDeepgramUsage["by_operation"] }) {
+  return (
+    <section className="admin-metric-table">
+      <h3>Operations</h3>
+      <table className="admin-mini-table">
+        <thead>
+          <tr>
+            <th>Operation</th>
+            <th>Status</th>
+            <th>Events</th>
+            <th>Cost</th>
+            <th>Billable</th>
+            <th>Unpriced</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => (
+            <tr key={`${row.operation}:${row.purpose}:${row.status}`}>
+              <td>{row.operation}/{row.purpose}</td>
+              <td>{row.status}</td>
+              <td>{fmtNumber(row.events)}</td>
+              <td>{fmtUsd(row.estimated_cost_usd)}</td>
+              <td>{fmtMinutes(row.billable_seconds)}</td>
+              <td>{fmtNumber(row.unpriced_events)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </section>
+  );
+}
+
+function DeepgramDayTable({ rows }: { rows: AdminDeepgramUsage["by_day"] }) {
+  return (
+    <section className="admin-metric-table">
+      <h3>Daily usage</h3>
+      <table className="admin-mini-table">
+        <thead>
+          <tr>
+            <th>Date</th>
+            <th>Estimated</th>
+            <th>Cost</th>
+            <th>Captured</th>
+            <th>Failed/refused</th>
+            <th>Unpriced</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => (
+            <tr key={row.date}>
+              <td>{row.date}</td>
+              <td>{fmtMinutes(row.estimated_recording_seconds + row.estimated_dictation_seconds)}</td>
+              <td>{fmtUsd(row.captured_estimated_cost_usd)}</td>
+              <td>{fmtMinutes(row.captured_billable_seconds)}</td>
+              <td>{fmtNumber(row.captured_failed_events + row.captured_refused_events)}</td>
+              <td>{fmtNumber(row.captured_unpriced_events)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </section>
+  );
+}
+
+function DeepgramRecordingTable({ rows }: { rows: AdminDeepgramUsage["top_recordings"] }) {
+  return (
+    <section className="admin-metric-table admin-metric-table--wide">
+      <h3>Top recordings</h3>
+      <table className="admin-mini-table">
+        <thead>
+          <tr>
+            <th>Recording</th>
+            <th>User</th>
+            <th>Status</th>
+            <th>Duration</th>
+            <th>Cost</th>
+            <th>Events</th>
+            <th>Failure</th>
+            <th>Unpriced</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => (
+            <tr key={row.recording_id}>
+              <td>{row.recording_id.slice(0, 8)}</td>
+              <td>{row.email ?? row.user_id}</td>
+              <td>{row.status}</td>
+              <td>{fmtMinutes(row.duration_seconds)}</td>
+              <td>{fmtUsd(row.estimated_cost_usd)}</td>
+              <td>{fmtNumber(row.captured_events)}</td>
+              <td>{row.failure_code ?? "-"}</td>
+              <td>{fmtNumber(row.unpriced_events)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </section>
+  );
+}
+
+function DeepgramEventTable({ rows }: { rows: AdminDeepgramUsage["recent_events"] }) {
+  return (
+    <section className="admin-metric-table admin-metric-table--wide">
+      <h3>Recent Deepgram events</h3>
+      <table className="admin-mini-table">
+        <thead>
+          <tr>
+            <th>Time</th>
+            <th>User</th>
+            <th>Operation</th>
+            <th>Status</th>
+            <th>Cost</th>
+            <th>Billing</th>
+            <th>Add-ons</th>
+            <th>Billable</th>
+            <th>Provider</th>
+            <th>Guard</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => (
+            <tr key={row.id}>
+              <td>{fmtDateTime(row.created_at)}</td>
+              <td>{row.email ?? row.user_id ?? "-"}</td>
+              <td>{row.operation}/{row.purpose}</td>
+              <td>{row.status}</td>
+              <td>{row.pricing_status === "priced" ? fmtUsd(row.estimated_cost_usd ?? 0) : row.pricing_status}</td>
+              <td>{[row.billing_mode, row.language_mode].filter(Boolean).join("/") || "-"}</td>
+              <td>{row.addons.length ? row.addons.join(", ") : "-"}</td>
+              <td>{fmtMinutes(row.billable_seconds)}</td>
+              <td>{row.provider_status_code ?? row.provider_error_code ?? "-"}</td>
+              <td>{row.guard_code ?? "-"}</td>
             </tr>
           ))}
         </tbody>

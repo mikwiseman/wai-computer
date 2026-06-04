@@ -126,6 +126,37 @@ public struct DataOwnershipMap: Codable, Sendable, Equatable {
     }
 }
 
+public struct SelfHostMigrationContractGroup: Codable, Sendable, Equatable {
+    public let tables: [[String: JSONValue]]
+    public let artifacts: [[String: JSONValue]]
+}
+
+public struct SelfHostMigrationContract: Codable, Sendable, Equatable {
+    public let schemaVersion: String
+    public let archiveFormat: String
+    public let requiresSameAlembicHead: Bool
+    public let preserveUserIDs: Bool
+    public let collisionPolicy: String
+    public let secretPolicy: String
+    public let ownedExportable: SelfHostMigrationContractGroup
+    public let reconnectRequired: SelfHostMigrationContractGroup
+    public let serverLocal: SelfHostMigrationContractGroup
+    public let excluded: SelfHostMigrationContractGroup
+
+    private enum CodingKeys: String, CodingKey {
+        case schemaVersion = "schema_version"
+        case archiveFormat = "archive_format"
+        case requiresSameAlembicHead = "requires_same_alembic_head"
+        case preserveUserIDs = "preserve_user_ids"
+        case collisionPolicy = "collision_policy"
+        case secretPolicy = "secret_policy"
+        case ownedExportable = "owned_exportable"
+        case reconnectRequired = "reconnect_required"
+        case serverLocal = "server_local"
+        case excluded
+    }
+}
+
 public enum SelfHostAuthMethod: String, Codable, Sendable, CaseIterable, Identifiable {
     case password
     case sshKey = "ssh_key"

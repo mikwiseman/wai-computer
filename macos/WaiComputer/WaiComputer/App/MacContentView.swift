@@ -97,7 +97,9 @@ struct MacMainView: View {
     @StateObject private var importViewModel = MacImportViewModel()
     // Computer-use (Mac-edge channel): opt-in, off by default. Runs only while
     // the assistant surface is open so it never silently polls 24/7.
-    @StateObject private var desktopAgent = DesktopAgentRunner()
+    @StateObject private var desktopAgent = DesktopAgentRunner(
+        deviceName: Host.current().localizedName ?? "WaiComputer Mac"
+    )
     @AppStorage("desktopComputerUseEnabled") private var computerUseEnabled = false
     @State private var selectedSection: SidebarSection? = .inbox
     @State private var selectedRecordingIds: Set<String> = []
@@ -901,7 +903,10 @@ struct MacMainView: View {
                 )
             }
         case .brain:
-            MacBrainView(apiClient: appState.getAPIClient())
+            MacBrainView(
+                apiClient: appState.getAPIClient(),
+                onOpenSource: openBrainSource
+            )
                 .environment(\.locale, MacDateFormatting.locale(for: languageManager.current))
         case .review:
             MacReviewView(apiClient: appState.getAPIClient())
@@ -1084,6 +1089,13 @@ struct MacMainView: View {
 
     private func openSearchResult(_ recordingId: String) {
         selectRecording(recordingId, in: .inbox)
+    }
+
+    private func openBrainSource(_ detail: InboxDetailRef) {
+        prefetchedRecordingDetail = nil
+        selectedRecordingIds.removeAll()
+        pendingInboxDetail = detail
+        selectedSection = .inbox
     }
 
     private func selectRecording(_ recordingId: String, in section: SidebarSection) {

@@ -28,6 +28,10 @@ public final class AccessibilityDesktopActuator: DesktopActuator {
 
     // MARK: - Tier A (delegated, no AX grant needed)
 
+    public func frontmostBundleId() async throws -> String? {
+        NSWorkspace.shared.frontmostApplication?.bundleIdentifier
+    }
+
     public func openURL(_ url: URL) async throws { try await tierA.openURL(url) }
     public func openApp(name: String) async throws { try await tierA.openApp(name: name) }
 

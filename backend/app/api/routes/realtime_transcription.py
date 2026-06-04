@@ -14,6 +14,11 @@ from websockets.exceptions import ConnectionClosed
 from app.api.deps import CurrentUser, Database
 from app.config import get_settings
 from app.core.deepgram import require_deepgram_api_key
+from app.core.deepgram_usage import (
+    effective_billable_seconds,
+    record_deepgram_usage_event,
+    record_deepgram_usage_event_standalone,
+)
 from app.core.observability import (
     add_sentry_breadcrumb,
     capture_sentry_anomaly,
@@ -103,6 +108,49 @@ class RealtimeTranscriptionSessionResponse(BaseModel):
     auth_scheme: str = "bearer"
 
 
+async def _record_realtime_mint_event(
+    db: Database,
+    *,
+    user_id: str,
+    purpose: str,
+    status: str,
+    language: str,
+    channels: int,
+    model: str | None = None,
+    latency_ms: int | None = None,
+    guard_code: str | None = None,
+    error_type: str | None = None,
+) -> None:
+    await record_deepgram_usage_event(
+        db,
+        user_id=user_id,
+        operation="realtime_session_mint",
+        purpose=purpose,
+        status=status,
+        model=model,
+        language=language,
+        audio_seconds=0,
+        billable_seconds=0,
+        channel_count=channels,
+        latency_ms=latency_ms,
+        guard_code=guard_code,
+        error_type=error_type,
+        billing_mode="streaming",
+        language_mode="multilingual",
+        addons=_realtime_deepgram_addons(purpose=purpose, keyterms=[]),
+        commit=True,
+    )
+
+
+def _realtime_deepgram_addons(*, purpose: str, keyterms: list[str]) -> list[str]:
+    addons: list[str] = []
+    if purpose == "recording":
+        addons.append("speaker_diarization")
+    if keyterms:
+        addons.append("keyterm_prompting")
+    return addons
+
+
 @router.post("/session", response_model=RealtimeTranscriptionSessionResponse)
 async def create_session(
     request: CreateRealtimeTranscriptionSessionRequest,
@@ -129,6 +177,17 @@ async def create_session(
         request.purpose,
     )
     if await transcription_halted():
+        latency_ms = round((perf_counter() - started_at) * 1000)
+        await _record_realtime_mint_event(
+            db,
+            user_id=str(user.id),
+            purpose=request.purpose,
+            status="refused",
+            language=request.language,
+            channels=request.channels,
+            latency_ms=latency_ms,
+            guard_code="transcription_halted",
+        )
         capture_sentry_anomaly(
             "realtime.session_mint.halted",
             "Realtime session mint refused: transcription kill-switch engaged",
@@ -141,6 +200,17 @@ async def create_session(
             detail=UNAVAILABLE_DETAIL,
         )
     if await provider_breaker_open():
+        latency_ms = round((perf_counter() - started_at) * 1000)
+        await _record_realtime_mint_event(
+            db,
+            user_id=str(user.id),
+            purpose=request.purpose,
+            status="refused",
+            language=request.language,
+            channels=request.channels,
+            latency_ms=latency_ms,
+            guard_code="provider_unavailable",
+        )
         capture_sentry_anomaly(
             "realtime.session_mint.breaker_open",
             "Realtime session mint refused: Deepgram circuit breaker is open",
@@ -155,6 +225,17 @@ async def create_session(
     try:
         recent_mints = await register_mint(str(user.id), request.purpose)
     except TranscriptionGuardError as exc:
+        latency_ms = round((perf_counter() - started_at) * 1000)
+        await _record_realtime_mint_event(
+            db,
+            user_id=str(user.id),
+            purpose=request.purpose,
+            status="refused",
+            language=request.language,
+            channels=request.channels,
+            latency_ms=latency_ms,
+            guard_code=exc.code,
+        )
         capture_sentry_anomaly(
             "realtime.session_mint.rate_limited",
             "Realtime session minting blocked (possible runaway/abusive client)",
@@ -174,6 +255,17 @@ async def create_session(
     try:
         await check_minutes_budget(str(user.id))
     except TranscriptionGuardError as exc:
+        latency_ms = round((perf_counter() - started_at) * 1000)
+        await _record_realtime_mint_event(
+            db,
+            user_id=str(user.id),
+            purpose=request.purpose,
+            status="refused",
+            language=request.language,
+            channels=request.channels,
+            latency_ms=latency_ms,
+            guard_code=exc.code,
+        )
         capture_sentry_anomaly(
             "realtime.session_mint.minutes_capped",
             "Realtime session mint refused: daily transcription-minute ceiling reached",
@@ -212,6 +304,17 @@ async def create_session(
         )
     except UnsupportedRealtimeLanguageError as exc:
         latency_ms = round((perf_counter() - started_at) * 1000)
+        await _record_realtime_mint_event(
+            db,
+            user_id=str(user.id),
+            purpose=request.purpose,
+            status="refused",
+            language=request.language,
+            channels=request.channels,
+            latency_ms=latency_ms,
+            guard_code="unsupported_language",
+            error_type=type(exc).__name__,
+        )
         capture_sentry_anomaly(
             "realtime.session_mint.unsupported_language",
             "Realtime transcription session rejected unsupported language",
@@ -230,6 +333,16 @@ async def create_session(
         ) from exc
     except ValueError as exc:
         latency_ms = round((perf_counter() - started_at) * 1000)
+        await _record_realtime_mint_event(
+            db,
+            user_id=str(user.id),
+            purpose=request.purpose,
+            status="failed",
+            language=request.language,
+            channels=request.channels,
+            latency_ms=latency_ms,
+            error_type=type(exc).__name__,
+        )
         capture_sentry_anomaly(
             "realtime.session_mint.failed",
             "Realtime transcription session mint failed",
@@ -254,6 +367,16 @@ async def create_session(
         ) from exc
     except Exception as exc:
         latency_ms = round((perf_counter() - started_at) * 1000)
+        await _record_realtime_mint_event(
+            db,
+            user_id=str(user.id),
+            purpose=request.purpose,
+            status="failed",
+            language=request.language,
+            channels=request.channels,
+            latency_ms=latency_ms,
+            error_type=type(exc).__name__,
+        )
         capture_sentry_exception(
             exc,
             extras={
@@ -276,6 +399,16 @@ async def create_session(
         ) from exc
 
     latency_ms = round((perf_counter() - started_at) * 1000)
+    await _record_realtime_mint_event(
+        db,
+        user_id=str(user.id),
+        purpose=request.purpose,
+        status="succeeded",
+        language=session.language,
+        channels=session.channels,
+        model=session.model,
+        latency_ms=latency_ms,
+    )
     add_sentry_breadcrumb(
         category="transcription.session",
         message="mint succeeded",
@@ -372,6 +505,24 @@ async def stream_realtime_transcription(websocket: WebSocket) -> None:
     try:
         deepgram_api_key = require_deepgram_api_key()
     except ValueError:
+        await record_deepgram_usage_event_standalone(
+            user_id=claims.subject,
+            operation="realtime_stream",
+            purpose=claims.purpose,
+            status="refused",
+            model=claims.model,
+            language=claims.language,
+            audio_seconds=0,
+            billable_seconds=0,
+            channel_count=claims.channels,
+            guard_code="missing_api_key",
+            billing_mode="streaming",
+            language_mode="multilingual",
+            addons=_realtime_deepgram_addons(
+                purpose=claims.purpose,
+                keyterms=claims.keyterms,
+            ),
+        )
         await websocket.accept()
         await _send_error_payload(websocket, PROXY_ERROR_MISSING_API_KEY)
         await _close_websocket_with_telemetry(
@@ -391,6 +542,24 @@ async def stream_realtime_transcription(websocket: WebSocket) -> None:
     await websocket.accept()
 
     if await transcription_halted():
+        await record_deepgram_usage_event_standalone(
+            user_id=claims.subject,
+            operation="realtime_stream",
+            purpose=claims.purpose,
+            status="refused",
+            model=claims.model,
+            language=claims.language,
+            audio_seconds=0,
+            billable_seconds=0,
+            channel_count=claims.channels,
+            guard_code="transcription_halted",
+            billing_mode="streaming",
+            language_mode="multilingual",
+            addons=_realtime_deepgram_addons(
+                purpose=claims.purpose,
+                keyterms=claims.keyterms,
+            ),
+        )
         await _send_error_payload(websocket, PROXY_ERROR_HALTED)
         await _close_websocket_with_telemetry(
             websocket,
@@ -411,6 +580,24 @@ async def stream_realtime_transcription(websocket: WebSocket) -> None:
     lease_ttl_seconds = (max_stream_seconds if max_stream_seconds > 0 else 21600) + 300
     stream_token = await acquire_stream_slot(claims.subject, lease_ttl_seconds=lease_ttl_seconds)
     if stream_token is None:
+        await record_deepgram_usage_event_standalone(
+            user_id=claims.subject,
+            operation="realtime_stream",
+            purpose=claims.purpose,
+            status="refused",
+            model=claims.model,
+            language=claims.language,
+            audio_seconds=0,
+            billable_seconds=0,
+            channel_count=claims.channels,
+            guard_code="too_many_streams",
+            billing_mode="streaming",
+            language_mode="multilingual",
+            addons=_realtime_deepgram_addons(
+                purpose=claims.purpose,
+                keyterms=claims.keyterms,
+            ),
+        )
         capture_sentry_anomaly(
             "realtime.stream.too_many_concurrent",
             "Realtime stream refused: per-user/global concurrent-stream cap reached",
@@ -428,6 +615,11 @@ async def stream_realtime_transcription(websocket: WebSocket) -> None:
         return
 
     stream_started = perf_counter()
+    provider_opened = False
+    stream_status = "succeeded"
+    stream_guard_code: str | None = None
+    stream_error_type: str | None = None
+    stream_provider_status_code: int | None = None
     try:
         # Breadcrumb lives INSIDE the try so a raise here still reaches the
         # finally that releases the stream slot — otherwise a throw in the
@@ -455,6 +647,7 @@ async def stream_realtime_transcription(websocket: WebSocket) -> None:
             ping_timeout=20,
             max_size=2 * 1024 * 1024,
         ) as provider:
+            provider_opened = True
             upstream = asyncio.create_task(_client_to_provider(websocket, provider))
             downstream = asyncio.create_task(_provider_to_client(websocket, provider))
             done, pending = await asyncio.wait(
@@ -466,6 +659,7 @@ async def stream_realtime_transcription(websocket: WebSocket) -> None:
                 task.cancel()
             await asyncio.gather(*pending, return_exceptions=True)
             if not done:
+                stream_guard_code = "duration_cap"
                 # Wall-clock cap reached: bound a stuck/over-long paid stream so a
                 # single minted token cannot bill Deepgram indefinitely.
                 capture_sentry_anomaly(
@@ -511,6 +705,8 @@ async def stream_realtime_transcription(websocket: WebSocket) -> None:
         )
         return
     except ConnectionClosed:
+        stream_status = "failed"
+        stream_error_type = "ConnectionClosed"
         await _close_websocket_with_telemetry(
             websocket,
             code=1000,
@@ -524,6 +720,9 @@ async def stream_realtime_transcription(websocket: WebSocket) -> None:
             },
         )
     except Exception as exc:
+        stream_status = "failed"
+        stream_error_type = type(exc).__name__
+        stream_provider_status_code = _provider_exception_status_code(exc)
         logger.warning(
             "deepgram realtime proxy failed error_type=%s purpose=%s",
             type(exc).__name__,
@@ -570,8 +769,46 @@ async def stream_realtime_transcription(websocket: WebSocket) -> None:
         # Always release the concurrency slot and meter the streamed minutes
         # toward the daily ceilings, on every exit path (normal, disconnect,
         # error, or duration cap).
-        await release_stream_slot(claims.subject, stream_token)
-        await record_minutes(claims.subject, (perf_counter() - stream_started) / 60.0)
+        elapsed_seconds = perf_counter() - stream_started
+        billable_seconds = effective_billable_seconds(
+            audio_seconds=elapsed_seconds,
+            channel_count=claims.channels,
+            provider_opened=provider_opened,
+        )
+        try:
+            await release_stream_slot(claims.subject, stream_token)
+        except Exception as exc:  # noqa: BLE001 - keep minute accounting and usage logging moving
+            logger.warning("realtime stream slot release failed error_type=%s", type(exc).__name__)
+        if provider_opened:
+            try:
+                await record_minutes(claims.subject, elapsed_seconds / 60.0)
+            except Exception as exc:  # noqa: BLE001 - analytics should still record the provider usage
+                logger.warning(
+                    "realtime minute accounting failed error_type=%s",
+                    type(exc).__name__,
+                )
+        await record_deepgram_usage_event_standalone(
+            user_id=claims.subject,
+            operation="realtime_stream",
+            purpose=claims.purpose,
+            status=stream_status,
+            model=claims.model,
+            language=claims.language,
+            audio_seconds=elapsed_seconds,
+            billable_seconds=billable_seconds,
+            channel_count=claims.channels,
+            latency_ms=round(elapsed_seconds * 1000),
+            provider_status_code=stream_provider_status_code,
+            guard_code=stream_guard_code,
+            error_type=stream_error_type,
+            billing_mode="streaming",
+            language_mode="multilingual",
+            addons=_realtime_deepgram_addons(
+                purpose=claims.purpose,
+                keyterms=claims.keyterms,
+            ),
+            details={"provider_opened": provider_opened},
+        )
 
 
 async def _client_to_provider(websocket: WebSocket, provider) -> None:
@@ -612,6 +849,15 @@ def _bearer_token(websocket: WebSocket) -> str | None:
     if query_token.strip():
         return query_token.strip()
     return None
+
+
+def _provider_exception_status_code(exc: Exception) -> int | None:
+    value = getattr(exc, "status_code", None)
+    if isinstance(value, int):
+        return value
+    response = getattr(exc, "response", None)
+    value = getattr(response, "status_code", None)
+    return value if isinstance(value, int) else None
 
 
 def _stream_websocket_url(request: Request) -> str:

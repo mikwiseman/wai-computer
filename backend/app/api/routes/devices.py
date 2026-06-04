@@ -6,14 +6,17 @@ approved computer-use command to the right Mac and record what happened.
 """
 
 import uuid
+from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
-from app.api.deps import CurrentUser, Database
+from app.api.deps import Database, SessionUser
+from app.core.companion_actions import expire_due_actions
 from app.core.device_presence import device_online, get_owned_device, upsert_device
+from app.models.agent import AgentRun
 from app.models.companion_pending_action import CompanionPendingAction
 
 router = APIRouter(prefix="/devices", tags=["devices"])
@@ -33,7 +36,7 @@ class HeartbeatResponse(BaseModel):
 @router.post("/heartbeat", response_model=HeartbeatResponse)
 async def heartbeat(
     request: HeartbeatRequest,
-    user: CurrentUser,
+    user: SessionUser,
     db: Database,
 ) -> HeartbeatResponse:
     """Register/refresh this device and stamp its presence."""
@@ -53,7 +56,9 @@ async def heartbeat(
 
 class DesktopActionItem(BaseModel):
     action_id: str
-    chat_id: str
+    chat_id: str | None = None
+    agent_id: str | None = None
+    agent_run_id: str | None = None
     tool: str
     args: dict[str, Any]
     preview: str
@@ -66,7 +71,7 @@ class DesktopActionQueue(BaseModel):
 @router.get("/{device_id}/desktop-actions", response_model=DesktopActionQueue)
 async def drain_desktop_actions(
     device_id: uuid.UUID,
-    user: CurrentUser,
+    user: SessionUser,
     db: Database,
 ) -> DesktopActionQueue:
     """Approved desktop actions awaiting execution on this device. The Mac polls
@@ -78,6 +83,8 @@ async def drain_desktop_actions(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Device not found"
         )
+    now = datetime.now(timezone.utc)
+    await expire_due_actions(db, now=now)
     rows = (
         await db.execute(
             select(CompanionPendingAction)
@@ -85,20 +92,37 @@ async def drain_desktop_actions(
                 CompanionPendingAction.user_id == user.id,
                 CompanionPendingAction.kind == "desktop_action",
                 CompanionPendingAction.status == "approved",
+                CompanionPendingAction.expires_at > now,
             )
             .order_by(CompanionPendingAction.created_at)
         )
     ).scalars().all()
+    agent_run_ids = [row.agent_run_id for row in rows if row.agent_run_id is not None]
+    run_by_id: dict[uuid.UUID, AgentRun] = {}
+    if agent_run_ids:
+        run_result = await db.execute(
+            select(AgentRun).where(
+                AgentRun.user_id == user.id,
+                AgentRun.id.in_(agent_run_ids),
+            )
+        )
+        run_by_id = {run.id: run for run in run_result.scalars().all()}
     target = str(device_id)
     items = [
         DesktopActionItem(
             action_id=str(row.id),
-            chat_id=str(row.conversation_id),
+            chat_id=str(row.conversation_id) if row.conversation_id else None,
+            agent_id=(
+                str(run_by_id[row.agent_run_id].agent_id)
+                if row.agent_run_id in run_by_id
+                else None
+            ),
+            agent_run_id=str(row.agent_run_id) if row.agent_run_id else None,
             tool=row.tool_name,
             args=(row.action_manifest or {}).get("args") or {},
             preview=(row.action_manifest or {}).get("preview", ""),
         )
         for row in rows
-        if row.device_target in (None, target)
+        if row.device_target == target
     ]
     return DesktopActionQueue(actions=items)

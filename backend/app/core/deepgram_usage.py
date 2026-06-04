@@ -13,6 +13,8 @@ from app.config import get_settings
 from app.core.ai_usage import (
     DEEPGRAM_PROVIDER,
     FEATURE_TRANSCRIPTION,
+    estimate_deepgram_usage_cost,
+    normalize_deepgram_addons,
     record_ai_usage_event,
 )
 from app.db.session import get_db_context
@@ -93,6 +95,9 @@ async def record_deepgram_usage_event(
     error_type: str | None = None,
     request_id: str | None = None,
     task_id: str | None = None,
+    billing_mode: str | None = None,
+    language_mode: str | None = None,
+    addons: list[str] | None = None,
     details: dict[str, Any] | None = None,
     commit: bool = False,
 ) -> None:
@@ -102,6 +107,14 @@ async def record_deepgram_usage_event(
     rollback. The helper never raises because observability must not break STT.
     """
     try:
+        resolved_addons = normalize_deepgram_addons(addons)
+        cost = estimate_deepgram_usage_cost(
+            model=model,
+            billable_seconds=_float_or_none(billable_seconds),
+            billing_mode=billing_mode,
+            language_mode=language_mode,
+            addons=resolved_addons,
+        )
         event = DeepgramUsageEvent(
             user_id=_uuid_or_none(user_id),
             recording_id=_uuid_or_none(recording_id),
@@ -116,6 +129,12 @@ async def record_deepgram_usage_event(
             channel_count=channel_count,
             audio_bytes=audio_bytes,
             latency_ms=latency_ms,
+            estimated_cost_usd=cost.amount_usd,
+            pricing_status=cost.pricing_status,
+            billing_mode=cost.billing_mode,
+            language_mode=cost.language_mode,
+            addons=cost.addons or None,
+            price_source=cost.price_source,
             provider_status_code=provider_status_code,
             provider_error_code=_bounded(provider_error_code, 128),
             guard_code=_bounded(guard_code, 128),
@@ -145,6 +164,10 @@ async def record_deepgram_usage_event(
             error_type=error_type,
             request_id=request_id,
             task_id=task_id,
+            billing_mode=cost.billing_mode,
+            language_mode=cost.language_mode,
+            addons=cost.addons,
+            price_source=cost.price_source,
             details={
                 "source": "deepgram_usage_events",
                 "purpose": purpose,
@@ -165,8 +188,14 @@ async def record_deepgram_usage_event(
 
 
 async def record_deepgram_usage_event_standalone(**kwargs: Any) -> None:
-    async with get_db_context() as db:
-        await record_deepgram_usage_event(db, **kwargs, commit=True)
+    try:
+        async with get_db_context() as db:
+            await record_deepgram_usage_event(db, **kwargs, commit=True)
+    except Exception as exc:  # noqa: BLE001 - usage logging must never break STT cleanup
+        logger.warning(
+            "standalone deepgram usage event dropped error_type=%s",
+            type(exc).__name__,
+        )
 
 
 def effective_billable_seconds(

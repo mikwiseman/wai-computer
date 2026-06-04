@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildForceGraph } from "./BrainGraphView";
+import { buildForceGraph, sourceRefFromGraphNode } from "./BrainGraphView";
 
 function graph() {
   return {
@@ -36,5 +36,17 @@ describe("buildForceGraph", () => {
     const anna = nodes.find((n) => n.id === "p1");
     expect(anna?.color).toBe("#e0823d"); // person
     expect(anna?.val).toBeCloseTo(1 + Math.log2(4)); // 1 + log2(degree + 1)
+  });
+
+  it("extracts source ids from graph source nodes", () => {
+    expect(sourceRefFromGraphNode({ id: "item:i1", kind: "item" })).toEqual({
+      sourceKind: "item",
+      sourceId: "i1",
+    });
+    expect(sourceRefFromGraphNode({ id: "recording:r1", kind: "recording" })).toEqual({
+      sourceKind: "recording",
+      sourceId: "r1",
+    });
+    expect(sourceRefFromGraphNode({ id: "p1", kind: "person" })).toBeNull();
   });
 });

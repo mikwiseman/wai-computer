@@ -11,6 +11,7 @@ from datetime import datetime, timedelta, timezone
 from hashlib import sha256
 from html import escape
 from typing import Any
+from uuid import UUID, uuid4
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request, Response, status
 from pydantic import BaseModel, Field
@@ -21,10 +22,36 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import CurrentUser, Database
 from app.config import get_settings
-from app.core.companion import CompanionError, ErrorEvent, TokenEvent, TurnContext, run_turn
+from app.core.agent_dispatch import AgentDispatchError, enqueue_agent_run
+from app.core.agent_runtime import cancel_run, execute_agent_step, run_job, static_config_planner
+from app.core.companion import (
+    ActionProposedEvent,
+    CompanionError,
+    ErrorEvent,
+    TokenEvent,
+    TurnContext,
+    run_turn,
+)
+from app.core.companion_actions import (
+    ApprovalError,
+    mark_executed,
+    mark_failed,
+    resolve_action,
+    verify_committable,
+)
+from app.core.companion_actuators import ActuationError, execute_action
+from app.core.document_extract import (
+    SUPPORTED_DOCUMENT_EXTENSIONS,
+    DocumentExtractionError,
+    document_kind_for_extension,
+    extract_document_text,
+    resolve_document_extension,
+)
 from app.core.item_ingest import ingest_item
 from app.core.item_processing import process_item
+from app.core.item_summary import generate_item_summary
 from app.core.item_telegram import format_fetch_error_reply, format_item_reply
+from app.core.item_titles import clean_title, title_from_filename
 from app.core.mcp_tools import (
     list_recordings_for_mcp,
     search_recordings_for_mcp,
@@ -34,10 +61,13 @@ from app.core.source_fetch import classify_url, find_first_url
 from app.core.telegram_client import (
     TelegramBotClient,
     TelegramClientError,
+    TelegramFileTooLargeError,
     telegram_chunks,
 )
 from app.db.session import get_db_context
+from app.models.agent import Agent, AgentRun, AgentStep
 from app.models.companion import Conversation
+from app.models.companion_pending_action import CompanionPendingAction
 from app.models.item import ItemSummary
 from app.models.telegram import (
     TelegramAccount,
@@ -62,6 +92,14 @@ TELEGRAM_BOT_COMMANDS = [
     {"command": "start", "description": "Привязать Telegram и показать статус"},
     {"command": "help", "description": "Что умеет WaiComputer в Telegram"},
     {"command": "link", "description": "Получить новый код привязки"},
+    {"command": "agents", "description": "Показать доступных агентов"},
+    {"command": "run", "description": "Запустить агента"},
+    {"command": "runs", "description": "Последние запуски агентов"},
+    {"command": "run_status", "description": "Статус запуска агента"},
+    {"command": "cancel_run", "description": "Остановить запуск агента"},
+    {"command": "approvals", "description": "Действия, ожидающие подтверждения"},
+    {"command": "approve", "description": "Подтвердить действие один раз"},
+    {"command": "reject", "description": "Отклонить действие"},
     {"command": "meetings", "description": "Последние встречи"},
     {"command": "search", "description": "Поиск по записям и расшифровкам"},
     {"command": "settings", "description": "Статус привязки и настройки"},
@@ -177,12 +215,21 @@ def _telegram_help_text(*, linked: bool) -> str:
     return (
         f"{status_line}\n\n"
         "Что можно делать:\n"
+        "/agents — список агентов\n"
+        "/run <агент> <задача> — запустить агента\n"
+        "/runs — последние запуски\n"
+        "/run_status <run_id> — статус запуска\n"
+        "/cancel_run <run_id> — остановить запуск\n"
+        "/approvals — действия на подтверждение\n"
+        "/approve <action_id> — подтвердить один раз\n"
+        "/reject <action_id> — отклонить действие\n"
         "/meetings — последние встречи\n"
         "/search <запрос> — поиск по записям, саммари и расшифровкам\n"
         "/link — получить новый код привязки\n"
         "/settings — где управлять привязкой\n\n"
         "Можно без команд: «покажи последние встречи», «найди дорожная карта». "
-        "Голосовые, аудио и видео я сохраняю в библиотеку."
+        "Голосовые, аудио и видео сохраняю как записи. PDF, DOCX, DOC, HTML, "
+        "TXT, Markdown, RTF, CSV, JSON, PPTX и XLSX добавляю в материалы."
     )
 
 
@@ -352,6 +399,40 @@ def _safe_transcript_filename(title: str | None, *, media_kind: str | None = Non
     return f"{slug}.txt"
 
 
+def _safe_display_filename(filename: str | None) -> str:
+    base = (filename or "").strip().rsplit("/", 1)[-1].rsplit("\\", 1)[-1]
+    return base[:120] if base else "файл"
+
+
+def _telegram_file_too_large_message() -> str:
+    limit_mb = max(1, settings.telegram_download_max_bytes // (1024 * 1024))
+    return f"Файл слишком большой для Telegram-импорта. Лимит бота — {limit_mb} MB."
+
+
+def _telegram_media_duration_seconds(media: dict[str, Any]) -> float | None:
+    duration = media.get("duration")
+    if isinstance(duration, int | float) and duration > 0:
+        return float(duration)
+    return None
+
+
+async def _send_unsupported_document_message(
+    client: TelegramBotClient,
+    *,
+    chat_id: int,
+    reply_to_message_id: Any,
+) -> None:
+    await client.send_message(
+        chat_id,
+        (
+            "Не могу извлечь текст из этого типа файла. Поддерживаются PDF, "
+            "DOCX, DOC, HTML, TXT, Markdown, RTF, CSV, JSON, PPTX и XLSX. "
+            "Аудио и видео сохраняю как записи."
+        ),
+        reply_to_message_id=reply_to_message_id,
+    )
+
+
 def _format_import_summary_message(result: Any) -> str:
     title = str(getattr(result.recording, "title", "") or "").strip()
     summary = getattr(result, "summary", None)
@@ -459,7 +540,11 @@ async def start_link(user: CurrentUser, db: Database) -> TelegramPairingResponse
     )
 
 
-@router.delete("/link", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete(
+    "/link",
+    status_code=status.HTTP_204_NO_CONTENT,
+    response_class=Response,
+)
 async def unlink(user: CurrentUser, db: Database) -> Response:
     result = await db.execute(select(TelegramAccount).where(TelegramAccount.user_id == user.id))
     account = result.scalar_one_or_none()
@@ -720,6 +805,19 @@ def _extract_media(message: dict[str, Any]) -> dict[str, Any] | None:
     return None
 
 
+def _extract_document(message: dict[str, Any]) -> dict[str, Any] | None:
+    document = message.get("document")
+    if not isinstance(document, dict) or not document.get("file_id"):
+        return None
+    ext = resolve_document_extension(
+        str(document.get("file_name") or ""),
+        str(document.get("mime_type") or ""),
+    )
+    if ext not in SUPPORTED_DOCUMENT_EXTENSIONS:
+        return None
+    return {"kind": "document", "document_ext": ext, **document}
+
+
 async def _handle_start_command(
     db: AsyncSession,
     client: TelegramBotClient,
@@ -916,6 +1014,449 @@ async def _handle_settings_command(
     )
 
 
+def _short_uuid(value: Any) -> str:
+    return str(value)[:8]
+
+
+async def _load_agent_ref(
+    db: AsyncSession,
+    *,
+    user_id: Any,
+    ref: str,
+) -> Agent | None:
+    clean = ref.strip()
+    if not clean:
+        return None
+    try:
+        agent_id = UUID(clean)
+    except ValueError:
+        agent_id = None
+    if agent_id is not None:
+        return (
+            await db.execute(
+                select(Agent).where(Agent.id == agent_id, Agent.user_id == user_id)
+            )
+        ).scalar_one_or_none()
+
+    result = await db.execute(
+        select(Agent).where(Agent.user_id == user_id).order_by(Agent.created_at.desc())
+    )
+    normalized = clean.casefold()
+    agents = list(result.scalars().all())
+    for agent in agents:
+        if agent.name.casefold() == normalized:
+            return agent
+    if len(clean) >= 8:
+        matches = [agent for agent in agents if str(agent.id).startswith(clean)]
+        if len(matches) == 1:
+            return matches[0]
+    return None
+
+
+async def _load_run_ref(
+    db: AsyncSession,
+    *,
+    user_id: Any,
+    ref: str,
+) -> AgentRun | None:
+    clean = ref.strip()
+    try:
+        run_id = UUID(clean)
+    except ValueError:
+        run_id = None
+    if run_id is not None:
+        return (
+            await db.execute(
+                select(AgentRun).where(AgentRun.id == run_id, AgentRun.user_id == user_id)
+            )
+        ).scalar_one_or_none()
+    if len(clean) < 8:
+        return None
+    result = await db.execute(
+        select(AgentRun)
+        .where(AgentRun.user_id == user_id)
+        .order_by(AgentRun.created_at.desc())
+        .limit(100)
+    )
+    matches = [run for run in result.scalars().all() if str(run.id).startswith(clean)]
+    if len(matches) == 1:
+        return matches[0]
+    return None
+
+
+async def _handle_agents_command(
+    db: AsyncSession,
+    client: TelegramBotClient,
+    *,
+    message: dict[str, Any],
+    account: TelegramAccount,
+) -> None:
+    chat_id = _telegram_chat_id(message)
+    if chat_id is None:
+        return
+    if await _ensure_active_user(db, client, message=message, account=account) is None:
+        return
+    result = await db.execute(
+        select(Agent)
+        .where(Agent.user_id == account.user_id)
+        .order_by(Agent.created_at.desc())
+        .limit(20)
+    )
+    agents = list(result.scalars().all())
+    if not agents:
+        text = "Агентов пока нет. Создай агента в WaiComputer Web или Mac."
+    else:
+        lines = ["Агенты:"]
+        for agent in agents:
+            state = "on" if agent.enabled else "off"
+            lines.append(f"{_short_uuid(agent.id)} · {agent.name} · {agent.kind} · {state}")
+        text = "\n".join(lines)
+    await client.send_message(chat_id, text, reply_to_message_id=message.get("message_id"))
+
+
+def _split_agent_run_arg(arg: str) -> tuple[str, str]:
+    clean = arg.strip()
+    if not clean:
+        return "", ""
+    ref, _, objective = clean.partition(" ")
+    return ref.strip(), objective.strip()
+
+
+async def _handle_run_command(
+    db: AsyncSession,
+    client: TelegramBotClient,
+    *,
+    message: dict[str, Any],
+    account: TelegramAccount,
+    arg: str,
+) -> None:
+    chat_id = _telegram_chat_id(message)
+    if chat_id is None:
+        return
+    if await _ensure_active_user(db, client, message=message, account=account) is None:
+        return
+    agent_ref, objective = _split_agent_run_arg(arg)
+    if not agent_ref:
+        await client.send_message(
+            chat_id,
+            "Формат: /run <agent_id или имя> <задача>",
+            reply_to_message_id=message.get("message_id"),
+        )
+        return
+    agent = await _load_agent_ref(db, user_id=account.user_id, ref=agent_ref)
+    if agent is None:
+        await client.send_message(
+            chat_id,
+            "Агент не найден. Посмотри /agents.",
+            reply_to_message_id=message.get("message_id"),
+        )
+        return
+    if not agent.enabled:
+        await client.send_message(
+            chat_id,
+            "Агент выключен. Включи его в WaiComputer перед запуском.",
+            reply_to_message_id=message.get("message_id"),
+        )
+        return
+
+    message_id = message.get("message_id")
+    trigger_suffix = f"{chat_id}:{message_id}" if isinstance(message_id, int) else uuid4().hex
+    trigger_key = f"telegram:{agent.id}:{trigger_suffix}"
+    existing = (
+        await db.execute(
+            select(AgentRun).where(
+                AgentRun.user_id == account.user_id,
+                AgentRun.trigger_key == trigger_key,
+            )
+        )
+    ).scalar_one_or_none()
+    if existing is None:
+        existing = AgentRun(
+            agent_id=agent.id,
+            user_id=account.user_id,
+            trigger_key=trigger_key,
+            trigger_kind="telegram",
+            trigger_payload={
+                "source": "telegram",
+                "objective": objective,
+                "telegram_message_id": message_id,
+            },
+        )
+        db.add(existing)
+        await db.flush()
+        await db.commit()
+        try:
+            enqueue_agent_run(existing.id)
+        except AgentDispatchError as exc:
+            existing.status = "failed"
+            existing.error = exc.message
+            existing.finished_at = datetime.now(timezone.utc)
+            await db.flush()
+            await db.commit()
+            await client.send_message(
+                chat_id,
+                f"Не смог запустить агента: {exc.message}",
+                reply_to_message_id=message.get("message_id"),
+            )
+            return
+
+    await client.send_message(
+        chat_id,
+        (
+            f"Запустил: {agent.name}\n"
+            f"run_id: {existing.id}\n"
+            f"status: {existing.status}"
+        ),
+        reply_to_message_id=message.get("message_id"),
+    )
+
+
+async def _handle_runs_command(
+    db: AsyncSession,
+    client: TelegramBotClient,
+    *,
+    message: dict[str, Any],
+    account: TelegramAccount,
+) -> None:
+    chat_id = _telegram_chat_id(message)
+    if chat_id is None:
+        return
+    if await _ensure_active_user(db, client, message=message, account=account) is None:
+        return
+    result = await db.execute(
+        select(AgentRun)
+        .where(AgentRun.user_id == account.user_id)
+        .order_by(AgentRun.created_at.desc())
+        .limit(10)
+    )
+    runs = list(result.scalars().all())
+    if not runs:
+        text = "Запусков агентов пока нет."
+    else:
+        lines = ["Последние запуски:"]
+        for run in runs:
+            run_label = (
+                f"{_short_uuid(run.id)} · {run.status} · {run.trigger_kind} · "
+                f"agent {_short_uuid(run.agent_id)}"
+            )
+            lines.append(
+                run_label
+            )
+        text = "\n".join(lines)
+    await client.send_message(chat_id, text, reply_to_message_id=message.get("message_id"))
+
+
+async def _format_run_status(db: AsyncSession, run: AgentRun) -> str:
+    steps_count = (
+        await db.execute(select(AgentStep).where(AgentStep.run_id == run.id))
+    ).scalars().all()
+    pending_actions = (
+        await db.execute(
+            select(CompanionPendingAction).where(
+                CompanionPendingAction.agent_run_id == run.id,
+                CompanionPendingAction.status == "pending",
+            )
+        )
+    ).scalars().all()
+    lines = [
+        f"run_id: {run.id}",
+        f"status: {run.status}",
+        f"trigger: {run.trigger_kind}",
+        f"steps: {len(steps_count)}",
+        f"pending approvals: {len(pending_actions)}",
+    ]
+    if run.error:
+        lines.append(f"error: {run.error}")
+    return "\n".join(lines)
+
+
+async def _handle_run_status_command(
+    db: AsyncSession,
+    client: TelegramBotClient,
+    *,
+    message: dict[str, Any],
+    account: TelegramAccount,
+    arg: str,
+) -> None:
+    chat_id = _telegram_chat_id(message)
+    if chat_id is None:
+        return
+    run = await _load_run_ref(db, user_id=account.user_id, ref=arg)
+    if run is None:
+        await client.send_message(
+            chat_id,
+            "Запуск не найден. Посмотри /runs.",
+            reply_to_message_id=message.get("message_id"),
+        )
+        return
+    await client.send_message(
+        chat_id,
+        await _format_run_status(db, run),
+        reply_to_message_id=message.get("message_id"),
+    )
+
+
+async def _handle_cancel_run_command(
+    db: AsyncSession,
+    client: TelegramBotClient,
+    *,
+    message: dict[str, Any],
+    account: TelegramAccount,
+    arg: str,
+) -> None:
+    chat_id = _telegram_chat_id(message)
+    if chat_id is None:
+        return
+    run = await _load_run_ref(db, user_id=account.user_id, ref=arg)
+    if run is None:
+        await client.send_message(
+            chat_id,
+            "Запуск не найден. Посмотри /runs.",
+            reply_to_message_id=message.get("message_id"),
+        )
+        return
+    await cancel_run(db, run, reason="cancelled from Telegram")
+    await client.send_message(
+        chat_id,
+        f"Остановил запуск {run.id}. status: {run.status}",
+        reply_to_message_id=message.get("message_id"),
+    )
+
+
+async def _handle_approvals_command(
+    db: AsyncSession,
+    client: TelegramBotClient,
+    *,
+    message: dict[str, Any],
+    account: TelegramAccount,
+) -> None:
+    chat_id = _telegram_chat_id(message)
+    if chat_id is None:
+        return
+    result = await db.execute(
+        select(CompanionPendingAction)
+        .where(
+            CompanionPendingAction.user_id == account.user_id,
+            CompanionPendingAction.status == "pending",
+        )
+        .order_by(CompanionPendingAction.created_at)
+        .limit(10)
+    )
+    actions = list(result.scalars().all())
+    if not actions:
+        text = "Нет действий, ожидающих подтверждения."
+    else:
+        lines = ["Ожидают подтверждения:"]
+        for action in actions:
+            preview = str((action.action_manifest or {}).get("preview") or "").strip()
+            lines.append(
+                f"{action.id}\n{action.tool_name} · {action.kind}\n{preview}\n"
+                f"/approve {action.id}\n/reject {action.id}"
+            )
+        text = "\n\n".join(lines)
+    await _send_chunks(
+        client,
+        chat_id,
+        text,
+        reply_to_message_id=message.get("message_id"),
+    )
+
+
+async def _resume_agent_after_telegram_action(
+    db: AsyncSession,
+    action: CompanionPendingAction,
+) -> None:
+    if action.agent_run_id is None:
+        return
+    await run_job(
+        db,
+        action.agent_run_id,
+        planner=static_config_planner,
+        executor=execute_agent_step,
+    )
+
+
+async def _handle_approval_decision_command(
+    db: AsyncSession,
+    client: TelegramBotClient,
+    *,
+    message: dict[str, Any],
+    account: TelegramAccount,
+    arg: str,
+    decision: str,
+) -> None:
+    chat_id = _telegram_chat_id(message)
+    if chat_id is None:
+        return
+    try:
+        action_id = UUID(arg.strip())
+    except ValueError:
+        await client.send_message(
+            chat_id,
+            "Нужен action_id. Посмотри /approvals.",
+            reply_to_message_id=message.get("message_id"),
+        )
+        return
+    try:
+        row = await resolve_action(
+            db,
+            action_id=action_id,
+            user_id=account.user_id,
+            decision=decision,
+        )
+    except ApprovalError as exc:
+        await client.send_message(
+            chat_id,
+            f"Не смог обработать подтверждение: {exc.message}",
+            reply_to_message_id=message.get("message_id"),
+        )
+        return
+
+    if decision == "reject":
+        await _resume_agent_after_telegram_action(db, row)
+        await client.send_message(
+            chat_id,
+            f"Отклонил действие {action_id}.",
+            reply_to_message_id=message.get("message_id"),
+        )
+        return
+
+    try:
+        verify_committable(row)
+        if row.kind == "desktop_action":
+            await _resume_agent_after_telegram_action(db, row)
+            await client.send_message(
+                chat_id,
+                f"Подтвердил действие {action_id}. Оно отправлено на Mac edge.",
+                reply_to_message_id=message.get("message_id"),
+            )
+            return
+        args = (row.action_manifest or {}).get("args") or {}
+        receipt = await execute_action(
+            db,
+            user_id=account.user_id,
+            tool_name=row.tool_name,
+            args=args,
+        )
+        await mark_executed(db, row=row, receipt=receipt)
+        await _resume_agent_after_telegram_action(db, row)
+    except (ApprovalError, ActuationError) as exc:
+        await mark_failed(db, row=row, detail=exc.message)
+        await _resume_agent_after_telegram_action(db, row)
+        await client.send_message(
+            chat_id,
+            f"Действие не выполнено: {exc.message}",
+            reply_to_message_id=message.get("message_id"),
+        )
+        return
+
+    await client.send_message(
+        chat_id,
+        f"Выполнил действие {action_id}.",
+        reply_to_message_id=message.get("message_id"),
+    )
+
+
 async def _handle_account_command(
     db: AsyncSession,
     client: TelegramBotClient,
@@ -927,6 +1468,36 @@ async def _handle_account_command(
 ) -> bool:
     if intent == "help":
         await _handle_help_command(client, message=message, linked=True)
+        return True
+    if await _ensure_active_user(db, client, message=message, account=account) is None:
+        return True
+    if intent == "agents":
+        await _handle_agents_command(db, client, message=message, account=account)
+        return True
+    if intent == "run":
+        await _handle_run_command(db, client, message=message, account=account, arg=arg)
+        return True
+    if intent == "runs":
+        await _handle_runs_command(db, client, message=message, account=account)
+        return True
+    if intent == "run_status":
+        await _handle_run_status_command(db, client, message=message, account=account, arg=arg)
+        return True
+    if intent == "cancel_run":
+        await _handle_cancel_run_command(db, client, message=message, account=account, arg=arg)
+        return True
+    if intent == "approvals":
+        await _handle_approvals_command(db, client, message=message, account=account)
+        return True
+    if intent == "approve":
+        await _handle_approval_decision_command(
+            db, client, message=message, account=account, arg=arg, decision="once"
+        )
+        return True
+    if intent == "reject":
+        await _handle_approval_decision_command(
+            db, client, message=message, account=account, arg=arg, decision="reject"
+        )
         return True
     if intent == "meetings":
         await _handle_meetings_command(db, client, message=message, account=account)
@@ -986,6 +1557,8 @@ async def _handle_url_message(
     chat_id = _telegram_chat_id(message)
     if chat_id is None:
         return
+    if await _ensure_active_user(db, client, message=message, account=account) is None:
+        return
 
     item, created = await ingest_item(
         db,
@@ -1039,6 +1612,20 @@ async def _handle_url_message(
     )
 
 
+def _format_action_proposals_for_telegram(actions: list[ActionProposedEvent]) -> str:
+    if not actions:
+        return ""
+    lines = ["Нужно подтверждение:"]
+    for action in actions:
+        preview = action.preview.strip() or action.tool
+        recipient = f" · {action.recipient}" if action.recipient else ""
+        lines.append(
+            f"{action.action_id}\n{action.tool} · {action.kind}{recipient}\n"
+            f"{preview}\n/approve {action.action_id}\n/reject {action.action_id}"
+        )
+    return "\n\n".join(lines)
+
+
 async def _handle_text_message(
     db: AsyncSession,
     client: TelegramBotClient,
@@ -1050,8 +1637,11 @@ async def _handle_text_message(
     chat_id = _telegram_chat_id(message)
     if chat_id is None:
         return
+    if await _ensure_active_user(db, client, message=message, account=account) is None:
+        return
     conversation = await _ensure_telegram_conversation(db, account)
     chunks: list[str] = []
+    proposed_actions: list[ActionProposedEvent] = []
     action_task = asyncio.create_task(_send_chat_action_until_cancelled(client, chat_id))
     try:
         async for event in run_turn(
@@ -1063,6 +1653,8 @@ async def _handle_text_message(
         ):
             if isinstance(event, TokenEvent):
                 chunks.append(event.text)
+            elif isinstance(event, ActionProposedEvent):
+                proposed_actions.append(event)
             elif isinstance(event, ErrorEvent):
                 raise CompanionError(event.code, event.message)
     except CompanionError as exc:
@@ -1077,6 +1669,9 @@ async def _handle_text_message(
         await _stop_chat_action_task(action_task)
 
     answer = "".join(chunks).strip()
+    approval_text = _format_action_proposals_for_telegram(proposed_actions)
+    if approval_text:
+        answer = f"{answer}\n\n{approval_text}".strip()
     if not answer:
         answer = "Wai не вернул ответ."
     await _send_chunks(
@@ -1084,6 +1679,144 @@ async def _handle_text_message(
         chat_id,
         answer,
         reply_to_message_id=message.get("message_id"),
+    )
+
+
+async def _handle_document_message(
+    db: AsyncSession,
+    client: TelegramBotClient,
+    *,
+    message: dict[str, Any],
+    account: TelegramAccount,
+    document: dict[str, Any],
+) -> None:
+    chat_id = _telegram_chat_id(message)
+    if chat_id is None:
+        return
+    if await _ensure_active_user(db, client, message=message, account=account) is None:
+        return
+
+    file_id = document.get("file_id")
+    if not isinstance(file_id, str):
+        return
+    ext = str(document.get("document_ext") or "").lower()
+    if not ext:
+        ext = resolve_document_extension(
+            str(document.get("file_name") or ""),
+            str(document.get("mime_type") or ""),
+        )
+    if ext not in SUPPORTED_DOCUMENT_EXTENSIONS:
+        await _send_unsupported_document_message(
+            client,
+            chat_id=chat_id,
+            reply_to_message_id=message.get("message_id"),
+        )
+        return
+
+    file_size = document.get("file_size")
+    if isinstance(file_size, int) and file_size > settings.telegram_download_max_bytes:
+        await client.send_message(
+            chat_id,
+            _telegram_file_too_large_message(),
+            reply_to_message_id=message.get("message_id"),
+        )
+        return
+
+    filename = _safe_display_filename(str(document.get("file_name") or ""))
+    status_response = await client.send_message(
+        chat_id,
+        f"Принял {filename}. Извлекаю текст и делаю краткое содержание.",
+        reply_to_message_id=message.get("message_id"),
+    )
+    status_message_id = _sent_message_id(status_response)
+
+    try:
+        tg_file = await client.get_file(file_id)
+        if (
+            tg_file.file_size is not None
+            and tg_file.file_size > settings.telegram_download_max_bytes
+        ):
+            await client.send_message(chat_id, _telegram_file_too_large_message())
+            return
+        data = await client.download_file(tg_file, max_bytes=settings.telegram_download_max_bytes)
+        if len(data) > settings.telegram_download_max_bytes:
+            await client.send_message(chat_id, _telegram_file_too_large_message())
+            return
+        body = await extract_document_text(ext, data)
+    except TelegramFileTooLargeError:
+        await client.send_message(
+            chat_id,
+            _telegram_file_too_large_message(),
+            reply_to_message_id=message.get("message_id"),
+        )
+        return
+    except DocumentExtractionError as exc:
+        await client.send_message(
+            chat_id,
+            f"Не смог прочитать файл: {exc.message}",
+            reply_to_message_id=message.get("message_id"),
+        )
+        return
+    finally:
+        await _delete_status_message(client, chat_id=chat_id, message_id=status_message_id)
+
+    caption = str(message.get("caption") or "").strip()
+    source_ref = str(document.get("file_unique_id") or file_id)
+    try:
+        item, created = await ingest_item(
+            db,
+            account.user_id,
+            source="telegram",
+            source_ref=source_ref,
+            kind=document_kind_for_extension(ext),
+            title=clean_title(caption) or title_from_filename(str(document.get("file_name") or "")),
+            body=body,
+            metadata={
+                "telegram": {
+                    "file_unique_id": document.get("file_unique_id"),
+                    "mime_type": document.get("mime_type"),
+                    "ext": ext,
+                    "size": len(data),
+                }
+            },
+            embed=True,
+        )
+        await db.flush()
+    except Exception:  # noqa: BLE001 - failed import should be explicit to the sender.
+        logger.exception("telegram document ingest failed ext=%s", ext)
+        await client.send_message(
+            chat_id,
+            "Не смог сохранить файл в материалы. Попробуй позже.",
+            reply_to_message_id=message.get("message_id"),
+        )
+        return
+
+    summary = (
+        await db.execute(select(ItemSummary).where(ItemSummary.item_id == item.id))
+    ).scalar_one_or_none()
+    if created or summary is None:
+        action_task = asyncio.create_task(_send_chat_action_until_cancelled(client, chat_id))
+        try:
+            summary = await generate_item_summary(db, item)
+            await db.flush()
+        except Exception:  # noqa: BLE001 - keep the saved item and surface the failure.
+            logger.exception("telegram document processing failed ext=%s", ext)
+            await client.send_message(
+                chat_id,
+                "Сохранил файл в материалы, но не смог сделать краткое содержание. Попробуй позже.",
+                reply_to_message_id=message.get("message_id"),
+            )
+            return
+        finally:
+            await _stop_chat_action_task(action_task)
+
+    reply = format_item_reply(item, summary)
+    await _send_chunks(
+        client,
+        chat_id,
+        reply,
+        reply_to_message_id=message.get("message_id"),
+        parse_mode="HTML",
     )
 
 
@@ -1098,6 +1831,8 @@ async def _handle_media_message(
     chat_id = _telegram_chat_id(message)
     if chat_id is None:
         return
+    if await _ensure_active_user(db, client, message=message, account=account) is None:
+        return
 
     file_id = media.get("file_id")
     if not isinstance(file_id, str):
@@ -1106,7 +1841,7 @@ async def _handle_media_message(
     if isinstance(file_size, int) and file_size > settings.telegram_download_max_bytes:
         await client.send_message(
             chat_id,
-            "Файл слишком большой для Telegram-импорта. Лимит бота — 20 MB.",
+            _telegram_file_too_large_message(),
             reply_to_message_id=message.get("message_id"),
         )
         return
@@ -1120,11 +1855,19 @@ async def _handle_media_message(
 
     tg_file = await client.get_file(file_id)
     if tg_file.file_size is not None and tg_file.file_size > settings.telegram_download_max_bytes:
-        await client.send_message(chat_id, "Файл слишком большой для Telegram-импорта.")
+        await client.send_message(chat_id, _telegram_file_too_large_message())
         return
-    data = await client.download_file(tg_file)
-    if len(data) > settings.telegram_download_max_bytes:
-        await client.send_message(chat_id, "Файл слишком большой для Telegram-импорта.")
+    try:
+        data = await client.download_file(tg_file, max_bytes=settings.telegram_download_max_bytes)
+        if len(data) > settings.telegram_download_max_bytes:
+            await client.send_message(chat_id, _telegram_file_too_large_message())
+            return
+    except TelegramFileTooLargeError:
+        await client.send_message(
+            chat_id,
+            _telegram_file_too_large_message(),
+            reply_to_message_id=message.get("message_id"),
+        )
         return
 
     user = await db.get(User, account.user_id)
@@ -1147,6 +1890,7 @@ async def _handle_media_message(
             title=title,
             source_label="telegram",
             language=user.default_language,
+            duration_seconds=_telegram_media_duration_seconds(media),
         )
     except RecordingImportError as exc:
         logger.warning(
@@ -1264,6 +2008,20 @@ async def _handle_update(update: dict[str, Any]) -> None:
                     account=account,
                     media=media,
                 )
+            elif (document := _extract_document(message)) is not None:
+                await _handle_document_message(
+                    db,
+                    client,
+                    message=message,
+                    account=account,
+                    document=document,
+                )
+            elif isinstance(message.get("document"), dict):
+                await _send_unsupported_document_message(
+                    client,
+                    chat_id=chat_id,
+                    reply_to_message_id=message.get("message_id"),
+                )
             elif command:
                 intent = command[0].removeprefix("/")
                 arg = command[1]
@@ -1288,7 +2046,7 @@ async def _handle_update(update: dict[str, Any]) -> None:
                 if not text:
                     await client.send_message(
                         chat_id,
-                        "Пришли голосовое, видео или вопрос текстом.",
+                        "Пришли голосовое, видео, документ или вопрос текстом.",
                         reply_to_message_id=message.get("message_id"),
                     )
                 else:

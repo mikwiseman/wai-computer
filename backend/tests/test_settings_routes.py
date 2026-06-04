@@ -115,7 +115,8 @@ async def test_get_settings_returns_user_settings(client: AsyncClient):
     assert data["recording_live_stt_model"] == "nova-3"
     assert data["file_stt_provider"] == "deepgram"
     assert data["file_stt_model"] == "nova-3"
-    assert data["dictation_post_filter_enabled"] is False
+    assert data["dictation_post_filter_enabled"] is True
+    assert data["dictation_cleanup_level"] == "light"
     assert data["dictation_post_filter_provider"] == "openai"
     assert data["dictation_post_filter_model"] == "gpt-5.5"
 
