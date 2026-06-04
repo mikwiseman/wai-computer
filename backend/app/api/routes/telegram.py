@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 import secrets
 import string
 from contextlib import suppress
@@ -22,6 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import CurrentUser, Database
 from app.config import get_settings
+from app.core import user_memory as user_memory_module
 from app.core.agent_dispatch import AgentDispatchError, enqueue_agent_run
 from app.core.agent_runtime import cancel_run, execute_agent_step, run_job, static_config_planner
 from app.core.companion import (
@@ -69,6 +71,7 @@ from app.models.agent import Agent, AgentRun, AgentStep
 from app.models.companion import Conversation
 from app.models.companion_pending_action import CompanionPendingAction
 from app.models.item import ItemSummary
+from app.models.reminder import UserReminder
 from app.models.telegram import (
     TelegramAccount,
     TelegramBotLinkCode,
@@ -88,10 +91,19 @@ BOT_LINK_CODE_TTL = timedelta(minutes=15)
 BOT_LINK_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 BOT_LINK_CODE_LENGTH = 8
 CHAT_ACTION_INTERVAL_SECONDS = 4.0
+REMINDER_TEXT_LIMIT = 1200
+_REMIND_RELATIVE_RE = re.compile(
+    r"^(?:in|через)\s+(\d{1,5})\s*"
+    r"(m|min|minute|minutes|мин|минут|h|hour|hours|ч|час|часа|часов|d|day|days|д|дн|день|дня|дней)"
+    r"\s+(.+)$",
+    re.IGNORECASE,
+)
 TELEGRAM_BOT_COMMANDS = [
     {"command": "start", "description": "Привязать Telegram и показать статус"},
     {"command": "help", "description": "Что умеет WaiComputer в Telegram"},
     {"command": "link", "description": "Получить новый код привязки"},
+    {"command": "remember", "description": "Сохранить факт в память Wai"},
+    {"command": "remind", "description": "Поставить напоминание в Telegram"},
     {"command": "agents", "description": "Показать доступных агентов"},
     {"command": "run", "description": "Запустить агента"},
     {"command": "runs", "description": "Последние запуски агентов"},
@@ -215,6 +227,8 @@ def _telegram_help_text(*, linked: bool) -> str:
     return (
         f"{status_line}\n\n"
         "Что можно делать:\n"
+        "/remember [human|topics|preferences] <факт> — сохранить факт в память Wai\n"
+        "/remind in 10m <текст> — напомнить в Telegram; также можно ISO-время с timezone\n"
         "/agents — список агентов\n"
         "/run <агент> <задача> — запустить агента\n"
         "/runs — последние запуски\n"
@@ -227,7 +241,8 @@ def _telegram_help_text(*, linked: bool) -> str:
         "/search <запрос> — поиск по записям, саммари и расшифровкам\n"
         "/link — получить новый код привязки\n"
         "/settings — где управлять привязкой\n\n"
-        "Можно без команд: «покажи последние встречи», «найди дорожная карта». "
+        "Можно без команд: «запомни люблю короткие ответы», "
+        "«покажи последние встречи», «найди дорожная карта». "
         "Голосовые, аудио и видео сохраняю как записи. PDF, DOCX, DOC, HTML, "
         "TXT, Markdown, RTF, CSV, JSON, PPTX и XLSX добавляю в материалы."
     )
@@ -276,6 +291,17 @@ def _extract_search_query(text: str) -> str:
     return stripped
 
 
+def _strip_text_prefix(text: str, prefixes: tuple[str, ...]) -> str:
+    stripped = text.strip()
+    lower = stripped.lower()
+    for prefix in prefixes:
+        if lower == prefix:
+            return ""
+        if lower.startswith(prefix + " "):
+            return stripped[len(prefix) :].strip()
+    return ""
+
+
 def _text_intent(text: str) -> tuple[str, str] | None:
     stripped = text.strip()
     if not stripped:
@@ -284,6 +310,14 @@ def _text_intent(text: str) -> tuple[str, str] | None:
 
     if lower in {"help", "помощь", "команды", "что ты умеешь"}:
         return "help", ""
+
+    remember_arg = _strip_text_prefix(stripped, ("remember", "запомни", "запомнить"))
+    if remember_arg:
+        return "remember", remember_arg
+
+    remind_arg = _strip_text_prefix(stripped, ("remind me", "remind", "напомни", "напомнить"))
+    if remind_arg:
+        return "remind", remind_arg
 
     search_prefixes = ("найди", "поищи", "найти", "поиск", "search", "find")
     search_questions = (
@@ -316,6 +350,103 @@ def _text_intent(text: str) -> tuple[str, str] | None:
         return "meetings", ""
 
     return None
+
+
+def _parse_remember_arg(arg: str) -> tuple[str, str]:
+    clean = arg.strip()
+    if not clean:
+        raise ValueError("remember requires content")
+
+    label = "human"
+    content = clean
+    first, sep, rest = clean.partition(":")
+    first_label = first.strip().casefold()
+    if sep and first_label in user_memory_module.BLOCK_SPECS:
+        label = first_label
+        content = rest.strip()
+    else:
+        parts = clean.split(maxsplit=1)
+        candidate = parts[0].strip().rstrip(":").casefold()
+        if candidate in user_memory_module.BLOCK_SPECS:
+            label = candidate
+            content = parts[1].strip() if len(parts) > 1 else ""
+
+    if not content:
+        raise ValueError("remember requires content")
+    if not content.startswith(("-", "*", "•")):
+        content = f"- {content}"
+    return label, content
+
+
+def _reminder_format_message() -> str:
+    return (
+        "Формат: /remind in 10m текст, /remind in 2h текст "
+        "или /remind 2026-06-04T18:30+03:00 текст."
+    )
+
+
+def _relative_delta(unit: str, amount: int) -> timedelta:
+    normalized = unit.casefold()
+    if normalized in {"m", "min", "minute", "minutes", "мин", "минут"}:
+        return timedelta(minutes=amount)
+    if normalized in {"h", "hour", "hours", "ч", "час", "часа", "часов"}:
+        return timedelta(hours=amount)
+    if normalized in {"d", "day", "days", "д", "дн", "день", "дня", "дней"}:
+        return timedelta(days=amount)
+    raise ValueError("unsupported reminder unit")
+
+
+def _parse_remind_arg(arg: str, *, now: datetime | None = None) -> tuple[datetime, str]:
+    now = now or datetime.now(timezone.utc)
+    clean = arg.strip()
+    if not clean:
+        raise ValueError(_reminder_format_message())
+
+    relative = _REMIND_RELATIVE_RE.match(clean)
+    if relative:
+        amount = int(relative.group(1))
+        if amount <= 0:
+            raise ValueError("Время напоминания должно быть в будущем.")
+        text = relative.group(3).strip()
+        if not text:
+            raise ValueError(_reminder_format_message())
+        return now + _relative_delta(relative.group(2), amount), _validate_reminder_text(text)
+
+    parts = clean.split(maxsplit=2)
+    candidates: list[tuple[str, str]] = []
+    if len(parts) >= 2 and ("T" in parts[0] or parts[0].endswith("Z")):
+        candidates.append((parts[0], clean.removeprefix(parts[0]).strip()))
+    elif len(parts) >= 3:
+        candidates.append((f"{parts[0]}T{parts[1]}", parts[2]))
+
+    for raw_due, text in candidates:
+        try:
+            due_at = datetime.fromisoformat(raw_due.replace("Z", "+00:00"))
+        except ValueError:
+            continue
+        if due_at.tzinfo is None or due_at.utcoffset() is None:
+            raise ValueError("Укажи timezone в ISO-времени, например +03:00 или Z.")
+        due_at = due_at.astimezone(timezone.utc)
+        if due_at <= now:
+            raise ValueError("Время напоминания должно быть в будущем.")
+        return due_at, _validate_reminder_text(text)
+
+    raise ValueError(_reminder_format_message())
+
+
+def _validate_reminder_text(text: str) -> str:
+    clean = text.strip()
+    if not clean:
+        raise ValueError(_reminder_format_message())
+    if len(clean) > REMINDER_TEXT_LIMIT:
+        raise ValueError(
+            f"Текст напоминания слишком длинный: максимум {REMINDER_TEXT_LIMIT} символов."
+        )
+    return clean
+
+
+def _format_reminder_due_at(due_at: datetime) -> str:
+    return due_at.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
 
 
 def _normalize_bot_link_code(code: str) -> str:
@@ -1013,6 +1144,94 @@ async def _handle_settings_command(
     )
 
 
+async def _handle_remember_command(
+    db: AsyncSession,
+    client: TelegramBotClient,
+    *,
+    message: dict[str, Any],
+    account: TelegramAccount,
+    arg: str,
+) -> None:
+    chat_id = _telegram_chat_id(message)
+    if chat_id is None:
+        return
+    try:
+        label, content = _parse_remember_arg(arg)
+    except ValueError:
+        await client.send_message(
+            chat_id,
+            "Формат: /remember [human|topics|preferences] факт",
+            reply_to_message_id=message.get("message_id"),
+        )
+        return
+    conversation = await _ensure_telegram_conversation(db, account)
+    try:
+        await user_memory_module.write_block(
+            db,
+            account.user_id,
+            label,
+            "append",
+            content,
+            source="user",
+            conversation_id=conversation.id,
+        )
+    except user_memory_module.MemoryError as exc:
+        await client.send_message(
+            chat_id,
+            f"Не сохранил в память: {exc}",
+            reply_to_message_id=message.get("message_id"),
+        )
+        return
+    await client.send_message(
+        chat_id,
+        f"Запомнил в блоке {label}.",
+        reply_to_message_id=message.get("message_id"),
+    )
+
+
+async def _handle_remind_command(
+    db: AsyncSession,
+    client: TelegramBotClient,
+    *,
+    message: dict[str, Any],
+    account: TelegramAccount,
+    arg: str,
+) -> None:
+    chat_id = _telegram_chat_id(message)
+    if chat_id is None:
+        return
+    try:
+        due_at, reminder_text = _parse_remind_arg(arg)
+    except ValueError as exc:
+        await client.send_message(
+            chat_id,
+            str(exc),
+            reply_to_message_id=message.get("message_id"),
+        )
+        return
+    message_id = message.get("message_id")
+    reminder = UserReminder(
+        user_id=account.user_id,
+        source="telegram",
+        source_ref=(
+            f"telegram:{chat_id}:{message_id}" if isinstance(message_id, int) else None
+        ),
+        text=reminder_text,
+        due_at=due_at,
+        status="pending",
+        telegram_chat_id=chat_id,
+        telegram_message_id=message_id if isinstance(message_id, int) else None,
+        metadata_={"command": "remind"},
+    )
+    db.add(reminder)
+    await db.flush()
+    await client.send_message(
+        chat_id,
+        f"Поставил напоминание на {_format_reminder_due_at(due_at)}.",
+        reply_to_message_id=message.get("message_id"),
+    )
+
+
 def _short_uuid(value: Any) -> str:
     return str(value)[:8]
 
@@ -1469,6 +1688,12 @@ async def _handle_account_command(
         await _handle_help_command(client, message=message, linked=True)
         return True
     if await _ensure_active_user(db, client, message=message, account=account) is None:
+        return True
+    if intent == "remember":
+        await _handle_remember_command(db, client, message=message, account=account, arg=arg)
+        return True
+    if intent == "remind":
+        await _handle_remind_command(db, client, message=message, account=account, arg=arg)
         return True
     if intent == "agents":
         await _handle_agents_command(db, client, message=message, account=account)

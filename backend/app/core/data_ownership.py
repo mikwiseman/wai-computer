@@ -160,6 +160,12 @@ DATA_OWNERSHIP: tuple[TableOwnershipEntry, ...] = (
         "user_memory_log", "owned_exportable", "Memory change history.", contains_user_content=True
     ),
     TableOwnershipEntry(
+        "user_reminders",
+        "owned_exportable",
+        "User scheduled reminders and delivery metadata.",
+        contains_user_content=True,
+    ),
+    TableOwnershipEntry(
         "entities",
         "owned_exportable",
         "User brain entities and embeddings.",

@@ -64,6 +64,7 @@ celery_app.conf.update(
         "app.tasks.media_import",
         "app.tasks.recording_audio_processing",
         "app.tasks.summary_generation",
+        "app.tasks.telegram_reminders",
     ],
 )
 
@@ -107,6 +108,10 @@ celery_app.conf.beat_schedule = {
     },
     "agent-action-expiry-every-minute": {
         "task": "app.tasks.agents.expire_due_actions",
+        "schedule": timedelta(minutes=1),
+    },
+    "telegram-reminders-every-minute": {
+        "task": "app.tasks.telegram_reminders.dispatch_due",
         "schedule": timedelta(minutes=1),
     },
 }

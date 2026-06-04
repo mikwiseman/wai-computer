@@ -40,6 +40,7 @@ from app.models.companion import Conversation
 from app.models.companion_pending_action import CompanionPendingAction
 from app.models.item import Item, ItemChunk, ItemSummary
 from app.models.recording import ActionItem, Highlight, Recording, RecordingStatus, Segment, Summary
+from app.models.reminder import UserReminder
 from app.models.telegram import (
     TelegramAccount,
     TelegramBotLinkCode,
@@ -47,6 +48,7 @@ from app.models.telegram import (
     TelegramUpdate,
 )
 from app.models.user import User
+from app.models.user_memory import UserMemoryBlock, UserMemoryLogEntry
 
 
 async def _user(db: AsyncSession, email: str = "telegram@example.com") -> User:
@@ -481,6 +483,14 @@ def test_telegram_command_and_formatting_helpers_cover_edge_branches():
     assert telegram_routes._extract_search_query("find roadmap") == "roadmap"
     assert telegram_routes._text_intent("") is None
     assert telegram_routes._text_intent("помощь") == ("help", "")
+    assert telegram_routes._text_intent("запомни отвечать короче") == (
+        "remember",
+        "отвечать короче",
+    )
+    assert telegram_routes._text_intent("remind me in 10m stretch") == (
+        "remind",
+        "in 10m stretch",
+    )
     assert telegram_routes._text_intent("what did we discuss launch") == (
         "search",
         "what did we discuss launch",
@@ -522,6 +532,23 @@ def test_telegram_command_and_formatting_helpers_cover_edge_branches():
     assert "Roadmap" in search_results
     assert "материал" in search_results
     assert "Launch plan" in search_results
+
+    assert telegram_routes._parse_remember_arg("preferences: answer shorter") == (
+        "preferences",
+        "- answer shorter",
+    )
+    now = datetime(2026, 6, 4, 12, 0, tzinfo=timezone.utc)
+    due_at, reminder_text = telegram_routes._parse_remind_arg("in 10m stand up", now=now)
+    assert due_at == datetime(2026, 6, 4, 12, 10, tzinfo=timezone.utc)
+    assert reminder_text == "stand up"
+    due_at, reminder_text = telegram_routes._parse_remind_arg(
+        "2026-06-04T18:30+03:00 call team",
+        now=now,
+    )
+    assert due_at == datetime(2026, 6, 4, 15, 30, tzinfo=timezone.utc)
+    assert reminder_text == "call team"
+    with pytest.raises(ValueError, match="timezone"):
+        telegram_routes._parse_remind_arg("2026-06-04T18:30 call team", now=now)
 
 
 @pytest.mark.asyncio
@@ -754,6 +781,80 @@ async def test_handle_update_routes_help_meetings_and_natural_search(
     assert "запуск" in capture.messages[3]["text"]
     assert "Launch memo" in capture.messages[3]["text"]
     assert (await db_session.get(TelegramUpdate, 204)).status == "completed"
+
+
+@pytest.mark.asyncio
+async def test_telegram_remember_and_remind_commands_persist_portable_state(
+    db_session: AsyncSession,
+    monkeypatch,
+):
+    user = await _user(db_session, "telegram-memory-reminders@example.com")
+    account = TelegramAccount(user_id=user.id, telegram_user_id=61, telegram_chat_id=61)
+    db_session.add(account)
+    for update_id in (205, 206, 207):
+        db_session.add(
+            TelegramUpdate(
+                update_id=update_id,
+                status="accepted",
+                received_at=datetime.now(timezone.utc),
+            )
+        )
+    await db_session.commit()
+    capture = _TelegramCapture()
+
+    @asynccontextmanager
+    async def fake_db_context():
+        yield db_session
+
+    monkeypatch.setattr(telegram_routes, "TelegramBotClient", lambda: capture)
+    monkeypatch.setattr(telegram_routes, "get_db_context", fake_db_context)
+
+    async def send_text(update_id: int, text: str) -> None:
+        await telegram_routes._handle_update(
+            {
+                "update_id": update_id,
+                "message": {
+                    "message_id": update_id,
+                    "from": {"id": 61, "username": "mik"},
+                    "chat": {"id": 61, "type": "private"},
+                    "text": text,
+                },
+            }
+        )
+
+    await send_text(205, "/remember preferences отвечать короче")
+    await send_text(206, "/remind in 10m stretch")
+    await send_text(207, "/remind tomorrow stretch")
+
+    memory = (
+        await db_session.execute(
+            select(UserMemoryBlock).where(
+                UserMemoryBlock.user_id == user.id,
+                UserMemoryBlock.label == "preferences",
+            )
+        )
+    ).scalar_one()
+    memory_log = (
+        await db_session.execute(
+            select(UserMemoryLogEntry).where(UserMemoryLogEntry.user_id == user.id)
+        )
+    ).scalar_one()
+    reminder = (
+        await db_session.execute(select(UserReminder).where(UserReminder.user_id == user.id))
+    ).scalar_one()
+
+    assert "отвечать короче" in memory.body
+    assert memory.updated_by == "user"
+    assert memory_log.source == "user"
+    assert reminder.status == "pending"
+    assert reminder.text == "stretch"
+    assert reminder.source == "telegram"
+    assert reminder.telegram_chat_id == 61
+    assert reminder.due_at > datetime.now(timezone.utc)
+    assert "Запомнил" in capture.messages[0]["text"]
+    assert "Поставил напоминание" in capture.messages[1]["text"]
+    assert "Формат: /remind" in capture.messages[2]["text"]
+    assert (await db_session.get(TelegramUpdate, 207)).status == "completed"
 
 
 @pytest.mark.asyncio

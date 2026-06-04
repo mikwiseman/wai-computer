@@ -62,6 +62,7 @@ from app.models.recording import (
     SummaryGenerationStatus,
 )
 from app.models.refresh_token import RefreshToken
+from app.models.reminder import UserReminder
 from app.models.telegram import (
     TelegramAccount,
     TelegramBotLinkCode,
@@ -126,6 +127,7 @@ __all__ = [
     "Tag",
     "RecordingTag",
     "RefreshToken",
+    "UserReminder",
     "TelegramAccount",
     "TelegramBotLinkCode",
     "TelegramPairing",
