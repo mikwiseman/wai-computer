@@ -61,6 +61,16 @@ const mockUnifiedSearch = vi.fn();
 const mockCreateItem = vi.fn();
 const mockGetItem = vi.fn();
 const mockUploadItem = vi.fn();
+const mockListAgents = vi.fn();
+const mockCreateAgent = vi.fn();
+const mockUpdateAgent = vi.fn();
+const mockStartAgentRun = vi.fn();
+const mockListAllAgentRuns = vi.fn();
+const mockListAgentActions = vi.fn();
+const mockResolveAgentAction = vi.fn();
+const mockListReminders = vi.fn();
+const mockCreateReminder = vi.fn();
+const mockCancelReminder = vi.fn();
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ replace: mockReplace }),
@@ -127,6 +137,16 @@ vi.mock("@/lib/api", () => ({
   createItem: (...args: unknown[]) => mockCreateItem(...args),
   getItem: (...args: unknown[]) => mockGetItem(...args),
   uploadItem: (...args: unknown[]) => mockUploadItem(...args),
+  listAgents: (...args: unknown[]) => mockListAgents(...args),
+  createAgent: (...args: unknown[]) => mockCreateAgent(...args),
+  updateAgent: (...args: unknown[]) => mockUpdateAgent(...args),
+  startAgentRun: (...args: unknown[]) => mockStartAgentRun(...args),
+  listAllAgentRuns: (...args: unknown[]) => mockListAllAgentRuns(...args),
+  listAgentActions: (...args: unknown[]) => mockListAgentActions(...args),
+  resolveAgentAction: (...args: unknown[]) => mockResolveAgentAction(...args),
+  listReminders: (...args: unknown[]) => mockListReminders(...args),
+  createReminder: (...args: unknown[]) => mockCreateReminder(...args),
+  cancelReminder: (...args: unknown[]) => mockCancelReminder(...args),
 }));
 
 const baseUser = {
@@ -465,6 +485,16 @@ describe("DashboardClient", () => {
       mockCreateItem,
       mockGetItem,
       mockUploadItem,
+      mockListAgents,
+      mockCreateAgent,
+      mockUpdateAgent,
+      mockStartAgentRun,
+      mockListAllAgentRuns,
+      mockListAgentActions,
+      mockResolveAgentAction,
+      mockListReminders,
+      mockCreateReminder,
+      mockCancelReminder,
       mockReplace,
     ].forEach((fn) => fn.mockReset());
     mockListInbox.mockResolvedValue(baseInboxResponse);
@@ -472,6 +502,10 @@ describe("DashboardClient", () => {
     mockListDictationEntries.mockResolvedValue([]);
     mockListDictionaryWords.mockResolvedValue([]);
     mockListPersonalizationTerms.mockResolvedValue([]);
+    mockListAgents.mockResolvedValue({ agents: [] });
+    mockListAllAgentRuns.mockResolvedValue({ runs: [] });
+    mockListAgentActions.mockResolvedValue({ actions: [] });
+    mockListReminders.mockResolvedValue({ reminders: [] });
   });
 
   it("redirects to login when initialize gets 401", async () => {
