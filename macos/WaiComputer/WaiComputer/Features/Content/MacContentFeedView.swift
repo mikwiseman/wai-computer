@@ -300,9 +300,22 @@ struct MacContentFeedView: View {
     @ViewBuilder
     private var detailColumn: some View {
         if let item = model.selectedItem {
-            MacItemDetailView(item: item, onDelete: {
-                Task { await model.deleteSelected() }
-            })
+            MacItemDetailView(
+                item: item,
+                onDelete: {
+                    Task { await model.deleteSelected() }
+                },
+                isGeneratingSummaryAudio: model.isGeneratingSummaryAudio(for: item.id) ||
+                    item.summaryAudio?.isActive == true,
+                isDownloadingSummaryAudio: model.isDownloadingSummaryAudio(for: item.id),
+                isPlayingSummaryAudio: model.isPlayingSummaryAudio(for: item.id),
+                onGenerateSummaryAudio: {
+                    Task { await model.startSummaryAudioGeneration(itemId: item.id) }
+                },
+                onPlaySummaryAudio: {
+                    Task { await model.playOrStopSummaryAudio(itemId: item.id) }
+                }
+            )
         } else {
             ContentUnavailableViewCompat(
                 t("Select an item", "Выберите материал"),

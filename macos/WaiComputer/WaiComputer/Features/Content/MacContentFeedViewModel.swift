@@ -16,6 +16,9 @@ final class MacContentFeedViewModel: ObservableObject {
     @Published var errorMessage: String?
     // Non-error notice (e.g. an audio/video upload now transcribing in the background).
     @Published var statusMessage: String?
+    @Published private var generatingSummaryAudioItemId: String?
+    @Published private var downloadingSummaryAudioItemId: String?
+    @Published private var playingSummaryAudioItemId: String?
 
     // Multi-select -> compare
     @Published var compareSelection: Set<String> = []
@@ -23,9 +26,16 @@ final class MacContentFeedViewModel: ObservableObject {
     @Published var isComparing = false
 
     let apiClient: APIClient
+    private let makeSummaryAudioPlayer: (Data) throws -> any MacSummaryAudioPlaying
+    private var summaryAudioPlayer: (any MacSummaryAudioPlaying)?
+    private var summaryAudioPlaybackToken = UUID()
 
-    init(apiClient: APIClient) {
+    init(
+        apiClient: APIClient,
+        summaryAudioPlayerFactory: @escaping (Data) throws -> any MacSummaryAudioPlaying = MacSummaryAudioPlayback.makePlayer
+    ) {
         self.apiClient = apiClient
+        self.makeSummaryAudioPlayer = summaryAudioPlayerFactory
     }
 
     func toggleCompare(_ id: String) {
@@ -166,6 +176,60 @@ final class MacContentFeedViewModel: ObservableObject {
         }
     }
 
+    func isGeneratingSummaryAudio(for itemId: String) -> Bool {
+        generatingSummaryAudioItemId == itemId
+    }
+
+    func isDownloadingSummaryAudio(for itemId: String) -> Bool {
+        downloadingSummaryAudioItemId == itemId
+    }
+
+    func isPlayingSummaryAudio(for itemId: String) -> Bool {
+        playingSummaryAudioItemId == itemId
+    }
+
+    func startSummaryAudioGeneration(itemId id: String) async {
+        guard generatingSummaryAudioItemId == nil else { return }
+        generatingSummaryAudioItemId = id
+        defer {
+            if generatingSummaryAudioItemId == id {
+                generatingSummaryAudioItemId = nil
+            }
+        }
+
+        do {
+            let state = try await apiClient.startItemSummaryAudio(itemId: id)
+            if selectedItem?.id == id {
+                selectedItem = selectedItem?.withSummaryAudio(state)
+            }
+            await pollSummaryAudioUntilReady(id)
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    func playOrStopSummaryAudio(itemId id: String) async {
+        if playingSummaryAudioItemId == id {
+            stopSummaryAudioPlayback(itemId: id)
+            return
+        }
+
+        downloadingSummaryAudioItemId = id
+        defer {
+            if downloadingSummaryAudioItemId == id {
+                downloadingSummaryAudioItemId = nil
+            }
+        }
+
+        do {
+            let data = try await apiClient.downloadItemSummaryAudio(itemId: id)
+            guard selectedItem?.id == id else { return }
+            try playSummaryAudioData(data, sourceId: id)
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
     func deleteSelected() async {
         guard let id = selectedId else { return }
         do {
@@ -176,5 +240,60 @@ final class MacContentFeedViewModel: ObservableObject {
         } catch {
             errorMessage = error.localizedDescription
         }
+    }
+
+    private func pollSummaryAudioUntilReady(_ id: String) async {
+        for _ in 0..<30 {
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            guard selectedId == id else { return }
+            do {
+                let item = try await apiClient.getItem(id: id)
+                selectedItem = item
+                if item.summaryAudio?.isActive != true {
+                    return
+                }
+            } catch {
+                errorMessage = error.localizedDescription
+                return
+            }
+        }
+    }
+
+    private func playSummaryAudioData(_ data: Data, sourceId: String) throws {
+        let player = try makeSummaryAudioPlayer(data)
+        _ = player.prepareToPlay()
+        guard player.play() else {
+            throw NSError(
+                domain: "MacSummaryAudioPlayback",
+                code: 1,
+                userInfo: [NSLocalizedDescriptionKey: "Could not play summary audio."]
+            )
+        }
+
+        summaryAudioPlayer?.stop()
+        summaryAudioPlayer = player
+        playingSummaryAudioItemId = sourceId
+
+        let token = UUID()
+        summaryAudioPlaybackToken = token
+        let duration = max(player.duration, 0)
+        Task { @MainActor [weak self] in
+            if duration > 0 {
+                try? await Task.sleep(nanoseconds: UInt64((duration + 0.25) * 1_000_000_000))
+            } else {
+                try? await Task.sleep(for: .seconds(1))
+            }
+            guard self?.summaryAudioPlaybackToken == token else { return }
+            self?.playingSummaryAudioItemId = nil
+            self?.summaryAudioPlayer = nil
+        }
+    }
+
+    private func stopSummaryAudioPlayback(itemId: String) {
+        guard playingSummaryAudioItemId == itemId else { return }
+        summaryAudioPlaybackToken = UUID()
+        summaryAudioPlayer?.stop()
+        summaryAudioPlayer = nil
+        playingSummaryAudioItemId = nil
     }
 }

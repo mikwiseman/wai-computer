@@ -168,6 +168,108 @@ final class MacRecordingDetailViewModelTests: XCTestCase {
         XCTAssertFalse(viewModel.isGeneratingSummary(for: recordingId))
     }
 
+    func testStartSummaryAudioGenerationUpdatesStateUntilReady() async {
+        let recordingId = "summary-audio-ready"
+        let initialDetail = RecordingDetail(
+            id: recordingId,
+            title: "Needs Audio",
+            type: .meeting,
+            status: .ready,
+            createdAt: Date(timeIntervalSince1970: 1_709_292_000),
+            segments: [],
+            summary: Summary(summary: "Generated summary.")
+        )
+        let viewModel = MacRecordingDetailViewModel(initialDetail: initialDetail)
+        let readyDetailJSON = makeRecordingDetailJSON(
+            id: recordingId,
+            status: "ready",
+            segments: [],
+            summary: ["summary": "Generated summary."],
+            summaryAudio: [
+                "artifact_id": "audio-1",
+                "source_kind": "recording",
+                "source_id": recordingId,
+                "status": "succeeded",
+                "stage": "completed",
+                "progress_percent": 100,
+                "message": "Summary audio is ready.",
+            ]
+        )
+        let apiClient = makeAPIClient { request in
+            let path = request.url?.path ?? ""
+            if request.httpMethod == "POST", path == "/api/recordings/\(recordingId)/summary/audio" {
+                return (200, """
+                {
+                  "artifact_id": "audio-1",
+                  "source_kind": "recording",
+                  "source_id": "\(recordingId)",
+                  "status": "queued",
+                  "stage": "queued",
+                  "progress_percent": 5,
+                  "message": "Summary audio generation is queued."
+                }
+                """)
+            }
+            if request.httpMethod == "GET", path == "/api/recordings/\(recordingId)" {
+                return (200, readyDetailJSON)
+            }
+            return (404, #"{"detail":"Unexpected request"}"#)
+        }
+
+        await viewModel.startSummaryAudioGeneration(recordingId: recordingId, apiClient: apiClient)
+
+        XCTAssertEqual(viewModel.recordingDetail?.summaryAudio?.status, "succeeded")
+        XCTAssertEqual(viewModel.selectedTab, .summary)
+        XCTAssertFalse(viewModel.isGeneratingSummaryAudio(for: recordingId))
+    }
+
+    func testPlaySummaryAudioDownloadsAudioAndTogglesStop() async {
+        let recordingId = "summary-audio-play"
+        let fakePlayer = FakeMacSummaryAudioPlayer(duration: 20)
+        let viewModel = MacRecordingDetailViewModel(
+            initialDetail: RecordingDetail(
+                id: recordingId,
+                title: "Ready Audio",
+                type: .meeting,
+                status: .ready,
+                createdAt: Date(timeIntervalSince1970: 1_709_292_000),
+                segments: [],
+                summary: Summary(summary: "Generated summary."),
+                summaryAudio: SummaryAudioState(
+                    artifactId: "audio-1",
+                    sourceKind: "recording",
+                    sourceId: recordingId,
+                    status: "succeeded",
+                    stage: "completed",
+                    progressPercent: 100,
+                    message: "Summary audio is ready."
+                )
+            ),
+            summaryAudioPlayerFactory: { data in
+                XCTAssertEqual(String(data: data, encoding: .utf8), "audio-bytes")
+                return fakePlayer
+            }
+        )
+        let apiClient = makeAPIClient { request in
+            let path = request.url?.path ?? ""
+            if request.httpMethod == "GET", path == "/api/recordings/\(recordingId)/summary/audio/file" {
+                return (200, "audio-bytes")
+            }
+            return (404, #"{"detail":"Unexpected request"}"#)
+        }
+
+        await viewModel.playOrStopSummaryAudio(recordingId: recordingId, apiClient: apiClient)
+
+        XCTAssertTrue(fakePlayer.didPrepare)
+        XCTAssertTrue(fakePlayer.didPlay)
+        XCTAssertTrue(viewModel.isPlayingSummaryAudio(for: recordingId))
+
+        await viewModel.playOrStopSummaryAudio(recordingId: recordingId, apiClient: apiClient)
+
+        XCTAssertTrue(fakePlayer.didStop)
+        XCTAssertFalse(viewModel.isPlayingSummaryAudio(for: recordingId))
+    }
+
     private func makeDetail(id: String, title: String) -> RecordingDetail {
         RecordingDetail(
             id: id,
@@ -209,7 +311,8 @@ final class MacRecordingDetailViewModelTests: XCTestCase {
         id: String,
         status: String,
         segments: [[String: Any]],
-        summary: [String: Any]? = nil
+        summary: [String: Any]? = nil,
+        summaryAudio: [String: Any]? = nil
     ) -> String {
         var payload: [String: Any] = [
             "id": id,
@@ -220,8 +323,34 @@ final class MacRecordingDetailViewModelTests: XCTestCase {
             "segments": segments,
         ]
         payload["summary"] = summary ?? NSNull()
+        payload["summary_audio"] = summaryAudio ?? NSNull()
         let data = try! JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys])
         return String(data: data, encoding: .utf8)!
+    }
+}
+
+private final class FakeMacSummaryAudioPlayer: MacSummaryAudioPlaying {
+    let duration: TimeInterval
+    var didPrepare = false
+    var didPlay = false
+    var didStop = false
+
+    init(duration: TimeInterval) {
+        self.duration = duration
+    }
+
+    func prepareToPlay() -> Bool {
+        didPrepare = true
+        return true
+    }
+
+    func play() -> Bool {
+        didPlay = true
+        return true
+    }
+
+    func stop() {
+        didStop = true
     }
 }
 

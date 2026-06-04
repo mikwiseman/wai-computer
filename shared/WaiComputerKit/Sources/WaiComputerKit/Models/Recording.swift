@@ -343,6 +343,10 @@ public struct SummaryAudioState: Codable, Sendable, Equatable {
         status == "failed"
     }
 
+    public var isSucceeded: Bool {
+        status == "succeeded"
+    }
+
     private enum CodingKeys: String, CodingKey {
         case artifactId = "artifact_id"
         case sourceKind = "source_kind"

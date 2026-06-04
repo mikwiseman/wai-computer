@@ -1,3 +1,4 @@
+import AVFoundation
 import Foundation
 import WaiComputerKit
 
@@ -32,6 +33,23 @@ enum MacTranscriptAvailability: Equatable {
 }
 
 @MainActor
+protocol MacSummaryAudioPlaying: AnyObject {
+    var duration: TimeInterval { get }
+
+    func prepareToPlay() -> Bool
+    func play() -> Bool
+    func stop()
+}
+
+extension AVAudioPlayer: MacSummaryAudioPlaying {}
+
+enum MacSummaryAudioPlayback {
+    static func makePlayer(data: Data) throws -> any MacSummaryAudioPlaying {
+        try AVAudioPlayer(data: data)
+    }
+}
+
+@MainActor
 class MacRecordingDetailViewModel: ObservableObject {
     enum Tab: Hashable {
         case transcript, summary
@@ -44,11 +62,20 @@ class MacRecordingDetailViewModel: ObservableObject {
     @Published var localRecoveryManifest: RecordingBackupManifest?
     @Published private var generatingSummaryRecordingId: String?
     @Published private var generatingSummaryAudioRecordingId: String?
+    @Published private var downloadingSummaryAudioRecordingId: String?
+    @Published private var playingSummaryAudioRecordingId: String?
 
+    private let makeSummaryAudioPlayer: (Data) throws -> any MacSummaryAudioPlaying
+    private var summaryAudioPlayer: (any MacSummaryAudioPlaying)?
+    private var summaryAudioPlaybackToken = UUID()
     private var loadGeneration = 0
 
-    init(initialDetail: RecordingDetail? = nil) {
+    init(
+        initialDetail: RecordingDetail? = nil,
+        summaryAudioPlayerFactory: @escaping (Data) throws -> any MacSummaryAudioPlaying = MacSummaryAudioPlayback.makePlayer
+    ) {
         recordingDetail = initialDetail
+        makeSummaryAudioPlayer = summaryAudioPlayerFactory
     }
 
     var transcriptAvailability: MacTranscriptAvailability {
@@ -66,6 +93,14 @@ class MacRecordingDetailViewModel: ObservableObject {
 
     func isGeneratingSummaryAudio(for recordingId: String) -> Bool {
         generatingSummaryAudioRecordingId == recordingId
+    }
+
+    func isDownloadingSummaryAudio(for recordingId: String) -> Bool {
+        downloadingSummaryAudioRecordingId == recordingId
+    }
+
+    func isPlayingSummaryAudio(for recordingId: String) -> Bool {
+        playingSummaryAudioRecordingId == recordingId
     }
 
     func load(
@@ -174,6 +209,28 @@ class MacRecordingDetailViewModel: ObservableObject {
         }
     }
 
+    func playOrStopSummaryAudio(recordingId id: String, apiClient: APIClient) async {
+        if playingSummaryAudioRecordingId == id {
+            stopSummaryAudioPlayback(recordingId: id)
+            return
+        }
+
+        downloadingSummaryAudioRecordingId = id
+        defer {
+            if downloadingSummaryAudioRecordingId == id {
+                downloadingSummaryAudioRecordingId = nil
+            }
+        }
+
+        do {
+            let data = try await apiClient.downloadRecordingSummaryAudio(recordingId: id)
+            guard recordingDetail?.id == id else { return }
+            try playSummaryAudioData(data, sourceId: id)
+        } catch {
+            self.error = error.userFacingMessage(context: .library)
+        }
+    }
+
     func generateSummary(recordingId id: String, apiClient: APIClient) async {
         generatingSummaryRecordingId = id
         defer {
@@ -260,6 +317,44 @@ class MacRecordingDetailViewModel: ObservableObject {
         case .ready, .failed, .none:
             return false
         }
+    }
+
+    private func playSummaryAudioData(_ data: Data, sourceId: String) throws {
+        let player = try makeSummaryAudioPlayer(data)
+        _ = player.prepareToPlay()
+        guard player.play() else {
+            throw NSError(
+                domain: "MacSummaryAudioPlayback",
+                code: 1,
+                userInfo: [NSLocalizedDescriptionKey: "Could not play summary audio."]
+            )
+        }
+
+        summaryAudioPlayer?.stop()
+        summaryAudioPlayer = player
+        playingSummaryAudioRecordingId = sourceId
+
+        let token = UUID()
+        summaryAudioPlaybackToken = token
+        let duration = max(player.duration, 0)
+        Task { @MainActor [weak self] in
+            if duration > 0 {
+                try? await Task.sleep(nanoseconds: UInt64((duration + 0.25) * 1_000_000_000))
+            } else {
+                try? await Task.sleep(for: .seconds(1))
+            }
+            guard self?.summaryAudioPlaybackToken == token else { return }
+            self?.playingSummaryAudioRecordingId = nil
+            self?.summaryAudioPlayer = nil
+        }
+    }
+
+    private func stopSummaryAudioPlayback(recordingId: String) {
+        guard playingSummaryAudioRecordingId == recordingId else { return }
+        summaryAudioPlaybackToken = UUID()
+        summaryAudioPlayer?.stop()
+        summaryAudioPlayer = nil
+        playingSummaryAudioRecordingId = nil
     }
 
     private func applyFetchedDetail(_ detail: RecordingDetail) {

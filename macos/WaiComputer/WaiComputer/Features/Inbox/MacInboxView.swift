@@ -835,6 +835,11 @@ private struct MacInboxItemDetail: View {
     @State private var errorMessage: String?
     @State private var isLoading = true
     @State private var isDeleting = false
+    @State private var isGeneratingSummaryAudio = false
+    @State private var isDownloadingSummaryAudio = false
+    @State private var isPlayingSummaryAudio = false
+    @State private var summaryAudioPlayer: (any MacSummaryAudioPlaying)?
+    @State private var summaryAudioPlaybackToken = UUID()
 
     var body: some View {
         Group {
@@ -848,6 +853,16 @@ private struct MacInboxItemDetail: View {
                         Task {
                             await deleteItem()
                         }
+                    },
+                    isGeneratingSummaryAudio: isGeneratingSummaryAudio ||
+                        item.summaryAudio?.isActive == true,
+                    isDownloadingSummaryAudio: isDownloadingSummaryAudio,
+                    isPlayingSummaryAudio: isPlayingSummaryAudio,
+                    onGenerateSummaryAudio: {
+                        Task { await startSummaryAudioGeneration() }
+                    },
+                    onPlaySummaryAudio: {
+                        Task { await playOrStopSummaryAudio() }
                     }
                 )
             } else {
@@ -899,6 +914,85 @@ private struct MacInboxItemDetail: View {
         } catch {
             errorMessage = error.localizedDescription
         }
+    }
+
+    private func startSummaryAudioGeneration() async {
+        guard !isGeneratingSummaryAudio else { return }
+        isGeneratingSummaryAudio = true
+        defer { isGeneratingSummaryAudio = false }
+        do {
+            let state = try await apiClient.startItemSummaryAudio(itemId: itemId)
+            item = item?.withSummaryAudio(state)
+            await pollSummaryAudioUntilReady()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    private func pollSummaryAudioUntilReady() async {
+        for _ in 0..<30 {
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            guard !Task.isCancelled else { return }
+            do {
+                let latest = try await apiClient.getItem(id: itemId)
+                item = latest
+                if latest.summaryAudio?.isActive != true {
+                    onUpdated()
+                    return
+                }
+            } catch {
+                errorMessage = error.localizedDescription
+                return
+            }
+        }
+    }
+
+    private func playOrStopSummaryAudio() async {
+        if isPlayingSummaryAudio {
+            stopSummaryAudioPlayback()
+            return
+        }
+
+        isDownloadingSummaryAudio = true
+        defer { isDownloadingSummaryAudio = false }
+        do {
+            let data = try await apiClient.downloadItemSummaryAudio(itemId: itemId)
+            let player = try MacSummaryAudioPlayback.makePlayer(data: data)
+            _ = player.prepareToPlay()
+            guard player.play() else {
+                throw NSError(
+                    domain: "MacSummaryAudioPlayback",
+                    code: 1,
+                    userInfo: [NSLocalizedDescriptionKey: "Could not play summary audio."]
+                )
+            }
+            summaryAudioPlayer?.stop()
+            summaryAudioPlayer = player
+            isPlayingSummaryAudio = true
+
+            let token = UUID()
+            summaryAudioPlaybackToken = token
+            let duration = max(player.duration, 0)
+            Task { @MainActor in
+                if duration > 0 {
+                    try? await Task.sleep(nanoseconds: UInt64((duration + 0.25) * 1_000_000_000))
+                } else {
+                    try? await Task.sleep(for: .seconds(1))
+                }
+                guard summaryAudioPlaybackToken == token else { return }
+                isPlayingSummaryAudio = false
+                summaryAudioPlayer = nil
+            }
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    private func stopSummaryAudioPlayback() {
+        summaryAudioPlaybackToken = UUID()
+        summaryAudioPlayer?.stop()
+        summaryAudioPlayer = nil
+        isPlayingSummaryAudio = false
     }
 
     private func t(_ english: String, _ russian: String) -> String {

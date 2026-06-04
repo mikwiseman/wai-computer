@@ -89,6 +89,26 @@ public struct Item: Codable, Identifiable, Sendable {
         case summary
         case summaryAudio = "summary_audio"
     }
+
+    public func withSummaryAudio(_ state: SummaryAudioState?) -> Item {
+        Item(
+            id: id,
+            source: source,
+            sourceRef: sourceRef,
+            url: url,
+            kind: kind,
+            title: title,
+            body: body,
+            occurredAt: occurredAt,
+            state: self.state,
+            status: status,
+            error: error,
+            folderId: folderId,
+            createdAt: createdAt,
+            summary: summary,
+            summaryAudio: state
+        )
+    }
 }
 
 /// A lightweight row in the unified content feed.
