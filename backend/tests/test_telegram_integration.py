@@ -905,14 +905,14 @@ async def test_telegram_agent_commands_start_list_status_cancel_and_approvals(
         capture,
         message=message,
         account=account,
-        intent="runs",
+        intent="list",
     )
     await telegram_routes._handle_account_command(
         db_session,
         capture,
         message=message,
         account=account,
-        intent="run_status",
+        intent="status",
         arg=str(run.id)[:8],
     )
     await telegram_routes._handle_account_command(
@@ -920,7 +920,7 @@ async def test_telegram_agent_commands_start_list_status_cancel_and_approvals(
         capture,
         message=message,
         account=account,
-        intent="cancel_run",
+        intent="cancel",
         arg=str(run.id)[:8],
     )
 
@@ -1047,6 +1047,47 @@ async def test_telegram_run_requires_id_for_duplicate_agent_names(
     assert dispatched == []
     runs = (await db_session.execute(select(AgentRun).where(AgentRun.user_id == user.id))).all()
     assert runs == []
+
+
+@pytest.mark.asyncio
+async def test_telegram_run_supports_multi_word_agent_name(
+    db_session: AsyncSession,
+    monkeypatch,
+):
+    user = await _user(db_session, "telegram-agent-multiword@example.com")
+    account = TelegramAccount(user_id=user.id, telegram_user_id=74, telegram_chat_id=74)
+    agent = Agent(
+        user_id=user.id,
+        name="Daily Researcher",
+        kind="research",
+        trigger_type="manual",
+        config={"steps": [{"tool": "note", "args": {"text": "first"}}]},
+    )
+    db_session.add_all([account, agent])
+    await db_session.commit()
+    capture = _TelegramCapture()
+    dispatched: list[str] = []
+    monkeypatch.setattr(
+        telegram_routes,
+        "enqueue_agent_run",
+        lambda run_id: dispatched.append(str(run_id)) or "task-multiword",
+    )
+
+    await telegram_routes._handle_account_command(
+        db_session,
+        capture,
+        message={"message_id": 409, "chat": {"id": 74}},
+        account=account,
+        intent="run",
+        arg="Daily Researcher compare notes",
+    )
+
+    run = (
+        await db_session.execute(select(AgentRun).where(AgentRun.agent_id == agent.id))
+    ).scalar_one()
+    assert "Запустил: Daily Researcher" in capture.messages[-1]["text"]
+    assert run.trigger_payload["objective"] == "compare notes"
+    assert dispatched == [str(run.id)]
 
 
 @pytest.mark.asyncio
@@ -1279,6 +1320,52 @@ async def test_telegram_can_resolve_agent_pending_action(
     assert row.status == "executed"
     assert row.decision == "always"
     assert run.status == "done"
+
+
+@pytest.mark.asyncio
+async def test_telegram_approvals_expires_stale_actions_before_listing(
+    db_session: AsyncSession,
+):
+    user = await _user(db_session, "telegram-expired-approvals@example.com")
+    account = TelegramAccount(user_id=user.id, telegram_user_id=84, telegram_chat_id=84)
+    db_session.add(account)
+    await db_session.flush()
+    expired = await ca.propose_action(
+        db_session,
+        user_id=user.id,
+        conversation_id=None,
+        kind="send",
+        tool_name="send_message_telegram",
+        args={"text": "expired"},
+        preview="expired",
+        idempotency_key=f"expired:{uuid4().hex}",
+        ttl_seconds=-1,
+    )
+    active = await ca.propose_action(
+        db_session,
+        user_id=user.id,
+        conversation_id=None,
+        kind="send",
+        tool_name="send_message_telegram",
+        args={"text": "active"},
+        preview="active",
+        idempotency_key=f"active:{uuid4().hex}",
+    )
+    await db_session.commit()
+    capture = _TelegramCapture()
+
+    await telegram_routes._handle_account_command(
+        db_session,
+        capture,
+        message={"message_id": 304, "chat": {"id": 84}},
+        account=account,
+        intent="approvals",
+    )
+
+    assert str(active.id) in capture.messages[-1]["text"]
+    assert str(expired.id) not in capture.messages[-1]["text"]
+    await db_session.refresh(expired)
+    assert expired.status == "expired"
 
 
 @pytest.mark.asyncio
@@ -1707,6 +1794,7 @@ async def test_handle_text_message_reuses_wai_conversation(
 
     async def fake_run_turn(*args, **kwargs):
         assert kwargs["turn_context"].client_timezone is None
+        assert kwargs["enable_actions"] is True
         for _ in range(20):
             if capture.actions:
                 break

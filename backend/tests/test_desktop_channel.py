@@ -106,6 +106,57 @@ async def test_drain_and_report_roundtrip(client, auth_headers, db_session):
     assert all(a["action_id"] != str(row.id) for a in again.json()["actions"])
 
 
+async def test_tampered_desktop_action_is_not_drained_or_reportable(
+    client, auth_headers, db_session
+):
+    uid = await _user_id(client, auth_headers)
+    device_id = await _device_id(client, auth_headers)
+    cid = await _new_conv(db_session, uid)
+    row = await _desktop_pending(db_session, uid, cid, device_target=device_id)
+    approved = await client.post(
+        f"/api/companion/chats/{cid}/actions/{row.id}/resolve",
+        json={"decision": "once"},
+        headers=auth_headers,
+    )
+    assert approved.status_code == 200, approved.text
+
+    manifest = dict(row.action_manifest or {})
+    manifest["args"] = {"target": "https://evil.example"}
+    row.action_manifest = manifest
+    await db_session.flush()
+
+    drained = await client.get(
+        f"/api/devices/{device_id}/desktop-actions", headers=auth_headers
+    )
+    assert drained.status_code == 200, drained.text
+    assert all(a["action_id"] != str(row.id) for a in drained.json()["actions"])
+    await db_session.refresh(row)
+    assert row.status == "failed"
+    assert row.receipt == {"error": "Action payload changed after approval"}
+
+    second = await _desktop_pending(db_session, uid, cid, device_target=device_id)
+    approved_second = await client.post(
+        f"/api/companion/chats/{cid}/actions/{second.id}/resolve",
+        json={"decision": "once"},
+        headers=auth_headers,
+    )
+    assert approved_second.status_code == 200, approved_second.text
+    manifest = dict(second.action_manifest or {})
+    manifest["args"] = {"target": "https://evil.example"}
+    second.action_manifest = manifest
+    await db_session.flush()
+
+    reported = await client.post(
+        f"/api/companion/chats/{cid}/actions/{second.id}/desktop_result",
+        json={"device_id": device_id, "status": "executed"},
+        headers=auth_headers,
+    )
+    assert reported.status_code == 400, reported.text
+    assert reported.json()["detail"] == "Action payload changed after approval"
+    await db_session.refresh(second)
+    assert second.status == "failed"
+
+
 async def test_drain_agent_desktop_action_carries_agent_report_target(
     client, auth_headers, db_session
 ):

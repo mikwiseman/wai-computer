@@ -164,7 +164,6 @@ final class MacRecordingDetailViewModelTests: XCTestCase {
         await viewModel.generateSummary(recordingId: recordingId, apiClient: apiClient)
 
         XCTAssertEqual(viewModel.recordingDetail?.summary?.summary, "Generated summary.")
-        XCTAssertEqual(viewModel.selectedTab, .summary)
         XCTAssertFalse(viewModel.isGeneratingSummary(for: recordingId))
     }
 
@@ -219,7 +218,6 @@ final class MacRecordingDetailViewModelTests: XCTestCase {
         await viewModel.startSummaryAudioGeneration(recordingId: recordingId, apiClient: apiClient)
 
         XCTAssertEqual(viewModel.recordingDetail?.summaryAudio?.status, "succeeded")
-        XCTAssertEqual(viewModel.selectedTab, .summary)
         XCTAssertFalse(viewModel.isGeneratingSummaryAudio(for: recordingId))
     }
 

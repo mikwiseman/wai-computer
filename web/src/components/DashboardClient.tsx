@@ -358,7 +358,7 @@ const COPY: Record<Locale, DashboardCopy> = {
       search: { label: "Search", detail: "Find a moment across transcripts" },
       history: { label: "Dictation History", detail: "Voice to text inserts" },
       dictionary: { label: "Dictionary", detail: "Custom dictation replacements" },
-      agents: { label: "Agents", detail: "Runs, approvals, and reminders" },
+      agents: { label: "Agents", detail: "Ask Wai and approve actions" },
       settings: { label: "Settings", detail: "Account, data, and integrations" },
     },
     folders: {
@@ -2061,7 +2061,13 @@ export function DashboardClient() {
         {view === "dictate" ? <DictatePanel locale={locale} /> : null}
         {view === "history" ? renderHistoryView() : null}
         {view === "dictionary" ? renderDictionaryView() : null}
-        {view === "agents" ? <AgentsPanel locale={locale} onError={setMessage} /> : null}
+        {view === "agents" ? (
+          <AgentsPanel
+            locale={locale}
+            recordings={recordings}
+            onError={setMessage}
+          />
+        ) : null}
         {view === "settings" ? renderSettingsView() : null}
       </main>
 
@@ -2956,7 +2962,7 @@ function inboxTitle(row: InboxRow, locale: Locale): string {
     return locale === "ru" ? "Без названия" : "Untitled recording";
   }
   if (row.source_kind === "chat") {
-    return locale === "ru" ? "Новый чат" : "New chat";
+    return locale === "ru" ? "Спросить Wai" : "Ask Wai";
   }
   return locale === "ru" ? "Без названия" : "Untitled material";
 }
@@ -2979,11 +2985,19 @@ function sourceLabel(kind: InboxSourceKind, locale: Locale): string {
   if (locale === "ru") {
     if (kind === "recording") return "Запись";
     if (kind === "item") return "Материал";
-    return "Чат";
+    return "Wai";
   }
   if (kind === "recording") return "Recording";
   if (kind === "item") return "Material";
-  return "Chat";
+  return "Wai";
+}
+
+function inboxSublabel(row: InboxRow, locale: Locale): string | null {
+  if (!row.sublabel) return null;
+  if (row.source_kind === "chat" && row.sublabel === "Agent thread") {
+    return locale === "ru" ? "Агентский диалог" : "Agent thread";
+  }
+  return row.sublabel;
 }
 
 function recordingRowFromDetail(detail: RecordingDetail): InboxRow {
@@ -3328,8 +3342,8 @@ function UniversalInboxPanel({
         source_id: chat.id,
         detail: { kind: "chat", id: chat.id },
         title: chat.title,
-        source_label: "Wai chat",
-        sublabel: "Chat",
+        source_label: "Wai",
+        sublabel: "Agent thread",
         activity_at: chat.last_message_at ?? chat.created_at,
         created_at: chat.created_at,
         updated_at: chat.updated_at,
@@ -3356,7 +3370,7 @@ function UniversalInboxPanel({
     { key: "all", label: locale === "ru" ? "Все" : "All" },
     { key: "recording", label: locale === "ru" ? "Записи" : "Recordings" },
     { key: "item", label: locale === "ru" ? "Материалы" : "Materials" },
-    { key: "chat", label: locale === "ru" ? "Чаты" : "Chats" },
+    { key: "chat", label: locale === "ru" ? "Wai" : "Ask Wai" },
   ];
   const statusFilters: Array<{ key: InboxFilterStatus; label: string }> = [
     { key: "all", label: locale === "ru" ? "Любой статус" : "Any status" },
@@ -3452,14 +3466,15 @@ function UniversalInboxPanel({
             <h3>{locale === "ru" ? "Пока пусто" : "Nothing here yet"}</h3>
             <p>
               {locale === "ru"
-                ? "Добавьте запись, файл, ссылку, текст или чат."
-                : "Add a recording, file, link, text, or chat."}
+                ? "Добавьте запись, файл, ссылку, текст или диалог Wai."
+                : "Add a recording, file, link, text, or Wai thread."}
             </p>
           </div>
         ) : (
           <ul className="inbox-list">
             {rows.map((row) => {
               const statusLabel = inboxStatusLabel(row, locale);
+              const sublabel = inboxSublabel(row, locale);
               return (
                 <li key={row.id}>
                   <button
@@ -3483,7 +3498,7 @@ function UniversalInboxPanel({
                       <strong>{inboxTitle(row, locale)}</strong>
                       <small>
                         {sourceLabel(row.source_kind, locale)}
-                        {row.sublabel ? ` / ${row.sublabel}` : ""} /{" "}
+                        {sublabel ? ` / ${sublabel}` : ""} /{" "}
                         {formatDate(row.activity_at, locale)}
                         {row.duration_seconds
                           ? ` / ${formatDuration(row.duration_seconds)}`
@@ -3534,8 +3549,8 @@ function UniversalInboxPanel({
                 <h3>{locale === "ru" ? "Добавить в Инбокс" : "Add to Inbox"}</h3>
                 <p>
                   {locale === "ru"
-                    ? "Запишите, загрузите файл, вставьте ссылку или начните чат Wai."
-                    : "Record, upload a file, paste a link, or start a Wai chat."}
+                    ? "Запишите, загрузите файл, вставьте ссылку или попросите Wai выполнить задачу."
+                    : "Record, upload a file, paste a link, or ask Wai to work."}
                 </p>
               </div>
               <button
@@ -3600,11 +3615,11 @@ function UniversalInboxPanel({
 
               <section className="inbox-command-card">
                 <div>
-                  <h4>{locale === "ru" ? "Чат Wai" : "Wai chat"}</h4>
+                  <h4>{locale === "ru" ? "Спросить Wai" : "Ask Wai"}</h4>
                   <p>
                     {locale === "ru"
-                      ? "Спросите Wai по записям, материалам и чатам."
-                      : "Ask Wai about recordings, materials, and chats."}
+                      ? "Искать, помнить, планировать или действовать."
+                      : "Search, remember, plan, or act."}
                   </p>
                 </div>
                 <button
@@ -3612,7 +3627,7 @@ function UniversalInboxPanel({
                   className="wai-primary-button"
                   onClick={() => void handleNewChat()}
                 >
-                  {locale === "ru" ? "Новый чат" : "New chat"}
+                  {locale === "ru" ? "Новый диалог" : "New thread"}
                 </button>
               </section>
             </div>

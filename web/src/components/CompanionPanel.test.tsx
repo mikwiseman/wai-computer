@@ -80,13 +80,13 @@ describe("CompanionPanel", () => {
     });
   });
 
-  it("shows the empty home state with starter prompts when there are no chats", async () => {
+  it("shows the empty home state with starter prompts when there are no threads", async () => {
     mockListChats.mockResolvedValue({ chats: [] });
 
     render(<CompanionPanel recordings={recordings} />);
 
-    expect(await screen.findByText("What do you want to know?")).toBeInTheDocument();
-    expect(screen.getByText("What did I commit to this week?")).toBeInTheDocument();
+    expect(await screen.findByText("What should Wai do?")).toBeInTheDocument();
+    expect(screen.getByText("Find what I promised this week.")).toBeInTheDocument();
   });
 
   it("clicking a starter prompt fills the composer", async () => {
@@ -95,13 +95,13 @@ describe("CompanionPanel", () => {
 
     render(<CompanionPanel recordings={recordings} />);
 
-    await screen.findByText("What do you want to know?");
-    await user.click(screen.getByText("Summarize my last meeting."));
+    await screen.findByText("What should Wai do?");
+    await user.click(screen.getByText("Summarize my last meeting and suggest next steps."));
     const composer = screen.getByTestId("companion-composer") as HTMLTextAreaElement;
-    expect(composer.value).toBe("Summarize my last meeting.");
+    expect(composer.value).toBe("Summarize my last meeting and suggest next steps.");
   });
 
-  it("creates a new chat via the + New chat button", async () => {
+  it("creates a new thread via the + New thread button", async () => {
     const user = userEvent.setup();
     mockListChats.mockResolvedValue({ chats: [] });
     const newChat = makeChat("new-1");
@@ -109,7 +109,7 @@ describe("CompanionPanel", () => {
     mockGetChat.mockResolvedValue({ ...newChat, messages: [] });
 
     render(<CompanionPanel recordings={recordings} />);
-    await screen.findByText("What do you want to know?");
+    await screen.findByText("What should Wai do?");
 
     await user.click(screen.getByTestId("companion-new-chat"));
 
@@ -224,11 +224,11 @@ describe("CompanionPanel", () => {
     );
 
     render(<CompanionPanel recordings={recordings} />);
-    await screen.findByText("What do you want to know?");
+    await screen.findByText("What should Wai do?");
 
     const composer = screen.getByTestId("companion-composer");
     await user.type(composer, "Hi");
-    await user.click(screen.getByRole("button", { name: /ask/i }));
+    await user.click(screen.getByRole("button", { name: /^Ask$/i }));
 
     await waitFor(() => {
       expect(screen.getByText("Done.")).toBeInTheDocument();
@@ -241,7 +241,7 @@ describe("CompanionPanel", () => {
 
     render(<CompanionPanel recordings={recordings} locale="ru" />);
 
-    expect(await screen.findByText("Что хотите узнать?")).toBeInTheDocument();
+    expect(await screen.findByText("Что сделать Wai?")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Спросить Wai" })).toBeInTheDocument();
     // The ask button uses the Russian label.
     expect(screen.getByRole("button", { name: "Спросить" })).toBeInTheDocument();
@@ -263,7 +263,7 @@ describe("CompanionPanel", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("Something went wrong");
   });
 
-  it("toggles the chat history sidebar and renders a dated label for untitled chats", async () => {
+  it("toggles the thread history sidebar and renders a dated label for untitled threads", async () => {
     const user = userEvent.setup();
     const titled = makeChat("c1", "Quarterly review");
     const untitled = makeChat("c2");
@@ -272,20 +272,20 @@ describe("CompanionPanel", () => {
     mockGetChat.mockResolvedValue({ ...titled, messages: [] });
 
     render(<CompanionPanel recordings={recordings} />);
-    await screen.findByText("What do you want to know?");
+    await screen.findByText("What should Wai do?");
 
-    // Sidebar starts collapsed; the toggle advertises the chat count.
+    // Sidebar starts collapsed; the toggle advertises the thread count.
     const toggle = screen.getByTestId("companion-toggle-history");
-    expect(toggle).toHaveTextContent("Chats (2)");
+    expect(toggle).toHaveTextContent("Threads (2)");
     expect(screen.queryByTestId("companion-chat-list")).not.toBeInTheDocument();
 
     await user.click(toggle);
 
     expect(screen.getByTestId("companion-chat-list")).toBeInTheDocument();
-    expect(toggle).toHaveTextContent("Hide chats");
-    // Titled chat keeps its title; untitled chat shows the "Chat · …" date label.
+    expect(toggle).toHaveTextContent("Hide threads");
+    // Titled thread keeps its title; untitled thread shows the "Thread · …" date label.
     expect(screen.getByText("Quarterly review")).toBeInTheDocument();
-    expect(screen.getByText(/^Chat · /)).toBeInTheDocument();
+    expect(screen.getByText(/^Thread · /)).toBeInTheDocument();
 
     await user.click(toggle);
     expect(screen.queryByTestId("companion-chat-list")).not.toBeInTheDocument();
@@ -293,7 +293,7 @@ describe("CompanionPanel", () => {
 
   it("shows an empty-history hint when there are chats but the list is empty", async () => {
     // activeChatId is set, so the home starter state is suppressed, but the
-    // sidebar still renders the "no chats yet" message.
+    // sidebar still renders the "no threads yet" message.
     const user = userEvent.setup();
     const chat = makeChat("c1", "Only chat");
     mockListChats.mockResolvedValue({ chats: [chat] });
@@ -309,11 +309,11 @@ describe("CompanionPanel", () => {
     await user.click(screen.getByTestId("companion-confirm-accept"));
 
     await waitFor(() => {
-      expect(screen.getByText("No chats yet.")).toBeInTheDocument();
+      expect(screen.getByText("No threads yet.")).toBeInTheDocument();
     });
   });
 
-  it("renames a chat through the rename modal and updates the list", async () => {
+  it("renames a thread through the rename modal and updates the list", async () => {
     const user = userEvent.setup();
     const chat = makeChat("c1", "Old name");
     mockListChats.mockResolvedValue({ chats: [chat] });
@@ -449,7 +449,7 @@ describe("CompanionPanel", () => {
       expect(mockDeleteChat).toHaveBeenCalledWith("c1");
     });
     // activeChatId was the deleted chat → it resets to null, surfacing the home state.
-    expect(await screen.findByText("What did I commit to this week?")).toBeInTheDocument();
+    expect(await screen.findByText("Find what I promised this week.")).toBeInTheDocument();
   });
 
   it("surfaces an error when deletion fails", async () => {
@@ -478,16 +478,16 @@ describe("CompanionPanel", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("Detail down");
   });
 
-  it("creates a chat on send when none is active, then reports a creation failure", async () => {
+  it("creates a thread on send when none is active, then reports a creation failure", async () => {
     const user = userEvent.setup();
     mockListChats.mockResolvedValue({ chats: [] });
     mockCreateChat.mockRejectedValue(new ApiError(500, "Create failed"));
 
     render(<CompanionPanel recordings={recordings} />);
-    await screen.findByText("What do you want to know?");
+    await screen.findByText("What should Wai do?");
 
     await user.type(screen.getByTestId("companion-composer"), "Hello?");
-    await user.click(screen.getByRole("button", { name: /ask/i }));
+    await user.click(screen.getByRole("button", { name: /^Ask$/i }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent("Create failed");
     expect(mockStreamMessage).not.toHaveBeenCalled();
@@ -585,14 +585,14 @@ describe("CompanionPanel", () => {
     });
 
     render(<CompanionPanel recordings={recordings} />);
-    await screen.findByText("What do you want to know?");
+    await screen.findByText("What should Wai do?");
 
     await user.type(screen.getByTestId("companion-composer"), "When did pricing come up?");
-    await user.click(screen.getByRole("button", { name: /ask/i }));
+    await user.click(screen.getByRole("button", { name: /^Ask$/i }));
 
     // Phase 1: before any token, the searching hint + tool-call progress show.
     const bubble = await screen.findByTestId("companion-streaming");
-    expect(within(bubble).getByText("Searching your Inbox...")).toBeInTheDocument();
+    expect(within(bubble).getByText("Searching Inbox...")).toBeInTheDocument();
     await waitFor(() => {
       expect(within(bubble).getByText(/search → 3 hits/)).toBeInTheDocument();
     });
@@ -634,7 +634,7 @@ describe("CompanionPanel", () => {
     await screen.findByTestId("companion-composer");
 
     await user.type(screen.getByTestId("companion-composer"), "Hi");
-    await user.click(screen.getByRole("button", { name: /ask/i }));
+    await user.click(screen.getByRole("button", { name: /^Ask$/i }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent("Slow down");
     // Stream finished (error branch), so the composer is interactive again.
@@ -664,7 +664,7 @@ describe("CompanionPanel", () => {
     await screen.findByTestId("companion-composer");
 
     await user.type(screen.getByTestId("companion-composer"), "Hi");
-    await user.click(screen.getByRole("button", { name: /ask/i }));
+    await user.click(screen.getByRole("button", { name: /^Ask$/i }));
 
     // The Stop button appears while loading.
     const stop = await screen.findByTestId("companion-stop");
@@ -674,7 +674,7 @@ describe("CompanionPanel", () => {
       expect(screen.queryByTestId("companion-streaming")).not.toBeInTheDocument();
     });
     expect(screen.getByTestId("companion-composer")).not.toBeDisabled();
-    expect(screen.getByRole("button", { name: /ask/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Ask$/i })).toBeInTheDocument();
     releaseHang();
   });
 
@@ -735,7 +735,7 @@ describe("CompanionPanel", () => {
     mockListChats.mockResolvedValue({ chats: [] });
 
     render(<CompanionPanel recordings={recordings} />);
-    await screen.findByText("What do you want to know?");
+    await screen.findByText("What should Wai do?");
 
     const composer = screen.getByTestId("companion-composer") as HTMLTextAreaElement;
     await user.type(composer, "line1");

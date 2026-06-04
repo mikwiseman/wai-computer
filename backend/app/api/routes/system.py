@@ -120,7 +120,7 @@ class ProvisionResponse(BaseModel):
 
 
 class MigrationPreflightResponse(BaseModel):
-    status: Literal["ready"]
+    status: Literal["manual_review_required"]
     owned_exportable: list[str]
     reconnect_required: list[str]
     server_local: list[str]
@@ -168,12 +168,12 @@ async def data_map() -> dict[str, object]:
 async def migration_preflight(user: SessionUser) -> MigrationPreflightResponse:
     entries = [*DATA_OWNERSHIP, *ARTIFACT_OWNERSHIP]
     return MigrationPreflightResponse(
-        status="ready",
+        status="manual_review_required",
         owned_exportable=[
             entry.name for entry in entries if entry.classification == "owned_exportable"
         ],
         reconnect_required=[
-            entry.name for entry in entries if entry.classification == "reconnect_required"
+            entry.name for entry in entries if entry.requires_reconnect
         ],
         server_local=[entry.name for entry in entries if entry.classification == "self_host_local"],
         excluded=[

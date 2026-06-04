@@ -189,6 +189,11 @@ describe("streamMessage SSE parser", () => {
       "citation",
       "done",
     ]);
+    const [, init] = (global.fetch as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(JSON.parse(init.body as string)).toEqual({
+      content: "hello",
+      client_capabilities: ["actions_v1"],
+    });
   });
 
   it("throws ApiError on non-2xx responses", async () => {
@@ -229,7 +234,10 @@ describe("streamMessage 401 refresh-and-retry", () => {
     expect((global.fetch as ReturnType<typeof vi.fn>).mock.calls).toHaveLength(2);
     // Both attempts target the same messages endpoint with identical body.
     const [, secondInit] = (global.fetch as ReturnType<typeof vi.fn>).mock.calls[1];
-    expect(JSON.parse(secondInit.body as string)).toEqual({ content: "hi" });
+    expect(JSON.parse(secondInit.body as string)).toEqual({
+      content: "hi",
+      client_capabilities: ["actions_v1"],
+    });
   });
 
   it("swallows a body.cancel() rejection and still retries after refresh", async () => {

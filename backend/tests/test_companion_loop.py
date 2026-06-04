@@ -451,6 +451,34 @@ class TestPostMessageSSE:
         assert holder["fake"] is not None
         assert len(holder["fake"].calls) == 1
 
+    async def test_sse_actions_capability_enables_agentic_action_loop(
+        self,
+        client: AsyncClient,
+        auth_headers: dict,
+        stub_openai_for_route,
+    ):
+        install, holder = stub_openai_for_route
+        chat = (
+            await client.post(
+                "/api/companion/chats", json={}, headers=auth_headers
+            )
+        ).json()
+        install()
+
+        response = await client.post(
+            f"/api/companion/chats/{chat['id']}/messages",
+            json={
+                "content": "open my launch notes",
+                "client_capabilities": ["actions_v1"],
+            },
+            headers=auth_headers,
+        )
+        assert response.status_code == 200
+        assert holder["fake"] is not None
+        tools = holder["fake"].calls[0]["tools"]
+        assert any(t.get("name") == "request_tool_group" for t in tools)
+        assert any(t.get("type") == "web_search" for t in tools)
+
     async def test_first_user_message_auto_titles_new_chat(
         self,
         client: AsyncClient,

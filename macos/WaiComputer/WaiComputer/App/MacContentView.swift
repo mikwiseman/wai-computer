@@ -924,7 +924,10 @@ struct MacMainView: View {
         case .dictionary:
             DictationDictionaryView()
         case .agents:
-            MacAgentsView(apiClient: appState.getAPIClient())
+            MacAgentsView(
+                apiClient: appState.getAPIClient(),
+                recordings: libraryViewModel.recordings
+            )
                 .environment(\.locale, MacDateFormatting.locale(for: languageManager.current))
         case .settings:
             MacSettingsView()

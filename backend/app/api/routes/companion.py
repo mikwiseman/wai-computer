@@ -500,6 +500,7 @@ async def post_message(
                     chat_id,
                     request.content,
                     turn_context=turn_context,
+                    enable_actions=_CLIENT_CAP_ACTIONS in request.client_capabilities,
                 ):
                     event_count += 1
                     if _client_can_receive(evt, request.client_capabilities):
@@ -784,6 +785,15 @@ async def desktop_action_result(
             status_code=status.HTTP_409_CONFLICT,
             detail="Desktop action is not dispatched",
         )
+    try:
+        verify_committable(row)
+    except ApprovalError as exc:
+        await mark_failed(db, row=row, detail=exc.message)
+        await db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=exc.message,
+        ) from exc
     if request.status == "executed":
         await mark_executed(
             db, row=row, receipt=request.payload or {"status": "executed"}

@@ -943,6 +943,17 @@ async def agent_desktop_action_result(
             status_code=status.HTTP_409_CONFLICT,
             detail="Desktop action is not dispatched",
         )
+    try:
+        verify_committable(row)
+    except ApprovalError as exc:
+        await mark_failed(db, row=row, detail=exc.message)
+        run = await _resume_after_action(db, run)
+        await db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=exc.message,
+            headers={"X-Agent-Run-Status": run.status},
+        ) from exc
     if request.status == "executed":
         await mark_executed(
             db, row=row, receipt=request.payload or {"status": "executed"}

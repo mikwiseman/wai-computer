@@ -90,9 +90,13 @@ export async function* streamMessage(
   chatId: string,
   content: string,
   signal?: AbortSignal,
+  clientCapabilities: string[] = ["actions_v1"],
 ): AsyncGenerator<CompanionEvent, void, unknown> {
   const url = `${getApiBaseUrl()}${COMPANION}/chats/${chatId}/messages`;
-  const body = JSON.stringify({ content });
+  const body = JSON.stringify({
+    content,
+    client_capabilities: clientCapabilities,
+  });
 
   let response = await openStream(url, body, signal);
 

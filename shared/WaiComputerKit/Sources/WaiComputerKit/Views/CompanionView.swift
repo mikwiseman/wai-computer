@@ -58,7 +58,7 @@ enum CompanionChatPresentation {
     }
 }
 
-/// Cross-platform Wai chat view used by both the macOS sidebar `.wai` section
+/// Cross-platform Ask Wai thread view used by both the macOS sidebar `.wai` section
 /// and the iOS `WaiHomeView`. Takes an `APIClient` (kept in environment by the
 /// host app's auth flow) and a list of recordings used to resolve citation
 /// chip titles. Persists chats server-side and streams turns via SSE.
@@ -408,9 +408,9 @@ public struct CompanionView: View {
 
     private var emptyState: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text(t("What do you want to know?", "Что хочешь узнать?"))
+            Text(t("What should Wai do?", "Что Wai должен сделать?"))
                 .font(.system(size: 22, weight: .semibold, design: .serif))
-            Text(t("Wai answers from your recordings.", "Wai отвечает по твоим записям."))
+            Text(t("Search, remember, plan, or act across your Inbox.", "Искать, помнить, планировать или действовать по Инбоксу."))
                 .font(.callout)
                 .foregroundStyle(.secondary)
 
@@ -450,7 +450,7 @@ public struct CompanionView: View {
     private var streamingBubble: some View {
         let text: String = {
             if !streamingText.isEmpty { return streamingText }
-            if stage == .searching { return t("Searching recordings...", "Ищем по записям...") }
+            if stage == .searching { return t("Searching Inbox...", "Ищем по Инбоксу...") }
             return streamingToolNotes.joined(separator: "\n")
         }()
 
@@ -535,7 +535,7 @@ public struct CompanionView: View {
 
             HStack(alignment: .bottom, spacing: 10) {
                 TextField(
-                    t("Ask Wai about your recordings...", "Спроси Wai о своих записях..."),
+                    t("Ask Wai to search, remember, plan, or act...", "Попросите Wai искать, помнить, планировать или действовать..."),
                     text: $input,
                     axis: .vertical
                 )

@@ -104,6 +104,11 @@ function countByClassification(map: DataOwnershipMap | null, classification: str
   ).length;
 }
 
+function countReconnectRequired(map: DataOwnershipMap | null): number {
+  if (!map) return 0;
+  return [...map.tables, ...map.artifacts].filter((entry) => entry.requires_reconnect).length;
+}
+
 function serverLabel(info: SystemInfo | null, locale: Locale): string {
   if (!info) return "";
   if (info.deployment_mode === "self_host") return COPY[locale].selfHost;
@@ -160,7 +165,7 @@ export function ServerDataSection({
   }, []);
 
   const ownedCount = useMemo(() => countByClassification(dataMap, "owned_exportable"), [dataMap]);
-  const reconnectCount = useMemo(() => countByClassification(dataMap, "reconnect_required"), [dataMap]);
+  const reconnectCount = useMemo(() => countReconnectRequired(dataMap), [dataMap]);
 
   async function submitProvision(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();

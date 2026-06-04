@@ -102,7 +102,7 @@ body = json.loads(sys.argv[1])
 ids = {capability["id"] for capability in body["capabilities"]}
 required = {"wai.search", "wai.action.propose", "local.desktop.open", "local.shell"}
 missing = sorted(required - ids)
-if body.get("schema_version") != "2026-06-03" or missing:
+if body.get("schema_version") != "2026-06-04" or missing:
     raise SystemExit(f"bad agent capabilities contract: missing={missing} body={body}")
 shell = next(capability for capability in body["capabilities"] if capability["id"] == "local.shell")
 if shell.get("availability") != "planned" or shell.get("cloud_supported") is not False:

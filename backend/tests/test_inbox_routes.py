@@ -168,6 +168,8 @@ async def test_inbox_returns_mixed_newest_first_privacy_safe_rows(
     ]
     assert rows[0]["id"] == f"chat:{seeded['chat'].id}"
     assert rows[0]["detail"] == {"kind": "chat", "id": str(seeded["chat"].id)}
+    assert rows[0]["source_label"] == "Wai"
+    assert rows[0]["sublabel"] == "Agent thread"
     assert rows[1]["status"] == "needs_input"
     assert rows[2]["has_summary"] is True
     assert rows[3]["status"] == "failed"

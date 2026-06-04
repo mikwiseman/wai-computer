@@ -330,7 +330,13 @@ async def build_entity_page(
     if item_ids:
         for iid, title, url, occurred_at, created_at in (
             await db.execute(
-                select(Item.id, Item.title, Item.url, Item.occurred_at, Item.created_at).where(
+                select(
+                    Item.id,
+                    Item.title,
+                    Item.url,
+                    Item.occurred_at,
+                    Item.created_at,
+                ).where(
                     Item.id.in_(item_ids), Item.deleted_at.is_(None)
                 )
             )
@@ -339,7 +345,12 @@ async def build_entity_page(
     if rec_ids:
         for rid, title, uploaded_at, created_at in (
             await db.execute(
-                select(Recording.id, Recording.title, Recording.uploaded_at, Recording.created_at).where(
+                select(
+                    Recording.id,
+                    Recording.title,
+                    Recording.uploaded_at,
+                    Recording.created_at,
+                ).where(
                     Recording.id.in_(rec_ids), Recording.deleted_at.is_(None)
                 )
             )

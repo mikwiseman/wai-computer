@@ -2,7 +2,7 @@ import XCTest
 @testable import WaiComputerKit
 
 final class CompanionPresentationTests: XCTestCase {
-    func testUntitledChatLabelUsesLocalizedDateFallback() {
+    func testUntitledThreadLabelUsesLocalizedDateFallback() {
         let created = Date(timeIntervalSince1970: 1_768_545_600) // 2026-01-14T00:00:00Z
         let label = CompanionChatPresentation.chatLabel(
             title: nil,
@@ -11,7 +11,7 @@ final class CompanionPresentationTests: XCTestCase {
             locale: Locale(identifier: "ru_RU")
         )
 
-        XCTAssertTrue(label.hasPrefix("Чат · "))
+        XCTAssertTrue(label.hasPrefix("Диалог · "))
         XCTAssertFalse(label.contains("Untitled"))
     }
 

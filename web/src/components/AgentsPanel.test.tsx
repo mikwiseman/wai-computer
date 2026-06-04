@@ -26,6 +26,33 @@ vi.mock("@/lib/api", () => ({
   cancelReminder: (...args: unknown[]) => mockCancelReminder(...args),
 }));
 
+vi.mock("./CompanionPanel", () => ({
+  CompanionPanel: ({ recordings, locale }: { recordings: unknown[]; locale: string }) => (
+    <div data-testid="agents-primary-companion">
+      Ask Wai {locale} {recordings.length}
+    </div>
+  ),
+}));
+
+const recordings = [
+  {
+    id: "rec-1",
+    title: "Launch notes",
+    type: "meeting",
+    audio_url: null,
+    status: "ready",
+    failure_code: null,
+    failure_message: null,
+    uploaded_at: null,
+    duration_seconds: null,
+    language: null,
+    folder_id: null,
+    deleted_at: null,
+    starred_at: null,
+    created_at: "2026-06-04T12:00:00Z",
+  },
+];
+
 const agent = {
   id: "agent-1",
   name: "Researcher",
@@ -113,8 +140,10 @@ describe("AgentsPanel", () => {
 
   it("loads agents, starts a run, resolves an approval, and creates a reminder", async () => {
     const onError = vi.fn();
-    render(<AgentsPanel locale="en" onError={onError} />);
+    render(<AgentsPanel locale="en" recordings={recordings} onError={onError} />);
 
+    expect(screen.getByTestId("agents-primary-companion")).toHaveTextContent("Ask Wai en 1");
+    expect(screen.getByTestId("agents-controls")).toBeInTheDocument();
     expect(await screen.findByTestId("agent-agent-1")).toBeInTheDocument();
 
     fireEvent.change(screen.getByTestId("agent-objective-agent-1"), {
@@ -159,7 +188,7 @@ describe("AgentsPanel", () => {
 
   it("creates a simple note agent", async () => {
     const onError = vi.fn();
-    render(<AgentsPanel locale="en" onError={onError} />);
+    render(<AgentsPanel locale="en" recordings={recordings} onError={onError} />);
     await screen.findByTestId("agent-agent-1");
 
     fireEvent.change(screen.getByTestId("agent-name-input"), {

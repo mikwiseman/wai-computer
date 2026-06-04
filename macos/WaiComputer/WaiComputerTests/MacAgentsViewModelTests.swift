@@ -22,7 +22,7 @@ final class MacAgentsViewModelTests: XCTestCase {
 
         await model.createAgent(name: "Daily check", note: "Write launch notes")
         await model.startRun(agent: try XCTUnwrap(model.agents.first), objective: "Check launch")
-        await model.resolve(action: try XCTUnwrap(model.actions.first), decision: "once")
+        await model.resolve(action: try XCTUnwrap(model.actions.first), decision: .once)
         await model.createReminder(text: "Review launch", dueAt: Date(timeIntervalSince1970: 1_780_597_800))
         await model.cancel(reminder: try XCTUnwrap(model.reminders.first))
 
@@ -88,13 +88,16 @@ final class MacAgentsViewModelTests: XCTestCase {
 
         if path == "/api/agents", method == "POST" {
             let body = try jsonBody(from: request)
-            XCTAssertEqual(body["name"] as? String, "Daily check")
+            let name = try XCTUnwrap(body["name"] as? String)
+            XCTAssertEqual(name, "Daily check")
             XCTAssertEqual(body["kind"] as? String, "mac")
             let config = try XCTUnwrap(body["config"] as? [String: Any])
             let steps = try XCTUnwrap(config["steps"] as? [[String: Any]])
             XCTAssertEqual(steps.first?["tool"] as? String, "note")
+            let args = try XCTUnwrap(steps.first?["args"] as? [String: Any])
+            XCTAssertEqual(args["text"] as? String, "Write launch notes")
             return (response, Data("""
-            {"id":"agent-1","name":"Daily check","kind":"mac","trigger_type":"manual","config":{},"autonomy":"propose","enabled":true,"next_run_at":null,"last_run_at":null,"created_at":"2026-06-04T12:00:00Z","updated_at":"2026-06-04T12:00:00Z"}
+            {"id":"agent-1","name":"\(name)","kind":"mac","trigger_type":"manual","config":{},"autonomy":"propose","enabled":true,"next_run_at":null,"last_run_at":null,"created_at":"2026-06-04T12:00:00Z","updated_at":"2026-06-04T12:00:00Z"}
             """.utf8))
         }
 
@@ -107,10 +110,11 @@ final class MacAgentsViewModelTests: XCTestCase {
         if path == "/api/agents/agent-1/runs", method == "POST" {
             let body = try jsonBody(from: request)
             XCTAssertEqual(body["trigger_kind"] as? String, "manual")
-            XCTAssertEqual((body["trigger_payload"] as? [String: Any])?["objective"] as? String, "Check launch")
+            let objective = try XCTUnwrap((body["trigger_payload"] as? [String: Any])?["objective"] as? String)
+            XCTAssertEqual(objective, "Check launch")
             XCTAssertTrue((body["idempotency_key"] as? String)?.hasPrefix("mac:") == true)
             return (response, Data("""
-            {"id":"run-1","agent_id":"agent-1","trigger_key":"manual:agent-1:mac","trigger_kind":"manual","trigger_payload":{"objective":"Check launch"},"status":"pending","plan":null,"done_spec":null,"result":null,"content_hash":null,"error":null,"next_step_idx":0,"heartbeat_at":null,"started_at":null,"finished_at":null,"cancel_requested_at":null,"created_at":"2026-06-04T12:00:00Z","updated_at":"2026-06-04T12:00:00Z"}
+            {"id":"run-1","agent_id":"agent-1","trigger_key":"manual:agent-1:mac","trigger_kind":"manual","trigger_payload":{"objective":"\(objective)"},"status":"pending","plan":null,"done_spec":null,"result":null,"content_hash":null,"error":null,"next_step_idx":0,"heartbeat_at":null,"started_at":null,"finished_at":null,"cancel_requested_at":null,"created_at":"2026-06-04T12:00:00Z","updated_at":"2026-06-04T12:00:00Z"}
             """.utf8))
         }
 

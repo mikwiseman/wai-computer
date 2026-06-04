@@ -38,11 +38,11 @@ const COPY: Record<
     step: "Step 1 of 1",
     heading: "Set up your universal Inbox",
     lead:
-      "WaiComputer keeps recordings, files, links, notes, and Wai chats in one Inbox. Add anything, filter by type, and ask Wai when you need an answer.",
+      "WaiComputer keeps recordings, files, links, notes, and Wai agent threads in one Inbox. Add anything, filter by type, and ask Wai when you need an answer or action.",
     setupItems: [
       {
         title: "Add anything",
-        body: "Record, upload a PDF or audio file, paste a link, or start a chat.",
+        body: "Record, upload a PDF or audio file, paste a link, or ask Wai to work.",
       },
       {
         title: "Organize once",
@@ -54,7 +54,7 @@ const COPY: Record<
       },
     ],
     prompt:
-      "Hi, I'm setting up WaiComputer. It keeps my recordings, materials, notes, and chats in one Inbox so I can find the important moments later. Wai listens, summarizes, and helps me ask better questions about everything I saved.",
+      "Hi, I'm setting up WaiComputer. It keeps my recordings, materials, notes, and Wai agent threads in one Inbox so I can find the important moments later. Wai listens, summarizes, remembers, and helps me act on everything I saved.",
     record: "Record",
     stop: "Stop",
     use: "Use this take",

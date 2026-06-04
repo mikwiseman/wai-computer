@@ -14,7 +14,12 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 
 from app.api.deps import Database, SessionUser
-from app.core.companion_actions import expire_due_actions
+from app.core.companion_actions import (
+    ApprovalError,
+    expire_due_actions,
+    mark_failed,
+    verify_committable,
+)
 from app.core.device_presence import device_online, get_owned_device, upsert_device
 from app.models.agent import AgentRun
 from app.models.companion_pending_action import CompanionPendingAction
@@ -77,14 +82,14 @@ async def drain_desktop_actions(
     """Approved desktop actions awaiting execution on this device. The Mac polls
     this, runs each via the native actuator, and reports back via
     /api/companion/chats/{chat_id}/actions/{action_id}/desktop_result. Returns
-    actions targeted at this device or to any device (device_target null)."""
+    only actions explicitly targeted at this device."""
     device = await get_owned_device(db, user_id=user.id, device_id=device_id)
     if device is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Device not found"
         )
     now = datetime.now(timezone.utc)
-    await expire_due_actions(db, now=now)
+    expired_count = await expire_due_actions(db, now=now)
     rows = (
         await db.execute(
             select(CompanionPendingAction)
@@ -108,21 +113,32 @@ async def drain_desktop_actions(
         )
         run_by_id = {run.id: run for run in run_result.scalars().all()}
     target = str(device_id)
-    items = [
-        DesktopActionItem(
-            action_id=str(row.id),
-            chat_id=str(row.conversation_id) if row.conversation_id else None,
-            agent_id=(
-                str(run_by_id[row.agent_run_id].agent_id)
-                if row.agent_run_id in run_by_id
-                else None
-            ),
-            agent_run_id=str(row.agent_run_id) if row.agent_run_id else None,
-            tool=row.tool_name,
-            args=(row.action_manifest or {}).get("args") or {},
-            preview=(row.action_manifest or {}).get("preview", ""),
+    items: list[DesktopActionItem] = []
+    failed_count = 0
+    for row in rows:
+        if row.device_target != target:
+            continue
+        try:
+            verify_committable(row)
+        except ApprovalError as exc:
+            await mark_failed(db, row=row, detail=exc.message)
+            failed_count += 1
+            continue
+        items.append(
+            DesktopActionItem(
+                action_id=str(row.id),
+                chat_id=str(row.conversation_id) if row.conversation_id else None,
+                agent_id=(
+                    str(run_by_id[row.agent_run_id].agent_id)
+                    if row.agent_run_id in run_by_id
+                    else None
+                ),
+                agent_run_id=str(row.agent_run_id) if row.agent_run_id else None,
+                tool=row.tool_name,
+                args=(row.action_manifest or {}).get("args") or {},
+                preview=(row.action_manifest or {}).get("preview", ""),
+            )
         )
-        for row in rows
-        if row.device_target == target
-    ]
+    if expired_count or failed_count:
+        await db.commit()
     return DesktopActionQueue(actions=items)

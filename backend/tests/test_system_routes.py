@@ -103,10 +103,12 @@ async def test_self_host_migration_preflight_groups_owned_and_reconnect_data(
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["status"] == "ready"
+    assert payload["status"] == "manual_review_required"
     assert "recordings" in payload["owned_exportable"]
     assert "document_uploads" in payload["owned_exportable"]
     assert "refresh_tokens" in payload["reconnect_required"]
+    assert "telegram_accounts" in payload["reconnect_required"]
+    assert "mcp_connections" in payload["reconnect_required"]
     assert "recording_audio_staging" in payload["server_local"]
     assert payload["data_map"]["audio_retention_policy"] == "delete_after_processing"
 

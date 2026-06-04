@@ -2767,6 +2767,34 @@ a.primary-button[aria-disabled="true"]:hover {
   gap: 1rem;
 }
 
+.agents-controls {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+  padding: 0.85rem 1rem;
+}
+
+.agents-controls summary {
+  cursor: pointer;
+  color: var(--ink);
+  font-size: var(--font-body-size);
+}
+
+.agents-controls summary span {
+  display: inline-grid;
+  gap: 0.2rem;
+}
+
+.agents-controls summary small {
+  color: var(--ink-soft);
+  font-size: var(--font-label-size);
+  font-weight: 500;
+}
+
+.agents-controls[open] summary {
+  margin-bottom: 0.85rem;
+}
+
 .agents-panel__header {
   display: flex;
   align-items: flex-start;

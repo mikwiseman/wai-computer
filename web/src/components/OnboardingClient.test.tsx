@@ -35,7 +35,7 @@ describe("OnboardingClient", () => {
     render(<OnboardingClient />);
 
     expect(screen.getByRole("heading", { level: 1, name: "Set up your universal Inbox" })).toBeInTheDocument();
-    expect(screen.getByText(/recordings, files, links, notes, and Wai chats/i)).toBeInTheDocument();
+    expect(screen.getByText(/recordings, files, links, notes, and Wai agent threads/i)).toBeInTheDocument();
     expect(screen.getByText("Add anything")).toBeInTheDocument();
     expect(screen.getByText("Organize once")).toBeInTheDocument();
     expect(screen.getByText("Teach your voice")).toBeInTheDocument();

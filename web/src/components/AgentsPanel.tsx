@@ -13,19 +13,21 @@ import {
   startAgentRun,
   updateAgent,
 } from "@/lib/api";
-import type { Agent, AgentAction, AgentRun, Reminder } from "@/lib/types";
+import type { Agent, AgentAction, AgentRun, Recording, Reminder } from "@/lib/types";
+import { CompanionPanel } from "./CompanionPanel";
 
 type Locale = "en" | "ru";
 
 interface AgentsPanelProps {
   locale: Locale;
+  recordings: Recording[];
   onError: (message: string) => void;
 }
 
 const COPY = {
   en: {
-    title: "Agents",
-    subtitle: "Run agents, approve actions, and manage reminders from WaiComputer Web.",
+    controlsTitle: "Agent controls",
+    controlsSubtitle: "Saved agents, approvals, reminders, and manual runs.",
     refresh: "Refresh",
     namePlaceholder: "Agent name",
     stepPlaceholder: "First note step",
@@ -64,8 +66,8 @@ const COPY = {
     missingActionScope: "This approval is missing agent run context.",
   },
   ru: {
-    title: "Агенты",
-    subtitle: "Запускай агентов, подтверждай действия и управляй напоминаниями из Web.",
+    controlsTitle: "Управление агентами",
+    controlsSubtitle: "Сохраненные агенты, подтверждения, напоминания и ручные запуски.",
     refresh: "Обновить",
     namePlaceholder: "Название агента",
     stepPlaceholder: "Первый шаг-заметка",
@@ -117,7 +119,7 @@ function runLabel(run: AgentRun, agentsById: Map<string, Agent>): string {
   return agentsById.get(run.agent_id)?.name ?? run.agent_id.slice(0, 8);
 }
 
-export function AgentsPanel({ locale, onError }: AgentsPanelProps) {
+export function AgentsPanel({ locale, recordings, onError }: AgentsPanelProps) {
   const copy = COPY[locale];
   const [agents, setAgents] = useState<Agent[]>([]);
   const [runs, setRuns] = useState<AgentRun[]>([]);
@@ -291,28 +293,34 @@ export function AgentsPanel({ locale, onError }: AgentsPanelProps) {
 
   return (
     <section className="agents-panel" data-testid="agents-panel">
-      <header className="panel-header agents-panel__header">
-        <div>
-          <h3>{copy.title}</h3>
-          <p>{copy.subtitle}</p>
-        </div>
-        <button
-          type="button"
-          className="ghost-button compact-button"
-          data-testid="agents-refresh"
-          onClick={() => void load()}
-          disabled={loading}
-        >
-          {copy.refresh}
-        </button>
-      </header>
+      <CompanionPanel recordings={recordings} locale={locale} />
 
-      {loading ? <p className="settings-note">{copy.loading}</p> : null}
+      <details className="agents-controls" data-testid="agents-controls">
+        <summary>
+          <span>
+            <strong>{copy.controlsTitle}</strong>
+            <small>{copy.controlsSubtitle}</small>
+          </span>
+        </summary>
 
-      <div className="agents-grid">
+        <header className="panel-header agents-panel__header">
+          <button
+            type="button"
+            className="ghost-button compact-button"
+            data-testid="agents-refresh"
+            onClick={() => void load()}
+            disabled={loading}
+          >
+            {copy.refresh}
+          </button>
+        </header>
+
+        {loading ? <p className="settings-note">{copy.loading}</p> : null}
+
+        <div className="agents-grid">
         <section className="agents-section">
           <header className="agents-section__header">
-            <h4>{copy.title}</h4>
+            <h4>{copy.controlsTitle}</h4>
           </header>
           <form className="agents-inline-form" onSubmit={handleCreateAgent}>
             <input
@@ -514,7 +522,8 @@ export function AgentsPanel({ locale, onError }: AgentsPanelProps) {
             </ul>
           )}
         </section>
-      </div>
+        </div>
+      </details>
     </section>
   );
 }

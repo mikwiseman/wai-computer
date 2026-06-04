@@ -44,6 +44,7 @@ from app.core.companion import (
 )
 from app.core.companion_actions import (
     ApprovalError,
+    expire_due_actions,
     mark_executed,
     mark_failed,
     resolve_action,
@@ -115,8 +116,11 @@ TELEGRAM_BOT_COMMANDS = [
     {"command": "agents", "description": "Показать доступных агентов"},
     {"command": "run", "description": "Запустить агента"},
     {"command": "runs", "description": "Последние запуски агентов"},
+    {"command": "list", "description": "Короткий алиас для /runs"},
     {"command": "run_status", "description": "Статус запуска агента"},
+    {"command": "status", "description": "Короткий алиас для /run_status"},
     {"command": "cancel_run", "description": "Остановить запуск агента"},
+    {"command": "cancel", "description": "Короткий алиас для /cancel_run"},
     {"command": "approvals", "description": "Действия, ожидающие подтверждения"},
     {"command": "approve", "description": "Подтвердить действие один раз"},
     {"command": "approve_always", "description": "Подтвердить действие всегда"},
@@ -240,9 +244,9 @@ def _telegram_help_text(*, linked: bool) -> str:
         "/remind in 10m <текст> — напомнить в Telegram; также можно ISO-время с timezone\n"
         "/agents — список агентов\n"
         "/run <агент> <задача> — запустить агента\n"
-        "/runs — последние запуски\n"
-        "/run_status <run_id> — статус запуска\n"
-        "/cancel_run <run_id> — остановить запуск\n"
+        "/runs или /list — последние запуски\n"
+        "/run_status или /status <run_id> — статус запуска\n"
+        "/cancel_run или /cancel <run_id> — остановить запуск\n"
         "/approvals — действия на подтверждение\n"
         "/approve <action_id> — подтвердить один раз\n"
         "/approve_always <action_id> — подтвердить всегда\n"
@@ -1370,6 +1374,57 @@ def _split_agent_run_arg(arg: str) -> tuple[str, str]:
     return ref.strip(), objective.strip()
 
 
+@dataclass(frozen=True)
+class AgentRunArgResolution:
+    resolution: AgentRefResolution
+    objective: str
+
+
+async def _resolve_agent_run_arg(
+    db: AsyncSession,
+    *,
+    user_id: Any,
+    arg: str,
+) -> AgentRunArgResolution:
+    clean = arg.strip()
+    if not clean:
+        return AgentRunArgResolution(AgentRefResolution(None), "")
+
+    result = await db.execute(
+        select(Agent).where(Agent.user_id == user_id).order_by(Agent.created_at.desc())
+    )
+    agents = list(result.scalars().all())
+    normalized = clean.casefold()
+    name_matches: list[tuple[int, Agent, str]] = []
+    for agent in agents:
+        name = agent.name.strip()
+        if not name:
+            continue
+        normalized_name = name.casefold()
+        if normalized == normalized_name:
+            name_matches.append((len(name), agent, ""))
+            continue
+        if normalized.startswith(normalized_name):
+            remainder = clean[len(name) :]
+            if remainder and remainder[0].isspace():
+                name_matches.append((len(name), agent, remainder.strip()))
+
+    if name_matches:
+        best_len = max(match[0] for match in name_matches)
+        best_matches = [match for match in name_matches if match[0] == best_len]
+        if len(best_matches) == 1:
+            _, agent, objective = best_matches[0]
+            return AgentRunArgResolution(AgentRefResolution(agent), objective)
+        return AgentRunArgResolution(
+            AgentRefResolution(None, ambiguous_matches=tuple(match[1] for match in best_matches)),
+            best_matches[0][2],
+        )
+
+    agent_ref, objective = _split_agent_run_arg(clean)
+    resolution = await _resolve_agent_ref(db, user_id=user_id, ref=agent_ref)
+    return AgentRunArgResolution(resolution, objective)
+
+
 async def _handle_run_command(
     db: AsyncSession,
     client: TelegramBotClient,
@@ -1383,15 +1438,25 @@ async def _handle_run_command(
         return
     if await _ensure_active_user(db, client, message=message, account=account) is None:
         return
-    agent_ref, objective = _split_agent_run_arg(arg)
-    if not agent_ref or not objective:
+    run_arg = await _resolve_agent_run_arg(db, user_id=account.user_id, arg=arg)
+    objective = run_arg.objective
+    if run_arg.resolution.agent is None and not run_arg.resolution.ambiguous_matches:
+        agent_ref, objective = _split_agent_run_arg(arg)
+        if not agent_ref or not objective:
+            await client.send_message(
+                chat_id,
+                "Формат: /run <agent_id или имя> <задача>",
+                reply_to_message_id=message.get("message_id"),
+            )
+            return
+    if not objective:
         await client.send_message(
             chat_id,
             "Формат: /run <agent_id или имя> <задача>",
             reply_to_message_id=message.get("message_id"),
         )
         return
-    resolution = await _resolve_agent_ref(db, user_id=account.user_id, ref=agent_ref)
+    resolution = run_arg.resolution
     if resolution.ambiguous_matches:
         lines = [
             "Несколько агентов совпадают с этим именем. Запусти по id из /agents:",
@@ -1595,6 +1660,7 @@ async def _handle_approvals_command(
     chat_id = _telegram_chat_id(message)
     if chat_id is None:
         return
+    await expire_due_actions(db)
     result = await db.execute(
         select(CompanionPendingAction)
         .where(
@@ -1800,13 +1866,13 @@ async def _handle_account_command(
     if intent == "run":
         await _handle_run_command(db, client, message=message, account=account, arg=arg)
         return True
-    if intent == "runs":
+    if intent in {"runs", "list"}:
         await _handle_runs_command(db, client, message=message, account=account)
         return True
-    if intent == "run_status":
+    if intent in {"run_status", "status"}:
         await _handle_run_status_command(db, client, message=message, account=account, arg=arg)
         return True
-    if intent == "cancel_run":
+    if intent in {"cancel_run", "cancel"}:
         await _handle_cancel_run_command(db, client, message=message, account=account, arg=arg)
         return True
     if intent == "approvals":
@@ -1979,6 +2045,7 @@ async def _handle_text_message(
             conversation.id,
             text,
             turn_context=TurnContext(),
+            enable_actions=True,
         ):
             if isinstance(event, TokenEvent):
                 chunks.append(event.text)

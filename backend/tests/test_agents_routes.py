@@ -6,7 +6,8 @@ from uuid import UUID, uuid4
 
 from sqlalchemy import select
 
-from app.models.agent import AgentRun, AgentStep
+from app.core.companion_actions import propose_action
+from app.models.agent import Agent, AgentRun, AgentStep
 from app.models.companion_pending_action import CompanionPendingAction
 from app.models.telegram import TelegramAccount
 
@@ -1001,3 +1002,70 @@ async def test_desktop_action_failed_result_is_idempotent(
     )
     assert duplicate.status_code == 200, duplicate.text
     assert duplicate.json()["status"] == "failed"
+
+
+async def test_agent_desktop_result_rejects_tampered_action_payload(
+    client,
+    auth_headers,
+    db_session,
+):
+    heartbeat = await client.post(
+        "/api/devices/heartbeat",
+        headers=auth_headers,
+        json={"platform": "macos", "name": "Tamper Agent Mac"},
+    )
+    assert heartbeat.status_code == 200, heartbeat.text
+    device_id = heartbeat.json()["device_id"]
+    me = await client.get("/api/auth/me", headers=auth_headers)
+    assert me.status_code == 200, me.text
+    user_id = UUID(me.json()["id"])
+
+    agent = Agent(
+        user_id=user_id,
+        name="Desktop tamper",
+        kind="mac_edge",
+        trigger_type="manual",
+    )
+    db_session.add(agent)
+    await db_session.flush()
+    run = AgentRun(
+        agent_id=agent.id,
+        user_id=user_id,
+        trigger_key=f"manual:{agent.id}:tamper",
+        trigger_kind="manual",
+        status="awaiting_approval",
+    )
+    db_session.add(run)
+    await db_session.flush()
+    row = await propose_action(
+        db_session,
+        user_id=user_id,
+        conversation_id=None,
+        agent_run_id=run.id,
+        agent_step_idx=1,
+        kind="desktop_action",
+        tool_name="desktop_open",
+        args={"target": "https://wai.computer"},
+        preview="Open wai.computer",
+        idempotency_key=f"desktop:{uuid4().hex}",
+        device_target=device_id,
+    )
+    row.status = "approved"
+    manifest = dict(row.action_manifest or {})
+    manifest["args"] = {"target": "https://evil.example"}
+    row.action_manifest = manifest
+    await db_session.flush()
+
+    result = await client.post(
+        f"/api/agents/{agent.id}/runs/{run.id}/actions/{row.id}/desktop_result",
+        headers=auth_headers,
+        json={"device_id": device_id, "status": "executed"},
+    )
+
+    assert result.status_code == 400, result.text
+    assert result.json()["detail"] == "Action payload changed after approval"
+    assert result.headers["X-Agent-Run-Status"] == "failed"
+    await db_session.refresh(row)
+    await db_session.refresh(run)
+    assert row.status == "failed"
+    assert run.status == "failed"

@@ -38,6 +38,14 @@ const dataOwnershipMap = {
       requires_reconnect: false,
     },
     {
+      name: "mcp_connections",
+      table: "mcp_connections",
+      classification: "owned_exportable",
+      reason: "MCP connection metadata moves, encrypted credentials reconnect.",
+      contains_user_content: false,
+      requires_reconnect: true,
+    },
+    {
       name: "mcp_oauth_tokens",
       table: "mcp_oauth_tokens",
       classification: "reconnect_required",
@@ -104,6 +112,7 @@ describe("ServerDataSection", () => {
     expect(section.textContent).toContain("Owned exportable records");
     expect(section.textContent).toContain("Files and artifacts");
     expect(section.textContent).toContain("Needs reconnect");
+    expect(section.textContent).toContain("2Needs reconnect");
   });
 
   it("submits a self-host provisioning preflight with a public SSH key", async () => {

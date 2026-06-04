@@ -333,7 +333,7 @@ final class APIClientNewEndpointsTests: XCTestCase {
             agentId: "agent-1",
             runId: "run-1",
             actionId: "action-1",
-            ResolveAgentActionRequest(decision: "once")
+            ResolveAgentActionRequest(decision: .once)
         )
         XCTAssertEqual(resolved.runStatus, "done")
         try await client.deleteAgent(agentId: "agent-1")
@@ -864,6 +864,55 @@ final class APIClientNewEndpointsTests: XCTestCase {
         }
 
         try await client.deleteCompanionChat(chatId: "chat-1")
+    }
+
+    func testStreamCompanionMessageAdvertisesActionsCapability() async throws {
+        let client = makeClient()
+
+        MockURLProtocol.requestHandler = { [self] request in
+            XCTAssertEqual(request.httpMethod, "POST")
+            XCTAssertEqual(request.url?.path, "/api/companion/chats/chat-1/messages")
+            XCTAssertEqual(request.value(forHTTPHeaderField: "Accept"), "text/event-stream")
+
+            let body = try jsonBody(from: request)
+            XCTAssertEqual(body["content"] as? String, "open launch notes")
+            XCTAssertEqual(body["client_local_date"] as? String, "2026-06-04")
+            XCTAssertEqual(body["client_timezone"] as? String, "Europe/Moscow")
+            XCTAssertEqual(body["viewing_recording_id"] as? String, "recording-1")
+            XCTAssertEqual(body["viewing_folder_id"] as? String, "folder-1")
+            XCTAssertEqual(body["client_capabilities"] as? [String], ["actions_v1"])
+
+            let response = HTTPURLResponse(
+                url: request.url!,
+                statusCode: 200,
+                httpVersion: nil,
+                headerFields: ["Content-Type": "text/event-stream"]
+            )!
+            let payload = """
+            event: done
+            data: {"message_id":"message-1","model":"gpt-test","latency_ms":1}
+
+            """.data(using: .utf8)!
+            return (response, payload)
+        }
+
+        let stream = try await client.streamCompanionMessage(
+            chatId: "chat-1",
+            content: "open launch notes",
+            viewingRecordingId: "recording-1",
+            viewingFolderId: "folder-1",
+            now: Date(timeIntervalSince1970: 1_780_597_800),
+            timeZone: TimeZone(identifier: "Europe/Moscow")!,
+            calendar: Calendar(identifier: .gregorian)
+        )
+        var events: [CompanionStreamEvent] = []
+        for await event in stream {
+            events.append(event)
+        }
+        XCTAssertEqual(
+            events,
+            [.done(messageId: "message-1", model: "gpt-test", latencyMs: 1)]
+        )
     }
 
     // MARK: - Billing

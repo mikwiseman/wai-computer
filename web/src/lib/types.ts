@@ -88,7 +88,7 @@ export interface SelfHostProvisionResponse {
 }
 
 export interface SelfHostMigrationPreflight {
-  status: "ready";
+  status: "manual_review_required";
   owned_exportable: string[];
   reconnect_required: string[];
   server_local: string[];

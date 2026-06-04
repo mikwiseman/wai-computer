@@ -266,11 +266,17 @@ public struct AgentActionListResponse: Codable, Sendable, Equatable {
     public let actions: [AgentAction]
 }
 
+public enum AgentActionDecision: String, Codable, Sendable, Equatable {
+    case once
+    case always
+    case reject
+}
+
 public struct ResolveAgentActionRequest: Codable, Sendable, Equatable {
-    public let decision: String
+    public let decision: AgentActionDecision
     public let editedArgs: [String: JSONValue]?
 
-    public init(decision: String, editedArgs: [String: JSONValue]? = nil) {
+    public init(decision: AgentActionDecision, editedArgs: [String: JSONValue]? = nil) {
         self.decision = decision
         self.editedArgs = editedArgs
     }

@@ -67,7 +67,7 @@ final class MacAgentsViewModel: ObservableObject {
         }
     }
 
-    func resolve(action: AgentAction, decision: String) async {
+    func resolve(action: AgentAction, decision: AgentActionDecision) async {
         await perform(status: "Action resolved.") {
             guard let agentId = action.agentId, let runId = action.runId else {
                 throw MacAgentsError.missingActionScope
@@ -117,62 +117,89 @@ final class MacAgentsViewModel: ObservableObject {
 
 struct MacAgentsView: View {
     @EnvironmentObject private var languageManager: LanguageManager
+    private let apiClient: APIClient
+    private let recordings: [Recording]
     @StateObject private var model: MacAgentsViewModel
     @AppStorage("desktopComputerUseEnabled") private var computerUseEnabled = false
+    @State private var controlsExpanded = false
     @State private var agentName = ""
     @State private var agentNote = ""
     @State private var reminderText = ""
     @State private var runObjective = ""
     @State private var reminderDueAt = Date().addingTimeInterval(3_600)
 
-    init(apiClient: APIClient) {
+    init(apiClient: APIClient, recordings: [Recording]) {
+        self.apiClient = apiClient
+        self.recordings = recordings
         _model = StateObject(wrappedValue: MacAgentsViewModel(apiClient: apiClient))
     }
 
     var body: some View {
         VStack(spacing: 0) {
-            header
-            WaiDivider()
+            CompanionView(
+                apiClient: apiClient,
+                recordings: recordings,
+                showsConversationSwitcher: true
+            )
+            .environment(\.locale, MacDateFormatting.locale(for: languageManager.current))
+            .companionAccentColor(Palette.accent)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-            ScrollView {
-                VStack(alignment: .leading, spacing: Spacing.lg) {
-                    banners
-                    edgeControl
-                    forms
-                    agentsSection
-                    approvalsSection
-                    remindersSection
-                }
-                .frame(maxWidth: 920, alignment: .topLeading)
-                .padding(Spacing.lg)
-                .frame(maxWidth: .infinity, alignment: .topLeading)
-            }
+            controlsDrawer
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .task { await model.load() }
     }
 
-    private var header: some View {
-        HStack {
-            VStack(alignment: .leading, spacing: Spacing.xs) {
-                Text(t("Agents", "Агенты"))
-                    .font(Typography.displaySmall)
+    private var controlsDrawer: some View {
+        VStack(spacing: 0) {
+            WaiDivider()
 
-                Text(t("Run tasks, approve actions, and schedule reminders.", "Запускай задачи, подтверждай действия и ставь напоминания."))
-                    .font(Typography.bodySmall)
-                    .foregroundStyle(Palette.textSecondary)
+            DisclosureGroup(isExpanded: $controlsExpanded) {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: Spacing.lg) {
+                        banners
+                        edgeControl
+                        forms
+                        agentsSection
+                        approvalsSection
+                        remindersSection
+                    }
+                    .frame(maxWidth: 920, alignment: .topLeading)
+                    .padding(.top, Spacing.md)
+                    .padding(.bottom, Spacing.lg)
+                }
+                .frame(maxHeight: 360)
+            } label: {
+                HStack(spacing: Spacing.md) {
+                    Label(t("Agent controls", "Управление агентами"), systemImage: "slider.horizontal.3")
+                        .font(Typography.headingMedium)
+                        .foregroundStyle(Palette.textPrimary)
+
+                    Text(macActionStatusText)
+                        .font(Typography.caption)
+                        .foregroundStyle(Palette.textSecondary)
+
+                    Spacer()
+
+                    Button(t("Refresh", "Обновить")) {
+                        Task { await model.load() }
+                    }
+                    .help(t("Refresh agent controls", "Обновить управление агентами"))
+                    .disabled(model.isLoading)
+                }
             }
-
-            Spacer()
-
-            Button(t("Refresh", "Обновить")) {
-                Task { await model.load() }
-            }
-            .help(t("Refresh agents", "Обновить агентов"))
-            .disabled(model.isLoading)
+            .accessibilityIdentifier("mac-agents-controls")
+            .padding(.horizontal, Spacing.lg)
+            .padding(.vertical, Spacing.md)
         }
-        .padding(.horizontal, Spacing.lg)
-        .padding(.vertical, Spacing.md)
+        .background(Palette.surfaceSubtle)
+    }
+
+    private var macActionStatusText: String {
+        computerUseEnabled
+            ? t("Mac actions on", "Действия Mac включены")
+            : t("Mac actions off", "Действия Mac выключены")
     }
 
     @ViewBuilder
@@ -301,12 +328,12 @@ struct MacAgentsView: View {
                         }
                         Spacer()
                         Button(t("Approve", "Подтвердить")) {
-                            Task { await model.resolve(action: action, decision: "once") }
+                            Task { await model.resolve(action: action, decision: .once) }
                         }
                         .disabled(model.isLoading)
 
                         Button(t("Reject", "Отклонить"), role: .destructive) {
-                            Task { await model.resolve(action: action, decision: "reject") }
+                            Task { await model.resolve(action: action, decision: .reject) }
                         }
                         .disabled(model.isLoading)
                     }

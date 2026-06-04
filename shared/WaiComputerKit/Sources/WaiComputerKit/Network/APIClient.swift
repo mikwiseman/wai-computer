@@ -1828,6 +1828,7 @@ public actor APIClient {
         content: String,
         viewingRecordingId: String? = nil,
         viewingFolderId: String? = nil,
+        clientCapabilities: [String] = ["actions_v1"],
         now: Date = Date(),
         timeZone: TimeZone = .current,
         calendar: Calendar = .current
@@ -1844,6 +1845,7 @@ public actor APIClient {
             let client_timezone: String
             let viewing_recording_id: String?
             let viewing_folder_id: String?
+            let client_capabilities: [String]
         }
         var dayCal = calendar
         dayCal.timeZone = timeZone
@@ -1857,7 +1859,8 @@ public actor APIClient {
             client_local_date: dayFormatter.string(from: now),
             client_timezone: timeZone.identifier,
             viewing_recording_id: viewingRecordingId,
-            viewing_folder_id: viewingFolderId
+            viewing_folder_id: viewingFolderId,
+            client_capabilities: clientCapabilities
         )
         let path = "/api/companion/chats/\(chatId)/messages"
 
