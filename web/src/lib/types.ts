@@ -694,7 +694,13 @@ export interface CompanionConversationList {
 }
 
 export type CompanionEvent =
-  | { type: "turn_start"; message_id: string; conversation_id: string }
+  | {
+      type: "turn_start";
+      message_id: string;
+      conversation_id: string;
+      assistant_message_id?: string;
+      title?: string;
+    }
   | { type: "tool_call"; call_id: string; tool: string; args: Record<string, unknown> }
   | { type: "tool_result"; call_id: string; summary: string }
   | { type: "token"; text: string }

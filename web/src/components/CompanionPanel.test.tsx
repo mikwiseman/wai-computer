@@ -18,6 +18,8 @@ const mockGetChat = vi.fn<() => Promise<CompanionConversationDetail>>();
 const mockPatchChat = vi.fn<() => Promise<CompanionConversation>>();
 const mockDeleteChat = vi.fn<() => Promise<void>>();
 const mockStreamMessage = vi.fn<() => AsyncGenerator<CompanionEvent, void, unknown>>();
+const mockResolveAction =
+  vi.fn<() => Promise<{ action_id: string; status: string; recipient: string | null }>>();
 
 vi.mock("@/lib/companion", () => ({
   listChats: (...args: unknown[]) => mockListChats(...(args as [])),
@@ -26,6 +28,7 @@ vi.mock("@/lib/companion", () => ({
   patchChat: (...args: unknown[]) => mockPatchChat(...(args as [])),
   deleteChat: (...args: unknown[]) => mockDeleteChat(...(args as [])),
   streamMessage: (...args: unknown[]) => mockStreamMessage(...(args as [])),
+  resolveAction: (...args: unknown[]) => mockResolveAction(...(args as [])),
 }));
 
 const recordings: Recording[] = [
@@ -74,6 +77,7 @@ describe("CompanionPanel", () => {
     mockPatchChat.mockReset();
     mockDeleteChat.mockReset();
     mockStreamMessage.mockReset();
+    mockResolveAction.mockReset();
     Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
       configurable: true,
       value: vi.fn(),
@@ -744,5 +748,202 @@ describe("CompanionPanel", () => {
 
     expect(composer.value).toBe("line1\nline2");
     expect(mockStreamMessage).not.toHaveBeenCalled();
+  });
+
+  // ---- inline action approval (the agent's "hands") ----
+
+  const PROPOSE_AND_DONE: CompanionEvent[] = [
+    { type: "turn_start", message_id: "m1", conversation_id: "c1" },
+    { type: "token", text: "I'll message you." },
+    {
+      type: "action_proposed",
+      action_id: "act-1",
+      kind: "send",
+      tool: "send_message_telegram",
+      preview: "Send a Telegram message to you: “ping”",
+      expires_at: "2026-05-18T10:05:00Z",
+      recipient: "you",
+    },
+    {
+      type: "done",
+      message_id: "a1",
+      input_tokens: 1,
+      output_tokens: 1,
+      cached_tokens: null,
+      model: "gpt-5.5",
+      latency_ms: 10,
+    },
+  ];
+
+  async function startTurnWith(events: CompanionEvent[]) {
+    const user = userEvent.setup();
+    const chat = makeChat("c1", "Acting");
+    mockListChats.mockResolvedValue({ chats: [chat] });
+    mockGetChat.mockResolvedValue({ ...chat, messages: [] });
+    mockStreamMessage.mockImplementation(() => eventStream(events));
+    render(<CompanionPanel recordings={recordings} />);
+    await screen.findByTestId("companion-composer");
+    await user.type(screen.getByTestId("companion-composer"), "remind me to ping");
+    await user.click(screen.getByRole("button", { name: /^Ask$/i }));
+    return user;
+  }
+
+  it("renders an inline approval card for a proposed action and approves it", async () => {
+    mockResolveAction.mockResolvedValue({
+      action_id: "act-1",
+      status: "executed",
+      recipient: "you",
+    });
+    const user = await startTurnWith(PROPOSE_AND_DONE);
+
+    // Previously this event was silently dropped; now it is an approvable card.
+    const card = await screen.findByTestId("companion-action-card");
+    expect(card).toHaveTextContent("Send a Telegram message to you");
+
+    await user.click(screen.getByTestId("companion-action-approve"));
+
+    await waitFor(() => {
+      expect(mockResolveAction).toHaveBeenCalledWith("c1", "act-1", "once");
+    });
+    expect(await screen.findByTestId("companion-action-status")).toHaveTextContent("Done");
+  });
+
+  it("approves an action 'always' through the secondary button", async () => {
+    mockResolveAction.mockResolvedValue({
+      action_id: "act-1",
+      status: "executed",
+      recipient: "you",
+    });
+    const user = await startTurnWith(PROPOSE_AND_DONE);
+    await screen.findByTestId("companion-action-card");
+
+    await user.click(screen.getByTestId("companion-action-always"));
+
+    await waitFor(() => {
+      expect(mockResolveAction).toHaveBeenCalledWith("c1", "act-1", "always");
+    });
+  });
+
+  it("rejects a proposed action", async () => {
+    mockResolveAction.mockResolvedValue({
+      action_id: "act-1",
+      status: "rejected",
+      recipient: "you",
+    });
+    const user = await startTurnWith(PROPOSE_AND_DONE);
+    await screen.findByTestId("companion-action-card");
+
+    await user.click(screen.getByTestId("companion-action-reject"));
+
+    await waitFor(() => {
+      expect(mockResolveAction).toHaveBeenCalledWith("c1", "act-1", "reject");
+    });
+    expect(await screen.findByTestId("companion-action-status")).toHaveTextContent("Rejected");
+  });
+
+  it("surfaces the gate's verdict verbatim when an approval has expired", async () => {
+    mockResolveAction.mockRejectedValue(
+      new ApiError(410, "Approval window elapsed (timeout == deny)"),
+    );
+    const user = await startTurnWith(PROPOSE_AND_DONE);
+    await screen.findByTestId("companion-action-card");
+
+    await user.click(screen.getByTestId("companion-action-approve"));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Approval window elapsed");
+    expect(await screen.findByTestId("companion-action-status")).toHaveTextContent("Expired");
+  });
+
+  it("handles contract events with no card without dropping the turn", async () => {
+    const user = userEvent.setup();
+    const chat = makeChat("c1", "Quiet");
+    mockListChats.mockResolvedValue({ chats: [chat] });
+    mockGetChat
+      .mockResolvedValueOnce({ ...chat, messages: [] })
+      .mockResolvedValueOnce({
+        ...chat,
+        messages: [
+          {
+            id: "a1",
+            role: "assistant",
+            content: [{ type: "text", text: "All set." }],
+            tool_calls: null,
+            citations: [],
+            model: "gpt-5.5",
+            input_tokens: 1,
+            output_tokens: 1,
+            cached_tokens: null,
+            latency_ms: 1,
+            created_at: "2026-05-18T10:00:02Z",
+          },
+        ],
+      });
+    mockStreamMessage.mockImplementation(() =>
+      eventStream([
+        { type: "turn_start", message_id: "m1", conversation_id: "c1" },
+        { type: "memory_updated", block: "human", operation: "append" },
+        { type: "narration", text: "Opening Mail…" },
+        { type: "desktop_action", action_id: "d1", command: {}, device_target: null },
+        { type: "token", text: "All set." },
+        {
+          type: "done",
+          message_id: "a1",
+          input_tokens: 1,
+          output_tokens: 1,
+          cached_tokens: null,
+          model: "gpt-5.5",
+          latency_ms: 1,
+        },
+      ]),
+    );
+
+    render(<CompanionPanel recordings={recordings} />);
+    await screen.findByTestId("companion-composer");
+    await user.type(screen.getByTestId("companion-composer"), "do a thing");
+    await user.click(screen.getByRole("button", { name: /^Ask$/i }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("companion-message-assistant")).toHaveTextContent("All set.");
+    });
+    expect(screen.queryByTestId("companion-action-card")).not.toBeInTheDocument();
+  });
+
+  it("titles an untitled thread live from the turn_start title", async () => {
+    const user = userEvent.setup();
+    const chat = makeChat("c1"); // untitled
+    mockListChats.mockResolvedValue({ chats: [chat] });
+    mockGetChat.mockResolvedValue({ ...chat, messages: [] });
+    mockStreamMessage.mockImplementation(() =>
+      eventStream([
+        {
+          type: "turn_start",
+          message_id: "m1",
+          conversation_id: "c1",
+          assistant_message_id: "a1",
+          title: "Ping reminder",
+        },
+        { type: "token", text: "ok" },
+        {
+          type: "done",
+          message_id: "a1",
+          input_tokens: 1,
+          output_tokens: 1,
+          cached_tokens: null,
+          model: "gpt-5.5",
+          latency_ms: 1,
+        },
+      ]),
+    );
+
+    render(<CompanionPanel recordings={recordings} />);
+    await screen.findByTestId("companion-composer");
+    await user.type(screen.getByTestId("companion-composer"), "remind me");
+    await user.click(screen.getByRole("button", { name: /^Ask$/i }));
+
+    // The server-assigned title lands live in the thread list (no manual reload).
+    await user.click(await screen.findByTestId("companion-toggle-history"));
+    await waitFor(() => {
+      expect(screen.getByText("Ping reminder")).toBeInTheDocument();
+    });
   });
 });

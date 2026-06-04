@@ -2356,6 +2356,62 @@ a.primary-button[aria-disabled="true"]:hover {
   gap: 0.75rem;
 }
 
+/* Inline approval cards: the agent proposed an action (send / write / control
+ * the Mac) and the user approves or rejects it right in the thread. */
+.companion-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  max-width: 860px;
+}
+
+.companion-actions__heading {
+  font-size: var(--font-label-size);
+  color: var(--ink-soft);
+}
+
+.action-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: 8px;
+  background: var(--surface-subtle);
+  padding: 0.85rem 1rem;
+}
+
+.action-card__preview {
+  font: var(--font-reading);
+}
+
+.action-card__buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.action-card__approve {
+  border: none;
+  border-radius: 8px;
+  background: var(--accent);
+  color: #fff;
+  cursor: pointer;
+  font-size: var(--font-label-size);
+  font-weight: 600;
+  padding: 0.4rem 0.9rem;
+}
+
+.action-card__approve:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.action-card__status {
+  font-size: var(--font-label-size);
+  color: var(--ink-soft);
+}
+
 .source-list {
   display: grid;
   gap: 0.6rem;

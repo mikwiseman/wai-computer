@@ -8,6 +8,7 @@ import {
   getChat,
   listChats,
   patchChat,
+  resolveAction,
   streamMessage,
 } from "@/lib/companion";
 import { ApiError } from "@/lib/http";
@@ -49,6 +50,11 @@ interface CompanionCopy {
   somethingWentWrong: string;
   chatLabelPrefix: string;
   recordingFallback: string;
+  actionsHeading: string;
+  approve: string;
+  approveAlways: string;
+  reject: string;
+  actionStatus: (status: string) => string;
 }
 
 const COPY: Record<Locale, CompanionCopy> = {
@@ -86,6 +92,18 @@ const COPY: Record<Locale, CompanionCopy> = {
     somethingWentWrong: "Something went wrong",
     chatLabelPrefix: "Thread",
     recordingFallback: "Recording",
+    actionsHeading: "Needs your approval",
+    approve: "Approve",
+    approveAlways: "Always",
+    reject: "Reject",
+    actionStatus: (s) =>
+      ({
+        executed: "Done",
+        rejected: "Rejected",
+        dispatched: "Sent to your Mac",
+        expired: "Expired",
+        failed: "Failed",
+      })[s] ?? s,
   },
   ru: {
     heading: "Спросить Wai",
@@ -121,6 +139,18 @@ const COPY: Record<Locale, CompanionCopy> = {
     somethingWentWrong: "Что-то пошло не так",
     chatLabelPrefix: "Диалог",
     recordingFallback: "Запись",
+    actionsHeading: "Нужно ваше подтверждение",
+    approve: "Подтвердить",
+    approveAlways: "Всегда",
+    reject: "Отклонить",
+    actionStatus: (s) =>
+      ({
+        executed: "Готово",
+        rejected: "Отклонено",
+        dispatched: "Отправлено на ваш Mac",
+        expired: "Истекло",
+        failed: "Ошибка",
+      })[s] ?? s,
   },
 };
 
@@ -153,6 +183,18 @@ interface StreamingAssistant {
   text: string;
   citations: StreamingCitation[];
   toolCalls: { call_id: string; tool: string; summary: string | null }[];
+}
+
+interface ProposedAction {
+  action_id: string;
+  kind: string;
+  tool: string;
+  preview: string;
+  recipient: string | null;
+  expires_at: string;
+  // pending | resolving | executed | rejected | dispatched | expired | failed
+  status: string;
+  detail?: string;
 }
 
 function formatError(error: unknown, copy: CompanionCopy): string {
@@ -215,6 +257,7 @@ export function CompanionPanel({
   const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
   const [renameTarget, setRenameTarget] = useState<{ chatId: string; value: string } | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
+  const [pendingActions, setPendingActions] = useState<ProposedAction[]>([]);
   const abortRef = useRef<AbortController | null>(null);
   const threadEndRef = useRef<HTMLDivElement | null>(null);
   const initialized = useRef(false);
@@ -251,6 +294,7 @@ export function CompanionPanel({
   }, [initialChatId]);
 
   useEffect(() => {
+    setPendingActions([]);
     if (!activeChatId) {
       setMessages([]);
       return;
@@ -437,6 +481,18 @@ export function CompanionPanel({
   function handleEvent(evt: CompanionEvent, streaming: StreamingAssistant) {
     switch (evt.type) {
       case "turn_start":
+        // The server titles a new chat on its first turn; reflect it live so the
+        // thread list stops showing "Thread · HH:MM" before the reload.
+        if (evt.title) {
+          const title = evt.title;
+          setChats((prev) =>
+            prev.map((c) =>
+              c.id === activeChatId && !(c.title && c.title.trim())
+                ? { ...c, title }
+                : c,
+            ),
+          );
+        }
         return;
       case "tool_call":
         streaming.toolCalls.push({
@@ -473,6 +529,43 @@ export function CompanionPanel({
           setStreamingAssistant({ ...streaming });
         }
         return;
+      case "action_proposed":
+        // The agent wants to act (send / write / control the Mac). Surface it as
+        // an inline card the user can approve or reject — previously this event
+        // was silently dropped, so the agent could never actually do anything.
+        setPendingActions((prev) =>
+          prev.some((a) => a.action_id === evt.action_id)
+            ? prev
+            : [
+                ...prev,
+                {
+                  action_id: evt.action_id,
+                  kind: evt.kind,
+                  tool: evt.tool,
+                  preview: evt.preview,
+                  recipient: evt.recipient,
+                  expires_at: evt.expires_at,
+                  status: "pending",
+                },
+              ],
+        );
+        return;
+      case "action_result":
+        setPendingActions((prev) =>
+          prev.map((a) =>
+            a.action_id === evt.action_id
+              ? { ...a, status: evt.status, detail: evt.detail }
+              : a,
+          ),
+        );
+        return;
+      case "memory_updated":
+      case "narration":
+      case "desktop_action":
+        // Part of the event contract but not surfaced as their own UI here;
+        // handled so they are never silently dropped. (Mutating actions arrive
+        // as action_proposed above and are approved in-thread.)
+        return;
       case "done":
         setStage("idle");
         return;
@@ -480,6 +573,39 @@ export function CompanionPanel({
         // Handled in the outer loop, but defensive.
         setError(evt.message);
         return;
+    }
+  }
+
+  async function handleResolveAction(
+    actionId: string,
+    decision: "once" | "always" | "reject",
+  ) {
+    if (!activeChatId) return;
+    setError(null);
+    setPendingActions((prev) =>
+      prev.map((a) =>
+        a.action_id === actionId ? { ...a, status: "resolving" } : a,
+      ),
+    );
+    try {
+      const res = await resolveAction(activeChatId, actionId, decision);
+      setPendingActions((prev) =>
+        prev.map((a) =>
+          a.action_id === actionId ? { ...a, status: res.status } : a,
+        ),
+      );
+    } catch (e) {
+      // Surface the gate's verdict verbatim (409 already-resolved, 410 expired,
+      // …) — no silent fallback. Reflect an expired action so the card locks.
+      setError(formatError(e, copy));
+      const expired = e instanceof ApiError && e.status === 410;
+      setPendingActions((prev) =>
+        prev.map((a) =>
+          a.action_id === actionId
+            ? { ...a, status: expired ? "expired" : "pending" }
+            : a,
+        ),
+      );
     }
   }
 
@@ -665,6 +791,22 @@ export function CompanionPanel({
           </article>
         ) : null}
 
+        {pendingActions.length > 0 ? (
+          <div className="companion-actions" data-testid="companion-actions">
+            <strong className="companion-actions__heading">
+              {copy.actionsHeading}
+            </strong>
+            {pendingActions.map((a) => (
+              <ActionCard
+                key={a.action_id}
+                action={a}
+                copy={copy}
+                onResolve={(d) => void handleResolveAction(a.action_id, d)}
+              />
+            ))}
+          </div>
+        ) : null}
+
         <div ref={threadEndRef} />
 
         {error ? (
@@ -722,6 +864,66 @@ export function CompanionPanel({
         />
       ) : null}
     </section>
+  );
+}
+
+function ActionCard({
+  action,
+  copy,
+  onResolve,
+}: {
+  action: ProposedAction;
+  copy: CompanionCopy;
+  onResolve: (decision: "once" | "always" | "reject") => void;
+}) {
+  const open = action.status === "pending" || action.status === "resolving";
+  const busy = action.status === "resolving";
+  return (
+    <div
+      className="action-card"
+      data-testid="companion-action-card"
+      data-status={action.status}
+    >
+      <div className="action-card__preview">{action.preview}</div>
+      {open ? (
+        <div className="action-card__buttons">
+          <button
+            type="button"
+            className="action-card__approve"
+            disabled={busy}
+            onClick={() => onResolve("once")}
+            data-testid="companion-action-approve"
+          >
+            {copy.approve}
+          </button>
+          <button
+            type="button"
+            className="ghost-button compact-button"
+            disabled={busy}
+            onClick={() => onResolve("always")}
+            data-testid="companion-action-always"
+          >
+            {copy.approveAlways}
+          </button>
+          <button
+            type="button"
+            className="ghost-button compact-button danger-button"
+            disabled={busy}
+            onClick={() => onResolve("reject")}
+            data-testid="companion-action-reject"
+          >
+            {copy.reject}
+          </button>
+        </div>
+      ) : (
+        <div
+          className="action-card__status"
+          data-testid="companion-action-status"
+        >
+          {copy.actionStatus(action.status)}
+        </div>
+      )}
+    </div>
   );
 }
 

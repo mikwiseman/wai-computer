@@ -62,6 +62,33 @@ export async function deleteChat(chatId: string): Promise<void> {
   await apiFetchResponse(`${COMPANION}/chats/${chatId}`, { method: "DELETE" });
 }
 
+export interface ResolveActionResult {
+  action_id: string;
+  status: string; // "executed" | "rejected" | "dispatched"
+  recipient: string | null;
+}
+
+/**
+ * Approve (once/always) or reject a pending mutating action the agent proposed
+ * during a turn. The approval ledger and the side effect live server-side; this
+ * only records the decision. Throws `ApiError` on 404 / 409 (already resolved) /
+ * 410 (expired) — the caller MUST surface it (no silent fallback).
+ */
+export function resolveAction(
+  chatId: string,
+  actionId: string,
+  decision: "once" | "always" | "reject",
+  editedArgs?: Record<string, unknown>,
+): Promise<ResolveActionResult> {
+  return apiFetch<ResolveActionResult>(
+    `${COMPANION}/chats/${chatId}/actions/${actionId}/resolve`,
+    {
+      method: "POST",
+      body: JSON.stringify({ decision, edited_args: editedArgs ?? null }),
+    },
+  );
+}
+
 async function openStream(
   url: string,
   body: string,
