@@ -127,6 +127,7 @@ async def test_self_host_migration_contract_describes_agent_data_and_exclusions(
     owned_tables = {row["table"]: row for row in payload["owned_exportable"]["tables"]}
     excluded_tables = {row["table"] for row in payload["excluded"]["tables"]}
     reconnect_tables = {row["table"] for row in payload["reconnect_required"]["tables"]}
+    server_local_tables = {row["table"] for row in payload["server_local"]["tables"]}
     assert owned_tables["agents"]["scope_strategy"] == "owner_scoped_user_id"
     assert owned_tables["agents"]["contains_user_content"] is True
     assert owned_tables["agent_runs"]["scope_strategy"] == "owner_scoped_user_id"
@@ -141,6 +142,8 @@ async def test_self_host_migration_contract_describes_agent_data_and_exclusions(
     }
     assert "billing_plans" in excluded_tables
     assert "refresh_tokens" in reconnect_tables
+    assert owned_tables["telegram_accounts"]["requires_reconnect"] is True
+    assert "telegram_updates" in server_local_tables
 
 
 @pytest.mark.asyncio

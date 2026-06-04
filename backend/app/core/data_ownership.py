@@ -317,8 +317,9 @@ DATA_OWNERSHIP: tuple[TableOwnershipEntry, ...] = (
     TableOwnershipEntry(
         "telegram_accounts",
         "owned_exportable",
-        "Linked Telegram account metadata.",
+        "Linked Telegram account metadata; the destination server must reconnect its bot.",
         contains_user_content=True,
+        requires_reconnect=True,
     ),
     TableOwnershipEntry(
         "telegram_pairings",
@@ -331,7 +332,9 @@ DATA_OWNERSHIP: tuple[TableOwnershipEntry, ...] = (
         "Short-lived Telegram bot link codes are server-local.",
     ),
     TableOwnershipEntry(
-        "telegram_updates", "owned_exportable", "Telegram update processing ledger."
+        "telegram_updates",
+        "self_host_local",
+        "Telegram webhook idempotency ledger is local to the receiving server.",
     ),
     TableOwnershipEntry(
         "dictation_benchmark_votes", "owned_exportable", "User benchmark vote metadata."

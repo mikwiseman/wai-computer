@@ -43,6 +43,9 @@ def test_enqueue_agent_run_surfaces_broker_failure(monkeypatch):
 def test_self_host_contract_helper_classifies_owner_edges():
     assert _table_scope_strategy("agents") == "owner_scoped_user_id"
     assert _table_scope_strategy("agent_steps") == "derived_owner_scoped"
+    assert _table_scope_strategy("ai_usage_events") == "owner_scoped_user_id"
+    assert _table_scope_strategy("deepgram_usage_events") == "owner_scoped_user_id"
+    assert _table_scope_strategy("entity_page_snapshots") == "owner_scoped_user_id"
     assert _table_scope_strategy("missing_table") == "model_table_missing"
 
     edge = _derived_owner_edge("agent_steps")
@@ -65,3 +68,15 @@ def test_self_host_contract_groups_non_owned_tables_and_artifacts():
     assert contract["server_local"]["artifacts"]
     assert contract["reconnect_required"]["artifacts"] == []
     assert contract["excluded"]["artifacts"] == []
+
+
+def test_self_host_owned_tables_have_exportable_scope() -> None:
+    contract = migration_contract_response()
+    broken: list[str] = []
+    for row in contract["owned_exportable"]["tables"]:
+        if row["scope_strategy"] == "model_table_missing":
+            broken.append(f"{row['table']}:missing")
+        if row["scope_strategy"] == "derived_owner_scoped" and "derived_owner_edge" not in row:
+            broken.append(f"{row['table']}:missing_owner_edge")
+
+    assert broken == []

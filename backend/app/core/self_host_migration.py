@@ -15,6 +15,18 @@ MIGRATION_CONTRACT_VERSION = "2026-06-03"
 ARCHIVE_FORMAT = "wai-self-host-export-v1"
 
 DERIVED_OWNER_EDGES: dict[str, dict[str, str]] = {
+    "recording_tags": {
+        "parent_table": "tags",
+        "local_column": "tag_id",
+        "parent_column": "id",
+        "owner_column": "user_id",
+    },
+    "entity_relations": {
+        "parent_table": "entities",
+        "local_column": "source_id",
+        "parent_column": "id",
+        "owner_column": "user_id",
+    },
     "brain_space_members": {
         "parent_table": "brain_spaces",
         "local_column": "space_id",
@@ -87,6 +99,36 @@ DERIVED_OWNER_EDGES: dict[str, dict[str, str]] = {
         "parent_column": "id",
         "owner_column": "user_id",
     },
+    "item_chunks": {
+        "parent_table": "items",
+        "local_column": "item_id",
+        "parent_column": "id",
+        "owner_column": "user_id",
+    },
+    "item_summaries": {
+        "parent_table": "items",
+        "local_column": "item_id",
+        "parent_column": "id",
+        "owner_column": "user_id",
+    },
+    "mcp_ingestion_runs": {
+        "parent_table": "mcp_connections",
+        "local_column": "connection_id",
+        "parent_column": "id",
+        "owner_column": "user_id",
+    },
+    "billing_invoices": {
+        "parent_table": "billing_subscriptions",
+        "local_column": "subscription_id",
+        "parent_column": "id",
+        "owner_column": "user_id",
+    },
+    "billing_events": {
+        "parent_table": "billing_subscriptions",
+        "local_column": "subscription_id",
+        "parent_column": "id",
+        "owner_column": "user_id",
+    },
     "transcript_segments": {
         "parent_table": "recordings",
         "local_column": "recording_id",
@@ -97,6 +139,8 @@ DERIVED_OWNER_EDGES: dict[str, dict[str, str]] = {
 
 
 def _table_scope_strategy(table_name: str) -> str:
+    if table_name == "users":
+        return "owner_scoped_primary_key"
     table = Base.metadata.tables.get(table_name)
     if table is None:
         return "model_table_missing"

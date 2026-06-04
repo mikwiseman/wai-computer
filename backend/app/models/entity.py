@@ -1,9 +1,20 @@
 """Entity and knowledge graph models."""
 
 import uuid
+from datetime import datetime
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import Float, ForeignKey, Index, String, Text, UniqueConstraint
+from sqlalchemy import (
+    DateTime,
+    Float,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    func,
+)
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -122,6 +133,41 @@ class EntityMention(Base, UUIDMixin, TimestampMixin):
     weight: Mapped[float] = mapped_column(
         Float, nullable=False, default=1.0, server_default="1.0"
     )
+
+
+class EntityPageSnapshot(Base, UUIDMixin, TimestampMixin):
+    """Generated wiki-style snapshot for an entity page."""
+
+    __tablename__ = "entity_page_snapshots"
+    __table_args__ = (
+        UniqueConstraint("entity_id", name="uq_entity_page_snapshots_entity"),
+        Index("ix_entity_page_snapshots_user_id", "user_id"),
+        Index("ix_entity_page_snapshots_entity_id", "entity_id"),
+    )
+
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    entity_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("entities.id", ondelete="CASCADE"), nullable=False
+    )
+    source_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    source_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    overview: Mapped[str] = mapped_column(Text, nullable=False)
+    facts: Mapped[list] = mapped_column(JSONB, nullable=False)
+    citations: Mapped[list] = mapped_column(JSONB, nullable=False)
+    timeline: Mapped[list] = mapped_column(JSONB, nullable=False)
+    related_explanations: Mapped[list] = mapped_column(JSONB, nullable=False)
+    questions: Mapped[list] = mapped_column(JSONB, nullable=False)
+    actions: Mapped[list] = mapped_column(JSONB, nullable=False)
+    compiled_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )
+
+    user: Mapped["User"] = relationship("User")
+    entity: Mapped["Entity"] = relationship("Entity")
 
 
 class Tag(Base, UUIDMixin):
