@@ -69,6 +69,9 @@ public struct CompanionView: View {
     /// transcribes speech into the focused composer field. nil hides the mic.
     private let onVoiceInput: (() -> Void)?
     private let initialChatId: String?
+    /// Type-and-go: a first message to auto-send once the thread is active.
+    private let initialMessage: String?
+    private let onInitialMessageConsumed: (() -> Void)?
     private let showsConversationSwitcher: Bool
     @Environment(\.locale) private var locale
     @Environment(\.companionAccentColor) private var companionAccentColor
@@ -97,6 +100,7 @@ public struct CompanionView: View {
     @State private var isRenamingChat = false
     @State private var deletingChat: CompanionConversation?
     @State private var pendingActions: [PendingActionVM] = []
+    @State private var didAutoSendInitial = false
     private let contentMaxWidth: CGFloat = 880
 
     private enum TurnStage {
@@ -118,12 +122,16 @@ public struct CompanionView: View {
         apiClient: APIClient,
         recordings: [Recording],
         initialChatId: String? = nil,
+        initialMessage: String? = nil,
+        onInitialMessageConsumed: (() -> Void)? = nil,
         showsConversationSwitcher: Bool = true,
         onVoiceInput: (() -> Void)? = nil
     ) {
         self.apiClient = apiClient
         self.recordings = recordings
         self.initialChatId = initialChatId
+        self.initialMessage = initialMessage
+        self.onInitialMessageConsumed = onInitialMessageConsumed
         self.showsConversationSwitcher = showsConversationSwitcher
         self.onVoiceInput = onVoiceInput
     }
@@ -723,6 +731,7 @@ public struct CompanionView: View {
         if !showsConversationSwitcher, let initialChatId {
             await MainActor.run { activeChatId = initialChatId }
             await loadChat(initialChatId)
+            await autoSendInitialIfNeeded()
             return
         }
 
@@ -743,9 +752,23 @@ public struct CompanionView: View {
             } else if let chatId = list.chats.first?.id {
                 await loadChat(chatId)
             }
+            await autoSendInitialIfNeeded()
         } catch {
             await MainActor.run { errorMessage = error.localizedDescription }
         }
+    }
+
+    /// Type-and-go: send the handed-in first message once the thread is active,
+    /// exactly once per mount (the inbox remounts this view per chat).
+    @MainActor
+    private func autoSendInitialIfNeeded() async {
+        guard !didAutoSendInitial,
+              let message = initialMessage?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !message.isEmpty,
+              activeChatId != nil else { return }
+        didAutoSendInitial = true
+        await send(text: message)
+        onInitialMessageConsumed?()
     }
 
     @MainActor
@@ -821,8 +844,8 @@ public struct CompanionView: View {
     }
 
     @MainActor
-    private func send() async {
-        let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)
+    private func send(text: String? = nil) async {
+        let trimmed = (text ?? input).trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
         input = ""
         errorMessage = nil

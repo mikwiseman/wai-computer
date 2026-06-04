@@ -49,6 +49,8 @@ struct MacInboxView: View {
     @State private var selectedDetail: InboxDetailRef?
     @State private var showingImporter = false
     @State private var focusedCreateMode: InboxCreateMode = .file
+    @State private var askDraft: String = ""
+    @State private var pendingChatMessage: String?
 
     init(
         apiClient: APIClient,
@@ -367,6 +369,8 @@ struct MacInboxView: View {
                     apiClient: apiClient,
                     recordings: recordings,
                     initialChatId: selectedDetail.id,
+                    initialMessage: pendingChatMessage,
+                    onInitialMessageConsumed: { pendingChatMessage = nil },
                     showsConversationSwitcher: false
                 )
                 .environment(\.locale, MacDateFormatting.locale(for: languageManager.current))
@@ -476,17 +480,11 @@ struct MacInboxView: View {
                             onSubmit: addDraft
                         )
                     case .ask:
-                        MacInboxInlineActionComposer(
-                            systemImage: "sparkles",
-                            title: t("Ask Wai", "Спросить Wai"),
-                            message: t(
-                                "Open a focused agent thread for search, memory, planning, or action.",
-                                "Откройте агентский диалог для поиска, памяти, планирования или действия."
-                            ),
-                            primaryTitle: t("Start Ask Wai Thread", "Начать диалог с Wai"),
-                            accent: .orange,
+                        MacInboxAskComposer(
+                            draft: $askDraft,
                             isWorking: model.isAdding,
-                            action: startAskThread
+                            onSubmit: { startAskThread(message: askDraft) },
+                            onBlank: { startAskThread() }
                         )
                     }
                 }
@@ -537,9 +535,14 @@ struct MacInboxView: View {
         }
     }
 
-    private func startAskThread() {
+    private func startAskThread(message: String? = nil) {
+        let trimmed = message?.trimmingCharacters(in: .whitespacesAndNewlines)
         Task {
             if let detail = await model.newChat() {
+                if let trimmed, !trimmed.isEmpty {
+                    pendingChatMessage = trimmed
+                }
+                askDraft = ""
                 selectedDetail = detail
             }
         }
@@ -854,6 +857,67 @@ private struct MacInboxInlineActionComposer: View {
                 .stroke(Palette.border, lineWidth: 1)
         )
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+}
+
+private struct MacInboxAskComposer: View {
+    @Binding var draft: String
+    let isWorking: Bool
+    let onSubmit: () -> Void
+    let onBlank: () -> Void
+
+    @EnvironmentObject private var languageManager: LanguageManager
+
+    private var trimmed: String {
+        draft.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Spacing.sm) {
+            Text(t("Ask Wai", "Спросить Wai"))
+                .font(Typography.headingMedium)
+            TextField(
+                t(
+                    "Ask Wai to search, remember, plan, or act...",
+                    "Попросите Wai искать, помнить, планировать или действовать..."
+                ),
+                text: $draft,
+                axis: .vertical
+            )
+            .textFieldStyle(.roundedBorder)
+            .lineLimit(3...8)
+            .onSubmit { if !trimmed.isEmpty { onSubmit() } }
+            .accessibilityIdentifier("mac-inbox-ask-field")
+
+            HStack(spacing: Spacing.sm) {
+                Button(action: onSubmit) {
+                    if isWorking {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Text(t("Ask", "Спросить"))
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(trimmed.isEmpty || isWorking)
+                .accessibilityIdentifier("mac-inbox-ask-primary-button")
+
+                Button(t("Blank thread", "Пустой диалог"), action: onBlank)
+                    .buttonStyle(.bordered)
+                    .disabled(isWorking)
+                Spacer()
+            }
+        }
+        .padding(Spacing.lg)
+        .background(Palette.surfaceSubtle)
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(Palette.border, lineWidth: 1)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+
+    private func t(_ english: String, _ russian: String) -> String {
+        OnboardingL10n.text(english, russian, language: languageManager.current)
     }
 }
 
