@@ -393,9 +393,14 @@ test("web dashboard uses the universal Inbox shell", async ({ page }) => {
   await expect(page.getByTestId("workspace-title")).toContainText("Inbox");
   await expect(page.getByTestId("tab-library")).toHaveCount(0);
   await expect(page.getByTestId("tab-wai")).toHaveCount(0);
+  await expect(page.getByTestId("tab-agents")).toHaveCount(0);
   await expect(page.getByTestId("select-recording-rec-1")).toContainText("Existing recording");
   await expect(page.getByText("Launch PDF")).toBeVisible();
   await expect(page.getByText("Chat with Wai")).toBeVisible();
+
+  await page.goto("/dashboard?view=agents");
+  await expect(page.getByTestId("workspace-title")).toContainText("Inbox");
+  await expect(page.getByTestId("tab-agents")).toHaveCount(0);
 
   await page.getByRole("button", { name: "+ Add" }).click();
   await page.getByText("Create empty recording").click();

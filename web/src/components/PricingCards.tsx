@@ -70,7 +70,7 @@ const COPY: Record<
       features: [
         "No weekly word cap",
         "Permanent searchable memory",
-        "Agents + MCP access",
+        "Wai automation + MCP access",
         "Advanced search across everything",
         "Priority support",
       ],
@@ -115,7 +115,7 @@ const COPY: Record<
       features: [
         "Без недельного лимита на слова",
         "Постоянная память с поиском",
-        "Агенты + доступ к MCP",
+        "Автоматизация Wai + доступ к MCP",
         "Расширенный поиск по всему",
         "Приоритетная поддержка",
       ],

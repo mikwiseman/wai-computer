@@ -1350,8 +1350,24 @@ describe("DashboardClient", () => {
     expect(screen.queryByTestId("tab-library")).not.toBeInTheDocument();
     expect(screen.queryByTestId("tab-wai")).not.toBeInTheDocument();
     expect(screen.queryByTestId("tab-add")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("tab-agents")).not.toBeInTheDocument();
     expect(screen.getByTestId("sidebar-folders-label")).toBeInTheDocument();
     expect(screen.getByTestId("open-create-folder")).toBeInTheDocument();
+  });
+
+  it("routes legacy agents URLs to Inbox instead of rendering a separate agent surface", async () => {
+    arrangeHappyPathMocks();
+    window.history.pushState({}, "", "/dashboard?view=agents");
+
+    try {
+      render(<DashboardClient />);
+      await waitForDashboardReady();
+
+      expect(screen.getByTestId("workspace-title")).toHaveTextContent("Inbox");
+      expect(screen.queryByTestId("tab-agents")).not.toBeInTheDocument();
+    } finally {
+      window.history.pushState({}, "", "/dashboard");
+    }
   });
 
   // --- Folder creation flow ---

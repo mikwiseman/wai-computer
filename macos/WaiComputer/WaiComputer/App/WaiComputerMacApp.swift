@@ -213,13 +213,6 @@ struct WaiComputerMacApp: App {
                 }
                 .keyboardShortcut("f", modifiers: .command)
 
-                Button(t("Agents", "Агенты")) {
-                    NotificationCenter.default.post(name: .init("navigateTo"), object: "agents")
-                }
-                .keyboardShortcut("6", modifiers: .command)
-
-                Divider()
-
                 Button(t("History", "История")) {
                     NotificationCenter.default.post(name: .init("navigateTo"), object: "history")
                 }

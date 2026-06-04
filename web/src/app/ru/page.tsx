@@ -566,7 +566,7 @@ export default function RuHome() {
             <ul className={styles.pricingTeaserBullets} role="list">
               <li>Без недельного лимита на слова</li>
               <li>Постоянная память с поиском</li>
-              <li>Агенты + доступ к MCP</li>
+              <li>Автоматизация Wai + доступ к MCP</li>
             </ul>
           </article>
         </div>

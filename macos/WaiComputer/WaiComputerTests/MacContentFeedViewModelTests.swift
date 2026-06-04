@@ -72,13 +72,18 @@ final class MacContentFeedViewModelTests: XCTestCase {
         XCTAssertFalse(source.contains("Wai Chat"))
     }
 
-    func testAgentsViewUsesAskWaiConversationFirst() throws {
-        let source = try macSource("WaiComputer/Features/Agents/MacAgentsView.swift")
+    func testInboxIsTheOnlyAskWaiAgentSurface() throws {
+        let inboxSource = try macSource("WaiComputer/Features/Inbox/MacInboxView.swift")
+        let shellSource = try macSource("WaiComputer/App/MacContentView.swift")
 
-        XCTAssertTrue(source.contains("CompanionView("))
-        XCTAssertTrue(source.contains("Agent controls"))
-        XCTAssertFalse(source.contains("What should Wai do?"))
-        XCTAssertFalse(source.contains("mac-agents-prompt"))
+        XCTAssertTrue(inboxSource.contains("case .chat:"))
+        XCTAssertTrue(inboxSource.contains("CompanionView("))
+        XCTAssertTrue(inboxSource.contains("Ask Wai"))
+        XCTAssertTrue(inboxSource.contains("Search, remember, plan, or act"))
+        XCTAssertTrue(shellSource.contains(#"case "agents": selectedSection = .inbox"#))
+        XCTAssertFalse(shellSource.contains("case agents"))
+        XCTAssertFalse(shellSource.contains("MacAgentsView("))
+        XCTAssertFalse(shellSource.contains(#"sidebarRow(t("Agents""#))
     }
 
     func testInboxViewModelClearsStaleErrorAfterSuccessfulReload() throws {

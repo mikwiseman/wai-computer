@@ -133,7 +133,6 @@ struct MacMainView: View {
         case search
         case history
         case dictionary
-        case agents
         case wai
         case settings
     }
@@ -147,7 +146,7 @@ struct MacMainView: View {
         switch selectedSection {
         case .trash, .none:
             return true
-        case .inbox, .allRecordings, .folder(_), .content, .brain, .review, .search, .history, .dictionary, .agents, .wai, .settings:
+        case .inbox, .allRecordings, .folder(_), .content, .brain, .review, .search, .history, .dictionary, .wai, .settings:
             return false
         }
     }
@@ -207,8 +206,6 @@ struct MacMainView: View {
             return t("History", "История")
         case .dictionary:
             return t("Dictionary", "Словарь")
-        case .agents:
-            return t("Agents", "Агенты")
         case .wai:
             return t("Inbox", "Инбокс")
         case .settings:
@@ -534,7 +531,7 @@ struct MacMainView: View {
             case "review": selectedSection = .brain
             case "history": selectedSection = .history
             case "dictionary": selectedSection = .dictionary
-            case "agents": selectedSection = .agents
+            case "agents": selectedSection = .inbox
             case "search": selectedSection = .search
             case "trash": selectedSection = .trash
             case "wai": selectedSection = .inbox
@@ -662,7 +659,6 @@ struct MacMainView: View {
 
             Section {
                 sidebarRow(t("Search", "Поиск"), icon: "magnifyingglass", section: .search, identifier: "search")
-                sidebarRow(t("Agents", "Агенты"), icon: "sparkles", section: .agents, identifier: "agents")
                 sidebarRow(t("Settings", "Настройки"), icon: "gear", section: .settings, identifier: "settings")
             } header: {
                 Text(t("Tools", "Инструменты"))
@@ -923,12 +919,6 @@ struct MacMainView: View {
             DictationHistoryView()
         case .dictionary:
             DictationDictionaryView()
-        case .agents:
-            MacAgentsView(
-                apiClient: appState.getAPIClient(),
-                recordings: libraryViewModel.recordings
-            )
-                .environment(\.locale, MacDateFormatting.locale(for: languageManager.current))
         case .settings:
             MacSettingsView()
         }
@@ -1061,7 +1051,7 @@ struct MacMainView: View {
     /// open AND the user has opted in (default off) — never a silent 24/7 loop.
     @MainActor
     private func syncDesktopAgent() {
-        let shouldRunDesktopAgent = computerUseEnabled && (selectedSection == .inbox || selectedSection == .agents)
+        let shouldRunDesktopAgent = computerUseEnabled && selectedSection == .inbox
         guard shouldRunDesktopAgent else {
             desktopAgent.stop()
             return

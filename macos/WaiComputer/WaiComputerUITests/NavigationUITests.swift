@@ -66,6 +66,7 @@ final class NavigationUITests: XCTestCase {
             .firstMatch
         XCTAssertTrue(waitForElement(settings, in: app, timeout: 3))
 
+        XCTAssertFalse(app.descendants(matching: .any).matching(identifier: "sidebar-agents").firstMatch.exists)
         XCTAssertFalse(app.descendants(matching: .any).matching(identifier: "sidebar-meetings").firstMatch.exists)
         XCTAssertFalse(app.descendants(matching: .any).matching(identifier: "sidebar-notes").firstMatch.exists)
         XCTAssertFalse(app.descendants(matching: .any).matching(identifier: "sidebar-reflections").firstMatch.exists)

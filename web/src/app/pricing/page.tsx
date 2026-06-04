@@ -7,7 +7,7 @@ import styles from "../page.module.css";
 export const metadata: Metadata = {
   title: "Pricing — WaiComputer",
   description:
-    "WaiComputer is free for everyday voice notes. Upgrade to Pro for no weekly word cap, permanent memory, agents, and MCP.",
+    "WaiComputer is free for everyday voice notes. Upgrade to Pro for no weekly word cap, permanent memory, Wai automation, and MCP.",
   alternates: {
     canonical: "https://wai.computer/pricing",
     languages: {

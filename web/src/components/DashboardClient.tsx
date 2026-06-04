@@ -48,7 +48,6 @@ import { ItemDetail } from "@/components/ItemDetail";
 import { AudioUpload } from "@/components/AudioUpload";
 import { LiveRecorder } from "@/components/LiveRecorder";
 import { McpConnectSection } from "@/components/McpConnectSection";
-import { AgentsPanel } from "@/components/AgentsPanel";
 import { ApiKeysSection } from "@/components/ApiKeysSection";
 import { ServerDataSection } from "@/components/ServerDataSection";
 import { IdentityAndVoicePanel } from "@/components/IdentityAndVoicePanel";
@@ -91,7 +90,6 @@ type DashboardView =
   | "add"
   | "content"
   | "brain"
-  | "agents"
   | "library"
   | "folder"
   | "trash"
@@ -116,7 +114,6 @@ const DASHBOARD_VIEW_KEYS = [
   "add",
   "content",
   "brain",
-  "agents",
   "library",
   "trash",
   "search",
@@ -147,10 +144,12 @@ function viewFromCurrentLocation(): DashboardView | null {
 
   const params = new URLSearchParams(window.location.search);
   const requested = params.get("view") ?? params.get("tab");
+  if (requested === "agents") return "inbox";
   if (isDashboardView(requested)) return canonicalDashboardView(requested);
 
   const hash = window.location.hash.replace(/^#/, "");
   if (hash === "server-data" || hash === "settings") return "settings";
+  if (hash === "agents") return "inbox";
   if (isDashboardView(hash)) return canonicalDashboardView(hash);
   return null;
 }
@@ -174,7 +173,6 @@ interface DashboardCopy {
     search: { label: string; detail: string };
     history: { label: string; detail: string };
     dictionary: { label: string; detail: string };
-    agents: { label: string; detail: string };
     settings: { label: string; detail: string };
   };
   // Folder management
@@ -358,7 +356,6 @@ const COPY: Record<Locale, DashboardCopy> = {
       search: { label: "Search", detail: "Find a moment across transcripts" },
       history: { label: "Dictation History", detail: "Voice to text inserts" },
       dictionary: { label: "Dictionary", detail: "Custom dictation replacements" },
-      agents: { label: "Agents", detail: "Ask Wai and approve actions" },
       settings: { label: "Settings", detail: "Account, data, and integrations" },
     },
     folders: {
@@ -571,7 +568,6 @@ const COPY: Record<Locale, DashboardCopy> = {
       search: { label: "Поиск", detail: "Найти момент по всем расшифровкам" },
       history: { label: "История диктовки", detail: "Голос превращённый в текст" },
       dictionary: { label: "Словарь", detail: "Свои замены для диктовки" },
-      agents: { label: "Агенты", detail: "Запуски, подтверждения и напоминания" },
       settings: { label: "Настройки", detail: "Аккаунт, данные и интеграции" },
     },
     folders: {
@@ -1733,7 +1729,6 @@ export function DashboardClient() {
       header: locale === "ru" ? "Инструменты" : "Tools",
       items: [
         { key: "search", label: copy.nav.search.label, count: null },
-        { key: "agents", label: copy.nav.agents.label, count: null },
         { key: "settings", label: copy.nav.settings.label, count: null },
       ],
     },
@@ -2061,13 +2056,6 @@ export function DashboardClient() {
         {view === "dictate" ? <DictatePanel locale={locale} /> : null}
         {view === "history" ? renderHistoryView() : null}
         {view === "dictionary" ? renderDictionaryView() : null}
-        {view === "agents" ? (
-          <AgentsPanel
-            locale={locale}
-            recordings={recordings}
-            onError={setMessage}
-          />
-        ) : null}
         {view === "settings" ? renderSettingsView() : null}
       </main>
 
