@@ -96,12 +96,22 @@ public struct CompanionView: View {
     @State private var renameDraft: String = ""
     @State private var isRenamingChat = false
     @State private var deletingChat: CompanionConversation?
+    @State private var pendingActions: [PendingActionVM] = []
     private let contentMaxWidth: CGFloat = 880
 
     private enum TurnStage {
         case idle
         case searching
         case composing
+    }
+
+    /// A proposed mutating action shown as an inline approval card, plus its
+    /// status once the user resolves it.
+    private struct PendingActionVM: Identifiable, Equatable {
+        let proposal: CompanionActionProposal
+        // pending | resolving | executed | rejected | dispatched | expired | failed
+        var status: String
+        var id: String { proposal.actionId }
     }
 
     public init(
@@ -175,6 +185,7 @@ public struct CompanionView: View {
             }
             VStack(spacing: 0) {
                 messageList
+                pendingActionsBar
                 composer
             }
         }
@@ -185,6 +196,7 @@ public struct CompanionView: View {
                 CompanionDivider()
             }
             messageList
+            pendingActionsBar
             composer
         }
         #endif
@@ -607,6 +619,73 @@ public struct CompanionView: View {
         }
     }
 
+    @ViewBuilder
+    private var pendingActionsBar: some View {
+        if !pendingActions.isEmpty {
+            VStack(alignment: .leading, spacing: 8) {
+                Text(t("Needs your approval", "Нужно ваше подтверждение"))
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                ForEach(pendingActions) { item in
+                    actionCard(item)
+                }
+            }
+            .frame(maxWidth: contentMaxWidth, alignment: .leading)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+        }
+    }
+
+    @ViewBuilder
+    private func actionCard(_ item: PendingActionVM) -> some View {
+        let open = item.status == "pending" || item.status == "resolving"
+        VStack(alignment: .leading, spacing: 8) {
+            Text(item.proposal.preview)
+                .font(.system(size: 14))
+                .fixedSize(horizontal: false, vertical: true)
+            if open {
+                HStack(spacing: 8) {
+                    Button(t("Approve", "Подтвердить")) {
+                        Task { await resolveAction(item.proposal.actionId, .once) }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(companionAccentColor)
+                    Button(t("Always", "Всегда")) {
+                        Task { await resolveAction(item.proposal.actionId, .always) }
+                    }
+                    Button(t("Reject", "Отклонить"), role: .destructive) {
+                        Task { await resolveAction(item.proposal.actionId, .reject) }
+                    }
+                }
+                .disabled(item.status == "resolving")
+            } else {
+                Text(actionStatusLabel(item.status))
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.primary.opacity(0.045))
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .strokeBorder(companionAccentColor.opacity(0.35), lineWidth: 1)
+        )
+    }
+
+    private func actionStatusLabel(_ status: String) -> String {
+        switch status {
+        case "executed": return t("Done", "Готово")
+        case "rejected": return t("Rejected", "Отклонено")
+        case "dispatched": return t("Sent to your Mac", "Отправлено на ваш Mac")
+        case "expired": return t("Expired", "Истекло")
+        case "failed": return t("Failed", "Ошибка")
+        default: return status
+        }
+    }
+
     private func renameSheet(for chat: CompanionConversation) -> some View {
         VStack(alignment: .leading, spacing: 18) {
             Text(t("Rename thread", "Переименовать диалог"))
@@ -673,6 +752,7 @@ public struct CompanionView: View {
     private func loadChat(_ chatId: String) async {
         activeChatId = chatId
         messages = []
+        pendingActions = []
         do {
             let detail = try await apiClient.getCompanionChat(chatId: chatId)
             messages = detail.messages
@@ -688,6 +768,7 @@ public struct CompanionView: View {
             chats.insert(chat, at: 0)
             activeChatId = chat.id
             messages = []
+            pendingActions = []
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -862,6 +943,32 @@ public struct CompanionView: View {
         stage = .idle
     }
 
+    @MainActor
+    private func resolveAction(_ actionId: String, _ decision: AgentActionDecision) async {
+        guard let chatId = activeChatId else { return }
+        errorMessage = nil
+        if let idx = pendingActions.firstIndex(where: { $0.proposal.actionId == actionId }) {
+            pendingActions[idx].status = "resolving"
+        }
+        do {
+            let response = try await apiClient.resolveCompanionAction(
+                chatId: chatId,
+                actionId: actionId,
+                CompanionResolveActionRequest(decision: decision)
+            )
+            if let idx = pendingActions.firstIndex(where: { $0.proposal.actionId == actionId }) {
+                pendingActions[idx].status = response.status
+            }
+        } catch {
+            // Surface the gate's verdict (409 already-resolved, 410 expired, …) —
+            // no silent fallback; leave the card actionable so the user can retry.
+            errorMessage = error.localizedDescription
+            if let idx = pendingActions.firstIndex(where: { $0.proposal.actionId == actionId }) {
+                pendingActions[idx].status = "pending"
+            }
+        }
+    }
+
     /// Read a completed answer aloud, sentence by sentence (content-aware voice).
     @MainActor
     private func speakAnswer(_ text: String) async {
@@ -897,9 +1004,15 @@ public struct CompanionView: View {
         case .memoryUpdated:
             break  // a subtle "remembered" toast is a later nicety
         case .actionProposed(let proposal):
-            streamingToolNotes.append(t("Approval needed: \(proposal.tool)", "Нужно подтверждение: \(proposal.tool)"))
-        case .actionResult(_, let status, _, _):
-            streamingToolNotes.append("Action \(status)")
+            // Surface as an inline approval card the user can act on (previously
+            // flattened into a dead note, so the agent could never actually act).
+            if !pendingActions.contains(where: { $0.proposal.actionId == proposal.actionId }) {
+                pendingActions.append(PendingActionVM(proposal: proposal, status: "pending"))
+            }
+        case .actionResult(let actionId, let status, _, _):
+            if let idx = pendingActions.firstIndex(where: { $0.proposal.actionId == actionId }) {
+                pendingActions[idx].status = status
+            }
         case .narration:
             break  // spoken via TTS on the voice surface; no-op in the chat view
         case .desktopAction:

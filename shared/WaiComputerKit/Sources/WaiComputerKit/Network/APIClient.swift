@@ -730,6 +730,20 @@ public actor APIClient {
         return try await request(.GET, path: "/api/devices/\(deviceId)/desktop-actions")
     }
 
+    /// Approve (once/always) or reject a pending companion action proposed
+    /// during a chat turn. The approval ledger + side effect live server-side.
+    public func resolveCompanionAction(
+        chatId: String,
+        actionId: String,
+        _ request: CompanionResolveActionRequest
+    ) async throws -> CompanionResolveActionResponse {
+        return try await self.request(
+            .POST,
+            path: "/api/companion/chats/\(chatId)/actions/\(actionId)/resolve",
+            body: request
+        )
+    }
+
     /// Report the outcome of a dispatched desktop action back to the cloud.
     public func reportDesktopResult(
         chatId: String,

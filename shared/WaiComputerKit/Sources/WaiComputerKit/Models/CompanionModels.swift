@@ -279,3 +279,32 @@ public struct CompanionActionProposal: Sendable, Equatable {
         self.recipient = recipient
     }
 }
+
+/// Approve (once/always) or reject a pending companion action. Mirrors the
+/// agent-action resolve body; reuses `AgentActionDecision` (once|always|reject).
+public struct CompanionResolveActionRequest: Codable, Sendable, Equatable {
+    public let decision: AgentActionDecision
+    public let editedArgs: [String: JSONValue]?
+
+    public init(decision: AgentActionDecision, editedArgs: [String: JSONValue]? = nil) {
+        self.decision = decision
+        self.editedArgs = editedArgs
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case decision
+        case editedArgs = "edited_args"
+    }
+}
+
+public struct CompanionResolveActionResponse: Codable, Sendable, Equatable {
+    public let actionId: String
+    public let status: String       // executed | rejected | dispatched
+    public let recipient: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case actionId = "action_id"
+        case status
+        case recipient
+    }
+}
