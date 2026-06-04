@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
 import WaiComputerKit
@@ -7,6 +8,27 @@ private enum InboxCreateMode {
     case file
     case paste
     case ask
+}
+
+private extension MacAccentChoice {
+    var nsColor: NSColor {
+        switch self {
+        case .system:
+            return .controlAccentColor
+        case .amber:
+            return .systemOrange
+        case .blue:
+            return .systemBlue
+        case .green:
+            return .systemGreen
+        case .violet:
+            return .systemPurple
+        case .rose:
+            return .systemPink
+        case .graphite:
+            return .systemGray
+        }
+    }
 }
 
 struct MacInboxView: View {
@@ -24,7 +46,7 @@ struct MacInboxView: View {
 
     @EnvironmentObject private var languageManager: LanguageManager
     @StateObject private var model: MacInboxViewModel
-    @State private var selectedRow: InboxRow?
+    @State private var selectedDetail: InboxDetailRef?
     @State private var showingImporter = false
     @State private var focusedCreateMode: InboxCreateMode = .file
 
@@ -71,6 +93,11 @@ struct MacInboxView: View {
         return types
     }
 
+    private var selectedRowID: String? {
+        guard let selectedDetail else { return nil }
+        return "\(selectedDetail.kind.rawValue):\(selectedDetail.id)"
+    }
+
     var body: some View {
         HStack(spacing: 0) {
             listPane
@@ -109,7 +136,7 @@ struct MacInboxView: View {
             if case let .success(urls) = result, let url = urls.first {
                 Task {
                     if let row = await model.uploadFile(url) {
-                        selectedRow = row
+                        selectedDetail = row.detail
                     }
                     await onLibraryChanged()
                 }
@@ -156,7 +183,7 @@ struct MacInboxView: View {
             Spacer()
             Menu {
                 Button {
-                    selectedRow = nil
+                    selectedDetail = nil
                     focusedCreateMode = .record
                     onStartRecording()
                 } label: {
@@ -169,7 +196,7 @@ struct MacInboxView: View {
                     Label(t("Upload File", "Загрузить файл"), systemImage: "square.and.arrow.down")
                 }
                 Button {
-                    selectedRow = nil
+                    selectedDetail = nil
                     focusedCreateMode = .paste
                 } label: {
                     Label(t("Paste Link or Text", "Вставить ссылку или текст"), systemImage: "link")
@@ -177,7 +204,7 @@ struct MacInboxView: View {
                 Button {
                     Task {
                         if let row = await model.newChat() {
-                            selectedRow = row
+                            selectedDetail = row.detail
                         }
                     }
                 } label: {
@@ -268,36 +295,27 @@ struct MacInboxView: View {
                     onRecord: onStartRecording,
                     onUpload: { showingImporter = true },
                     onPaste: {
-                        selectedRow = nil
+                        selectedDetail = nil
                         focusedCreateMode = .paste
                     },
                     onChat: {
                         Task {
                             if let row = await model.newChat() {
-                                selectedRow = row
+                                selectedDetail = row.detail
                             }
                         }
                     }
                 )
             } else {
-                List {
-                    ForEach(model.rows) { row in
-                        Button {
-                            selectedRow = row
-                        } label: {
-                            MacInboxRowView(
-                                row: row,
-                                isActive: selectedRow?.id == row.id
-                            )
-                        }
-                        .buttonStyle(.plain)
-                        .listRowInsets(EdgeInsets())
-                        .listRowSeparator(.visible)
-                        .listRowBackground(Color.clear)
+                MacInboxRowsTable(
+                    rows: model.rows,
+                    language: languageManager.current,
+                    selectedRowID: selectedRowID,
+                    accentColor: MacThemePreferences.currentAccent.nsColor,
+                    onSelect: { row in
+                        selectedDetail = row.detail
                     }
-                }
-                .listStyle(.plain)
-                .scrollContentBackground(.hidden)
+                )
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -305,24 +323,24 @@ struct MacInboxView: View {
 
     @ViewBuilder
     private var detailPane: some View {
-        if let selectedRow {
-            switch selectedRow.sourceKind {
+        if let selectedDetail {
+            switch selectedDetail.kind {
             case .recording:
                 MacRecordingDetailView(
-                    recordingId: selectedRow.sourceId,
+                    recordingId: selectedDetail.id,
                     initialDetail: nil,
                     mode: .active,
                     folders: folders,
                     pendingTitleEditId: .constant(nil),
                     onDelete: {
-                        self.selectedRow = nil
+                        self.selectedDetail = nil
                         Task {
                             await model.load()
                             await onLibraryChanged()
                         }
                     },
                     onRestore: {
-                        self.selectedRow = nil
+                        self.selectedDetail = nil
                         Task {
                             await model.load()
                             await onLibraryChanged()
@@ -341,35 +359,31 @@ struct MacInboxView: View {
                         }
                     }
                 )
-                .id(selectedRow.id)
+                .id(selectedRowID)
             case .item:
                 MacInboxItemDetail(
                     apiClient: apiClient,
-                    itemId: selectedRow.sourceId,
+                    itemId: selectedDetail.id,
                     onDeleted: {
-                        self.selectedRow = nil
+                        self.selectedDetail = nil
                         Task {
                             await model.load()
                             await onLibraryChanged()
                         }
                     },
-                    onUpdated: {
-                        Task {
-                            await model.load()
-                        }
-                    }
+                    onUpdated: {}
                 )
-                    .id(selectedRow.id)
+                    .id(selectedRowID)
             case .chat:
                 CompanionView(
                     apiClient: apiClient,
                     recordings: recordings,
-                    initialChatId: selectedRow.sourceId,
+                    initialChatId: selectedDetail.id,
                     showsConversationSwitcher: false
                 )
                 .environment(\.locale, MacDateFormatting.locale(for: languageManager.current))
                 .companionAccentColor(Palette.accent)
-                .id(selectedRow.id)
+                .id(selectedRowID)
             }
         } else {
             createPane
@@ -441,7 +455,7 @@ struct MacInboxView: View {
                                 focusedCreateMode = .ask
                                 Task {
                                     if let row = await model.newChat() {
-                                        selectedRow = row
+                                        selectedDetail = row.detail
                                     }
                                 }
                             }
@@ -463,7 +477,7 @@ struct MacInboxView: View {
                             Button {
                                 Task {
                                     if let row = await model.addDraft() {
-                                        selectedRow = row
+                                        selectedDetail = row.detail
                                     }
                                 }
                             } label: {
@@ -501,34 +515,11 @@ struct MacInboxView: View {
         if let row = model.rows.first(where: {
             $0.detail.kind == pendingDetail.kind && $0.detail.id == pendingDetail.id
         }) {
-            selectedRow = row
+            selectedDetail = row.detail
             onPendingDetailConsumed()
             return
         }
-        selectedRow = InboxRow(
-            id: "\(pendingDetail.kind.rawValue):\(pendingDetail.id)",
-            sourceKind: pendingDetail.kind,
-            sourceId: pendingDetail.id,
-            detail: pendingDetail,
-            title: nil,
-            sourceLabel: pendingDetail.kind.rawValue,
-            sublabel: nil,
-            activityAt: Date(),
-            createdAt: Date(),
-            updatedAt: nil,
-            occurredAt: nil,
-            status: .processing,
-            sourceStatus: "loading",
-            error: nil,
-            folderId: nil,
-            durationSeconds: nil,
-            language: nil,
-            hasSummary: nil,
-            isStarred: false,
-            isPinned: false,
-            isArchived: false,
-            isTrashed: false
-        )
+        selectedDetail = pendingDetail
         onPendingDetailConsumed()
     }
 
@@ -683,141 +674,439 @@ private struct MacInboxEmptyState: View {
     }
 }
 
-private struct MacInboxRowView: View {
-    let row: InboxRow
-    let isActive: Bool
-    @EnvironmentObject private var languageManager: LanguageManager
+private struct MacInboxDisplayRow: Identifiable, Equatable {
+    let id: String
+    let detail: InboxDetailRef
+    let sourceKind: InboxSourceKind
+    let title: String
+    let metadata: String
+    let statusLabel: String?
+    let statusTone: StatusTone
+    let iconSystemName: String
+    let accessibilityLabel: String
 
-    var body: some View {
-        HStack(alignment: .top, spacing: Spacing.sm) {
-            Image(systemName: icon)
-                .foregroundStyle(color)
-                .frame(width: 22)
-
-            VStack(alignment: .leading, spacing: Spacing.xxs) {
-                HStack(alignment: .firstTextBaseline, spacing: Spacing.sm) {
-                    Text(title)
-                        .font(Typography.headingMedium)
-                        .lineLimit(1)
-                    Spacer(minLength: 0)
-                    if let statusLabel {
-                        Text(statusLabel)
-                            .font(Typography.labelSmall)
-                            .foregroundStyle(statusColor)
-                    }
-                }
-
-                HStack(spacing: Spacing.xs) {
-                    Text(sourceLabel)
-                    if let sublabel = displaySublabel {
-                        Text("/")
-                        Text(sublabel)
-                    }
-                    Text("/")
-                    Text(MacDateFormatting.string(
-                        from: row.activityAt,
-                        dateStyle: .medium,
-                        timeStyle: .short,
-                        language: languageManager.current
-                    ))
-                    if let duration = row.durationSeconds {
-                        Text("/")
-                        Text(formatDuration(duration))
-                    }
-                }
-                .font(Typography.label)
-                .foregroundStyle(Palette.textSecondary)
-                .lineLimit(1)
-            }
-        }
-        .padding(.vertical, Spacing.sm)
-        .padding(.horizontal, Spacing.md)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(isActive ? Palette.accentSubtle : Color.clear)
+    enum StatusTone: Equatable {
+        case neutral
+        case warning
+        case error
     }
 
-    private var title: String {
+    init(row: InboxRow, language: LanguageManager.SupportedLanguage) {
+        id = row.id
+        detail = row.detail
+        sourceKind = row.sourceKind
+        title = Self.title(for: row, language: language)
+        metadata = Self.metadata(for: row, language: language)
+        statusLabel = Self.statusLabel(for: row.status, language: language)
+        statusTone = Self.statusTone(for: row.status)
+        iconSystemName = Self.iconSystemName(for: row.sourceKind)
+        accessibilityLabel = [title, metadata, statusLabel].compactMap { $0 }.joined(separator: ", ")
+    }
+
+    private static func title(for row: InboxRow, language: LanguageManager.SupportedLanguage) -> String {
         let trimmed = (row.title ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         if !trimmed.isEmpty { return trimmed }
         switch row.sourceKind {
         case .recording:
-            return t("Untitled Recording", "Запись без названия")
+            return text("Untitled Recording", "Запись без названия", language: language)
         case .item:
-            return t("Untitled Material", "Материал без названия")
+            return text("Untitled Material", "Материал без названия", language: language)
         case .chat:
-            return t("Ask Wai", "Спросить Wai")
+            return text("Ask Wai", "Спросить Wai", language: language)
         }
     }
 
-    private var sourceLabel: String {
-        switch row.sourceKind {
+    private static func metadata(for row: InboxRow, language: LanguageManager.SupportedLanguage) -> String {
+        var parts: [String] = [sourceLabel(for: row.sourceKind, language: language)]
+        if let sublabel = displaySublabel(for: row, language: language) {
+            parts.append(sublabel)
+        }
+        parts.append(MacDateFormatting.string(
+            from: row.activityAt,
+            dateStyle: .medium,
+            timeStyle: .short,
+            language: language
+        ))
+        if let duration = row.durationSeconds {
+            parts.append(formatDuration(duration))
+        }
+        return parts.joined(separator: " / ")
+    }
+
+    private static func sourceLabel(
+        for sourceKind: InboxSourceKind,
+        language: LanguageManager.SupportedLanguage
+    ) -> String {
+        switch sourceKind {
         case .recording:
-            return t("Recording", "Запись")
+            return text("Recording", "Запись", language: language)
         case .item:
-            return t("Material", "Материал")
+            return text("Material", "Материал", language: language)
         case .chat:
-            return t("Wai", "Wai")
+            return "Wai"
         }
     }
 
-    private var displaySublabel: String? {
+    private static func displaySublabel(for row: InboxRow, language: LanguageManager.SupportedLanguage) -> String? {
         guard let sublabel = row.sublabel else { return nil }
         if row.sourceKind == .chat && sublabel == "Agent thread" {
-            return t("Agent thread", "Агентский диалог")
+            return text("Agent thread", "Агентский диалог", language: language)
         }
         return sublabel
     }
 
-    private var icon: String {
-        switch row.sourceKind {
+    private static func statusLabel(
+        for status: InboxStatus,
+        language: LanguageManager.SupportedLanguage
+    ) -> String? {
+        switch status {
+        case .ready:
+            return nil
+        case .processing:
+            return text("Processing", "В работе", language: language)
+        case .needsInput:
+            return text("Needs Input", "Нужен ввод", language: language)
+        case .failed:
+            return text("Failed", "Ошибка", language: language)
+        case .archived:
+            return text("Archived", "Архив", language: language)
+        }
+    }
+
+    private static func statusTone(for status: InboxStatus) -> StatusTone {
+        switch status {
+        case .failed, .needsInput:
+            return .error
+        case .processing:
+            return .warning
+        case .ready, .archived:
+            return .neutral
+        }
+    }
+
+    private static func iconSystemName(for sourceKind: InboxSourceKind) -> String {
+        switch sourceKind {
         case .recording: return "waveform"
         case .item: return "doc.text"
         case .chat: return "sparkles"
         }
     }
 
-    private var color: Color {
-        switch row.sourceKind {
-        case .recording: return Palette.accent
-        case .item: return .green
-        case .chat: return .orange
-        }
-    }
-
-    private var statusLabel: String? {
-        switch row.status {
-        case .ready:
-            return nil
-        case .processing:
-            return t("Processing", "В работе")
-        case .needsInput:
-            return t("Needs Input", "Нужен ввод")
-        case .failed:
-            return t("Failed", "Ошибка")
-        case .archived:
-            return t("Archived", "Архив")
-        }
-    }
-
-    private var statusColor: Color {
-        switch row.status {
-        case .failed, .needsInput:
-            return .red
-        case .processing:
-            return .orange
-        case .ready, .archived:
-            return Palette.textSecondary
-        }
-    }
-
-    private func formatDuration(_ seconds: Int) -> String {
+    private static func formatDuration(_ seconds: Int) -> String {
         let mins = seconds / 60
         let secs = seconds % 60
         return String(format: "%d:%02d", mins, secs)
     }
 
-    private func t(_ english: String, _ russian: String) -> String {
-        OnboardingL10n.text(english, russian, language: languageManager.current)
+    private static func text(
+        _ english: String,
+        _ russian: String,
+        language: LanguageManager.SupportedLanguage
+    ) -> String {
+        OnboardingL10n.text(english, russian, language: language)
+    }
+}
+
+private struct MacInboxRowsTable: NSViewRepresentable {
+    let rows: [InboxRow]
+    let language: LanguageManager.SupportedLanguage
+    let selectedRowID: String?
+    let accentColor: NSColor
+    let onSelect: (InboxRow) -> Void
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(onSelect: onSelect)
+    }
+
+    func makeNSView(context: Context) -> NSScrollView {
+        let tableView = NSTableView()
+        tableView.identifier = NSUserInterfaceItemIdentifier("mac-inbox-rows")
+        tableView.setAccessibilityIdentifier("mac-inbox-rows")
+        tableView.headerView = nil
+        tableView.backgroundColor = .clear
+        tableView.enclosingScrollView?.drawsBackground = false
+        tableView.usesAlternatingRowBackgroundColors = false
+        tableView.usesAutomaticRowHeights = false
+        tableView.rowHeight = MacInboxTableMetrics.rowHeight
+        tableView.intercellSpacing = .zero
+        tableView.gridStyleMask = [.solidHorizontalGridLineMask]
+        tableView.gridColor = NSColor.separatorColor.withAlphaComponent(0.45)
+        tableView.allowsMultipleSelection = false
+        tableView.allowsEmptySelection = true
+        tableView.selectionHighlightStyle = .none
+        tableView.focusRingType = .none
+        tableView.dataSource = context.coordinator
+        tableView.delegate = context.coordinator
+        tableView.target = context.coordinator
+        tableView.action = #selector(Coordinator.rowClicked(_:))
+
+        let column = NSTableColumn(identifier: MacInboxTableMetrics.columnIdentifier)
+        column.minWidth = 180
+        column.resizingMask = .autoresizingMask
+        tableView.addTableColumn(column)
+
+        let scrollView = NSScrollView()
+        scrollView.identifier = NSUserInterfaceItemIdentifier("mac-inbox-rows-scroll")
+        scrollView.setAccessibilityIdentifier("mac-inbox-rows-scroll")
+        scrollView.drawsBackground = false
+        scrollView.hasVerticalScroller = true
+        scrollView.autohidesScrollers = true
+        scrollView.borderType = .noBorder
+        scrollView.documentView = tableView
+
+        context.coordinator.tableView = tableView
+        return scrollView
+    }
+
+    func updateNSView(_ scrollView: NSScrollView, context: Context) {
+        guard let tableView = scrollView.documentView as? NSTableView else { return }
+        context.coordinator.onSelect = onSelect
+        context.coordinator.update(
+            rows: rows,
+            displayRows: rows.map { MacInboxDisplayRow(row: $0, language: language) },
+            selectedRowID: selectedRowID,
+            accentColor: accentColor
+        )
+        if tableView.bounds.width > 0, let column = tableView.tableColumns.first {
+            column.width = max(0, tableView.bounds.width)
+        }
+    }
+
+    final class Coordinator: NSObject, NSTableViewDataSource, NSTableViewDelegate {
+        var onSelect: (InboxRow) -> Void
+        weak var tableView: NSTableView?
+        private var rows: [InboxRow] = []
+        private var displayRows: [MacInboxDisplayRow] = []
+        private var selectedRowID: String?
+        private var accentColor: NSColor = .controlAccentColor
+        private var isApplyingSelection = false
+
+        init(onSelect: @escaping (InboxRow) -> Void) {
+            self.onSelect = onSelect
+        }
+
+        func update(
+            rows: [InboxRow],
+            displayRows: [MacInboxDisplayRow],
+            selectedRowID: String?,
+            accentColor: NSColor
+        ) {
+            let needsReload = self.displayRows != displayRows || !self.accentColor.isEqual(accentColor)
+            self.rows = rows
+            self.displayRows = displayRows
+            self.selectedRowID = selectedRowID
+            self.accentColor = accentColor
+
+            if needsReload {
+                tableView?.reloadData()
+            }
+            applySelection()
+        }
+
+        func numberOfRows(in tableView: NSTableView) -> Int {
+            displayRows.count
+        }
+
+        func tableView(
+            _ tableView: NSTableView,
+            viewFor tableColumn: NSTableColumn?,
+            row: Int
+        ) -> NSView? {
+            guard displayRows.indices.contains(row) else { return nil }
+            let cell = tableView.makeView(
+                withIdentifier: MacInboxTableMetrics.cellIdentifier,
+                owner: self
+            ) as? MacInboxTableCellView ?? MacInboxTableCellView(
+                identifier: MacInboxTableMetrics.cellIdentifier
+            )
+            cell.configure(with: displayRows[row], accentColor: accentColor)
+            return cell
+        }
+
+        func tableView(_ tableView: NSTableView, heightOfRow row: Int) -> CGFloat {
+            MacInboxTableMetrics.rowHeight
+        }
+
+        func tableView(_ tableView: NSTableView, rowViewForRow row: Int) -> NSTableRowView? {
+            let rowView = tableView.makeView(
+                withIdentifier: MacInboxTableMetrics.rowIdentifier,
+                owner: self
+            ) as? MacInboxTableRowView ?? MacInboxTableRowView()
+            rowView.identifier = MacInboxTableMetrics.rowIdentifier
+            rowView.accentColor = accentColor
+            return rowView
+        }
+
+        func tableViewSelectionDidChange(_ notification: Notification) {
+            guard !isApplyingSelection, let tableView else { return }
+            let selectedRow = tableView.selectedRow
+            guard rows.indices.contains(selectedRow) else { return }
+            guard selectedRowID != rows[selectedRow].id else { return }
+            selectedRowID = rows[selectedRow].id
+            onSelect(rows[selectedRow])
+        }
+
+        @objc
+        func rowClicked(_ sender: NSTableView) {
+            let clickedRow = sender.clickedRow
+            guard rows.indices.contains(clickedRow) else { return }
+            guard selectedRowID != rows[clickedRow].id else { return }
+            selectedRowID = rows[clickedRow].id
+            onSelect(rows[clickedRow])
+        }
+
+        private func applySelection() {
+            guard let tableView else { return }
+            let nextIndex: Int? = selectedRowID.flatMap { id in
+                displayRows.firstIndex { $0.id == id }
+            }
+            isApplyingSelection = true
+            defer { isApplyingSelection = false }
+            if let nextIndex {
+                tableView.selectRowIndexes(IndexSet(integer: nextIndex), byExtendingSelection: false)
+            } else {
+                tableView.deselectAll(nil)
+            }
+        }
+    }
+}
+
+private enum MacInboxTableMetrics {
+    static let rowHeight: CGFloat = 64
+    static let columnIdentifier = NSUserInterfaceItemIdentifier("MacInboxRowsColumn")
+    static let cellIdentifier = NSUserInterfaceItemIdentifier("MacInboxRowCell")
+    static let rowIdentifier = NSUserInterfaceItemIdentifier("MacInboxTableRow")
+}
+
+private final class MacInboxTableRowView: NSTableRowView {
+    var accentColor: NSColor = .controlAccentColor {
+        didSet { needsDisplay = true }
+    }
+
+    override var isSelected: Bool {
+        didSet { needsDisplay = true }
+    }
+
+    override func drawBackground(in dirtyRect: NSRect) {
+        if isSelected {
+            accentColor.withAlphaComponent(0.16).setFill()
+            dirtyRect.fill()
+        } else {
+            NSColor.clear.setFill()
+            dirtyRect.fill()
+        }
+    }
+
+    override func drawSelection(in dirtyRect: NSRect) {
+        drawBackground(in: dirtyRect)
+    }
+}
+
+private final class MacInboxTableCellView: NSTableCellView {
+    private let iconView = NSImageView()
+    private let titleLabel = NSTextField(labelWithString: "")
+    private let metadataLabel = NSTextField(labelWithString: "")
+    private let statusLabel = NSTextField(labelWithString: "")
+
+    init(identifier: NSUserInterfaceItemIdentifier) {
+        super.init(frame: .zero)
+        self.identifier = identifier
+        setup()
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    func configure(with row: MacInboxDisplayRow, accentColor: NSColor) {
+        iconView.image = NSImage(systemSymbolName: row.iconSystemName, accessibilityDescription: nil)?
+            .withSymbolConfiguration(Self.iconSymbolConfiguration)
+        iconView.contentTintColor = iconColor(for: row.sourceKind, accentColor: accentColor)
+        titleLabel.stringValue = row.title
+        metadataLabel.stringValue = row.metadata
+        statusLabel.stringValue = row.statusLabel ?? ""
+        statusLabel.isHidden = row.statusLabel == nil
+        statusLabel.textColor = statusColor(for: row.statusTone)
+        setAccessibilityLabel(row.accessibilityLabel)
+    }
+
+    private func setup() {
+        wantsLayer = true
+        layer?.backgroundColor = NSColor.clear.cgColor
+
+        iconView.translatesAutoresizingMaskIntoConstraints = false
+        iconView.imageScaling = .scaleProportionallyDown
+
+        titleLabel.font = .systemFont(ofSize: 15, weight: .semibold)
+        titleLabel.textColor = .labelColor
+        titleLabel.lineBreakMode = .byTruncatingTail
+        titleLabel.maximumNumberOfLines = 1
+        titleLabel.translatesAutoresizingMaskIntoConstraints = false
+
+        metadataLabel.font = .systemFont(ofSize: 12, weight: .medium)
+        metadataLabel.textColor = .secondaryLabelColor
+        metadataLabel.lineBreakMode = .byTruncatingTail
+        metadataLabel.maximumNumberOfLines = 1
+        metadataLabel.translatesAutoresizingMaskIntoConstraints = false
+
+        statusLabel.font = .systemFont(ofSize: 11, weight: .medium)
+        statusLabel.alignment = .right
+        statusLabel.lineBreakMode = .byTruncatingTail
+        statusLabel.maximumNumberOfLines = 1
+        statusLabel.translatesAutoresizingMaskIntoConstraints = false
+        statusLabel.setContentHuggingPriority(.required, for: .horizontal)
+        statusLabel.setContentCompressionResistancePriority(.required, for: .horizontal)
+
+        addSubview(iconView)
+        addSubview(titleLabel)
+        addSubview(metadataLabel)
+        addSubview(statusLabel)
+        imageView = iconView
+        textField = titleLabel
+
+        NSLayoutConstraint.activate([
+            iconView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 16),
+            iconView.centerYAnchor.constraint(equalTo: centerYAnchor),
+            iconView.widthAnchor.constraint(equalToConstant: 22),
+            iconView.heightAnchor.constraint(equalToConstant: 22),
+
+            titleLabel.leadingAnchor.constraint(equalTo: iconView.trailingAnchor, constant: 8),
+            titleLabel.topAnchor.constraint(equalTo: topAnchor, constant: 11),
+            titleLabel.trailingAnchor.constraint(lessThanOrEqualTo: statusLabel.leadingAnchor, constant: -8),
+
+            statusLabel.centerYAnchor.constraint(equalTo: titleLabel.centerYAnchor),
+            statusLabel.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -16),
+            statusLabel.widthAnchor.constraint(lessThanOrEqualToConstant: 96),
+
+            metadataLabel.leadingAnchor.constraint(equalTo: titleLabel.leadingAnchor),
+            metadataLabel.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 3),
+            metadataLabel.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -16)
+        ])
+    }
+
+    private func iconColor(for sourceKind: InboxSourceKind, accentColor: NSColor) -> NSColor {
+        switch sourceKind {
+        case .recording:
+            return accentColor
+        case .item:
+            return .systemGreen
+        case .chat:
+            return .systemOrange
+        }
+    }
+
+    private static let iconSymbolConfiguration = NSImage.SymbolConfiguration(pointSize: 15, weight: .medium)
+
+    private func statusColor(for tone: MacInboxDisplayRow.StatusTone) -> NSColor {
+        switch tone {
+        case .neutral:
+            return .secondaryLabelColor
+        case .warning:
+            return .systemOrange
+        case .error:
+            return .systemRed
+        }
     }
 }
 

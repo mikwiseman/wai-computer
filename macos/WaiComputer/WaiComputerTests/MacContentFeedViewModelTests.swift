@@ -32,11 +32,14 @@ final class MacContentFeedViewModelTests: XCTestCase {
         XCTAssertFalse(source.contains("Compare ("))
     }
 
-    func testInboxViewUsesNativeListForFastScrollingRows() throws {
+    func testInboxViewUsesAppKitTableForFastScrollingRows() throws {
         let source = try macSource("WaiComputer/Features/Inbox/MacInboxView.swift")
 
-        XCTAssertTrue(source.contains("List {"))
-        XCTAssertFalse(source.contains("ScrollView {\n                    LazyVStack(spacing: 0)"))
+        XCTAssertTrue(source.contains("MacInboxRowsTable("))
+        XCTAssertTrue(source.contains("NSTableView"))
+        XCTAssertTrue(source.contains("usesAutomaticRowHeights = false"))
+        XCTAssertFalse(source.contains("List {"))
+        XCTAssertFalse(source.contains("LazyVStack(spacing: 0)"))
     }
 
     func testInboxViewDoesNotRenderStatusFilter() throws {
