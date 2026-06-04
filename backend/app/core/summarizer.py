@@ -1,11 +1,4 @@
-"""OpenAI Responses API summarization, title generation, and entity extraction.
-
-Uses gpt-5.5 structured outputs via ``client.responses.parse(text_format=...)`` so
-the model is guaranteed to emit a JSON shape that matches our Pydantic schemas.
-That removes the defensive ``json.loads`` + ``SummarizationError`` path the
-previous implementation needed, and makes downstream code free to trust the
-shape it receives.
-"""
+"""Cerebras-backed summarization, title generation, and entity extraction."""
 
 import logging
 import re
@@ -15,15 +8,16 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 from app.config import get_settings
+from app.core.cerebras_chat import (
+    CerebrasResponseError,
+    chat_completion_parsed,
+    chat_completion_text,
+    get_cerebras_client,
+    strict_json_response_format,
+)
 from app.core.observability import (
     add_sentry_breadcrumb,
     capture_sentry_exception,
-)
-from app.core.openai_client import get_openai_client
-from app.core.openai_responses import (
-    OpenAIResponseError,
-    ensure_response_completed,
-    response_output_text,
 )
 
 logger = logging.getLogger(__name__)
@@ -104,8 +98,8 @@ class _KeyMomentsSchema(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# Prompts. The structured-output schema is enforced by ``text_format``, so the
-# prompt itself only carries instructions (no JSON shape to repeat).
+# Prompts. The structured-output schema is enforced by ``response_format``, so
+# the prompt itself only carries instructions (no JSON shape to repeat).
 # ---------------------------------------------------------------------------
 
 
@@ -149,6 +143,24 @@ STYLE_INSTRUCTIONS = {
 
 DEFAULT_SUMMARY_LANGUAGE = "auto"
 DEFAULT_SUMMARY_STYLE = "medium"
+
+
+def _require_cerebras_key() -> None:
+    if not settings.cerebras_api_key:
+        raise ValueError("CEREBRAS_API_KEY not configured")
+
+
+def _summary_messages(instructions: str, content: str) -> list[dict[str, str]]:
+    return [
+        {
+            "role": "system",
+            "content": (
+                "You are a precise WaiComputer text processing model. Follow the "
+                "developer instructions exactly and return only the requested output."
+            ),
+        },
+        {"role": "user", "content": instructions + content},
+    ]
 
 
 def build_summary_prompt(
@@ -211,34 +223,40 @@ async def summarize_transcript(
     style: str = DEFAULT_SUMMARY_STYLE,
     instructions: str | None = None,
 ) -> SummaryResult:
-    """Summarize a transcript via the OpenAI Responses API with structured outputs."""
+    """Summarize a transcript via Cerebras strict structured outputs."""
     add_sentry_breadcrumb(
         category="summarizer",
         message="Summarizing transcript",
         data={"transcript_length": len(transcript), "language": language, "style": style},
     )
-    if not settings.openai_api_key:
-        raise ValueError("OPENAI_API_KEY not configured")
+    _require_cerebras_key()
 
     prompt = build_summary_prompt(language=language, style=style, instructions=instructions)
-    client = get_openai_client()
+    client = get_cerebras_client()
 
     try:
-        response = await client.responses.parse(
-            model=settings.openai_llm_model,
-            input=prompt + transcript,
-            text_format=_SummarySchema,
-            reasoning={"effort": "medium"},
-            max_output_tokens=4096,
+        response = await client.chat.completions.create(
+            model=settings.cerebras_llm_model,
+            messages=_summary_messages(prompt, transcript),
+            response_format=strict_json_response_format(
+                _SummarySchema,
+                name="recording_summary",
+            ),
+            reasoning_effort="medium",
+            max_completion_tokens=4096,
         )
-        ensure_response_completed(response, operation="Summarization")
     except Exception as exc:  # noqa: BLE001 — capture for breadcrumbs then re-raise
         capture_sentry_exception(exc)
         raise SummarizationError(f"Summarization failed: {exc}") from exc
 
-    parsed = response.output_parsed
-    if parsed is None:
-        raise SummarizationError("OpenAI returned no parsed summary payload")
+    try:
+        parsed = chat_completion_parsed(
+            response,
+            _SummarySchema,
+            operation="Summarization",
+        )
+    except CerebrasResponseError as exc:
+        raise SummarizationError(f"Summarization failed: {exc}") from exc
 
     add_sentry_breadcrumb(category="summarizer", message="Summarization completed")
 
@@ -343,29 +361,35 @@ async def summarize_content(
         message="Summarizing content",
         data={"content_length": len(text), "kind": content_kind, "language": language},
     )
-    if not settings.openai_api_key:
-        raise ValueError("OPENAI_API_KEY not configured")
+    _require_cerebras_key()
 
     prompt = build_content_summary_prompt(
         content_kind=content_kind, language=language, style=style, instructions=instructions
     )
-    client = get_openai_client()
+    client = get_cerebras_client()
     try:
-        response = await client.responses.parse(
-            model=settings.openai_llm_model,
-            input=prompt + text,
-            text_format=_SummarySchema,
-            reasoning={"effort": "medium"},
-            max_output_tokens=4096,
+        response = await client.chat.completions.create(
+            model=settings.cerebras_llm_model,
+            messages=_summary_messages(prompt, text),
+            response_format=strict_json_response_format(
+                _SummarySchema,
+                name="content_summary",
+            ),
+            reasoning_effort="medium",
+            max_completion_tokens=4096,
         )
-        ensure_response_completed(response, operation="Content summarization")
     except Exception as exc:  # noqa: BLE001 — capture for breadcrumbs then re-raise
         capture_sentry_exception(exc)
         raise SummarizationError(f"Content summarization failed: {exc}") from exc
 
-    parsed = response.output_parsed
-    if parsed is None:
-        raise SummarizationError("OpenAI returned no parsed summary payload")
+    try:
+        parsed = chat_completion_parsed(
+            response,
+            _SummarySchema,
+            operation="Content summarization",
+        )
+    except CerebrasResponseError as exc:
+        raise SummarizationError(f"Content summarization failed: {exc}") from exc
 
     add_sentry_breadcrumb(category="summarizer", message="Content summarization completed")
     return SummaryResult(
@@ -400,7 +424,7 @@ async def extract_key_moments(
     *,
     language: str = DEFAULT_SUMMARY_LANGUAGE,
 ) -> list[KeyMoment]:
-    """Extract a scannable key-moments table from any content via OpenAI.
+    """Extract a scannable key-moments table from any content via Cerebras.
 
     For time-based media whose transcript carries markers, ``timestamp`` is
     populated from those markers; for plain text it is null. Word-level
@@ -412,31 +436,38 @@ async def extract_key_moments(
         message="Extracting key moments",
         data={"content_length": len(text), "language": language},
     )
-    if not settings.openai_api_key:
-        raise ValueError("OPENAI_API_KEY not configured")
+    _require_cerebras_key()
 
     language_instruction = (
         f"\nWrite all text in {language}."
         if language and language not in {DEFAULT_SUMMARY_LANGUAGE, "multi"}
         else "\nWrite all text in the dominant language of the content."
     )
-    client = get_openai_client()
+    client = get_cerebras_client()
     try:
-        response = await client.responses.parse(
-            model=settings.openai_llm_model,
-            input=KEY_MOMENTS_INSTRUCTIONS + language_instruction + "\n\nContent:\n" + text,
-            text_format=_KeyMomentsSchema,
-            reasoning={"effort": "medium"},
-            max_output_tokens=4096,
+        prompt = KEY_MOMENTS_INSTRUCTIONS + language_instruction + "\n\nContent:\n"
+        response = await client.chat.completions.create(
+            model=settings.cerebras_llm_model,
+            messages=_summary_messages(prompt, text),
+            response_format=strict_json_response_format(
+                _KeyMomentsSchema,
+                name="key_moments",
+            ),
+            reasoning_effort="medium",
+            max_completion_tokens=4096,
         )
-        ensure_response_completed(response, operation="Key moments extraction")
     except Exception as exc:  # noqa: BLE001 — capture for breadcrumbs then re-raise
         capture_sentry_exception(exc)
         raise SummarizationError(f"Key moments extraction failed: {exc}") from exc
 
-    parsed = response.output_parsed
-    if parsed is None:
-        raise SummarizationError("OpenAI returned no parsed key-moments payload")
+    try:
+        parsed = chat_completion_parsed(
+            response,
+            _KeyMomentsSchema,
+            operation="Key moments extraction",
+        )
+    except CerebrasResponseError as exc:
+        raise SummarizationError(f"Key moments extraction failed: {exc}") from exc
 
     return [
         KeyMoment(
@@ -488,10 +519,9 @@ async def generate_title(
     *,
     language: str = DEFAULT_SUMMARY_LANGUAGE,
 ) -> str:
-    """Generate a short descriptive title from transcript text via OpenAI."""
+    """Generate a short descriptive title from transcript text via Cerebras."""
     add_sentry_breadcrumb(category="summarizer", message="Generating title")
-    if not settings.openai_api_key:
-        raise ValueError("OPENAI_API_KEY not configured")
+    _require_cerebras_key()
 
     snippet = transcript[:500]
     language_instruction = (
@@ -503,23 +533,31 @@ async def generate_title(
             "If the transcript is primarily in English, output English."
         )
     )
-    client = get_openai_client()
-    response = await client.responses.create(
-        model=settings.openai_llm_model,
-        input=(
-            "Generate a short title (3-7 words) for this audio recording based on "
-            "its transcript. Return ONLY the plain title text — no markdown "
-            "formatting (no **bold**, no *italics*, no asterisks, no quotes, no #), "
-            f"nothing else. {language_instruction}\n\n"
-            f"Transcript:\n{snippet}"
-        ),
-        reasoning={"effort": "low"},
-        max_output_tokens=256,
-    )
+    client = get_cerebras_client()
     try:
-        ensure_response_completed(response, operation="Title generation")
-        return response_output_text(response)
-    except OpenAIResponseError as exc:
+        response = await client.chat.completions.create(
+            model=settings.cerebras_llm_model,
+            messages=[
+                {
+                    "role": "system",
+                    "content": "Return only the requested plain title text.",
+                },
+                {
+                    "role": "user",
+                    "content": (
+                        "Generate a short title (3-7 words) for this audio recording "
+                        "based on its transcript. Return ONLY the plain title text — "
+                        "no markdown formatting (no **bold**, no *italics*, no "
+                        "asterisks, no quotes, no #), nothing else. "
+                        f"{language_instruction}\n\nTranscript:\n{snippet}"
+                    ),
+                },
+            ],
+            reasoning_effort="low",
+            max_completion_tokens=256,
+        )
+        return chat_completion_text(response, operation="Title generation")
+    except Exception as exc:  # noqa: BLE001
         capture_sentry_exception(exc)
         raise SummarizationError(f"Title generation failed: {exc}") from exc
 
@@ -586,33 +624,39 @@ class EntityResult:
 
 
 async def extract_entities(transcript: str) -> list[EntityResult]:
-    """Extract entities from a transcript via OpenAI with structured outputs."""
+    """Extract entities from a transcript via Cerebras strict structured outputs."""
     add_sentry_breadcrumb(
         category="summarizer",
         message="Extracting entities",
         data={"transcript_length": len(transcript)},
     )
-    if not settings.openai_api_key:
-        raise ValueError("OPENAI_API_KEY not configured")
+    _require_cerebras_key()
 
-    client = get_openai_client()
+    client = get_cerebras_client()
 
     try:
-        response = await client.responses.parse(
-            model=settings.openai_llm_model,
-            input=ENTITY_EXTRACTION_PROMPT + transcript,
-            text_format=_EntityExtractionSchema,
-            reasoning={"effort": "low"},
-            max_output_tokens=4096,
+        response = await client.chat.completions.create(
+            model=settings.cerebras_llm_model,
+            messages=_summary_messages(ENTITY_EXTRACTION_PROMPT, transcript),
+            response_format=strict_json_response_format(
+                _EntityExtractionSchema,
+                name="entity_extraction",
+            ),
+            reasoning_effort="low",
+            max_completion_tokens=4096,
         )
-        ensure_response_completed(response, operation="Entity extraction")
     except Exception as exc:  # noqa: BLE001 — capture for breadcrumbs then re-raise
         capture_sentry_exception(exc)
         raise SummarizationError(f"Entity extraction failed: {exc}") from exc
 
-    parsed = response.output_parsed
-    if parsed is None:
-        raise SummarizationError("OpenAI returned no parsed entity payload")
+    try:
+        parsed = chat_completion_parsed(
+            response,
+            _EntityExtractionSchema,
+            operation="Entity extraction",
+        )
+    except CerebrasResponseError as exc:
+        raise SummarizationError(f"Entity extraction failed: {exc}") from exc
 
     return [
         EntityResult(

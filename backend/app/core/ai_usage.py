@@ -17,6 +17,7 @@ logger = logging.getLogger(__name__)
 OPENAI_PROVIDER = "openai"
 DEEPGRAM_PROVIDER = "deepgram"
 XAI_PROVIDER = "xai"
+CEREBRAS_PROVIDER = "cerebras"
 
 # Explicit, low-cardinality feature names used by the admin dashboard.
 FEATURE_COMPANION = "companion"
@@ -52,10 +53,15 @@ _PRICE_BY_PROVIDER_MODEL: dict[tuple[str, str], dict[str, float]] = {
         "output_per_1m": 30.00,
     },
     (OPENAI_PROVIDER, "text-embedding-3-large"): {"input_per_1m": 0.13},
+    (CEREBRAS_PROVIDER, "gpt-oss-120b"): {
+        "input_per_1m": 0.25,
+        "output_per_1m": 0.69,
+    },
 }
 
 OPENAI_PRICE_SOURCE = "openai-api-pricing-2026-06-04"
 DEEPGRAM_PRICE_SOURCE = "deepgram-payg-2026-06-04"
+CEREBRAS_PRICE_SOURCE = "cerebras-gpt-oss-120b-pricing-2026-06-04"
 
 _DEEPGRAM_BASE_RATES_PER_MIN: dict[tuple[str, str, str], float] = {
     ("nova-3", "streaming", "monolingual"): 0.0048,
@@ -179,7 +185,9 @@ async def record_ai_usage_event(
                 billable_seconds=_float_or_none(billable_seconds),
             )
             if resolved_pricing_status == "priced":
-                resolved_price_source = resolved_price_source or OPENAI_PRICE_SOURCE
+                resolved_price_source = resolved_price_source or _price_source_for_provider(
+                    provider
+                )
         event = AiUsageEvent(
             user_id=_uuid_or_none(user_id),
             recording_id=_uuid_or_none(recording_id),
@@ -397,6 +405,14 @@ def _reasoning_tokens(usage: Any) -> int | None:
             return raw
     raw = _field(usage, "reasoning_tokens")
     return raw if isinstance(raw, int) else None
+
+
+def _price_source_for_provider(provider: str) -> str | None:
+    if provider == CEREBRAS_PROVIDER:
+        return CEREBRAS_PRICE_SOURCE
+    if provider == OPENAI_PROVIDER:
+        return OPENAI_PRICE_SOURCE
+    return None
 
 
 def _string_field(value: Any, name: str) -> str | None:

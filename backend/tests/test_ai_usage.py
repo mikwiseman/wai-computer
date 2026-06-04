@@ -7,6 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.ai_usage import (
+    CEREBRAS_PROVIDER,
     DEEPGRAM_PROVIDER,
     FEATURE_SEARCH,
     OPENAI_PROVIDER,
@@ -29,6 +30,30 @@ def test_usage_from_response_reads_openai_token_breakdowns() -> None:
             "total_tokens": 120,
             "input_tokens_details": {"cached_tokens": 40},
             "output_tokens_details": {"reasoning_tokens": 5},
+        },
+    }
+
+    usage = usage_from_response(response)
+
+    assert usage == {
+        "input_tokens": 100,
+        "output_tokens": 20,
+        "cached_tokens": 40,
+        "reasoning_tokens": 5,
+        "total_tokens": 120,
+    }
+
+
+def test_usage_from_response_reads_chat_completions_token_breakdowns() -> None:
+    response = {
+        "id": "chatcmpl_test",
+        "model": "gpt-oss-120b",
+        "usage": {
+            "prompt_tokens": 100,
+            "completion_tokens": 20,
+            "total_tokens": 120,
+            "prompt_tokens_details": {"cached_tokens": 40},
+            "completion_tokens_details": {"reasoning_tokens": 5},
         },
     }
 
@@ -68,6 +93,12 @@ def test_estimate_cost_prices_known_models_and_marks_unknown_models_unpriced() -
         model="nova-3",
         billable_seconds=60,
     ) == (0.0058, "priced")
+    assert estimate_cost_usd(
+        provider=CEREBRAS_PROVIDER,
+        model="gpt-oss-120b",
+        input_tokens=1_000_000,
+        output_tokens=10_000,
+    ) == (0.2569, "priced")
     assert estimate_cost_usd(
         provider=OPENAI_PROVIDER,
         model="gpt-unknown",

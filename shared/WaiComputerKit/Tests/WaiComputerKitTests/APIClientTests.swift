@@ -944,7 +944,7 @@ final class APIClientTests: XCTestCase {
             data: {"text":" text."}
 
             event: done
-            data: {"text":"Cleaned text.","model":"gpt-5.5","latency_ms":12,"input_tokens":111,"output_tokens":7,"cached_tokens":64}
+            data: {"text":"Cleaned text.","model":"gpt-oss-120b","latency_ms":12,"input_tokens":111,"output_tokens":7,"cached_tokens":64}
 
 
             """
@@ -972,7 +972,7 @@ final class APIClientTests: XCTestCase {
                 .token(text: " text."),
                 .done(
                     text: "Cleaned text.",
-                    model: "gpt-5.5",
+                    model: "gpt-oss-120b",
                     latencyMs: 12,
                     inputTokens: 111,
                     outputTokens: 7,

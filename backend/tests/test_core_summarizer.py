@@ -1,5 +1,6 @@
-"""Tests for app/core/summarizer.py — OpenAI Responses API structured outputs."""
+"""Tests for app/core/summarizer.py — Cerebras Chat Completions structured outputs."""
 
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -99,30 +100,28 @@ def _key_moments_payload():
 
 
 def _parsed_response(parsed) -> MagicMock:
-    response = MagicMock()
-    response.output_parsed = parsed
-    response.status = "completed"
-    response.error = None
-    response.incomplete_details = None
-    response.output = []
-    return response
+    if parsed is None:
+        return _text_response("")
+    return _text_response(parsed.model_dump_json())
 
 
 def _text_response(text: str) -> MagicMock:
     response = MagicMock()
-    response.output_text = text
-    response.status = "completed"
-    response.error = None
-    response.incomplete_details = None
-    response.output = []
+    response.model = "gpt-oss-120b"
+    response.choices = [
+        SimpleNamespace(
+            finish_reason="stop",
+            message=SimpleNamespace(content=text),
+        )
+    ]
     return response
 
 
 @pytest.fixture(autouse=True)
 def mock_settings():
     """Patch settings attributes on the already-imported module."""
-    with patch.object(summarizer_module.settings, "openai_api_key", "sk-test"), \
-         patch.object(summarizer_module.settings, "openai_llm_model", "gpt-5.5"):
+    with patch.object(summarizer_module.settings, "cerebras_api_key", "sk-test"), \
+         patch.object(summarizer_module.settings, "cerebras_llm_model", "gpt-oss-120b"):
         yield
 
 
@@ -130,9 +129,9 @@ class TestSummarizeTranscript:
     async def test_returns_summary_result_from_parsed_payload(self):
         mock_response = _parsed_response(_summary_schema_payload())
         mock_client = MagicMock()
-        mock_client.responses.parse = AsyncMock(return_value=mock_response)
+        mock_client.chat.completions.create = AsyncMock(return_value=mock_response)
 
-        with patch("app.core.summarizer.get_openai_client", return_value=mock_client):
+        with patch("app.core.summarizer.get_cerebras_client", return_value=mock_client):
             result = await summarize_transcript("Some transcript text")
 
         assert isinstance(result, SummaryResult)
@@ -148,94 +147,94 @@ class TestSummarizeTranscript:
         """When the model returns no action items, the result has an empty list (not invented)."""
         mock_response = _parsed_response(_summary_schema_payload(action_items=[]))
         mock_client = MagicMock()
-        mock_client.responses.parse = AsyncMock(return_value=mock_response)
+        mock_client.chat.completions.create = AsyncMock(return_value=mock_response)
 
-        with patch("app.core.summarizer.get_openai_client", return_value=mock_client):
+        with patch("app.core.summarizer.get_cerebras_client", return_value=mock_client):
             result = await summarize_transcript("Casual chitchat with no commitments")
 
         assert result.action_items == []
 
     async def test_missing_api_key_raises_value_error(self):
-        with patch.object(summarizer_module.settings, "openai_api_key", ""):
-            with pytest.raises(ValueError, match="OPENAI_API_KEY not configured"):
+        with patch.object(summarizer_module.settings, "cerebras_api_key", ""):
+            with pytest.raises(ValueError, match="CEREBRAS_API_KEY not configured"):
                 await summarize_transcript("Some transcript")
 
     async def test_parser_error_wrapped_in_summarization_error(self):
         mock_client = MagicMock()
-        mock_client.responses.parse = AsyncMock(side_effect=Exception("upstream blew up"))
+        mock_client.chat.completions.create = AsyncMock(side_effect=Exception("upstream blew up"))
 
-        with patch("app.core.summarizer.get_openai_client", return_value=mock_client):
+        with patch("app.core.summarizer.get_cerebras_client", return_value=mock_client):
             with pytest.raises(SummarizationError, match="Summarization failed"):
                 await summarize_transcript("Transcript")
 
     async def test_none_parsed_payload_raises_summarization_error(self):
         mock_client = MagicMock()
-        mock_client.responses.parse = AsyncMock(return_value=_parsed_response(None))
+        mock_client.chat.completions.create = AsyncMock(return_value=_parsed_response(None))
 
-        with patch("app.core.summarizer.get_openai_client", return_value=mock_client):
-            with pytest.raises(SummarizationError, match="no parsed summary"):
+        with patch("app.core.summarizer.get_cerebras_client", return_value=mock_client):
+            with pytest.raises(SummarizationError, match="returned empty text"):
                 await summarize_transcript("Transcript")
 
-    async def test_calls_responses_parse_with_correct_params(self):
+    async def test_calls_chat_completions_with_correct_params(self):
         mock_response = _parsed_response(_summary_schema_payload())
         mock_client = MagicMock()
-        mock_client.responses.parse = AsyncMock(return_value=mock_response)
+        mock_client.chat.completions.create = AsyncMock(return_value=mock_response)
 
-        with patch("app.core.summarizer.get_openai_client", return_value=mock_client):
+        with patch("app.core.summarizer.get_cerebras_client", return_value=mock_client):
             await summarize_transcript("My meeting notes")
 
-        mock_client.responses.parse.assert_awaited_once()
-        kwargs = mock_client.responses.parse.await_args.kwargs
-        assert kwargs["model"] == "gpt-5.5"
-        assert kwargs["max_output_tokens"] == 4096
-        assert kwargs["text_format"] is _SummarySchema
-        assert kwargs["reasoning"] == {"effort": "medium"}
-        assert "My meeting notes" in kwargs["input"]
+        mock_client.chat.completions.create.assert_awaited_once()
+        kwargs = mock_client.chat.completions.create.await_args.kwargs
+        assert kwargs["model"] == "gpt-oss-120b"
+        assert kwargs["max_completion_tokens"] == 4096
+        assert kwargs["response_format"]["json_schema"]["name"] == "recording_summary"
+        assert kwargs["reasoning_effort"] == "medium"
+        assert "My meeting notes" in kwargs["messages"][1]["content"]
 
     async def test_language_param_injected_into_prompt(self):
         mock_response = _parsed_response(_summary_schema_payload())
         mock_client = MagicMock()
-        mock_client.responses.parse = AsyncMock(return_value=mock_response)
+        mock_client.chat.completions.create = AsyncMock(return_value=mock_response)
 
-        with patch("app.core.summarizer.get_openai_client", return_value=mock_client):
+        with patch("app.core.summarizer.get_cerebras_client", return_value=mock_client):
             await summarize_transcript("Notes", language="ru")
 
-        content = mock_client.responses.parse.await_args.kwargs["input"]
+        content = mock_client.chat.completions.create.await_args.kwargs["messages"][1]["content"]
         assert "ru" in content
         assert "OUTPUT LANGUAGE" in content
 
     async def test_style_param_injected_into_prompt(self):
         mock_response = _parsed_response(_summary_schema_payload())
         mock_client = MagicMock()
-        mock_client.responses.parse = AsyncMock(return_value=mock_response)
+        mock_client.chat.completions.create = AsyncMock(return_value=mock_response)
 
-        with patch("app.core.summarizer.get_openai_client", return_value=mock_client):
+        with patch("app.core.summarizer.get_cerebras_client", return_value=mock_client):
             await summarize_transcript("Notes", style="brief")
 
-        content = mock_client.responses.parse.await_args.kwargs["input"]
+        content = mock_client.chat.completions.create.await_args.kwargs["messages"][1]["content"]
         assert "1-2 sentences" in content
 
     async def test_custom_instructions_injected_into_prompt(self):
         mock_response = _parsed_response(_summary_schema_payload())
         mock_client = MagicMock()
-        mock_client.responses.parse = AsyncMock(return_value=mock_response)
+        mock_client.chat.completions.create = AsyncMock(return_value=mock_response)
 
-        with patch("app.core.summarizer.get_openai_client", return_value=mock_client):
+        with patch("app.core.summarizer.get_cerebras_client", return_value=mock_client):
             await summarize_transcript("Notes", instructions="Focus on deadlines")
 
-        content = mock_client.responses.parse.await_args.kwargs["input"]
+        content = mock_client.chat.completions.create.await_args.kwargs["messages"][1]["content"]
         assert "Focus on deadlines" in content
         assert "ADDITIONAL INSTRUCTIONS" in content
 
     async def test_auto_language_follows_transcript_language(self):
         mock_response = _parsed_response(_summary_schema_payload())
         mock_client = MagicMock()
-        mock_client.responses.parse = AsyncMock(return_value=mock_response)
+        mock_client.chat.completions.create = AsyncMock(return_value=mock_response)
 
-        with patch("app.core.summarizer.get_openai_client", return_value=mock_client):
+        with patch("app.core.summarizer.get_cerebras_client", return_value=mock_client):
             await summarize_transcript("Notes", language="auto")
 
-        content = mock_client.responses.parse.await_args.kwargs["input"]
+        content = mock_client.chat.completions.create.await_args.kwargs["messages"][1]["content"]
         assert "OUTPUT LANGUAGE" in content
         assert "dominant language of the transcript" in content
 
@@ -304,9 +303,9 @@ class TestContentSummariesAndMoments:
     async def test_summarize_content_returns_structured_result(self):
         mock_response = _parsed_response(_summary_schema_payload(title="Saved Article"))
         mock_client = MagicMock()
-        mock_client.responses.parse = AsyncMock(return_value=mock_response)
+        mock_client.chat.completions.create = AsyncMock(return_value=mock_response)
 
-        with patch("app.core.summarizer.get_openai_client", return_value=mock_client):
+        with patch("app.core.summarizer.get_cerebras_client", return_value=mock_client):
             result = await summarize_content(
                 "Article body",
                 content_kind="article",
@@ -317,77 +316,78 @@ class TestContentSummariesAndMoments:
 
         assert result.title == "Saved Article"
         assert result.highlights[0]["title"] == "Approved hiring plan"
-        kwargs = mock_client.responses.parse.await_args.kwargs
-        assert kwargs["text_format"] is _SummarySchema
-        assert "Article body" in kwargs["input"]
-        assert "No fluff" in kwargs["input"]
+        kwargs = mock_client.chat.completions.create.await_args.kwargs
+        assert kwargs["response_format"]["json_schema"]["name"] == "content_summary"
+        assert kwargs["reasoning_effort"] == "medium"
+        assert "Article body" in kwargs["messages"][1]["content"]
+        assert "No fluff" in kwargs["messages"][1]["content"]
 
     async def test_summarize_content_errors_are_explicit(self):
-        with patch.object(summarizer_module.settings, "openai_api_key", ""):
-            with pytest.raises(ValueError, match="OPENAI_API_KEY not configured"):
+        with patch.object(summarizer_module.settings, "cerebras_api_key", ""):
+            with pytest.raises(ValueError, match="CEREBRAS_API_KEY not configured"):
                 await summarize_content("body")
 
         mock_client = MagicMock()
-        mock_client.responses.parse = AsyncMock(side_effect=Exception("upstream"))
-        with patch("app.core.summarizer.get_openai_client", return_value=mock_client):
+        mock_client.chat.completions.create = AsyncMock(side_effect=Exception("upstream"))
+        with patch("app.core.summarizer.get_cerebras_client", return_value=mock_client):
             with pytest.raises(SummarizationError, match="Content summarization failed"):
                 await summarize_content("body")
 
-        mock_client.responses.parse = AsyncMock(return_value=_parsed_response(None))
-        with patch("app.core.summarizer.get_openai_client", return_value=mock_client):
-            with pytest.raises(SummarizationError, match="no parsed summary"):
+        mock_client.chat.completions.create = AsyncMock(return_value=_parsed_response(None))
+        with patch("app.core.summarizer.get_cerebras_client", return_value=mock_client):
+            with pytest.raises(SummarizationError, match="returned empty text"):
                 await summarize_content("body")
 
     async def test_extract_key_moments_returns_rows_and_builds_language_prompt(self):
         mock_response = _parsed_response(_key_moments_payload())
         mock_client = MagicMock()
-        mock_client.responses.parse = AsyncMock(return_value=mock_response)
+        mock_client.chat.completions.create = AsyncMock(return_value=mock_response)
 
-        with patch("app.core.summarizer.get_openai_client", return_value=mock_client):
+        with patch("app.core.summarizer.get_cerebras_client", return_value=mock_client):
             result = await extract_key_moments("Transcript", language="ru")
 
         assert [moment.importance for moment in result] == ["high", "medium"]
         assert result[0].quote == "approved the launch"
-        kwargs = mock_client.responses.parse.await_args.kwargs
-        assert kwargs["text_format"] is summarizer_module._KeyMomentsSchema
-        assert "Write all text in ru" in kwargs["input"]
+        kwargs = mock_client.chat.completions.create.await_args.kwargs
+        assert kwargs["response_format"]["json_schema"]["name"] == "key_moments"
+        assert kwargs["reasoning_effort"] == "medium"
+        assert "Write all text in ru" in kwargs["messages"][1]["content"]
 
     async def test_extract_key_moments_errors_are_explicit(self):
-        with patch.object(summarizer_module.settings, "openai_api_key", ""):
-            with pytest.raises(ValueError, match="OPENAI_API_KEY not configured"):
+        with patch.object(summarizer_module.settings, "cerebras_api_key", ""):
+            with pytest.raises(ValueError, match="CEREBRAS_API_KEY not configured"):
                 await extract_key_moments("body")
 
         mock_client = MagicMock()
-        mock_client.responses.parse = AsyncMock(side_effect=Exception("upstream"))
-        with patch("app.core.summarizer.get_openai_client", return_value=mock_client):
+        mock_client.chat.completions.create = AsyncMock(side_effect=Exception("upstream"))
+        with patch("app.core.summarizer.get_cerebras_client", return_value=mock_client):
             with pytest.raises(SummarizationError, match="Key moments extraction failed"):
                 await extract_key_moments("body")
 
-        mock_client.responses.parse = AsyncMock(return_value=_parsed_response(None))
-        with patch("app.core.summarizer.get_openai_client", return_value=mock_client):
-            with pytest.raises(SummarizationError, match="no parsed key-moments"):
+        mock_client.chat.completions.create = AsyncMock(return_value=_parsed_response(None))
+        with patch("app.core.summarizer.get_cerebras_client", return_value=mock_client):
+            with pytest.raises(SummarizationError, match="returned empty text"):
                 await extract_key_moments("body")
 
     async def test_generate_title_uses_response_text_and_wraps_incomplete_response(self):
         mock_client = MagicMock()
-        mock_client.responses.create = AsyncMock(return_value=_text_response("Roadmap Sync"))
+        mock_client.chat.completions.create = AsyncMock(return_value=_text_response("Roadmap Sync"))
 
-        with patch("app.core.summarizer.get_openai_client", return_value=mock_client):
+        with patch("app.core.summarizer.get_cerebras_client", return_value=mock_client):
             title = await generate_title("Transcript body", language="multi")
 
         assert title == "Roadmap Sync"
-        kwargs = mock_client.responses.create.await_args.kwargs
-        assert "dominant language of the transcript" in kwargs["input"]
+        kwargs = mock_client.chat.completions.create.await_args.kwargs
+        assert "dominant language of the transcript" in kwargs["messages"][1]["content"]
 
-        with patch.object(summarizer_module.settings, "openai_api_key", ""):
-            with pytest.raises(ValueError, match="OPENAI_API_KEY not configured"):
+        with patch.object(summarizer_module.settings, "cerebras_api_key", ""):
+            with pytest.raises(ValueError, match="CEREBRAS_API_KEY not configured"):
                 await generate_title("Transcript")
 
         failed = _text_response("ignored")
-        failed.status = "incomplete"
-        failed.incomplete_details = {"reason": "max_output_tokens"}
-        mock_client.responses.create = AsyncMock(return_value=failed)
-        with patch("app.core.summarizer.get_openai_client", return_value=mock_client):
+        failed.choices[0].finish_reason = "length"
+        mock_client.chat.completions.create = AsyncMock(return_value=failed)
+        with patch("app.core.summarizer.get_cerebras_client", return_value=mock_client):
             with pytest.raises(SummarizationError, match="Title generation failed"):
                 await generate_title("Transcript", language="ru")
 
@@ -430,9 +430,9 @@ class TestExtractEntities:
     async def test_returns_entity_results_correctly(self):
         mock_response = _parsed_response(_entity_schema_payload())
         mock_client = MagicMock()
-        mock_client.responses.parse = AsyncMock(return_value=mock_response)
+        mock_client.chat.completions.create = AsyncMock(return_value=mock_response)
 
-        with patch("app.core.summarizer.get_openai_client", return_value=mock_client):
+        with patch("app.core.summarizer.get_cerebras_client", return_value=mock_client):
             results = await extract_entities("Transcript with entities")
 
         assert len(results) == 2
@@ -449,13 +449,13 @@ class TestExtractEntities:
 
     async def test_parser_error_wrapped_in_summarization_error(self):
         mock_client = MagicMock()
-        mock_client.responses.parse = AsyncMock(side_effect=Exception("upstream blew up"))
+        mock_client.chat.completions.create = AsyncMock(side_effect=Exception("upstream blew up"))
 
-        with patch("app.core.summarizer.get_openai_client", return_value=mock_client):
+        with patch("app.core.summarizer.get_cerebras_client", return_value=mock_client):
             with pytest.raises(SummarizationError, match="Entity extraction failed"):
                 await extract_entities("Transcript")
 
     async def test_missing_api_key_raises_value_error(self):
-        with patch.object(summarizer_module.settings, "openai_api_key", ""):
-            with pytest.raises(ValueError, match="OPENAI_API_KEY not configured"):
+        with patch.object(summarizer_module.settings, "cerebras_api_key", ""):
+            with pytest.raises(ValueError, match="CEREBRAS_API_KEY not configured"):
                 await extract_entities("Some transcript")

@@ -50,6 +50,32 @@ def test_dictation_post_filter_openai_migration_flips_defaults(monkeypatch):
     assert defaults["dictation_post_filter_model"] == "gpt-5.5"
 
 
+def test_cerebras_post_filter_default_migration_resets_all_users(monkeypatch):
+    """June 4 LLM swap should overwrite every saved post-filter pair to Cerebras."""
+    migration = _load_migration("20260604_160000_cerebras_post_filter_defaults.py")
+    executed: list[TextClause] = []
+    altered: list[dict[str, object]] = []
+
+    monkeypatch.setattr(migration.op, "execute", executed.append)
+    monkeypatch.setattr(
+        migration.op,
+        "alter_column",
+        lambda *args, **kwargs: altered.append({"args": args, "kwargs": kwargs}),
+    )
+
+    migration.upgrade()
+
+    assert len(executed) == 1
+    statement = str(executed[0])
+    assert "dictation_post_filter_provider = :provider" in statement
+    assert "dictation_post_filter_model = :model" in statement
+    assert "WHERE" not in statement
+
+    defaults = {change["args"][1]: change["kwargs"]["server_default"] for change in altered}
+    assert defaults["dictation_post_filter_provider"] == "cerebras"
+    assert defaults["dictation_post_filter_model"] == "gpt-oss-120b"
+
+
 def test_disable_dictation_post_filter_default_migration(monkeypatch):
     """May 20 product change should make dictation cleanup opt-in."""
     migration = _load_migration("20260520_170000_disable_dictation_post_filter_default.py")

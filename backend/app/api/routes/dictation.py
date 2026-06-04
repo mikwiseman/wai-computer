@@ -1,7 +1,7 @@
 """Dictation routes: AI text cleanup + persistent history/dictionary store.
 
 Two concerns share this module:
-- POST /cleanup runs the OpenAI Responses API to polish dictated text.
+- POST /cleanup runs Cerebras gpt-oss to polish dictated text.
 - /entries and /dictionary back the macOS client's local stores so they
   survive logout/login and sync across Macs.
 """
@@ -25,17 +25,20 @@ from app.api.deps import CurrentUser, Database, PaymentModeOverride
 from app.billing.quota import WordQuota, count_words
 from app.config import get_settings
 from app.core.ai_usage import (
+    CEREBRAS_PROVIDER,
     FEATURE_DICTATION,
-    OPENAI_PROVIDER,
     STATUS_FAILED,
     STATUS_SUCCEEDED,
     record_ai_usage_event_standalone,
 )
-from app.core.openai_client import get_openai_client
-from app.core.openai_responses import (
-    OpenAIResponseError,
-    ensure_response_completed,
-    response_output_text,
+from app.core.cerebras_chat import (
+    CerebrasResponseError,
+    chat_completion_delta_text,
+    chat_completion_finish_reason,
+    chat_completion_model,
+    chat_completion_text,
+    chat_completion_usage_response,
+    get_cerebras_client,
 )
 from app.core.transcription_options import (
     DEFAULT_DICTATION_POST_FILTER_MODEL,
@@ -62,9 +65,9 @@ CLEANUP_OUTPUT_TOKEN_QUANTUM = 256
 
 
 def _dictation_cleanup_reasoning_effort(cleanup_level: str) -> str:
-    """Use no reasoning for default light cleanup; keep low effort for rewrites."""
-    if cleanup_level == "light":
-        return "none"
+    """Keep cleanup fast while allowing more polish for explicit high rewrites."""
+    if cleanup_level == "high":
+        return "medium"
     return "low"
 
 DICTATION_CLEANUP_INSTRUCTIONS_BY_LEVEL = {
@@ -199,16 +202,15 @@ class CleanupResponse(BaseModel):
 
 
 @dataclass(frozen=True)
-class CleanupOpenAIRequest:
-    """Prepared Responses API request for dictation cleanup."""
+class CleanupCerebrasRequest:
+    """Prepared Cerebras Chat Completions request for dictation cleanup."""
 
     text: str
     model: str
     reasoning_effort: str
     instructions: str
     input: str
-    max_output_tokens: int
-    prompt_cache_key: str
+    max_completion_tokens: int
 
 
 class TranslationRequest(BaseModel):
@@ -350,37 +352,21 @@ def _cleanup_output_token_cap(text: str) -> int:
     )
 
 
-def _dictation_cleanup_prompt_cache_key(user_id: UUID) -> str:
-    return f"wai-dictation-cleanup-{user_id}"
-
-
-def _dictation_cleanup_text_config() -> dict[str, Any]:
-    return {"format": {"type": "text"}, "verbosity": "low"}
-
-
 def _event_field(event: Any, name: str, default: Any = None) -> Any:
     if isinstance(event, dict):
         return event.get(name, default)
     return getattr(event, name, default)
 
 
-def _event_output_text(event: Any) -> str:
-    event_type = _event_field(event, "type")
-    if event_type == "response.output_text.done":
-        text = _event_field(event, "text", "")
-        return text if isinstance(text, str) else ""
-    if event_type == "response.content_part.done":
-        part = _event_field(event, "part")
-        part_type = _event_field(part, "type")
-        text = _event_field(part, "text", "")
-        return text if part_type == "output_text" and isinstance(text, str) else ""
-    return ""
+def _string_event_field(event: Any, name: str) -> str | None:
+    value = _event_field(event, name)
+    return value if isinstance(value, str) and value else None
 
 
-def _prepare_cleanup_openai_request(
+def _prepare_cleanup_cerebras_request(
     request: CleanupRequest,
     user: CurrentUser,
-) -> CleanupOpenAIRequest | CleanupResponse:
+) -> CleanupCerebrasRequest | CleanupResponse:
     text = request.text.strip()
     if not text:
         return CleanupResponse(text="")
@@ -393,10 +379,10 @@ def _prepare_cleanup_openai_request(
         return CleanupResponse(text=text)
 
     settings = get_settings()
-    if not settings.openai_api_key:
+    if not settings.cerebras_api_key:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="AI cleanup is not configured (missing OPENAI_API_KEY).",
+            detail="AI cleanup is not configured (missing CEREBRAS_API_KEY).",
         )
 
     provider, model = validate_option(
@@ -404,7 +390,7 @@ def _prepare_cleanup_openai_request(
         DEFAULT_DICTATION_POST_FILTER_PROVIDER,
         DEFAULT_DICTATION_POST_FILTER_MODEL,
     )
-    if provider != "openai":
+    if provider != "cerebras":
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=f"Unsupported dictation post-filter provider: {provider}",
@@ -417,7 +403,7 @@ def _prepare_cleanup_openai_request(
             detail=f"Unsupported dictation cleanup level: {cleanup_level}",
         )
 
-    return CleanupOpenAIRequest(
+    return CleanupCerebrasRequest(
         text=text,
         model=model,
         reasoning_effort=_dictation_cleanup_reasoning_effort(cleanup_level),
@@ -431,8 +417,7 @@ def _prepare_cleanup_openai_request(
             f"{text}\n"
             "</dictated_text>"
         ),
-        max_output_tokens=_cleanup_output_token_cap(text),
-        prompt_cache_key=_dictation_cleanup_prompt_cache_key(user.id),
+        max_completion_tokens=_cleanup_output_token_cap(text),
     )
 
 
@@ -444,6 +429,14 @@ def _jsonable_usage_value(value: Any, key: str) -> int | None:
     else:
         raw = getattr(value, key, None)
     return raw if isinstance(raw, int) else None
+
+
+def _first_jsonable_usage_value(value: Any, *keys: str) -> int | None:
+    for key in keys:
+        raw = _jsonable_usage_value(value, key)
+        if raw is not None:
+            return raw
+    return None
 
 
 def _cached_tokens_from_usage(usage: Any) -> int | None:
@@ -460,16 +453,6 @@ def _cached_tokens_from_usage(usage: Any) -> int | None:
             or getattr(usage, "prompt_tokens_details", None)
         )
     return _jsonable_usage_value(details, "cached_tokens")
-
-
-def _model_from_response(response: Any, fallback: str | None) -> str | None:
-    if response is None:
-        return fallback
-    if isinstance(response, dict):
-        model = response.get("model")
-    else:
-        model = getattr(response, "model", None)
-    return model if isinstance(model, str) and model else fallback
 
 
 def _sse_frame(event_type: str, payload: dict[str, Any]) -> bytes:
@@ -492,8 +475,16 @@ def _cleanup_done_frame(
             "text": text,
             "model": model,
             "latency_ms": latency_ms,
-            "input_tokens": _jsonable_usage_value(usage, "input_tokens"),
-            "output_tokens": _jsonable_usage_value(usage, "output_tokens"),
+            "input_tokens": _first_jsonable_usage_value(
+                usage,
+                "input_tokens",
+                "prompt_tokens",
+            ),
+            "output_tokens": _first_jsonable_usage_value(
+                usage,
+                "output_tokens",
+                "completion_tokens",
+            ),
             "cached_tokens": _cached_tokens_from_usage(usage),
         },
     )
@@ -515,7 +506,7 @@ async def _record_dictation_ai_usage(
     streamed: bool = False,
 ) -> None:
     await record_ai_usage_event_standalone(
-        provider=OPENAI_PROVIDER,
+        provider=CEREBRAS_PROVIDER,
         feature=FEATURE_DICTATION,
         operation=operation,
         status=status_value,
@@ -529,78 +520,55 @@ async def _record_dictation_ai_usage(
 
 
 async def _stream_cleanup_events(
-    prepared: CleanupOpenAIRequest,
+    prepared: CleanupCerebrasRequest,
     user_id: UUID,
 ) -> AsyncIterator[bytes]:
     started = time.monotonic()
     assistant_text = ""
-    completed_response_obj: Any = None
+    response_for_usage: Any = None
     usage: Any = None
+    response_id: str | None = None
+    response_model: str | None = prepared.model
 
     try:
-        client = get_openai_client()
-        stream = await client.responses.create(
+        client = get_cerebras_client()
+        stream = await client.chat.completions.create(
             model=prepared.model,
-            instructions=prepared.instructions,
-            input=prepared.input,
-            reasoning={"effort": prepared.reasoning_effort},
-            text=_dictation_cleanup_text_config(),
-            max_output_tokens=prepared.max_output_tokens,
-            prompt_cache_key=prepared.prompt_cache_key,
-            prompt_cache_retention="24h",
+            messages=[
+                {"role": "system", "content": prepared.instructions},
+                {"role": "user", "content": prepared.input},
+            ],
+            reasoning_effort=prepared.reasoning_effort,
+            max_completion_tokens=prepared.max_completion_tokens,
             stream=True,
-            store=False,
         )
 
         async for event in stream:
-            event_type = _event_field(event, "type")
-            if event_type == "response.output_text.delta":
-                delta = _event_field(event, "delta", "")
-                delta = delta or ""
-                assistant_text += delta
-                if delta:
-                    yield _sse_frame("token", {"text": delta})
-            elif event_type in (
-                "response.output_text.done",
-                "response.content_part.done",
-            ):
-                text = _event_output_text(event)
-                if text and not assistant_text:
-                    assistant_text = text
-                    yield _sse_frame("token", {"text": text})
-            elif event_type in ("response.completed", "response.done"):
-                response_obj = _event_field(event, "response")
-                completed_response_obj = response_obj
-                if response_obj is not None:
-                    ensure_response_completed(
-                        response_obj,
-                        operation="Dictation cleanup",
-                    )
-                    usage = (
-                        response_obj.get("usage")
-                        if isinstance(response_obj, dict)
-                        else getattr(response_obj, "usage", None)
-                    )
-                    if not assistant_text:
-                        assistant_text = response_output_text(response_obj)
-                        if assistant_text:
-                            yield _sse_frame("token", {"text": assistant_text})
-            elif event_type in ("response.error", "error"):
-                error_obj = _event_field(event, "error")
-                message = "AI service error. Please try again later."
-                if isinstance(error_obj, dict):
-                    message = str(error_obj.get("message") or message)
-                elif error_obj is not None:
-                    message = str(getattr(error_obj, "message", None) or message)
-                raise OpenAIResponseError(message)
+            response_id = _string_event_field(event, "id") or response_id
+            response_model = chat_completion_model(event, response_model)
+            event_usage = _event_field(event, "usage")
+            if event_usage is not None:
+                usage = event_usage
 
-        ensure_response_completed(
-            completed_response_obj,
-            operation="Dictation cleanup",
-        )
+            delta = chat_completion_delta_text(event)
+            if delta:
+                assistant_text += delta
+                yield _sse_frame("token", {"text": delta})
+
+            finish_reason = chat_completion_finish_reason(event)
+            if finish_reason and finish_reason != "stop":
+                raise CerebrasResponseError(
+                    f"Dictation cleanup did not complete: {finish_reason}"
+                )
+
         cleaned = assistant_text.strip()
         if not cleaned:
-            raise OpenAIResponseError("Dictation cleanup returned empty text.")
+            raise CerebrasResponseError("Dictation cleanup returned empty text.")
+        response_for_usage = chat_completion_usage_response(
+            model=response_model,
+            usage=usage,
+            response_id=response_id,
+        )
 
         logger.info(
             "Dictation cleanup stream: %d chars → %d chars for user %s",
@@ -612,14 +580,14 @@ async def _stream_cleanup_events(
             operation="dictation.cleanup",
             status_value=STATUS_SUCCEEDED,
             user_id=user_id,
-            model=_model_from_response(completed_response_obj, prepared.model),
-            response=completed_response_obj,
+            model=response_model,
+            response=response_for_usage,
             started=started,
             streamed=True,
         )
         yield _cleanup_done_frame(
             text=cleaned,
-            model=_model_from_response(completed_response_obj, prepared.model),
+            model=response_model,
             latency_ms=int((time.monotonic() - started) * 1000),
             usage=usage,
         )
@@ -629,7 +597,7 @@ async def _stream_cleanup_events(
             status_value=STATUS_FAILED,
             user_id=user_id,
             model=prepared.model,
-            response=completed_response_obj,
+            response=response_for_usage,
             started=started,
             error=exc,
             streamed=True,
@@ -641,7 +609,7 @@ async def _stream_cleanup_events(
             status_value=STATUS_FAILED,
             user_id=user_id,
             model=prepared.model,
-            response=completed_response_obj,
+            response=response_for_usage,
             started=started,
             error=exc,
             streamed=True,
@@ -656,7 +624,7 @@ async def _stream_cleanup_events(
             status_value=STATUS_FAILED,
             user_id=user_id,
             model=prepared.model,
-            response=completed_response_obj,
+            response=response_for_usage,
             started=started,
             error=exc,
             streamed=True,
@@ -666,13 +634,13 @@ async def _stream_cleanup_events(
             "upstream_error",
             "AI service error. Please try again later.",
         )
-    except OpenAIResponseError as exc:
+    except CerebrasResponseError as exc:
         await _record_dictation_ai_usage(
             operation="dictation.cleanup",
             status_value=STATUS_FAILED,
             user_id=user_id,
             model=prepared.model,
-            response=completed_response_obj,
+            response=response_for_usage,
             started=started,
             error=exc,
             streamed=True,
@@ -688,7 +656,7 @@ async def _stream_cleanup_events(
             status_value=STATUS_FAILED,
             user_id=user_id,
             model=prepared.model,
-            response=completed_response_obj,
+            response=response_for_usage,
             started=started,
             error=exc,
             streamed=True,
@@ -731,35 +699,30 @@ def _translation_instructions(
 
 @router.post("/cleanup", response_model=CleanupResponse)
 async def cleanup_dictation(request: CleanupRequest, user: CurrentUser):
-    """Clean up raw dictated text via the OpenAI Responses API.
+    """Clean up raw dictated text via Cerebras gpt-oss.
 
     Removes filler words, fixes grammar, adds proper punctuation, and formats
     the text while preserving the original meaning.
     """
-    prepared = _prepare_cleanup_openai_request(request, user)
+    prepared = _prepare_cleanup_cerebras_request(request, user)
     if isinstance(prepared, CleanupResponse):
         return prepared
 
     started = time.monotonic()
     response = None
-    started = time.monotonic()
-    response = None
     try:
-        client = get_openai_client()
-        response = await client.responses.create(
+        client = get_cerebras_client()
+        response = await client.chat.completions.create(
             model=prepared.model,
-            instructions=prepared.instructions,
-            input=prepared.input,
-            reasoning={"effort": prepared.reasoning_effort},
-            text=_dictation_cleanup_text_config(),
-            max_output_tokens=prepared.max_output_tokens,
-            prompt_cache_key=prepared.prompt_cache_key,
-            prompt_cache_retention="24h",
-            store=False,
+            messages=[
+                {"role": "system", "content": prepared.instructions},
+                {"role": "user", "content": prepared.input},
+            ],
+            reasoning_effort=prepared.reasoning_effort,
+            max_completion_tokens=prepared.max_completion_tokens,
         )
 
-        ensure_response_completed(response, operation="Dictation cleanup")
-        cleaned = response_output_text(response)
+        cleaned = chat_completion_text(response, operation="Dictation cleanup")
 
         logger.info(
             "Dictation cleanup: %d chars → %d chars for user %s",
@@ -771,7 +734,7 @@ async def cleanup_dictation(request: CleanupRequest, user: CurrentUser):
             operation="dictation.cleanup",
             status_value=STATUS_SUCCEEDED,
             user_id=user.id,
-            model=_model_from_response(response, prepared.model),
+            model=chat_completion_model(response, prepared.model),
             response=response,
             started=started,
         )
@@ -822,7 +785,7 @@ async def cleanup_dictation(request: CleanupRequest, user: CurrentUser):
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail="AI service error. Please try again later.",
         ) from exc
-    except OpenAIResponseError as exc:
+    except CerebrasResponseError as exc:
         await _record_dictation_ai_usage(
             operation="dictation.cleanup",
             status_value=STATUS_FAILED,
@@ -857,7 +820,7 @@ async def cleanup_dictation(request: CleanupRequest, user: CurrentUser):
 @router.post("/cleanup/stream")
 async def cleanup_dictation_stream(request: CleanupRequest, user: CurrentUser):
     """Stream AI cleanup deltas as server-sent events."""
-    prepared = _prepare_cleanup_openai_request(request, user)
+    prepared = _prepare_cleanup_cerebras_request(request, user)
     if isinstance(prepared, CleanupResponse):
         text = prepared.text
 
@@ -891,10 +854,10 @@ async def translate_dictation(request: TranslationRequest, user: CurrentUser):
         return CleanupResponse(text="")
 
     settings = get_settings()
-    if not settings.openai_api_key:
+    if not settings.cerebras_api_key:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="AI translation is not configured (missing OPENAI_API_KEY).",
+            detail="AI translation is not configured (missing CEREBRAS_API_KEY).",
         )
 
     provider, model = validate_option(
@@ -902,7 +865,7 @@ async def translate_dictation(request: TranslationRequest, user: CurrentUser):
         DEFAULT_DICTATION_POST_FILTER_PROVIDER,
         DEFAULT_DICTATION_POST_FILTER_MODEL,
     )
-    if provider != "openai":
+    if provider != "cerebras":
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=f"Unsupported dictation post-filter provider: {provider}",
@@ -911,28 +874,29 @@ async def translate_dictation(request: TranslationRequest, user: CurrentUser):
     response = None
     started = time.monotonic()
     try:
-        client = get_openai_client()
-        response = await client.responses.create(
+        instructions = _translation_instructions(
+            target_language_code=request.target_language_code,
+            target_language_name=request.target_language_name,
+            context=request.context,
+            vocabulary=request.vocabulary,
+        )
+        input_text = (
+            "<dictated_text>\n"
+            f"{text}\n"
+            "</dictated_text>"
+        )
+        client = get_cerebras_client()
+        response = await client.chat.completions.create(
             model=model,
-            instructions=_translation_instructions(
-                target_language_code=request.target_language_code,
-                target_language_name=request.target_language_name,
-                context=request.context,
-                vocabulary=request.vocabulary,
-            ),
-            input=(
-                "<dictated_text>\n"
-                f"{text}\n"
-                "</dictated_text>"
-            ),
-            reasoning={"effort": "low"},
-            text=_dictation_cleanup_text_config(),
-            max_output_tokens=_cleanup_output_token_cap(text),
-            store=False,
+            messages=[
+                {"role": "system", "content": instructions},
+                {"role": "user", "content": input_text},
+            ],
+            reasoning_effort="low",
+            max_completion_tokens=_cleanup_output_token_cap(text),
         )
 
-        ensure_response_completed(response, operation="Dictation translation")
-        translated = response_output_text(response)
+        translated = chat_completion_text(response, operation="Dictation translation")
 
         logger.info(
             "Dictation translation: %d chars → %d chars for user %s",
@@ -944,7 +908,7 @@ async def translate_dictation(request: TranslationRequest, user: CurrentUser):
             operation="dictation.translate",
             status_value=STATUS_SUCCEEDED,
             user_id=user.id,
-            model=_model_from_response(response, model),
+            model=chat_completion_model(response, model),
             response=response,
             started=started,
         )
@@ -995,7 +959,7 @@ async def translate_dictation(request: TranslationRequest, user: CurrentUser):
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail="AI service error. Please try again later.",
         ) from exc
-    except OpenAIResponseError as exc:
+    except CerebrasResponseError as exc:
         await _record_dictation_ai_usage(
             operation="dictation.translate",
             status_value=STATUS_FAILED,

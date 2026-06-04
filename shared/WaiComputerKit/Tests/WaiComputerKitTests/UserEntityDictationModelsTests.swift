@@ -153,8 +153,8 @@ final class UserEntityDictationModelsTests: XCTestCase {
           "file_stt_model":"scribe_v2",
           "dictation_post_filter_enabled":true,
           "dictation_cleanup_level":"light",
-          "dictation_post_filter_provider":"openai",
-          "dictation_post_filter_model":"gpt-5.5"
+          "dictation_post_filter_provider":"cerebras",
+          "dictation_post_filter_model":"gpt-oss-120b"
         }
         """.data(using: .utf8)!
         let s = try decoder.decode(UserSettings.self, from: json)

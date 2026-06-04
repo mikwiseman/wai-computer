@@ -23,7 +23,7 @@ An ecosystem for task-centric dialogue, realtime voice, transcription, app gener
 │  │              (Self-hosted VPS)            │                  │
 │  ├───────────────────────────────────────────┤                  │
 │  │  ┌─────────────┐  ┌─────────────────────┐ │                  │
-│  │  │ ElevenLabs  │  │   OpenAI Responses  │ │                  │
+│  │  │ ElevenLabs  │  │ Cerebras/OpenAI AI │ │                  │
 │  │  │ Realtime    │  │   Summarization     │ │                  │
 │  │  │ Voice + STT │  │   App Generation    │ │                  │
 │  │  │             │  │   Tool Execution    │ │                  │
@@ -58,7 +58,8 @@ An ecosystem for task-centric dialogue, realtime voice, transcription, app gener
 - Deepgram Nova-3 realtime speech-to-text for live dictation and recording captions
 - ElevenLabs Scribe v2 file transcription for full recording processing
 - ElevenLabs realtime voice sessions
-- OpenAI Responses API for summarization, entity extraction, Companion, and dictation cleanup
+- Cerebras gpt-oss-120b for summarization, entity extraction, and dictation cleanup
+- OpenAI Responses API for Companion and embeddings
 - PostgreSQL with pgvector for hybrid search
 - Redis for agent scheduling and deploy/runtime coordination
 
@@ -170,6 +171,7 @@ Web app default routes:
 DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/waicomputer
 JWT_SECRET=your-secure-secret
 OPENAI_API_KEY=your-openai-key
+CEREBRAS_API_KEY=your-cerebras-key
 
 # Optional - realtime voice sessions
 ELEVENLABS_API_KEY=your-elevenlabs-key
@@ -256,7 +258,7 @@ To capture audio from Zoom/Meet/etc:
 - **Backend**: Python 3.11+, FastAPI
 - **Database**: PostgreSQL 16 + pgvector
 - **Transcription**: Deepgram `nova-3` for dictation/live STT, ElevenLabs `scribe_v2` for full file STT
-- **AI**: OpenAI Responses API
+- **AI**: Cerebras `gpt-oss-120b` for summaries/dictation cleanup; OpenAI Responses API for Companion and embeddings
 - **Audio Codec**: Opus (16kHz, mono)
 - **Deploy**: Cloudflare Pages + Workers
 

@@ -35,6 +35,7 @@ async def test_lifespan_emits_all_warnings_when_everything_unconfigured(
     monkeypatch.setattr(settings, "realtime_voice_provider", "openai", raising=False)
     monkeypatch.setattr(settings, "elevenlabs_api_key", "ok", raising=False)
     monkeypatch.setattr(settings, "openai_api_key", "", raising=False)
+    monkeypatch.setattr(settings, "cerebras_api_key", "", raising=False)
     monkeypatch.setattr(settings, "resend_api_key", "", raising=False)
     monkeypatch.setattr(settings, "redis_url", "", raising=False)
     monkeypatch.setattr(main, "app_settings", settings)
@@ -46,6 +47,7 @@ async def test_lifespan_emits_all_warnings_when_everything_unconfigured(
     messages = " ".join(r.message for r in caplog.records)
     assert "unsupported" in messages.lower()
     assert "OPENAI_API_KEY" in messages
+    assert "CEREBRAS_API_KEY" in messages
     assert "RESEND_API_KEY" in messages
     assert "REDIS_URL" in messages
 

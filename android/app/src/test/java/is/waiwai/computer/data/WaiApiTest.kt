@@ -132,8 +132,8 @@ class WaiApiTest {
         assertEquals("elevenlabs", settings.fileSttProvider)
         assertEquals("scribe_v2", settings.fileSttModel)
         assertFalse(settings.dictationPostFilterEnabled)
-        assertEquals("openai", settings.dictationPostFilterProvider)
-        assertEquals("gpt-5.5", settings.dictationPostFilterModel)
+        assertEquals("cerebras", settings.dictationPostFilterProvider)
+        assertEquals("gpt-oss-120b", settings.dictationPostFilterModel)
     }
 
     @Test

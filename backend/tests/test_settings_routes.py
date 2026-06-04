@@ -117,8 +117,8 @@ async def test_get_settings_returns_user_settings(client: AsyncClient):
     assert data["file_stt_model"] == "nova-3"
     assert data["dictation_post_filter_enabled"] is True
     assert data["dictation_cleanup_level"] == "light"
-    assert data["dictation_post_filter_provider"] == "openai"
-    assert data["dictation_post_filter_model"] == "gpt-5.5"
+    assert data["dictation_post_filter_provider"] == "cerebras"
+    assert data["dictation_post_filter_model"] == "gpt-oss-120b"
 
 
 @pytest.mark.asyncio
@@ -337,6 +337,7 @@ async def test_get_transcription_options_returns_curated_choices(
             "elevenlabs_api_key": "xi-key",
             "deepgram_api_key": "deepgram-test-key",
             "openai_api_key": "openai-test-key",
+            "cerebras_api_key": "cerebras-test-key",
         },
     )()
     monkeypatch.setattr("app.api.routes.settings.get_app_settings", lambda: settings)
@@ -369,7 +370,8 @@ async def test_get_transcription_options_returns_curated_choices(
             "description": "Full-session batch transcription with v2 speaker diarization.",
         }
     ]
-    assert data["dictation_post_filter"][0]["model"] == "gpt-5.5"
+    assert data["dictation_post_filter"][0]["provider"] == "cerebras"
+    assert data["dictation_post_filter"][0]["model"] == "gpt-oss-120b"
     assert all(
         option["model"] != "removed-file-model"
         for group in data.values()
@@ -390,6 +392,7 @@ async def test_get_transcription_options_hides_unconfigured_providers(
         {
             "elevenlabs_api_key": "xi-key",
             "openai_api_key": "",
+            "cerebras_api_key": "",
         },
     )()
     monkeypatch.setattr("app.api.routes.settings.get_app_settings", lambda: settings)
@@ -436,8 +439,8 @@ async def test_update_transcription_settings_rejects_post_filter_model_change(
         "/api/settings",
         headers=headers,
         json={
-            "dictation_post_filter_provider": "openai",
-            "dictation_post_filter_model": "gpt-5.5",
+            "dictation_post_filter_provider": "cerebras",
+            "dictation_post_filter_model": "gpt-oss-120b",
         },
     )
 

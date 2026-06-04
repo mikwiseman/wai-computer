@@ -1,4 +1,4 @@
-"""Tests for dictation cleanup routes (OpenAI Responses API)."""
+"""Tests for dictation cleanup routes (Cerebras Chat Completions API)."""
 
 from types import SimpleNamespace
 from unittest.mock import MagicMock
@@ -9,22 +9,44 @@ import pytest
 from httpx import AsyncClient
 
 
-def _make_response(text: str):
-    """Build a mock Responses API result."""
+def _make_response(text: str, *, model: str = "gpt-oss-120b", finish_reason: str = "stop"):
+    """Build a mock Chat Completions result."""
     response = MagicMock()
-    response.output_text = text
-    response.status = "completed"
-    response.error = None
-    response.incomplete_details = None
-    response.output = []
+    response.model = model
+    response.choices = [
+        SimpleNamespace(
+            finish_reason=finish_reason,
+            message=SimpleNamespace(content=text),
+        )
+    ]
     return response
+
+
+def _make_stream_chunk(
+    *,
+    delta: str | None = None,
+    finish_reason: str | None = None,
+    model: str = "gpt-oss-120b",
+    usage: object | None = None,
+):
+    return SimpleNamespace(
+        id="chatcmpl-test",
+        model=model,
+        usage=usage,
+        choices=[
+            SimpleNamespace(
+                delta=SimpleNamespace(content=delta),
+                finish_reason=finish_reason,
+            )
+        ],
+    )
 
 
 def _make_mock_client(
     response_text: str = "Cleaned text.",
     error: Exception | None = None,
 ):
-    """Mock client that exposes responses.create() returning a canned result."""
+    """Mock client that exposes chat.completions.create() returning a canned result."""
     mock = MagicMock()
 
     async def _create(**_: object):
@@ -32,7 +54,7 @@ def _make_mock_client(
             raise error
         return _make_response(response_text)
 
-    mock.responses.create = _create
+    mock.chat.completions.create = _create
     return mock
 
 
@@ -55,15 +77,15 @@ def _patch_settings(monkeypatch: pytest.MonkeyPatch, api_key: str = "test-key") 
     monkeypatch.setattr(
         "app.api.routes.dictation.get_settings",
         lambda: SimpleNamespace(
-            openai_api_key=api_key,
-            openai_llm_model="gpt-5.5",
+            cerebras_api_key=api_key,
+            cerebras_llm_model="gpt-oss-120b",
         ),
     )
 
 
 def _patch_client(monkeypatch: pytest.MonkeyPatch, mock_client) -> None:
     monkeypatch.setattr(
-        "app.api.routes.dictation.get_openai_client", lambda: mock_client
+        "app.api.routes.dictation.get_cerebras_client", lambda: mock_client
     )
 
 
@@ -121,7 +143,7 @@ async def test_translate_dictation_translates_to_selected_target_language(
         captured.update(kwargs)
         return _make_response("Привет, команда.")
 
-    mock_client = SimpleNamespace(responses=SimpleNamespace(create=_create))
+    mock_client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=_create)))
     _patch_settings(monkeypatch)
     _patch_client(monkeypatch, mock_client)
 
@@ -145,18 +167,16 @@ async def test_translate_dictation_translates_to_selected_target_language(
 
     assert response.status_code == 200
     assert response.json() == {"text": "Привет, команда."}
-    assert captured["model"] == "gpt-5.5"
-    assert captured["reasoning"] == {"effort": "low"}
-    assert captured["text"] == {"format": {"type": "text"}, "verbosity": "low"}
-    assert captured["store"] is False
-    assert captured["max_output_tokens"] == 512
-    instructions = captured["instructions"]
+    assert captured["model"] == "gpt-oss-120b"
+    assert captured["reasoning_effort"] == "low"
+    assert captured["max_completion_tokens"] == 512
+    instructions = captured["messages"][0]["content"]
     assert "Translate the dictated text into Russian (ru)." in instructions
     assert "Output only the translated text" in instructions
     assert "<preserve_exact>" in instructions
     assert "WaiComputer" in instructions
     assert "<dictation_context>" in instructions
-    assert captured["input"] == "<dictated_text>\nHello team.\n</dictated_text>"
+    assert captured["messages"][1]["content"] == "<dictated_text>\nHello team.\n</dictated_text>"
 
 
 @pytest.mark.asyncio
@@ -255,7 +275,7 @@ async def test_cleanup_dictation_uses_fixed_post_filter_model(
         captured.update(kwargs)
         return _make_response("Cleaned text.")
 
-    mock_client = SimpleNamespace(responses=SimpleNamespace(create=_create))
+    mock_client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=_create)))
     _patch_settings(monkeypatch)
     _patch_client(monkeypatch, mock_client)
 
@@ -268,13 +288,12 @@ async def test_cleanup_dictation_uses_fixed_post_filter_model(
     )
 
     assert response.status_code == 200
-    assert captured["model"] == "gpt-5.5"
-    assert captured["max_output_tokens"] == 512
-    assert captured["reasoning"] == {"effort": "none"}
-    assert captured["text"] == {"format": {"type": "text"}, "verbosity": "low"}
-    assert captured["prompt_cache_key"].startswith("wai-dictation-cleanup-")
-    assert captured["prompt_cache_retention"] == "24h"
-    assert captured["store"] is False
+    assert captured["model"] == "gpt-oss-120b"
+    assert captured["max_completion_tokens"] == 512
+    assert captured["reasoning_effort"] == "low"
+    assert captured["messages"][1]["content"] == (
+        "<dictated_text>\nplease clean up this dictated sentence\n</dictated_text>"
+    )
 
 
 @pytest.mark.asyncio
@@ -287,28 +306,20 @@ async def test_cleanup_dictation_stream_emits_tokens_and_done(
 
     async def _create(**kwargs: object):
         captured.update(kwargs)
-        completed_response = SimpleNamespace(
-            status="completed",
-            error=None,
-            incomplete_details=None,
-            output_text="Cleaned text.",
-            output=[],
-            model="gpt-5.5",
-            usage=SimpleNamespace(
-                input_tokens=111,
-                output_tokens=7,
-                input_tokens_details=SimpleNamespace(cached_tokens=64),
-            ),
+        usage = SimpleNamespace(
+            prompt_tokens=111,
+            completion_tokens=7,
+            prompt_tokens_details=SimpleNamespace(cached_tokens=64),
         )
         return _AsyncStream(
             [
-                SimpleNamespace(type="response.output_text.delta", delta="Cleaned"),
-                SimpleNamespace(type="response.output_text.delta", delta=" text."),
-                SimpleNamespace(type="response.completed", response=completed_response),
+                _make_stream_chunk(delta="Cleaned"),
+                _make_stream_chunk(delta=" text."),
+                _make_stream_chunk(finish_reason="stop", usage=usage),
             ]
         )
 
-    mock_client = SimpleNamespace(responses=SimpleNamespace(create=_create))
+    mock_client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=_create)))
     _patch_settings(monkeypatch)
     _patch_client(monkeypatch, mock_client)
     await _set_cleanup_level(client, auth_headers, "light")
@@ -329,19 +340,15 @@ async def test_cleanup_dictation_stream_emits_tokens_and_done(
     assert 'event: token\ndata: {"text": " text."}' in body
     assert "event: done" in body
     assert '"text": "Cleaned text."' in body
-    assert '"model": "gpt-5.5"' in body
+    assert '"model": "gpt-oss-120b"' in body
     assert '"latency_ms":' in body
     assert '"input_tokens": 111' in body
     assert '"output_tokens": 7' in body
     assert '"cached_tokens": 64' in body
-    assert captured["model"] == "gpt-5.5"
+    assert captured["model"] == "gpt-oss-120b"
     assert captured["stream"] is True
-    assert captured["reasoning"] == {"effort": "none"}
-    assert captured["text"] == {"format": {"type": "text"}, "verbosity": "low"}
-    assert captured["prompt_cache_key"].startswith("wai-dictation-cleanup-")
-    assert captured["prompt_cache_retention"] == "24h"
-    assert captured["store"] is False
-    assert "email=polished paragraphs" in captured["instructions"]
+    assert captured["reasoning_effort"] == "low"
+    assert "email=polished paragraphs" in captured["messages"][0]["content"]
 
 
 @pytest.mark.asyncio
@@ -356,7 +363,7 @@ async def test_cleanup_dictation_medium_keeps_low_reasoning_effort(
         captured.update(kwargs)
         return _make_response("Cleaned text.")
 
-    mock_client = SimpleNamespace(responses=SimpleNamespace(create=_create))
+    mock_client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=_create)))
     _patch_settings(monkeypatch)
     _patch_client(monkeypatch, mock_client)
     await _set_cleanup_level(client, auth_headers, "medium")
@@ -368,11 +375,11 @@ async def test_cleanup_dictation_medium_keeps_low_reasoning_effort(
     )
 
     assert response.status_code == 200
-    assert captured["reasoning"] == {"effort": "low"}
+    assert captured["reasoning_effort"] == "low"
 
 
 @pytest.mark.asyncio
-async def test_cleanup_dictation_stream_extracts_text_from_done_event_dict(
+async def test_cleanup_dictation_stream_uses_chat_usage_dict(
     client: AsyncClient,
     auth_headers: dict,
     monkeypatch: pytest.MonkeyPatch,
@@ -381,25 +388,35 @@ async def test_cleanup_dictation_stream_extracts_text_from_done_event_dict(
         return _AsyncStream(
             [
                 {
-                    "type": "response.completed",
-                    "response": {
-                        "status": "completed",
-                        "error": None,
-                        "incomplete_details": None,
-                        "output_text": "Cleaned from done.",
-                        "output": [],
-                        "model": "gpt-5.5",
-                        "usage": {
-                            "input_tokens": 123,
-                            "output_tokens": 8,
-                            "input_tokens_details": {"cached_tokens": 96},
-                        },
+                    "id": "chatcmpl-test",
+                    "model": "gpt-oss-120b",
+                    "usage": None,
+                    "choices": [
+                        {
+                            "delta": {"content": "Cleaned from stream."},
+                            "finish_reason": None,
+                        }
+                    ],
+                },
+                {
+                    "id": "chatcmpl-test",
+                    "model": "gpt-oss-120b",
+                    "usage": {
+                        "prompt_tokens": 123,
+                        "completion_tokens": 8,
+                        "prompt_tokens_details": {"cached_tokens": 96},
                     },
-                }
+                    "choices": [
+                        {
+                            "delta": {},
+                            "finish_reason": "stop",
+                        }
+                    ],
+                },
             ]
         )
 
-    mock_client = SimpleNamespace(responses=SimpleNamespace(create=_create))
+    mock_client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=_create)))
     _patch_settings(monkeypatch)
     _patch_client(monkeypatch, mock_client)
     await _set_cleanup_level(client, auth_headers, "light")
@@ -411,114 +428,10 @@ async def test_cleanup_dictation_stream_extracts_text_from_done_event_dict(
     )
 
     assert response.status_code == 200
-    assert 'event: token\ndata: {"text": "Cleaned from done."}' in response.text
+    assert 'event: token\ndata: {"text": "Cleaned from stream."}' in response.text
     assert '"input_tokens": 123' in response.text
     assert '"output_tokens": 8' in response.text
     assert '"cached_tokens": 96' in response.text
-
-
-@pytest.mark.asyncio
-async def test_cleanup_dictation_stream_uses_output_text_done_when_completed_lacks_output_text(
-    client: AsyncClient,
-    auth_headers: dict,
-    monkeypatch: pytest.MonkeyPatch,
-):
-    async def _create(**_: object):
-        return _AsyncStream(
-            [
-                {
-                    "type": "response.output_text.done",
-                    "text": "Cleaned from output text done.",
-                },
-                {
-                    "type": "response.completed",
-                    "response": {
-                        "status": "completed",
-                        "error": None,
-                        "incomplete_details": None,
-                        "output": [
-                            {
-                                "type": "message",
-                                "status": "completed",
-                                "content": [
-                                    {
-                                        "type": "output_text",
-                                        "text": "Cleaned from output text done.",
-                                    }
-                                ],
-                            }
-                        ],
-                        "model": "gpt-5.5",
-                    },
-                },
-            ]
-        )
-
-    mock_client = SimpleNamespace(responses=SimpleNamespace(create=_create))
-    _patch_settings(monkeypatch)
-    _patch_client(monkeypatch, mock_client)
-    await _set_cleanup_level(client, auth_headers, "light")
-
-    response = await client.post(
-        "/api/dictation/cleanup/stream",
-        headers=auth_headers,
-        json={"text": "please clean up this dictated sentence"},
-    )
-
-    assert response.status_code == 200
-    assert (
-        'event: token\ndata: {"text": "Cleaned from output text done."}'
-        in response.text
-    )
-    assert '"text": "Cleaned from output text done."' in response.text
-
-
-@pytest.mark.asyncio
-async def test_cleanup_dictation_stream_uses_content_part_done_text(
-    client: AsyncClient,
-    auth_headers: dict,
-    monkeypatch: pytest.MonkeyPatch,
-):
-    async def _create(**_: object):
-        return _AsyncStream(
-            [
-                {
-                    "type": "response.content_part.done",
-                    "part": {
-                        "type": "output_text",
-                        "text": "Cleaned from content part done.",
-                    },
-                },
-                {
-                    "type": "response.completed",
-                    "response": {
-                        "status": "completed",
-                        "error": None,
-                        "incomplete_details": None,
-                        "output": [],
-                        "model": "gpt-5.5",
-                    },
-                },
-            ]
-        )
-
-    mock_client = SimpleNamespace(responses=SimpleNamespace(create=_create))
-    _patch_settings(monkeypatch)
-    _patch_client(monkeypatch, mock_client)
-    await _set_cleanup_level(client, auth_headers, "light")
-
-    response = await client.post(
-        "/api/dictation/cleanup/stream",
-        headers=auth_headers,
-        json={"text": "please clean up this dictated sentence"},
-    )
-
-    assert response.status_code == 200
-    assert (
-        'event: token\ndata: {"text": "Cleaned from content part done."}'
-        in response.text
-    )
-    assert '"text": "Cleaned from content part done."' in response.text
 
 
 @pytest.mark.asyncio
@@ -634,7 +547,7 @@ async def test_cleanup_dictation_stream_maps_upstream_failures_to_sse_errors(
 
 
 @pytest.mark.asyncio
-async def test_cleanup_dictation_stream_maps_model_error_event_to_sse_error(
+async def test_cleanup_dictation_stream_maps_non_stop_finish_reason_to_sse_error(
     client: AsyncClient,
     auth_headers: dict,
     monkeypatch: pytest.MonkeyPatch,
@@ -642,14 +555,12 @@ async def test_cleanup_dictation_stream_maps_model_error_event_to_sse_error(
     async def _create(**_: object):
         return _AsyncStream(
             [
-                {
-                    "type": "response.error",
-                    "error": {"message": "model stopped"},
-                }
+                _make_stream_chunk(delta="partial"),
+                _make_stream_chunk(finish_reason="content_filter"),
             ]
         )
 
-    mock_client = SimpleNamespace(responses=SimpleNamespace(create=_create))
+    mock_client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=_create)))
     _patch_settings(monkeypatch)
     _patch_client(monkeypatch, mock_client)
     await _set_cleanup_level(client, auth_headers, "light")
@@ -676,7 +587,7 @@ async def test_cleanup_dictation_prompt_targets_russian_fillers_and_false_starts
         captured.update(kwargs)
         return _make_response("Что мы хотим дать LLM в России.")
 
-    mock_client = SimpleNamespace(responses=SimpleNamespace(create=_create))
+    mock_client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=_create)))
     _patch_settings(monkeypatch)
     _patch_client(monkeypatch, mock_client)
     await _enable_post_filter(client, auth_headers)
@@ -688,12 +599,12 @@ async def test_cleanup_dictation_prompt_targets_russian_fillers_and_false_starts
     )
 
     assert response.status_code == 200
-    instructions = captured["instructions"]
+    instructions = captured["messages"][0]["content"]
     assert "э-э-э" in instructions
     assert "а-а-а" in instructions
     assert "мы х-- мы предлагаем" in instructions
     assert "Do not summarize" in instructions
-    assert "<dictated_text>" in captured["input"]
+    assert "<dictated_text>" in captured["messages"][1]["content"]
 
 
 @pytest.mark.asyncio
@@ -708,7 +619,7 @@ async def test_cleanup_dictation_medium_level_targets_clarity_and_conciseness(
         captured.update(kwargs)
         return _make_response("Clear concise text.")
 
-    mock_client = SimpleNamespace(responses=SimpleNamespace(create=_create))
+    mock_client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=_create)))
     _patch_settings(monkeypatch)
     _patch_client(monkeypatch, mock_client)
     await _set_cleanup_level(client, auth_headers, "medium")
@@ -720,7 +631,7 @@ async def test_cleanup_dictation_medium_level_targets_clarity_and_conciseness(
     )
 
     assert response.status_code == 200
-    instructions = captured["instructions"]
+    instructions = captured["messages"][0]["content"]
     assert "clarity and conciseness" in instructions
     assert "Do not summarize" in instructions
 
@@ -737,7 +648,7 @@ async def test_cleanup_dictation_high_level_targets_brevity_and_polish(
         captured.update(kwargs)
         return _make_response("Polished text.")
 
-    mock_client = SimpleNamespace(responses=SimpleNamespace(create=_create))
+    mock_client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=_create)))
     _patch_settings(monkeypatch)
     _patch_client(monkeypatch, mock_client)
     await _set_cleanup_level(client, auth_headers, "high")
@@ -749,7 +660,7 @@ async def test_cleanup_dictation_high_level_targets_brevity_and_polish(
     )
 
     assert response.status_code == 200
-    instructions = captured["instructions"]
+    instructions = captured["messages"][0]["content"]
     assert "brevity and polish" in instructions
     assert "Do not summarize away details" in instructions
 
@@ -766,7 +677,7 @@ async def test_cleanup_dictation_includes_context_for_formatting(
         captured.update(kwargs)
         return _make_response("Cleaned text.")
 
-    mock_client = SimpleNamespace(responses=SimpleNamespace(create=_create))
+    mock_client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=_create)))
     _patch_settings(monkeypatch)
     _patch_client(monkeypatch, mock_client)
     await _set_cleanup_level(client, auth_headers, "light")
@@ -792,7 +703,7 @@ async def test_cleanup_dictation_includes_context_for_formatting(
     )
 
     assert response.status_code == 200
-    instructions = captured["instructions"]
+    instructions = captured["messages"][0]["content"]
     assert "<dictation_context>" in instructions
     assert "<app_category>engineering</app_category>" in instructions
     assert "<app_name>Cursor</app_name>" in instructions
@@ -831,7 +742,7 @@ async def test_cleanup_dictation_truncates_large_textbox_context(
         captured.update(kwargs)
         return _make_response("Cleaned text.")
 
-    mock_client = SimpleNamespace(responses=SimpleNamespace(create=_create))
+    mock_client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=_create)))
     _patch_settings(monkeypatch)
     _patch_client(monkeypatch, mock_client)
     await _set_cleanup_level(client, auth_headers, "medium")
@@ -852,7 +763,7 @@ async def test_cleanup_dictation_truncates_large_textbox_context(
     )
 
     assert response.status_code == 200
-    instructions = captured["instructions"]
+    instructions = captured["messages"][0]["content"]
     assert "a" * 400 in instructions
     assert "a" * 401 not in instructions
     assert "b" * 800 in instructions
@@ -873,7 +784,7 @@ async def test_cleanup_dictation_caps_large_output_token_budget(
         captured.update(kwargs)
         return _make_response("Polished text.")
 
-    mock_client = SimpleNamespace(responses=SimpleNamespace(create=_create))
+    mock_client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=_create)))
     _patch_settings(monkeypatch)
     _patch_client(monkeypatch, mock_client)
     await _set_cleanup_level(client, auth_headers, "high")
@@ -885,7 +796,7 @@ async def test_cleanup_dictation_caps_large_output_token_budget(
     )
 
     assert response.status_code == 200
-    assert captured["max_output_tokens"] == 33792
+    assert captured["max_completion_tokens"] == 33792
 
 
 @pytest.mark.asyncio
@@ -900,7 +811,7 @@ async def test_cleanup_dictation_reserves_tokens_for_reasoning(
         captured.update(kwargs)
         return _make_response("Polished text.")
 
-    mock_client = SimpleNamespace(responses=SimpleNamespace(create=_create))
+    mock_client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=_create)))
     _patch_settings(monkeypatch)
     _patch_client(monkeypatch, mock_client)
     await _set_cleanup_level(client, auth_headers, "medium")
@@ -912,7 +823,7 @@ async def test_cleanup_dictation_reserves_tokens_for_reasoning(
     )
 
     assert response.status_code == 200
-    assert captured["max_output_tokens"] == 1280
+    assert captured["max_completion_tokens"] == 1280
 
 
 @pytest.mark.asyncio
@@ -1008,12 +919,12 @@ async def test_cleanup_short_text_returned_as_is(
 
 
 @pytest.mark.asyncio
-async def test_cleanup_empty_output_text_returns_502(
+async def test_cleanup_empty_completion_text_returns_502(
     client: AsyncClient,
     auth_headers: dict,
     monkeypatch: pytest.MonkeyPatch,
 ):
-    """Model returns an empty output_text → 502."""
+    """Model returns an empty assistant message → 502."""
     _patch_settings(monkeypatch)
     _patch_client(monkeypatch, _make_mock_client(response_text=""))
     await _enable_post_filter(client, auth_headers)
@@ -1029,12 +940,12 @@ async def test_cleanup_empty_output_text_returns_502(
 
 
 @pytest.mark.asyncio
-async def test_cleanup_blank_output_text_returns_502(
+async def test_cleanup_blank_completion_text_returns_502(
     client: AsyncClient,
     auth_headers: dict,
     monkeypatch: pytest.MonkeyPatch,
 ):
-    """Whitespace-only output_text → 502."""
+    """Whitespace-only assistant message → 502."""
     _patch_settings(monkeypatch)
     _patch_client(monkeypatch, _make_mock_client(response_text="   "))
     await _enable_post_filter(client, auth_headers)
@@ -1143,7 +1054,7 @@ async def test_cleanup_dictation_embeds_vocabulary_in_preserve_block(
         captured.update(kwargs)
         return _make_response("WaiComputer is great with OpenAI.")
 
-    mock_client = SimpleNamespace(responses=SimpleNamespace(create=_create))
+    mock_client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=_create)))
     _patch_settings(monkeypatch)
     _patch_client(monkeypatch, mock_client)
     await _enable_post_filter(client, auth_headers)
@@ -1158,7 +1069,7 @@ async def test_cleanup_dictation_embeds_vocabulary_in_preserve_block(
     )
 
     assert response.status_code == 200
-    prompt = captured["instructions"]
+    prompt = captured["messages"][0]["content"]
     assert "<preserve_exact>" in prompt
     assert "</preserve_exact>" in prompt
     assert "WaiComputer" in prompt
@@ -1182,7 +1093,7 @@ async def test_cleanup_dictation_omits_preserve_block_when_vocabulary_empty(
         captured.update(kwargs)
         return _make_response("Cleaned text.")
 
-    mock_client = SimpleNamespace(responses=SimpleNamespace(create=_create))
+    mock_client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=_create)))
     _patch_settings(monkeypatch)
     _patch_client(monkeypatch, mock_client)
     await _enable_post_filter(client, auth_headers)
@@ -1200,4 +1111,4 @@ async def test_cleanup_dictation_omits_preserve_block_when_vocabulary_empty(
         )
 
         assert response.status_code == 200
-        assert "<preserve_exact>" not in captured["instructions"]
+        assert "<preserve_exact>" not in captured["messages"][0]["content"]

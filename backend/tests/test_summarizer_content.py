@@ -1,7 +1,7 @@
 """Unit tests for the universal content summarizer + key-moments table.
 
-The OpenAI Responses client is stubbed, so these assert our prompt-building,
-schema wiring, and result mapping without a network call.
+The Cerebras Chat Completions client is stubbed, so these assert our
+prompt-building, schema wiring, and result mapping without a network call.
 """
 
 from types import SimpleNamespace
@@ -48,25 +48,39 @@ def _summary_payload() -> _SummarySchema:
     )
 
 
+def _text_response(text: str) -> SimpleNamespace:
+    return SimpleNamespace(
+        model="gpt-oss-120b",
+        choices=[
+            SimpleNamespace(
+                finish_reason="stop",
+                message=SimpleNamespace(content=text),
+            )
+        ],
+    )
+
+
 @pytest.mark.asyncio
 async def test_summarize_content_maps_result() -> None:
-    fake_response = SimpleNamespace(output_parsed=_summary_payload(), status="completed")
+    fake_response = _text_response(_summary_payload().model_dump_json())
     fake_client = SimpleNamespace(
-        responses=SimpleNamespace(parse=AsyncMock(return_value=fake_response))
+        chat=SimpleNamespace(
+            completions=SimpleNamespace(create=AsyncMock(return_value=fake_response))
+        )
     )
     with (
-        patch.object(summarizer, "get_openai_client", return_value=fake_client),
-        patch.object(summarizer, "ensure_response_completed"),
-        patch.object(summarizer.settings, "openai_api_key", "sk-test"),
+        patch.object(summarizer, "get_cerebras_client", return_value=fake_client),
+        patch.object(summarizer.settings, "cerebras_api_key", "sk-test"),
     ):
         result = await summarize_content("Some article text", content_kind="web article")
 
     assert result.title == "Solar in 2026"
     assert result.key_points == ["costs fell", "storage grew"]
     # The general-content prompt (not the meeting one) was used.
-    sent = fake_client.responses.parse.call_args.kwargs["input"]
+    kwargs = fake_client.chat.completions.create.call_args.kwargs
+    sent = kwargs["messages"][1]["content"]
     assert "web article" in sent
-    assert fake_client.responses.parse.call_args.kwargs["text_format"] is _SummarySchema
+    assert kwargs["response_format"]["json_schema"]["name"] == "content_summary"
 
 
 @pytest.mark.asyncio
@@ -89,14 +103,15 @@ async def test_extract_key_moments_maps_rows() -> None:
             },
         ]
     )
-    fake_response = SimpleNamespace(output_parsed=payload, status="completed")
+    fake_response = _text_response(payload.model_dump_json())
     fake_client = SimpleNamespace(
-        responses=SimpleNamespace(parse=AsyncMock(return_value=fake_response))
+        chat=SimpleNamespace(
+            completions=SimpleNamespace(create=AsyncMock(return_value=fake_response))
+        )
     )
     with (
-        patch.object(summarizer, "get_openai_client", return_value=fake_client),
-        patch.object(summarizer, "ensure_response_completed"),
-        patch.object(summarizer.settings, "openai_api_key", "sk-test"),
+        patch.object(summarizer, "get_cerebras_client", return_value=fake_client),
+        patch.object(summarizer.settings, "cerebras_api_key", "sk-test"),
     ):
         moments = await extract_key_moments("transcript with [01:23] marker")
 
@@ -104,7 +119,11 @@ async def test_extract_key_moments_maps_rows() -> None:
     assert moments[0].timestamp == "01:23"
     assert moments[0].importance == "high"
     assert moments[1].timestamp is None
-    assert fake_client.responses.parse.call_args.kwargs["text_format"] is _KeyMomentsSchema
+    assert (
+        fake_client.chat.completions.create.call_args.kwargs["response_format"]
+        ["json_schema"]["name"]
+        == "key_moments"
+    )
 
 
 def test_resolve_key_moment_timestamps_matches_segment() -> None:
@@ -144,13 +163,13 @@ def test_content_prompt_appends_additional_instructions() -> None:
 
 @pytest.mark.asyncio
 async def test_summarize_content_requires_api_key() -> None:
-    with patch.object(summarizer.settings, "openai_api_key", ""):
-        with pytest.raises(ValueError, match="OPENAI_API_KEY not configured"):
+    with patch.object(summarizer.settings, "cerebras_api_key", ""):
+        with pytest.raises(ValueError, match="CEREBRAS_API_KEY not configured"):
             await summarize_content("text", content_kind="web article")
 
 
 @pytest.mark.asyncio
 async def test_extract_key_moments_requires_api_key() -> None:
-    with patch.object(summarizer.settings, "openai_api_key", ""):
-        with pytest.raises(ValueError, match="OPENAI_API_KEY not configured"):
+    with patch.object(summarizer.settings, "cerebras_api_key", ""):
+        with pytest.raises(ValueError, match="CEREBRAS_API_KEY not configured"):
             await extract_key_moments("text")

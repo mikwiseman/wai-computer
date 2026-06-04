@@ -29,8 +29,8 @@ DEFAULT_RECORDING_LIVE_STT_PROVIDER = "deepgram"
 DEFAULT_RECORDING_LIVE_STT_MODEL = "nova-3"
 DEFAULT_FILE_STT_PROVIDER = "deepgram"
 DEFAULT_FILE_STT_MODEL = "nova-3"
-DEFAULT_DICTATION_POST_FILTER_PROVIDER = "openai"
-DEFAULT_DICTATION_POST_FILTER_MODEL = "gpt-5.5"
+DEFAULT_DICTATION_POST_FILTER_PROVIDER = "cerebras"
+DEFAULT_DICTATION_POST_FILTER_MODEL = "gpt-oss-120b"
 
 
 @dataclass(frozen=True)
@@ -81,10 +81,10 @@ TRANSCRIPTION_OPTIONS: dict[TranscriptionOptionGroup, tuple[ModelOption, ...]] =
     ),
     "dictation_post_filter": (
         ModelOption(
-            provider="openai",
-            model="gpt-5.5",
-            label="OpenAI GPT-5.5",
-            description="Default cleanup model for dictated text.",
+            provider="cerebras",
+            model="gpt-oss-120b",
+            label="Cerebras GPT-OSS 120B",
+            description="Default fast cleanup model for dictated text.",
         ),
     ),
 }
@@ -93,6 +93,7 @@ _PROVIDER_KEY_BY_NAME = {
     "deepgram": "deepgram_api_key",
     "elevenlabs": "elevenlabs_api_key",
     "openai": "openai_api_key",
+    "cerebras": "cerebras_api_key",
 }
 
 

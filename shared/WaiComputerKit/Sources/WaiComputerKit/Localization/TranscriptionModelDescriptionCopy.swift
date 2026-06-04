@@ -66,7 +66,7 @@ public enum TranscriptionModelDescriptionCopy {
         CopyKey(context: .fileSTT, provider: "elevenlabs", model: "scribe_v2"):
             "По умолчанию для полной расшифровки записи. ElevenLabs Scribe v2 с разделением по говорящим.",
 
-        CopyKey(context: .dictationPostFilter, provider: "openai", model: "gpt-5.5"):
-            "Модель очистки продиктованного текста по умолчанию.",
+        CopyKey(context: .dictationPostFilter, provider: "cerebras", model: "gpt-oss-120b"):
+            "По умолчанию для очистки продиктованного текста. Cerebras GPT-OSS 120B.",
     ]
 }

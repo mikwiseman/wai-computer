@@ -45,7 +45,7 @@ class Settings(BaseSettings):
     # Voice provider
     realtime_voice_provider: str = "elevenlabs"
 
-    # OpenAI — LLM, dictation cleanup, and embeddings.
+    # OpenAI — Companion, OCR, comparisons, memory tasks, and embeddings.
     openai_api_key: str = ""
     openai_llm_model: str = "gpt-5.5"
     openai_embedding_model: str = "text-embedding-3-large"
@@ -55,6 +55,11 @@ class Settings(BaseSettings):
     # can't run an unbounded inline call. ocr_enabled=False disables it.
     ocr_enabled: bool = True
     ocr_max_pages: int = 10
+
+    # Cerebras — dictation cleanup/translation and summary generation.
+    cerebras_api_key: str = ""
+    cerebras_api_base_url: str = "https://api.cerebras.ai/v1"
+    cerebras_llm_model: str = "gpt-oss-120b"
 
     # Deepgram — realtime dictation, live transcription, and batch file STT.
     deepgram_api_key: str = ""

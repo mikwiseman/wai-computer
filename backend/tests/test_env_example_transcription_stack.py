@@ -95,6 +95,7 @@ def test_env_example_exposes_only_current_stt_stack():
     content = env_example.read_text()
 
     assert "OPENAI_API_KEY=" in content
+    assert "CEREBRAS_API_KEY=" in content
     assert "DEEPGRAM_API_KEY=" in content
 
     removed_stt_entries = (

@@ -1,5 +1,6 @@
 """Tests for recording highlights / key moments feature."""
 
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import UUID
 
@@ -14,13 +15,15 @@ from app.models.recording import Segment
 
 
 def _make_model_response(parsed: _SummarySchema):
-    """Create a mock Responses API result with the given parsed payload."""
+    """Create a mock Chat Completions result with the given parsed payload."""
     response = MagicMock()
-    response.output_parsed = parsed
-    response.status = "completed"
-    response.error = None
-    response.incomplete_details = None
-    response.output = []
+    response.model = "gpt-oss-120b"
+    response.choices = [
+        SimpleNamespace(
+            finish_reason="stop",
+            message=SimpleNamespace(content=parsed.model_dump_json()),
+        )
+    ]
     return response
 
 
@@ -88,8 +91,8 @@ async def _create_recording(
 def mock_settings():
     """Patch settings for summarizer tests."""
     with (
-        patch.object(summarizer_module.settings, "openai_api_key", "sk-test"),
-        patch.object(summarizer_module.settings, "openai_llm_model", "gpt-5.5"),
+        patch.object(summarizer_module.settings, "cerebras_api_key", "sk-test"),
+        patch.object(summarizer_module.settings, "cerebras_llm_model", "gpt-oss-120b"),
     ):
         yield
 
@@ -112,9 +115,9 @@ async def test_highlight_extraction_from_summary():
 
     mock_response = _make_model_response(_SummarySchema(**response_data))
     mock_client = MagicMock()
-    mock_client.responses.parse = AsyncMock(return_value=mock_response)
+    mock_client.chat.completions.create = AsyncMock(return_value=mock_response)
 
-    with patch("app.core.summarizer.get_openai_client", return_value=mock_client):
+    with patch("app.core.summarizer.get_cerebras_client", return_value=mock_client):
         result = await summarize_transcript("Some transcript")
 
     assert hasattr(result, "highlights")

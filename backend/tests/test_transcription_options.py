@@ -124,7 +124,7 @@ def test_is_valid_option_matches_registered() -> None:
     assert is_valid_option("dictation_live_stt", "deepgram", "nova-3")
     assert is_valid_option("recording_live_stt", "deepgram", "nova-3")
     assert is_valid_option("file_stt", "deepgram", "nova-3")
-    assert is_valid_option("dictation_post_filter", "openai", "gpt-5.5")
+    assert is_valid_option("dictation_post_filter", "cerebras", "gpt-oss-120b")
 
 
 def test_is_valid_option_normalizes_input() -> None:
@@ -242,11 +242,13 @@ def test_provider_is_configured_checks_required_key_names() -> None:
             "elevenlabs_api_key": "xi-key",
             "deepgram_api_key": "deepgram-test-key",
             "openai_api_key": "",
+            "cerebras_api_key": "cerebras-test-key",
         },
     )()
 
     assert provider_is_configured("deepgram", settings)
     assert provider_is_configured("elevenlabs", settings)
+    assert provider_is_configured("cerebras", settings)
     assert not provider_is_configured("removed-provider", settings)
     assert not provider_is_configured("openai", settings)
     assert not provider_is_configured("unknown", settings)
@@ -260,6 +262,7 @@ def test_options_response_filters_unconfigured_providers() -> None:
             "elevenlabs_api_key": "xi-key",
             "deepgram_api_key": "deepgram-test-key",
             "openai_api_key": "openai-test-key",
+            "cerebras_api_key": "cerebras-test-key",
         },
     )()
 
@@ -268,7 +271,7 @@ def test_options_response_filters_unconfigured_providers() -> None:
     assert {entry["provider"] for entry in out["dictation_live_stt"]} == {"deepgram"}
     assert {entry["provider"] for entry in out["recording_live_stt"]} == {"deepgram"}
     assert {entry["provider"] for entry in out["file_stt"]} == {"deepgram"}
-    assert {entry["provider"] for entry in out["dictation_post_filter"]} == {"openai"}
+    assert {entry["provider"] for entry in out["dictation_post_filter"]} == {"cerebras"}
 
 
 def test_validate_configured_option_rejects_missing_provider_key() -> None:
@@ -279,6 +282,7 @@ def test_validate_configured_option_rejects_missing_provider_key() -> None:
             "elevenlabs_api_key": "",
             "deepgram_api_key": "",
             "openai_api_key": "",
+            "cerebras_api_key": "",
         },
     )()
 
@@ -299,6 +303,7 @@ def test_validate_configured_option_returns_valid_configured_option() -> None:
             "elevenlabs_api_key": "xi-key",
             "deepgram_api_key": "deepgram-test-key",
             "openai_api_key": "sk-test",
+            "cerebras_api_key": "cerebras-test-key",
         },
     )()
 
