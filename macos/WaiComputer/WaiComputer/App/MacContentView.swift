@@ -905,7 +905,13 @@ struct MacMainView: View {
         case .brain:
             MacBrainView(
                 apiClient: appState.getAPIClient(),
-                onOpenSource: openBrainSource
+                onOpenSource: openBrainSource,
+                onOpenInbox: {
+                    selectedSection = .inbox
+                },
+                onOpenWai: {
+                    selectedSection = .wai
+                }
             )
                 .environment(\.locale, MacDateFormatting.locale(for: languageManager.current))
         case .review:

@@ -229,17 +229,25 @@ describe("BrainPanel", () => {
     mockRejectMemoryProposal.mockResolvedValue({});
   });
 
-  it("renders the overview with coverage, top entities, and review evidence", async () => {
+  it("renders the Brain home with use, review, knowledge, and source sections", async () => {
     render(<BrainPanel />);
-    await waitFor(() => expect(screen.getByText("Coverage")).toBeInTheDocument());
-    expect(screen.getAllByText("Space").length).toBeGreaterThan(0);
+    await waitFor(() =>
+      expect(screen.getByRole("heading", { name: "Use with Wai" })).toBeInTheDocument(),
+    );
+    expect(screen.getByRole("tab", { name: "Home" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Knowledge" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Map" })).toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: "Wiki" })).not.toBeInTheDocument();
+    expect(screen.getByText("Brains")).toBeInTheDocument();
     expect(screen.getByDisplayValue("Wai School")).toBeInTheDocument();
-    expect(screen.getByText("Prepare context")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Share" })).toBeDisabled();
+    expect(screen.getByText("Review suggestions")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Knowledge" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Sources" })).toBeInTheDocument();
+    expect(screen.queryByText("Prepare context")).not.toBeInTheDocument();
+    expect(screen.queryByText(/claims ready/i)).not.toBeInTheDocument();
     expect(screen.getByText("Customer stage rules")).toBeInTheDocument();
     expect(screen.getByText("Bridge from Mik Personal")).toBeInTheDocument();
     expect(screen.getByText("1 / 2")).toBeInTheDocument();
-    expect(screen.getAllByText("Needs review").length).toBeGreaterThan(0);
     expect(screen.getByText("Anna is the launch owner.")).toBeInTheDocument();
     expect(screen.getAllByText(/Launch sync/i).length).toBeGreaterThan(0);
     expect(screen.getByText("1 recordings · 1 materials")).toBeInTheDocument();
@@ -248,43 +256,50 @@ describe("BrainPanel", () => {
   it("opens the source behind a recently organized row", async () => {
     const onOpenSource = vi.fn();
     render(<BrainPanel onOpenSource={onOpenSource} />);
-    await waitFor(() => expect(screen.getByText("Recently organized")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText("Launch sync")).toBeInTheDocument());
 
     fireEvent.click(screen.getByRole("button", { name: /Launch sync/i }));
 
     expect(onOpenSource).toHaveBeenCalledWith("recording", "r1");
   });
 
-  it("accepts a Space review pack and exports the selected Space", async () => {
+  it("accepts a knowledge suggestion and exports from Advanced", async () => {
     render(<BrainPanel />);
     await waitFor(() => expect(screen.getByText("Bridge from Mik Personal")).toBeInTheDocument());
-    fireEvent.click(screen.getByRole("button", { name: /Accept review pack/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Approve knowledge suggestion/i }));
     await waitFor(() => expect(mockAcceptBrainReviewPack).toHaveBeenCalledWith("s1", "rp1"));
     expect(screen.queryByText("Bridge from Mik Personal")).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "obsidian" }));
+    fireEvent.click(screen.getByText("Advanced"));
+    fireEvent.click(screen.getByRole("button", { name: "Export to Obsidian" }));
     await waitFor(() => expect(mockExportBrainSpace).toHaveBeenCalledWith("s1", "obsidian"));
-    expect(screen.getByText(/obsidian export ready/i)).toBeInTheDocument();
+    expect(screen.getByText(/1 Markdown file is ready/i)).toBeInTheDocument();
   });
 
-  it("shares a Space and prepares assistant context", async () => {
-    render(<BrainPanel />);
-    await waitFor(() => expect(screen.getByText("Prepare context")).toBeInTheDocument());
+  it("uses approved Brain knowledge with Wai and shares from Advanced", async () => {
+    const onOpenWai = vi.fn();
+    render(<BrainPanel onOpenWai={onOpenWai} />);
+    await waitFor(() =>
+      expect(screen.getByRole("heading", { name: "Use with Wai" })).toBeInTheDocument(),
+    );
 
-    fireEvent.click(screen.getByRole("button", { name: "Prepare" }));
+    fireEvent.click(screen.getByRole("button", { name: "Use with Wai" }));
     await waitFor(() =>
       expect(mockBuildBrainContext).toHaveBeenCalledWith("s1", {
-        task: "Use this Space as the source of truth.",
+        task: "Use this Brain as the source of truth.",
         limit: 80,
       }),
     );
-    expect(screen.getByText(/2 claims ready/i)).toBeInTheDocument();
-    expect(screen.getByText("Context preview")).toBeInTheDocument();
+    expect(screen.getByText(/2 approved items ready for Wai/i)).toBeInTheDocument();
+    expect(screen.getByText("What Wai will see")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Open Ask Wai" }));
+    expect(onOpenWai).toHaveBeenCalled();
 
+    fireEvent.click(screen.getByText("Advanced"));
     fireEvent.change(screen.getByPlaceholderText("teammate@example.com"), {
       target: { value: "teammate@example.com" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Share" }));
+    fireEvent.click(screen.getByRole("button", { name: "Invite" }));
 
     await waitFor(() =>
       expect(mockAddBrainSpaceMember).toHaveBeenCalledWith("s1", {
@@ -298,7 +313,7 @@ describe("BrainPanel", () => {
   it("renders categorized entities sorted by degree (sources excluded)", async () => {
     render(<BrainPanel />);
     await waitFor(() => expect(screen.getByText("Anna")).toBeInTheDocument());
-    fireEvent.click(screen.getByRole("tab", { name: "Index" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Knowledge" }));
     await waitFor(() => expect(screen.getByText("People")).toBeInTheDocument());
     expect(screen.getByText("Topics")).toBeInTheDocument();
 
@@ -328,7 +343,7 @@ describe("BrainPanel", () => {
     mockListMemoryProposals.mockResolvedValue(proposals({ proposals: [], pending_count: 0 }));
     render(<BrainPanel />);
     await waitFor(() =>
-      expect(screen.getByText(/No organized entities yet/i)).toBeInTheDocument(),
+      expect(screen.getByText(/Add recordings or materials/i)).toBeInTheDocument(),
     );
   });
 
@@ -341,14 +356,14 @@ describe("BrainPanel", () => {
     await waitFor(() => expect(screen.getByText("Anna")).toBeInTheDocument());
   });
 
-  it("switches to the Graph tab", async () => {
+  it("switches to the Map tab", async () => {
     render(<BrainPanel />);
     await waitFor(() => expect(screen.getByText("Anna")).toBeInTheDocument());
-    fireEvent.click(screen.getByRole("tab", { name: "Graph" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Map" }));
     expect(screen.getByTestId("brain-graph-stub")).toBeInTheDocument();
   });
 
-  it("opens the Wiki for a clicked Index entity", async () => {
+  it("opens the Knowledge detail for a clicked entity", async () => {
     render(<BrainPanel />);
     await waitFor(() => expect(screen.getByText("Anna")).toBeInTheDocument());
     fireEvent.click(screen.getByText("Anna"));

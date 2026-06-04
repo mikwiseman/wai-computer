@@ -32,6 +32,8 @@ interface BrainPanelProps {
   locale?: string;
   onError?: (message: string) => void;
   onOpenSource?: (sourceKind: "recording" | "item", sourceId: string) => void;
+  onOpenInbox?: () => void;
+  onOpenWai?: () => void | Promise<void>;
 }
 
 type BrainTab = "overview" | "index" | "wiki" | "graph";
@@ -43,13 +45,17 @@ const ENTITY_KINDS: Array<{ key: string; en: string; ru: string }> = [
 ];
 
 /**
- * The Brain section: a knowledge graph of the people / topics / projects across
- * everything captured. Two views — a calm scannable Index (default) and the
- * Obsidian-style force Graph — both built from `GET /api/brain/graph`. `focus`
- * refetches the backend ego graph around a clicked entity. Honest empty + error
- * states (no silent fallback).
+ * The Brain section: saved sources, approved knowledge, and the context Wai can
+ * use. Home is the product surface; Knowledge and Map are secondary inspection
+ * views. Honest empty + error states, with no silent fallback.
  */
-export function BrainPanel({ locale = "en", onError, onOpenSource }: BrainPanelProps) {
+export function BrainPanel({
+  locale = "en",
+  onError,
+  onOpenSource,
+  onOpenInbox,
+  onOpenWai,
+}: BrainPanelProps) {
   const [graph, setGraph] = useState<BrainGraph | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -168,7 +174,18 @@ export function BrainPanel({ locale = "en", onError, onOpenSource }: BrainPanelP
   const isEmpty = (graph?.nodes.length ?? 0) === 0;
   const overview = graph?.overview;
   const selectedSpace = spaces.find((space) => space.id === selectedSpaceId) ?? null;
-  const spaceReviewCount = spaceHome?.pending_review_count ?? reviewPacks.length;
+  const approvedKnowledgeCount = Object.values(spaceHome?.claim_counts ?? {}).reduce(
+    (sum, count) => sum + count,
+    0,
+  );
+  const sourceCount =
+    (overview?.recordings.total ?? stats.recordings ?? 0) +
+    (overview?.materials.total ?? stats.items ?? 0);
+  const memorySuggestionCount = Math.max(pendingReviewCount, proposals.length);
+  const suggestionCount = reviewPacks.length + memorySuggestionCount;
+  const brainName = selectedSpace?.name ?? t("Personal", "Личный");
+  const hasApprovedKnowledge = approvedKnowledgeCount > 0;
+  const canOpenWai = typeof onOpenWai === "function";
 
   const decideProposal = useCallback(
     async (id: string, action: (id: string) => Promise<MemoryProposal>) => {
@@ -237,12 +254,25 @@ export function BrainPanel({ locale = "en", onError, onOpenSource }: BrainPanelP
       setExportMessage(null);
       try {
         const exported = await exportBrainSpace(selectedSpaceId, profile);
-        setExportMessage(
-          t(
-            `${exported.profile} export ready: ${exported.files.length} files.`,
-            `Экспорт ${exported.profile}: ${exported.files.length} файлов.`,
-          ),
-        );
+        if (exported.files.length === 0) {
+          setExportMessage(
+            t(
+              "Nothing to export yet. Approved knowledge notes will appear here.",
+              "Пока нечего экспортировать. Здесь появятся подтвержденные заметки.",
+            ),
+          );
+        } else if (exported.files.length === 1) {
+          setExportMessage(
+            t("1 Markdown file is ready.", "Готов 1 Markdown-файл."),
+          );
+        } else {
+          setExportMessage(
+            t(
+              `${exported.files.length} Markdown files are ready.`,
+              `Готово Markdown-файлов: ${exported.files.length}.`,
+            ),
+          );
+        }
       } catch (err) {
         const message = err instanceof Error ? err.message : "Couldn't export this Space.";
         setSpaceError(message);
@@ -258,16 +288,25 @@ export function BrainPanel({ locale = "en", onError, onOpenSource }: BrainPanelP
     setContextMessage(null);
     try {
       const context = await buildBrainContext(selectedSpaceId, {
-        task: "Use this Space as the source of truth.",
+        task: "Use this Brain as the source of truth.",
         limit: 80,
       });
       setContextPreview(context.markdown);
-      setContextMessage(
-        t(
-          `${context.claim_count} claims ready for assistant context.`,
-          `${context.claim_count} утверждений готовы для контекста ассистента.`,
-        ),
-      );
+      if (context.claim_count === 0) {
+        setContextMessage(
+          t(
+            "No approved knowledge yet. Approve suggestions first, then Wai can use them.",
+            "Пока нет подтвержденных знаний. Сначала примите предложения, и Wai сможет их использовать.",
+          ),
+        );
+      } else {
+        setContextMessage(
+          t(
+            `${context.claim_count} approved items ready for Wai.`,
+            `Подтверждено элементов для Wai: ${context.claim_count}.`,
+          ),
+        );
+      }
       setSpaceError(null);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Couldn't prepare Space context.";
@@ -299,6 +338,21 @@ export function BrainPanel({ locale = "en", onError, onOpenSource }: BrainPanelP
     }
   }, [onError, selectedSpaceId, shareEmail, shareRole, sharing, t]);
 
+  const copyContext = useCallback(async () => {
+    if (!contextPreview) return;
+    if (!navigator.clipboard?.writeText) {
+      setContextMessage(
+        t(
+          "Context is ready in the preview below.",
+          "Контекст готов в предпросмотре ниже.",
+        ),
+      );
+      return;
+    }
+    await navigator.clipboard.writeText(contextPreview);
+    setContextMessage(t("Context copied.", "Контекст скопирован."));
+  }, [contextPreview, t]);
+
   const evidenceLabel = useCallback(
     (proposal: MemoryProposal) => {
       for (const value of proposal.evidence ?? []) {
@@ -327,6 +381,31 @@ export function BrainPanel({ locale = "en", onError, onOpenSource }: BrainPanelP
       if (label === "topics") return t("Recurring topics", "Повторяющиеся темы");
       if (label === "preferences") return t("Preferences", "Предпочтения");
       return label;
+    },
+    [t],
+  );
+
+  const proposalLabel = useCallback(
+    (proposal: MemoryProposal) =>
+      proposal.risk === "high" ? t("Correction", "Исправление") : t("New fact", "Новый факт"),
+    [t],
+  );
+
+  const authorityLabel = useCallback(
+    (authority: string) => {
+      if (authority === "self") return t("About you", "О вас");
+      if (authority === "model") return t("Wai suggestion", "Предложение Wai");
+      return sectionTitle(authority);
+    },
+    [sectionTitle, t],
+  );
+
+  const exportProfileLabel = useCallback(
+    (profile: string) => {
+      if (profile === "obsidian") return t("Export to Obsidian", "Экспорт в Obsidian");
+      if (profile === "gbrain") return t("Export for GBrain", "Экспорт для GBrain");
+      if (profile === "mempalace") return t("Export for MemPalace", "Экспорт для MemPalace");
+      return t("Export notes", "Экспорт заметок");
     },
     [t],
   );
@@ -400,110 +479,146 @@ export function BrainPanel({ locale = "en", onError, onOpenSource }: BrainPanelP
     </button>
   );
 
-  const spaceCockpitBody = (
-    <section className="brain-panel__section">
-      <div className="brain-panel__section-head">
-        <h3>{t("Space", "Пространство")}</h3>
-        <span>{spaces.length}</span>
-      </div>
-      {spaceError ? <p className="brain-panel__error-detail">{spaceError}</p> : null}
-      {spaces.length > 0 ? (
-        <>
-          <div className="brain-panel__space-toolbar">
-            <label>
-              <span>{t("Space", "Пространство")}</span>
-              <select
-                value={selectedSpaceId ?? ""}
-                onChange={(event) => {
-                  setSelectedSpaceId(event.target.value || null);
-                  setExportMessage(null);
-                  setShareMessage(null);
-                  setContextMessage(null);
-                  setContextPreview(null);
-                }}
-              >
-                {spaces.map((space) => (
-                  <option key={space.id} value={space.id}>
-                    {space.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            {selectedSpace ? (
-              <div className="brain-panel__space-meta">
-                <strong>{selectedSpace.engine_profile}</strong>
-                <span>{selectedSpace.role}</span>
-                <span>{selectedSpace.kind}</span>
-              </div>
+  const brainHomeBody = (
+    <>
+      <section className="brain-panel__section brain-panel__section--hero">
+        <div className="brain-panel__section-head">
+          <div>
+            <p className="brain-panel__eyebrow">{t("Use", "Использовать")}</p>
+            <h3>{t("Use with Wai", "Использовать с Wai")}</h3>
+          </div>
+          <button
+            type="button"
+            className="wai-primary-button"
+            disabled={contextLoading || !selectedSpaceId || !hasApprovedKnowledge}
+            onClick={() => void prepareContext()}
+          >
+            {contextLoading ? t("Preparing", "Готовлю") : t("Use with Wai", "Использовать с Wai")}
+          </button>
+        </div>
+        <p className="brain-panel__proposal-detail">
+          {t(
+            `Ask Wai using approved knowledge from ${brainName}.`,
+            `Попросите Wai использовать подтвержденные знания из ${brainName}.`,
+          )}
+        </p>
+        {sourceCount === 0 ? (
+          <div className="brain-panel__empty">
+            <p>
+              {t(
+                "Add recordings or materials to start building your Brain.",
+                "Добавьте записи или материалы, чтобы начать собирать Мозг.",
+              )}
+            </p>
+            {onOpenInbox ? (
+              <button type="button" onClick={onOpenInbox}>
+                {t("Open Inbox", "Открыть инбокс")}
+              </button>
             ) : null}
           </div>
-          <div className="brain-panel__coverage">
-            <div className="brain-panel__coverage-block">
-              <span>{t("Pages", "Страницы")}</span>
-              <strong>{spaceHome?.page_count ?? 0}</strong>
-              <em>{t("living wiki pages", "страницы вики")}</em>
-            </div>
-            <div className="brain-panel__coverage-block">
-              <span>{t("Sources", "Источники")}</span>
-              <strong>{spaceHome?.source_count ?? 0}</strong>
-              <em>{Object.keys(spaceHome?.source_counts ?? {}).join(" · ") || t("none", "нет")}</em>
-            </div>
-            <div className="brain-panel__coverage-block">
-              <span>{t("Knowledge", "Знания")}</span>
-              <strong>
-                {Object.values(spaceHome?.claim_counts ?? {}).reduce((sum, count) => sum + count, 0)}
-              </strong>
-              <em>
-                {Object.entries(spaceHome?.claim_counts ?? {})
-                  .map(([kind, count]) => `${kind} ${count}`)
-                  .join(" · ") || t("none", "нет")}
-              </em>
-            </div>
-            <div className="brain-panel__coverage-block">
-              <span>{t("Review", "Проверка")}</span>
-              <strong>{spaceReviewCount}</strong>
-              <em>{t("pending decisions", "ожидают решения")}</em>
-            </div>
-          </div>
-          <div className="brain-panel__workflow">
-            <div className="brain-panel__workflow-card">
-              <span>{t("Use", "Использовать")}</span>
-              <strong>{t("Prepare context", "Подготовить контекст")}</strong>
-              <button type="button" disabled={contextLoading} onClick={() => void prepareContext()}>
-                {contextLoading ? t("Preparing", "Готовлю") : t("Prepare", "Подготовить")}
+        ) : null}
+        {!hasApprovedKnowledge ? (
+          <p className="brain-panel__empty">
+            {t(
+              "No approved knowledge yet. Approve suggestions first, then Wai can use them.",
+              "Пока нет подтвержденных знаний. Сначала примите предложения, и Wai сможет их использовать.",
+            )}
+          </p>
+        ) : null}
+        {contextMessage ? <p className="brain-panel__proposal-detail">{contextMessage}</p> : null}
+        {contextPreview ? (
+          <>
+            <div className="brain-panel__export-row">
+              <button type="button" onClick={() => void copyContext()}>
+                {t("Copy context", "Скопировать контекст")}
               </button>
-              {contextMessage ? <em>{contextMessage}</em> : null}
+              <button type="button" disabled={!canOpenWai} onClick={() => void onOpenWai?.()}>
+                {t("Open Ask Wai", "Открыть Wai")}
+              </button>
             </div>
-            <form
-              className="brain-panel__workflow-card"
-              onSubmit={(event) => {
-                event.preventDefault();
-                void shareSpace();
-              }}
-            >
-              <span>{t("Share", "Поделиться")}</span>
-              <div className="brain-panel__share-row">
-                <input
-                  type="email"
-                  value={shareEmail}
-                  placeholder={t("teammate@example.com", "email@example.com")}
-                  onChange={(event) => setShareEmail(event.target.value)}
-                />
+            <details className="brain-panel__context-preview">
+              <summary>{t("What Wai will see", "Что увидит Wai")}</summary>
+              <pre>{contextPreview}</pre>
+            </details>
+          </>
+        ) : null}
+      </section>
+
+      <section className="brain-panel__section">
+        <div className="brain-panel__section-head">
+          <h3>{t("Brains", "Мозги")}</h3>
+          <span>{spaces.length}</span>
+        </div>
+        {spaceError ? <p className="brain-panel__error-detail">{spaceError}</p> : null}
+        {spaces.length > 0 ? (
+          <>
+            <div className="brain-panel__space-toolbar">
+              <label>
+                <span>{t("Brain", "Мозг")}</span>
                 <select
-                  value={shareRole}
-                  onChange={(event) => setShareRole(event.target.value as "viewer" | "editor")}
+                  value={selectedSpaceId ?? ""}
+                  onChange={(event) => {
+                    setSelectedSpaceId(event.target.value || null);
+                    setExportMessage(null);
+                    setShareMessage(null);
+                    setContextMessage(null);
+                    setContextPreview(null);
+                  }}
                 >
-                  <option value="viewer">{t("Viewer", "Читатель")}</option>
-                  <option value="editor">{t("Editor", "Редактор")}</option>
+                  {spaces.map((space) => (
+                    <option key={space.id} value={space.id}>
+                      {space.name}
+                    </option>
+                  ))}
                 </select>
-                <button type="submit" disabled={sharing || shareEmail.trim().length === 0}>
-                  {sharing ? t("Sharing", "Открываю") : t("Share", "Поделиться")}
-                </button>
+              </label>
+            </div>
+            <div className="brain-panel__coverage">
+              <div className="brain-panel__coverage-block">
+                <span>{t("Sources", "Источники")}</span>
+                <strong>{sourceCount}</strong>
+                <em>{t("saved recordings and materials", "записи и материалы")}</em>
               </div>
-              {shareMessage ? <em>{shareMessage}</em> : null}
-            </form>
-          </div>
-          {reviewPacks.length > 0 ? (
+              <div className="brain-panel__coverage-block">
+                <span>{t("Knowledge", "Знания")}</span>
+                <strong>{approvedKnowledgeCount}</strong>
+                <em>{t("approved items", "подтверждено")}</em>
+              </div>
+              <div className="brain-panel__coverage-block">
+                <span>{t("Suggestions", "Предложения")}</span>
+                <strong>{suggestionCount}</strong>
+                <em>{t("need review", "нужно проверить")}</em>
+              </div>
+              <div className="brain-panel__coverage-block">
+                <span>{t("Notes", "Заметки")}</span>
+                <strong>{spaceHome?.page_count ?? 0}</strong>
+                <em>{t("knowledge pages", "страницы знаний")}</em>
+              </div>
+            </div>
+          </>
+        ) : (
+          <p className="brain-panel__empty">
+            {t(
+              "Add recordings or materials to start building your Brain.",
+              "Добавьте записи или материалы, чтобы начать собирать Мозг.",
+            )}
+          </p>
+        )}
+      </section>
+
+      <section className="brain-panel__section">
+        <div className="brain-panel__section-head">
+          <h3>{t("Review suggestions", "Проверить предложения")}</h3>
+          <span>{suggestionCount}</span>
+        </div>
+        {reviewPacks.length > 0 ? (
+          <>
+            <p className="brain-panel__proposal-detail">
+              {t(
+                "Wai found possible knowledge for this Brain. Approve only what should guide future answers.",
+                "Wai нашел возможные знания для этого Мозга. Подтверждайте только то, что должно влиять на будущие ответы.",
+              )}
+            </p>
             <div className="brain-panel__rows brain-panel__rows--spaced">
               {reviewPacks.map((pack) => {
                 const acting = actingReviewPackIds.has(pack.id);
@@ -511,7 +626,7 @@ export function BrainPanel({ locale = "en", onError, onOpenSource }: BrainPanelP
                   <article key={pack.id} className="brain-panel__proposal">
                     <div>
                       <p className="brain-panel__proposal-meta">
-                        <span>{pack.kind}</span>
+                        <span>{t("Knowledge suggestion", "Предложение знания")}</span>
                         <span>{pack.risk}</span>
                       </p>
                       <p className="brain-panel__proposal-content">{pack.title}</p>
@@ -520,152 +635,112 @@ export function BrainPanel({ locale = "en", onError, onOpenSource }: BrainPanelP
                     <div className="brain-panel__proposal-actions">
                       <button
                         type="button"
-                        aria-label={t("Reject review pack", "Отклонить пакет")}
+                        aria-label={t("Ignore knowledge suggestion", "Игнорировать предложение знания")}
                         disabled={acting}
                         onClick={() => void decideReviewPack(pack.id, "reject")}
                       >
-                        ×
+                        {t("Ignore", "Игнорировать")}
                       </button>
                       <button
                         type="button"
-                        aria-label={t("Accept review pack", "Принять пакет")}
+                        aria-label={t("Approve knowledge suggestion", "Подтвердить предложение знания")}
                         disabled={acting}
                         onClick={() => void decideReviewPack(pack.id, "accept")}
                       >
-                        ✓
+                        {t("Approve", "Подтвердить")}
                       </button>
                     </div>
                   </article>
                 );
               })}
             </div>
-          ) : null}
-          {spaceHome?.recent_pages.length ? (
+          </>
+        ) : null}
+        {proposals.length > 0 ? (
+          <>
+            <h4 className="brain-panel__group-title">{t("Memory suggestions", "Предложения памяти")}</h4>
             <div className="brain-panel__rows brain-panel__rows--spaced">
-              {spaceHome.recent_pages.map((page) => (
-                <div key={page.id} className="brain-panel__source-row">
-                  <strong>{page.title}</strong>
-                  <em>
-                    {page.kind} · {page.claims.length} {t("claims", "утверждений")}
-                  </em>
-                </div>
-              ))}
+              {proposals.map((proposal) => {
+                const acting = actingProposalIds.has(proposal.id);
+                return (
+                  <article key={proposal.id} className="brain-panel__proposal">
+                    <div>
+                      <p className="brain-panel__proposal-meta">
+                        <span>{proposalLabel(proposal)}</span>
+                        <span>{authorityLabel(proposal.authority)}</span>
+                        <span>{Math.round(proposal.confidence * 100)}%</span>
+                      </p>
+                      <p className="brain-panel__proposal-content">{proposal.content}</p>
+                      <p className="brain-panel__proposal-detail">{evidenceLabel(proposal)}</p>
+                    </div>
+                    <div className="brain-panel__proposal-actions">
+                      <button
+                        type="button"
+                        aria-label={t("Ignore memory suggestion", "Игнорировать предложение памяти")}
+                        disabled={acting}
+                        onClick={() => void decideProposal(proposal.id, rejectMemoryProposal)}
+                      >
+                        {t("Ignore", "Игнорировать")}
+                      </button>
+                      <button
+                        type="button"
+                        aria-label={t("Approve memory suggestion", "Подтвердить предложение памяти")}
+                        disabled={acting}
+                        onClick={() => void decideProposal(proposal.id, acceptMemoryProposal)}
+                      >
+                        {t("Approve", "Подтвердить")}
+                      </button>
+                    </div>
+                  </article>
+                );
+              })}
             </div>
-          ) : null}
-          <div className="brain-panel__export-row">
-            {(spaceHome?.engine_profiles ?? ["obsidian", "gbrain", "mempalace"]).map((profile) => (
-              <button key={profile} type="button" onClick={() => void runExport(profile)}>
-                {profile}
-              </button>
+          </>
+        ) : null}
+        {suggestionCount === 0 && !reviewError ? (
+          <p className="brain-panel__empty">
+            {t("No suggestions need review.", "Нет предложений на проверку.")}
+          </p>
+        ) : null}
+        {reviewError ? <p className="brain-panel__error-detail">{reviewError}</p> : null}
+      </section>
+
+      <section className="brain-panel__section">
+        <h3>{t("Knowledge", "Знания")}</h3>
+        {spaceHome?.recent_pages.length ? (
+          <div className="brain-panel__rows brain-panel__rows--spaced">
+            {spaceHome.recent_pages.map((page) => (
+              <div key={page.id} className="brain-panel__source-row">
+                <strong>{page.title}</strong>
+                <em>
+                  {page.kind} · {page.claims.length} {t("approved items", "подтверждено")}
+                </em>
+              </div>
             ))}
           </div>
-          {exportMessage ? (
-            <p className="brain-panel__proposal-detail">{exportMessage}</p>
-          ) : null}
-          {contextPreview ? (
-            <details className="brain-panel__context-preview">
-              <summary>{t("Context preview", "Предпросмотр контекста")}</summary>
-              <pre>{contextPreview}</pre>
-            </details>
-          ) : null}
-        </>
-      ) : (
-        <p className="brain-panel__empty">{t("No Spaces yet.", "Пространств пока нет.")}</p>
-      )}
-    </section>
-  );
+        ) : null}
+        {overview?.top_entities.length ? (
+          <div className="brain-panel__rows brain-panel__rows--spaced">
+            {overview.top_entities.map((entity) => entityOverviewRow(entity))}
+          </div>
+        ) : !spaceHome?.recent_pages.length ? (
+          <p className="brain-panel__empty">
+            {t(
+              "No approved knowledge yet. Review suggestions or add more sources.",
+              "Пока нет подтвержденных знаний. Проверьте предложения или добавьте источники.",
+            )}
+          </p>
+        ) : null}
+      </section>
 
-  const reviewBody = (
-    <section className="brain-panel__section">
-      <div className="brain-panel__section-head">
-        <h3>{t("Needs review", "На проверку")}</h3>
-        <span>{Math.max(pendingReviewCount, overview?.pending_review_count ?? 0)}</span>
-      </div>
-      {reviewError ? <p className="brain-panel__error-detail">{reviewError}</p> : null}
-      {proposals.length > 0 ? (
-        <div className="brain-panel__rows">
-          {proposals.map((proposal) => {
-            const acting = actingProposalIds.has(proposal.id);
-            return (
-              <article key={proposal.id} className="brain-panel__proposal">
-                <div>
-                  <p className="brain-panel__proposal-meta">
-                    <span>{proposal.risk === "high" ? t("Correction", "Исправление") : t("New fact", "Новый факт")}</span>
-                    <span>{sectionTitle(proposal.block_label)}</span>
-                    <span>{Math.round(proposal.confidence * 100)}%</span>
-                  </p>
-                  <p className="brain-panel__proposal-content">{proposal.content}</p>
-                  {proposal.target_line ? (
-                    <p className="brain-panel__proposal-detail">
-                      {t("Replaces: ", "Заменяет: ") + proposal.target_line}
-                    </p>
-                  ) : null}
-                  {evidenceLabel(proposal) ? (
-                    <p className="brain-panel__proposal-detail">{evidenceLabel(proposal)}</p>
-                  ) : null}
-                </div>
-                <div className="brain-panel__proposal-actions">
-                  <button
-                    type="button"
-                    aria-label={t("Reject", "Отклонить")}
-                    disabled={acting}
-                    onClick={() => void decideProposal(proposal.id, rejectMemoryProposal)}
-                  >
-                    ×
-                  </button>
-                  <button
-                    type="button"
-                    aria-label={t("Accept", "Принять")}
-                    disabled={acting}
-                    onClick={() => void decideProposal(proposal.id, acceptMemoryProposal)}
-                  >
-                    ✓
-                  </button>
-                </div>
-              </article>
-            );
-          })}
-        </div>
-      ) : reviewError ? null : (
-        <p className="brain-panel__empty">{t("No memory changes need review.", "Нет изменений памяти на проверку.")}</p>
-      )}
-    </section>
-  );
-
-  const overviewBody = (
-    <>
-      {spaceCockpitBody}
       <section className="brain-panel__section">
-        <h3>{t("Coverage", "Покрытие")}</h3>
+        <h3>{t("Sources", "Источники")}</h3>
         <div className="brain-panel__coverage">
           {coverageBlock(t("Recordings", "Записи"), overview?.recordings, stats.recordings ?? 0)}
           {coverageBlock(t("Materials", "Материалы"), overview?.materials, stats.items ?? 0)}
-          <div className="brain-panel__coverage-block">
-            <span>{t("Needs review", "На проверку")}</span>
-            <strong>{Math.max(pendingReviewCount, overview?.pending_review_count ?? 0)}</strong>
-            <em>{t("memory changes", "изменений памяти")}</em>
-          </div>
         </div>
-      </section>
-      {Math.max(pendingReviewCount, overview?.pending_review_count ?? 0) > 0 || reviewError
-        ? reviewBody
-        : null}
-      <section className="brain-panel__section">
-        <h3>{t("Top entities", "Главное")}</h3>
-        {overview?.top_entities.length ? (
-          <div className="brain-panel__rows">
-            {overview.top_entities.map((entity) => entityOverviewRow(entity))}
-          </div>
-        ) : (
-          <p className="brain-panel__empty">
-            {t("No organized entities yet.", "Пока нет организованных сущностей.")}
-          </p>
-        )}
-      </section>
-      {overview?.recent_sources.length ? (
-        <section className="brain-panel__section">
-          <h3>{t("Recently organized", "Недавно организовано")}</h3>
-          <div className="brain-panel__rows">
+        {overview?.recent_sources.length ? (
+          <div className="brain-panel__rows brain-panel__rows--spaced">
             {overview.recent_sources.map((source) => (
               <button
                 key={source.id}
@@ -683,10 +758,59 @@ export function BrainPanel({ locale = "en", onError, onOpenSource }: BrainPanelP
               </button>
             ))}
           </div>
-        </section>
-      ) : null}
+        ) : null}
+      </section>
+
+      <details className="brain-panel__context-preview">
+        <summary>{t("Advanced", "Дополнительно")}</summary>
+        <div className="brain-panel__workflow">
+          <form
+            className="brain-panel__workflow-card"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void shareSpace();
+            }}
+          >
+            <span>{t("Share", "Поделиться")}</span>
+            <strong>{t("Invite teammate", "Пригласить участника")}</strong>
+            <div className="brain-panel__share-row">
+              <input
+                type="email"
+                value={shareEmail}
+                placeholder={t("teammate@example.com", "email@example.com")}
+                onChange={(event) => setShareEmail(event.target.value)}
+              />
+              <select
+                value={shareRole}
+                onChange={(event) => setShareRole(event.target.value as "viewer" | "editor")}
+              >
+                <option value="viewer">{t("Viewer", "Читатель")}</option>
+                <option value="editor">{t("Editor", "Редактор")}</option>
+              </select>
+              <button type="submit" disabled={sharing || shareEmail.trim().length === 0}>
+                {sharing ? t("Inviting", "Приглашаю") : t("Invite", "Пригласить")}
+              </button>
+            </div>
+            {shareMessage ? <em>{shareMessage}</em> : null}
+          </form>
+          <div className="brain-panel__workflow-card">
+            <span>{t("Export", "Экспорт")}</span>
+            <strong>{t("Export notes", "Экспорт заметок")}</strong>
+            <div className="brain-panel__export-row">
+              {(spaceHome?.engine_profiles ?? ["obsidian", "gbrain", "mempalace"]).map((profile) => (
+                <button key={profile} type="button" onClick={() => void runExport(profile)}>
+                  {exportProfileLabel(profile)}
+                </button>
+              ))}
+            </div>
+            {exportMessage ? <em>{exportMessage}</em> : null}
+          </div>
+        </div>
+      </details>
     </>
   );
+
+  const overviewBody = brainHomeBody;
 
   const indexBody = (
     <>
@@ -734,8 +858,8 @@ export function BrainPanel({ locale = "en", onError, onOpenSource }: BrainPanelP
         <h2 className="brain-panel__title">{t("Brain", "Мозг")}</h2>
         <p className="brain-panel__subtitle">
           {t(
-            "People, topics and projects across everything you've captured.",
-            "Люди, темы и проекты по всему, что вы сохранили.",
+            "Saved sources, approved knowledge, and what Wai can use to help you.",
+            "Источники, подтвержденные знания и то, что Wai может использовать для помощи.",
           )}
         </p>
       </header>
@@ -748,25 +872,16 @@ export function BrainPanel({ locale = "en", onError, onOpenSource }: BrainPanelP
           className={`brain-panel__tab ${tab === "overview" ? "brain-panel__tab--active" : ""}`}
           onClick={() => setTab("overview")}
         >
-          {t("Overview", "Обзор")}
+          {t("Home", "Главная")}
         </button>
         <button
           type="button"
           role="tab"
-          aria-selected={tab === "index"}
-          className={`brain-panel__tab ${tab === "index" ? "brain-panel__tab--active" : ""}`}
+          aria-selected={tab === "index" || tab === "wiki"}
+          className={`brain-panel__tab ${tab === "index" || tab === "wiki" ? "brain-panel__tab--active" : ""}`}
           onClick={() => setTab("index")}
         >
-          {t("Index", "Индекс")}
-        </button>
-        <button
-          type="button"
-          role="tab"
-          aria-selected={tab === "wiki"}
-          className={`brain-panel__tab ${tab === "wiki" ? "brain-panel__tab--active" : ""}`}
-          onClick={() => setTab("wiki")}
-        >
-          {t("Wiki", "Вики")}
+          {t("Knowledge", "Знания")}
         </button>
         <button
           type="button"
@@ -775,7 +890,7 @@ export function BrainPanel({ locale = "en", onError, onOpenSource }: BrainPanelP
           className={`brain-panel__tab ${tab === "graph" ? "brain-panel__tab--active" : ""}`}
           onClick={() => setTab("graph")}
         >
-          {t("Graph", "Граф")}
+          {t("Map", "Карта")}
         </button>
       </div>
 
@@ -792,8 +907,8 @@ export function BrainPanel({ locale = "en", onError, onOpenSource }: BrainPanelP
       ) : isEmpty && tab !== "overview" ? (
         <p className="brain-panel__empty">
           {t(
-            "Your brain is empty — add materials or record, and the people & topics they mention will appear here.",
-            "Ваш мозг пуст — добавьте материалы или записи, и здесь появятся люди и темы из них.",
+            "Add recordings or materials to start building your Brain.",
+            "Добавьте записи или материалы, чтобы начать собирать Мозг.",
           )}
         </p>
       ) : tab === "overview" ? (
@@ -812,8 +927,8 @@ export function BrainPanel({ locale = "en", onError, onOpenSource }: BrainPanelP
         ) : (
           <p className="brain-panel__empty">
             {t(
-              "Pick a person or topic from the Index to read its page.",
-              "Выберите человека или тему в Индексе, чтобы открыть страницу.",
+              "Pick a person or topic from Knowledge to read its page.",
+              "Выберите человека или тему в Знаниях, чтобы открыть страницу.",
             )}
           </p>
         )

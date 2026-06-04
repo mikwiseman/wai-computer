@@ -2039,6 +2039,8 @@ export function DashboardClient() {
             <BrainPanel
               locale={locale}
               onError={setMessage}
+              onOpenInbox={() => setView("inbox")}
+              onOpenWai={() => handleNewChat()}
               onOpenSource={(sourceKind, sourceId) => {
                 setActiveFolderId(null);
                 setSelectedRecording(null);
@@ -3348,6 +3350,7 @@ function UniversalInboxPanel({
         is_archived: false,
         is_trashed: false,
       });
+      setView("inbox");
       setShowCreate(false);
     } catch (error: unknown) {
       onError(formatError(error));

@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 import WaiComputerKit
 
@@ -8,21 +9,30 @@ enum MacBrainTab: String, CaseIterable {
     case graph
 }
 
-/// The macOS "Brain" view: a knowledge graph of the people / topics / projects
-/// across everything captured. Overview is the product surface; Index, Wiki,
-/// and Graph are secondary inspection views. Honest empty / error+retry states.
+/// The macOS "Brain" view: saved sources, approved knowledge, and the context
+/// Wai can use. Home is the product surface; Knowledge and Map are secondary
+/// inspection views. Honest empty / error+retry states.
 struct MacBrainView: View {
     let apiClient: APIClient
     let onOpenSource: (InboxDetailRef) -> Void
+    let onOpenInbox: (() -> Void)?
+    let onOpenWai: (() -> Void)?
 
     @EnvironmentObject private var languageManager: LanguageManager
     @StateObject private var model: MacBrainViewModel
     @State private var shareEmail = ""
     @State private var shareRole = "viewer"
 
-    init(apiClient: APIClient, onOpenSource: @escaping (InboxDetailRef) -> Void = { _ in }) {
+    init(
+        apiClient: APIClient,
+        onOpenSource: @escaping (InboxDetailRef) -> Void = { _ in },
+        onOpenInbox: (() -> Void)? = nil,
+        onOpenWai: (() -> Void)? = nil
+    ) {
         self.apiClient = apiClient
         self.onOpenSource = onOpenSource
+        self.onOpenInbox = onOpenInbox
+        self.onOpenWai = onOpenWai
         _model = StateObject(wrappedValue: MacBrainViewModel(apiClient: apiClient))
     }
 
@@ -44,8 +54,8 @@ struct MacBrainView: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: Spacing.xs) {
             Text(t("Brain", "Мозг")).font(Typography.displaySmall)
-            Text(t("People, topics and projects across everything you've captured.",
-                   "Люди, темы и проекты по всему, что вы сохранили."))
+            Text(t("Saved sources, approved knowledge, and what Wai can use to help you.",
+                   "Сохраненные источники, подтвержденные знания и то, что Wai может использовать."))
                 .font(Typography.bodySmall)
                 .foregroundStyle(Palette.textSecondary)
         }
@@ -55,30 +65,30 @@ struct MacBrainView: View {
 
     private var tabBar: some View {
         HStack(spacing: Spacing.sm) {
-            tabButton(.overview, t("Overview", "Обзор"))
-            tabButton(.index, t("Index", "Индекс"))
-            tabButton(.wiki, t("Wiki", "Вики"))
-            tabButton(.graph, t("Graph", "Граф"))
+            tabButton(.overview, t("Home", "Главная"))
+            tabButton(.index, t("Knowledge", "Знания"), isActive: model.tab == .index || model.tab == .wiki)
+            tabButton(.graph, t("Map", "Карта"))
             Spacer()
         }
         .padding(.horizontal, Spacing.xl)
         .padding(.vertical, Spacing.sm)
     }
 
-    private func tabButton(_ tab: MacBrainTab, _ label: String) -> some View {
-        Button {
+    private func tabButton(_ tab: MacBrainTab, _ label: String, isActive: Bool? = nil) -> some View {
+        let active = isActive ?? (model.tab == tab)
+        return Button {
             model.tab = tab
         } label: {
             Text(label)
                 .font(Typography.label)
-                .foregroundStyle(model.tab == tab ? Palette.textPrimary : Palette.textSecondary)
+                .foregroundStyle(active ? Palette.textPrimary : Palette.textSecondary)
                 .padding(.horizontal, Spacing.sm)
                 .padding(.vertical, Spacing.xxs)
         }
         .buttonStyle(.plain)
         .overlay(alignment: .bottom) {
             Rectangle()
-                .fill(model.tab == tab ? Palette.accent : Color.clear)
+                .fill(active ? Palette.accent : Color.clear)
                 .frame(height: 2)
         }
     }
@@ -115,14 +125,15 @@ struct MacBrainView: View {
         if let graph = model.graph {
             ScrollView {
                 VStack(alignment: .leading, spacing: Spacing.xl) {
-                    spaceSection
-                    coverageSection(graph)
-                    reviewSection(graph)
-                    topEntitiesSection(graph)
-                    recentSourcesSection(graph)
+                    useWithWaiSection(graph)
+                    brainsSection(graph)
+                    reviewSuggestionsSection
+                    knowledgeSection(graph)
+                    sourcesSection(graph)
+                    advancedSection
                 }
                 .padding(Spacing.xl)
-                .frame(maxWidth: 860, alignment: .leading)
+                .frame(maxWidth: 900, alignment: .leading)
                 .frame(maxWidth: .infinity, alignment: .topLeading)
             }
         } else {
@@ -130,39 +141,109 @@ struct MacBrainView: View {
         }
     }
 
-    private func coverageSection(_ graph: BrainGraph) -> some View {
-        let recordings = graph.overview?.recordings
-        let materials = graph.overview?.materials
-        return VStack(alignment: .leading, spacing: Spacing.sm) {
-            Text(t("Coverage", "Покрытие")).font(Typography.headingSmall)
-            HStack(spacing: Spacing.sm) {
-                coverageTile(
-                    title: t("Recordings", "Записи"),
-                    coverage: recordings,
-                    fallbackTotal: graph.stats["recordings"] ?? 0,
-                    icon: "waveform"
-                )
-                coverageTile(
-                    title: t("Materials", "Материалы"),
-                    coverage: materials,
-                    fallbackTotal: graph.stats["items"] ?? 0,
-                    icon: "doc.text"
-                )
-                metricTile(
-                    title: t("Needs review", "На проверку"),
-                    value: "\(max(model.pendingReviewCount, graph.overview?.pendingReviewCount ?? 0))",
-                    detail: t("memory changes", "изменений памяти"),
-                    icon: "checkmark.seal"
-                )
+    @ViewBuilder
+    private func useWithWaiSection(_ graph: BrainGraph) -> some View {
+        let sourceCount = sourceTotal(graph)
+        let approvedCount = approvedKnowledgeCount(model.spaceHome)
+        let hasApprovedKnowledge = approvedCount > 0
+        VStack(alignment: .leading, spacing: Spacing.sm) {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: Spacing.xxs) {
+                    Text(t("Use", "Использовать"))
+                        .font(Typography.labelSmall)
+                        .foregroundStyle(Palette.textSecondary)
+                    Text(t("Use with Wai", "Использовать с Wai"))
+                        .font(Typography.headingSmall)
+                    Text(
+                        t(
+                            "Ask Wai using approved knowledge from \(selectedBrainName).",
+                            "Попросите Wai использовать подтвержденные знания из \(selectedBrainName)."
+                        )
+                    )
+                    .font(Typography.bodySmall)
+                    .foregroundStyle(Palette.textSecondary)
+                }
+                Spacer()
+                Button {
+                    Task { await model.prepareSpaceContext() }
+                } label: {
+                    Text(model.contextLoading ? t("Preparing", "Готовлю") : t("Use with Wai", "Использовать с Wai"))
+                        .frame(minWidth: 120)
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(model.contextLoading || model.selectedSpaceId.isEmpty || !hasApprovedKnowledge)
+            }
+
+            if sourceCount == 0 {
+                VStack(alignment: .leading, spacing: Spacing.xs) {
+                    Text(t(
+                        "Add recordings or materials to start building your Brain.",
+                        "Добавьте записи или материалы, чтобы начать собирать Мозг."
+                    ))
+                    .font(Typography.bodySmall)
+                    .foregroundStyle(Palette.textTertiary)
+                    if let onOpenInbox {
+                        Button(t("Open Inbox", "Открыть инбокс")) {
+                            onOpenInbox()
+                        }
+                        .buttonStyle(.bordered)
+                    }
+                }
+            }
+
+            if !hasApprovedKnowledge {
+                Text(t(
+                    "No approved knowledge yet. Approve suggestions first, then Wai can use them.",
+                    "Пока нет подтвержденных знаний. Сначала примите предложения, и Wai сможет их использовать."
+                ))
+                .font(Typography.bodySmall)
+                .foregroundStyle(Palette.textTertiary)
+            }
+
+            if let message = model.contextMessage {
+                Text(message)
+                    .font(Typography.labelSmall)
+                    .foregroundStyle(Palette.textSecondary)
+            }
+
+            if let preview = model.contextPreview {
+                HStack(spacing: Spacing.xs) {
+                    Button(t("Copy context", "Скопировать контекст")) {
+                        copyContextToPasteboard()
+                    }
+                    .buttonStyle(.bordered)
+                    Button(t("Open Ask Wai", "Открыть Wai")) {
+                        if let onOpenWai {
+                            onOpenWai()
+                        }
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(onOpenWai == nil)
+                }
+                DisclosureGroup(t("What Wai will see", "Что увидит Wai")) {
+                    ScrollView {
+                        Text(preview)
+                            .font(.system(.caption, design: .monospaced))
+                            .foregroundStyle(Palette.textSecondary)
+                            .textSelection(.enabled)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.top, Spacing.xs)
+                    }
+                    .frame(maxHeight: 180)
+                }
+                .font(Typography.bodySmall)
             }
         }
+        .padding(Spacing.md)
+        .background(Palette.surfaceSubtle)
+        .clipShape(RoundedRectangle(cornerRadius: 8))
     }
 
     @ViewBuilder
-    private var spaceSection: some View {
+    private func brainsSection(_ graph: BrainGraph) -> some View {
         VStack(alignment: .leading, spacing: Spacing.sm) {
             HStack {
-                Text(t("Space", "Пространство")).font(Typography.headingSmall)
+                Text(t("Brains", "Мозги")).font(Typography.headingSmall)
                 Spacer()
                 if !model.spaces.isEmpty {
                     Picker("", selection: $model.selectedSpaceId) {
@@ -184,55 +265,150 @@ struct MacBrainView: View {
             if let home = model.spaceHome {
                 HStack(spacing: Spacing.sm) {
                     metricTile(
-                        title: t("Pages", "Страницы"),
-                        value: "\(home.pageCount)",
-                        detail: t("living wiki pages", "страницы вики"),
-                        icon: "doc.text"
-                    )
-                    metricTile(
                         title: t("Sources", "Источники"),
-                        value: "\(home.sourceCount)",
-                        detail: sourceCountsLabel(home),
+                        value: "\(sourceTotal(graph))",
+                        detail: t("recordings and materials", "записи и материалы"),
                         icon: "tray.full"
                     )
                     metricTile(
                         title: t("Knowledge", "Знания"),
-                        value: "\(home.claimCounts.values.reduce(0, +))",
-                        detail: claimCountsLabel(home),
+                        value: "\(approvedKnowledgeCount(home))",
+                        detail: t("approved items", "подтверждено"),
                         icon: "checklist"
                     )
                     metricTile(
-                        title: t("Review", "Проверка"),
-                        value: "\(model.spaceReviewPacks.count)",
-                        detail: t("pending decisions", "ожидают решения"),
+                        title: t("Suggestions", "Предложения"),
+                        value: "\(suggestionCount)",
+                        detail: t("need review", "нужно проверить"),
                         icon: "checkmark.seal"
                     )
+                    metricTile(
+                        title: t("Notes", "Заметки"),
+                        value: "\(home.pageCount)",
+                        detail: t("knowledge pages", "страницы знаний"),
+                        icon: "doc.text"
+                    )
                 }
-
-                HStack(alignment: .top, spacing: Spacing.sm) {
-                    spaceActionCard(
-                        eyebrow: t("Use", "Использовать"),
-                        title: t("Prepare context", "Подготовить контекст"),
-                        systemImage: "text.badge.checkmark"
-                    ) {
-                        Button {
-                            Task { await model.prepareSpaceContext() }
-                        } label: {
-                            Text(model.contextLoading ? t("Preparing", "Готовлю") : t("Prepare", "Подготовить"))
-                                .frame(maxWidth: .infinity)
+            } else if model.spaces.isEmpty {
+                VStack(alignment: .leading, spacing: Spacing.xs) {
+                    wikiEmpty(t(
+                        "Add recordings or materials to start building your Brain.",
+                        "Добавьте записи или материалы, чтобы начать собирать Мозг."
+                    ))
+                    if let onOpenInbox {
+                        Button(t("Open Inbox", "Открыть инбокс")) {
+                            onOpenInbox()
                         }
                         .buttonStyle(.bordered)
-                        .disabled(model.contextLoading)
-                        if let message = model.contextMessage {
-                            Text(message)
-                                .font(Typography.labelSmall)
-                                .foregroundStyle(Palette.textSecondary)
-                        }
                     }
+                }
+            } else {
+                ProgressView()
+            }
+        }
+    }
 
+    @ViewBuilder
+    private var reviewSuggestionsSection: some View {
+        VStack(alignment: .leading, spacing: Spacing.sm) {
+            HStack {
+                Text(t("Review suggestions", "Проверить предложения")).font(Typography.headingSmall)
+                Spacer()
+                Text("\(suggestionCount)")
+                    .font(Typography.labelSmall)
+                    .foregroundStyle(Palette.textTertiary)
+            }
+            if !model.spaceReviewPacks.isEmpty {
+                Text(t(
+                    "Wai found possible knowledge for this Brain. Approve only what should guide future answers.",
+                    "Wai нашел возможные знания для этого Мозга. Подтверждайте только то, что должно влиять на будущие ответы."
+                ))
+                .font(Typography.bodySmall)
+                .foregroundStyle(Palette.textSecondary)
+                VStack(alignment: .leading, spacing: Spacing.xs) {
+                    ForEach(model.spaceReviewPacks) { pack in
+                        spaceReviewPackRow(pack)
+                    }
+                }
+            }
+            if !model.proposals.isEmpty {
+                Text(t("Memory suggestions", "Предложения памяти"))
+                    .font(Typography.label)
+                    .foregroundStyle(Palette.textSecondary)
+                VStack(alignment: .leading, spacing: Spacing.xs) {
+                    ForEach(model.proposals) { proposal in
+                        proposalRow(proposal)
+                    }
+                }
+            }
+            if suggestionCount == 0 && model.reviewError == nil {
+                wikiEmpty(t("No suggestions need review.", "Нет предложений на проверку."))
+            }
+            if let reviewError = model.reviewError {
+                Text(reviewErrorText(reviewError))
+                    .font(Typography.bodySmall)
+                    .foregroundStyle(.red)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func knowledgeSection(_ graph: BrainGraph) -> some View {
+        VStack(alignment: .leading, spacing: Spacing.sm) {
+            Text(t("Knowledge", "Знания")).font(Typography.headingSmall)
+            if let home = model.spaceHome, !home.recentPages.isEmpty {
+                VStack(alignment: .leading, spacing: Spacing.xs) {
+                    ForEach(home.recentPages) { page in
+                        brainPageRow(page)
+                    }
+                }
+            }
+            let top = graph.overview?.topEntities ?? []
+            if !top.isEmpty {
+                VStack(alignment: .leading, spacing: Spacing.xs) {
+                    ForEach(top) { entity in
+                        entityOverviewRow(entity)
+                    }
+                }
+            } else if model.spaceHome?.recentPages.isEmpty != false {
+                wikiEmpty(t(
+                    "No approved knowledge yet. Review suggestions or add more sources.",
+                    "Пока нет подтвержденных знаний. Проверьте предложения или добавьте источники."
+                ))
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func sourcesSection(_ graph: BrainGraph) -> some View {
+        VStack(alignment: .leading, spacing: Spacing.sm) {
+            Text(t("Sources", "Источники")).font(Typography.headingSmall)
+            HStack(spacing: Spacing.sm) {
+                coverageTile(
+                    title: t("Recordings", "Записи"),
+                    coverage: graph.overview?.recordings,
+                    fallbackTotal: graph.stats["recordings"] ?? 0,
+                    icon: "waveform"
+                )
+                coverageTile(
+                    title: t("Materials", "Материалы"),
+                    coverage: graph.overview?.materials,
+                    fallbackTotal: graph.stats["items"] ?? 0,
+                    icon: "doc.text"
+                )
+            }
+            recentSourcesSection(graph)
+        }
+    }
+
+    @ViewBuilder
+    private var advancedSection: some View {
+        if let home = model.spaceHome {
+            DisclosureGroup(t("Advanced", "Дополнительно")) {
+                HStack(alignment: .top, spacing: Spacing.sm) {
                     spaceActionCard(
                         eyebrow: t("Share", "Поделиться"),
-                        title: t("Give access", "Открыть доступ"),
+                        title: t("Invite teammate", "Пригласить участника"),
                         systemImage: "person.badge.plus"
                     ) {
                         TextField(t("teammate@example.com", "email@example.com"), text: $shareEmail)
@@ -263,49 +439,30 @@ struct MacBrainView: View {
                                 .foregroundStyle(Palette.textSecondary)
                         }
                     }
-                }
 
-                HStack(spacing: Spacing.xs) {
-                    ForEach(home.engineProfiles, id: \.self) { profile in
-                        Button(profile) {
-                            Task { await model.exportSelectedSpace(profile: profile) }
+                    spaceActionCard(
+                        eyebrow: t("Export", "Экспорт"),
+                        title: t("Export notes", "Экспортировать заметки"),
+                        systemImage: "square.and.arrow.up"
+                    ) {
+                        HStack(spacing: Spacing.xs) {
+                            ForEach(home.engineProfiles, id: \.self) { profile in
+                                Button(exportProfileLabel(profile)) {
+                                    Task { await model.exportSelectedSpace(profile: profile) }
+                                }
+                                .buttonStyle(.bordered)
+                            }
                         }
-                        .buttonStyle(.bordered)
-                    }
-                    if let message = model.exportMessage {
-                        Text(message)
-                            .font(Typography.labelSmall)
-                            .foregroundStyle(Palette.textSecondary)
-                    }
-                }
-
-                if !model.spaceReviewPacks.isEmpty {
-                    VStack(alignment: .leading, spacing: Spacing.xs) {
-                        ForEach(model.spaceReviewPacks) { pack in
-                            spaceReviewPackRow(pack)
-                        }
-                    }
-                }
-
-                if let preview = model.contextPreview {
-                    DisclosureGroup(t("Context preview", "Предпросмотр контекста")) {
-                        ScrollView {
-                            Text(preview)
-                                .font(.system(.caption, design: .monospaced))
+                        if let message = model.exportMessage {
+                            Text(message)
+                                .font(Typography.labelSmall)
                                 .foregroundStyle(Palette.textSecondary)
-                                .textSelection(.enabled)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(.top, Spacing.xs)
                         }
-                        .frame(maxHeight: 180)
                     }
-                    .font(Typography.bodySmall)
                 }
-            } else if model.spaces.isEmpty {
-                wikiEmpty(t("No Spaces yet.", "Пространств пока нет."))
-            } else {
-                ProgressView()
+                .padding(.top, Spacing.xs)
             }
+            .font(Typography.bodySmall)
         }
     }
 
@@ -338,7 +495,7 @@ struct MacBrainView: View {
         return HStack(alignment: .top, spacing: Spacing.md) {
             VStack(alignment: .leading, spacing: Spacing.xxs) {
                 HStack(spacing: Spacing.xs) {
-                    Text(pack.kind)
+                    Text(t("Knowledge suggestion", "Предложение знания"))
                         .font(Typography.labelSmall)
                         .padding(.horizontal, Spacing.xs)
                         .padding(.vertical, 2)
@@ -360,27 +517,119 @@ struct MacBrainView: View {
                 Button {
                     Task { await model.rejectSpaceReviewPack(pack.id) }
                 } label: {
-                    Image(systemName: "xmark")
-                        .frame(width: 26, height: 26)
+                    Text(t("Ignore", "Игнорировать"))
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.bordered)
                 .disabled(acting)
-                .help(t("Reject", "Отклонить"))
+                .help(t("Ignore knowledge suggestion", "Игнорировать предложение знания"))
 
                 Button {
                     Task { await model.acceptSpaceReviewPack(pack.id) }
                 } label: {
-                    Image(systemName: "checkmark")
-                        .frame(width: 26, height: 26)
+                    Text(t("Approve", "Подтвердить"))
                 }
                 .buttonStyle(.borderedProminent)
                 .disabled(acting)
-                .help(t("Accept", "Принять"))
+                .help(t("Approve knowledge suggestion", "Подтвердить предложение знания"))
             }
         }
         .padding(Spacing.md)
         .background(Palette.surfaceSubtle)
         .clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+
+    private var selectedBrainName: String {
+        model.spaces.first { $0.id == model.selectedSpaceId }?.name ?? t("Personal", "Личный")
+    }
+
+    private var suggestionCount: Int {
+        model.spaceReviewPacks.count + max(model.pendingReviewCount, model.proposals.count)
+    }
+
+    private func sourceTotal(_ graph: BrainGraph) -> Int {
+        if let home = model.spaceHome {
+            return home.sourceCount
+        }
+        return (graph.overview?.recordings.total ?? graph.stats["recordings"] ?? 0)
+            + (graph.overview?.materials.total ?? graph.stats["items"] ?? 0)
+    }
+
+    private func approvedKnowledgeCount(_ home: BrainSpaceHome?) -> Int {
+        home?.claimCounts.values.reduce(0, +) ?? 0
+    }
+
+    private func copyContextToPasteboard() {
+        guard let preview = model.contextPreview else { return }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(preview, forType: .string)
+        model.contextMessage = t("Context copied.", "Контекст скопирован.")
+    }
+
+    private func brainPageRow(_ page: BrainPage) -> some View {
+        HStack(spacing: Spacing.sm) {
+            Image(systemName: "doc.text")
+                .font(.system(size: 11))
+                .foregroundStyle(Palette.accent)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(page.title).font(Typography.bodySmall.weight(.medium))
+                Text(
+                    t(
+                        "\(page.kind) · \(page.claims.count) approved items",
+                        "\(page.kind) · \(page.claims.count) подтверждено"
+                    )
+                )
+                .font(Typography.labelSmall)
+                .foregroundStyle(Palette.textSecondary)
+            }
+            Spacer()
+        }
+        .padding(Spacing.sm)
+        .background(Palette.surfaceSubtle)
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+
+    private func entityOverviewRow(_ entity: BrainOverviewEntity) -> some View {
+        Button {
+            model.openEntity(id: entity.id, name: entity.name)
+        } label: {
+            HStack(spacing: Spacing.sm) {
+                Image(systemName: entityIcon(entity.type))
+                    .font(.system(size: 11))
+                    .foregroundStyle(Palette.accent)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(entity.name).font(Typography.bodySmall.weight(.medium))
+                    Text(
+                        t(
+                            "\(entity.recordingCount) recordings · \(entity.materialCount) materials",
+                            "\(entity.recordingCount) записей · \(entity.materialCount) материалов"
+                        )
+                    )
+                    .font(Typography.labelSmall)
+                    .foregroundStyle(Palette.textSecondary)
+                }
+                Spacer()
+                Text("\(entity.sourceCount)")
+                    .font(Typography.labelSmall)
+                    .foregroundStyle(Palette.textTertiary)
+            }
+            .padding(Spacing.sm)
+            .background(Palette.surfaceSubtle)
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func exportProfileLabel(_ profile: String) -> String {
+        switch profile {
+        case "obsidian":
+            return t("Export to Obsidian", "Экспорт в Obsidian")
+        case "mempalace":
+            return t("Export to MemPalace", "Экспорт в MemPalace")
+        case "gbrain":
+            return t("Export to G Brain", "Экспорт в G Brain")
+        default:
+            return t("Export notes", "Экспортировать заметки")
+        }
     }
 
     private func sourceCountsLabel(_ home: BrainSpaceHome) -> String {
@@ -447,36 +696,6 @@ struct MacBrainView: View {
         .clipShape(RoundedRectangle(cornerRadius: 8))
     }
 
-    @ViewBuilder
-    private func reviewSection(_ graph: BrainGraph) -> some View {
-        let pending = max(model.pendingReviewCount, graph.overview?.pendingReviewCount ?? 0)
-        if pending > 0 || model.reviewError != nil {
-            VStack(alignment: .leading, spacing: Spacing.sm) {
-                HStack {
-                    Text(t("Needs review", "На проверку")).font(Typography.headingSmall)
-                    Spacer()
-                    Text("\(pending)")
-                        .font(Typography.labelSmall)
-                        .foregroundStyle(Palette.textTertiary)
-                }
-                if let reviewError = model.reviewError {
-                    Text(reviewErrorText(reviewError))
-                        .font(Typography.bodySmall)
-                        .foregroundStyle(.red)
-                }
-                if model.proposals.isEmpty && model.reviewError == nil {
-                    wikiEmpty(t("No memory changes need review.", "Нет изменений памяти на проверку."))
-                } else {
-                    VStack(alignment: .leading, spacing: Spacing.sm) {
-                        ForEach(model.proposals) { proposal in
-                            proposalRow(proposal)
-                        }
-                    }
-                }
-            }
-        }
-    }
-
     private func proposalRow(_ proposal: MemoryProposal) -> some View {
         let acting = model.actingProposalIds.contains(proposal.id)
         return HStack(alignment: .top, spacing: Spacing.md) {
@@ -518,29 +737,19 @@ struct MacBrainView: View {
                 Button {
                     Task { await model.rejectProposal(proposal.id) }
                 } label: {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(Palette.textSecondary)
-                        .frame(width: 30, height: 30)
-                        .background(Palette.surfaceSubtle)
-                        .clipShape(Circle())
+                    Text(t("Ignore", "Игнорировать"))
                 }
-                .buttonStyle(.plain)
-                .help(t("Reject", "Отклонить"))
+                .buttonStyle(.bordered)
+                .help(t("Ignore memory suggestion", "Игнорировать предложение памяти"))
                 .disabled(acting)
 
                 Button {
                     Task { await model.acceptProposal(proposal.id) }
                 } label: {
-                    Image(systemName: "checkmark")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(.white)
-                        .frame(width: 30, height: 30)
-                        .background(Palette.accent)
-                        .clipShape(Circle())
+                    Text(t("Approve", "Подтвердить"))
                 }
-                .buttonStyle(.plain)
-                .help(t("Accept", "Принять"))
+                .buttonStyle(.borderedProminent)
+                .help(t("Approve memory suggestion", "Подтвердить предложение памяти"))
                 .disabled(acting)
             }
             .opacity(acting ? 0.5 : 1)
@@ -551,66 +760,11 @@ struct MacBrainView: View {
     }
 
     @ViewBuilder
-    private func topEntitiesSection(_ graph: BrainGraph) -> some View {
-        let top = graph.overview?.topEntities ?? []
-        if top.isEmpty {
-            VStack(alignment: .leading, spacing: Spacing.sm) {
-                Text(t("Top entities", "Главное")).font(Typography.headingSmall)
-                if model.entityGroups.isEmpty {
-                    wikiEmpty(t("No organized entities yet.", "Пока нет организованных сущностей."))
-                } else {
-                    ForEach(model.entityGroups, id: \.kind) { group in
-                        ForEach(group.nodes.prefix(4)) { node in
-                            entityRow(node)
-                        }
-                    }
-                }
-            }
-        } else {
-            VStack(alignment: .leading, spacing: Spacing.sm) {
-                Text(t("Top entities", "Главное")).font(Typography.headingSmall)
-                VStack(alignment: .leading, spacing: Spacing.xs) {
-                    ForEach(top) { entity in
-                        Button {
-                            model.openEntity(id: entity.id, name: entity.name)
-                        } label: {
-                            HStack(spacing: Spacing.sm) {
-                                Image(systemName: entityIcon(entity.type))
-                                    .font(.system(size: 11))
-                                    .foregroundStyle(Palette.accent)
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(entity.name).font(Typography.bodySmall.weight(.medium))
-                                    Text(
-                                        t(
-                                            "\(entity.recordingCount) recordings · \(entity.materialCount) materials",
-                                            "\(entity.recordingCount) записей · \(entity.materialCount) материалов"
-                                        )
-                                    )
-                                    .font(Typography.labelSmall)
-                                    .foregroundStyle(Palette.textSecondary)
-                                }
-                                Spacer()
-                                Text("\(entity.sourceCount)")
-                                    .font(Typography.labelSmall)
-                                    .foregroundStyle(Palette.textTertiary)
-                            }
-                            .padding(Spacing.sm)
-                            .background(Palette.surfaceSubtle)
-                            .clipShape(RoundedRectangle(cornerRadius: 8))
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-            }
-        }
-    }
-
-    @ViewBuilder
     private func recentSourcesSection(_ graph: BrainGraph) -> some View {
         let sources = graph.overview?.recentSources ?? []
         if !sources.isEmpty {
             VStack(alignment: .leading, spacing: Spacing.sm) {
-                Text(t("Recently organized", "Недавно организовано"))
+                Text(t("Recent sources", "Недавние источники"))
                     .font(Typography.headingSmall)
                 VStack(alignment: .leading, spacing: Spacing.xs) {
                     ForEach(sources) { source in
@@ -740,8 +894,8 @@ struct MacBrainView: View {
             ContentUnavailableViewCompat(
                 t("Pick a person or topic", "Выберите человека или тему"),
                 systemImage: "doc.text.magnifyingglass",
-                description: Text(t("Choose one from the Index to read its page.",
-                                    "Выберите элемент в Индексе, чтобы открыть страницу."))
+                description: Text(t("Choose one from Knowledge to read its page.",
+                                    "Выберите элемент в Знаниях, чтобы открыть страницу."))
             )
         }
     }
@@ -1018,8 +1172,8 @@ struct MacBrainView: View {
             t("Your brain is empty", "Ваш мозг пуст"),
             systemImage: "brain",
             description: Text(t(
-                "As you record and add content, the people & topics they mention appear here.",
-                "По мере записей и добавления материалов здесь появятся люди и темы."
+                "Add recordings or materials to start building your Brain.",
+                "Добавьте записи или материалы, чтобы начать собирать Мозг."
             ))
         )
     }
@@ -1158,11 +1312,15 @@ final class MacBrainViewModel: ObservableObject {
         do {
             let context = try await apiClient.buildBrainContext(
                 spaceId: selectedSpaceId,
-                task: "Use this Space as the source of truth.",
+                task: "Use this Brain as the source of truth.",
                 limit: 80
             )
             contextPreview = context.markdown
-            contextMessage = "\(context.claimCount) claims ready for assistant context."
+            if context.claimCount == 0 {
+                contextMessage = "No approved knowledge yet. Approve suggestions first, then Wai can use them."
+            } else {
+                contextMessage = "\(context.claimCount) approved items ready for Wai."
+            }
             spaceError = nil
         } catch {
             spaceError = error.localizedDescription
@@ -1193,7 +1351,14 @@ final class MacBrainViewModel: ObservableObject {
         exportMessage = nil
         do {
             let export = try await apiClient.exportBrainSpace(spaceId: selectedSpaceId, profile: profile)
-            exportMessage = "\(export.profile) export ready: \(export.files.count) files."
+            switch export.files.count {
+            case 0:
+                exportMessage = "Nothing to export yet. Approved knowledge notes will appear here."
+            case 1:
+                exportMessage = "1 Markdown file is ready."
+            default:
+                exportMessage = "\(export.files.count) Markdown files are ready."
+            }
             spaceError = nil
         } catch {
             spaceError = error.localizedDescription
