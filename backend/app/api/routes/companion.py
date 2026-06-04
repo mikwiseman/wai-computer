@@ -82,6 +82,9 @@ class CitationResponse(BaseModel):
 class MessageResponse(BaseModel):
     id: str
     role: str
+    # 'streaming' (turn in flight — content is a partial), 'complete', or
+    # 'failed'. Lets a reopened thread reconstruct an interrupted turn.
+    status: str
     content: Any
     tool_calls: list[Any] | None
     citations: list[CitationResponse]
@@ -139,6 +142,7 @@ def _to_message(
     return MessageResponse(
         id=str(m.id),
         role=m.role,
+        status=m.status,
         content=m.content,
         tool_calls=m.tool_calls,
         citations=[

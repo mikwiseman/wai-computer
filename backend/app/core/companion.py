@@ -7,11 +7,11 @@ import logging
 import time
 import uuid
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, AsyncIterator, Literal
 
 from fastapi import HTTPException, status
-from sqlalchemy import and_, select
+from sqlalchemy import and_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
@@ -40,6 +40,13 @@ COMPANION_AUTO_TITLE_MAX_CHARS = 72
 TOOL_CALL_CAP = 6
 HISTORY_WINDOW = 20
 SNIPPET_CHAR_CAP = 400
+# A streaming assistant message is checkpointed to the DB every N text deltas so
+# a dropped SSE stream resumes from the persisted partial instead of losing it.
+CHECKPOINT_EVERY_N_DELTAS = 40
+# A 'streaming' row older than this with no terminal status is a crashed or
+# abandoned turn; the sweep marks it 'failed' (no forever-streaming ghost, and
+# no silent success).
+STREAMING_TURN_STALE_SECONDS = 120
 
 _IDENTITY_SECTION = (
     "<identity>\n"
@@ -201,6 +208,12 @@ class TurnStartEvent:
     type: Literal["turn_start"] = "turn_start"
     message_id: str = ""
     conversation_id: str = ""
+    # The assistant row is created up front (status='streaming') so a reload can
+    # reconstruct an in-flight turn; this id is stable through to DoneEvent.
+    assistant_message_id: str = ""
+    # The chat's current title (instant truncation on the first turn) so the
+    # inbox row can title itself live; an async job may refine it afterwards.
+    title: str = ""
 
 
 @dataclass(frozen=True)
@@ -1323,7 +1336,12 @@ async def _load_history(
 ) -> list[ChatMessage]:
     stmt = (
         select(ChatMessage)
-        .where(ChatMessage.conversation_id == conversation_id)
+        .where(
+            ChatMessage.conversation_id == conversation_id,
+            # Only finalized turns feed the model. An in-flight ('streaming') or
+            # crashed ('failed') assistant row must never poison the next prompt.
+            ChatMessage.status == "complete",
+        )
         .order_by(ChatMessage.created_at.desc())
         .limit(HISTORY_WINDOW)
     )
@@ -1568,6 +1586,107 @@ def _action_preview(name: str, args: dict[str, Any]) -> tuple[str, str | None]:
     return (f"Run {name}", None)
 
 
+async def _begin_assistant_message(
+    db: AsyncSession, conversation_id: uuid.UUID, model: str
+) -> ChatMessage:
+    """Create the assistant row up front (status='streaming') and flush it for a
+    durable id, so a dropped SSE stream resumes from the persisted partial via
+    get_chat instead of losing the whole turn."""
+    msg = ChatMessage(
+        conversation_id=conversation_id,
+        role="assistant",
+        content=[{"type": "text", "text": ""}],
+        model=model,
+        status="streaming",
+    )
+    db.add(msg)
+    await db.flush()
+    await db.refresh(msg)
+    return msg
+
+
+async def _checkpoint_assistant_text(
+    db: AsyncSession, message_id: uuid.UUID, text: str
+) -> None:
+    """Persist the partial answer mid-stream (throttled by the caller) so a
+    reload shows the answer-in-progress, not an empty bubble."""
+    await db.execute(
+        update(ChatMessage)
+        .where(ChatMessage.id == message_id)
+        .values(content=[{"type": "text", "text": text}])
+    )
+    await db.commit()
+
+
+async def _finalize_assistant_message(
+    db: AsyncSession,
+    *,
+    message: ChatMessage,
+    conv: Conversation,
+    text: str,
+    usage: Any,
+    latency_ms: int,
+    model: str,
+    tool_calls: list[Any] | None = None,
+) -> tuple[int, int, int]:
+    """Write the final answer + usage and flip status to 'complete'. Mutates the
+    ORM rows (expire_on_commit is False, so a same-session reader sees the fresh
+    values) then commits. Returns (input, output, cached) token counts."""
+    input_tokens = _get_usage(usage, "input_tokens")
+    output_tokens = _get_usage(usage, "output_tokens")
+    cached_tokens = _get_usage(usage, "cached_tokens")
+    message.content = [{"type": "text", "text": text}]
+    message.tool_calls = tool_calls or None
+    message.input_tokens = input_tokens or None
+    message.output_tokens = output_tokens or None
+    message.cached_tokens = cached_tokens or None
+    message.model = model
+    message.latency_ms = latency_ms
+    message.status = "complete"
+    conv.last_message_at = datetime.now(timezone.utc)
+    await db.flush()
+    await db.commit()
+    return input_tokens, output_tokens, cached_tokens
+
+
+async def _fail_assistant_message(db: AsyncSession, message_id: uuid.UUID) -> None:
+    """Mark a turn that errored mid-stream as 'failed' so a reopened thread shows
+    a failed turn, never a forever-'streaming' ghost. Best-effort: the sweep
+    (sweep_stale_streaming_messages) is the backstop if this cannot run."""
+    try:
+        await db.rollback()
+        await db.execute(
+            update(ChatMessage)
+            .where(ChatMessage.id == message_id)
+            .values(status="failed")
+        )
+        await db.commit()
+    except Exception:  # pragma: no cover - defensive; sweep is the backstop
+        logger.warning("could not mark companion assistant message failed")
+
+
+async def sweep_stale_streaming_messages(
+    db: AsyncSession,
+    *,
+    older_than_seconds: int = STREAMING_TURN_STALE_SECONDS,
+    now: datetime | None = None,
+) -> int:
+    """Fail-closed backstop for crashed turns: flip 'streaming' assistant rows
+    older than the cutoff to 'failed'. Returns the number swept."""
+    now = now or datetime.now(timezone.utc)
+    cutoff = now - timedelta(seconds=older_than_seconds)
+    result = await db.execute(
+        update(ChatMessage)
+        .where(
+            ChatMessage.role == "assistant",
+            ChatMessage.status == "streaming",
+            ChatMessage.created_at <= cutoff,
+        )
+        .values(status="failed")
+    )
+    return result.rowcount or 0
+
+
 async def run_turn(
     db: AsyncSession,
     user_id: uuid.UUID,
@@ -1603,9 +1722,18 @@ async def run_turn(
     await db.flush()
     await db.refresh(user_msg)
 
+    # Create the assistant row up front (status='streaming') so a dropped stream
+    # never loses the turn — a reload reconstructs it from the persisted partial.
+    assistant_msg = await _begin_assistant_message(
+        db, conv.id, settings.openai_llm_model
+    )
+    assistant_message_id = str(assistant_msg.id)
+
     yield TurnStartEvent(
         message_id=str(user_msg.id),
         conversation_id=str(conv.id),
+        assistant_message_id=assistant_message_id,
+        title=conv.title or "",
     )
 
     history = await _load_history(db, conv.id)
@@ -1620,113 +1748,119 @@ async def run_turn(
 
     access_token = await issue_companion_mcp_access_token(db, user_id)
     # OpenAI calls the remote MCP server from outside this DB transaction.
-    # Commit the just-issued token (and the user turn) before the stream starts
-    # so `/mcp` can resolve the presented token on its own connection.
+    # Commit the just-issued token (the user turn + the streaming assistant row)
+    # before the stream starts so `/mcp` can resolve the presented token on its
+    # own connection and a reload already sees the in-flight turn.
     await db.commit()
     mcp_tool = _companion_mcp_tool(settings, access_token)
 
     if enable_actions:
-        async for _evt in _run_actions_loop(
-            db,
-            client,
-            settings,
-            user_id,
-            conv,
-            user_msg,
-            instructions,
-            response_input,
-            mcp_tool,
-            started,
-        ):
-            yield _evt
+        try:
+            async for _evt in _run_actions_loop(
+                db,
+                client,
+                settings,
+                user_id,
+                conv,
+                user_msg,
+                assistant_msg,
+                instructions,
+                response_input,
+                mcp_tool,
+                started,
+            ):
+                yield _evt
+        except Exception:
+            await _fail_assistant_message(db, assistant_msg.id)
+            raise
         return
 
     assistant_text = ""
     usage: Any = None
     completed_response_obj: Any = None
-    stream = await client.responses.create(
-        model=settings.openai_llm_model,
-        instructions=instructions,
-        input=response_input,
-        tools=[mcp_tool],
-        prompt_cache_key=f"wai-companion-{user_id}",
-        stream=True,
-    )
-
-    async for event in stream:
-        event_type = getattr(event, "type", None) or (
-            event.get("type") if isinstance(event, dict) else None
+    delta_count = 0
+    try:
+        stream = await client.responses.create(
+            model=settings.openai_llm_model,
+            instructions=instructions,
+            input=response_input,
+            tools=[mcp_tool],
+            prompt_cache_key=f"wai-companion-{user_id}",
+            stream=True,
         )
-        if event_type == "response.output_text.delta":
-            delta = getattr(event, "delta", None)
-            if delta is None and isinstance(event, dict):
-                delta = event.get("delta", "")
-            delta = delta or ""
-            assistant_text += delta
-            if delta:
-                yield TokenEvent(text=delta)
-        elif event_type in ("response.completed", "response.done"):
-            response_obj = getattr(event, "response", None)
-            if response_obj is None and isinstance(event, dict):
-                response_obj = event.get("response")
-            if response_obj is not None:
-                completed_response_obj = response_obj
-                try:
-                    ensure_response_completed(response_obj, operation="Companion response")
-                except OpenAIResponseError as exc:
-                    raise CompanionError("model_incomplete", str(exc)) from exc
-                usage = getattr(response_obj, "usage", None)
-                if usage is None and isinstance(response_obj, dict):
-                    usage = response_obj.get("usage")
-                if not assistant_text:
-                    assistant_text = _extract_text(response_obj)
-                    if assistant_text:
-                        yield TokenEvent(text=assistant_text)
-        elif event_type == "response.error" or event_type == "error":
-            err = getattr(event, "error", None)
-            if err is None and isinstance(event, dict):
-                err = event.get("error")
-            err_msg = (
-                getattr(err, "message", None)
-                or (err.get("message") if isinstance(err, dict) else None)
-                or "Companion stream failed"
+
+        async for event in stream:
+            event_type = getattr(event, "type", None) or (
+                event.get("type") if isinstance(event, dict) else None
             )
-            raise CompanionError("stream_error", str(err_msg))
+            if event_type == "response.output_text.delta":
+                delta = getattr(event, "delta", None)
+                if delta is None and isinstance(event, dict):
+                    delta = event.get("delta", "")
+                delta = delta or ""
+                assistant_text += delta
+                if delta:
+                    yield TokenEvent(text=delta)
+                    delta_count += 1
+                    if delta_count % CHECKPOINT_EVERY_N_DELTAS == 0:
+                        await _checkpoint_assistant_text(
+                            db, assistant_msg.id, assistant_text
+                        )
+            elif event_type in ("response.completed", "response.done"):
+                response_obj = getattr(event, "response", None)
+                if response_obj is None and isinstance(event, dict):
+                    response_obj = event.get("response")
+                if response_obj is not None:
+                    completed_response_obj = response_obj
+                    try:
+                        ensure_response_completed(
+                            response_obj, operation="Companion response"
+                        )
+                    except OpenAIResponseError as exc:
+                        raise CompanionError("model_incomplete", str(exc)) from exc
+                    usage = getattr(response_obj, "usage", None)
+                    if usage is None and isinstance(response_obj, dict):
+                        usage = response_obj.get("usage")
+                    if not assistant_text:
+                        assistant_text = _extract_text(response_obj)
+                        if assistant_text:
+                            yield TokenEvent(text=assistant_text)
+            elif event_type == "response.error" or event_type == "error":
+                err = getattr(event, "error", None)
+                if err is None and isinstance(event, dict):
+                    err = event.get("error")
+                err_msg = (
+                    getattr(err, "message", None)
+                    or (err.get("message") if isinstance(err, dict) else None)
+                    or "Companion stream failed"
+                )
+                raise CompanionError("stream_error", str(err_msg))
 
-    assistant_text = assistant_text.strip()
-    if not assistant_text:
-        raise CompanionError(
-            "empty_model_output",
-            "Companion stream completed without emitting any text.",
-        )
+        assistant_text = assistant_text.strip()
+        if not assistant_text:
+            raise CompanionError(
+                "empty_model_output",
+                "Companion stream completed without emitting any text.",
+            )
+    except Exception:
+        await _fail_assistant_message(db, assistant_msg.id)
+        raise
 
-    input_tokens = _get_usage(usage, "input_tokens")
-    output_tokens = _get_usage(usage, "output_tokens")
-    cached_tokens = _get_usage(usage, "cached_tokens")
     latency_ms = int((time.monotonic() - started) * 1000)
-
-    assistant_content = [{"type": "text", "text": assistant_text}]
     mcp_context_items = _extract_mcp_context_items(completed_response_obj)
-    assistant_msg = ChatMessage(
-        conversation_id=conv.id,
-        role="assistant",
-        content=assistant_content,
-        tool_calls=mcp_context_items or None,
-        cached_tokens=cached_tokens or None,
-        input_tokens=input_tokens or None,
-        output_tokens=output_tokens or None,
-        model=settings.openai_llm_model,
+    input_tokens, output_tokens, cached_tokens = await _finalize_assistant_message(
+        db,
+        message=assistant_msg,
+        conv=conv,
+        text=assistant_text,
+        usage=usage,
         latency_ms=latency_ms,
+        model=settings.openai_llm_model,
+        tool_calls=mcp_context_items or None,
     )
-    db.add(assistant_msg)
-    await db.flush()
-    await db.refresh(assistant_msg)
-
-    conv.last_message_at = datetime.now(timezone.utc)
-    await db.flush()
 
     yield DoneEvent(
-        message_id=str(assistant_msg.id),
+        message_id=assistant_message_id,
         input_tokens=input_tokens or None,
         output_tokens=output_tokens or None,
         cached_tokens=cached_tokens or None,
@@ -1742,6 +1876,7 @@ async def _run_actions_loop(
     user_id: uuid.UUID,
     conv: Conversation,
     user_msg: ChatMessage,
+    assistant_msg: ChatMessage,
     instructions: str,
     response_input: list[dict[str, Any]],
     mcp_tool: dict[str, Any],
@@ -1752,7 +1887,9 @@ async def _run_actions_loop(
     Reads still go via the MCP tool; write 'hands' are gated function tools
     attached on demand (request_tool_group). A mutating call is proposed to the
     approval gate and the turn DEFERS — the side effect runs only after
-    /resolve. Bounded by TOOL_CALL_CAP; errors surface (no fallback).
+    /resolve. Bounded by TOOL_CALL_CAP; errors surface (no fallback). The
+    assistant row (created 'streaming' before the loop) is finalized here; the
+    caller flips it to 'failed' if this loop raises.
     """
     active_groups: set[str] = set()
     prev_response_id: str | None = None
@@ -1827,6 +1964,7 @@ async def _run_actions_loop(
 
         if step_text:
             final_text = step_text
+            await _checkpoint_assistant_text(db, assistant_msg.id, final_text)
         calls = _extract_tool_calls(completed)
         if not calls:
             break  # model produced a final answer
@@ -1888,31 +2026,22 @@ async def _run_actions_loop(
             break  # defer for human approval; do not continue the loop
         next_input = outputs
 
-    latency_ms = int((time.monotonic() - started) * 1000)
-    input_tokens = _get_usage(usage, "input_tokens")
-    output_tokens = _get_usage(usage, "output_tokens")
-    cached_tokens = _get_usage(usage, "cached_tokens")
     text_to_store = final_text.strip()
     if not text_to_store and not proposed:
         raise CompanionError(
             "empty_model_output",
             "Companion stream completed without emitting any text.",
         )
-    assistant_msg = ChatMessage(
-        conversation_id=conv.id,
-        role="assistant",
-        content=[{"type": "text", "text": text_to_store}],
-        cached_tokens=cached_tokens or None,
-        input_tokens=input_tokens or None,
-        output_tokens=output_tokens or None,
-        model=settings.openai_llm_model,
+    latency_ms = int((time.monotonic() - started) * 1000)
+    input_tokens, output_tokens, cached_tokens = await _finalize_assistant_message(
+        db,
+        message=assistant_msg,
+        conv=conv,
+        text=text_to_store,
+        usage=usage,
         latency_ms=latency_ms,
+        model=settings.openai_llm_model,
     )
-    db.add(assistant_msg)
-    await db.flush()
-    await db.refresh(assistant_msg)
-    conv.last_message_at = datetime.now(timezone.utc)
-    await db.flush()
     yield DoneEvent(
         message_id=str(assistant_msg.id),
         input_tokens=input_tokens or None,

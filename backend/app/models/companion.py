@@ -45,7 +45,12 @@ class Conversation(Base, UUIDMixin, TimestampMixin):
 class ChatMessage(Base, UUIDMixin):
     """A single message in a conversation (user, assistant, or tool result).
 
-    Messages are immutable once written, so no TimestampMixin (no updated_at).
+    Messages are immutable once written, with ONE exception: an assistant
+    message's ``content``/usage/``status`` are updated in place while its turn
+    is streaming (``status='streaming'``) and finalized when the turn completes
+    or fails. This durability lets a dropped SSE stream resume from the
+    persisted partial instead of losing the turn. No TimestampMixin:
+    ``created_at`` is the only timestamp.
     """
 
     __tablename__ = "chat_messages"
@@ -58,6 +63,12 @@ class ChatMessage(Base, UUIDMixin):
     )
     # 'user' | 'assistant' | 'tool'
     role: Mapped[str] = mapped_column(String(20), nullable=False)
+    # Assistant-turn lifecycle: 'streaming' while in flight, 'complete' once
+    # finalized, 'failed' if the turn errored. User/tool messages are always
+    # 'complete'. The only mutable field on a message (see class docstring).
+    status: Mapped[str] = mapped_column(
+        String(20), nullable=False, server_default="complete"
+    )
     # OpenAI Responses API content blocks
     content: Mapped[list[Any] | dict[str, Any]] = mapped_column(JSONB, nullable=False)
     # Raw tool_use blocks for replay/eval — only set on assistant messages
