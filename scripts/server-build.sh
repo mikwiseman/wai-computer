@@ -11,8 +11,8 @@ if [[ "${WAICOMPUTER_DEPLOY_LOCK_HELD:-0}" != "1" ]]; then
   exec flock -n "$DEPLOY_LOCK_FILE" env WAICOMPUTER_DEPLOY_LOCK_HELD=1 bash "$0" "$@"
 fi
 
-PROD_ROOT="${PROD_ROOT:-/opt/waicomputer}"
-PROD_ENV_FILE="${PROD_ENV_FILE:-/etc/waicomputer/backend.env}"
+PROD_ROOT="${PROD_ROOT:-}"
+PROD_ENV_FILE="${PROD_ENV_FILE:-}"
 PROD_ENV_DIR=$(dirname "$PROD_ENV_FILE")
 LEGACY_ENV_FILE=""
 GIT_SHA="${GIT_SHA:-}"

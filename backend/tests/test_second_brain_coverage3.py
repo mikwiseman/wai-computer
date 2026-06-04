@@ -8,9 +8,16 @@ from uuid import uuid4
 import pytest
 
 
+async def _fake_embeddings(texts):
+    return [[0.01] * 1536 for _ in texts]
+
+
 async def _make_two_items(client, auth_headers) -> list[str]:
     ids = []
-    with patch("app.tasks.item_summary_generation.generate_item_summary_task.delay"):
+    with (
+        patch("app.core.item_ingest.generate_embeddings", _fake_embeddings),
+        patch("app.tasks.item_summary_generation.generate_item_summary_task.delay"),
+    ):
         for i in range(2):
             r = await client.post(
                 "/api/items",

@@ -57,7 +57,7 @@ async def _remaining_candidate_count(db: AsyncSession, *, user_id: UUID | None) 
 async def _generate_checked_embeddings(
     texts: list[str],
     *,
-    user_id: UUID | None,
+    user_id: UUID | None = None,
 ) -> list[list[float]]:
     embeddings = await generate_embeddings(
         texts,

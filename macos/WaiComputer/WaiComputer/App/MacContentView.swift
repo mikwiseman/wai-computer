@@ -913,10 +913,7 @@ struct MacMainView: View {
             )
                 .environment(\.locale, MacDateFormatting.locale(for: languageManager.current))
         case .review:
-            MacBrainView(
-                apiClient: appState.getAPIClient(),
-                onOpenSource: openBrainSource
-            )
+            MacReviewView(apiClient: appState.getAPIClient())
                 .environment(\.locale, MacDateFormatting.locale(for: languageManager.current))
         case .search:
             MacSearchView { recordingId in

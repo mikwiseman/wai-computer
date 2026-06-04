@@ -29,7 +29,7 @@ from app.core.tool_router import (
 )
 from app.core.tool_safety import is_mutating_tool_call
 from app.models.companion import ChatMessage, Conversation
-from app.models.recording import ActionItem, Folder, Recording, Summary
+from app.models.recording import ActionItem, Folder, Recording, Segment, Summary
 from app.models.user import User
 from app.models.user_memory import UserMemoryBlock
 
@@ -589,6 +589,27 @@ def _intersect_recording_ids(
     return [r for r in explicit if r in scope_set]
 
 
+async def _has_searchable_transcript_segments(
+    db: AsyncSession,
+    user_id: uuid.UUID,
+    recording_ids: list[uuid.UUID] | None,
+) -> bool:
+    stmt = (
+        select(Segment.id)
+        .join(Recording, Segment.recording_id == Recording.id)
+        .where(
+            Recording.user_id == user_id,
+            Recording.deleted_at.is_(None),
+        )
+        .limit(1)
+    )
+    if recording_ids is not None:
+        if not recording_ids:
+            return False
+        stmt = stmt.where(Segment.recording_id.in_(recording_ids))
+    return (await db.scalar(stmt)) is not None
+
+
 async def _tool_search_transcripts(
     db: AsyncSession,
     user_id: uuid.UUID,
@@ -614,6 +635,13 @@ async def _tool_search_transcripts(
 
     scope_ids = _scope_recording_uuids(scope)
     recording_ids = _intersect_recording_ids(explicit, scope_ids)
+
+    if not await _has_searchable_transcript_segments(db, user_id, recording_ids):
+        return ToolExecutionResult(
+            summary_for_event="0 segments",
+            payload_for_model={"segments": []},
+            citable_segments={},
+        )
 
     rows = await retrieve_context(
         db, user_id, query, recording_ids=recording_ids, limit=k

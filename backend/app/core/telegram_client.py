@@ -51,7 +51,11 @@ class TelegramBotClient:
         file_base = (file_base_url or settings.telegram_file_base_url).rstrip("/")
         self._api_base = f"{api_base}/bot{self._token}"
         self._file_base = f"{file_base}/bot{self._token}"
-        root = local_file_root if local_file_root is not None else settings.telegram_local_file_root
+        root = (
+            local_file_root
+            if local_file_root is not None
+            else settings.telegram_local_file_root
+        )
         root = (root or "").strip()
         self._local_file_root = Path(root).resolve() if root else None
 

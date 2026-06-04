@@ -13,8 +13,9 @@ interface EntityWikiViewProps {
 }
 
 function citationsFor(page: EntityPage): EntityPageCitation[] {
-  if (page.citations.length > 0) return page.citations;
-  return page.sources.map((source) => ({
+  const explicitCitations = page.citations ?? [];
+  if (explicitCitations.length > 0) return explicitCitations;
+  return (page.sources ?? []).map((source) => ({
     id: `${source.source_kind}:${source.source_id}`,
     source_kind: source.source_kind,
     source_id: source.source_id,
@@ -87,9 +88,14 @@ export function EntityWikiView({
 
   const citations = citationsFor(page);
   const citationMap = new Map(citations.map((citation) => [citation.id, citation]));
-  const relatedExplanations = page.related_explanations.length > 0
-    ? page.related_explanations
-    : page.related.map((related) => ({
+  const facts = page.facts ?? [];
+  const timeline = page.timeline ?? [];
+  const questions = page.questions ?? [];
+  const actions = page.actions ?? [];
+  const explicitRelated = page.related_explanations ?? [];
+  const relatedExplanations = explicitRelated.length > 0
+    ? explicitRelated
+    : (page.related ?? []).map((related) => ({
         ...related,
         explanation: `${related.shared} ${t("shared sources", "общих источников")}`,
         citation_ids: [],
@@ -111,15 +117,15 @@ export function EntityWikiView({
 
       <section className="brain-wiki__section">
         <h4 className="brain-wiki__h4">{t("Facts", "Факты")}</h4>
-        {page.facts.length === 0 ? (
+        {facts.length === 0 ? (
           <p className="brain-wiki__empty">{t("No extracted facts yet.", "Пока нет фактов.")}</p>
         ) : (
           <ul className="brain-wiki__list">
-            {page.facts.map((fact) => (
+            {facts.map((fact) => (
               <li key={fact.id}>
                 <span>{fact.text}</span>
-                {citationLabels(fact.citation_ids, citationMap) ? (
-                  <em>{citationLabels(fact.citation_ids, citationMap)}</em>
+                {citationLabels(fact.citation_ids ?? [], citationMap) ? (
+                  <em>{citationLabels(fact.citation_ids ?? [], citationMap)}</em>
                 ) : null}
               </li>
             ))}
@@ -129,18 +135,18 @@ export function EntityWikiView({
 
       <section className="brain-wiki__section">
         <h4 className="brain-wiki__h4">{t("Timeline", "Хронология")}</h4>
-        {page.timeline.length === 0 ? (
+        {timeline.length === 0 ? (
           <p className="brain-wiki__empty">
             {t("No timeline events yet.", "Пока нет событий.")}
           </p>
         ) : (
           <ol className="brain-wiki__timeline">
-            {page.timeline.map((event) => (
+            {timeline.map((event) => (
               <li key={event.id}>
                 <span>{event.title}</span>
                 {event.description ? <p>{event.description}</p> : null}
-                {citationLabels(event.citation_ids, citationMap) ? (
-                  <em>{citationLabels(event.citation_ids, citationMap)}</em>
+                {citationLabels(event.citation_ids ?? [], citationMap) ? (
+                  <em>{citationLabels(event.citation_ids ?? [], citationMap)}</em>
                 ) : null}
               </li>
             ))}
@@ -174,17 +180,17 @@ export function EntityWikiView({
 
       <section className="brain-wiki__section">
         <h4 className="brain-wiki__h4">{t("Questions", "Вопросы")}</h4>
-        {page.questions.length === 0 ? (
+        {questions.length === 0 ? (
           <p className="brain-wiki__empty">
             {t("No open questions found.", "Открытых вопросов не найдено.")}
           </p>
         ) : (
           <ul className="brain-wiki__list">
-            {page.questions.map((question) => (
+            {questions.map((question) => (
               <li key={question.id}>
                 <span>{question.text}</span>
-                {citationLabels(question.citation_ids, citationMap) ? (
-                  <em>{citationLabels(question.citation_ids, citationMap)}</em>
+                {citationLabels(question.citation_ids ?? [], citationMap) ? (
+                  <em>{citationLabels(question.citation_ids ?? [], citationMap)}</em>
                 ) : null}
               </li>
             ))}
@@ -194,17 +200,17 @@ export function EntityWikiView({
 
       <section className="brain-wiki__section">
         <h4 className="brain-wiki__h4">{t("Actions", "Действия")}</h4>
-        {page.actions.length === 0 ? (
+        {actions.length === 0 ? (
           <p className="brain-wiki__empty">
             {t("No action items found.", "Действий не найдено.")}
           </p>
         ) : (
           <ul className="brain-wiki__list">
-            {page.actions.map((action) => (
+            {actions.map((action) => (
               <li key={action.id}>
                 <span>{action.text}</span>
                 <em>
-                  {[action.owner, action.status, citationLabels(action.citation_ids, citationMap)]
+                  {[action.owner, action.status, citationLabels(action.citation_ids ?? [], citationMap)]
                     .filter(Boolean)
                     .join(" · ")}
                 </em>

@@ -22,7 +22,10 @@ async def _embedder(texts):
 
 async def _two_items(client, auth_headers) -> list[str]:
     ids = []
-    with patch("app.tasks.item_summary_generation.generate_item_summary_task.delay"):
+    with (
+        patch("app.core.item_ingest.generate_embeddings", _embedder),
+        patch("app.tasks.item_summary_generation.generate_item_summary_task.delay"),
+    ):
         for i in range(3):
             r = await client.post(
                 "/api/items",
