@@ -369,7 +369,6 @@
 		5D15DE54E4FDA3B1560A15A6 /* Features */ = {
 			isa = PBXGroup;
 			children = (
-				F1496A60436994840F6A6DB3 /* Agents */,
 				59B2AD84382DEB3E12F19C35 /* Billing */,
 				E6B047E70F441C8BBC87FBBB /* Brain */,
 				6602274E3261548AC14C77A9 /* Content */,
@@ -511,13 +510,6 @@
 				CA81D61D799AAA444B4B8BF2 /* MacBrainView.swift */,
 			);
 			path = Brain;
-			sourceTree = "<group>";
-		};
-		F1496A60436994840F6A6DB3 /* Agents */ = {
-			isa = PBXGroup;
-			children = (
-			);
-			path = Agents;
 			sourceTree = "<group>";
 		};
 		FBAD2F2F9B09CC3E5E829C1F /* WaiComputerTests */ = {
@@ -868,7 +860,7 @@
 				CODE_SIGN_ENTITLEMENTS = WaiComputer/WaiComputer.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 184;
+				CURRENT_PROJECT_VERSION = 185;
 				DEVELOPMENT_TEAM = "<apple-team-id>";
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -1032,7 +1024,7 @@
 				CODE_SIGN_ENTITLEMENTS = WaiComputer/WaiComputer.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 184;
+				CURRENT_PROJECT_VERSION = 185;
 				DEVELOPMENT_TEAM = "<apple-team-id>";
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
