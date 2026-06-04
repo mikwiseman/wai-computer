@@ -159,6 +159,9 @@ struct MacThemePreferences {
 }
 
 enum MacDateFormatting {
+    private static let formatterCacheLock = NSLock()
+    private static var formatterCache: [String: DateFormatter] = [:]
+
     static func locale(for language: LanguageManager.SupportedLanguage) -> Locale {
         switch language {
         case .followSystem:
@@ -176,10 +179,21 @@ enum MacDateFormatting {
         timeStyle: DateFormatter.Style,
         language: LanguageManager.SupportedLanguage
     ) -> String {
-        let formatter = DateFormatter()
-        formatter.locale = locale(for: language)
-        formatter.dateStyle = dateStyle
-        formatter.timeStyle = timeStyle
+        let locale = locale(for: language)
+        let cacheKey = "\(locale.identifier)|\(dateStyle.rawValue)|\(timeStyle.rawValue)"
+        formatterCacheLock.lock()
+        defer { formatterCacheLock.unlock() }
+        let formatter: DateFormatter
+        if let cached = formatterCache[cacheKey] {
+            formatter = cached
+        } else {
+            let created = DateFormatter()
+            created.locale = locale
+            created.dateStyle = dateStyle
+            created.timeStyle = timeStyle
+            formatterCache[cacheKey] = created
+            formatter = created
+        }
         return formatter.string(from: date)
     }
 }

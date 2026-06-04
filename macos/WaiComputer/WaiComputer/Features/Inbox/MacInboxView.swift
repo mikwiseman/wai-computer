@@ -6,7 +6,7 @@ private enum InboxCreateMode {
     case record
     case file
     case paste
-    case chat
+    case ask
 }
 
 struct MacInboxView: View {
@@ -74,11 +74,12 @@ struct MacInboxView: View {
     var body: some View {
         HStack(spacing: 0) {
             listPane
-                .frame(minWidth: 340, idealWidth: 430, maxWidth: 520)
+                .frame(minWidth: 340, idealWidth: 430, maxWidth: 520, maxHeight: .infinity, alignment: .topLeading)
             Divider()
             detailPane
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .task {
             await model.configureScope(sourceKind: initialSourceKind, folderId: folderId)
             await model.load()
@@ -140,6 +141,7 @@ struct MacInboxView: View {
                 .disabled(model.isLoadingMore)
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
     private var header: some View {
@@ -179,7 +181,7 @@ struct MacInboxView: View {
                         }
                     }
                 } label: {
-                    Label(t("New Wai Chat", "Новый чат Wai"), systemImage: "bubble.left.and.bubble.right")
+                    Label(t("Ask Wai", "Спросить Wai"), systemImage: "sparkles")
                 }
             } label: {
                 Image(systemName: "plus")
@@ -206,13 +208,13 @@ struct MacInboxView: View {
     private var headerSubtitle: String {
         if scopedFolder != nil {
             return t(
-                "Recordings, materials, and Wai chats in this folder",
-                "Записи, материалы и чаты Wai в этой папке"
+                "Recordings, materials, and Wai agent threads in this folder",
+                "Записи, материалы и агентские диалоги Wai в этой папке"
             )
         }
         return t(
-            "Recordings, materials, and Wai chats in one place",
-            "Записи, материалы и чаты Wai в одном месте"
+            "Recordings, materials, and Wai agent threads in one place",
+            "Записи, материалы и агентские диалоги Wai в одном месте"
         )
     }
 
@@ -225,22 +227,11 @@ struct MacInboxView: View {
                 Text(t("All", "Все")).tag(Optional<InboxSourceKind>.none)
                 Text(t("Recordings", "Записи")).tag(Optional.some(InboxSourceKind.recording))
                 Text(t("Materials", "Материалы")).tag(Optional.some(InboxSourceKind.item))
-                Text(t("Chats", "Чаты")).tag(Optional.some(InboxSourceKind.chat))
+                Text(t("Ask Wai", "Wai")).tag(Optional.some(InboxSourceKind.chat))
             }
             .pickerStyle(.segmented)
             .labelsHidden()
             .accessibilityLabel(t("Source", "Источник"))
-
-            Picker(t("Status", "Статус"), selection: Binding(
-                get: { model.statusFilter },
-                set: { next in Task { await model.setStatusFilter(next) } }
-            )) {
-                Text(t("Any Status", "Любой статус")).tag(Optional<InboxStatusFilter>.none)
-                Text(t("Ready", "Готово")).tag(Optional.some(InboxStatusFilter.ready))
-                Text(t("Processing", "В работе")).tag(Optional.some(InboxStatusFilter.processing))
-                Text(t("Needs Attention", "Нужно внимание")).tag(Optional.some(InboxStatusFilter.needsAttention))
-            }
-            .pickerStyle(.menu)
         }
         .padding(.horizontal, Spacing.lg)
         .padding(.vertical, Spacing.md)
@@ -274,7 +265,6 @@ struct MacInboxView: View {
             } else if model.rows.isEmpty {
                 MacInboxEmptyState(
                     sourceKind: model.sourceKind,
-                    statusFilter: model.statusFilter,
                     onRecord: onStartRecording,
                     onUpload: { showingImporter = true },
                     onPaste: {
@@ -290,24 +280,27 @@ struct MacInboxView: View {
                     }
                 )
             } else {
-                ScrollView {
-                    LazyVStack(spacing: 0) {
-                        ForEach(model.rows) { row in
-                            Button {
-                                selectedRow = row
-                            } label: {
-                                MacInboxRowView(
-                                    row: row,
-                                    isActive: selectedRow?.id == row.id
-                                )
-                            }
-                            .buttonStyle(.plain)
-                            Divider()
+                List {
+                    ForEach(model.rows) { row in
+                        Button {
+                            selectedRow = row
+                        } label: {
+                            MacInboxRowView(
+                                row: row,
+                                isActive: selectedRow?.id == row.id
+                            )
                         }
+                        .buttonStyle(.plain)
+                        .listRowInsets(EdgeInsets())
+                        .listRowSeparator(.visible)
+                        .listRowBackground(Color.clear)
                     }
                 }
+                .listStyle(.plain)
+                .scrollContentBackground(.hidden)
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     @ViewBuilder
@@ -371,7 +364,8 @@ struct MacInboxView: View {
                 CompanionView(
                     apiClient: apiClient,
                     recordings: recordings,
-                    initialChatId: selectedRow.sourceId
+                    initialChatId: selectedRow.sourceId,
+                    showsConversationSwitcher: false
                 )
                 .environment(\.locale, MacDateFormatting.locale(for: languageManager.current))
                 .companionAccentColor(Palette.accent)
@@ -383,122 +377,123 @@ struct MacInboxView: View {
     }
 
     private var createPane: some View {
-        VStack(spacing: 0) {
-            Spacer(minLength: Spacing.xl)
-            VStack(alignment: .leading, spacing: Spacing.lg) {
-                HStack(alignment: .top, spacing: Spacing.md) {
-                    Image(systemName: "tray.full")
-                        .font(.system(size: 24, weight: .semibold))
-                        .foregroundStyle(Palette.accent)
-                        .frame(width: 42, height: 42)
-                        .background(Palette.accentSubtle)
-                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                    VStack(alignment: .leading, spacing: Spacing.xxs) {
-                        Text(t("Add to Inbox", "Добавить в Инбокс"))
-                            .font(Typography.displaySmall)
-                        Text(t(
-                            "Record, upload a file, paste a link or text, or start a Wai chat.",
-                            "Запишите, загрузите файл, вставьте ссылку или текст, или начните чат Wai."
-                        ))
-                        .font(Typography.bodySmall)
-                        .foregroundStyle(Palette.textSecondary)
-                        .fixedSize(horizontal: false, vertical: true)
+        GeometryReader { proxy in
+            ScrollView {
+                VStack(alignment: .leading, spacing: Spacing.lg) {
+                    HStack(alignment: .top, spacing: Spacing.md) {
+                        Image(systemName: "tray.full")
+                            .font(.system(size: 24, weight: .semibold))
+                            .foregroundStyle(Palette.accent)
+                            .frame(width: 42, height: 42)
+                            .background(Palette.accentSubtle)
+                            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                        VStack(alignment: .leading, spacing: Spacing.xxs) {
+                            Text(t("Add to Inbox", "Добавить в Инбокс"))
+                                .font(Typography.displaySmall)
+                            Text(t(
+                                "Record, upload a file, paste a link or text, or ask Wai to work.",
+                                "Запишите, загрузите файл, вставьте ссылку или текст, или попросите Wai выполнить задачу."
+                            ))
+                            .font(Typography.bodySmall)
+                            .foregroundStyle(Palette.textSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                        }
                     }
-                }
 
-                LazyVGrid(
-                    columns: [
-                        GridItem(.flexible(), spacing: Spacing.sm),
-                        GridItem(.flexible(), spacing: Spacing.sm)
-                    ],
-                    spacing: Spacing.sm
-                ) {
-                    MacInboxCreateAction(
-                        title: t("Record", "Записать"),
-                        subtitle: t("Microphone and system audio", "Микрофон и звук компьютера"),
-                        systemImage: "waveform",
-                        accent: Palette.accent,
-                        isActive: focusedCreateMode == .record,
-                        action: onStartRecording
-                    )
-                    MacInboxCreateAction(
-                        title: t("Upload File", "Загрузить файл"),
-                        subtitle: t("Audio, video, PDF, DOCX, TXT", "Аудио, видео, PDF, DOCX, TXT"),
-                        systemImage: "square.and.arrow.down",
-                        accent: .green,
-                        isActive: focusedCreateMode == .file,
-                        action: { showingImporter = true }
-                    )
-                    MacInboxCreateAction(
-                        title: t("Paste", "Вставить"),
-                        subtitle: t("Link, note, or long text", "Ссылка, заметка или длинный текст"),
-                        systemImage: "link",
-                        accent: .blue,
-                        isActive: focusedCreateMode == .paste,
-                        action: { focusedCreateMode = .paste }
-                    )
-                    MacInboxCreateAction(
-                        title: t("Wai Chat", "Чат Wai"),
-                        subtitle: t("Ask about your inbox", "Спросить по Инбоксу"),
-                        systemImage: "bubble.left.and.bubble.right",
-                        accent: .orange,
-                        isActive: focusedCreateMode == .chat,
-                        action: {
-                            focusedCreateMode = .chat
-                            Task {
-                                if let row = await model.newChat() {
-                                    selectedRow = row
+                    LazyVGrid(
+                        columns: [
+                            GridItem(.flexible(), spacing: Spacing.sm),
+                            GridItem(.flexible(), spacing: Spacing.sm)
+                        ],
+                        spacing: Spacing.sm
+                    ) {
+                        MacInboxCreateAction(
+                            title: t("Record", "Записать"),
+                            subtitle: t("Microphone and system audio", "Микрофон и звук компьютера"),
+                            systemImage: "waveform",
+                            accent: Palette.accent,
+                            isActive: focusedCreateMode == .record,
+                            action: onStartRecording
+                        )
+                        MacInboxCreateAction(
+                            title: t("Upload File", "Загрузить файл"),
+                            subtitle: t("Audio, video, PDF, DOCX, TXT", "Аудио, видео, PDF, DOCX, TXT"),
+                            systemImage: "square.and.arrow.down",
+                            accent: .green,
+                            isActive: focusedCreateMode == .file,
+                            action: { showingImporter = true }
+                        )
+                        MacInboxCreateAction(
+                            title: t("Paste", "Вставить"),
+                            subtitle: t("Link, note, or long text", "Ссылка, заметка или длинный текст"),
+                            systemImage: "link",
+                            accent: .blue,
+                            isActive: focusedCreateMode == .paste,
+                            action: { focusedCreateMode = .paste }
+                        )
+                        MacInboxCreateAction(
+                            title: t("Ask Wai", "Спросить Wai"),
+                            subtitle: t("Search, remember, plan, or act", "Искать, помнить, планировать или действовать"),
+                            systemImage: "sparkles",
+                            accent: .orange,
+                            isActive: focusedCreateMode == .ask,
+                            action: {
+                                focusedCreateMode = .ask
+                                Task {
+                                    if let row = await model.newChat() {
+                                        selectedRow = row
+                                    }
                                 }
                             }
-                        }
-                    )
-                }
+                        )
+                    }
 
-                VStack(alignment: .leading, spacing: Spacing.sm) {
-                    Text(t("Paste link or text", "Вставить ссылку или текст"))
-                        .font(Typography.headingMedium)
-                    TextField(
-                        t("Paste a link, note, transcript, or any text...", "Вставьте ссылку, заметку, транскрипт или любой текст..."),
-                        text: $model.draft,
-                        axis: .vertical
-                    )
-                    .textFieldStyle(.roundedBorder)
-                    .lineLimit(3...7)
+                    VStack(alignment: .leading, spacing: Spacing.sm) {
+                        Text(t("Paste link or text", "Вставить ссылку или текст"))
+                            .font(Typography.headingMedium)
+                        TextField(
+                            t("Paste a link, note, transcript, or any text...", "Вставьте ссылку, заметку, транскрипт или любой текст..."),
+                            text: $model.draft,
+                            axis: .vertical
+                        )
+                        .textFieldStyle(.roundedBorder)
+                        .lineLimit(3...7)
 
-                    HStack(spacing: Spacing.sm) {
-                        Button {
-                            Task {
-                                if let row = await model.addDraft() {
-                                    selectedRow = row
+                        HStack(spacing: Spacing.sm) {
+                            Button {
+                                Task {
+                                    if let row = await model.addDraft() {
+                                        selectedRow = row
+                                    }
+                                }
+                            } label: {
+                                if model.isAdding {
+                                    ProgressView().controlSize(.small)
+                                } else {
+                                    Text(t("Add to Inbox", "Добавить в Инбокс"))
                                 }
                             }
-                        } label: {
-                            if model.isAdding {
-                                ProgressView().controlSize(.small)
-                            } else {
-                                Text(t("Add to Inbox", "Добавить в Инбокс"))
+                            .buttonStyle(.borderedProminent)
+                            .disabled(model.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || model.isAdding)
+
+                            Button {
+                                showingImporter = true
+                            } label: {
+                                Label(t("Attach File", "Прикрепить файл"), systemImage: "paperclip")
                             }
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .disabled(model.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || model.isAdding)
+                            .buttonStyle(.bordered)
+                            .disabled(model.isAdding)
 
-                        Button {
-                            showingImporter = true
-                        } label: {
-                            Label(t("Attach File", "Прикрепить файл"), systemImage: "paperclip")
+                            Spacer()
                         }
-                        .buttonStyle(.bordered)
-                        .disabled(model.isAdding)
-
-                        Spacer()
                     }
                 }
+                .padding(Spacing.xl)
+                .frame(maxWidth: 720, alignment: .leading)
+                .frame(maxWidth: .infinity, minHeight: proxy.size.height, alignment: .center)
             }
-            .padding(Spacing.xl)
-            .frame(maxWidth: 720)
-            Spacer(minLength: Spacing.xl)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
     private func consumePendingDetailIfNeeded() {
@@ -589,7 +584,6 @@ private struct MacInboxCreateAction: View {
 
 private struct MacInboxEmptyState: View {
     let sourceKind: InboxSourceKind?
-    let statusFilter: InboxStatusFilter?
     let onRecord: () -> Void
     let onUpload: () -> Void
     let onPaste: () -> Void
@@ -627,12 +621,14 @@ private struct MacInboxEmptyState: View {
                 }
                 .buttonStyle(.bordered)
 
+                Button(action: onChat) {
+                    Label(t("Ask Wai", "Спросить Wai"), systemImage: "sparkles")
+                }
+                .buttonStyle(.bordered)
+
                 Menu {
                     Button(action: onPaste) {
                         Label(t("Paste Link or Text", "Вставить ссылку или текст"), systemImage: "link")
-                    }
-                    Button(action: onChat) {
-                        Label(t("New Wai Chat", "Новый чат Wai"), systemImage: "bubble.left.and.bubble.right")
                     }
                 } label: {
                     Label(t("More", "Ещё"), systemImage: "ellipsis")
@@ -645,30 +641,22 @@ private struct MacInboxEmptyState: View {
     }
 
     private var icon: String {
-        if statusFilter == .processing { return "clock" }
-        if statusFilter == .needsAttention { return "checkmark.seal" }
         switch sourceKind {
         case .recording: return "waveform"
         case .item: return "doc.text"
-        case .chat: return "bubble.left.and.bubble.right"
+        case .chat: return "sparkles"
         case .none: return "tray.full"
         }
     }
 
     private var title: String {
-        if statusFilter == .processing {
-            return t("Nothing Processing", "Ничего не обрабатывается")
-        }
-        if statusFilter == .needsAttention {
-            return t("Nothing Needs Attention", "Ничего не требует внимания")
-        }
         switch sourceKind {
         case .recording:
             return t("No Recordings Yet", "Записей пока нет")
         case .item:
             return t("No Materials Yet", "Материалов пока нет")
         case .chat:
-            return t("No Wai Chats Yet", "Чатов Wai пока нет")
+            return t("No Wai Threads Yet", "Диалогов Wai пока нет")
         case .none:
             return t("Inbox Is Empty", "Инбокс пуст")
         }
@@ -681,11 +669,11 @@ private struct MacInboxEmptyState: View {
         case .item:
             return t("Upload a file or paste a link/text.", "Загрузите файл или вставьте ссылку/текст.")
         case .chat:
-            return t("Start a Wai chat from + Add.", "Начните чат Wai через +.")
+            return t("Ask Wai to search, remember, plan, or act.", "Попросите Wai искать, помнить, планировать или действовать.")
         case .none:
             return t(
-                "Record, upload a file, paste a link, or start a Wai chat.",
-                "Запишите, загрузите файл, вставьте ссылку или начните чат Wai."
+                "Record, upload a file, paste a link, or ask Wai to work.",
+                "Запишите, загрузите файл, вставьте ссылку или попросите Wai выполнить задачу."
             )
         }
     }
@@ -721,7 +709,7 @@ private struct MacInboxRowView: View {
 
                 HStack(spacing: Spacing.xs) {
                     Text(sourceLabel)
-                    if let sublabel = row.sublabel {
+                    if let sublabel = displaySublabel {
                         Text("/")
                         Text(sublabel)
                     }
@@ -757,7 +745,7 @@ private struct MacInboxRowView: View {
         case .item:
             return t("Untitled Material", "Материал без названия")
         case .chat:
-            return t("New Chat", "Новый чат")
+            return t("Ask Wai", "Спросить Wai")
         }
     }
 
@@ -768,15 +756,23 @@ private struct MacInboxRowView: View {
         case .item:
             return t("Material", "Материал")
         case .chat:
-            return t("Chat", "Чат")
+            return t("Wai", "Wai")
         }
+    }
+
+    private var displaySublabel: String? {
+        guard let sublabel = row.sublabel else { return nil }
+        if row.sourceKind == .chat && sublabel == "Agent thread" {
+            return t("Agent thread", "Агентский диалог")
+        }
+        return sublabel
     }
 
     private var icon: String {
         switch row.sourceKind {
         case .recording: return "waveform"
         case .item: return "doc.text"
-        case .chat: return "bubble.left.and.bubble.right"
+        case .chat: return "sparkles"
         }
     }
 

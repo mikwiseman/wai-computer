@@ -71,30 +71,7 @@ struct MacRecordingDetailView: View {
 
                     WaiDivider()
 
-                    WaiTabBar(
-                        tabs: [
-                            (t("Transcript", "Расшифровка"), MacRecordingDetailViewModel.Tab.transcript),
-                            (t("Summary", "Сводка"), MacRecordingDetailViewModel.Tab.summary),
-                        ],
-                        selection: $viewModel.selectedTab
-                    )
-
-                    WaiDivider()
-
-                    switch viewModel.selectedTab {
-                    case .transcript:
-                        MacTranscriptView(
-                            segments: detail.segments,
-                            availability: viewModel.transcriptAvailability,
-                            localRecoveryManifest: viewModel.localRecoveryManifest,
-                            recordingId: detail.id,
-                            onAssigned: { updated in
-                                viewModel.recordingDetail = updated
-                            }
-                        )
-                    case .summary:
-                        summaryTab(detail)
-                    }
+                    recordingDetailContent(detail)
                 }
                 .accessibilityElement(children: .contain)
                 .accessibilityIdentifier("recording-detail-root")
@@ -514,6 +491,20 @@ struct MacRecordingDetailView: View {
         }
     }
 
+    private func recordingDetailContent(_ detail: RecordingDetail) -> some View {
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: Spacing.xxxl) {
+                summarySection(detail)
+                transcriptSection(detail)
+            }
+            .padding(.horizontal, Spacing.xxl)
+            .padding(.vertical, Spacing.xl)
+            .frame(maxWidth: 920, alignment: .leading)
+            .frame(maxWidth: .infinity, alignment: .topLeading)
+        }
+        .accessibilityIdentifier("recording-detail-content")
+    }
+
     private func fullSummaryText(_ summary: Summary) -> String {
         var parts: [String] = []
         if let text = summary.summary { parts.append(text) }
@@ -529,8 +520,26 @@ struct MacRecordingDetailView: View {
         return parts.joined(separator: "\n")
     }
 
+    private func transcriptText(_ segments: [Segment]) -> String {
+        segments.map { segment in
+            let speaker = segment.userFacingSpeakerLabel(languageCode: speakerLanguageCode)
+                ?? t("Speaker", "Говорящий")
+            return "[\(speaker), \(segment.formattedTimestamp)] \(segment.content)"
+        }
+        .joined(separator: "\n")
+    }
+
+    private var speakerLanguageCode: String {
+        switch languageManager.current {
+        case .followSystem:
+            return languageManager.preferredLocale.identifier
+        case .english, .russian:
+            return languageManager.current.rawValue
+        }
+    }
+
     @ViewBuilder
-    private func summaryTab(_ detail: RecordingDetail) -> some View {
+    private func summarySection(_ detail: RecordingDetail) -> some View {
         let generationState = detail.summaryGeneration
         let isGeneratingSummary = viewModel.isGeneratingSummary(for: detail.id) ||
             generationState?.isActive == true
@@ -541,17 +550,13 @@ struct MacRecordingDetailView: View {
         let isDownloadingAudio = viewModel.isDownloadingSummaryAudio(for: detail.id)
         let isPlayingAudio = viewModel.isPlayingSummaryAudio(for: detail.id)
 
-        if let summary = detail.summary {
-            ScrollView {
-                VStack(alignment: .leading, spacing: Spacing.xl) {
-                    if isGeneratingSummary {
-                        summaryGenerationProgress(state: generationState)
-                    }
-
-                    HStack {
-                        Text(t("Summary", "Сводка"))
-                            .waiSectionHeader()
-                        Spacer()
+        VStack(alignment: .leading, spacing: Spacing.lg) {
+            HStack(alignment: .center, spacing: Spacing.md) {
+                Label(t("Summary", "Сводка"), systemImage: "doc.text.magnifyingglass")
+                    .waiSectionHeader()
+                Spacer()
+                if let summary = detail.summary {
+                    ViewThatFits(in: .horizontal) {
                         copyActionButton(
                             title: t("Copy Summary", "Скопировать сводку"),
                             copiedTitle: t("Copied", "Скопировано"),
@@ -559,107 +564,221 @@ struct MacRecordingDetailView: View {
                             section: "summary-all"
                         )
                     }
-
-                    summaryAudioControls(
-                        detail: detail,
-                        state: audioState,
-                        isGenerating: isGeneratingAudio,
-                        isDownloading: isDownloadingAudio,
-                        isPlaying: isPlayingAudio
-                    )
-
-                    if isGeneratingAudio {
-                        summaryAudioProgress(state: audioState)
-                    } else if audioState?.isFailed == true {
-                        summaryAudioFailure(state: audioState)
-                    }
-
-                    if let text = summary.summary {
-                        VStack(alignment: .leading, spacing: Spacing.sm) {
-                            Text(t("Overview", "Обзор"))
-                                .waiSectionHeader()
-                            Text(text)
-                                .font(Typography.reading)
-                                .lineSpacing(6)
-                                .textSelection(.enabled)
-                        }
-                    }
-
-                    if let points = summary.keyPoints, !points.isEmpty {
-                        VStack(alignment: .leading, spacing: Spacing.sm) {
-                            Text(t("Key Points", "Ключевые пункты"))
-                                .waiSectionHeader()
-                            ForEach(points, id: \.self) { point in
-                                HStack(alignment: .firstTextBaseline, spacing: Spacing.sm) {
-                                    Text("\u{2014}")
-                                        .font(Typography.reading)
-                                        .foregroundStyle(Palette.textTertiary)
-                                    Text(point)
-                                        .font(Typography.reading)
-                                        .lineSpacing(6)
-                                        .textSelection(.enabled)
-                                }
-                            }
-                        }
-                    }
-
-                    if let topics = summary.topics, !topics.isEmpty {
-                        VStack(alignment: .leading, spacing: Spacing.sm) {
-                            Text(t("Topics", "Темы"))
-                                .waiSectionHeader()
-                            Text(topics.joined(separator: " \u{00B7} "))
-                                .font(Typography.body)
-                                .foregroundStyle(Palette.textSecondary)
-                                .textSelection(.enabled)
-                        }
-                    }
-
-                    if let people = summary.peopleMentioned, !people.isEmpty {
-                        VStack(alignment: .leading, spacing: Spacing.sm) {
-                            Text(t("People", "Люди"))
-                                .waiSectionHeader()
-                            Text(people.joined(separator: ", "))
-                                .font(Typography.body)
-                                .foregroundStyle(Palette.textSecondary)
-                                .textSelection(.enabled)
-                        }
-                    }
                 }
-                .padding(.horizontal, Spacing.xxl)
-                .padding(.vertical, Spacing.xl)
             }
-            .accessibilityIdentifier("summary-content")
-        } else {
-            VStack(spacing: Spacing.lg) {
-                Spacer().frame(height: Spacing.xxxl)
-                ContentUnavailableViewCompat(
-                    t("No Summary", "Нет сводки"),
-                    systemImage: "doc.text",
-                    description: Text(t("Generate a summary to see key points and insights.", "Сгенерируй сводку, чтобы увидеть ключевые пункты."))
+
+            if isGeneratingSummary {
+                summaryGenerationProgress(state: generationState)
+            }
+
+            if let summary = detail.summary {
+                summaryAudioControls(
+                    detail: detail,
+                    state: audioState,
+                    isGenerating: isGeneratingAudio,
+                    isDownloading: isDownloadingAudio,
+                    isPlaying: isPlayingAudio
                 )
 
-                Button(action: {
-                    Task {
-                        await viewModel.startSummaryGeneration(
+                if isGeneratingAudio {
+                    summaryAudioProgress(state: audioState)
+                } else if audioState?.isFailed == true {
+                    summaryAudioFailure(state: audioState)
+                }
+
+                summaryBody(summary)
+            } else {
+                summaryEmptyState(
+                    detail: detail,
+                    isGeneratingSummary: isGeneratingSummary,
+                    generationFailed: generationFailed,
+                    generationState: generationState
+                )
+            }
+        }
+        .accessibilityIdentifier(detail.summary == nil ? "summary-empty-state" : "summary-content")
+    }
+
+    @ViewBuilder
+    private func summaryBody(_ summary: Summary) -> some View {
+        if let text = summary.summary {
+            VStack(alignment: .leading, spacing: Spacing.sm) {
+                Text(text)
+                    .font(Typography.reading)
+                    .lineSpacing(6)
+                    .textSelection(.enabled)
+            }
+        }
+
+        if let points = summary.keyPoints, !points.isEmpty {
+            VStack(alignment: .leading, spacing: Spacing.sm) {
+                Text(t("Key Points", "Ключевые пункты"))
+                    .waiSectionHeader()
+                ForEach(points, id: \.self) { point in
+                    HStack(alignment: .firstTextBaseline, spacing: Spacing.sm) {
+                        Circle()
+                            .fill(Palette.accent)
+                            .frame(width: 5, height: 5)
+                        Text(point)
+                            .font(Typography.reading)
+                            .lineSpacing(6)
+                            .textSelection(.enabled)
+                    }
+                }
+            }
+        }
+
+        if let topics = summary.topics, !topics.isEmpty {
+            summaryTagSection(title: t("Topics", "Темы"), values: topics)
+        }
+
+        if let people = summary.peopleMentioned, !people.isEmpty {
+            summaryTagSection(title: t("People", "Люди"), values: people)
+        }
+    }
+
+    private func summaryTagSection(title: String, values: [String]) -> some View {
+        VStack(alignment: .leading, spacing: Spacing.sm) {
+            Text(title).waiSectionHeader()
+            LazyVGrid(
+                columns: [GridItem(.adaptive(minimum: 96), spacing: 6, alignment: .leading)],
+                alignment: .leading,
+                spacing: 6
+            ) {
+                ForEach(values, id: \.self) { value in
+                    Text(value)
+                        .font(Typography.labelSmall)
+                        .foregroundStyle(Palette.textSecondary)
+                        .padding(.horizontal, Spacing.sm)
+                        .padding(.vertical, 4)
+                        .background(Palette.surfaceSubtle)
+                        .clipShape(Capsule())
+                }
+            }
+        }
+    }
+
+    private func summaryEmptyState(
+        detail: RecordingDetail,
+        isGeneratingSummary: Bool,
+        generationFailed: Bool,
+        generationState: SummaryGenerationState?
+    ) -> some View {
+        VStack(alignment: .leading, spacing: Spacing.md) {
+            Text(t("Summary is not ready yet.", "Сводка еще не готова."))
+                .font(Typography.body)
+                .foregroundStyle(Palette.textPrimary)
+
+            Button(action: {
+                Task {
+                    await viewModel.startSummaryGeneration(
+                        recordingId: detail.id,
+                        apiClient: appState.getAPIClient()
+                    )
+                }
+            }) {
+                Text(summaryGenerationButtonTitle(isGenerating: isGeneratingSummary, failed: generationFailed))
+            }
+            .buttonStyle(WaiPrimaryButtonStyle(isDisabled: isGeneratingSummary))
+            .disabled(isGeneratingSummary)
+
+            if isGeneratingSummary {
+                summaryGenerationProgress(state: generationState)
+            } else if generationFailed {
+                summaryGenerationFailure(state: generationState)
+            }
+        }
+        .padding(Spacing.lg)
+        .background(Palette.surfaceSubtle)
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+
+    @ViewBuilder
+    private func transcriptSection(_ detail: RecordingDetail) -> some View {
+        VStack(alignment: .leading, spacing: Spacing.lg) {
+            HStack(alignment: .center, spacing: Spacing.md) {
+                Label(t("Transcript", "Расшифровка"), systemImage: "text.alignleft")
+                    .waiSectionHeader()
+                Spacer()
+                if !detail.segments.isEmpty {
+                    ViewThatFits(in: .horizontal) {
+                        copyActionButton(
+                            title: t("Copy Transcript", "Скопировать расшифровку"),
+                            copiedTitle: t("Copied", "Скопировано"),
+                            text: transcriptText(detail.segments),
+                            section: "transcript-all"
+                        )
+                        Button {
+                            copyToClipboard(transcriptText(detail.segments), section: "transcript-all")
+                        } label: {
+                            Image(systemName: copiedSection == "transcript-all" ? "checkmark" : "doc.on.doc")
+                        }
+                        .buttonStyle(WaiGhostButtonStyle())
+                        .help(t("Copy transcript", "Скопировать расшифровку"))
+                    }
+                }
+            }
+
+            if detail.segments.isEmpty {
+                transcriptEmptyState
+            } else {
+                LazyVStack(alignment: .leading, spacing: Spacing.xl) {
+                    ForEach(detail.segments) { segment in
+                        SegmentRowView(
+                            segment: segment,
                             recordingId: detail.id,
-                            apiClient: appState.getAPIClient()
+                            onAssigned: { updated in
+                                viewModel.recordingDetail = updated
+                            }
                         )
                     }
-                }) {
-                    Text(summaryGenerationButtonTitle(isGenerating: isGeneratingSummary, failed: generationFailed))
                 }
-                .buttonStyle(WaiPrimaryButtonStyle(isDisabled: isGeneratingSummary))
-                .disabled(isGeneratingSummary)
-
-                if isGeneratingSummary {
-                    summaryGenerationProgress(state: generationState)
-                } else if generationFailed {
-                    summaryGenerationFailure(state: generationState)
-                }
-                Spacer()
             }
-            .accessibilityIdentifier("summary-empty-state")
         }
+        .accessibilityIdentifier("transcript-content")
+    }
+
+    @ViewBuilder
+    private var transcriptEmptyState: some View {
+        switch viewModel.transcriptAvailability {
+        case .savedLocally:
+            Text(savedLocallyTranscriptDescription)
+                .font(Typography.bodySmall)
+                .foregroundStyle(Palette.textSecondary)
+        case .processing:
+            Text(t(
+                "Transcript is processing and will appear here automatically.",
+                "Расшифровка готовится и появится здесь автоматически."
+            ))
+            .font(Typography.bodySmall)
+            .foregroundStyle(Palette.textSecondary)
+        case .empty, .content:
+            Text(t("No transcript yet.", "Расшифровки пока нет."))
+                .font(Typography.bodySmall)
+                .foregroundStyle(Palette.textSecondary)
+        }
+    }
+
+    private var savedLocallyTranscriptDescription: String {
+        if viewModel.localRecoveryManifest?.requiresAuthentication == true {
+            return t("Sign in again to sync this recording.", "Войди снова, чтобы синхронизировать эту запись.")
+        }
+        if viewModel.localRecoveryManifest?.isPermanentFailure == true {
+            return t(
+                "This recording needs attention before it can sync.",
+                "Эта запись требует внимания перед синхронизацией."
+            )
+        }
+        if viewModel.localRecoveryManifest?.isServerProcessing == true {
+            return t(
+                "Audio is stored on this Mac while server processing finishes.",
+                "Аудио сохранено на этом Mac, пока сервер завершает обработку."
+            )
+        }
+        return t(
+            "This recording is stored on this Mac and will sync when the connection is available.",
+            "Эта запись сохранена на этом Mac и синхронизируется, когда соединение будет доступно."
+        )
     }
 
     private func summaryGenerationButtonTitle(isGenerating: Bool, failed: Bool) -> String {

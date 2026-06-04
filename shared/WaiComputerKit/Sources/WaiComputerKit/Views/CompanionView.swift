@@ -53,7 +53,7 @@ enum CompanionChatPresentation {
         formatter.locale = locale
         formatter.dateStyle = .short
         formatter.timeStyle = .short
-        let fallbackPrefix = locale.identifier.lowercased().hasPrefix("ru") ? "Чат" : "Chat"
+        let fallbackPrefix = locale.identifier.lowercased().hasPrefix("ru") ? "Диалог" : "Thread"
         return "\(fallbackPrefix) · \(formatter.string(from: lastMessageAt ?? createdAt))"
     }
 }
@@ -69,6 +69,7 @@ public struct CompanionView: View {
     /// transcribes speech into the focused composer field. nil hides the mic.
     private let onVoiceInput: (() -> Void)?
     private let initialChatId: String?
+    private let showsConversationSwitcher: Bool
     @Environment(\.locale) private var locale
     @Environment(\.companionAccentColor) private var companionAccentColor
 
@@ -107,11 +108,13 @@ public struct CompanionView: View {
         apiClient: APIClient,
         recordings: [Recording],
         initialChatId: String? = nil,
+        showsConversationSwitcher: Bool = true,
         onVoiceInput: (() -> Void)? = nil
     ) {
         self.apiClient = apiClient
         self.recordings = recordings
         self.initialChatId = initialChatId
+        self.showsConversationSwitcher = showsConversationSwitcher
         self.onVoiceInput = onVoiceInput
     }
 
@@ -133,7 +136,7 @@ public struct CompanionView: View {
             renameSheet(for: chat)
         }
         .confirmationDialog(
-            t("Delete chat?", "Удалить чат?"),
+            t("Delete thread?", "Удалить диалог?"),
             isPresented: Binding(
                 get: { deletingChat != nil },
                 set: { if !$0 { deletingChat = nil } }
@@ -151,7 +154,7 @@ public struct CompanionView: View {
                 Text(
                     t(
                         "This removes “\(chatLabel(deletingChat))” from Wai.",
-                        "Чат «\(chatLabel(deletingChat))» будет удален из Wai."
+                        "Диалог «\(chatLabel(deletingChat))» будет удален из Wai."
                     )
                 )
             }
@@ -164,7 +167,7 @@ public struct CompanionView: View {
     private var content: some View {
         #if os(macOS)
         HStack(spacing: 0) {
-            if showChats {
+            if showsConversationSwitcher && showChats {
                 chatList
                     .frame(width: 280)
                 Color.primary.opacity(0.08)
@@ -177,7 +180,7 @@ public struct CompanionView: View {
         }
         #else
         VStack(spacing: 0) {
-            if showChats {
+            if showsConversationSwitcher && showChats {
                 chatList
                 CompanionDivider()
             }
@@ -218,24 +221,26 @@ public struct CompanionView: View {
             )
             .accessibilityIdentifier("wai-speak-toggle-button")
 
-            Button {
-                showChats.toggle()
-            } label: {
-                Label(showChats ? t("Hide chats", "Скрыть чаты") : chatsCountLabel, systemImage: "bubble.left.and.bubble.right")
-                    .labelStyle(.titleAndIcon)
+            if showsConversationSwitcher {
+                Button {
+                    showChats.toggle()
+                } label: {
+                    Label(showChats ? t("Hide threads", "Скрыть диалоги") : t("Show threads", "Показать диалоги"), systemImage: "bubble.left.and.bubble.right")
+                        .labelStyle(.titleAndIcon)
+                }
+                .buttonStyle(.bordered)
+                .help(showChats ? t("Hide threads", "Скрыть диалоги") : t("Show threads", "Показать диалоги"))
+                .accessibilityIdentifier("wai-toggle-chats-button")
             }
-            .buttonStyle(.bordered)
-            .help(showChats ? t("Hide chats", "Скрыть чаты") : t("Show chats", "Показать чаты"))
-            .accessibilityIdentifier("wai-toggle-chats-button")
 
             Button {
                 Task { await newChat() }
             } label: {
-                Label(t("New chat", "Новый чат"), systemImage: "plus")
+                Label(t("New thread", "Новый диалог"), systemImage: "plus")
                     .labelStyle(.titleAndIcon)
             }
             .buttonStyle(.borderedProminent)
-            .help(t("New chat", "Новый чат"))
+            .help(t("New Wai thread", "Новый диалог Wai"))
             .accessibilityIdentifier("wai-new-chat-button")
         }
         .frame(maxWidth: contentMaxWidth, alignment: .leading)
@@ -248,7 +253,7 @@ public struct CompanionView: View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 0) {
                 if chats.isEmpty {
-                    Text(t("No chats yet", "Чатов пока нет"))
+                    Text(t("No threads yet", "Диалогов пока нет"))
                         .font(.callout)
                         .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -604,9 +609,9 @@ public struct CompanionView: View {
 
     private func renameSheet(for chat: CompanionConversation) -> some View {
         VStack(alignment: .leading, spacing: 18) {
-            Text(t("Rename chat", "Переименовать чат"))
+            Text(t("Rename thread", "Переименовать диалог"))
                 .font(.headline)
-            TextField(t("Chat name", "Название чата"), text: $renameDraft)
+            TextField(t("Thread name", "Название диалога"), text: $renameDraft)
                 .textFieldStyle(.roundedBorder)
                 .accessibilityIdentifier("wai-rename-chat-field")
 
@@ -636,6 +641,12 @@ public struct CompanionView: View {
     // MARK: - Loading + sending
 
     private func initialLoad() async {
+        if !showsConversationSwitcher, let initialChatId {
+            await MainActor.run { activeChatId = initialChatId }
+            await loadChat(initialChatId)
+            return
+        }
+
         do {
             let list = try await apiClient.listCompanionChats()
             await MainActor.run {
@@ -886,8 +897,7 @@ public struct CompanionView: View {
         case .memoryUpdated:
             break  // a subtle "remembered" toast is a later nicety
         case .actionProposed(let proposal):
-            // Approval UI lands in P7; surface a note so the turn isn't silent.
-            streamingToolNotes.append("Proposed: \(proposal.tool) — approve in the app")
+            streamingToolNotes.append(t("Approval needed: \(proposal.tool)", "Нужно подтверждение: \(proposal.tool)"))
         case .actionResult(_, let status, _, _):
             streamingToolNotes.append("Action \(status)")
         case .narration:
@@ -903,19 +913,12 @@ public struct CompanionView: View {
 
     private var isStreaming: Bool { stage != .idle }
 
-    private var chatsCountLabel: String {
-        if isRussian {
-            return "Чаты: \(chats.count)"
-        }
-        return "Chats (\(chats.count))"
-    }
-
     private var starterPrompts: [String] {
         [
-            t("What did I commit to this week?", "Что я обещал сделать на этой неделе?"),
-            t("Summarize my last meeting.", "Сделай сводку последней встречи."),
-            t("What patterns show up in my reflections?", "Какие повторяющиеся темы есть в моих рефлексиях?"),
-            t("When did I first mention pricing?", "Когда я впервые упомянул цены?"),
+            t("Find what I promised this week.", "Найди, что я обещал на этой неделе."),
+            t("Summarize my last meeting and suggest next steps.", "Сделай сводку последней встречи и предложи следующие шаги."),
+            t("Remember that I prefer short weekly launch updates.", "Запомни, что я предпочитаю короткие еженедельные апдейты по запуску."),
+            t("Open the source I need to continue this task.", "Открой источник, который нужен, чтобы продолжить эту задачу."),
         ]
     }
 

@@ -31,4 +31,135 @@ final class MacContentFeedViewModelTests: XCTestCase {
         XCTAssertFalse(source.contains("Select to compare"))
         XCTAssertFalse(source.contains("Compare ("))
     }
+
+    func testInboxViewUsesNativeListForFastScrollingRows() throws {
+        let source = try macSource("WaiComputer/Features/Inbox/MacInboxView.swift")
+
+        XCTAssertTrue(source.contains("List {"))
+        XCTAssertFalse(source.contains("ScrollView {\n                    LazyVStack(spacing: 0)"))
+    }
+
+    func testInboxViewDoesNotRenderStatusFilter() throws {
+        let source = try macSource("WaiComputer/Features/Inbox/MacInboxView.swift")
+
+        XCTAssertFalse(source.contains("Picker(t(\"Status\""))
+        XCTAssertFalse(source.contains("setStatusFilter"))
+    }
+
+    func testInboxLayoutPinsPanesAndMakesCreatePaneScrollable() throws {
+        let source = try macSource("WaiComputer/Features/Inbox/MacInboxView.swift")
+
+        XCTAssertTrue(source.contains(".frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)"))
+        XCTAssertTrue(source.contains("private var createPane: some View {\n        GeometryReader"))
+        XCTAssertTrue(source.contains("ScrollView {"))
+    }
+
+    func testInboxChatDetailUsesFocusedCompanionWithoutSwitcher() throws {
+        let source = try macSource("WaiComputer/Features/Inbox/MacInboxView.swift")
+
+        XCTAssertTrue(source.contains("showsConversationSwitcher: false"))
+    }
+
+    func testInboxPresentsWaiChatAsAgentThread() throws {
+        let source = try macSource("WaiComputer/Features/Inbox/MacInboxView.swift")
+
+        XCTAssertTrue(source.contains("Ask Wai"))
+        XCTAssertTrue(source.contains("Search, remember, plan, or act"))
+        XCTAssertFalse(source.contains("New Wai Chat"))
+        XCTAssertFalse(source.contains("Wai Chat"))
+    }
+
+    func testAgentsViewUsesAskWaiConversationFirst() throws {
+        let source = try macSource("WaiComputer/Features/Agents/MacAgentsView.swift")
+
+        XCTAssertTrue(source.contains("CompanionView("))
+        XCTAssertTrue(source.contains("Agent controls"))
+        XCTAssertFalse(source.contains("What should Wai do?"))
+        XCTAssertFalse(source.contains("mac-agents-prompt"))
+    }
+
+    func testInboxViewModelClearsStaleErrorAfterSuccessfulReload() throws {
+        let source = try macSource("WaiComputer/Features/Inbox/MacInboxViewModel.swift")
+
+        XCTAssertTrue(source.contains("errorMessage = nil\n            rows = response.rows"))
+        XCTAssertTrue(source.contains("errorMessage = nil\n            rows.append(contentsOf: response.rows)"))
+    }
+
+    func testCompanionViewCanHideChatSwitcherAndDoesNotShowChatCounts() throws {
+        let source = try sharedSource("Sources/WaiComputerKit/Views/CompanionView.swift")
+
+        XCTAssertTrue(source.contains("showsConversationSwitcher: Bool = true"))
+        XCTAssertTrue(source.contains("if showsConversationSwitcher {"))
+        XCTAssertFalse(source.contains("chatsCountLabel"))
+        XCTAssertFalse(source.contains("Чаты: \\("))
+        XCTAssertFalse(source.contains("Chats (\\("))
+    }
+
+    func testMacDateFormattingCachesFormattersForLargeLists() throws {
+        let source = try macSource("WaiComputer/Core/DesignSystem.swift")
+
+        XCTAssertTrue(source.contains("formatterCache"))
+        XCTAssertTrue(source.contains("formatterCacheLock"))
+    }
+
+    func testRecordingDetailShowsSummaryBeforeTranscriptWithoutTabs() throws {
+        let source = try macSource("WaiComputer/Features/Library/MacRecordingDetailView.swift")
+
+        XCTAssertFalse(source.contains("WaiTabBar("))
+        XCTAssertBefore("summarySection(detail)", "transcriptSection(detail)", in: source)
+    }
+
+    func testRecordingDetailViewModelDoesNotDefaultToTranscriptTab() throws {
+        let source = try macSource("WaiComputer/Features/Library/MacRecordingDetailViewModel.swift")
+
+        XCTAssertFalse(source.contains("selectedTab: Tab = .transcript"))
+        XCTAssertFalse(source.contains("enum Tab"))
+    }
+
+    func testItemDetailShowsSummaryBeforeOriginalMaterial() throws {
+        let source = try macSource("WaiComputer/Features/Content/MacItemDetailView.swift")
+
+        XCTAssertBefore("summarySection", "originalMaterialSection", in: source)
+        XCTAssertTrue(source.contains("Original Material"))
+        XCTAssertTrue(source.contains("item.body"))
+    }
+
+    private func macSource(_ relativePath: String) throws -> String {
+        let testFile = URL(fileURLWithPath: #filePath)
+        let file = testFile
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent(relativePath)
+        return try String(contentsOf: file, encoding: .utf8)
+    }
+
+    private func sharedSource(_ relativePath: String) throws -> String {
+        let testFile = URL(fileURLWithPath: #filePath)
+        let file = testFile
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("shared/WaiComputerKit")
+            .appendingPathComponent(relativePath)
+        return try String(contentsOf: file, encoding: .utf8)
+    }
+
+    private func XCTAssertBefore(
+        _ earlier: String,
+        _ later: String,
+        in source: String,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        guard let earlierIndex = source.range(of: earlier)?.lowerBound else {
+            XCTFail("Missing \(earlier)", file: file, line: line)
+            return
+        }
+        guard let laterIndex = source.range(of: later)?.lowerBound else {
+            XCTFail("Missing \(later)", file: file, line: line)
+            return
+        }
+        XCTAssertLessThan(earlierIndex, laterIndex, file: file, line: line)
+    }
 }

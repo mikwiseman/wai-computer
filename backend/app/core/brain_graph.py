@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any
 
 from sqlalchemy import select
@@ -200,6 +201,7 @@ class EntitySource:
     source_id: str
     title: str
     context: str | None
+    occurred_at: datetime | None
 
 
 @dataclass
@@ -211,6 +213,59 @@ class RelatedEntity:
 
 
 @dataclass
+class EntityPageCitation:
+    id: str
+    source_kind: str
+    source_id: str
+    title: str
+    context: str | None
+    occurred_at: datetime | None
+
+
+@dataclass
+class EntityPageFact:
+    id: str
+    text: str
+    citation_ids: list[str]
+
+
+@dataclass
+class EntityPageTimelineEvent:
+    id: str
+    title: str
+    description: str | None
+    occurred_at: datetime | None
+    citation_ids: list[str]
+
+
+@dataclass
+class EntityPageRelatedExplanation:
+    id: str
+    name: str
+    type: str
+    shared: int
+    explanation: str
+    citation_ids: list[str]
+
+
+@dataclass
+class EntityPageQuestion:
+    id: str
+    text: str
+    citation_ids: list[str]
+
+
+@dataclass
+class EntityPageAction:
+    id: str
+    text: str
+    owner: str | None
+    due_date: str | None
+    status: str | None
+    citation_ids: list[str]
+
+
+@dataclass
 class EntityPage:
     id: str
     name: str
@@ -218,6 +273,28 @@ class EntityPage:
     mention_count: int
     sources: list[EntitySource]
     related: list[RelatedEntity]
+    overview: str
+    facts: list[EntityPageFact]
+    citations: list[EntityPageCitation]
+    timeline: list[EntityPageTimelineEvent]
+    related_explanations: list[EntityPageRelatedExplanation]
+    questions: list[EntityPageQuestion]
+    actions: list[EntityPageAction]
+    cache_status: str
+
+
+def _source_label(count: int) -> str:
+    return "source" if count == 1 else "sources"
+
+
+def _entity_page_overview(name: str, mention_count: int) -> str:
+    if mention_count == 0:
+        return f"{name} has not appeared in any sources yet."
+    return f"{name} appears in {mention_count} {_source_label(mention_count)}."
+
+
+def _citation_id(source_kind: str, source_id: uuid.UUID | str) -> str:
+    return f"{source_kind}:{source_id}"
 
 
 async def build_entity_page(
@@ -249,61 +326,108 @@ async def build_entity_page(
 
     item_ids = {sid for kind, sid, _ in mentions if kind == "item"}
     rec_ids = {sid for kind, sid, _ in mentions if kind == "recording"}
-    titles: dict[tuple[str, uuid.UUID], str] = {}
+    source_meta: dict[tuple[str, uuid.UUID], tuple[str, datetime | None]] = {}
     if item_ids:
-        for iid, title, url in (
+        for iid, title, url, occurred_at, created_at in (
             await db.execute(
-                select(Item.id, Item.title, Item.url).where(
+                select(Item.id, Item.title, Item.url, Item.occurred_at, Item.created_at).where(
                     Item.id.in_(item_ids), Item.deleted_at.is_(None)
                 )
             )
         ).all():
-            titles[("item", iid)] = title or url or "Untitled"
+            source_meta[("item", iid)] = (title or url or "Untitled", occurred_at or created_at)
     if rec_ids:
-        for rid, title in (
+        for rid, title, uploaded_at, created_at in (
             await db.execute(
-                select(Recording.id, Recording.title).where(
+                select(Recording.id, Recording.title, Recording.uploaded_at, Recording.created_at).where(
                     Recording.id.in_(rec_ids), Recording.deleted_at.is_(None)
                 )
             )
         ).all():
-            titles[("recording", rid)] = title or "Recording"
+            source_meta[("recording", rid)] = (title or "Recording", uploaded_at or created_at)
 
     sources = [
         EntitySource(
-            source_kind=kind, source_id=str(sid), title=titles[(kind, sid)], context=ctx
+            source_kind=kind,
+            source_id=str(sid),
+            title=source_meta[(kind, sid)][0],
+            context=ctx,
+            occurred_at=source_meta[(kind, sid)][1],
         )
         for kind, sid, ctx in mentions
-        if (kind, sid) in titles
+        if (kind, sid) in source_meta
+    ]
+    citations = [
+        EntityPageCitation(
+            id=_citation_id(source.source_kind, source.source_id),
+            source_kind=source.source_kind,
+            source_id=source.source_id,
+            title=source.title,
+            context=source.context,
+            occurred_at=source.occurred_at,
+        )
+        for source in sources
     ]
 
     related: list[RelatedEntity] = []
-    source_ids = [sid for _, sid, _ in mentions]
-    if source_ids:
+    related_source_keys: dict[uuid.UUID, set[tuple[str, uuid.UUID]]] = {}
+    source_keys = {(kind, sid) for kind, sid, _ in mentions if (kind, sid) in source_meta}
+    source_ids = {sid for _, sid in source_keys}
+    if source_keys:
         co_rows = (
             await db.execute(
-                select(EntityMention.entity_id).where(
+                select(
+                    EntityMention.entity_id,
+                    EntityMention.source_kind,
+                    EntityMention.source_id,
+                ).where(
                     EntityMention.user_id == user_id,
                     EntityMention.source_id.in_(source_ids),
                     EntityMention.entity_id != entity_id,
                 )
             )
         ).all()
-        shared: dict[uuid.UUID, int] = {}
-        for (eid,) in co_rows:
-            shared[eid] = shared.get(eid, 0) + 1
-        if shared:
+        for eid, kind, sid in co_rows:
+            key = (kind, sid)
+            if key in source_keys:
+                related_source_keys.setdefault(eid, set()).add(key)
+        if related_source_keys:
             for eid, etype, name in (
                 await db.execute(
                     select(Entity.id, Entity.type, Entity.name).where(
-                        Entity.id.in_(list(shared.keys()))
+                        Entity.id.in_(list(related_source_keys.keys()))
                     )
                 )
             ).all():
                 related.append(
-                    RelatedEntity(id=str(eid), name=name, type=etype, shared=shared[eid])
+                    RelatedEntity(
+                        id=str(eid),
+                        name=name,
+                        type=etype,
+                        shared=len(related_source_keys[eid]),
+                    )
                 )
-            related.sort(key=lambda r: r.shared, reverse=True)
+            related.sort(key=lambda r: (-r.shared, r.name.lower()))
+
+    related_explanations = [
+        EntityPageRelatedExplanation(
+            id=rel.id,
+            name=rel.name,
+            type=rel.type,
+            shared=rel.shared,
+            explanation=(
+                f"Shares {rel.shared} {_source_label(rel.shared)} with {entity.name}."
+            ),
+            citation_ids=[
+                _citation_id(kind, sid)
+                for kind, sid in sorted(
+                    related_source_keys.get(uuid.UUID(rel.id), set()),
+                    key=lambda value: (value[0], str(value[1])),
+                )
+            ],
+        )
+        for rel in related
+    ]
 
     return EntityPage(
         id=str(entity.id),
@@ -312,4 +436,12 @@ async def build_entity_page(
         mention_count=len(mentions),
         sources=sources,
         related=related,
+        overview=_entity_page_overview(entity.name, len(sources)),
+        facts=[],
+        citations=citations,
+        timeline=[],
+        related_explanations=related_explanations,
+        questions=[],
+        actions=[],
+        cache_status="computed",
     )

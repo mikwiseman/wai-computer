@@ -179,6 +179,7 @@ class EntitySourceResponse(BaseModel):
     source_id: str
     title: str
     context: str | None
+    occurred_at: datetime | None
 
 
 class RelatedEntityResponse(BaseModel):
@@ -186,6 +187,53 @@ class RelatedEntityResponse(BaseModel):
     name: str
     type: str
     shared: int
+
+
+class EntityPageCitationResponse(BaseModel):
+    id: str
+    source_kind: str
+    source_id: str
+    title: str
+    context: str | None
+    occurred_at: datetime | None
+
+
+class EntityPageFactResponse(BaseModel):
+    id: str
+    text: str
+    citation_ids: list[str]
+
+
+class EntityPageTimelineEventResponse(BaseModel):
+    id: str
+    title: str
+    description: str | None
+    occurred_at: datetime | None
+    citation_ids: list[str]
+
+
+class EntityPageRelatedExplanationResponse(BaseModel):
+    id: str
+    name: str
+    type: str
+    shared: int
+    explanation: str
+    citation_ids: list[str]
+
+
+class EntityPageQuestionResponse(BaseModel):
+    id: str
+    text: str
+    citation_ids: list[str]
+
+
+class EntityPageActionResponse(BaseModel):
+    id: str
+    text: str
+    owner: str | None
+    due_date: str | None
+    status: str | None
+    citation_ids: list[str]
 
 
 class EntityPageResponse(BaseModel):
@@ -197,6 +245,14 @@ class EntityPageResponse(BaseModel):
     mention_count: int
     sources: list[EntitySourceResponse]
     related: list[RelatedEntityResponse]
+    overview: str
+    facts: list[EntityPageFactResponse]
+    citations: list[EntityPageCitationResponse]
+    timeline: list[EntityPageTimelineEventResponse]
+    related_explanations: list[EntityPageRelatedExplanationResponse]
+    questions: list[EntityPageQuestionResponse]
+    actions: list[EntityPageActionResponse]
+    cache_status: str
 
 
 @router.get("/{entity_id}/page", response_model=EntityPageResponse)

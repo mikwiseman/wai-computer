@@ -6,7 +6,6 @@ import WaiComputerKit
 final class MacInboxViewModel: ObservableObject {
     @Published var rows: [InboxRow] = []
     @Published var sourceKind: InboxSourceKind?
-    @Published var statusFilter: InboxStatusFilter?
     @Published var nextCursor: String?
     @Published var isLoading = false
     @Published var isLoadingMore = false
@@ -28,7 +27,6 @@ final class MacInboxViewModel: ObservableObject {
         guard self.sourceKind != sourceKind || self.folderId != folderId else { return }
         self.sourceKind = sourceKind
         self.folderId = folderId
-        statusFilter = nil
         nextCursor = nil
         await load()
     }
@@ -39,10 +37,10 @@ final class MacInboxViewModel: ObservableObject {
         do {
             let response = try await apiClient.listInbox(
                 sourceKind: sourceKind,
-                status: statusFilter,
                 folderId: folderId,
                 limit: 50
             )
+            errorMessage = nil
             rows = response.rows
             nextCursor = response.nextCursor
         } catch {
@@ -57,11 +55,11 @@ final class MacInboxViewModel: ObservableObject {
         do {
             let response = try await apiClient.listInbox(
                 sourceKind: sourceKind,
-                status: statusFilter,
                 folderId: folderId,
                 limit: 50,
                 cursor: nextCursor
             )
+            errorMessage = nil
             rows.append(contentsOf: response.rows)
             self.nextCursor = response.nextCursor
         } catch {
@@ -71,12 +69,6 @@ final class MacInboxViewModel: ObservableObject {
 
     func setSourceKind(_ next: InboxSourceKind?) async {
         sourceKind = next
-        nextCursor = nil
-        await load()
-    }
-
-    func setStatusFilter(_ next: InboxStatusFilter?) async {
-        statusFilter = next
         nextCursor = nil
         await load()
     }
@@ -180,8 +172,8 @@ final class MacInboxViewModel: ObservableObject {
                 sourceId: chat.id,
                 detail: InboxDetailRef(kind: .chat, id: chat.id),
                 title: chat.title,
-                sourceLabel: "Wai chat",
-                sublabel: "Chat",
+                sourceLabel: "Wai",
+                sublabel: "Agent thread",
                 activityAt: chat.lastMessageAt ?? chat.createdAt,
                 createdAt: chat.createdAt,
                 updatedAt: chat.updatedAt,

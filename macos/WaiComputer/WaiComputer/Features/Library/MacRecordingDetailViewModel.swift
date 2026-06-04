@@ -51,14 +51,9 @@ enum MacSummaryAudioPlayback {
 
 @MainActor
 class MacRecordingDetailViewModel: ObservableObject {
-    enum Tab: Hashable {
-        case transcript, summary
-    }
-
     @Published var recordingDetail: RecordingDetail?
     @Published var isLoading = false
     @Published var error: String?
-    @Published var selectedTab: Tab = .transcript
     @Published var localRecoveryManifest: RecordingBackupManifest?
     @Published private var generatingSummaryRecordingId: String?
     @Published private var generatingSummaryAudioRecordingId: String?
@@ -115,7 +110,6 @@ class MacRecordingDetailViewModel: ObservableObject {
         if isSwitchingRecording {
             recordingDetail = nil
             localRecoveryManifest = nil
-            selectedTab = .transcript
         }
         if showLoading {
             isLoading = true
@@ -181,7 +175,6 @@ class MacRecordingDetailViewModel: ObservableObject {
             let state = try await apiClient.startSummaryGeneration(recordingId: id)
             if recordingDetail?.id == id {
                 recordingDetail = recordingDetail?.withSummaryGeneration(state)
-                selectedTab = .summary
             }
             await refreshPendingDetailIfNeeded(recordingId: id, apiClient: apiClient)
         } catch {
@@ -201,7 +194,6 @@ class MacRecordingDetailViewModel: ObservableObject {
             let state = try await apiClient.startRecordingSummaryAudio(recordingId: id)
             if recordingDetail?.id == id {
                 recordingDetail = recordingDetail?.withSummaryAudio(state)
-                selectedTab = .summary
             }
             await refreshPendingDetailIfNeeded(recordingId: id, apiClient: apiClient)
         } catch {
@@ -243,12 +235,10 @@ class MacRecordingDetailViewModel: ObservableObject {
             let summary = try await apiClient.generateSummary(recordingId: id)
             if recordingDetail?.id == id {
                 recordingDetail = recordingDetail?.withSummary(summary)
-                selectedTab = .summary
             }
             let detail = try await apiClient.getRecording(id: id)
             if recordingDetail?.id == id {
                 applyFetchedDetail(detail.summary == nil ? detail.withSummary(summary) : detail)
-                selectedTab = .summary
             }
         } catch {
             self.error = error.userFacingMessage(context: .library)

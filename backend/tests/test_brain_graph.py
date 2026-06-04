@@ -150,6 +150,15 @@ async def test_build_entity_page_sources_and_related(db_session) -> None:
     related = {r.name: r.shared for r in page.related}
     assert related.get("GPU") == 1  # shared item1
     assert "Anna" not in related  # never lists itself
+    assert page.overview == "Anna appears in 2 sources."
+    assert {c.title for c in page.citations} == {"GPU note", "Second"}
+    assert page.related_explanations[0].name == "GPU"
+    assert page.related_explanations[0].explanation == "Shares 1 source with Anna."
+    assert page.facts == []
+    assert page.timeline == []
+    assert page.questions == []
+    assert page.actions == []
+    assert page.cache_status == "computed"
 
 
 async def test_build_entity_page_missing_returns_none(db_session) -> None:
@@ -174,3 +183,11 @@ async def test_entity_page_route_200_for_owned_entity(client, auth_headers) -> N
     assert data["name"] == "Roadmaps"
     assert data["mention_count"] == 0
     assert data["sources"] == [] and data["related"] == []
+    assert data["overview"] == "Roadmaps has not appeared in any sources yet."
+    assert data["facts"] == []
+    assert data["citations"] == []
+    assert data["timeline"] == []
+    assert data["related_explanations"] == []
+    assert data["questions"] == []
+    assert data["actions"] == []
+    assert data["cache_status"] == "computed"
