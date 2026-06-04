@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 from time import perf_counter
 from typing import Any, Literal
 
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, HTTPException, Query, Response, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import and_, select
@@ -357,15 +357,20 @@ async def update_chat(
     return _to_summary(chat)
 
 
-@router.delete("/chats/{chat_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete(
+    "/chats/{chat_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    response_class=Response,
+)
 async def delete_chat(
     chat_id: uuid.UUID,
     user: CurrentUser,
     db: Database,
-) -> None:
+) -> Response:
     chat = await _load_user_chat(db, user.id, chat_id)
     chat.deleted_at = datetime.now(timezone.utc)
     await db.flush()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 class PostMessageRequest(BaseModel):

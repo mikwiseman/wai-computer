@@ -54,7 +54,6 @@ from app.core.item_telegram import format_fetch_error_reply, format_item_reply
 from app.core.item_titles import clean_title, title_from_filename
 from app.core.mcp_tools import (
     list_recordings_for_mcp,
-    search_recordings_for_mcp,
 )
 from app.core.recording_import import RecordingImportError, import_media_as_recording
 from app.core.source_fetch import classify_url, find_first_url
@@ -64,6 +63,7 @@ from app.core.telegram_client import (
     TelegramFileTooLargeError,
     telegram_chunks,
 )
+from app.core.unified_search import UnifiedHit, unified_search
 from app.db.session import get_db_context
 from app.models.agent import Agent, AgentRun, AgentStep
 from app.models.companion import Conversation
@@ -903,17 +903,16 @@ def _format_recording_list(results: list[dict[str, Any]], *, empty_text: str) ->
     return "\n\n".join(lines)
 
 
-def _format_search_results(results: list[dict[str, Any]], *, query: str) -> str:
+def _format_search_results(results: list[UnifiedHit], *, query: str) -> str:
     if not results:
         return f"Ничего не нашел по запросу: {query}"
     lines = [f"Нашел по запросу: {query}"]
     for index, item in enumerate(results, start=1):
-        metadata = item.get("metadata") if isinstance(item.get("metadata"), dict) else {}
-        title = str(item.get("title") or "Без названия")
-        text = str(item.get("text") or "").strip()
-        created = _format_created_at(metadata.get("created_at"))
-        url = str(item.get("url") or "")
-        lines.append(f"{index}. {title}\n{created}\n{text}\n{url}".strip())
+        title = str(item.title or "Без названия")
+        text = item.snippet.strip()
+        created = _format_created_at(item.created_at)
+        source = "запись" if item.source_kind == "recording" else "материал"
+        lines.append(f"{index}. {title}\n{source} · {created}\n{text}".strip())
     return "\n\n".join(lines)
 
 
@@ -985,11 +984,11 @@ async def _handle_search_command(
             reply_to_message_id=message.get("message_id"),
         )
         return
-    result = await search_recordings_for_mcp(db, account.user_id, clean_query, limit=5)
+    results = await unified_search(db, account.user_id, clean_query, limit=5)
     await _send_chunks(
         client,
         chat_id,
-        _format_search_results(result["results"], query=clean_query),
+        _format_search_results(results, query=clean_query),
         reply_to_message_id=message.get("message_id"),
     )
 

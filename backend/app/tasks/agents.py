@@ -170,25 +170,27 @@ async def _recover_stale_agent_runs_async(limit: int = 50) -> int:
     recovered = 0
     async with get_db_context() as db:
         now = _now()
+        stale_active_run = AgentRun.status.in_(["planning", "running"]) & (
+            (
+                AgentRun.heartbeat_at.is_not(None)
+                & (AgentRun.heartbeat_at < cutoff)
+            )
+            | (
+                AgentRun.heartbeat_at.is_(None)
+                & (AgentRun.created_at < cutoff)
+            )
+        )
+        stale_pending_run = (
+            (AgentRun.status == "pending")
+            & (AgentRun.created_at < cutoff)
+            & (
+                AgentRun.heartbeat_at.is_(None)
+                | (AgentRun.heartbeat_at < cutoff)
+            )
+        )
         result = await db.execute(
             select(AgentRun)
-            .where(
-                (
-                    (
-                        AgentRun.status.in_(["planning", "running"])
-                        & AgentRun.heartbeat_at.is_not(None)
-                        & (AgentRun.heartbeat_at < cutoff)
-                    )
-                    | (
-                        (AgentRun.status == "pending")
-                        & (AgentRun.created_at < cutoff)
-                        & (
-                            AgentRun.heartbeat_at.is_(None)
-                            | (AgentRun.heartbeat_at < cutoff)
-                        )
-                    )
-                ),
-            )
+            .where(stale_active_run | stale_pending_run)
             .order_by(AgentRun.created_at)
             .limit(limit)
         )

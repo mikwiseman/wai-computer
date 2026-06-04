@@ -262,6 +262,7 @@ async def backfill_entity_mentions_from_existing_summaries(
         if recorded > 0:
             sources_with_entities += 1
 
+    await db.flush()
     after = await _mention_count(db, user_id)
     return EntitySummaryBackfillResult(
         recording_summaries_scanned=len(recording_rows),

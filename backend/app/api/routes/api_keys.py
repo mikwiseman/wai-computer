@@ -82,7 +82,11 @@ async def create_api_key(
     )
 
 
-@router.post("/{key_id}/revoke", status_code=status.HTTP_204_NO_CONTENT)
+@router.post(
+    "/{key_id}/revoke",
+    status_code=status.HTTP_204_NO_CONTENT,
+    response_class=Response,
+)
 async def revoke_api_key(key_id: UUID, user: SessionUser, db: Database) -> Response:
     """Revoke one of the current user's API keys."""
     result = await db.execute(

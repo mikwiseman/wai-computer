@@ -3,16 +3,32 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 
 import { McpConnectSection } from "./McpConnectSection";
 
+const mockGetSystemInfo = vi.fn();
+
 vi.mock("@/lib/api", () => ({
+  getSystemInfo: (...args: unknown[]) => mockGetSystemInfo(...args),
   listMcpConnections: vi.fn().mockResolvedValue([]),
   revokeMcpConnection: vi.fn(),
 }));
 
-let clipboardWriteText: ReturnType<typeof vi.fn>;
+let clipboardWriteText: ReturnType<typeof vi.fn<(data: string) => Promise<void>>>;
+const cloudSystemInfo = {
+  app_name: "WaiComputer",
+  deployment_mode: "wai_cloud",
+  public_base_url: "https://wai.computer",
+  cloud_base_url: "https://wai.computer",
+  mcp_url: "https://wai.computer/mcp",
+  git_sha: null,
+  git_dirty: false,
+  audio_retention_policy: "delete_after_processing",
+  self_hosting_available: true,
+  billing_mode: "cloud",
+};
 
 describe("McpConnectSection", () => {
   beforeEach(() => {
-    clipboardWriteText = vi.fn().mockResolvedValue(undefined);
+    mockGetSystemInfo.mockResolvedValue(cloudSystemInfo);
+    clipboardWriteText = vi.fn<(data: string) => Promise<void>>().mockResolvedValue(undefined);
     if (!navigator.clipboard) {
       Object.defineProperty(navigator, "clipboard", {
         configurable: true,
@@ -25,13 +41,35 @@ describe("McpConnectSection", () => {
 
   afterEach(() => {
     cleanup();
+    vi.clearAllMocks();
     vi.restoreAllMocks();
   });
 
-  it("renders the canonical production MCP endpoint URL", () => {
+  it("renders the canonical production MCP endpoint URL", async () => {
     render(<McpConnectSection />);
     const url = screen.getByTestId("mcp-endpoint-url");
-    expect(url.textContent).toBe("https://wai.computer/mcp");
+    await waitFor(() => expect(url.textContent).toBe("https://wai.computer/mcp"));
+  });
+
+  it("renders the MCP endpoint returned by this server", async () => {
+    mockGetSystemInfo.mockResolvedValue({
+      ...cloudSystemInfo,
+      deployment_mode: "self_host",
+      public_base_url: "https://demo.self.example",
+      mcp_url: "https://demo.self.example/mcp",
+      billing_mode: "self_host",
+    });
+
+    render(<McpConnectSection />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("mcp-endpoint-url").textContent).toBe(
+        "https://demo.self.example/mcp",
+      );
+    });
+    fireEvent.click(screen.getByRole("tab", { name: "Cursor" }));
+    const snippet = screen.getByText(/"mcpServers"/);
+    expect(snippet.textContent).toContain("https://demo.self.example/mcp");
   });
 
   it("defaults to the Claude.ai guide and exposes the external link", () => {
@@ -42,8 +80,9 @@ describe("McpConnectSection", () => {
     expect(link.target).toBe("_blank");
   });
 
-  it("switches to the Cursor guide and shows the JSON snippet", () => {
+  it("switches to the Cursor guide and shows the JSON snippet", async () => {
     render(<McpConnectSection />);
+    await screen.findByText("https://wai.computer/mcp");
     fireEvent.click(screen.getByRole("tab", { name: "Cursor" }));
     expect(screen.getByTestId("mcp-guide-cursor")).toBeTruthy();
     const snippet = screen.getByText(/"mcpServers"/);
@@ -52,6 +91,7 @@ describe("McpConnectSection", () => {
 
   it("copies the endpoint URL to the clipboard and shows confirmation", async () => {
     render(<McpConnectSection />);
+    await screen.findByText("https://wai.computer/mcp");
     fireEvent.click(screen.getByTestId("mcp-copy-endpoint"));
     await waitFor(() => {
       expect(clipboardWriteText).toHaveBeenCalledWith("https://wai.computer/mcp");
@@ -61,6 +101,7 @@ describe("McpConnectSection", () => {
 
   it("copies the active client snippet when present", async () => {
     render(<McpConnectSection />);
+    await screen.findByText("https://wai.computer/mcp");
     fireEvent.click(screen.getByRole("tab", { name: "Codex CLI" }));
     fireEvent.click(screen.getByTestId("mcp-copy-snippet"));
     await waitFor(() => {
@@ -71,6 +112,7 @@ describe("McpConnectSection", () => {
 
   it("uses --transport http in the Claude Code CLI snippet so it is treated as HTTP, not stdio", async () => {
     render(<McpConnectSection />);
+    await screen.findByText("https://wai.computer/mcp");
     fireEvent.click(screen.getByRole("tab", { name: "Claude Code" }));
     fireEvent.click(screen.getByTestId("mcp-copy-snippet"));
     await waitFor(() => {

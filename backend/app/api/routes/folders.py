@@ -3,7 +3,7 @@
 from datetime import datetime
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, Response, status
 from pydantic import BaseModel, field_validator
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
@@ -90,12 +90,16 @@ async def update_folder(
     return _serialize_folder(folder)
 
 
-@router.delete("/{folder_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete(
+    "/{folder_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    response_class=Response,
+)
 async def delete_folder(
     folder_id: UUID,
     user: CurrentUser,
     db: Database,
-) -> None:
+) -> Response:
     """Delete a folder and unassign every inbox object in it."""
     result = await db.execute(
         select(Folder)
@@ -118,3 +122,4 @@ async def delete_folder(
 
     await db.delete(folder)
     await db.flush()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

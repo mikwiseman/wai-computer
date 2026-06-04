@@ -60,6 +60,18 @@ async def generate_embedding(
             type(exc).__name__,
             fingerprint_text(str(exc)),
         )
+        await record_ai_usage_event_standalone(
+            provider=OPENAI_PROVIDER,
+            feature=usage_feature,
+            operation=usage_operation,
+            status=STATUS_FAILED,
+            user_id=usage_user_id,
+            recording_id=usage_recording_id,
+            item_id=usage_item_id,
+            model=settings.openai_embedding_model,
+            error_type=type(exc).__name__,
+            latency_ms=round((time.perf_counter() - started) * 1000),
+        )
         raise
     await _record_embedding_usage(
         response=response,
@@ -82,6 +94,18 @@ async def generate_embedding(
         getattr(usage, "prompt_tokens", None),
         getattr(usage, "total_tokens", None),
     )
+    await record_ai_usage_event_standalone(
+        provider=OPENAI_PROVIDER,
+        feature=usage_feature,
+        operation=usage_operation,
+        status=STATUS_SUCCEEDED,
+        user_id=usage_user_id,
+        recording_id=usage_recording_id,
+        item_id=usage_item_id,
+        model=settings.openai_embedding_model,
+        response=response,
+        latency_ms=round((time.perf_counter() - started) * 1000),
+    )
     return list(response.data[0].embedding)
 
 
@@ -89,6 +113,7 @@ async def generate_embeddings(
     texts: list[str],
     *,
     usage_user_id: UUID | str | None = None,
+    usage_recording_id: UUID | str | None = None,
     usage_item_id: UUID | str | None = None,
     usage_feature: str = FEATURE_EMBEDDINGS,
     usage_operation: str = "embedding.batch",
@@ -110,6 +135,7 @@ async def generate_embeddings(
             status=STATUS_FAILED,
             started=started,
             user_id=usage_user_id,
+            recording_id=usage_recording_id,
             item_id=usage_item_id,
             feature=usage_feature,
             operation=usage_operation,
@@ -126,12 +152,25 @@ async def generate_embeddings(
             type(exc).__name__,
             fingerprint_text(str(exc)),
         )
+        await record_ai_usage_event_standalone(
+            provider=OPENAI_PROVIDER,
+            feature=usage_feature,
+            operation=usage_operation,
+            status=STATUS_FAILED,
+            user_id=usage_user_id,
+            recording_id=usage_recording_id,
+            item_id=usage_item_id,
+            model=settings.openai_embedding_model,
+            error_type=type(exc).__name__,
+            latency_ms=round((time.perf_counter() - started) * 1000),
+        )
         raise
     await _record_embedding_usage(
         response=response,
         status=STATUS_SUCCEEDED,
         started=started,
         user_id=usage_user_id,
+        recording_id=usage_recording_id,
         item_id=usage_item_id,
         feature=usage_feature,
         operation=usage_operation,
@@ -147,6 +186,18 @@ async def generate_embeddings(
         round((time.perf_counter() - started) * 1000),
         getattr(usage, "prompt_tokens", None),
         getattr(usage, "total_tokens", None),
+    )
+    await record_ai_usage_event_standalone(
+        provider=OPENAI_PROVIDER,
+        feature=usage_feature,
+        operation=usage_operation,
+        status=STATUS_SUCCEEDED,
+        user_id=usage_user_id,
+        recording_id=usage_recording_id,
+        item_id=usage_item_id,
+        model=settings.openai_embedding_model,
+        response=response,
+        latency_ms=round((time.perf_counter() - started) * 1000),
     )
     return [list(item.embedding) for item in response.data]
 

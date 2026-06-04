@@ -199,7 +199,7 @@ struct MacMainView: View {
         case .brain:
             return t("Brain", "Мозг")
         case .review:
-            return t("Review", "На проверку")
+            return t("Brain", "Мозг")
         case .search:
             return t("Search", "Поиск")
         case .history:
@@ -528,7 +528,7 @@ struct MacMainView: View {
             case "allRecordings": selectedSection = .inbox
             case "content": selectedSection = .inbox
             case "brain": selectedSection = .brain
-            case "review": selectedSection = .review
+            case "review": selectedSection = .brain
             case "history": selectedSection = .history
             case "dictionary": selectedSection = .dictionary
             case "search": selectedSection = .search
@@ -622,7 +622,6 @@ struct MacMainView: View {
             Section {
                 sidebarRow(t("Inbox", "Инбокс"), icon: "tray.full", section: .inbox, identifier: "inbox")
                 sidebarRow(t("Brain", "Мозг"), icon: "brain", section: .brain, identifier: "brain")
-                sidebarRow(t("Review", "На проверку"), icon: "tray.full", section: .review, identifier: "review")
                 sidebarRow(t("Trash", "Корзина"), icon: "trash", section: .trash, identifier: "trash")
             } header: {
                 Text(t("Workspace", "Рабочее"))

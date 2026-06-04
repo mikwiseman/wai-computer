@@ -1,11 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
+import { getSystemInfo } from "@/lib/api";
 import { McpConnectionsList } from "./McpConnectionsList";
 import { McpSourcesPanel } from "./McpSourcesPanel";
-
-const MCP_ENDPOINT_URL = "https://wai.computer/mcp";
 
 type McpClient = "claudeai" | "cursor" | "chatgpt" | "claudecode" | "codex" | "bot";
 
@@ -17,7 +16,8 @@ type McpClientGuide = {
   externalLink?: { label: string; url: string };
 };
 
-const CLIENT_GUIDES: McpClientGuide[] = [
+function clientGuides(mcpEndpointUrl: string): McpClientGuide[] {
+  return [
   {
     id: "claudeai",
     label: "Claude.ai",
@@ -35,7 +35,7 @@ const CLIENT_GUIDES: McpClientGuide[] = [
       body: `{
   "mcpServers": {
     "waicomputer": {
-      "url": "${MCP_ENDPOINT_URL}"
+      "url": "${mcpEndpointUrl}"
     }
   }
 }`,
@@ -55,14 +55,14 @@ const CLIENT_GUIDES: McpClientGuide[] = [
     snippet: {
       language: "json",
       body: `# CLI
-claude mcp add --transport http waicomputer ${MCP_ENDPOINT_URL}
+claude mcp add --transport http waicomputer ${mcpEndpointUrl}
 
 # Or .mcp.json:
 {
   "mcpServers": {
     "waicomputer": {
       "type": "http",
-      "url": "${MCP_ENDPOINT_URL}"
+      "url": "${mcpEndpointUrl}"
     }
   }
 }`,
@@ -75,7 +75,7 @@ claude mcp add --transport http waicomputer ${MCP_ENDPOINT_URL}
       "Add the server, then complete the OAuth login from the browser when prompted.",
     snippet: {
       language: "bash",
-      body: `codex mcp add waicomputer --url ${MCP_ENDPOINT_URL}
+      body: `codex mcp add waicomputer --url ${mcpEndpointUrl}
 codex mcp login waicomputer`,
     },
   },
@@ -96,14 +96,15 @@ curl -H "Authorization: Bearer wc_live_…" \\
 # {
 #   "mcpServers": {
 #     "waicomputer": {
-#       "url": "${MCP_ENDPOINT_URL}",
+#       "url": "${mcpEndpointUrl}",
 #       "headers": { "Authorization": "Bearer wc_live_…" }
 #     }
 #   }
 # }`,
     },
   },
-];
+  ];
+}
 
 async function copyText(value: string): Promise<boolean> {
   if (!navigator.clipboard?.writeText) return false;
@@ -118,8 +119,35 @@ async function copyText(value: string): Promise<boolean> {
 export function McpConnectSection() {
   const [selected, setSelected] = useState<McpClient>("claudeai");
   const [copied, setCopied] = useState<"endpoint" | "snippet" | null>(null);
+  const [endpointUrl, setEndpointUrl] = useState<string | null>(null);
+  const [endpointError, setEndpointError] = useState<string | null>(null);
 
-  const guide = CLIENT_GUIDES.find((c) => c.id === selected) ?? CLIENT_GUIDES[0];
+  useEffect(() => {
+    let cancelled = false;
+    void getSystemInfo()
+      .then((info) => {
+        if (!cancelled) {
+          setEndpointUrl(info.mcp_url);
+          setEndpointError(null);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setEndpointUrl(null);
+          setEndpointError("Could not load the MCP endpoint for this server.");
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const guides = useMemo(
+    () => (endpointUrl ? clientGuides(endpointUrl) : clientGuides("")),
+    [endpointUrl],
+  );
+  const guide = guides.find((c) => c.id === selected) ?? guides[0];
+  const snippet = endpointUrl ? guide.snippet : undefined;
 
   async function handleCopy(field: "endpoint" | "snippet", value: string) {
     const ok = await copyText(value);
@@ -140,20 +168,21 @@ export function McpConnectSection() {
 
       <div className="mcp-endpoint-row">
         <code className="mcp-endpoint-url" data-testid="mcp-endpoint-url">
-          {MCP_ENDPOINT_URL}
+          {endpointUrl ?? endpointError ?? "Loading MCP endpoint..."}
         </code>
         <button
           type="button"
           className="ghost-button compact-button"
           data-testid="mcp-copy-endpoint"
-          onClick={() => void handleCopy("endpoint", MCP_ENDPOINT_URL)}
+          disabled={!endpointUrl}
+          onClick={() => (endpointUrl ? void handleCopy("endpoint", endpointUrl) : undefined)}
         >
           {copied === "endpoint" ? "Copied" : "Copy URL"}
         </button>
       </div>
 
       <div className="tab-strip mcp-client-tabs" role="tablist" aria-label="MCP client">
-        {CLIENT_GUIDES.map((client) => (
+        {guides.map((client) => (
           <button
             key={client.id}
             type="button"
@@ -170,16 +199,16 @@ export function McpConnectSection() {
       <div className="mcp-client-guide" data-testid={`mcp-guide-${guide.id}`}>
         <p>{guide.steps}</p>
 
-        {guide.snippet ? (
+        {snippet ? (
           <div className="mcp-snippet">
             <pre>
-              <code className={`language-${guide.snippet.language}`}>{guide.snippet.body}</code>
+              <code className={`language-${snippet.language}`}>{snippet.body}</code>
             </pre>
             <button
               type="button"
               className="ghost-button compact-button"
               data-testid="mcp-copy-snippet"
-              onClick={() => void handleCopy("snippet", guide.snippet!.body)}
+              onClick={() => void handleCopy("snippet", snippet.body)}
             >
               {copied === "snippet" ? "Copied" : "Copy snippet"}
             </button>

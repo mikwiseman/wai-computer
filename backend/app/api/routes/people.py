@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, Response, status
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import func, select, update
 from sqlalchemy.orm import selectinload
@@ -144,12 +144,16 @@ async def update_person(
     return _serialize_person(person, counts.get(person.id, 0))
 
 
-@router.delete("/{person_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete(
+    "/{person_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    response_class=Response,
+)
 async def delete_person(
     person_id: UUID,
     user: CurrentUser,
     db: Database,
-) -> None:
+) -> Response:
     result = await db.execute(
         select(Person).where(Person.id == person_id, Person.user_id == user.id)
     )
@@ -178,18 +182,20 @@ async def delete_person(
             )
     await db.delete(person)
     await db.flush()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.delete(
     "/{person_id}/voiceprints/{voiceprint_id}",
     status_code=status.HTTP_204_NO_CONTENT,
+    response_class=Response,
 )
 async def delete_voiceprint(
     person_id: UUID,
     voiceprint_id: UUID,
     user: CurrentUser,
     db: Database,
-) -> None:
+) -> Response:
     """Drop a single voiceprint sample without removing the Person.
 
     GDPR-relevant: lets a user revoke an individual biometric sample (bad
@@ -227,6 +233,7 @@ async def delete_voiceprint(
             from app.core.voice_sharing import unpublish_voice_sharing
 
             await unpublish_voice_sharing(db=db, user=user)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.post("/{person_id}/merge", response_model=PersonResponse)

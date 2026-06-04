@@ -183,6 +183,16 @@ class TestExecuteAndExpire:
         await ca.mark_executed(db_session, row=row, receipt={"message_id": 999})
         assert row.receipt["message_id"] == 9
 
+    async def test_mark_executed_requires_approved_action(self, db_session, user_conv):
+        uid, cid = user_conv
+        row = await _propose(db_session, uid, cid)
+
+        with pytest.raises(ApprovalError) as exc:
+            await ca.mark_executed(db_session, row=row, receipt={"message_id": 9})
+
+        assert exc.value.code == "not_approved"
+        assert row.status == "pending"
+
     async def test_expire_due_actions_sweep(self, db_session, user_conv):
         uid, cid = user_conv
         old = await _propose(db_session, uid, cid, ttl_seconds=10)

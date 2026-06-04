@@ -319,6 +319,15 @@ async def test_recover_stale_agent_runs_dispatches_old_rows_once(db_session, mon
         created_at=datetime.now(timezone.utc)
         - timedelta(seconds=agent_tasks.STALE_AFTER_SECONDS + 20),
     )
+    stale_planning_without_heartbeat = AgentRun(
+        agent_id=agent.id,
+        user_id=user.id,
+        trigger_key=f"manual:{uuid4()}",
+        trigger_kind="manual",
+        status="planning",
+        created_at=datetime.now(timezone.utc)
+        - timedelta(seconds=agent_tasks.STALE_AFTER_SECONDS + 30),
+    )
     fresh = AgentRun(
         agent_id=agent.id,
         user_id=user.id,
@@ -335,7 +344,9 @@ async def test_recover_stale_agent_runs_dispatches_old_rows_once(db_session, mon
         status="pending",
         created_at=datetime.now(timezone.utc),
     )
-    db_session.add_all([stale, old_pending, fresh, fresh_pending])
+    db_session.add_all(
+        [stale, old_pending, stale_planning_without_heartbeat, fresh, fresh_pending]
+    )
     await db_session.flush()
 
     @asynccontextmanager
@@ -346,12 +357,18 @@ async def test_recover_stale_agent_runs_dispatches_old_rows_once(db_session, mon
     monkeypatch.setattr(agent_tasks, "get_db_context", fake_db_context)
     monkeypatch.setattr(agent_tasks.run, "delay", lambda run_id: dispatched.append(run_id))
 
-    assert await agent_tasks._recover_stale_agent_runs_async(limit=10) == 2
-    assert set(dispatched) == {str(stale.id), str(old_pending.id)}
+    assert await agent_tasks._recover_stale_agent_runs_async(limit=10) == 3
+    assert set(dispatched) == {
+        str(stale.id),
+        str(old_pending.id),
+        str(stale_planning_without_heartbeat.id),
+    }
     await db_session.refresh(stale)
     await db_session.refresh(old_pending)
+    await db_session.refresh(stale_planning_without_heartbeat)
     assert stale.heartbeat_at is not None
     assert old_pending.heartbeat_at is not None
+    assert stale_planning_without_heartbeat.heartbeat_at is not None
 
     dispatched.clear()
     assert await agent_tasks._recover_stale_agent_runs_async(limit=10) == 0

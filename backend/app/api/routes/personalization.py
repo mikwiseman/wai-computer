@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
-from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile, status
+from fastapi import APIRouter, File, Form, HTTPException, Query, Response, UploadFile, status
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -227,16 +227,18 @@ async def update_personalization_term(
 @router.delete(
     "/terms/{term_id}",
     status_code=status.HTTP_204_NO_CONTENT,
+    response_class=Response,
     response_model=None,
 )
 async def delete_personalization_term(
     term_id: UUID,
     user: CurrentUser,
     db: Database,
-) -> None:
+) -> Response:
     term = await _load_term(term_id, user.id, db)
     await db.delete(term)
     await db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.post(

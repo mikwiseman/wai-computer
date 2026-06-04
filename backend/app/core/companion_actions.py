@@ -257,6 +257,8 @@ async def mark_executed(
         return row
     if row.status in {_FAILED, _REJECTED, _EXPIRED}:
         raise ApprovalError("already_resolved", f"Action already {row.status}")
+    if row.status != _APPROVED:
+        raise ApprovalError("not_approved", f"Action is {row.status}, not approved")
     row.status = _EXECUTED
     row.receipt = receipt
     await db.flush()

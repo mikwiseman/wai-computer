@@ -324,6 +324,43 @@ async def test_agent_config_validation_rejects_unknown_tools(client, auth_header
     assert "Unknown agent tool" in response.text
 
 
+async def test_agent_config_validation_rejects_inert_cron_schedule(
+    client, auth_headers
+):
+    missing_interval = await client.post(
+        "/api/agents",
+        headers=auth_headers,
+        json={
+            "name": "Bad cron",
+            "kind": "daily",
+            "trigger_type": "cron",
+            "config": {"steps": [{"tool": "note", "args": {"text": "tick"}}]},
+        },
+    )
+    assert missing_interval.status_code == 422
+    assert "interval_minutes" in missing_interval.text
+
+    created = await client.post(
+        "/api/agents",
+        headers=auth_headers,
+        json={
+            "name": "Manual",
+            "kind": "daily",
+            "trigger_type": "manual",
+            "config": {"steps": [{"tool": "note", "args": {"text": "tick"}}]},
+        },
+    )
+    assert created.status_code == 201, created.text
+
+    inert_update = await client.patch(
+        f"/api/agents/{created.json()['id']}",
+        headers=auth_headers,
+        json={"trigger_type": "cron"},
+    )
+    assert inert_update.status_code == 422
+    assert "interval_minutes" in inert_update.text
+
+
 async def test_agent_action_reject_resumes_run_as_failed(client, auth_headers):
     created = await client.post(
         "/api/agents",
@@ -574,6 +611,7 @@ async def test_aggregate_agent_actions_and_telegram_approval_execute(
     aggregate = await client.get("/api/agents/actions", headers=auth_headers)
     assert aggregate.status_code == 200, aggregate.text
     action = aggregate.json()["actions"][0]
+    assert action["agent_id"] == agent_id
     assert action["run_id"] == run_id
     assert action["status"] == "pending"
     assert action["preview"] == "Send Telegram message to your linked chat: hello from agent"
@@ -599,7 +637,7 @@ async def test_aggregate_agent_actions_and_telegram_approval_execute(
 
 
 async def test_agent_approval_surfaces_actuation_error(
-    client, auth_headers
+    client, auth_headers, db_session
 ):
     created = await client.post(
         "/api/agents",
@@ -647,6 +685,19 @@ async def test_agent_approval_surfaces_actuation_error(
     assert resolved.status_code == 400
     assert resolved.headers["x-agent-run-status"] == "failed"
     assert resolved.json()["detail"] == "No linked Telegram account for this user"
+    row = (
+        await db_session.execute(
+            select(CompanionPendingAction).where(
+                CompanionPendingAction.id == UUID(action_id)
+            )
+        )
+    ).scalar_one()
+    run = (
+        await db_session.execute(select(AgentRun).where(AgentRun.id == UUID(run_id)))
+    ).scalar_one()
+    assert row.status == "failed"
+    assert row.receipt == {"error": "No linked Telegram account for this user"}
+    assert run.status == "failed"
 
 
 async def test_desktop_action_dispatch_and_result_resume_run(
@@ -871,6 +922,8 @@ async def test_agent_action_resolve_surfaces_expired_approval(
 
     assert resolved.status_code == 410
     assert resolved.json()["detail"] == "Approval window elapsed (timeout == deny)"
+    await db_session.refresh(row)
+    assert row.status == "expired"
 
 
 async def test_desktop_action_failed_result_is_idempotent(

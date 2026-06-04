@@ -7,6 +7,7 @@ import pytest
 import app.core.summarizer as summarizer_module
 from app.core.summarizer import (
     EntityResult,
+    KeyMoment,
     SummarizationError,
     SummaryResult,
     _ActionItem,
@@ -18,6 +19,11 @@ from app.core.summarizer import (
     _SummarySchema,
     build_summary_prompt,
     extract_entities,
+    extract_key_moments,
+    generate_title,
+    resolve_highlight_timestamps,
+    resolve_key_moment_timestamps,
+    summarize_content,
     summarize_transcript,
 )
 
@@ -71,9 +77,40 @@ def _entity_schema_payload() -> _EntityExtractionSchema:
     )
 
 
+def _key_moments_payload():
+    return summarizer_module._KeyMomentsSchema(
+        moments=[
+            summarizer_module._KeyMoment(
+                timestamp="00:10",
+                moment="Alice approved the launch plan",
+                why_it_matters="The release is unblocked.",
+                quote="approved the launch",
+                importance="high",
+            ),
+            summarizer_module._KeyMoment(
+                timestamp=None,
+                moment="Budget needs a second review",
+                why_it_matters="Finance follow-up is required.",
+                quote=None,
+                importance="medium",
+            ),
+        ]
+    )
+
+
 def _parsed_response(parsed) -> MagicMock:
     response = MagicMock()
     response.output_parsed = parsed
+    response.status = "completed"
+    response.error = None
+    response.incomplete_details = None
+    response.output = []
+    return response
+
+
+def _text_response(text: str) -> MagicMock:
+    response = MagicMock()
+    response.output_text = text
     response.status = "completed"
     response.error = None
     response.incomplete_details = None
@@ -240,6 +277,153 @@ class TestBuildSummaryPrompt:
         assert "4-6 sentence" in prompt
         assert "Be formal" in prompt
         assert "Transcript:" in prompt
+
+
+class TestContentSummariesAndMoments:
+    def test_content_summary_prompt_variants(self):
+        prompt = summarizer_module.build_content_summary_prompt(
+            content_kind="article",
+            language="ru",
+            style="detailed",
+            instructions="Keep project names exact",
+        )
+
+        assert "content is a article" in prompt
+        assert "4-6 sentence" in prompt
+        assert "ru" in prompt
+        assert "Keep project names exact" in prompt
+
+        default_prompt = summarizer_module.build_content_summary_prompt(
+            content_kind="content",
+            language="auto",
+            style="unknown-style",
+        )
+        assert "dominant language of the content" in default_prompt
+        assert "2-3 sentence" in default_prompt
+
+    async def test_summarize_content_returns_structured_result(self):
+        mock_response = _parsed_response(_summary_schema_payload(title="Saved Article"))
+        mock_client = MagicMock()
+        mock_client.responses.parse = AsyncMock(return_value=mock_response)
+
+        with patch("app.core.summarizer.get_openai_client", return_value=mock_client):
+            result = await summarize_content(
+                "Article body",
+                content_kind="article",
+                language="en",
+                style="brief",
+                instructions="No fluff",
+            )
+
+        assert result.title == "Saved Article"
+        assert result.highlights[0]["title"] == "Approved hiring plan"
+        kwargs = mock_client.responses.parse.await_args.kwargs
+        assert kwargs["text_format"] is _SummarySchema
+        assert "Article body" in kwargs["input"]
+        assert "No fluff" in kwargs["input"]
+
+    async def test_summarize_content_errors_are_explicit(self):
+        with patch.object(summarizer_module.settings, "openai_api_key", ""):
+            with pytest.raises(ValueError, match="OPENAI_API_KEY not configured"):
+                await summarize_content("body")
+
+        mock_client = MagicMock()
+        mock_client.responses.parse = AsyncMock(side_effect=Exception("upstream"))
+        with patch("app.core.summarizer.get_openai_client", return_value=mock_client):
+            with pytest.raises(SummarizationError, match="Content summarization failed"):
+                await summarize_content("body")
+
+        mock_client.responses.parse = AsyncMock(return_value=_parsed_response(None))
+        with patch("app.core.summarizer.get_openai_client", return_value=mock_client):
+            with pytest.raises(SummarizationError, match="no parsed summary"):
+                await summarize_content("body")
+
+    async def test_extract_key_moments_returns_rows_and_builds_language_prompt(self):
+        mock_response = _parsed_response(_key_moments_payload())
+        mock_client = MagicMock()
+        mock_client.responses.parse = AsyncMock(return_value=mock_response)
+
+        with patch("app.core.summarizer.get_openai_client", return_value=mock_client):
+            result = await extract_key_moments("Transcript", language="ru")
+
+        assert [moment.importance for moment in result] == ["high", "medium"]
+        assert result[0].quote == "approved the launch"
+        kwargs = mock_client.responses.parse.await_args.kwargs
+        assert kwargs["text_format"] is summarizer_module._KeyMomentsSchema
+        assert "Write all text in ru" in kwargs["input"]
+
+    async def test_extract_key_moments_errors_are_explicit(self):
+        with patch.object(summarizer_module.settings, "openai_api_key", ""):
+            with pytest.raises(ValueError, match="OPENAI_API_KEY not configured"):
+                await extract_key_moments("body")
+
+        mock_client = MagicMock()
+        mock_client.responses.parse = AsyncMock(side_effect=Exception("upstream"))
+        with patch("app.core.summarizer.get_openai_client", return_value=mock_client):
+            with pytest.raises(SummarizationError, match="Key moments extraction failed"):
+                await extract_key_moments("body")
+
+        mock_client.responses.parse = AsyncMock(return_value=_parsed_response(None))
+        with patch("app.core.summarizer.get_openai_client", return_value=mock_client):
+            with pytest.raises(SummarizationError, match="no parsed key-moments"):
+                await extract_key_moments("body")
+
+    async def test_generate_title_uses_response_text_and_wraps_incomplete_response(self):
+        mock_client = MagicMock()
+        mock_client.responses.create = AsyncMock(return_value=_text_response("Roadmap Sync"))
+
+        with patch("app.core.summarizer.get_openai_client", return_value=mock_client):
+            title = await generate_title("Transcript body", language="multi")
+
+        assert title == "Roadmap Sync"
+        kwargs = mock_client.responses.create.await_args.kwargs
+        assert "dominant language of the transcript" in kwargs["input"]
+
+        with patch.object(summarizer_module.settings, "openai_api_key", ""):
+            with pytest.raises(ValueError, match="OPENAI_API_KEY not configured"):
+                await generate_title("Transcript")
+
+        failed = _text_response("ignored")
+        failed.status = "incomplete"
+        failed.incomplete_details = {"reason": "max_output_tokens"}
+        mock_client.responses.create = AsyncMock(return_value=failed)
+        with patch("app.core.summarizer.get_openai_client", return_value=mock_client):
+            with pytest.raises(SummarizationError, match="Title generation failed"):
+                await generate_title("Transcript", language="ru")
+
+    def test_timestamp_resolvers_match_words_without_mutating_when_empty(self):
+        moments = [
+            KeyMoment(
+                timestamp=None,
+                moment="Alice approved launch",
+                why_it_matters="Release can proceed",
+                quote="approved launch",
+                importance="high",
+            )
+        ]
+        assert resolve_key_moment_timestamps(moments, []) is moments
+        resolved = resolve_key_moment_timestamps(
+            moments,
+            [
+                {"content": "Budget discussion only", "start_ms": 0, "end_ms": 1_000},
+                {
+                    "content": "Alice approved launch yesterday",
+                    "start_ms": 2_000,
+                    "end_ms": 3_000,
+                },
+            ],
+        )
+        assert resolved[0].start_ms == 2_000
+        assert resolved[0].end_ms == 3_000
+
+        highlights = [{"title": "Budget", "description": "No matching words"}]
+        assert resolve_highlight_timestamps(highlights, []) is highlights
+        matched = resolve_highlight_timestamps(
+            [{"title": "Launch approved", "description": "Alice said yes"}],
+            [{"content": "Alice said the launch was approved", "start_ms": 4_000, "end_ms": 5_000}],
+        )
+        assert matched[0]["start_ms"] == 4_000
+        assert matched[0]["end_ms"] == 5_000
 
 
 class TestExtractEntities:

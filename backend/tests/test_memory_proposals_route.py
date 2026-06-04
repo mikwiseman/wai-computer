@@ -15,7 +15,8 @@ async def _authed_user_id(client, auth_headers) -> uuid.UUID:
 async def _seed_pending(db, user_id, content="Curated bio."):
     outcome = await gov.propose_block_update(
         db, user_id, block_label="human", operation="rewrite",
-        content=content, confidence=0.99,  # high risk → queued
+        content=content, confidence=0.99,  # high risk -> queued
+        evidence=[{"source_kind": "item", "source_id": "item-1"}],
     )
     return outcome.proposal
 
@@ -49,6 +50,9 @@ async def test_list_returns_pending_and_count(client, auth_headers, db_session) 
     assert data["pending_count"] == 1
     assert data["proposals"][0]["status"] == "pending"
     assert data["proposals"][0]["risk"] == "high"
+    assert data["proposals"][0]["evidence"] == [
+        {"source_kind": "item", "source_id": "item-1"}
+    ]
 
 
 async def test_list_all_status(client, auth_headers, db_session) -> None:

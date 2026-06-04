@@ -33,7 +33,14 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.companion_actions import expire_actions_for_run, propose_action
+from app.core.agent_capabilities import (
+    ACTION_TOOL_NAMES,
+    DESKTOP_ACTION_TOOL_NAMES,
+    MAX_AGENT_SEARCH_LIMIT,
+    MAX_AGENT_STEPS,
+    validate_agent_config,
+)
+from app.core.companion_actions import DEFAULT_TTL_SECONDS, expire_actions_for_run, propose_action
 from app.core.memory_proposal import propose_block_update
 from app.core.unified_search import unified_search
 from app.models.agent import Agent, AgentRun, AgentStep
@@ -185,6 +192,11 @@ def _plan_steps(plan: dict[str, Any]) -> list[dict[str, Any]]:
         return []
     if not isinstance(steps, list):
         raise AgentRuntimeError("invalid_plan", "plan.steps must be an array")
+    if len(steps) > MAX_AGENT_STEPS:
+        raise AgentRuntimeError(
+            "invalid_plan",
+            f"plan.steps cannot exceed {MAX_AGENT_STEPS} steps",
+        )
     return steps
 
 
@@ -203,6 +215,10 @@ async def static_config_planner(agent: Agent, run: AgentRun) -> AgentPlan:
     tests. A future LLM planner can be swapped in without changing the journal,
     approval, or execution safety boundary.
     """
+    try:
+        validate_agent_config(agent.config or {})
+    except ValueError as exc:
+        raise AgentRuntimeError("invalid_agent_config", str(exc)) from exc
     steps = (agent.config or {}).get("steps")
     if not isinstance(steps, list):
         raise AgentRuntimeError(
@@ -408,7 +424,18 @@ async def execute_agent_step(
         query = str(args.get("query") or "").strip()
         if not query:
             raise AgentRuntimeError("invalid_tool_args", "search_wai.query is required")
-        limit = int(args.get("limit") or 10)
+        raw_limit = args.get("limit", 10)
+        if (
+            not isinstance(raw_limit, int)
+            or isinstance(raw_limit, bool)
+            or raw_limit < 1
+            or raw_limit > MAX_AGENT_SEARCH_LIMIT
+        ):
+            raise AgentRuntimeError(
+                "invalid_tool_args",
+                f"search_wai.limit must be 1..{MAX_AGENT_SEARCH_LIMIT}",
+            )
+        limit = raw_limit
         hits = await unified_search(session, run.user_id, query, limit=limit)
         return AgentStepResult(
             status="done",
@@ -469,9 +496,16 @@ async def execute_agent_step(
         tool_name = str(args.get("tool_name") or "").strip()
         action_args = args.get("action_args") or {}
         preview = str(args.get("preview") or "").strip()
-        kind = str(args.get("kind") or "mutate").strip()
         if not tool_name:
             raise AgentRuntimeError("invalid_tool_args", "propose_action.tool_name is required")
+        if tool_name not in ACTION_TOOL_NAMES:
+            raise AgentRuntimeError(
+                "invalid_tool_args", f"Unsupported action tool: {tool_name}"
+            )
+        kind = str(
+            args.get("kind")
+            or ("desktop_action" if tool_name in DESKTOP_ACTION_TOOL_NAMES else "mutate")
+        ).strip()
         if not isinstance(action_args, dict):
             raise AgentRuntimeError(
                 "invalid_tool_args",
@@ -480,10 +514,23 @@ async def execute_agent_step(
         if not preview:
             raise AgentRuntimeError("invalid_tool_args", "propose_action.preview is required")
         device_target = args.get("device_target")
-        if tool_name.startswith("desktop_") and not device_target:
+        if tool_name in DESKTOP_ACTION_TOOL_NAMES:
+            kind = "desktop_action"
+        if tool_name in DESKTOP_ACTION_TOOL_NAMES and not device_target:
             raise AgentRuntimeError(
                 "invalid_tool_args",
                 "propose_action.device_target is required for desktop actions",
+            )
+        raw_ttl_seconds = args.get("ttl_seconds", DEFAULT_TTL_SECONDS)
+        if (
+            not isinstance(raw_ttl_seconds, int)
+            or isinstance(raw_ttl_seconds, bool)
+            or raw_ttl_seconds < 1
+            or raw_ttl_seconds > DEFAULT_TTL_SECONDS
+        ):
+            raise AgentRuntimeError(
+                "invalid_tool_args",
+                f"propose_action.ttl_seconds must be 1..{DEFAULT_TTL_SECONDS}",
             )
         row = await propose_action(
             session,
@@ -498,7 +545,7 @@ async def execute_agent_step(
             idempotency_key=idempotency_key,
             recipient_display=args.get("recipient_display"),
             device_target=device_target,
-            ttl_seconds=int(args.get("ttl_seconds") or 300),
+            ttl_seconds=raw_ttl_seconds,
         )
         return AgentStepResult(
             status="awaiting_approval",
@@ -558,6 +605,11 @@ async def run_job(
         return run
 
     agent = await _load_agent(session, run.agent_id)
+    if agent.user_id != run.user_id:
+        raise AgentRuntimeError(
+            "agent_run_user_mismatch",
+            "Agent run user_id does not match its agent owner",
+        )
     run.error = None
 
     if run.cancel_requested_at is not None:

@@ -786,13 +786,13 @@ final class DictationManager: ObservableObject {
         setState(.processing)
         instrumentationSession?.event(.finalizingStarted, data: ["durationMs": Int(dictationDuration * 1000)])
 
-        // Start cleanup against the live transcript while the audio tail and
-        // provider close drain complete; reuse it when final text matches.
-        let speculativeCleanup = startSpeculativeCleanupIfPossible()
-
         // Drain the active provider before choosing the best final transcript.
         await finishProviderAudioPumpBeforeFinalizing()
         guard shouldContinueFinalization() else { return }
+
+        // Start cleanup only after the audio tail is drained so finalization
+        // does not spend on a speculative cleanup call before final text exists.
+        let speculativeCleanup = startSpeculativeCleanupIfPossible()
         let providerSegments = (try? await providerSession?.close(timeout: .seconds(4))) ?? []
 
         // If cancelDictation ran during finalization, bail out cleanly.

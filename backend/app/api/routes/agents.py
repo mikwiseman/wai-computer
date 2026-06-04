@@ -172,6 +172,7 @@ class AgentStepListResponse(BaseModel):
 
 class AgentActionResponse(BaseModel):
     id: str
+    agent_id: str | None
     run_id: str | None
     step_idx: int | None
     kind: str
@@ -264,10 +265,13 @@ def _step_response(step: AgentStep) -> AgentStepResponse:
     )
 
 
-def _action_response(row: CompanionPendingAction) -> AgentActionResponse:
+def _action_response(
+    row: CompanionPendingAction, *, agent_id: UUID | None = None
+) -> AgentActionResponse:
     manifest = row.action_manifest or {}
     return AgentActionResponse(
         id=str(row.id),
+        agent_id=str(agent_id) if agent_id else None,
         run_id=str(row.agent_run_id) if row.agent_run_id else None,
         step_idx=row.agent_step_idx,
         kind=row.kind,
@@ -289,6 +293,24 @@ def _validate_config_or_422(config: dict[str, Any]) -> None:
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=str(exc),
         ) from exc
+
+
+def _validate_schedule_or_422(trigger_type: str, config: dict[str, Any]) -> None:
+    if trigger_type != "cron":
+        return
+    interval = config.get("interval_minutes")
+    if isinstance(interval, bool):
+        minutes = None
+    else:
+        try:
+            minutes = int(interval)
+        except (TypeError, ValueError):
+            minutes = None
+    if minutes is None or minutes < 1:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Cron agents require config.interval_minutes >= 1",
+        )
 
 
 def _now() -> datetime:
@@ -410,6 +432,7 @@ async def create_agent(
     db: Database,
 ) -> AgentResponse:
     _validate_config_or_422(request.config)
+    _validate_schedule_or_422(request.trigger_type, request.config)
     agent = Agent(
         user_id=user.id,
         name=request.name,
@@ -470,15 +493,25 @@ async def list_user_agent_actions(
     status_filter: str | None = Query(default="pending", alias="status", max_length=40),
     limit: int = Query(50, ge=1, le=200),
 ) -> AgentActionListResponse:
-    stmt = select(CompanionPendingAction).where(
-        CompanionPendingAction.user_id == user.id,
-        CompanionPendingAction.agent_run_id.is_not(None),
+    stmt = (
+        select(CompanionPendingAction, AgentRun.agent_id)
+        .join(AgentRun, AgentRun.id == CompanionPendingAction.agent_run_id)
+        .where(
+            CompanionPendingAction.user_id == user.id,
+            AgentRun.user_id == user.id,
+            CompanionPendingAction.agent_run_id.is_not(None),
+        )
     )
     if status_filter:
         stmt = stmt.where(CompanionPendingAction.status == status_filter)
-    result = await db.execute(stmt.order_by(CompanionPendingAction.created_at).limit(limit))
+    result = await db.execute(
+        stmt.order_by(CompanionPendingAction.created_at).limit(limit)
+    )
     return AgentActionListResponse(
-        actions=[_action_response(row) for row in result.scalars().all()]
+        actions=[
+            _action_response(row, agent_id=agent_id)
+            for row, agent_id in result.all()
+        ]
     )
 
 
@@ -502,6 +535,9 @@ async def update_agent(
     data = request.model_dump(exclude_unset=True)
     if "config" in data and data["config"] is not None:
         _validate_config_or_422(data["config"])
+    next_trigger_type = data.get("trigger_type", agent.trigger_type)
+    next_config = data.get("config", agent.config or {})
+    _validate_schedule_or_422(next_trigger_type, next_config)
     for field, value in data.items():
         setattr(agent, field, value)
     await db.flush()
@@ -712,7 +748,10 @@ async def list_agent_run_actions(
         .order_by(CompanionPendingAction.created_at)
     )
     return AgentActionListResponse(
-        actions=[_action_response(row) for row in result.scalars().all()]
+        actions=[
+            _action_response(row, agent_id=agent_id)
+            for row in result.scalars().all()
+        ]
     )
 
 
@@ -749,6 +788,8 @@ async def resolve_agent_action(
             edited_args=request.edited_args,
         )
     except ApprovalError as exc:
+        if exc.code == "expired":
+            await db.commit()
         raise HTTPException(
             status_code=_APPROVAL_HTTP_STATUS.get(
                 exc.code, status.HTTP_400_BAD_REQUEST
@@ -784,6 +825,7 @@ async def resolve_agent_action(
     except (ApprovalError, ActuationError) as exc:
         await mark_failed(db, row=row, detail=exc.message)
         run = await _resume_after_action(db, run)
+        await db.commit()
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=exc.message,

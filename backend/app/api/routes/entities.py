@@ -5,7 +5,7 @@ from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, HTTPException, Query, Response, status
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
@@ -248,12 +248,16 @@ async def create_entity(
     )
 
 
-@router.delete("/{entity_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete(
+    "/{entity_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    response_class=Response,
+)
 async def delete_entity(
     entity_id: UUID,
     user: CurrentUser,
     db: Database,
-) -> None:
+) -> Response:
     """Delete an entity."""
     result = await db.execute(
         select(Entity).where(Entity.id == entity_id, Entity.user_id == user.id)
@@ -267,3 +271,4 @@ async def delete_entity(
         )
 
     await db.delete(entity)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

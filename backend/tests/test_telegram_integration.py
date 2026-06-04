@@ -33,11 +33,12 @@ from app.core.telegram_client import (
     telegram_chunks,
 )
 from app.core.transcript_utils import TranscriptResult
+from app.core.unified_search import UnifiedHit
 from app.models.agent import Agent, AgentRun
 from app.models.billing import UsageWeek
 from app.models.companion import Conversation
 from app.models.companion_pending_action import CompanionPendingAction
-from app.models.item import Item, ItemSummary
+from app.models.item import Item, ItemChunk, ItemSummary
 from app.models.recording import ActionItem, Highlight, Recording, RecordingStatus, Segment, Summary
 from app.models.telegram import (
     TelegramAccount,
@@ -504,10 +505,22 @@ def test_telegram_command_and_formatting_helpers_cover_edge_branches():
     assert "1:01" in recordings
 
     search_results = telegram_routes._format_search_results(
-        [{"title": "Roadmap", "text": "Launch plan", "metadata": {}, "url": ""}],
+        [
+            UnifiedHit(
+                source_kind="item",
+                parent_id=str(uuid4()),
+                chunk_id=str(uuid4()),
+                title="Roadmap",
+                kind="note",
+                snippet="Launch plan",
+                score=1.0,
+                created_at=None,
+            )
+        ],
         query="launch",
     )
     assert "Roadmap" in search_results
+    assert "материал" in search_results
     assert "Launch plan" in search_results
 
 
@@ -673,6 +686,25 @@ async def test_handle_update_routes_help_meetings_and_natural_search(
     db_session.add_all([meeting, note, deleted_meeting, other_meeting])
     await db_session.flush()
     db_session.add(Segment(recording_id=meeting.id, content="Дорожная карта и запуск", start_ms=0))
+    item = Item(
+        user_id=user.id,
+        source="paste",
+        kind="note",
+        title="Launch memo",
+        body="Материал про запуск Product Radar",
+        content_hash="a" * 64,
+        embedding=[0.02] * 1536,
+    )
+    db_session.add(item)
+    await db_session.flush()
+    db_session.add(
+        ItemChunk(
+            item_id=item.id,
+            seq=0,
+            content="Материал про запуск Product Radar",
+            embedding=[0.02] * 1536,
+        )
+    )
     for update_id in (201, 202, 203, 204):
         db_session.add(
             TelegramUpdate(
@@ -690,6 +722,10 @@ async def test_handle_update_routes_help_meetings_and_natural_search(
 
     monkeypatch.setattr(telegram_routes, "TelegramBotClient", lambda: capture)
     monkeypatch.setattr(telegram_routes, "get_db_context", fake_db_context)
+    monkeypatch.setattr(
+        "app.core.unified_search.generate_embedding",
+        AsyncMock(return_value=[0.02] * 1536),
+    )
 
     async def send_text(update_id: int, text: str) -> None:
         await telegram_routes._handle_update(
@@ -716,6 +752,7 @@ async def test_handle_update_routes_help_meetings_and_natural_search(
     assert "Deleted meeting" not in capture.messages[1]["text"]
     assert "Roadmap Sync" in capture.messages[2]["text"]
     assert "запуск" in capture.messages[3]["text"]
+    assert "Launch memo" in capture.messages[3]["text"]
     assert (await db_session.get(TelegramUpdate, 204)).status == "completed"
 
 

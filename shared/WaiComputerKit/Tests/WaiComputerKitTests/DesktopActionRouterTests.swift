@@ -41,6 +41,14 @@ final class DesktopActionRouterTests: XCTestCase {
         XCTAssertTrue(plan.isRefusal)
     }
 
+    func testOpenFileURLRefusedByDefault() {
+        let plan = router.plan(
+            tool: "desktop_open",
+            args: ["target": .string("file:///Users/mik/private.txt")]
+        )
+        XCTAssertTrue(plan.isRefusal)
+    }
+
     func testOpenMissingTargetRefused() {
         XCTAssertTrue(router.plan(tool: "desktop_open", args: [:]).isRefusal)
         XCTAssertTrue(

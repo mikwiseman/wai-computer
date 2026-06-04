@@ -24,7 +24,7 @@ from typing import Any
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile, status
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
@@ -621,12 +621,16 @@ async def reprocess_item(
     return _item_response(item, summary)
 
 
-@router.delete("/{item_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete(
+    "/{item_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    response_class=Response,
+)
 async def delete_item(
     item_id: UUID,
     user: CurrentUser,
     db: Database,
-) -> None:
+) -> Response:
     """Soft-delete an item."""
     from datetime import datetime, timezone
 
@@ -638,6 +642,7 @@ async def delete_item(
     if item is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Item not found"
-        )
+    )
     item.deleted_at = datetime.now(timezone.utc)
     await db.flush()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

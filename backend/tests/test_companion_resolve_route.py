@@ -139,3 +139,156 @@ async def test_resolve_rejects_same_user_action_from_different_chat(
     assert r.status_code == 404, r.text
     await db_session.refresh(row)
     assert row.status == "pending"
+
+
+async def test_desktop_result_requires_target_device_and_is_idempotent(
+    client, auth_headers, db_session
+):
+    uid = await _user_id(client, auth_headers)
+    conv_id = await _new_conv(db_session, uid)
+    heartbeat = await client.post(
+        "/api/devices/heartbeat",
+        json={"platform": "macos", "name": "Companion Mac"},
+        headers=auth_headers,
+    )
+    assert heartbeat.status_code == 200, heartbeat.text
+    device_id = heartbeat.json()["device_id"]
+    row = await propose_action(
+        db_session,
+        user_id=uid,
+        conversation_id=conv_id,
+        kind="desktop_action",
+        tool_name="desktop_open",
+        args={"target": "https://wai.computer"},
+        preview="Open WaiComputer",
+        idempotency_key=f"desktop:{uuid4().hex}",
+        device_target=device_id,
+    )
+    await db_session.flush()
+
+    missing_action = await client.post(
+        f"/api/companion/chats/{conv_id}/actions/{uuid4()}/desktop_result",
+        json={"device_id": device_id, "status": "executed"},
+        headers=auth_headers,
+    )
+    assert missing_action.status_code == 404
+
+    missing_device = await client.post(
+        f"/api/companion/chats/{conv_id}/actions/{row.id}/desktop_result",
+        json={"device_id": str(uuid4()), "status": "executed"},
+        headers=auth_headers,
+    )
+    assert missing_device.status_code == 404
+
+    row.device_target = None
+    await db_session.flush()
+    untargeted = await client.post(
+        f"/api/companion/chats/{conv_id}/actions/{row.id}/desktop_result",
+        json={"device_id": device_id, "status": "executed"},
+        headers=auth_headers,
+    )
+    assert untargeted.status_code == 409
+    row.device_target = device_id
+    await db_session.flush()
+
+    other_heartbeat = await client.post(
+        "/api/devices/heartbeat",
+        json={"platform": "macos", "name": "Other Companion Mac"},
+        headers=auth_headers,
+    )
+    assert other_heartbeat.status_code == 200, other_heartbeat.text
+    wrong_device = await client.post(
+        f"/api/companion/chats/{conv_id}/actions/{row.id}/desktop_result",
+        json={"device_id": other_heartbeat.json()["device_id"], "status": "executed"},
+        headers=auth_headers,
+    )
+    assert wrong_device.status_code == 409
+
+    premature = await client.post(
+        f"/api/companion/chats/{conv_id}/actions/{row.id}/desktop_result",
+        json={"device_id": device_id, "status": "executed"},
+        headers=auth_headers,
+    )
+    assert premature.status_code == 409
+
+    approved = await client.post(
+        f"/api/companion/chats/{conv_id}/actions/{row.id}/resolve",
+        json={"decision": "once"},
+        headers=auth_headers,
+    )
+    assert approved.status_code == 200, approved.text
+    assert approved.json()["status"] == "dispatched"
+
+    executed = await client.post(
+        f"/api/companion/chats/{conv_id}/actions/{row.id}/desktop_result",
+        json={
+            "device_id": device_id,
+            "status": "executed",
+            "payload": {"event_id": "companion-mac-ok"},
+        },
+        headers=auth_headers,
+    )
+    assert executed.status_code == 200, executed.text
+    assert executed.json()["status"] == "executed"
+
+    duplicate = await client.post(
+        f"/api/companion/chats/{conv_id}/actions/{row.id}/desktop_result",
+        json={"device_id": device_id, "status": "executed"},
+        headers=auth_headers,
+    )
+    assert duplicate.status_code == 200, duplicate.text
+
+    conflicting_duplicate = await client.post(
+        f"/api/companion/chats/{conv_id}/actions/{row.id}/desktop_result",
+        json={"device_id": device_id, "status": "failed"},
+        headers=auth_headers,
+    )
+    assert conflicting_duplicate.status_code == 409
+
+
+async def test_failed_desktop_result_duplicate_is_idempotent(
+    client, auth_headers, db_session
+):
+    uid = await _user_id(client, auth_headers)
+    conv_id = await _new_conv(db_session, uid)
+    heartbeat = await client.post(
+        "/api/devices/heartbeat",
+        json={"platform": "macos", "name": "Failing Companion Mac"},
+        headers=auth_headers,
+    )
+    assert heartbeat.status_code == 200, heartbeat.text
+    device_id = heartbeat.json()["device_id"]
+    row = await propose_action(
+        db_session,
+        user_id=uid,
+        conversation_id=conv_id,
+        kind="desktop_action",
+        tool_name="desktop_open",
+        args={"target": "https://wai.computer"},
+        preview="Open WaiComputer",
+        idempotency_key=f"desktop:{uuid4().hex}",
+        device_target=device_id,
+    )
+    await db_session.flush()
+    approved = await client.post(
+        f"/api/companion/chats/{conv_id}/actions/{row.id}/resolve",
+        json={"decision": "once"},
+        headers=auth_headers,
+    )
+    assert approved.status_code == 200, approved.text
+
+    failed = await client.post(
+        f"/api/companion/chats/{conv_id}/actions/{row.id}/desktop_result",
+        json={"device_id": device_id, "status": "failed"},
+        headers=auth_headers,
+    )
+    assert failed.status_code == 200, failed.text
+    assert failed.json()["status"] == "failed"
+
+    duplicate_failure = await client.post(
+        f"/api/companion/chats/{conv_id}/actions/{row.id}/desktop_result",
+        json={"device_id": device_id, "status": "refused"},
+        headers=auth_headers,
+    )
+    assert duplicate_failure.status_code == 200, duplicate_failure.text
+    assert duplicate_failure.json()["status"] == "failed"

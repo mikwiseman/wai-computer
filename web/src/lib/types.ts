@@ -207,6 +207,7 @@ export interface AgentStepListResponse {
 
 export interface AgentAction {
   id: string;
+  agent_id: string | null;
   run_id: string | null;
   step_idx: number | null;
   kind: string;
