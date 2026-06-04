@@ -463,7 +463,8 @@ public struct CompanionView: View {
                     startMs: nil
                 )
             },
-            formattedCitation: formattedCitation
+            formattedCitation: formattedCitation,
+            renderMarkdown: !isUser
         )
     }
 
@@ -502,6 +503,23 @@ public struct CompanionView: View {
         let accentColor: Color
         let citations: [CitationDisplay]
         let formattedCitation: (CitationDisplay) -> String
+        var renderMarkdown = false
+
+        // Assistant answers often carry inline markdown (bold, code, links);
+        // render it (whitespace-preserving) instead of showing raw "**…**".
+        // Falls back to plain text on any parse failure — no silent corruption.
+        private var displayText: AttributedString {
+            if renderMarkdown, !isMuted, !text.isEmpty,
+               let attributed = try? AttributedString(
+                   markdown: text,
+                   options: AttributedString.MarkdownParsingOptions(
+                       interpretedSyntax: .inlineOnlyPreservingWhitespace
+                   )
+               ) {
+                return attributed
+            }
+            return AttributedString(text)
+        }
 
         var body: some View {
             HStack(alignment: .top, spacing: 0) {
@@ -517,7 +535,7 @@ public struct CompanionView: View {
                         Spacer()
                     }
 
-                    Text(text)
+                    Text(displayText)
                         .font(.system(size: 15))
                         .lineSpacing(5)
                         .foregroundStyle(isMuted ? .secondary : .primary)
