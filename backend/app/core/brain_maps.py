@@ -148,6 +148,18 @@ def _choose_map_type(prompt: str, explicit: str | None = None) -> str:
         return "comparison"
     if any(word in text for word in ("timeline", "when", "history", "хронолог", "когда")):
         return "timeline"
+    if any(
+        phrase in text
+        for phrase in (
+            "active project",
+            "project state",
+            "projects with owners",
+            "карта активных проектов",
+            "активных проектов",
+            "состояние проекта",
+        )
+    ):
+        return "project_state"
     if any(word in text for word in ("decision", "decide", "решен", "выбор")):
         return "decision"
     if any(word in text for word in ("relationship", "people", "network", "связ", "люд")):

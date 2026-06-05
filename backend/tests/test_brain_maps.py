@@ -98,6 +98,52 @@ async def test_create_brain_map_creates_cited_draft_projection(
     assert revision.source_count == 1
 
 
+@pytest.mark.parametrize(
+    ("prompt", "expected_type"),
+    [
+        (
+            "Map my active projects with owners, risks, decisions, and next steps",
+            "project_state",
+        ),
+        (
+            "Map recent decisions with options, tradeoffs, blockers, and open questions",
+            "decision",
+        ),
+        (
+            "Map people, projects, and relationships that matter right now",
+            "relationship",
+        ),
+        (
+            "Create a timeline of the important changes, commitments, and deadlines",
+            "timeline",
+        ),
+    ],
+)
+async def test_scenario_template_prompts_create_expected_map_types(
+    db_session,
+    monkeypatch,
+    prompt,
+    expected_type,
+) -> None:
+    user = await _make_user(db_session)
+
+    async def fake_search(*_args, **_kwargs):
+        return []
+
+    monkeypatch.setattr(brain_maps, "unified_search", fake_search)
+
+    brain_map, revision = await create_brain_map(
+        db_session,
+        user.id,
+        prompt=prompt,
+        origin="brain",
+    )
+
+    assert brain_map.map_type == expected_type
+    assert revision.projection["map_type"] == expected_type
+    assert revision.projection["briefing"]["suggested_questions"]
+
+
 async def test_refresh_brain_map_creates_revision_diff_and_preserves_layout(
     db_session, monkeypatch
 ) -> None:
