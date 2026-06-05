@@ -170,14 +170,18 @@ struct MacBrainView: View {
             mapStrip
 
             if let projection = model.activeProjection {
-                MacBrainMapCanvasView(
-                    projection: projection,
-                    layout: model.activeMap?.layout,
-                    onOpenSource: openSource,
-                    onOpenEntity: { id, name in model.openEntity(id: id, name: name) }
-                )
-                .frame(height: 430)
-                .clipShape(RoundedRectangle(cornerRadius: 8))
+                if model.selectedMapId == "mirror" {
+                    mirrorFocusSurface(projection)
+                } else {
+                    MacBrainMapCanvasView(
+                        projection: projection,
+                        layout: model.activeMap?.layout,
+                        onOpenSource: openSource,
+                        onOpenEntity: { id, name in model.openEntity(id: id, name: name) }
+                    )
+                    .frame(height: 430)
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                }
                 mapStats(projection)
             } else {
                 wikiEmpty(t("No source map yet.", "Карты источников пока нет."))
@@ -186,6 +190,137 @@ struct MacBrainView: View {
         .padding(Spacing.md)
         .background(Palette.surfaceSubtle)
         .clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+
+    private func mirrorFocusSurface(_ projection: BrainMapProjection) -> some View {
+        VStack(alignment: .leading, spacing: Spacing.md) {
+            HStack(alignment: .top, spacing: Spacing.lg) {
+                VStack(alignment: .leading, spacing: Spacing.xs) {
+                    Text(t("Focus diagrams", "Фокусные диаграммы"))
+                        .font(Typography.headingSmall)
+                    Text(mirrorFocusSummary(projection))
+                    .font(Typography.bodySmall)
+                    .foregroundStyle(Palette.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer()
+                VStack(alignment: .trailing, spacing: 4) {
+                    Text("\(projection.citations.count)")
+                        .font(Typography.headingSmall)
+                    Text(t("sources", "источн."))
+                        .font(Typography.labelSmall)
+                        .foregroundStyle(Palette.textSecondary)
+                }
+            }
+
+            LazyVGrid(
+                columns: [
+                    GridItem(.flexible(), spacing: Spacing.sm),
+                    GridItem(.flexible(), spacing: Spacing.sm)
+                ],
+                alignment: .leading,
+                spacing: Spacing.sm
+            ) {
+                diagramTemplateButton(
+                    title: t("Projects", "Проекты"),
+                    subtitle: t("owners, risks, next steps", "ответственные, риски, шаги"),
+                    icon: "folder.badge.gearshape",
+                    prompt: t(
+                        "Map my active projects with owners, risks, decisions, and next steps",
+                        "Сделай карту активных проектов: ответственные, риски, решения и следующие шаги"
+                    )
+                )
+                diagramTemplateButton(
+                    title: t("Decisions", "Решения"),
+                    subtitle: t("options, tradeoffs, blockers", "варианты, компромиссы, блокеры"),
+                    icon: "checklist",
+                    prompt: t(
+                        "Map recent decisions with options, tradeoffs, blockers, and open questions",
+                        "Сделай карту последних решений: варианты, компромиссы, блокеры и открытые вопросы"
+                    )
+                )
+                diagramTemplateButton(
+                    title: t("Relationships", "Связи"),
+                    subtitle: t("people, projects, sources", "люди, проекты, источники"),
+                    icon: "point.3.connected.trianglepath.dotted",
+                    prompt: t(
+                        "Map people, projects, and relationships that matter right now",
+                        "Сделай карту людей, проектов и связей, которые сейчас важны"
+                    )
+                )
+                diagramTemplateButton(
+                    title: t("Timeline", "Хронология"),
+                    subtitle: t("what changed and when", "что изменилось и когда"),
+                    icon: "calendar.badge.clock",
+                    prompt: t(
+                        "Create a timeline of the important changes, commitments, and deadlines",
+                        "Сделай хронологию важных изменений, обещаний и дедлайнов"
+                    )
+                )
+            }
+        }
+        .padding(Spacing.md)
+        .frame(maxWidth: .infinity, minHeight: 300, alignment: .topLeading)
+        .background(
+            RoundedRectangle(cornerRadius: 8)
+                .fill(Color.primary.opacity(0.035))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(Color.primary.opacity(0.08), lineWidth: 1)
+        )
+    }
+
+    private func diagramTemplateButton(
+        title: String,
+        subtitle: String,
+        icon: String,
+        prompt: String
+    ) -> some View {
+        Button {
+            model.lensPrompt = prompt
+            showLensForm = true
+        } label: {
+            HStack(alignment: .top, spacing: Spacing.sm) {
+                Image(systemName: icon)
+                    .foregroundStyle(Palette.accent)
+                    .frame(width: 22)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(title)
+                        .font(Typography.bodySmall.weight(.semibold))
+                        .foregroundStyle(Palette.textPrimary)
+                    Text(subtitle)
+                        .font(Typography.labelSmall)
+                        .foregroundStyle(Palette.textSecondary)
+                        .lineLimit(1)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(Spacing.sm)
+            .frame(maxWidth: .infinity, minHeight: 72, alignment: .topLeading)
+            .background(Palette.surfaceSubtle)
+            .overlay(
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(Color.primary.opacity(0.08), lineWidth: 1)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func mirrorFocusSummary(_ projection: BrainMapProjection) -> String {
+        let hiddenSources = projection.stats?["hidden_source_count"] ?? 0
+        let hiddenEntities = projection.stats?["hidden_entity_count"] ?? 0
+        if hiddenSources > 0 || hiddenEntities > 0 {
+            return t(
+                "\(projection.citations.count) sources · \(hiddenSources + hiddenEntities) outside focus",
+                "\(projection.citations.count) источн. · вне фокуса: \(hiddenSources + hiddenEntities)"
+            )
+        }
+        return t(
+            "\(projection.citations.count) sources · \(projection.nodes.count) cards",
+            "\(projection.citations.count) источн. · \(projection.nodes.count) карточек"
+        )
     }
 
     private var mapStrip: some View {

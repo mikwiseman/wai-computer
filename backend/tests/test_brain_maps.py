@@ -186,6 +186,71 @@ async def test_source_scope_seeds_map_from_selected_inbox_source(
     assert revision.source_count == 1
 
 
+async def test_projection_caps_large_brain_to_focused_diagram(db_session, monkeypatch) -> None:
+    user = await _make_user(db_session)
+    hits = []
+    for index in range(12):
+        item, _ = await ingest_item(
+            db_session,
+            user.id,
+            source="paste",
+            title=f"Source {index:02d}",
+            body=f"Project {index} mentions Topic {index}.",
+            embed=False,
+        )
+        project = await upsert_entity(
+            db_session, user.id, type="project", name=f"Project {index:02d}"
+        )
+        topic = await upsert_entity(
+            db_session, user.id, type="topic", name=f"Topic {index:02d}"
+        )
+        await record_mention(
+            db_session,
+            user_id=user.id,
+            entity_id=project.id,
+            source_kind="item",
+            source_id=item.id,
+            context=f"Project {index} mentions Topic {index}.",
+        )
+        await record_mention(
+            db_session,
+            user_id=user.id,
+            entity_id=topic.id,
+            source_kind="item",
+            source_id=item.id,
+            context=f"Project {index} mentions Topic {index}.",
+        )
+        hits.append(
+            _hit(
+                kind="item",
+                parent_id=item.id,
+                title=f"Source {index:02d}",
+                snippet=f"Project {index} mentions Topic {index}.",
+            )
+        )
+
+    async def fake_search(*_args, **_kwargs):
+        return hits
+
+    monkeypatch.setattr(brain_maps, "unified_search", fake_search)
+
+    _brain_map, revision = await create_brain_map(
+        db_session,
+        user.id,
+        prompt="Map everything",
+        origin="brain",
+    )
+    projection = revision.projection
+    source_nodes = [n for n in projection["nodes"] if n["kind"] == "source"]
+    entity_nodes = [n for n in projection["nodes"] if n["kind"] == "entity"]
+
+    assert len(source_nodes) == brain_maps.MAX_VISIBLE_SOURCE_NODES
+    assert len(entity_nodes) == brain_maps.MAX_VISIBLE_ENTITY_NODES
+    assert any(n["id"] == "gap:focused-diagram" for n in projection["nodes"])
+    assert projection["stats"]["hidden_source_count"] == 4
+    assert projection["stats"]["hidden_entity_count"] == 6
+
+
 async def test_agent_runtime_can_create_brain_map(db_session, monkeypatch) -> None:
     user = await _make_user(db_session)
     item, _ = await ingest_item(

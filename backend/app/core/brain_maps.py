@@ -30,6 +30,9 @@ MAP_TYPES = {
     "open_questions",
 }
 DEFAULT_MAP_LIMIT = 18
+MAX_VISIBLE_SOURCE_NODES = 8
+MAX_VISIBLE_ENTITY_NODES = 18
+MAX_RELATED_EDGES = 32
 
 
 class BrainMapError(Exception):
@@ -504,9 +507,19 @@ async def _build_projection(
         }
     )
 
-    for index, ((kind, sid), source) in enumerate(
-        sorted(source_meta.items(), key=lambda s: s[1]["title"])
-    ):
+    def source_rank(item: tuple[tuple[str, uuid.UUID], dict[str, Any]]) -> tuple[float, str]:
+        key, source = item
+        hit = hit_by_source.get(key)
+        return (-(hit.score if hit else 0.0), str(source["title"]).casefold())
+
+    source_items = sorted(source_meta.items(), key=source_rank)
+    visible_source_items = source_items[:MAX_VISIBLE_SOURCE_NODES]
+    visible_source_node_ids = {
+        _source_node_id(kind, sid) for (kind, sid), _source in visible_source_items
+    }
+    hidden_source_count = max(0, len(source_items) - len(visible_source_items))
+
+    for index, ((kind, sid), source) in enumerate(visible_source_items):
         hit = hit_by_source.get((kind, sid))
         node_id = _source_node_id(kind, sid)
         citation_id = source["id"]
@@ -545,7 +558,20 @@ async def _build_projection(
         source_entities.setdefault(citation_id, set()).add(entity_id)
 
     lane_counts: dict[str, int] = {}
-    for entity_id, (entity_type, name) in sorted(entity_meta.items(), key=lambda row: row[1][1]):
+
+    entity_items = sorted(
+        entity_meta.items(),
+        key=lambda row: (
+            -len(entity_citations[row[0]]),
+            0 if row[1][0] == "project" else 1,
+            row[1][1].casefold(),
+        ),
+    )
+    visible_entity_items = entity_items[:MAX_VISIBLE_ENTITY_NODES]
+    visible_entity_ids = {entity_id for entity_id, _meta in visible_entity_items}
+    hidden_entity_count = max(0, len(entity_items) - len(visible_entity_items))
+
+    for entity_id, (entity_type, name) in visible_entity_items:
         lane = _entity_lane(entity_type)
         index = lane_counts.get(lane, 0)
         lane_counts[lane] = index + 1
@@ -566,10 +592,14 @@ async def _build_projection(
         )
 
     for eid, (_entity_type, _name) in entity_meta.items():
+        if eid not in visible_entity_ids:
+            continue
         entity_node_id = _entity_node_id(eid)
         for citation_id in sorted(entity_citations[eid]):
             source_kind, source_id = citation_id.split(":", 1)
             source_node_id = _source_node_id(source_kind, source_id)
+            if source_node_id not in visible_source_node_ids:
+                continue
             edges.append(
                 {
                     "id": f"edge:{source_node_id}:{entity_node_id}",
@@ -582,10 +612,13 @@ async def _build_projection(
             )
 
     seen_related: set[tuple[str, str, str]] = set()
+    related_edge_count = 0
     for citation_id, entity_ids in source_entities.items():
-        ordered = sorted(entity_ids)
+        ordered = sorted(entity_id for entity_id in entity_ids if entity_id in visible_entity_ids)
         for i in range(len(ordered)):
             for j in range(i + 1, len(ordered)):
+                if related_edge_count >= MAX_RELATED_EDGES:
+                    break
                 key = (ordered[i], ordered[j], citation_id)
                 if key in seen_related:
                     continue
@@ -602,6 +635,42 @@ async def _build_projection(
                         "citation_ids": [citation_id],
                     }
                 )
+                related_edge_count += 1
+            if related_edge_count >= MAX_RELATED_EDGES:
+                break
+
+    if hidden_source_count or hidden_entity_count:
+        hidden_parts = []
+        if hidden_source_count:
+            hidden_parts.append(f"{hidden_source_count} source(s)")
+        if hidden_entity_count:
+            hidden_parts.append(f"{hidden_entity_count} linked node(s)")
+        focus_id = "gap:focused-diagram"
+        nodes.append(
+            {
+                "id": focus_id,
+                "kind": "gap",
+                "title": "More evidence outside this diagram",
+                "body": (
+                    "Hidden from this view: "
+                    + ", ".join(hidden_parts)
+                    + "."
+                ),
+                "lane": "gaps",
+                "citation_ids": [],
+                "position": _layout_position(layout, focus_id, lane="gaps", index=0),
+            }
+        )
+        edges.append(
+            {
+                "id": f"edge:{lens_id}:{focus_id}",
+                "source": lens_id,
+                "target": focus_id,
+                "kind": "open_question",
+                "label": "focus",
+                "citation_ids": [],
+            }
+        )
 
     if not source_meta:
         gap_id = "gap:no-evidence"
@@ -638,6 +707,15 @@ async def _build_projection(
         "edges": edges,
         "citations": citations,
         "freshness": freshness,
+        "stats": {
+            "total_source_count": len(source_meta),
+            "visible_source_count": len(visible_source_items),
+            "hidden_source_count": hidden_source_count,
+            "total_entity_count": len(entity_meta),
+            "visible_entity_count": len(visible_entity_items),
+            "hidden_entity_count": hidden_entity_count,
+            "related_edges_capped": 1 if related_edge_count >= MAX_RELATED_EDGES else 0,
+        },
     }
     return projection, _source_fingerprint(prompt, map_type, citations), citations, freshness
 
@@ -916,7 +994,7 @@ async def build_live_mirror(
     )
     graph = await build_brain_graph(db, user_id, include_sources=True, limit=limit)
     projection["source_fingerprint"] = fingerprint
-    projection["stats"] = graph.stats
+    projection["stats"] = {**(projection.get("stats") or {}), **graph.stats}
     projection["freshness"] = freshness
     projection["citations"] = citations
     return projection
