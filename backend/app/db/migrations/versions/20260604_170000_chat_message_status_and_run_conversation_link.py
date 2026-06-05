@@ -5,9 +5,10 @@ Adds:
   message can be created at turn start and finalized when the stream ends —
   a dropped SSE stream no longer loses the turn. Existing rows backfill to
   ``complete``.
-* ``agent_runs.conversation_id`` + ``agent_runs.origin_message_id`` (both
-  nullable) so a chat can hand a job to a durable background run that reports
-  its result back into the same conversation thread.
+* ``agent_runs.origin_message_id`` so a chat can hand a job to a durable
+  background run that reports its result back into the same conversation
+  thread. ``agent_runs.conversation_id`` is owned by revision
+  ``20260605_090000``.
 
 Revision ID: 20260604_170000
 Revises: 20260604_150000
@@ -42,19 +43,7 @@ def upgrade() -> None:
     )
     op.add_column(
         "agent_runs",
-        sa.Column("conversation_id", postgresql.UUID(as_uuid=True), nullable=True),
-    )
-    op.add_column(
-        "agent_runs",
         sa.Column("origin_message_id", postgresql.UUID(as_uuid=True), nullable=True),
-    )
-    op.create_foreign_key(
-        "fk_agent_runs_conversation_id_conversations",
-        "agent_runs",
-        "conversations",
-        ["conversation_id"],
-        ["id"],
-        ondelete="SET NULL",
     )
     op.create_foreign_key(
         "fk_agent_runs_origin_message_id_chat_messages",
@@ -64,26 +53,13 @@ def upgrade() -> None:
         ["id"],
         ondelete="SET NULL",
     )
-    op.create_index(
-        op.f("ix_agent_runs_conversation_id"),
-        "agent_runs",
-        ["conversation_id"],
-        unique=False,
-    )
 
 
 def downgrade() -> None:
-    op.drop_index(op.f("ix_agent_runs_conversation_id"), table_name="agent_runs")
     op.drop_constraint(
         "fk_agent_runs_origin_message_id_chat_messages",
         "agent_runs",
         type_="foreignkey",
     )
-    op.drop_constraint(
-        "fk_agent_runs_conversation_id_conversations",
-        "agent_runs",
-        type_="foreignkey",
-    )
     op.drop_column("agent_runs", "origin_message_id")
-    op.drop_column("agent_runs", "conversation_id")
     op.drop_column("chat_messages", "status")
