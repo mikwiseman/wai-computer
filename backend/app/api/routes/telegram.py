@@ -32,7 +32,6 @@ from app.core.agent_runtime import (
     execute_agent_step,
     pop_agent_runs_to_dispatch_after_commit,
     run_job,
-    static_config_planner,
 )
 from app.core.companion_actions import (
     ApprovalError,
