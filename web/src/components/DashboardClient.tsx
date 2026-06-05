@@ -919,6 +919,7 @@ export function DashboardClient() {
   const [pendingInboxSource, setPendingInboxSource] = useState<PendingInboxSource | null>(
     null,
   );
+  const [pendingBrainMapId, setPendingBrainMapId] = useState<string | null>(null);
   const [accountSettings, setAccountSettings] = useState<UserSettings | null>(null);
   const [transcriptionOptions, setTranscriptionOptions] = useState<TranscriptionOptions | null>(
     null,
@@ -2009,7 +2010,10 @@ export function DashboardClient() {
             onRefreshRecordings={loadRecordingsState}
             onItemsChanged={() => setItemsReloadKey((key) => key + 1)}
             onError={setMessage}
-            onOpenBrain={() => setView("brain")}
+            onOpenBrain={(mapId) => {
+              setPendingBrainMapId(mapId ?? null);
+              setView("brain");
+            }}
           />
         ) : null}
         {view === "library" || view === "wai" || view === "add" || view === "content" ? (
@@ -2031,7 +2035,10 @@ export function DashboardClient() {
             onRefreshRecordings={loadRecordingsState}
             onItemsChanged={() => setItemsReloadKey((key) => key + 1)}
             onError={setMessage}
-            onOpenBrain={() => setView("brain")}
+            onOpenBrain={(mapId) => {
+              setPendingBrainMapId(mapId ?? null);
+              setView("brain");
+            }}
           />
         ) : null}
         {view === "folder" && currentFolder ? (
@@ -2052,7 +2059,10 @@ export function DashboardClient() {
             onRefreshRecordings={loadRecordingsState}
             onItemsChanged={() => setItemsReloadKey((key) => key + 1)}
             onError={setMessage}
-            onOpenBrain={() => setView("brain")}
+            onOpenBrain={(mapId) => {
+              setPendingBrainMapId(mapId ?? null);
+              setView("brain");
+            }}
           />
         ) : null}
         {view === "trash" ? renderLibrary("trash", trashRecordings) : null}
@@ -2061,6 +2071,7 @@ export function DashboardClient() {
           <section className="tool-panel">
             <BrainPanel
               locale={locale}
+              initialMapId={pendingBrainMapId}
               onError={setMessage}
               onOpenInbox={() => setView("inbox")}
               onOpenWai={({ spaceId }) => handleNewChat({ brain_space_id: spaceId })}
@@ -3128,7 +3139,7 @@ function UniversalInboxPanel({
   onRefreshRecordings: () => Promise<void>;
   onItemsChanged: () => void;
   onError: (message: string | null) => void;
-  onOpenBrain?: () => void;
+  onOpenBrain?: (mapId?: string) => void;
 }) {
   const [rows, setRows] = useState<InboxRow[]>([]);
   const [selectedRow, setSelectedRow] = useState<InboxRow | null>(null);
@@ -3399,7 +3410,7 @@ function UniversalInboxPanel({
     setCreatingBrainMapSourceId(selectedRow.id);
     try {
       const title = inboxTitle(selectedRow, locale);
-      await createBrainMap({
+      const created = await createBrainMap({
         prompt: locale === "ru" ? `Сделай карту: ${title}` : `Map this source: ${title}`,
         origin: "inbox",
         source_scope: {
@@ -3411,7 +3422,7 @@ function UniversalInboxPanel({
           ],
         },
       });
-      onOpenBrain?.();
+      onOpenBrain?.(created.id);
     } catch (error: unknown) {
       onError(formatError(error));
     } finally {

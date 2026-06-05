@@ -71,9 +71,16 @@ const mockResolveAgentAction = vi.fn();
 const mockListReminders = vi.fn();
 const mockCreateReminder = vi.fn();
 const mockCancelReminder = vi.fn();
+const mockCreateBrainMap = vi.fn();
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ replace: mockReplace }),
+}));
+
+vi.mock("./BrainPanel", () => ({
+  BrainPanel: ({ initialMapId }: { initialMapId?: string | null }) => (
+    <div data-testid="brain-panel">brain:{initialMapId ?? "mirror"}</div>
+  ),
 }));
 
 vi.mock("@/lib/api", () => ({
@@ -81,6 +88,7 @@ vi.mock("@/lib/api", () => ({
   listInbox: (...args: unknown[]) => mockListInbox(...args),
   listRecordings: (...args: unknown[]) => mockListRecordings(...args),
   createRecording: (...args: unknown[]) => mockCreateRecording(...args),
+  createBrainMap: (...args: unknown[]) => mockCreateBrainMap(...args),
   deleteRecording: (...args: unknown[]) => mockDeleteRecording(...args),
   restoreRecording: (...args: unknown[]) => mockRestoreRecording(...args),
   bulkRecordingOperation: (...args: unknown[]) => mockBulkRecordingOperation(...args),
@@ -418,6 +426,10 @@ function arrangeHappyPathMocks() {
   mockCreateItem.mockResolvedValue({});
   mockGetItem.mockResolvedValue({});
   mockUploadItem.mockResolvedValue({ kind: "item", item: {} });
+  mockCreateBrainMap.mockResolvedValue({
+    id: "map-from-inbox",
+    title: "Map this source",
+  });
 }
 
 function createDeferred<T>() {
@@ -518,6 +530,7 @@ describe("DashboardClient", () => {
       mockListReminders,
       mockCreateReminder,
       mockCancelReminder,
+      mockCreateBrainMap,
       mockReplace,
     ].forEach((fn) => fn.mockReset());
     mockListInbox.mockResolvedValue(baseInboxResponse);
@@ -698,6 +711,35 @@ describe("DashboardClient", () => {
       expect(screen.getByTestId("dashboard-message")).toHaveTextContent("Logout failed");
     });
   }, 15_000);
+
+  it("opens the source-scoped Brain map created from Inbox", async () => {
+    arrangeHappyPathMocks();
+    const user = userEvent.setup();
+
+    render(<DashboardClient />);
+    await waitForDashboardReady();
+
+    await user.click(screen.getByTestId("select-recording-r1"));
+    await waitFor(() => expect(screen.getByTestId("recording-detail")).toBeInTheDocument());
+    await user.click(screen.getByRole("button", { name: "Create Lens" }));
+
+    await waitFor(() =>
+      expect(mockCreateBrainMap).toHaveBeenCalledWith({
+        prompt: "Map this source: Planning",
+        origin: "inbox",
+        source_scope: {
+          sources: [
+            {
+              source_kind: "recording",
+              source_id: "r1",
+            },
+          ],
+        },
+      }),
+    );
+    expect(screen.getByTestId("workspace-title")).toHaveTextContent("Brain");
+    expect(screen.getByTestId("brain-panel")).toHaveTextContent("brain:map-from-inbox");
+  });
 
   it("renders untitled recording/detail fallbacks", async () => {
     const user = userEvent.setup();

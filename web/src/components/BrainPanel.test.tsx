@@ -400,6 +400,17 @@ describe("BrainPanel (Live Mirror)", () => {
     await waitFor(() => expect(mockUpdateBrainMap).toHaveBeenCalledWith("map-1", { status: "saved" }));
   });
 
+  it("opens a requested map after loading maps", async () => {
+    mockListBrainMaps.mockResolvedValue({ maps: [brainMap()] });
+
+    render(<BrainPanel initialMapId="map-1" />);
+
+    await waitFor(() =>
+      expect(screen.getByText("Showing 3 of 12 sources and 8 of 24 nodes.")).toBeInTheDocument(),
+    );
+    expect(screen.getAllByText("Project state").length).toBeGreaterThan(0);
+  });
+
   it("shows generated-map briefing with evidence and next actions", async () => {
     const onOpenSource = vi.fn();
     const onOpenWai = vi.fn();

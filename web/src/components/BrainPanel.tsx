@@ -49,6 +49,7 @@ import { EntityWikiView } from "@/components/EntityWikiView";
 
 interface BrainPanelProps {
   locale?: string;
+  initialMapId?: string | null;
   onError?: (message: string) => void;
   onOpenSource?: (sourceKind: "recording" | "item", sourceId: string) => void;
   onOpenInbox?: () => void;
@@ -605,6 +606,7 @@ function BrainMapCanvas({
 
 export function BrainPanel({
   locale = "en",
+  initialMapId,
   onError,
   onOpenSource,
   onOpenInbox,
@@ -684,6 +686,9 @@ export function BrainPanel({
       ]);
       setMirror(mirrorProjection);
       setMaps(mapList.maps);
+      if (initialMapId && mapList.maps.some((map) => map.id === initialMapId)) {
+        setActiveMapId(initialMapId);
+      }
       setEntities(entityList);
       setSpaces(spaceList.spaces);
       const nextSpaceId =
@@ -701,11 +706,16 @@ export function BrainPanel({
       hasLoadedRef.current = true;
       setLoading(false);
     }
-  }, [loadCurated, onError, selectedSpaceId]);
+  }, [initialMapId, loadCurated, onError, selectedSpaceId]);
 
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    if (!initialMapId || !maps.some((map) => map.id === initialMapId)) return;
+    setActiveMapId(initialMapId);
+  }, [initialMapId, maps]);
 
   useEffect(() => {
     if (!hasLoadedRef.current) return;
