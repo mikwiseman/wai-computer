@@ -95,6 +95,9 @@ public struct CompanionStreamParser: Sendable {
             case "plan":
                 let payload = try decoder.decode(PlanPayload.self, from: data)
                 return .plan(steps: payload.steps)
+            case "artifact":
+                let payload = try decoder.decode(CompanionArtifact.self, from: data)
+                return .artifact(payload)
             case "token":
                 let payload = try decoder.decode(TokenPayload.self, from: data)
                 return .token(text: payload.text)

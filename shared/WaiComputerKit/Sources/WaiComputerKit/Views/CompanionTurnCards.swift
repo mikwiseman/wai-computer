@@ -1,4 +1,12 @@
 import SwiftUI
+#if canImport(WebKit)
+import WebKit
+#endif
+#if os(macOS)
+import AppKit
+#elseif os(iOS)
+import UIKit
+#endif
 
 private func companionLocaleIsRussian(_ locale: Locale) -> Bool {
     locale.identifier.lowercased().hasPrefix("ru")
@@ -58,6 +66,8 @@ struct CompanionTimelineView: View {
                     CompanionToolActionsCard(actions: actions, isLive: isLive, accent: accent)
                 case .plan(_, let steps):
                     CompanionPlanCard(steps: steps, accent: accent)
+                case .artifact(_, let artifact):
+                    CompanionArtifactCard(artifact: artifact, accent: accent)
                 case .text(_, let markdown):
                     CompanionMarkdownText(text: markdown, accent: accent)
                 case .action(_, let proposal, let resolution):
@@ -562,3 +572,120 @@ private func companionInlineMarkdown(_ string: String) -> AttributedString {
         )
     )) ?? AttributedString(string)
 }
+
+// MARK: - Artifact
+
+struct CompanionArtifactCard: View {
+    let artifact: CompanionArtifact
+    var accent: Color
+    @Environment(\.locale) private var locale
+
+    private var russian: Bool { companionLocaleIsRussian(locale) }
+    private var icon: String {
+        switch artifact.kind {
+        case "html": return "globe"
+        case "code": return "chevron.left.forwardslash.chevron.right"
+        default: return "doc.richtext"
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                Image(systemName: icon)
+                    .foregroundStyle(accent)
+                    .font(.system(size: 13, weight: .semibold))
+                Text(artifact.title.isEmpty ? (russian ? "Артефакт" : "Artifact") : artifact.title)
+                    .font(.system(size: 13, weight: .semibold))
+                    .lineLimit(1)
+                Text(artifact.kind.uppercased())
+                    .font(.system(size: 9, weight: .bold))
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 2)
+                    .background(accent.opacity(0.15))
+                    .clipShape(Capsule())
+                Spacer(minLength: 4)
+                Button { copyContent() } label: {
+                    Image(systemName: "doc.on.doc").font(.system(size: 12))
+                }
+                .buttonStyle(.borderless)
+                .help(russian ? "Скопировать" : "Copy")
+                .accessibilityIdentifier("wai-artifact-copy")
+            }
+            preview
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.primary.opacity(0.04))
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .overlay(RoundedRectangle(cornerRadius: 12).stroke(accent.opacity(0.18), lineWidth: 1))
+        .accessibilityIdentifier("wai-artifact-card")
+    }
+
+    @ViewBuilder
+    private var preview: some View {
+        switch artifact.kind {
+        case "html":
+            #if canImport(WebKit)
+            CompanionHTMLPreview(html: artifact.content)
+                .frame(height: 300)
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.primary.opacity(0.08)))
+            #else
+            codeBlock
+            #endif
+        case "code":
+            codeBlock
+        default:
+            CompanionMarkdownText(text: artifact.content, accent: accent)
+        }
+    }
+
+    private var codeBlock: some View {
+        ScrollView {
+            Text(artifact.content)
+                .font(.system(size: 12.5, design: .monospaced))
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .frame(maxHeight: 300)
+        .padding(8)
+        .background(Color.primary.opacity(0.05))
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+
+    private func copyContent() {
+        #if os(macOS)
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(artifact.content, forType: .string)
+        #elseif os(iOS)
+        UIPasteboard.general.string = artifact.content
+        #endif
+    }
+}
+
+#if canImport(WebKit)
+/// Live preview of an HTML artifact in an embedded web view.
+struct CompanionHTMLPreview: View {
+    let html: String
+    var body: some View { _CompanionWebView(html: html) }
+}
+
+#if os(macOS)
+private struct _CompanionWebView: NSViewRepresentable {
+    let html: String
+    func makeNSView(context: Context) -> WKWebView { WKWebView() }
+    func updateNSView(_ nsView: WKWebView, context: Context) {
+        nsView.loadHTMLString(html, baseURL: nil)
+    }
+}
+#elseif os(iOS)
+private struct _CompanionWebView: UIViewRepresentable {
+    let html: String
+    func makeUIView(context: Context) -> WKWebView { WKWebView() }
+    func updateUIView(_ uiView: WKWebView, context: Context) {
+        uiView.loadHTMLString(html, baseURL: nil)
+    }
+}
+#endif
+#endif

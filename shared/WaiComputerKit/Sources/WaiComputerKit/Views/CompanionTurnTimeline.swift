@@ -33,6 +33,7 @@ public enum CompanionTurnItem: Equatable, Identifiable, Sendable {
     case thinking(id: String, text: String)
     case tools(id: String, actions: [CompanionToolAction])
     case plan(id: String, steps: [CompanionPlanStep])
+    case artifact(id: String, artifact: CompanionArtifact)
     case text(id: String, markdown: String)
     case action(id: String, proposal: CompanionActionProposal, resolution: CompanionActionResolution?)
 
@@ -41,6 +42,7 @@ public enum CompanionTurnItem: Equatable, Identifiable, Sendable {
         case .thinking(let id, _): return id
         case .tools(let id, _): return id
         case .plan(let id, _): return id
+        case .artifact(let id, _): return id
         case .text(let id, _): return id
         case .action(let id, _, _): return id
         }
@@ -88,6 +90,8 @@ public struct CompanionTurnReducer: Equatable, Sendable {
             applyToolResult(callId: callId, summary: summary, ok: ok)
         case .plan(let steps):
             upsertPlan(steps)
+        case .artifact(let artifact):
+            items.append(.artifact(id: nextId("artifact"), artifact: artifact))
         case .token(let text):
             appendText(text)
         case .citation(let citation):

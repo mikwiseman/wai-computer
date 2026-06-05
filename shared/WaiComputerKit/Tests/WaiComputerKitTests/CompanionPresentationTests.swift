@@ -172,4 +172,23 @@ final class CompanionPresentationTests: XCTestCase {
         XCTAssertEqual(actions[0].ok, false)
         XCTAssertEqual(actions[0].summary, "Stopped")
     }
+
+    func testReducerAppendsArtifact() {
+        let artifact = CompanionArtifact(
+            artifactId: "a1", title: "Landing", kind: "html",
+            content: "<h1>Hi</h1>", language: ""
+        )
+        let reducer = reduce([
+            .thinking(text: "Building…"),
+            .artifact(artifact),
+            .token(text: "Done."),
+        ])
+        let arts = reducer.items.compactMap { item -> CompanionArtifact? in
+            if case .artifact(_, let a) = item { return a }
+            return nil
+        }
+        XCTAssertEqual(arts.count, 1)
+        XCTAssertEqual(arts[0].kind, "html")
+        XCTAssertEqual(arts[0].title, "Landing")
+    }
 }
