@@ -2953,7 +2953,7 @@ export function DashboardClient() {
             <h2>{copy.settings.developerGroupTitle}</h2>
             <p>{copy.settings.developerGroupBody}</p>
           </header>
-          <McpConnectSection />
+          <McpConnectSection locale={locale} />
           <ApiKeysSection />
         </div>
       </section>
