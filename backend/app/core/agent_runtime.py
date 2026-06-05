@@ -44,6 +44,7 @@ from app.core.brain_ask import ask_brain
 from app.core.brain_maps import create_brain_map
 from app.core.companion_actions import DEFAULT_TTL_SECONDS, expire_actions_for_run, propose_action
 from app.core.memory_proposal import propose_block_update
+from app.core.retry_policy import is_retryable_exception
 from app.core.unified_search import unified_search
 from app.models.agent import Agent, AgentRun, AgentStep
 from app.models.brain_map import BrainMap, BrainMapRevision
@@ -52,6 +53,7 @@ from app.models.item import Item, ItemChunk, ItemSummary
 from app.models.recording import ActionItem, Recording, Segment, Summary
 
 AGENT_RUNS_TO_DISPATCH_SESSION_KEY = "agent_runs_to_dispatch_after_commit"
+RETRYABLE_AGENT_ERROR_PREFIX = "Retrying after transient provider error"
 
 # A run in one of these states is finished — run_job is a no-op (safe re-delivery).
 TERMINAL_STATUSES: frozenset[str] = frozenset(
@@ -71,6 +73,13 @@ class AgentRuntimeError(Exception):
         super().__init__(message)
         self.code = code
         self.message = message
+
+
+def is_retrying_agent_run(run: AgentRun) -> bool:
+    """True when a committed run is waiting for a Celery retry/backoff wake."""
+    return run.status == "pending" and bool(
+        (run.error or "").startswith(RETRYABLE_AGENT_ERROR_PREFIX)
+    )
 
 
 @dataclass(frozen=True)
@@ -1399,6 +1408,19 @@ async def run_job(
         await session.flush()
         return run
     except Exception as exc:
+        if is_retryable_exception(exc):
+            await _append_step(
+                session,
+                run,
+                kind="retry",
+                payload={"code": "retryable_error", "message": type(exc).__name__},
+            )
+            run.status = "pending"
+            run.error = f"{RETRYABLE_AGENT_ERROR_PREFIX}: {type(exc).__name__}"
+            run.finished_at = None
+            run.heartbeat_at = _now()
+            await session.flush()
+            return run
         if await _find_step(session, run.id, kind="error") is None:
             await _append_step(
                 session,

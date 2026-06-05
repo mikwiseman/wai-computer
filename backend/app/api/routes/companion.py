@@ -16,6 +16,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import and_, select
 
 from app.api.deps import CurrentUser, Database
+from app.core.agent_runtime import is_retrying_agent_run
 from app.core.brain_spaces import (
     BrainSpaceNotFoundError,
     BrainSpacePermissionError,
@@ -640,6 +641,27 @@ async def _run_wai_companion_turn(
     )
 
     run = await run_wai_run_inline(db, run)
+    if is_retrying_agent_run(run):
+        retry_text = (
+            "Wai hit a temporary provider limit and saved the task state. Try again "
+            "in a moment."
+        )
+        assistant_msg = ChatMessage(
+            conversation_id=chat_id,
+            role="assistant",
+            content=[{"type": "text", "text": retry_text}],
+            model="wai-agent",
+            latency_ms=0,
+        )
+        db.add(assistant_msg)
+        await db.flush()
+        yield TokenEvent(text=retry_text)
+        yield DoneEvent(
+            message_id=str(assistant_msg.id),
+            model="wai-agent",
+            latency_ms=0,
+        )
+        return
     if run.status == "failed":
         raise CompanionError("wai_agent_failed", run.error or "Wai task failed")
 

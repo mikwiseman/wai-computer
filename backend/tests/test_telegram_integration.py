@@ -20,7 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.routes import telegram as telegram_routes
 from app.core import companion_actions as ca
 from app.core import companion_actuators
-from app.core.agent_runtime import static_config_planner
+from app.core.agent_runtime import RETRYABLE_AGENT_ERROR_PREFIX, static_config_planner
 from app.core.recording_import import (
     RecordingImportError,
     import_media_as_recording,
@@ -2434,6 +2434,66 @@ async def test_handle_text_message_reports_wai_errors(
     )
 
     assert "Не получилось обработать" in capture.messages[-1]["text"]
+
+
+@pytest.mark.asyncio
+async def test_handle_text_message_reports_retryable_provider_errors(
+    db_session: AsyncSession,
+    monkeypatch,
+):
+    user = await _user(db_session, "telegram-retryable-turn@example.com")
+    account = TelegramAccount(user_id=user.id, telegram_user_id=44, telegram_chat_id=44)
+    db_session.add(account)
+    await db_session.commit()
+    capture = _TelegramCapture()
+
+    async def fail_wai_run(*args, **kwargs):
+        raise httpx.TimeoutException("provider timeout")
+        if False:
+            yield telegram_routes.TokenEvent(text="")
+
+    monkeypatch.setattr(telegram_routes, "run_turn", fail_wai_run)
+    await telegram_routes._handle_text_message(
+        db_session,
+        capture,
+        message={"message_id": 12, "chat": {"id": 44}},
+        account=account,
+        text="привет",
+    )
+
+    assert "временный лимит провайдера" in capture.messages[-1]["text"]
+    assert "Не получилось обработать" not in capture.messages[-1]["text"]
+
+
+@pytest.mark.asyncio
+async def test_format_wai_run_reply_surfaces_retrying_state(
+    db_session: AsyncSession,
+):
+    user = await _user(db_session, "telegram-retrying-run@example.com")
+    agent = Agent(
+        user_id=user.id,
+        name="Wai",
+        kind="wai",
+        trigger_type="chat",
+    )
+    db_session.add(agent)
+    await db_session.flush()
+    run = AgentRun(
+        agent_id=agent.id,
+        user_id=user.id,
+        trigger_key=f"telegram:retry:{uuid4().hex}",
+        trigger_kind="telegram",
+        status="pending",
+        error=f"{RETRYABLE_AGENT_ERROR_PREFIX}: RateLimitError",
+    )
+    db_session.add(run)
+    await db_session.flush()
+
+    text = await telegram_routes._format_wai_run_reply(db_session, run)
+
+    assert "продолжает задачу" in text
+    assert "RateLimitError" not in text
+    assert "Не получилось выполнить" not in text
 
 
 @pytest.mark.asyncio

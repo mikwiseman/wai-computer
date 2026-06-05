@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 from types import SimpleNamespace
 from uuid import UUID, uuid4
 
+import httpx
 import pytest
 import pytest_asyncio
 from sqlalchemy import select
@@ -286,6 +287,38 @@ async def test_runtime_journals_unexpected_executor_error(db_session, user):
     steps = await _steps(db_session, run.id)
     assert steps[-1].kind == "error"
     assert steps[-1].payload == {"code": "unexpected_error", "message": "RuntimeError"}
+
+
+async def test_runtime_marks_retryable_executor_error_resumable(db_session, user):
+    _, run = await _agent_run(
+        db_session,
+        user,
+        config={"steps": [{"tool": "note", "args": {"text": "x"}}]},
+    )
+    request = httpx.Request("POST", "https://provider.example/responses")
+    response = httpx.Response(429, request=request)
+    retryable = httpx.HTTPStatusError("rate limited", request=request, response=response)
+
+    async def rate_limited_executor(*_args, **_kwargs):
+        raise retryable
+
+    await run_job(
+        db_session,
+        run.id,
+        planner=static_config_planner,
+        executor=rate_limited_executor,
+    )
+    await db_session.refresh(run)
+
+    assert run.status == "pending"
+    assert run.error == "Retrying after transient provider error: HTTPStatusError"
+    assert run.finished_at is None
+    steps = await _steps(db_session, run.id)
+    assert steps[-1].kind == "retry"
+    assert steps[-1].payload == {
+        "code": "retryable_error",
+        "message": "HTTPStatusError",
+    }
 
 
 @pytest.mark.parametrize(

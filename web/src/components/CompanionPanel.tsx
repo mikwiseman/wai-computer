@@ -62,6 +62,9 @@ interface CompanionCopy {
   deleteCancel: string;
   user: string;
   assistant: string;
+  stillWorking: string;
+  turnFailed: string;
+  turnFailedEmpty: string;
   somethingWentWrong: string;
   chatLabelPrefix: string;
   recordingFallback: string;
@@ -104,6 +107,9 @@ const COPY: Record<Locale, CompanionCopy> = {
     deleteCancel: "Cancel",
     user: "You",
     assistant: "Wai",
+    stillWorking: "Still working...",
+    turnFailed: "Turn failed.",
+    turnFailedEmpty: "Turn failed before Wai wrote a response.",
     somethingWentWrong: "Something went wrong",
     chatLabelPrefix: "Thread",
     recordingFallback: "Recording",
@@ -151,6 +157,9 @@ const COPY: Record<Locale, CompanionCopy> = {
     deleteCancel: "Отмена",
     user: "Вы",
     assistant: "Wai",
+    stillWorking: "Еще работает...",
+    turnFailed: "Не удалось выполнить запрос.",
+    turnFailedEmpty: "Не удалось выполнить запрос до ответа Wai.",
     somethingWentWrong: "Что-то пошло не так",
     chatLabelPrefix: "Диалог",
     recordingFallback: "Запись",
@@ -253,6 +262,30 @@ function stoppedText(locale: Locale): string {
 
 function failedText(locale: Locale): string {
   return locale === "ru" ? "Не удалось." : "Failed.";
+}
+
+function persistedTurnState(
+  status: string | undefined,
+  copy: CompanionCopy,
+  hasVisibleOutput: boolean,
+): { role: "status" | "alert"; className: string; text: string; testId: string } | null {
+  if (status === "streaming") {
+    return {
+      role: "status",
+      className: "wai-message-state wai-message-state--streaming",
+      text: copy.stillWorking,
+      testId: "companion-message-streaming-status",
+    };
+  }
+  if (status === "failed") {
+    return {
+      role: "alert",
+      className: "wai-message-state wai-message-state--failed",
+      text: hasVisibleOutput ? copy.turnFailed : copy.turnFailedEmpty,
+      testId: "companion-message-failed-status",
+    };
+  }
+  return null;
 }
 
 function localDateString(date: Date): string {
@@ -771,6 +804,12 @@ export function CompanionPanel({
 
           const completedTurn = completedTurns[m.id];
           const storedItems = completedTurn ? [] : storedTimelineItemsForMessage(m);
+          const assistantText = plainText(m.content);
+          const hasVisibleOutput =
+            Boolean(completedTurn)
+            || storedItems.length > 0
+            || assistantText.trim().length > 0;
+          const state = persistedTurnState(m.status, copy, hasVisibleOutput);
 
           return (
             <article
@@ -783,6 +822,15 @@ export function CompanionPanel({
               <strong style={{ display: "block", fontSize: 12, opacity: 0.6 }}>
                 {copy.assistant}
               </strong>
+              {state ? (
+                <p
+                  role={state.role}
+                  className={state.className}
+                  data-testid={state.testId}
+                >
+                  {state.text}
+                </p>
+              ) : null}
               {completedTurn ? (
                 <CompanionTimeline
                   items={completedTurn.items}
@@ -806,7 +854,7 @@ export function CompanionPanel({
                   }
                 />
               ) : (
-                <Markdown text={plainText(m.content)} />
+                <Markdown text={assistantText} />
               )}
               {m.citations.length > 0 ? (
                 <CitationStrip

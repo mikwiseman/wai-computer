@@ -30,6 +30,7 @@ from app.core.agent_runtime import (
     TERMINAL_STATUSES,
     cancel_run,
     execute_agent_step,
+    is_retrying_agent_run,
     pop_agent_runs_to_dispatch_after_commit,
     run_job,
 )
@@ -67,6 +68,7 @@ from app.core.mcp_tools import (
     list_recordings_for_mcp,
 )
 from app.core.recording_import import RecordingImportError, import_media_as_recording
+from app.core.retry_policy import is_retryable_exception
 from app.core.source_fetch import classify_url, find_first_url
 from app.core.telegram_client import (
     TelegramBotClient,
@@ -103,6 +105,10 @@ BOT_LINK_CODE_LENGTH = 8
 CHAT_ACTION_INTERVAL_SECONDS = 4.0
 REMINDER_TEXT_LIMIT = 1200
 TELEGRAM_PENDING_RECORDING_TTL = timedelta(hours=6)
+TELEGRAM_WAI_GENERIC_ERROR_REPLY = "Не получилось обработать запрос к Wai. Попробуй еще раз."
+TELEGRAM_WAI_RETRYABLE_ERROR_REPLY = (
+    "Wai уперся во временный лимит провайдера. Попробуй еще раз через минуту."
+)
 _REMIND_RELATIVE_RE = re.compile(
     r"^(?:in|через)\s+(\d{1,5})\s*"
     r"(m|min|minute|minutes|мин|минут|h|hour|hours|ч|час|часа|часов|d|day|days|д|дн|день|дня|дней)"
@@ -1682,6 +1688,8 @@ async def _format_run_status(db: AsyncSession, run: AgentRun) -> str:
     ]
     if run.error:
         lines.append(f"error: {run.error}")
+    if is_retrying_agent_run(run):
+        lines.append("Wai продолжит автоматически после backoff.")
     return "\n".join(lines)
 
 
@@ -2379,6 +2387,11 @@ async def _handle_callback_query(
 
 
 async def _format_wai_run_reply(db: AsyncSession, run: AgentRun) -> str:
+    if is_retrying_agent_run(run):
+        return (
+            "Wai получил временный лимит провайдера и продолжает задачу в фоне. "
+            f"Проверить статус: /status {run.id}"
+        )
     if run.status == "failed":
         return f"Не получилось выполнить задачу Wai: {run.error or 'ошибка агента'}"
     result = run.result or {}
@@ -2399,6 +2412,12 @@ async def _format_wai_run_reply(db: AsyncSession, run: AgentRun) -> str:
     if text:
         return text
     return f"Wai run {run.id} status: {run.status}"
+
+
+def _telegram_wai_turn_failure_reply(exc: BaseException) -> str:
+    if is_retryable_exception(exc):
+        return TELEGRAM_WAI_RETRYABLE_ERROR_REPLY
+    return TELEGRAM_WAI_GENERIC_ERROR_REPLY
 
 
 async def _handle_text_message(
@@ -2447,7 +2466,7 @@ async def _handle_text_message(
         logger.warning("telegram Wai turn failed code=%s", exc.code)
         await client.send_message(
             chat_id,
-            "Не получилось обработать запрос к Wai. Попробуй еще раз.",
+            _telegram_wai_turn_failure_reply(exc),
             reply_to_message_id=message.get("message_id"),
         )
         return
@@ -2455,7 +2474,7 @@ async def _handle_text_message(
         logger.warning("telegram Wai turn failed error=%s", type(exc).__name__)
         await client.send_message(
             chat_id,
-            "Не получилось обработать запрос к Wai. Попробуй еще раз.",
+            _telegram_wai_turn_failure_reply(exc),
             reply_to_message_id=message.get("message_id"),
         )
         return

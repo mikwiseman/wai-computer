@@ -675,6 +675,7 @@ export interface CompanionCitation {
 export interface CompanionMessage {
   id: string;
   role: CompanionMessageRole;
+  status?: "streaming" | "complete" | "failed" | string;
   content: unknown;
   tool_calls: unknown[] | null;
   citations: CompanionCitation[];

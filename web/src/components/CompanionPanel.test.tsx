@@ -190,6 +190,65 @@ describe("CompanionPanel", () => {
     expect(screen.getByText(/\[1\] Standup/)).toBeInTheDocument();
   });
 
+  it("shows a persisted in-flight turn after reopening a thread", async () => {
+    const chat = makeChat("c1", "Working chat");
+    mockListChats.mockResolvedValue({ chats: [chat] });
+    mockGetChat.mockResolvedValue({
+      ...chat,
+      messages: [
+        {
+          id: "a-streaming",
+          role: "assistant",
+          status: "streaming",
+          content: [{ type: "text", text: "Checking sources" }],
+          tool_calls: null,
+          citations: [],
+          model: "gpt-5.5",
+          input_tokens: null,
+          output_tokens: null,
+          cached_tokens: null,
+          latency_ms: null,
+          created_at: "2026-05-18T10:00:02Z",
+        },
+      ],
+    });
+
+    render(<CompanionPanel recordings={recordings} />);
+
+    expect(await screen.findByTestId("companion-message-streaming-status"))
+      .toHaveTextContent("Still working...");
+    expect(screen.getByText("Checking sources")).toBeInTheDocument();
+  });
+
+  it("shows a persisted failed turn even when no assistant text was saved", async () => {
+    const chat = makeChat("c1", "Failed chat");
+    mockListChats.mockResolvedValue({ chats: [chat] });
+    mockGetChat.mockResolvedValue({
+      ...chat,
+      messages: [
+        {
+          id: "a-failed",
+          role: "assistant",
+          status: "failed",
+          content: [],
+          tool_calls: null,
+          citations: [],
+          model: "gpt-5.5",
+          input_tokens: null,
+          output_tokens: null,
+          cached_tokens: null,
+          latency_ms: null,
+          created_at: "2026-05-18T10:00:02Z",
+        },
+      ],
+    });
+
+    render(<CompanionPanel recordings={recordings} />);
+
+    expect(await screen.findByTestId("companion-message-failed-status"))
+      .toHaveTextContent("Turn failed before Wai wrote a response.");
+  });
+
   it("renders stored artifact cards from assistant tool calls", async () => {
     const chat = makeChat("c1", "Artifact chat");
     mockListChats.mockResolvedValue({ chats: [chat] });

@@ -12,6 +12,7 @@ from sqlalchemy import select
 from app.core import agent_guard
 from app.core.agent_runtime import (
     execute_agent_step,
+    is_retrying_agent_run,
     pop_agent_runs_to_dispatch_after_commit,
     run_job,
 )
@@ -19,16 +20,22 @@ from app.core.agent_runtime import (
     static_config_planner as static_config_planner,
 )
 from app.core.companion_actions import expire_due_actions
+from app.core.observability import fingerprint_text
 from app.core.wai_agent import planner_for_agent
 from app.db.session import get_db_context
 from app.models.agent import Agent, AgentRun
 from app.models.companion_pending_action import CompanionPendingAction
 from app.tasks.celery_app import celery_app
+from app.tasks.retry_policy import is_retryable_exception
 
 logger = logging.getLogger(__name__)
 
 RUN_LEASE_TTL_SECONDS = 3600
 STALE_AFTER_SECONDS = 900
+
+
+class AgentRunRetryRequestedError(Exception):
+    """A committed agent run is waiting for Celery backoff/retry."""
 
 
 def _now() -> datetime:
@@ -39,6 +46,20 @@ async def _mark_failed(run: AgentRun, message: str) -> None:
     run.status = "failed"
     run.error = message[:2000]
     run.finished_at = _now()
+
+
+async def _mark_retryable_failure_after_retries(run_id: str) -> None:
+    async with get_db_context() as db:
+        run_row = (
+            await db.execute(select(AgentRun).where(AgentRun.id == UUID(run_id)))
+        ).scalar_one_or_none()
+        terminal_statuses = {"done", "failed", "expired", "skipped", "cancelled"}
+        if run_row is not None and run_row.status not in terminal_statuses:
+            await _mark_failed(
+                run_row,
+                "Agent run failed after retryable provider errors.",
+            )
+            await db.flush()
 
 
 async def _dispatch_child_runs_after_commit(run_ids: list[UUID]) -> None:
@@ -100,7 +121,7 @@ async def _run_agent_async(run_id: str) -> str:
                 planner=planner_for_agent(agent),
                 executor=execute_agent_step,
             )
-            final_status = run.status
+            final_status = "retrying" if is_retrying_agent_run(run) else run.status
             child_run_ids = pop_agent_runs_to_dispatch_after_commit(db)
         finally:
             await agent_guard.release_run_slot(str(run.user_id), lease)
@@ -108,9 +129,57 @@ async def _run_agent_async(run_id: str) -> str:
     return final_status
 
 
-@celery_app.task(name="app.tasks.agents.run")
-def run(run_id: str) -> str:
-    return asyncio.run(_run_agent_async(run_id))
+def _request_agent_retry(self, *, run_id: str, exc: Exception) -> str:
+    retry_count = int(getattr(self.request, "retries", 0) or 0)
+    if retry_count < int(self.max_retries or 0):
+        logger.info(
+            (
+                "agent task retrying run_id=%s task_id=%s retries=%s "
+                "error_type=%s error_fingerprint=%s"
+            ),
+            run_id,
+            getattr(self.request, "id", None),
+            retry_count,
+            type(exc).__name__,
+            fingerprint_text(str(exc)),
+        )
+        raise self.retry(exc=exc)
+    asyncio.run(_mark_retryable_failure_after_retries(run_id=run_id))
+    logger.error(
+        (
+            "agent task retry exhausted run_id=%s task_id=%s "
+            "error_type=%s error_fingerprint=%s"
+        ),
+        run_id,
+        getattr(self.request, "id", None),
+        type(exc).__name__,
+        fingerprint_text(str(exc)),
+    )
+    raise exc
+
+
+@celery_app.task(
+    bind=True,
+    name="app.tasks.agents.run",
+    max_retries=3,
+    retry_backoff=True,
+    retry_backoff_max=600,
+    retry_jitter=True,
+)
+def run(self, run_id: str) -> str:
+    try:
+        result = asyncio.run(_run_agent_async(run_id))
+    except Exception as exc:
+        if is_retryable_exception(exc):
+            return _request_agent_retry(self, run_id=run_id, exc=exc)
+        raise
+    if result == "retrying":
+        return _request_agent_retry(
+            self,
+            run_id=run_id,
+            exc=AgentRunRetryRequestedError(run_id),
+        )
+    return result
 
 
 def _next_run_at(agent: Agent, now: datetime) -> datetime | None:

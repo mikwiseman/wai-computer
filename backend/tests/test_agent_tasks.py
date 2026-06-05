@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock
 from uuid import UUID, uuid4
 
+import httpx
 import pytest
 from sqlalchemy import select
 
@@ -254,6 +255,46 @@ async def test_run_agent_async_success_releases_slot(db_session, monkeypatch):
 
     assert await agent_tasks._run_agent_async(str(run.id)) == "done"
     assert released == [(str(user.id), "lease-1")]
+
+
+async def test_run_task_retries_retryable_provider_errors(monkeypatch):
+    async def fail_run_agent_async(_run_id: str) -> str:
+        raise httpx.TimeoutException("provider timeout")
+
+    def fake_asyncio_run(coro):
+        coro.close()
+        raise httpx.TimeoutException("provider timeout")
+
+    monkeypatch.setattr(agent_tasks, "_run_agent_async", fail_run_agent_async)
+    monkeypatch.setattr(agent_tasks.asyncio, "run", fake_asyncio_run)
+
+    def fake_retry(*, exc):
+        raise RuntimeError(f"retry requested: {type(exc).__name__}")
+
+    monkeypatch.setattr(agent_tasks.run, "retry", fake_retry)
+
+    with pytest.raises(RuntimeError, match="retry requested: TimeoutException"):
+        agent_tasks.run.run("00000000-0000-0000-0000-000000000031")
+
+
+async def test_run_task_retries_committed_retrying_status(monkeypatch):
+    async def retrying_run_agent_async(_run_id: str) -> str:
+        return "retrying"
+
+    def fake_asyncio_run(coro):
+        coro.close()
+        return "retrying"
+
+    monkeypatch.setattr(agent_tasks, "_run_agent_async", retrying_run_agent_async)
+    monkeypatch.setattr(agent_tasks.asyncio, "run", fake_asyncio_run)
+
+    def fake_retry(*, exc):
+        raise RuntimeError(f"retry requested: {type(exc).__name__}")
+
+    monkeypatch.setattr(agent_tasks.run, "retry", fake_retry)
+
+    with pytest.raises(RuntimeError, match="retry requested: AgentRunRetryRequestedError"):
+        agent_tasks.run.run("00000000-0000-0000-0000-000000000032")
 
 
 async def test_celery_task_wrappers_delegate_to_asyncio_run(monkeypatch):
