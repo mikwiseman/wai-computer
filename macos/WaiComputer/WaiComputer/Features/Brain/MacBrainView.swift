@@ -172,17 +172,10 @@ struct MacBrainView: View {
             if let projection = model.activeProjection {
                 if model.selectedMapId == "mirror" {
                     mirrorFocusSurface(projection)
+                    mapStats(projection)
                 } else {
-                    MacBrainMapCanvasView(
-                        projection: projection,
-                        layout: model.activeMap?.layout,
-                        onOpenSource: openSource,
-                        onOpenEntity: { id, name in model.openEntity(id: id, name: name) }
-                    )
-                    .frame(height: projection.nodes.count > 14 ? 520 : 430)
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                    generatedMapSurface(projection)
                 }
-                mapStats(projection)
             } else {
                 wikiEmpty(t("No source map yet.", "Карты источников пока нет."))
             }
@@ -269,6 +262,290 @@ struct MacBrainView: View {
             RoundedRectangle(cornerRadius: 8)
                 .stroke(Color.primary.opacity(0.08), lineWidth: 1)
         )
+    }
+
+    private func generatedMapSurface(_ projection: BrainMapProjection) -> some View {
+        VStack(alignment: .leading, spacing: Spacing.md) {
+            if let briefing = projection.briefing {
+                generatedBriefing(briefing, projection: projection)
+            }
+
+            MacBrainMapCanvasView(
+                projection: projection,
+                layout: model.activeMap?.layout,
+                onOpenSource: openSource,
+                onOpenEntity: { id, name in model.openEntity(id: id, name: name) }
+            )
+            .frame(height: projection.nodes.count > 14 ? 520 : 430)
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+
+            mapStats(projection)
+
+            if let briefing = projection.briefing {
+                generatedEvidence(briefing)
+                generatedQuestions(briefing, projection: projection)
+            } else {
+                mapCitationList(projection.citations.prefix(4).map { $0 })
+            }
+        }
+    }
+
+    private func generatedBriefing(
+        _ briefing: BrainMapBriefing,
+        projection: BrainMapProjection
+    ) -> some View {
+        VStack(alignment: .leading, spacing: Spacing.sm) {
+            HStack(alignment: .top, spacing: Spacing.md) {
+                VStack(alignment: .leading, spacing: Spacing.xxs) {
+                    Text(mapTypeLabel(projection.mapType))
+                        .font(Typography.labelSmall)
+                        .foregroundStyle(Palette.textTertiary)
+                    Text(briefingFocusNote(briefing))
+                        .font(Typography.bodySmall.weight(.semibold))
+                        .foregroundStyle(Palette.textPrimary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text(briefingFreshnessNote(projection))
+                        .font(Typography.labelSmall)
+                        .foregroundStyle(Palette.textSecondary)
+                }
+                Spacer()
+                HStack(spacing: Spacing.xs) {
+                    if let openWai = onOpenWai, let space = model.selectedSpace {
+                        Button {
+                            openWai(space)
+                        } label: {
+                            Label(t("Ask Wai", "Спросить Wai"), systemImage: "sparkles")
+                        }
+                        .buttonStyle(.bordered)
+                    }
+                }
+            }
+
+            HStack(spacing: Spacing.sm) {
+                coverageTile(
+                    value: "\(briefing.coverage.visibleSources)/\(briefing.coverage.totalSources)",
+                    label: t("sources in focus", "источн. в фокусе"),
+                    systemImage: "doc.text.magnifyingglass"
+                )
+                coverageTile(
+                    value: "\(briefing.coverage.visibleEntities)/\(briefing.coverage.totalEntities)",
+                    label: t("nodes in focus", "узлов в фокусе"),
+                    systemImage: "point.3.connected.trianglepath.dotted"
+                )
+                if hiddenFocusCount(briefing) > 0 {
+                    coverageTile(
+                        value: "\(hiddenFocusCount(briefing))",
+                        label: t("kept outside canvas", "вне canvas"),
+                        systemImage: "rectangle.stack"
+                    )
+                }
+            }
+        }
+        .padding(.bottom, Spacing.xs)
+    }
+
+    private func coverageTile(value: String, label: String, systemImage: String) -> some View {
+        HStack(spacing: Spacing.xs) {
+            Image(systemName: systemImage)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(Palette.accent)
+                .frame(width: 18)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(value)
+                    .font(Typography.bodySmall.weight(.semibold))
+                    .foregroundStyle(Palette.textPrimary)
+                Text(label)
+                    .font(Typography.labelSmall)
+                    .foregroundStyle(Palette.textSecondary)
+                    .lineLimit(1)
+            }
+        }
+        .padding(.horizontal, Spacing.sm)
+        .padding(.vertical, Spacing.xs)
+        .background(Color.primary.opacity(0.045))
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+
+    private func generatedEvidence(_ briefing: BrainMapBriefing) -> some View {
+        VStack(alignment: .leading, spacing: Spacing.sm) {
+            HStack(alignment: .top, spacing: Spacing.lg) {
+                VStack(alignment: .leading, spacing: Spacing.xs) {
+                    Text(t("Evidence", "Источники"))
+                        .font(Typography.label)
+                        .foregroundStyle(Palette.textSecondary)
+                    if briefing.topSources.isEmpty {
+                        wikiEmpty(t("No matching sources yet.", "Подходящих источников пока нет."))
+                    } else {
+                        mapBriefingSourceList(briefing.topSources)
+                    }
+                }
+                VStack(alignment: .leading, spacing: Spacing.xs) {
+                    Text(t("Key nodes", "Ключевые узлы"))
+                        .font(Typography.label)
+                        .foregroundStyle(Palette.textSecondary)
+                    if briefing.topEntities.isEmpty {
+                        wikiEmpty(t("No linked pages yet.", "Связанных страниц пока нет."))
+                    } else {
+                        mapBriefingEntityList(briefing.topEntities)
+                    }
+                }
+            }
+        }
+    }
+
+    private func generatedQuestions(
+        _ briefing: BrainMapBriefing,
+        projection: BrainMapProjection
+    ) -> some View {
+        let questions = localizedSuggestedQuestions(
+            mapType: projection.mapType,
+            fallback: briefing.suggestedQuestions
+        )
+        VStack(alignment: .leading, spacing: Spacing.xs) {
+            Text(t("Ask next", "Следующие вопросы"))
+                .font(Typography.label)
+                .foregroundStyle(Palette.textSecondary)
+            LazyVGrid(
+                columns: [
+                    GridItem(.flexible(), spacing: Spacing.xs),
+                    GridItem(.flexible(), spacing: Spacing.xs),
+                    GridItem(.flexible(), spacing: Spacing.xs)
+                ],
+                alignment: .leading,
+                spacing: Spacing.xs
+            ) {
+                ForEach(questions.prefix(3), id: \.self) { question in
+                    Button {
+                        model.lensPrompt = question
+                        Task { await model.createLens() }
+                    } label: {
+                        Text(question)
+                            .font(Typography.labelSmall)
+                            .foregroundStyle(Palette.textSecondary)
+                            .lineLimit(2)
+                            .frame(maxWidth: .infinity, minHeight: 42, alignment: .topLeading)
+                            .padding(.horizontal, Spacing.sm)
+                            .padding(.vertical, Spacing.xs)
+                            .background(Color.primary.opacity(0.045))
+                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(model.creatingLens)
+                }
+            }
+        }
+    }
+
+    private func mapBriefingSourceList(_ sources: [BrainMapBriefingSource]) -> some View {
+        VStack(alignment: .leading, spacing: Spacing.xs) {
+            ForEach(sources.prefix(4)) { source in
+                Button {
+                    openSource(kind: source.sourceKind, id: source.sourceId)
+                } label: {
+                    mapSourceRow(
+                        title: source.title,
+                        detail: sourceKindLabel(source.sourceKind),
+                        systemImage: source.sourceKind == "recording" ? "waveform" : "doc.text"
+                    )
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+
+    private func mapBriefingEntityList(_ entities: [BrainMapBriefingEntity]) -> some View {
+        VStack(alignment: .leading, spacing: Spacing.xs) {
+            ForEach(entities.prefix(5)) { entity in
+                Button {
+                    model.openEntity(id: entity.id, name: entity.name)
+                } label: {
+                    mapSourceRow(
+                        title: entity.name,
+                        detail: "\(entityTypeLabel(entity.type)) · \(entity.citationCount) "
+                            + t("source(s)", "источн."),
+                        systemImage: entityIcon(entity.type)
+                    )
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+
+    private func mapCitationList(_ citations: [BrainMapCitation]) -> some View {
+        VStack(alignment: .leading, spacing: Spacing.xs) {
+            Text(t("Evidence", "Источники"))
+                .font(Typography.label)
+                .foregroundStyle(Palette.textSecondary)
+            ForEach(citations) { citation in
+                Button {
+                    openSource(kind: citation.sourceKind, id: citation.sourceId)
+                } label: {
+                    mapSourceRow(
+                        title: citation.title,
+                        detail: sourceKindLabel(citation.sourceKind),
+                        systemImage: citation.sourceKind == "recording" ? "waveform" : "doc.text"
+                    )
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+
+    private func mapSourceRow(title: String, detail: String, systemImage: String) -> some View {
+        HStack(spacing: Spacing.xs) {
+            Image(systemName: systemImage)
+                .font(.system(size: 11))
+                .foregroundStyle(Palette.accent)
+                .frame(width: 16)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(title)
+                    .font(Typography.bodySmall.weight(.medium))
+                    .foregroundStyle(Palette.textPrimary)
+                    .lineLimit(1)
+                Text(detail)
+                    .font(Typography.labelSmall)
+                    .foregroundStyle(Palette.textSecondary)
+                    .lineLimit(1)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(Spacing.xs)
+        .background(Color.primary.opacity(0.035))
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+
+    private func briefingFocusNote(_ briefing: BrainMapBriefing) -> String {
+        if briefing.mode == "empty" {
+            return t("No matching evidence yet.", "Подходящих источников пока нет.")
+        }
+        if briefing.mode == "focused" {
+            return t(
+                "Showing \(briefing.coverage.visibleSources) of \(briefing.coverage.totalSources) sources and \(briefing.coverage.visibleEntities) of \(briefing.coverage.totalEntities) nodes.",
+                "Показано \(briefing.coverage.visibleSources) из \(briefing.coverage.totalSources) источн. и \(briefing.coverage.visibleEntities) из \(briefing.coverage.totalEntities) узлов."
+            )
+        }
+        return t(
+            "Showing all \(briefing.coverage.totalSources) sources and \(briefing.coverage.totalEntities) nodes.",
+            "Показаны все источники: \(briefing.coverage.totalSources), узлы: \(briefing.coverage.totalEntities)."
+        )
+    }
+
+    private func briefingFreshnessNote(_ projection: BrainMapProjection) -> String {
+        if projection.freshness.stale, let weeks = projection.freshness.weeksSince {
+            return t(
+                "Newest evidence is \(weeks) week(s) old.",
+                "Самому новому источнику \(weeks) нед."
+            )
+        }
+        if projection.freshness.newestSourceAt == nil {
+            return t("No dated source yet.", "Пока нет источника с датой.")
+        }
+        return t("Evidence is current.", "Источники актуальны.")
+    }
+
+    private func hiddenFocusCount(_ briefing: BrainMapBriefing) -> Int {
+        max(0, briefing.coverage.totalSources - briefing.coverage.visibleSources)
+            + max(0, briefing.coverage.totalEntities - briefing.coverage.visibleEntities)
     }
 
     private func diagramTemplateButton(

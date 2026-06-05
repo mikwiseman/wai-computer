@@ -223,12 +223,81 @@ public struct BrainMapFreshness: Codable, Sendable, Equatable {
     }
 }
 
+public struct BrainMapBriefingCoverage: Codable, Sendable, Equatable {
+    public let visibleSources: Int
+    public let totalSources: Int
+    public let visibleEntities: Int
+    public let totalEntities: Int
+
+    private enum CodingKeys: String, CodingKey {
+        case visibleSources = "visible_sources"
+        case totalSources = "total_sources"
+        case visibleEntities = "visible_entities"
+        case totalEntities = "total_entities"
+    }
+}
+
+public struct BrainMapBriefingSource: Codable, Identifiable, Sendable, Equatable {
+    public let id: String
+    public let sourceKind: String
+    public let sourceId: String
+    public let title: String
+    public let kind: String?
+    public let createdAt: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case sourceKind = "source_kind"
+        case sourceId = "source_id"
+        case title
+        case kind
+        case createdAt = "created_at"
+    }
+}
+
+public struct BrainMapBriefingEntity: Codable, Identifiable, Sendable, Equatable {
+    public let id: String
+    public let type: String
+    public let name: String
+    public let citationCount: Int
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case type
+        case name
+        case citationCount = "citation_count"
+    }
+}
+
+public struct BrainMapBriefing: Codable, Sendable, Equatable {
+    public let mode: String
+    public let headline: String
+    public let focusNote: String
+    public let freshnessNote: String
+    public let coverage: BrainMapBriefingCoverage
+    public let topSources: [BrainMapBriefingSource]
+    public let topEntities: [BrainMapBriefingEntity]
+    public let suggestedQuestions: [String]
+
+    private enum CodingKeys: String, CodingKey {
+        case mode
+        case headline
+        case focusNote = "focus_note"
+        case freshnessNote = "freshness_note"
+        case coverage
+        case topSources = "top_sources"
+        case topEntities = "top_entities"
+        case suggestedQuestions = "suggested_questions"
+    }
+}
+
 public struct BrainMapProjection: Codable, Sendable, Equatable {
     public let version: Int
     public let mapType: String
     public let title: String
     public let prompt: String
     public let summary: String
+    public let briefing: BrainMapBriefing?
     public let nodes: [BrainMapNode]
     public let edges: [BrainMapEdge]
     public let citations: [BrainMapCitation]
@@ -242,6 +311,7 @@ public struct BrainMapProjection: Codable, Sendable, Equatable {
         case title
         case prompt
         case summary
+        case briefing
         case nodes
         case edges
         case citations

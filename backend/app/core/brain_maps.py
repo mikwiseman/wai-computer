@@ -703,6 +703,15 @@ async def _build_projection(
         "title": title,
         "prompt": prompt,
         "summary": _summary(map_type, len(source_meta), len(entity_meta)),
+        "briefing": _projection_briefing(
+            map_type=map_type,
+            source_items=source_items,
+            visible_source_items=visible_source_items,
+            entity_items=entity_items,
+            visible_entity_items=visible_entity_items,
+            entity_citations=entity_citations,
+            freshness=freshness,
+        ),
         "nodes": nodes,
         "edges": edges,
         "citations": citations,
@@ -749,6 +758,123 @@ def _summary(map_type: str, source_count: int, entity_count: int) -> str:
         return "No matching evidence yet."
     label = map_type.replace("_", " ")
     return f"{label.title()} from {source_count} source(s) and {entity_count} linked node(s)."
+
+
+def _suggested_questions(map_type: str) -> list[str]:
+    if map_type == "decision":
+        return [
+            "What changed since this decision?",
+            "Which sources disagree or add risk?",
+            "What is still open?",
+        ]
+    if map_type == "timeline":
+        return [
+            "What changed most recently?",
+            "Which deadlines or commitments are implied?",
+            "What has not been updated in a while?",
+        ]
+    if map_type == "relationship":
+        return [
+            "Who is connected to this work?",
+            "Which relationship has the strongest evidence?",
+            "Where are the missing links?",
+        ]
+    if map_type == "comparison":
+        return [
+            "What are the strongest differences?",
+            "Which option has the best evidence?",
+            "What evidence is missing before choosing?",
+        ]
+    if map_type == "open_questions":
+        return [
+            "Which question blocks progress?",
+            "Who or what source can answer it?",
+            "What should Wai watch for next?",
+        ]
+    return [
+        "What are the active risks?",
+        "What changed since the last update?",
+        "What should happen next?",
+    ]
+
+
+def _freshness_note(freshness: dict[str, Any]) -> str:
+    if freshness.get("newest_source_at") is None:
+        return "No dated source yet."
+    weeks = freshness.get("weeks_since")
+    if isinstance(weeks, int) and weeks >= 3:
+        return f"Newest evidence is {weeks} week(s) old."
+    return "Evidence is current."
+
+
+def _projection_briefing(
+    *,
+    map_type: str,
+    source_items: list[tuple[tuple[str, uuid.UUID], dict[str, Any]]],
+    visible_source_items: list[tuple[tuple[str, uuid.UUID], dict[str, Any]]],
+    entity_items: list[tuple[str, tuple[str, str]]],
+    visible_entity_items: list[tuple[str, tuple[str, str]]],
+    entity_citations: dict[str, set[str]],
+    freshness: dict[str, Any],
+) -> dict[str, Any]:
+    total_sources = len(source_items)
+    visible_sources = len(visible_source_items)
+    total_entities = len(entity_items)
+    visible_entities = len(visible_entity_items)
+    hidden_sources = max(0, total_sources - visible_sources)
+    hidden_entities = max(0, total_entities - visible_entities)
+    mode = "empty"
+    if total_sources > 0:
+        mode = "focused" if hidden_sources or hidden_entities else "complete"
+
+    if mode == "empty":
+        focus_note = "No matching evidence yet."
+    elif mode == "focused":
+        focus_note = (
+            f"Showing {visible_sources} of {total_sources} source(s) and "
+            f"{visible_entities} of {total_entities} linked node(s)."
+        )
+    else:
+        focus_note = (
+            f"Showing all {total_sources} source(s) and "
+            f"{total_entities} linked node(s)."
+        )
+
+    top_sources = [
+        {
+            "id": source["id"],
+            "source_kind": source["source_kind"],
+            "source_id": source["source_id"],
+            "title": source["title"],
+            "kind": source.get("kind"),
+            "created_at": source.get("created_at"),
+        }
+        for _key, source in visible_source_items
+    ]
+    top_entities = [
+        {
+            "id": entity_id,
+            "type": entity_type,
+            "name": name,
+            "citation_count": len(entity_citations.get(entity_id, set())),
+        }
+        for entity_id, (entity_type, name) in visible_entity_items
+    ]
+    return {
+        "mode": mode,
+        "headline": map_type.replace("_", " ").title(),
+        "focus_note": focus_note,
+        "freshness_note": _freshness_note(freshness),
+        "coverage": {
+            "visible_sources": visible_sources,
+            "total_sources": total_sources,
+            "visible_entities": visible_entities,
+            "total_entities": total_entities,
+        },
+        "top_sources": top_sources,
+        "top_entities": top_entities,
+        "suggested_questions": _suggested_questions(map_type),
+    }
 
 
 async def _next_revision_index(db: AsyncSession, map_id: uuid.UUID) -> int:
