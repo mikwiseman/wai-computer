@@ -1251,11 +1251,13 @@ async def test_upload_size_mismatch_can_be_retried(
 
 
 @pytest.mark.asyncio
-async def test_processing_failed_audio_upload_can_be_retried(
+@pytest.mark.parametrize("failure_code", ["processing_failed", "audio_decode_failed"])
+async def test_failed_audio_upload_can_be_retried(
     client: AsyncClient,
     auth_headers: dict,
     db_session: AsyncSession,
     monkeypatch: pytest.MonkeyPatch,
+    failure_code: str,
 ):
     """A server-side processing failure should not strand local audio forever."""
     recording = await _create_recording(client, auth_headers, title=None)
@@ -1265,7 +1267,7 @@ async def test_processing_failed_audio_upload_can_be_retried(
     ).scalar_one()
     stored.status = RecordingStatus.FAILED.value
     stored.uploaded_at = datetime.now(timezone.utc)
-    stored.failure_code = "processing_failed"
+    stored.failure_code = failure_code
     stored.failure_message = "Imported audio processing failed"
     await db_session.commit()
 

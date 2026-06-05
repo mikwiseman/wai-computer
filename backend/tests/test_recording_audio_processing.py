@@ -26,6 +26,14 @@ from app.models.recording import (
 from app.models.user import User
 
 
+class _FakeAudioSegment:
+    def __init__(self, duration_ms: int) -> None:
+        self.duration_ms = duration_ms
+
+    def __len__(self) -> int:
+        return self.duration_ms
+
+
 @pytest.fixture(autouse=True)
 def _stub_summary_enqueue(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
@@ -1073,6 +1081,122 @@ async def test_process_staged_recording_upload_rejects_too_short_wav_before_prov
 
 
 @pytest.mark.asyncio
+async def test_process_staged_recording_upload_rejects_too_short_m4a_before_provider(
+    db_session: AsyncSession,
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from pydub import AudioSegment
+
+    user = User(
+        email="queued-too-short-m4a@example.com",
+        password_hash="x",
+        default_language="en",
+    )
+    db_session.add(user)
+    await db_session.flush()
+    recording = Recording(
+        user_id=user.id,
+        title=None,
+        type="meeting",
+        status=RecordingStatus.PROCESSING.value,
+        uploaded_at=datetime.now(timezone.utc),
+        language="en",
+    )
+    db_session.add(recording)
+    await db_session.commit()
+
+    staged_path = tmp_path / "too-short.m4a"
+    staged_path.write_bytes(b"tiny-m4a")
+    transcribe = AsyncMock(return_value=[
+        TranscriptResult(
+            text="Should not reach provider.",
+            speaker="speaker_0",
+            is_final=True,
+            start_ms=0,
+            end_ms=1000,
+            confidence=0.9,
+        )
+    ])
+    monkeypatch.setattr(AudioSegment, "from_file", lambda *_args, **_kwargs: _FakeAudioSegment(50))
+    monkeypatch.setattr(
+        "app.core.recording_audio_processing.transcribe_audio_file",
+        transcribe,
+    )
+
+    await process_staged_recording_upload(
+        db_session,
+        recording_id=recording.id,
+        user_id=user.id,
+        staged_path=staged_path,
+        content_type="audio/mp4",
+        user_default_language="en",
+        staged_size_bytes=staged_path.stat().st_size,
+    )
+
+    await db_session.refresh(recording)
+    assert recording.status == RecordingStatus.FAILED.value
+    assert recording.failure_code == "transcript_empty"
+    assert recording.title == "No speech detected"
+    assert recording.failure_message == "We could not detect clear speech in this recording."
+    assert not staged_path.exists()
+    transcribe.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_process_staged_recording_upload_marks_decode_failed_before_provider(
+    db_session: AsyncSession,
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from pydub import AudioSegment
+
+    user = User(email="queued-decode-failed@example.com", password_hash="x")
+    db_session.add(user)
+    await db_session.flush()
+    recording = Recording(
+        user_id=user.id,
+        title="Broken upload",
+        type="meeting",
+        status=RecordingStatus.PROCESSING.value,
+        uploaded_at=datetime.now(timezone.utc),
+        language="en",
+    )
+    db_session.add(recording)
+    await db_session.commit()
+
+    staged_path = tmp_path / "broken.m4a"
+    staged_path.write_bytes(b"not-media")
+    transcribe = AsyncMock(return_value=[])
+
+    def _decode_failed(*_args, **_kwargs):
+        raise RuntimeError("decode failed")
+
+    monkeypatch.setattr(AudioSegment, "from_file", _decode_failed)
+    monkeypatch.setattr(
+        "app.core.recording_audio_processing.transcribe_audio_file",
+        transcribe,
+    )
+
+    await process_staged_recording_upload(
+        db_session,
+        recording_id=recording.id,
+        user_id=user.id,
+        staged_path=staged_path,
+        content_type="audio/mp4",
+        user_default_language="en",
+        staged_size_bytes=staged_path.stat().st_size,
+    )
+
+    await db_session.refresh(recording)
+    assert recording.status == RecordingStatus.FAILED.value
+    assert recording.failure_code == "audio_decode_failed"
+    assert recording.failure_message == "Could not read the uploaded audio file."
+    assert not staged_path.exists()
+    transcribe.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_process_staged_recording_upload_allows_provider_minimum_wav(
     db_session: AsyncSession,
     tmp_path,
@@ -1149,6 +1273,8 @@ async def test_process_staged_recording_upload_maps_provider_audio_too_short_to_
     tmp_path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    from pydub import AudioSegment
+
     user = User(
         email="queued-provider-too-short@example.com",
         password_hash="x",
@@ -1182,6 +1308,7 @@ async def test_process_staged_recording_upload_maps_provider_audio_too_short_to_
         "app.core.recording_audio_processing.transcribe_audio_file",
         AsyncMock(side_effect=error),
     )
+    monkeypatch.setattr(AudioSegment, "from_file", lambda *_args, **_kwargs: _FakeAudioSegment(500))
 
     await process_staged_recording_upload(
         db_session,

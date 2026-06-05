@@ -169,6 +169,36 @@ async def test_transcribe_audio_file_detects_multichannel_wav() -> None:
 
 
 @pytest.mark.asyncio
+async def test_transcribe_audio_file_accepts_list_channel_index() -> None:
+    response = httpx.Response(
+        200,
+        json={
+            "results": {
+                "utterances": [
+                    {
+                        "start": 0.0,
+                        "end": 0.5,
+                        "confidence": 0.9,
+                        "channel": [0, 1],
+                        "transcript": "single channel list shape",
+                    }
+                ]
+            }
+        },
+        request=httpx.Request("POST", "https://api.deepgram.com/v1/listen"),
+    )
+
+    with (
+        patch("app.core.deepgram.get_settings") as mock_settings,
+        patch("httpx.AsyncClient.post", new=AsyncMock(return_value=response)),
+    ):
+        mock_settings.return_value.deepgram_api_key = "deepgram-test-key"
+        results = await transcribe_audio_file(b"m4a", content_type="audio/mp4", channels=1)
+
+    assert results[0].speaker == "Channel 1"
+
+
+@pytest.mark.asyncio
 async def test_transcribe_audio_file_normalizes_m4a_content_type() -> None:
     response = httpx.Response(
         200,

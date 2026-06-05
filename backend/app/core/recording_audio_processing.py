@@ -78,9 +78,16 @@ NO_SPEECH_PLACEHOLDERS = {
     "typing",
 }
 EMPTY_TRANSCRIPT_FAILURE_CODE = "transcript_empty"
+AUDIO_DECODE_FAILURE_CODE = "audio_decode_failed"
+AUDIO_DECODE_FAILURE_MESSAGE = "Could not read the uploaded audio file."
 MIN_FILE_STT_AUDIO_SECONDS = 0.1
+AUDIO_DURATION_PROBE_MAX_BYTES = 30 * 1024 * 1024
 PROCESSING_SLOW_MIN_THRESHOLD_MS = 300_000
 PROCESSING_AUDIO_DURATION_MULTIPLIER = 4.0
+
+
+class AudioDecodeError(Exception):
+    """Raised when a staged non-WAV upload cannot be decoded locally."""
 
 
 def copy_locale_from_recording_language(
@@ -205,10 +212,57 @@ def _wav_duration_seconds(path: Path) -> float | None:
         return None
 
 
-def _audio_duration_seconds(path: Path, content_type: str) -> float | None:
+def _normalized_content_type(content_type: str) -> str:
+    return content_type.split(";", 1)[0].strip().lower()
+
+
+def _pydub_format_for_audio(path: Path, content_type: str) -> str | None:
+    suffix = path.suffix.lower().lstrip(".")
+    if suffix == "oga":
+        return "ogg"
+    if suffix:
+        return suffix
+    return {
+        "audio/aac": "aac",
+        "audio/flac": "flac",
+        "audio/m4a": "m4a",
+        "audio/mp3": "mp3",
+        "audio/mp4": "m4a",
+        "audio/mpeg": "mp3",
+        "audio/oga": "ogg",
+        "audio/ogg": "ogg",
+        "audio/opus": "opus",
+        "audio/webm": "webm",
+    }.get(_normalized_content_type(content_type))
+
+
+def _non_wav_duration_seconds(path: Path, content_type: str) -> float:
+    from pydub import AudioSegment
+
+    try:
+        segment = AudioSegment.from_file(
+            str(path),
+            format=_pydub_format_for_audio(path, content_type),
+        )
+    except Exception as exc:
+        raise AudioDecodeError(AUDIO_DECODE_FAILURE_MESSAGE) from exc
+    return len(segment) / 1000.0
+
+
+def _audio_duration_seconds(
+    path: Path,
+    content_type: str,
+    *,
+    staged_size_bytes: int | None = None,
+) -> float | None:
     normalized_content_type = content_type.split(";", 1)[0].strip().lower()
     if normalized_content_type in {"audio/wav", "audio/x-wav"} or path.suffix.lower() == ".wav":
         return _wav_duration_seconds(path)
+    if (
+        staged_size_bytes is None
+        or staged_size_bytes <= AUDIO_DURATION_PROBE_MAX_BYTES
+    ):
+        return _non_wav_duration_seconds(path, content_type)
     return None
 
 
@@ -490,7 +544,57 @@ async def process_staged_recording_upload(
     recording.duration_seconds = None
     recording_language = recording.language or "en"
     should_generate_title = not recording.title
-    audio_duration_seconds = _audio_duration_seconds(staged_path, content_type)
+    try:
+        audio_duration_seconds = _audio_duration_seconds(
+            staged_path,
+            content_type,
+            staged_size_bytes=staged_size_bytes,
+        )
+    except AudioDecodeError as exc:
+        recording.duration_seconds = _duration_seconds_from_sources(
+            audio_duration_seconds=None,
+            client_duration_seconds=client_duration_seconds,
+            transcript_end_ms=None,
+        )
+        recording.status = RecordingStatus.FAILED.value
+        recording.failure_code = AUDIO_DECODE_FAILURE_CODE
+        recording.failure_message = sanitize_failure_message(AUDIO_DECODE_FAILURE_MESSAGE)
+        await db.commit()
+        delete_staged_file(staged_path)
+        logger.warning(
+            "audio processing rejected undecodable upload recording_id=%s "
+            "content_type=%s staged_size_bytes=%s error_type=%s error_fingerprint=%s",
+            recording_id,
+            content_type,
+            staged_size_bytes,
+            type(exc.__cause__ or exc).__name__,
+            fingerprint_text(str(exc.__cause__ or exc)),
+        )
+        capture_sentry_anomaly(
+            "recording.audio.decode_failed",
+            "Recording upload audio could not be decoded before transcription",
+            category="recording",
+            extras={
+                "recording_id": str(recording_id),
+                "content_type": content_type,
+                "staged_size_bytes": staged_size_bytes,
+                "client_duration_seconds": client_duration_seconds,
+                "error_type": type(exc.__cause__ or exc).__name__,
+                "error_fingerprint": fingerprint_text(str(exc.__cause__ or exc)),
+            },
+            level="warning",
+        )
+        _recording_lifecycle_breadcrumb(
+            "Recording processing rejected undecodable audio",
+            recording_id=recording_id,
+            level="warning",
+            data={
+                "content_type": content_type,
+                "staged_size_bytes": staged_size_bytes,
+                "client_duration_seconds": client_duration_seconds,
+            },
+        )
+        return
     logger.info(
         "audio processing started recording_id=%s content_type=%s staged_size_bytes=%s "
         "client_file_size_bytes=%s audio_duration_seconds=%s client_duration_seconds=%s",

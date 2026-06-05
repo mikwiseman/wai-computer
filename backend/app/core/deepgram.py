@@ -315,14 +315,7 @@ def _results_from_deepgram_payload(payload: object) -> list[TranscriptResult]:
         # of the stack expects (see app/core/speaker_labels.py and the web
         # formatter); this matches the format the previous provider produced, so
         # persisted segments and speaker-name extraction stay format-stable.
-        speaker_index = utterance.get("speaker")
-        channel_index = utterance.get("channel")
-        if speaker_index is not None:
-            speaker: str | None = f"speaker_{speaker_index}"
-        elif channel_index is not None:
-            speaker = f"Channel {channel_index + 1}"
-        else:
-            speaker = None
+        speaker = _speaker_label_from_utterance(utterance)
         results.append(
             TranscriptResult(
                 text=text,
@@ -334,6 +327,36 @@ def _results_from_deepgram_payload(payload: object) -> list[TranscriptResult]:
             )
         )
     return results
+
+
+def _integer_index(value: object) -> int | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float) and value.is_integer():
+        return int(value)
+    if isinstance(value, str):
+        stripped = value.strip()
+        if stripped.isdigit():
+            return int(stripped)
+    return None
+
+
+def _speaker_label_from_utterance(utterance: dict) -> str | None:
+    speaker_index = utterance.get("speaker")
+    if speaker_index is not None:
+        return f"speaker_{speaker_index}"
+
+    channel_value = utterance.get("channel")
+    channel_index = (
+        _integer_index(channel_value[0])
+        if isinstance(channel_value, (list, tuple)) and channel_value
+        else _integer_index(channel_value)
+    )
+    if channel_index is None or channel_index < 0:
+        return None
+    return f"Channel {channel_index + 1}"
 
 
 async def transcribe_audio_file(
