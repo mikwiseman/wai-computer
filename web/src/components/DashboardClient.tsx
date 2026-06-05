@@ -3689,6 +3689,7 @@ function UniversalInboxPanel({
         ) : selectedRow.source_kind === "item" ? (
           <ItemDetail
             itemId={selectedRow.source_id}
+            locale={locale}
             onError={onError}
             onDeleted={() => {
               setSelectedRow(null);
