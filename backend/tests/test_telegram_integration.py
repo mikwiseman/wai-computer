@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from contextlib import asynccontextmanager
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
@@ -3210,6 +3211,21 @@ class _MockHttpxStream:
         return None
 
 
+class _MockUrllibResponse:
+    def __init__(self, status: int, body: bytes) -> None:
+        self.status = status
+        self._body = body
+
+    def __enter__(self) -> "_MockUrllibResponse":
+        return self
+
+    def __exit__(self, *_args: object) -> None:
+        return None
+
+    def read(self) -> bytes:
+        return self._body
+
+
 def _patch_telegram_httpx(
     *,
     post_responses: list[MagicMock],
@@ -3357,6 +3373,7 @@ async def test_telegram_client_send_document_network_error_is_token_safe():
     async_ctx.__aexit__ = AsyncMock(return_value=None)
     with (
         patch("app.core.telegram_client.httpx.AsyncClient", return_value=async_ctx),
+        patch("app.core.telegram_client.urllib.request.urlopen", side_effect=OSError("offline")),
         pytest.raises(TelegramClientError) as exc,
     ):
         await TelegramBotClient("secret-token").send_document(
@@ -3365,6 +3382,37 @@ async def test_telegram_client_send_document_network_error_is_token_safe():
             data=b"transcript",
         )
     assert "secret-token" not in str(exc.value)
+
+
+@pytest.mark.asyncio
+async def test_telegram_client_send_message_recovers_from_httpx_network_error():
+    client_mock = MagicMock()
+    client_mock.post = AsyncMock(side_effect=httpx.ConnectError("dns failed"))
+    async_ctx = MagicMock()
+    async_ctx.__aenter__ = AsyncMock(return_value=client_mock)
+    async_ctx.__aexit__ = AsyncMock(return_value=None)
+    urlopen = MagicMock(
+        return_value=_MockUrllibResponse(
+            200,
+            b'{"ok": true, "result": {"message_id": 42}}',
+        )
+    )
+
+    with (
+        patch("app.core.telegram_client.httpx.AsyncClient", return_value=async_ctx),
+        patch("app.core.telegram_client.urllib.request.urlopen", urlopen),
+    ):
+        result = await TelegramBotClient("secret-token").send_message(1, "hello")
+
+    request = urlopen.call_args.args[0]
+    assert result == {"message_id": 42}
+    assert request.full_url.endswith("/sendMessage")
+    assert "secret-token" in request.full_url
+    assert json.loads(request.data.decode("utf-8")) == {
+        "chat_id": 1,
+        "text": "hello",
+        "disable_web_page_preview": True,
+    }
 
 
 @pytest.mark.asyncio
@@ -3469,6 +3517,7 @@ async def test_telegram_client_network_and_file_errors_do_not_include_token():
     async_ctx.__aexit__ = AsyncMock(return_value=None)
     with (
         patch("app.core.telegram_client.httpx.AsyncClient", return_value=async_ctx),
+        patch("app.core.telegram_client.urllib.request.urlopen", side_effect=OSError("offline")),
         pytest.raises(TelegramClientError) as exc,
     ):
         await TelegramBotClient("secret-token").send_message(1, "hello")
