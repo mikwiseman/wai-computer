@@ -536,8 +536,12 @@ class TestRunTurn:
             )
         )
         plans = [e for e in events if isinstance(e, PlanEvent)]
-        assert len(plans) == 1
-        assert plans[0].steps == [
+        assert len(plans) == 2
+        assert plans[0].steps[0] == {
+            "title": "Understand the task",
+            "status": "in_progress",
+        }
+        assert plans[1].steps == [
             {"title": "Search", "status": "in_progress"},
             {"title": "Summarize", "status": "pending"},
         ]
@@ -600,6 +604,14 @@ class TestRunTurn:
             )
         ).scalar_one()
         assert assistant.tool_calls == [
+            {
+                "type": "plan",
+                "steps": [
+                    {"title": "Understand the task", "status": "done"},
+                    {"title": "Check the needed sources and tools", "status": "done"},
+                    {"title": "Deliver the result", "status": "done"},
+                ],
+            },
             {
                 "type": "artifact",
                 "artifact_id": "call_1",

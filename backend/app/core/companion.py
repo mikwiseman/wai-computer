@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -1687,6 +1688,86 @@ def _normalize_plan_steps(raw: Any) -> list[dict[str, str]]:
 CREATE_ARTIFACT_NAME = "create_artifact"
 
 
+_TASK_LIKE_RE = re.compile(
+    r"\b("
+    r"find|search|research|compare|analy[sz]e|summari[sz]e|create|build|make|"
+    r"generate|write|draft|plan|check|audit|investigate|collect|prepare|"
+    r"remember|open|send|list"
+    r")\b"
+    r"|(?:"
+    r"найди|ищи|поиск|сравни|проанализируй|анализ|суммируй|создай|сделай|"
+    r"сгенерируй|напиши|подготовь|проверь|аудит|исследуй|собери|запомни|"
+    r"открой|отправь|перечисли"
+    r")",
+    re.IGNORECASE,
+)
+_COMPLEX_CONNECTOR_RE = re.compile(
+    r"\b(and then|then|also|after that|first|second|finally)\b|(?:\bи\b|\bпотом\b|\bзатем\b)",
+    re.IGNORECASE,
+)
+
+
+def _task_plan_for_user_text(user_text: str) -> list[dict[str, str]]:
+    """Return a short host-side plan for task-like prompts.
+
+    The model can replace this by calling update_plan. This scaffold is only a
+    UX contract: it makes long tasks visibly alive even when the model answers
+    without using the plan tool. It is deliberately generic so it cannot invent
+    work that the model has not performed.
+    """
+    text = " ".join(user_text.split())
+    if not text:
+        return []
+    looks_task_like = bool(_TASK_LIKE_RE.search(text))
+    looks_complex = len(text) >= 96 and bool(_COMPLEX_CONNECTOR_RE.search(text))
+    if not looks_task_like and not looks_complex:
+        return []
+
+    if _looks_russian(text):
+        return [
+            {"title": "Понять задачу", "status": "in_progress"},
+            {"title": "Проверить нужные источники и инструменты", "status": "pending"},
+            {"title": "Выдать результат", "status": "pending"},
+        ]
+    return [
+        {"title": "Understand the task", "status": "in_progress"},
+        {"title": "Check the needed sources and tools", "status": "pending"},
+        {"title": "Deliver the result", "status": "pending"},
+    ]
+
+
+def _advance_host_plan_for_tool_call(
+    steps: list[dict[str, str]],
+) -> list[dict[str, str]]:
+    if len(steps) < 3:
+        return steps
+    next_steps = [dict(step) for step in steps]
+    next_steps[0]["status"] = "done"
+    next_steps[1]["status"] = "in_progress"
+    next_steps[2]["status"] = "pending"
+    return next_steps
+
+
+def _complete_host_plan(steps: list[dict[str, str]]) -> list[dict[str, str]]:
+    return [{**step, "status": "done"} for step in steps]
+
+
+def _approval_host_plan(
+    user_text: str,
+    steps: list[dict[str, str]],
+) -> list[dict[str, str]]:
+    if len(steps) < 3:
+        return steps
+    next_steps = [dict(step) for step in steps]
+    next_steps[0]["status"] = "done"
+    next_steps[1]["status"] = "done"
+    next_steps[2] = {
+        "title": "Ждать подтверждения" if _looks_russian(user_text) else "Wait for approval",
+        "status": "in_progress",
+    }
+    return next_steps
+
+
 def _create_artifact_tool() -> dict[str, Any]:
     """Always-on tool: the agent produces a self-contained document (HTML / Markdown
     / code) shown as a preview card. Auto-run — it only emits a UI event."""
@@ -2079,6 +2160,14 @@ async def _run_actions_loop(
     proposed_preview: str | None = None
     persisted_tool_calls: list[dict[str, Any]] = []
     web_citations: list[dict[str, Any]] = []
+    host_plan = _task_plan_for_user_text(_message_content_to_text(user_msg.content))
+    model_plan_seen = False
+    if host_plan:
+        yield PlanEvent(steps=host_plan)
+        _upsert_stored_plan_tool_call(
+            persisted_tool_calls,
+            _stored_plan_tool_call(host_plan),
+        )
 
     for step in range(1, TOOL_CALL_CAP + 1):
         # mcp_tool = read access to the user's brain; the hosted web_search tool
@@ -2126,6 +2215,15 @@ async def _run_actions_loop(
             elif etype == "response.output_item.added":
                 _tc = _tool_call_event_from_item(_stream_event_item(event))
                 if _tc is not None:
+                    if host_plan and not model_plan_seen:
+                        advanced_plan = _advance_host_plan_for_tool_call(host_plan)
+                        if advanced_plan != host_plan:
+                            host_plan = advanced_plan
+                            yield PlanEvent(steps=host_plan)
+                            _upsert_stored_plan_tool_call(
+                                persisted_tool_calls,
+                                _stored_plan_tool_call(host_plan),
+                            )
                     _append_stored_tool_action(persisted_tool_calls, _tc)
                     yield _tc
             elif etype == "response.output_item.done":
@@ -2197,11 +2295,14 @@ async def _run_actions_loop(
                 )
             elif cname == UPDATE_PLAN_NAME:
                 plan_steps = _normalize_plan_steps(cargs.get("steps"))
-                yield PlanEvent(steps=plan_steps)
-                _upsert_stored_plan_tool_call(
-                    persisted_tool_calls,
-                    _stored_plan_tool_call(plan_steps),
-                )
+                if plan_steps:
+                    model_plan_seen = True
+                    host_plan = []
+                    yield PlanEvent(steps=plan_steps)
+                    _upsert_stored_plan_tool_call(
+                        persisted_tool_calls,
+                        _stored_plan_tool_call(plan_steps),
+                    )
                 outputs.append(
                     {
                         "type": "function_call_output",
@@ -2282,6 +2383,17 @@ async def _run_actions_loop(
     if web_citations:
         yield WebCitationsEvent(citations=web_citations)
         persisted_tool_calls.append(_stored_web_citations_tool_call(web_citations))
+    if host_plan and not model_plan_seen:
+        host_plan = (
+            _approval_host_plan(_message_content_to_text(user_msg.content), host_plan)
+            if proposed
+            else _complete_host_plan(host_plan)
+        )
+        yield PlanEvent(steps=host_plan)
+        _upsert_stored_plan_tool_call(
+            persisted_tool_calls,
+            _stored_plan_tool_call(host_plan),
+        )
     assistant_msg = ChatMessage(
         conversation_id=conv.id,
         role="assistant",

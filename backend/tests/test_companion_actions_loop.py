@@ -14,6 +14,7 @@ from app.core.companion import (
     ActionProposedEvent,
     CompanionError,
     DoneEvent,
+    PlanEvent,
     TokenEvent,
     run_turn,
 )
@@ -127,6 +128,170 @@ async def test_actions_turn_with_no_tool_call_answers_like_chat(db_session, user
     assert any(t.get("name") == "request_tool_group" for t in tools)  # lazy-attach offered
     # No write tool is attached until requested.
     assert not any(t.get("name") == "send_message_telegram" for t in tools)
+    assert not any(isinstance(e, PlanEvent) for e in events)
+
+
+async def test_task_like_actions_turn_gets_host_plan_when_model_does_not_plan(
+    db_session, user_conv
+):
+    uid, cid = user_conv
+    fake = FakeOpenAISeq(
+        [
+            [
+                _DeltaEvent("Found the links."),
+                _CompletedEvent(_FakeResponse(output_text="Found the links.")),
+            ]
+        ]
+    )
+
+    events = await _collect(
+        run_turn(
+            db_session,
+            uid,
+            cid,
+            "find links for cloud GPU pricing",
+            openai_client=fake,
+            enable_actions=True,
+        )
+    )
+
+    plans = [e for e in events if isinstance(e, PlanEvent)]
+    assert len(plans) == 2
+    assert plans[0].steps == [
+        {"title": "Understand the task", "status": "in_progress"},
+        {"title": "Check the needed sources and tools", "status": "pending"},
+        {"title": "Deliver the result", "status": "pending"},
+    ]
+    assert plans[-1].steps == [
+        {"title": "Understand the task", "status": "done"},
+        {"title": "Check the needed sources and tools", "status": "done"},
+        {"title": "Deliver the result", "status": "done"},
+    ]
+
+    assistant = (
+        await db_session.execute(
+            select(ChatMessage).where(
+                ChatMessage.conversation_id == cid,
+                ChatMessage.role == "assistant",
+            )
+        )
+    ).scalar_one()
+    assert assistant.tool_calls == [
+        {
+            "type": "plan",
+            "steps": [
+                {"title": "Understand the task", "status": "done"},
+                {"title": "Check the needed sources and tools", "status": "done"},
+                {"title": "Deliver the result", "status": "done"},
+            ],
+        }
+    ]
+
+
+async def test_host_plan_advances_when_hosted_tool_starts(db_session, user_conv):
+    uid, cid = user_conv
+    fake = FakeOpenAISeq(
+        [
+            [
+                {
+                    "type": "response.output_item.added",
+                    "item": {
+                        "type": "web_search_call",
+                        "id": "web_1",
+                        "action": {"query": "cloud GPU pricing"},
+                    },
+                },
+                _DeltaEvent("Found it."),
+                {
+                    "type": "response.output_item.done",
+                    "item": {
+                        "type": "web_search_call",
+                        "id": "web_1",
+                        "status": "completed",
+                    },
+                },
+                _CompletedEvent(_FakeResponse(output_text="Found it.")),
+            ]
+        ]
+    )
+
+    events = await _collect(
+        run_turn(
+            db_session,
+            uid,
+            cid,
+            "research cloud GPU pricing",
+            openai_client=fake,
+            enable_actions=True,
+        )
+    )
+
+    plans = [e for e in events if isinstance(e, PlanEvent)]
+    assert len(plans) == 3
+    assert plans[1].steps == [
+        {"title": "Understand the task", "status": "done"},
+        {"title": "Check the needed sources and tools", "status": "in_progress"},
+        {"title": "Deliver the result", "status": "pending"},
+    ]
+
+
+async def test_model_plan_replaces_host_plan_and_is_not_overwritten(
+    db_session, user_conv
+):
+    uid, cid = user_conv
+    fake = FakeOpenAISeq([
+        [
+            _CompletedEvent(
+                _FakeResponse(
+                    output=[
+                        _fc(
+                            "update_plan",
+                            (
+                                '{"steps": [{"title": "Search GPU prices", '
+                                '"status": "in_progress"}]}'
+                            ),
+                            "c1",
+                        )
+                    ],
+                    id="r1",
+                )
+            )
+        ],
+        [_DeltaEvent("Done."), _CompletedEvent(_FakeResponse(output_text="Done."))],
+    ])
+
+    events = await _collect(
+        run_turn(
+            db_session,
+            uid,
+            cid,
+            "research cloud GPU pricing",
+            openai_client=fake,
+            enable_actions=True,
+        )
+    )
+
+    plans = [e for e in events if isinstance(e, PlanEvent)]
+    assert len(plans) == 2
+    assert plans[0].steps[0] == {"title": "Understand the task", "status": "in_progress"}
+    assert plans[1].steps == [
+        {"title": "Search GPU prices", "status": "in_progress"}
+    ]
+
+    assistant = (
+        await db_session.execute(
+            select(ChatMessage).where(
+                ChatMessage.conversation_id == cid,
+                ChatMessage.role == "assistant",
+            )
+        )
+    ).scalar_one()
+    assert assistant.tool_calls == [
+        {
+            "type": "plan",
+            "steps": [{"title": "Search GPU prices", "status": "in_progress"}],
+        }
+    ]
 
 
 async def test_write_tool_call_proposes_and_defers(db_session, user_conv):
@@ -198,6 +363,63 @@ async def test_write_tool_call_proposes_and_defers(db_session, user_conv):
     ]
 
     assert any(isinstance(e, DoneEvent) for e in events)
+
+
+async def test_host_plan_waits_when_task_requires_approval(db_session, user_conv):
+    uid, cid = user_conv
+    fake = FakeOpenAISeq([
+        [
+            _CompletedEvent(
+                _FakeResponse(
+                    output=[_fc("request_tool_group", '{"group": "telegram"}', "c1")],
+                    id="r1",
+                )
+            )
+        ],
+        [
+            _CompletedEvent(
+                _FakeResponse(
+                    output=[_fc("send_message_telegram", '{"text": "late"}', "c2")],
+                    id="r2",
+                )
+            )
+        ],
+    ])
+
+    events = await _collect(
+        run_turn(
+            db_session,
+            uid,
+            cid,
+            "send me a Telegram message saying late",
+            openai_client=fake,
+            enable_actions=True,
+        )
+    )
+
+    plans = [e for e in events if isinstance(e, PlanEvent)]
+    assert plans[-1].steps == [
+        {"title": "Understand the task", "status": "done"},
+        {"title": "Check the needed sources and tools", "status": "done"},
+        {"title": "Wait for approval", "status": "in_progress"},
+    ]
+
+    assistant = (
+        await db_session.execute(
+            select(ChatMessage).where(
+                ChatMessage.conversation_id == cid,
+                ChatMessage.role == "assistant",
+            )
+        )
+    ).scalar_one()
+    assert assistant.tool_calls[0] == {
+        "type": "plan",
+        "steps": [
+            {"title": "Understand the task", "status": "done"},
+            {"title": "Check the needed sources and tools", "status": "done"},
+            {"title": "Wait for approval", "status": "in_progress"},
+        ],
+    }
 
 
 async def test_loop_surfaces_stream_error(db_session, user_conv):
