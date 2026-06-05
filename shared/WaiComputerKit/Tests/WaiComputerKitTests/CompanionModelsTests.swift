@@ -256,7 +256,7 @@ final class CompanionModelsTests: XCTestCase {
         let events: [CompanionStreamEvent] = [
             .turnStart(messageId: "m1", conversationId: "c1"),
             .toolCall(callId: "t1", tool: "search"),
-            .toolResult(callId: "t1", summary: "ok"),
+            .toolResult(callId: "t1", summary: "ok", ok: true),
             .token(text: "hi"),
             .citation(citation),
             .done(messageId: "m1", model: "gpt", latencyMs: 250),

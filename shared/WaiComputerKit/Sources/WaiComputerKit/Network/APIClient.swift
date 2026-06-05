@@ -1828,7 +1828,7 @@ public actor APIClient {
         content: String,
         viewingRecordingId: String? = nil,
         viewingFolderId: String? = nil,
-        clientCapabilities: [String] = ["actions_v1"],
+        clientCapabilities: [String] = ["actions_v1", "agent_chat_v2"],
         now: Date = Date(),
         timeZone: TimeZone = .current,
         calendar: Calendar = .current

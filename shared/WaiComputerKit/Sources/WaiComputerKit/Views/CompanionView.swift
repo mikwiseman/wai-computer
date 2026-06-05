@@ -833,10 +833,14 @@ public struct CompanionView: View {
             break
         case .toolCall(let callId, let tool):
             streamingToolNotes.append("\(tool) (\(callId))…")
-        case .toolResult(let callId, let summary):
+        case .toolResult(let callId, let summary, _):
             if let idx = streamingToolNotes.firstIndex(where: { $0.contains(callId) }) {
                 streamingToolNotes[idx] = "\(streamingToolNotes[idx]) → \(summary)"
             }
+        case .thinking:
+            break  // rendered by the structured timeline (M2)
+        case .plan:
+            break  // rendered by the structured timeline (M2)
         case .token(let text):
             streamingText += text
             if !streamingText.isEmpty { stage = .composing }
