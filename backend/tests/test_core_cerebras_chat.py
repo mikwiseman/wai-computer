@@ -43,10 +43,13 @@ def test_strict_json_response_format_sanitizes_pydantic_schema() -> None:
     assert response_format["json_schema"]["strict"] is True
     assert schema["additionalProperties"] is False
     assert "title" not in schema
+    assert "title" in schema["properties"]
+    assert schema["required"] == ["title", "items"]
     assert "maxItems" not in schema["properties"]["items"]
     nested = schema["$defs"]["_Nested"]
     assert nested["additionalProperties"] is False
     assert "title" not in nested
+    assert nested["required"] == ["name"]
 
 
 def test_chat_completion_text_reads_content_and_rejects_incomplete() -> None:

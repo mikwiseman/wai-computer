@@ -163,8 +163,17 @@ def _sanitize_json_schema(value: Any) -> Any:
         for key, raw in value.items():
             if key in unsupported_keys:
                 continue
+            if key in {"$defs", "definitions", "properties"} and isinstance(raw, dict):
+                cleaned[key] = {
+                    property_name: _sanitize_json_schema(property_schema)
+                    for property_name, property_schema in raw.items()
+                }
+                continue
             cleaned[key] = _sanitize_json_schema(raw)
         if cleaned.get("type") == "object":
+            properties = cleaned.get("properties")
+            if isinstance(properties, dict):
+                cleaned["required"] = list(properties)
             cleaned["additionalProperties"] = False
         return cleaned
     if isinstance(value, list):
