@@ -1017,7 +1017,7 @@ export function BillingDashboard({ locale, currency }: Props) {
                 borderRadius: "8px",
                 border: "1px solid var(--border)",
                 background: "var(--accent)",
-                color: "var(--accent-ink, #fff)",
+                color: "var(--accent-contrast)",
                 cursor: portalInFlight ? "wait" : "pointer",
                 minHeight: "38px",
                 fontWeight: 600,

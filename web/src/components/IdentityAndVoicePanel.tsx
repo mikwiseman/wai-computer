@@ -263,7 +263,7 @@ export function IdentityAndVoicePanel({ locale = "en" }: IdentityAndVoicePanelPr
           <p className="settings-note">{subtitle()}</p>
 
           {error ? (
-            <p className="settings-note" style={{ color: "#dc2626" }}>
+            <p className="settings-note" style={{ color: "var(--danger)" }}>
               {error}
             </p>
           ) : null}
@@ -277,7 +277,7 @@ export function IdentityAndVoicePanel({ locale = "en" }: IdentityAndVoicePanelPr
               style={{
                 marginTop: "1rem",
                 padding: "0.75rem 1rem",
-                border: "1px solid var(--surface-border, rgba(0,0,0,0.1))",
+                border: "1px solid var(--border)",
                 borderRadius: "0.5rem",
               }}
             >
