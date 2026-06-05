@@ -703,9 +703,10 @@ async def _send_chat_action_until_cancelled(
             await client.send_chat_action(chat_id, action)
         except TelegramClientError as exc:
             logger.warning(
-                "telegram chat action failed action=%s error=%s",
+                "telegram chat action failed action=%s error=%s detail=%s",
                 action,
                 type(exc).__name__,
+                str(exc)[:300],
             )
         except Exception:
             logger.exception("telegram chat action crashed action=%s", action)
@@ -2727,16 +2728,17 @@ async def _handle_update(update: dict[str, Any]) -> None:
             await _mark_update(db, update_id, "completed")
         except (TelegramClientError, RecordingImportError) as exc:
             logger.warning(
-                "telegram update failed update_id=%s code=%s",
+                "telegram update failed update_id=%s code=%s detail=%s",
                 update_id,
                 type(exc).__name__,
+                str(exc)[:500],
             )
             await _mark_update(
                 db,
                 update_id,
                 "failed",
                 type(exc).__name__,
-                "Telegram update failed",
+                str(exc)[:2000] or "Telegram update failed",
             )
         except Exception:
             logger.exception("telegram update failed update_id=%s", update_id)

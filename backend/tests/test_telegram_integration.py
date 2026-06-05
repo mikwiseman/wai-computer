@@ -3254,7 +3254,10 @@ async def test_telegram_client_send_get_and_download():
     assert tg_file.file_path == "voice/file.ogg"
     assert data == b"audio"
     assert client_mock.post.await_args_list[0].args[0].endswith("/sendMessage")
-    assert client_mock.post.await_args_list[0].kwargs["json"]["reply_to_message_id"] == 9
+    assert client_mock.post.await_args_list[0].kwargs["json"]["reply_parameters"] == {
+        "message_id": 9,
+        "allow_sending_without_reply": True,
+    }
     assert client_mock.post.await_args_list[0].kwargs["json"]["parse_mode"] == "HTML"
     assert client_mock.stream.call_args.args[1].endswith("/voice/file.ogg")
 

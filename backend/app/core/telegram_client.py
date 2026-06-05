@@ -112,7 +112,10 @@ class TelegramBotClient:
             "disable_web_page_preview": True,
         }
         if reply_to_message_id is not None:
-            payload["reply_to_message_id"] = reply_to_message_id
+            payload["reply_parameters"] = {
+                "message_id": reply_to_message_id,
+                "allow_sending_without_reply": True,
+            }
         if parse_mode:
             payload["parse_mode"] = parse_mode
         return await self._post(
