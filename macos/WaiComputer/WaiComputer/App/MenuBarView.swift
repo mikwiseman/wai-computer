@@ -113,7 +113,7 @@ struct MenuBarView: View {
                             Text(recordingVM.canStopRecording ? t("Stop Recording", "Остановить запись") : recordingVM.statusText)
                                 .font(Typography.body)
                             Spacer()
-                            Text("\u{2318}R")
+                            Text("\u{2318}.")
                                 .font(Typography.caption)
                                 .foregroundStyle(Palette.textTertiary)
                         }
@@ -135,12 +135,13 @@ struct MenuBarView: View {
                     .padding(.horizontal, Spacing.lg)
                 } else {
                     Button {
-                        Task { await appState.startRecording(type: .meeting, inputSource: .dual) }
+                        appState.pendingMainWindowAction = .inboxCommand(.showCreatePane)
+                        openMainWindow()
                     } label: {
                         HStack {
-                            Image(systemName: "waveform")
+                            Image(systemName: "tray.full")
                                 .foregroundStyle(Palette.textSecondary)
-                            Text(t("Record", "Записать"))
+                            Text(t("New Inbox Item", "Новый объект в Инбоксе"))
                                 .font(Typography.body)
                             Spacer()
                             Text("\u{2318}N")
@@ -154,16 +155,35 @@ struct MenuBarView: View {
                     .buttonStyle(.plain)
 
                     Button {
-                        appState.pendingMainWindowAction = .importAudioFile
+                        Task { await appState.startRecording(type: .meeting, inputSource: .dual) }
+                    } label: {
+                        HStack {
+                            Image(systemName: "waveform")
+                                .foregroundStyle(Palette.textSecondary)
+                            Text(t("Record", "Записать"))
+                                .font(Typography.body)
+                            Spacer()
+                            Text("\u{21E7}\u{2318}R")
+                                .font(Typography.caption)
+                                .foregroundStyle(Palette.textTertiary)
+                        }
+                        .contentShape(Rectangle())
+                        .padding(.vertical, Spacing.sm)
+                        .padding(.horizontal, Spacing.lg)
+                    }
+                    .buttonStyle(.plain)
+
+                    Button {
+                        appState.pendingMainWindowAction = .inboxCommand(.uploadFile)
                         openMainWindow()
                     } label: {
                         HStack {
                             Image(systemName: "square.and.arrow.down")
                                 .foregroundStyle(Palette.textSecondary)
-                            Text(t("Import Audio File", "Импорт аудиофайла"))
+                            Text(t("Upload File", "Загрузить файл"))
                                 .font(Typography.body)
                             Spacer()
-                            Text("\u{2318}I")
+                            Text("\u{2325}\u{2318}U")
                                 .font(Typography.caption)
                                 .foregroundStyle(Palette.textTertiary)
                         }

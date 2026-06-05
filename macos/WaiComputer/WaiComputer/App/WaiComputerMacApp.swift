@@ -6,8 +6,18 @@ import Sparkle
 extension Notification.Name {
     static let importAudioFile = Notification.Name("importAudioFile")
     static let showNewRecording = Notification.Name("showNewRecording")
+    static let macInboxCommand = Notification.Name("macInboxCommand")
+    static let macCreateFolder = Notification.Name("macCreateFolder")
     static let waicomputerIncomingURL = Notification.Name("waicomputerIncomingURL")
     static let waicomputerCheckForUpdates = Notification.Name("waicomputerCheckForUpdates")
+}
+
+enum MacInboxCommand: String, Equatable {
+    case showCreatePane
+    case recordNow
+    case uploadFile
+    case pasteLinkOrText
+    case askWai
 }
 
 @main
@@ -141,7 +151,7 @@ struct WaiComputerMacApp: App {
         .windowStyle(.hiddenTitleBar)
         .defaultSize(width: 1200, height: 800)
         .commands {
-            // Replace default Cmd+N (new window) with recording commands
+            // Replace default Cmd+N (new window) with Inbox-first creation commands.
             CommandGroup(replacing: .newItem) {
                 if recordingViewModel.shouldPresentLiveView {
                     Button(recordingViewModel.canResumeRecording ? t("Resume Recording", "Продолжить запись") : t("Pause Recording", "Пауза")) {
@@ -159,24 +169,48 @@ struct WaiComputerMacApp: App {
                     Button(t("Stop Recording", "Остановить запись")) {
                         Task { await appState.stopRecording() }
                     }
-                    .keyboardShortcut("r", modifiers: .command)
+                    .keyboardShortcut(".", modifiers: .command)
                     .disabled(!recordingViewModel.canStopRecording)
 
                     Divider()
                 }
 
-                Button(t("New Recording", "Новая запись")) {
-                    Task { await appState.startRecording(type: .meeting, inputSource: .dual) }
+                Button(t("New Inbox Item", "Новый объект в Инбоксе")) {
+                    postInboxCommand(.showCreatePane)
                 }
                 .keyboardShortcut("n", modifiers: .command)
                 .disabled(isRecordingActivityVisible || !appState.isAuthenticated)
 
+                Button(t("New Folder", "Новая папка")) {
+                    NotificationCenter.default.post(name: .macCreateFolder, object: nil)
+                }
+                .keyboardShortcut("n", modifiers: [.command, .shift])
+                .disabled(isRecordingActivityVisible || !appState.isAuthenticated)
+
                 Divider()
 
-                Button(t("Import Audio File", "Импорт аудиофайла")) {
-                    NotificationCenter.default.post(name: .importAudioFile, object: nil)
+                Button(t("Record Now", "Записать сейчас")) {
+                    postInboxCommand(.recordNow)
                 }
-                .keyboardShortcut("i", modifiers: .command)
+                .keyboardShortcut("r", modifiers: [.command, .shift])
+                .disabled(isRecordingActivityVisible || !appState.isAuthenticated)
+
+                Button(t("Upload File", "Загрузить файл")) {
+                    postInboxCommand(.uploadFile)
+                }
+                .keyboardShortcut("u", modifiers: [.command, .option])
+                .disabled(isRecordingActivityVisible || !appState.isAuthenticated)
+
+                Button(t("Paste Link or Text", "Вставить ссылку или текст")) {
+                    postInboxCommand(.pasteLinkOrText)
+                }
+                .keyboardShortcut("v", modifiers: [.command, .option])
+                .disabled(isRecordingActivityVisible || !appState.isAuthenticated)
+
+                Button(t("Ask Wai", "Спросить Wai")) {
+                    postInboxCommand(.askWai)
+                }
+                .keyboardShortcut("a", modifiers: [.command, .option])
                 .disabled(isRecordingActivityVisible || !appState.isAuthenticated)
             }
 
@@ -201,39 +235,38 @@ struct WaiComputerMacApp: App {
                 #endif
             }
 
-            // View menu — sidebar navigation
-            CommandMenu(t("View", "Вид")) {
-                Button(t("All Recordings", "Все записи")) {
-                    NotificationCenter.default.post(name: .init("navigateTo"), object: "allRecordings")
+            CommandMenu(t("Navigate", "Переход")) {
+                Button(t("Inbox", "Инбокс")) {
+                    NotificationCenter.default.post(name: .init("navigateTo"), object: "inbox")
                 }
                 .keyboardShortcut("1", modifiers: .command)
+
+                Button(t("Brain", "Мозг")) {
+                    NotificationCenter.default.post(name: .init("navigateTo"), object: "brain")
+                }
+                .keyboardShortcut("2", modifiers: .command)
+
+                Button(t("Trash", "Корзина")) {
+                    NotificationCenter.default.post(name: .init("navigateTo"), object: "trash")
+                }
+                .keyboardShortcut("3", modifiers: .command)
+
+                Button(t("History", "История")) {
+                    NotificationCenter.default.post(name: .init("navigateTo"), object: "history")
+                }
+                .keyboardShortcut("4", modifiers: .command)
+
+                Button(t("Dictionary", "Словарь")) {
+                    NotificationCenter.default.post(name: .init("navigateTo"), object: "dictionary")
+                }
+                .keyboardShortcut("5", modifiers: .command)
+
+                Divider()
 
                 Button(t("Search", "Поиск")) {
                     NotificationCenter.default.post(name: .init("navigateTo"), object: "search")
                 }
                 .keyboardShortcut("f", modifiers: .command)
-
-                Button(t("History", "История")) {
-                    NotificationCenter.default.post(name: .init("navigateTo"), object: "history")
-                }
-                .keyboardShortcut("2", modifiers: .command)
-
-                Button(t("Dictionary", "Словарь")) {
-                    NotificationCenter.default.post(name: .init("navigateTo"), object: "dictionary")
-                }
-                .keyboardShortcut("3", modifiers: .command)
-
-                Button(t("Settings", "Настройки")) {
-                    NotificationCenter.default.post(name: .init("navigateToSettings"), object: nil)
-                }
-                .keyboardShortcut("4", modifiers: .command)
-
-                Divider()
-
-                Button(t("Trash", "Корзина")) {
-                    NotificationCenter.default.post(name: .init("navigateTo"), object: "trash")
-                }
-                .keyboardShortcut("5", modifiers: .command)
             }
 
             // Remove the default "New Window" from the Window menu
@@ -269,6 +302,10 @@ struct WaiComputerMacApp: App {
     private func t(_ english: String, _ russian: String) -> String {
         OnboardingL10n.text(english, russian, language: languageManager.current)
     }
+
+    private func postInboxCommand(_ command: MacInboxCommand) {
+        NotificationCenter.default.post(name: .macInboxCommand, object: command.rawValue)
+    }
 }
 
 enum MacPresentationSettings {
@@ -280,7 +317,7 @@ enum MacPresentationSettings {
 }
 
 enum MacMainWindowAction: Equatable {
-    case importAudioFile
+    case inboxCommand(MacInboxCommand)
     case settings
 }
 

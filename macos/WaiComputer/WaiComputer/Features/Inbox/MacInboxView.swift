@@ -35,9 +35,11 @@ struct MacInboxView: View {
     let initialSourceKind: InboxSourceKind?
     let folderId: String?
     let pendingDetail: InboxDetailRef?
+    let pendingCommand: MacInboxCommand?
     let onStartRecording: () -> Void
     let onLibraryChanged: () async -> Void
     let onPendingDetailConsumed: () -> Void
+    let onPendingCommandConsumed: () -> Void
 
     @EnvironmentObject private var languageManager: LanguageManager
     @StateObject private var model: MacInboxViewModel
@@ -52,9 +54,11 @@ struct MacInboxView: View {
         initialSourceKind: InboxSourceKind? = nil,
         folderId: String? = nil,
         pendingDetail: InboxDetailRef? = nil,
+        pendingCommand: MacInboxCommand? = nil,
         onStartRecording: @escaping () -> Void,
         onLibraryChanged: @escaping () async -> Void,
-        onPendingDetailConsumed: @escaping () -> Void = {}
+        onPendingDetailConsumed: @escaping () -> Void = {},
+        onPendingCommandConsumed: @escaping () -> Void = {}
     ) {
         self.apiClient = apiClient
         self.recordings = recordings
@@ -62,9 +66,11 @@ struct MacInboxView: View {
         self.initialSourceKind = initialSourceKind
         self.folderId = folderId
         self.pendingDetail = pendingDetail
+        self.pendingCommand = pendingCommand
         self.onStartRecording = onStartRecording
         self.onLibraryChanged = onLibraryChanged
         self.onPendingDetailConsumed = onPendingDetailConsumed
+        self.onPendingCommandConsumed = onPendingCommandConsumed
         _model = StateObject(wrappedValue: MacInboxViewModel(
             apiClient: apiClient,
             sourceKind: initialSourceKind,
@@ -102,6 +108,7 @@ struct MacInboxView: View {
             await model.configureScope(sourceKind: initialSourceKind, folderId: folderId)
             await model.load()
             consumePendingDetailIfNeeded()
+            consumePendingCommandIfNeeded()
         }
         .onChangeCompat(of: initialSourceKind) { _, next in
             Task {
@@ -115,6 +122,9 @@ struct MacInboxView: View {
         }
         .onChangeCompat(of: pendingDetail) { _, _ in
             consumePendingDetailIfNeeded()
+        }
+        .onChangeCompat(of: pendingCommand) { _, _ in
+            consumePendingCommandIfNeeded()
         }
         .onChangeCompat(of: model.rows) { _, _ in
             consumePendingDetailIfNeeded()
@@ -535,6 +545,33 @@ struct MacInboxView: View {
             if let detail = await model.newChat() {
                 selectedDetail = detail
             }
+        }
+    }
+
+    private func consumePendingCommandIfNeeded() {
+        guard let pendingCommand else { return }
+        performInboxCommand(pendingCommand)
+        onPendingCommandConsumed()
+    }
+
+    private func performInboxCommand(_ command: MacInboxCommand) {
+        switch command {
+        case .showCreatePane:
+            selectedDetail = nil
+            activeCreateMode = nil
+        case .recordNow:
+            selectedDetail = nil
+            activeCreateMode = nil
+            onStartRecording()
+        case .uploadFile:
+            chooseFile()
+        case .pasteLinkOrText:
+            selectedDetail = nil
+            activeCreateMode = .paste
+        case .askWai:
+            selectedDetail = nil
+            activeCreateMode = nil
+            startAskThread()
         }
     }
 

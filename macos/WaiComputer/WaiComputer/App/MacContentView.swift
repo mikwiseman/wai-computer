@@ -121,6 +121,7 @@ struct MacMainView: View {
     @State private var lastMeasuredLayoutWidth: CGFloat = 0
     @State private var pendingRecordingSelectionAfterSectionChange: PendingRecordingSelection?
     @State private var pendingInboxDetail: InboxDetailRef?
+    @State private var pendingInboxCommand: MacInboxCommand?
 
     enum SidebarSection: Hashable {
         case inbox
@@ -518,6 +519,15 @@ struct MacMainView: View {
         .onReceive(NotificationCenter.default.publisher(for: .importAudioFile)) { _ in
             importAudioFile()
         }
+        .onReceive(NotificationCenter.default.publisher(for: .macInboxCommand)) { notification in
+            guard let rawCommand = notification.object as? String,
+                  let command = MacInboxCommand(rawValue: rawCommand)
+            else { return }
+            routeInboxCommand(command)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .macCreateFolder)) { _ in
+            beginCreateFolderFromCommand()
+        }
         .onReceive(NotificationCenter.default.publisher(for: .init("navigateToSettings"))) { _ in
             selectedSection = .settings
         }
@@ -824,6 +834,7 @@ struct MacMainView: View {
                 initialSourceKind: inboxInitialSourceKind,
                 folderId: currentFolderId,
                 pendingDetail: pendingInboxDetail,
+                pendingCommand: pendingInboxCommand,
                 onStartRecording: {
                     startRecording(type: .meeting, inputSource: .dual, folderId: currentFolderId)
                 },
@@ -832,6 +843,9 @@ struct MacMainView: View {
                 },
                 onPendingDetailConsumed: {
                     pendingInboxDetail = nil
+                },
+                onPendingCommandConsumed: {
+                    pendingInboxCommand = nil
                 }
             )
             .environment(\.locale, MacDateFormatting.locale(for: languageManager.current))
@@ -1063,6 +1077,21 @@ struct MacMainView: View {
 
     // MARK: - Actions
 
+    private func routeInboxCommand(_ command: MacInboxCommand) {
+        guard !isRecordingHandoffActive else { return }
+        selectedRecordingIds.removeAll()
+        prefetchedRecordingDetail = nil
+        pendingInboxDetail = nil
+        pendingInboxCommand = command
+        selectedSection = .inbox
+    }
+
+    private func beginCreateFolderFromCommand() {
+        guard !isRecordingHandoffActive, !isLibraryOperationActive else { return }
+        shouldAssignNewFolderToSelection = !selectedRecordingIds.isEmpty
+        isShowingCreateFolderSheet = true
+    }
+
     private func startRecording(
         type: RecordingType,
         inputSource: MacRecordingInputSource = .dual,
@@ -1134,8 +1163,8 @@ struct MacMainView: View {
 
         appState.pendingMainWindowAction = nil
         switch action {
-        case .importAudioFile:
-            importAudioFile()
+        case .inboxCommand(let command):
+            routeInboxCommand(command)
         case .settings:
             selectedSection = .settings
         }

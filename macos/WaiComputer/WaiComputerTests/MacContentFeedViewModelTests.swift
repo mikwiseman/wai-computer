@@ -89,6 +89,50 @@ final class MacContentFeedViewModelTests: XCTestCase {
         XCTAssertFalse(source.contains("case .file:"))
     }
 
+    func testCommandNOpensInboxCreatePaneInsteadOfStartingRecording() throws {
+        let appSource = try macSource("WaiComputer/App/WaiComputerMacApp.swift")
+        let shellSource = try macSource("WaiComputer/App/MacContentView.swift")
+        let inboxSource = try macSource("WaiComputer/Features/Inbox/MacInboxView.swift")
+
+        XCTAssertTrue(appSource.contains("Button(t(\"New Inbox Item\", \"Новый объект в Инбоксе\"))"))
+        XCTAssertTrue(appSource.contains(".keyboardShortcut(\"n\", modifiers: .command)"))
+        XCTAssertTrue(appSource.contains("postInboxCommand(.showCreatePane)"))
+        XCTAssertTrue(shellSource.contains("routeInboxCommand(command)"))
+        XCTAssertTrue(inboxSource.contains("case .showCreatePane:"))
+        XCTAssertFalse(appSource.contains(".keyboardShortcut(\"n\", modifiers: .command)\n                .disabled(isRecordingActivityVisible || !appState.isAuthenticated)\n\n                Divider()\n\n                Button(t(\"Import Audio File\""))
+        XCTAssertFalse(appSource.contains("Task { await appState.startRecording(type: .meeting, inputSource: .dual) }\n                }\n                .keyboardShortcut(\"n\", modifiers: .command)"))
+    }
+
+    func testInboxCommandMenuCoversAllCreateActionsWithShortcuts() throws {
+        let source = try macSource("WaiComputer/App/WaiComputerMacApp.swift")
+
+        XCTAssertTrue(source.contains("Button(t(\"Record Now\", \"Записать сейчас\"))"))
+        XCTAssertTrue(source.contains("postInboxCommand(.recordNow)"))
+        XCTAssertTrue(source.contains(".keyboardShortcut(\"r\", modifiers: [.command, .shift])"))
+        XCTAssertTrue(source.contains("Button(t(\"Upload File\", \"Загрузить файл\"))"))
+        XCTAssertTrue(source.contains("postInboxCommand(.uploadFile)"))
+        XCTAssertTrue(source.contains(".keyboardShortcut(\"u\", modifiers: [.command, .option])"))
+        XCTAssertTrue(source.contains("Button(t(\"Paste Link or Text\", \"Вставить ссылку или текст\"))"))
+        XCTAssertTrue(source.contains("postInboxCommand(.pasteLinkOrText)"))
+        XCTAssertTrue(source.contains(".keyboardShortcut(\"v\", modifiers: [.command, .option])"))
+        XCTAssertTrue(source.contains("Button(t(\"Ask Wai\", \"Спросить Wai\"))"))
+        XCTAssertTrue(source.contains("postInboxCommand(.askWai)"))
+        XCTAssertTrue(source.contains(".keyboardShortcut(\"a\", modifiers: [.command, .option])"))
+    }
+
+    func testNavigationShortcutsFollowSidebarOrder() throws {
+        let source = try macSource("WaiComputer/App/WaiComputerMacApp.swift")
+
+        XCTAssertBefore("object: \"inbox\"", ".keyboardShortcut(\"1\", modifiers: .command)", in: source)
+        XCTAssertBefore("object: \"brain\"", ".keyboardShortcut(\"2\", modifiers: .command)", in: source)
+        XCTAssertBefore("object: \"trash\"", ".keyboardShortcut(\"3\", modifiers: .command)", in: source)
+        XCTAssertBefore("object: \"history\"", ".keyboardShortcut(\"4\", modifiers: .command)", in: source)
+        XCTAssertBefore("object: \"dictionary\"", ".keyboardShortcut(\"5\", modifiers: .command)", in: source)
+        XCTAssertTrue(source.contains("CommandMenu(t(\"Navigate\", \"Переход\"))"))
+        XCTAssertTrue(source.contains("Button(t(\"New Folder\", \"Новая папка\"))"))
+        XCTAssertTrue(source.contains(".keyboardShortcut(\"n\", modifiers: [.command, .shift])"))
+    }
+
     func testInboxTableDisablesHorizontalScrollingAndGridLines() throws {
         let source = try macSource("WaiComputer/Features/Inbox/MacInboxView.swift")
 
