@@ -326,6 +326,19 @@
   --color-text-secondary: var(--ink-soft);
   --color-border: var(--border);
   --color-surface: var(--panel);
+
+  /* Compatibility aliases — globals.css references these names that were never
+   * defined, so the rules silently fell back to `initial` (no border / no
+   * background). Map them to the canonical tokens; because they reference other
+   * tokens they stay light/dark-adaptive automatically.
+   *   --line       → cleanup-level cards + dividers had no border
+   *   --surface    → cleanup-level + server-data-badge had no background
+   *   --color-bg   → admin page + admin inputs had no background
+   *   --panel-soft → MCP code blocks / endpoint URL field lost their tint */
+  --color-bg: var(--bg);
+  --line: var(--border);
+  --surface: var(--panel);
+  --panel-soft: var(--panel-subtle);
 }
 
 /* -----------------------------------------------------------------------

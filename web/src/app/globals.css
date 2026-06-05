@@ -947,8 +947,15 @@ a.primary-button[aria-disabled="true"]:hover {
 }
 
 .inline-alert {
-  background: rgba(194, 65, 59, 0.1);
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
   color: var(--danger);
+}
+
+/* Inline error message (e.g. failed summary audio). Was referenced by
+ * SummaryAudioControls with no rule, so the error rendered as plain body text. */
+.error-text {
+  color: var(--danger);
+  font-size: var(--font-body-small-size);
 }
 
 .inline-success,
@@ -4536,7 +4543,7 @@ a.primary-button[aria-disabled="true"]:hover {
   border: 0;
   border-radius: 8px;
   background: var(--accent);
-  color: white;
+  color: var(--accent-contrast);
   font: inherit;
   font-weight: 700;
   padding: 0.8rem 1.2rem;
