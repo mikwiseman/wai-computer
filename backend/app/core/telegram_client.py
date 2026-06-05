@@ -3,6 +3,10 @@
 from __future__ import annotations
 
 import asyncio
+import json
+import urllib.error
+import urllib.request
+import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -70,12 +74,120 @@ class TelegramBotClient:
         result = data.get("result")
         return result if isinstance(result, dict) else {"value": result}
 
+    @staticmethod
+    def _parse_response_body(method: str, status_code: int, body: bytes) -> dict[str, Any]:
+        if status_code >= 400:
+            try:
+                data = json.loads(body.decode("utf-8"))
+            except (UnicodeDecodeError, json.JSONDecodeError):
+                raise TelegramClientError(
+                    f"Telegram {method} returned HTTP {status_code}"
+                )
+            description = str(data.get("description") or f"HTTP {status_code}")
+            raise TelegramClientError(f"Telegram {method} failed: {description}")
+        try:
+            data = json.loads(body.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise TelegramClientError(f"Telegram {method} returned invalid JSON") from exc
+        if not data.get("ok"):
+            description = str(data.get("description") or "request failed")
+            raise TelegramClientError(f"Telegram {method} failed: {description}")
+        result = data.get("result")
+        return result if isinstance(result, dict) else {"value": result}
+
+    def _post_json_sync(self, method: str, payload: dict[str, Any]) -> dict[str, Any]:
+        request = urllib.request.Request(
+            f"{self._api_base}/{method}",
+            data=json.dumps(payload).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=30.0) as response:
+                return self._parse_response_body(
+                    method, response.status, response.read()
+                )
+        except urllib.error.HTTPError as exc:
+            return self._parse_response_body(method, exc.code, exc.read())
+        except OSError as exc:
+            raise TelegramClientError(
+                f"Telegram {method} stdlib request failed: {type(exc).__name__}"
+            ) from exc
+
+    @staticmethod
+    def _multipart_body(
+        *,
+        data: dict[str, str],
+        files: dict[str, tuple[str, bytes, str]],
+        boundary: str,
+    ) -> bytes:
+        parts: list[bytes] = []
+        for key, value in data.items():
+            parts.extend(
+                [
+                    f"--{boundary}\r\n".encode("utf-8"),
+                    f'Content-Disposition: form-data; name="{key}"\r\n\r\n'.encode(
+                        "utf-8"
+                    ),
+                    value.encode("utf-8"),
+                    b"\r\n",
+                ]
+            )
+        for key, (filename, content, content_type) in files.items():
+            safe_filename = filename.replace('"', "")
+            parts.extend(
+                [
+                    f"--{boundary}\r\n".encode("utf-8"),
+                    (
+                        f'Content-Disposition: form-data; name="{key}"; '
+                        f'filename="{safe_filename}"\r\n'
+                    ).encode("utf-8"),
+                    f"Content-Type: {content_type}\r\n\r\n".encode("utf-8"),
+                    content,
+                    b"\r\n",
+                ]
+            )
+        parts.append(f"--{boundary}--\r\n".encode("utf-8"))
+        return b"".join(parts)
+
+    def _post_multipart_sync(
+        self,
+        method: str,
+        *,
+        data: dict[str, str],
+        files: dict[str, tuple[str, bytes, str]],
+    ) -> dict[str, Any]:
+        boundary = f"wai-{uuid.uuid4().hex}"
+        request = urllib.request.Request(
+            f"{self._api_base}/{method}",
+            data=self._multipart_body(data=data, files=files, boundary=boundary),
+            headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=120.0) as response:
+                return self._parse_response_body(
+                    method, response.status, response.read()
+                )
+        except urllib.error.HTTPError as exc:
+            return self._parse_response_body(method, exc.code, exc.read())
+        except OSError as exc:
+            raise TelegramClientError(
+                f"Telegram {method} stdlib request failed: {type(exc).__name__}"
+            ) from exc
+
     async def _post(self, method: str, payload: dict[str, Any]) -> dict[str, Any]:
         try:
             async with httpx.AsyncClient(timeout=30.0) as client:
                 response = await client.post(f"{self._api_base}/{method}", json=payload)
         except httpx.HTTPError as exc:
-            raise TelegramClientError(f"Telegram {method} request failed") from exc
+            try:
+                return await asyncio.to_thread(
+                    self._post_json_sync, method, payload
+                )
+            except TelegramClientError as fallback_exc:
+                raise TelegramClientError(
+                    f"Telegram {method} request failed: {type(exc).__name__}; "
+                    f"{fallback_exc}"
+                ) from fallback_exc
 
         return self._parse_response(method, response)
 
@@ -94,7 +206,15 @@ class TelegramBotClient:
                     files=files,
                 )
         except httpx.HTTPError as exc:
-            raise TelegramClientError(f"Telegram {method} request failed") from exc
+            try:
+                return await asyncio.to_thread(
+                    self._post_multipart_sync, method, data=data, files=files
+                )
+            except TelegramClientError as fallback_exc:
+                raise TelegramClientError(
+                    f"Telegram {method} request failed: {type(exc).__name__}; "
+                    f"{fallback_exc}"
+                ) from fallback_exc
 
         return self._parse_response(method, response)
 
