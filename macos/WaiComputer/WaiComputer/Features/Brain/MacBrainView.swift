@@ -401,7 +401,7 @@ struct MacBrainView: View {
             mapType: projection.mapType,
             fallback: briefing.suggestedQuestions
         )
-        VStack(alignment: .leading, spacing: Spacing.xs) {
+        return VStack(alignment: .leading, spacing: Spacing.xs) {
             Text(t("Ask next", "Следующие вопросы"))
                 .font(Typography.label)
                 .foregroundStyle(Palette.textSecondary)
@@ -546,6 +546,74 @@ struct MacBrainView: View {
     private func hiddenFocusCount(_ briefing: BrainMapBriefing) -> Int {
         max(0, briefing.coverage.totalSources - briefing.coverage.visibleSources)
             + max(0, briefing.coverage.totalEntities - briefing.coverage.visibleEntities)
+    }
+
+    private func localizedSuggestedQuestions(
+        mapType: String,
+        fallback: [String]
+    ) -> [String] {
+        switch mapType {
+        case "decision":
+            return [
+                t("What changed since this decision?", "Что изменилось после этого решения?"),
+                t("Which sources disagree or add risk?", "Какие источники спорят или добавляют риск?"),
+                t("What is still open?", "Что ещё открыто?")
+            ]
+        case "timeline":
+            return [
+                t("What changed most recently?", "Что изменилось недавно?"),
+                t("Which deadlines or commitments are implied?", "Какие дедлайны или обещания следуют из этого?"),
+                t("What has not been updated in a while?", "Что давно не обновлялось?")
+            ]
+        case "relationship":
+            return [
+                t("Who is connected to this work?", "Кто связан с этой работой?"),
+                t("Which relationship has the strongest evidence?", "Какая связь подтверждена сильнее всего?"),
+                t("Where are the missing links?", "Где не хватает связей?")
+            ]
+        case "comparison":
+            return [
+                t("What are the strongest differences?", "Какие различия самые сильные?"),
+                t("Which option has the best evidence?", "У какого варианта лучшие доказательства?"),
+                t("What evidence is missing before choosing?", "Каких источников не хватает для выбора?")
+            ]
+        case "open_questions":
+            return [
+                t("Which question blocks progress?", "Какой вопрос блокирует прогресс?"),
+                t("Who or what source can answer it?", "Кто или какой источник может ответить?"),
+                t("What should Wai watch for next?", "За чем Wai следить дальше?")
+            ]
+        default:
+            let localized = [
+                t("What are the active risks?", "Какие сейчас активные риски?"),
+                t("What changed since the last update?", "Что изменилось с последнего обновления?"),
+                t("What should happen next?", "Что должно произойти дальше?")
+            ]
+            return fallback.isEmpty ? localized : localized
+        }
+    }
+
+    private func mapTypeLabel(_ mapType: String) -> String {
+        switch mapType {
+        case "live_mirror": return t("Live Mirror", "Живое зеркало")
+        case "project_state": return t("Project state", "Состояние проекта")
+        case "decision": return t("Decision", "Решение")
+        case "relationship": return t("Relationships", "Связи")
+        case "timeline": return t("Timeline", "Хронология")
+        case "comparison": return t("Comparison", "Сравнение")
+        case "open_questions": return t("Open questions", "Открытые вопросы")
+        default: return mapType.replacingOccurrences(of: "_", with: " ").capitalized
+        }
+    }
+
+    private func entityTypeLabel(_ type: String) -> String {
+        switch type {
+        case "person": return t("person", "человек")
+        case "project": return t("project", "проект")
+        case "organization": return t("organization", "организация")
+        case "topic": return t("topic", "тема")
+        default: return type
+        }
     }
 
     private func diagramTemplateButton(
