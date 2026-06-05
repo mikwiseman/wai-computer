@@ -16,6 +16,7 @@ from app.core import companion as companion_module
 from app.core.companion import (
     CompanionError,
     DoneEvent,
+    PlanEvent,
     ThinkingEvent,
     TokenEvent,
     ToolCallEvent,
@@ -107,6 +108,56 @@ class FakeOpenAI:
         self.calls.append(kwargs)
         assert kwargs.get("stream") is True
         return _AsyncEventStream(self.events)
+
+
+class _SeqOpenAI:
+    """Like FakeOpenAI but returns a DIFFERENT event list per create() call, for
+    testing the multi-step actions loop (each loop step is one create())."""
+
+    def __init__(self, calls_events: list[list[Any]]):
+        self._queue = list(calls_events)
+        self.calls: list[dict[str, Any]] = []
+        self.responses = self
+
+    async def create(self, **kwargs):
+        self.calls.append(kwargs)
+        events = self._queue.pop(0) if self._queue else []
+        return _AsyncEventStream(events)
+
+
+def _function_call_completed(name: str, arguments: str) -> "_CompletedEvent":
+    return _CompletedEvent(
+        _FakeResponse(
+            output=[
+                {
+                    "type": "function_call",
+                    "name": name,
+                    "arguments": arguments,
+                    "call_id": "call_1",
+                    "id": "fc_1",
+                }
+            ],
+            output_text="",
+            usage=_Usage(input_tokens=5, output_tokens=2, cached_tokens=0),
+        )
+    )
+
+
+def test_normalize_plan_steps_bounds_and_coerces():
+    from app.core.companion import _normalize_plan_steps
+
+    out = _normalize_plan_steps(
+        [
+            {"title": "  Search  ", "status": "done"},
+            {"title": "", "status": "in_progress"},  # dropped: blank title
+            {"title": "Summarize", "status": "bogus"},  # status coerced
+            "not-a-dict",  # dropped
+        ]
+    )
+    assert out == [
+        {"title": "Search", "status": "done"},
+        {"title": "Summarize", "status": "pending"},
+    ]
 
 
 @pytest_asyncio.fixture
@@ -455,6 +506,39 @@ class TestRunTurn:
             )
         assert exc.value.code == "stream_error"
         assert "Companion stream failed" in exc.value.message
+
+    async def test_update_plan_tool_emits_plan_event(
+        self, db_session, setup_user_and_chat
+    ):
+        """When the agent calls update_plan, a PlanEvent is streamed (live plan
+        card) and the loop continues to do the real work — no approval gate."""
+        s = setup_user_and_chat
+        step1 = [
+            _function_call_completed(
+                "update_plan",
+                '{"steps": [{"title": "Search", "status": "in_progress"}, '
+                '{"title": "Summarize", "status": "pending"}]}',
+            )
+        ]
+        step2 = [_DeltaEvent("Done."), _completed("Done.")]
+        fake = _SeqOpenAI([step1, step2])
+        events = await _collect(
+            run_turn(
+                db_session,
+                s["user"].id,
+                s["conversation"].id,
+                "summarize my pricing call and list follow-ups",
+                openai_client=fake,
+                enable_actions=True,
+            )
+        )
+        plans = [e for e in events if isinstance(e, PlanEvent)]
+        assert len(plans) == 1
+        assert plans[0].steps == [
+            {"title": "Search", "status": "in_progress"},
+            {"title": "Summarize", "status": "pending"},
+        ]
+        assert isinstance(events[-1], DoneEvent)
 
     async def test_run_turn_streams_reasoning_as_thinking(
         self, db_session, setup_user_and_chat

@@ -286,11 +286,23 @@ class ThinkingEvent:
     text: str = ""
 
 
+@dataclass(frozen=True)
+class PlanEvent:
+    """The agent's working checklist for a multi-step task, posted/updated via
+    the update_plan tool so the client can render a live plan card with
+    checkmarks. Each step is {"title": str, "status": pending|in_progress|done}.
+    Gated behind agent_chat_v2."""
+
+    type: Literal["plan"] = "plan"
+    steps: list[dict[str, Any]] = field(default_factory=list)
+
+
 CompanionEvent = (
     TurnStartEvent
     | ToolCallEvent
     | ToolResultEvent
     | ThinkingEvent
+    | PlanEvent
     | TokenEvent
     | CitationEvent
     | MemoryUpdatedEvent
@@ -1580,6 +1592,65 @@ def _action_tool_defs() -> dict[str, dict[str, Any]]:
     }
 
 
+UPDATE_PLAN_NAME = "update_plan"
+
+
+def _update_plan_tool() -> dict[str, Any]:
+    """Always-on tool: the model posts a short checklist so the client can show a
+    live plan card. Auto-run (no approval) — it only emits a UI event."""
+    return {
+        "type": "function",
+        "name": UPDATE_PLAN_NAME,
+        "description": (
+            "Post or update a SHORT checklist (2-6 steps) of what you will do "
+            "for a multi-step task, so the user can watch progress. Call it once "
+            "near the start with steps as 'pending'/'in_progress', then again to "
+            "mark steps 'done' as you finish them. Skip it for simple one-shot "
+            "answers — never use it for trivial replies."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "steps": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "title": {"type": "string"},
+                            "status": {
+                                "type": "string",
+                                "enum": ["pending", "in_progress", "done"],
+                            },
+                        },
+                        "required": ["title", "status"],
+                        "additionalProperties": False,
+                    },
+                },
+            },
+            "required": ["steps"],
+            "additionalProperties": False,
+        },
+    }
+
+
+def _normalize_plan_steps(raw: Any) -> list[dict[str, str]]:
+    """Coerce model-supplied plan steps to a safe, bounded shape for the client."""
+    if not isinstance(raw, list):
+        return []
+    steps: list[dict[str, str]] = []
+    for item in raw[:12]:
+        if not isinstance(item, dict):
+            continue
+        title = str(item.get("title") or "").strip()[:120]
+        if not title:
+            continue
+        status = str(item.get("status") or "pending")
+        if status not in ("pending", "in_progress", "done"):
+            status = "pending"
+        steps.append({"title": title, "status": status})
+    return steps
+
+
 def _visible_action_tools(active_groups: set[str]) -> list[dict[str, Any]]:
     names = set(visible_tool_names(active_groups))
     return [d for n, d in _action_tool_defs().items() if n in names]
@@ -1822,7 +1893,11 @@ async def _run_actions_loop(
         # = "find this on the internet" (runs server-side). Hosted results are
         # not interceptable, so the propose->commit write gate (every send/OS
         # action confirmed) is the lethal-trifecta control, not result-wrapping.
-        tools: list[dict[str, Any]] = [mcp_tool, {"type": "web_search"}]
+        tools: list[dict[str, Any]] = [
+            mcp_tool,
+            {"type": "web_search"},
+            _update_plan_tool(),
+        ]
         if requestable_groups("voice_default"):
             tools.append(request_tool_group_tool("voice_default"))
         tools.extend(_visible_action_tools(active_groups))
@@ -1920,6 +1995,15 @@ async def _run_actions_loop(
                         "type": "function_call_output",
                         "call_id": cid,
                         "output": json.dumps({"ok": True, "attached": group}),
+                    }
+                )
+            elif cname == UPDATE_PLAN_NAME:
+                yield PlanEvent(steps=_normalize_plan_steps(cargs.get("steps")))
+                outputs.append(
+                    {
+                        "type": "function_call_output",
+                        "call_id": cid,
+                        "output": json.dumps({"ok": True}),
                     }
                 )
             elif is_mutating_tool_call(cname, cargs):
