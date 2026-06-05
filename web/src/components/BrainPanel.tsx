@@ -31,6 +31,9 @@ import {
 } from "@/lib/api";
 import type {
   BrainMap,
+  BrainMapBriefing,
+  BrainMapBriefingEntity,
+  BrainMapBriefingSource,
   BrainMapDiff,
   BrainMapNode,
   BrainMapPosition,
@@ -53,6 +56,7 @@ interface BrainPanelProps {
 }
 
 type PageFilter = "all" | "person" | "project" | "topic";
+type Translator = (en: string, ru: string) => string;
 
 const FILTERS: { key: PageFilter; en: string; ru: string }[] = [
   { key: "all", en: "All", ru: "Все" },
@@ -74,11 +78,32 @@ function entityGlyph(type: EntityType | string): string {
   return "#";
 }
 
-function mapTypeLabel(type: string): string {
+function mapTypeLabel(type: string, t: Translator): string {
+  if (type === "live_mirror") return t("Live Mirror", "Живое зеркало");
+  if (type === "project_state") return t("Project state", "Состояние проекта");
+  if (type === "decision") return t("Decision", "Решение");
+  if (type === "relationship") return t("Relationships", "Связи");
+  if (type === "timeline") return t("Timeline", "Хронология");
+  if (type === "comparison") return t("Comparison", "Сравнение");
+  if (type === "open_questions") return t("Open questions", "Открытые вопросы");
   return type.replaceAll("_", " ");
 }
 
-function diffText(diff: BrainMapDiff | null, t: (en: string, ru: string) => string): string {
+function sourceKindLabel(kind: string, t: Translator): string {
+  if (kind === "recording") return t("recording", "запись");
+  if (kind === "item") return t("material", "материал");
+  return kind;
+}
+
+function entityTypeLabel(type: string, t: Translator): string {
+  if (type === "person") return t("person", "человек");
+  if (type === "project") return t("project", "проект");
+  if (type === "organization") return t("organization", "организация");
+  if (type === "topic") return t("topic", "тема");
+  return type;
+}
+
+function diffText(diff: BrainMapDiff | null, t: Translator): string {
   if (!diff || !diff.changed) return t("Current", "Актуально");
   const parts = [
     diff.sources_added ? t(`+${diff.sources_added} sources`, `+${diff.sources_added} источн.`) : "",
@@ -86,6 +111,266 @@ function diffText(diff: BrainMapDiff | null, t: (en: string, ru: string) => stri
     diff.edges_added ? t(`+${diff.edges_added} links`, `+${diff.edges_added} связей`) : "",
   ].filter(Boolean);
   return parts.join(" · ") || t("Updated", "Обновлено");
+}
+
+function briefingFocusText(briefing: BrainMapBriefing, t: Translator): string {
+  if (briefing.mode === "empty") return t("No matching evidence yet.", "Подходящих источников пока нет.");
+  if (briefing.mode === "focused") {
+    return t(
+      `Showing ${briefing.coverage.visible_sources} of ${briefing.coverage.total_sources} sources and ${briefing.coverage.visible_entities} of ${briefing.coverage.total_entities} nodes.`,
+      `Показано ${briefing.coverage.visible_sources} из ${briefing.coverage.total_sources} источн. и ${briefing.coverage.visible_entities} из ${briefing.coverage.total_entities} узлов.`,
+    );
+  }
+  return t(
+    `Showing all ${briefing.coverage.total_sources} sources and ${briefing.coverage.total_entities} nodes.`,
+    `Показаны все источники: ${briefing.coverage.total_sources}, узлы: ${briefing.coverage.total_entities}.`,
+  );
+}
+
+function briefingFreshnessText(projection: BrainMapProjection, t: Translator): string {
+  if (projection.freshness.stale && projection.freshness.weeks_since !== null) {
+    return t(
+      `Newest evidence is ${projection.freshness.weeks_since} week(s) old.`,
+      `Самому новому источнику ${projection.freshness.weeks_since} нед.`,
+    );
+  }
+  if (!projection.freshness.newest_source_at) return t("No dated source yet.", "Пока нет источника с датой.");
+  return t("Evidence is current.", "Источники актуальны.");
+}
+
+function hiddenFocusCount(briefing: BrainMapBriefing): number {
+  return Math.max(0, briefing.coverage.total_sources - briefing.coverage.visible_sources)
+    + Math.max(0, briefing.coverage.total_entities - briefing.coverage.visible_entities);
+}
+
+function localizedSuggestedQuestions(
+  mapType: string,
+  fallback: string[],
+  t: Translator,
+): string[] {
+  if (mapType === "decision") {
+    return [
+      t("What changed since this decision?", "Что изменилось после этого решения?"),
+      t("Which sources disagree or add risk?", "Какие источники спорят или добавляют риск?"),
+      t("What is still open?", "Что ещё открыто?"),
+    ];
+  }
+  if (mapType === "timeline") {
+    return [
+      t("What changed most recently?", "Что изменилось недавно?"),
+      t("Which deadlines or commitments are implied?", "Какие дедлайны или обещания следуют из этого?"),
+      t("What has not been updated in a while?", "Что давно не обновлялось?"),
+    ];
+  }
+  if (mapType === "relationship") {
+    return [
+      t("Who is connected to this work?", "Кто связан с этой работой?"),
+      t("Which relationship has the strongest evidence?", "Какая связь подтверждена сильнее всего?"),
+      t("Where are the missing links?", "Где не хватает связей?"),
+    ];
+  }
+  if (mapType === "comparison") {
+    return [
+      t("What are the strongest differences?", "Какие различия самые сильные?"),
+      t("Which option has the best evidence?", "У какого варианта лучшие доказательства?"),
+      t("What evidence is missing before choosing?", "Каких источников не хватает для выбора?"),
+    ];
+  }
+  if (mapType === "open_questions") {
+    return [
+      t("Which question blocks progress?", "Какой вопрос блокирует прогресс?"),
+      t("Who or what source can answer it?", "Кто или какой источник может ответить?"),
+      t("What should Wai watch for next?", "За чем Wai следить дальше?"),
+    ];
+  }
+  const localized = [
+    t("What are the active risks?", "Какие сейчас активные риски?"),
+    t("What changed since the last update?", "Что изменилось с последнего обновления?"),
+    t("What should happen next?", "Что должно произойти дальше?"),
+  ];
+  return mapType === "project_state" || fallback.length === 0 ? localized : fallback;
+}
+
+function BriefingMetric({
+  value,
+  label,
+}: {
+  value: string;
+  label: string;
+}) {
+  return (
+    <span className="brain-map-briefing__metric">
+      <strong>{value}</strong>
+      <em>{label}</em>
+    </span>
+  );
+}
+
+function BriefingSourceRow({
+  source,
+  onOpen,
+  t,
+}: {
+  source: BrainMapBriefingSource;
+  onOpen: (source: BrainMapBriefingSource) => void;
+  t: Translator;
+}) {
+  const kindLabel = sourceKindLabel(source.source_kind, t);
+  return (
+    <button
+      type="button"
+      className="brain-map-briefing__row"
+      aria-label={`${source.title} ${kindLabel}`}
+      onClick={() => onOpen(source)}
+    >
+      <strong>{source.title}</strong>
+      <em>{kindLabel}</em>
+    </button>
+  );
+}
+
+function BriefingEntityRow({
+  entity,
+  onOpen,
+  t,
+}: {
+  entity: BrainMapBriefingEntity;
+  onOpen: (entity: BrainMapBriefingEntity) => void;
+  t: Translator;
+}) {
+  const typeLabel = entityTypeLabel(entity.type, t);
+  return (
+    <button
+      type="button"
+      className="brain-map-briefing__row"
+      aria-label={`${entity.name} ${typeLabel}`}
+      onClick={() => onOpen(entity)}
+    >
+      <strong>{entity.name}</strong>
+      <em>
+        {typeLabel} · {entity.citation_count} {t("source(s)", "источн.")}
+      </em>
+    </button>
+  );
+}
+
+function BrainMapBriefingPanel({
+  projection,
+  selectedSpace,
+  creatingLens,
+  onAskNext,
+  onAskWai,
+  onOpenSource,
+  onOpenEntity,
+  t,
+}: {
+  projection: BrainMapProjection;
+  selectedSpace: BrainSpace | null;
+  creatingLens: boolean;
+  onAskNext: (prompt: string) => void;
+  onAskWai?: (brain: { spaceId: string; spaceName: string }) => void | Promise<void>;
+  onOpenSource: (kind: string, id: string) => void;
+  onOpenEntity: (id: string, name: string) => void;
+  t: Translator;
+}) {
+  const briefing = projection.briefing;
+  if (!briefing) return null;
+
+  const questions = localizedSuggestedQuestions(
+    projection.map_type,
+    briefing.suggested_questions,
+    t,
+  );
+  const hiddenCount = hiddenFocusCount(briefing);
+
+  return (
+    <section className="brain-map-briefing" aria-label={t("Map briefing", "Бриф карты")}>
+      <div className="brain-map-briefing__top">
+        <div>
+          <span className="brain-map-briefing__type">{mapTypeLabel(projection.map_type, t)}</span>
+          <h3>{briefingFocusText(briefing, t)}</h3>
+          <p>{briefingFreshnessText(projection, t)}</p>
+        </div>
+        {selectedSpace && onAskWai ? (
+          <button
+            type="button"
+            className="wai-secondary-button"
+            onClick={() => void onAskWai({ spaceId: selectedSpace.id, spaceName: selectedSpace.name })}
+          >
+            {t("Ask Wai", "Спросить Wai")}
+          </button>
+        ) : null}
+      </div>
+
+      <div className="brain-map-briefing__metrics">
+        <BriefingMetric
+          value={`${briefing.coverage.visible_sources}/${briefing.coverage.total_sources}`}
+          label={t("sources in focus", "источн. в фокусе")}
+        />
+        <BriefingMetric
+          value={`${briefing.coverage.visible_entities}/${briefing.coverage.total_entities}`}
+          label={t("nodes in focus", "узлов в фокусе")}
+        />
+        {hiddenCount > 0 ? (
+          <BriefingMetric
+            value={`${hiddenCount}`}
+            label={t("kept outside canvas", "вне canvas")}
+          />
+        ) : null}
+      </div>
+
+      <div className="brain-map-briefing__evidence">
+        <div>
+          <h4>{t("Evidence", "Источники")}</h4>
+          {briefing.top_sources.length > 0 ? (
+            briefing.top_sources.slice(0, 4).map((source) => (
+              <BriefingSourceRow
+                key={source.id}
+                source={source}
+                onOpen={(next) => onOpenSource(next.source_kind, next.source_id)}
+                t={t}
+              />
+            ))
+          ) : (
+            <p className="brain-panel__empty">{t("No matching sources yet.", "Подходящих источников пока нет.")}</p>
+          )}
+        </div>
+        <div>
+          <h4>{t("Key nodes", "Ключевые узлы")}</h4>
+          {briefing.top_entities.length > 0 ? (
+            briefing.top_entities.slice(0, 5).map((entity) => (
+              <BriefingEntityRow
+                key={entity.id}
+                entity={entity}
+                onOpen={(next) => onOpenEntity(next.id, next.name)}
+                t={t}
+              />
+            ))
+          ) : (
+            <p className="brain-panel__empty">{t("No linked pages yet.", "Связанных страниц пока нет.")}</p>
+          )}
+        </div>
+      </div>
+
+      {questions.length > 0 ? (
+        <div className="brain-map-briefing__questions">
+          <h4>{t("Ask next", "Следующие вопросы")}</h4>
+          <div>
+            {questions.slice(0, 3).map((question) => (
+              <button
+                key={question}
+                type="button"
+                onClick={() => onAskNext(question)}
+                disabled={creatingLens}
+              >
+                {question}
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : null}
+    </section>
+  );
 }
 
 function MapNodeCard(props: NodeProps) {
@@ -347,8 +632,8 @@ export function BrainPanel({
     });
   }, [loadCurated, onError, selectedSpaceId]);
 
-  const createLens = useCallback(async () => {
-    const prompt = lensPrompt.trim();
+  const createLens = useCallback(async (promptOverride?: string) => {
+    const prompt = (promptOverride ?? lensPrompt).trim();
     if (!prompt || creatingLens) return;
     setCreatingLens(true);
     try {
@@ -643,7 +928,7 @@ export function BrainPanel({
             <div className="brain-map-toolbar">
               <div>
                 <strong>{activeProjection?.title ?? t("Live Mirror", "Живое зеркало")}</strong>
-                <span>{activeProjection ? mapTypeLabel(activeProjection.map_type) : ""}</span>
+                <span>{activeProjection ? mapTypeLabel(activeProjection.map_type, t) : ""}</span>
               </div>
               <div className="brain-map-toolbar__stats">
                 <span>{activeProjection?.nodes.length ?? 0} {t("cards", "карточек")}</span>
@@ -651,6 +936,18 @@ export function BrainPanel({
                 <span>{activeProjection?.citations.length ?? 0} {t("sources", "источн.")}</span>
               </div>
             </div>
+            {activeMap && activeProjection ? (
+              <BrainMapBriefingPanel
+                projection={activeProjection}
+                selectedSpace={selectedSpace}
+                creatingLens={creatingLens}
+                onAskNext={(prompt) => void createLens(prompt)}
+                onAskWai={onOpenWai}
+                onOpenSource={openSource}
+                onOpenEntity={(id, name) => setSelectedEntity({ id, name })}
+                t={t}
+              />
+            ) : null}
             {activeProjection ? (
               <BrainMapCanvas
                 key={activeProjectionKey}

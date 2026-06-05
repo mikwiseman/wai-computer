@@ -153,12 +153,52 @@ function projection(overrides = {}) {
   };
 }
 
+function briefing(overrides = {}) {
+  return {
+    mode: "focused",
+    headline: "Project State",
+    focus_note: "Showing 3 of 12 source(s) and 8 of 24 linked node(s).",
+    freshness_note: "Evidence is current.",
+    coverage: {
+      visible_sources: 3,
+      total_sources: 12,
+      visible_entities: 8,
+      total_entities: 24,
+    },
+    top_sources: [
+      {
+        id: "item:item-1",
+        source_kind: "item",
+        source_id: "item-1",
+        title: "Launch notes",
+        kind: "note",
+        created_at: "2026-06-05T10:00:00Z",
+      },
+    ],
+    top_entities: [
+      {
+        id: "e1",
+        type: "person",
+        name: "Anna",
+        citation_count: 1,
+      },
+    ],
+    suggested_questions: [
+      "What are the active risks?",
+      "What changed since the last update?",
+      "What should happen next?",
+    ],
+    ...overrides,
+  };
+}
+
 function revision(overrides = {}) {
   const baseProjection = projection({
     map_type: "project_state",
     title: "Hiring map",
     prompt: "Map hiring",
     summary: "Project State from 1 source(s) and 1 linked node(s).",
+    briefing: briefing(),
   });
   return {
     id: "rev-1",
@@ -344,6 +384,37 @@ describe("BrainPanel (Live Mirror)", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Keep" }));
     await waitFor(() => expect(mockUpdateBrainMap).toHaveBeenCalledWith("map-1", { status: "saved" }));
+  });
+
+  it("shows generated-map briefing with evidence and next actions", async () => {
+    const onOpenSource = vi.fn();
+    const onOpenWai = vi.fn();
+    mockListBrainMaps.mockResolvedValue({ maps: [brainMap()] });
+
+    render(<BrainPanel onOpenSource={onOpenSource} onOpenWai={onOpenWai} />);
+    await waitFor(() => expect(screen.getByText("Hiring map")).toBeInTheDocument());
+
+    fireEvent.click(screen.getByRole("button", { name: /Hiring map/ }));
+    expect(screen.getByText("Showing 3 of 12 sources and 8 of 24 nodes.")).toBeInTheDocument();
+    expect(screen.getByText("3/12")).toBeInTheDocument();
+    expect(screen.getByText("8/24")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /Launch notes material/i }));
+    expect(onOpenSource).toHaveBeenCalledWith("item", "item-1");
+
+    fireEvent.click(screen.getByRole("button", { name: "Ask Wai" }));
+    expect(onOpenWai).toHaveBeenCalledWith({ spaceId: "s1", spaceName: "Wai School" });
+
+    fireEvent.click(screen.getByRole("button", { name: "What are the active risks?" }));
+    await waitFor(() =>
+      expect(mockCreateBrainMap).toHaveBeenCalledWith({
+        prompt: "What are the active risks?",
+        origin: "brain",
+      }),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /Anna person/i }));
+    expect(screen.getByTestId("wiki-stub")).toHaveTextContent("wiki:e1");
   });
 
   it("opens sources and living pages from the map", async () => {

@@ -1037,12 +1037,47 @@ export interface BrainMapFreshness {
   stale: boolean;
 }
 
+export interface BrainMapBriefingCoverage {
+  visible_sources: number;
+  total_sources: number;
+  visible_entities: number;
+  total_entities: number;
+}
+
+export interface BrainMapBriefingSource {
+  id: string;
+  source_kind: "item" | "recording" | string;
+  source_id: string;
+  title: string;
+  kind?: string | null;
+  created_at?: string | null;
+}
+
+export interface BrainMapBriefingEntity {
+  id: string;
+  type: string;
+  name: string;
+  citation_count: number;
+}
+
+export interface BrainMapBriefing {
+  mode: "empty" | "focused" | "complete" | string;
+  headline: string;
+  focus_note: string;
+  freshness_note: string;
+  coverage: BrainMapBriefingCoverage;
+  top_sources: BrainMapBriefingSource[];
+  top_entities: BrainMapBriefingEntity[];
+  suggested_questions: string[];
+}
+
 export interface BrainMapProjection {
   version: number;
   map_type: string;
   title: string;
   prompt: string;
   summary: string;
+  briefing?: BrainMapBriefing | null;
   nodes: BrainMapNode[];
   edges: BrainMapEdge[];
   citations: BrainMapCitation[];

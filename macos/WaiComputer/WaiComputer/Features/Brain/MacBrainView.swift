@@ -268,25 +268,36 @@ struct MacBrainView: View {
         VStack(alignment: .leading, spacing: Spacing.md) {
             if let briefing = projection.briefing {
                 generatedBriefing(briefing, projection: projection)
+                generatedDiagramPreview(projection)
+                generatedEvidence(briefing)
+                generatedQuestions(briefing, projection: projection)
+            } else {
+                generatedDiagramPreview(projection)
+                mapCitationList(projection.citations.prefix(4).map { $0 })
             }
+        }
+    }
 
+    private func generatedDiagramPreview(_ projection: BrainMapProjection) -> some View {
+        VStack(alignment: .leading, spacing: Spacing.xs) {
+            HStack(alignment: .firstTextBaseline, spacing: Spacing.sm) {
+                Text(t("Diagram preview", "Превью диаграммы"))
+                    .font(Typography.label)
+                    .foregroundStyle(Palette.textSecondary)
+                Spacer()
+                Text("\(projection.nodes.count) \(t("cards", "карточек")) · \(projection.edges.count) \(t("links", "связей"))")
+                    .font(Typography.labelSmall)
+                    .foregroundStyle(Palette.textTertiary)
+            }
             MacBrainMapCanvasView(
                 projection: projection,
                 layout: model.activeMap?.layout,
                 onOpenSource: openSource,
-                onOpenEntity: { id, name in model.openEntity(id: id, name: name) }
+                onOpenEntity: { id, name in model.openEntity(id: id, name: name) },
+                compact: true
             )
-            .frame(height: projection.nodes.count > 14 ? 520 : 430)
+            .frame(height: 310)
             .clipShape(RoundedRectangle(cornerRadius: 8))
-
-            mapStats(projection)
-
-            if let briefing = projection.briefing {
-                generatedEvidence(briefing)
-                generatedQuestions(briefing, projection: projection)
-            } else {
-                mapCitationList(projection.citations.prefix(4).map { $0 })
-            }
         }
     }
 
@@ -1338,9 +1349,11 @@ private struct MacBrainMapCanvasView: View {
     let layout: [String: BrainMapPosition]?
     let onOpenSource: (String, String) -> Void
     let onOpenEntity: (String, String) -> Void
-    private let maxSources = 3
-    private let maxEntities = 8
-    private let maxGaps = 1
+    let compact: Bool
+
+    private var maxSources: Int { compact ? 2 : 3 }
+    private var maxEntities: Int { compact ? 5 : 8 }
+    private var maxGaps: Int { compact ? 0 : 1 }
 
     private var displayNodes: [BrainMapNode] {
         let lens = projection.nodes.filter { $0.kind == "lens" }.prefix(1)
@@ -1423,28 +1436,29 @@ private struct MacBrainMapCanvasView: View {
                     .fill(nodeColor(node.kind))
                     .frame(width: 7, height: 7)
                 Text(node.kind.replacingOccurrences(of: "_", with: " ").uppercased())
-                    .font(.system(size: 9, weight: .semibold))
+                    .font(.system(size: compact ? 8 : 9, weight: .semibold))
                     .foregroundStyle(Palette.textTertiary)
             }
             Text(node.title)
-                .font(Typography.bodySmall.weight(.semibold))
+                .font(compact ? Typography.labelSmall.weight(.semibold) : Typography.bodySmall.weight(.semibold))
                 .foregroundStyle(Palette.textPrimary)
-                .lineLimit(node.kind == "lens" ? 2 : 1)
-            if let body = node.body, !body.isEmpty {
+                .lineLimit(compact ? 1 : (node.kind == "lens" ? 2 : 1))
+                .truncationMode(.tail)
+            if !compact, let body = node.body, !body.isEmpty {
                 Text(body)
                     .font(Typography.labelSmall)
                     .foregroundStyle(Palette.textSecondary)
                     .lineLimit(node.kind == "lens" ? 2 : 1)
             }
-            if !node.citationIds.isEmpty {
+            if !compact, !node.citationIds.isEmpty {
                 Text("\(node.citationIds.count) source\(node.citationIds.count == 1 ? "" : "s")")
                     .font(.system(size: 10, weight: .medium))
                 .foregroundStyle(Palette.accent)
             }
         }
-        .frame(width: node.kind == "lens" ? 210 : 164, alignment: .leading)
-        .frame(minHeight: node.kind == "lens" ? 76 : 64, alignment: .leading)
-        .padding(Spacing.sm)
+        .frame(width: node.kind == "lens" ? (compact ? 190 : 210) : (compact ? 142 : 164), alignment: .leading)
+        .frame(minHeight: node.kind == "lens" ? (compact ? 58 : 76) : (compact ? 50 : 64), alignment: .leading)
+        .padding(compact ? Spacing.xs : Spacing.sm)
         .background(node.kind == "lens" ? Palette.accentSubtle : Palette.surfaceSubtle)
         .overlay(
             RoundedRectangle(cornerRadius: 8)
@@ -1457,13 +1471,13 @@ private struct MacBrainMapCanvasView: View {
     private func fittedPositions(in size: CGSize) -> [String: CGPoint] {
         let nodes = displayNodes
         guard !nodes.isEmpty else { return [:] }
-        if nodes.count <= 6 {
+        if !compact, nodes.count <= 6 {
             return fittedPositionsFromSuppliedLayout(in: size)
         }
 
-        let width = max(size.width, 760)
-        let topY: CGFloat = 74
-        let rowY: [CGFloat] = [170, 260, 350, 440]
+        let width = max(size.width, compact ? 720 : 760)
+        let topY: CGFloat = compact ? 50 : 74
+        let rowY: [CGFloat] = compact ? [132, 214, 286] : [170, 260, 350, 440]
         var positions: [String: CGPoint] = [:]
         let lens = nodes.first { $0.kind == "lens" }
         if let lens {
@@ -1479,7 +1493,7 @@ private struct MacBrainMapCanvasView: View {
         }
 
         let entities = nodes.filter { $0.kind == "entity" }
-        let entityXs = [width * 0.42, width * 0.64]
+        let entityXs = compact ? [width * 0.44, width * 0.70] : [width * 0.42, width * 0.64]
         for (index, node) in entities.enumerated() {
             positions[node.id] = CGPoint(
                 x: entityXs[index % entityXs.count],
@@ -1496,9 +1510,11 @@ private struct MacBrainMapCanvasView: View {
         }
 
         return positions.mapValues { point in
-            CGPoint(
-                x: min(max(point.x, 96), max(96, size.width - 96)),
-                y: min(max(point.y, 64), max(64, size.height - 64))
+            let horizontalInset: CGFloat = compact ? 76 : 96
+            let verticalInset: CGFloat = compact ? 40 : 64
+            return CGPoint(
+                x: min(max(point.x, horizontalInset), max(horizontalInset, size.width - horizontalInset)),
+                y: min(max(point.y, verticalInset), max(verticalInset, size.height - verticalInset))
             )
         }
     }

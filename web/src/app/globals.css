@@ -3494,6 +3494,148 @@ a.primary-button[aria-disabled="true"]:hover {
   background: var(--surface-subtle);
 }
 
+.brain-map-briefing {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  border-bottom: 1px solid var(--border);
+  padding: 0.85rem 1rem;
+  background: var(--panel);
+}
+
+.brain-map-briefing__top {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 0.75rem;
+}
+
+.brain-map-briefing__type {
+  display: block;
+  margin-bottom: 0.15rem;
+  color: var(--accent);
+  font-size: var(--font-label-small-size);
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.brain-map-briefing h3,
+.brain-map-briefing h4,
+.brain-map-briefing p {
+  margin: 0;
+}
+
+.brain-map-briefing h3 {
+  color: var(--ink);
+  font-size: var(--font-body-small-size);
+  line-height: 1.35;
+}
+
+.brain-map-briefing p,
+.brain-map-briefing h4 {
+  color: var(--ink-soft);
+  font-size: var(--font-label-small-size);
+}
+
+.brain-map-briefing__metrics,
+.brain-map-briefing__questions > div {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+
+.brain-map-briefing__metric {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.45rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.45rem 0.55rem;
+  background: var(--surface-subtle);
+}
+
+.brain-map-briefing__metric strong {
+  color: var(--ink);
+  font-size: var(--font-body-small-size);
+}
+
+.brain-map-briefing__metric em {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ink-soft);
+  font-size: var(--font-label-small-size);
+  font-style: normal;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.brain-map-briefing__evidence {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.brain-map-briefing__evidence > div,
+.brain-map-briefing__questions {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.brain-map-briefing__row,
+.brain-map-briefing__questions button {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.brain-map-briefing__row {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 0.1rem;
+  padding: 0.5rem 0.6rem;
+}
+
+.brain-map-briefing__row:hover,
+.brain-map-briefing__questions button:hover {
+  border-color: var(--accent);
+}
+
+.brain-map-briefing__row strong {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ink);
+  font-size: var(--font-body-small-size);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.brain-map-briefing__row em {
+  color: var(--ink-soft);
+  font-size: var(--font-label-small-size);
+  font-style: normal;
+}
+
+.brain-map-briefing__questions button {
+  min-height: 3rem;
+  padding: 0.55rem 0.65rem;
+  color: var(--ink-soft);
+  font-size: var(--font-label-small-size);
+  line-height: 1.3;
+}
+
+.brain-map-briefing__questions button:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
 .brain-map-canvas {
   position: relative;
   flex: 1;
@@ -3802,6 +3944,16 @@ a.primary-button[aria-disabled="true"]:hover {
     min-height: 620px;
     border-right: 0;
     border-bottom: 1px solid var(--border);
+  }
+
+  .brain-map-briefing__top,
+  .brain-map-briefing__evidence {
+    grid-template-columns: 1fr;
+  }
+
+  .brain-map-briefing__metrics,
+  .brain-map-briefing__questions > div {
+    grid-template-columns: 1fr;
   }
 }
 
