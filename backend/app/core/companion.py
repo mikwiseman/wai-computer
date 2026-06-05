@@ -275,10 +275,22 @@ class DesktopActionEvent:
     device_target: str | None = None
 
 
+@dataclass(frozen=True)
+class ThinkingEvent:
+    """A streamed reasoning-summary delta — the model's private thinking,
+    surfaced so the client can show a collapsible "Thinking" block. Gated behind
+    the agent_chat_v2 capability and only emitted when reasoning is requested
+    (chat), never on the low-latency voice path."""
+
+    type: Literal["thinking"] = "thinking"
+    text: str = ""
+
+
 CompanionEvent = (
     TurnStartEvent
     | ToolCallEvent
     | ToolResultEvent
+    | ThinkingEvent
     | TokenEvent
     | CitationEvent
     | MemoryUpdatedEvent
@@ -1602,6 +1614,7 @@ async def run_turn(
     turn_context: TurnContext | None = None,
     openai_client=None,
     enable_actions: bool = False,
+    stream_reasoning: bool = False,
 ) -> AsyncIterator[CompanionEvent]:
     settings = get_settings()
     client = openai_client if openai_client is not None else get_openai_client()
@@ -1663,6 +1676,7 @@ async def run_turn(
             response_input,
             mcp_tool,
             started,
+            stream_reasoning,
         ):
             yield _evt
         return
@@ -1677,6 +1691,7 @@ async def run_turn(
         tools=[mcp_tool],
         prompt_cache_key=f"wai-companion-{user_id}",
         stream=True,
+        **({"reasoning": {"summary": "auto"}} if stream_reasoning else {}),
     )
 
     async for event in stream:
@@ -1699,6 +1714,12 @@ async def run_turn(
             _tr = _tool_result_event_from_item(_stream_event_item(event))
             if _tr is not None:
                 yield _tr
+        elif event_type == "response.reasoning_summary_text.delta":
+            rdelta = getattr(event, "delta", None)
+            if rdelta is None and isinstance(event, dict):
+                rdelta = event.get("delta", "")
+            if rdelta:
+                yield ThinkingEvent(text=rdelta)
         elif event_type in ("response.completed", "response.done"):
             response_obj = getattr(event, "response", None)
             if response_obj is None and isinstance(event, dict):
@@ -1780,6 +1801,7 @@ async def _run_actions_loop(
     response_input: list[dict[str, Any]],
     mcp_tool: dict[str, Any],
     started: float,
+    stream_reasoning: bool = False,
 ) -> AsyncIterator[CompanionEvent]:
     """Bounded function-tool loop for action-capable turns.
 
@@ -1813,6 +1835,8 @@ async def _run_actions_loop(
             stream=True,
             input=next_input,
         )
+        if stream_reasoning:
+            create_kwargs["reasoning"] = {"summary": "auto"}
         if prev_response_id is not None:
             create_kwargs["previous_response_id"] = prev_response_id
 
@@ -1839,6 +1863,12 @@ async def _run_actions_loop(
                 _tr = _tool_result_event_from_item(_stream_event_item(event))
                 if _tr is not None:
                     yield _tr
+            elif etype == "response.reasoning_summary_text.delta":
+                rdelta = getattr(event, "delta", None)
+                if rdelta is None and isinstance(event, dict):
+                    rdelta = event.get("delta", "")
+                if rdelta:
+                    yield ThinkingEvent(text=rdelta)
             elif etype in ("response.completed", "response.done"):
                 completed = getattr(event, "response", None)
                 if completed is None and isinstance(event, dict):

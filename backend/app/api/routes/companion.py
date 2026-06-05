@@ -552,6 +552,7 @@ async def _run_wai_companion_turn(
             user_text,
             turn_context=turn_context,
             enable_actions=True,
+            stream_reasoning=True,
         ):
             yield evt
         return

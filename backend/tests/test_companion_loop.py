@@ -16,6 +16,7 @@ from app.core import companion as companion_module
 from app.core.companion import (
     CompanionError,
     DoneEvent,
+    ThinkingEvent,
     TokenEvent,
     ToolCallEvent,
     ToolResultEvent,
@@ -63,6 +64,14 @@ class _OutputItemEvent:
 
     item: dict[str, Any]
     type: str = "response.output_item.added"
+
+
+@dataclass
+class _ReasoningDeltaEvent:
+    """A streamed reasoning-summary delta (the model's private thinking)."""
+
+    delta: str
+    type: str = "response.reasoning_summary_text.delta"
 
 
 @dataclass
@@ -446,6 +455,51 @@ class TestRunTurn:
             )
         assert exc.value.code == "stream_error"
         assert "Companion stream failed" in exc.value.message
+
+    async def test_run_turn_streams_reasoning_as_thinking(
+        self, db_session, setup_user_and_chat
+    ):
+        """With stream_reasoning the model's reasoning summary is forwarded as
+        ThinkingEvent deltas (collapsible "Thinking" block) and reasoning is
+        actually requested on the API call."""
+        s = setup_user_and_chat
+        fake = FakeOpenAI(
+            [
+                _ReasoningDeltaEvent("Checking the pricing call. "),
+                _DeltaEvent("Found it."),
+                _completed("Found it."),
+            ]
+        )
+        events = await _collect(
+            run_turn(
+                db_session,
+                s["user"].id,
+                s["conversation"].id,
+                "what about pricing?",
+                openai_client=fake,
+                stream_reasoning=True,
+            )
+        )
+        thinking = [e for e in events if isinstance(e, ThinkingEvent)]
+        assert thinking and "pricing" in thinking[0].text
+        assert fake.calls[0].get("reasoning") == {"summary": "auto"}
+
+    async def test_default_run_turn_does_not_request_reasoning(
+        self, db_session, setup_user_and_chat
+    ):
+        """The low-latency voice path (default) must not pay the reasoning tax."""
+        s = setup_user_and_chat
+        fake = FakeOpenAI([_DeltaEvent("Hi."), _completed("Hi.")])
+        await _collect(
+            run_turn(
+                db_session,
+                s["user"].id,
+                s["conversation"].id,
+                "hi",
+                openai_client=fake,
+            )
+        )
+        assert "reasoning" not in fake.calls[0]
 
     async def test_run_turn_emits_tool_actions_for_mcp_reads(
         self, db_session, setup_user_and_chat
