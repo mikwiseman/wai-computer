@@ -250,6 +250,18 @@ DATA_OWNERSHIP: tuple[TableOwnershipEntry, ...] = (
         contains_user_content=True,
     ),
     TableOwnershipEntry(
+        "brain_maps",
+        "owned_exportable",
+        "Saved Brain Map prompts, layout preferences, and source scopes.",
+        contains_user_content=True,
+    ),
+    TableOwnershipEntry(
+        "brain_map_revisions",
+        "owned_exportable",
+        "Generated Brain Map projections, citations, diffs, and freshness metadata.",
+        contains_user_content=True,
+    ),
+    TableOwnershipEntry(
         "commitments", "owned_exportable", "Tracked commitments.", contains_user_content=True
     ),
     TableOwnershipEntry(
