@@ -3749,7 +3749,7 @@ function NewRecordingPane({
           locale={locale}
           folderId={folderId}
         />
-        <AudioUpload onUploadComplete={onComplete} onError={onError} folderId={folderId} />
+        <AudioUpload onUploadComplete={onComplete} onError={onError} folderId={folderId} locale={locale} />
       </div>
 
       <form className="manual-note-form" onSubmit={onSubmit}>
