@@ -24,6 +24,7 @@ from app.core.summary_generation import (
 )
 from app.db.session import get_db_context
 from app.tasks.celery_app import celery_app
+from app.tasks.retry_policy import is_retryable_exception
 
 logger = logging.getLogger(__name__)
 
@@ -53,6 +54,8 @@ async def _generate_recording_summary(
         summary_result = await generate_summary_for_payload(payload)
     except Exception as exc:  # noqa: BLE001
         capture_sentry_exception(exc)
+        if is_retryable_exception(exc):
+            raise
         async with get_db_context() as db:
             await fail_summary_generation_job(
                 db,
@@ -86,6 +89,10 @@ async def _recover_missing_summary_generation_jobs(*, limit: int = 5) -> int:
     reject_on_worker_lost=True,
     soft_time_limit=900,
     time_limit=960,
+    max_retries=3,
+    retry_backoff=True,
+    retry_backoff_max=600,
+    retry_jitter=True,
 )
 def generate_recording_summary(self, *, job_id: str) -> None:
     try:
@@ -119,6 +126,22 @@ def generate_recording_summary(self, *, job_id: str) -> None:
         )
         raise
     except Exception as exc:
+        retry_count = int(getattr(self.request, "retries", 0) or 0)
+        if is_retryable_exception(exc) and retry_count < int(self.max_retries or 0):
+            logger.info(
+                (
+                    "summary generation task retrying job_id=%s task_id=%s "
+                    "retries=%s error_type=%s error_fingerprint=%s"
+                ),
+                job_id,
+                getattr(self.request, "id", None),
+                retry_count,
+                type(exc).__name__,
+                fingerprint_text(str(exc)),
+            )
+            raise self.retry(exc=exc)
+        if is_retryable_exception(exc):
+            asyncio.run(_mark_summary_generation_retry_exhausted(job_id=job_id))
         logger.error(
             (
                 "summary generation task failed job_id=%s task_id=%s "
@@ -157,4 +180,14 @@ async def _mark_summary_generation_timeout(*, job_id: str) -> None:
             job_id=UUID(job_id),
             error_code="summary_timeout",
             error_message="Summary generation timed out.",
+        )
+
+
+async def _mark_summary_generation_retry_exhausted(*, job_id: str) -> None:
+    async with get_db_context() as db:
+        await fail_summary_generation_job(
+            db,
+            job_id=UUID(job_id),
+            error_code="summary_retry_exhausted",
+            error_message="Summary generation failed after retryable provider errors.",
         )

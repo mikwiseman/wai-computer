@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+
 import httpx
 from redis.exceptions import ConnectionError as RedisConnectionError
 from redis.exceptions import TimeoutError as RedisTimeoutError
@@ -21,6 +23,24 @@ def _status_is_retryable(status_code: int | None) -> bool:
 
 def is_retryable_exception(exc: BaseException) -> bool:
     """Return true only for errors that can plausibly succeed on retry."""
+    return any(_is_retryable_exception(item) for item in _exception_chain(exc))
+
+
+def _exception_chain(exc: BaseException) -> Iterator[BaseException]:
+    seen: set[int] = set()
+    current: BaseException | None = exc
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        yield current
+        if current.__cause__ is not None:
+            current = current.__cause__
+        elif current.__suppress_context__:
+            current = None
+        else:
+            current = current.__context__
+
+
+def _is_retryable_exception(exc: BaseException) -> bool:
     if isinstance(exc, httpx.HTTPStatusError):
         return _status_is_retryable(exc.response.status_code)
     if isinstance(exc, (httpx.TimeoutException, httpx.TransportError)):

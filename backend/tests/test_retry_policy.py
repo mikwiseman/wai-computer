@@ -36,3 +36,17 @@ def test_retry_policy_retries_infrastructure_errors() -> None:
     assert is_retryable_exception(RedisConnectionError("redis down"))
     assert is_retryable_exception(RedisTimeoutError("redis timeout"))
     assert is_retryable_exception(OperationalError("select 1", {}, RuntimeError("db down")))
+
+
+def test_retry_policy_retries_wrapped_transient_errors() -> None:
+    request = httpx.Request("POST", "https://provider.example/chat")
+    cause = httpx.HTTPStatusError(
+        "rate limited",
+        request=request,
+        response=httpx.Response(429, request=request),
+    )
+
+    try:
+        raise RuntimeError("summarizer wrapped provider error") from cause
+    except RuntimeError as exc:
+        assert is_retryable_exception(exc)

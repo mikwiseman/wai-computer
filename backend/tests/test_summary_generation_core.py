@@ -7,6 +7,7 @@ from datetime import date, datetime, timezone
 from types import SimpleNamespace
 from uuid import UUID, uuid4
 
+import httpx
 import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -513,6 +514,45 @@ async def test_summary_generation_task_marks_summarization_failure(monkeypatch) 
 
 
 @pytest.mark.asyncio
+async def test_summary_generation_task_leaves_retryable_failure_active(monkeypatch) -> None:
+    from app.tasks import summary_generation as task_module
+
+    db_objects = ["prepare-db", "fail-db"]
+
+    @asynccontextmanager
+    async def fake_db_context():
+        yield db_objects.pop(0)
+
+    request = httpx.Request("POST", "https://api.cerebras.ai/v1/chat/completions")
+    provider_error = httpx.HTTPStatusError(
+        "rate limited",
+        request=request,
+        response=httpx.Response(429, request=request),
+    )
+
+    async def fake_prepare(db, **kwargs):
+        return SimpleNamespace(job_id=uuid4(), transcript="text")
+
+    async def fake_generate(payload):
+        raise RuntimeError("summarizer wrapped provider error") from provider_error
+
+    fail_calls: list[str] = []
+
+    async def fake_fail(db, **kwargs):
+        fail_calls.append(db)
+
+    monkeypatch.setattr(task_module, "get_db_context", fake_db_context)
+    monkeypatch.setattr(task_module, "prepare_summary_generation_payload", fake_prepare)
+    monkeypatch.setattr(task_module, "generate_summary_for_payload", fake_generate)
+    monkeypatch.setattr(task_module, "fail_summary_generation_job", fake_fail)
+
+    with pytest.raises(RuntimeError, match="summarizer wrapped provider error"):
+        await task_module._generate_recording_summary(job_id=str(uuid4()))
+
+    assert fail_calls == []
+
+
+@pytest.mark.asyncio
 async def test_summary_generation_task_returns_when_payload_not_available(monkeypatch) -> None:
     from app.tasks import summary_generation as task_module
 
@@ -618,3 +658,34 @@ def test_summary_generation_celery_task_reraises_generic_failure(monkeypatch) ->
 
     with pytest.raises(RuntimeError, match="database unavailable"):
         task_module.generate_recording_summary.run(job_id=str(uuid4()))
+
+
+def test_summary_generation_celery_task_retries_retryable_failure(monkeypatch) -> None:
+    from app.tasks import summary_generation as task_module
+
+    class RetrySentinelError(Exception):
+        pass
+
+    request = httpx.Request("POST", "https://api.cerebras.ai/v1/chat/completions")
+    provider_error = httpx.HTTPStatusError(
+        "rate limited",
+        request=request,
+        response=httpx.Response(429, request=request),
+    )
+
+    async def fake_generate(*, job_id: str, task_id: str | None = None):
+        raise RuntimeError("summarizer wrapped provider error") from provider_error
+
+    retry_calls: list[Exception] = []
+
+    def fake_retry(*, exc: Exception):
+        retry_calls.append(exc)
+        raise RetrySentinelError
+
+    monkeypatch.setattr(task_module, "_generate_recording_summary", fake_generate)
+    monkeypatch.setattr(task_module.generate_recording_summary, "retry", fake_retry)
+
+    with pytest.raises(RetrySentinelError):
+        task_module.generate_recording_summary.run(job_id=str(uuid4()))
+
+    assert len(retry_calls) == 1
