@@ -27,6 +27,9 @@
 }
 
 .onboarding-shell > h1 {
+  /* Serif display, matching auth/setup/billing headings (was sans). */
+  font-family: var(--font-family-serif);
+  font-weight: 600;
   font-size: clamp(1.7rem, 4.4vw, 2.25rem);
   line-height: 1.05;
   letter-spacing: -0.01em;
@@ -74,7 +77,7 @@
   border-radius: 10px;
   background: var(--panel-subtle);
   color: var(--ink);
-  font-family: Georgia, "Times New Roman", "Iowan Old Style", serif;
+  font-family: var(--font-family-serif);
   font-size: 1.02rem;
   font-style: italic;
   line-height: 1.55;
