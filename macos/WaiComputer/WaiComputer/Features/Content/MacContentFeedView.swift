@@ -17,14 +17,16 @@ struct MacContentFeedView: View {
         _model = StateObject(wrappedValue: MacContentFeedViewModel(apiClient: apiClient))
     }
 
-    private let kinds: [(key: String?, label: String)] = [
-        (nil, "All"),
-        ("article", "Articles"),
-        ("video", "Videos"),
-        ("pdf", "PDFs"),
-        ("note", "Notes"),
-        ("mcp_resource", "Connected"),
-    ]
+    private var kinds: [(key: String?, label: String)] {
+        [
+            (nil, t("All", "Все")),
+            ("article", t("Articles", "Статьи")),
+            ("video", t("Videos", "Видео")),
+            ("pdf", t("PDFs", "PDF")),
+            ("note", t("Notes", "Заметки")),
+            ("mcp_resource", t("Connected", "Подключённые")),
+        ]
+    }
 
     private var importTypes: [UTType] {
         // Documents extract inline into an Item; audio/video are transcribed into
@@ -142,6 +144,7 @@ struct MacContentFeedView: View {
                 }
                 .buttonStyle(.plain)
                 .help(t("Dismiss", "Закрыть"))
+                .accessibilityLabel(t("Dismiss", "Закрыть"))
             }
             .padding(.horizontal, Spacing.xl)
             .padding(.vertical, Spacing.sm)
@@ -167,6 +170,7 @@ struct MacContentFeedView: View {
                 }
                 .buttonStyle(.plain)
                 .help(t("Dismiss", "Закрыть"))
+                .accessibilityLabel(t("Dismiss", "Закрыть"))
             }
             .padding(.horizontal, Spacing.xl)
             .padding(.vertical, Spacing.sm)
@@ -239,7 +243,7 @@ struct MacContentFeedView: View {
                     if !entry.hasSummary {
                         Text(t("summarizing…", "обработка…"))
                             .font(Typography.labelSmall)
-                            .foregroundStyle(Palette.accent)
+                            .foregroundStyle(Palette.textSecondary)
                     }
                 }
             }

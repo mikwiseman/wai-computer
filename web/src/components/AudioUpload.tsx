@@ -4,10 +4,13 @@ import { useCallback, useRef, useState } from "react";
 import { createRecording, uploadAudio } from "@/lib/api";
 import type { RecordingDetail } from "@/lib/types";
 
+type Locale = "en" | "ru";
+
 interface AudioUploadProps {
   onUploadComplete: (detail: RecordingDetail) => void;
   onError: (message: string) => void;
   folderId?: string | null;
+  locale?: Locale;
 }
 
 const ACCEPTED_TYPES = [
@@ -16,9 +19,28 @@ const ACCEPTED_TYPES = [
 ];
 const ACCEPTED_FILE_EXTENSIONS = ["mp3", "m4a", "wav", "webm", "ogg", "opus", "flac"] as const;
 const ACCEPTED_FILE_INPUT = ".mp3,.m4a,.wav,.webm,.ogg,.opus,.flac";
-const UNSUPPORTED_FORMAT_MESSAGE = "Unsupported format. Use MP3, M4A, WAV, WebM, OGG, OPUS, or FLAC.";
 
-export function AudioUpload({ onUploadComplete, onError, folderId = null }: AudioUploadProps) {
+const COPY: Record<Locale, {
+  unsupported: string; creating: string; uploading: string; failed: string; drop: string;
+}> = {
+  en: {
+    unsupported: "Unsupported format. Use MP3, M4A, WAV, WebM, OGG, OPUS, or FLAC.",
+    creating: "Creating recording...",
+    uploading: "Uploading audio...",
+    failed: "Upload failed",
+    drop: "Drop audio file here or click to upload",
+  },
+  ru: {
+    unsupported: "Неподдерживаемый формат. Используйте MP3, M4A, WAV, WebM, OGG, OPUS или FLAC.",
+    creating: "Создание записи...",
+    uploading: "Загрузка аудио...",
+    failed: "Не удалось загрузить",
+    drop: "Перетащите аудиофайл сюда или нажмите для загрузки",
+  },
+};
+
+export function AudioUpload({ onUploadComplete, onError, folderId = null, locale = "en" }: AudioUploadProps) {
+  const copy = COPY[locale];
   const [isDragging, setIsDragging] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [progress, setProgress] = useState("");
@@ -40,7 +62,7 @@ export function AudioUpload({ onUploadComplete, onError, folderId = null }: Audi
   const handleFiles = useCallback(async (files: File[]) => {
     if (files.length === 0) return;
     if (files.some((file) => !validateFile(file))) {
-      onError(UNSUPPORTED_FORMAT_MESSAGE);
+      onError(copy.unsupported);
       return;
     }
 
@@ -50,7 +72,7 @@ export function AudioUpload({ onUploadComplete, onError, folderId = null }: Audi
       for (let index = 0; index < files.length; index += 1) {
         const file = files[index];
         const prefix = files.length > 1 ? `${index + 1}/${files.length}: ` : "";
-        setProgress(`${prefix}Creating recording...`);
+        setProgress(`${prefix}${copy.creating}`);
         // Pass an empty title so the backend auto-generates one from the
         // transcript content instead of using the filename verbatim.
         const recording = await createRecording({
@@ -60,19 +82,19 @@ export function AudioUpload({ onUploadComplete, onError, folderId = null }: Audi
           ...(folderId ? { folder_id: folderId } : {}),
         });
 
-        setProgress(`${prefix}Uploading audio...`);
+        setProgress(`${prefix}${copy.uploading}`);
         const detail = await uploadAudio(recording.id, file);
         onUploadComplete(detail);
       }
 
       setProgress("");
     } catch (err) {
-      onError(err instanceof Error ? err.message : "Upload failed");
+      onError(err instanceof Error ? err.message : copy.failed);
     } finally {
       setUploading(false);
       setProgress("");
     }
-  }, [folderId, onUploadComplete, onError, validateFile]);
+  }, [folderId, onUploadComplete, onError, validateFile, copy.creating, copy.uploading, copy.unsupported, copy.failed]);
 
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -109,7 +131,7 @@ export function AudioUpload({ onUploadComplete, onError, folderId = null }: Audi
       ) : (
         <div className="upload-zone__label">
           <span style={{ fontSize: "1.5rem" }}>+</span>
-          <span>Drop audio file here or click to upload</span>
+          <span>{copy.drop}</span>
           <span className="upload-zone__formats">MP3, M4A, WAV, WebM, OGG, OPUS, FLAC</span>
         </div>
       )}

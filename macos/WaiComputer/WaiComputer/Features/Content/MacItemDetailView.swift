@@ -234,7 +234,7 @@ struct MacItemDetailView: View {
                     Text(t("URL", "URL"))
                         .font(Typography.labelSmall)
                         .foregroundStyle(Palette.textTertiary)
-                        .frame(width: 86, alignment: .leading)
+                        .frame(width: 116, alignment: .leading)
                     Link(url, destination: destination)
                         .font(Typography.bodySmall)
                         .lineLimit(1)
@@ -249,7 +249,7 @@ struct MacItemDetailView: View {
             Text(title)
                 .font(Typography.labelSmall)
                 .foregroundStyle(Palette.textTertiary)
-                .frame(width: 86, alignment: .leading)
+                .frame(width: 116, alignment: .leading)
             Text(value)
                 .font(Typography.bodySmall)
                 .foregroundStyle(Palette.textSecondary)
@@ -336,7 +336,7 @@ struct MacItemDetailView: View {
         HStack(alignment: .top, spacing: Spacing.sm) {
             Text(moment.timestamp ?? "—")
                 .font(Typography.mono)
-                .foregroundStyle(Palette.accent)
+                .foregroundStyle(Palette.textSecondary)
                 .frame(width: 56, alignment: .leading)
             VStack(alignment: .leading, spacing: Spacing.xxs) {
                 Text(moment.moment).font(Typography.bodySmall.weight(.medium))

@@ -18,14 +18,171 @@ import { SummaryAudioControls } from "@/components/SummaryAudioControls";
 
 type DetailLocale = "en" | "ru";
 
-interface DetailFolderCopy {
-  label: string;
+interface DetailCopy {
+  folderLabel: string;
   noFolder: string;
+  unexpectedError: string;
+  copied: string;
+  tabTranscript: string;
+  tabSummary: string;
+  summaryQueued: string;
+  summaryAudioQueued: string;
+  renamed: string;
+  shareTitle: string;
+  shareText: string;
+  shareOpened: string;
+  shareCanceled: string;
+  clipboardUnavailable: string;
+  shareCopied: string;
+  recordingTitleLabel: string;
+  saving: string;
+  save: string;
+  cancel: string;
+  untitled: string;
+  rename: string;
+  sharing: string;
+  share: string;
+  rematching: string;
+  rematch: string;
+  exportLabel: string;
+  exportPlaceholder: string;
+  plainText: string;
+  moveToTrash: string;
+  restore: string;
+  deletePermanently: string;
+  detailLabel: string;
+  confirmDeletePermTitle: string;
+  confirmDeleteTrashTitle: string;
+  confirmDeletePermBody: string;
+  confirmDeleteTrashBody: string;
+  transcriptProcessingTitle: string;
+  transcriptProcessingBody: string;
+  noTranscriptTitle: string;
+  noTranscriptBody: string;
+  transcriptHeading: string;
+  copyTranscript: string;
+  noSummaryTitle: string;
+  generating: string;
+  generateSummary: string;
+  summaryHeading: string;
+  copySummary: string;
+  overview: string;
+  keyPoints: string;
+  topics: string;
+  people: string;
 }
 
-const FOLDER_COPY: Record<DetailLocale, DetailFolderCopy> = {
-  en: { label: "Move to folder", noFolder: "(no folder)" },
-  ru: { label: "Переместить в папку", noFolder: "(без папки)" },
+const COPY: Record<DetailLocale, DetailCopy> = {
+  en: {
+    folderLabel: "Move to folder",
+    noFolder: "(no folder)",
+    unexpectedError: "Unexpected error",
+    copied: "Copied",
+    tabTranscript: "Transcript",
+    tabSummary: "Summary",
+    summaryQueued: "Summary generation queued.",
+    summaryAudioQueued: "Summary audio generation queued.",
+    renamed: "Recording renamed.",
+    shareTitle: "WaiComputer note",
+    shareText: "Shared WaiComputer note",
+    shareOpened: "Share sheet opened.",
+    shareCanceled: "Share canceled.",
+    clipboardUnavailable: "Clipboard sharing is unavailable in this browser.",
+    shareCopied: "Share link copied.",
+    recordingTitleLabel: "Recording title",
+    saving: "Saving...",
+    save: "Save",
+    cancel: "Cancel",
+    untitled: "(untitled recording)",
+    rename: "Rename",
+    sharing: "Sharing...",
+    share: "Share",
+    rematching: "Re-matching…",
+    rematch: "Re-match speakers",
+    exportLabel: "Export recording",
+    exportPlaceholder: "Export",
+    plainText: "Plain Text",
+    moveToTrash: "Move to Trash",
+    restore: "Restore",
+    deletePermanently: "Delete Permanently",
+    detailLabel: "Recording detail",
+    confirmDeletePermTitle: "Delete recording permanently?",
+    confirmDeleteTrashTitle: "Move recording to Trash?",
+    confirmDeletePermBody:
+      "This recording, its transcript, and summary will be permanently removed. This cannot be undone.",
+    confirmDeleteTrashBody: "You can restore it from Trash later.",
+    transcriptProcessingTitle: "Transcript is processing",
+    transcriptProcessingBody:
+      "WaiComputer is processing this recording. The transcript will appear here automatically.",
+    noTranscriptTitle: "No Transcript",
+    noTranscriptBody: "This recording does not have transcript segments yet.",
+    transcriptHeading: "Transcript",
+    copyTranscript: "Copy Transcript",
+    noSummaryTitle: "No Summary",
+    generating: "Generating…",
+    generateSummary: "Generate Summary",
+    summaryHeading: "Summary",
+    copySummary: "Copy Summary",
+    overview: "Overview",
+    keyPoints: "Key Points",
+    topics: "Topics",
+    people: "People",
+  },
+  ru: {
+    folderLabel: "Переместить в папку",
+    noFolder: "(без папки)",
+    unexpectedError: "Непредвиденная ошибка",
+    copied: "Скопировано",
+    tabTranscript: "Расшифровка",
+    tabSummary: "Резюме",
+    summaryQueued: "Генерация резюме поставлена в очередь.",
+    summaryAudioQueued: "Генерация аудио-резюме поставлена в очередь.",
+    renamed: "Запись переименована.",
+    shareTitle: "Заметка WaiComputer",
+    shareText: "Заметка из WaiComputer",
+    shareOpened: "Меню «Поделиться» открыто.",
+    shareCanceled: "Отправка отменена.",
+    clipboardUnavailable: "Доступ к буферу обмена недоступен в этом браузере.",
+    shareCopied: "Ссылка скопирована.",
+    recordingTitleLabel: "Название записи",
+    saving: "Сохранение...",
+    save: "Сохранить",
+    cancel: "Отмена",
+    untitled: "(запись без названия)",
+    rename: "Переименовать",
+    sharing: "Отправка...",
+    share: "Поделиться",
+    rematching: "Сопоставление…",
+    rematch: "Сопоставить голоса",
+    exportLabel: "Экспорт записи",
+    exportPlaceholder: "Экспорт",
+    plainText: "Обычный текст",
+    moveToTrash: "В корзину",
+    restore: "Восстановить",
+    deletePermanently: "Удалить навсегда",
+    detailLabel: "Детали записи",
+    confirmDeletePermTitle: "Удалить запись навсегда?",
+    confirmDeleteTrashTitle: "Переместить запись в корзину?",
+    confirmDeletePermBody:
+      "Запись, её расшифровка и резюме будут удалены навсегда. Это действие необратимо.",
+    confirmDeleteTrashBody: "Позже её можно восстановить из корзины.",
+    transcriptProcessingTitle: "Расшифровка обрабатывается",
+    transcriptProcessingBody:
+      "WaiComputer обрабатывает эту запись. Расшифровка появится здесь автоматически.",
+    noTranscriptTitle: "Нет расшифровки",
+    noTranscriptBody: "У этой записи пока нет сегментов расшифровки.",
+    transcriptHeading: "Расшифровка",
+    copyTranscript: "Скопировать расшифровку",
+    noSummaryTitle: "Нет резюме",
+    generating: "Генерация…",
+    generateSummary: "Сгенерировать резюме",
+    summaryHeading: "Резюме",
+    copySummary: "Скопировать резюме",
+    overview: "Обзор",
+    keyPoints: "Ключевые тезисы",
+    topics: "Темы",
+    people: "Люди",
+  },
 };
 
 function formatTimestamp(ms: number | null): string {
@@ -47,16 +204,16 @@ function formatDate(value: string): string {
   return new Date(value).toLocaleDateString(undefined, { dateStyle: "medium" });
 }
 
-function formatError(error: unknown): string {
+function formatError(error: unknown, fallback: string): string {
   if (error instanceof Error) return error.message;
-  return "Unexpected error";
+  return fallback;
 }
 
 function recordingTypeLabel(type: string): string {
   return type.charAt(0).toUpperCase() + type.slice(1);
 }
 
-function CopyButton({ text, label }: { text: string; label: string }) {
+function CopyButton({ text, label, copiedLabel }: { text: string; label: string; copiedLabel: string }) {
   const [copied, setCopied] = useState(false);
 
   const handleCopy = useCallback(async () => {
@@ -67,7 +224,7 @@ function CopyButton({ text, label }: { text: string; label: string }) {
 
   return (
     <button className="ghost-button compact-button" type="button" onClick={handleCopy}>
-      {copied ? "Copied" : label}
+      {copied ? copiedLabel : label}
     </button>
   );
 }
@@ -94,7 +251,7 @@ export function RecordingDetailPanel({
   onRestore?: (recordingId: string) => void;
   onDelete?: (recordingId: string) => void;
 }) {
-  const folderCopy = FOLDER_COPY[locale] ?? FOLDER_COPY.en;
+  const copy = COPY[locale] ?? COPY.en;
   const [tab, setTab] = useState<Tab>("transcript");
   const [generating, setGenerating] = useState(false);
   const [renaming, setRenaming] = useState(false);
@@ -109,10 +266,10 @@ export function RecordingDetailPanel({
   const tabs = useMemo(
     () =>
       [
-        ["transcript", "Transcript"],
-        ["summary", "Summary"],
+        ["transcript", copy.tabTranscript],
+        ["summary", copy.tabSummary],
       ] as const,
-    [],
+    [copy.tabTranscript, copy.tabSummary],
   );
 
   useEffect(() => {
@@ -129,9 +286,9 @@ export function RecordingDetailPanel({
       const updated = await getRecording(recording.id);
       onRecordingUpdate?.(updated);
       setTab("summary");
-      setNotice("Summary generation queued.");
+      setNotice(copy.summaryQueued);
     } catch (e) {
-      setError(formatError(e));
+      setError(formatError(e, copy.unexpectedError));
     } finally {
       setGenerating(false);
     }
@@ -144,9 +301,9 @@ export function RecordingDetailPanel({
       await startRecordingSummaryAudio(recording.id);
       const updated = await getRecording(recording.id);
       onRecordingUpdate?.(updated);
-      setNotice("Summary audio generation queued.");
+      setNotice(copy.summaryAudioQueued);
     } catch (e) {
-      setError(formatError(e));
+      setError(formatError(e, copy.unexpectedError));
     }
   };
 
@@ -154,7 +311,7 @@ export function RecordingDetailPanel({
     try {
       return await downloadRecordingSummaryAudio(recording.id);
     } catch (e) {
-      setError(formatError(e));
+      setError(formatError(e, copy.unexpectedError));
       throw e;
     }
   };
@@ -169,9 +326,9 @@ export function RecordingDetailPanel({
       const updated = await getRecording(recording.id);
       onRecordingUpdate?.(updated);
       setRenameOpen(false);
-      setNotice("Recording renamed.");
+      setNotice(copy.renamed);
     } catch (e) {
-      setError(formatError(e));
+      setError(formatError(e, copy.unexpectedError));
     } finally {
       setRenaming(false);
     }
@@ -191,7 +348,7 @@ export function RecordingDetailPanel({
       a.click();
       URL.revokeObjectURL(url);
     } catch (e) {
-      setError(formatError(e));
+      setError(formatError(e, copy.unexpectedError));
     }
   };
 
@@ -203,31 +360,31 @@ export function RecordingDetailPanel({
     try {
       const link = await createRecordingShareLink(recording.id);
       const shareData = {
-        title: recording.title ?? "WaiComputer note",
-        text: "Shared WaiComputer note",
+        title: recording.title ?? copy.shareTitle,
+        text: copy.shareText,
         url: link.url,
       };
 
       if (typeof navigator.share === "function") {
         try {
           await navigator.share(shareData);
-          setNotice("Share sheet opened.");
+          setNotice(copy.shareOpened);
           return;
         } catch (e) {
           if (e instanceof DOMException && e.name === "AbortError") {
-            setNotice("Share canceled.");
+            setNotice(copy.shareCanceled);
             return;
           }
         }
       }
 
       if (!navigator.clipboard?.writeText) {
-        throw new Error("Clipboard sharing is unavailable in this browser.");
+        throw new Error(copy.clipboardUnavailable);
       }
       await navigator.clipboard.writeText(link.url);
-      setNotice("Share link copied.");
+      setNotice(copy.shareCopied);
     } catch (e) {
-      setError(formatError(e));
+      setError(formatError(e, copy.unexpectedError));
     } finally {
       setSharing(false);
     }
@@ -242,11 +399,13 @@ export function RecordingDetailPanel({
       const updated = await getRecording(recording.id);
       onRecordingUpdate?.(updated);
       setNotice(
-        `Voice re-match complete — ${result.matched_clusters} of ${result.updated_clusters} ` +
-          `speaker${result.updated_clusters === 1 ? "" : "s"} matched.`,
+        locale === "ru"
+          ? `Сопоставление голосов завершено — сопоставлено ${result.matched_clusters} из ${result.updated_clusters}.`
+          : `Voice re-match complete — ${result.matched_clusters} of ${result.updated_clusters} ` +
+              `speaker${result.updated_clusters === 1 ? "" : "s"} matched.`,
       );
     } catch (e) {
-      setError(formatError(e));
+      setError(formatError(e, copy.unexpectedError));
     } finally {
       setRematching(false);
     }
@@ -259,13 +418,13 @@ export function RecordingDetailPanel({
           {renameOpen ? (
             <div className="inline-title-edit">
               <input
-                aria-label="Recording title"
+                aria-label={copy.recordingTitleLabel}
                 value={draftTitle}
                 onChange={(event) => setDraftTitle(event.target.value)}
                 disabled={renaming}
               />
               <button className="ghost-button compact-button" type="button" onClick={handleRename} disabled={renaming}>
-                {renaming ? "Saving..." : "Save"}
+                {renaming ? copy.saving : copy.save}
               </button>
               <button
                 className="ghost-button compact-button"
@@ -276,15 +435,15 @@ export function RecordingDetailPanel({
                 }}
                 disabled={renaming}
               >
-                Cancel
+                {copy.cancel}
               </button>
             </div>
           ) : (
             <div className="section-heading-row">
-              <h2>{recording.title ?? "(untitled recording)"}</h2>
+              <h2>{recording.title ?? copy.untitled}</h2>
               {mode === "active" ? (
                 <button className="ghost-button compact-button" type="button" onClick={() => setRenameOpen(true)}>
-                  Rename
+                  {copy.rename}
                 </button>
               ) : null}
             </div>
@@ -302,8 +461,8 @@ export function RecordingDetailPanel({
             <>
               {folders && onAssignFolder ? (
                 <select
-                  aria-label={folderCopy.label}
-                  title={folderCopy.label}
+                  aria-label={copy.folderLabel}
+                  title={copy.folderLabel}
                   className="select-button"
                   data-testid="assign-folder-select"
                   value={recording.folder_id ?? ""}
@@ -315,7 +474,7 @@ export function RecordingDetailPanel({
                     onAssignFolder(recording.id, next);
                   }}
                 >
-                  <option value="">{folderCopy.noFolder}</option>
+                  <option value="">{copy.noFolder}</option>
                   {folders.map((folder) => (
                     <option key={folder.id} value={folder.id}>
                       {folder.name}
@@ -330,7 +489,7 @@ export function RecordingDetailPanel({
                 onClick={handleShare}
                 disabled={sharing}
               >
-                {sharing ? "Sharing..." : "Share"}
+                {sharing ? copy.sharing : copy.share}
               </button>
               {recording.segments.length > 0 ? (
                 <button
@@ -340,12 +499,12 @@ export function RecordingDetailPanel({
                   onClick={handleRematch}
                   disabled={rematching}
                 >
-                  {rematching ? "Re-matching…" : "Re-match speakers"}
+                  {rematching ? copy.rematching : copy.rematch}
                 </button>
               ) : null}
               <select
                 className="select-button"
-                aria-label="Export recording"
+                aria-label={copy.exportLabel}
                 onChange={(event) => {
                   if (event.target.value) {
                     void handleExport(event.target.value as "markdown" | "txt" | "srt");
@@ -355,10 +514,10 @@ export function RecordingDetailPanel({
                 defaultValue=""
               >
                 <option value="" disabled>
-                  Export
+                  {copy.exportPlaceholder}
                 </option>
                 <option value="markdown">Markdown</option>
-                <option value="txt">Plain Text</option>
+                <option value="txt">{copy.plainText}</option>
                 <option value="srt">SRT</option>
               </select>
               {onDelete ? (
@@ -367,21 +526,21 @@ export function RecordingDetailPanel({
                   type="button"
                   onClick={() => setConfirmDelete("trash")}
                 >
-                  Move to Trash
+                  {copy.moveToTrash}
                 </button>
               ) : null}
             </>
           ) : (
             <>
               <button className="ghost-button" type="button" onClick={() => onRestore?.(recording.id)}>
-                Restore
+                {copy.restore}
               </button>
               <button
                 className="ghost-button danger-button"
                 type="button"
                 onClick={() => setConfirmDelete("permanent")}
               >
-                Delete Permanently
+                {copy.deletePermanently}
               </button>
             </>
           )}
@@ -399,7 +558,7 @@ export function RecordingDetailPanel({
         </p>
       ) : null}
 
-      <div className="tab-strip" role="tablist" aria-label="Recording detail">
+      <div className="tab-strip" role="tablist" aria-label={copy.detailLabel}>
         {tabs.map(([key, label]) => (
           <button
             key={key}
@@ -429,6 +588,7 @@ export function RecordingDetailPanel({
             status={recording.status}
             recordingId={recording.id}
             onRecordingUpdate={onRecordingUpdate}
+            copy={copy}
           />
         )}
         {tab === "summary" && (
@@ -440,6 +600,7 @@ export function RecordingDetailPanel({
             generating={generating}
             onCreateAudio={handleCreateSummaryAudio}
             onDownloadAudio={handleDownloadSummaryAudio}
+            copy={copy}
           />
         )}
       </div>
@@ -457,13 +618,13 @@ export function RecordingDetailPanel({
           <div className="modal-card">
             <h3>
               {confirmDelete === "permanent"
-                ? "Delete recording permanently?"
-                : "Move recording to Trash?"}
+                ? copy.confirmDeletePermTitle
+                : copy.confirmDeleteTrashTitle}
             </h3>
             <p>
               {confirmDelete === "permanent"
-                ? "This recording, its transcript, and summary will be permanently removed. This cannot be undone."
-                : "You can restore it from Trash later."}
+                ? copy.confirmDeletePermBody
+                : copy.confirmDeleteTrashBody}
             </p>
             <div className="modal-actions">
               <button
@@ -471,7 +632,7 @@ export function RecordingDetailPanel({
                 className="ghost-button"
                 onClick={() => setConfirmDelete(null)}
               >
-                Cancel
+                {copy.cancel}
               </button>
               <button
                 type="button"
@@ -487,7 +648,7 @@ export function RecordingDetailPanel({
                   }
                 }}
               >
-                {confirmDelete === "permanent" ? "Delete Permanently" : "Move to Trash"}
+                {confirmDelete === "permanent" ? copy.deletePermanently : copy.moveToTrash}
               </button>
             </div>
           </div>
@@ -502,26 +663,28 @@ function TranscriptTab({
   status,
   recordingId,
   onRecordingUpdate,
+  copy,
 }: {
   segments: Segment[];
   status: string;
   recordingId: string;
   onRecordingUpdate?: (r: RecordingDetail) => void;
+  copy: DetailCopy;
 }) {
   if (segments.length === 0) {
     if (isRecordingProcessing(status)) {
       return (
         <div className="empty-state">
-          <h3>Transcript is processing</h3>
-          <p>WaiComputer is processing this recording. The transcript will appear here automatically.</p>
+          <h3>{copy.transcriptProcessingTitle}</h3>
+          <p>{copy.transcriptProcessingBody}</p>
         </div>
       );
     }
 
     return (
       <div className="empty-state">
-        <h3>No Transcript</h3>
-        <p>This recording does not have transcript segments yet.</p>
+        <h3>{copy.noTranscriptTitle}</h3>
+        <p>{copy.noTranscriptBody}</p>
       </div>
     );
   }
@@ -537,8 +700,8 @@ function TranscriptTab({
   return (
     <div className="reading-stack">
       <div className="section-heading-row">
-        <h3>Transcript</h3>
-        <CopyButton text={fullText} label="Copy Transcript" />
+        <h3>{copy.transcriptHeading}</h3>
+        <CopyButton text={fullText} label={copy.copyTranscript} copiedLabel={copy.copied} />
       </div>
       {segments.map((segment) => {
         // When the diariser exposes raw machine labels like "speaker_0" /
@@ -588,6 +751,7 @@ function SummaryTab({
   generating,
   onCreateAudio,
   onDownloadAudio,
+  copy,
 }: {
   recording: RecordingDetail;
   summary: Summary | null;
@@ -596,17 +760,18 @@ function SummaryTab({
   generating: boolean;
   onCreateAudio: () => Promise<void>;
   onDownloadAudio: () => Promise<Blob>;
+  copy: DetailCopy;
 }) {
   if (!summary) {
     return (
       <div className="empty-state">
-        <h3>No Summary</h3>
+        <h3>{copy.noSummaryTitle}</h3>
         <button
           type="button"
           onClick={() => onGenerate(null)}
           disabled={generating}
         >
-          {generating ? "Generating…" : "Generate Summary"}
+          {generating ? copy.generating : copy.generateSummary}
         </button>
       </div>
     );
@@ -624,9 +789,9 @@ function SummaryTab({
   return (
     <div className="reading-stack">
       <div className="section-heading-row">
-        <h3>Summary</h3>
+        <h3>{copy.summaryHeading}</h3>
         <div className="metadata-row">
-          <CopyButton text={fullSummaryText} label="Copy Summary" />
+          <CopyButton text={fullSummaryText} label={copy.copySummary} copiedLabel={copy.copied} />
         </div>
       </div>
       <SummaryAudioControls
@@ -638,14 +803,14 @@ function SummaryTab({
 
       {summary.summary ? (
         <section className="note-section">
-          <h4>Overview</h4>
+          <h4>{copy.overview}</h4>
           <p>{summary.summary}</p>
         </section>
       ) : null}
 
       {summary.key_points?.length ? (
         <section className="note-section">
-          <h4>Key Points</h4>
+          <h4>{copy.keyPoints}</h4>
           <ul className="reading-list">
             {summary.key_points.map((point) => (
               <li key={point}>{point}</li>
@@ -656,14 +821,14 @@ function SummaryTab({
 
       {summary.topics?.length ? (
         <section className="note-section">
-          <h4>Topics</h4>
+          <h4>{copy.topics}</h4>
           <p className="muted-text">{summary.topics.join(" · ")}</p>
         </section>
       ) : null}
 
       {summary.people_mentioned?.length ? (
         <section className="note-section">
-          <h4>People</h4>
+          <h4>{copy.people}</h4>
           <p className="muted-text">{summary.people_mentioned.join(", ")}</p>
         </section>
       ) : null}

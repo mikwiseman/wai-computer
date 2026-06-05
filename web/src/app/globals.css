@@ -949,8 +949,15 @@ a.primary-button[aria-disabled="true"]:hover {
 }
 
 .inline-alert {
-  background: rgba(194, 65, 59, 0.1);
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
   color: var(--danger);
+}
+
+/* Inline error message (e.g. failed summary audio). Was referenced by
+ * SummaryAudioControls with no rule, so the error rendered as plain body text. */
+.error-text {
+  color: var(--danger);
+  font-size: var(--font-body-small-size);
 }
 
 .inline-success,
@@ -1684,7 +1691,9 @@ a.primary-button[aria-disabled="true"]:hover {
 }
 
 .dictate-start {
-  align-self: start;
+  /* Grid items stretch on the inline axis by default, so the CTA was rendering
+   * full panel width. justify-self keeps it sized to its content (top-left). */
+  justify-self: start;
 }
 
 .dictate-result {
@@ -3995,7 +4004,9 @@ a.primary-button[aria-disabled="true"]:hover {
   display: grid;
   grid-template-columns: minmax(220px, 320px) 1fr;
   gap: 1rem;
-  align-items: start;
+  /* stretch (not start) so the detail card matches the list height instead of
+   * floating as a short box beside a tall list (master-detail parity). */
+  align-items: stretch;
 }
 
 .items-feed__list,
@@ -4119,6 +4130,18 @@ a.primary-button[aria-disabled="true"]:hover {
 .items-feed__detail {
   padding: 1rem;
   min-height: 120px;
+}
+
+/* Loading / empty states fill + center within the (now full-height) detail card
+ * instead of sitting as a bare line at the top-left. */
+.item-detail--loading,
+.item-detail--empty {
+  display: grid;
+  place-items: center;
+  min-height: 100%;
+  color: var(--ink-soft);
+  font-size: var(--font-body-size);
+  text-align: center;
 }
 
 .items-feed__detail-actions {
@@ -4385,9 +4408,12 @@ a.primary-button[aria-disabled="true"]:hover {
 }
 
 .pricing header h1 {
+  /* Serif display, matching the landing hero + .wai-display-large; was sans,
+   * the only marketing heading not using the editorial serif. */
+  font-family: var(--font-family-serif);
   font-size: clamp(2.25rem, 5vw, 3.5rem);
   font-weight: 700;
-  letter-spacing: 0;
+  letter-spacing: -0.01em;
   margin: 0 0 0.75rem;
 }
 
@@ -4818,7 +4844,7 @@ a.primary-button[aria-disabled="true"]:hover {
   border: 0;
   border-radius: 8px;
   background: var(--accent);
-  color: white;
+  color: var(--accent-contrast);
   font: inherit;
   font-weight: 700;
   padding: 0.8rem 1.2rem;

@@ -742,7 +742,18 @@ export function BillingDashboard({ locale, currency }: Props) {
       <p style={{ marginBottom: "1rem" }}>
         <Link href="/dashboard">{copy.backToDashboard}</Link>
       </p>
-      <h1>{copy.heading}</h1>
+      <h1
+        style={{
+          fontFamily: "var(--font-family-serif)",
+          fontWeight: 600,
+          fontSize: "clamp(1.75rem, 4vw, 2.25rem)",
+          letterSpacing: "-0.012em",
+          lineHeight: 1.05,
+          color: "var(--ink)",
+        }}
+      >
+        {copy.heading}
+      </h1>
 
       {bannerNode}
 
@@ -1017,7 +1028,7 @@ export function BillingDashboard({ locale, currency }: Props) {
                 borderRadius: "8px",
                 border: "1px solid var(--border)",
                 background: "var(--accent)",
-                color: "var(--accent-ink, #fff)",
+                color: "var(--accent-contrast)",
                 cursor: portalInFlight ? "wait" : "pointer",
                 minHeight: "38px",
                 fontWeight: 600,

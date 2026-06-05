@@ -102,7 +102,7 @@ struct MacReviewView: View {
                     Task { await model.reject(proposal.id) }
                 } label: {
                     Image(systemName: "xmark")
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(Typography.headingSmall)
                         .foregroundStyle(Palette.textSecondary)
                         .frame(width: 30, height: 30)
                         .background(Palette.surfaceSubtle)
@@ -110,13 +110,14 @@ struct MacReviewView: View {
                 }
                 .buttonStyle(.plain)
                 .help(t("Reject", "Отклонить"))
+                .accessibilityLabel(t("Reject", "Отклонить"))
                 .disabled(acting)
 
                 Button {
                     Task { await model.accept(proposal.id) }
                 } label: {
                     Image(systemName: "checkmark")
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(Typography.headingSmall)
                         .foregroundStyle(.white)
                         .frame(width: 30, height: 30)
                         .background(Palette.accent)
@@ -124,6 +125,7 @@ struct MacReviewView: View {
                 }
                 .buttonStyle(.plain)
                 .help(t("Accept", "Принять"))
+                .accessibilityLabel(t("Accept", "Принять"))
                 .disabled(acting)
             }
             .opacity(acting ? 0.5 : 1)

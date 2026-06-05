@@ -970,7 +970,7 @@ private struct RecordingDetailInlineErrorBanner: View {
     var body: some View {
         HStack(alignment: .top, spacing: Spacing.sm) {
             Image(systemName: "wifi.exclamationmark")
-                .font(.system(size: 13, weight: .semibold))
+                .font(Typography.headingSmall)
                 .foregroundStyle(Palette.recording)
 
             Text(message)

@@ -6,7 +6,7 @@
  * so a value set in the Mac app can be matched 1:1 on web.
  *
  * Override via `data-theme="light|dark|system"` and `data-accent="<name>"` on
- * <html>. The defaults below preserve the current web behaviour (teal accent +
+ * <html>. The defaults below preserve the current web behaviour (amber accent +
  * follow OS theme) so this file ships visually identical to the prod baseline.
  */
 
@@ -238,39 +238,48 @@
 
   /* Amber — Mac default, mirrors `systemOrange`. */
   --accent-amber: #ff9500;
-  --accent-amber-strong: #d97a00;
+  /* `-strong` is used as TEXT on `--bg` (links, ghost buttons, success, selected
+   * nav). #d97a00 was only 2.91:1 — fails WCAG AA. #a65d00 keeps the burnt-amber
+   * hue at 4.66:1. (Dark-theme amber-strong already passes, see below.) */
+  --accent-amber-strong: #a65d00;
   --accent-amber-soft: rgba(255, 149, 0, 0.12);
   --accent-amber-contrast: #1f1300;
 
-  /* Blue — mirrors `systemBlue`. */
-  --accent-blue: #007aff;
+  /* Blue — mirrors `systemBlue`. Fill nudged #007aff→#0070eb so white button
+   * text reaches AA (was 4.02:1, now 4.64:1); shift is imperceptible. */
+  --accent-blue: #0070eb;
   --accent-blue-strong: #0058c7;
   --accent-blue-soft: rgba(0, 122, 255, 0.12);
   --accent-blue-contrast: #ffffff;
 
-  /* Green — mirrors `systemGreen`. */
+  /* Green — mirrors `systemGreen`. `-strong` as text bumped #248a3d→#218039
+   * (4.10→4.65:1 on --bg). */
   --accent-green: #34c759;
-  --accent-green-strong: #248a3d;
+  --accent-green-strong: #218039;
   --accent-green-soft: rgba(52, 199, 89, 0.12);
   --accent-green-contrast: #052614;
 
-  /* Violet — mirrors `systemPurple`. */
-  --accent-violet: #af52de;
+  /* Violet — mirrors `systemPurple`. Fill #af52de→#a843db for AA white text
+   * (4.13→4.67:1). */
+  --accent-violet: #a843db;
   --accent-violet-strong: #893bb3;
   --accent-violet-soft: rgba(175, 82, 222, 0.12);
   --accent-violet-contrast: #ffffff;
 
-  /* Rose — mirrors `systemPink`. */
-  --accent-rose: #ff2d55;
+  /* Rose — mirrors `systemPink`. Fill #ff2d55→#ea002d so white button text
+   * reaches AA (3.65→4.64:1); stays a vivid rose-red. */
+  --accent-rose: #ea002d;
   --accent-rose-strong: #c91d3f;
   --accent-rose-soft: rgba(255, 45, 85, 0.12);
   --accent-rose-contrast: #ffffff;
 
-  /* Graphite — mirrors `systemGray`. Neutral / focused-work choice. */
+  /* Graphite — mirrors `systemGray`. Neutral / focused-work choice. A mid-gray
+   * fill can't carry white text at AA (3.26:1), so use dark contrast text on the
+   * gray button instead (5.79:1) — the conventional look for a neutral button. */
   --accent-graphite: #8e8e93;
   --accent-graphite-strong: #5e5e62;
   --accent-graphite-soft: rgba(142, 142, 147, 0.14);
-  --accent-graphite-contrast: #ffffff;
+  --accent-graphite-contrast: #1c1c1e;
 
   /* ---------------------------------------------------------------------
    * Active accent — defaults to amber to match the Mac app's
@@ -292,14 +301,18 @@
   --panel-raised: #fbfbfa;
   --ink: #191a1f;
   --ink-soft: #626a73;
-  --ink-faint: #9199a2;
+  /* `-faint` is used on real metadata text (dates, counts, section eyebrows),
+   * so it must clear AA. #9199a2 was 2.69:1; #6a737d is 4.51:1 and still a clear
+   * step below --ink-soft (5.11:1). Dark-theme --ink-faint already passes. */
+  --ink-faint: #6a737d;
   --warm: #b86f2e;
   --warm-soft: rgba(184, 111, 46, 0.12);
   --border: #dcdfdf;
   --border-strong: #c9cecf;
   --danger: #ba3d37;
   --danger-contrast: #ffffff;
-  --warning: #b86f2e;
+  /* Used as status text + icon strokes; #b86f2e was 3.66:1. #a06028 = 4.66:1. */
+  --warning: #a06028;
   --warning-contrast: #1f1300;
   --success: #17765a;
 
@@ -313,6 +326,19 @@
   --color-text-secondary: var(--ink-soft);
   --color-border: var(--border);
   --color-surface: var(--panel);
+
+  /* Compatibility aliases — globals.css references these names that were never
+   * defined, so the rules silently fell back to `initial` (no border / no
+   * background). Map them to the canonical tokens; because they reference other
+   * tokens they stay light/dark-adaptive automatically.
+   *   --line       → cleanup-level cards + dividers had no border
+   *   --surface    → cleanup-level + server-data-badge had no background
+   *   --color-bg   → admin page + admin inputs had no background
+   *   --panel-soft → MCP code blocks / endpoint URL field lost their tint */
+  --color-bg: var(--bg);
+  --line: var(--border);
+  --surface: var(--panel);
+  --panel-soft: var(--panel-subtle);
 }
 
 /* -----------------------------------------------------------------------
@@ -424,7 +450,7 @@
   --accent-amber-soft: rgba(255, 159, 10, 0.16);
   --accent-amber-contrast: #1f1300;
 
-  --accent-blue: #0a84ff;
+  --accent-blue: #0072e5;
   --accent-blue-strong: #4ea6ff;
   --accent-blue-soft: rgba(10, 132, 255, 0.18);
   --accent-blue-contrast: #ffffff;
@@ -434,12 +460,12 @@
   --accent-green-soft: rgba(48, 209, 88, 0.16);
   --accent-green-contrast: #052614;
 
-  --accent-violet: #bf5af2;
+  --accent-violet: #af32ef;
   --accent-violet-strong: #d385f7;
   --accent-violet-soft: rgba(191, 90, 242, 0.18);
   --accent-violet-contrast: #ffffff;
 
-  --accent-rose: #ff375f;
+  --accent-rose: #e9002f;
   --accent-rose-strong: #ff6a89;
   --accent-rose-soft: rgba(255, 55, 95, 0.16);
   --accent-rose-contrast: #ffffff;
@@ -560,7 +586,7 @@
     --accent-amber-soft: rgba(255, 159, 10, 0.16);
     --accent-amber-contrast: #1f1300;
 
-    --accent-blue: #0a84ff;
+    --accent-blue: #0072e5;
     --accent-blue-strong: #4ea6ff;
     --accent-blue-soft: rgba(10, 132, 255, 0.18);
     --accent-blue-contrast: #ffffff;
@@ -570,12 +596,12 @@
     --accent-green-soft: rgba(48, 209, 88, 0.16);
     --accent-green-contrast: #052614;
 
-    --accent-violet: #bf5af2;
+    --accent-violet: #af32ef;
     --accent-violet-strong: #d385f7;
     --accent-violet-soft: rgba(191, 90, 242, 0.18);
     --accent-violet-contrast: #ffffff;
 
-    --accent-rose: #ff375f;
+    --accent-rose: #e9002f;
     --accent-rose-strong: #ff6a89;
     --accent-rose-soft: rgba(255, 55, 95, 0.16);
     --accent-rose-contrast: #ffffff;

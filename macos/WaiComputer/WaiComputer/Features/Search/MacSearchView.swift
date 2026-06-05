@@ -91,6 +91,18 @@ struct MacSearchView: View {
                 ProgressView(t("Searching...", "Ищем..."))
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if let searchError = viewModel.error, !searchError.isEmpty {
+            VStack(spacing: Spacing.md) {
+                ContentUnavailableViewCompat(
+                    t("Search Failed", "Не удалось выполнить поиск"),
+                    systemImage: "exclamationmark.triangle",
+                    description: Text(searchError)
+                )
+                Button(t("Try Again", "Повторить")) { performSearch() }
+                    .buttonStyle(.bordered)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .accessibilityIdentifier("search-error-state")
         } else if hasNoResults && !viewModel.query.isEmpty && viewModel.hasSearched {
             ContentUnavailableViewCompat(
                 t("No Results", "Ничего не найдено"),
@@ -202,7 +214,7 @@ struct SearchResultRow: View {
                 if let speaker = displaySpeaker {
                     Text(speaker)
                         .font(Typography.label)
-                        .foregroundStyle(Palette.accent)
+                        .foregroundStyle(Palette.textSecondary)
                 }
 
                 Text(result.content)
@@ -251,8 +263,8 @@ struct UnifiedResultRow: View {
             VStack(alignment: .leading, spacing: Spacing.xs) {
                 HStack(spacing: Spacing.xs) {
                     Image(systemName: hit.sourceKind == "recording" ? "waveform" : "doc.text")
-                        .font(.system(size: 11))
-                        .foregroundStyle(Palette.accent)
+                        .font(Typography.caption)
+                        .foregroundStyle(Palette.textSecondary)
                     Text(hit.title ?? t("Untitled", "Без названия"))
                         .font(Typography.headingMedium)
                         .lineLimit(1)

@@ -2957,7 +2957,7 @@ export function DashboardClient() {
             <h2>{copy.settings.developerGroupTitle}</h2>
             <p>{copy.settings.developerGroupBody}</p>
           </header>
-          <McpConnectSection />
+          <McpConnectSection locale={locale} />
           <ApiKeysSection />
         </div>
       </section>
@@ -3749,6 +3749,7 @@ function UniversalInboxPanel({
         ) : selectedRow.source_kind === "item" ? (
           <ItemDetail
             itemId={selectedRow.source_id}
+            locale={locale}
             onError={onError}
             onDeleted={() => {
               setSelectedRow(null);
@@ -3809,7 +3810,7 @@ function NewRecordingPane({
           locale={locale}
           folderId={folderId}
         />
-        <AudioUpload onUploadComplete={onComplete} onError={onError} folderId={folderId} />
+        <AudioUpload onUploadComplete={onComplete} onError={onError} folderId={folderId} locale={locale} />
       </div>
 
       <form className="manual-note-form" onSubmit={onSubmit}>

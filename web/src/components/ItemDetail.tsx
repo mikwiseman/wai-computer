@@ -11,6 +11,87 @@ import {
 import { SummaryAudioControls } from "@/components/SummaryAudioControls";
 import type { Item, KeyMoment } from "@/lib/types";
 
+type Locale = "en" | "ru";
+
+interface Copy {
+  untitled: string;
+  loading: string;
+  notFound: string;
+  deleting: string;
+  delete: string;
+  fetching: string;
+  summarizing: string;
+  recoverNotice: string;
+  pastePlaceholder: string;
+  processing: string;
+  processPasted: string;
+  retrySource: string;
+  keyMoments: string;
+  when: string;
+  moment: string;
+  whyItMatters: string;
+  keyPoints: string;
+  errLoad: string;
+  errRefresh: string;
+  errReprocess: string;
+  errCreateAudio: string;
+  errDownloadAudio: string;
+  errDelete: string;
+}
+
+const COPY: Record<Locale, Copy> = {
+  en: {
+    untitled: "Untitled",
+    loading: "Loading…",
+    notFound: "Item not found.",
+    deleting: "Deleting…",
+    delete: "Delete",
+    fetching: "Fetching the source text…",
+    summarizing: "Extracted text is being summarized. This material will update automatically.",
+    recoverNotice: "Couldn't read this automatically — paste the text below, or retry the source.",
+    pastePlaceholder: "Paste the text here…",
+    processing: "Processing…",
+    processPasted: "Process pasted text",
+    retrySource: "Retry source",
+    keyMoments: "Key moments",
+    when: "When",
+    moment: "Moment",
+    whyItMatters: "Why it matters",
+    keyPoints: "Key points",
+    errLoad: "Couldn't load item.",
+    errRefresh: "Couldn't refresh item.",
+    errReprocess: "Couldn't reprocess this item.",
+    errCreateAudio: "Couldn't create summary audio.",
+    errDownloadAudio: "Couldn't download summary audio.",
+    errDelete: "Couldn't delete item.",
+  },
+  ru: {
+    untitled: "Без названия",
+    loading: "Загрузка…",
+    notFound: "Материал не найден.",
+    deleting: "Удаление…",
+    delete: "Удалить",
+    fetching: "Загружаем исходный текст…",
+    summarizing: "Извлечённый текст обрабатывается. Материал обновится автоматически.",
+    recoverNotice: "Не удалось прочитать автоматически — вставьте текст ниже или повторите загрузку источника.",
+    pastePlaceholder: "Вставьте текст сюда…",
+    processing: "Обработка…",
+    processPasted: "Обработать вставленный текст",
+    retrySource: "Повторить источник",
+    keyMoments: "Ключевые моменты",
+    when: "Когда",
+    moment: "Момент",
+    whyItMatters: "Почему это важно",
+    keyPoints: "Ключевые тезисы",
+    errLoad: "Не удалось загрузить материал.",
+    errRefresh: "Не удалось обновить материал.",
+    errReprocess: "Не удалось переобработать материал.",
+    errCreateAudio: "Не удалось создать аудио-резюме.",
+    errDownloadAudio: "Не удалось скачать аудио-резюме.",
+    errDelete: "Не удалось удалить материал.",
+  },
+};
+
 interface ItemDetailProps {
   itemId: string;
   onError?: (message: string) => void;
@@ -18,9 +99,10 @@ interface ItemDetailProps {
   onItemChange?: (item: Item) => void;
   pollIntervalMs?: number;
   showDelete?: boolean;
+  locale?: Locale;
 }
 
-function displayTitle(title: string | null, url: string | null): string {
+function displayTitle(title: string | null, url: string | null, untitled: string): string {
   const cleaned = title?.trim();
   if (
     cleaned &&
@@ -30,7 +112,7 @@ function displayTitle(title: string | null, url: string | null): string {
   ) {
     return cleaned;
   }
-  return url ?? "Untitled";
+  return url ?? untitled;
 }
 
 /** Detail view for a non-recording Item: summary, key-moments table, key points. */
@@ -41,7 +123,9 @@ export function ItemDetail({
   onItemChange,
   pollIntervalMs = 2000,
   showDelete = true,
+  locale = "en",
 }: ItemDetailProps) {
+  const copy = COPY[locale];
   // Keyed by itemId: resetting to "loading" happens via the deps, and all
   // state writes occur inside the async callbacks (not synchronously in the
   // effect body) to satisfy react-hooks/set-state-in-effect.
@@ -59,9 +143,9 @@ export function ItemDetail({
       })
       .catch((err) => {
         setState({ id: itemId, item: null, loading: false });
-        onError?.(err instanceof Error ? err.message : "Couldn't load item.");
+        onError?.(err instanceof Error ? err.message : copy.errLoad);
       });
-  }, [itemId, onError, onItemChange]);
+  }, [itemId, onError, onItemChange, copy.errLoad]);
 
   useEffect(() => {
     void loadItem().catch(() => {
@@ -81,7 +165,7 @@ export function ItemDetail({
         })
         .catch((err) => {
           if (!cancelled) {
-            onError?.(err instanceof Error ? err.message : "Couldn't refresh item.");
+            onError?.(err instanceof Error ? err.message : copy.errRefresh);
           }
         });
     }, 2000);
@@ -90,7 +174,7 @@ export function ItemDetail({
       cancelled = true;
       window.clearInterval(interval);
     };
-  }, [itemId, onError, state.id, state.item?.summary_audio?.status]);
+  }, [itemId, onError, state.id, state.item?.summary_audio?.status, copy.errRefresh]);
 
   const [pasteText, setPasteText] = useState("");
   const [recovering, setRecovering] = useState(false);
@@ -105,7 +189,7 @@ export function ItemDetail({
       onItemChange?.(updated);
       setPasteText("");
     } catch (err) {
-      onError?.(err instanceof Error ? err.message : "Couldn't reprocess this item.");
+      onError?.(err instanceof Error ? err.message : copy.errReprocess);
     } finally {
       setRecovering(false);
     }
@@ -122,7 +206,7 @@ export function ItemDetail({
         };
       });
     } catch (err) {
-      onError?.(err instanceof Error ? err.message : "Couldn't create summary audio.");
+      onError?.(err instanceof Error ? err.message : copy.errCreateAudio);
     }
   };
 
@@ -130,7 +214,7 @@ export function ItemDetail({
     try {
       return await downloadItemSummaryAudio(itemId);
     } catch (err) {
-      onError?.(err instanceof Error ? err.message : "Couldn't download summary audio.");
+      onError?.(err instanceof Error ? err.message : copy.errDownloadAudio);
       throw err;
     }
   };
@@ -151,16 +235,16 @@ export function ItemDetail({
       await deleteItem(itemId);
       await onDeleted?.(itemId);
     } catch (err) {
-      onError?.(err instanceof Error ? err.message : "Couldn't delete item.");
+      onError?.(err instanceof Error ? err.message : copy.errDelete);
       setDeleting(false);
     }
   };
 
   if (loading) {
-    return <div className="item-detail item-detail--loading">Loading…</div>;
+    return <div className="item-detail item-detail--loading">{copy.loading}</div>;
   }
   if (!item) {
-    return <div className="item-detail item-detail--empty">Item not found.</div>;
+    return <div className="item-detail item-detail--empty">{copy.notFound}</div>;
   }
 
   const summary = item.summary;
@@ -171,7 +255,7 @@ export function ItemDetail({
     <article className="item-detail">
       <header className="item-detail__header">
         <span className="item-detail__kind">{item.kind}</span>
-        <h2 className="item-detail__title">{displayTitle(item.title, item.url)}</h2>
+        <h2 className="item-detail__title">{displayTitle(item.title, item.url, copy.untitled)}</h2>
         {showDelete ? (
           <button
             type="button"
@@ -179,7 +263,7 @@ export function ItemDetail({
             disabled={deleting}
             onClick={() => void handleDelete()}
           >
-            {deleting ? "Deleting..." : "Delete"}
+            {deleting ? copy.deleting : copy.delete}
           </button>
         ) : null}
         {item.url ? (
@@ -191,21 +275,18 @@ export function ItemDetail({
 
       {(item.status === "fetching" || item.status === "summarizing") && !summary?.summary ? (
         <div className="item-detail__processing" data-testid="item-processing">
-          {item.status === "fetching"
-            ? "Fetching the source text…"
-            : "Extracted text is being summarized. This material will update automatically."}
+          {item.status === "fetching" ? copy.fetching : copy.summarizing}
         </div>
       ) : null}
 
       {(item.status === "needs_input" || item.status === "failed") && !summary?.summary ? (
         <div className="item-detail__recover" data-testid="item-recover">
           <p className="item-detail__notice">
-            {item.error?.message ??
-              "Couldn't read this automatically — paste the text below, or retry the source."}
+            {item.error?.message ?? copy.recoverNotice}
           </p>
           <textarea
             className="item-detail__recover-input"
-            placeholder="Paste the text here…"
+            placeholder={copy.pastePlaceholder}
             value={pasteText}
             onChange={(e) => setPasteText(e.target.value)}
             data-testid="item-recover-input"
@@ -217,7 +298,7 @@ export function ItemDetail({
               disabled={recovering || !pasteText.trim()}
               onClick={() => void handleReprocess(pasteText.trim())}
             >
-              {recovering ? "Processing…" : "Process pasted text"}
+              {recovering ? copy.processing : copy.processPasted}
             </button>
             {item.url ? (
               <button
@@ -226,7 +307,7 @@ export function ItemDetail({
                 disabled={recovering}
                 onClick={() => void handleReprocess()}
               >
-                Retry source
+                {copy.retrySource}
               </button>
             ) : null}
           </div>
@@ -239,7 +320,7 @@ export function ItemDetail({
             state={item.summary_audio}
             onCreate={handleCreateAudio}
             onDownload={handleDownloadAudio}
-            filename={`${displayTitle(item.title, item.url).replace(/[/\\]/g, "_")}-summary.mp3`}
+            filename={`${displayTitle(item.title, item.url, copy.untitled).replace(/[/\\]/g, "_")}-summary.mp3`}
           />
           <p className="item-detail__summary">{summary.summary}</p>
         </section>
@@ -247,13 +328,13 @@ export function ItemDetail({
 
       {keyMoments.length > 0 ? (
         <section className="item-detail__section">
-          <h3 className="item-detail__h3">Key moments</h3>
+          <h3 className="item-detail__h3">{copy.keyMoments}</h3>
           <table className="add-anything__moments">
             <thead>
               <tr>
-                <th>When</th>
-                <th>Moment</th>
-                <th>Why it matters</th>
+                <th>{copy.when}</th>
+                <th>{copy.moment}</th>
+                <th>{copy.whyItMatters}</th>
               </tr>
             </thead>
             <tbody>
@@ -271,7 +352,7 @@ export function ItemDetail({
 
       {keyPoints.length > 0 ? (
         <section className="item-detail__section">
-          <h3 className="item-detail__h3">Key points</h3>
+          <h3 className="item-detail__h3">{copy.keyPoints}</h3>
           <ul className="item-detail__points">
             {keyPoints.map((point, index) => (
               <li key={index}>{point}</li>

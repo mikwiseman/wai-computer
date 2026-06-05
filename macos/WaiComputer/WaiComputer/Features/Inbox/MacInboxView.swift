@@ -1526,6 +1526,7 @@ private struct MacInboxItemDetail: View {
 }
 
 private struct InlineMessageRow: View {
+    @EnvironmentObject private var languageManager: LanguageManager
     let systemImage: String
     let message: String
     let color: Color
@@ -1544,6 +1545,8 @@ private struct InlineMessageRow: View {
                 Image(systemName: "xmark")
             }
             .buttonStyle(.plain)
+            .help(OnboardingL10n.text("Dismiss", "Закрыть", language: languageManager.current))
+            .accessibilityLabel(OnboardingL10n.text("Dismiss", "Закрыть", language: languageManager.current))
         }
         .padding(.horizontal, Spacing.lg)
         .padding(.vertical, Spacing.sm)

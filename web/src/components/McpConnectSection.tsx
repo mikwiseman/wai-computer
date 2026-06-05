@@ -6,6 +6,8 @@ import { getSystemInfo } from "@/lib/api";
 import { McpConnectionsList } from "./McpConnectionsList";
 import { McpSourcesPanel } from "./McpSourcesPanel";
 
+type Locale = "en" | "ru";
+
 type McpClient = "claudeai" | "cursor" | "chatgpt" | "claudecode" | "codex" | "bot";
 
 type McpClientGuide = {
@@ -16,20 +18,81 @@ type McpClientGuide = {
   externalLink?: { label: string; url: string };
 };
 
-function clientGuides(mcpEndpointUrl: string): McpClientGuide[] {
+interface Copy {
+  intro: string;
+  endpointError: string;
+  endpointLoading: string;
+  copyUrl: string;
+  copied: string;
+  copySnippet: string;
+  linkClaudeai: string;
+  stepsClaudeai: string;
+  stepsCursor: string;
+  stepsChatgpt: string;
+  stepsClaudecode: string;
+  stepsCodex: string;
+  stepsBot: string;
+}
+
+const COPY: Record<Locale, Copy> = {
+  en: {
+    intro:
+      "WaiComputer exposes an MCP (Model Context Protocol) server. Connect any MCP-compatible AI assistant to give it read-only access to your recordings, transcripts, summaries, action items, and metadata. You approve each client by name on wai.computer and can revoke any time from the client itself.",
+    endpointError: "Could not load the MCP endpoint for this server.",
+    endpointLoading: "Loading MCP endpoint...",
+    copyUrl: "Copy URL",
+    copied: "Copied",
+    copySnippet: "Copy snippet",
+    linkClaudeai: "Open Connectors in Claude.ai",
+    stepsClaudeai:
+      "Open Customize → Connectors and click the “+” button. Paste the URL, then approve the request on wai.computer when prompted.",
+    stepsCursor:
+      "Add this server to .cursor/mcp.json in your project root (or to your global Cursor MCP settings). Cursor starts the OAuth flow on first use.",
+    stepsChatgpt:
+      "Open ChatGPT → Settings → Connectors. Enable Developer Mode, add an MCP server, and paste the URL.",
+    stepsClaudecode:
+      "Either run the CLI add command, or drop the snippet into a .mcp.json at your project root.",
+    stepsCodex:
+      "Add the server, then complete the OAuth login from the browser when prompted.",
+    stepsBot:
+      "For an unattended bot or cron job (no browser), create a read-only API token under “API tokens” below and send it as a Bearer header. The same token works on the REST API and this MCP endpoint — no OAuth, no refresh to manage.",
+  },
+  ru: {
+    intro:
+      "WaiComputer предоставляет MCP-сервер (Model Context Protocol). Подключите любой совместимый с MCP ИИ-ассистент, чтобы дать ему доступ только для чтения к вашим записям, расшифровкам, резюме, задачам и метаданным. Каждый клиент вы подтверждаете по имени на wai.computer и можете отозвать доступ в любой момент из самого клиента.",
+    endpointError: "Не удалось загрузить MCP-адрес для этого сервера.",
+    endpointLoading: "Загрузка MCP-адреса...",
+    copyUrl: "Скопировать URL",
+    copied: "Скопировано",
+    copySnippet: "Скопировать фрагмент",
+    linkClaudeai: "Открыть «Коннекторы» в Claude.ai",
+    stepsClaudeai:
+      "Откройте «Настроить → Коннекторы» и нажмите «+». Вставьте URL и подтвердите запрос на wai.computer.",
+    stepsCursor:
+      "Добавьте этот сервер в .cursor/mcp.json в корне проекта (или в глобальные настройки MCP в Cursor). При первом обращении Cursor запустит OAuth.",
+    stepsChatgpt:
+      "Откройте ChatGPT → Настройки → Коннекторы. Включите режим разработчика, добавьте MCP-сервер и вставьте URL.",
+    stepsClaudecode:
+      "Выполните команду CLI для добавления или поместите фрагмент в .mcp.json в корне проекта.",
+    stepsCodex:
+      "Добавьте сервер, затем завершите вход через OAuth в браузере по запросу.",
+    stepsBot:
+      "Для бота или cron-задачи без браузера создайте токен API только для чтения в разделе «API-токены» ниже и передавайте его в заголовке Bearer. Один и тот же токен работает и в REST API, и в этом MCP-адресе — без OAuth и обновления токенов.",
+  },
+};
+
+function clientGuides(mcpEndpointUrl: string, copy: Copy): McpClientGuide[] {
   return [
   {
     id: "claudeai",
     label: "Claude.ai",
-    steps:
-      "Open Customize → Connectors and click the “+” button. Paste the URL, then approve the request on wai.computer when prompted.",
-    externalLink: { label: "Open Connectors in Claude.ai", url: "https://claude.ai/customize/connectors" },
+    steps: copy.stepsClaudeai,
+    externalLink: { label: copy.linkClaudeai, url: "https://claude.ai/customize/connectors" },
   },
   {
     id: "cursor",
     label: "Cursor",
-    steps:
-      "Add this server to .cursor/mcp.json in your project root (or to your global Cursor MCP settings). Cursor starts the OAuth flow on first use.",
+    steps: copy.stepsCursor,
     snippet: {
       language: "json",
       body: `{
@@ -44,14 +107,12 @@ function clientGuides(mcpEndpointUrl: string): McpClientGuide[] {
   {
     id: "chatgpt",
     label: "ChatGPT",
-    steps:
-      "Open ChatGPT → Settings → Connectors. Enable Developer Mode, add an MCP server, and paste the URL.",
+    steps: copy.stepsChatgpt,
   },
   {
     id: "claudecode",
     label: "Claude Code",
-    steps:
-      "Either run the CLI add command, or drop the snippet into a .mcp.json at your project root.",
+    steps: copy.stepsClaudecode,
     snippet: {
       language: "json",
       body: `# CLI
@@ -71,8 +132,7 @@ claude mcp add --transport http waicomputer ${mcpEndpointUrl}
   {
     id: "codex",
     label: "Codex CLI",
-    steps:
-      "Add the server, then complete the OAuth login from the browser when prompted.",
+    steps: copy.stepsCodex,
     snippet: {
       language: "bash",
       body: `codex mcp add waicomputer --url ${mcpEndpointUrl}
@@ -82,8 +142,7 @@ codex mcp login waicomputer`,
   {
     id: "bot",
     label: "Custom / bot",
-    steps:
-      "For an unattended bot or cron job (no browser), create a read-only API token under “API tokens” below and send it as a Bearer header. The same token works on the REST API and this MCP endpoint — no OAuth, no refresh to manage.",
+    steps: copy.stepsBot,
     snippet: {
       language: "bash",
       body: `# Create a token under "API tokens" below (copy it once), then:
@@ -116,7 +175,12 @@ async function copyText(value: string): Promise<boolean> {
   }
 }
 
-export function McpConnectSection() {
+interface McpConnectSectionProps {
+  locale?: Locale;
+}
+
+export function McpConnectSection({ locale = "en" }: McpConnectSectionProps) {
+  const copy = COPY[locale];
   const [selected, setSelected] = useState<McpClient>("claudeai");
   const [copied, setCopied] = useState<"endpoint" | "snippet" | null>(null);
   const [endpointUrl, setEndpointUrl] = useState<string | null>(null);
@@ -134,17 +198,17 @@ export function McpConnectSection() {
       .catch(() => {
         if (!cancelled) {
           setEndpointUrl(null);
-          setEndpointError("Could not load the MCP endpoint for this server.");
+          setEndpointError(copy.endpointError);
         }
       });
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [copy.endpointError]);
 
   const guides = useMemo(
-    () => (endpointUrl ? clientGuides(endpointUrl) : clientGuides("")),
-    [endpointUrl],
+    () => (endpointUrl ? clientGuides(endpointUrl, copy) : clientGuides("", copy)),
+    [endpointUrl, copy],
   );
   const guide = guides.find((c) => c.id === selected) ?? guides[0];
   const snippet = endpointUrl ? guide.snippet : undefined;
@@ -160,15 +224,11 @@ export function McpConnectSection() {
   return (
     <div className="settings-form mcp-connect-form">
       <h3>MCP</h3>
-      <p className="settings-note">
-        WaiComputer exposes an MCP (Model Context Protocol) server. Connect any MCP-compatible AI assistant to give
-        it read-only access to your recordings, transcripts, summaries, action items, and metadata. You approve each
-        client by name on wai.computer and can revoke any time from the client itself.
-      </p>
+      <p className="settings-note">{copy.intro}</p>
 
       <div className="mcp-endpoint-row">
         <code className="mcp-endpoint-url" data-testid="mcp-endpoint-url">
-          {endpointUrl ?? endpointError ?? "Loading MCP endpoint..."}
+          {endpointUrl ?? endpointError ?? copy.endpointLoading}
         </code>
         <button
           type="button"
@@ -177,7 +237,7 @@ export function McpConnectSection() {
           disabled={!endpointUrl}
           onClick={() => (endpointUrl ? void handleCopy("endpoint", endpointUrl) : undefined)}
         >
-          {copied === "endpoint" ? "Copied" : "Copy URL"}
+          {copied === "endpoint" ? copy.copied : copy.copyUrl}
         </button>
       </div>
 
@@ -210,7 +270,7 @@ export function McpConnectSection() {
               data-testid="mcp-copy-snippet"
               onClick={() => void handleCopy("snippet", snippet.body)}
             >
-              {copied === "snippet" ? "Copied" : "Copy snippet"}
+              {copied === "snippet" ? copy.copied : copy.copySnippet}
             </button>
           </div>
         ) : null}
@@ -227,8 +287,8 @@ export function McpConnectSection() {
         ) : null}
       </div>
 
-      <McpConnectionsList />
-      <McpSourcesPanel />
+      <McpConnectionsList locale={locale} />
+      <McpSourcesPanel locale={locale} />
     </div>
   );
 }

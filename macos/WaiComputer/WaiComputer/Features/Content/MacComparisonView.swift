@@ -12,6 +12,7 @@ struct MacComparisonView: View {
     @State private var set: ComparisonSet?
     @State private var loading = true
     @State private var pollCount = 0
+    @State private var loadError: String?
 
     private let maxPolls = 30
 
@@ -45,6 +46,12 @@ struct MacComparisonView: View {
                     .foregroundStyle(Palette.textSecondary)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if let loadError {
+            ContentUnavailableViewCompat(
+                t("Couldn't load comparison", "Не удалось загрузить сравнение"),
+                systemImage: "exclamationmark.triangle",
+                description: Text(loadError)
+            )
         } else if set?.status == "failed" {
             ContentUnavailableViewCompat(
                 t("Couldn't build comparison", "Не удалось построить сравнение"),
@@ -110,6 +117,7 @@ struct MacComparisonView: View {
                 loading = false
                 if result.status != "generating" { return }
             } catch {
+                loadError = error.userFacingMessage(context: .generic)
                 loading = false
                 return
             }

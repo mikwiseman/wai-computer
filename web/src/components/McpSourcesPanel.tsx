@@ -10,13 +10,87 @@ import {
 } from "@/lib/api";
 import type { McpIngestionConnection } from "@/lib/types";
 
+type Locale = "en" | "ru";
+
+interface Copy {
+  errLoad: string;
+  errConnect: string;
+  errUpdate: string;
+  errSync: string;
+  heading: string;
+  note: string;
+  nameLabel: string;
+  urlLabel: string;
+  tokenLabel: string;
+  connecting: string;
+  connect: string;
+  loading: string;
+  empty: string;
+  paused: string;
+  everyPrefix: string;
+  minSuffix: string;
+  sync: string;
+  pause: string;
+  resume: string;
+}
+
+const COPY: Record<Locale, Copy> = {
+  en: {
+    errLoad: "Couldn’t load connected sources.",
+    errConnect: "Couldn’t connect that source.",
+    errUpdate: "Couldn’t update that source.",
+    errSync: "Couldn’t trigger a sync.",
+    heading: "Connected sources",
+    note: "Pull items from any MCP server into your brain (read-only). Wai syncs on a schedule; pause or sync a source any time.",
+    nameLabel: "Source name",
+    urlLabel: "Server URL",
+    tokenLabel: "Auth token (optional)",
+    connecting: "Connecting…",
+    connect: "Connect",
+    loading: "Loading…",
+    empty: "No sources connected yet.",
+    paused: "paused",
+    everyPrefix: "every ",
+    minSuffix: "m",
+    sync: "Sync",
+    pause: "Pause",
+    resume: "Resume",
+  },
+  ru: {
+    errLoad: "Не удалось загрузить подключённые источники.",
+    errConnect: "Не удалось подключить источник.",
+    errUpdate: "Не удалось обновить источник.",
+    errSync: "Не удалось запустить синхронизацию.",
+    heading: "Подключённые источники",
+    note: "Подтягивайте материалы из любого MCP-сервера в свой мозг (только чтение). Wai синхронизирует по расписанию; источник можно поставить на паузу или синхронизировать в любой момент.",
+    nameLabel: "Название источника",
+    urlLabel: "URL сервера",
+    tokenLabel: "Токен доступа (необязательно)",
+    connecting: "Подключение…",
+    connect: "Подключить",
+    loading: "Загрузка…",
+    empty: "Пока нет подключённых источников.",
+    paused: "на паузе",
+    everyPrefix: "каждые ",
+    minSuffix: " мин",
+    sync: "Синхр.",
+    pause: "Пауза",
+    resume: "Возобновить",
+  },
+};
+
 /**
  * Connect-a-source: the inverse of exposing Wai as an MCP server — here Wai is
  * the CLIENT, pulling items from an external MCP server into the brain on a
  * schedule. Connect, pause/resume, or trigger a sync; errors surface (no silent
  * failure), and a server error is shown inline against its row.
  */
-export function McpSourcesPanel() {
+interface McpSourcesPanelProps {
+  locale?: Locale;
+}
+
+export function McpSourcesPanel({ locale = "en" }: McpSourcesPanelProps) {
+  const copy = COPY[locale];
   const [sources, setSources] = useState<McpIngestionConnection[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [label, setLabel] = useState("");
@@ -30,10 +104,10 @@ export function McpSourcesPanel() {
     try {
       setSources(await listMcpIngestionConnections());
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Couldn’t load connected sources.");
+      setError(err instanceof Error ? err.message : copy.errLoad);
       setSources([]);
     }
-  }, []);
+  }, [copy.errLoad]);
 
   useEffect(() => {
     void load();
@@ -60,12 +134,12 @@ export function McpSourcesPanel() {
         setToken("");
         await load();
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Couldn’t connect that source.");
+        setError(err instanceof Error ? err.message : copy.errConnect);
       } finally {
         setSubmitting(false);
       }
     },
-    [label, url, token, submitting, load],
+    [label, url, token, submitting, load, copy.errConnect],
   );
 
   const handleToggle = useCallback(
@@ -76,12 +150,12 @@ export function McpSourcesPanel() {
         await updateMcpIngestionConnection(conn.id, { enabled: !conn.enabled });
         await load();
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Couldn’t update that source.");
+        setError(err instanceof Error ? err.message : copy.errUpdate);
       } finally {
         setBusyId(null);
       }
     },
-    [load],
+    [load, copy.errUpdate],
   );
 
   const handleSync = useCallback(
@@ -92,38 +166,35 @@ export function McpSourcesPanel() {
         await syncMcpIngestionConnection(id);
         await load();
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Couldn’t trigger a sync.");
+        setError(err instanceof Error ? err.message : copy.errSync);
       } finally {
         setBusyId(null);
       }
     },
-    [load],
+    [load, copy.errSync],
   );
 
   return (
     <div className="mcp-connections mcp-sources" data-testid="mcp-sources">
-      <h4>Connected sources</h4>
-      <p className="settings-note">
-        Pull items from any MCP server into your brain (read-only). Wai syncs on a
-        schedule; pause or sync a source any time.
-      </p>
+      <h4>{copy.heading}</h4>
+      <p className="settings-note">{copy.note}</p>
 
       <form className="mcp-source-form" onSubmit={handleConnect}>
         <input
-          aria-label="Source name"
-          placeholder="Source name"
+          aria-label={copy.nameLabel}
+          placeholder={copy.nameLabel}
           value={label}
           onChange={(e) => setLabel(e.target.value)}
         />
         <input
-          aria-label="Server URL"
+          aria-label={copy.urlLabel}
           placeholder="https://example.com/mcp"
           value={url}
           onChange={(e) => setUrl(e.target.value)}
         />
         <input
-          aria-label="Auth token (optional)"
-          placeholder="Auth token (optional)"
+          aria-label={copy.tokenLabel}
+          placeholder={copy.tokenLabel}
           type="password"
           value={token}
           onChange={(e) => setToken(e.target.value)}
@@ -133,7 +204,7 @@ export function McpSourcesPanel() {
           className="primary-button compact-button"
           disabled={submitting || !label.trim() || !url.trim()}
         >
-          {submitting ? "Connecting…" : "Connect"}
+          {submitting ? copy.connecting : copy.connect}
         </button>
       </form>
 
@@ -145,11 +216,11 @@ export function McpSourcesPanel() {
 
       {sources === null ? (
         <p className="settings-note" data-testid="mcp-sources-loading">
-          Loading…
+          {copy.loading}
         </p>
       ) : sources.length === 0 ? (
         <p className="settings-note" data-testid="mcp-sources-empty">
-          No sources connected yet.
+          {copy.empty}
         </p>
       ) : (
         <ul className="mcp-connection-rows">
@@ -162,9 +233,9 @@ export function McpSourcesPanel() {
               <div className="mcp-connection-meta">
                 <span className="mcp-connection-name">{conn.server_label}</span>
                 <span className="mcp-connection-detail">
-                  {conn.enabled ? conn.status : "paused"}
-                  {conn.last_error ? ` · ${conn.last_error}` : ""} · every{" "}
-                  {conn.sync_interval_minutes}m
+                  {conn.enabled ? conn.status : copy.paused}
+                  {conn.last_error ? ` · ${conn.last_error}` : ""} · {copy.everyPrefix}
+                  {conn.sync_interval_minutes}{copy.minSuffix}
                 </span>
               </div>
               <div className="mcp-source-actions">
@@ -174,7 +245,7 @@ export function McpSourcesPanel() {
                   disabled={busyId === conn.id}
                   onClick={() => void handleSync(conn.id)}
                 >
-                  Sync
+                  {copy.sync}
                 </button>
                 <button
                   type="button"
@@ -182,7 +253,7 @@ export function McpSourcesPanel() {
                   disabled={busyId === conn.id}
                   onClick={() => void handleToggle(conn)}
                 >
-                  {conn.enabled ? "Pause" : "Resume"}
+                  {conn.enabled ? copy.pause : copy.resume}
                 </button>
               </div>
             </li>

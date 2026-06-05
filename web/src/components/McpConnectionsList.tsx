@@ -5,14 +5,61 @@ import { useCallback, useEffect, useState } from "react";
 import { listMcpConnections, revokeMcpConnection } from "@/lib/api";
 import type { McpConnection } from "@/lib/types";
 
-function formatDate(value: string | null): string {
-  if (!value) return "never";
+type Locale = "en" | "ru";
+
+interface Copy {
+  never: string;
+  errLoad: string;
+  errRevoke: string;
+  heading: string;
+  note: string;
+  loading: string;
+  empty: string;
+  lastActive: string;
+  revoking: string;
+  revoke: string;
+}
+
+const COPY: Record<Locale, Copy> = {
+  en: {
+    never: "never",
+    errLoad: "Couldn’t load connected clients.",
+    errRevoke: "Couldn’t revoke that client.",
+    heading: "Connected clients",
+    note: "Apps you’ve approved for read-only access to your library. Revoke any you no longer use — access is cut off on wai.computer immediately.",
+    loading: "Loading…",
+    empty: "No clients connected yet.",
+    lastActive: "last active",
+    revoking: "Revoking…",
+    revoke: "Revoke",
+  },
+  ru: {
+    never: "никогда",
+    errLoad: "Не удалось загрузить подключённые клиенты.",
+    errRevoke: "Не удалось отозвать доступ клиента.",
+    heading: "Подключённые клиенты",
+    note: "Приложения, которым вы разрешили доступ к библиотеке только для чтения. Отзовите те, которыми больше не пользуетесь — доступ на wai.computer прекращается сразу.",
+    loading: "Загрузка…",
+    empty: "Пока нет подключённых клиентов.",
+    lastActive: "последняя активность",
+    revoking: "Отзыв…",
+    revoke: "Отозвать",
+  },
+};
+
+function formatDate(value: string | null, never: string): string {
+  if (!value) return never;
   const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "never";
+  if (Number.isNaN(date.getTime())) return never;
   return date.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
 }
 
-export function McpConnectionsList() {
+interface McpConnectionsListProps {
+  locale?: Locale;
+}
+
+export function McpConnectionsList({ locale = "en" }: McpConnectionsListProps) {
+  const copy = COPY[locale];
   const [connections, setConnections] = useState<McpConnection[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [revoking, setRevoking] = useState<string | null>(null);
@@ -22,10 +69,10 @@ export function McpConnectionsList() {
     try {
       setConnections(await listMcpConnections());
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Couldn’t load connected clients.");
+      setError(err instanceof Error ? err.message : copy.errLoad);
       setConnections([]);
     }
-  }, []);
+  }, [copy.errLoad]);
 
   useEffect(() => {
     void load();
@@ -38,7 +85,7 @@ export function McpConnectionsList() {
       await revokeMcpConnection(clientId);
       setConnections((current) => (current ?? []).filter((c) => c.client_id !== clientId));
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Couldn’t revoke that client.");
+      setError(err instanceof Error ? err.message : copy.errRevoke);
     } finally {
       setRevoking(null);
     }
@@ -46,11 +93,8 @@ export function McpConnectionsList() {
 
   return (
     <div className="mcp-connections" data-testid="mcp-connections">
-      <h4>Connected clients</h4>
-      <p className="settings-note">
-        Apps you’ve approved for read-only access to your library. Revoke any you no longer use —
-        access is cut off on wai.computer immediately.
-      </p>
+      <h4>{copy.heading}</h4>
+      <p className="settings-note">{copy.note}</p>
 
       {error ? (
         <p className="mcp-connections-error" data-testid="mcp-connections-error" role="alert">
@@ -60,11 +104,11 @@ export function McpConnectionsList() {
 
       {connections === null ? (
         <p className="settings-note" data-testid="mcp-connections-loading">
-          Loading…
+          {copy.loading}
         </p>
       ) : connections.length === 0 ? (
         <p className="settings-note" data-testid="mcp-connections-empty">
-          No clients connected yet.
+          {copy.empty}
         </p>
       ) : (
         <ul className="mcp-connection-rows">
@@ -77,7 +121,8 @@ export function McpConnectionsList() {
               <div className="mcp-connection-meta">
                 <span className="mcp-connection-name">{connection.client_name}</span>
                 <span className="mcp-connection-detail">
-                  {connection.scopes.join(", ")} · last active {formatDate(connection.last_active_at)}
+                  {connection.scopes.join(", ")} · {copy.lastActive}{" "}
+                  {formatDate(connection.last_active_at, copy.never)}
                 </span>
               </div>
               <button
@@ -87,7 +132,7 @@ export function McpConnectionsList() {
                 disabled={revoking === connection.client_id}
                 onClick={() => void handleRevoke(connection.client_id)}
               >
-                {revoking === connection.client_id ? "Revoking…" : "Revoke"}
+                {revoking === connection.client_id ? copy.revoking : copy.revoke}
               </button>
             </li>
           ))}
