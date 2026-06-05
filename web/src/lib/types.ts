@@ -696,12 +696,28 @@ export interface CompanionConversationList {
 
 export type CompanionPlanStep = { title: string; status: string };
 
+export type CompanionArtifact = {
+  artifact_id: string;
+  title: string;
+  kind: string; // html | markdown | code
+  content: string;
+  language?: string;
+};
+
 export type CompanionEvent =
   | { type: "turn_start"; message_id: string; conversation_id: string }
   | { type: "thinking"; text: string }
   | { type: "tool_call"; call_id: string; tool: string; args: Record<string, unknown> }
   | { type: "tool_result"; call_id: string; summary: string; ok?: boolean }
   | { type: "plan"; steps: CompanionPlanStep[] }
+  | {
+      type: "artifact";
+      artifact_id: string;
+      title: string;
+      kind: string;
+      content: string;
+      language?: string;
+    }
   | { type: "token"; text: string }
   | {
       type: "citation";

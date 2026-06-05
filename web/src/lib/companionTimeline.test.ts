@@ -130,4 +130,24 @@ describe("companionTimeline reducer", () => {
     turn = failRunningTools(turn, "Stopped");
     expect(turnHasRunningTool(turn)).toBe(false);
   });
+
+  it("appends an artifact item", () => {
+    const turn = reduce([
+      { type: "thinking", text: "Building…" },
+      {
+        type: "artifact",
+        artifact_id: "a1",
+        title: "Landing",
+        kind: "html",
+        content: "<h1>Hi</h1>",
+      },
+      { type: "token", text: "Done." },
+    ]);
+    const arts = turn.items.filter((i) => i.kind === "artifact");
+    expect(arts).toHaveLength(1);
+    if (arts[0].kind === "artifact") {
+      expect(arts[0].artifact.kind).toBe("html");
+      expect(arts[0].artifact.title).toBe("Landing");
+    }
+  });
 });
