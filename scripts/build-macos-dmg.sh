@@ -289,12 +289,16 @@ find_sign_update_bin() {
     return 1
   fi
 
+  local search_root
   local candidate
-  candidate=$(find "$HOME/Library/Developer/Xcode/DerivedData" -path '*/SourcePackages/artifacts/sparkle/Sparkle/bin/sign_update' -type f -perm -111 2>/dev/null | head -n 1 || true)
-  if [[ -n "$candidate" ]]; then
-    printf '%s\n' "$candidate"
-    return 0
-  fi
+  for search_root in "$DERIVED_DATA_PATH" "$HOME/Library/Developer/Xcode/DerivedData"; do
+    [[ -d "$search_root" ]] || continue
+    candidate=$(find "$search_root" -path '*/SourcePackages/artifacts/sparkle/Sparkle/bin/sign_update' -type f -perm -111 2>/dev/null | head -n 1 || true)
+    if [[ -n "$candidate" ]]; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  done
 
   echo "Sparkle sign_update not found. Build or resolve the WaiComputer scheme first, or set SPARKLE_SIGN_UPDATE_BIN." >&2
   return 1
