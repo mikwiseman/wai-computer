@@ -17,9 +17,9 @@ import {
   type CompanionTurn,
   type CompanionTurnItem,
   emptyTurn,
-  failRunningTools,
   ingestEvent,
   itemsFromStoredToolCalls,
+  markTurnInterrupted,
   setActionResolution,
   setStoredActionResolution,
   turnIsEmpty,
@@ -212,6 +212,14 @@ function storedTimelineItemsForMessage(message: CompanionMessage): CompanionTurn
   const text = plainText(message.content);
   if (!text.trim()) return items;
   return [...items, { kind: "text", id: `stored-text-${message.id}`, markdown: text }];
+}
+
+function stoppedText(locale: Locale): string {
+  return locale === "ru" ? "Остановлено." : "Stopped.";
+}
+
+function failedText(locale: Locale): string {
+  return locale === "ru" ? "Не удалось." : "Failed.";
 }
 
 function localDateString(date: Date): string {
@@ -453,7 +461,7 @@ export function CompanionPanel({
         if (controller.signal.aborted) break;
         if (evt.type === "error") {
           receivedError = true;
-          turn = failRunningTools(turn, locale === "ru" ? "Остановлено" : "Stopped");
+          turn = markTurnInterrupted(turn, failedText(locale));
           setLiveTurn(turn);
           setError(evt.message);
           break;
@@ -479,6 +487,7 @@ export function CompanionPanel({
         if (!receivedError) setError(formatError(refetchErr, copy));
       }
       if (!receivedError) {
+        setLiveTurn(emptyTurn());
         setChats((prev) => {
           const idx = prev.findIndex((c) => c.id === chatId);
           if (idx < 0) return prev;
@@ -491,6 +500,8 @@ export function CompanionPanel({
       if (controller.signal.aborted || isAbortError(e)) {
         return;
       }
+      turn = markTurnInterrupted(turn, failedText(locale));
+      setLiveTurn(turn);
       setError(formatError(e, copy));
       try {
         const refreshed = await getChat(chatId);
@@ -555,7 +566,7 @@ export function CompanionPanel({
     abortRef.current?.abort();
     abortRef.current = null;
     setLiveTurn((prev) =>
-      failRunningTools(prev, locale === "ru" ? "Остановлено" : "Stopped"),
+      markTurnInterrupted(prev, stoppedText(locale)),
     );
     setLoading(false);
     setStage("idle");
@@ -753,7 +764,7 @@ export function CompanionPanel({
           );
         })}
 
-        {loading ? (
+        {loading || !turnIsEmpty(liveTurn) ? (
           <article
             className="qa-bubble qa-bubble--assistant qa-bubble--loading"
             data-testid="companion-streaming"

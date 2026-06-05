@@ -448,3 +448,32 @@ export function failRunningTools(turn: CompanionTurn, summary: string): Companio
   });
   return { ...turn, items };
 }
+
+/** Preserve an interrupted turn as visible, settled timeline state. */
+export function markTurnInterrupted(turn: CompanionTurn, summary: string): CompanionTurn {
+  const items = turn.items.map((it) => {
+    if (it.kind === "tools" && it.actions.some((a) => a.summary === null)) {
+      return {
+        ...it,
+        actions: it.actions.map((a) =>
+          a.summary === null ? { ...a, summary, ok: false } : a,
+        ),
+      };
+    }
+    if (it.kind === "plan" && it.steps.some((step) => step.status === "in_progress")) {
+      return {
+        ...it,
+        steps: it.steps.map((step) =>
+          step.status === "in_progress" ? { ...step, status: "failed" } : step,
+        ),
+      };
+    }
+    return it;
+  });
+  const interrupted = { ...turn, items };
+  const hasText = interrupted.items.some(
+    (item) => item.kind === "text" && item.markdown.trim().length > 0,
+  );
+  if (hasText) return interrupted;
+  return ingestEvent(interrupted, { type: "token", text: summary });
+}

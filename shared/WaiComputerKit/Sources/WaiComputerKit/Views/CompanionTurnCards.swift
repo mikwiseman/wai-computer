@@ -235,7 +235,7 @@ struct CompanionPlanCard: View {
                         Text(step.title)
                             .font(.system(size: 14))
                             .strikethrough(step.status == "done", color: .secondary)
-                            .foregroundStyle(step.status == "done" ? .secondary : .primary)
+                            .foregroundStyle(stepColor(step.status))
                         Spacer(minLength: 0)
                     }
                 }
@@ -260,11 +260,24 @@ struct CompanionPlanCard: View {
                 Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
             case "in_progress":
                 Image(systemName: "circle.lefthalf.filled").foregroundStyle(accent)
+            case "failed":
+                Image(systemName: "xmark.circle.fill").foregroundStyle(.red)
             default:
                 Image(systemName: "circle").foregroundStyle(.secondary)
             }
         }
         .font(.system(size: 13))
+    }
+
+    private func stepColor(_ status: String) -> Color {
+        switch status {
+        case "done":
+            return .secondary
+        case "failed":
+            return .red
+        default:
+            return .primary
+        }
     }
 }
 

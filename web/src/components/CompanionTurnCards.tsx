@@ -204,7 +204,13 @@ function PlanCard({
         {steps.map((s, i) => (
           <li key={i} className={`wai-plan-step wai-plan-${s.status}`}>
             <span aria-hidden>
-              {s.status === "done" ? "☑︎" : s.status === "in_progress" ? "◐" : "○"}
+              {s.status === "done"
+                ? "☑︎"
+                : s.status === "failed"
+                  ? "×"
+                  : s.status === "in_progress"
+                    ? "◐"
+                    : "○"}
             </span>
             <span style={{ textDecoration: s.status === "done" ? "line-through" : undefined }}>
               {s.title}

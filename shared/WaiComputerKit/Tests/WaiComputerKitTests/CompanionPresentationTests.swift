@@ -173,6 +173,46 @@ final class CompanionPresentationTests: XCTestCase {
         XCTAssertEqual(actions[0].summary, "Stopped")
     }
 
+    func testMarkInterruptedSettlesPlanAndAddsStoppedSummary() {
+        var reducer = reduce([
+            .plan(steps: [CompanionPlanStep(title: "Check sources", status: "in_progress")]),
+            .toolCall(callId: "web-1", tool: "web_search"),
+        ])
+
+        reducer.markInterrupted(summary: "Stopped.")
+
+        XCTAssertFalse(reducer.hasRunningTool)
+        XCTAssertEqual(reducer.items.count, 3)
+        guard case .plan(_, let steps) = reducer.items[0] else {
+            return XCTFail("expected plan card")
+        }
+        XCTAssertEqual(steps, [CompanionPlanStep(title: "Check sources", status: "failed")])
+        guard case .tools(_, let actions) = reducer.items[1] else {
+            return XCTFail("expected tools card")
+        }
+        XCTAssertEqual(actions[0].summary, "Stopped.")
+        XCTAssertEqual(actions[0].ok, false)
+        guard case .text(_, let markdown) = reducer.items[2] else {
+            return XCTFail("expected stopped text")
+        }
+        XCTAssertEqual(markdown, "Stopped.")
+    }
+
+    func testMarkInterruptedKeepsPartialText() {
+        var reducer = reduce([
+            .toolCall(callId: "web-1", tool: "web_search"),
+            .token(text: "Partial answer"),
+        ])
+
+        reducer.markInterrupted(summary: "Stopped.")
+
+        let texts = reducer.items.compactMap { item -> String? in
+            if case .text(_, let markdown) = item { return markdown }
+            return nil
+        }
+        XCTAssertEqual(texts, ["Partial answer"])
+    }
+
     func testReducerAppendsArtifact() {
         let artifact = CompanionArtifact(
             artifactId: "a1", title: "Landing", kind: "html",

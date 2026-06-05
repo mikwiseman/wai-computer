@@ -365,7 +365,7 @@ public struct CompanionView: View {
                             bubble(for: message)
                                 .id(message.id)
                         }
-                        if isStreaming {
+                        if isStreaming || !liveTurn.isEmpty {
                             streamingBubble
                                 .id("streaming")
                         }
@@ -488,7 +488,7 @@ public struct CompanionView: View {
         } else {
             assistantTurnView(
                 items: liveTurn.items,
-                isLive: true,
+                isLive: isStreaming,
                 dateText: t("Now", "Сейчас"),
                 citations: liveTurn.citations.map {
                     CitationDisplay(
@@ -941,27 +941,36 @@ public struct CompanionView: View {
                     viewingRecordingId: viewingRecordingId,
                     viewingFolderId: viewingFolderId
                 )
-                for await event in stream {
+                streamLoop: for await event in stream {
                     if Task.isCancelled { break }
                     handle(event)
-                    if case .done = event { break }
+                    switch event {
+                    case .done:
+                        break streamLoop
+                    case .error:
+                        hadError = true
+                        break streamLoop
+                    default:
+                        break
+                    }
                 }
                 if Task.isCancelled {
                     return
                 }
-                let detail = try await apiClient.getCompanionChat(chatId: chatId)
-                messages = detail.messages
-                await refreshChats(selecting: chatId)
+                if !hadError {
+                    let detail = try await apiClient.getCompanionChat(chatId: chatId)
+                    messages = detail.messages
+                    await refreshChats(selecting: chatId)
+                    liveTurn = CompanionTurnReducer()
+                }
             } catch is CancellationError {
                 return
             } catch let urlError as URLError where urlError.code == .cancelled {
                 return
             } catch {
-                hadError = true
+                liveTurn.markInterrupted(summary: t("Failed.", "Не удалось."))
+                streamTick &+= 1
                 errorMessage = error.localizedDescription
-            }
-            if !hadError {
-                liveTurn = CompanionTurnReducer()
             }
             stage = .idle
         }
@@ -991,9 +1000,11 @@ public struct CompanionView: View {
 
     @MainActor
     private func cancelTurn() {
+        guard turnTask != nil || !liveTurn.isEmpty || stage != .idle else { return }
         turnTask?.cancel()
         turnTask = nil
-        liveTurn = CompanionTurnReducer()
+        liveTurn.markInterrupted(summary: t("Stopped.", "Остановлено."))
+        streamTick &+= 1
         stage = .idle
     }
 
@@ -1020,7 +1031,7 @@ public struct CompanionView: View {
             }
             stage = .idle
         case .error(_, let message):
-            liveTurn.failRunningTools(summary: t("Stopped", "Остановлено"))
+            liveTurn.markInterrupted(summary: t("Failed.", "Не удалось."))
             errorMessage = message
         default:
             break

@@ -337,6 +337,34 @@ public struct CompanionTurnReducer: Equatable, Sendable {
         }
     }
 
+    /// Preserve an interrupted turn as visible, settled timeline state.
+    public mutating func markInterrupted(summary: String) {
+        failRunningTools(summary: summary)
+        for index in items.indices {
+            if case .plan(let id, let steps) = items[index],
+               steps.contains(where: { $0.status == "in_progress" }) {
+                items[index] = .plan(
+                    id: id,
+                    steps: steps.map { step in
+                        if step.status == "in_progress" {
+                            return CompanionPlanStep(title: step.title, status: "failed")
+                        }
+                        return step
+                    }
+                )
+            }
+        }
+        let hasText = items.contains { item in
+            if case .text(_, let markdown) = item {
+                return !markdown.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            }
+            return false
+        }
+        if !hasText {
+            appendText(summary)
+        }
+    }
+
     /// Set the resolution on a proposed-action card by id. Returns false if no
     /// matching action card exists in this turn.
     @discardableResult

@@ -2548,6 +2548,9 @@ a.primary-button[aria-disabled="true"]:hover {
 .wai-plan-done span:last-child {
   color: var(--ink-soft);
 }
+.wai-plan-failed span:last-child {
+  color: var(--danger);
+}
 
 .wai-action-preview {
   margin-bottom: 0.3rem;

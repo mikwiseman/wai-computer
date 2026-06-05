@@ -5,6 +5,7 @@ import {
   failRunningTools,
   ingestEvent,
   itemsFromStoredToolCalls,
+  markTurnInterrupted,
   setActionResolution,
   turnHasRunningTool,
 } from "./companionTimeline";
@@ -130,6 +131,41 @@ describe("companionTimeline reducer", () => {
     expect(turnHasRunningTool(turn)).toBe(true);
     turn = failRunningTools(turn, "Stopped");
     expect(turnHasRunningTool(turn)).toBe(false);
+  });
+
+  it("settles interrupted plans and appends a stopped summary", () => {
+    const turn = markTurnInterrupted(
+      reduce([
+        { type: "plan", steps: [{ title: "Check sources", status: "in_progress" }] },
+        { type: "tool_call", call_id: "web-1", tool: "web_search", args: {} },
+      ]),
+      "Stopped.",
+    );
+
+    expect(turnHasRunningTool(turn)).toBe(false);
+    expect(turn.items).toHaveLength(3);
+    expect(turn.items[0]).toMatchObject({
+      kind: "plan",
+      steps: [{ title: "Check sources", status: "failed" }],
+    });
+    expect(turn.items[1]).toMatchObject({
+      kind: "tools",
+      actions: [{ call_id: "web-1", summary: "Stopped.", ok: false }],
+    });
+    expect(turn.items[2]).toMatchObject({ kind: "text", markdown: "Stopped." });
+  });
+
+  it("keeps partial text when settling interrupted turns", () => {
+    const turn = markTurnInterrupted(
+      reduce([
+        { type: "tool_call", call_id: "web-1", tool: "web_search", args: {} },
+        { type: "token", text: "Partial answer" },
+      ]),
+      "Stopped.",
+    );
+
+    expect(turn.items.filter((item) => item.kind === "text")).toHaveLength(1);
+    expect(turn.items[1]).toMatchObject({ kind: "text", markdown: "Partial answer" });
   });
 
   it("appends an artifact item", () => {

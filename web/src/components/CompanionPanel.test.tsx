@@ -17,7 +17,14 @@ const mockCreateChat = vi.fn<() => Promise<CompanionConversation>>();
 const mockGetChat = vi.fn<() => Promise<CompanionConversationDetail>>();
 const mockPatchChat = vi.fn<() => Promise<CompanionConversation>>();
 const mockDeleteChat = vi.fn<() => Promise<void>>();
-const mockStreamMessage = vi.fn<() => AsyncGenerator<CompanionEvent, void, unknown>>();
+const mockStreamMessage = vi.fn<
+  (
+    chatId: string,
+    content: string,
+    signal: AbortSignal,
+    options?: unknown,
+  ) => AsyncGenerator<CompanionEvent, void, unknown>
+>();
 const mockResolveAction = vi.fn<
   (
     chatId: string,
@@ -36,7 +43,8 @@ vi.mock("@/lib/companion", () => ({
     mockResolveAction(
       ...(args as [string, string, "once" | "always" | "reject"]),
     ),
-  streamMessage: (...args: unknown[]) => mockStreamMessage(...(args as [])),
+  streamMessage: (...args: unknown[]) =>
+    mockStreamMessage(...(args as [string, string, AbortSignal, unknown?])),
 }));
 
 const recordings: Recording[] = [
@@ -914,22 +922,28 @@ describe("CompanionPanel", () => {
     });
   });
 
-  it("stops an in-flight stream, clearing the streaming bubble and re-enabling input", async () => {
+  it("stops an in-flight stream while preserving visible progress", async () => {
     const user = userEvent.setup();
     const chat = makeChat("c1", "Stoppable");
     mockListChats.mockResolvedValue({ chats: [chat] });
     mockGetChat.mockResolvedValue({ ...chat, messages: [] });
 
-    // A stream that never resolves past the first token keeps loading=true.
-    let releaseHang: () => void = () => {};
-    const hang = new Promise<void>((resolve) => {
-      releaseHang = resolve;
-    });
-    mockStreamMessage.mockImplementation(async function* () {
+    async function* abortableStream(signal: AbortSignal) {
       yield { type: "turn_start", message_id: "m1", conversation_id: "c1" };
-      yield { type: "token", text: "partial" };
-      await hang;
-    });
+      yield {
+        type: "plan",
+        steps: [{ title: "Check sources", status: "in_progress" }],
+      };
+      yield { type: "tool_call", call_id: "web-1", tool: "web_search", args: {} };
+      await new Promise<void>((resolve) => {
+        if (signal.aborted) {
+          resolve();
+          return;
+        }
+        signal.addEventListener("abort", () => resolve(), { once: true });
+      });
+    }
+    mockStreamMessage.mockImplementation((_, __, signal) => abortableStream(signal));
 
     render(<CompanionPanel recordings={recordings} />);
     await screen.findByTestId("companion-composer");
@@ -941,12 +955,14 @@ describe("CompanionPanel", () => {
     const stop = await screen.findByTestId("companion-stop");
     await user.click(stop);
 
-    await waitFor(() => {
-      expect(screen.queryByTestId("companion-streaming")).not.toBeInTheDocument();
-    });
+    const bubble = screen.getByTestId("companion-streaming");
+    expect(within(bubble).getByTestId("wai-plan-card")).toHaveTextContent("Check sources");
+    expect(within(bubble).getByTestId("wai-tool-actions-card")).toHaveTextContent(
+      "Searched the web",
+    );
+    expect(bubble).toHaveTextContent("Stopped.");
     expect(screen.getByTestId("companion-composer")).not.toBeDisabled();
     expect(screen.getByRole("button", { name: /^Send$/i })).toBeInTheDocument();
-    releaseHang();
   });
 
   it("submits the composer when Enter is pressed without Shift", async () => {
