@@ -375,7 +375,7 @@ public struct CompanionActionProposal: Sendable, Equatable {
 }
 
 /// User's decision on a proposed action, sent to the /resolve route.
-public enum CompanionActionDecision: String, Sendable, Equatable {
+public enum CompanionActionDecision: String, Codable, Sendable, Equatable {
     case once
     case always
     case reject
@@ -388,14 +388,39 @@ public struct ResolveCompanionActionRequest: Encodable, Sendable {
     public init(decision: String) { self.decision = decision }
 }
 
-public struct ResolveCompanionActionResponse: Decodable, Sendable, Equatable {
+public struct ResolveCompanionActionResponse: Codable, Sendable, Equatable {
     public let actionId: String
     public let status: String       // executed | rejected | dispatched | failed
     public let recipient: String?   // display name only, never a raw id
 
-    enum CodingKeys: String, CodingKey {
+    private enum CodingKeys: String, CodingKey {
         case actionId = "action_id"
         case status
         case recipient
     }
 }
+
+/// Approve (once/always) or reject a pending companion action. Mirrors the
+/// agent-action resolve body while preserving the Companion-specific decision
+/// enum used by the UI action cards.
+public struct CompanionResolveActionRequest: Encodable, Sendable, Equatable {
+    public let decision: String
+    public let editedArgs: [String: JSONValue]?
+
+    public init(decision: CompanionActionDecision, editedArgs: [String: JSONValue]? = nil) {
+        self.decision = decision.wireValue
+        self.editedArgs = editedArgs
+    }
+
+    public init(decision: AgentActionDecision, editedArgs: [String: JSONValue]? = nil) {
+        self.decision = decision.rawValue
+        self.editedArgs = editedArgs
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case decision
+        case editedArgs = "edited_args"
+    }
+}
+
+public typealias CompanionResolveActionResponse = ResolveCompanionActionResponse

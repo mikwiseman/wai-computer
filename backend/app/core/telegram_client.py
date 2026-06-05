@@ -105,6 +105,7 @@ class TelegramBotClient:
         *,
         reply_to_message_id: int | None = None,
         parse_mode: str | None = None,
+        reply_markup: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         payload: dict[str, Any] = {
             "chat_id": chat_id,
@@ -112,13 +113,51 @@ class TelegramBotClient:
             "disable_web_page_preview": True,
         }
         if reply_to_message_id is not None:
-            payload["reply_to_message_id"] = reply_to_message_id
+            payload["reply_parameters"] = {
+                "message_id": reply_to_message_id,
+                "allow_sending_without_reply": True,
+            }
         if parse_mode:
             payload["parse_mode"] = parse_mode
+        if reply_markup is not None:
+            payload["reply_markup"] = reply_markup
         return await self._post(
             "sendMessage",
             payload,
         )
+
+    async def answer_callback_query(
+        self, callback_query_id: str, *, text: str | None = None
+    ) -> None:
+        """Acknowledge an inline-button tap (stops Telegram's loading spinner);
+        the optional text shows as a small toast."""
+        payload: dict[str, Any] = {"callback_query_id": callback_query_id}
+        if text:
+            payload["text"] = text
+        await self._post("answerCallbackQuery", payload)
+
+    async def edit_message_text(
+        self,
+        chat_id: int,
+        message_id: int,
+        text: str,
+        *,
+        reply_markup: dict[str, Any] | None = None,
+        parse_mode: str | None = None,
+    ) -> dict[str, Any]:
+        """Edit a message in place — used to drop the approval buttons and show
+        the outcome once an action is resolved."""
+        payload: dict[str, Any] = {
+            "chat_id": chat_id,
+            "message_id": message_id,
+            "text": text,
+            "disable_web_page_preview": True,
+        }
+        if reply_markup is not None:
+            payload["reply_markup"] = reply_markup
+        if parse_mode:
+            payload["parse_mode"] = parse_mode
+        return await self._post("editMessageText", payload)
 
     async def send_document(
         self,

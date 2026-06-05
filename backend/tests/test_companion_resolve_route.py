@@ -4,10 +4,14 @@ approve→execute-once, reject, timeout==deny (410), not-found (404)."""
 import uuid
 from uuid import uuid4
 
-from app.core import companion_actuators
+import pytest
+
+from app.core import companion_actuators, companion_resolve
 from app.core.companion_actions import propose_action
+from app.core.companion_actuators import ActuationError
 from app.models.companion import ChatMessage, Conversation
 from app.models.telegram import TelegramAccount
+from app.models.user import User
 
 
 class FakeTelegram:
@@ -337,3 +341,51 @@ async def test_failed_desktop_result_duplicate_is_idempotent(
     )
     assert duplicate_failure.status_code == 200, duplicate_failure.text
     assert duplicate_failure.json()["status"] == "failed"
+
+
+async def test_resolve_helper_marks_failed_on_actuation_error(db_session, monkeypatch):
+    """The shared helper fails closed: a side-effect error marks the row failed
+    and surfaces (no silent fallback)."""
+    user = User(email=f"resolve-{uuid4().hex}@example.com", password_hash="x")
+    db_session.add(user)
+    await db_session.flush()
+    conv_id = await _new_conv(db_session, user.id)
+    row = await _pending(db_session, user.id, conv_id)
+
+    async def boom(*args, **kwargs):
+        raise ActuationError("send_failed", "boom")
+
+    monkeypatch.setattr(companion_resolve, "execute_action", boom)
+
+    with pytest.raises(ActuationError):
+        await companion_resolve.resolve_action_for_user(
+            db_session,
+            action_id=row.id,
+            user_id=user.id,
+            decision="once",
+        )
+    await db_session.refresh(row)
+    assert row.status == "failed"
+
+
+async def test_resolve_route_reports_actuation_error(
+    client, auth_headers, db_session, monkeypatch
+):
+    """A side-effect failure surfaces as 400 and marks the action failed."""
+
+    async def boom(*args, **kwargs):
+        raise ActuationError("send_failed", "boom")
+
+    monkeypatch.setattr(companion_resolve, "execute_action", boom)
+    uid = await _user_id(client, auth_headers)
+    conv_id = await _new_conv(db_session, uid)
+    row = await _pending(db_session, uid, conv_id)
+
+    r = await client.post(
+        f"/api/companion/chats/{conv_id}/actions/{row.id}/resolve",
+        json={"decision": "once"},
+        headers=auth_headers,
+    )
+    assert r.status_code == 400, r.text
+    await db_session.refresh(row)
+    assert row.status == "failed"

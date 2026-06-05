@@ -77,15 +77,26 @@ export type ResolveActionResponse = {
   recipient: string | null;
 };
 
-/** Approve (once/always) or reject a pending Companion chat action. */
+export type ResolveActionResult = ResolveActionResponse;
+
+/**
+ * Approve (once/always) or reject a pending mutating action the agent proposed
+ * during a turn. The approval ledger and the side effect live server-side; this
+ * only records the decision. Throws `ApiError` on 404 / 409 (already resolved) /
+ * 410 (expired) — the caller MUST surface it (no silent fallback).
+ */
 export function resolveAction(
   chatId: string,
   actionId: string,
   decision: "once" | "always" | "reject",
+  editedArgs?: Record<string, unknown>,
 ): Promise<ResolveActionResponse> {
   return apiFetch<ResolveActionResponse>(
     `${COMPANION}/chats/${chatId}/actions/${actionId}/resolve`,
-    { method: "POST", body: JSON.stringify({ decision }) },
+    {
+      method: "POST",
+      body: JSON.stringify({ decision, edited_args: editedArgs ?? null }),
+    },
   );
 }
 

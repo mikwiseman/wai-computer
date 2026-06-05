@@ -150,6 +150,45 @@ final class CompanionRequestBodyTests: XCTestCase {
         XCTAssertEqual(json?["client_local_date"] as? String, "2026-05-19")
         XCTAssertEqual(json?["client_timezone"] as? String, "Asia/Tokyo")
     }
+
+    func testResolveCompanionActionPostsDecisionAndDecodesResponse() async throws {
+        let client = makeClient()
+        let captured = CapturedBody()
+
+        MockURLProtocol.requestHandler = { [self] request in
+            XCTAssertEqual(request.httpMethod, "POST")
+            XCTAssertEqual(
+                request.url?.path,
+                "/api/companion/chats/chat-1/actions/act-9/resolve"
+            )
+            captured.data = self.bodyData(from: request)
+            let response = HTTPURLResponse(
+                url: request.url!,
+                statusCode: 200,
+                httpVersion: nil,
+                headerFields: ["Content-Type": "application/json"]
+            )!
+            let body = #"{"action_id":"act-9","status":"executed","recipient":"you"}"#
+            return (response, body.data(using: .utf8)!)
+        }
+
+        let result = try await client.resolveCompanionAction(
+            chatId: "chat-1",
+            actionId: "act-9",
+            CompanionResolveActionRequest(decision: CompanionActionDecision.once)
+        )
+
+        XCTAssertEqual(result.actionId, "act-9")
+        XCTAssertEqual(result.status, "executed")
+        XCTAssertEqual(result.recipient, "you")
+
+        guard let data = captured.data else {
+            XCTFail("expected captured request body")
+            return
+        }
+        let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        XCTAssertEqual(json?["decision"] as? String, "once")
+    }
 }
 
 private final class CapturedBody: @unchecked Sendable {

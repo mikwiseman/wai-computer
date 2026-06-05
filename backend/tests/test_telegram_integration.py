@@ -73,6 +73,15 @@ def _stub_empty_brain_answer(monkeypatch, expected_question: str) -> None:
     monkeypatch.setattr("app.core.agent_runtime.ask_brain", fake_ask_brain)
 
 
+def _stub_telegram_turn(monkeypatch, answer: str, contexts: list[Any] | None = None) -> None:
+    async def fake_run_turn(*args, **kwargs):
+        if contexts is not None:
+            contexts.append(kwargs.get("turn_context"))
+        yield telegram_routes.TokenEvent(text=answer)
+
+    monkeypatch.setattr(telegram_routes, "run_turn", fake_run_turn)
+
+
 @pytest.mark.asyncio
 async def test_start_link_returns_waicomputer_bot_deep_link(client, auth_headers, monkeypatch):
     monkeypatch.setattr(telegram_routes.settings, "telegram_bot_username", "waicomputer_bot")
@@ -608,6 +617,8 @@ class _TelegramCapture:
         self.actions: list[dict[str, Any]] = []
         self.documents: list[dict[str, Any]] = []
         self.deleted_messages: list[dict[str, Any]] = []
+        self.callback_answers: list[dict[str, Any]] = []
+        self.edited_messages: list[dict[str, Any]] = []
         self.file = TelegramFile("file-id", "voice/file.ogg", 12)
         self.data = b"telegram audio"
 
@@ -618,6 +629,7 @@ class _TelegramCapture:
         *,
         reply_to_message_id: int | None = None,
         parse_mode: str | None = None,
+        reply_markup: dict[str, Any] | None = None,
     ) -> None:
         message_id = len(self.messages) + 1
         self.messages.append(
@@ -627,6 +639,31 @@ class _TelegramCapture:
                 "text": text,
                 "reply_to_message_id": reply_to_message_id,
                 "parse_mode": parse_mode,
+                "reply_markup": reply_markup,
+            }
+        )
+        return {"message_id": message_id}
+
+    async def answer_callback_query(
+        self, callback_query_id: str, *, text: str | None = None
+    ) -> None:
+        self.callback_answers.append({"id": callback_query_id, "text": text})
+
+    async def edit_message_text(
+        self,
+        chat_id: int,
+        message_id: int,
+        text: str,
+        *,
+        reply_markup: dict[str, Any] | None = None,
+        parse_mode: str | None = None,
+    ) -> None:
+        self.edited_messages.append(
+            {
+                "chat_id": chat_id,
+                "message_id": message_id,
+                "text": text,
+                "reply_markup": reply_markup,
             }
         )
         return {"message_id": message_id}
@@ -764,7 +801,10 @@ async def test_handle_update_routes_help_meetings_and_natural_search(
 
     monkeypatch.setattr(telegram_routes, "TelegramBotClient", lambda: capture)
     monkeypatch.setattr(telegram_routes, "get_db_context", fake_db_context)
-    _stub_empty_brain_answer(monkeypatch, "что я обещал")
+    _stub_telegram_turn(
+        monkeypatch,
+        "Пока не могу ответить из твоего Brain.\nNo matching sources yet.",
+    )
 
     async def send_text(update_id: int, text: str) -> None:
         await telegram_routes._handle_update(
@@ -1600,7 +1640,10 @@ async def test_handle_update_routes_obligation_question_to_wai_agent(
 
     monkeypatch.setattr(telegram_routes, "TelegramBotClient", lambda: capture)
     monkeypatch.setattr(telegram_routes, "get_db_context", fake_db_context)
-    _stub_empty_brain_answer(monkeypatch, "что я обещал")
+    _stub_telegram_turn(
+        monkeypatch,
+        "Пока не могу ответить из твоего Brain.\nNo matching sources yet.",
+    )
 
     await telegram_routes._handle_update(
         {
@@ -1617,10 +1660,10 @@ async def test_handle_update_routes_obligation_question_to_wai_agent(
     assert "Пока не могу ответить из твоего Brain." in capture.messages[-1]["text"]
     assert "No matching sources yet." in capture.messages[-1]["text"]
     assert (await db_session.get(TelegramUpdate, 207)).status == "completed"
-    run = (
-        await db_session.execute(select(AgentRun).where(AgentRun.user_id == user.id))
+    conversation = (
+        await db_session.execute(select(Conversation).where(Conversation.user_id == user.id))
     ).scalar_one()
-    assert run.trigger_kind == "telegram"
+    assert conversation.title == "Telegram"
 
 
 @pytest.mark.asyncio
@@ -1800,7 +1843,10 @@ async def test_handle_text_message_reuses_wai_conversation(
     db_session.add(account)
     await db_session.commit()
     capture = _TelegramCapture()
-    _stub_empty_brain_answer(monkeypatch, "Что я обещал?")
+    _stub_telegram_turn(
+        monkeypatch,
+        "Пока не могу ответить из твоего Brain.\nNo matching sources yet.",
+    )
 
     await telegram_routes._handle_text_message(
         db_session,
@@ -1819,22 +1865,31 @@ async def test_handle_text_message_reuses_wai_conversation(
     assert account.companion_conversation_id == conversation.id
     reused = await telegram_routes._ensure_telegram_conversation(db_session, account)
     assert reused.id == conversation.id
-    run = (
-        await db_session.execute(select(AgentRun).where(AgentRun.user_id == user.id))
-    ).scalar_one()
-    assert run.conversation_id == conversation.id
-    assert run.trigger_kind == "telegram"
 
 
 @pytest.mark.asyncio
 async def test_handle_text_message_renders_action_proposals(
     db_session: AsyncSession,
+    monkeypatch,
 ):
     user = await _user(db_session, "telegram-action-event@example.com")
     account = TelegramAccount(user_id=user.id, telegram_user_id=67, telegram_chat_id=67)
     db_session.add(account)
     await db_session.commit()
     capture = _TelegramCapture()
+    action_id = str(uuid4())
+
+    async def fake_run_turn(*args, **kwargs):
+        yield telegram_routes.TokenEvent(text="Могу сделать это.")
+        yield telegram_routes.ActionProposedEvent(
+            action_id=action_id,
+            kind="send",
+            tool="send_message_telegram",
+            preview="Send to you: hello",
+            recipient="you",
+        )
+
+    monkeypatch.setattr(telegram_routes, "run_turn", fake_run_turn)
 
     await telegram_routes._handle_text_message(
         db_session,
@@ -1844,24 +1899,27 @@ async def test_handle_text_message_renders_action_proposals(
         text="отправь сообщение",
     )
 
-    text = capture.messages[-1]["text"]
-    assert "Нужно подтверждение" in text
-    action = (
-        await db_session.execute(
-            select(CompanionPendingAction).where(
-                CompanionPendingAction.user_id == user.id,
-                CompanionPendingAction.tool_name == "send_message_telegram",
-            )
-        )
-    ).scalar_one()
-    assert f"/approve {action.id}" in text
-    assert f"/approve_always {action.id}" in text
-    assert f"/reject {action.id}" in text
+    # The answer is sent first, then the action arrives as an inline-button card
+    # (no copy-paste "/approve <uuid>" command).
+    assert "Могу сделать это." in capture.messages[0]["text"]
+    proposal = capture.messages[-1]
+    assert "Нужно подтверждение" in proposal["text"]
+    assert "Send to you: hello" in proposal["text"]
+    callbacks = {
+        button["callback_data"]
+        for button in proposal["reply_markup"]["inline_keyboard"][0]
+    }
+    assert callbacks == {
+        f"act:once:{action_id}",
+        f"act:always:{action_id}",
+        f"act:reject:{action_id}",
+    }
 
 
 @pytest.mark.asyncio
 async def test_handle_text_message_uses_active_recording_context(
     db_session: AsyncSession,
+    monkeypatch,
 ):
     user = await _user(db_session, "telegram-active-context@example.com")
     recording = Recording(
@@ -1892,6 +1950,12 @@ async def test_handle_text_message_uses_active_recording_context(
     db_session.add(account)
     await db_session.commit()
     capture = _TelegramCapture()
+    contexts: list[Any] = []
+    _stub_telegram_turn(
+        monkeypatch,
+        "Это саммари последнего голосового сообщения.",
+        contexts,
+    )
 
     await telegram_routes._handle_text_message(
         db_session,
@@ -1902,10 +1966,11 @@ async def test_handle_text_message_uses_active_recording_context(
     )
 
     assert "Это саммари последнего голосового сообщения" in capture.messages[-1]["text"]
-    run = (
-        await db_session.execute(select(AgentRun).where(AgentRun.user_id == user.id))
+    assert contexts[0].viewing_recording_title == "Telegram Voice"
+    conversation = (
+        await db_session.execute(select(Conversation).where(Conversation.user_id == user.id))
     ).scalar_one()
-    assert run.trigger_payload["context"]["ref_id"] == str(recording.id)
+    assert conversation.scope["recording_ids"] == [str(recording.id)]
 
 
 @pytest.mark.asyncio
@@ -1973,6 +2038,326 @@ async def test_handle_text_message_reports_pending_telegram_recording_context(
     ).all() == []
 
 
+def test_action_callback_parse_and_keyboard_roundtrip():
+    aid = str(uuid4())
+    keyboard = telegram_routes._action_inline_keyboard(aid)
+    row = keyboard["inline_keyboard"][0]
+    assert {b["callback_data"] for b in row} == {
+        f"act:once:{aid}",
+        f"act:always:{aid}",
+        f"act:reject:{aid}",
+    }
+    # callback_data must stay under Telegram's 64-byte cap.
+    for button in row:
+        assert len(button["callback_data"].encode("utf-8")) <= 64
+    assert telegram_routes._parse_action_callback(f"act:once:{aid}") == ("once", aid)
+    assert telegram_routes._parse_action_callback(f"act:reject:{aid}") == ("reject", aid)
+    assert telegram_routes._parse_action_callback("act:bogus:x") is None
+    assert telegram_routes._parse_action_callback("nope:once:x") is None
+    assert telegram_routes._parse_action_callback("act:once") is None
+
+
+@pytest.mark.asyncio
+async def test_handle_callback_query_approves_action(db_session: AsyncSession, monkeypatch):
+    from app.core import companion_actuators
+    from app.core.companion_actions import propose_action
+    from app.models.companion import Conversation
+
+    class _FakeTG:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def send_message(self, chat_id, text, **kwargs):
+            return {"message_id": 1}
+
+    monkeypatch.setattr(companion_actuators, "TelegramBotClient", _FakeTG)
+
+    user = await _user(db_session, "telegram-callback-approve@example.com")
+    account = TelegramAccount(user_id=user.id, telegram_user_id=991, telegram_chat_id=991)
+    db_session.add(account)
+    conv = Conversation(user_id=user.id)
+    db_session.add(conv)
+    await db_session.flush()
+    row = await propose_action(
+        db_session,
+        user_id=user.id,
+        conversation_id=conv.id,
+        kind="send",
+        tool_name="send_message_telegram",
+        args={"text": "ping"},
+        preview="Send to you: ping",
+        idempotency_key=f"cb-{uuid4().hex}",
+        recipient_display="you",
+    )
+    await db_session.flush()
+
+    capture = _TelegramCapture()
+    await telegram_routes._handle_callback_query(
+        db_session,
+        capture,
+        callback_query={
+            "id": "cbq-1",
+            "from": {"id": 991},
+            "data": f"act:once:{row.id}",
+            "message": {"message_id": 55, "chat": {"id": 991}},
+        },
+    )
+
+    assert capture.callback_answers[-1]["text"] == "Готово"
+    assert "Готово" in capture.edited_messages[-1]["text"]
+    await db_session.refresh(row)
+    assert row.status == "executed"
+
+
+@pytest.mark.asyncio
+async def test_handle_callback_query_rejects_action(db_session: AsyncSession):
+    from app.core.companion_actions import propose_action
+    from app.models.companion import Conversation
+
+    user = await _user(db_session, "telegram-callback-reject@example.com")
+    account = TelegramAccount(user_id=user.id, telegram_user_id=992, telegram_chat_id=992)
+    db_session.add(account)
+    conv = Conversation(user_id=user.id)
+    db_session.add(conv)
+    await db_session.flush()
+    row = await propose_action(
+        db_session,
+        user_id=user.id,
+        conversation_id=conv.id,
+        kind="send",
+        tool_name="send_message_telegram",
+        args={"text": "x"},
+        preview="Send to you: x",
+        idempotency_key=f"cbr-{uuid4().hex}",
+        recipient_display="you",
+    )
+    await db_session.flush()
+
+    capture = _TelegramCapture()
+    await telegram_routes._handle_callback_query(
+        db_session,
+        capture,
+        callback_query={
+            "id": "cbq-2",
+            "from": {"id": 992},
+            "data": f"act:reject:{row.id}",
+            "message": {"message_id": 56, "chat": {"id": 992}},
+        },
+    )
+
+    assert capture.callback_answers[-1]["text"] == "Отклонено"
+    await db_session.refresh(row)
+    assert row.status == "rejected"
+
+
+@pytest.mark.asyncio
+async def test_telegram_client_builds_inline_button_payloads(monkeypatch):
+    client = telegram_routes.TelegramBotClient(token="test-token")
+    calls: list[tuple[str, dict]] = []
+
+    async def fake_post(method, payload):
+        calls.append((method, payload))
+        return {"message_id": 1}
+
+    monkeypatch.setattr(client, "_post", fake_post)
+
+    keyboard = {"inline_keyboard": [[{"text": "A", "callback_data": "act:once:x"}]]}
+    await client.send_message(5, "hi", reply_markup=keyboard)
+    await client.answer_callback_query("cbq-9", text="Готово")
+    await client.edit_message_text(5, 9, "done", reply_markup={"inline_keyboard": []})
+
+    by_method = {method: payload for method, payload in calls}
+    assert by_method["sendMessage"]["reply_markup"] == keyboard
+    assert by_method["answerCallbackQuery"] == {
+        "callback_query_id": "cbq-9",
+        "text": "Готово",
+    }
+    assert by_method["editMessageText"]["message_id"] == 9
+    assert by_method["editMessageText"]["reply_markup"] == {"inline_keyboard": []}
+
+
+@pytest.mark.asyncio
+async def test_handle_callback_query_handles_edge_cases(db_session: AsyncSession):
+    capture = _TelegramCapture()
+    # Unknown telegram user → prompt to link, no resolution.
+    await telegram_routes._handle_callback_query(
+        db_session,
+        capture,
+        callback_query={
+            "id": "c1",
+            "from": {"id": 424242},
+            "data": "act:once:00000000-0000-0000-0000-000000000000",
+            "message": {"chat": {"id": 1}, "message_id": 1},
+        },
+    )
+    assert capture.callback_answers[-1]["text"] == "Сначала привяжи Telegram."
+
+    user = await _user(db_session, "tg-cb-edge@example.com")
+    account = TelegramAccount(user_id=user.id, telegram_user_id=4243, telegram_chat_id=4243)
+    db_session.add(account)
+    await db_session.flush()
+
+    # Malformed callback data → silent ack (no crash, no resolution).
+    await telegram_routes._handle_callback_query(
+        db_session,
+        capture,
+        callback_query={
+            "id": "c2",
+            "from": {"id": 4243},
+            "data": "garbage",
+            "message": {"chat": {"id": 4243}, "message_id": 2},
+        },
+    )
+    assert capture.callback_answers[-1] == {"id": "c2", "text": None}
+
+    # Well-formed prefix but non-UUID id → silent ack.
+    await telegram_routes._handle_callback_query(
+        db_session,
+        capture,
+        callback_query={
+            "id": "c3",
+            "from": {"id": 4243},
+            "data": "act:once:not-a-uuid",
+            "message": {"chat": {"id": 4243}, "message_id": 3},
+        },
+    )
+    assert capture.callback_answers[-1] == {"id": "c3", "text": None}
+
+    # Missing data field entirely → silent ack.
+    await telegram_routes._handle_callback_query(
+        db_session,
+        capture,
+        callback_query={"id": "c4", "from": {"id": 4243}, "message": {"chat": {"id": 4243}}},
+    )
+    assert capture.callback_answers[-1] == {"id": "c4", "text": None}
+
+
+@pytest.mark.asyncio
+async def test_handle_callback_query_surfaces_expired_action(db_session: AsyncSession):
+    from app.core.companion_actions import propose_action
+    from app.models.companion import Conversation
+
+    user = await _user(db_session, "tg-cb-expired@example.com")
+    account = TelegramAccount(user_id=user.id, telegram_user_id=4244, telegram_chat_id=4244)
+    db_session.add(account)
+    conv = Conversation(user_id=user.id)
+    db_session.add(conv)
+    await db_session.flush()
+    row = await propose_action(
+        db_session,
+        user_id=user.id,
+        conversation_id=conv.id,
+        kind="send",
+        tool_name="send_message_telegram",
+        args={"text": "x"},
+        preview="Send to you: x",
+        idempotency_key=f"exp-{uuid4().hex}",
+        recipient_display="you",
+        ttl_seconds=-10,  # already past TTL → timeout == deny
+    )
+    await db_session.flush()
+
+    capture = _TelegramCapture()
+    await telegram_routes._handle_callback_query(
+        db_session,
+        capture,
+        callback_query={
+            "id": "c5",
+            "from": {"id": 4244},
+            "data": f"act:once:{row.id}",
+            "message": {"chat": {"id": 4244}, "message_id": 5},
+        },
+    )
+    assert capture.callback_answers[-1]["text"] == "Не удалось"
+    assert "Не смог" in capture.edited_messages[-1]["text"]
+
+
+@pytest.mark.asyncio
+async def test_handle_callback_query_reports_actuation_error(db_session: AsyncSession, monkeypatch):
+    from app.core import companion_resolve
+    from app.core.companion_actions import propose_action
+    from app.core.companion_actuators import ActuationError
+    from app.models.companion import Conversation
+
+    async def boom(*args, **kwargs):
+        raise ActuationError("send_failed", "boom")
+
+    monkeypatch.setattr(companion_resolve, "execute_action", boom)
+
+    user = await _user(db_session, "tg-cb-actuation@example.com")
+    account = TelegramAccount(user_id=user.id, telegram_user_id=4245, telegram_chat_id=4245)
+    db_session.add(account)
+    conv = Conversation(user_id=user.id)
+    db_session.add(conv)
+    await db_session.flush()
+    row = await propose_action(
+        db_session,
+        user_id=user.id,
+        conversation_id=conv.id,
+        kind="send",
+        tool_name="send_message_telegram",
+        args={"text": "x"},
+        preview="Send to you: x",
+        idempotency_key=f"act-{uuid4().hex}",
+        recipient_display="you",
+    )
+    await db_session.flush()
+
+    capture = _TelegramCapture()
+    await telegram_routes._handle_callback_query(
+        db_session,
+        capture,
+        callback_query={
+            "id": "c6",
+            "from": {"id": 4245},
+            "data": f"act:once:{row.id}",
+            "message": {"chat": {"id": 4245}, "message_id": 6},
+        },
+    )
+    assert capture.callback_answers[-1]["text"] == "Ошибка"
+    await db_session.refresh(row)
+    assert row.status == "failed"
+
+
+@pytest.mark.asyncio
+async def test_handle_callback_query_dispatches_desktop_action(db_session: AsyncSession):
+    from app.core.companion_actions import propose_action
+    from app.models.companion import Conversation
+
+    user = await _user(db_session, "tg-cb-desktop@example.com")
+    account = TelegramAccount(user_id=user.id, telegram_user_id=4246, telegram_chat_id=4246)
+    db_session.add(account)
+    conv = Conversation(user_id=user.id)
+    db_session.add(conv)
+    await db_session.flush()
+    row = await propose_action(
+        db_session,
+        user_id=user.id,
+        conversation_id=conv.id,
+        kind="desktop_action",
+        tool_name="desktop_open",
+        args={"target": "https://wai.computer"},
+        preview="Open WaiComputer",
+        idempotency_key=f"desk-{uuid4().hex}",
+    )
+    await db_session.flush()
+
+    capture = _TelegramCapture()
+    await telegram_routes._handle_callback_query(
+        db_session,
+        capture,
+        callback_query={
+            "id": "c7",
+            "from": {"id": 4246},
+            "data": f"act:once:{row.id}",
+            "message": {"chat": {"id": 4246}, "message_id": 7},
+        },
+    )
+    assert capture.callback_answers[-1]["text"] == "Отправлено на Mac"
+    await db_session.refresh(row)
+    assert row.status == "approved"  # dispatched to the Mac edge, awaiting report
+
+
 @pytest.mark.asyncio
 async def test_handle_text_message_empty_answer_and_missing_chat(
     db_session: AsyncSession,
@@ -2016,8 +2401,10 @@ async def test_handle_text_message_reports_wai_errors(
 
     async def fail_wai_run(*args, **kwargs):
         raise RuntimeError("boom")
+        if False:
+            yield telegram_routes.TokenEvent(text="")
 
-    monkeypatch.setattr(telegram_routes, "run_wai_run_inline", fail_wai_run)
+    monkeypatch.setattr(telegram_routes, "run_turn", fail_wai_run)
     await telegram_routes._handle_text_message(
         db_session,
         capture,
@@ -2638,7 +3025,10 @@ async def test_handle_update_processes_linked_text_message(
 
     monkeypatch.setattr(telegram_routes, "TelegramBotClient", lambda: capture)
     monkeypatch.setattr(telegram_routes, "get_db_context", fake_db_context)
-    _stub_empty_brain_answer(monkeypatch, "вопрос")
+    _stub_telegram_turn(
+        monkeypatch,
+        "Пока не могу ответить из твоего Brain.\nNo matching sources yet.",
+    )
 
     await telegram_routes._handle_update(
         {
@@ -2655,7 +3045,7 @@ async def test_handle_update_processes_linked_text_message(
     assert "Пока не могу ответить из твоего Brain." in capture.messages[-1]["text"]
     assert "No matching sources yet." in capture.messages[-1]["text"]
     assert (
-        await db_session.execute(select(AgentRun).where(AgentRun.user_id == user.id))
+        await db_session.execute(select(Conversation).where(Conversation.user_id == user.id))
     ).scalar_one()
     update = await db_session.get(TelegramUpdate, 100)
     assert update.status == "completed"
@@ -3254,7 +3644,10 @@ async def test_telegram_client_send_get_and_download():
     assert tg_file.file_path == "voice/file.ogg"
     assert data == b"audio"
     assert client_mock.post.await_args_list[0].args[0].endswith("/sendMessage")
-    assert client_mock.post.await_args_list[0].kwargs["json"]["reply_to_message_id"] == 9
+    assert client_mock.post.await_args_list[0].kwargs["json"]["reply_parameters"] == {
+        "message_id": 9,
+        "allow_sending_without_reply": True,
+    }
     assert client_mock.post.await_args_list[0].kwargs["json"]["parse_mode"] == "HTML"
     assert client_mock.stream.call_args.args[1].endswith("/voice/file.ogg")
 

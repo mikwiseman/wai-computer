@@ -89,6 +89,9 @@ public struct CompanionView: View {
     /// transcribes speech into the focused composer field. nil hides the mic.
     private let onVoiceInput: (() -> Void)?
     private let initialChatId: String?
+    /// Type-and-go: a first message to auto-send once the thread is active.
+    private let initialMessage: String?
+    private let onInitialMessageConsumed: (() -> Void)?
     private let showsConversationSwitcher: Bool
     private let viewingRecordingId: String?
     private let viewingFolderId: String?
@@ -122,6 +125,7 @@ public struct CompanionView: View {
     @State private var renameDraft: String = ""
     @State private var isRenamingChat = false
     @State private var deletingChat: CompanionConversation?
+    @State private var didAutoSendInitial = false
     private let contentMaxWidth: CGFloat = 880
 
     private enum TurnStage {
@@ -134,6 +138,8 @@ public struct CompanionView: View {
         apiClient: APIClient,
         recordings: [Recording],
         initialChatId: String? = nil,
+        initialMessage: String? = nil,
+        onInitialMessageConsumed: (() -> Void)? = nil,
         showsConversationSwitcher: Bool = true,
         viewingRecordingId: String? = nil,
         viewingFolderId: String? = nil,
@@ -143,6 +149,8 @@ public struct CompanionView: View {
         self.apiClient = apiClient
         self.recordings = recordings
         self.initialChatId = initialChatId
+        self.initialMessage = initialMessage
+        self.onInitialMessageConsumed = onInitialMessageConsumed
         self.showsConversationSwitcher = showsConversationSwitcher
         self.viewingRecordingId = viewingRecordingId
         self.viewingFolderId = viewingFolderId
@@ -628,6 +636,23 @@ public struct CompanionView: View {
         let accentColor: Color
         let citations: [CitationDisplay]
         let formattedCitation: (CitationDisplay) -> String
+        var renderMarkdown = false
+
+        // Assistant answers often carry inline markdown (bold, code, links);
+        // render it (whitespace-preserving) instead of showing raw "**…**".
+        // Falls back to plain text on any parse failure — no silent corruption.
+        private var displayText: AttributedString {
+            if renderMarkdown, !isMuted, !text.isEmpty,
+               let attributed = try? AttributedString(
+                   markdown: text,
+                   options: AttributedString.MarkdownParsingOptions(
+                       interpretedSyntax: .inlineOnlyPreservingWhitespace
+                   )
+               ) {
+                return attributed
+            }
+            return AttributedString(text)
+        }
 
         var body: some View {
             HStack(alignment: .top, spacing: 0) {
@@ -643,7 +668,7 @@ public struct CompanionView: View {
                         Spacer()
                     }
 
-                    Text(text)
+                    Text(displayText)
                         .font(.system(size: 15))
                         .lineSpacing(5)
                         .foregroundStyle(isMuted ? .secondary : .primary)
@@ -790,6 +815,7 @@ public struct CompanionView: View {
         if !showsConversationSwitcher, let initialChatId {
             await MainActor.run { activeChatId = initialChatId }
             await loadChat(initialChatId)
+            await autoSendInitialIfNeeded()
             return
         }
 
@@ -810,9 +836,23 @@ public struct CompanionView: View {
             } else if let chatId = list.chats.first?.id {
                 await loadChat(chatId)
             }
+            await autoSendInitialIfNeeded()
         } catch {
             await MainActor.run { errorMessage = error.localizedDescription }
         }
+    }
+
+    /// Type-and-go: send the handed-in first message once the thread is active,
+    /// exactly once per mount (the inbox remounts this view per chat).
+    @MainActor
+    private func autoSendInitialIfNeeded() async {
+        guard !didAutoSendInitial,
+              let message = initialMessage?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !message.isEmpty,
+              activeChatId != nil else { return }
+        didAutoSendInitial = true
+        await send(text: message)
+        onInitialMessageConsumed?()
     }
 
     @MainActor
@@ -835,6 +875,8 @@ public struct CompanionView: View {
             chats.insert(chat, at: 0)
             activeChatId = chat.id
             messages = []
+            liveTurn = CompanionTurnReducer()
+            completedTurns = [:]
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -887,8 +929,8 @@ public struct CompanionView: View {
     }
 
     @MainActor
-    private func send() async {
-        let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)
+    private func send(text: String? = nil) async {
+        let trimmed = (text ?? input).trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
         input = ""
         errorMessage = nil

@@ -8,12 +8,12 @@ import re
 import time
 import uuid
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, AsyncIterator, Literal
 from urllib.parse import urlparse
 
 from fastapi import HTTPException, status
-from sqlalchemy import and_, select
+from sqlalchemy import and_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
@@ -46,6 +46,13 @@ ARTIFACT_MAX_CONTENT_CHARS = 60000
 SNIPPET_CHAR_CAP = 400
 WEB_CITATION_MAX_TITLE_CHARS = 180
 WEB_CITATION_MAX_URL_CHARS = 2048
+# A streaming assistant message is checkpointed to the DB every N text deltas so
+# a dropped SSE stream resumes from the persisted partial instead of losing it.
+CHECKPOINT_EVERY_N_DELTAS = 40
+# A 'streaming' row older than this with no terminal status is a crashed or
+# abandoned turn; the sweep marks it 'failed' (no forever-streaming ghost, and
+# no silent success).
+STREAMING_TURN_STALE_SECONDS = 120
 
 _IDENTITY_SECTION = (
     "<identity>\n"
@@ -83,6 +90,37 @@ _ANSWER_FORMAT_SECTION = (
     "transcripts'. Do not use emojis unless the user does first.\n"
     "- When the corpus is silent, say so in one sentence and stop.\n"
     "</answer_format>"
+)
+
+# Used INSTEAD of _IDENTITY_SECTION on action-capable turns so the model stops
+# behaving like a read-only Q&A bot and actually reaches for its hands. Read-only
+# turns keep _IDENTITY_SECTION verbatim so their cacheable prefix never changes.
+_IDENTITY_SECTION_WITH_ACTIONS = (
+    "<identity>\n"
+    "You are Wai — a calm, precise partner. You answer over the user's "
+    "recorded conversations, notes, and reflections, and you can also take "
+    "actions on their behalf using the tools below.\n"
+    "</identity>"
+)
+
+# Injected ONLY on action-capable turns. States, in cacheable prose, the same
+# act-vs-ask contract that tool_safety.is_mutating_tool_call enforces in code:
+# reads + web_search are automatic; anything that leaves the device is proposed
+# for approval first. The code gate stays authoritative — this only aligns model
+# behaviour with it so the action path actually fires.
+_ACTION_POLICY_SECTION = (
+    "<action_policy>\n"
+    "You have hands, not just answers.\n"
+    "- Look things up freely, without asking: the WaiComputer MCP tools (the "
+    "user's own library) and web_search (the public internet). Never ask for "
+    "permission to search or read — do it, then answer.\n"
+    "- Acting in the world is gated: sending a message, writing to an external "
+    "service, or controlling the user's Mac is PROPOSED first and runs only "
+    "after the user approves it. Propose one concrete action and stop; never "
+    "claim an action is done before it has been approved.\n"
+    "- Prefer doing over describing how to do it. Cite the user's library for "
+    "their own data and the web for external facts.\n"
+    "</action_policy>"
 )
 
 
@@ -126,16 +164,24 @@ def _render_memory_section(memory_strings: dict[str, str] | None) -> str:
 def system_prompt_for(
     user: User | None = None,
     memory_blocks: dict[str, UserMemoryBlock] | dict[str, str] | None = None,
+    *,
+    with_actions: bool = False,
 ) -> str:
     """Assemble the cacheable system prompt for a turn.
 
-    Order: identity → user_profile → memory → tool_guidance → answer_format.
-    The first three sections vary per user but rarely; the last two are
-    fully static. With `prompt_cache_key` keyed to user_id this keeps a
-    stable prefix that's well above the 1024-token cache warm threshold
-    once user_profile and memory accumulate.
+    Order: identity → user_profile → memory → tool_guidance → [action_policy] →
+    answer_format. The first three sections vary per user but rarely; the rest
+    are static. With `prompt_cache_key` keyed to user_id this keeps a stable
+    prefix that's well above the 1024-token cache warm threshold once
+    user_profile and memory accumulate.
+
+    `with_actions` swaps in the capability-aware identity and appends
+    <action_policy>. It is False for read-only turns so their cacheable prefix
+    stays byte-for-byte identical — the prompt cache for read turns is untouched,
+    and a client without the actions capability sees exactly the historical prompt.
     """
-    sections: list[str] = [_IDENTITY_SECTION]
+    identity = _IDENTITY_SECTION_WITH_ACTIONS if with_actions else _IDENTITY_SECTION
+    sections: list[str] = [identity]
     profile = _render_user_profile(user)
     if profile:
         sections.append(profile)
@@ -148,6 +194,8 @@ def system_prompt_for(
         if memory:
             sections.append(memory)
     sections.append(_TOOL_GUIDANCE_SECTION)
+    if with_actions:
+        sections.append(_ACTION_POLICY_SECTION)
     sections.append(_ANSWER_FORMAT_SECTION)
     return "\n\n".join(sections)
 
@@ -166,6 +214,12 @@ class TurnStartEvent:
     type: Literal["turn_start"] = "turn_start"
     message_id: str = ""
     conversation_id: str = ""
+    # The assistant row is created up front (status='streaming') so a reload can
+    # reconstruct an in-flight turn; this id is stable through to DoneEvent.
+    assistant_message_id: str = ""
+    # The chat's current title (instant truncation on the first turn) so the
+    # inbox row can title itself live; an async job may refine it afterwards.
+    title: str = ""
 
 
 @dataclass(frozen=True)
@@ -1357,7 +1411,12 @@ async def _load_history(
 ) -> list[ChatMessage]:
     stmt = (
         select(ChatMessage)
-        .where(ChatMessage.conversation_id == conversation_id)
+        .where(
+            ChatMessage.conversation_id == conversation_id,
+            # Only finalized turns feed the model. An in-flight ('streaming') or
+            # crashed ('failed') assistant row must never poison the next prompt.
+            ChatMessage.status == "complete",
+        )
         .order_by(ChatMessage.created_at.desc())
         .limit(HISTORY_WINDOW)
     )
@@ -1934,6 +1993,107 @@ def _approval_waiting_text(user_text: str, preview: str) -> str:
     return f"Waiting for your approval: {preview}"
 
 
+async def _begin_assistant_message(
+    db: AsyncSession, conversation_id: uuid.UUID, model: str
+) -> ChatMessage:
+    """Create the assistant row up front (status='streaming') and flush it for a
+    durable id, so a dropped SSE stream resumes from the persisted partial via
+    get_chat instead of losing the whole turn."""
+    msg = ChatMessage(
+        conversation_id=conversation_id,
+        role="assistant",
+        content=[{"type": "text", "text": ""}],
+        model=model,
+        status="streaming",
+    )
+    db.add(msg)
+    await db.flush()
+    await db.refresh(msg)
+    return msg
+
+
+async def _checkpoint_assistant_text(
+    db: AsyncSession, message_id: uuid.UUID, text: str
+) -> None:
+    """Persist the partial answer mid-stream (throttled by the caller) so a
+    reload shows the answer-in-progress, not an empty bubble."""
+    await db.execute(
+        update(ChatMessage)
+        .where(ChatMessage.id == message_id)
+        .values(content=[{"type": "text", "text": text}])
+    )
+    await db.commit()
+
+
+async def _finalize_assistant_message(
+    db: AsyncSession,
+    *,
+    message: ChatMessage,
+    conv: Conversation,
+    text: str,
+    usage: Any,
+    latency_ms: int,
+    model: str,
+    tool_calls: list[Any] | None = None,
+) -> tuple[int, int, int]:
+    """Write the final answer + usage and flip status to 'complete'. Mutates the
+    ORM rows (expire_on_commit is False, so a same-session reader sees the fresh
+    values) then commits. Returns (input, output, cached) token counts."""
+    input_tokens = _get_usage(usage, "input_tokens")
+    output_tokens = _get_usage(usage, "output_tokens")
+    cached_tokens = _get_usage(usage, "cached_tokens")
+    message.content = [{"type": "text", "text": text}]
+    message.tool_calls = tool_calls or None
+    message.input_tokens = input_tokens or None
+    message.output_tokens = output_tokens or None
+    message.cached_tokens = cached_tokens or None
+    message.model = model
+    message.latency_ms = latency_ms
+    message.status = "complete"
+    conv.last_message_at = datetime.now(timezone.utc)
+    await db.flush()
+    await db.commit()
+    return input_tokens, output_tokens, cached_tokens
+
+
+async def _fail_assistant_message(db: AsyncSession, message_id: uuid.UUID) -> None:
+    """Mark a turn that errored mid-stream as 'failed' so a reopened thread shows
+    a failed turn, never a forever-'streaming' ghost. Best-effort: the sweep
+    (sweep_stale_streaming_messages) is the backstop if this cannot run."""
+    try:
+        await db.rollback()
+        await db.execute(
+            update(ChatMessage)
+            .where(ChatMessage.id == message_id)
+            .values(status="failed")
+        )
+        await db.commit()
+    except Exception:  # pragma: no cover - defensive; sweep is the backstop
+        logger.warning("could not mark companion assistant message failed")
+
+
+async def sweep_stale_streaming_messages(
+    db: AsyncSession,
+    *,
+    older_than_seconds: int = STREAMING_TURN_STALE_SECONDS,
+    now: datetime | None = None,
+) -> int:
+    """Fail-closed backstop for crashed turns: flip 'streaming' assistant rows
+    older than the cutoff to 'failed'. Returns the number swept."""
+    now = now or datetime.now(timezone.utc)
+    cutoff = now - timedelta(seconds=older_than_seconds)
+    result = await db.execute(
+        update(ChatMessage)
+        .where(
+            ChatMessage.role == "assistant",
+            ChatMessage.status == "streaming",
+            ChatMessage.created_at <= cutoff,
+        )
+        .values(status="failed")
+    )
+    return result.rowcount or 0
+
+
 async def run_turn(
     db: AsyncSession,
     user_id: uuid.UUID,
@@ -1952,7 +2112,9 @@ async def run_turn(
     conv = await _load_conversation_locked(db, user_id, conversation_id)
     user_row = await db.get(User, user_id)
     memory_blocks = await user_memory_module.get_or_seed_blocks(db, user_id)
-    instructions = system_prompt_for(user_row, memory_blocks=memory_blocks)
+    instructions = system_prompt_for(
+        user_row, memory_blocks=memory_blocks, with_actions=enable_actions
+    )
 
     if not (conv.title or "").strip() and not await _conversation_has_messages(
         db, conv.id
@@ -1968,9 +2130,18 @@ async def run_turn(
     await db.flush()
     await db.refresh(user_msg)
 
+    # Create the assistant row up front (status='streaming') so a dropped stream
+    # never loses the turn — a reload reconstructs it from the persisted partial.
+    assistant_msg = await _begin_assistant_message(
+        db, conv.id, settings.openai_llm_model
+    )
+    assistant_message_id = str(assistant_msg.id)
+
     yield TurnStartEvent(
         message_id=str(user_msg.id),
         conversation_id=str(conv.id),
+        assistant_message_id=assistant_message_id,
+        title=conv.title or "",
     )
 
     history = await _load_history(db, conv.id)
@@ -1988,111 +2159,124 @@ async def run_turn(
 
     access_token = await issue_companion_mcp_access_token(db, user_id)
     # OpenAI calls the remote MCP server from outside this DB transaction.
-    # Commit the just-issued token (and the user turn) before the stream starts
-    # so `/mcp` can resolve the presented token on its own connection.
+    # Commit the just-issued token (the user turn + the streaming assistant row)
+    # before the stream starts so `/mcp` can resolve the presented token on its
+    # own connection and a reload already sees the in-flight turn.
     await db.commit()
     mcp_tool = _companion_mcp_tool(settings, access_token)
 
     if enable_actions:
-        async for _evt in _run_actions_loop(
-            db,
-            client,
-            settings,
-            user_id,
-            conv,
-            user_msg,
-            instructions,
-            response_input,
-            mcp_tool,
-            started,
-            stream_reasoning,
-        ):
-            yield _evt
+        try:
+            async for _evt in _run_actions_loop(
+                db,
+                client,
+                settings,
+                user_id,
+                conv,
+                user_msg,
+                assistant_msg,
+                instructions,
+                response_input,
+                mcp_tool,
+                started,
+                stream_reasoning,
+            ):
+                yield _evt
+        except Exception:
+            await _fail_assistant_message(db, assistant_msg.id)
+            raise
         return
 
     assistant_text = ""
     usage: Any = None
     completed_response_obj: Any = None
     persisted_tool_calls: list[dict[str, Any]] = []
-    stream = await client.responses.create(
-        model=settings.openai_llm_model,
-        instructions=instructions,
-        input=response_input,
-        tools=[mcp_tool],
-        prompt_cache_key=f"wai-companion-{user_id}",
-        stream=True,
-        **({"reasoning": {"summary": "auto"}} if stream_reasoning else {}),
-    )
-
-    async for event in stream:
-        event_type = getattr(event, "type", None) or (
-            event.get("type") if isinstance(event, dict) else None
+    delta_count = 0
+    try:
+        stream = await client.responses.create(
+            model=settings.openai_llm_model,
+            instructions=instructions,
+            input=response_input,
+            tools=[mcp_tool],
+            prompt_cache_key=f"wai-companion-{user_id}",
+            stream=True,
+            **({"reasoning": {"summary": "auto"}} if stream_reasoning else {}),
         )
-        if event_type == "response.output_text.delta":
-            delta = getattr(event, "delta", None)
-            if delta is None and isinstance(event, dict):
-                delta = event.get("delta", "")
-            delta = delta or ""
-            assistant_text += delta
-            if delta:
-                yield TokenEvent(text=delta)
-        elif event_type == "response.output_item.added":
-            _tc = _tool_call_event_from_item(_stream_event_item(event))
-            if _tc is not None:
-                _append_stored_tool_action(persisted_tool_calls, _tc)
-                yield _tc
-        elif event_type == "response.output_item.done":
-            _tr = _tool_result_event_from_item(_stream_event_item(event))
-            if _tr is not None:
-                _apply_stored_tool_result(persisted_tool_calls, _tr)
-                yield _tr
-        elif event_type == "response.reasoning_summary_text.delta":
-            rdelta = getattr(event, "delta", None)
-            if rdelta is None and isinstance(event, dict):
-                rdelta = event.get("delta", "")
-            if rdelta:
-                yield ThinkingEvent(text=rdelta)
-        elif event_type in ("response.completed", "response.done"):
-            response_obj = getattr(event, "response", None)
-            if response_obj is None and isinstance(event, dict):
-                response_obj = event.get("response")
-            if response_obj is not None:
-                completed_response_obj = response_obj
-                try:
-                    ensure_response_completed(response_obj, operation="Companion response")
-                except OpenAIResponseError as exc:
-                    raise CompanionError("model_incomplete", str(exc)) from exc
-                usage = getattr(response_obj, "usage", None)
-                if usage is None and isinstance(response_obj, dict):
-                    usage = response_obj.get("usage")
-                if not assistant_text:
-                    assistant_text = _extract_text(response_obj)
-                    if assistant_text:
-                        yield TokenEvent(text=assistant_text)
-        elif event_type == "response.error" or event_type == "error":
-            err = getattr(event, "error", None)
-            if err is None and isinstance(event, dict):
-                err = event.get("error")
-            err_msg = (
-                getattr(err, "message", None)
-                or (err.get("message") if isinstance(err, dict) else None)
-                or "Companion stream failed"
+
+        async for event in stream:
+            event_type = getattr(event, "type", None) or (
+                event.get("type") if isinstance(event, dict) else None
             )
-            raise CompanionError("stream_error", str(err_msg))
+            if event_type == "response.output_text.delta":
+                delta = getattr(event, "delta", None)
+                if delta is None and isinstance(event, dict):
+                    delta = event.get("delta", "")
+                delta = delta or ""
+                assistant_text += delta
+                if delta:
+                    yield TokenEvent(text=delta)
+                    delta_count += 1
+                    if delta_count % CHECKPOINT_EVERY_N_DELTAS == 0:
+                        await _checkpoint_assistant_text(
+                            db, assistant_msg.id, assistant_text
+                        )
+            elif event_type == "response.output_item.added":
+                _tc = _tool_call_event_from_item(_stream_event_item(event))
+                if _tc is not None:
+                    _append_stored_tool_action(persisted_tool_calls, _tc)
+                    yield _tc
+            elif event_type == "response.output_item.done":
+                _tr = _tool_result_event_from_item(_stream_event_item(event))
+                if _tr is not None:
+                    _apply_stored_tool_result(persisted_tool_calls, _tr)
+                    yield _tr
+            elif event_type == "response.reasoning_summary_text.delta":
+                rdelta = getattr(event, "delta", None)
+                if rdelta is None and isinstance(event, dict):
+                    rdelta = event.get("delta", "")
+                if rdelta:
+                    yield ThinkingEvent(text=rdelta)
+            elif event_type in ("response.completed", "response.done"):
+                response_obj = getattr(event, "response", None)
+                if response_obj is None and isinstance(event, dict):
+                    response_obj = event.get("response")
+                if response_obj is not None:
+                    completed_response_obj = response_obj
+                    try:
+                        ensure_response_completed(
+                            response_obj, operation="Companion response"
+                        )
+                    except OpenAIResponseError as exc:
+                        raise CompanionError("model_incomplete", str(exc)) from exc
+                    usage = getattr(response_obj, "usage", None)
+                    if usage is None and isinstance(response_obj, dict):
+                        usage = response_obj.get("usage")
+                    if not assistant_text:
+                        assistant_text = _extract_text(response_obj)
+                        if assistant_text:
+                            yield TokenEvent(text=assistant_text)
+            elif event_type == "response.error" or event_type == "error":
+                err = getattr(event, "error", None)
+                if err is None and isinstance(event, dict):
+                    err = event.get("error")
+                err_msg = (
+                    getattr(err, "message", None)
+                    or (err.get("message") if isinstance(err, dict) else None)
+                    or "Companion stream failed"
+                )
+                raise CompanionError("stream_error", str(err_msg))
 
-    assistant_text = assistant_text.strip()
-    if not assistant_text:
-        raise CompanionError(
-            "empty_model_output",
-            "Companion stream completed without emitting any text.",
-        )
+        assistant_text = assistant_text.strip()
+        if not assistant_text:
+            raise CompanionError(
+                "empty_model_output",
+                "Companion stream completed without emitting any text.",
+            )
+    except Exception:
+        await _fail_assistant_message(db, assistant_msg.id)
+        raise
 
-    input_tokens = _get_usage(usage, "input_tokens")
-    output_tokens = _get_usage(usage, "output_tokens")
-    cached_tokens = _get_usage(usage, "cached_tokens")
     latency_ms = int((time.monotonic() - started) * 1000)
-
-    assistant_content = [{"type": "text", "text": assistant_text}]
     web_citations = _extract_web_citations(completed_response_obj)
     if web_citations:
         yield WebCitationsEvent(citations=web_citations)
@@ -2103,26 +2287,19 @@ async def run_turn(
             _stored_web_citations_tool_call(web_citations)
         ]
     stored_tool_calls = stored_tool_calls + mcp_context_items
-    assistant_msg = ChatMessage(
-        conversation_id=conv.id,
-        role="assistant",
-        content=assistant_content,
-        tool_calls=stored_tool_calls or None,
-        cached_tokens=cached_tokens or None,
-        input_tokens=input_tokens or None,
-        output_tokens=output_tokens or None,
-        model=settings.openai_llm_model,
+    input_tokens, output_tokens, cached_tokens = await _finalize_assistant_message(
+        db,
+        message=assistant_msg,
+        conv=conv,
+        text=assistant_text,
+        usage=usage,
         latency_ms=latency_ms,
+        model=settings.openai_llm_model,
+        tool_calls=stored_tool_calls or None,
     )
-    db.add(assistant_msg)
-    await db.flush()
-    await db.refresh(assistant_msg)
-
-    conv.last_message_at = datetime.now(timezone.utc)
-    await db.flush()
 
     yield DoneEvent(
-        message_id=str(assistant_msg.id),
+        message_id=assistant_message_id,
         input_tokens=input_tokens or None,
         output_tokens=output_tokens or None,
         cached_tokens=cached_tokens or None,
@@ -2138,6 +2315,7 @@ async def _run_actions_loop(
     user_id: uuid.UUID,
     conv: Conversation,
     user_msg: ChatMessage,
+    assistant_msg: ChatMessage,
     instructions: str,
     response_input: list[dict[str, Any]],
     mcp_tool: dict[str, Any],
@@ -2149,7 +2327,9 @@ async def _run_actions_loop(
     Reads still go via the MCP tool; write 'hands' are gated function tools
     attached on demand (request_tool_group). A mutating call is proposed to the
     approval gate and the turn DEFERS — the side effect runs only after
-    /resolve. Bounded by TOOL_CALL_CAP; errors surface (no fallback).
+    /resolve. Bounded by TOOL_CALL_CAP; errors surface (no fallback). The
+    assistant row (created 'streaming' before the loop) is finalized here; the
+    caller flips it to 'failed' if this loop raises.
     """
     active_groups: set[str] = set()
     prev_response_id: str | None = None
@@ -2270,6 +2450,7 @@ async def _run_actions_loop(
 
         if step_text:
             final_text = step_text
+            await _checkpoint_assistant_text(db, assistant_msg.id, final_text)
         calls = _extract_tool_calls(completed)
         if not calls:
             break  # model produced a final answer
@@ -2370,10 +2551,6 @@ async def _run_actions_loop(
             break  # defer for human approval; do not continue the loop
         next_input = outputs
 
-    latency_ms = int((time.monotonic() - started) * 1000)
-    input_tokens = _get_usage(usage, "input_tokens")
-    output_tokens = _get_usage(usage, "output_tokens")
-    cached_tokens = _get_usage(usage, "cached_tokens")
     text_to_store = final_text.strip()
     if not text_to_store and not proposed:
         raise CompanionError(
@@ -2394,22 +2571,17 @@ async def _run_actions_loop(
             persisted_tool_calls,
             _stored_plan_tool_call(host_plan),
         )
-    assistant_msg = ChatMessage(
-        conversation_id=conv.id,
-        role="assistant",
-        content=[{"type": "text", "text": text_to_store}],
-        tool_calls=persisted_tool_calls or None,
-        cached_tokens=cached_tokens or None,
-        input_tokens=input_tokens or None,
-        output_tokens=output_tokens or None,
-        model=settings.openai_llm_model,
+    latency_ms = int((time.monotonic() - started) * 1000)
+    input_tokens, output_tokens, cached_tokens = await _finalize_assistant_message(
+        db,
+        message=assistant_msg,
+        conv=conv,
+        text=text_to_store,
+        usage=usage,
         latency_ms=latency_ms,
+        model=settings.openai_llm_model,
+        tool_calls=persisted_tool_calls or None,
     )
-    db.add(assistant_msg)
-    await db.flush()
-    await db.refresh(assistant_msg)
-    conv.last_message_at = datetime.now(timezone.utc)
-    await db.flush()
     yield DoneEvent(
         message_id=str(assistant_msg.id),
         input_tokens=input_tokens or None,

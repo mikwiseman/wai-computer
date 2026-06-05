@@ -4,7 +4,10 @@ import UniformTypeIdentifiers
 import WaiComputerKit
 
 private enum InboxCreateMode {
+    case record
+    case file
     case paste
+    case ask
 }
 
 private extension MacAccentChoice {
@@ -45,7 +48,9 @@ struct MacInboxView: View {
     @StateObject private var model: MacInboxViewModel
     @State private var selectedDetail: InboxDetailRef?
     @State private var showingImporter = false
-    @State private var activeCreateMode: InboxCreateMode?
+    @State private var focusedCreateMode: InboxCreateMode = .file
+    @State private var askDraft: String = ""
+    @State private var pendingChatMessage: String?
 
     init(
         apiClient: APIClient,
@@ -138,7 +143,7 @@ struct MacInboxView: View {
             allowsMultipleSelection: false
         ) { result in
             if case let .success(urls) = result, let url = urls.first {
-                uploadFile(url)
+                selectUploadFile(url)
             } else if case let .failure(error) = result {
                 model.errorMessage = error.localizedDescription
             }
@@ -170,7 +175,7 @@ struct MacInboxView: View {
             Menu {
                 Button {
                     selectedDetail = nil
-                    activeCreateMode = nil
+                    focusedCreateMode = .record
                     onStartRecording()
                 } label: {
                     Label(t("Record Now", "Записать сейчас"), systemImage: "waveform")
@@ -182,17 +187,13 @@ struct MacInboxView: View {
                 }
                 Button {
                     selectedDetail = nil
-                    activeCreateMode = .paste
+                    focusedCreateMode = .paste
                 } label: {
                     Label(t("Paste Link or Text", "Вставить ссылку или текст"), systemImage: "link")
                 }
                 Button {
-                    activeCreateMode = nil
-                    Task {
-                        if let detail = await model.newChat() {
-                            selectedDetail = detail
-                        }
-                    }
+                    selectedDetail = nil
+                    startAskThread()
                 } label: {
                     Label(t("Wai", "Wai"), systemImage: "sparkles")
                 }
@@ -282,15 +283,11 @@ struct MacInboxView: View {
                     onUpload: chooseFile,
                     onPaste: {
                         selectedDetail = nil
-                        activeCreateMode = .paste
+                        focusedCreateMode = .paste
                     },
                     onChat: {
-                        activeCreateMode = nil
-                        Task {
-                            if let detail = await model.newChat() {
-                                selectedDetail = detail
-                            }
-                        }
+                        selectedDetail = nil
+                        startAskThread()
                     }
                 )
             } else {
@@ -371,6 +368,8 @@ struct MacInboxView: View {
                     apiClient: apiClient,
                     recordings: recordings,
                     initialChatId: selectedDetail.id,
+                    initialMessage: pendingChatMessage,
+                    onInitialMessageConsumed: { pendingChatMessage = nil },
                     showsConversationSwitcher: false,
                     viewingFolderId: folderId,
                     onTurnCompleted: { completion in
@@ -426,9 +425,9 @@ struct MacInboxView: View {
                             subtitle: t("Microphone and system audio", "Микрофон и звук компьютера"),
                             systemImage: "waveform",
                             accent: Palette.accent,
+                            isActive: focusedCreateMode == .record,
                             action: {
-                                activeCreateMode = nil
-                                onStartRecording()
+                                focusedCreateMode = .record
                             }
                         )
                         MacInboxCreateAction(
@@ -436,6 +435,7 @@ struct MacInboxView: View {
                             subtitle: t("Audio, video, PDF, DOCX, TXT", "Аудио, видео, PDF, DOCX, TXT"),
                             systemImage: "square.and.arrow.down",
                             accent: .green,
+                            isActive: focusedCreateMode == .file,
                             action: { chooseFile() }
                         )
                         MacInboxCreateAction(
@@ -443,26 +443,44 @@ struct MacInboxView: View {
                             subtitle: t("Link, note, or long text", "Ссылка, заметка или длинный текст"),
                             systemImage: "link",
                             accent: .blue,
-                            action: { activeCreateMode = .paste }
+                            isActive: focusedCreateMode == .paste,
+                            action: { focusedCreateMode = .paste }
                         )
                         MacInboxCreateAction(
                             title: t("Wai", "Wai"),
                             subtitle: t("Search, remember, plan, or act", "Искать, помнить, планировать или действовать"),
                             systemImage: "sparkles",
                             accent: .orange,
-                            action: startAskThread
+                            isActive: focusedCreateMode == .ask,
+                            action: {
+                                focusedCreateMode = .ask
+                            }
                         )
                     }
 
-                    if let message = model.uploadPhase.message {
-                        MacInboxUploadStatusRow(
-                            message: message,
-                            isWorking: model.uploadPhase.isWorking,
-                            isError: model.uploadPhase.isError
+                    switch focusedCreateMode {
+                    case .record:
+                        MacInboxInlineActionComposer(
+                            systemImage: "waveform",
+                            title: t("Record into Inbox", "Записать в Инбокс"),
+                            message: t(
+                                "Start a new recording with microphone and system audio.",
+                                "Начните новую запись с микрофоном и звуком компьютера."
+                            ),
+                            primaryTitle: t("Start Recording", "Начать запись"),
+                            accent: Palette.accent,
+                            isWorking: false,
+                            action: onStartRecording
                         )
-                    }
-
-                    switch activeCreateMode {
+                    case .file:
+                        MacInboxFileComposer(
+                            selectedFile: model.selectedUploadFile,
+                            phase: model.uploadPhase,
+                            isAdding: model.isAdding,
+                            onChoose: chooseFile,
+                            onUpload: uploadPendingFile,
+                            onRemove: { model.clearSelectedUploadFile() }
+                        )
                     case .paste:
                         MacInboxPasteComposer(
                             draft: $model.draft,
@@ -470,14 +488,22 @@ struct MacInboxView: View {
                             submitTitle: pasteSubmitTitle,
                             onSubmit: addDraft
                         )
-                    case .none:
-                        EmptyView()
+                    case .ask:
+                        MacInboxAskComposer(
+                            draft: $askDraft,
+                            isWorking: model.isAdding,
+                            onSubmit: { startAskThread(message: askDraft) },
+                            onBlank: { startAskThread() }
+                        )
                     }
                 }
                 .padding(Spacing.xl)
                 .frame(maxWidth: 720, alignment: .leading)
                 .frame(maxWidth: .infinity, minHeight: proxy.size.height, alignment: .center)
             }
+        }
+        .dropDestination(for: URL.self) { urls, _ in
+            handleDroppedFiles(urls)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
@@ -503,11 +529,11 @@ struct MacInboxView: View {
             return
         }
         selectedDetail = nil
-        activeCreateMode = nil
+        focusedCreateMode = .file
         showingImporter = true
     }
 
-    private func uploadFile(_ url: URL) {
+    private func selectUploadFile(_ url: URL) {
         guard canStartInboxUpload else {
             model.errorMessage = t(
                 "Wait for the current Inbox action to finish.",
@@ -516,8 +542,18 @@ struct MacInboxView: View {
             return
         }
         selectedDetail = nil
-        activeCreateMode = nil
+        focusedCreateMode = .file
         model.selectUploadFile(url)
+    }
+
+    private func uploadPendingFile() {
+        guard canStartInboxUpload else {
+            model.errorMessage = t(
+                "Wait for the current Inbox action to finish.",
+                "Дождитесь завершения текущего действия в Инбоксе."
+            )
+            return
+        }
         Task {
             if let detail = await model.submitSelectedUploadFile() {
                 selectedDetail = detail
@@ -534,7 +570,7 @@ struct MacInboxView: View {
             )
             return false
         }
-        uploadFile(url)
+        selectUploadFile(url)
         return true
     }
 
@@ -547,10 +583,15 @@ struct MacInboxView: View {
         }
     }
 
-    private func startAskThread() {
-        activeCreateMode = nil
+    private func startAskThread(message: String? = nil) {
+        let trimmed = message?.trimmingCharacters(in: .whitespacesAndNewlines)
+        focusedCreateMode = .ask
         Task {
             if let detail = await model.newChat() {
+                if let trimmed, !trimmed.isEmpty {
+                    pendingChatMessage = trimmed
+                }
+                askDraft = ""
                 selectedDetail = detail
             }
         }
@@ -566,19 +607,19 @@ struct MacInboxView: View {
         switch command {
         case .showCreatePane:
             selectedDetail = nil
-            activeCreateMode = nil
+            focusedCreateMode = .file
         case .recordNow:
             selectedDetail = nil
-            activeCreateMode = nil
+            focusedCreateMode = .record
             onStartRecording()
         case .uploadFile:
             chooseFile()
         case .pasteLinkOrText:
             selectedDetail = nil
-            activeCreateMode = .paste
+            focusedCreateMode = .paste
         case .askWai:
             selectedDetail = nil
-            activeCreateMode = nil
+            focusedCreateMode = .ask
             startAskThread()
         }
     }
@@ -601,41 +642,186 @@ struct MacInboxView: View {
     }
 }
 
-private struct MacInboxUploadStatusRow: View {
-    let message: String
-    let isWorking: Bool
-    let isError: Bool
+private struct MacInboxFileComposer: View {
+    let selectedFile: PendingInboxUploadFile?
+    let phase: InboxUploadPhase
+    let isAdding: Bool
+    let onChoose: () -> Void
+    let onUpload: () -> Void
+    let onRemove: () -> Void
 
     @EnvironmentObject private var languageManager: LanguageManager
 
     var body: some View {
-        HStack(spacing: Spacing.sm) {
-            if isWorking {
-                ProgressView()
-                    .controlSize(.small)
-            } else {
-                Image(systemName: isError ? "exclamationmark.triangle.fill" : "checkmark.circle.fill")
-                    .foregroundStyle(isError ? .red : .green)
+        VStack(alignment: .leading, spacing: Spacing.md) {
+            HStack(alignment: .top, spacing: Spacing.sm) {
+                Image(systemName: "square.and.arrow.down")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundStyle(.green)
+                    .frame(width: 34, height: 34)
+                    .background(Color.green.opacity(0.12))
+                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                VStack(alignment: .leading, spacing: Spacing.xxs) {
+                    Text(t("Upload a file", "Загрузить файл"))
+                        .font(Typography.headingMedium)
+                    Text(t(
+                        "Choose a file first. Then upload it to Inbox from this panel.",
+                        "Сначала выберите файл. Затем загрузите его в Инбокс из этой панели."
+                    ))
+                    .font(Typography.bodySmall)
+                    .foregroundStyle(Palette.textSecondary)
+                }
             }
-            Text(message)
-                .font(Typography.bodySmall)
-                .foregroundStyle(isError ? .red : Palette.textSecondary)
-                .lineLimit(2)
-                .textSelection(.enabled)
-            Spacer(minLength: 0)
+
+            if let selectedFile {
+                selectedFileRow(selectedFile)
+            } else {
+                emptyDropTarget
+            }
+
+            if let message = phase.message {
+                HStack(spacing: Spacing.xs) {
+                    if phase.isWorking {
+                        ProgressView()
+                            .controlSize(.small)
+                    } else {
+                        Image(systemName: phaseIconName)
+                    }
+                    Text(message)
+                        .font(Typography.bodySmall)
+                        .foregroundStyle(phaseColor)
+                        .lineLimit(2)
+                        .textSelection(.enabled)
+                    Spacer(minLength: 0)
+                }
+                .accessibilityIdentifier("mac-inbox-upload-progress")
+            }
+
+            HStack(spacing: Spacing.sm) {
+                Button(action: selectedFile == nil ? onChoose : onUpload) {
+                    if phase.isWorking {
+                        ProgressView()
+                            .controlSize(.small)
+                    } else {
+                        Text(selectedFile == nil
+                             ? t("Choose File...", "Выбрать файл...")
+                             : t("Upload File to Inbox", "Загрузить файл в Инбокс"))
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled((selectedFile != nil && phase.isWorking) || isAdding)
+                .accessibilityIdentifier("mac-inbox-upload-primary-button")
+
+                Button(action: onChoose) {
+                    Text(selectedFile == nil
+                         ? t("Browse...", "Обзор...")
+                         : t("Choose Another...", "Выбрать другой..."))
+                }
+                .buttonStyle(.bordered)
+                .disabled(isAdding)
+
+                Spacer()
+            }
         }
-        .padding(Spacing.md)
+        .padding(Spacing.lg)
         .background(Palette.surfaceSubtle)
         .overlay(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .stroke(isError ? Color.red.opacity(0.45) : Palette.border, lineWidth: 1)
+                .stroke(Palette.border, lineWidth: 1)
         )
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(t("Upload status", "Статус загрузки"))
-        .accessibilityValue(message)
-        .accessibilityIdentifier("mac-inbox-upload-status")
     }
+
+    private var emptyDropTarget: some View {
+        HStack(spacing: Spacing.sm) {
+            Image(systemName: "doc.badge.plus")
+                .foregroundStyle(.green)
+            Text(t("Drop a file here, or choose one below.", "Перетащите файл сюда или выберите ниже."))
+                .font(Typography.bodySmall)
+                .foregroundStyle(Palette.textSecondary)
+            Spacer()
+        }
+        .padding(Spacing.md)
+        .background(Palette.surfaceHover)
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(Palette.border, style: StrokeStyle(lineWidth: 1, dash: [5, 4]))
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+
+    private func selectedFileRow(_ file: PendingInboxUploadFile) -> some View {
+        HStack(spacing: Spacing.sm) {
+            Image(systemName: "doc.text")
+                .foregroundStyle(.green)
+                .frame(width: 28, height: 28)
+                .background(Color.green.opacity(0.12))
+                .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+            VStack(alignment: .leading, spacing: 2) {
+                Text(file.filename)
+                    .font(Typography.headingMedium)
+                    .foregroundStyle(Palette.textPrimary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Text(fileMetadata(file))
+                    .font(Typography.label)
+                    .foregroundStyle(Palette.textSecondary)
+                    .lineLimit(1)
+            }
+            Spacer(minLength: Spacing.sm)
+            Button(action: onRemove) {
+                Image(systemName: "xmark")
+            }
+            .buttonStyle(.plain)
+            .disabled(isAdding)
+            .help(t("Remove file", "Убрать файл"))
+        }
+        .padding(Spacing.md)
+        .background(Palette.surfaceHover)
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(Palette.border, lineWidth: 1)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .accessibilityIdentifier("mac-inbox-selected-file")
+    }
+
+    private func fileMetadata(_ file: PendingInboxUploadFile) -> String {
+        let parts = [
+            file.typeDescription,
+            file.byteCount.map { Self.byteFormatter.string(fromByteCount: $0) }
+        ].compactMap { $0 }.filter { !$0.isEmpty }
+        return parts.isEmpty ? t("Ready to upload", "Готово к загрузке") : parts.joined(separator: " / ")
+    }
+
+    private var phaseIconName: String {
+        switch phase {
+        case .failed:
+            return "exclamationmark.triangle.fill"
+        case .added, .processing:
+            return "checkmark.circle.fill"
+        case .idle, .selected, .preparing, .uploading:
+            return "info.circle"
+        }
+    }
+
+    private var phaseColor: Color {
+        switch phase {
+        case .failed:
+            return .red
+        case .added, .processing:
+            return .green
+        case .idle, .selected, .preparing, .uploading:
+            return Palette.textSecondary
+        }
+    }
+
+    private static let byteFormatter: ByteCountFormatter = {
+        let formatter = ByteCountFormatter()
+        formatter.allowedUnits = [.useKB, .useMB, .useGB]
+        formatter.countStyle = .file
+        return formatter
+    }()
 
     private func t(_ english: String, _ russian: String) -> String {
         OnboardingL10n.text(english, russian, language: languageManager.current)
@@ -702,11 +888,121 @@ private struct MacInboxPasteComposer: View {
     }
 }
 
+private struct MacInboxInlineActionComposer: View {
+    let systemImage: String
+    let title: String
+    let message: String
+    let primaryTitle: String
+    let accent: Color
+    let isWorking: Bool
+    let action: () -> Void
+
+    var body: some View {
+        HStack(alignment: .top, spacing: Spacing.md) {
+            Image(systemName: systemImage)
+                .font(.system(size: 18, weight: .semibold))
+                .foregroundStyle(accent)
+                .frame(width: 34, height: 34)
+                .background(accent.opacity(0.12))
+                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            VStack(alignment: .leading, spacing: Spacing.sm) {
+                VStack(alignment: .leading, spacing: Spacing.xxs) {
+                    Text(title)
+                        .font(Typography.headingMedium)
+                    Text(message)
+                        .font(Typography.bodySmall)
+                        .foregroundStyle(Palette.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Button(action: action) {
+                    if isWorking {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Text(primaryTitle)
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(isWorking)
+            }
+            Spacer()
+        }
+        .padding(Spacing.lg)
+        .background(Palette.surfaceSubtle)
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(Palette.border, lineWidth: 1)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+}
+
+private struct MacInboxAskComposer: View {
+    @Binding var draft: String
+    let isWorking: Bool
+    let onSubmit: () -> Void
+    let onBlank: () -> Void
+
+    @EnvironmentObject private var languageManager: LanguageManager
+
+    private var trimmed: String {
+        draft.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Spacing.sm) {
+            Text(t("Ask Wai", "Спросить Wai"))
+                .font(Typography.headingMedium)
+            TextField(
+                t(
+                    "Ask Wai to search, remember, plan, or act...",
+                    "Попросите Wai искать, помнить, планировать или действовать..."
+                ),
+                text: $draft,
+                axis: .vertical
+            )
+            .textFieldStyle(.roundedBorder)
+            .lineLimit(3...8)
+            .onSubmit { if !trimmed.isEmpty { onSubmit() } }
+            .accessibilityIdentifier("mac-inbox-ask-field")
+
+            HStack(spacing: Spacing.sm) {
+                Button(action: onSubmit) {
+                    if isWorking {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Text(t("Ask", "Спросить"))
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(trimmed.isEmpty || isWorking)
+                .accessibilityIdentifier("mac-inbox-ask-primary-button")
+
+                Button(t("Blank thread", "Пустой диалог"), action: onBlank)
+                    .buttonStyle(.bordered)
+                    .disabled(isWorking)
+                Spacer()
+            }
+        }
+        .padding(Spacing.lg)
+        .background(Palette.surfaceSubtle)
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(Palette.border, lineWidth: 1)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+
+    private func t(_ english: String, _ russian: String) -> String {
+        OnboardingL10n.text(english, russian, language: languageManager.current)
+    }
+}
+
 private struct MacInboxCreateAction: View {
     let title: String
     let subtitle: String
     let systemImage: String
     let accent: Color
+    let isActive: Bool
     let action: () -> Void
 
     var body: some View {
@@ -733,10 +1029,10 @@ private struct MacInboxCreateAction: View {
             }
             .padding(Spacing.md)
             .frame(maxWidth: .infinity, minHeight: 76, alignment: .topLeading)
-            .background(Palette.surfaceSubtle)
+            .background(isActive ? accent.opacity(0.12) : Palette.surfaceSubtle)
             .overlay(
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .stroke(Palette.border, lineWidth: 1)
+                    .stroke(isActive ? accent.opacity(0.42) : Palette.border, lineWidth: 1)
             )
             .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         }

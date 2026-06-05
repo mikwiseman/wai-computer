@@ -65,6 +65,11 @@ interface CompanionCopy {
   somethingWentWrong: string;
   chatLabelPrefix: string;
   recordingFallback: string;
+  actionsHeading: string;
+  approve: string;
+  approveAlways: string;
+  reject: string;
+  actionStatus: (status: string) => string;
 }
 
 const COPY: Record<Locale, CompanionCopy> = {
@@ -102,6 +107,18 @@ const COPY: Record<Locale, CompanionCopy> = {
     somethingWentWrong: "Something went wrong",
     chatLabelPrefix: "Thread",
     recordingFallback: "Recording",
+    actionsHeading: "Needs your approval",
+    approve: "Approve",
+    approveAlways: "Always",
+    reject: "Reject",
+    actionStatus: (s) =>
+      ({
+        executed: "Done",
+        rejected: "Rejected",
+        dispatched: "Sent to your Mac",
+        expired: "Expired",
+        failed: "Failed",
+      })[s] ?? s,
   },
   ru: {
     heading: "Wai",
@@ -137,6 +154,18 @@ const COPY: Record<Locale, CompanionCopy> = {
     somethingWentWrong: "Что-то пошло не так",
     chatLabelPrefix: "Диалог",
     recordingFallback: "Запись",
+    actionsHeading: "Нужно ваше подтверждение",
+    approve: "Подтвердить",
+    approveAlways: "Всегда",
+    reject: "Отклонить",
+    actionStatus: (s) =>
+      ({
+        executed: "Готово",
+        rejected: "Отклонено",
+        dispatched: "Отправлено на ваш Mac",
+        expired: "Истекло",
+        failed: "Ошибка",
+      })[s] ?? s,
   },
 };
 
@@ -153,6 +182,10 @@ interface CompanionPanelProps {
   recordings: Recording[];
   locale?: Locale;
   initialChatId?: string | null;
+  // Type-and-go: a first message to auto-send once the thread is active, so the
+  // user's first keystroke in the inbox IS the turn (no extra click).
+  initialMessage?: string | null;
+  onInitialMessageConsumed?: () => void;
   onChatCreated?: (chat: CompanionConversation) => void;
   embedded?: boolean;
   viewingRecordingId?: string | null;
@@ -256,6 +289,8 @@ export function CompanionPanel({
   recordings,
   locale: localeProp,
   initialChatId,
+  initialMessage,
+  onInitialMessageConsumed,
   onChatCreated,
   embedded = false,
   viewingRecordingId,
@@ -280,6 +315,7 @@ export function CompanionPanel({
   const abortRef = useRef<AbortController | null>(null);
   const threadEndRef = useRef<HTMLDivElement | null>(null);
   const initialized = useRef(false);
+  const initialSentRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (localeProp) {
@@ -339,6 +375,19 @@ export function CompanionPanel({
     return () => abortRef.current?.abort();
   }, []);
 
+  // Type-and-go: auto-send the handed-in first message once the thread is active.
+  // Keyed by chat+text so a re-render never re-sends, yet a later type-and-go
+  // (even with identical text in a different thread) still fires.
+  useEffect(() => {
+    const msg = initialMessage?.trim();
+    if (!msg || !activeChatId || loading) return;
+    const key = `${activeChatId}::${msg}`;
+    if (initialSentRef.current === key) return;
+    initialSentRef.current = key;
+    void handleSend(undefined, msg);
+    onInitialMessageConsumed?.();
+  }, [initialMessage, activeChatId]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const recordingTitlesById = useMemo(() => {
     const m = new Map<string, string>();
     for (const r of recordings) m.set(r.id, r.title ?? copy.recordingFallback);
@@ -397,9 +446,9 @@ export function CompanionPanel({
     }
   }
 
-  async function handleSend(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const question = input.trim();
+  async function handleSend(event?: FormEvent<HTMLFormElement>, overrideText?: string) {
+    event?.preventDefault();
+    const question = (overrideText ?? input).trim();
     if (!question || loading) return;
 
     // Abort any prior turn so two streams never overlap.
@@ -465,6 +514,16 @@ export function CompanionPanel({
           setLiveTurn(turn);
           setError(evt.message);
           break;
+        }
+        if (evt.type === "turn_start" && evt.title) {
+          const title = evt.title;
+          setChats((prev) =>
+            prev.map((c) =>
+              c.id === chatId && !(c.title && c.title.trim())
+                ? { ...c, title }
+                : c,
+            ),
+          );
         }
         turn = ingestEvent(turn, evt);
         setLiveTurn(turn);
@@ -554,11 +613,13 @@ export function CompanionPanel({
         detail: resp.recipient ?? "",
       });
     } catch (e) {
+      const detail = formatError(e, copy);
       setActionRes(actionId, {
         state: "resolved",
-        status: "failed",
-        detail: formatError(e, copy),
+        status: e instanceof ApiError && e.status === 410 ? "expired" : "failed",
+        detail,
       });
+      setError(detail);
     }
   }
 

@@ -41,8 +41,18 @@ class BrainMap(Base, UUIDMixin, TimestampMixin):
     title: Mapped[str] = mapped_column(String(300), nullable=False)
     prompt: Mapped[str] = mapped_column(Text, nullable=False)
     map_type: Mapped[str] = mapped_column(String(40), nullable=False)
-    origin: Mapped[str] = mapped_column(String(40), nullable=False, default="brain", server_default="brain")
-    status: Mapped[str] = mapped_column(String(20), nullable=False, default="draft", server_default="draft")
+    origin: Mapped[str] = mapped_column(
+        String(40),
+        nullable=False,
+        default="brain",
+        server_default="brain",
+    )
+    status: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+        default="draft",
+        server_default="draft",
+    )
     source_scope: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     layout: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     current_revision_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
@@ -74,7 +84,12 @@ class BrainMapRevision(Base, UUIDMixin, TimestampMixin):
     revision_index: Mapped[int] = mapped_column(Integer, nullable=False)
     projection: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
     source_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
-    source_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    source_count: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+        server_default="0",
+    )
     freshness: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
     diff: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
     citations: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False)

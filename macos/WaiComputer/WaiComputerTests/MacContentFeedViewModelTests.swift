@@ -49,44 +49,39 @@ final class MacContentFeedViewModelTests: XCTestCase {
         XCTAssertFalse(source.contains("setStatusFilter"))
     }
 
-    func testInboxFileImporterUploadsImmediatelyAfterSelection() throws {
+    func testInboxFileImporterStagesFileBeforeUpload() throws {
         let viewSource = try macSource("WaiComputer/Features/Inbox/MacInboxView.swift")
         let modelSource = try macSource("WaiComputer/Features/Inbox/MacInboxViewModel.swift")
 
-        XCTAssertTrue(viewSource.contains("uploadFile(url)"))
-        XCTAssertTrue(viewSource.contains("private var canStartInboxUpload: Bool"))
         XCTAssertTrue(viewSource.contains("model.selectUploadFile(url)"))
+        XCTAssertTrue(viewSource.contains("uploadPendingFile()"))
+        XCTAssertTrue(viewSource.contains("private var canStartInboxUpload: Bool"))
         XCTAssertTrue(modelSource.contains("selectedUploadFile"))
         XCTAssertTrue(modelSource.contains("submitSelectedUploadFile()"))
         XCTAssertTrue(modelSource.contains("selectedUploadFileHasScopedAccess"))
         XCTAssertTrue(modelSource.contains("releaseSelectedUploadAccess()"))
-        XCTAssertFalse(viewSource.contains("uploadPendingFile()"))
-        XCTAssertFalse(viewSource.contains("onUpload: uploadPendingFile"))
         XCTAssertFalse(viewSource.contains("if let row = await model.uploadFile(url)"))
     }
 
-    func testInboxCreatePaneTreatsUploadAsTransientAction() throws {
+    func testInboxCreatePaneShowsExplicitFileUploadState() throws {
         let source = try macSource("WaiComputer/Features/Inbox/MacInboxView.swift")
 
-        XCTAssertTrue(source.contains("private func uploadFile(_ url: URL)"))
-        XCTAssertTrue(source.contains("model.selectUploadFile(url)"))
-        XCTAssertTrue(source.contains("model.submitSelectedUploadFile()"))
-        XCTAssertFalse(source.contains("MacInboxFileComposer("))
-        XCTAssertFalse(source.contains("Upload File to Inbox"))
-        XCTAssertFalse(source.contains("mac-inbox-selected-file"))
-        XCTAssertFalse(source.contains("mac-inbox-upload-primary-button"))
-        XCTAssertFalse(source.contains("mac-inbox-upload-progress"))
+        XCTAssertTrue(source.contains("MacInboxFileComposer("))
+        XCTAssertTrue(source.contains("Upload File to Inbox"))
+        XCTAssertTrue(source.contains("mac-inbox-selected-file"))
+        XCTAssertTrue(source.contains("mac-inbox-upload-primary-button"))
+        XCTAssertTrue(source.contains("mac-inbox-upload-progress"))
         XCTAssertFalse(source.contains("Attach File"))
         XCTAssertFalse(source.contains("Прикрепить файл"))
     }
 
-    func testInboxCreatePaneDoesNotDefaultSelectUploadMode() throws {
+    func testInboxCreatePaneDefaultsToFocusedUploadMode() throws {
         let source = try macSource("WaiComputer/Features/Inbox/MacInboxView.swift")
 
-        XCTAssertTrue(source.contains("@State private var activeCreateMode: InboxCreateMode?"))
-        XCTAssertFalse(source.contains("focusedCreateMode"))
-        XCTAssertFalse(source.contains("isActive:"))
-        XCTAssertFalse(source.contains("case .file:"))
+        XCTAssertTrue(source.contains("@State private var focusedCreateMode: InboxCreateMode = .file"))
+        XCTAssertTrue(source.contains("isActive: focusedCreateMode == .file"))
+        XCTAssertTrue(source.contains("case .file:"))
+        XCTAssertFalse(source.contains("activeCreateMode"))
     }
 
     func testCommandNOpensInboxCreatePaneInsteadOfStartingRecording() throws {

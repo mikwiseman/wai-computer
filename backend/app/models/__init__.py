@@ -19,6 +19,7 @@ from app.models.billing import (
     SubscriptionStatus,
     UsageWeek,
 )
+from app.models.brain_map import BrainMap, BrainMapRevision
 from app.models.brain_space import (
     BrainClaim,
     BrainPage,
@@ -27,7 +28,6 @@ from app.models.brain_space import (
     BrainSpaceMember,
     BrainSpaceSource,
 )
-from app.models.brain_map import BrainMap, BrainMapRevision
 from app.models.commitment import Commitment
 from app.models.companion import ChatMessage, Conversation, MessageCitation
 from app.models.companion_pending_action import CompanionPendingAction

@@ -33,6 +33,14 @@ from app.core.agent_runtime import (
     pop_agent_runs_to_dispatch_after_commit,
     run_job,
 )
+from app.core.companion import (
+    ActionProposedEvent,
+    CompanionError,
+    ErrorEvent,
+    TokenEvent,
+    TurnContext,
+    run_turn,
+)
 from app.core.companion_actions import (
     ApprovalError,
     expire_due_actions,
@@ -42,6 +50,7 @@ from app.core.companion_actions import (
     verify_committable,
 )
 from app.core.companion_actuators import ActuationError, execute_action
+from app.core.companion_resolve import resolve_action_for_user
 from app.core.document_extract import (
     SUPPORTED_DOCUMENT_EXTENSIONS,
     DocumentExtractionError,
@@ -66,7 +75,7 @@ from app.core.telegram_client import (
     telegram_chunks,
 )
 from app.core.unified_search import UnifiedHit, unified_search
-from app.core.wai_agent import planner_for_agent, run_wai_run_inline, start_wai_task
+from app.core.wai_agent import planner_for_agent
 from app.db.session import get_db_context
 from app.models.agent import Agent, AgentRun, AgentStep
 from app.models.companion import Conversation
@@ -703,9 +712,10 @@ async def _send_chat_action_until_cancelled(
             await client.send_chat_action(chat_id, action)
         except TelegramClientError as exc:
             logger.warning(
-                "telegram chat action failed action=%s error=%s",
+                "telegram chat action failed action=%s error=%s detail=%s",
                 action,
                 type(exc).__name__,
+                str(exc)[:300],
             )
         except Exception:
             logger.exception("telegram chat action crashed action=%s", action)
@@ -2040,6 +2050,33 @@ def _telegram_context(ref_type: str, ref_id: UUID, title: str | None) -> dict[st
     }
 
 
+def _telegram_turn_context(context: Any) -> TurnContext:
+    if not isinstance(context, dict):
+        return TurnContext()
+    if context.get("ref_type") == "recording":
+        title = str(context.get("title") or "").strip() or None
+        return TurnContext(viewing_recording_title=title)
+    return TurnContext()
+
+
+def _apply_telegram_active_context_scope(
+    conversation: Conversation,
+    context: dict[str, Any] | None,
+) -> None:
+    scope = dict(conversation.scope or {})
+    if context is None:
+        scope.pop("active_context", None)
+        scope.pop("recording_ids", None)
+    else:
+        scope["active_context"] = context
+        ref_id = context.get("ref_id")
+        if context.get("ref_type") == "recording" and isinstance(ref_id, str) and ref_id:
+            scope["recording_ids"] = [ref_id]
+        else:
+            scope.pop("recording_ids", None)
+    conversation.scope = scope
+
+
 async def _set_telegram_active_context(
     db: AsyncSession,
     account: TelegramAccount,
@@ -2059,12 +2096,7 @@ async def _write_telegram_active_context(
 ) -> None:
     account.active_context = context
     conversation = await _ensure_telegram_conversation(db, account)
-    scope = dict(conversation.scope or {})
-    if context is None:
-        scope.pop("active_context", None)
-    else:
-        scope["active_context"] = context
-    conversation.scope = scope
+    _apply_telegram_active_context_scope(conversation, context)
     await db.flush()
 
 
@@ -2221,6 +2253,131 @@ async def _format_pending_actions_for_run(db: AsyncSession, run: AgentRun) -> st
     return "\n\n".join(lines)
 
 
+_ACTION_CALLBACK_PREFIX = "act"
+
+
+def _action_inline_keyboard(action_id: str) -> dict[str, Any]:
+    """Inline Approve / Always / Reject buttons. callback_data is
+    'act:<decision>:<uuid>' (~47 bytes, under Telegram's 64-byte cap)."""
+
+    def cb(decision: str) -> str:
+        return f"{_ACTION_CALLBACK_PREFIX}:{decision}:{action_id}"
+
+    return {
+        "inline_keyboard": [
+            [
+                {"text": "✅ Подтвердить", "callback_data": cb("once")},
+                {"text": "🔁 Всегда", "callback_data": cb("always")},
+                {"text": "✕ Отклонить", "callback_data": cb("reject")},
+            ]
+        ]
+    }
+
+
+async def _send_action_proposal(
+    client: TelegramBotClient, chat_id: int, action: ActionProposedEvent
+) -> None:
+    preview = action.preview.strip() or action.tool
+    await client.send_message(
+        chat_id,
+        f"Нужно подтверждение:\n{preview}",
+        reply_markup=_action_inline_keyboard(action.action_id),
+    )
+
+
+def _parse_action_callback(data: str) -> tuple[str, str] | None:
+    """Parse 'act:<decision>:<action_id>' → (decision, action_id)."""
+    parts = data.split(":", 2)
+    if len(parts) != 3 or parts[0] != _ACTION_CALLBACK_PREFIX:
+        return None
+    decision, action_id = parts[1], parts[2]
+    if decision not in {"once", "always", "reject"}:
+        return None
+    return decision, action_id
+
+
+async def _resolve_action_for_telegram(
+    db: AsyncSession,
+    *,
+    account: TelegramAccount,
+    action_id: UUID,
+    decision: str,
+) -> tuple[str, str]:
+    """Resolve a tapped action via the shared helper (same path as the web
+    route), resume any linked agent run, and return (toast, edited-message)."""
+    guard = await _telegram_agent_action_guard_message(
+        db, action_id=action_id, user_id=account.user_id
+    )
+    if guard is not None:
+        return ("Не удалось", guard)
+    try:
+        outcome = await resolve_action_for_user(
+            db, action_id=action_id, user_id=account.user_id, decision=decision
+        )
+    except ApprovalError as exc:
+        await db.commit()
+        return ("Не удалось", f"Не смог обработать: {exc.message}")
+    except ActuationError as exc:
+        await db.commit()
+        return ("Ошибка", f"Действие не выполнено: {exc.message}")
+    await _resume_agent_after_telegram_action(db, outcome.row)
+    await db.commit()
+    if decision == "reject":
+        return ("Отклонено", "✕ Отклонено.")
+    if outcome.status == "dispatched":
+        return ("Отправлено на Mac", "✅ Отправлено на ваш Mac.")
+    return ("Готово", "✅ Готово.")
+
+
+async def _handle_callback_query(
+    db: AsyncSession,
+    client: TelegramBotClient,
+    *,
+    callback_query: dict[str, Any],
+) -> None:
+    callback_id = callback_query.get("id")
+    if not isinstance(callback_id, str):
+        return
+    from_user = callback_query.get("from")
+    telegram_user_id = from_user.get("id") if isinstance(from_user, dict) else None
+    data = callback_query.get("data")
+    cb_message = callback_query.get("message")
+    chat_id = _telegram_chat_id(cb_message) if isinstance(cb_message, dict) else None
+    message_id = (
+        cb_message.get("message_id") if isinstance(cb_message, dict) else None
+    )
+
+    if not isinstance(telegram_user_id, int) or not isinstance(data, str):
+        await client.answer_callback_query(callback_id)
+        return
+    account = await _load_account(db, telegram_user_id)
+    if account is None:
+        await client.answer_callback_query(
+            callback_id, text="Сначала привяжи Telegram."
+        )
+        return
+    parsed = _parse_action_callback(data)
+    if parsed is None:
+        await client.answer_callback_query(callback_id)
+        return
+    decision, action_id_raw = parsed
+    try:
+        action_id = UUID(action_id_raw)
+    except ValueError:
+        await client.answer_callback_query(callback_id)
+        return
+
+    short, full = await _resolve_action_for_telegram(
+        db, account=account, action_id=action_id, decision=decision
+    )
+    await client.answer_callback_query(callback_id, text=short)
+    if chat_id is not None and isinstance(message_id, int):
+        try:
+            await client.edit_message_text(chat_id, message_id, full)
+        except TelegramClientError:
+            pass  # best-effort; the message may be too old to edit
+
+
 async def _format_wai_run_reply(db: AsyncSession, run: AgentRun) -> str:
     if run.status == "failed":
         return f"Не получилось выполнить задачу Wai: {run.error or 'ошибка агента'}"
@@ -2266,21 +2423,36 @@ async def _handle_text_message(
         )
         return
     conversation = await _ensure_telegram_conversation(db, account)
+    _apply_telegram_active_context_scope(conversation, account.active_context)
+    await db.flush()
+    chunks: list[str] = []
+    proposed_actions: list[ActionProposedEvent] = []
     action_task = asyncio.create_task(_send_chat_action_until_cancelled(client, chat_id))
     try:
-        _, run, _ = await start_wai_task(
+        async for event in run_turn(
             db,
-            user_id=account.user_id,
-            conversation_id=conversation.id,
-            objective=text,
-            context=account.active_context,
-            trigger_kind="telegram",
-            idempotency_key=str(message.get("message_id") or uuid4().hex),
+            account.user_id,
+            conversation.id,
+            text,
+            turn_context=_telegram_turn_context(account.active_context),
+            enable_actions=True,
+        ):
+            if isinstance(event, TokenEvent):
+                chunks.append(event.text)
+            elif isinstance(event, ActionProposedEvent):
+                proposed_actions.append(event)
+            elif isinstance(event, ErrorEvent):
+                raise CompanionError(event.code, event.message)
+    except CompanionError as exc:
+        logger.warning("telegram Wai turn failed code=%s", exc.code)
+        await client.send_message(
+            chat_id,
+            "Не получилось обработать запрос к Wai. Попробуй еще раз.",
+            reply_to_message_id=message.get("message_id"),
         )
-        run = await run_wai_run_inline(db, run)
-        answer = await _format_wai_run_reply(db, run)
-    except Exception as exc:  # noqa: BLE001 - Telegram must surface the failed agent turn.
-        logger.warning("telegram Wai agent run failed error=%s", type(exc).__name__)
+        return
+    except Exception as exc:  # noqa: BLE001 - Telegram must surface the failed turn.
+        logger.warning("telegram Wai turn failed error=%s", type(exc).__name__)
         await client.send_message(
             chat_id,
             "Не получилось обработать запрос к Wai. Попробуй еще раз.",
@@ -2290,12 +2462,20 @@ async def _handle_text_message(
     finally:
         await _stop_chat_action_task(action_task)
 
-    await _send_chunks(
-        client,
-        chat_id,
-        answer,
-        reply_to_message_id=message.get("message_id"),
-    )
+    answer = "".join(chunks).strip()
+    if not answer and not proposed_actions:
+        answer = "Wai не вернул ответ."
+    if answer:
+        await _send_chunks(
+            client,
+            chat_id,
+            answer,
+            reply_to_message_id=message.get("message_id"),
+        )
+    # Surface each proposed action as a tap-to-approve card (inline buttons)
+    # rather than a "/approve <uuid>" command the user must copy-paste.
+    for action in proposed_actions:
+        await _send_action_proposal(client, chat_id, action)
 
 
 async def _handle_document_message(
@@ -2584,6 +2764,14 @@ async def _handle_update(update: dict[str, Any]) -> None:
     client = TelegramBotClient()
     async with get_db_context() as db:
         try:
+            callback_query = update.get("callback_query")
+            if isinstance(callback_query, dict):
+                await _handle_callback_query(
+                    db, client, callback_query=callback_query
+                )
+                await _mark_update(db, update_id, "completed")
+                return
+
             message = update.get("message")
             if not isinstance(message, dict):
                 await _mark_update(db, update_id, "completed")
@@ -2727,16 +2915,17 @@ async def _handle_update(update: dict[str, Any]) -> None:
             await _mark_update(db, update_id, "completed")
         except (TelegramClientError, RecordingImportError) as exc:
             logger.warning(
-                "telegram update failed update_id=%s code=%s",
+                "telegram update failed update_id=%s code=%s detail=%s",
                 update_id,
                 type(exc).__name__,
+                str(exc)[:500],
             )
             await _mark_update(
                 db,
                 update_id,
                 "failed",
                 type(exc).__name__,
-                "Telegram update failed",
+                str(exc)[:2000] or "Telegram update failed",
             )
         except Exception:
             logger.exception("telegram update failed update_id=%s", update_id)

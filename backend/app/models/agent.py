@@ -97,14 +97,6 @@ class AgentRun(Base, UUIDMixin, TimestampMixin):
         nullable=False,
         index=True,
     )
-    # Wai agent sessions are backed by conversations so native/web/Telegram can
-    # show a durable Hermes-style task timeline instead of a detached chat turn.
-    conversation_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True),
-        ForeignKey("conversations.id", ondelete="SET NULL"),
-        nullable=True,
-        index=True,
-    )
     # Optional orchestration edge: a parent run can spawn isolated child runs.
     parent_run_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
@@ -112,6 +104,18 @@ class AgentRun(Base, UUIDMixin, TimestampMixin):
         index=True,
     )
     parent_step_idx: Mapped[int | None] = mapped_column(Integer)
+    # Optional chat origin: a chat turn can hand a long job to a durable
+    # background run that reports its result back into this conversation. Both
+    # SET NULL on delete so removing a chat/message never orphans the run row.
+    conversation_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("conversations.id", ondelete="SET NULL"),
+        index=True,
+    )
+    origin_message_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("chat_messages.id", ondelete="SET NULL"),
+    )
     # Stable per-wake key: a redelivered trigger RESUMES this run, never forks.
     trigger_key: Mapped[str] = mapped_column(String(200), nullable=False)
     trigger_kind: Mapped[str] = mapped_column(String(20), nullable=False)

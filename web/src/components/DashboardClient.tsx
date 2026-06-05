@@ -3143,6 +3143,10 @@ function UniversalInboxPanel({
   const [loadError, setLoadError] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
   const [creatingBrainMapSourceId, setCreatingBrainMapSourceId] = useState<string | null>(null);
+  // Type-and-go: the inbox composer's draft + the first message handed to a
+  // freshly created chat so the agent starts on the user's first line.
+  const [chatDraft, setChatDraft] = useState("");
+  const [initialChatMessage, setInitialChatMessage] = useState<string | null>(null);
   const inboxRequestId = useRef(0);
 
   const selectInboxSource = useCallback(
@@ -3347,11 +3351,12 @@ function UniversalInboxPanel({
     }
   }
 
-  async function handleNewChat() {
+  async function handleNewChat(message?: string) {
     onError(null);
     try {
       const chat = await createChat();
       await loadInbox("replace");
+      if (message && message.trim()) setInitialChatMessage(message.trim());
       setSelectedRow({
         id: `chat:${chat.id}`,
         source_kind: "chat",
@@ -3691,13 +3696,51 @@ function UniversalInboxPanel({
                       : "Search, remember, plan, or act."}
                   </p>
                 </div>
-                <button
-                  type="button"
-                  className="wai-primary-button"
-                  onClick={() => void handleNewChat()}
+                <form
+                  className="inbox-ask-form"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    const msg = chatDraft.trim();
+                    if (!msg) return;
+                    setChatDraft("");
+                    void handleNewChat(msg);
+                  }}
                 >
-                  {locale === "ru" ? "Новая сессия" : "New session"}
-                </button>
+                  <textarea
+                    className="inbox-ask-form__input"
+                    value={chatDraft}
+                    onChange={(event) => setChatDraft(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" && !event.shiftKey) {
+                        event.preventDefault();
+                        event.currentTarget.closest("form")?.requestSubmit();
+                      }
+                    }}
+                    rows={2}
+                    placeholder={
+                      locale === "ru"
+                        ? "Попросите Wai искать, помнить, планировать или действовать…"
+                        : "Ask Wai to search, remember, plan, or act…"
+                    }
+                    aria-label={locale === "ru" ? "Спросить Wai" : "Ask Wai"}
+                  />
+                  <div className="inbox-ask-form__actions">
+                    <button
+                      type="submit"
+                      className="wai-primary-button"
+                      disabled={chatDraft.trim().length === 0}
+                    >
+                      {locale === "ru" ? "Спросить" : "Ask"}
+                    </button>
+                    <button
+                      type="button"
+                      className="ghost-button compact-button"
+                      onClick={() => void handleNewChat()}
+                    >
+                      {locale === "ru" ? "Пустой диалог" : "Blank thread"}
+                    </button>
+                  </div>
+                </form>
               </section>
             </div>
 
@@ -3763,6 +3806,8 @@ function UniversalInboxPanel({
             recordings={recordings}
             locale={locale}
             initialChatId={selectedRow.source_id}
+            initialMessage={initialChatMessage}
+            onInitialMessageConsumed={() => setInitialChatMessage(null)}
             onChatCreated={() => void loadInbox("replace")}
             viewingFolderId={folderId}
             embedded
