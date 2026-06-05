@@ -35,7 +35,6 @@ from app.core.brain_graph import (
     entity_source_fingerprint,
 )
 from app.core.cerebras_chat import (
-    CerebrasResponseError,
     chat_completion_parsed,
     get_cerebras_client,
     strict_json_response_format,
@@ -365,8 +364,11 @@ async def ensure_entity_page(
         return page  # ready (cache hit) or skeleton (no sources)
     try:
         await synthesize_entity_page(db, user_id, entity_id)
-    except CerebrasResponseError:
-        logger.warning("entity_page_synthesis failed for entity=%s", entity_id)
+    except Exception:
+        # A view path must stay resilient: a model/provider/network failure
+        # degrades to the real deterministic skeleton (never fabricated),
+        # surfaced honestly via cache_status. The backlinks still render.
+        logger.warning("entity_page_synthesis failed for entity=%s", entity_id, exc_info=True)
         page.cache_status = "error"
         return page
     refreshed = await build_entity_page(db, user_id, entity_id)

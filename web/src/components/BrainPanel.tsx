@@ -270,7 +270,7 @@ export function BrainPanel({
         <em>{t(e.type, e.type)}</em>
       </span>
       <small>
-        {e.source_count ?? 0} {t("sources", "источн.")}
+        {e.source_count ?? 0} {(e.source_count ?? 0) === 1 ? t("source", "источн.") : t("sources", "источн.")}
       </small>
     </button>
   );
