@@ -34,14 +34,6 @@ from app.core.agent_runtime import (
     run_job,
     static_config_planner,
 )
-from app.core.companion import (
-    ActionProposedEvent,
-    CompanionError,
-    ErrorEvent,
-    TokenEvent,
-    TurnContext,
-    run_turn,
-)
 from app.core.companion_actions import (
     ApprovalError,
     expire_due_actions,
@@ -75,6 +67,7 @@ from app.core.telegram_client import (
     telegram_chunks,
 )
 from app.core.unified_search import UnifiedHit, unified_search
+from app.core.wai_agent import planner_for_agent, run_wai_run_inline, start_wai_task
 from app.db.session import get_db_context
 from app.models.agent import Agent, AgentRun, AgentStep
 from app.models.companion import Conversation
@@ -1310,8 +1303,21 @@ async def _load_run_ref(
     *,
     user_id: Any,
     ref: str,
+    conversation_id: UUID | None = None,
 ) -> AgentRun | None:
     clean = ref.strip()
+    if not clean and conversation_id is not None:
+        return (
+            await db.execute(
+                select(AgentRun)
+                .where(
+                    AgentRun.user_id == user_id,
+                    AgentRun.conversation_id == conversation_id,
+                )
+                .order_by(AgentRun.created_at.desc())
+                .limit(1)
+            )
+        ).scalar_one_or_none()
     try:
         run_id = UUID(clean)
     except ValueError:
@@ -1608,7 +1614,12 @@ async def _handle_run_status_command(
     chat_id = _telegram_chat_id(message)
     if chat_id is None:
         return
-    run = await _load_run_ref(db, user_id=account.user_id, ref=arg)
+    run = await _load_run_ref(
+        db,
+        user_id=account.user_id,
+        conversation_id=account.companion_conversation_id,
+        ref=arg,
+    )
     if run is None:
         await client.send_message(
             chat_id,
@@ -1634,7 +1645,12 @@ async def _handle_cancel_run_command(
     chat_id = _telegram_chat_id(message)
     if chat_id is None:
         return
-    run = await _load_run_ref(db, user_id=account.user_id, ref=arg)
+    run = await _load_run_ref(
+        db,
+        user_id=account.user_id,
+        conversation_id=account.companion_conversation_id,
+        ref=arg,
+    )
     if run is None:
         await client.send_message(
             chat_id,
@@ -1696,10 +1712,20 @@ async def _resume_agent_after_telegram_action(
 ) -> None:
     if action.agent_run_id is None:
         return
+    run = await db.get(AgentRun, action.agent_run_id)
+    if run is None:
+        return
+    agent = await db.get(Agent, run.agent_id)
+    if agent is None:
+        run.status = "failed"
+        run.error = "Agent not found"
+        run.finished_at = datetime.now(timezone.utc)
+        await db.flush()
+        return
     await run_job(
         db,
         action.agent_run_id,
-        planner=static_config_planner,
+        planner=planner_for_agent(agent),
         executor=execute_agent_step,
     )
     run_ids = pop_agent_runs_to_dispatch_after_commit(db)
@@ -1933,6 +1959,33 @@ async def _ensure_telegram_conversation(
     return conversation
 
 
+def _telegram_context(ref_type: str, ref_id: UUID, title: str | None) -> dict[str, Any]:
+    return {
+        "ref_type": ref_type,
+        "ref_id": str(ref_id),
+        "title": title,
+        "source": "telegram",
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+async def _set_telegram_active_context(
+    db: AsyncSession,
+    account: TelegramAccount,
+    *,
+    ref_type: str,
+    ref_id: UUID,
+    title: str | None,
+) -> None:
+    context = _telegram_context(ref_type, ref_id, title)
+    account.active_context = context
+    conversation = await _ensure_telegram_conversation(db, account)
+    scope = dict(conversation.scope or {})
+    scope["active_context"] = context
+    conversation.scope = scope
+    await db.flush()
+
+
 async def _handle_url_message(
     db: AsyncSession,
     client: TelegramBotClient,
@@ -1997,6 +2050,13 @@ async def _handle_url_message(
         select(ItemSummary).where(ItemSummary.item_id == item.id)
     )
     reply = format_item_reply(item, summary.scalar_one_or_none())
+    await _set_telegram_active_context(
+        db,
+        account,
+        ref_type="item",
+        ref_id=item.id,
+        title=item.title,
+    )
     await _send_chunks(
         client,
         chat_id,
@@ -2006,19 +2066,57 @@ async def _handle_url_message(
     )
 
 
-def _format_action_proposals_for_telegram(actions: list[ActionProposedEvent]) -> str:
+async def _format_pending_actions_for_run(db: AsyncSession, run: AgentRun) -> str:
+    actions = list(
+        (
+            await db.execute(
+                select(CompanionPendingAction)
+                .where(
+                    CompanionPendingAction.agent_run_id == run.id,
+                    CompanionPendingAction.status == "pending",
+                )
+                .order_by(CompanionPendingAction.created_at)
+            )
+        )
+        .scalars()
+        .all()
+    )
     if not actions:
         return ""
     lines = ["Нужно подтверждение:"]
     for action in actions:
-        preview = action.preview.strip() or action.tool
-        recipient = f" · {action.recipient}" if action.recipient else ""
+        manifest = action.action_manifest or {}
+        preview = str(manifest.get("preview") or action.tool_name).strip()
+        recipient = f" · {action.recipient_display}" if action.recipient_display else ""
         lines.append(
-            f"{action.action_id}\n{action.tool} · {action.kind}{recipient}\n"
-            f"{preview}\n/approve {action.action_id}\n"
-            f"/approve_always {action.action_id}\n/reject {action.action_id}"
+            f"{action.id}\n{action.tool_name} · {action.kind}{recipient}\n"
+            f"{preview}\n/approve {action.id}\n"
+            f"/approve_always {action.id}\n/reject {action.id}"
         )
     return "\n\n".join(lines)
+
+
+async def _format_wai_run_reply(db: AsyncSession, run: AgentRun) -> str:
+    if run.status == "failed":
+        return f"Не получилось выполнить задачу Wai: {run.error or 'ошибка агента'}"
+    result = run.result or {}
+    text = str(result.get("output_text") or "").strip()
+    artifacts = result.get("artifacts")
+    if isinstance(artifacts, list) and artifacts:
+        artifact_lines = ["Артефакты:"]
+        for artifact in artifacts[:5]:
+            if not isinstance(artifact, dict):
+                continue
+            title = str(artifact.get("title") or artifact.get("item_id") or "artifact")
+            kind = str(artifact.get("kind") or "item")
+            artifact_lines.append(f"- {title} ({kind})")
+        text = f"{text}\n\n" + "\n".join(artifact_lines) if text else "\n".join(artifact_lines)
+    approvals = await _format_pending_actions_for_run(db, run)
+    if approvals:
+        text = f"{text}\n\n{approvals}".strip()
+    if text:
+        return text
+    return f"Wai run {run.id} status: {run.status}"
 
 
 async def _handle_text_message(
@@ -2035,26 +2133,21 @@ async def _handle_text_message(
     if await _ensure_active_user(db, client, message=message, account=account) is None:
         return
     conversation = await _ensure_telegram_conversation(db, account)
-    chunks: list[str] = []
-    proposed_actions: list[ActionProposedEvent] = []
     action_task = asyncio.create_task(_send_chat_action_until_cancelled(client, chat_id))
     try:
-        async for event in run_turn(
+        _, run, _ = await start_wai_task(
             db,
-            account.user_id,
-            conversation.id,
-            text,
-            turn_context=TurnContext(),
-            enable_actions=True,
-        ):
-            if isinstance(event, TokenEvent):
-                chunks.append(event.text)
-            elif isinstance(event, ActionProposedEvent):
-                proposed_actions.append(event)
-            elif isinstance(event, ErrorEvent):
-                raise CompanionError(event.code, event.message)
-    except CompanionError as exc:
-        logger.warning("telegram Wai turn failed code=%s", exc.code)
+            user_id=account.user_id,
+            conversation_id=conversation.id,
+            objective=text,
+            context=account.active_context,
+            trigger_kind="telegram",
+            idempotency_key=str(message.get("message_id") or uuid4().hex),
+        )
+        run = await run_wai_run_inline(db, run)
+        answer = await _format_wai_run_reply(db, run)
+    except Exception as exc:  # noqa: BLE001 - Telegram must surface the failed agent turn.
+        logger.warning("telegram Wai agent run failed error=%s", type(exc).__name__)
         await client.send_message(
             chat_id,
             "Не получилось обработать запрос к Wai. Попробуй еще раз.",
@@ -2064,12 +2157,6 @@ async def _handle_text_message(
     finally:
         await _stop_chat_action_task(action_task)
 
-    answer = "".join(chunks).strip()
-    approval_text = _format_action_proposals_for_telegram(proposed_actions)
-    if approval_text:
-        answer = f"{answer}\n\n{approval_text}".strip()
-    if not answer:
-        answer = "Wai не вернул ответ."
     await _send_chunks(
         client,
         chat_id,
@@ -2207,6 +2294,13 @@ async def _handle_document_message(
             await _stop_chat_action_task(action_task)
 
     reply = format_item_reply(item, summary)
+    await _set_telegram_active_context(
+        db,
+        account,
+        ref_type="item",
+        ref_id=item.id,
+        title=item.title,
+    )
     await _send_chunks(
         client,
         chat_id,
@@ -2310,6 +2404,15 @@ async def _handle_media_message(
             reply_to_message_id=message.get("message_id"),
         )
     summary_message = _format_import_summary_message(result)
+    recording_id = getattr(result.recording, "id", None)
+    if recording_id is not None:
+        await _set_telegram_active_context(
+            db,
+            account,
+            ref_type="recording",
+            ref_id=recording_id,
+            title=result.recording.title,
+        )
     if summary_message:
         await _send_chunks(
             client,

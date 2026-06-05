@@ -58,7 +58,7 @@ enum CompanionChatPresentation {
     }
 }
 
-/// Cross-platform Ask Wai thread view used by both the macOS sidebar `.wai` section
+/// Cross-platform Wai agent session view used by both the macOS sidebar `.wai` section
 /// and the iOS `WaiHomeView`. Takes an `APIClient` (kept in environment by the
 /// host app's auth flow) and a list of recordings used to resolve citation
 /// chip titles. Persists chats server-side and streams turns via SSE.
@@ -83,10 +83,6 @@ public struct CompanionView: View {
     @State private var streamingCitations: [CompanionStreamCitation] = []
     @State private var streamingToolNotes: [String] = []
     @State private var stage: TurnStage = .idle
-    // Read-aloud (voice out): off by default, persisted across launches; speaks
-    // the completed answer with a content-aware voice (Russian → Russian voice).
-    @AppStorage("companionSpeakAnswers") private var speakAnswers = false
-    @State private var readAloud = ReadAloudController(provider: AVSpeechTTSProvider())
     @State private var input: String = ""
     @FocusState private var inputFocused: Bool
     @State private var errorMessage: String?
@@ -199,27 +195,12 @@ public struct CompanionView: View {
                 .background(companionAccentColor.opacity(0.12))
                 .clipShape(RoundedRectangle(cornerRadius: 7))
 
-            Text(t("Ask Wai", "Спроси Wai"))
+            Text("Wai")
                 .font(.system(size: 18, weight: .semibold))
                 .lineLimit(1)
             .layoutPriority(1)
 
             Spacer(minLength: 12)
-
-            Button {
-                speakAnswers.toggle()
-                if !speakAnswers { Task { await readAloud.cancel() } }
-            } label: {
-                Image(systemName: speakAnswers ? "speaker.wave.2.fill" : "speaker.slash")
-            }
-            .buttonStyle(.bordered)
-            .foregroundStyle(speakAnswers ? companionAccentColor : .secondary)
-            .help(
-                speakAnswers
-                    ? t("Read answers aloud: on", "Озвучивать ответы: вкл")
-                    : t("Read answers aloud: off", "Озвучивать ответы: выкл")
-            )
-            .accessibilityIdentifier("wai-speak-toggle-button")
 
             if showsConversationSwitcher {
                 Button {
@@ -232,16 +213,6 @@ public struct CompanionView: View {
                 .help(showChats ? t("Hide threads", "Скрыть диалоги") : t("Show threads", "Показать диалоги"))
                 .accessibilityIdentifier("wai-toggle-chats-button")
             }
-
-            Button {
-                Task { await newChat() }
-            } label: {
-                Label(t("New thread", "Новый диалог"), systemImage: "plus")
-                    .labelStyle(.titleAndIcon)
-            }
-            .buttonStyle(.borderedProminent)
-            .help(t("New Wai thread", "Новый диалог Wai"))
-            .accessibilityIdentifier("wai-new-chat-button")
         }
         .frame(maxWidth: contentMaxWidth, alignment: .leading)
         .padding(.horizontal, 24)
@@ -393,6 +364,7 @@ public struct CompanionView: View {
                     isNearBottom = bottomMinY <= viewport.size.height + 80
                 }
                 .onChangeCompat(of: messages.count) {
+                    guard isNearBottom else { return }
                     withAnimation {
                         proxy.scrollTo("bottomAnchor", anchor: .bottom)
                     }
@@ -535,7 +507,7 @@ public struct CompanionView: View {
 
             HStack(alignment: .bottom, spacing: 10) {
                 TextField(
-                    t("Ask Wai to search, remember, plan, or act...", "Попросите Wai искать, помнить, планировать или действовать..."),
+                    t("Give Wai a task", "Дайте Wai задачу"),
                     text: $input,
                     axis: .vertical
                 )
@@ -591,7 +563,7 @@ public struct CompanionView: View {
                     Button {
                         Task { await send() }
                     } label: {
-                        Label(t("Ask", "Спросить"), systemImage: "paperplane.fill")
+                        Label(t("Send", "Отправить"), systemImage: "paperplane.fill")
                             .labelStyle(.titleAndIcon)
                             .frame(minWidth: 96)
                     }
@@ -749,8 +721,6 @@ public struct CompanionView: View {
         // Cancel any in-flight turn first so two streams never interleave.
         turnTask?.cancel()
         turnTask = nil
-        Task { await readAloud.cancel() }  // barge-in: stop reading the prior answer
-
         // Flip stage synchronously so the disabled button covers the gap.
         stage = .searching
         streamingText = ""
@@ -787,6 +757,7 @@ public struct CompanionView: View {
             createdAt: Date()
         )
         messages.append(optimistic)
+        isNearBottom = true
 
         turnTask = Task { @MainActor in
             var hadError = false
@@ -802,12 +773,6 @@ public struct CompanionView: View {
                 }
                 if Task.isCancelled {
                     return
-                }
-                // Speak the finished answer (detached so reading never throttles
-                // the text stream); the segmenter splits it into sentences.
-                if speakAnswers, !streamingText.isEmpty {
-                    let answer = streamingText
-                    Task { await speakAnswer(answer) }
                 }
                 let detail = try await apiClient.getCompanionChat(chatId: chatId)
                 messages = detail.messages
@@ -855,19 +820,10 @@ public struct CompanionView: View {
     private func cancelTurn() {
         turnTask?.cancel()
         turnTask = nil
-        Task { await readAloud.cancel() }
         streamingText = ""
         streamingCitations = []
         streamingToolNotes = []
         stage = .idle
-    }
-
-    /// Read a completed answer aloud, sentence by sentence (content-aware voice).
-    @MainActor
-    private func speakAnswer(_ text: String) async {
-        await readAloud.begin()
-        await readAloud.feed(text)
-        await readAloud.finish()
     }
 
     @MainActor

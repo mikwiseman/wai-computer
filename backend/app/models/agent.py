@@ -97,6 +97,14 @@ class AgentRun(Base, UUIDMixin, TimestampMixin):
         nullable=False,
         index=True,
     )
+    # Wai agent sessions are backed by conversations so native/web/Telegram can
+    # show a durable Hermes-style task timeline instead of a detached chat turn.
+    conversation_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("conversations.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     # Optional orchestration edge: a parent run can spawn isolated child runs.
     parent_run_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
@@ -133,6 +141,7 @@ class AgentRun(Base, UUIDMixin, TimestampMixin):
     __table_args__ = (
         UniqueConstraint("trigger_key", name="uq_agent_runs_trigger_key"),
         Index("ix_agent_runs_user_parent", "user_id", "parent_run_id"),
+        Index("ix_agent_runs_user_conversation", "user_id", "conversation_id"),
     )
 
 

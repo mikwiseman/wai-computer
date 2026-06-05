@@ -156,8 +156,8 @@ struct MacBrainView: View {
                         .font(Typography.headingSmall)
                     Text(
                         t(
-                            "Ask Wai using approved knowledge from \(selectedBrainName).",
-                            "Попросите Wai использовать подтвержденные знания из \(selectedBrainName)."
+                            "Give Wai a task using approved knowledge from \(selectedBrainName).",
+                            "Дайте Wai задачу с подтвержденными знаниями из \(selectedBrainName)."
                         )
                     )
                     .font(Typography.bodySmall)
@@ -212,7 +212,7 @@ struct MacBrainView: View {
                         copyContextToPasteboard()
                     }
                     .buttonStyle(.bordered)
-                    Button(t("Open Ask Wai", "Открыть Wai")) {
+                    Button(t("Open Wai", "Открыть Wai")) {
                         if let onOpenWai {
                             onOpenWai()
                         }

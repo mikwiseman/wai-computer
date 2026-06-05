@@ -13,7 +13,7 @@ struct OnboardingValuePropsSlide: View {
                 Text(t("One Inbox for everything", "Один Инбокс для всего"))
                     .font(.system(size: 30, weight: .bold))
                     .foregroundStyle(Palette.textPrimary)
-                Text(t("Capture, organize, and ask Wai without switching sections.", "Сохраняйте, раскладывайте и спрашивайте Wai без лишних разделов."))
+                Text(t("Capture, organize, and give Wai tasks without switching sections.", "Сохраняйте, раскладывайте и давайте Wai задачи без лишних разделов."))
                     .font(.system(size: 14))
                     .foregroundStyle(Palette.textSecondary)
             }
@@ -39,11 +39,11 @@ struct OnboardingValuePropsSlide: View {
                 )
                 valueCard(
                     icon: "bubble.left.and.bubble.right",
-                    title: t("Ask Wai", "Спросите Wai"),
-                    primary: t("Chat over what you saved", "Чат по тому, что сохранено"),
+                    title: "Wai",
+                    primary: t("Give Wai tasks over what you saved", "Давайте Wai задачи по тому, что сохранено"),
                     detail: t(
-                        "Ask for summaries, decisions, repeated themes, or answers from your saved context.",
-                        "Спросите про саммари, решения, повторяющиеся темы или ответы из сохраненного контекста."
+                        "Use Wai for summaries, decisions, repeated themes, or answers from your saved context.",
+                        "Используйте Wai для саммари, решений, повторяющихся тем или ответов из сохраненного контекста."
                     )
                 )
             }

@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime
 
 from sqlalchemy import BigInteger, DateTime, ForeignKey, String, Text
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, TimestampMixin, UUIDMixin
@@ -37,6 +37,7 @@ class TelegramAccount(Base, UUIDMixin, TimestampMixin):
         ForeignKey("conversations.id", ondelete="SET NULL"),
         nullable=True,
     )
+    active_context: Mapped[dict | None] = mapped_column(JSONB)
     last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     user: Mapped["User"] = relationship("User")

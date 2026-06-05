@@ -115,7 +115,7 @@ final class MacContentFeedViewModelTests: XCTestCase {
         XCTAssertTrue(source.contains("Button(t(\"Paste Link or Text\", \"Вставить ссылку или текст\"))"))
         XCTAssertTrue(source.contains("postInboxCommand(.pasteLinkOrText)"))
         XCTAssertTrue(source.contains(".keyboardShortcut(\"v\", modifiers: [.command, .option])"))
-        XCTAssertTrue(source.contains("Button(t(\"Ask Wai\", \"Спросить Wai\"))"))
+        XCTAssertTrue(source.contains("Button(\"Wai\")"))
         XCTAssertTrue(source.contains("postInboxCommand(.askWai)"))
         XCTAssertTrue(source.contains(".keyboardShortcut(\"a\", modifiers: [.command, .option])"))
     }
@@ -169,20 +169,22 @@ final class MacContentFeedViewModelTests: XCTestCase {
     func testInboxPresentsWaiChatAsAgentThread() throws {
         let source = try macSource("WaiComputer/Features/Inbox/MacInboxView.swift")
 
-        XCTAssertTrue(source.contains("Ask Wai"))
-        XCTAssertTrue(source.contains("Search, remember, plan, or act"))
+        XCTAssertTrue(source.contains("New Wai Session"))
+        XCTAssertTrue(source.contains("Give Wai a task"))
+        XCTAssertFalse(source.contains("Ask Wai"))
         XCTAssertFalse(source.contains("New Wai Chat"))
         XCTAssertFalse(source.contains("Wai Chat"))
     }
 
-    func testInboxIsTheOnlyAskWaiAgentSurface() throws {
+    func testInboxIsTheOnlyWaiAgentSurface() throws {
         let inboxSource = try macSource("WaiComputer/Features/Inbox/MacInboxView.swift")
         let shellSource = try macSource("WaiComputer/App/MacContentView.swift")
 
         XCTAssertTrue(inboxSource.contains("case .chat:"))
         XCTAssertTrue(inboxSource.contains("CompanionView("))
-        XCTAssertTrue(inboxSource.contains("Ask Wai"))
-        XCTAssertTrue(inboxSource.contains("Search, remember, plan, or act"))
+        XCTAssertTrue(inboxSource.contains("New Wai Session"))
+        XCTAssertTrue(inboxSource.contains("Give Wai a task"))
+        XCTAssertFalse(inboxSource.contains("Ask Wai"))
         XCTAssertTrue(shellSource.contains(#"case "agents": selectedSection = .inbox"#))
         XCTAssertFalse(shellSource.contains("case agents"))
         XCTAssertFalse(shellSource.contains("MacAgentsView("))

@@ -207,7 +207,7 @@ struct WaiComputerMacApp: App {
                 .keyboardShortcut("v", modifiers: [.command, .option])
                 .disabled(isRecordingActivityVisible || !appState.isAuthenticated)
 
-                Button(t("Ask Wai", "Спросить Wai")) {
+                Button("Wai") {
                     postInboxCommand(.askWai)
                 }
                 .keyboardShortcut("a", modifiers: [.command, .option])

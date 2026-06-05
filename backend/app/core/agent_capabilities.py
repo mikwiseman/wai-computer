@@ -125,6 +125,86 @@ AGENT_CAPABILITIES: tuple[AgentCapability, ...] = (
         safety_notes="Read-only and owner-scoped.",
     ),
     AgentCapability(
+        id="wai.context.load",
+        label="Load active Wai context",
+        category="memory",
+        description="Load an exact recording or material selected by a Wai session.",
+        availability="available",
+        runtime_tool="load_context",
+        surfaces=("web", "mac", "telegram", "api"),
+        requires_approval=False,
+        cloud_supported=True,
+        self_host_supported=True,
+        local_gateway_required=False,
+        risk_level="read_only",
+        permission_scopes=("recordings:read", "items:read"),
+        safety_notes="Read-only and owner-scoped by the context object's user_id.",
+    ),
+    AgentCapability(
+        id="wai.respond",
+        label="Final run response",
+        category="runtime",
+        description="Record the final user-visible response for an agent run.",
+        availability="available",
+        runtime_tool="respond",
+        surfaces=("web", "mac", "telegram", "api"),
+        requires_approval=False,
+        cloud_supported=True,
+        self_host_supported=True,
+        local_gateway_required=False,
+        risk_level="read_only",
+        permission_scopes=("agent:run:read",),
+        safety_notes="Non-mutating journal entry used by clients as the run result.",
+    ),
+    AgentCapability(
+        id="wai.respond.context",
+        label="Final response from context",
+        category="runtime",
+        description="Build the final user-visible response from an active recording or material.",
+        availability="available",
+        runtime_tool="respond_from_context",
+        surfaces=("web", "mac", "telegram", "api"),
+        requires_approval=False,
+        cloud_supported=True,
+        self_host_supported=True,
+        local_gateway_required=False,
+        risk_level="read_only",
+        permission_scopes=("agent:run:read", "recordings:read", "items:read"),
+        safety_notes="Non-mutating journal entry based only on owner-scoped Wai context.",
+    ),
+    AgentCapability(
+        id="wai.respond.search",
+        label="Final response from search",
+        category="runtime",
+        description="Build the final user-visible response from prior Wai search results.",
+        availability="available",
+        runtime_tool="respond_from_search",
+        surfaces=("web", "mac", "telegram", "api"),
+        requires_approval=False,
+        cloud_supported=True,
+        self_host_supported=True,
+        local_gateway_required=False,
+        risk_level="read_only",
+        permission_scopes=("agent:run:read", "search:read"),
+        safety_notes="Non-mutating journal entry based only on owner-scoped search results.",
+    ),
+    AgentCapability(
+        id="wai.capability.missing",
+        label="Missing capability status",
+        category="runtime",
+        description="Fail a run explicitly when the requested job needs an unavailable tool.",
+        availability="available",
+        runtime_tool="missing_capability",
+        surfaces=("web", "mac", "telegram", "api"),
+        requires_approval=False,
+        cloud_supported=True,
+        self_host_supported=True,
+        local_gateway_required=False,
+        risk_level="read_only",
+        permission_scopes=("agent:run:read",),
+        safety_notes="Surfaces unsupported jobs instead of inventing a fake result.",
+    ),
+    AgentCapability(
         id="wai.memory.propose",
         label="Propose memory",
         category="memory",
@@ -331,6 +411,101 @@ AGENT_TOOL_CONTRACTS: tuple[AgentToolContract, ...] = (
         },
     ),
     AgentToolContract(
+        name="load_context",
+        capability_id="wai.context.load",
+        kind="runtime",
+        description="Load an exact owner-scoped recording or item by id.",
+        side_effect="none",
+        requires_approval=False,
+        permission_scopes=("recordings:read", "items:read"),
+        args_schema={
+            "type": "object",
+            "required": ["ref_type", "ref_id"],
+            "additionalProperties": False,
+            "properties": {
+                "ref_type": {"type": "string", "enum": ["recording", "item"]},
+                "ref_id": {"type": "string", "format": "uuid"},
+                "objective": {"type": "string"},
+            },
+        },
+        result_schema={"type": "object", "properties": {"title": {"type": "string"}}},
+    ),
+    AgentToolContract(
+        name="respond",
+        capability_id="wai.respond",
+        kind="runtime",
+        description="Record final user-visible output.",
+        side_effect="none",
+        requires_approval=False,
+        permission_scopes=("agent:run:read",),
+        args_schema={
+            "type": "object",
+            "required": ["text"],
+            "additionalProperties": False,
+            "properties": {"text": {"type": "string", "minLength": 1}},
+        },
+        result_schema={
+            "type": "object",
+            "required": ["text"],
+            "properties": {"text": {"type": "string"}},
+        },
+    ),
+    AgentToolContract(
+        name="respond_from_context",
+        capability_id="wai.respond",
+        kind="runtime",
+        description="Build a concise final response from the active Wai context.",
+        side_effect="none",
+        requires_approval=False,
+        permission_scopes=("agent:run:read", "recordings:read", "items:read"),
+        args_schema={
+            "type": "object",
+            "required": ["ref_type", "ref_id", "objective"],
+            "additionalProperties": False,
+            "properties": {
+                "ref_type": {"type": "string", "enum": ["recording", "item"]},
+                "ref_id": {"type": "string", "format": "uuid"},
+                "objective": {"type": "string", "minLength": 1},
+            },
+        },
+        result_schema={"type": "object", "properties": {"text": {"type": "string"}}},
+    ),
+    AgentToolContract(
+        name="respond_from_search",
+        capability_id="wai.respond",
+        kind="runtime",
+        description="Build a concise final response from prior search results.",
+        side_effect="none",
+        requires_approval=False,
+        permission_scopes=("agent:run:read", "search:read"),
+        args_schema={
+            "type": "object",
+            "required": ["query"],
+            "additionalProperties": False,
+            "properties": {"query": {"type": "string", "minLength": 1}},
+        },
+        result_schema={"type": "object", "properties": {"text": {"type": "string"}}},
+    ),
+    AgentToolContract(
+        name="missing_capability",
+        capability_id="wai.capability.missing",
+        kind="runtime",
+        description="Fail explicitly with the unavailable capability name.",
+        side_effect="none",
+        requires_approval=False,
+        permission_scopes=("agent:run:read",),
+        args_schema={
+            "type": "object",
+            "required": ["capability", "reason"],
+            "additionalProperties": False,
+            "properties": {
+                "capability": {"type": "string", "minLength": 1},
+                "reason": {"type": "string", "minLength": 1},
+            },
+        },
+        result_schema={"type": "object", "properties": {"code": {"type": "string"}}},
+    ),
+    AgentToolContract(
         name="propose_memory",
         capability_id="wai.memory.propose",
         kind="runtime",
@@ -521,7 +696,7 @@ RUNTIME_TOOL_NAMES = frozenset(RUNTIME_TOOL_CONTRACTS)
 def capabilities_response(*, deployment_mode: str) -> dict[str, Any]:
     """Return the agent control-plane contract consumed by all clients."""
     return {
-        "schema_version": "2026-06-04",
+        "schema_version": "2026-06-05",
         "deployment_mode": deployment_mode,
         "max_steps": MAX_AGENT_STEPS,
         "runtime_modes": [
@@ -606,6 +781,43 @@ def _validate_step_args(tool: str, args: dict[str, Any], idx: int) -> None:
                     f"Agent config.steps[{idx}].search_wai.limit must be "
                     f"1..{MAX_AGENT_SEARCH_LIMIT}"
                 )
+        return
+    if tool == "load_context":
+        ref_type = _require_text(args, "ref_type", idx, tool)
+        if ref_type not in {"recording", "item"}:
+            raise ValueError(
+                f"Agent config.steps[{idx}].load_context.ref_type must be recording or item"
+            )
+        try:
+            UUID(_require_text(args, "ref_id", idx, tool))
+        except ValueError as exc:
+            raise ValueError(
+                f"Agent config.steps[{idx}].load_context.ref_id must be a UUID string"
+            ) from exc
+        return
+    if tool == "respond":
+        _require_text(args, "text", idx, tool)
+        return
+    if tool == "respond_from_context":
+        ref_type = _require_text(args, "ref_type", idx, tool)
+        if ref_type not in {"recording", "item"}:
+            raise ValueError(
+                f"Agent config.steps[{idx}].respond_from_context.ref_type must be recording or item"
+            )
+        try:
+            UUID(_require_text(args, "ref_id", idx, tool))
+        except ValueError as exc:
+            raise ValueError(
+                f"Agent config.steps[{idx}].respond_from_context.ref_id must be a UUID string"
+            ) from exc
+        _require_text(args, "objective", idx, tool)
+        return
+    if tool == "respond_from_search":
+        _require_text(args, "query", idx, tool)
+        return
+    if tool == "missing_capability":
+        _require_text(args, "capability", idx, tool)
+        _require_text(args, "reason", idx, tool)
         return
     if tool == "propose_memory":
         _require_text(args, "content", idx, tool)

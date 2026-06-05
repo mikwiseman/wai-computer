@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.routes import telegram as telegram_routes
 from app.core import companion_actions as ca
 from app.core import companion_actuators
+from app.core.agent_runtime import static_config_planner
 from app.core.recording_import import (
     RecordingImportError,
     import_media_as_recording,
@@ -1281,7 +1282,7 @@ async def test_telegram_can_resolve_agent_pending_action(
     await telegram_routes.run_job(
         db_session,
         run.id,
-        planner=telegram_routes.static_config_planner,
+        planner=static_config_planner,
         executor=telegram_routes.execute_agent_step,
     )
     row = (
@@ -1459,7 +1460,7 @@ async def test_telegram_can_reject_agent_pending_action(
     await telegram_routes.run_job(
         db_session,
         run.id,
-        planner=telegram_routes.static_config_planner,
+        planner=static_config_planner,
         executor=telegram_routes.execute_agent_step,
     )
     row = (
@@ -1565,7 +1566,7 @@ async def test_telegram_approval_reports_actuation_error(
 
 
 @pytest.mark.asyncio
-async def test_handle_update_routes_obligation_question_to_companion(
+async def test_handle_update_routes_obligation_question_to_wai_agent(
     db_session: AsyncSession,
     monkeypatch,
 ):
@@ -1586,13 +1587,12 @@ async def test_handle_update_routes_obligation_question_to_companion(
     async def fake_db_context():
         yield db_session
 
-    async def fake_run_turn(*args, **kwargs):
-        assert args[3] == "что я обещал"
-        yield telegram_routes.TokenEvent(text="Ответ Wai")
-
     monkeypatch.setattr(telegram_routes, "TelegramBotClient", lambda: capture)
     monkeypatch.setattr(telegram_routes, "get_db_context", fake_db_context)
-    monkeypatch.setattr(telegram_routes, "run_turn", fake_run_turn)
+    monkeypatch.setattr(
+        "app.core.unified_search.generate_embedding",
+        AsyncMock(return_value=[0.02] * 1536),
+    )
 
     await telegram_routes._handle_update(
         {
@@ -1606,8 +1606,12 @@ async def test_handle_update_routes_obligation_question_to_companion(
         }
     )
 
-    assert capture.messages[-1]["text"] == "Ответ Wai"
+    assert "что я обещал" in capture.messages[-1]["text"]
     assert (await db_session.get(TelegramUpdate, 207)).status == "completed"
+    run = (
+        await db_session.execute(select(AgentRun).where(AgentRun.user_id == user.id))
+    ).scalar_one()
+    assert run.trigger_kind == "telegram"
 
 
 @pytest.mark.asyncio
@@ -1631,12 +1635,8 @@ async def test_handle_update_rejects_unsupported_document_even_with_caption(
     async def fake_db_context():
         yield db_session
 
-    async def fail_run_turn(*args, **kwargs):
-        raise AssertionError("unsupported document captions must not route to Wai chat")
-
     monkeypatch.setattr(telegram_routes, "TelegramBotClient", lambda: capture)
     monkeypatch.setattr(telegram_routes, "get_db_context", fake_db_context)
-    monkeypatch.setattr(telegram_routes, "run_turn", fail_run_turn)
 
     await telegram_routes._handle_update(
         {
@@ -1791,19 +1791,11 @@ async def test_handle_text_message_reuses_wai_conversation(
     db_session.add(account)
     await db_session.commit()
     capture = _TelegramCapture()
+    monkeypatch.setattr(
+        "app.core.unified_search.generate_embedding",
+        AsyncMock(return_value=[0.02] * 1536),
+    )
 
-    async def fake_run_turn(*args, **kwargs):
-        assert kwargs["turn_context"].client_timezone is None
-        assert kwargs["enable_actions"] is True
-        for _ in range(20):
-            if capture.actions:
-                break
-            await asyncio.sleep(0.01)
-        assert capture.actions == [{"chat_id": 42, "action": "typing"}]
-        yield telegram_routes.TokenEvent(text="Ответ ")
-        yield telegram_routes.TokenEvent(text="Wai")
-
-    monkeypatch.setattr(telegram_routes, "run_turn", fake_run_turn)
     await telegram_routes._handle_text_message(
         db_session,
         capture,
@@ -1812,7 +1804,7 @@ async def test_handle_text_message_reuses_wai_conversation(
         text="Что я обещал?",
     )
 
-    assert capture.messages[-1]["text"] == "Ответ Wai"
+    assert "Что я обещал" in capture.messages[-1]["text"]
     conversation = (
         await db_session.execute(select(Conversation).where(Conversation.user_id == user.id))
     ).scalar_one()
@@ -1820,31 +1812,22 @@ async def test_handle_text_message_reuses_wai_conversation(
     assert account.companion_conversation_id == conversation.id
     reused = await telegram_routes._ensure_telegram_conversation(db_session, account)
     assert reused.id == conversation.id
+    run = (
+        await db_session.execute(select(AgentRun).where(AgentRun.user_id == user.id))
+    ).scalar_one()
+    assert run.conversation_id == conversation.id
+    assert run.trigger_kind == "telegram"
 
 
 @pytest.mark.asyncio
 async def test_handle_text_message_renders_action_proposals(
     db_session: AsyncSession,
-    monkeypatch,
 ):
     user = await _user(db_session, "telegram-action-event@example.com")
     account = TelegramAccount(user_id=user.id, telegram_user_id=67, telegram_chat_id=67)
     db_session.add(account)
     await db_session.commit()
     capture = _TelegramCapture()
-    action_id = str(uuid4())
-
-    async def fake_run_turn(*args, **kwargs):
-        yield telegram_routes.TokenEvent(text="Могу сделать это.")
-        yield telegram_routes.ActionProposedEvent(
-            action_id=action_id,
-            kind="send",
-            tool="send_message_telegram",
-            preview="Send to you: hello",
-            recipient="you",
-        )
-
-    monkeypatch.setattr(telegram_routes, "run_turn", fake_run_turn)
 
     await telegram_routes._handle_text_message(
         db_session,
@@ -1855,17 +1838,72 @@ async def test_handle_text_message_renders_action_proposals(
     )
 
     text = capture.messages[-1]["text"]
-    assert "Могу сделать это." in text
     assert "Нужно подтверждение" in text
-    assert f"/approve {action_id}" in text
-    assert f"/approve_always {action_id}" in text
-    assert f"/reject {action_id}" in text
+    action = (
+        await db_session.execute(
+            select(CompanionPendingAction).where(
+                CompanionPendingAction.user_id == user.id,
+                CompanionPendingAction.tool_name == "send_message_telegram",
+            )
+        )
+    ).scalar_one()
+    assert f"/approve {action.id}" in text
+    assert f"/approve_always {action.id}" in text
+    assert f"/reject {action.id}" in text
+
+
+@pytest.mark.asyncio
+async def test_handle_text_message_uses_active_recording_context(
+    db_session: AsyncSession,
+):
+    user = await _user(db_session, "telegram-active-context@example.com")
+    recording = Recording(
+        user_id=user.id,
+        title="Telegram Voice",
+        type="note",
+        status=RecordingStatus.READY.value,
+    )
+    db_session.add(recording)
+    await db_session.flush()
+    db_session.add(
+        Summary(
+            recording_id=recording.id,
+            summary="Это саммари последнего голосового сообщения.",
+        )
+    )
+    account = TelegramAccount(
+        user_id=user.id,
+        telegram_user_id=68,
+        telegram_chat_id=68,
+        active_context={
+            "ref_type": "recording",
+            "ref_id": str(recording.id),
+            "title": recording.title,
+            "source": "telegram",
+        },
+    )
+    db_session.add(account)
+    await db_session.commit()
+    capture = _TelegramCapture()
+
+    await telegram_routes._handle_text_message(
+        db_session,
+        capture,
+        message={"message_id": 18, "chat": {"id": 68}},
+        account=account,
+        text="?",
+    )
+
+    assert "Это саммари последнего голосового сообщения" in capture.messages[-1]["text"]
+    run = (
+        await db_session.execute(select(AgentRun).where(AgentRun.user_id == user.id))
+    ).scalar_one()
+    assert run.trigger_payload["context"]["ref_id"] == str(recording.id)
 
 
 @pytest.mark.asyncio
 async def test_handle_text_message_empty_answer_and_missing_chat(
     db_session: AsyncSession,
-    monkeypatch,
 ):
     user = await _user(db_session)
     account = TelegramAccount(user_id=user.id, telegram_user_id=47, telegram_chat_id=47)
@@ -1873,11 +1911,6 @@ async def test_handle_text_message_empty_answer_and_missing_chat(
     await db_session.commit()
     capture = _TelegramCapture()
 
-    async def empty_run_turn(*args, **kwargs):
-        if False:
-            yield telegram_routes.TokenEvent(text="")
-
-    monkeypatch.setattr(telegram_routes, "run_turn", empty_run_turn)
     await telegram_routes._handle_text_message(
         db_session,
         capture,
@@ -1885,6 +1918,7 @@ async def test_handle_text_message_empty_answer_and_missing_chat(
         account=account,
         text="пусто",
     )
+    message_count = len(capture.messages)
     await telegram_routes._handle_text_message(
         db_session,
         capture,
@@ -1893,7 +1927,8 @@ async def test_handle_text_message_empty_answer_and_missing_chat(
         text="без чата",
     )
 
-    assert capture.messages[-1]["text"] == "Wai не вернул ответ."
+    assert len(capture.messages) == message_count
+    assert capture.messages[-1]["text"]
 
 
 @pytest.mark.asyncio
@@ -1907,10 +1942,10 @@ async def test_handle_text_message_reports_wai_errors(
     await db_session.commit()
     capture = _TelegramCapture()
 
-    async def fake_run_turn(*args, **kwargs):
-        yield telegram_routes.ErrorEvent(code="model_error", message="boom")
+    async def fail_wai_run(*args, **kwargs):
+        raise RuntimeError("boom")
 
-    monkeypatch.setattr(telegram_routes, "run_turn", fake_run_turn)
+    monkeypatch.setattr(telegram_routes, "run_wai_run_inline", fail_wai_run)
     await telegram_routes._handle_text_message(
         db_session,
         capture,
@@ -2488,16 +2523,16 @@ async def test_handle_update_processes_linked_text_message(
     await db_session.commit()
     capture = _TelegramCapture()
 
-    async def fake_run_turn(*args, **kwargs):
-        yield telegram_routes.TokenEvent(text="ответ")
-
     @asynccontextmanager
     async def fake_db_context():
         yield db_session
 
-    monkeypatch.setattr(telegram_routes, "run_turn", fake_run_turn)
     monkeypatch.setattr(telegram_routes, "TelegramBotClient", lambda: capture)
     monkeypatch.setattr(telegram_routes, "get_db_context", fake_db_context)
+    monkeypatch.setattr(
+        "app.core.unified_search.generate_embedding",
+        AsyncMock(return_value=[0.02] * 1536),
+    )
 
     await telegram_routes._handle_update(
         {
@@ -2511,7 +2546,10 @@ async def test_handle_update_processes_linked_text_message(
         }
     )
 
-    assert capture.messages[-1]["text"] == "ответ"
+    assert "вопрос" in capture.messages[-1]["text"]
+    assert (
+        await db_session.execute(select(AgentRun).where(AgentRun.user_id == user.id))
+    ).scalar_one()
     update = await db_session.get(TelegramUpdate, 100)
     assert update.status == "completed"
 

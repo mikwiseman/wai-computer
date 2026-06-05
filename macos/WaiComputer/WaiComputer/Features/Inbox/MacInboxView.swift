@@ -194,7 +194,7 @@ struct MacInboxView: View {
                         }
                     }
                 } label: {
-                    Label(t("Ask Wai", "Спросить Wai"), systemImage: "sparkles")
+                    Label(t("Wai", "Wai"), systemImage: "sparkles")
                 }
             } label: {
                 Image(systemName: "plus")
@@ -240,7 +240,7 @@ struct MacInboxView: View {
                 Text(t("All", "Все")).tag(Optional<InboxSourceKind>.none)
                 Text(t("Recordings", "Записи")).tag(Optional.some(InboxSourceKind.recording))
                 Text(t("Materials", "Материалы")).tag(Optional.some(InboxSourceKind.item))
-                Text(t("Ask Wai", "Wai")).tag(Optional.some(InboxSourceKind.chat))
+                Text(t("Wai", "Wai")).tag(Optional.some(InboxSourceKind.chat))
             }
             .pickerStyle(.segmented)
             .labelsHidden()
@@ -397,8 +397,8 @@ struct MacInboxView: View {
                             Text(t("Add to Inbox", "Добавить в Инбокс"))
                                 .font(Typography.displaySmall)
                             Text(t(
-                                "Record, upload a file, paste a link or text, or ask Wai to work.",
-                                "Запишите, загрузите файл, вставьте ссылку или текст, или попросите Wai выполнить задачу."
+                                "Record, upload a file, paste a link or text, or give Wai a task.",
+                                "Запишите, загрузите файл, вставьте ссылку или текст, или дайте Wai задачу."
                             ))
                             .font(Typography.bodySmall)
                             .foregroundStyle(Palette.textSecondary)
@@ -438,7 +438,7 @@ struct MacInboxView: View {
                             action: { activeCreateMode = .paste }
                         )
                         MacInboxCreateAction(
-                            title: t("Ask Wai", "Спросить Wai"),
+                            title: t("Wai", "Wai"),
                             subtitle: t("Search, remember, plan, or act", "Искать, помнить, планировать или действовать"),
                             systemImage: "sparkles",
                             accent: .orange,
@@ -778,7 +778,7 @@ private struct MacInboxEmptyState: View {
                 .buttonStyle(.bordered)
 
                 Button(action: onChat) {
-                    Label(t("Ask Wai", "Спросить Wai"), systemImage: "sparkles")
+                    Label(t("Wai", "Wai"), systemImage: "sparkles")
                 }
                 .buttonStyle(.bordered)
 
@@ -825,11 +825,11 @@ private struct MacInboxEmptyState: View {
         case .item:
             return t("Upload a file or paste a link/text.", "Загрузите файл или вставьте ссылку/текст.")
         case .chat:
-            return t("Ask Wai to search, remember, plan, or act.", "Попросите Wai искать, помнить, планировать или действовать.")
+            return t("Give Wai a task to search, remember, plan, or act.", "Дайте Wai задачу: искать, помнить, планировать или действовать.")
         case .none:
             return t(
-                "Record, upload a file, paste a link, or ask Wai to work.",
-                "Запишите, загрузите файл, вставьте ссылку или попросите Wai выполнить задачу."
+                "Record, upload a file, paste a link, or give Wai a task.",
+                "Запишите, загрузите файл, вставьте ссылку или дайте Wai задачу."
             )
         }
     }
@@ -877,7 +877,7 @@ private struct MacInboxDisplayRow: Identifiable, Equatable {
         case .item:
             return text("Untitled Material", "Материал без названия", language: language)
         case .chat:
-            return text("Ask Wai", "Спросить Wai", language: language)
+            return text("Wai", "Wai", language: language)
         }
     }
 

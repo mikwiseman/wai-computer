@@ -2970,7 +2970,7 @@ function inboxTitle(row: InboxRow, locale: Locale): string {
     return locale === "ru" ? "Без названия" : "Untitled recording";
   }
   if (row.source_kind === "chat") {
-    return locale === "ru" ? "Спросить Wai" : "Ask Wai";
+    return "Wai";
   }
   return locale === "ru" ? "Без названия" : "Untitled material";
 }
@@ -3003,7 +3003,7 @@ function sourceLabel(kind: InboxSourceKind, locale: Locale): string {
 function inboxSublabel(row: InboxRow, locale: Locale): string | null {
   if (!row.sublabel) return null;
   if (row.source_kind === "chat" && row.sublabel === "Agent thread") {
-    return locale === "ru" ? "Агентский диалог" : "Agent thread";
+    return locale === "ru" ? "Агентская сессия" : "Agent session";
   }
   return row.sublabel;
 }
@@ -3351,7 +3351,7 @@ function UniversalInboxPanel({
         detail: { kind: "chat", id: chat.id },
         title: chat.title,
         source_label: "Wai",
-        sublabel: "Agent thread",
+        sublabel: "Agent session",
         activity_at: chat.last_message_at ?? chat.created_at,
         created_at: chat.created_at,
         updated_at: chat.updated_at,
@@ -3378,7 +3378,7 @@ function UniversalInboxPanel({
     { key: "all", label: locale === "ru" ? "Все" : "All" },
     { key: "recording", label: locale === "ru" ? "Записи" : "Recordings" },
     { key: "item", label: locale === "ru" ? "Материалы" : "Materials" },
-    { key: "chat", label: locale === "ru" ? "Wai" : "Ask Wai" },
+    { key: "chat", label: "Wai" },
   ];
   const statusFilters: Array<{ key: InboxFilterStatus; label: string }> = [
     { key: "all", label: locale === "ru" ? "Любой статус" : "Any status" },
@@ -3557,8 +3557,8 @@ function UniversalInboxPanel({
                 <h3>{locale === "ru" ? "Добавить в Инбокс" : "Add to Inbox"}</h3>
                 <p>
                   {locale === "ru"
-                    ? "Запишите, загрузите файл, вставьте ссылку или попросите Wai выполнить задачу."
-                    : "Record, upload a file, paste a link, or ask Wai to work."}
+                    ? "Запишите, загрузите файл, вставьте ссылку или дайте Wai задачу."
+                    : "Record, upload a file, paste a link, or give Wai a task."}
                 </p>
               </div>
               <button
@@ -3623,7 +3623,7 @@ function UniversalInboxPanel({
 
               <section className="inbox-command-card">
                 <div>
-                  <h4>{locale === "ru" ? "Спросить Wai" : "Ask Wai"}</h4>
+                  <h4>Wai</h4>
                   <p>
                     {locale === "ru"
                       ? "Искать, помнить, планировать или действовать."
@@ -3635,7 +3635,7 @@ function UniversalInboxPanel({
                   className="wai-primary-button"
                   onClick={() => void handleNewChat()}
                 >
-                  {locale === "ru" ? "Новый диалог" : "New thread"}
+                  {locale === "ru" ? "Новая сессия" : "New session"}
                 </button>
               </section>
             </div>

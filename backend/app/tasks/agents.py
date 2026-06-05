@@ -14,9 +14,12 @@ from app.core.agent_runtime import (
     execute_agent_step,
     pop_agent_runs_to_dispatch_after_commit,
     run_job,
-    static_config_planner,
+)
+from app.core.agent_runtime import (
+    static_config_planner as static_config_planner,
 )
 from app.core.companion_actions import expire_due_actions
+from app.core.wai_agent import planner_for_agent
 from app.db.session import get_db_context
 from app.models.agent import Agent, AgentRun
 from app.models.companion_pending_action import CompanionPendingAction
@@ -85,10 +88,16 @@ async def _run_agent_async(run_id: str) -> str:
 
         try:
             await agent_guard.record_run(str(run.user_id))
+            agent = (
+                await db.execute(select(Agent).where(Agent.id == run.agent_id))
+            ).scalar_one_or_none()
+            if agent is None:
+                await _mark_failed(run, "Agent not found")
+                return "failed"
             run = await run_job(
                 db,
                 run.id,
-                planner=static_config_planner,
+                planner=planner_for_agent(agent),
                 executor=execute_agent_step,
             )
             final_status = run.status
@@ -262,10 +271,16 @@ async def _expire_due_actions_async() -> int:
                 )
             ).scalar_one_or_none()
             if run is not None:
+                agent = (
+                    await db.execute(select(Agent).where(Agent.id == run.agent_id))
+                ).scalar_one_or_none()
+                if agent is None:
+                    await _mark_failed(run, "Agent not found")
+                    continue
                 await run_job(
                     db,
                     run.id,
-                    planner=static_config_planner,
+                    planner=planner_for_agent(agent),
                     executor=execute_agent_step,
                 )
                 child_run_ids.extend(pop_agent_runs_to_dispatch_after_commit(db))

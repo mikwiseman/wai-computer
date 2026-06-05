@@ -498,8 +498,8 @@ export function BrainPanel({
         </div>
         <p className="brain-panel__proposal-detail">
           {t(
-            `Ask Wai using approved knowledge from ${brainName}.`,
-            `Попросите Wai использовать подтвержденные знания из ${brainName}.`,
+            `Give Wai a task using approved knowledge from ${brainName}.`,
+            `Дайте Wai задачу с подтвержденными знаниями из ${brainName}.`,
           )}
         </p>
         {sourceCount === 0 ? (
@@ -533,7 +533,7 @@ export function BrainPanel({
                 {t("Copy context", "Скопировать контекст")}
               </button>
               <button type="button" disabled={!canOpenWai} onClick={() => void onOpenWai?.()}>
-                {t("Open Ask Wai", "Открыть Wai")}
+                {t("Open Wai", "Открыть Wai")}
               </button>
             </div>
             <details className="brain-panel__context-preview">

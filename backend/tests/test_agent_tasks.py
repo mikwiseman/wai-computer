@@ -9,6 +9,7 @@ import pytest
 from sqlalchemy import select
 
 from app.core import companion_actions as ca
+from app.core.agent_runtime import static_config_planner
 from app.models.agent import Agent, AgentRun, AgentStep
 from app.models.companion import Conversation
 from app.models.companion_pending_action import CompanionPendingAction
@@ -233,7 +234,7 @@ async def test_run_agent_async_success_releases_slot(db_session, monkeypatch):
     async def fake_run_job(db, run_id, *, planner, executor):
         assert db is db_session
         assert run_id == run.id
-        assert planner is agent_tasks.static_config_planner
+        assert planner is static_config_planner
         assert executor is agent_tasks.execute_agent_step
         run.status = "done"
         return run
@@ -486,7 +487,7 @@ async def test_expire_due_actions_task_resumes_agent_runs_as_failed(
     await agent_tasks.run_job(
         db_session,
         run.id,
-        planner=agent_tasks.static_config_planner,
+        planner=static_config_planner,
         executor=agent_tasks.execute_agent_step,
     )
     assert run.status == "awaiting_approval"

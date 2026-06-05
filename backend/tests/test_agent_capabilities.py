@@ -19,7 +19,7 @@ from app.core.agent_capabilities import (
 def test_capabilities_response_serializes_runtime_modes_and_surfaces():
     body = capabilities_response(deployment_mode="self_host")
 
-    assert body["schema_version"] == "2026-06-04"
+    assert body["schema_version"] == "2026-06-05"
     assert body["runtime_modes"][0]["available"] is False
     assert body["runtime_modes"][1]["available"] is True
     note = next(capability for capability in body["capabilities"] if capability["id"] == "wai.note")
@@ -46,6 +46,11 @@ def test_capability_tool_contracts_stay_in_sync():
         "note",
         "create_artifact",
         "search_wai",
+        "load_context",
+        "respond",
+        "respond_from_context",
+        "respond_from_search",
+        "missing_capability",
         "propose_memory",
         "propose_action",
         "delegate_agent",
@@ -72,6 +77,33 @@ def test_validate_agent_config_accepts_all_enabled_tools():
                 {
                     "tool": "search_wai",
                     "args": {"query": "roadmap", "limit": MAX_AGENT_SEARCH_LIMIT},
+                },
+                {
+                    "tool": "load_context",
+                    "args": {
+                        "ref_type": "recording",
+                        "ref_id": "11111111-1111-4111-8111-111111111111",
+                    },
+                },
+                {"tool": "respond", "args": {"text": "Done"}},
+                {
+                    "tool": "respond_from_context",
+                    "args": {
+                        "ref_type": "item",
+                        "ref_id": "11111111-1111-4111-8111-111111111111",
+                        "objective": "Answer from this PDF.",
+                    },
+                },
+                {
+                    "tool": "respond_from_search",
+                    "args": {"query": "roadmap"},
+                },
+                {
+                    "tool": "missing_capability",
+                    "args": {
+                        "capability": "local.shell",
+                        "reason": "Shell execution is unavailable here.",
+                    },
                 },
                 {
                     "tool": "propose_memory",

@@ -101,7 +101,7 @@ describe("CompanionPanel", () => {
     expect(composer.value).toBe("Summarize my last meeting and suggest next steps.");
   });
 
-  it("creates a new thread via the + New thread button", async () => {
+  it("creates a new session via the + New session button", async () => {
     const user = userEvent.setup();
     mockListChats.mockResolvedValue({ chats: [] });
     const newChat = makeChat("new-1");
@@ -228,7 +228,7 @@ describe("CompanionPanel", () => {
 
     const composer = screen.getByTestId("companion-composer");
     await user.type(composer, "Hi");
-    await user.click(screen.getByRole("button", { name: /^Ask$/i }));
+    await user.click(screen.getByRole("button", { name: /^Send$/i }));
 
     await waitFor(() => {
       expect(screen.getByText("Done.")).toBeInTheDocument();
@@ -242,9 +242,8 @@ describe("CompanionPanel", () => {
     render(<CompanionPanel recordings={recordings} locale="ru" />);
 
     expect(await screen.findByText("Что сделать Wai?")).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Спросить Wai" })).toBeInTheDocument();
-    // The ask button uses the Russian label.
-    expect(screen.getByRole("button", { name: "Спросить" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Wai" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Отправить" })).toBeInTheDocument();
   });
 
   it("surfaces an error when the initial chat list fails to load", async () => {
@@ -487,7 +486,7 @@ describe("CompanionPanel", () => {
     await screen.findByText("What should Wai do?");
 
     await user.type(screen.getByTestId("companion-composer"), "Hello?");
-    await user.click(screen.getByRole("button", { name: /^Ask$/i }));
+    await user.click(screen.getByRole("button", { name: /^Send$/i }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent("Create failed");
     expect(mockStreamMessage).not.toHaveBeenCalled();
@@ -588,7 +587,7 @@ describe("CompanionPanel", () => {
     await screen.findByText("What should Wai do?");
 
     await user.type(screen.getByTestId("companion-composer"), "When did pricing come up?");
-    await user.click(screen.getByRole("button", { name: /^Ask$/i }));
+    await user.click(screen.getByRole("button", { name: /^Send$/i }));
 
     // Phase 1: before any token, the searching hint + tool-call progress show.
     const bubble = await screen.findByTestId("companion-streaming");
@@ -634,7 +633,7 @@ describe("CompanionPanel", () => {
     await screen.findByTestId("companion-composer");
 
     await user.type(screen.getByTestId("companion-composer"), "Hi");
-    await user.click(screen.getByRole("button", { name: /^Ask$/i }));
+    await user.click(screen.getByRole("button", { name: /^Send$/i }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent("Slow down");
     // Stream finished (error branch), so the composer is interactive again.
@@ -664,7 +663,7 @@ describe("CompanionPanel", () => {
     await screen.findByTestId("companion-composer");
 
     await user.type(screen.getByTestId("companion-composer"), "Hi");
-    await user.click(screen.getByRole("button", { name: /^Ask$/i }));
+    await user.click(screen.getByRole("button", { name: /^Send$/i }));
 
     // The Stop button appears while loading.
     const stop = await screen.findByTestId("companion-stop");
@@ -674,7 +673,7 @@ describe("CompanionPanel", () => {
       expect(screen.queryByTestId("companion-streaming")).not.toBeInTheDocument();
     });
     expect(screen.getByTestId("companion-composer")).not.toBeDisabled();
-    expect(screen.getByRole("button", { name: /^Ask$/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Send$/i })).toBeInTheDocument();
     releaseHang();
   });
 

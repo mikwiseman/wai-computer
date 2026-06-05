@@ -45,7 +45,8 @@ from app.core.memory_proposal import propose_block_update
 from app.core.unified_search import unified_search
 from app.models.agent import Agent, AgentRun, AgentStep
 from app.models.companion_pending_action import CompanionPendingAction
-from app.models.item import Item, ItemChunk
+from app.models.item import Item, ItemChunk, ItemSummary
+from app.models.recording import ActionItem, Recording, Segment, Summary
 
 AGENT_RUNS_TO_DISPATCH_SESSION_KEY = "agent_runs_to_dispatch_after_commit"
 
@@ -361,6 +362,21 @@ def _content_hash(title: str, body: str, source_ref: str) -> str:
     ).hexdigest()
 
 
+def _is_cyrillic(text: str) -> bool:
+    return any("а" <= char.lower() <= "я" or char.lower() == "ё" for char in text)
+
+
+def _agent_text(language_source: str, english: str, russian: str) -> str:
+    return russian if _is_cyrillic(language_source) else english
+
+
+def _shorten(text: str | None, limit: int) -> str:
+    value = " ".join((text or "").split())
+    if len(value) <= limit:
+        return value
+    return value[: limit - 3].rstrip() + "..."
+
+
 async def _create_artifact(
     session: AsyncSession,
     run: AgentRun,
@@ -400,13 +416,254 @@ async def _create_artifact(
         content_hash=_content_hash(title, body, source_ref),
         authority_score=0.7,
         salience_score=0.5,
-        metadata_={"agent_run_id": str(run.id), "agent_step_idx": tool_call_idx},
+        metadata_={
+            "agent_run_id": str(run.id),
+            "agent_step_idx": tool_call_idx,
+            "filename": args.get("filename"),
+            "mime_type": args.get("mime_type"),
+            "preview_kind": args.get("preview_kind"),
+        },
     )
     session.add(item)
     await session.flush()
     session.add(ItemChunk(item_id=item.id, seq=0, content=f"{title}\n\n{body}"))
     await session.flush()
-    return {"item_id": str(item.id), "created": True}
+    return {
+        "item_id": str(item.id),
+        "created": True,
+        "title": title,
+        "kind": kind,
+        "filename": args.get("filename"),
+        "mime_type": args.get("mime_type"),
+        "preview_kind": args.get("preview_kind"),
+    }
+
+
+async def _load_recording_context(
+    session: AsyncSession, run: AgentRun, ref_id: UUID
+) -> dict[str, Any]:
+    recording = (
+        await session.execute(
+            select(Recording).where(
+                Recording.id == ref_id,
+                Recording.user_id == run.user_id,
+                Recording.deleted_at.is_(None),
+            )
+        )
+    ).scalar_one_or_none()
+    if recording is None:
+        raise AgentRuntimeError("context_not_found", "Recording context not found")
+    summary = (
+        await session.execute(select(Summary).where(Summary.recording_id == recording.id))
+    ).scalar_one_or_none()
+    segments = (
+        await session.execute(
+            select(Segment)
+            .where(Segment.recording_id == recording.id)
+            .order_by(Segment.start_ms, Segment.id)
+            .limit(30)
+        )
+    ).scalars().all()
+    action_items = (
+        await session.execute(
+            select(ActionItem)
+            .where(ActionItem.recording_id == recording.id)
+            .order_by(ActionItem.created_at, ActionItem.id)
+        )
+    ).scalars().all()
+    transcript = "\n".join(s.content for s in segments if s.content).strip()
+    return {
+        "ref_type": "recording",
+        "ref_id": str(recording.id),
+        "title": recording.title,
+        "status": recording.status,
+        "summary": summary.summary if summary else None,
+        "topics": summary.topics if summary else None,
+        "decisions": summary.decisions if summary else None,
+        "action_items": [
+            {
+                "task": action.task,
+                "owner": action.owner,
+                "due_date": action.due_date.isoformat() if action.due_date else None,
+                "priority": action.priority,
+                "status": action.status,
+            }
+            for action in action_items
+        ],
+        "transcript_excerpt": _shorten(transcript, 1600),
+    }
+
+
+async def _load_item_context(
+    session: AsyncSession, run: AgentRun, ref_id: UUID
+) -> dict[str, Any]:
+    item = (
+        await session.execute(
+            select(Item).where(
+                Item.id == ref_id,
+                Item.user_id == run.user_id,
+                Item.deleted_at.is_(None),
+            )
+        )
+    ).scalar_one_or_none()
+    if item is None:
+        raise AgentRuntimeError("context_not_found", "Material context not found")
+    summary = (
+        await session.execute(select(ItemSummary).where(ItemSummary.item_id == item.id))
+    ).scalar_one_or_none()
+    return {
+        "ref_type": "item",
+        "ref_id": str(item.id),
+        "title": item.title,
+        "kind": item.kind,
+        "summary": summary.summary if summary else None,
+        "key_points": summary.key_points if summary else None,
+        "action_items": summary.action_items if summary else None,
+        "body_excerpt": _shorten(item.body, 1600),
+    }
+
+
+async def _load_context(
+    session: AsyncSession, run: AgentRun, args: dict[str, Any]
+) -> dict[str, Any]:
+    ref_type = str(args.get("ref_type") or "").strip()
+    raw_ref_id = str(args.get("ref_id") or "").strip()
+    try:
+        ref_id = UUID(raw_ref_id)
+    except ValueError as exc:
+        raise AgentRuntimeError(
+            "invalid_tool_args",
+            "load_context.ref_id must be a UUID string",
+        ) from exc
+    if ref_type == "recording":
+        return await _load_recording_context(session, run, ref_id)
+    if ref_type == "item":
+        return await _load_item_context(session, run, ref_id)
+    raise AgentRuntimeError(
+        "invalid_tool_args",
+        "load_context.ref_type must be recording or item",
+    )
+
+
+async def _respond_from_context(
+    session: AsyncSession, run: AgentRun, args: dict[str, Any]
+) -> dict[str, Any]:
+    context = await _load_context(session, run, args)
+    objective = str(args.get("objective") or "").strip()
+    title = context.get("title") or (
+        "recording" if context["ref_type"] == "recording" else "material"
+    )
+    body = (
+        context.get("summary")
+        or context.get("body_excerpt")
+        or context.get("transcript_excerpt")
+        or ""
+    )
+    if not body:
+        text = _agent_text(
+            objective,
+            f"I found {title}, but it has no readable summary or transcript yet.",
+            f"Нашел {title}, но у него пока нет читаемого саммари или расшифровки.",
+        )
+    else:
+        lead = _agent_text(
+            objective,
+            f"Continuing from {title}:",
+            f"Продолжаю от контекста «{title}»:",
+        )
+        text = f"{lead}\n\n{_shorten(body, 2500)}"
+    return {"text": text, "context": context}
+
+
+async def _latest_search_payload(
+    session: AsyncSession, run: AgentRun
+) -> dict[str, Any] | None:
+    result = (
+        await session.execute(
+            select(AgentStep)
+            .where(
+                AgentStep.run_id == run.id,
+                AgentStep.kind == "tool_result",
+            )
+            .order_by(AgentStep.idx.desc())
+        )
+    ).scalars().all()
+    for step in result:
+        payload = step.payload or {}
+        if isinstance(payload.get("hits"), list):
+            return payload
+    return None
+
+
+async def _respond_from_search(
+    session: AsyncSession, run: AgentRun, args: dict[str, Any]
+) -> dict[str, Any]:
+    query = str(args.get("query") or "").strip()
+    payload = await _latest_search_payload(session, run)
+    hits = (payload or {}).get("hits") or []
+    if not hits:
+        return {
+            "text": _agent_text(
+                query,
+                f"I could not find relevant Wai material for: {query}",
+                f"Не нашел релевантных материалов Wai по запросу: {query}",
+            )
+        }
+    lines = [
+        _agent_text(
+            query,
+            f"Found {len(hits)} relevant Wai result(s) for: {query}",
+            f"Нашел {len(hits)} релевантных результата Wai по запросу: {query}",
+        )
+    ]
+    for hit in hits[:5]:
+        title = str(hit.get("title") or hit.get("kind") or "Untitled").strip()
+        snippet = _shorten(str(hit.get("snippet") or ""), 220)
+        if snippet:
+            lines.append(f"- {title}: {snippet}")
+        else:
+            lines.append(f"- {title}")
+    return {"text": "\n".join(lines), "hits": hits[:5]}
+
+
+async def _collect_final_result(
+    session: AsyncSession, run: AgentRun
+) -> dict[str, Any]:
+    steps = (
+        await session.execute(
+            select(AgentStep).where(AgentStep.run_id == run.id).order_by(AgentStep.idx)
+        )
+    ).scalars().all()
+    output_text: str | None = None
+    artifacts: list[dict[str, Any]] = []
+    for step in steps:
+        if step.kind != "tool_result":
+            continue
+        payload = step.payload or {}
+        text = payload.get("text")
+        if isinstance(text, str) and text.strip():
+            output_text = text.strip()
+        if payload.get("item_id"):
+            artifacts.append(
+                {
+                    "item_id": payload.get("item_id"),
+                    "title": payload.get("title"),
+                    "kind": payload.get("kind"),
+                    "filename": payload.get("filename"),
+                    "mime_type": payload.get("mime_type"),
+                    "preview_kind": payload.get("preview_kind"),
+                }
+            )
+    result: dict[str, Any] = {
+        "status": "done",
+        "completed_at": _now().isoformat(),
+        "done_spec": run.done_spec or {},
+    }
+    if output_text:
+        result["output_text"] = output_text
+    if artifacts:
+        result["artifacts"] = artifacts
+    return result
 
 
 def _delegate_trigger_key(idempotency_key: str) -> str:
@@ -622,6 +879,40 @@ async def execute_agent_step(
             },
         )
 
+    if tool == "load_context":
+        payload = await _load_context(session, run, args)
+        return AgentStepResult(status="done", payload=payload)
+
+    if tool == "respond":
+        text = str(args.get("text") or "").strip()
+        if not text:
+            raise AgentRuntimeError("invalid_tool_args", "respond.text is required")
+        return AgentStepResult(status="done", payload={"text": text})
+
+    if tool == "respond_from_context":
+        payload = await _respond_from_context(session, run, args)
+        return AgentStepResult(status="done", payload=payload)
+
+    if tool == "respond_from_search":
+        payload = await _respond_from_search(session, run, args)
+        return AgentStepResult(status="done", payload=payload)
+
+    if tool == "missing_capability":
+        capability = str(args.get("capability") or "").strip()
+        reason = str(args.get("reason") or "").strip()
+        if not capability:
+            raise AgentRuntimeError(
+                "invalid_tool_args", "missing_capability.capability is required"
+            )
+        if not reason:
+            raise AgentRuntimeError(
+                "invalid_tool_args", "missing_capability.reason is required"
+            )
+        raise AgentRuntimeError(
+            "missing_capability",
+            f"{capability}: {reason}",
+        )
+
     if tool == "propose_memory":
         content = str(args.get("content") or "").strip()
         block = str(args.get("block") or "topics").strip()
@@ -700,7 +991,7 @@ async def execute_agent_step(
         row = await propose_action(
             session,
             user_id=run.user_id,
-            conversation_id=None,
+            conversation_id=run.conversation_id,
             agent_run_id=run.id,
             agent_step_idx=tool_call_idx,
             kind=kind,
@@ -908,11 +1199,7 @@ async def run_job(
             return run
         if await _find_step(session, run.id, kind="final") is None:
             run.status = "done"
-            run.result = {
-                "status": "done",
-                "completed_at": _now().isoformat(),
-                "done_spec": run.done_spec or {},
-            }
+            run.result = await _collect_final_result(session, run)
             run.finished_at = _now()
             agent.last_run_at = run.finished_at
             if run.content_hash:

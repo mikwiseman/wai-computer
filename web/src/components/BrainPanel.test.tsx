@@ -292,7 +292,7 @@ describe("BrainPanel", () => {
     );
     expect(screen.getByText(/2 approved items ready for Wai/i)).toBeInTheDocument();
     expect(screen.getByText("What Wai will see")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Open Ask Wai" }));
+    fireEvent.click(screen.getByRole("button", { name: "Open Wai" }));
     expect(onOpenWai).toHaveBeenCalled();
 
     fireEvent.click(screen.getByText("Advanced"));

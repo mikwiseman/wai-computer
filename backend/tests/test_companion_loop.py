@@ -402,17 +402,20 @@ class TestRunTurn:
 
 @pytest_asyncio.fixture
 async def stub_openai_for_route(monkeypatch):
-    holder = {"fake": None}
+    holder = {"runs": []}
 
-    def install() -> FakeOpenAI:
-        fake = FakeOpenAI([_DeltaEvent("Found it."), _completed("Found it.")])
-        holder["fake"] = fake
+    def install():
+        async def fake_run_wai_run_inline(_db, run):
+            holder["runs"].append(run)
+            run.status = "done"
+            run.result = {"output_text": "Found it."}
+            return run
+
         monkeypatch.setattr(
-            "app.core.companion.get_openai_client",
-            lambda: fake,
+            "app.api.routes.companion.run_wai_run_inline",
+            fake_run_wai_run_inline,
             raising=True,
         )
-        return fake
 
     return install, holder
 
@@ -448,36 +451,33 @@ class TestPostMessageSSE:
         ]
         assert events == ["turn_start", "token", "done"]
         assert "Found it." in body
-        assert holder["fake"] is not None
-        assert len(holder["fake"].calls) == 1
+        assert len(holder["runs"]) == 1
 
     async def test_sse_actions_capability_enables_agentic_action_loop(
         self,
         client: AsyncClient,
         auth_headers: dict,
-        stub_openai_for_route,
     ):
-        install, holder = stub_openai_for_route
         chat = (
             await client.post(
                 "/api/companion/chats", json={}, headers=auth_headers
             )
         ).json()
-        install()
 
         response = await client.post(
             f"/api/companion/chats/{chat['id']}/messages",
             json={
-                "content": "open my launch notes",
+                "content": "send message hello",
                 "client_capabilities": ["actions_v1"],
             },
             headers=auth_headers,
         )
         assert response.status_code == 200
-        assert holder["fake"] is not None
-        tools = holder["fake"].calls[0]["tools"]
-        assert any(t.get("name") == "request_tool_group" for t in tools)
-        assert any(t.get("type") == "web_search" for t in tools)
+        body = response.text
+        assert "event: action_proposed" in body
+        assert "send_message_telegram" in body
+        assert "linked chat" in body
+        assert "hello" in body
 
     async def test_first_user_message_auto_titles_new_chat(
         self,

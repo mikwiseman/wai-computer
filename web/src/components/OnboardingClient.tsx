@@ -38,11 +38,11 @@ const COPY: Record<
     step: "Step 1 of 1",
     heading: "Set up your universal Inbox",
     lead:
-      "WaiComputer keeps recordings, files, links, notes, and Wai agent threads in one Inbox. Add anything, filter by type, and ask Wai when you need an answer or action.",
+      "WaiComputer keeps recordings, files, links, notes, and Wai agent threads in one Inbox. Add anything, filter by type, and give Wai a task when you need an answer or action.",
     setupItems: [
       {
         title: "Add anything",
-        body: "Record, upload a PDF or audio file, paste a link, or ask Wai to work.",
+        body: "Record, upload a PDF or audio file, paste a link, or give Wai a task.",
       },
       {
         title: "Organize once",

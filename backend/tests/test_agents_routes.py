@@ -67,13 +67,18 @@ async def test_agent_capabilities_are_discoverable(client, auth_headers):
     assert response.status_code == 200, response.text
     body = response.json()
     ids = {capability["id"] for capability in body["capabilities"]}
-    assert body["schema_version"] == "2026-06-04"
+    assert body["schema_version"] == "2026-06-05"
     assert body["max_steps"] >= 1
     assert "wai.search" in ids
+    assert "wai.context.load" in ids
+    assert "wai.respond.context" in ids
+    assert "wai.respond.search" in ids
     assert "wai.action.propose" in ids
     assert "local.shell" in ids
     contracts = {contract["name"] for contract in body["tool_contracts"]}
     assert "search_wai" in contracts
+    assert "load_context" in contracts
+    assert "respond_from_context" in contracts
     assert "desktop_open" in contracts
     shell = next(
         capability for capability in body["capabilities"] if capability["id"] == "local.shell"

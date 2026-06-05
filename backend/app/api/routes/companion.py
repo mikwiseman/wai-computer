@@ -4,6 +4,7 @@ import asyncio
 import json
 import logging
 import uuid
+from collections.abc import AsyncIterator
 from dataclasses import asdict
 from datetime import datetime, timezone
 from time import perf_counter
@@ -15,7 +16,14 @@ from pydantic import BaseModel, Field
 from sqlalchemy import and_, select
 
 from app.api.deps import CurrentUser, Database
-from app.core.companion import CompanionError, ErrorEvent, TurnContext, run_turn
+from app.core.companion import (
+    ActionProposedEvent,
+    CompanionError,
+    DoneEvent,
+    ErrorEvent,
+    TokenEvent,
+    TurnStartEvent,
+)
 from app.core.companion_actions import (
     ApprovalError,
     get_pending,
@@ -31,7 +39,9 @@ from app.core.observability import (
     capture_sentry_anomaly,
     safe_query_metadata,
 )
+from app.core.wai_agent import run_wai_run_inline, start_wai_task
 from app.models.companion import ChatMessage, Conversation, MessageCitation
+from app.models.companion_pending_action import CompanionPendingAction
 from app.models.recording import Folder, Recording
 
 logger = logging.getLogger(__name__)
@@ -452,6 +462,101 @@ async def _resolve_viewing_titles(
     return recording_title, folder_name
 
 
+def _active_context_from_request(
+    request: PostMessageRequest,
+    *,
+    viewing_recording_title: str | None,
+) -> dict[str, Any] | None:
+    if request.viewing_recording_id is None:
+        return None
+    context: dict[str, Any] = {
+        "ref_type": "recording",
+        "ref_id": str(request.viewing_recording_id),
+        "source": "companion",
+    }
+    if viewing_recording_title:
+        context["title"] = viewing_recording_title
+    return context
+
+
+async def _run_wai_companion_turn(
+    db: Database,
+    *,
+    user_id: uuid.UUID,
+    chat_id: uuid.UUID,
+    user_text: str,
+    context: dict[str, Any] | None,
+) -> AsyncIterator[Any]:
+    _conversation, run, _created = await start_wai_task(
+        db,
+        user_id=user_id,
+        objective=user_text,
+        conversation_id=chat_id,
+        context=context,
+        trigger_kind="chat",
+        idempotency_key=uuid.uuid4().hex,
+    )
+    payload = run.trigger_payload or {}
+    yield TurnStartEvent(
+        message_id=str(payload.get("user_message_id") or ""),
+        conversation_id=str(chat_id),
+    )
+
+    run = await run_wai_run_inline(db, run)
+    if run.status == "failed":
+        raise CompanionError("wai_agent_failed", run.error or "Wai task failed")
+
+    if run.status == "awaiting_approval":
+        actions = (
+            await db.execute(
+                select(CompanionPendingAction)
+                .where(
+                    CompanionPendingAction.user_id == user_id,
+                    CompanionPendingAction.agent_run_id == run.id,
+                    CompanionPendingAction.status == "pending",
+                )
+                .order_by(CompanionPendingAction.created_at, CompanionPendingAction.id)
+            )
+        ).scalars().all()
+        for action in actions:
+            manifest = action.action_manifest or {}
+            yield ActionProposedEvent(
+                action_id=str(action.id),
+                kind=action.kind,
+                tool=action.tool_name,
+                preview=str(manifest.get("preview") or ""),
+                expires_at=action.expires_at.isoformat(),
+                recipient=action.recipient_display,
+            )
+        return
+
+    result = run.result or {}
+    output_text = str(result.get("output_text") or "").strip()
+    if not output_text:
+        raise CompanionError("empty_agent_output", "Wai task completed without output.")
+
+    assistant_msg = ChatMessage(
+        conversation_id=chat_id,
+        role="assistant",
+        content=[{"type": "text", "text": output_text}],
+        model="wai-agent",
+        latency_ms=0,
+    )
+    db.add(assistant_msg)
+    conversation = await db.get(Conversation, chat_id)
+    if conversation is not None:
+        conversation.last_message_at = datetime.now(timezone.utc)
+    await db.flush()
+    await db.refresh(assistant_msg)
+
+    yield TokenEvent(text=output_text)
+    yield DoneEvent(
+        message_id=str(assistant_msg.id),
+        model="wai-agent",
+        latency_ms=0,
+    )
+
+
 @router.post("/chats/{chat_id}/messages")
 async def post_message(
     chat_id: uuid.UUID,
@@ -473,17 +578,15 @@ async def post_message(
         },
     )
 
-    viewing_recording_title, viewing_folder_name = await _resolve_viewing_titles(
+    viewing_recording_title, _viewing_folder_name = await _resolve_viewing_titles(
         db,
         user.id,
         request.viewing_recording_id,
         request.viewing_folder_id,
     )
-    turn_context = TurnContext(
-        client_local_date=request.client_local_date,
-        client_timezone=request.client_timezone,
+    active_context = _active_context_from_request(
+        request,
         viewing_recording_title=viewing_recording_title,
-        viewing_folder_name=viewing_folder_name,
     )
 
     async def event_stream():
@@ -494,13 +597,12 @@ async def post_message(
             event_count = 0
             failed = False
             try:
-                async for evt in run_turn(
+                async for evt in _run_wai_companion_turn(
                     db,
-                    user.id,
-                    chat_id,
-                    request.content,
-                    turn_context=turn_context,
-                    enable_actions=_CLIENT_CAP_ACTIONS in request.client_capabilities,
+                    user_id=user.id,
+                    chat_id=chat_id,
+                    user_text=request.content,
+                    context=active_context,
                 ):
                     event_count += 1
                     if _client_can_receive(evt, request.client_capabilities):

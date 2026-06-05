@@ -27,7 +27,6 @@ from app.core.agent_runtime import (
     execute_agent_step,
     pop_agent_runs_to_dispatch_after_commit,
     run_job,
-    static_config_planner,
 )
 from app.core.companion_actions import (
     ApprovalError,
@@ -39,6 +38,7 @@ from app.core.companion_actions import (
 )
 from app.core.companion_actuators import ActuationError, execute_action
 from app.core.device_presence import get_owned_device
+from app.core.wai_agent import planner_for_agent
 from app.models.agent import Agent, AgentRun, AgentStep
 from app.models.companion_pending_action import CompanionPendingAction
 
@@ -151,6 +151,7 @@ class CancelRunRequest(BaseModel):
 class AgentRunResponse(BaseModel):
     id: str
     agent_id: str
+    conversation_id: str | None
     parent_run_id: str | None
     parent_step_idx: int | None
     trigger_key: str
@@ -253,6 +254,7 @@ def _run_response(run: AgentRun) -> AgentRunResponse:
     return AgentRunResponse(
         id=str(run.id),
         agent_id=str(run.agent_id),
+        conversation_id=str(run.conversation_id) if run.conversation_id else None,
         parent_run_id=str(run.parent_run_id) if run.parent_run_id else None,
         parent_step_idx=run.parent_step_idx,
         trigger_key=run.trigger_key,
@@ -444,10 +446,18 @@ async def _run_inline(db: Database, run: AgentRun) -> AgentRun:
         )
     try:
         await agent_guard.record_run(str(run.user_id))
+        agent = (
+            await db.execute(select(Agent).where(Agent.id == run.agent_id))
+        ).scalar_one_or_none()
+        if agent is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Agent not found",
+            )
         return await run_job(
             db,
             run.id,
-            planner=static_config_planner,
+            planner=planner_for_agent(agent),
             executor=execute_agent_step,
         )
     finally:
@@ -464,10 +474,15 @@ _APPROVAL_HTTP_STATUS = {
 
 
 async def _resume_after_action(db: Database, run: AgentRun) -> AgentRun:
+    agent = (
+        await db.execute(select(Agent).where(Agent.id == run.agent_id))
+    ).scalar_one_or_none()
+    if agent is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Agent not found")
     resumed = await run_job(
         db,
         run.id,
-        planner=static_config_planner,
+        planner=planner_for_agent(agent),
         executor=execute_agent_step,
     )
     await _dispatch_queued_child_runs_or_fail(db)

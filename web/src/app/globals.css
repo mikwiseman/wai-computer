@@ -2267,8 +2267,8 @@ a.primary-button[aria-disabled="true"]:hover {
   padding: 1rem 1.05rem;
 }
 
-/* "Ask Wai" panel heading — serif, mirror Mac CompanionView header
- * which uses `.font(.system(size: 18, weight: .semibold))` for "Ask Wai". */
+/* Wai panel heading — serif, mirror Mac CompanionView header
+ * which uses `.font(.system(size: 18, weight: .semibold))` for "Wai". */
 .qa-panel__header h2 {
   font-family: var(--font-family-serif);
   font-size: 1.35rem;
@@ -2334,7 +2334,7 @@ a.primary-button[aria-disabled="true"]:hover {
   gap: 0.75rem;
 }
 
-/* Ask Wai answer bubble — mirror Mac `CompanionView.bubble` for Wai role:
+/* Wai answer bubble — mirror Mac `CompanionView.bubble` for Wai role:
  * `Color.primary.opacity(0.045)` background + accent border-left. */
 .qa-bubble {
   max-width: 860px;
