@@ -389,7 +389,9 @@ async def test_extract_builds_guarded_prompt_and_filters_model_output(
     assert "<transcript>" in prompt
     assert "SECURITY:" in prompt
     assert "Bob speaking." in prompt
-    assert responses.calls[0]["temperature"] == 0
+    assert responses.calls[0]["reasoning"] == {"effort": "low"}
+    assert responses.calls[0]["max_output_tokens"] == 512
+    assert "temperature" not in responses.calls[0]
 
 
 @pytest.mark.asyncio

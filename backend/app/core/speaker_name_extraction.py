@@ -163,7 +163,6 @@ async def extract_speaker_names(
             text_format=_NameExtractionSchema,
             reasoning={"effort": "low"},
             max_output_tokens=512,
-            temperature=0,
         )
         ensure_response_completed(response, operation="Speaker name extraction")
     except Exception as exc:  # noqa: BLE001 -- name extraction is best-effort
