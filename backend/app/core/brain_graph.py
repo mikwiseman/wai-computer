@@ -16,6 +16,7 @@ never fabricated edges.
 
 from __future__ import annotations
 
+import hashlib
 import uuid
 from dataclasses import dataclass
 from datetime import datetime
@@ -24,9 +25,9 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.entity import Entity, EntityMention
+from app.models.entity import Entity, EntityMention, EntityPageSnapshot
 from app.models.item import Item
-from app.models.recording import Recording
+from app.models.recording import ActionItem, Recording
 
 
 @dataclass
@@ -297,6 +298,80 @@ def _citation_id(source_kind: str, source_id: uuid.UUID | str) -> str:
     return f"{source_kind}:{source_id}"
 
 
+def _source_fingerprint(citation_ids: list[str], entity_updated_at: datetime | None) -> str:
+    payload = "\x00".join(sorted(citation_ids))
+    if entity_updated_at is not None:
+        payload += f"\x00{entity_updated_at.isoformat()}"
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def entity_source_fingerprint(page: EntityPage, entity_updated_at: datetime | None) -> str:
+    """Cache key for an entity's compiled dossier — its source set + entity mtime."""
+    return _source_fingerprint([c.id for c in page.citations], entity_updated_at)
+
+
+def _parse_iso(value: Any) -> datetime | None:
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        return datetime.fromisoformat(value)
+    except ValueError:
+        return None
+
+
+def _facts_from_snapshot(rows: Any) -> list[EntityPageFact]:
+    out: list[EntityPageFact] = []
+    for i, row in enumerate(rows or []):
+        if not isinstance(row, dict):
+            continue
+        text = str(row.get("text") or "").strip()
+        if not text:
+            continue
+        out.append(
+            EntityPageFact(
+                id=f"fact:{i}", text=text, citation_ids=list(row.get("citation_ids") or [])
+            )
+        )
+    return out
+
+
+def _timeline_from_snapshot(rows: Any) -> list[EntityPageTimelineEvent]:
+    out: list[EntityPageTimelineEvent] = []
+    for i, row in enumerate(rows or []):
+        if not isinstance(row, dict):
+            continue
+        title = str(row.get("title") or "").strip()
+        if not title:
+            continue
+        description = row.get("description")
+        out.append(
+            EntityPageTimelineEvent(
+                id=f"event:{i}",
+                title=title,
+                description=str(description).strip() if description else None,
+                occurred_at=_parse_iso(row.get("occurred_at")),
+                citation_ids=list(row.get("citation_ids") or []),
+            )
+        )
+    return out
+
+
+def _questions_from_snapshot(rows: Any) -> list[EntityPageQuestion]:
+    out: list[EntityPageQuestion] = []
+    for i, row in enumerate(rows or []):
+        if not isinstance(row, dict):
+            continue
+        text = str(row.get("text") or "").strip()
+        if not text:
+            continue
+        out.append(
+            EntityPageQuestion(
+                id=f"question:{i}", text=text, citation_ids=list(row.get("citation_ids") or [])
+            )
+        )
+    return out
+
+
 async def build_entity_page(
     db: AsyncSession, user_id: Any, entity_id: uuid.UUID
 ) -> EntityPage | None:
@@ -440,6 +515,57 @@ async def build_entity_page(
         for rel in related
     ]
 
+    # Action items from the recordings that mention this entity, kept only when
+    # they actually name it (deterministic — never an LLM guess).
+    actions: list[EntityPageAction] = []
+    if rec_ids:
+        name_l = entity.name.lower()
+        ai_rows = (
+            await db.execute(select(ActionItem).where(ActionItem.recording_id.in_(rec_ids)))
+        ).scalars().all()
+        for ai in ai_rows:
+            task_text = ai.task or ""
+            owner = ai.owner or ""
+            relevant = (name_l and name_l in task_text.lower()) or (
+                entity.type == "person" and name_l and name_l in owner.lower()
+            )
+            if not relevant:
+                continue
+            actions.append(
+                EntityPageAction(
+                    id=str(ai.id),
+                    text=task_text,
+                    owner=ai.owner,
+                    due_date=ai.due_date.isoformat() if ai.due_date else None,
+                    status=ai.status,
+                    citation_ids=[_citation_id("recording", ai.recording_id)],
+                )
+            )
+
+    # Compiled dossier (overview/facts/timeline/questions) from the cached
+    # snapshot when it still matches the current source set; otherwise the page
+    # is a deterministic skeleton flagged for (re)synthesis ("stale"), or an
+    # honest empty when there is nothing to compile ("skeleton").
+    fingerprint = _source_fingerprint([c.id for c in citations], entity.updated_at)
+    snapshot = (
+        await db.execute(
+            select(EntityPageSnapshot).where(EntityPageSnapshot.entity_id == entity_id)
+        )
+    ).scalar_one_or_none()
+    template_overview = _entity_page_overview(entity.name, len(sources))
+    if snapshot is not None and snapshot.source_fingerprint == fingerprint:
+        overview = (snapshot.overview or "").strip() or template_overview
+        facts = _facts_from_snapshot(snapshot.facts)
+        timeline = _timeline_from_snapshot(snapshot.timeline)
+        questions = _questions_from_snapshot(snapshot.questions)
+        cache_status = "ready"
+    else:
+        overview = template_overview
+        facts = []
+        timeline = []
+        questions = []
+        cache_status = "stale" if citations else "skeleton"
+
     return EntityPage(
         id=str(entity.id),
         name=entity.name,
@@ -447,12 +573,12 @@ async def build_entity_page(
         mention_count=len(mentions),
         sources=sources,
         related=related,
-        overview=_entity_page_overview(entity.name, len(sources)),
-        facts=[],
+        overview=overview,
+        facts=facts,
         citations=citations,
-        timeline=[],
+        timeline=timeline,
         related_explanations=related_explanations,
-        questions=[],
-        actions=[],
-        cache_status="computed",
+        questions=questions,
+        actions=actions,
+        cache_status=cache_status,
     )

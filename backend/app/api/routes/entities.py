@@ -7,13 +7,13 @@ from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Query, Response, status
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import selectinload
 
 from app.api.deps import CurrentUser, Database
-from app.core.brain_graph import build_entity_page
 from app.core.entity_dedup import find_duplicate_entity_candidates, merge_entities
-from app.models.entity import Entity, EntityRelation
+from app.core.entity_page_synthesis import ensure_entity_page
+from app.models.entity import Entity, EntityMention, EntityRelation
 
 router = APIRouter(prefix="/entities", tags=["entities"])
 
@@ -37,6 +37,9 @@ class EntityResponse(BaseModel):
     name: str
     metadata: dict | None
     created_at: datetime
+    # How many sources mention this entity — powers Pages ranking + "12 sources".
+    mention_count: int = 0
+    source_count: int = 0
 
 
 class EntityDetailResponse(EntityResponse):
@@ -50,20 +53,38 @@ async def list_entities(
     user: CurrentUser,
     db: Database,
     type: Literal["person", "topic", "project", "organization"] | None = None,
+    q: str | None = Query(None, max_length=200),
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
 ) -> list[EntityResponse]:
-    """List all entities for the user."""
-    query = select(Entity).where(Entity.user_id == user.id)
+    """List the user's entities — the browsable "Pages", ranked by how many
+    sources mention each (so the people/projects/topics that matter surface
+    first), optionally filtered by ``type`` and a name search ``q``.
 
+    Each ``EntityMention`` row is one distinct source (unique per entity+source),
+    so the mention count equals the source count.
+    """
+    counts = (
+        select(EntityMention.entity_id, func.count().label("n"))
+        .where(EntityMention.user_id == user.id)
+        .group_by(EntityMention.entity_id)
+        .subquery()
+    )
+    source_count = func.coalesce(counts.c.n, 0)
+    query = (
+        select(Entity, source_count.label("source_count"))
+        .outerjoin(counts, counts.c.entity_id == Entity.id)
+        .where(Entity.user_id == user.id)
+    )
     if type:
         query = query.where(Entity.type == type)
+    if q and q.strip():
+        query = query.where(Entity.name.ilike(f"%{q.strip()}%"))
+    query = (
+        query.order_by(source_count.desc(), Entity.name.asc()).offset(offset).limit(limit)
+    )
 
-    query = query.order_by(Entity.name).offset(offset).limit(limit)
-
-    result = await db.execute(query)
-    entities = result.scalars().all()
-
+    rows = (await db.execute(query)).all()
     return [
         EntityResponse(
             id=str(e.id),
@@ -71,8 +92,10 @@ async def list_entities(
             name=e.name,
             metadata=e.metadata_,
             created_at=e.created_at,
+            mention_count=int(n),
+            source_count=int(n),
         )
-        for e in entities
+        for e, n in rows
     ]
 
 
@@ -261,9 +284,10 @@ async def get_entity_page(
     user: CurrentUser,
     db: Database,
 ) -> EntityPageResponse:
-    """Wiki page for one entity: the items/recordings that mention it (backlinks)
-    + related entities ranked by shared sources."""
-    page = await build_entity_page(db, user.id, entity_id)
+    """The living dossier for one entity: a compiled-truth overview + cited
+    facts, a cited timeline, open questions, and action items, over the
+    items/recordings that mention it. Synthesis runs inline on a cache miss."""
+    page = await ensure_entity_page(db, user.id, entity_id)
     if page is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Entity not found"
