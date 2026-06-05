@@ -117,6 +117,22 @@ public struct CompanionTurnReducer: Equatable, Sendable {
         }
     }
 
+    /// Set the resolution on a proposed-action card by id. Returns false if no
+    /// matching action card exists in this turn.
+    @discardableResult
+    public mutating func setActionResolution(
+        actionId: String,
+        resolution: CompanionActionResolution
+    ) -> Bool {
+        for index in items.indices.reversed() {
+            if case .action(let id, let proposal, _) = items[index], proposal.actionId == actionId {
+                items[index] = .action(id: id, proposal: proposal, resolution: resolution)
+                return true
+            }
+        }
+        return false
+    }
+
     // MARK: - Folding
 
     private mutating func appendThinking(_ text: String) {

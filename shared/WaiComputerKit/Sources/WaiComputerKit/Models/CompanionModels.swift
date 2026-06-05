@@ -297,3 +297,29 @@ public struct CompanionActionProposal: Sendable, Equatable {
         self.recipient = recipient
     }
 }
+
+/// User's decision on a proposed action, sent to the /resolve route.
+public enum CompanionActionDecision: String, Sendable, Equatable {
+    case once
+    case always
+    case reject
+
+    public var wireValue: String { rawValue }
+}
+
+public struct ResolveCompanionActionRequest: Encodable, Sendable {
+    public let decision: String
+    public init(decision: String) { self.decision = decision }
+}
+
+public struct ResolveCompanionActionResponse: Decodable, Sendable, Equatable {
+    public let actionId: String
+    public let status: String       // executed | rejected | dispatched | failed
+    public let recipient: String?   // display name only, never a raw id
+
+    enum CodingKeys: String, CodingKey {
+        case actionId = "action_id"
+        case status
+        case recipient
+    }
+}
