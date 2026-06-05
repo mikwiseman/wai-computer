@@ -49,13 +49,14 @@ ssh \
   -o BatchMode=yes \
   -o StrictHostKeyChecking=accept-new \
   "${VPS_USER}@${VPS_HOST}" \
-  "install -d -m 755 '${REMOTE_ROOT}'"
+  "install -d -m 755 '${REMOTE_ROOT}' && if [ ! -d '${REMOTE_ROOT}/.git' ]; then rm -f '${REMOTE_ROOT}/.git'; fi"
 
 rsync \
   -az \
   --delete \
   --no-owner \
   --no-group \
+  --exclude '.git' \
   --exclude '.git/' \
   --exclude '.github/' \
   --exclude '.codex/' \
