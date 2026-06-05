@@ -16,7 +16,11 @@ from app.core import companion as companion_module
 from app.core.companion import (
     CompanionError,
     DoneEvent,
+    PlanEvent,
+    ThinkingEvent,
     TokenEvent,
+    ToolCallEvent,
+    ToolResultEvent,
     TurnContext,
     run_turn,
     system_prompt_for,
@@ -55,6 +59,23 @@ class _CompletedEvent:
 
 
 @dataclass
+class _OutputItemEvent:
+    """A response.output_item.{added,done} streaming event carrying one output
+    item — the shape hosted reads (mcp_call) and web_search_call arrive in."""
+
+    item: dict[str, Any]
+    type: str = "response.output_item.added"
+
+
+@dataclass
+class _ReasoningDeltaEvent:
+    """A streamed reasoning-summary delta (the model's private thinking)."""
+
+    delta: str
+    type: str = "response.reasoning_summary_text.delta"
+
+
+@dataclass
 class _ErrorEvent:
     message: str
     type: str = "response.error"
@@ -87,6 +108,56 @@ class FakeOpenAI:
         self.calls.append(kwargs)
         assert kwargs.get("stream") is True
         return _AsyncEventStream(self.events)
+
+
+class _SeqOpenAI:
+    """Like FakeOpenAI but returns a DIFFERENT event list per create() call, for
+    testing the multi-step actions loop (each loop step is one create())."""
+
+    def __init__(self, calls_events: list[list[Any]]):
+        self._queue = list(calls_events)
+        self.calls: list[dict[str, Any]] = []
+        self.responses = self
+
+    async def create(self, **kwargs):
+        self.calls.append(kwargs)
+        events = self._queue.pop(0) if self._queue else []
+        return _AsyncEventStream(events)
+
+
+def _function_call_completed(name: str, arguments: str) -> "_CompletedEvent":
+    return _CompletedEvent(
+        _FakeResponse(
+            output=[
+                {
+                    "type": "function_call",
+                    "name": name,
+                    "arguments": arguments,
+                    "call_id": "call_1",
+                    "id": "fc_1",
+                }
+            ],
+            output_text="",
+            usage=_Usage(input_tokens=5, output_tokens=2, cached_tokens=0),
+        )
+    )
+
+
+def test_normalize_plan_steps_bounds_and_coerces():
+    from app.core.companion import _normalize_plan_steps
+
+    out = _normalize_plan_steps(
+        [
+            {"title": "  Search  ", "status": "done"},
+            {"title": "", "status": "in_progress"},  # dropped: blank title
+            {"title": "Summarize", "status": "bogus"},  # status coerced
+            "not-a-dict",  # dropped
+        ]
+    )
+    assert out == [
+        {"title": "Search", "status": "done"},
+        {"title": "Summarize", "status": "pending"},
+    ]
 
 
 @pytest_asyncio.fixture
@@ -436,6 +507,133 @@ class TestRunTurn:
         assert exc.value.code == "stream_error"
         assert "Companion stream failed" in exc.value.message
 
+    async def test_update_plan_tool_emits_plan_event(
+        self, db_session, setup_user_and_chat
+    ):
+        """When the agent calls update_plan, a PlanEvent is streamed (live plan
+        card) and the loop continues to do the real work — no approval gate."""
+        s = setup_user_and_chat
+        step1 = [
+            _function_call_completed(
+                "update_plan",
+                '{"steps": [{"title": "Search", "status": "in_progress"}, '
+                '{"title": "Summarize", "status": "pending"}]}',
+            )
+        ]
+        step2 = [_DeltaEvent("Done."), _completed("Done.")]
+        fake = _SeqOpenAI([step1, step2])
+        events = await _collect(
+            run_turn(
+                db_session,
+                s["user"].id,
+                s["conversation"].id,
+                "summarize my pricing call and list follow-ups",
+                openai_client=fake,
+                enable_actions=True,
+            )
+        )
+        plans = [e for e in events if isinstance(e, PlanEvent)]
+        assert len(plans) == 1
+        assert plans[0].steps == [
+            {"title": "Search", "status": "in_progress"},
+            {"title": "Summarize", "status": "pending"},
+        ]
+        assert isinstance(events[-1], DoneEvent)
+
+    async def test_run_turn_streams_reasoning_as_thinking(
+        self, db_session, setup_user_and_chat
+    ):
+        """With stream_reasoning the model's reasoning summary is forwarded as
+        ThinkingEvent deltas (collapsible "Thinking" block) and reasoning is
+        actually requested on the API call."""
+        s = setup_user_and_chat
+        fake = FakeOpenAI(
+            [
+                _ReasoningDeltaEvent("Checking the pricing call. "),
+                _DeltaEvent("Found it."),
+                _completed("Found it."),
+            ]
+        )
+        events = await _collect(
+            run_turn(
+                db_session,
+                s["user"].id,
+                s["conversation"].id,
+                "what about pricing?",
+                openai_client=fake,
+                stream_reasoning=True,
+            )
+        )
+        thinking = [e for e in events if isinstance(e, ThinkingEvent)]
+        assert thinking and "pricing" in thinking[0].text
+        assert fake.calls[0].get("reasoning") == {"summary": "auto"}
+
+    async def test_default_run_turn_does_not_request_reasoning(
+        self, db_session, setup_user_and_chat
+    ):
+        """The low-latency voice path (default) must not pay the reasoning tax."""
+        s = setup_user_and_chat
+        fake = FakeOpenAI([_DeltaEvent("Hi."), _completed("Hi.")])
+        await _collect(
+            run_turn(
+                db_session,
+                s["user"].id,
+                s["conversation"].id,
+                "hi",
+                openai_client=fake,
+            )
+        )
+        assert "reasoning" not in fake.calls[0]
+
+    async def test_run_turn_emits_tool_actions_for_mcp_reads(
+        self, db_session, setup_user_and_chat
+    ):
+        """Hosted brain reads surface as live tool_call + tool_result events so
+        the client can render a "Tool actions" card. The result summary is a
+        privacy-safe count, never raw transcript content."""
+        s = setup_user_and_chat
+        fake = FakeOpenAI(
+            [
+                _OutputItemEvent(
+                    item={
+                        "type": "mcp_call",
+                        "id": "mcp_1",
+                        "name": "search",
+                        "arguments": '{"query": "pricing"}',
+                    }
+                ),
+                _DeltaEvent("Found it. "),
+                _OutputItemEvent(
+                    item={
+                        "type": "mcp_call",
+                        "id": "mcp_1",
+                        "name": "search",
+                        "output": '{"segments": [1, 2, 3]}',
+                    },
+                    type="response.output_item.done",
+                ),
+                _completed("Found it."),
+            ]
+        )
+        events = await _collect(
+            run_turn(
+                db_session,
+                s["user"].id,
+                s["conversation"].id,
+                "what about pricing?",
+                openai_client=fake,
+            )
+        )
+        types = [e.type for e in events]
+        assert types[0] == "turn_start"
+        assert types[-1] == "done"
+        calls = [e for e in events if isinstance(e, ToolCallEvent)]
+        results = [e for e in events if isinstance(e, ToolResultEvent)]
+        assert len(calls) == 1 and calls[0].tool == "search"
+        assert calls[0].args == {"query": "pricing"}
+        assert len(results) == 1 and results[0].ok is True
+        assert "3 results" in results[0].summary
+
     async def test_system_prompt_points_to_mcp_not_private_function_tools(
         self, setup_user_and_chat
     ):
@@ -524,6 +722,66 @@ class TestPostMessageSSE:
         assert "send_message_telegram" in body
         assert "linked chat" in body
         assert "hello" in body
+
+    async def test_agent_chat_v2_streams_tool_actions_via_run_turn(
+        self,
+        client: AsyncClient,
+        auth_headers: dict,
+        monkeypatch,
+    ):
+        """A client advertising agent_chat_v2 is routed back through the
+        streaming run_turn engine and receives live tool_call/tool_result
+        events — the durable-runtime path would only emit a single message."""
+        fake = FakeOpenAI(
+            [
+                _OutputItemEvent(
+                    item={
+                        "type": "mcp_call",
+                        "id": "mcp_1",
+                        "name": "search",
+                        "arguments": '{"query": "pricing"}',
+                    }
+                ),
+                _DeltaEvent("Here it is."),
+                _OutputItemEvent(
+                    item={
+                        "type": "mcp_call",
+                        "id": "mcp_1",
+                        "output": '{"segments": [1, 2]}',
+                    },
+                    type="response.output_item.done",
+                ),
+                _completed("Here it is."),
+            ]
+        )
+        monkeypatch.setattr(
+            "app.core.companion.get_openai_client", lambda: fake
+        )
+        chat = (
+            await client.post(
+                "/api/companion/chats", json={}, headers=auth_headers
+            )
+        ).json()
+
+        response = await client.post(
+            f"/api/companion/chats/{chat['id']}/messages",
+            json={
+                "content": "what did I decide on pricing?",
+                "client_capabilities": ["actions_v1", "agent_chat_v2"],
+            },
+            headers=auth_headers,
+        )
+        assert response.status_code == 200
+        body = response.text
+        events = [
+            line.split(": ", 1)[1]
+            for line in body.split("\n")
+            if line.startswith("event: ")
+        ]
+        assert events[0] == "turn_start"
+        assert "tool_call" in events
+        assert "tool_result" in events
+        assert "done" in events
 
     async def test_first_user_message_auto_titles_new_chat(
         self,

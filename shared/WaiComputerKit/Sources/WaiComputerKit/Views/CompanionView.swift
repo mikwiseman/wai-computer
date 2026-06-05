@@ -56,6 +56,14 @@ enum CompanionChatPresentation {
         let fallbackPrefix = locale.identifier.lowercased().hasPrefix("ru") ? "Диалог" : "Thread"
         return "\(fallbackPrefix) · \(formatter.string(from: lastMessageAt ?? createdAt))"
     }
+
+    /// Compact token count for the status badge (e.g. 1234 -> "1.2k").
+    static func formatTokenCount(_ count: Int) -> String {
+        if count >= 1000 {
+            return String(format: "%.1fk", Double(count) / 1000.0)
+        }
+        return "\(count)"
+    }
 }
 
 /// Cross-platform Wai agent session view used by both the macOS sidebar `.wai` section
@@ -76,12 +84,19 @@ public struct CompanionView: View {
     @State private var chats: [CompanionConversation] = []
     @State private var activeChatId: String?
     @State private var messages: [CompanionMessage] = []
-    @State private var streamingText: String = ""
+    /// The in-progress assistant turn, folded from the SSE event stream into
+    /// structured timeline cards (thinking / tool actions / plan / text).
+    @State private var liveTurn = CompanionTurnReducer()
+    /// Completed rich turns kept for the session, keyed by assistant message id,
+    /// so thinking/tool/plan cards persist after the turn ends (the server stores
+    /// only the final text). Cleared when switching chats.
+    @State private var completedTurns: [String: CompanionTurnReducer] = [:]
+    /// Bumped on every streamed event so the list auto-scrolls while text grows
+    /// within a single block.
+    @State private var streamTick: Int = 0
     // Whether the chat is scrolled near the bottom. While streaming we only
     // auto-scroll when this is true, so scrolling up mid-answer is not fought (107).
     @State private var isNearBottom: Bool = true
-    @State private var streamingCitations: [CompanionStreamCitation] = []
-    @State private var streamingToolNotes: [String] = []
     @State private var stage: TurnStage = .idle
     @State private var input: String = ""
     @FocusState private var inputFocused: Bool
@@ -202,6 +217,8 @@ public struct CompanionView: View {
 
             Spacer(minLength: 12)
 
+            statusBadge
+
             if showsConversationSwitcher {
                 Button {
                     showChats.toggle()
@@ -320,7 +337,7 @@ public struct CompanionView: View {
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 0) {
-                        if messages.isEmpty && streamingText.isEmpty {
+                        if messages.isEmpty && liveTurn.isEmpty {
                             emptyState
                         }
                         ForEach(messages) { message in
@@ -369,7 +386,7 @@ public struct CompanionView: View {
                         proxy.scrollTo("bottomAnchor", anchor: .bottom)
                     }
                 }
-                .onChangeCompat(of: streamingText) {
+                .onChangeCompat(of: streamTick) {
                     guard isNearBottom else { return }
                     proxy.scrollTo("bottomAnchor", anchor: .bottom)
                 }
@@ -399,50 +416,170 @@ public struct CompanionView: View {
         .accessibilityIdentifier("wai-empty-state")
     }
 
+    @ViewBuilder
     private func bubble(for message: CompanionMessage) -> some View {
-        let isUser = message.role == .user
-        return MessageRow(
-            role: isUser ? t("You", "Ты") : "Wai",
-            text: message.plainText,
-            dateText: relativeDate(message.createdAt),
-            isUser: isUser,
-            accentColor: companionAccentColor,
-            citations: message.citations.map { cit in
-                CitationDisplay(
-                    index: cit.citationIndex,
-                    segmentId: cit.segmentId ?? "",
-                    recordingId: cit.recordingId ?? "",
-                    startMs: nil
-                )
-            },
-            formattedCitation: formattedCitation
-        )
+        if message.role == .user {
+            MessageRow(
+                role: t("You", "Ты"),
+                text: message.plainText,
+                dateText: relativeDate(message.createdAt),
+                isUser: true,
+                accentColor: companionAccentColor,
+                citations: [],
+                formattedCitation: formattedCitation
+            )
+        } else {
+            assistantTurnView(
+                items: timelineItems(for: message),
+                isLive: false,
+                dateText: relativeDate(message.createdAt),
+                citations: message.citations.map { cit in
+                    CitationDisplay(
+                        index: cit.citationIndex,
+                        segmentId: cit.segmentId ?? "",
+                        recordingId: cit.recordingId ?? "",
+                        startMs: nil
+                    )
+                }
+            )
+        }
     }
 
-    private var streamingBubble: some View {
-        let text: String = {
-            if !streamingText.isEmpty { return streamingText }
-            if stage == .searching { return t("Searching Inbox...", "Ищем по Инбоксу...") }
-            return streamingToolNotes.joined(separator: "\n")
-        }()
+    /// The rich timeline for a finished message if we kept it this session,
+    /// else a single markdown block from the stored final text.
+    private func timelineItems(for message: CompanionMessage) -> [CompanionTurnItem] {
+        if let reducer = completedTurns[message.id] {
+            return reducer.items
+        }
+        return [.text(id: message.id, markdown: message.plainText)]
+    }
 
-        return MessageRow(
-            role: "Wai",
-            text: text,
-            dateText: t("Now", "Сейчас"),
-            isMuted: streamingText.isEmpty,
-            isUser: false,
-            accentColor: companionAccentColor,
-            citations: streamingCitations.map {
-                CitationDisplay(
-                    index: $0.index,
-                    segmentId: $0.segmentId,
-                    recordingId: $0.recordingId,
-                    startMs: $0.startMs
+    @ViewBuilder
+    private var streamingBubble: some View {
+        if liveTurn.isEmpty {
+            assistantPlaceholder
+        } else {
+            assistantTurnView(
+                items: liveTurn.items,
+                isLive: true,
+                dateText: t("Now", "Сейчас"),
+                citations: liveTurn.citations.map {
+                    CitationDisplay(
+                        index: $0.index,
+                        segmentId: $0.segmentId,
+                        recordingId: $0.recordingId,
+                        startMs: $0.startMs
+                    )
+                }
+            )
+        }
+    }
+
+    private var assistantPlaceholder: some View {
+        HStack(alignment: .top, spacing: 0) {
+            VStack(alignment: .leading, spacing: 8) {
+                assistantHeader(dateText: t("Now", "Сейчас"))
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.small)
+                    Text(stage == .searching ? t("Thinking…", "Думаю…") : t("Working…", "Работаю…"))
+                        .font(.system(size: 14))
+                        .foregroundStyle(.secondary)
+                }
+            }
+            Spacer(minLength: 80)
+        }
+        .padding(.vertical, 6)
+    }
+
+    private func assistantHeader(dateText: String) -> some View {
+        HStack(spacing: 8) {
+            Text("Wai")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+            Text(dateText)
+                .font(.caption)
+                .foregroundStyle(.secondary.opacity(0.8))
+            Spacer()
+        }
+    }
+
+    private func assistantTurnView(
+        items: [CompanionTurnItem],
+        isLive: Bool,
+        dateText: String,
+        citations: [CitationDisplay]
+    ) -> some View {
+        let resolver: ((String, CompanionActionDecision) -> Void)? = activeChatId.map { cid in
+            { actionId, decision in resolveAction(chatId: cid, actionId: actionId, decision: decision) }
+        }
+        return HStack(alignment: .top, spacing: 0) {
+            VStack(alignment: .leading, spacing: 10) {
+                assistantHeader(dateText: dateText)
+                CompanionTimelineView(
+                    items: items,
+                    isLive: isLive,
+                    accent: companionAccentColor,
+                    onResolve: resolver
                 )
-            },
-            formattedCitation: formattedCitation
-        )
+                if !citations.isEmpty {
+                    FlowLayoutCompat {
+                        ForEach(citations.sorted(by: { $0.index < $1.index })) { citation in
+                            Text(formattedCitation(citation))
+                                .font(.caption)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 4)
+                                .background(companionAccentColor.opacity(0.12))
+                                .clipShape(Capsule())
+                        }
+                    }
+                }
+            }
+            .frame(maxWidth: 660, alignment: .leading)
+            Spacer(minLength: 40)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, 6)
+    }
+
+    @MainActor
+    private func resolveAction(
+        chatId: String,
+        actionId: String,
+        decision: CompanionActionDecision
+    ) {
+        setActionResolution(actionId: actionId, resolution: .executing)
+        Task { @MainActor in
+            do {
+                let response = try await apiClient.resolveCompanionAction(
+                    chatId: chatId,
+                    actionId: actionId,
+                    decision: decision
+                )
+                setActionResolution(
+                    actionId: actionId,
+                    resolution: .resolved(status: response.status, detail: response.recipient ?? "")
+                )
+            } catch {
+                setActionResolution(
+                    actionId: actionId,
+                    resolution: .resolved(status: "failed", detail: error.localizedDescription)
+                )
+            }
+        }
+    }
+
+    @MainActor
+    private func setActionResolution(actionId: String, resolution: CompanionActionResolution) {
+        if liveTurn.setActionResolution(actionId: actionId, resolution: resolution) {
+            return
+        }
+        for key in completedTurns.keys {
+            if var reducer = completedTurns[key],
+                reducer.setActionResolution(actionId: actionId, resolution: resolution) {
+                completedTurns[key] = reducer
+                return
+            }
+        }
     }
 
     private struct MessageRow: View {
@@ -645,6 +782,7 @@ public struct CompanionView: View {
     private func loadChat(_ chatId: String) async {
         activeChatId = chatId
         messages = []
+        completedTurns = [:]
         do {
             let detail = try await apiClient.getCompanionChat(chatId: chatId)
             messages = detail.messages
@@ -723,9 +861,7 @@ public struct CompanionView: View {
         turnTask = nil
         // Flip stage synchronously so the disabled button covers the gap.
         stage = .searching
-        streamingText = ""
-        streamingCitations = []
-        streamingToolNotes = []
+        liveTurn = CompanionTurnReducer()
 
         var chatId = activeChatId
         if chatId == nil {
@@ -786,9 +922,7 @@ public struct CompanionView: View {
                 errorMessage = error.localizedDescription
             }
             if !hadError {
-                streamingText = ""
-                streamingCitations = []
-                streamingToolNotes = []
+                liveTurn = CompanionTurnReducer()
             }
             stage = .idle
         }
@@ -820,54 +954,66 @@ public struct CompanionView: View {
     private func cancelTurn() {
         turnTask?.cancel()
         turnTask = nil
-        streamingText = ""
-        streamingCitations = []
-        streamingToolNotes = []
+        liveTurn = CompanionTurnReducer()
         stage = .idle
     }
 
     @MainActor
     private func handle(_ event: CompanionStreamEvent) {
+        // Fold every event into the structured timeline (thinking / tool actions
+        // / plan / text / approval cards), then react to lifecycle events.
+        liveTurn.ingest(event)
+        streamTick &+= 1
         switch event {
-        case .turnStart:
-            break
-        case .toolCall(let callId, let tool):
-            streamingToolNotes.append("\(tool) (\(callId))…")
-        case .toolResult(let callId, let summary):
-            if let idx = streamingToolNotes.firstIndex(where: { $0.contains(callId) }) {
-                streamingToolNotes[idx] = "\(streamingToolNotes[idx]) → \(summary)"
+        case .token:
+            stage = .composing
+        case .done(let messageId, _, _):
+            if !liveTurn.isEmpty {
+                completedTurns[messageId] = liveTurn
             }
-        case .token(let text):
-            streamingText += text
-            if !streamingText.isEmpty { stage = .composing }
-        case .citation(let citation):
-            if !streamingCitations.contains(where: {
-                $0.index == citation.index
-                    && $0.segmentId == citation.segmentId
-                    && $0.spanStart == citation.spanStart
-            }) {
-                streamingCitations.append(citation)
-            }
-        case .done:
             stage = .idle
-        case .memoryUpdated:
-            break  // a subtle "remembered" toast is a later nicety
-        case .actionProposed(let proposal):
-            streamingToolNotes.append(t("Approval needed: \(proposal.tool)", "Нужно подтверждение: \(proposal.tool)"))
-        case .actionResult(_, let status, _, _):
-            streamingToolNotes.append("Action \(status)")
-        case .narration:
-            break  // spoken via TTS on the voice surface; no-op in the chat view
-        case .desktopAction:
-            break  // executed by the macOS DesktopActuator (P4)
         case .error(_, let message):
+            liveTurn.failRunningTools(summary: t("Stopped", "Остановлено"))
             errorMessage = message
+        default:
+            break
         }
     }
 
     // MARK: - Derived
 
     private var isStreaming: Bool { stage != .idle }
+
+    /// Model + context used in the latest completed assistant turn, for the
+    /// header status badge (openclaw-style "GPT-5.5 · 1.2k").
+    private var latestModelInfo: (model: String, contextTokens: Int)? {
+        guard let last = messages.last(where: { $0.role == .assistant }),
+            let model = last.model, !model.isEmpty
+        else { return nil }
+        let ctx = (last.inputTokens ?? 0) + (last.outputTokens ?? 0)
+        return (model, ctx)
+    }
+
+    @ViewBuilder
+    private var statusBadge: some View {
+        if let info = latestModelInfo {
+            HStack(spacing: 5) {
+                Image(systemName: "cpu").font(.system(size: 10))
+                Text(info.model).font(.system(size: 11, weight: .medium))
+                if info.contextTokens > 0 {
+                    Text("· \(CompanionChatPresentation.formatTokenCount(info.contextTokens))")
+                        .font(.system(size: 11))
+                }
+            }
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(Color.primary.opacity(0.05))
+            .clipShape(Capsule())
+            .help(t("Model · context used last turn", "Модель · контекст последнего хода"))
+            .accessibilityIdentifier("wai-status-badge")
+        }
+    }
 
     private var starterPrompts: [String] {
         [

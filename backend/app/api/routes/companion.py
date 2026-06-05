@@ -28,7 +28,9 @@ from app.core.companion import (
     DoneEvent,
     ErrorEvent,
     TokenEvent,
+    TurnContext,
     TurnStartEvent,
+    run_turn,
 )
 from app.core.companion_actions import (
     ApprovalError,
@@ -455,18 +457,25 @@ def _sse_format(event_obj: Any) -> bytes:
 
 # Event types added after the v1 clients shipped. Emitted ONLY to clients that
 # advertise the matching capability; older clients never receive an event they
-# cannot decode (fail closed).
-_GATED_SSE_EVENTS: frozenset[str] = frozenset(
-    {"action_proposed", "action_result", "narration", "desktop_action"}
-)
+# cannot decode (the Swift CompanionStream parser THROWS on unknown types, so
+# this fails closed). actions_v1 = approval/desktop/narration; agent_chat_v2 =
+# the streaming agent surface (thinking + plan; tool_call/tool_result ride the
+# v1 union and stay ungated since both shipped clients already decode them).
 _CLIENT_CAP_ACTIONS = "actions_v1"
+_CLIENT_CAP_CHAT_V2 = "agent_chat_v2"
+_EVENT_REQUIRED_CAPABILITY: dict[str, str] = {
+    "action_proposed": _CLIENT_CAP_ACTIONS,
+    "action_result": _CLIENT_CAP_ACTIONS,
+    "narration": _CLIENT_CAP_ACTIONS,
+    "desktop_action": _CLIENT_CAP_ACTIONS,
+    "thinking": _CLIENT_CAP_CHAT_V2,
+    "plan": _CLIENT_CAP_CHAT_V2,
+}
 
 
 def _client_can_receive(event_obj: Any, capabilities: list[str]) -> bool:
-    event_type = getattr(event_obj, "type", "")
-    if event_type in _GATED_SSE_EVENTS:
-        return _CLIENT_CAP_ACTIONS in capabilities
-    return True
+    required = _EVENT_REQUIRED_CAPABILITY.get(getattr(event_obj, "type", ""))
+    return required is None or required in capabilities
 
 
 _SSE_HEARTBEAT = b": keep-alive\n\n"
@@ -528,7 +537,26 @@ async def _run_wai_companion_turn(
     chat_id: uuid.UUID,
     user_text: str,
     context: dict[str, Any] | None,
+    client_capabilities: list[str] | None = None,
+    turn_context: TurnContext | None = None,
 ) -> AsyncIterator[Any]:
+    # Clients advertising agent_chat_v2 get the streaming LLM agent (run_turn):
+    # live token deltas, visible tool actions (brain reads + web search), gated
+    # write approvals, thinking + plan events. Older clients stay on the durable
+    # agent runtime, which runs to completion and emits one final message.
+    if client_capabilities and _CLIENT_CAP_CHAT_V2 in client_capabilities:
+        async for evt in run_turn(
+            db,
+            user_id,
+            chat_id,
+            user_text,
+            turn_context=turn_context,
+            enable_actions=True,
+            stream_reasoning=True,
+        ):
+            yield evt
+        return
+
     _conversation, run, _created = await start_wai_task(
         db,
         user_id=user_id,
@@ -630,6 +658,12 @@ async def post_message(
         request,
         viewing_recording_title=viewing_recording_title,
     )
+    turn_context = TurnContext(
+        client_local_date=request.client_local_date,
+        client_timezone=request.client_timezone,
+        viewing_recording_title=viewing_recording_title,
+        viewing_folder_name=_viewing_folder_name,
+    )
 
     async def event_stream():
         queue: asyncio.Queue[bytes | None] = asyncio.Queue()
@@ -645,6 +679,8 @@ async def post_message(
                     chat_id=chat_id,
                     user_text=request.content,
                     context=active_context,
+                    client_capabilities=request.client_capabilities,
+                    turn_context=turn_context,
                 ):
                     event_count += 1
                     if _client_can_receive(evt, request.client_capabilities):

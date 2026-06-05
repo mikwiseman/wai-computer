@@ -881,7 +881,10 @@ final class APIClientNewEndpointsTests: XCTestCase {
             XCTAssertEqual(body["client_timezone"] as? String, "Europe/Moscow")
             XCTAssertEqual(body["viewing_recording_id"] as? String, "recording-1")
             XCTAssertEqual(body["viewing_folder_id"] as? String, "folder-1")
-            XCTAssertEqual(body["client_capabilities"] as? [String], ["actions_v1"])
+            XCTAssertEqual(
+                body["client_capabilities"] as? [String],
+                ["actions_v1", "agent_chat_v2"]
+            )
 
             let response = HTTPURLResponse(
                 url: request.url!,

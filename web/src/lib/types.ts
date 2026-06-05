@@ -694,10 +694,14 @@ export interface CompanionConversationList {
   chats: CompanionConversation[];
 }
 
+export type CompanionPlanStep = { title: string; status: string };
+
 export type CompanionEvent =
   | { type: "turn_start"; message_id: string; conversation_id: string }
+  | { type: "thinking"; text: string }
   | { type: "tool_call"; call_id: string; tool: string; args: Record<string, unknown> }
-  | { type: "tool_result"; call_id: string; summary: string }
+  | { type: "tool_result"; call_id: string; summary: string; ok?: boolean }
+  | { type: "plan"; steps: CompanionPlanStep[] }
   | { type: "token"; text: string }
   | {
       type: "citation";

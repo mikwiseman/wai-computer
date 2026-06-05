@@ -589,19 +589,20 @@ describe("CompanionPanel", () => {
     await user.type(screen.getByTestId("companion-composer"), "When did pricing come up?");
     await user.click(screen.getByRole("button", { name: /^Send$/i }));
 
-    // Phase 1: before any token, the searching hint + tool-call progress show.
+    // Phase 1: tool actions surface as a grouped, collapsible card.
     const bubble = await screen.findByTestId("companion-streaming");
-    expect(within(bubble).getByText("Searching Inbox...")).toBeInTheDocument();
     await waitFor(() => {
-      expect(within(bubble).getByText(/search → 3 hits/)).toBeInTheDocument();
+      expect(within(bubble).getByTestId("wai-tool-actions-card")).toBeInTheDocument();
     });
+    expect(bubble).toHaveTextContent("Searched your brain");
+    expect(bubble).toHaveTextContent("3 hits");
 
-    // Phase 2: token + citations stream in; tool list yields to the answer.
+    // Phase 2: token + citations stream in; the tool card persists above the answer.
     releaseToken();
     await waitFor(() => {
       expect(within(bubble).getByText("Pricing surfaced on Tuesday [1].")).toBeInTheDocument();
     });
-    expect(within(bubble).queryByText(/search → 3 hits/)).not.toBeInTheDocument();
+    expect(within(bubble).getByTestId("wai-tool-actions-card")).toBeInTheDocument();
     // 65000ms → 1:05; the recording title resolves from props; dedup → one chip.
     const chips = within(bubble).getByTestId("companion-citations");
     expect(chips).toHaveTextContent("[1] Standup · 1:05");
