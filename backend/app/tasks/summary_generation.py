@@ -19,10 +19,18 @@ from app.core.summary_generation import (
     persist_summary_generation_result,
     prepare_summary_generation_payload,
 )
+from app.core.summary_generation import (
+    recover_missing_summary_generation_jobs as recover_missing_summary_generation_jobs_core,
+)
 from app.db.session import get_db_context
 from app.tasks.celery_app import celery_app
 
 logger = logging.getLogger(__name__)
+
+
+def _enqueue_recording_summary_generation(job_id: UUID) -> str:
+    result = generate_recording_summary.apply_async(kwargs={"job_id": str(job_id)})
+    return str(result.id)
 
 
 async def _generate_recording_summary(
@@ -59,6 +67,15 @@ async def _generate_recording_summary(
             db,
             job_id=job_uuid,
             summary_result=summary_result,
+        )
+
+
+async def _recover_missing_summary_generation_jobs(*, limit: int = 5) -> int:
+    async with get_db_context() as db:
+        return await recover_missing_summary_generation_jobs_core(
+            db,
+            enqueue=_enqueue_recording_summary_generation,
+            limit=limit,
         )
 
 
@@ -113,6 +130,24 @@ def generate_recording_summary(self, *, job_id: str) -> None:
             fingerprint_text(str(exc)),
         )
         raise
+
+
+@celery_app.task(
+    bind=True,
+    name="app.tasks.summary_generation.recover_missing_summary_generation_jobs",
+    acks_late=True,
+    reject_on_worker_lost=True,
+    time_limit=120,
+)
+def recover_missing_summary_generation_jobs(self, *, limit: int = 5) -> int:
+    recovered = asyncio.run(_recover_missing_summary_generation_jobs(limit=limit))
+    logger.info(
+        "missing summary generation recovery finished task_id=%s recovered=%s limit=%s",
+        getattr(self.request, "id", None),
+        recovered,
+        limit,
+    )
+    return recovered
 
 
 async def _mark_summary_generation_timeout(*, job_id: str) -> None:

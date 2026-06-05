@@ -20,6 +20,7 @@ from app.models.highlight import Highlight
 from app.models.recording import (
     ActionItem,
     Recording,
+    RecordingStatus,
     Segment,
     Summary,
     SummaryGenerationJob,
@@ -332,6 +333,64 @@ async def start_recording_summary_generation_job(
 
     await db.commit()
     return job
+
+
+async def recover_missing_summary_generation_jobs(
+    db: AsyncSession,
+    *,
+    enqueue: Callable[[UUID], str],
+    limit: int = 5,
+) -> int:
+    """Enqueue summaries for ready recordings that never received a summary job."""
+    if limit <= 0:
+        return 0
+
+    has_segments = (
+        select(Segment.id)
+        .where(Segment.recording_id == Recording.id)
+        .limit(1)
+        .exists()
+    )
+    has_summary = (
+        select(Summary.id)
+        .where(Summary.recording_id == Recording.id)
+        .limit(1)
+        .exists()
+    )
+    has_summary_job = (
+        select(SummaryGenerationJob.id)
+        .where(SummaryGenerationJob.recording_id == Recording.id)
+        .limit(1)
+        .exists()
+    )
+    rows = (
+        await db.execute(
+            select(Recording.id, Recording.user_id)
+            .where(
+                Recording.status == RecordingStatus.READY.value,
+                has_segments,
+                ~has_summary,
+                ~has_summary_job,
+            )
+            .order_by(Recording.created_at.desc(), Recording.id.asc())
+            .limit(limit)
+        )
+    ).all()
+
+    recovered = 0
+    for recording_id, user_id in rows:
+        job = await start_recording_summary_generation_job(
+            db,
+            recording_id=recording_id,
+            user_id=user_id,
+            enqueue=enqueue,
+            skip_if_summary_exists=True,
+            raise_on_enqueue_error=False,
+        )
+        if job is not None and job.status in ACTIVE_SUMMARY_GENERATION_STATUSES:
+            recovered += 1
+
+    return recovered
 
 
 async def prepare_summary_generation_payload(

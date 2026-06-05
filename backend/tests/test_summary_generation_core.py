@@ -19,6 +19,7 @@ from app.core.summary_generation import (
     load_active_summary_generation_job,
     persist_summary_generation_result,
     prepare_summary_generation_payload,
+    recover_missing_summary_generation_jobs,
     resolve_summary_language_preference,
     resolve_summary_style_preference,
     summary_transcript_hash,
@@ -154,6 +155,67 @@ def test_summary_generation_pure_helpers() -> None:
     assert latest_summary_generation_job(
         SimpleNamespace(summary_generation_jobs=[older, newer])
     ) is newer
+
+
+@pytest.mark.asyncio
+async def test_recover_missing_summary_generation_jobs_enqueues_only_never_started_ready_recordings(
+    db_session: AsyncSession,
+) -> None:
+    user = await _user(db_session)
+    missing = await _recording(db_session, user)
+    summarized = await _recording(db_session, user)
+    with_job = await _recording(db_session, user)
+    no_segments = await _recording(db_session, user, with_segments=False)
+    processing = await _recording(db_session, user)
+    processing.status = RecordingStatus.PROCESSING.value
+    db_session.add(
+        Summary(
+            recording_id=summarized.id,
+            summary="Already summarized.",
+            key_points=[],
+            decisions=[],
+            topics=[],
+            people_mentioned=[],
+            sentiment="neutral",
+        )
+    )
+    existing_job_transcript = build_summary_transcript(await _segments(db_session, with_job))
+    db_session.add(
+        SummaryGenerationJob(
+            recording_id=with_job.id,
+            user_id=user.id,
+            status=SummaryGenerationStatus.FAILED.value,
+            stage="failed",
+            transcript_hash=summary_transcript_hash(existing_job_transcript),
+            error_code="summarization_failed",
+            error_message="Existing failure should not be retried by recovery.",
+        )
+    )
+    await db_session.flush()
+
+    enqueued: list[UUID] = []
+
+    recovered = await recover_missing_summary_generation_jobs(
+        db_session,
+        enqueue=lambda job_id: enqueued.append(job_id) or f"celery-{job_id}",
+        limit=10,
+    )
+
+    jobs = (
+        await db_session.execute(
+            select(SummaryGenerationJob).order_by(SummaryGenerationJob.created_at.asc())
+        )
+    ).scalars().all()
+    missing_jobs = [job for job in jobs if job.recording_id == missing.id]
+
+    assert recovered == 1
+    assert len(enqueued) == 1
+    assert len(missing_jobs) == 1
+    assert missing_jobs[0].status == SummaryGenerationStatus.QUEUED.value
+    assert missing_jobs[0].task_id == f"celery-{missing_jobs[0].id}"
+    assert {job.recording_id for job in jobs} == {with_job.id, missing.id}
+    assert no_segments.status == RecordingStatus.READY.value
+    assert processing.status == RecordingStatus.PROCESSING.value
 
 
 @pytest.mark.asyncio
@@ -469,6 +531,29 @@ async def test_summary_generation_task_returns_when_payload_not_available(monkey
     monkeypatch.setattr(task_module, "generate_summary_for_payload", fail_if_called)
 
     await task_module._generate_recording_summary(job_id=str(uuid4()))
+
+
+@pytest.mark.asyncio
+async def test_summary_generation_recovery_task_helper(monkeypatch) -> None:
+    from app.tasks import summary_generation as task_module
+
+    @asynccontextmanager
+    async def fake_db_context():
+        yield "recovery-db"
+
+    calls: list[tuple[object, object, int]] = []
+
+    async def fake_recover(db, *, enqueue, limit: int):
+        calls.append((db, enqueue, limit))
+        return 3
+
+    monkeypatch.setattr(task_module, "get_db_context", fake_db_context)
+    monkeypatch.setattr(task_module, "recover_missing_summary_generation_jobs_core", fake_recover)
+
+    recovered = await task_module._recover_missing_summary_generation_jobs(limit=7)
+
+    assert recovered == 3
+    assert calls == [("recovery-db", task_module._enqueue_recording_summary_generation, 7)]
 
 
 def test_summary_generation_celery_task_runs_async_helper(monkeypatch) -> None:

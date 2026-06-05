@@ -807,6 +807,25 @@ async def test_handle_update_routes_help_meetings_and_natural_search(
         "Пока не могу ответить из твоего Brain.\nNo matching sources yet.",
     )
 
+    async def fake_unified_search(_db, received_user_id, query, *, limit: int):
+        assert received_user_id == user.id
+        assert query == "запуск"
+        assert limit == 5
+        return [
+            UnifiedHit(
+                source_kind="item",
+                parent_id=str(item.id),
+                chunk_id=str(uuid4()),
+                title="Launch memo",
+                kind="note",
+                snippet="Материал про запуск Product Radar",
+                score=1.0,
+                created_at=None,
+            )
+        ]
+
+    monkeypatch.setattr(telegram_routes, "unified_search", fake_unified_search)
+
     async def send_text(update_id: int, text: str) -> None:
         await telegram_routes._handle_update(
             {
