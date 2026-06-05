@@ -62,6 +62,7 @@ rsync \
   --exclude '.codex/' \
   --exclude '.claude/' \
   --exclude '.playwright-mcp/' \
+  --exclude '.build/' \
   --exclude '.env' \
   --exclude '.env.*' \
   --exclude '.venv/' \
