@@ -32,6 +32,9 @@ import type {
 	  BrainSpacesResponse,
 	  ComparisonListEntry,
   EntityPage,
+  Entity,
+  EntityType,
+  BrainAnswer,
   ComparisonSet,
   Item,
   ItemListResponse,
@@ -951,6 +954,24 @@ export function exportBrainSpace(
 
 export function getEntityPage(entityId: string): Promise<EntityPage> {
   return apiFetch<EntityPage>(`/api/entities/${entityId}/page`);
+}
+
+// --- Second brain: Pages (entities) + Ask your Brain ---
+
+export function listEntities(params?: {
+  type?: EntityType;
+  q?: string;
+  limit?: number;
+  offset?: number;
+}): Promise<Entity[]> {
+  return apiFetch<Entity[]>(`/api/entities${asQuery(params ?? {})}`);
+}
+
+export function askBrain(question: string): Promise<BrainAnswer> {
+  return apiFetch<BrainAnswer>("/api/brain/ask", {
+    method: "POST",
+    body: JSON.stringify({ question }),
+  });
 }
 
 export function listMemoryProposals(params?: {

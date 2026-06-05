@@ -158,7 +158,8 @@ async def test_build_entity_page_sources_and_related(db_session) -> None:
     assert page.timeline == []
     assert page.questions == []
     assert page.actions == []
-    assert page.cache_status == "computed"
+    # Has sources but no compiled snapshot yet -> awaiting synthesis.
+    assert page.cache_status == "stale"
 
 
 async def test_build_entity_page_missing_returns_none(db_session) -> None:
@@ -190,4 +191,5 @@ async def test_entity_page_route_200_for_owned_entity(client, auth_headers) -> N
     assert data["related_explanations"] == []
     assert data["questions"] == []
     assert data["actions"] == []
-    assert data["cache_status"] == "computed"
+    # No sources at all -> honest skeleton, never an LLM call.
+    assert data["cache_status"] == "skeleton"

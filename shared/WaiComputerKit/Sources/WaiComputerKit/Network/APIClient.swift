@@ -746,6 +746,22 @@ public actor APIClient {
         )
     }
 
+    /// Approve (once/always) or reject a pending Companion chat action. The side
+    /// effect runs exactly once on the server for an approval; rejection cascades
+    /// to siblings. `timeout == deny` is enforced server-side.
+    public func resolveCompanionAction(
+        chatId: String,
+        actionId: String,
+        decision: CompanionActionDecision
+    ) async throws -> ResolveCompanionActionResponse {
+        let body = ResolveCompanionActionRequest(decision: decision.wireValue)
+        return try await request(
+            .POST,
+            path: "/api/companion/chats/\(chatId)/actions/\(actionId)/resolve",
+            body: body
+        )
+    }
+
     /// Report the outcome of an agent-originated desktop action back to the cloud.
     public func reportAgentDesktopResult(
         agentId: String,
@@ -1828,7 +1844,7 @@ public actor APIClient {
         content: String,
         viewingRecordingId: String? = nil,
         viewingFolderId: String? = nil,
-        clientCapabilities: [String] = ["actions_v1"],
+        clientCapabilities: [String] = ["actions_v1", "agent_chat_v2"],
         now: Date = Date(),
         timeZone: TimeZone = .current,
         calendar: Calendar = .current
@@ -2203,12 +2219,27 @@ public actor APIClient {
         try await requestNoContent(.DELETE, path: "/api/folders/\(id)")
     }
 
-    public func listEntities(type: EntityType? = nil) async throws -> [Entity] {
-        var queryItems: [URLQueryItem]? = nil
+    public func listEntities(
+        type: EntityType? = nil,
+        q: String? = nil,
+        limit: Int? = nil
+    ) async throws -> [Entity] {
+        var queryItems: [URLQueryItem] = []
         if let type = type {
-            queryItems = [URLQueryItem(name: "type", value: type.rawValue)]
+            queryItems.append(URLQueryItem(name: "type", value: type.rawValue))
         }
-        return try await request(.GET, path: "/api/entities", queryItems: queryItems)
+        if let q = q, !q.isEmpty {
+            queryItems.append(URLQueryItem(name: "q", value: q))
+        }
+        if let limit = limit {
+            queryItems.append(URLQueryItem(name: "limit", value: String(limit)))
+        }
+        return try await request(.GET, path: "/api/entities", queryItems: queryItems.isEmpty ? nil : queryItems)
+    }
+
+    /// Ask your Brain: one cited answer with honest gaps + freshness.
+    public func askBrain(question: String) async throws -> BrainAnswer {
+        return try await request(.POST, path: "/api/brain/ask", body: ["question": question])
     }
 
     public func getEntity(id: String) async throws -> EntityDetail {

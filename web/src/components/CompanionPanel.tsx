@@ -8,15 +8,27 @@ import {
   getChat,
   listChats,
   patchChat,
+  resolveAction,
   streamMessage,
 } from "@/lib/companion";
+import {
+  type CompanionActionResolution,
+  type CompanionTurn,
+  emptyTurn,
+  failRunningTools,
+  ingestEvent,
+  setActionResolution,
+  turnIsEmpty,
+} from "@/lib/companionTimeline";
 import { ApiError } from "@/lib/http";
 import type {
   CompanionConversation,
-  CompanionEvent,
   CompanionMessage,
   Recording,
 } from "@/lib/types";
+import { CompanionTimeline, Markdown } from "./CompanionTurnCards";
+
+type Decision = "once" | "always" | "reject";
 
 type Locale = "en" | "ru";
 
@@ -149,12 +161,6 @@ interface StreamingCitation {
   end_ms: number | null;
 }
 
-interface StreamingAssistant {
-  text: string;
-  citations: StreamingCitation[];
-  toolCalls: { call_id: string; tool: string; summary: string | null }[];
-}
-
 function formatError(error: unknown, copy: CompanionCopy): string {
   if (error instanceof ApiError) return error.message;
   if (error instanceof Error) return error.message;
@@ -207,8 +213,8 @@ export function CompanionPanel({
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
   const [activeScope, setActiveScope] = useState<CompanionConversation["scope"]>(null);
   const [messages, setMessages] = useState<CompanionMessage[]>([]);
-  const [streamingAssistant, setStreamingAssistant] =
-    useState<StreamingAssistant | null>(null);
+  const [liveTurn, setLiveTurn] = useState<CompanionTurn>(emptyTurn());
+  const [completedTurns, setCompletedTurns] = useState<Record<string, CompanionTurn>>({});
   const [stage, setStage] = useState<"idle" | "searching" | "composing">("idle");
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
@@ -262,7 +268,8 @@ export function CompanionPanel({
         const detail = await getChat(activeChatId);
         setMessages(detail.messages);
         setActiveScope(detail.scope);
-        setStreamingAssistant(null);
+        setLiveTurn(emptyTurn());
+        setCompletedTurns({});
       } catch (e) {
         setError(formatError(e, copy));
       }
@@ -271,7 +278,7 @@ export function CompanionPanel({
 
   useEffect(() => {
     threadEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-  }, [messages, streamingAssistant?.text]);
+  }, [messages, liveTurn]);
 
   useEffect(() => {
     return () => abortRef.current?.abort();
@@ -382,8 +389,8 @@ export function CompanionPanel({
     };
     setMessages((prev) => [...prev, optimisticUser]);
 
-    const streaming: StreamingAssistant = { text: "", citations: [], toolCalls: [] };
-    setStreamingAssistant(streaming);
+    let turn = emptyTurn();
+    setLiveTurn(turn);
 
     const controller = new AbortController();
     abortRef.current = controller;
@@ -394,11 +401,22 @@ export function CompanionPanel({
         if (controller.signal.aborted) break;
         if (evt.type === "error") {
           receivedError = true;
+          turn = failRunningTools(turn, locale === "ru" ? "Остановлено" : "Stopped");
+          setLiveTurn(turn);
           setError(evt.message);
           break;
         }
-        handleEvent(evt, streaming);
-        if (evt.type === "done") break;
+        turn = ingestEvent(turn, evt);
+        setLiveTurn(turn);
+        if (evt.type === "token") setStage("composing");
+        if (evt.type === "done") {
+          if (!turnIsEmpty(turn)) {
+            const messageId = evt.message_id;
+            const completed = turn;
+            setCompletedTurns((prev) => ({ ...prev, [messageId]: completed }));
+          }
+          break;
+        }
       }
       if (controller.signal.aborted) return;
       // Reconcile optimistic rows with the persisted state (success OR error).
@@ -408,7 +426,6 @@ export function CompanionPanel({
       } catch (refetchErr) {
         if (!receivedError) setError(formatError(refetchErr, copy));
       }
-      setStreamingAssistant(null);
       if (!receivedError) {
         setChats((prev) => {
           const idx = prev.findIndex((c) => c.id === chatId);
@@ -423,7 +440,6 @@ export function CompanionPanel({
         return;
       }
       setError(formatError(e, copy));
-      setStreamingAssistant(null);
       try {
         const refreshed = await getChat(chatId);
         setMessages(refreshed.messages);
@@ -439,59 +455,44 @@ export function CompanionPanel({
     }
   }
 
-  function handleEvent(evt: CompanionEvent, streaming: StreamingAssistant) {
-    switch (evt.type) {
-      case "turn_start":
-        return;
-      case "tool_call":
-        streaming.toolCalls.push({
-          call_id: evt.call_id,
-          tool: evt.tool,
-          summary: null,
-        });
-        setStreamingAssistant({ ...streaming });
-        return;
-      case "tool_result": {
-        const tc = streaming.toolCalls.find((t) => t.call_id === evt.call_id);
-        if (tc) tc.summary = evt.summary;
-        setStreamingAssistant({ ...streaming });
-        return;
+  function setActionRes(actionId: string, resolution: CompanionActionResolution) {
+    setLiveTurn((prev) => setActionResolution(prev, actionId, resolution));
+    setCompletedTurns((prev) => {
+      let changed = false;
+      const next: Record<string, CompanionTurn> = {};
+      for (const [key, value] of Object.entries(prev)) {
+        const updated = setActionResolution(value, actionId, resolution);
+        next[key] = updated;
+        if (updated !== value) changed = true;
       }
-      case "token":
-        streaming.text += evt.text;
-        if (streaming.text.length > 0) setStage("composing");
-        setStreamingAssistant({ ...streaming });
-        return;
-      case "citation":
-        if (
-          !streaming.citations.some(
-            (c) => c.index === evt.index && c.segment_id === evt.segment_id,
-          )
-        ) {
-          streaming.citations.push({
-            index: evt.index,
-            segment_id: evt.segment_id,
-            recording_id: evt.recording_id,
-            start_ms: evt.start_ms,
-            end_ms: evt.end_ms,
-          });
-          setStreamingAssistant({ ...streaming });
-        }
-        return;
-      case "done":
-        setStage("idle");
-        return;
-      case "error":
-        // Handled in the outer loop, but defensive.
-        setError(evt.message);
-        return;
+      return changed ? next : prev;
+    });
+  }
+
+  async function handleResolve(chatId: string, actionId: string, decision: Decision) {
+    setActionRes(actionId, { state: "executing" });
+    try {
+      const resp = await resolveAction(chatId, actionId, decision);
+      setActionRes(actionId, {
+        state: "resolved",
+        status: resp.status,
+        detail: resp.recipient ?? "",
+      });
+    } catch (e) {
+      setActionRes(actionId, {
+        state: "resolved",
+        status: "failed",
+        detail: formatError(e, copy),
+      });
     }
   }
 
   function handleStop() {
     abortRef.current?.abort();
     abortRef.current = null;
-    setStreamingAssistant(null);
+    setLiveTurn((prev) =>
+      failRunningTools(prev, locale === "ru" ? "Остановлено" : "Stopped"),
+    );
     setLoading(false);
     setStage("idle");
   }
@@ -504,7 +505,8 @@ export function CompanionPanel({
   }
 
   const hasNoChats = chats.length === 0 && !activeChatId;
-  const isEmptyActive = !!activeChatId && messages.length === 0 && !streamingAssistant;
+  const isEmptyActive =
+    !!activeChatId && messages.length === 0 && turnIsEmpty(liveTurn) && !loading;
   const hasBrainScope = Boolean(activeScope?.brain_space_id);
 
   return (
@@ -613,62 +615,93 @@ export function CompanionPanel({
           </div>
         ) : null}
 
-        {messages.map((m) => (
+        {messages.map((m) =>
+          m.role === "user" ? (
+            <article
+              key={m.id}
+              className="qa-bubble"
+              data-role="user"
+              data-testid="companion-message-user"
+              style={{ marginBottom: 12, whiteSpace: "pre-wrap" }}
+            >
+              <strong style={{ display: "block", fontSize: 12, opacity: 0.6 }}>
+                {copy.user}
+              </strong>
+              <div>{plainText(m.content)}</div>
+            </article>
+          ) : (
+            <article
+              key={m.id}
+              className="qa-bubble qa-bubble--assistant"
+              data-role="assistant"
+              data-testid="companion-message-assistant"
+              style={{ marginBottom: 12 }}
+            >
+              <strong style={{ display: "block", fontSize: 12, opacity: 0.6 }}>
+                {copy.assistant}
+              </strong>
+              {completedTurns[m.id] ? (
+                <CompanionTimeline
+                  items={completedTurns[m.id].items}
+                  isLive={false}
+                  locale={locale}
+                  onResolve={
+                    activeChatId
+                      ? (aid, dec) => void handleResolve(activeChatId, aid, dec)
+                      : undefined
+                  }
+                />
+              ) : (
+                <Markdown text={plainText(m.content)} />
+              )}
+              {m.citations.length > 0 ? (
+                <CitationStrip
+                  citations={m.citations.map((c) => ({
+                    index: c.citation_index,
+                    segment_id: c.segment_id ?? "",
+                    recording_id: c.recording_id ?? "",
+                    start_ms: null,
+                    end_ms: null,
+                  }))}
+                  recordingTitles={recordingTitlesById}
+                  fallbackTitle={copy.recordingFallback}
+                />
+              ) : null}
+            </article>
+          ),
+        )}
+
+        {loading ? (
           <article
-            key={m.id}
-            className="qa-bubble"
-            data-role={m.role}
-            data-testid={`companion-message-${m.role}`}
-            style={{ marginBottom: 12, whiteSpace: "pre-wrap" }}
+            className="qa-bubble qa-bubble--assistant qa-bubble--loading"
+            data-testid="companion-streaming"
           >
             <strong style={{ display: "block", fontSize: 12, opacity: 0.6 }}>
-              {m.role === "user" ? copy.user : copy.assistant}
+              {copy.assistant}
             </strong>
-            <div>{plainText(m.content)}</div>
-            {m.citations.length > 0 ? (
-              <CitationStrip
-                citations={m.citations.map((c) => ({
-                  index: c.citation_index,
-                  segment_id: c.segment_id ?? "",
-                  recording_id: c.recording_id ?? "",
-                  start_ms: null,
-                  end_ms: null,
-                }))}
-                recordingTitles={recordingTitlesById}
-                fallbackTitle={copy.recordingFallback}
-              />
-            ) : null}
-          </article>
-        ))}
-
-        {streamingAssistant ? (
-          <article
-            className="qa-bubble qa-bubble--loading"
-            data-testid="companion-streaming"
-            style={{ whiteSpace: "pre-wrap" }}
-          >
-            <strong style={{ display: "block", fontSize: 12, opacity: 0.6 }}>{copy.assistant}</strong>
-            {stage === "searching" && streamingAssistant.text.length === 0 ? (
+            {turnIsEmpty(liveTurn) ? (
               <div style={{ fontStyle: "italic", opacity: 0.7 }}>
-                {copy.searchingRecordings}
+                {stage === "searching"
+                  ? locale === "ru"
+                    ? "Думаю…"
+                    : "Thinking…"
+                  : copy.searchingRecordings}
               </div>
-            ) : null}
-            {streamingAssistant.toolCalls.length > 0 && streamingAssistant.text.length === 0 ? (
-              <ul style={{ margin: 0, paddingLeft: 18, fontSize: 13, opacity: 0.7 }}>
-                {streamingAssistant.toolCalls.map((tc) => (
-                  <li key={tc.call_id}>
-                    {tc.tool}
-                    {tc.summary ? ` → ${tc.summary}` : "…"}
-                  </li>
-                ))}
-              </ul>
-            ) : null}
-            {streamingAssistant.text.length > 0 ? (
-              <div>{streamingAssistant.text}</div>
-            ) : null}
-            {streamingAssistant.citations.length > 0 ? (
+            ) : (
+              <CompanionTimeline
+                items={liveTurn.items}
+                isLive={true}
+                locale={locale}
+                onResolve={
+                  activeChatId
+                    ? (aid, dec) => void handleResolve(activeChatId, aid, dec)
+                    : undefined
+                }
+              />
+            )}
+            {liveTurn.citations.length > 0 ? (
               <CitationStrip
-                citations={streamingAssistant.citations}
+                citations={liveTurn.citations}
                 recordingTitles={recordingTitlesById}
                 fallbackTitle={copy.recordingFallback}
               />

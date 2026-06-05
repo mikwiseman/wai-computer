@@ -62,6 +62,24 @@ export async function deleteChat(chatId: string): Promise<void> {
   await apiFetchResponse(`${COMPANION}/chats/${chatId}`, { method: "DELETE" });
 }
 
+export type ResolveActionResponse = {
+  action_id: string;
+  status: string; // executed | rejected | dispatched | failed
+  recipient: string | null;
+};
+
+/** Approve (once/always) or reject a pending Companion chat action. */
+export function resolveAction(
+  chatId: string,
+  actionId: string,
+  decision: "once" | "always" | "reject",
+): Promise<ResolveActionResponse> {
+  return apiFetch<ResolveActionResponse>(
+    `${COMPANION}/chats/${chatId}/actions/${actionId}/resolve`,
+    { method: "POST", body: JSON.stringify({ decision }) },
+  );
+}
+
 async function openStream(
   url: string,
   body: string,
@@ -90,7 +108,7 @@ export async function* streamMessage(
   chatId: string,
   content: string,
   signal?: AbortSignal,
-  clientCapabilities: string[] = ["actions_v1"],
+  clientCapabilities: string[] = ["actions_v1", "agent_chat_v2"],
 ): AsyncGenerator<CompanionEvent, void, unknown> {
   const url = `${getApiBaseUrl()}${COMPANION}/chats/${chatId}/messages`;
   const body = JSON.stringify({

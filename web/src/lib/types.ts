@@ -694,10 +694,14 @@ export interface CompanionConversationList {
   chats: CompanionConversation[];
 }
 
+export type CompanionPlanStep = { title: string; status: string };
+
 export type CompanionEvent =
   | { type: "turn_start"; message_id: string; conversation_id: string }
+  | { type: "thinking"; text: string }
   | { type: "tool_call"; call_id: string; tool: string; args: Record<string, unknown> }
-  | { type: "tool_result"; call_id: string; summary: string }
+  | { type: "tool_result"; call_id: string; summary: string; ok?: boolean }
+  | { type: "plan"; steps: CompanionPlanStep[] }
   | { type: "token"; text: string }
   | {
       type: "citation";
@@ -1238,6 +1242,9 @@ export interface Entity {
   name: string;
   metadata: Record<string, unknown> | null;
   created_at: string;
+  // How many sources mention this entity — powers Pages ranking + "N sources".
+  mention_count?: number;
+  source_count?: number;
 }
 
 export interface EntityDetail extends Entity {
@@ -1249,6 +1256,28 @@ export interface EntityDetail extends Entity {
     relation_type: string | null;
     context: string | null;
   }>;
+}
+
+// Ask your Brain — one cited answer with honest gaps + freshness.
+export interface BrainAnswerCitation {
+  id: string;
+  source_kind: string;
+  source_id: string;
+  title: string | null;
+  start_ms: number | null;
+}
+
+export interface BrainAnswerFreshness {
+  newest_source_at: string | null;
+  weeks_since: number | null;
+  stale: boolean;
+}
+
+export interface BrainAnswer {
+  answer: string;
+  citations: BrainAnswerCitation[];
+  gaps: string[];
+  freshness: BrainAnswerFreshness;
 }
 
 

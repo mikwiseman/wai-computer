@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict
+from datetime import datetime
 from uuid import UUID
 
 from fastapi import APIRouter, Query
@@ -10,6 +11,7 @@ from pydantic import BaseModel
 
 from app.api.deps import CurrentUser, Database
 from app.core.brain import compile_brain
+from app.core.brain_ask import ask_brain
 from app.core.brain_graph import build_brain_graph
 
 router = APIRouter(prefix="/brain", tags=["brain"])
@@ -112,4 +114,44 @@ async def get_brain_graph(
         nodes=[GraphNodeResponse(**asdict(n)) for n in graph.nodes],
         edges=[GraphEdgeResponse(**asdict(e)) for e in graph.edges],
         stats=graph.stats,
+    )
+
+
+class BrainAskRequest(BaseModel):
+    question: str
+
+
+class BrainAnswerCitationResponse(BaseModel):
+    id: str
+    source_kind: str
+    source_id: str
+    title: str | None
+    start_ms: int | None
+
+
+class BrainFreshnessResponse(BaseModel):
+    newest_source_at: datetime | None
+    weeks_since: int | None
+    stale: bool
+
+
+class BrainAnswerResponse(BaseModel):
+    answer: str
+    citations: list[BrainAnswerCitationResponse]
+    gaps: list[str]
+    freshness: BrainFreshnessResponse
+
+
+@router.post("/ask", response_model=BrainAnswerResponse)
+async def ask_brain_route(
+    request: BrainAskRequest, user: CurrentUser, db: Database
+) -> BrainAnswerResponse:
+    """Ask your Brain: one cited answer from your own recordings, with the
+    gaps and staleness stated honestly — never an answer from outside them."""
+    answer = await ask_brain(db, user.id, request.question)
+    return BrainAnswerResponse(
+        answer=answer.answer,
+        citations=[BrainAnswerCitationResponse(**asdict(c)) for c in answer.citations],
+        gaps=answer.gaps,
+        freshness=BrainFreshnessResponse(**asdict(answer.freshness)),
     )
