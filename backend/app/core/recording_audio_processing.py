@@ -480,6 +480,7 @@ async def process_staged_recording_upload(
             recording_id=recording_id,
             data={"status": recording.status},
         )
+        delete_staged_file(staged_path)
         return
 
     recording.status = RecordingStatus.PROCESSING.value
@@ -787,6 +788,59 @@ async def process_staged_recording_upload(
             client_duration_seconds=client_duration_seconds,
             transcript_end_ms=max_end_ms,
         )
+        transcript_text = " ".join(
+            transcript.text for transcript in speech_transcript_results if transcript.text.strip()
+        )
+
+        persisted_segments: list[Segment] = []
+        for transcript in speech_transcript_results:
+            text = transcript.text.strip()
+            segment = Segment(
+                recording_id=recording_id,
+                speaker=transcript.speaker,
+                raw_label=transcript.speaker,
+                content=text,
+                start_ms=transcript.start_ms,
+                end_ms=transcript.end_ms,
+                confidence=transcript.confidence,
+            )
+            db.add(segment)
+            persisted_segments.append(segment)
+
+        recording.duration_seconds = _duration_seconds_from_sources(
+            audio_duration_seconds=audio_duration_seconds,
+            client_duration_seconds=client_duration_seconds,
+            transcript_end_ms=max_end_ms,
+        )
+        _log_transcript_coverage(
+            recording_id=recording_id,
+            audio_duration_seconds=audio_duration_seconds,
+            client_duration_seconds=client_duration_seconds,
+            transcript_end_ms=max_end_ms,
+            segment_count=len(speech_transcript_results),
+        )
+        recording.status = RecordingStatus.READY.value
+        recording.failure_code = None
+        recording.failure_message = None
+        await record_recording_transcript_words(db, recording, transcript_text)
+        await db.commit()
+        await start_recording_summary_generation_job(
+            db,
+            recording_id=recording_id,
+            user_id=user_id,
+            enqueue=_enqueue_recording_summary_generation,
+            skip_if_summary_exists=True,
+            raise_on_enqueue_error=False,
+        )
+        _recording_lifecycle_breadcrumb(
+            "Recording transcript persisted",
+            recording_id=recording_id,
+            data={
+                "duration_seconds": recording.duration_seconds,
+                "segment_count": len(speech_transcript_results),
+            },
+        )
+
         voice_identification_enabled = voice_identification_enabled_for_audio(
             recording_id=recording_id,
             duration_seconds=effective_duration,
@@ -838,11 +892,14 @@ async def process_staged_recording_upload(
         # gain the introduced name as an alias. Clusters with no voice match
         # get a fresh Person created from the introduction.
         try:
+            raw_labels = {
+                transcript.speaker
+                for transcript in speech_transcript_results
+                if transcript.speaker
+            }
             extracted_names = await extract_speaker_names(
                 transcript_results=speech_transcript_results,
-                raw_labels=speaker_assignments.keys(),
-                usage_user_id=user_id,
-                usage_recording_id=recording_id,
+                raw_labels=raw_labels,
             )
             if extracted_names:
                 applied = await apply_extracted_names(
@@ -863,62 +920,16 @@ async def process_staged_recording_upload(
                 type(exc).__name__,
             )
 
-        embedding_failure_count = 0
-        for transcript in speech_transcript_results:
-            text = transcript.text.strip()
-            embedding = None
-            if text:
-                try:
-                    embedding = await generate_embedding(
-                        text,
-                        usage_user_id=user_id,
-                        usage_recording_id=recording_id,
-                        usage_feature="recording",
-                        usage_operation="embedding.segment",
-                    )
-                except Exception as exc:
-                    embedding_failure_count += 1
-                    logger.warning(
-                        "Failed to generate embedding error_type=%s error_fingerprint=%s",
-                        type(exc).__name__,
-                        fingerprint_text(str(exc)),
-                    )
-
-            assignment = speaker_assignments.get(transcript.speaker) if transcript.speaker else None
-            assigned_person_id, match_confidence = (
-                assignment if assignment is not None else (None, None)
+        for segment in persisted_segments:
+            assignment = (
+                speaker_assignments.get(segment.raw_label) if segment.raw_label else None
             )
-            db.add(
-                Segment(
-                    recording_id=recording_id,
-                    speaker=transcript.speaker,
-                    raw_label=transcript.speaker,
-                    person_id=assigned_person_id,
-                    auto_assigned=assigned_person_id is not None,
-                    match_confidence=match_confidence,
-                    content=text,
-                    start_ms=transcript.start_ms,
-                    end_ms=transcript.end_ms,
-                    confidence=transcript.confidence,
-                    embedding=embedding,
-                )
-            )
-
-        recording.duration_seconds = _duration_seconds_from_sources(
-            audio_duration_seconds=audio_duration_seconds,
-            client_duration_seconds=client_duration_seconds,
-            transcript_end_ms=max_end_ms,
-        )
-        _log_transcript_coverage(
-            recording_id=recording_id,
-            audio_duration_seconds=audio_duration_seconds,
-            client_duration_seconds=client_duration_seconds,
-            transcript_end_ms=max_end_ms,
-            segment_count=len(speech_transcript_results),
-        )
-        transcript_text = " ".join(
-            transcript.text for transcript in speech_transcript_results if transcript.text.strip()
-        )
+            if assignment is None:
+                continue
+            assigned_person_id, match_confidence = assignment
+            segment.person_id = assigned_person_id
+            segment.auto_assigned = assigned_person_id is not None
+            segment.match_confidence = match_confidence
 
         if should_generate_title and transcript_text.strip():
             try:
@@ -940,19 +951,31 @@ async def process_staged_recording_upload(
                 )
                 recording.title = None
 
-        recording.status = RecordingStatus.READY.value
-        recording.failure_code = None
-        recording.failure_message = None
-        await record_recording_transcript_words(db, recording, transcript_text)
         await db.commit()
-        await start_recording_summary_generation_job(
-            db,
-            recording_id=recording_id,
-            user_id=user_id,
-            enqueue=_enqueue_recording_summary_generation,
-            skip_if_summary_exists=True,
-            raise_on_enqueue_error=False,
-        )
+        delete_staged_file(staged_path)
+
+        embedding_failure_count = 0
+        for segment in persisted_segments:
+            text = segment.content.strip()
+            if not text:
+                continue
+            try:
+                segment.embedding = await generate_embedding(
+                    text,
+                    usage_user_id=user_id,
+                    usage_recording_id=recording_id,
+                    usage_feature="recording",
+                    usage_operation="embedding.segment",
+                )
+            except Exception as exc:
+                embedding_failure_count += 1
+                logger.warning(
+                    "Failed to generate embedding error_type=%s error_fingerprint=%s",
+                    type(exc).__name__,
+                    fingerprint_text(str(exc)),
+                )
+
+        await db.commit()
         if embedding_failure_count:
             alert_data = {
                 "alert_code": "recording.embeddings.degraded",
@@ -993,7 +1016,6 @@ async def process_staged_recording_upload(
             segment_count=len(speech_transcript_results),
             transcript_end_ms=max_end_ms,
         )
-        delete_staged_file(staged_path)
         logger.info("audio processing completed latency_ms=%s", processing_latency_ms)
     except TranscriptionGuardError as exc:
         await db.rollback()

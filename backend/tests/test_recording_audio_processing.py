@@ -1,5 +1,6 @@
 """Tests for queued canonical recording audio processing."""
 
+import asyncio
 import logging
 import wave
 from datetime import datetime, timezone
@@ -309,6 +310,91 @@ async def test_process_staged_recording_upload_survives_title_and_embedding_fail
         .all()
     )
     assert [s.content for s in segments] == ["Degraded path still completes."]
+    assert not staged_path.exists()
+
+
+@pytest.mark.asyncio
+async def test_process_staged_recording_upload_commits_transcript_before_embedding_tail(
+    db_session: AsyncSession,
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Transcript persistence must not depend on the long best-effort embedding tail."""
+    user = User(email="durable-transcript@example.com", password_hash="x", default_language="en")
+    db_session.add(user)
+    await db_session.flush()
+    recording = Recording(
+        user_id=user.id,
+        title=None,
+        type="meeting",
+        status=RecordingStatus.PROCESSING.value,
+        uploaded_at=datetime.now(timezone.utc),
+        language="en",
+    )
+    db_session.add(recording)
+    await db_session.commit()
+
+    staged_path = tmp_path / "durable-transcript.wav"
+    staged_path.write_bytes(b"audio")
+    transcript_results = [
+        TranscriptResult(
+            text="Durable transcript survives cancellation.",
+            speaker="speaker_0",
+            is_final=True,
+            start_ms=0,
+            end_ms=2400,
+            confidence=0.93,
+        )
+    ]
+
+    async def _cancel_embedding(*_args, **_kwargs):
+        raise asyncio.CancelledError()
+
+    monkeypatch.setattr(
+        "app.core.recording_audio_processing.transcribe_audio_file",
+        AsyncMock(return_value=transcript_results),
+    )
+    monkeypatch.setattr(
+        "app.core.recording_audio_processing.generate_embedding",
+        _cancel_embedding,
+    )
+    monkeypatch.setattr(
+        "app.core.recording_audio_processing.generate_title",
+        AsyncMock(return_value="Durable Transcript"),
+    )
+    monkeypatch.setattr(
+        "app.core.recording_audio_processing.identify_speakers_for_recording",
+        AsyncMock(return_value={}),
+    )
+
+    with pytest.raises(asyncio.CancelledError):
+        await process_staged_recording_upload(
+            db_session,
+            recording_id=recording.id,
+            user_id=user.id,
+            staged_path=staged_path,
+            content_type="audio/wav",
+            user_default_language="en",
+        )
+
+    await db_session.rollback()
+    await db_session.refresh(recording)
+    segments = (
+        (await db_session.execute(select(Segment).where(Segment.recording_id == recording.id)))
+        .scalars()
+        .all()
+    )
+    summary_job = (
+        await db_session.execute(
+            select(SummaryGenerationJob).where(SummaryGenerationJob.recording_id == recording.id)
+        )
+    ).scalar_one()
+
+    assert recording.status == RecordingStatus.READY.value
+    assert [segment.content for segment in segments] == [
+        "Durable transcript survives cancellation."
+    ]
+    assert summary_job.status == SummaryGenerationStatus.QUEUED.value
     assert not staged_path.exists()
 
 
