@@ -50,8 +50,9 @@ for candidate in "$RELEASE_ROOT/${RELEASE_SLUG}-"*; do
   fi
 done
 
-if [[ ! -f "$RELEASE_ROOT/appcast.xml" ]]; then
-  echo "ERROR: appcast not found at $RELEASE_ROOT/appcast.xml" >&2
+LOCAL_APPCAST_PATH="$RELEASE_DIR/appcast.xml"
+if [[ ! -f "$LOCAL_APPCAST_PATH" ]]; then
+  echo "ERROR: release appcast not found at $LOCAL_APPCAST_PATH" >&2
   exit 1
 fi
 
@@ -63,7 +64,7 @@ if [[ ! -x "$MERGE_SCRIPT" ]]; then
 fi
 echo "Merging local appcast with remote at $REMOTE_APPCAST_URL ..."
 python3 "$MERGE_SCRIPT" \
-  --local "$RELEASE_ROOT/appcast.xml" \
+  --local "$LOCAL_APPCAST_PATH" \
   --remote-url "$REMOTE_APPCAST_URL" \
   --out "$RELEASE_ROOT/appcast.xml"
 
@@ -74,13 +75,15 @@ ssh "${SSH_OPTS[@]}" "$REMOTE" "install -d -m 755 '$REMOTE_RELEASE_ROOT' '$REMOT
 rsync -az -e "ssh -i $SSH_KEY_PATH -o BatchMode=yes -o StrictHostKeyChecking=accept-new" \
   "$RELEASE_DIR/" \
   "$REMOTE:$REMOTE_RELEASE_ROOT/${RELEASE_SLUG}/"
-for variant_dir in "${VARIANT_RELEASE_DIRS[@]}"; do
-  variant_slug=$(basename "$variant_dir")
-  ssh "${SSH_OPTS[@]}" "$REMOTE" "install -d -m 755 '$REMOTE_RELEASE_ROOT/${variant_slug}'"
-  rsync -az -e "ssh -i $SSH_KEY_PATH -o BatchMode=yes -o StrictHostKeyChecking=accept-new" \
-    "$variant_dir/" \
-    "$REMOTE:$REMOTE_RELEASE_ROOT/${variant_slug}/"
-done
+if [[ ${#VARIANT_RELEASE_DIRS[@]} -gt 0 ]]; then
+  for variant_dir in "${VARIANT_RELEASE_DIRS[@]}"; do
+    variant_slug=$(basename "$variant_dir")
+    ssh "${SSH_OPTS[@]}" "$REMOTE" "install -d -m 755 '$REMOTE_RELEASE_ROOT/${variant_slug}'"
+    rsync -az -e "ssh -i $SSH_KEY_PATH -o BatchMode=yes -o StrictHostKeyChecking=accept-new" \
+      "$variant_dir/" \
+      "$REMOTE:$REMOTE_RELEASE_ROOT/${variant_slug}/"
+  done
+fi
 
 # Per-variant "latest" pointers ride along with the global artifacts so the
 # marketing site can link directly to e.g. WaiComputer-ru-latest.dmg.
