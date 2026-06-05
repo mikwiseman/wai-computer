@@ -1902,6 +1902,71 @@ async def test_handle_text_message_uses_active_recording_context(
 
 
 @pytest.mark.asyncio
+async def test_handle_text_message_does_not_route_ambiguous_prompt_without_context(
+    db_session: AsyncSession,
+    monkeypatch,
+):
+    user = await _user(db_session, "telegram-ambiguous@example.com")
+    account = TelegramAccount(user_id=user.id, telegram_user_id=69, telegram_chat_id=69)
+    db_session.add(account)
+    await db_session.commit()
+    capture = _TelegramCapture()
+    start_wai_task = AsyncMock()
+    monkeypatch.setattr(telegram_routes, "start_wai_task", start_wai_task)
+
+    await telegram_routes._handle_text_message(
+        db_session,
+        capture,
+        message={"message_id": 19, "chat": {"id": 69}},
+        account=account,
+        text="?",
+    )
+
+    start_wai_task.assert_not_awaited()
+    assert "Напиши вопрос полностью" in capture.messages[-1]["text"]
+    assert (
+        await db_session.execute(select(AgentRun).where(AgentRun.user_id == user.id))
+    ).all() == []
+
+
+@pytest.mark.asyncio
+async def test_handle_text_message_reports_pending_telegram_recording_context(
+    db_session: AsyncSession,
+    monkeypatch,
+):
+    user = await _user(db_session, "telegram-pending-recording@example.com")
+    account = TelegramAccount(
+        user_id=user.id,
+        telegram_user_id=70,
+        telegram_chat_id=70,
+        active_context={
+            "ref_type": "pending_recording",
+            "source": "telegram",
+            "started_at": datetime.now(timezone.utc).isoformat(),
+        },
+    )
+    db_session.add(account)
+    await db_session.commit()
+    capture = _TelegramCapture()
+    start_wai_task = AsyncMock()
+    monkeypatch.setattr(telegram_routes, "start_wai_task", start_wai_task)
+
+    await telegram_routes._handle_text_message(
+        db_session,
+        capture,
+        message={"message_id": 20, "chat": {"id": 70}},
+        account=account,
+        text="?",
+    )
+
+    start_wai_task.assert_not_awaited()
+    assert "еще расшифровывается" in capture.messages[-1]["text"]
+    assert (
+        await db_session.execute(select(AgentRun).where(AgentRun.user_id == user.id))
+    ).all() == []
+
+
+@pytest.mark.asyncio
 async def test_handle_text_message_empty_answer_and_missing_chat(
     db_session: AsyncSession,
 ):
@@ -2114,6 +2179,43 @@ async def test_handle_media_message_imports_and_replies(
     assert "Первый пункт" in capture.messages[-1]["text"]
     assert "Саммари" not in capture.messages[-1]["text"]
     assert "Расшифровка" not in capture.messages[-1]["text"]
+
+
+@pytest.mark.asyncio
+async def test_handle_media_message_marks_pending_context_before_import(
+    db_session: AsyncSession,
+    monkeypatch,
+):
+    user = await _user(db_session, "telegram-media-pending@example.com")
+    account = TelegramAccount(user_id=user.id, telegram_user_id=52, telegram_chat_id=52)
+    db_session.add(account)
+    await db_session.commit()
+    capture = _TelegramCapture()
+    recording_id = uuid4()
+    seen_contexts: list[dict[str, Any] | None] = []
+
+    async def fake_import(**kwargs):
+        seen_contexts.append(account.active_context)
+        return SimpleNamespace(
+            recording=SimpleNamespace(id=recording_id, title="Telegram Voice"),
+            summary=None,
+            transcript="",
+        )
+
+    monkeypatch.setattr(telegram_routes, "import_media_as_recording", fake_import)
+
+    await telegram_routes._handle_media_message(
+        db_session,
+        capture,
+        message={"message_id": 22, "chat": {"id": 52}},
+        account=account,
+        media={"kind": "voice", "file_id": "file-id"},
+    )
+
+    assert seen_contexts[0]["ref_type"] == "pending_recording"
+    assert seen_contexts[0]["source"] == "telegram"
+    assert account.active_context["ref_type"] == "recording"
+    assert account.active_context["ref_id"] == str(recording_id)
 
 
 @pytest.mark.asyncio

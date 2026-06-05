@@ -93,6 +93,7 @@ BOT_LINK_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 BOT_LINK_CODE_LENGTH = 8
 CHAT_ACTION_INTERVAL_SECONDS = 4.0
 REMINDER_TEXT_LIMIT = 1200
+TELEGRAM_PENDING_RECORDING_TTL = timedelta(hours=6)
 _REMIND_RELATIVE_RE = re.compile(
     r"^(?:in|через)\s+(\d{1,5})\s*"
     r"(m|min|minute|minutes|мин|минут|h|hour|hours|ч|час|часа|часов|d|day|days|д|дн|день|дня|дней)"
@@ -355,6 +356,78 @@ def _text_intent(text: str) -> tuple[str, str] | None:
     ):
         return "meetings", ""
 
+    return None
+
+
+def _is_ambiguous_status_prompt(text: str) -> bool:
+    normalized = text.strip().casefold()
+    if not normalized:
+        return False
+    if normalized in {"?", "??", "???", "статус?", "готово?", "status?", "done?"}:
+        return True
+    return len(normalized) <= 3 and set(normalized) <= {"?"}
+
+
+def _is_pending_recording_followup(text: str) -> bool:
+    normalized = text.strip().casefold()
+    if _is_ambiguous_status_prompt(normalized):
+        return True
+    return normalized in {
+        "статус",
+        "готово",
+        "готово?",
+        "что там",
+        "ну что",
+        "ну?",
+        "о чем",
+        "о чём",
+        "саммари",
+        "summary",
+        "summarize",
+        "what is it about",
+        "status",
+        "status?",
+        "done",
+        "done?",
+    }
+
+
+def _parse_context_datetime(value: Any) -> datetime | None:
+    if not isinstance(value, str) or not value.strip():
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        return parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def _telegram_status_reply_for_text(context: Any, text: str) -> str | None:
+    if isinstance(context, dict):
+        ref_type = str(context.get("ref_type") or "")
+        if ref_type == "pending_recording" and _is_pending_recording_followup(text):
+            started_at = _parse_context_datetime(context.get("started_at"))
+            if started_at is not None:
+                age = datetime.now(timezone.utc) - started_at
+                if age > TELEGRAM_PENDING_RECORDING_TTL:
+                    return (
+                        "Последний Telegram-импорт не завершился. "
+                        "Пришли запись еще раз или проверь библиотеку WaiComputer."
+                    )
+            return (
+                "Запись еще расшифровывается и сохраняется. "
+                "Когда закончу, пришлю расшифровку и саммари сюда."
+            )
+        if ref_type == "recording_import_error" and _is_pending_recording_followup(text):
+            message = str(context.get("message") or "ошибка импорта").strip()
+            return f"Последний Telegram-импорт не завершился: {message}"
+        if ref_type in {"recording", "item"}:
+            return None
+
+    if _is_ambiguous_status_prompt(text):
+        return "Напиши вопрос полностью или используй /help, чтобы посмотреть команды."
     return None
 
 
@@ -1954,7 +2027,6 @@ async def _ensure_telegram_conversation(
     db.add(conversation)
     await db.flush()
     account.companion_conversation_id = conversation.id
-    await db.commit()
     return conversation
 
 
@@ -1977,12 +2049,66 @@ async def _set_telegram_active_context(
     title: str | None,
 ) -> None:
     context = _telegram_context(ref_type, ref_id, title)
+    await _write_telegram_active_context(db, account, context)
+
+
+async def _write_telegram_active_context(
+    db: AsyncSession,
+    account: TelegramAccount,
+    context: dict[str, Any] | None,
+) -> None:
     account.active_context = context
     conversation = await _ensure_telegram_conversation(db, account)
     scope = dict(conversation.scope or {})
-    scope["active_context"] = context
+    if context is None:
+        scope.pop("active_context", None)
+    else:
+        scope["active_context"] = context
     conversation.scope = scope
     await db.flush()
+
+
+async def _set_telegram_pending_recording_context(
+    db: AsyncSession,
+    account: TelegramAccount,
+    *,
+    message: dict[str, Any],
+    media: dict[str, Any],
+    status_message_id: int | None,
+) -> None:
+    message_id = message.get("message_id")
+    context = {
+        "ref_type": "pending_recording",
+        "source": "telegram",
+        "started_at": datetime.now(timezone.utc).isoformat(),
+        "media_kind": str(media.get("kind") or "media"),
+        "telegram_message_id": message_id if isinstance(message_id, int) else None,
+        "status_message_id": status_message_id,
+    }
+    await _write_telegram_active_context(db, account, context)
+    await db.commit()
+
+
+async def _set_telegram_import_error_context(
+    db: AsyncSession,
+    account: TelegramAccount,
+    *,
+    message: str,
+) -> None:
+    context = {
+        "ref_type": "recording_import_error",
+        "source": "telegram",
+        "finished_at": datetime.now(timezone.utc).isoformat(),
+        "message": message,
+    }
+    await _write_telegram_active_context(db, account, context)
+
+
+async def _clear_telegram_active_context(
+    db: AsyncSession,
+    account: TelegramAccount,
+) -> None:
+    await _write_telegram_active_context(db, account, None)
 
 
 async def _handle_url_message(
@@ -2130,6 +2256,14 @@ async def _handle_text_message(
     if chat_id is None:
         return
     if await _ensure_active_user(db, client, message=message, account=account) is None:
+        return
+    status_reply = _telegram_status_reply_for_text(account.active_context, text)
+    if status_reply is not None:
+        await client.send_message(
+            chat_id,
+            status_reply,
+            reply_to_message_id=message.get("message_id"),
+        )
         return
     conversation = await _ensure_telegram_conversation(db, account)
     action_task = asyncio.create_task(_send_chat_action_until_cancelled(client, chat_id))
@@ -2320,7 +2454,8 @@ async def _handle_media_message(
     chat_id = _telegram_chat_id(message)
     if chat_id is None:
         return
-    if await _ensure_active_user(db, client, message=message, account=account) is None:
+    user = await _ensure_active_user(db, client, message=message, account=account)
+    if user is None:
         return
 
     file_id = media.get("file_id")
@@ -2341,31 +2476,40 @@ async def _handle_media_message(
         reply_to_message_id=message.get("message_id"),
     )
     status_message_id = _sent_message_id(status_response)
+    await _set_telegram_pending_recording_context(
+        db,
+        account,
+        message=message,
+        media=media,
+        status_message_id=status_message_id,
+    )
 
     tg_file = await client.get_file(file_id)
     if tg_file.file_size is not None and tg_file.file_size > settings.telegram_download_max_bytes:
-        await client.send_message(chat_id, _telegram_file_too_large_message())
+        too_large_message = _telegram_file_too_large_message()
+        await _set_telegram_import_error_context(db, account, message=too_large_message)
+        await client.send_message(chat_id, too_large_message)
+        await _delete_status_message(client, chat_id=chat_id, message_id=status_message_id)
         return
     try:
         data = await client.download_file(tg_file, max_bytes=settings.telegram_download_max_bytes)
         if len(data) > settings.telegram_download_max_bytes:
-            await client.send_message(chat_id, _telegram_file_too_large_message())
+            too_large_message = _telegram_file_too_large_message()
+            await _set_telegram_import_error_context(db, account, message=too_large_message)
+            await client.send_message(chat_id, too_large_message)
+            await _delete_status_message(client, chat_id=chat_id, message_id=status_message_id)
             return
     except TelegramFileTooLargeError:
+        too_large_message = _telegram_file_too_large_message()
+        await _set_telegram_import_error_context(db, account, message=too_large_message)
         await client.send_message(
             chat_id,
-            _telegram_file_too_large_message(),
+            too_large_message,
             reply_to_message_id=message.get("message_id"),
         )
+        await _delete_status_message(client, chat_id=chat_id, message_id=status_message_id)
         return
 
-    user = await db.get(User, account.user_id)
-    if user is None:
-        await client.send_message(
-            chat_id,
-            "Аккаунт WaiComputer не найден. Привяжи Telegram заново.",
-        )
-        return
     caption = str(message.get("caption") or "").strip()
     title = caption[:500] if caption else None
     action_task = asyncio.create_task(_send_chat_action_until_cancelled(client, chat_id))
@@ -2387,7 +2531,9 @@ async def _handle_media_message(
             exc.code,
             media.get("kind"),
         )
+        await _set_telegram_import_error_context(db, account, message=exc.message)
         await client.send_message(chat_id, exc.message)
+        await _delete_status_message(client, chat_id=chat_id, message_id=status_message_id)
         return
     finally:
         await _stop_chat_action_task(action_task)
@@ -2412,6 +2558,8 @@ async def _handle_media_message(
             ref_id=recording_id,
             title=result.recording.title,
         )
+    else:
+        await _clear_telegram_active_context(db, account)
     if summary_message:
         await _send_chunks(
             client,
