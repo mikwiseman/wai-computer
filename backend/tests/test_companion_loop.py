@@ -17,6 +17,8 @@ from app.core.companion import (
     CompanionError,
     DoneEvent,
     TokenEvent,
+    ToolCallEvent,
+    ToolResultEvent,
     TurnContext,
     run_turn,
     system_prompt_for,
@@ -52,6 +54,15 @@ class _DeltaEvent:
 class _CompletedEvent:
     response: _FakeResponse
     type: str = "response.completed"
+
+
+@dataclass
+class _OutputItemEvent:
+    """A response.output_item.{added,done} streaming event carrying one output
+    item — the shape hosted reads (mcp_call) and web_search_call arrive in."""
+
+    item: dict[str, Any]
+    type: str = "response.output_item.added"
 
 
 @dataclass
@@ -436,6 +447,55 @@ class TestRunTurn:
         assert exc.value.code == "stream_error"
         assert "Companion stream failed" in exc.value.message
 
+    async def test_run_turn_emits_tool_actions_for_mcp_reads(
+        self, db_session, setup_user_and_chat
+    ):
+        """Hosted brain reads surface as live tool_call + tool_result events so
+        the client can render a "Tool actions" card. The result summary is a
+        privacy-safe count, never raw transcript content."""
+        s = setup_user_and_chat
+        fake = FakeOpenAI(
+            [
+                _OutputItemEvent(
+                    item={
+                        "type": "mcp_call",
+                        "id": "mcp_1",
+                        "name": "search",
+                        "arguments": '{"query": "pricing"}',
+                    }
+                ),
+                _DeltaEvent("Found it. "),
+                _OutputItemEvent(
+                    item={
+                        "type": "mcp_call",
+                        "id": "mcp_1",
+                        "name": "search",
+                        "output": '{"segments": [1, 2, 3]}',
+                    },
+                    type="response.output_item.done",
+                ),
+                _completed("Found it."),
+            ]
+        )
+        events = await _collect(
+            run_turn(
+                db_session,
+                s["user"].id,
+                s["conversation"].id,
+                "what about pricing?",
+                openai_client=fake,
+            )
+        )
+        types = [e.type for e in events]
+        assert types[0] == "turn_start"
+        assert types[-1] == "done"
+        calls = [e for e in events if isinstance(e, ToolCallEvent)]
+        results = [e for e in events if isinstance(e, ToolResultEvent)]
+        assert len(calls) == 1 and calls[0].tool == "search"
+        assert calls[0].args == {"query": "pricing"}
+        assert len(results) == 1 and results[0].ok is True
+        assert "3 results" in results[0].summary
+
     async def test_system_prompt_points_to_mcp_not_private_function_tools(
         self, setup_user_and_chat
     ):
@@ -524,6 +584,66 @@ class TestPostMessageSSE:
         assert "send_message_telegram" in body
         assert "linked chat" in body
         assert "hello" in body
+
+    async def test_agent_chat_v2_streams_tool_actions_via_run_turn(
+        self,
+        client: AsyncClient,
+        auth_headers: dict,
+        monkeypatch,
+    ):
+        """A client advertising agent_chat_v2 is routed back through the
+        streaming run_turn engine and receives live tool_call/tool_result
+        events — the durable-runtime path would only emit a single message."""
+        fake = FakeOpenAI(
+            [
+                _OutputItemEvent(
+                    item={
+                        "type": "mcp_call",
+                        "id": "mcp_1",
+                        "name": "search",
+                        "arguments": '{"query": "pricing"}',
+                    }
+                ),
+                _DeltaEvent("Here it is."),
+                _OutputItemEvent(
+                    item={
+                        "type": "mcp_call",
+                        "id": "mcp_1",
+                        "output": '{"segments": [1, 2]}',
+                    },
+                    type="response.output_item.done",
+                ),
+                _completed("Here it is."),
+            ]
+        )
+        monkeypatch.setattr(
+            "app.core.companion.get_openai_client", lambda: fake
+        )
+        chat = (
+            await client.post(
+                "/api/companion/chats", json={}, headers=auth_headers
+            )
+        ).json()
+
+        response = await client.post(
+            f"/api/companion/chats/{chat['id']}/messages",
+            json={
+                "content": "what did I decide on pricing?",
+                "client_capabilities": ["actions_v1", "agent_chat_v2"],
+            },
+            headers=auth_headers,
+        )
+        assert response.status_code == 200
+        body = response.text
+        events = [
+            line.split(": ", 1)[1]
+            for line in body.split("\n")
+            if line.startswith("event: ")
+        ]
+        assert events[0] == "turn_start"
+        assert "tool_call" in events
+        assert "tool_result" in events
+        assert "done" in events
 
     async def test_first_user_message_auto_titles_new_chat(
         self,
