@@ -56,6 +56,14 @@ enum CompanionChatPresentation {
         let fallbackPrefix = locale.identifier.lowercased().hasPrefix("ru") ? "Диалог" : "Thread"
         return "\(fallbackPrefix) · \(formatter.string(from: lastMessageAt ?? createdAt))"
     }
+
+    /// Compact token count for the status badge (e.g. 1234 -> "1.2k").
+    static func formatTokenCount(_ count: Int) -> String {
+        if count >= 1000 {
+            return String(format: "%.1fk", Double(count) / 1000.0)
+        }
+        return "\(count)"
+    }
 }
 
 /// Cross-platform Wai agent session view used by both the macOS sidebar `.wai` section
@@ -208,6 +216,8 @@ public struct CompanionView: View {
             .layoutPriority(1)
 
             Spacer(minLength: 12)
+
+            statusBadge
 
             if showsConversationSwitcher {
                 Button {
@@ -973,6 +983,37 @@ public struct CompanionView: View {
     // MARK: - Derived
 
     private var isStreaming: Bool { stage != .idle }
+
+    /// Model + context used in the latest completed assistant turn, for the
+    /// header status badge (openclaw-style "GPT-5.5 · 1.2k").
+    private var latestModelInfo: (model: String, contextTokens: Int)? {
+        guard let last = messages.last(where: { $0.role == .assistant }),
+            let model = last.model, !model.isEmpty
+        else { return nil }
+        let ctx = (last.inputTokens ?? 0) + (last.outputTokens ?? 0)
+        return (model, ctx)
+    }
+
+    @ViewBuilder
+    private var statusBadge: some View {
+        if let info = latestModelInfo {
+            HStack(spacing: 5) {
+                Image(systemName: "cpu").font(.system(size: 10))
+                Text(info.model).font(.system(size: 11, weight: .medium))
+                if info.contextTokens > 0 {
+                    Text("· \(CompanionChatPresentation.formatTokenCount(info.contextTokens))")
+                        .font(.system(size: 11))
+                }
+            }
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(Color.primary.opacity(0.05))
+            .clipShape(Capsule())
+            .help(t("Model · context used last turn", "Модель · контекст последнего хода"))
+            .accessibilityIdentifier("wai-status-badge")
+        }
+    }
 
     private var starterPrompts: [String] {
         [

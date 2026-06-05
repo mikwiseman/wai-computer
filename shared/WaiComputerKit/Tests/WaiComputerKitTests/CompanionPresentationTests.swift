@@ -39,6 +39,14 @@ final class CompanionPresentationTests: XCTestCase {
         )
     }
 
+    func testFormatTokenCount() {
+        XCTAssertEqual(CompanionChatPresentation.formatTokenCount(0), "0")
+        XCTAssertEqual(CompanionChatPresentation.formatTokenCount(999), "999")
+        XCTAssertEqual(CompanionChatPresentation.formatTokenCount(1000), "1.0k")
+        XCTAssertEqual(CompanionChatPresentation.formatTokenCount(1234), "1.2k")
+        XCTAssertEqual(CompanionChatPresentation.formatTokenCount(272000), "272.0k")
+    }
+
     // MARK: - Turn timeline reducer
 
     private func reduce(_ events: [CompanionStreamEvent]) -> CompanionTurnReducer {
