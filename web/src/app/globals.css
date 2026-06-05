@@ -3722,7 +3722,9 @@ a.primary-button[aria-disabled="true"]:hover {
   display: grid;
   grid-template-columns: minmax(220px, 320px) 1fr;
   gap: 1rem;
-  align-items: start;
+  /* stretch (not start) so the detail card matches the list height instead of
+   * floating as a short box beside a tall list (master-detail parity). */
+  align-items: stretch;
 }
 
 .items-feed__list,
@@ -3846,6 +3848,18 @@ a.primary-button[aria-disabled="true"]:hover {
 .items-feed__detail {
   padding: 1rem;
   min-height: 120px;
+}
+
+/* Loading / empty states fill + center within the (now full-height) detail card
+ * instead of sitting as a bare line at the top-left. */
+.item-detail--loading,
+.item-detail--empty {
+  display: grid;
+  place-items: center;
+  min-height: 100%;
+  color: var(--ink-soft);
+  font-size: var(--font-body-size);
+  text-align: center;
 }
 
 .items-feed__detail-actions {
