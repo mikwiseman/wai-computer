@@ -114,7 +114,7 @@ struct LiveRecordingView: View {
                     } icon: {
                         Image(systemName: "trash")
                     }
-                    .font(.system(size: 13, weight: .medium))
+                    .font(Typography.headingSmall)
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.large)
@@ -128,7 +128,7 @@ struct LiveRecordingView: View {
                     } icon: {
                         Image(systemName: recordingVM.canResumeRecording ? "play.fill" : "pause.fill")
                     }
-                    .font(.system(size: 13, weight: .medium))
+                    .font(Typography.headingSmall)
                     .frame(minWidth: 120)
                 }
                 .buttonStyle(.bordered)
@@ -146,7 +146,7 @@ struct LiveRecordingView: View {
                     } icon: {
                         Image(systemName: "stop.fill")
                     }
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(Typography.headingSmall)
                     .frame(minWidth: 150)
                 }
                 .buttonStyle(.borderedProminent)

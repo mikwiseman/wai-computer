@@ -102,7 +102,7 @@ struct MacReviewView: View {
                     Task { await model.reject(proposal.id) }
                 } label: {
                     Image(systemName: "xmark")
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(Typography.headingSmall)
                         .foregroundStyle(Palette.textSecondary)
                         .frame(width: 30, height: 30)
                         .background(Palette.surfaceSubtle)
@@ -117,7 +117,7 @@ struct MacReviewView: View {
                     Task { await model.accept(proposal.id) }
                 } label: {
                     Image(systemName: "checkmark")
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(Typography.headingSmall)
                         .foregroundStyle(.white)
                         .frame(width: 30, height: 30)
                         .background(Palette.accent)
