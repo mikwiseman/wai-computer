@@ -14,6 +14,7 @@ import {
   bulkRecordingOperation,
   changePassword,
   claimTelegramLinkCode,
+  createBrainMap,
   createDictionaryWord,
   createFolder,
   createRecording,
@@ -2008,6 +2009,7 @@ export function DashboardClient() {
             onRefreshRecordings={loadRecordingsState}
             onItemsChanged={() => setItemsReloadKey((key) => key + 1)}
             onError={setMessage}
+            onOpenBrain={() => setView("brain")}
           />
         ) : null}
         {view === "library" || view === "wai" || view === "add" || view === "content" ? (
@@ -2029,6 +2031,7 @@ export function DashboardClient() {
             onRefreshRecordings={loadRecordingsState}
             onItemsChanged={() => setItemsReloadKey((key) => key + 1)}
             onError={setMessage}
+            onOpenBrain={() => setView("brain")}
           />
         ) : null}
         {view === "folder" && currentFolder ? (
@@ -2049,6 +2052,7 @@ export function DashboardClient() {
             onRefreshRecordings={loadRecordingsState}
             onItemsChanged={() => setItemsReloadKey((key) => key + 1)}
             onError={setMessage}
+            onOpenBrain={() => setView("brain")}
           />
         ) : null}
         {view === "trash" ? renderLibrary("trash", trashRecordings) : null}
@@ -3097,6 +3101,7 @@ function UniversalInboxPanel({
   onRefreshRecordings,
   onItemsChanged,
   onError,
+  onOpenBrain,
 }: {
   locale: Locale;
   copy: DashboardCopy;
@@ -3123,6 +3128,7 @@ function UniversalInboxPanel({
   onRefreshRecordings: () => Promise<void>;
   onItemsChanged: () => void;
   onError: (message: string | null) => void;
+  onOpenBrain?: () => void;
 }) {
   const [rows, setRows] = useState<InboxRow[]>([]);
   const [selectedRow, setSelectedRow] = useState<InboxRow | null>(null);
@@ -3136,6 +3142,7 @@ function UniversalInboxPanel({
   const [loadingMore, setLoadingMore] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
+  const [creatingBrainMapSourceId, setCreatingBrainMapSourceId] = useState<string | null>(null);
   const inboxRequestId = useRef(0);
 
   const selectInboxSource = useCallback(
@@ -3375,6 +3382,38 @@ function UniversalInboxPanel({
     }
   }
 
+  async function handleCreateBrainMapFromSelectedSource() {
+    if (
+      !selectedRow ||
+      (selectedRow.source_kind !== "recording" && selectedRow.source_kind !== "item") ||
+      creatingBrainMapSourceId
+    ) {
+      return;
+    }
+    onError(null);
+    setCreatingBrainMapSourceId(selectedRow.id);
+    try {
+      const title = inboxTitle(selectedRow, locale);
+      await createBrainMap({
+        prompt: locale === "ru" ? `Сделай карту: ${title}` : `Map this source: ${title}`,
+        origin: "inbox",
+        source_scope: {
+          sources: [
+            {
+              source_kind: selectedRow.source_kind,
+              source_id: selectedRow.source_id,
+            },
+          ],
+        },
+      });
+      onOpenBrain?.();
+    } catch (error: unknown) {
+      onError(formatError(error));
+    } finally {
+      setCreatingBrainMapSourceId(null);
+    }
+  }
+
   const sourceFilters: Array<{ key: InboxFilterKind; label: string }> = [
     { key: "all", label: locale === "ru" ? "Все" : "All" },
     { key: "recording", label: locale === "ru" ? "Записи" : "Recordings" },
@@ -3550,6 +3589,27 @@ function UniversalInboxPanel({
       </section>
 
       <section className="inbox-detail-area" aria-label="Inbox detail">
+        {!showCreate &&
+        selectedRow &&
+        (selectedRow.source_kind === "recording" || selectedRow.source_kind === "item") ? (
+          <div className="inbox-detail-actions">
+            <span>{sourceLabel(selectedRow.source_kind, locale)}</span>
+            <button
+              type="button"
+              className="ghost-button compact-button"
+              disabled={creatingBrainMapSourceId === selectedRow.id}
+              onClick={() => void handleCreateBrainMapFromSelectedSource()}
+            >
+              {creatingBrainMapSourceId === selectedRow.id
+                ? locale === "ru"
+                  ? "Создаю..."
+                  : "Creating..."
+                : locale === "ru"
+                  ? "Создать линзу"
+                  : "Create Lens"}
+            </button>
+          </div>
+        ) : null}
         {showCreate || !selectedRow ? (
           <div className="inbox-create">
             <header className="inbox-create__header">
@@ -3703,6 +3763,7 @@ function UniversalInboxPanel({
             locale={locale}
             initialChatId={selectedRow.source_id}
             onChatCreated={() => void loadInbox("replace")}
+            viewingFolderId={folderId}
             embedded
           />
         )}

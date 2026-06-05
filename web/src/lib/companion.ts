@@ -14,6 +14,15 @@ import type {
 } from "./types";
 
 const COMPANION = "/api/companion";
+const DEFAULT_STREAM_CAPABILITIES = ["actions_v1", "agent_chat_v2"] as const;
+
+export interface StreamMessageOptions {
+  clientCapabilities?: string[];
+  clientLocalDate?: string;
+  clientTimezone?: string;
+  viewingRecordingId?: string | null;
+  viewingFolderId?: string | null;
+}
 
 export function createChat(scope?: CompanionScope): Promise<CompanionConversation> {
   return apiFetch<CompanionConversation>(`${COMPANION}/chats`, {
@@ -108,13 +117,21 @@ export async function* streamMessage(
   chatId: string,
   content: string,
   signal?: AbortSignal,
-  clientCapabilities: string[] = ["actions_v1", "agent_chat_v2"],
+  optionsOrCapabilities: StreamMessageOptions | string[] = {},
 ): AsyncGenerator<CompanionEvent, void, unknown> {
   const url = `${getApiBaseUrl()}${COMPANION}/chats/${chatId}/messages`;
-  const body = JSON.stringify({
+  const options = Array.isArray(optionsOrCapabilities)
+    ? { clientCapabilities: optionsOrCapabilities }
+    : optionsOrCapabilities;
+  const payload: Record<string, unknown> = {
     content,
-    client_capabilities: clientCapabilities,
-  });
+    client_capabilities: options.clientCapabilities ?? [...DEFAULT_STREAM_CAPABILITIES],
+  };
+  if (options.clientLocalDate) payload.client_local_date = options.clientLocalDate;
+  if (options.clientTimezone) payload.client_timezone = options.clientTimezone;
+  if (options.viewingRecordingId) payload.viewing_recording_id = options.viewingRecordingId;
+  if (options.viewingFolderId) payload.viewing_folder_id = options.viewingFolderId;
+  const body = JSON.stringify(payload);
 
   let response = await openStream(url, body, signal);
 

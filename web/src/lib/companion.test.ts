@@ -196,6 +196,32 @@ describe("streamMessage SSE parser", () => {
     });
   });
 
+  it("sends per-turn local session context to the agent endpoint", async () => {
+    (global.fetch as ReturnType<typeof vi.fn>).mockResolvedValue(
+      sseResponse(["event: done\ndata: {\"message_id\":\"a1\"}\n\n"]),
+    );
+
+    const types = await collectTypes(
+      streamMessage("c1", "what did I promise yesterday?", undefined, {
+        clientLocalDate: "2026-06-05",
+        clientTimezone: "Europe/Moscow",
+        viewingRecordingId: "recording-1",
+        viewingFolderId: "folder-1",
+      }),
+    );
+
+    expect(types).toEqual(["done"]);
+    const [, init] = (global.fetch as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(JSON.parse(init.body as string)).toEqual({
+      content: "what did I promise yesterday?",
+      client_capabilities: ["actions_v1", "agent_chat_v2"],
+      client_local_date: "2026-06-05",
+      client_timezone: "Europe/Moscow",
+      viewing_recording_id: "recording-1",
+      viewing_folder_id: "folder-1",
+    });
+  });
+
   it("throws ApiError on non-2xx responses", async () => {
     (global.fetch as ReturnType<typeof vi.fn>).mockResolvedValue(
       new Response(JSON.stringify({ detail: "Conversation not found" }), {

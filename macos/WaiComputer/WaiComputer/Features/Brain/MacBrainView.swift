@@ -8,10 +8,9 @@ enum BrainPageFilter: String, CaseIterable {
     case topic
 }
 
-/// The macOS "Brain" view: one Ask box over everything you've recorded, plus a
-/// browsable list of living Pages (people / projects / topics) that compile
-/// themselves from your sources. Curated knowledge + sources sit quietly below.
-/// Honest empty / error+retry states.
+/// The macOS "Brain" view: a live mirror first, generated maps next, then the
+/// browsable living Pages and curated knowledge. Ask/workflows stay in Wai and
+/// Inbox; Brain is the up-to-date visual surface.
 struct MacBrainView: View {
     let apiClient: APIClient
     let onOpenSource: (InboxDetailRef) -> Void
@@ -22,6 +21,7 @@ struct MacBrainView: View {
     @StateObject private var model: MacBrainViewModel
     @State private var shareEmail = ""
     @State private var shareRole = "viewer"
+    @State private var showLensForm = false
 
     init(
         apiClient: APIClient,
@@ -52,8 +52,8 @@ struct MacBrainView: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: Spacing.xs) {
             Text(t("Brain", "Мозг")).font(Typography.displaySmall)
-            Text(t("Ask anything you've recorded — and open a living page on anyone or anything.",
-                   "Спросите о чём угодно из записей — и откройте живую страницу о любом человеке или теме."))
+            Text(t("A live mirror of what Wai knows, plus generated maps that stay tied to sources.",
+                   "Живое зеркало того, что знает Wai, и карты, которые остаются привязаны к источникам."))
                 .font(Typography.bodySmall)
                 .foregroundStyle(Palette.textSecondary)
         }
@@ -88,7 +88,7 @@ struct MacBrainView: View {
     private var unifiedView: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: Spacing.xl) {
-                askSection
+                liveMapSection
                 if model.hasAnything {
                     pagesSection
                     curatedDisclosure
@@ -102,29 +102,85 @@ struct MacBrainView: View {
         }
     }
 
-    // MARK: - Ask your Brain
+    // MARK: - Live mirror + maps
 
-    private var askSection: some View {
+    private var liveMapSection: some View {
         VStack(alignment: .leading, spacing: Spacing.md) {
-            HStack(spacing: Spacing.sm) {
-                TextField(
-                    t("Ask your Brain anything…", "Спросите свой Мозг о чём угодно…"),
-                    text: $model.question
-                )
-                .textFieldStyle(.roundedBorder)
-                .onSubmit { Task { await model.ask() } }
-                Button {
-                    Task { await model.ask() }
-                } label: {
-                    Text(model.asking ? t("Thinking…", "Думаю…") : t("Ask", "Спросить"))
-                        .frame(minWidth: 90)
+            HStack(alignment: .top, spacing: Spacing.md) {
+                VStack(alignment: .leading, spacing: Spacing.xxs) {
+                    Text(model.activeProjection?.title ?? t("Live Mirror", "Живое зеркало"))
+                        .font(Typography.headingSmall)
+                    Text(model.activeProjection?.summary ?? t(
+                        "Add recordings or materials from Inbox to build your Brain.",
+                        "Добавьте записи или материалы из инбокса."
+                    ))
+                    .font(Typography.bodySmall)
+                    .foregroundStyle(Palette.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
                 }
-                .buttonStyle(.borderedProminent)
-                .disabled(model.asking || model.question.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                Spacer()
+                HStack(spacing: Spacing.xs) {
+                    Button {
+                        showLensForm.toggle()
+                    } label: {
+                        Label(t("Create Lens", "Создать линзу"), systemImage: "plus.viewfinder")
+                    }
+                    .buttonStyle(.bordered)
+                    if model.activeMap != nil {
+                        Button {
+                            Task { await model.refreshActiveMap() }
+                        } label: {
+                            Label(
+                                model.refreshingMapId == model.activeMap?.id ? t("Refreshing", "Обновляю") : t("Refresh", "Обновить"),
+                                systemImage: "arrow.clockwise"
+                            )
+                        }
+                        .buttonStyle(.bordered)
+                        .disabled(model.refreshingMapId == model.activeMap?.id)
+                    }
+                    if model.activeMap?.status == "draft" {
+                        Button(t("Keep", "Сохранить")) {
+                            Task { await model.keepActiveMap() }
+                        }
+                        .buttonStyle(.borderedProminent)
+                    }
+                }
             }
 
-            if let answer = model.answer {
-                answerPanel(answer)
+            if showLensForm {
+                HStack(spacing: Spacing.sm) {
+                    TextField(
+                        t("Map a project, decision, relationship, timeline…",
+                          "Карта проекта, решения, связей, хронологии…"),
+                        text: $model.lensPrompt
+                    )
+                    .textFieldStyle(.roundedBorder)
+                    .onSubmit { Task { await model.createLens() } }
+                    Button {
+                        Task { await model.createLens() }
+                    } label: {
+                        Text(model.creatingLens ? t("Generating", "Создаю") : t("Generate", "Создать"))
+                            .frame(minWidth: 96)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(model.creatingLens || model.lensPrompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+            }
+
+            mapStrip
+
+            if let projection = model.activeProjection {
+                MacBrainMapCanvasView(
+                    projection: projection,
+                    layout: model.activeMap?.layout,
+                    onOpenSource: openSource,
+                    onOpenEntity: { id, name in model.openEntity(id: id, name: name) }
+                )
+                .frame(height: 430)
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+                mapStats(projection)
+            } else {
+                wikiEmpty(t("No source map yet.", "Карты источников пока нет."))
             }
         }
         .padding(Spacing.md)
@@ -132,68 +188,79 @@ struct MacBrainView: View {
         .clipShape(RoundedRectangle(cornerRadius: 8))
     }
 
-    @ViewBuilder
-    private func answerPanel(_ answer: BrainAnswer) -> some View {
-        VStack(alignment: .leading, spacing: Spacing.sm) {
-            Divider()
-            if answer.answer.isEmpty {
-                Text(t("Nothing in your recordings answers this yet.",
-                       "В ваших записях пока нет ответа на это."))
-                    .font(Typography.bodySmall)
-                    .foregroundStyle(Palette.textSecondary)
-            } else {
-                Text(answer.answer)
-                    .font(Typography.body)
-                    .foregroundStyle(Palette.textPrimary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-
-            if !answer.citations.isEmpty {
-                VStack(alignment: .leading, spacing: Spacing.xxs) {
-                    ForEach(Array(answer.citations.enumerated()), id: \.element.id) { index, citation in
-                        Button {
-                            openSource(kind: citation.sourceKind, id: citation.sourceId)
-                        } label: {
-                            Text("[\(index + 1)] \(citation.title ?? t("Recording", "Запись"))")
-                                .font(Typography.labelSmall)
-                                .foregroundStyle(Palette.accent)
-                                .lineLimit(1)
-                        }
-                        .buttonStyle(.plain)
-                    }
+    private var mapStrip: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: Spacing.xs) {
+                mapSelector(
+                    id: "mirror",
+                    title: t("Live Mirror", "Живое зеркало"),
+                    detail: t("always current", "всегда актуально")
+                )
+                ForEach(model.maps) { map in
+                    mapSelector(
+                        id: map.id,
+                        title: map.title,
+                        detail: "\(map.status) · \(diffSummary(map.currentRevision?.diff))"
+                    )
                 }
-            }
-
-            if !answer.gaps.isEmpty {
-                VStack(alignment: .leading, spacing: Spacing.xxs) {
-                    Text(t("What I don't know", "Чего я не знаю"))
-                        .font(Typography.labelSmall.weight(.semibold))
-                        .foregroundStyle(Palette.textSecondary)
-                    ForEach(answer.gaps, id: \.self) { gap in
-                        Text("• \(gap)")
-                            .font(Typography.labelSmall)
-                            .foregroundStyle(Palette.textSecondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                }
-            }
-
-            if answer.freshness.stale, let weeks = answer.freshness.weeksSince, weeks > 0 {
-                Text("⚠ " + t(
-                    "Heads-up: nothing has been added about this in \(weeks) weeks.",
-                    "Важно: по этой теме ничего не добавляли уже \(weeks) нед."
-                ))
-                .font(Typography.labelSmall)
-                .foregroundStyle(.orange)
-            }
-
-            if let space = model.selectedSpace, let onOpenWai {
-                Button(t("Open full chat", "Открыть полный чат")) { onOpenWai(space) }
-                    .buttonStyle(.plain)
-                    .font(Typography.labelSmall)
-                    .foregroundStyle(Palette.accent)
             }
         }
+    }
+
+    private func mapSelector(id: String, title: String, detail: String) -> some View {
+        let active = model.selectedMapId == id
+        return Button {
+            model.selectedMapId = id
+        } label: {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(Typography.labelSmall.weight(.semibold))
+                    .lineLimit(1)
+                Text(detail)
+                    .font(Typography.labelSmall)
+                    .foregroundStyle(active ? Palette.textSecondary : Palette.textTertiary)
+                    .lineLimit(1)
+            }
+            .frame(width: 168, alignment: .leading)
+            .padding(.horizontal, Spacing.sm)
+            .padding(.vertical, Spacing.xs)
+            .background(active ? Palette.accentSubtle : Color.primary.opacity(0.045))
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func mapStats(_ projection: BrainMapProjection) -> some View {
+        HStack(spacing: Spacing.sm) {
+            metricPill("\(projection.nodes.count)", t("cards", "карточек"))
+            metricPill("\(projection.edges.count)", t("links", "связей"))
+            metricPill("\(projection.citations.count)", t("sources", "источн."))
+            if projection.freshness.stale, let weeks = projection.freshness.weeksSince {
+                metricPill("\(weeks)", t("weeks since newest source", "нед. с нового источника"))
+            }
+            Spacer()
+        }
+    }
+
+    private func metricPill(_ value: String, _ label: String) -> some View {
+        HStack(spacing: 5) {
+            Text(value).font(Typography.labelSmall.weight(.semibold))
+            Text(label).font(Typography.labelSmall)
+        }
+        .foregroundStyle(Palette.textSecondary)
+        .padding(.horizontal, Spacing.sm)
+        .padding(.vertical, 5)
+        .background(Color.primary.opacity(0.045))
+        .clipShape(RoundedRectangle(cornerRadius: 7))
+    }
+
+    private func diffSummary(_ diff: BrainMapDiff?) -> String {
+        guard let diff, diff.changed else { return t("Current", "Актуально") }
+        var parts: [String] = []
+        if diff.sourcesAdded > 0 { parts.append("+\(diff.sourcesAdded) " + t("sources", "источн.")) }
+        if diff.nodesAdded > 0 { parts.append("+\(diff.nodesAdded) " + t("cards", "карточек")) }
+        if diff.edgesAdded > 0 { parts.append("+\(diff.edgesAdded) " + t("links", "связей")) }
+        return parts.isEmpty ? t("Updated", "Обновлено") : parts.joined(separator: " · ")
     }
 
     // MARK: - Pages
@@ -786,6 +853,178 @@ struct MacBrainView: View {
     }
 }
 
+private struct MacBrainMapCanvasView: View {
+    let projection: BrainMapProjection
+    let layout: [String: BrainMapPosition]?
+    let onOpenSource: (String, String) -> Void
+    let onOpenEntity: (String, String) -> Void
+
+    private var nodesById: [String: BrainMapNode] {
+        Dictionary(uniqueKeysWithValues: projection.nodes.map { ($0.id, $0) })
+    }
+
+    var body: some View {
+        GeometryReader { geometry in
+            let positions = fittedPositions(in: geometry.size)
+            ZStack {
+                Canvas { context, _ in
+                    for edge in projection.edges {
+                        guard let source = positions[edge.source], let target = positions[edge.target] else { continue }
+                        var path = Path()
+                        path.move(to: source)
+                        path.addCurve(
+                            to: target,
+                            control1: CGPoint(x: source.x + 90, y: source.y),
+                            control2: CGPoint(x: target.x - 90, y: target.y)
+                        )
+                        context.stroke(
+                            path,
+                            with: .color(edgeColor(edge).opacity(0.58)),
+                            lineWidth: edge.kind == "supports" ? 1.8 : 1.2
+                        )
+                    }
+                }
+
+                ForEach(projection.nodes) { node in
+                    if let position = positions[node.id] {
+                        Button {
+                            open(node)
+                        } label: {
+                            nodeCard(node)
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(!isOpenable(node))
+                        .position(position)
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(Color.primary.opacity(0.035))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(Color.primary.opacity(0.08), lineWidth: 1)
+            )
+        }
+    }
+
+    private func nodeCard(_ node: BrainMapNode) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            HStack(spacing: 5) {
+                Circle()
+                    .fill(nodeColor(node.kind))
+                    .frame(width: 7, height: 7)
+                Text(node.kind.replacingOccurrences(of: "_", with: " ").uppercased())
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(Palette.textTertiary)
+            }
+            Text(node.title)
+                .font(Typography.bodySmall.weight(.semibold))
+                .foregroundStyle(Palette.textPrimary)
+                .lineLimit(2)
+            if let body = node.body, !body.isEmpty {
+                Text(body)
+                    .font(Typography.labelSmall)
+                    .foregroundStyle(Palette.textSecondary)
+                    .lineLimit(2)
+            }
+            if !node.citationIds.isEmpty {
+                Text("\(node.citationIds.count) source\(node.citationIds.count == 1 ? "" : "s")")
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(Palette.accent)
+            }
+        }
+        .frame(width: node.kind == "lens" ? 210 : 176, alignment: .leading)
+        .frame(minHeight: 88, alignment: .leading)
+        .padding(Spacing.sm)
+        .background(node.kind == "lens" ? Palette.accentSubtle : Palette.surfaceSubtle)
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(nodeColor(node.kind).opacity(0.24), lineWidth: 1)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .shadow(color: .black.opacity(0.06), radius: 10, x: 0, y: 5)
+    }
+
+    private func fittedPositions(in size: CGSize) -> [String: CGPoint] {
+        let raw = rawPositions()
+        guard !raw.isEmpty else { return [:] }
+        let minX = raw.values.map(\.x).min() ?? 0
+        let maxX = raw.values.map(\.x).max() ?? minX
+        let minY = raw.values.map(\.y).min() ?? 0
+        let maxY = raw.values.map(\.y).max() ?? minY
+        let width = max(1, maxX - minX)
+        let height = max(1, maxY - minY)
+        let availableWidth = max(1, size.width - 260)
+        let availableHeight = max(1, size.height - 160)
+        let scale = min(1.15, availableWidth / width, availableHeight / height)
+        let centerX = minX + width / 2
+        let centerY = minY + height / 2
+        return raw.mapValues { point in
+            CGPoint(
+                x: (point.x - centerX) * scale + size.width / 2,
+                y: (point.y - centerY) * scale + size.height / 2
+            )
+        }
+    }
+
+    private func rawPositions() -> [String: CGPoint] {
+        var laneCounts: [String: Int] = [:]
+        return Dictionary(uniqueKeysWithValues: projection.nodes.enumerated().map { index, node in
+            if let persisted = layout?[node.id] {
+                return (node.id, CGPoint(x: persisted.x, y: persisted.y))
+            }
+            if let supplied = node.position {
+                return (node.id, CGPoint(x: supplied.x, y: supplied.y))
+            }
+            let lane = node.lane ?? "center"
+            let laneIndex = laneCounts[lane, default: 0]
+            laneCounts[lane] = laneIndex + 1
+            let x: CGFloat
+            switch lane {
+            case "sources": x = -360
+            case "related": x = 360
+            default: x = node.kind == "lens" ? 0 : CGFloat((index % 3) - 1) * 220
+            }
+            let y = node.kind == "lens" ? 0 : CGFloat(-170 + laneIndex * 130)
+            return (node.id, CGPoint(x: x, y: y))
+        })
+    }
+
+    private func isOpenable(_ node: BrainMapNode) -> Bool {
+        (node.kind == "source" && node.sourceKind != nil && node.sourceId != nil)
+            || (node.kind == "entity" && node.entityId != nil)
+    }
+
+    private func open(_ node: BrainMapNode) {
+        if node.kind == "source", let kind = node.sourceKind, let id = node.sourceId {
+            onOpenSource(kind, id)
+        } else if node.kind == "entity", let id = node.entityId {
+            onOpenEntity(id, node.title)
+        }
+    }
+
+    private func nodeColor(_ kind: String) -> Color {
+        switch kind {
+        case "lens": return Palette.accent
+        case "source": return .blue
+        case "entity": return .green
+        case "gap": return .orange
+        default: return Palette.textTertiary
+        }
+    }
+
+    private func edgeColor(_ edge: BrainMapEdge) -> Color {
+        switch edge.kind {
+        case "mentions": return Palette.accent
+        case "related_to": return Palette.textTertiary
+        default: return Palette.textSecondary
+        }
+    }
+}
+
 @MainActor
 final class MacBrainViewModel: ObservableObject {
     struct SelectedEntity: Equatable {
@@ -796,10 +1035,13 @@ final class MacBrainViewModel: ObservableObject {
     @Published var loading = true
     @Published var errorMessage: String?
 
-    // Ask your Brain
-    @Published var question = ""
-    @Published var answer: BrainAnswer?
-    @Published var asking = false
+    // Live mirror + generated maps
+    @Published var mirror: BrainMapProjection?
+    @Published var maps: [BrainMap] = []
+    @Published var selectedMapId = "mirror"
+    @Published var lensPrompt = ""
+    @Published var creatingLens = false
+    @Published var refreshingMapId: String?
 
     // Pages (entities)
     @Published var entities: [Entity] = []
@@ -833,7 +1075,20 @@ final class MacBrainViewModel: ObservableObject {
         defer { loading = false }
         do {
             // No-fallback: a transient failure must NOT look like "empty brain".
-            entities = try await apiClient.listEntities(limit: 200)
+            async let mirrorRequest = apiClient.getBrainMirror(limit: 60)
+            async let mapsRequest = apiClient.listBrainMaps(limit: 50)
+            async let entitiesRequest = apiClient.listEntities(limit: 200)
+            let (loadedMirror, loadedMaps, loadedEntities) = try await (
+                mirrorRequest,
+                mapsRequest,
+                entitiesRequest
+            )
+            mirror = loadedMirror
+            maps = loadedMaps.maps
+            entities = loadedEntities
+            if selectedMapId != "mirror", !maps.contains(where: { $0.id == selectedMapId }) {
+                selectedMapId = "mirror"
+            }
         } catch {
             errorMessage = error.localizedDescription
             return
@@ -842,20 +1097,68 @@ final class MacBrainViewModel: ObservableObject {
         await loadSelectedSpace()
     }
 
-    func ask() async {
-        let trimmed = question.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, !asking else { return }
-        asking = true
-        defer { asking = false }
+    var activeMap: BrainMap? {
+        maps.first { $0.id == selectedMapId }
+    }
+
+    var activeProjection: BrainMapProjection? {
+        if selectedMapId == "mirror" {
+            return mirror
+        }
+        return activeMap?.currentRevision?.projection
+    }
+
+    func createLens() async {
+        let prompt = lensPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !prompt.isEmpty, !creatingLens else { return }
+        creatingLens = true
+        defer { creatingLens = false }
         do {
-            answer = try await apiClient.askBrain(question: trimmed)
+            let created = try await apiClient.createBrainMap(
+                BrainMapCreateRequest(prompt: prompt, origin: "brain")
+            )
+            maps.removeAll { $0.id == created.id }
+            maps.insert(created, at: 0)
+            selectedMapId = created.id
+            lensPrompt = ""
+            errorMessage = nil
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    func refreshActiveMap() async {
+        guard let map = activeMap, refreshingMapId == nil else { return }
+        refreshingMapId = map.id
+        defer { refreshingMapId = nil }
+        do {
+            _ = try await apiClient.refreshBrainMap(mapId: map.id)
+            let refreshed = try await apiClient.getBrainMap(mapId: map.id)
+            replaceMap(refreshed)
+            errorMessage = nil
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    func keepActiveMap() async {
+        guard let map = activeMap else { return }
+        do {
+            let updated = try await apiClient.updateBrainMap(
+                mapId: map.id,
+                BrainMapUpdateRequest(status: "saved")
+            )
+            replaceMap(updated)
+            errorMessage = nil
         } catch {
             errorMessage = error.localizedDescription
         }
     }
 
     var hasAnything: Bool {
-        !entities.isEmpty
+        !(mirror?.nodes.isEmpty ?? true)
+            || !maps.isEmpty
+            || !entities.isEmpty
             || (spaceHome?.claimCounts.values.reduce(0, +) ?? 0) > 0
             || !spaceReviewPacks.isEmpty
             || !(spaceHome?.sources.isEmpty ?? true)
@@ -941,6 +1244,14 @@ final class MacBrainViewModel: ObservableObject {
 
     var selectedSpace: BrainSpace? {
         spaces.first { $0.id == selectedSpaceId }
+    }
+
+    private func replaceMap(_ updated: BrainMap) {
+        if let index = maps.firstIndex(where: { $0.id == updated.id }) {
+            maps[index] = updated
+        } else {
+            maps.insert(updated, at: 0)
+        }
     }
 
     func openEntity(id: String, name: String) {

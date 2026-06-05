@@ -371,7 +371,15 @@ struct MacInboxView: View {
                     apiClient: apiClient,
                     recordings: recordings,
                     initialChatId: selectedDetail.id,
-                    showsConversationSwitcher: false
+                    showsConversationSwitcher: false,
+                    viewingFolderId: folderId,
+                    onTurnCompleted: { completion in
+                        MacWaiTaskNotificationCenter.shared.notifyTaskFinished(
+                            title: t("Wai finished", "Wai закончил"),
+                            body: completion.preview ?? t("Your Wai task is ready.", "Задача Wai готова."),
+                            chatId: completion.chatId
+                        )
+                    }
                 )
                 .environment(\.locale, MacDateFormatting.locale(for: languageManager.current))
                 .companionAccentColor(Palette.accent)

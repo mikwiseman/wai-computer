@@ -6,7 +6,7 @@ from uuid import uuid4
 
 from app.core import companion_actuators
 from app.core.companion_actions import propose_action
-from app.models.companion import Conversation
+from app.models.companion import ChatMessage, Conversation
 from app.models.telegram import TelegramAccount
 
 
@@ -64,6 +64,24 @@ async def test_resolve_once_executes_send(client, auth_headers, db_session, monk
     )
     conv_id = await _new_conv(db_session, uid)
     row = await _pending(db_session, uid, conv_id)
+    message = ChatMessage(
+        conversation_id=conv_id,
+        role="assistant",
+        content=[{"type": "text", "text": "Waiting for your approval."}],
+        tool_calls=[
+            {
+                "type": "action_proposed",
+                "action_id": str(row.id),
+                "kind": "send",
+                "tool": "send_message_telegram",
+                "preview": "Send to you: running late",
+                "expires_at": row.expires_at.isoformat(),
+                "recipient": "you",
+            }
+        ],
+    )
+    db_session.add(message)
+    await db_session.flush()
 
     r = await client.post(
         f"/api/companion/chats/{conv_id}/actions/{row.id}/resolve",
@@ -77,6 +95,12 @@ async def test_resolve_once_executes_send(client, auth_headers, db_session, monk
     assert FakeTelegram.sent == [(555, "running late")]
     await db_session.refresh(row)
     assert row.status == "executed"
+    await db_session.refresh(message)
+    assert message.tool_calls[0]["resolution"] == {
+        "state": "resolved",
+        "status": "executed",
+        "detail": "",
+    }
 
 
 async def test_resolve_reject(client, auth_headers, db_session):
@@ -164,6 +188,23 @@ async def test_desktop_result_requires_target_device_and_is_idempotent(
         idempotency_key=f"desktop:{uuid4().hex}",
         device_target=device_id,
     )
+    message = ChatMessage(
+        conversation_id=conv_id,
+        role="assistant",
+        content=[{"type": "text", "text": "Waiting for your approval."}],
+        tool_calls=[
+            {
+                "type": "action_proposed",
+                "action_id": str(row.id),
+                "kind": "desktop_action",
+                "tool": "desktop_open",
+                "preview": "Open WaiComputer",
+                "expires_at": row.expires_at.isoformat(),
+                "recipient": None,
+            }
+        ],
+    )
+    db_session.add(message)
     await db_session.flush()
 
     missing_action = await client.post(
@@ -218,6 +259,8 @@ async def test_desktop_result_requires_target_device_and_is_idempotent(
     )
     assert approved.status_code == 200, approved.text
     assert approved.json()["status"] == "dispatched"
+    await db_session.refresh(message)
+    assert message.tool_calls[0]["resolution"]["status"] == "dispatched"
 
     executed = await client.post(
         f"/api/companion/chats/{conv_id}/actions/{row.id}/desktop_result",
@@ -230,6 +273,8 @@ async def test_desktop_result_requires_target_device_and_is_idempotent(
     )
     assert executed.status_code == 200, executed.text
     assert executed.json()["status"] == "executed"
+    await db_session.refresh(message)
+    assert message.tool_calls[0]["resolution"]["status"] == "executed"
 
     duplicate = await client.post(
         f"/api/companion/chats/{conv_id}/actions/{row.id}/desktop_result",

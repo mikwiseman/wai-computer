@@ -4,15 +4,29 @@ from __future__ import annotations
 
 from dataclasses import asdict
 from datetime import datetime
+from typing import Any
 from uuid import UUID
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel
 
 from app.api.deps import CurrentUser, Database
 from app.core.brain import compile_brain
 from app.core.brain_ask import ask_brain
 from app.core.brain_graph import build_brain_graph
+from app.core.brain_maps import (
+    BrainMapError,
+    BrainMapNotFoundError,
+    BrainMapValidationError,
+    build_live_mirror,
+    create_brain_map,
+    list_brain_map_revisions,
+    list_brain_maps,
+    load_brain_map,
+    refresh_brain_map,
+    update_brain_map,
+)
+from app.models.brain_map import BrainMap, BrainMapRevision
 
 router = APIRouter(prefix="/brain", tags=["brain"])
 
@@ -114,6 +128,216 @@ async def get_brain_graph(
         nodes=[GraphNodeResponse(**asdict(n)) for n in graph.nodes],
         edges=[GraphEdgeResponse(**asdict(e)) for e in graph.edges],
         stats=graph.stats,
+    )
+
+
+class BrainMapRevisionResponse(BaseModel):
+    id: str
+    map_id: str
+    revision_index: int
+    projection: dict[str, Any]
+    source_fingerprint: str
+    source_count: int
+    freshness: dict[str, Any]
+    diff: dict[str, Any]
+    citations: list[dict[str, Any]]
+    compiled_at: datetime
+    created_at: datetime
+
+
+class BrainMapResponse(BaseModel):
+    id: str
+    space_id: str | None
+    title: str
+    prompt: str
+    map_type: str
+    origin: str
+    status: str
+    source_scope: dict[str, Any] | None
+    layout: dict[str, Any] | None
+    current_revision_id: str | None
+    current_revision: BrainMapRevisionResponse | None
+    created_at: datetime
+    updated_at: datetime
+
+
+class BrainMapsResponse(BaseModel):
+    maps: list[BrainMapResponse]
+
+
+class BrainMapCreateRequest(BaseModel):
+    prompt: str
+    origin: str = "brain"
+    map_type: str | None = None
+    title: str | None = None
+    space_id: UUID | None = None
+    source_scope: dict[str, Any] | None = None
+
+
+class BrainMapUpdateRequest(BaseModel):
+    title: str | None = None
+    status: str | None = None
+    layout: dict[str, Any] | None = None
+
+
+class BrainMapRevisionsResponse(BaseModel):
+    revisions: list[BrainMapRevisionResponse]
+
+
+def _raise_map_http(exc: Exception) -> None:
+    if isinstance(exc, BrainMapNotFoundError):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    if isinstance(exc, BrainMapValidationError):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+        ) from exc
+    if isinstance(exc, BrainMapError):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
+        ) from exc
+    raise exc
+
+
+def _revision_response(revision: BrainMapRevision) -> BrainMapRevisionResponse:
+    return BrainMapRevisionResponse(
+        id=str(revision.id),
+        map_id=str(revision.map_id),
+        revision_index=revision.revision_index,
+        projection=revision.projection,
+        source_fingerprint=revision.source_fingerprint,
+        source_count=revision.source_count,
+        freshness=revision.freshness,
+        diff=revision.diff,
+        citations=revision.citations,
+        compiled_at=revision.compiled_at,
+        created_at=revision.created_at,
+    )
+
+
+def _map_response(
+    brain_map: BrainMap, revision: BrainMapRevision | None
+) -> BrainMapResponse:
+    return BrainMapResponse(
+        id=str(brain_map.id),
+        space_id=str(brain_map.space_id) if brain_map.space_id else None,
+        title=brain_map.title,
+        prompt=brain_map.prompt,
+        map_type=brain_map.map_type,
+        origin=brain_map.origin,
+        status=brain_map.status,
+        source_scope=brain_map.source_scope,
+        layout=brain_map.layout,
+        current_revision_id=(
+            str(brain_map.current_revision_id) if brain_map.current_revision_id else None
+        ),
+        current_revision=_revision_response(revision) if revision else None,
+        created_at=brain_map.created_at,
+        updated_at=brain_map.updated_at,
+    )
+
+
+@router.get("/mirror")
+async def get_brain_mirror(
+    user: CurrentUser,
+    db: Database,
+    limit: int = Query(40, ge=5, le=200),
+) -> dict[str, Any]:
+    """The Live Mirror: an always-current visual projection over recent Brain evidence."""
+    return await build_live_mirror(db, user.id, limit=limit)
+
+
+@router.get("/maps", response_model=BrainMapsResponse)
+async def get_brain_maps(
+    user: CurrentUser,
+    db: Database,
+    status_filter: str | None = Query(default=None, alias="status"),
+    limit: int = Query(50, ge=1, le=200),
+) -> BrainMapsResponse:
+    rows = await list_brain_maps(db, user.id, status=status_filter, limit=limit)
+    return BrainMapsResponse(maps=[_map_response(m, r) for m, r in rows])
+
+
+@router.post("/maps", response_model=BrainMapResponse, status_code=status.HTTP_201_CREATED)
+async def create_brain_map_route(
+    request: BrainMapCreateRequest,
+    user: CurrentUser,
+    db: Database,
+) -> BrainMapResponse:
+    try:
+        brain_map, revision = await create_brain_map(
+            db,
+            user.id,
+            prompt=request.prompt,
+            origin=request.origin,
+            map_type=request.map_type,
+            title=request.title,
+            space_id=request.space_id,
+            source_scope=request.source_scope,
+        )
+    except Exception as exc:  # noqa: BLE001 - translated by type below.
+        _raise_map_http(exc)
+    return _map_response(brain_map, revision)
+
+
+@router.get("/maps/{map_id}", response_model=BrainMapResponse)
+async def get_brain_map_route(
+    map_id: UUID,
+    user: CurrentUser,
+    db: Database,
+) -> BrainMapResponse:
+    try:
+        brain_map, revision = await load_brain_map(db, user.id, map_id)
+    except Exception as exc:  # noqa: BLE001 - translated by type below.
+        _raise_map_http(exc)
+    return _map_response(brain_map, revision)
+
+
+@router.patch("/maps/{map_id}", response_model=BrainMapResponse)
+async def update_brain_map_route(
+    map_id: UUID,
+    request: BrainMapUpdateRequest,
+    user: CurrentUser,
+    db: Database,
+) -> BrainMapResponse:
+    try:
+        brain_map, revision = await update_brain_map(
+            db,
+            user.id,
+            map_id,
+            title=request.title,
+            status=request.status,
+            layout=request.layout,
+        )
+    except Exception as exc:  # noqa: BLE001 - translated by type below.
+        _raise_map_http(exc)
+    return _map_response(brain_map, revision)
+
+
+@router.post("/maps/{map_id}/refresh", response_model=BrainMapRevisionResponse)
+async def refresh_brain_map_route(
+    map_id: UUID,
+    user: CurrentUser,
+    db: Database,
+) -> BrainMapRevisionResponse:
+    try:
+        revision = await refresh_brain_map(db, user.id, map_id)
+    except Exception as exc:  # noqa: BLE001 - translated by type below.
+        _raise_map_http(exc)
+    return _revision_response(revision)
+
+
+@router.get("/maps/{map_id}/revisions", response_model=BrainMapRevisionsResponse)
+async def get_brain_map_revisions_route(
+    map_id: UUID,
+    user: CurrentUser,
+    db: Database,
+) -> BrainMapRevisionsResponse:
+    try:
+        revisions = await list_brain_map_revisions(db, user.id, map_id)
+    except Exception as exc:  # noqa: BLE001 - translated by type below.
+        _raise_map_http(exc)
+    return BrainMapRevisionsResponse(
+        revisions=[_revision_response(revision) for revision in revisions]
     )
 
 

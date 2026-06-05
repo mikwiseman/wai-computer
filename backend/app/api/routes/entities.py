@@ -78,8 +78,9 @@ async def list_entities(
     )
     if type:
         query = query.where(Entity.type == type)
-    if q and q.strip():
-        query = query.where(Entity.name.ilike(f"%{q.strip()}%"))
+    search = q.strip() if isinstance(q, str) else ""
+    if search:
+        query = query.where(Entity.name.ilike(f"%{search}%"))
     query = (
         query.order_by(source_count.desc(), Entity.name.asc()).offset(offset).limit(limit)
     )

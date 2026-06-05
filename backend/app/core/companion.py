@@ -1714,6 +1714,89 @@ def _artifact_event_from_args(call_id: str | None, args: dict[str, Any]) -> Arti
     )
 
 
+def _stored_artifact_tool_call(event: ArtifactEvent) -> dict[str, Any]:
+    return {
+        "type": event.type,
+        "artifact_id": event.artifact_id,
+        "title": event.title,
+        "kind": event.kind,
+        "content": event.content,
+        "language": event.language,
+    }
+
+
+def _stored_action_proposal_tool_call(event: ActionProposedEvent) -> dict[str, Any]:
+    return {
+        "type": event.type,
+        "action_id": event.action_id,
+        "kind": event.kind,
+        "tool": event.tool,
+        "preview": event.preview,
+        "expires_at": event.expires_at,
+        "recipient": event.recipient,
+    }
+
+
+def _stored_plan_tool_call(steps: list[dict[str, str]]) -> dict[str, Any]:
+    return {"type": "plan", "steps": steps}
+
+
+def _upsert_stored_plan_tool_call(
+    tool_calls: list[dict[str, Any]],
+    item: dict[str, Any],
+) -> None:
+    for index, existing in enumerate(tool_calls):
+        if existing.get("type") == "plan":
+            tool_calls[index] = item
+            return
+    tool_calls.append(item)
+
+
+def _stored_tools_tool_call(tool_calls: list[dict[str, Any]]) -> dict[str, Any]:
+    for existing in tool_calls:
+        if existing.get("type") == "tools":
+            if not isinstance(existing.get("actions"), list):
+                existing["actions"] = []
+            return existing
+    item: dict[str, Any] = {"type": "tools", "actions": []}
+    tool_calls.append(item)
+    return item
+
+
+def _append_stored_tool_action(
+    tool_calls: list[dict[str, Any]],
+    event: ToolCallEvent,
+) -> None:
+    if not event.call_id or not event.tool:
+        return
+    item = _stored_tools_tool_call(tool_calls)
+    actions = item["actions"]
+    actions.append(
+        {
+            "call_id": event.call_id,
+            "tool": event.tool,
+            "summary": None,
+            "ok": None,
+        }
+    )
+
+
+def _apply_stored_tool_result(
+    tool_calls: list[dict[str, Any]],
+    event: ToolResultEvent,
+) -> None:
+    if not event.call_id:
+        return
+    for item in reversed(tool_calls):
+        if item.get("type") != "tools" or not isinstance(item.get("actions"), list):
+            continue
+        for action in reversed(item["actions"]):
+            if isinstance(action, dict) and action.get("call_id") == event.call_id:
+                action["summary"] = event.summary
+                action["ok"] = event.ok
+                return
+
+
 def _visible_action_tools(active_groups: set[str]) -> list[dict[str, Any]]:
     names = set(visible_tool_names(active_groups))
     return [d for n, d in _action_tool_defs().items() if n in names]
@@ -1737,6 +1820,16 @@ def _action_preview(name: str, args: dict[str, Any]) -> tuple[str, str | None]:
     if name == "desktop_click":
         return (f"Click element {args.get('index')} on your Mac", None)
     return (f"Run {name}", None)
+
+
+def _looks_russian(text: str) -> bool:
+    return any("а" <= char.casefold() <= "я" or char.casefold() == "ё" for char in text)
+
+
+def _approval_waiting_text(user_text: str, preview: str) -> str:
+    if _looks_russian(user_text):
+        return f"Жду твоего подтверждения: {preview}"
+    return f"Waiting for your approval: {preview}"
 
 
 async def run_turn(
@@ -1818,6 +1911,7 @@ async def run_turn(
     assistant_text = ""
     usage: Any = None
     completed_response_obj: Any = None
+    persisted_tool_calls: list[dict[str, Any]] = []
     stream = await client.responses.create(
         model=settings.openai_llm_model,
         instructions=instructions,
@@ -1843,10 +1937,12 @@ async def run_turn(
         elif event_type == "response.output_item.added":
             _tc = _tool_call_event_from_item(_stream_event_item(event))
             if _tc is not None:
+                _append_stored_tool_action(persisted_tool_calls, _tc)
                 yield _tc
         elif event_type == "response.output_item.done":
             _tr = _tool_result_event_from_item(_stream_event_item(event))
             if _tr is not None:
+                _apply_stored_tool_result(persisted_tool_calls, _tr)
                 yield _tr
         elif event_type == "response.reasoning_summary_text.delta":
             rdelta = getattr(event, "delta", None)
@@ -1896,11 +1992,12 @@ async def run_turn(
 
     assistant_content = [{"type": "text", "text": assistant_text}]
     mcp_context_items = _extract_mcp_context_items(completed_response_obj)
+    stored_tool_calls = persisted_tool_calls + mcp_context_items
     assistant_msg = ChatMessage(
         conversation_id=conv.id,
         role="assistant",
         content=assistant_content,
-        tool_calls=mcp_context_items or None,
+        tool_calls=stored_tool_calls or None,
         cached_tokens=cached_tokens or None,
         input_tokens=input_tokens or None,
         output_tokens=output_tokens or None,
@@ -1950,6 +2047,8 @@ async def _run_actions_loop(
     usage: Any = None
     final_text = ""
     proposed = False
+    proposed_preview: str | None = None
+    persisted_tool_calls: list[dict[str, Any]] = []
 
     for step in range(1, TOOL_CALL_CAP + 1):
         # mcp_tool = read access to the user's brain; the hosted web_search tool
@@ -1997,10 +2096,12 @@ async def _run_actions_loop(
             elif etype == "response.output_item.added":
                 _tc = _tool_call_event_from_item(_stream_event_item(event))
                 if _tc is not None:
+                    _append_stored_tool_action(persisted_tool_calls, _tc)
                     yield _tc
             elif etype == "response.output_item.done":
                 _tr = _tool_result_event_from_item(_stream_event_item(event))
                 if _tr is not None:
+                    _apply_stored_tool_result(persisted_tool_calls, _tr)
                     yield _tr
             elif etype == "response.reasoning_summary_text.delta":
                 rdelta = getattr(event, "delta", None)
@@ -2062,7 +2163,12 @@ async def _run_actions_loop(
                     }
                 )
             elif cname == UPDATE_PLAN_NAME:
-                yield PlanEvent(steps=_normalize_plan_steps(cargs.get("steps")))
+                plan_steps = _normalize_plan_steps(cargs.get("steps"))
+                yield PlanEvent(steps=plan_steps)
+                _upsert_stored_plan_tool_call(
+                    persisted_tool_calls,
+                    _stored_plan_tool_call(plan_steps),
+                )
                 outputs.append(
                     {
                         "type": "function_call_output",
@@ -2071,7 +2177,9 @@ async def _run_actions_loop(
                     }
                 )
             elif cname == CREATE_ARTIFACT_NAME:
-                yield _artifact_event_from_args(cid, cargs)
+                artifact_event = _artifact_event_from_args(cid, cargs)
+                yield artifact_event
+                persisted_tool_calls.append(_stored_artifact_tool_call(artifact_event))
                 outputs.append(
                     {
                         "type": "function_call_output",
@@ -2094,7 +2202,7 @@ async def _run_actions_loop(
                     recipient_display=recipient,
                 )
                 await db.commit()  # register BEFORE surfacing (race-fix)
-                yield ActionProposedEvent(
+                proposal_event = ActionProposedEvent(
                     action_id=str(row.id),
                     kind=_action_kind(cname),
                     tool=cname,
@@ -2102,7 +2210,12 @@ async def _run_actions_loop(
                     expires_at=row.expires_at.isoformat(),
                     recipient=recipient,
                 )
+                yield proposal_event
+                persisted_tool_calls.append(
+                    _stored_action_proposal_tool_call(proposal_event)
+                )
                 proposed = True
+                proposed_preview = proposed_preview or preview
             else:
                 outputs.append(
                     {
@@ -2114,6 +2227,12 @@ async def _run_actions_loop(
                     }
                 )
         if proposed:
+            if not final_text.strip() and proposed_preview:
+                final_text = _approval_waiting_text(
+                    _message_content_to_text(user_msg.content),
+                    proposed_preview,
+                )
+                yield TokenEvent(text=final_text)
             break  # defer for human approval; do not continue the loop
         next_input = outputs
 
@@ -2131,6 +2250,7 @@ async def _run_actions_loop(
         conversation_id=conv.id,
         role="assistant",
         content=[{"type": "text", "text": text_to_store}],
+        tool_calls=persisted_tool_calls or None,
         cached_tokens=cached_tokens or None,
         input_tokens=input_tokens or None,
         output_tokens=output_tokens or None,

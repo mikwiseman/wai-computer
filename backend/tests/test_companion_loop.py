@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from typing import Any
@@ -540,6 +541,23 @@ class TestRunTurn:
             {"title": "Summarize", "status": "pending"},
         ]
         assert isinstance(events[-1], DoneEvent)
+        assistant = (
+            await db_session.execute(
+                select(ChatMessage).where(
+                    ChatMessage.conversation_id == s["conversation"].id,
+                    ChatMessage.role == "assistant",
+                )
+            )
+        ).scalar_one()
+        assert assistant.tool_calls == [
+            {
+                "type": "plan",
+                "steps": [
+                    {"title": "Search", "status": "in_progress"},
+                    {"title": "Summarize", "status": "pending"},
+                ],
+            }
+        ]
 
     async def test_create_artifact_tool_emits_artifact_event(
         self, db_session, setup_user_and_chat
@@ -572,6 +590,24 @@ class TestRunTurn:
         assert arts[0].kind == "html"
         assert "<h1>Hi</h1>" in arts[0].content
         assert isinstance(events[-1], DoneEvent)
+        assistant = (
+            await db_session.execute(
+                select(ChatMessage).where(
+                    ChatMessage.conversation_id == s["conversation"].id,
+                    ChatMessage.role == "assistant",
+                )
+            )
+        ).scalar_one()
+        assert assistant.tool_calls == [
+            {
+                "type": "artifact",
+                "artifact_id": "call_1",
+                "title": "Landing",
+                "kind": "html",
+                "content": "<!doctype html><h1>Hi</h1>",
+                "language": "",
+            }
+        ]
 
     async def test_run_turn_streams_reasoning_as_thinking(
         self, db_session, setup_user_and_chat
@@ -666,6 +702,88 @@ class TestRunTurn:
         assert calls[0].args == {"query": "pricing"}
         assert len(results) == 1 and results[0].ok is True
         assert "3 results" in results[0].summary
+        assistant = (
+            await db_session.execute(
+                select(ChatMessage).where(
+                    ChatMessage.conversation_id == s["conversation"].id,
+                    ChatMessage.role == "assistant",
+                )
+            )
+        ).scalar_one()
+        assert assistant.tool_calls == [
+            {
+                "type": "tools",
+                "actions": [
+                    {
+                        "call_id": "mcp_1",
+                        "tool": "search",
+                        "summary": "3 results",
+                        "ok": True,
+                    }
+                ],
+            }
+        ]
+
+    async def test_actions_loop_persists_tool_actions_for_mcp_reads(
+        self, db_session, setup_user_and_chat
+    ):
+        s = setup_user_and_chat
+        fake = FakeOpenAI(
+            [
+                _OutputItemEvent(
+                    item={
+                        "type": "mcp_call",
+                        "id": "mcp_2",
+                        "name": "search",
+                        "arguments": '{"query": "pricing"}',
+                    }
+                ),
+                _OutputItemEvent(
+                    item={
+                        "type": "mcp_call",
+                        "id": "mcp_2",
+                        "name": "search",
+                        "output": '{"segments": [1, 2]}',
+                    },
+                    type="response.output_item.done",
+                ),
+                _DeltaEvent("Found it."),
+                _completed("Found it."),
+            ]
+        )
+
+        await _collect(
+            run_turn(
+                db_session,
+                s["user"].id,
+                s["conversation"].id,
+                "what about pricing?",
+                openai_client=fake,
+                enable_actions=True,
+            )
+        )
+
+        assistant = (
+            await db_session.execute(
+                select(ChatMessage).where(
+                    ChatMessage.conversation_id == s["conversation"].id,
+                    ChatMessage.role == "assistant",
+                )
+            )
+        ).scalar_one()
+        assert assistant.tool_calls == [
+            {
+                "type": "tools",
+                "actions": [
+                    {
+                        "call_id": "mcp_2",
+                        "tool": "search",
+                        "summary": "2 results",
+                        "ok": True,
+                    }
+                ],
+            }
+        ]
 
     async def test_system_prompt_points_to_mcp_not_private_function_tools(
         self, setup_user_and_chat
@@ -729,6 +847,109 @@ class TestPostMessageSSE:
         assert events == ["turn_start", "token", "done"]
         assert "Found it." in body
         assert len(holder["runs"]) == 1
+
+    async def test_legacy_wai_task_streams_and_persists_brain_citations(
+        self,
+        client: AsyncClient,
+        auth_headers: dict,
+        db_session,
+        monkeypatch,
+    ):
+        from app.models.recording import Recording, Segment
+        from app.models.user import User
+
+        user = (await db_session.execute(select(User))).scalars().one()
+        recording = Recording(
+            user_id=user.id,
+            title="Roadmap review",
+            type="meeting",
+            status="ready",
+        )
+        db_session.add(recording)
+        await db_session.flush()
+        segment = Segment(
+            recording_id=recording.id,
+            content="The roadmap risk is hiring.",
+            start_ms=42000,
+            end_ms=46000,
+        )
+        db_session.add(segment)
+        await db_session.flush()
+
+        async def fake_run_wai_run_inline(_db, run):
+            run.status = "done"
+            run.result = {
+                "output_text": "The roadmap risk is hiring [1]",
+                "citations": [
+                    {
+                        "id": str(segment.id),
+                        "source_kind": "recording",
+                        "source_id": str(recording.id),
+                        "title": "Roadmap review",
+                        "start_ms": 42000,
+                    }
+                ],
+                "gaps": [],
+                "freshness": {
+                    "newest_source_at": "2026-06-01T00:00:00+00:00",
+                    "weeks_since": 0,
+                    "stale": False,
+                },
+            }
+            return run
+
+        monkeypatch.setattr(
+            "app.api.routes.companion.run_wai_run_inline",
+            fake_run_wai_run_inline,
+            raising=True,
+        )
+        chat = (
+            await client.post(
+                "/api/companion/chats", json={}, headers=auth_headers
+            )
+        ).json()
+
+        response = await client.post(
+            f"/api/companion/chats/{chat['id']}/messages",
+            json={"content": "What is the roadmap risk?"},
+            headers=auth_headers,
+        )
+
+        assert response.status_code == 200
+        events = [
+            line.split(": ", 1)[1]
+            for line in response.text.split("\n")
+            if line.startswith("event: ")
+        ]
+        assert events == ["turn_start", "token", "citation", "done"]
+        citation_payloads = [
+            json.loads(line.split(": ", 1)[1])
+            for line in response.text.split("\n")
+            if line.startswith("data: ") and "recording_id" in line
+        ]
+        assert citation_payloads == [
+            {
+                "index": 1,
+                "segment_id": str(segment.id),
+                "recording_id": str(recording.id),
+                "start_ms": 42000,
+                "end_ms": None,
+                "span_start": 27,
+                "span_end": 30,
+            }
+        ]
+
+        detail = await client.get(
+            f"/api/companion/chats/{chat['id']}", headers=auth_headers
+        )
+        assert detail.status_code == 200
+        assistant = [
+            msg for msg in detail.json()["messages"] if msg["role"] == "assistant"
+        ][-1]
+        assert assistant["citations"][0]["segment_id"] == str(segment.id)
+        assert assistant["citations"][0]["recording_id"] == str(recording.id)
+        assert assistant["citations"][0]["span_start"] == 27
+        assert assistant["citations"][0]["span_end"] == 30
 
     async def test_sse_actions_capability_enables_agentic_action_loop(
         self,
@@ -815,6 +1036,132 @@ class TestPostMessageSSE:
         assert "tool_call" in events
         assert "tool_result" in events
         assert "done" in events
+
+    async def test_agent_chat_v2_action_proposal_stores_visible_waiting_message(
+        self,
+        client: AsyncClient,
+        auth_headers: dict,
+        monkeypatch,
+    ):
+        fake = _SeqOpenAI(
+            [
+                [
+                    _function_call_completed(
+                        "request_tool_group",
+                        '{"group": "telegram"}',
+                    )
+                ],
+                [
+                    _function_call_completed(
+                        "send_message_telegram",
+                        '{"text": "late"}',
+                    )
+                ],
+            ]
+        )
+        monkeypatch.setattr(
+            "app.core.companion.get_openai_client", lambda: fake
+        )
+        chat = (
+            await client.post(
+                "/api/companion/chats", json={}, headers=auth_headers
+            )
+        ).json()
+
+        response = await client.post(
+            f"/api/companion/chats/{chat['id']}/messages",
+            json={
+                "content": "message me that I am late",
+                "client_capabilities": ["actions_v1", "agent_chat_v2"],
+            },
+            headers=auth_headers,
+        )
+
+        assert response.status_code == 200
+        body = response.text
+        events = [
+            line.split(": ", 1)[1]
+            for line in body.split("\n")
+            if line.startswith("event: ")
+        ]
+        assert "action_proposed" in events
+        assert "token" in events
+        assert "Waiting for your approval" in body
+
+        detail = await client.get(
+            f"/api/companion/chats/{chat['id']}", headers=auth_headers
+        )
+        assert detail.status_code == 200
+        assistant_messages = [
+            m for m in detail.json()["messages"] if m["role"] == "assistant"
+        ]
+        assert assistant_messages
+        assert (
+            assistant_messages[-1]["content"][0]["text"]
+            == "Waiting for your approval: Send a Telegram message to you: “late”"
+        )
+
+    async def test_agent_chat_v2_action_proposal_waiting_message_matches_russian(
+        self,
+        client: AsyncClient,
+        auth_headers: dict,
+        monkeypatch,
+    ):
+        fake = _SeqOpenAI(
+            [
+                [
+                    _function_call_completed(
+                        "request_tool_group",
+                        '{"group": "telegram"}',
+                    )
+                ],
+                [
+                    _function_call_completed(
+                        "send_message_telegram",
+                        '{"text": "я опаздываю"}',
+                    )
+                ],
+            ]
+        )
+        monkeypatch.setattr(
+            "app.core.companion.get_openai_client", lambda: fake
+        )
+        chat = (
+            await client.post(
+                "/api/companion/chats", json={}, headers=auth_headers
+            )
+        ).json()
+
+        response = await client.post(
+            f"/api/companion/chats/{chat['id']}/messages",
+            json={
+                "content": "напиши мне, что я опаздываю",
+                "client_capabilities": ["actions_v1", "agent_chat_v2"],
+            },
+            headers=auth_headers,
+        )
+
+        assert response.status_code == 200
+        payloads = [
+            json.loads(line.split(": ", 1)[1])
+            for line in response.text.split("\n")
+            if line.startswith("data: ")
+        ]
+        assert any(
+            payload.get("text", "").startswith("Жду твоего подтверждения")
+            for payload in payloads
+        )
+        detail = await client.get(
+            f"/api/companion/chats/{chat['id']}", headers=auth_headers
+        )
+        assert detail.status_code == 200
+        assistant_messages = [
+            m for m in detail.json()["messages"] if m["role"] == "assistant"
+        ]
+        assert assistant_messages[-1]["content"][0]["text"] == (
+            "Жду твоего подтверждения: "
+            "Send a Telegram message to you: “я опаздываю”"
+        )
 
     async def test_first_user_message_auto_titles_new_chat(
         self,

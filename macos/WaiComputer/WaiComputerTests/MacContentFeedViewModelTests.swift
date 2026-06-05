@@ -166,6 +166,59 @@ final class MacContentFeedViewModelTests: XCTestCase {
         XCTAssertTrue(source.contains("showsConversationSwitcher: false"))
     }
 
+    func testInboxChatDetailPassesFolderContextToFocusedCompanion() throws {
+        let source = try macSource("WaiComputer/Features/Inbox/MacInboxView.swift")
+
+        XCTAssertTrue(source.contains("viewingFolderId: folderId"))
+    }
+
+    func testCompanionViewForwardsViewingContextToStreamRequest() throws {
+        let source = try sharedSource("Sources/WaiComputerKit/Views/CompanionView.swift")
+
+        XCTAssertTrue(source.contains("private let viewingRecordingId: String?"))
+        XCTAssertTrue(source.contains("private let viewingFolderId: String?"))
+        XCTAssertTrue(source.contains("private let onTurnCompleted: ((CompanionTurnCompletion) -> Void)?"))
+        XCTAssertTrue(source.contains("viewingRecordingId: viewingRecordingId"))
+        XCTAssertTrue(source.contains("viewingFolderId: viewingFolderId"))
+        XCTAssertTrue(source.contains("onTurnCompleted?(CompanionTurnCompletion("))
+    }
+
+    func testInboxFocusedCompanionNotifiesWhenTurnCompletes() throws {
+        let source = try macSource("WaiComputer/Features/Inbox/MacInboxView.swift")
+
+        XCTAssertTrue(source.contains("onTurnCompleted: { completion in"))
+        XCTAssertTrue(source.contains("MacWaiTaskNotificationCenter.shared.notifyTaskFinished("))
+        XCTAssertTrue(source.contains("body: completion.preview ?? t(\"Your Wai task is ready.\", \"Задача Wai готова.\")"))
+    }
+
+    func testMacWaiTaskNotificationCenterRequestsPermissionAndSkipsForeground() throws {
+        let source = try macSource("WaiComputer/Features/Inbox/MacWaiTaskNotificationCenter.swift")
+
+        XCTAssertTrue(source.contains("import UserNotifications"))
+        XCTAssertTrue(source.contains("guard !application.isActive else { return }"))
+        XCTAssertTrue(source.contains("requestAuthorization(options: [.alert, .sound])"))
+        XCTAssertTrue(source.contains("UNNotificationRequest("))
+        XCTAssertFalse(source.contains("try?"))
+    }
+
+    func testMacAppConfiguresTaskNotificationCenterAtLaunch() throws {
+        let source = try macSource("WaiComputer/App/WaiComputerMacApp.swift")
+
+        XCTAssertTrue(source.contains("MacWaiTaskNotificationCenter.shared.configure()"))
+    }
+
+    func testMacNotificationTapRoutesFinishedChatToInbox() throws {
+        let appSource = try macSource("WaiComputer/App/WaiComputerMacApp.swift")
+        let contentSource = try macSource("WaiComputer/App/MacContentView.swift")
+        let notificationSource = try macSource("WaiComputer/Features/Inbox/MacWaiTaskNotificationCenter.swift")
+
+        XCTAssertTrue(appSource.contains("static let macOpenInboxChat = Notification.Name(\"macOpenInboxChat\")"))
+        XCTAssertTrue(notificationSource.contains("NotificationCenter.default.post(name: .macOpenInboxChat, object: chatId)"))
+        XCTAssertTrue(contentSource.contains("NotificationCenter.default.publisher(for: .macOpenInboxChat)"))
+        XCTAssertTrue(contentSource.contains("pendingInboxDetail = InboxDetailRef(kind: .chat, id: chatId)"))
+        XCTAssertTrue(contentSource.contains("selectedSection = .inbox"))
+    }
+
     func testInboxPresentsWaiChatAsAgentThread() throws {
         let source = try macSource("WaiComputer/Features/Inbox/MacInboxView.swift")
 

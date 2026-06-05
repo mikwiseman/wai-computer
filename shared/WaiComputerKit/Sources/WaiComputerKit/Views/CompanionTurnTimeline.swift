@@ -64,6 +64,156 @@ public struct CompanionTurnReducer: Equatable, Sendable {
 
     public var isEmpty: Bool { items.isEmpty && citations.isEmpty }
 
+    public static func storedItems(from toolCalls: [CompanionJSONValue]?) -> [CompanionTurnItem] {
+        guard let toolCalls else { return [] }
+
+        var items: [CompanionTurnItem] = []
+        for call in toolCalls {
+            guard case .object(let object) = call else { continue }
+            if object["type"]?.stringValue == "tools",
+                let actions = storedToolActions(from: object["actions"]) {
+                items.append(.tools(id: "stored-tools-\(items.count)", actions: actions))
+            } else if object["type"]?.stringValue == "artifact",
+                let artifactId = object["artifact_id"]?.stringValue,
+                let title = object["title"]?.stringValue,
+                let kind = object["kind"]?.stringValue,
+                let content = object["content"]?.stringValue {
+                items.append(.artifact(
+                    id: "stored-artifact-\(artifactId)",
+                    artifact: CompanionArtifact(
+                        artifactId: artifactId,
+                        title: title,
+                        kind: kind,
+                        content: content,
+                        language: object["language"]?.stringValue ?? ""
+                    )
+                ))
+            } else if object["type"]?.stringValue == "action_proposed",
+                let actionId = object["action_id"]?.stringValue,
+                let kind = object["kind"]?.stringValue,
+                let tool = object["tool"]?.stringValue,
+                let preview = object["preview"]?.stringValue,
+                let expiresAt = object["expires_at"]?.stringValue {
+                items.append(.action(
+                    id: "stored-action-\(actionId)",
+                    proposal: CompanionActionProposal(
+                        actionId: actionId,
+                        kind: kind,
+                        tool: tool,
+                        preview: preview,
+                        expiresAt: expiresAt,
+                        recipient: object["recipient"]?.stringValue
+                    ),
+                    resolution: storedActionResolution(from: object["resolution"])
+                ))
+            } else if object["type"]?.stringValue == "plan",
+                let steps = storedPlanSteps(from: object["steps"]) {
+                items.append(.plan(id: "stored-plan-\(items.count)", steps: steps))
+            }
+        }
+        return items
+    }
+
+    private static func storedToolActions(
+        from value: CompanionJSONValue?
+    ) -> [CompanionToolAction]? {
+        guard case .array(let rawActions) = value else { return nil }
+        let actions = rawActions.compactMap { rawAction -> CompanionToolAction? in
+            guard case .object(let object) = rawAction,
+                  let callId = object["call_id"]?.stringValue,
+                  let tool = object["tool"]?.stringValue
+            else { return nil }
+
+            let summary: String?
+            switch object["summary"] {
+            case .some(.string(let value)):
+                summary = value
+            case .some(.null), .none:
+                summary = nil
+            default:
+                return nil
+            }
+
+            let ok: Bool?
+            switch object["ok"] {
+            case .some(.bool(let value)):
+                ok = value
+            case .some(.null), .none:
+                ok = nil
+            default:
+                return nil
+            }
+
+            return CompanionToolAction(callId: callId, tool: tool, summary: summary, ok: ok)
+        }
+        return actions.isEmpty ? nil : actions
+    }
+
+    public static func toolCalls(
+        _ toolCalls: [CompanionJSONValue]?,
+        settingActionResolution actionId: String,
+        resolution: CompanionActionResolution
+    ) -> [CompanionJSONValue]? {
+        guard let toolCalls else { return nil }
+
+        var changed = false
+        let resolutionPayload = storedActionResolutionPayload(resolution)
+        let next = toolCalls.map { call -> CompanionJSONValue in
+            guard case .object(var object) = call,
+                  object["type"]?.stringValue == "action_proposed",
+                  object["action_id"]?.stringValue == actionId
+            else { return call }
+
+            object["resolution"] = resolutionPayload
+            changed = true
+            return .object(object)
+        }
+        return changed ? next : toolCalls
+    }
+
+    private static func storedActionResolution(
+        from value: CompanionJSONValue?
+    ) -> CompanionActionResolution? {
+        guard case .object(let object) = value else { return nil }
+        if object["state"]?.stringValue == "executing" {
+            return .executing
+        }
+        guard object["state"]?.stringValue == "resolved",
+              let status = object["status"]?.stringValue,
+              let detail = object["detail"]?.stringValue
+        else { return nil }
+        return .resolved(status: status, detail: detail)
+    }
+
+    private static func storedPlanSteps(
+        from value: CompanionJSONValue?
+    ) -> [CompanionPlanStep]? {
+        guard case .array(let rawSteps) = value else { return nil }
+        let steps = rawSteps.compactMap { rawStep -> CompanionPlanStep? in
+            guard case .object(let object) = rawStep,
+                  let title = object["title"]?.stringValue,
+                  let status = object["status"]?.stringValue
+            else { return nil }
+            return CompanionPlanStep(title: title, status: status)
+        }
+        return steps.isEmpty ? nil : steps
+    }
+
+    private static func storedActionResolutionPayload(
+        _ resolution: CompanionActionResolution
+    ) -> CompanionJSONValue {
+        switch resolution {
+        case .executing:
+            return .object(["state": .string("executing")])
+        case .resolved(let status, let detail):
+            return .object([
+                "state": .string("resolved"),
+                "status": .string(status),
+                "detail": .string(detail),
+            ])
+        }
+    }
+
     /// True while at least one tool action is still running — used to keep the
     /// "Tool actions" card spinning.
     public var hasRunningTool: Bool {
@@ -73,6 +223,30 @@ public struct CompanionTurnReducer: Equatable, Sendable {
             }
             return false
         }
+    }
+
+    public func notificationPreview(maxCharacters: Int) -> String? {
+        guard maxCharacters > 0 else { return nil }
+
+        let text = items.compactMap { item -> String? in
+            if case .text(_, let markdown) = item { return markdown }
+            return nil
+        }
+        .joined(separator: " ")
+        .split(whereSeparator: { $0.isWhitespace })
+        .joined(separator: " ")
+
+        guard !text.isEmpty else { return nil }
+        guard text.count > maxCharacters else { return text }
+
+        let ellipsis = "..."
+        let characterLimit = max(maxCharacters - ellipsis.count, 1)
+        let hardLimitIndex = text.index(text.startIndex, offsetBy: characterLimit)
+        var prefix = String(text[..<hardLimitIndex]).trimmingCharacters(in: .whitespacesAndNewlines)
+        if let lastSpace = prefix.lastIndex(of: " "), lastSpace > prefix.startIndex {
+            prefix = String(prefix[..<lastSpace])
+        }
+        return "\(prefix)\(ellipsis)"
     }
 
     private mutating func nextId(_ prefix: String) -> String {

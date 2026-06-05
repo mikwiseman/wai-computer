@@ -87,6 +87,7 @@ async def transcribe_audio_file(
     audio_duration_seconds: float | None = None,
     keyterms: list[str] | None = None,
     user_id: str | None = None,
+    usage_purpose: str | None = None,
 ) -> list[TranscriptResult]:
     """Transcribe audio using the active speech-to-text runtime.
 
@@ -127,17 +128,20 @@ async def transcribe_audio_file(
 
     started_at = perf_counter()
     audio_bytes = len(audio_data)
+    start_data = {
+        "provider": provider,
+        "model": selected_model,
+        "audio_bytes": audio_bytes,
+        "content_type": content_type,
+        "channels": channels,
+        "audio_duration_seconds": audio_duration_seconds,
+    }
+    if usage_purpose is not None:
+        start_data["usage_purpose"] = usage_purpose
     add_sentry_breadcrumb(
         category="recording",
         message="File transcription started",
-        data={
-            "provider": provider,
-            "model": selected_model,
-            "audio_bytes": audio_bytes,
-            "content_type": content_type,
-            "channels": channels,
-            "audio_duration_seconds": audio_duration_seconds,
-        },
+        data=start_data,
     )
 
     try:
@@ -203,6 +207,8 @@ async def transcribe_audio_file(
         "channels": channels,
         "segment_count": len(results),
     }
+    if usage_purpose is not None:
+        completion_data["usage_purpose"] = usage_purpose
     logger.info(
         "file STT completed provider=%s model=%s latency_ms=%s segment_count=%s "
         "audio_bytes=%s content_type=%s channels=%s",

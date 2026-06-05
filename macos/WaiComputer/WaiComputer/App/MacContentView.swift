@@ -528,6 +528,10 @@ struct MacMainView: View {
         .onReceive(NotificationCenter.default.publisher(for: .macCreateFolder)) { _ in
             beginCreateFolderFromCommand()
         }
+        .onReceive(NotificationCenter.default.publisher(for: .macOpenInboxChat)) { notification in
+            guard let chatId = notification.object as? String else { return }
+            openInboxChat(chatId)
+        }
         .onReceive(NotificationCenter.default.publisher(for: .init("navigateToSettings"))) { _ in
             selectedSection = .settings
         }
@@ -1150,6 +1154,13 @@ struct MacMainView: View {
                 }
             }
         }
+    }
+
+    private func openInboxChat(_ chatId: String) {
+        prefetchedRecordingDetail = nil
+        selectedRecordingIds.removeAll()
+        pendingInboxDetail = InboxDetailRef(kind: .chat, id: chatId)
+        selectedSection = .inbox
     }
 
     private func selectRecording(_ recordingId: String, in section: SidebarSection) {

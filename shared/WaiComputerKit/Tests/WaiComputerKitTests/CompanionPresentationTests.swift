@@ -191,4 +191,158 @@ final class CompanionPresentationTests: XCTestCase {
         XCTAssertEqual(arts[0].kind, "html")
         XCTAssertEqual(arts[0].title, "Landing")
     }
+
+    func testStoredToolCallsRestoreArtifactTimelineItems() {
+        let items = CompanionTurnReducer.storedItems(from: [
+            .object([
+                "type": .string("artifact"),
+                "artifact_id": .string("call_1"),
+                "title": .string("Landing"),
+                "kind": .string("html"),
+                "content": .string("<!doctype html><h1>Hi</h1>"),
+                "language": .string(""),
+            ]),
+            .object([
+                "type": .string("function_call"),
+                "name": .string("web_search"),
+            ]),
+            .null,
+        ])
+
+        XCTAssertEqual(items.count, 1)
+        guard case .artifact(let id, let artifact) = items[0] else {
+            return XCTFail("expected stored artifact item")
+        }
+        XCTAssertEqual(id, "stored-artifact-call_1")
+        XCTAssertEqual(artifact.artifactId, "call_1")
+        XCTAssertEqual(artifact.title, "Landing")
+        XCTAssertEqual(artifact.kind, "html")
+        XCTAssertEqual(artifact.content, "<!doctype html><h1>Hi</h1>")
+    }
+
+    func testStoredToolCallsRestoreActionTimelineItems() {
+        let items = CompanionTurnReducer.storedItems(from: [
+            .object([
+                "type": .string("action_proposed"),
+                "action_id": .string("act1"),
+                "kind": .string("send"),
+                "tool": .string("send_message_telegram"),
+                "preview": .string("Send Telegram message to your linked chat: late"),
+                "expires_at": .string("2026-06-05T12:40:00+00:00"),
+                "recipient": .string("you"),
+            ]),
+        ])
+
+        XCTAssertEqual(items.count, 1)
+        guard case .action(let id, let proposal, let resolution) = items[0] else {
+            return XCTFail("expected stored action item")
+        }
+        XCTAssertEqual(id, "stored-action-act1")
+        XCTAssertEqual(proposal.actionId, "act1")
+        XCTAssertEqual(proposal.kind, "send")
+        XCTAssertEqual(proposal.tool, "send_message_telegram")
+        XCTAssertEqual(proposal.preview, "Send Telegram message to your linked chat: late")
+        XCTAssertEqual(proposal.expiresAt, "2026-06-05T12:40:00+00:00")
+        XCTAssertEqual(proposal.recipient, "you")
+        XCTAssertNil(resolution)
+    }
+
+    func testStoredToolCallsApplyActionResolution() {
+        let toolCalls: [CompanionJSONValue] = [
+            .object([
+                "type": .string("action_proposed"),
+                "action_id": .string("act1"),
+                "kind": .string("send"),
+                "tool": .string("send_message_telegram"),
+                "preview": .string("Send Telegram message to your linked chat: late"),
+                "expires_at": .string("2026-06-05T12:40:00+00:00"),
+                "recipient": .string("you"),
+            ]),
+        ]
+
+        let updated = CompanionTurnReducer.toolCalls(
+            toolCalls,
+            settingActionResolution: "act1",
+            resolution: .resolved(status: "executed", detail: "")
+        )
+        let items = CompanionTurnReducer.storedItems(from: updated)
+
+        guard case .action(_, _, let resolution) = items.first else {
+            return XCTFail("expected stored action item")
+        }
+        XCTAssertEqual(resolution, .resolved(status: "executed", detail: ""))
+    }
+
+    func testStoredToolCallsRestorePlanTimelineItems() {
+        let items = CompanionTurnReducer.storedItems(from: [
+            .object([
+                "type": .string("plan"),
+                "steps": .array([
+                    .object([
+                        "title": .string("Search"),
+                        "status": .string("done"),
+                    ]),
+                    .object([
+                        "title": .string("Summarize"),
+                        "status": .string("in_progress"),
+                    ]),
+                ]),
+            ]),
+        ])
+
+        XCTAssertEqual(items.count, 1)
+        guard case .plan(let id, let steps) = items[0] else {
+            return XCTFail("expected stored plan item")
+        }
+        XCTAssertEqual(id, "stored-plan-0")
+        XCTAssertEqual(steps, [
+            CompanionPlanStep(title: "Search", status: "done"),
+            CompanionPlanStep(title: "Summarize", status: "in_progress"),
+        ])
+    }
+
+    func testStoredToolCallsRestoreToolTimelineItems() {
+        let items = CompanionTurnReducer.storedItems(from: [
+            .object([
+                "type": .string("tools"),
+                "actions": .array([
+                    .object([
+                        "call_id": .string("mcp_1"),
+                        "tool": .string("search"),
+                        "summary": .string("3 results"),
+                        "ok": .bool(true),
+                    ]),
+                    .object([
+                        "call_id": .string("web_1"),
+                        "tool": .string("web_search"),
+                        "summary": .null,
+                        "ok": .null,
+                    ]),
+                ]),
+            ]),
+        ])
+
+        XCTAssertEqual(items.count, 1)
+        guard case .tools(let id, let actions) = items[0] else {
+            return XCTFail("expected stored tools item")
+        }
+        XCTAssertEqual(id, "stored-tools-0")
+        XCTAssertEqual(actions, [
+            CompanionToolAction(callId: "mcp_1", tool: "search", summary: "3 results", ok: true),
+            CompanionToolAction(callId: "web_1", tool: "web_search"),
+        ])
+    }
+
+    func testReducerBuildsCompactedNotificationPreviewFromAssistantText() {
+        let reducer = reduce([
+            .thinking(text: "Searching..."),
+            .token(text: "Here are the direct links\n\n"),
+            .token(text: "for GPU rental providers and pricing pages."),
+        ])
+
+        XCTAssertEqual(
+            reducer.notificationPreview(maxCharacters: 48),
+            "Here are the direct links for GPU rental..."
+        )
+    }
 }

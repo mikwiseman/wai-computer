@@ -70,6 +70,18 @@ enum CompanionChatPresentation {
 /// and the iOS `WaiHomeView`. Takes an `APIClient` (kept in environment by the
 /// host app's auth flow) and a list of recordings used to resolve citation
 /// chip titles. Persists chats server-side and streams turns via SSE.
+public struct CompanionTurnCompletion: Equatable, Sendable {
+    public let chatId: String
+    public let messageId: String
+    public let preview: String?
+
+    public init(chatId: String, messageId: String, preview: String?) {
+        self.chatId = chatId
+        self.messageId = messageId
+        self.preview = preview
+    }
+}
+
 public struct CompanionView: View {
     public let apiClient: APIClient
     public let recordings: [Recording]
@@ -78,6 +90,9 @@ public struct CompanionView: View {
     private let onVoiceInput: (() -> Void)?
     private let initialChatId: String?
     private let showsConversationSwitcher: Bool
+    private let viewingRecordingId: String?
+    private let viewingFolderId: String?
+    private let onTurnCompleted: ((CompanionTurnCompletion) -> Void)?
     @Environment(\.locale) private var locale
     @Environment(\.companionAccentColor) private var companionAccentColor
 
@@ -120,12 +135,18 @@ public struct CompanionView: View {
         recordings: [Recording],
         initialChatId: String? = nil,
         showsConversationSwitcher: Bool = true,
+        viewingRecordingId: String? = nil,
+        viewingFolderId: String? = nil,
+        onTurnCompleted: ((CompanionTurnCompletion) -> Void)? = nil,
         onVoiceInput: (() -> Void)? = nil
     ) {
         self.apiClient = apiClient
         self.recordings = recordings
         self.initialChatId = initialChatId
         self.showsConversationSwitcher = showsConversationSwitcher
+        self.viewingRecordingId = viewingRecordingId
+        self.viewingFolderId = viewingFolderId
+        self.onTurnCompleted = onTurnCompleted
         self.onVoiceInput = onVoiceInput
     }
 
@@ -451,6 +472,12 @@ public struct CompanionView: View {
         if let reducer = completedTurns[message.id] {
             return reducer.items
         }
+        let storedItems = CompanionTurnReducer.storedItems(from: message.toolCalls)
+        if !storedItems.isEmpty {
+            let text = message.plainText.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !text.isEmpty else { return storedItems }
+            return storedItems + [.text(id: "stored-text-\(message.id)", markdown: message.plainText)]
+        }
         return [.text(id: message.id, markdown: message.plainText)]
     }
 
@@ -579,6 +606,16 @@ public struct CompanionView: View {
                 completedTurns[key] = reducer
                 return
             }
+        }
+        messages = messages.map { message in
+            let nextToolCalls = CompanionTurnReducer.toolCalls(
+                message.toolCalls,
+                settingActionResolution: actionId,
+                resolution: resolution
+            )
+            return nextToolCalls == message.toolCalls
+                ? message
+                : message.replacingToolCalls(nextToolCalls)
         }
     }
 
@@ -900,7 +937,9 @@ public struct CompanionView: View {
             do {
                 let stream = try await apiClient.streamCompanionMessage(
                     chatId: chatId,
-                    content: trimmed
+                    content: trimmed,
+                    viewingRecordingId: viewingRecordingId,
+                    viewingFolderId: viewingFolderId
                 )
                 for await event in stream {
                     if Task.isCancelled { break }
@@ -968,8 +1007,16 @@ public struct CompanionView: View {
         case .token:
             stage = .composing
         case .done(let messageId, _, _):
-            if !liveTurn.isEmpty {
-                completedTurns[messageId] = liveTurn
+            let completedTurn = liveTurn
+            if !completedTurn.isEmpty {
+                completedTurns[messageId] = completedTurn
+                if let chatId = activeChatId {
+                    onTurnCompleted?(CompanionTurnCompletion(
+                        chatId: chatId,
+                        messageId: messageId,
+                        preview: completedTurn.notificationPreview(maxCharacters: 140)
+                    ))
+                }
             }
             stage = .idle
         case .error(_, let message):

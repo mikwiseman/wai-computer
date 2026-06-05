@@ -1515,6 +1515,48 @@ public actor APIClient {
         return try await request(.GET, path: "/api/brain/graph", queryItems: queryItems)
     }
 
+    public func getBrainMirror(limit: Int = 40) async throws -> BrainMapProjection {
+        return try await request(
+            .GET,
+            path: "/api/brain/mirror",
+            queryItems: [URLQueryItem(name: "limit", value: "\(limit)")]
+        )
+    }
+
+    public func listBrainMaps(
+        status: String? = nil,
+        limit: Int = 50
+    ) async throws -> BrainMapsResponse {
+        var queryItems: [URLQueryItem] = [URLQueryItem(name: "limit", value: "\(limit)")]
+        if let status, !status.isEmpty {
+            queryItems.append(URLQueryItem(name: "status", value: status))
+        }
+        return try await request(.GET, path: "/api/brain/maps", queryItems: queryItems)
+    }
+
+    public func createBrainMap(_ input: BrainMapCreateRequest) async throws -> BrainMap {
+        return try await request(.POST, path: "/api/brain/maps", body: input)
+    }
+
+    public func getBrainMap(mapId: String) async throws -> BrainMap {
+        return try await request(.GET, path: "/api/brain/maps/\(mapId)")
+    }
+
+    public func updateBrainMap(
+        mapId: String,
+        _ input: BrainMapUpdateRequest
+    ) async throws -> BrainMap {
+        return try await request(.PATCH, path: "/api/brain/maps/\(mapId)", body: input)
+    }
+
+    public func refreshBrainMap(mapId: String) async throws -> BrainMapRevision {
+        return try await request(.POST, path: "/api/brain/maps/\(mapId)/refresh")
+    }
+
+    public func listBrainMapRevisions(mapId: String) async throws -> BrainMapRevisionsResponse {
+        return try await request(.GET, path: "/api/brain/maps/\(mapId)/revisions")
+    }
+
     // MARK: - WaiBrain Spaces
 
     public func listBrainSpaces() async throws -> BrainSpacesResponse {

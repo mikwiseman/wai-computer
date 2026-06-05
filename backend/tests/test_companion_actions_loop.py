@@ -17,7 +17,7 @@ from app.core.companion import (
     TokenEvent,
     run_turn,
 )
-from app.models.companion import Conversation
+from app.models.companion import ChatMessage, Conversation
 from app.models.companion_pending_action import CompanionPendingAction
 from app.models.user import User
 
@@ -176,6 +176,26 @@ async def test_write_tool_call_proposes_and_defers(db_session, user_conv):
     assert rows[0].status == "pending"
     assert rows[0].tool_name == "send_message_telegram"
     assert rows[0].action_manifest["args"] == {"text": "late"}
+
+    assistant = (
+        await db_session.execute(
+            select(ChatMessage).where(
+                ChatMessage.conversation_id == cid,
+                ChatMessage.role == "assistant",
+            )
+        )
+    ).scalar_one()
+    assert assistant.tool_calls == [
+        {
+            "type": "action_proposed",
+            "action_id": proposed[0].action_id,
+            "kind": "send",
+            "tool": "send_message_telegram",
+            "preview": proposed[0].preview,
+            "expires_at": proposed[0].expires_at,
+            "recipient": "you",
+        }
+    ]
 
     assert any(isinstance(e, DoneEvent) for e in events)
 

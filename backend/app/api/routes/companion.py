@@ -24,6 +24,7 @@ from app.core.brain_spaces import (
 )
 from app.core.companion import (
     ActionProposedEvent,
+    CitationEvent,
     CompanionError,
     DoneEvent,
     ErrorEvent,
@@ -482,6 +483,65 @@ def _client_can_receive(event_obj: Any, capabilities: list[str]) -> bool:
 _SSE_HEARTBEAT = b": keep-alive\n\n"
 
 
+def _uuid_or_none(value: Any) -> uuid.UUID | None:
+    if value is None:
+        return None
+    if isinstance(value, uuid.UUID):
+        return value
+    try:
+        return uuid.UUID(str(value))
+    except (TypeError, ValueError):
+        return None
+
+
+def _citation_span(output_text: str, index: int) -> tuple[int, int]:
+    marker = f"[{index}]"
+    start = output_text.find(marker)
+    if start < 0:
+        return 0, 0
+    return start, start + len(marker)
+
+
+def _int_or_none(value: Any) -> int | None:
+    if isinstance(value, bool) or value is None:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _recording_citation_events_from_agent_result(
+    result: dict[str, Any],
+    output_text: str,
+) -> list[tuple[CitationEvent, uuid.UUID | None, uuid.UUID]]:
+    events: list[tuple[CitationEvent, uuid.UUID | None, uuid.UUID]] = []
+    citations = result.get("citations") or []
+    if not isinstance(citations, list):
+        return events
+    for index, citation in enumerate(citations, start=1):
+        if not isinstance(citation, dict):
+            continue
+        if citation.get("source_kind") != "recording":
+            continue
+        recording_id = _uuid_or_none(citation.get("source_id"))
+        if recording_id is None:
+            continue
+        segment_id = _uuid_or_none(citation.get("id"))
+        span_start, span_end = _citation_span(output_text, index)
+        event = CitationEvent(
+            index=index,
+            segment_id=str(segment_id or ""),
+            recording_id=str(recording_id),
+            start_ms=_int_or_none(citation.get("start_ms")),
+            end_ms=_int_or_none(citation.get("end_ms")),
+            span_start=span_start,
+            span_end=span_end,
+        )
+        events.append((event, segment_id, recording_id))
+    return events
+
+
 async def _resolve_viewing_titles(
     db: Database,
     user_id: uuid.UUID,
@@ -605,6 +665,7 @@ async def _run_wai_companion_turn(
     output_text = str(result.get("output_text") or "").strip()
     if not output_text:
         raise CompanionError("empty_agent_output", "Wai task completed without output.")
+    citation_events = _recording_citation_events_from_agent_result(result, output_text)
 
     assistant_msg = ChatMessage(
         conversation_id=chat_id,
@@ -614,6 +675,18 @@ async def _run_wai_companion_turn(
         latency_ms=0,
     )
     db.add(assistant_msg)
+    await db.flush()
+    for citation_event, segment_id, recording_id in citation_events:
+        db.add(
+            MessageCitation(
+                message_id=assistant_msg.id,
+                segment_id=segment_id,
+                recording_id=recording_id,
+                span_start=citation_event.span_start,
+                span_end=citation_event.span_end,
+                citation_index=citation_event.index,
+            )
+        )
     conversation = await db.get(Conversation, chat_id)
     if conversation is not None:
         conversation.last_message_at = datetime.now(timezone.utc)
@@ -621,6 +694,8 @@ async def _run_wai_companion_turn(
     await db.refresh(assistant_msg)
 
     yield TokenEvent(text=output_text)
+    for citation_event, _segment_id, _recording_id in citation_events:
+        yield citation_event
     yield DoneEvent(
         message_id=str(assistant_msg.id),
         model="wai-agent",
@@ -820,6 +895,52 @@ class ResolveActionResponse(BaseModel):
     recipient: str | None = None  # display name only, never a raw id
 
 
+async def _mark_stored_action_resolution(
+    db: Database,
+    *,
+    chat_id: uuid.UUID,
+    action_id: uuid.UUID,
+    status_value: str,
+    detail: str,
+) -> None:
+    action_id_str = str(action_id)
+    resolution = {
+        "state": "resolved",
+        "status": status_value,
+        "detail": detail,
+    }
+    messages = (
+        await db.execute(
+            select(ChatMessage).where(
+                ChatMessage.conversation_id == chat_id,
+                ChatMessage.role == "assistant",
+                ChatMessage.tool_calls.is_not(None),
+            )
+        )
+    ).scalars().all()
+
+    for message in messages:
+        tool_calls = message.tool_calls
+        if not isinstance(tool_calls, list):
+            continue
+        changed = False
+        next_tool_calls: list[Any] = []
+        for item in tool_calls:
+            if (
+                isinstance(item, dict)
+                and item.get("type") == "action_proposed"
+                and item.get("action_id") == action_id_str
+            ):
+                next_item = dict(item)
+                next_item["resolution"] = resolution
+                next_tool_calls.append(next_item)
+                changed = True
+            else:
+                next_tool_calls.append(item)
+        if changed:
+            message.tool_calls = next_tool_calls
+
+
 @router.post(
     "/chats/{chat_id}/actions/{action_id}/resolve",
     response_model=ResolveActionResponse,
@@ -855,6 +976,14 @@ async def resolve_chat_action(
             edited_args=request.edited_args,
         )
     except ApprovalError as exc:
+        if exc.code == "expired":
+            await _mark_stored_action_resolution(
+                db,
+                chat_id=chat_id,
+                action_id=action_id,
+                status_value="expired",
+                detail=exc.message,
+            )
         await db.commit()  # persist any expired-on-read transition
         raise HTTPException(
             status_code=_APPROVAL_HTTP_STATUS.get(
@@ -864,6 +993,13 @@ async def resolve_chat_action(
         ) from exc
 
     if request.decision == "reject":
+        await _mark_stored_action_resolution(
+            db,
+            chat_id=chat_id,
+            action_id=action_id,
+            status_value="rejected",
+            detail="",
+        )
         await db.commit()
         return ResolveActionResponse(
             action_id=str(action_id),
@@ -878,6 +1014,13 @@ async def resolve_chat_action(
             # Dispatched to the Mac edge — NOT run server-side. It stays
             # "approved" in the device drain queue and is marked executed only
             # when the Mac reports back via /desktop_result.
+            await _mark_stored_action_resolution(
+                db,
+                chat_id=chat_id,
+                action_id=action_id,
+                status_value="dispatched",
+                detail="",
+            )
             await db.commit()
             return ResolveActionResponse(
                 action_id=str(action_id),
@@ -889,9 +1032,23 @@ async def resolve_chat_action(
             db, user_id=user.id, tool_name=row.tool_name, args=args
         )
         await mark_executed(db, row=row, receipt=receipt)
+        await _mark_stored_action_resolution(
+            db,
+            chat_id=chat_id,
+            action_id=action_id,
+            status_value="executed",
+            detail="",
+        )
         await db.commit()
     except (ApprovalError, ActuationError) as exc:
         await mark_failed(db, row=row, detail=exc.message)
+        await _mark_stored_action_resolution(
+            db,
+            chat_id=chat_id,
+            action_id=action_id,
+            status_value="failed",
+            detail=exc.message,
+        )
         await db.commit()
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail=exc.message
@@ -970,6 +1127,13 @@ async def desktop_action_result(
         verify_committable(row)
     except ApprovalError as exc:
         await mark_failed(db, row=row, detail=exc.message)
+        await _mark_stored_action_resolution(
+            db,
+            chat_id=chat_id,
+            action_id=action_id,
+            status_value="failed",
+            detail=exc.message,
+        )
         await db.commit()
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -979,7 +1143,21 @@ async def desktop_action_result(
         await mark_executed(
             db, row=row, receipt=request.payload or {"status": "executed"}
         )
+        await _mark_stored_action_resolution(
+            db,
+            chat_id=chat_id,
+            action_id=action_id,
+            status_value="executed",
+            detail="",
+        )
     else:
         await mark_failed(db, row=row, detail=request.status)
+        await _mark_stored_action_resolution(
+            db,
+            chat_id=chat_id,
+            action_id=action_id,
+            status_value="failed",
+            detail=request.status,
+        )
     await db.commit()
     return DesktopResultResponse(action_id=str(action_id), status=row.status)

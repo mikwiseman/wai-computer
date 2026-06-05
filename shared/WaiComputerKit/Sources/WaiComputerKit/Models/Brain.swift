@@ -135,6 +135,260 @@ public struct BrainGraph: Codable, Sendable {
     public let overview: BrainOverview?
 }
 
+// MARK: - Live Brain Maps
+
+public struct BrainMapCitation: Codable, Identifiable, Sendable, Equatable {
+    public let id: String
+    public let sourceKind: String
+    public let sourceId: String
+    public let title: String
+    public let kind: String?
+    public let createdAt: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case sourceKind = "source_kind"
+        case sourceId = "source_id"
+        case title
+        case kind
+        case createdAt = "created_at"
+    }
+}
+
+public struct BrainMapPosition: Codable, Sendable, Equatable {
+    public let x: Double
+    public let y: Double
+
+    public init(x: Double, y: Double) {
+        self.x = x
+        self.y = y
+    }
+}
+
+public struct BrainMapNode: Codable, Identifiable, Sendable, Equatable {
+    public let id: String
+    public let kind: String
+    public let title: String
+    public let body: String?
+    public let lane: String?
+    public let sourceKind: String?
+    public let sourceId: String?
+    public let entityId: String?
+    public let entityType: String?
+    public let citationIds: [String]
+    public let position: BrainMapPosition?
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case kind
+        case title
+        case body
+        case lane
+        case sourceKind = "source_kind"
+        case sourceId = "source_id"
+        case entityId = "entity_id"
+        case entityType = "entity_type"
+        case citationIds = "citation_ids"
+        case position
+    }
+}
+
+public struct BrainMapEdge: Codable, Identifiable, Sendable, Equatable {
+    public let id: String
+    public let source: String
+    public let target: String
+    public let kind: String
+    public let label: String?
+    public let citationIds: [String]
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case source
+        case target
+        case kind
+        case label
+        case citationIds = "citation_ids"
+    }
+}
+
+public struct BrainMapFreshness: Codable, Sendable, Equatable {
+    public let newestSourceAt: String?
+    public let weeksSince: Int?
+    public let stale: Bool
+
+    private enum CodingKeys: String, CodingKey {
+        case newestSourceAt = "newest_source_at"
+        case weeksSince = "weeks_since"
+        case stale
+    }
+}
+
+public struct BrainMapProjection: Codable, Sendable, Equatable {
+    public let version: Int
+    public let mapType: String
+    public let title: String
+    public let prompt: String
+    public let summary: String
+    public let nodes: [BrainMapNode]
+    public let edges: [BrainMapEdge]
+    public let citations: [BrainMapCitation]
+    public let freshness: BrainMapFreshness
+    public let stats: [String: Int]?
+    public let sourceFingerprint: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case version
+        case mapType = "map_type"
+        case title
+        case prompt
+        case summary
+        case nodes
+        case edges
+        case citations
+        case freshness
+        case stats
+        case sourceFingerprint = "source_fingerprint"
+    }
+}
+
+public struct BrainMapDiff: Codable, Sendable, Equatable {
+    public let nodesAdded: Int
+    public let nodesRemoved: Int
+    public let edgesAdded: Int
+    public let edgesRemoved: Int
+    public let sourcesAdded: Int
+    public let sourcesRemoved: Int
+    public let changed: Bool
+
+    private enum CodingKeys: String, CodingKey {
+        case nodesAdded = "nodes_added"
+        case nodesRemoved = "nodes_removed"
+        case edgesAdded = "edges_added"
+        case edgesRemoved = "edges_removed"
+        case sourcesAdded = "sources_added"
+        case sourcesRemoved = "sources_removed"
+        case changed
+    }
+}
+
+public struct BrainMapRevision: Codable, Identifiable, Sendable, Equatable {
+    public let id: String
+    public let mapId: String
+    public let revisionIndex: Int
+    public let projection: BrainMapProjection
+    public let sourceFingerprint: String
+    public let sourceCount: Int
+    public let freshness: BrainMapFreshness
+    public let diff: BrainMapDiff
+    public let citations: [BrainMapCitation]
+    public let compiledAt: String
+    public let createdAt: String
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case mapId = "map_id"
+        case revisionIndex = "revision_index"
+        case projection
+        case sourceFingerprint = "source_fingerprint"
+        case sourceCount = "source_count"
+        case freshness
+        case diff
+        case citations
+        case compiledAt = "compiled_at"
+        case createdAt = "created_at"
+    }
+}
+
+public struct BrainMap: Codable, Identifiable, Sendable, Equatable {
+    public let id: String
+    public let spaceId: String?
+    public let title: String
+    public let prompt: String
+    public let mapType: String
+    public let origin: String
+    public let status: String
+    public let sourceScope: [String: JSONValue]?
+    public let layout: [String: BrainMapPosition]?
+    public let currentRevisionId: String?
+    public let currentRevision: BrainMapRevision?
+    public let createdAt: String
+    public let updatedAt: String
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case spaceId = "space_id"
+        case title
+        case prompt
+        case mapType = "map_type"
+        case origin
+        case status
+        case sourceScope = "source_scope"
+        case layout
+        case currentRevisionId = "current_revision_id"
+        case currentRevision = "current_revision"
+        case createdAt = "created_at"
+        case updatedAt = "updated_at"
+    }
+}
+
+public struct BrainMapsResponse: Codable, Sendable, Equatable {
+    public let maps: [BrainMap]
+}
+
+public struct BrainMapCreateRequest: Codable, Sendable, Equatable {
+    public let prompt: String
+    public let origin: String?
+    public let mapType: String?
+    public let title: String?
+    public let spaceId: String?
+    public let sourceScope: [String: JSONValue]?
+
+    public init(
+        prompt: String,
+        origin: String? = nil,
+        mapType: String? = nil,
+        title: String? = nil,
+        spaceId: String? = nil,
+        sourceScope: [String: JSONValue]? = nil
+    ) {
+        self.prompt = prompt
+        self.origin = origin
+        self.mapType = mapType
+        self.title = title
+        self.spaceId = spaceId
+        self.sourceScope = sourceScope
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case prompt
+        case origin
+        case mapType = "map_type"
+        case title
+        case spaceId = "space_id"
+        case sourceScope = "source_scope"
+    }
+}
+
+public struct BrainMapUpdateRequest: Codable, Sendable, Equatable {
+    public let title: String?
+    public let status: String?
+    public let layout: [String: BrainMapPosition]?
+
+    public init(
+        title: String? = nil,
+        status: String? = nil,
+        layout: [String: BrainMapPosition]? = nil
+    ) {
+        self.title = title
+        self.status = status
+        self.layout = layout
+    }
+}
+
+public struct BrainMapRevisionsResponse: Codable, Sendable, Equatable {
+    public let revisions: [BrainMapRevision]
+}
+
 // MARK: - WaiBrain Spaces (GET /api/brain/spaces)
 
 public struct BrainSpace: Codable, Identifiable, Sendable, Equatable {

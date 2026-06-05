@@ -40,10 +40,13 @@ from app.core.agent_capabilities import (
     MAX_AGENT_STEPS,
     validate_agent_config,
 )
+from app.core.brain_ask import ask_brain
+from app.core.brain_maps import create_brain_map
 from app.core.companion_actions import DEFAULT_TTL_SECONDS, expire_actions_for_run, propose_action
 from app.core.memory_proposal import propose_block_update
 from app.core.unified_search import unified_search
 from app.models.agent import Agent, AgentRun, AgentStep
+from app.models.brain_map import BrainMap, BrainMapRevision
 from app.models.companion_pending_action import CompanionPendingAction
 from app.models.item import Item, ItemChunk, ItemSummary
 from app.models.recording import ActionItem, Recording, Segment, Summary
@@ -377,6 +380,50 @@ def _shorten(text: str | None, limit: int) -> str:
     return value[: limit - 3].rstrip() + "..."
 
 
+def _isoformat_or_none(value: Any) -> str | None:
+    if value is None:
+        return None
+    isoformat = getattr(value, "isoformat", None)
+    if callable(isoformat):
+        return isoformat()
+    return str(value)
+
+
+def _brain_citation_payload(citation: Any) -> dict[str, Any]:
+    return {
+        "id": str(getattr(citation, "id")),
+        "source_kind": str(getattr(citation, "source_kind")),
+        "source_id": str(getattr(citation, "source_id")),
+        "title": getattr(citation, "title", None),
+        "start_ms": getattr(citation, "start_ms", None),
+    }
+
+
+def _brain_freshness_payload(freshness: Any) -> dict[str, Any]:
+    return {
+        "newest_source_at": _isoformat_or_none(
+            getattr(freshness, "newest_source_at", None)
+        ),
+        "weeks_since": getattr(freshness, "weeks_since", None),
+        "stale": bool(getattr(freshness, "stale", False)),
+    }
+
+
+def _brain_gap_text(question: str, gaps: list[str]) -> str:
+    if not gaps:
+        raise AgentRuntimeError(
+            "empty_brain_answer",
+            "Brain answer returned no answer, citations, or gaps.",
+        )
+    header = _agent_text(
+        question,
+        "I could not answer from your Brain yet.",
+        "Пока не могу ответить из твоего Brain.",
+    )
+    label = _agent_text(question, "Gaps:", "Не хватает:")
+    return f"{header}\n\n{label}\n" + "\n".join(f"- {gap}" for gap in gaps)
+
+
 async def _create_artifact(
     session: AsyncSession,
     run: AgentRun,
@@ -436,6 +483,103 @@ async def _create_artifact(
         "filename": args.get("filename"),
         "mime_type": args.get("mime_type"),
         "preview_kind": args.get("preview_kind"),
+    }
+
+
+async def _create_brain_map(
+    session: AsyncSession,
+    run: AgentRun,
+    *,
+    tool_call_idx: int,
+    args: dict[str, Any],
+) -> dict[str, Any]:
+    prompt = str(args.get("prompt") or "").strip()
+    if not prompt:
+        raise AgentRuntimeError("invalid_tool_args", "create_brain_map.prompt is required")
+    title = str(args.get("title") or "").strip() or None
+    map_type = str(args.get("map_type") or "").strip() or None
+    requested_scope = args.get("source_scope")
+    if requested_scope is not None and not isinstance(requested_scope, dict):
+        raise AgentRuntimeError(
+            "invalid_tool_args", "create_brain_map.source_scope must be an object"
+        )
+    source_ref = f"agent_run:{run.id}:step:{tool_call_idx}"
+    source_scope = dict(requested_scope or {})
+    source_scope["agent_source_ref"] = source_ref
+    existing = (
+        await session.execute(
+            select(BrainMap).where(
+                BrainMap.user_id == run.user_id,
+                BrainMap.origin == "agent",
+                BrainMap.source_scope["agent_source_ref"].astext == source_ref,
+            )
+        )
+    ).scalar_one_or_none()
+    if existing is not None:
+        revision = await session.get(BrainMapRevision, existing.current_revision_id)
+        return {
+            "map_id": str(existing.id),
+            "revision_id": str(revision.id) if revision else None,
+            "status": existing.status,
+            "title": existing.title,
+            "created": False,
+        }
+    brain_map, revision = await create_brain_map(
+        session,
+        run.user_id,
+        prompt=prompt,
+        title=title,
+        map_type=map_type,
+        origin="agent",
+        source_scope=source_scope,
+    )
+    return {
+        "map_id": str(brain_map.id),
+        "revision_id": str(revision.id),
+        "status": brain_map.status,
+        "title": brain_map.title,
+        "created": True,
+    }
+
+
+async def _ask_brain(
+    session: AsyncSession,
+    run: AgentRun,
+    args: dict[str, Any],
+) -> dict[str, Any]:
+    question = str(args.get("question") or "").strip()
+    if not question:
+        raise AgentRuntimeError("invalid_tool_args", "ask_brain.question is required")
+    raw_limit = args.get("limit")
+    kwargs: dict[str, Any] = {}
+    if raw_limit is not None:
+        if (
+            not isinstance(raw_limit, int)
+            or isinstance(raw_limit, bool)
+            or raw_limit < 1
+            or raw_limit > MAX_AGENT_SEARCH_LIMIT
+        ):
+            raise AgentRuntimeError(
+                "invalid_tool_args",
+                f"ask_brain.limit must be 1..{MAX_AGENT_SEARCH_LIMIT}",
+            )
+        kwargs["limit"] = raw_limit
+
+    answer = await ask_brain(session, run.user_id, question, **kwargs)
+    gaps = [str(gap).strip() for gap in getattr(answer, "gaps", []) if str(gap).strip()]
+    text = str(getattr(answer, "answer", "") or "").strip()
+    if not text:
+        text = _brain_gap_text(question, gaps)
+    return {
+        "question": question,
+        "text": text,
+        "answer": str(getattr(answer, "answer", "") or "").strip(),
+        "citations": [
+            _brain_citation_payload(citation)
+            for citation in getattr(answer, "citations", [])
+        ],
+        "gaps": gaps,
+        "freshness": _brain_freshness_payload(getattr(answer, "freshness")),
     }
 
 
@@ -636,6 +780,10 @@ async def _collect_final_result(
     ).scalars().all()
     output_text: str | None = None
     artifacts: list[dict[str, Any]] = []
+    brain_maps: list[dict[str, Any]] = []
+    citations: list[dict[str, Any]] = []
+    gaps: list[str] = []
+    freshness: dict[str, Any] | None = None
     for step in steps:
         if step.kind != "tool_result":
             continue
@@ -643,6 +791,12 @@ async def _collect_final_result(
         text = payload.get("text")
         if isinstance(text, str) and text.strip():
             output_text = text.strip()
+        if isinstance(payload.get("citations"), list):
+            citations = list(payload["citations"])
+        if isinstance(payload.get("gaps"), list):
+            gaps = [str(gap) for gap in payload["gaps"]]
+        if isinstance(payload.get("freshness"), dict):
+            freshness = dict(payload["freshness"])
         if payload.get("item_id"):
             artifacts.append(
                 {
@@ -654,6 +808,15 @@ async def _collect_final_result(
                     "preview_kind": payload.get("preview_kind"),
                 }
             )
+        if payload.get("map_id"):
+            brain_maps.append(
+                {
+                    "map_id": payload.get("map_id"),
+                    "revision_id": payload.get("revision_id"),
+                    "title": payload.get("title"),
+                    "status": payload.get("status"),
+                }
+            )
     result: dict[str, Any] = {
         "status": "done",
         "completed_at": _now().isoformat(),
@@ -663,6 +826,14 @@ async def _collect_final_result(
         result["output_text"] = output_text
     if artifacts:
         result["artifacts"] = artifacts
+    if brain_maps:
+        result["brain_maps"] = brain_maps
+    if citations:
+        result["citations"] = citations
+    if gaps:
+        result["gaps"] = gaps
+    if freshness is not None:
+        result["freshness"] = freshness
     return result
 
 
@@ -840,6 +1011,16 @@ async def execute_agent_step(
         payload = await _create_artifact(
             session, run, tool_call_idx=tool_call_idx, args=args
         )
+        return AgentStepResult(status="done", payload=payload)
+
+    if tool == "create_brain_map":
+        payload = await _create_brain_map(
+            session, run, tool_call_idx=tool_call_idx, args=args
+        )
+        return AgentStepResult(status="done", payload=payload)
+
+    if tool == "ask_brain":
+        payload = await _ask_brain(session, run, args)
         return AgentStepResult(status="done", payload=payload)
 
     if tool == "search_wai":

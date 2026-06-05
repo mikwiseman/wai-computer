@@ -979,6 +979,107 @@ export interface BrainGraph {
   overview?: BrainOverview;
 }
 
+export interface BrainMapCitation {
+  id: string;
+  source_kind: "item" | "recording" | string;
+  source_id: string;
+  title: string;
+  kind?: string | null;
+  created_at?: string | null;
+}
+
+export interface BrainMapPosition {
+  x: number;
+  y: number;
+}
+
+export interface BrainMapNode {
+  id: string;
+  kind: "lens" | "source" | "entity" | "gap" | string;
+  title: string;
+  body?: string | null;
+  lane?: string;
+  source_kind?: string;
+  source_id?: string;
+  entity_id?: string;
+  entity_type?: string;
+  citation_ids: string[];
+  position?: BrainMapPosition;
+}
+
+export interface BrainMapEdge {
+  id: string;
+  source: string;
+  target: string;
+  kind: "supports" | "mentions" | "related_to" | "open_question" | string;
+  label?: string | null;
+  citation_ids: string[];
+}
+
+export interface BrainMapFreshness {
+  newest_source_at: string | null;
+  weeks_since: number | null;
+  stale: boolean;
+}
+
+export interface BrainMapProjection {
+  version: number;
+  map_type: string;
+  title: string;
+  prompt: string;
+  summary: string;
+  nodes: BrainMapNode[];
+  edges: BrainMapEdge[];
+  citations: BrainMapCitation[];
+  freshness: BrainMapFreshness;
+  stats?: Record<string, number>;
+  source_fingerprint?: string;
+}
+
+export interface BrainMapDiff {
+  nodes_added: number;
+  nodes_removed: number;
+  edges_added: number;
+  edges_removed: number;
+  sources_added: number;
+  sources_removed: number;
+  changed: boolean;
+}
+
+export interface BrainMapRevision {
+  id: string;
+  map_id: string;
+  revision_index: number;
+  projection: BrainMapProjection;
+  source_fingerprint: string;
+  source_count: number;
+  freshness: BrainMapFreshness;
+  diff: BrainMapDiff;
+  citations: BrainMapCitation[];
+  compiled_at: string;
+  created_at: string;
+}
+
+export interface BrainMap {
+  id: string;
+  space_id: string | null;
+  title: string;
+  prompt: string;
+  map_type: string;
+  origin: "brain" | "inbox" | "agent" | "wai" | string;
+  status: "draft" | "saved" | "archived" | string;
+  source_scope: Record<string, unknown> | null;
+  layout: Record<string, BrainMapPosition> | null;
+  current_revision_id: string | null;
+  current_revision: BrainMapRevision | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface BrainMapsResponse {
+  maps: BrainMap[];
+}
+
 export interface BrainSpace {
   id: string;
   owner_user_id: string;

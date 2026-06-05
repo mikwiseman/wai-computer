@@ -124,6 +124,22 @@ public struct CompanionMessage: Codable, Sendable, Identifiable, Equatable {
                 .joined()
         }
     }
+
+    public func replacingToolCalls(_ nextToolCalls: [CompanionJSONValue]?) -> CompanionMessage {
+        CompanionMessage(
+            id: id,
+            role: role,
+            content: content,
+            toolCalls: nextToolCalls,
+            citations: citations,
+            model: model,
+            inputTokens: inputTokens,
+            outputTokens: outputTokens,
+            cachedTokens: cachedTokens,
+            latencyMs: latencyMs,
+            createdAt: createdAt
+        )
+    }
 }
 
 /// OpenAI Responses API content blocks come as either a string (for user

@@ -10,14 +10,18 @@ import {
   patchChat,
   resolveAction,
   streamMessage,
+  type StreamMessageOptions,
 } from "@/lib/companion";
 import {
   type CompanionActionResolution,
   type CompanionTurn,
+  type CompanionTurnItem,
   emptyTurn,
   failRunningTools,
   ingestEvent,
+  itemsFromStoredToolCalls,
   setActionResolution,
+  setStoredActionResolution,
   turnIsEmpty,
 } from "@/lib/companionTimeline";
 import { ApiError } from "@/lib/http";
@@ -151,6 +155,8 @@ interface CompanionPanelProps {
   initialChatId?: string | null;
   onChatCreated?: (chat: CompanionConversation) => void;
   embedded?: boolean;
+  viewingRecordingId?: string | null;
+  viewingFolderId?: string | null;
 }
 
 interface StreamingCitation {
@@ -199,12 +205,53 @@ function plainText(content: unknown): string {
   return "";
 }
 
+function storedTimelineItemsForMessage(message: CompanionMessage): CompanionTurnItem[] {
+  const items = itemsFromStoredToolCalls(message.tool_calls);
+  if (items.length === 0) return [];
+
+  const text = plainText(message.content);
+  if (!text.trim()) return items;
+  return [...items, { kind: "text", id: `stored-text-${message.id}`, markdown: text }];
+}
+
+function localDateString(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function browserTimezone(): string | undefined {
+  if (typeof Intl === "undefined") return undefined;
+  const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  return typeof timezone === "string" && timezone.trim() ? timezone : undefined;
+}
+
+function turnOptions({
+  viewingRecordingId,
+  viewingFolderId,
+}: {
+  viewingRecordingId?: string | null;
+  viewingFolderId?: string | null;
+}): StreamMessageOptions {
+  const options: StreamMessageOptions = {
+    clientLocalDate: localDateString(new Date()),
+  };
+  const timezone = browserTimezone();
+  if (timezone) options.clientTimezone = timezone;
+  if (viewingRecordingId) options.viewingRecordingId = viewingRecordingId;
+  if (viewingFolderId) options.viewingFolderId = viewingFolderId;
+  return options;
+}
+
 export function CompanionPanel({
   recordings,
   locale: localeProp,
   initialChatId,
   onChatCreated,
   embedded = false,
+  viewingRecordingId,
+  viewingFolderId,
 }: CompanionPanelProps) {
   const [locale, setLocale] = useState<Locale>(localeProp ?? "en");
   const copy = COPY[locale];
@@ -397,7 +444,12 @@ export function CompanionPanel({
     let receivedError = false;
 
     try {
-      for await (const evt of streamMessage(chatId, question, controller.signal)) {
+      for await (const evt of streamMessage(
+        chatId,
+        question,
+        controller.signal,
+        turnOptions({ viewingRecordingId, viewingFolderId }),
+      )) {
         if (controller.signal.aborted) break;
         if (evt.type === "error") {
           receivedError = true;
@@ -457,6 +509,18 @@ export function CompanionPanel({
 
   function setActionRes(actionId: string, resolution: CompanionActionResolution) {
     setLiveTurn((prev) => setActionResolution(prev, actionId, resolution));
+    setMessages((prev) =>
+      prev.map((message) => {
+        const nextToolCalls = setStoredActionResolution(
+          message.tool_calls,
+          actionId,
+          resolution,
+        );
+        return nextToolCalls === message.tool_calls
+          ? message
+          : { ...message, tool_calls: nextToolCalls };
+      }),
+    );
     setCompletedTurns((prev) => {
       let changed = false;
       const next: Record<string, CompanionTurn> = {};
@@ -615,21 +679,28 @@ export function CompanionPanel({
           </div>
         ) : null}
 
-        {messages.map((m) =>
-          m.role === "user" ? (
-            <article
-              key={m.id}
-              className="qa-bubble"
-              data-role="user"
-              data-testid="companion-message-user"
-              style={{ marginBottom: 12, whiteSpace: "pre-wrap" }}
-            >
-              <strong style={{ display: "block", fontSize: 12, opacity: 0.6 }}>
-                {copy.user}
-              </strong>
-              <div>{plainText(m.content)}</div>
-            </article>
-          ) : (
+        {messages.map((m) => {
+          if (m.role === "user") {
+            return (
+              <article
+                key={m.id}
+                className="qa-bubble"
+                data-role="user"
+                data-testid="companion-message-user"
+                style={{ marginBottom: 12, whiteSpace: "pre-wrap" }}
+              >
+                <strong style={{ display: "block", fontSize: 12, opacity: 0.6 }}>
+                  {copy.user}
+                </strong>
+                <div>{plainText(m.content)}</div>
+              </article>
+            );
+          }
+
+          const completedTurn = completedTurns[m.id];
+          const storedItems = completedTurn ? [] : storedTimelineItemsForMessage(m);
+
+          return (
             <article
               key={m.id}
               className="qa-bubble qa-bubble--assistant"
@@ -640,9 +711,20 @@ export function CompanionPanel({
               <strong style={{ display: "block", fontSize: 12, opacity: 0.6 }}>
                 {copy.assistant}
               </strong>
-              {completedTurns[m.id] ? (
+              {completedTurn ? (
                 <CompanionTimeline
-                  items={completedTurns[m.id].items}
+                  items={completedTurn.items}
+                  isLive={false}
+                  locale={locale}
+                  onResolve={
+                    activeChatId
+                      ? (aid, dec) => void handleResolve(activeChatId, aid, dec)
+                      : undefined
+                  }
+                />
+              ) : storedItems.length > 0 ? (
+                <CompanionTimeline
+                  items={storedItems}
                   isLive={false}
                   locale={locale}
                   onResolve={
@@ -668,8 +750,8 @@ export function CompanionPanel({
                 />
               ) : null}
             </article>
-          ),
-        )}
+          );
+        })}
 
         {loading ? (
           <article

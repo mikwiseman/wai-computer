@@ -62,6 +62,174 @@ export function turnHasRunningTool(turn: CompanionTurn): boolean {
   );
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function stringField(record: Record<string, unknown>, key: string): string | null {
+  const value = record[key];
+  return typeof value === "string" ? value : null;
+}
+
+function storedActionResolution(
+  value: unknown,
+): CompanionActionResolution | null {
+  if (!isRecord(value)) return null;
+  const state = stringField(value, "state");
+  if (state === "executing") return { state: "executing" };
+  if (state !== "resolved") return null;
+
+  const status = stringField(value, "status");
+  const detail = stringField(value, "detail");
+  if (!status || detail === null) return null;
+  return { state: "resolved", status, detail };
+}
+
+function storedPlanSteps(value: unknown): CompanionPlanStep[] | null {
+  if (!Array.isArray(value)) return null;
+  const steps: CompanionPlanStep[] = [];
+  for (const item of value) {
+    if (!isRecord(item)) continue;
+    const title = stringField(item, "title");
+    const status = stringField(item, "status");
+    if (!title || !status) continue;
+    steps.push({ title, status });
+  }
+  return steps.length > 0 ? steps : null;
+}
+
+function storedToolActions(value: unknown): CompanionToolAction[] | null {
+  if (!Array.isArray(value)) return null;
+  const actions: CompanionToolAction[] = [];
+  for (const item of value) {
+    if (!isRecord(item)) continue;
+    const callId = stringField(item, "call_id");
+    const tool = stringField(item, "tool");
+    if (!callId || !tool) continue;
+
+    const rawSummary = item.summary;
+    const rawOk = item.ok;
+    if (
+      rawSummary !== null
+      && rawSummary !== undefined
+      && typeof rawSummary !== "string"
+    ) {
+      continue;
+    }
+    if (rawOk !== null && rawOk !== undefined && typeof rawOk !== "boolean") {
+      continue;
+    }
+
+    actions.push({
+      call_id: callId,
+      tool,
+      summary: typeof rawSummary === "string" ? rawSummary : null,
+      ok: typeof rawOk === "boolean" ? rawOk : null,
+    });
+  }
+  return actions.length > 0 ? actions : null;
+}
+
+export function itemsFromStoredToolCalls(
+  toolCalls: unknown[] | null | undefined,
+): CompanionTurnItem[] {
+  if (!Array.isArray(toolCalls)) return [];
+
+  const items: CompanionTurnItem[] = [];
+  for (const item of toolCalls) {
+    if (!isRecord(item)) continue;
+
+    if (item.type === "tools") {
+      const actions = storedToolActions(item.actions);
+      if (!actions) continue;
+      items.push({
+        kind: "tools",
+        id: `stored-tools-${items.length}`,
+        actions,
+      });
+    } else if (item.type === "artifact") {
+      const artifactId = stringField(item, "artifact_id");
+      const title = stringField(item, "title");
+      const kind = stringField(item, "kind");
+      const content = stringField(item, "content");
+      if (!artifactId || !title || !kind || content === null) continue;
+
+      const language = stringField(item, "language") ?? undefined;
+      items.push({
+        kind: "artifact",
+        id: `stored-artifact-${artifactId}`,
+        artifact: {
+          artifact_id: artifactId,
+          title,
+          kind,
+          content,
+          language,
+        },
+      });
+    } else if (item.type === "action_proposed") {
+      const actionId = stringField(item, "action_id");
+      const kind = stringField(item, "kind");
+      const tool = stringField(item, "tool");
+      const preview = stringField(item, "preview");
+      const expiresAt = stringField(item, "expires_at");
+      if (!actionId || !kind || !tool || !preview || !expiresAt) continue;
+
+      items.push({
+        kind: "action",
+        id: `stored-action-${actionId}`,
+        proposal: {
+          action_id: actionId,
+          kind,
+          tool,
+          preview,
+          expires_at: expiresAt,
+          recipient: stringField(item, "recipient"),
+        },
+        resolution: storedActionResolution(item.resolution),
+      });
+    } else if (item.type === "plan") {
+      const steps = storedPlanSteps(item.steps);
+      if (!steps) continue;
+      items.push({
+        kind: "plan",
+        id: `stored-plan-${items.length}`,
+        steps,
+      });
+    }
+  }
+  return items;
+}
+
+export function setStoredActionResolution(
+  toolCalls: unknown[] | null | undefined,
+  actionId: string,
+  resolution: CompanionActionResolution,
+): unknown[] | null {
+  if (!Array.isArray(toolCalls)) return toolCalls ?? null;
+  let changed = false;
+  const resolutionPayload =
+    resolution.state === "executing"
+      ? { state: "executing" }
+      : {
+          state: "resolved",
+          status: resolution.status,
+          detail: resolution.detail,
+        };
+
+  const next = toolCalls.map((item) => {
+    if (
+      isRecord(item)
+      && item.type === "action_proposed"
+      && item.action_id === actionId
+    ) {
+      changed = true;
+      return { ...item, resolution: resolutionPayload };
+    }
+    return item;
+  });
+  return changed ? next : toolCalls;
+}
+
 /**
  * Immutable fold of the Companion SSE event stream into ordered timeline items
  * (openclaw-style cards). Returns a NEW turn each call so React re-renders

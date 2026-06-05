@@ -109,6 +109,44 @@ AGENT_CAPABILITIES: tuple[AgentCapability, ...] = (
         safety_notes="Stores user-visible content in the user's Wai library.",
     ),
     AgentCapability(
+        id="wai.brain.map.create",
+        label="Create Brain Map",
+        category="memory",
+        description="Create a draft live Brain Map from owner-scoped Wai evidence.",
+        availability="available",
+        runtime_tool="create_brain_map",
+        surfaces=("web", "mac", "telegram", "api"),
+        requires_approval=False,
+        cloud_supported=True,
+        self_host_supported=True,
+        local_gateway_required=False,
+        risk_level="user_content_write",
+        permission_scopes=("brain:maps:write", "search:read", "recordings:read", "items:read"),
+        safety_notes=(
+            "Writes a draft map projection only; factual cards and edges remain "
+            "citation-bound to owner-scoped evidence."
+        ),
+    ),
+    AgentCapability(
+        id="wai.brain.ask",
+        label="Ask Brain",
+        category="memory",
+        description="Answer from the user's Brain with citations, gaps, and freshness.",
+        availability="available",
+        runtime_tool="ask_brain",
+        surfaces=("web", "mac", "telegram", "api", "mcp"),
+        requires_approval=False,
+        cloud_supported=True,
+        self_host_supported=True,
+        local_gateway_required=False,
+        risk_level="read_only",
+        permission_scopes=("brain:read", "search:read", "recordings:read", "items:read"),
+        safety_notes=(
+            "Read-only synthesis over owner-scoped evidence; unsupported claims "
+            "surface as gaps instead of guesses."
+        ),
+    ),
+    AgentCapability(
         id="wai.search",
         label="Search Wai data",
         category="memory",
@@ -381,6 +419,100 @@ AGENT_TOOL_CONTRACTS: tuple[AgentToolContract, ...] = (
             "properties": {
                 "item_id": {"type": "string"},
                 "created": {"type": "boolean"},
+            },
+        },
+    ),
+    AgentToolContract(
+        name="create_brain_map",
+        capability_id="wai.brain.map.create",
+        kind="runtime",
+        description="Create a draft live Brain Map from a user prompt.",
+        side_effect="user_content_write",
+        requires_approval=False,
+        permission_scopes=("brain:maps:write", "search:read", "recordings:read", "items:read"),
+        args_schema={
+            "type": "object",
+            "required": ["prompt"],
+            "additionalProperties": False,
+            "properties": {
+                "prompt": {"type": "string", "minLength": 1},
+                "title": {"type": ["string", "null"]},
+                "map_type": {
+                    "type": ["string", "null"],
+                    "enum": [
+                        None,
+                        "project_state",
+                        "decision",
+                        "relationship",
+                        "timeline",
+                        "comparison",
+                        "open_questions",
+                    ],
+                },
+                "source_scope": {
+                    "type": ["object", "null"],
+                    "additionalProperties": True,
+                    "properties": {
+                        "sources": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "required": ["source_kind", "source_id"],
+                                "additionalProperties": False,
+                                "properties": {
+                                    "source_kind": {
+                                        "type": "string",
+                                        "enum": ["item", "recording"],
+                                    },
+                                    "source_id": {"type": "string"},
+                                },
+                            },
+                        }
+                    },
+                },
+            },
+        },
+        result_schema={
+            "type": "object",
+            "required": ["map_id", "revision_id", "status"],
+            "properties": {
+                "map_id": {"type": "string"},
+                "revision_id": {"type": "string"},
+                "status": {"type": "string"},
+                "title": {"type": "string"},
+            },
+        },
+    ),
+    AgentToolContract(
+        name="ask_brain",
+        capability_id="wai.brain.ask",
+        kind="runtime",
+        description="Answer a question from the user's Brain with cited evidence.",
+        side_effect="none",
+        requires_approval=False,
+        permission_scopes=("brain:read", "search:read", "recordings:read", "items:read"),
+        args_schema={
+            "type": "object",
+            "required": ["question"],
+            "additionalProperties": False,
+            "properties": {
+                "question": {"type": "string", "minLength": 1},
+                "limit": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": MAX_AGENT_SEARCH_LIMIT,
+                },
+            },
+        },
+        result_schema={
+            "type": "object",
+            "required": ["text", "citations", "gaps", "freshness"],
+            "properties": {
+                "text": {"type": "string"},
+                "answer": {"type": "string"},
+                "citations": {"type": "array"},
+                "gaps": {"type": "array"},
+                "freshness": {"type": "object"},
             },
         },
     ),
@@ -767,6 +899,9 @@ def _validate_step_args(tool: str, args: dict[str, Any], idx: int) -> None:
         if args.get("kind") is not None and not isinstance(args.get("kind"), str):
             raise ValueError(f"Agent config.steps[{idx}].create_artifact.kind must be a string")
         return
+    if tool == "create_brain_map":
+        _require_text(args, "prompt", idx, tool)
+        return
     if tool == "search_wai":
         _require_text(args, "query", idx, tool)
         if args.get("limit") is not None:
@@ -779,6 +914,21 @@ def _validate_step_args(tool: str, args: dict[str, Any], idx: int) -> None:
             ):
                 raise ValueError(
                     f"Agent config.steps[{idx}].search_wai.limit must be "
+                    f"1..{MAX_AGENT_SEARCH_LIMIT}"
+                )
+        return
+    if tool == "ask_brain":
+        _require_text(args, "question", idx, tool)
+        if args.get("limit") is not None:
+            limit = args.get("limit")
+            if (
+                not isinstance(limit, int)
+                or isinstance(limit, bool)
+                or limit < 1
+                or limit > MAX_AGENT_SEARCH_LIMIT
+            ):
+                raise ValueError(
+                    f"Agent config.steps[{idx}].ask_brain.limit must be "
                     f"1..{MAX_AGENT_SEARCH_LIMIT}"
                 )
         return

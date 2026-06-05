@@ -557,6 +557,118 @@ async def test_runtime_executes_search_and_memory_tools(
     assert tool_results[2] == {"proposal": "duplicate"}
 
 
+async def test_runtime_executes_ask_brain_with_citations(db_session, user, monkeypatch):
+    source_id = uuid4()
+
+    async def fake_ask_brain(_session, user_id, question):
+        assert user_id == user.id
+        assert question == "What is the roadmap risk?"
+        return SimpleNamespace(
+            answer="The roadmap risk is hiring [1]",
+            citations=[
+                SimpleNamespace(
+                    id="segment-1",
+                    source_kind="recording",
+                    source_id=str(source_id),
+                    title="Roadmap review",
+                    start_ms=42000,
+                )
+            ],
+            gaps=["The owner is not in the recordings."],
+            freshness=SimpleNamespace(
+                newest_source_at=datetime(2026, 6, 1, tzinfo=timezone.utc),
+                weeks_since=0,
+                stale=False,
+            ),
+        )
+
+    monkeypatch.setattr("app.core.agent_runtime.ask_brain", fake_ask_brain)
+    _, run = await _agent_run(
+        db_session,
+        user,
+        config={
+            "steps": [
+                {
+                    "tool": "ask_brain",
+                    "args": {"question": "What is the roadmap risk?"},
+                }
+            ]
+        },
+    )
+
+    await run_job(
+        db_session,
+        run.id,
+        planner=static_config_planner,
+        executor=execute_agent_step,
+    )
+    await db_session.refresh(run)
+
+    assert run.status == "done"
+    assert run.result["output_text"] == "The roadmap risk is hiring [1]"
+    assert run.result["citations"][0]["source_id"] == str(source_id)
+    assert run.result["gaps"] == ["The owner is not in the recordings."]
+    assert run.result["freshness"]["stale"] is False
+    tool_result = next(
+        step.payload for step in await _steps(db_session, run.id) if step.kind == "tool_result"
+    )
+    assert tool_result["citations"] == [
+        {
+            "id": "segment-1",
+            "source_kind": "recording",
+            "source_id": str(source_id),
+            "title": "Roadmap review",
+            "start_ms": 42000,
+        }
+    ]
+    assert tool_result["gaps"] == ["The owner is not in the recordings."]
+    assert tool_result["freshness"] == {
+        "newest_source_at": "2026-06-01T00:00:00+00:00",
+        "weeks_since": 0,
+        "stale": False,
+    }
+
+
+async def test_runtime_ask_brain_surfaces_gap_only_answers(db_session, user, monkeypatch):
+    async def fake_ask_brain(_session, _user_id, _question):
+        return SimpleNamespace(
+            answer="",
+            citations=[],
+            gaps=["Your recordings don't contain anything about this yet."],
+            freshness=SimpleNamespace(
+                newest_source_at=None,
+                weeks_since=None,
+                stale=False,
+            ),
+        )
+
+    monkeypatch.setattr("app.core.agent_runtime.ask_brain", fake_ask_brain)
+    _, run = await _agent_run(
+        db_session,
+        user,
+        config={
+            "steps": [
+                {
+                    "tool": "ask_brain",
+                    "args": {"question": "What did we decide about hiring?"},
+                }
+            ]
+        },
+    )
+
+    await run_job(
+        db_session,
+        run.id,
+        planner=static_config_planner,
+        executor=execute_agent_step,
+    )
+    await db_session.refresh(run)
+
+    assert run.status == "done"
+    assert run.result["output_text"].startswith("I could not answer from your Brain yet.")
+    assert "Your recordings don't contain anything about this yet." in run.result["output_text"]
+
+
 async def test_create_artifact_and_propose_action_are_idempotent(db_session, user):
     agent, run = await _agent_run(db_session, user, config={"steps": []})
     artifact_step = {

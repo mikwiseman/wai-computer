@@ -8,6 +8,7 @@ extension Notification.Name {
     static let showNewRecording = Notification.Name("showNewRecording")
     static let macInboxCommand = Notification.Name("macInboxCommand")
     static let macCreateFolder = Notification.Name("macCreateFolder")
+    static let macOpenInboxChat = Notification.Name("macOpenInboxChat")
     static let waicomputerIncomingURL = Notification.Name("waicomputerIncomingURL")
     static let waicomputerCheckForUpdates = Notification.Name("waicomputerCheckForUpdates")
 }
@@ -484,6 +485,8 @@ final class MainWindowCloseInterceptor: NSObject, NSWindowDelegate {
 @MainActor
 final class WaiComputerAppDelegate: NSObject, NSApplicationDelegate {
     func applicationWillFinishLaunching(_ notification: Notification) {
+        MacWaiTaskNotificationCenter.shared.configure()
+
         // Run TCC legacy migration before SwiftUI mounts and before any
         // TCC-protected API is touched. If we end up resetting any stale
         // entries, relaunch — `CGRequestListenEventAccess` and

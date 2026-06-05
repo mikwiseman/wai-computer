@@ -18,6 +18,13 @@ const mockGetChat = vi.fn<() => Promise<CompanionConversationDetail>>();
 const mockPatchChat = vi.fn<() => Promise<CompanionConversation>>();
 const mockDeleteChat = vi.fn<() => Promise<void>>();
 const mockStreamMessage = vi.fn<() => AsyncGenerator<CompanionEvent, void, unknown>>();
+const mockResolveAction = vi.fn<
+  (
+    chatId: string,
+    actionId: string,
+    decision: "once" | "always" | "reject",
+  ) => Promise<{ action_id: string; status: string; recipient: string | null }>
+>();
 
 vi.mock("@/lib/companion", () => ({
   listChats: (...args: unknown[]) => mockListChats(...(args as [])),
@@ -25,6 +32,10 @@ vi.mock("@/lib/companion", () => ({
   getChat: (...args: unknown[]) => mockGetChat(...(args as [])),
   patchChat: (...args: unknown[]) => mockPatchChat(...(args as [])),
   deleteChat: (...args: unknown[]) => mockDeleteChat(...(args as [])),
+  resolveAction: (...args: unknown[]) =>
+    mockResolveAction(
+      ...(args as [string, string, "once" | "always" | "reject"]),
+    ),
   streamMessage: (...args: unknown[]) => mockStreamMessage(...(args as [])),
 }));
 
@@ -74,6 +85,7 @@ describe("CompanionPanel", () => {
     mockPatchChat.mockReset();
     mockDeleteChat.mockReset();
     mockStreamMessage.mockReset();
+    mockResolveAction.mockReset();
     Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
       configurable: true,
       value: vi.fn(),
@@ -170,6 +182,177 @@ describe("CompanionPanel", () => {
     expect(screen.getByText(/\[1\] Standup/)).toBeInTheDocument();
   });
 
+  it("renders stored artifact cards from assistant tool calls", async () => {
+    const chat = makeChat("c1", "Artifact chat");
+    mockListChats.mockResolvedValue({ chats: [chat] });
+    mockGetChat.mockResolvedValue({
+      ...chat,
+      messages: [
+        {
+          id: "a1",
+          role: "assistant",
+          content: [{ type: "text", text: "Done — see the artifact." }],
+          tool_calls: [
+            {
+              type: "artifact",
+              artifact_id: "call_1",
+              title: "Landing",
+              kind: "html",
+              content: "<!doctype html><h1>Hi</h1>",
+              language: "",
+            },
+          ],
+          citations: [],
+          model: "gpt-5.5",
+          input_tokens: 100,
+          output_tokens: 50,
+          cached_tokens: null,
+          latency_ms: 1200,
+          created_at: "2026-05-18T10:00:02Z",
+        },
+      ],
+    });
+
+    render(<CompanionPanel recordings={recordings} />);
+
+    const card = await screen.findByTestId("wai-artifact-card");
+    expect(within(card).getByText("Landing")).toBeInTheDocument();
+    expect(within(card).getByText("HTML")).toBeInTheDocument();
+    expect(screen.getByText("Done — see the artifact.")).toBeInTheDocument();
+  });
+
+  it("renders stored action approval cards from assistant tool calls", async () => {
+    const user = userEvent.setup();
+    const chat = makeChat("c1", "Action chat");
+    mockListChats.mockResolvedValue({ chats: [chat] });
+    mockResolveAction.mockResolvedValue({
+      action_id: "act1",
+      status: "executed",
+      recipient: "you",
+    });
+    mockGetChat.mockResolvedValue({
+      ...chat,
+      messages: [
+        {
+          id: "a1",
+          role: "assistant",
+          content: [{ type: "text", text: "Waiting for your approval: Send late" }],
+          tool_calls: [
+            {
+              type: "action_proposed",
+              action_id: "act1",
+              kind: "send",
+              tool: "send_message_telegram",
+              preview: "Send Telegram message to your linked chat: late",
+              expires_at: "2026-06-05T12:40:00+00:00",
+              recipient: "you",
+            },
+          ],
+          citations: [],
+          model: "gpt-5.5",
+          input_tokens: 100,
+          output_tokens: 50,
+          cached_tokens: null,
+          latency_ms: 1200,
+          created_at: "2026-05-18T10:00:02Z",
+        },
+      ],
+    });
+
+    render(<CompanionPanel recordings={recordings} />);
+
+    const card = await screen.findByTestId("wai-action-card");
+    expect(within(card).getByText("Approval needed")).toBeInTheDocument();
+    expect(
+      within(card).getByText("Send Telegram message to your linked chat: late"),
+    ).toBeInTheDocument();
+    await user.click(within(card).getByTestId("wai-action-approve"));
+
+    expect(mockResolveAction).toHaveBeenCalledWith("c1", "act1", "once");
+    expect(await screen.findByTestId("wai-action-result")).toHaveTextContent("Done");
+  });
+
+  it("renders stored plan cards from assistant tool calls", async () => {
+    const chat = makeChat("c1", "Plan chat");
+    mockListChats.mockResolvedValue({ chats: [chat] });
+    mockGetChat.mockResolvedValue({
+      ...chat,
+      messages: [
+        {
+          id: "a1",
+          role: "assistant",
+          content: [{ type: "text", text: "Done." }],
+          tool_calls: [
+            {
+              type: "plan",
+              steps: [
+                { title: "Search", status: "done" },
+                { title: "Summarize", status: "in_progress" },
+              ],
+            },
+          ],
+          citations: [],
+          model: "gpt-5.5",
+          input_tokens: 100,
+          output_tokens: 50,
+          cached_tokens: null,
+          latency_ms: 1200,
+          created_at: "2026-05-18T10:00:02Z",
+        },
+      ],
+    });
+
+    render(<CompanionPanel recordings={recordings} />);
+
+    const card = await screen.findByTestId("wai-plan-card");
+    expect(within(card).getByText("Search")).toBeInTheDocument();
+    expect(within(card).getByText("Summarize")).toBeInTheDocument();
+    expect(screen.getByText("Done.")).toBeInTheDocument();
+  });
+
+  it("renders stored tool action cards from assistant tool calls", async () => {
+    const chat = makeChat("c1", "Tool chat");
+    mockListChats.mockResolvedValue({ chats: [chat] });
+    mockGetChat.mockResolvedValue({
+      ...chat,
+      messages: [
+        {
+          id: "a1",
+          role: "assistant",
+          content: [{ type: "text", text: "Found it." }],
+          tool_calls: [
+            {
+              type: "tools",
+              actions: [
+                {
+                  call_id: "mcp_1",
+                  tool: "search",
+                  summary: "3 results",
+                  ok: true,
+                },
+              ],
+            },
+          ],
+          citations: [],
+          model: "gpt-5.5",
+          input_tokens: 100,
+          output_tokens: 50,
+          cached_tokens: null,
+          latency_ms: 1200,
+          created_at: "2026-05-18T10:00:02Z",
+        },
+      ],
+    });
+
+    render(<CompanionPanel recordings={recordings} />);
+
+    const card = await screen.findByTestId("wai-tool-actions-card");
+    expect(within(card).getByText("Tool actions · 1 step")).toBeInTheDocument();
+    expect(within(card).getByText("Searched your brain")).toBeInTheDocument();
+    expect(within(card).getByText(/3 results/)).toBeInTheDocument();
+    expect(screen.getByText("Found it.")).toBeInTheDocument();
+  });
+
   it("streams a turn end-to-end, optimistically rendering user input and refetching", async () => {
     const user = userEvent.setup();
     const chat = makeChat("c1");
@@ -233,7 +416,81 @@ describe("CompanionPanel", () => {
     await waitFor(() => {
       expect(screen.getByText("Done.")).toBeInTheDocument();
     });
-    expect(mockStreamMessage).toHaveBeenCalledWith("c1", "Hi", expect.any(AbortSignal));
+    expect(mockStreamMessage).toHaveBeenCalledWith(
+      "c1",
+      "Hi",
+      expect.any(AbortSignal),
+      expect.objectContaining({
+        clientLocalDate: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+        clientTimezone: expect.any(String),
+      }),
+    );
+  });
+
+  it("includes active recording and folder context when sending a task", async () => {
+    const user = userEvent.setup();
+    const chat = makeChat("c1");
+    mockListChats.mockResolvedValue({ chats: [chat] });
+    mockGetChat
+      .mockResolvedValueOnce({ ...chat, messages: [] })
+      .mockResolvedValueOnce({
+        ...chat,
+        messages: [
+          {
+            id: "u-server",
+            role: "user",
+            content: "Use this context",
+            tool_calls: null,
+            citations: [],
+            model: null,
+            input_tokens: null,
+            output_tokens: null,
+            cached_tokens: null,
+            latency_ms: null,
+            created_at: "2026-05-18T10:00:01Z",
+          },
+        ],
+      });
+    mockStreamMessage.mockImplementation(() =>
+      eventStream([
+        { type: "turn_start", message_id: "m1", conversation_id: "c1" },
+        {
+          type: "done",
+          message_id: "u-server",
+          input_tokens: null,
+          output_tokens: null,
+          cached_tokens: null,
+          model: "gpt-5.5",
+          latency_ms: 100,
+        },
+      ]),
+    );
+
+    render(
+      <CompanionPanel
+        recordings={recordings}
+        viewingRecordingId="recording-1"
+        viewingFolderId="folder-1"
+      />,
+    );
+    await screen.findByText("What should Wai do?");
+
+    await user.type(screen.getByTestId("companion-composer"), "Use this context");
+    await user.click(screen.getByRole("button", { name: /^Send$/i }));
+
+    await waitFor(() => {
+      expect(mockStreamMessage).toHaveBeenCalledWith(
+        "c1",
+        "Use this context",
+        expect.any(AbortSignal),
+        expect.objectContaining({
+          viewingRecordingId: "recording-1",
+          viewingFolderId: "folder-1",
+          clientLocalDate: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+          clientTimezone: expect.any(String),
+        }),
+      );
+    });
   });
 
   it("renders Russian copy when the ru locale prop is supplied", async () => {
@@ -726,7 +983,15 @@ describe("CompanionPanel", () => {
     await user.type(composer, "{Enter}");
 
     await waitFor(() => {
-      expect(mockStreamMessage).toHaveBeenCalledWith("c1", "Quick", expect.any(AbortSignal));
+      expect(mockStreamMessage).toHaveBeenCalledWith(
+        "c1",
+        "Quick",
+        expect.any(AbortSignal),
+        expect.objectContaining({
+          clientLocalDate: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+          clientTimezone: expect.any(String),
+        }),
+      );
     });
   });
 

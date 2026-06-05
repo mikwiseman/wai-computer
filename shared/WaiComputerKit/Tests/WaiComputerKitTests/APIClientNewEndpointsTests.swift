@@ -420,6 +420,98 @@ final class APIClientNewEndpointsTests: XCTestCase {
 
     // MARK: - WaiBrain Spaces
 
+    func testBrainMapEndpointsUseLiveMapRoutes() async throws {
+        let client = makeClient()
+        let seenPaths = RequestPathRecorder()
+
+        MockURLProtocol.requestHandler = { [self] request in
+            seenPaths.append(request.url?.path ?? "")
+            let path = request.url?.path ?? ""
+            let response = HTTPURLResponse(
+                url: request.url!,
+                statusCode: path == "/api/brain/maps" && request.httpMethod == "POST" ? 201 : 200,
+                httpVersion: nil,
+                headerFields: nil
+            )!
+            let revision = """
+            {"id":"rev-1","map_id":"map-1","revision_index":1,"projection":{"version":1,"map_type":"project_state","title":"Roadmap","prompt":"Map roadmap","summary":"Project State from 1 source(s) and 1 linked node(s).","nodes":[{"id":"lens:root","kind":"lens","title":"Roadmap","body":"Map roadmap","lane":"center","citation_ids":[],"position":{"x":0,"y":0}},{"id":"source:item:item-1","kind":"source","title":"Roadmap note","body":"Risk is hiring.","lane":"sources","source_kind":"item","source_id":"item-1","citation_ids":["item:item-1"],"position":{"x":-340,"y":-160}}],"edges":[{"id":"edge:lens:root:source:item:item-1","source":"lens:root","target":"source:item:item-1","kind":"supports","label":"supports","citation_ids":["item:item-1"]}],"citations":[{"id":"item:item-1","source_kind":"item","source_id":"item-1","title":"Roadmap note","kind":"note","created_at":"2026-06-05T10:00:00Z"}],"freshness":{"newest_source_at":"2026-06-05T10:00:00Z","weeks_since":0,"stale":false}},"source_fingerprint":"abc","source_count":1,"freshness":{"newest_source_at":"2026-06-05T10:00:00Z","weeks_since":0,"stale":false},"diff":{"nodes_added":2,"nodes_removed":0,"edges_added":1,"edges_removed":0,"sources_added":1,"sources_removed":0,"changed":true},"citations":[{"id":"item:item-1","source_kind":"item","source_id":"item-1","title":"Roadmap note","kind":"note","created_at":"2026-06-05T10:00:00Z"}],"compiled_at":"2026-06-05T10:00:00Z","created_at":"2026-06-05T10:00:00Z"}
+            """
+            let map = """
+            {"id":"map-1","space_id":null,"title":"Roadmap","prompt":"Map roadmap","map_type":"project_state","origin":"brain","status":"draft","source_scope":null,"layout":{"lens:root":{"x":0,"y":0}},"current_revision_id":"rev-1","current_revision":\(revision),"created_at":"2026-06-05T10:00:00Z","updated_at":"2026-06-05T10:00:00Z"}
+            """
+
+            if path == "/api/brain/mirror" {
+                XCTAssertEqual(request.url?.query, "limit=40")
+                let payload = """
+                {"version":1,"map_type":"live_mirror","title":"Live Mirror","prompt":"Live Mirror","summary":"No matching evidence yet.","nodes":[],"edges":[],"citations":[],"freshness":{"newest_source_at":null,"weeks_since":null,"stale":false},"stats":{"entities":0},"source_fingerprint":"empty"}
+                """.data(using: .utf8)!
+                return (response, payload)
+            }
+            if path == "/api/brain/maps" && request.httpMethod == "GET" {
+                XCTAssertEqual(request.url?.query, "limit=50")
+                return (response, "{\"maps\":[\(map)]}".data(using: .utf8)!)
+            }
+            if path == "/api/brain/maps" && request.httpMethod == "POST" {
+                let body = try jsonBody(from: request)
+                XCTAssertEqual(body["prompt"] as? String, "Map roadmap")
+                return (response, map.data(using: .utf8)!)
+            }
+            if path == "/api/brain/maps/map-1" && request.httpMethod == "GET" {
+                return (response, map.data(using: .utf8)!)
+            }
+            if path == "/api/brain/maps/map-1" && request.httpMethod == "PATCH" {
+                let body = try jsonBody(from: request)
+                XCTAssertEqual(body["status"] as? String, "saved")
+                return (response, map.replacingOccurrences(of: "\"status\":\"draft\"", with: "\"status\":\"saved\"").data(using: .utf8)!)
+            }
+            if path == "/api/brain/maps/map-1/refresh" {
+                return (response, revision.data(using: .utf8)!)
+            }
+            if path == "/api/brain/maps/map-1/revisions" {
+                return (response, "{\"revisions\":[\(revision)]}".data(using: .utf8)!)
+            }
+
+            return (response, Data("{}".utf8))
+        }
+
+        let mirror = try await client.getBrainMirror()
+        XCTAssertEqual(mirror.mapType, "live_mirror")
+
+        let maps = try await client.listBrainMaps()
+        XCTAssertEqual(maps.maps.first?.currentRevision?.sourceCount, 1)
+
+        let created = try await client.createBrainMap(BrainMapCreateRequest(prompt: "Map roadmap"))
+        XCTAssertEqual(created.title, "Roadmap")
+
+        let loaded = try await client.getBrainMap(mapId: "map-1")
+        XCTAssertEqual(loaded.currentRevision?.projection.nodes.first?.kind, "lens")
+
+        let updated = try await client.updateBrainMap(
+            mapId: "map-1",
+            BrainMapUpdateRequest(status: "saved")
+        )
+        XCTAssertEqual(updated.status, "saved")
+
+        let refreshed = try await client.refreshBrainMap(mapId: "map-1")
+        XCTAssertEqual(refreshed.diff.sourcesAdded, 1)
+
+        let revisions = try await client.listBrainMapRevisions(mapId: "map-1")
+        XCTAssertEqual(revisions.revisions.count, 1)
+
+        XCTAssertEqual(
+            seenPaths.values(),
+            [
+                "/api/brain/mirror",
+                "/api/brain/maps",
+                "/api/brain/maps",
+                "/api/brain/maps/map-1",
+                "/api/brain/maps/map-1",
+                "/api/brain/maps/map-1/refresh",
+                "/api/brain/maps/map-1/revisions"
+            ]
+        )
+    }
+
     func testBrainSpaceEndpointsUseCanonicalSpaceRoutes() async throws {
         let client = makeClient()
         let seenPaths = RequestPathRecorder()

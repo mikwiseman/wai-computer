@@ -383,6 +383,7 @@ struct CompanionActionCard: View {
         switch status {
         case "executed", "dispatched": return "checkmark.circle.fill"
         case "rejected": return "xmark.circle.fill"
+        case "expired": return "clock.badge.exclamationmark"
         default: return "exclamationmark.triangle.fill"
         }
     }
@@ -400,6 +401,7 @@ struct CompanionActionCard: View {
         case "executed": return russian ? "Готово" : "Done"
         case "dispatched": return russian ? "Отправлено на Mac" : "Sent to your Mac"
         case "rejected": return russian ? "Отклонено" : "Rejected"
+        case "expired": return russian ? "Истекло" : "Expired"
         case "failed": return russian ? "Не удалось" : "Failed"
         default: return status
         }

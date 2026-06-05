@@ -44,6 +44,11 @@ _SEND_TELEGRAM_RE = re.compile(
     r"^(?:send|отправь|отправить|напиши|написать)\s+(?:message\s+)?(?P<text>.+)$",
     re.IGNORECASE,
 )
+_BRAIN_MAP_RE = re.compile(
+    r"\b(map|diagram|canvas|schema|scheme|timeline|relationship|graph|mirror|miro)\b"
+    r"|(?:карта|карту|схема|схему|диаграмма|диаграмму|хронология|хронологию|связи|зеркало)",
+    re.IGNORECASE,
+)
 
 
 def _now() -> datetime:
@@ -65,6 +70,24 @@ def _objective_from_payload(run: AgentRun) -> str:
     payload = run.trigger_payload or {}
     objective = str(payload.get("objective") or "").strip()
     return objective or "Continue"
+
+
+def _is_cyrillic(text: str) -> bool:
+    return any("а" <= char.lower() <= "я" or char.lower() == "ё" for char in text)
+
+
+def _agent_text(language_source: str, english: str, russian: str) -> str:
+    return russian if _is_cyrillic(language_source) else english
+
+
+def _brain_map_source_scope(context: dict[str, Any] | None) -> dict[str, Any] | None:
+    if not context:
+        return None
+    ref_type = str(context.get("ref_type") or "").strip()
+    ref_id = str(context.get("ref_id") or "").strip()
+    if ref_type not in {"recording", "item"} or not ref_id:
+        return None
+    return {"sources": [{"source_kind": ref_type, "source_id": ref_id}]}
 
 
 def _html_artifact_for_objective(objective: str) -> str:
@@ -304,6 +327,33 @@ async def wai_task_planner(agent: Agent, run: AgentRun) -> AgentPlan:
                 },
             }
         )
+    elif _BRAIN_MAP_RE.search(objective):
+        title = _normalize_title(objective)
+        args: dict[str, Any] = {"prompt": objective, "title": title}
+        source_scope = _brain_map_source_scope(context)
+        if source_scope is not None:
+            args["source_scope"] = source_scope
+        steps.extend(
+            [
+                {"tool": "create_brain_map", "args": args},
+                {
+                    "tool": "respond",
+                    "args": {
+                        "text": _agent_text(
+                            objective,
+                            (
+                                f"Created a draft Brain Map for “{title}”. "
+                                "Open Brain to inspect, refresh, or keep it."
+                            ),
+                            (
+                                f"Создал черновик Brain Map «{title}». "
+                                "Откройте Мозг, чтобы проверить, обновить или сохранить его."
+                            ),
+                        )
+                    },
+                },
+            ]
+        )
     elif context and context.get("ref_type") and context.get("ref_id"):
         args = {
             "ref_type": str(context["ref_type"]),
@@ -343,12 +393,7 @@ async def wai_task_planner(agent: Agent, run: AgentRun) -> AgentPlan:
             ]
         )
     else:
-        steps.extend(
-            [
-                {"tool": "search_wai", "args": {"query": objective, "limit": 8}},
-                {"tool": "respond_from_search", "args": {"query": objective}},
-            ]
-        )
+        steps.append({"tool": "ask_brain", "args": {"question": objective, "limit": 12}})
 
     return AgentPlan(
         plan={"runtime": "wai_builtin", "steps": steps},

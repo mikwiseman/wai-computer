@@ -4,6 +4,7 @@ import {
   emptyTurn,
   failRunningTools,
   ingestEvent,
+  itemsFromStoredToolCalls,
   setActionResolution,
   turnHasRunningTool,
 } from "./companionTimeline";
@@ -149,5 +150,115 @@ describe("companionTimeline reducer", () => {
       expect(arts[0].artifact.kind).toBe("html");
       expect(arts[0].artifact.title).toBe("Landing");
     }
+  });
+
+  it("restores stored artifact items from assistant tool calls", () => {
+    const items = itemsFromStoredToolCalls([
+      {
+        type: "artifact",
+        artifact_id: "call_1",
+        title: "Landing",
+        kind: "html",
+        content: "<!doctype html><h1>Hi</h1>",
+        language: "",
+      },
+      { type: "function_call", name: "web_search" },
+      null,
+    ]);
+
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({
+      kind: "artifact",
+      id: "stored-artifact-call_1",
+      artifact: {
+        artifact_id: "call_1",
+        title: "Landing",
+        kind: "html",
+        content: "<!doctype html><h1>Hi</h1>",
+      },
+    });
+  });
+
+  it("restores stored action items from assistant tool calls", () => {
+    const items = itemsFromStoredToolCalls([
+      {
+        type: "action_proposed",
+        action_id: "act1",
+        kind: "send",
+        tool: "send_message_telegram",
+        preview: "Send Telegram message to your linked chat: late",
+        expires_at: "2026-06-05T12:40:00+00:00",
+        recipient: "you",
+      },
+    ]);
+
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({
+      kind: "action",
+      id: "stored-action-act1",
+      proposal: {
+        action_id: "act1",
+        kind: "send",
+        tool: "send_message_telegram",
+        preview: "Send Telegram message to your linked chat: late",
+        expires_at: "2026-06-05T12:40:00+00:00",
+        recipient: "you",
+      },
+      resolution: null,
+    });
+  });
+
+  it("restores stored plan items from assistant tool calls", () => {
+    const items = itemsFromStoredToolCalls([
+      {
+        type: "plan",
+        steps: [
+          { title: "Search", status: "done" },
+          { title: "Summarize", status: "in_progress" },
+        ],
+      },
+    ]);
+
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({
+      kind: "plan",
+      id: "stored-plan-0",
+      steps: [
+        { title: "Search", status: "done" },
+        { title: "Summarize", status: "in_progress" },
+      ],
+    });
+  });
+
+  it("restores stored tool action items from assistant tool calls", () => {
+    const items = itemsFromStoredToolCalls([
+      {
+        type: "tools",
+        actions: [
+          {
+            call_id: "mcp_1",
+            tool: "search",
+            summary: "3 results",
+            ok: true,
+          },
+          {
+            call_id: "web_1",
+            tool: "web_search",
+            summary: null,
+            ok: null,
+          },
+        ],
+      },
+    ]);
+
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({
+      kind: "tools",
+      id: "stored-tools-0",
+      actions: [
+        { call_id: "mcp_1", tool: "search", summary: "3 results", ok: true },
+        { call_id: "web_1", tool: "web_search", summary: null, ok: null },
+      ],
+    });
   });
 });

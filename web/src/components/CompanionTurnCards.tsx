@@ -95,7 +95,8 @@ function ThinkingCard({
   return (
     <details className="wai-card wai-thinking" open={isLive} data-testid="wai-thinking-card">
       <summary>
-        🧠 {locale === "ru" ? "Размышляю" : "Thinking"}
+        <span className="wai-card-icon wai-card-icon--thinking" aria-hidden />
+        {locale === "ru" ? "Размышляю" : "Thinking"}
         {isLive ? " …" : ""}
       </summary>
       <div className="wai-thinking-body">{text}</div>
@@ -117,13 +118,23 @@ function ToolActionsCard({
   const title = ru ? `Действия · ${n}` : `Tool actions · ${n} ${n === 1 ? "step" : "steps"}`;
   return (
     <details className="wai-card wai-tools" open={isLive} data-testid="wai-tool-actions-card">
-      <summary>⚡ {title}</summary>
+      <summary>
+        <span className="wai-card-icon wai-card-icon--tools" aria-hidden />
+        {title}
+      </summary>
       <ul className="wai-tool-list">
         {actions.map((a) => (
           <li key={a.call_id}>
-            <span className="wai-tool-status" aria-hidden>
-              {a.summary === null ? "⏳" : a.ok === false ? "❌" : "✅"}
-            </span>
+            <span
+              className={`wai-tool-status ${
+                a.summary === null
+                  ? "wai-tool-status--running"
+                  : a.ok === false
+                    ? "wai-tool-status--failed"
+                    : "wai-tool-status--done"
+              }`}
+              aria-hidden
+            />
             <span>{toolLabel(a.tool, ru)}</span>
             {a.summary ? <span className="wai-tool-summary">· {a.summary}</span> : null}
           </li>
@@ -141,14 +152,13 @@ function ArtifactCard({
   locale: Locale;
 }) {
   const ru = locale === "ru";
-  const icon = artifact.kind === "html" ? "🌐" : artifact.kind === "code" ? "≡" : "📄";
   function copy() {
     void navigator.clipboard?.writeText(artifact.content).catch(() => {});
   }
   return (
     <div className="wai-card wai-artifact" data-testid="wai-artifact-card">
       <div className="wai-artifact-head">
-        <span aria-hidden>{icon}</span>
+        <span className="wai-card-icon wai-card-icon--artifact" aria-hidden />
         <span className="wai-artifact-title">
           {artifact.title || (ru ? "Артефакт" : "Artifact")}
         </span>
@@ -183,7 +193,10 @@ function PlanCard({
 }) {
   return (
     <div className="wai-card wai-plan" data-testid="wai-plan-card">
-      <div className="wai-plan-head">📋 {locale === "ru" ? "План" : "Plan"}</div>
+      <div className="wai-plan-head">
+        <span className="wai-card-icon wai-card-icon--plan" aria-hidden />
+        {locale === "ru" ? "План" : "Plan"}
+      </div>
       <ul className="wai-plan-list">
         {steps.map((s, i) => (
           <li key={i} className={`wai-plan-step wai-plan-${s.status}`}>
@@ -208,6 +221,8 @@ function resolvedLabel(status: string, ru: boolean): string {
       return ru ? "Отправлено на Mac" : "Sent to your Mac";
     case "rejected":
       return ru ? "Отклонено" : "Rejected";
+    case "expired":
+      return ru ? "Истекло" : "Expired";
     case "failed":
       return ru ? "Не удалось" : "Failed";
     default:
@@ -237,7 +252,14 @@ function ActionCard({
   return (
     <div className="wai-card wai-action" data-testid="wai-action-card">
       <div className="wai-action-head">
-        {proposal.tool.startsWith("desktop_") ? "🖥" : "✈️"}{" "}
+        <span
+          className={`wai-card-icon ${
+            proposal.tool.startsWith("desktop_")
+              ? "wai-card-icon--desktop"
+              : "wai-card-icon--action"
+          }`}
+          aria-hidden
+        />
         {ru ? "Нужно подтверждение" : "Approval needed"}
       </div>
       <div className="wai-action-preview">{proposal.preview}</div>

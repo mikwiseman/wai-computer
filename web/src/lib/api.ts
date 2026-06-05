@@ -17,20 +17,24 @@ import type {
   AgentRunListResponse,
   AgentStepListResponse,
   AgentUpdateRequest,
-	  ApiKey,
-	  ApiKeyCreated,
-	  BrainContextResponse,
-	  BrainExportResponse,
-	  BrainGraph,
-	  BrainPage,
-	  BrainPagesResponse,
-	  BrainReviewPack,
-	  BrainReviewPacksResponse,
-	  BrainSpace,
-	  BrainSpaceMember,
-	  BrainSpaceHome,
-	  BrainSpacesResponse,
-	  ComparisonListEntry,
+  ApiKey,
+  ApiKeyCreated,
+  BrainContextResponse,
+  BrainExportResponse,
+  BrainGraph,
+  BrainMap,
+  BrainMapProjection,
+  BrainMapRevision,
+  BrainMapsResponse,
+  BrainPage,
+  BrainPagesResponse,
+  BrainReviewPack,
+  BrainReviewPacksResponse,
+  BrainSpace,
+  BrainSpaceMember,
+  BrainSpaceHome,
+  BrainSpacesResponse,
+  ComparisonListEntry,
   EntityPage,
   Entity,
   EntityType,
@@ -829,6 +833,59 @@ export function getBrainGraph(params?: {
   limit?: number;
 }): Promise<BrainGraph> {
   return apiFetch<BrainGraph>(`/api/brain/graph${asQuery(params ?? {})}`);
+}
+
+export function getBrainMirror(params?: { limit?: number }): Promise<BrainMapProjection> {
+  return apiFetch<BrainMapProjection>(`/api/brain/mirror${asQuery(params ?? {})}`);
+}
+
+export function listBrainMaps(params?: {
+  status?: string;
+  limit?: number;
+}): Promise<BrainMapsResponse> {
+  return apiFetch<BrainMapsResponse>(`/api/brain/maps${asQuery(params ?? {})}`);
+}
+
+export function createBrainMap(input: {
+  prompt: string;
+  origin?: "brain" | "inbox" | "agent" | "wai";
+  map_type?: string | null;
+  title?: string | null;
+  space_id?: string | null;
+  source_scope?: Record<string, unknown> | null;
+}): Promise<BrainMap> {
+  return apiFetch<BrainMap>("/api/brain/maps", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function getBrainMap(mapId: string): Promise<BrainMap> {
+  return apiFetch<BrainMap>(`/api/brain/maps/${mapId}`);
+}
+
+export function updateBrainMap(
+  mapId: string,
+  input: {
+    title?: string | null;
+    status?: "draft" | "saved" | "archived" | string | null;
+    layout?: Record<string, { x: number; y: number }> | null;
+  },
+): Promise<BrainMap> {
+  return apiFetch<BrainMap>(`/api/brain/maps/${mapId}`, {
+    method: "PATCH",
+    body: JSON.stringify(input),
+  });
+}
+
+export function refreshBrainMap(mapId: string): Promise<BrainMapRevision> {
+  return apiFetch<BrainMapRevision>(`/api/brain/maps/${mapId}/refresh`, {
+    method: "POST",
+  });
+}
+
+export function listBrainMapRevisions(mapId: string): Promise<{ revisions: BrainMapRevision[] }> {
+  return apiFetch<{ revisions: BrainMapRevision[] }>(`/api/brain/maps/${mapId}/revisions`);
 }
 
 export function listBrainSpaces(): Promise<BrainSpacesResponse> {

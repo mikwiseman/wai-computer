@@ -28,6 +28,7 @@ def test_capabilities_response_serializes_runtime_modes_and_surfaces():
     assert note["permission_scopes"] == ["agent:run:read"]
     contracts = {contract["name"]: contract for contract in body["tool_contracts"]}
     assert contracts["search_wai"]["args_schema"]["properties"]["limit"]["maximum"] == 50
+    assert contracts["ask_brain"]["args_schema"]["required"] == ["question"]
     assert contracts["propose_action"]["args_schema"]["properties"]["tool_name"]["enum"] == sorted(
         ACTION_TOOL_NAMES
     )
@@ -45,7 +46,9 @@ def test_capability_tool_contracts_stay_in_sync():
     assert set(RUNTIME_TOOL_CONTRACTS) == {
         "note",
         "create_artifact",
+        "create_brain_map",
         "search_wai",
+        "ask_brain",
         "load_context",
         "respond",
         "respond_from_context",
@@ -78,6 +81,8 @@ def test_validate_agent_config_accepts_all_enabled_tools():
                     "tool": "search_wai",
                     "args": {"query": "roadmap", "limit": MAX_AGENT_SEARCH_LIMIT},
                 },
+                {"tool": "create_brain_map", "args": {"prompt": "Map the roadmap"}},
+                {"tool": "ask_brain", "args": {"question": "What is the roadmap risk?"}},
                 {
                     "tool": "load_context",
                     "args": {
@@ -167,6 +172,10 @@ def test_validate_agent_config_accepts_all_enabled_tools():
         (
             {"steps": [{"tool": "search_wai", "args": {"query": "q", "limit": True}}]},
             "search_wai.limit must be",
+        ),
+        (
+            {"steps": [{"tool": "ask_brain", "args": {}}]},
+            "ask_brain.question is required",
         ),
         (
             {"steps": [{"tool": "propose_memory", "args": {"content": "x", "operation": "bad"}}]},

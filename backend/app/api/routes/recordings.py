@@ -826,6 +826,18 @@ async def _load_active_recording(
     return result.scalar_one_or_none()
 
 
+AUDIO_UPLOAD_RETRYABLE_FAILURE_CODES = {
+    "processing_enqueue_failed",
+    "processing_failed",
+    "processing_retry_exhausted",
+    "processing_timeout",
+    "provider_unavailable",
+    "staged_file_missing",
+    "staging_failed",
+    "transcription_halted",
+}
+
+
 def _has_canonical_audio_processing(recording: Recording) -> bool:
     """Return true when uploaded audio owns canonical transcript generation."""
     if recording.status in {
@@ -833,6 +845,12 @@ def _has_canonical_audio_processing(recording: Recording) -> bool:
         RecordingStatus.PROCESSING.value,
     }:
         return True
+    if (
+        recording.uploaded_at is not None
+        and recording.status == RecordingStatus.FAILED.value
+        and recording.failure_code in AUDIO_UPLOAD_RETRYABLE_FAILURE_CODES
+    ):
+        return False
     if (
         recording.uploaded_at is not None
         and recording.status == RecordingStatus.FAILED.value
@@ -870,7 +888,14 @@ async def _claim_audio_upload(
                         (Recording.status == RecordingStatus.FAILED.value)
                         & (
                             Recording.failure_code.is_(None)
-                            | (Recording.failure_code != "upload_size_mismatch")
+                            | (
+                                Recording.failure_code.notin_(
+                                    [
+                                        *AUDIO_UPLOAD_RETRYABLE_FAILURE_CODES,
+                                        "upload_size_mismatch",
+                                    ]
+                                )
+                            )
                         )
                     )
                 )
