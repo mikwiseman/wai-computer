@@ -336,7 +336,7 @@ struct MacItemDetailView: View {
         HStack(alignment: .top, spacing: Spacing.sm) {
             Text(moment.timestamp ?? "—")
                 .font(Typography.mono)
-                .foregroundStyle(Palette.accent)
+                .foregroundStyle(Palette.textSecondary)
                 .frame(width: 56, alignment: .leading)
             VStack(alignment: .leading, spacing: Spacing.xxs) {
                 Text(moment.moment).font(Typography.bodySmall.weight(.medium))

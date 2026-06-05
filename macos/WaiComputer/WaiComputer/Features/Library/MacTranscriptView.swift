@@ -154,7 +154,7 @@ struct SegmentRowView: View {
                 } else if let speaker = effectiveDisplayLabel {
                     Text(speaker)
                         .font(Typography.label)
-                        .foregroundStyle(Palette.accent)
+                        .foregroundStyle(Palette.textSecondary)
                 }
 
                 Text(segment.formattedTimestamp)

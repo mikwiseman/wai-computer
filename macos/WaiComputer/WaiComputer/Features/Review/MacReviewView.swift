@@ -110,6 +110,7 @@ struct MacReviewView: View {
                 }
                 .buttonStyle(.plain)
                 .help(t("Reject", "Отклонить"))
+                .accessibilityLabel(t("Reject", "Отклонить"))
                 .disabled(acting)
 
                 Button {
@@ -124,6 +125,7 @@ struct MacReviewView: View {
                 }
                 .buttonStyle(.plain)
                 .help(t("Accept", "Принять"))
+                .accessibilityLabel(t("Accept", "Принять"))
                 .disabled(acting)
             }
             .opacity(acting ? 0.5 : 1)
