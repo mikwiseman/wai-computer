@@ -589,7 +589,7 @@ struct MacBrainView: View {
                 t("What changed since the last update?", "Что изменилось с последнего обновления?"),
                 t("What should happen next?", "Что должно произойти дальше?")
             ]
-            return fallback.isEmpty ? localized : localized
+            return fallback.isEmpty ? localized : fallback
         }
     }
 
