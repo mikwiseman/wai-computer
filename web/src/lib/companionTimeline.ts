@@ -1,4 +1,4 @@
-import type { CompanionEvent, CompanionPlanStep } from "./types";
+import type { CompanionArtifact, CompanionEvent, CompanionPlanStep } from "./types";
 
 /** A single hosted-read tool invocation in a "Tool actions" card. */
 export type CompanionToolAction = {
@@ -33,6 +33,7 @@ export type CompanionTurnItem =
   | { kind: "thinking"; id: string; text: string }
   | { kind: "tools"; id: string; actions: CompanionToolAction[] }
   | { kind: "plan"; id: string; steps: CompanionPlanStep[] }
+  | { kind: "artifact"; id: string; artifact: CompanionArtifact }
   | { kind: "text"; id: string; markdown: string }
   | {
       kind: "action";
@@ -117,6 +118,20 @@ export function ingestEvent(turn: CompanionTurn, evt: CompanionEvent): Companion
           }
         }
       }
+      return { ...turn, items, counter };
+    }
+    case "artifact": {
+      items.push({
+        kind: "artifact",
+        id: nextId("artifact"),
+        artifact: {
+          artifact_id: evt.artifact_id,
+          title: evt.title,
+          kind: evt.kind,
+          content: evt.content,
+          language: evt.language,
+        },
+      });
       return { ...turn, items, counter };
     }
     case "plan": {

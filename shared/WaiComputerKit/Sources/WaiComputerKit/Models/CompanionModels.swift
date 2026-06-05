@@ -238,6 +238,7 @@ public enum CompanionStreamEvent: Sendable, Equatable {
     case toolCall(callId: String, tool: String)
     case toolResult(callId: String, summary: String, ok: Bool)
     case plan(steps: [CompanionPlanStep])
+    case artifact(CompanionArtifact)
     case token(text: String)
     case citation(CompanionStreamCitation)
     case memoryUpdated(block: String, operation: String)
@@ -258,6 +259,40 @@ public struct CompanionPlanStep: Sendable, Equatable, Codable {
     public init(title: String, status: String) {
         self.title = title
         self.status = status
+    }
+}
+
+/// A self-contained document the agent produced (html | markdown | code),
+/// rendered as a live preview card.
+public struct CompanionArtifact: Sendable, Equatable, Codable, Identifiable {
+    public let artifactId: String
+    public let title: String
+    public let kind: String      // html | markdown | code
+    public let content: String
+    public let language: String
+
+    public var id: String { artifactId }
+
+    public init(
+        artifactId: String,
+        title: String,
+        kind: String,
+        content: String,
+        language: String
+    ) {
+        self.artifactId = artifactId
+        self.title = title
+        self.kind = kind
+        self.content = content
+        self.language = language
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case artifactId = "artifact_id"
+        case title
+        case kind
+        case content
+        case language
     }
 }
 

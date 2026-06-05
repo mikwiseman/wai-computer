@@ -36,6 +36,20 @@ final class CompanionStreamTests: XCTestCase {
         ]))
     }
 
+    func testParsesArtifactFrame() throws {
+        let event = try parser.parse(
+            "event: artifact\ndata: {\"artifact_id\":\"a1\",\"title\":\"Landing\","
+            + "\"kind\":\"html\",\"content\":\"<h1>Hi</h1>\",\"language\":\"\"}"
+        )
+        guard case .artifact(let artifact) = event else {
+            return XCTFail("expected artifact event, got \(String(describing: event))")
+        }
+        XCTAssertEqual(artifact.artifactId, "a1")
+        XCTAssertEqual(artifact.title, "Landing")
+        XCTAssertEqual(artifact.kind, "html")
+        XCTAssertEqual(artifact.content, "<h1>Hi</h1>")
+    }
+
     func testToolResultDefaultsOkTrueAndParsesOkFalse() throws {
         let okMissing = try parser.parse("event: tool_result\ndata: {\"call_id\":\"t1\",\"summary\":\"Done\"}")
         XCTAssertEqual(okMissing, .toolResult(callId: "t1", summary: "Done", ok: true))

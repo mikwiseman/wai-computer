@@ -61,6 +61,8 @@ export function CompanionTimeline({
             );
           case "plan":
             return <PlanCard key={item.id} steps={item.steps} locale={locale} />;
+          case "artifact":
+            return <ArtifactCard key={item.id} artifact={item.artifact} locale={locale} />;
           case "text":
             return <Markdown key={item.id} text={item.markdown} />;
           case "action":
@@ -128,6 +130,47 @@ function ToolActionsCard({
         ))}
       </ul>
     </details>
+  );
+}
+
+function ArtifactCard({
+  artifact,
+  locale,
+}: {
+  artifact: { artifact_id: string; title: string; kind: string; content: string; language?: string };
+  locale: Locale;
+}) {
+  const ru = locale === "ru";
+  const icon = artifact.kind === "html" ? "🌐" : artifact.kind === "code" ? "≡" : "📄";
+  function copy() {
+    void navigator.clipboard?.writeText(artifact.content).catch(() => {});
+  }
+  return (
+    <div className="wai-card wai-artifact" data-testid="wai-artifact-card">
+      <div className="wai-artifact-head">
+        <span aria-hidden>{icon}</span>
+        <span className="wai-artifact-title">
+          {artifact.title || (ru ? "Артефакт" : "Artifact")}
+        </span>
+        <span className="wai-artifact-kind">{artifact.kind.toUpperCase()}</span>
+        <span style={{ flex: 1 }} />
+        <button type="button" className="ghost-button compact-button" onClick={copy}>
+          {ru ? "Копировать" : "Copy"}
+        </button>
+      </div>
+      {artifact.kind === "html" ? (
+        <iframe
+          className="wai-artifact-preview"
+          title={artifact.title || "preview"}
+          sandbox="allow-scripts"
+          srcDoc={artifact.content}
+        />
+      ) : artifact.kind === "code" ? (
+        <pre className="wai-md-code wai-artifact-code">{artifact.content}</pre>
+      ) : (
+        <Markdown text={artifact.content} />
+      )}
+    </div>
   );
 }
 

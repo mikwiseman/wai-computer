@@ -14,6 +14,7 @@ from sqlalchemy import select
 
 from app.core import companion as companion_module
 from app.core.companion import (
+    ArtifactEvent,
     CompanionError,
     DoneEvent,
     PlanEvent,
@@ -538,6 +539,38 @@ class TestRunTurn:
             {"title": "Search", "status": "in_progress"},
             {"title": "Summarize", "status": "pending"},
         ]
+        assert isinstance(events[-1], DoneEvent)
+
+    async def test_create_artifact_tool_emits_artifact_event(
+        self, db_session, setup_user_and_chat
+    ):
+        """create_artifact streams an ArtifactEvent (preview card) and the loop
+        continues — auto-run, no approval gate."""
+        s = setup_user_and_chat
+        step1 = [
+            _function_call_completed(
+                "create_artifact",
+                '{"title": "Landing", "kind": "html", '
+                '"content": "<!doctype html><h1>Hi</h1>"}',
+            )
+        ]
+        step2 = [_DeltaEvent("Done — see the artifact."), _completed("Done.")]
+        fake = _SeqOpenAI([step1, step2])
+        events = await _collect(
+            run_turn(
+                db_session,
+                s["user"].id,
+                s["conversation"].id,
+                "build a landing page",
+                openai_client=fake,
+                enable_actions=True,
+            )
+        )
+        arts = [e for e in events if isinstance(e, ArtifactEvent)]
+        assert len(arts) == 1
+        assert arts[0].title == "Landing"
+        assert arts[0].kind == "html"
+        assert "<h1>Hi</h1>" in arts[0].content
         assert isinstance(events[-1], DoneEvent)
 
     async def test_run_turn_streams_reasoning_as_thinking(
