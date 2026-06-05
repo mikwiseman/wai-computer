@@ -179,7 +179,7 @@ struct MacBrainView: View {
                         onOpenSource: openSource,
                         onOpenEntity: { id, name in model.openEntity(id: id, name: name) }
                     )
-                    .frame(height: 430)
+                    .frame(height: projection.nodes.count > 14 ? 520 : 430)
                     .clipShape(RoundedRectangle(cornerRadius: 8))
                 }
                 mapStats(projection)
@@ -993,9 +993,35 @@ private struct MacBrainMapCanvasView: View {
     let layout: [String: BrainMapPosition]?
     let onOpenSource: (String, String) -> Void
     let onOpenEntity: (String, String) -> Void
+    private let maxSources = 3
+    private let maxEntities = 8
+    private let maxGaps = 1
 
-    private var nodesById: [String: BrainMapNode] {
-        Dictionary(uniqueKeysWithValues: projection.nodes.map { ($0.id, $0) })
+    private var displayNodes: [BrainMapNode] {
+        let lens = projection.nodes.filter { $0.kind == "lens" }.prefix(1)
+        let sources = projection.nodes.filter { $0.kind == "source" }.prefix(maxSources)
+        let entities = projection.nodes
+            .filter { $0.kind == "entity" }
+            .sorted {
+                if $0.citationIds.count != $1.citationIds.count {
+                    return $0.citationIds.count > $1.citationIds.count
+                }
+                return $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending
+            }
+            .prefix(maxEntities)
+        let gaps = projection.nodes.filter { $0.kind == "gap" }.prefix(maxGaps)
+        return Array(lens) + Array(sources) + Array(entities) + Array(gaps)
+    }
+
+    private var displayNodeIds: Set<String> {
+        Set(displayNodes.map(\.id))
+    }
+
+    private var displayEdges: [BrainMapEdge] {
+        projection.edges
+            .filter { displayNodeIds.contains($0.source) && displayNodeIds.contains($0.target) }
+            .prefix(18)
+            .map { $0 }
     }
 
     var body: some View {
@@ -1003,7 +1029,7 @@ private struct MacBrainMapCanvasView: View {
             let positions = fittedPositions(in: geometry.size)
             ZStack {
                 Canvas { context, _ in
-                    for edge in projection.edges {
+                    for edge in displayEdges {
                         guard let source = positions[edge.source], let target = positions[edge.target] else { continue }
                         var path = Path()
                         path.move(to: source)
@@ -1020,7 +1046,7 @@ private struct MacBrainMapCanvasView: View {
                     }
                 }
 
-                ForEach(projection.nodes) { node in
+                ForEach(displayNodes) { node in
                     if let position = positions[node.id] {
                         Button {
                             open(node)
@@ -1058,21 +1084,21 @@ private struct MacBrainMapCanvasView: View {
             Text(node.title)
                 .font(Typography.bodySmall.weight(.semibold))
                 .foregroundStyle(Palette.textPrimary)
-                .lineLimit(2)
+                .lineLimit(node.kind == "lens" ? 2 : 1)
             if let body = node.body, !body.isEmpty {
                 Text(body)
                     .font(Typography.labelSmall)
                     .foregroundStyle(Palette.textSecondary)
-                    .lineLimit(2)
+                    .lineLimit(node.kind == "lens" ? 2 : 1)
             }
             if !node.citationIds.isEmpty {
                 Text("\(node.citationIds.count) source\(node.citationIds.count == 1 ? "" : "s")")
                     .font(.system(size: 10, weight: .medium))
-                    .foregroundStyle(Palette.accent)
+                .foregroundStyle(Palette.accent)
             }
         }
-        .frame(width: node.kind == "lens" ? 210 : 176, alignment: .leading)
-        .frame(minHeight: 88, alignment: .leading)
+        .frame(width: node.kind == "lens" ? 210 : 164, alignment: .leading)
+        .frame(minHeight: node.kind == "lens" ? 76 : 64, alignment: .leading)
         .padding(Spacing.sm)
         .background(node.kind == "lens" ? Palette.accentSubtle : Palette.surfaceSubtle)
         .overlay(
@@ -1084,6 +1110,55 @@ private struct MacBrainMapCanvasView: View {
     }
 
     private func fittedPositions(in size: CGSize) -> [String: CGPoint] {
+        let nodes = displayNodes
+        guard !nodes.isEmpty else { return [:] }
+        if nodes.count <= 6 {
+            return fittedPositionsFromSuppliedLayout(in: size)
+        }
+
+        let width = max(size.width, 760)
+        let topY: CGFloat = 74
+        let rowY: [CGFloat] = [170, 260, 350, 440]
+        var positions: [String: CGPoint] = [:]
+        let lens = nodes.first { $0.kind == "lens" }
+        if let lens {
+            positions[lens.id] = CGPoint(x: width * 0.50, y: topY)
+        }
+
+        let sources = nodes.filter { $0.kind == "source" }
+        for (index, node) in sources.enumerated() {
+            positions[node.id] = CGPoint(
+                x: width * 0.18,
+                y: rowY[min(index, rowY.count - 1)]
+            )
+        }
+
+        let entities = nodes.filter { $0.kind == "entity" }
+        let entityXs = [width * 0.42, width * 0.64]
+        for (index, node) in entities.enumerated() {
+            positions[node.id] = CGPoint(
+                x: entityXs[index % entityXs.count],
+                y: rowY[min(index / entityXs.count, rowY.count - 1)]
+            )
+        }
+
+        let gaps = nodes.filter { $0.kind == "gap" }
+        for (index, node) in gaps.enumerated() {
+            positions[node.id] = CGPoint(
+                x: width * 0.84,
+                y: rowY[min(index + 1, rowY.count - 1)]
+            )
+        }
+
+        return positions.mapValues { point in
+            CGPoint(
+                x: min(max(point.x, 96), max(96, size.width - 96)),
+                y: min(max(point.y, 64), max(64, size.height - 64))
+            )
+        }
+    }
+
+    private func fittedPositionsFromSuppliedLayout(in size: CGSize) -> [String: CGPoint] {
         let raw = rawPositions()
         guard !raw.isEmpty else { return [:] }
         let minX = raw.values.map(\.x).min() ?? 0
@@ -1092,9 +1167,9 @@ private struct MacBrainMapCanvasView: View {
         let maxY = raw.values.map(\.y).max() ?? minY
         let width = max(1, maxX - minX)
         let height = max(1, maxY - minY)
-        let availableWidth = max(1, size.width - 260)
-        let availableHeight = max(1, size.height - 160)
-        let scale = min(1.15, availableWidth / width, availableHeight / height)
+        let availableWidth = max(1, size.width - 240)
+        let availableHeight = max(1, size.height - 140)
+        let scale = min(1.0, availableWidth / width, availableHeight / height)
         let centerX = minX + width / 2
         let centerY = minY + height / 2
         return raw.mapValues { point in
@@ -1107,12 +1182,14 @@ private struct MacBrainMapCanvasView: View {
 
     private func rawPositions() -> [String: CGPoint] {
         var laneCounts: [String: Int] = [:]
-        return Dictionary(uniqueKeysWithValues: projection.nodes.enumerated().map { index, node in
-            if let persisted = layout?[node.id] {
-                return (node.id, CGPoint(x: persisted.x, y: persisted.y))
-            }
-            if let supplied = node.position {
-                return (node.id, CGPoint(x: supplied.x, y: supplied.y))
+        return Dictionary(uniqueKeysWithValues: displayNodes.enumerated().map { index, node in
+            if displayNodes.count <= 6 {
+                if let persisted = layout?[node.id] {
+                    return (node.id, CGPoint(x: persisted.x, y: persisted.y))
+                }
+                if let supplied = node.position {
+                    return (node.id, CGPoint(x: supplied.x, y: supplied.y))
+                }
             }
             let lane = node.lane ?? "center"
             let laneIndex = laneCounts[lane, default: 0]

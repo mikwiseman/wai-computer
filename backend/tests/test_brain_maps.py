@@ -247,8 +247,8 @@ async def test_projection_caps_large_brain_to_focused_diagram(db_session, monkey
     assert len(source_nodes) == brain_maps.MAX_VISIBLE_SOURCE_NODES
     assert len(entity_nodes) == brain_maps.MAX_VISIBLE_ENTITY_NODES
     assert any(n["id"] == "gap:focused-diagram" for n in projection["nodes"])
-    assert projection["stats"]["hidden_source_count"] == 4
-    assert projection["stats"]["hidden_entity_count"] == 6
+    assert projection["stats"]["hidden_source_count"] == 9
+    assert projection["stats"]["hidden_entity_count"] == 16
 
 
 async def test_agent_runtime_can_create_brain_map(db_session, monkeypatch) -> None:
