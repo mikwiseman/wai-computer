@@ -59,6 +59,20 @@ async def _user(db: AsyncSession, email: str = "telegram@example.com") -> User:
     return user
 
 
+def _stub_empty_brain_answer(monkeypatch, expected_question: str) -> None:
+    async def fake_ask_brain(_session, _user_id, question, *, limit=None):
+        assert question == expected_question
+        assert limit == 12
+        return SimpleNamespace(
+            answer="",
+            citations=[],
+            gaps=["No matching sources yet."],
+            freshness=None,
+        )
+
+    monkeypatch.setattr("app.core.agent_runtime.ask_brain", fake_ask_brain)
+
+
 @pytest.mark.asyncio
 async def test_start_link_returns_waicomputer_bot_deep_link(client, auth_headers, monkeypatch):
     monkeypatch.setattr(telegram_routes.settings, "telegram_bot_username", "waicomputer_bot")
@@ -750,10 +764,7 @@ async def test_handle_update_routes_help_meetings_and_natural_search(
 
     monkeypatch.setattr(telegram_routes, "TelegramBotClient", lambda: capture)
     monkeypatch.setattr(telegram_routes, "get_db_context", fake_db_context)
-    monkeypatch.setattr(
-        "app.core.unified_search.generate_embedding",
-        AsyncMock(return_value=[0.02] * 1536),
-    )
+    _stub_empty_brain_answer(monkeypatch, "что я обещал")
 
     async def send_text(update_id: int, text: str) -> None:
         await telegram_routes._handle_update(
@@ -1589,10 +1600,7 @@ async def test_handle_update_routes_obligation_question_to_wai_agent(
 
     monkeypatch.setattr(telegram_routes, "TelegramBotClient", lambda: capture)
     monkeypatch.setattr(telegram_routes, "get_db_context", fake_db_context)
-    monkeypatch.setattr(
-        "app.core.unified_search.generate_embedding",
-        AsyncMock(return_value=[0.02] * 1536),
-    )
+    _stub_empty_brain_answer(monkeypatch, "что я обещал")
 
     await telegram_routes._handle_update(
         {
@@ -1606,7 +1614,8 @@ async def test_handle_update_routes_obligation_question_to_wai_agent(
         }
     )
 
-    assert "что я обещал" in capture.messages[-1]["text"]
+    assert "Пока не могу ответить из твоего Brain." in capture.messages[-1]["text"]
+    assert "No matching sources yet." in capture.messages[-1]["text"]
     assert (await db_session.get(TelegramUpdate, 207)).status == "completed"
     run = (
         await db_session.execute(select(AgentRun).where(AgentRun.user_id == user.id))
@@ -1791,10 +1800,7 @@ async def test_handle_text_message_reuses_wai_conversation(
     db_session.add(account)
     await db_session.commit()
     capture = _TelegramCapture()
-    monkeypatch.setattr(
-        "app.core.unified_search.generate_embedding",
-        AsyncMock(return_value=[0.02] * 1536),
-    )
+    _stub_empty_brain_answer(monkeypatch, "Что я обещал?")
 
     await telegram_routes._handle_text_message(
         db_session,
@@ -1804,7 +1810,8 @@ async def test_handle_text_message_reuses_wai_conversation(
         text="Что я обещал?",
     )
 
-    assert "Что я обещал" in capture.messages[-1]["text"]
+    assert "Пока не могу ответить из твоего Brain." in capture.messages[-1]["text"]
+    assert "No matching sources yet." in capture.messages[-1]["text"]
     conversation = (
         await db_session.execute(select(Conversation).where(Conversation.user_id == user.id))
     ).scalar_one()
@@ -2631,10 +2638,7 @@ async def test_handle_update_processes_linked_text_message(
 
     monkeypatch.setattr(telegram_routes, "TelegramBotClient", lambda: capture)
     monkeypatch.setattr(telegram_routes, "get_db_context", fake_db_context)
-    monkeypatch.setattr(
-        "app.core.unified_search.generate_embedding",
-        AsyncMock(return_value=[0.02] * 1536),
-    )
+    _stub_empty_brain_answer(monkeypatch, "вопрос")
 
     await telegram_routes._handle_update(
         {
@@ -2648,7 +2652,8 @@ async def test_handle_update_processes_linked_text_message(
         }
     )
 
-    assert "вопрос" in capture.messages[-1]["text"]
+    assert "Пока не могу ответить из твоего Brain." in capture.messages[-1]["text"]
+    assert "No matching sources yet." in capture.messages[-1]["text"]
     assert (
         await db_session.execute(select(AgentRun).where(AgentRun.user_id == user.id))
     ).scalar_one()
