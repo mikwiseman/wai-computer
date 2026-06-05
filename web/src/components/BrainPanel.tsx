@@ -65,6 +65,45 @@ const FILTERS: { key: PageFilter; en: string; ru: string }[] = [
   { key: "topic", en: "Topics", ru: "Темы" },
 ];
 
+const DIAGRAM_TEMPLATES = [
+  {
+    key: "projects",
+    titleEn: "Projects",
+    titleRu: "Проекты",
+    subtitleEn: "owners, risks, next steps",
+    subtitleRu: "ответственные, риски, шаги",
+    promptEn: "Map my active projects with owners, risks, decisions, and next steps",
+    promptRu: "Сделай карту активных проектов: ответственные, риски, решения и следующие шаги",
+  },
+  {
+    key: "decisions",
+    titleEn: "Decisions",
+    titleRu: "Решения",
+    subtitleEn: "options, tradeoffs, blockers",
+    subtitleRu: "варианты, компромиссы, блокеры",
+    promptEn: "Map recent decisions with options, tradeoffs, blockers, and open questions",
+    promptRu: "Сделай карту последних решений: варианты, компромиссы, блокеры и открытые вопросы",
+  },
+  {
+    key: "relationships",
+    titleEn: "Relationships",
+    titleRu: "Связи",
+    subtitleEn: "people, projects, sources",
+    subtitleRu: "люди, проекты, источники",
+    promptEn: "Map people, projects, and relationships that matter right now",
+    promptRu: "Сделай карту людей, проектов и связей, которые сейчас важны",
+  },
+  {
+    key: "timeline",
+    titleEn: "Timeline",
+    titleRu: "Хронология",
+    subtitleEn: "what changed and when",
+    subtitleRu: "что изменилось и когда",
+    promptEn: "Create a timeline of the important changes, commitments, and deadlines",
+    promptRu: "Сделай хронологию важных изменений, обещаний и дедлайнов",
+  },
+];
+
 type MapNodeData = {
   node: BrainMapNode;
   citationCount: number;
@@ -369,6 +408,51 @@ function BrainMapBriefingPanel({
           </div>
         </div>
       ) : null}
+    </section>
+  );
+}
+
+function BrainLensTemplatesPanel({
+  creatingLens,
+  onCreate,
+  t,
+}: {
+  creatingLens: boolean;
+  onCreate: (prompt: string) => void;
+  t: Translator;
+}) {
+  return (
+    <section className="brain-lens-templates" aria-label={t("Focus diagrams", "Фокусные диаграммы")}>
+      <div className="brain-lens-templates__head">
+        <div>
+          <h3>{t("Focus diagrams", "Фокусные диаграммы")}</h3>
+          <p>
+            {t(
+              "Start from a real question. Wai will generate a map and keep it tied to sources.",
+              "Начните с реального вопроса. Wai создаст карту и привяжет её к источникам.",
+            )}
+          </p>
+        </div>
+      </div>
+      <div className="brain-lens-templates__grid">
+        {DIAGRAM_TEMPLATES.map((template) => {
+          const title = t(template.titleEn, template.titleRu);
+          const subtitle = t(template.subtitleEn, template.subtitleRu);
+          const prompt = t(template.promptEn, template.promptRu);
+          return (
+            <button
+              key={template.key}
+              type="button"
+              aria-label={`${title}: ${subtitle}`}
+              disabled={creatingLens}
+              onClick={() => onCreate(prompt)}
+            >
+              <strong>{title}</strong>
+              <span>{subtitle}</span>
+            </button>
+          );
+        })}
+      </div>
     </section>
   );
 }
@@ -945,6 +1029,13 @@ export function BrainPanel({
                 onAskWai={onOpenWai}
                 onOpenSource={openSource}
                 onOpenEntity={(id, name) => setSelectedEntity({ id, name })}
+                t={t}
+              />
+            ) : null}
+            {!activeMap && activeProjection ? (
+              <BrainLensTemplatesPanel
+                creatingLens={creatingLens}
+                onCreate={(prompt) => void createLens(prompt)}
                 t={t}
               />
             ) : null}

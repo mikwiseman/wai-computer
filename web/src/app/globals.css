@@ -3494,6 +3494,77 @@ a.primary-button[aria-disabled="true"]:hover {
   background: var(--surface-subtle);
 }
 
+.brain-lens-templates {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  border-bottom: 1px solid var(--border);
+  padding: 0.85rem 1rem;
+  background: var(--panel);
+}
+
+.brain-lens-templates__head h3,
+.brain-lens-templates__head p {
+  margin: 0;
+}
+
+.brain-lens-templates__head h3 {
+  color: var(--ink);
+  font-size: var(--font-body-small-size);
+}
+
+.brain-lens-templates__head p {
+  margin-top: 0.2rem;
+  color: var(--ink-soft);
+  font-size: var(--font-label-small-size);
+}
+
+.brain-lens-templates__grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+
+.brain-lens-templates__grid button {
+  display: flex;
+  min-width: 0;
+  min-height: 4.5rem;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 0.4rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.65rem;
+  background: var(--surface-subtle);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.brain-lens-templates__grid button:hover {
+  border-color: var(--accent);
+}
+
+.brain-lens-templates__grid button:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
+.brain-lens-templates__grid strong {
+  overflow: hidden;
+  color: var(--ink);
+  font-size: var(--font-body-small-size);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.brain-lens-templates__grid span {
+  color: var(--ink-soft);
+  font-size: var(--font-label-small-size);
+  line-height: 1.3;
+}
+
 .brain-map-briefing {
   display: flex;
   flex-direction: column;
@@ -3946,6 +4017,10 @@ a.primary-button[aria-disabled="true"]:hover {
     border-bottom: 1px solid var(--border);
   }
 
+  .brain-lens-templates__grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .brain-map-briefing__top,
   .brain-map-briefing__evidence {
     grid-template-columns: 1fr;
@@ -3953,6 +4028,12 @@ a.primary-button[aria-disabled="true"]:hover {
 
   .brain-map-briefing__metrics,
   .brain-map-briefing__questions > div {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 640px) {
+  .brain-lens-templates__grid {
     grid-template-columns: 1fr;
   }
 }

@@ -373,6 +373,20 @@ describe("BrainPanel (Live Mirror)", () => {
     await waitFor(() => expect(screen.getAllByText("Hiring map").length).toBeGreaterThan(0));
   });
 
+  it("creates a real-scenario diagram from the live mirror templates", async () => {
+    render(<BrainPanel />);
+    const templates = await screen.findByRole("region", { name: "Focus diagrams" });
+
+    fireEvent.click(within(templates).getByRole("button", { name: "Projects: owners, risks, next steps" }));
+
+    await waitFor(() =>
+      expect(mockCreateBrainMap).toHaveBeenCalledWith({
+        prompt: "Map my active projects with owners, risks, decisions, and next steps",
+        origin: "brain",
+      }),
+    );
+  });
+
   it("refreshes and keeps a draft map", async () => {
     mockListBrainMaps.mockResolvedValue({ maps: [brainMap()] });
     render(<BrainPanel />);
