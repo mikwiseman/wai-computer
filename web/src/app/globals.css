@@ -1668,7 +1668,9 @@ a.primary-button[aria-disabled="true"]:hover {
 }
 
 .dictate-start {
-  align-self: start;
+  /* Grid items stretch on the inline axis by default, so the CTA was rendering
+   * full panel width. justify-self keeps it sized to its content (top-left). */
+  justify-self: start;
 }
 
 .dictate-result {
