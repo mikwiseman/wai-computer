@@ -1984,8 +1984,8 @@ async def test_handle_text_message_does_not_route_ambiguous_prompt_without_conte
     db_session.add(account)
     await db_session.commit()
     capture = _TelegramCapture()
-    start_wai_task = AsyncMock()
-    monkeypatch.setattr(telegram_routes, "start_wai_task", start_wai_task)
+    contexts: list[Any] = []
+    _stub_telegram_turn(monkeypatch, "unexpected", contexts)
 
     await telegram_routes._handle_text_message(
         db_session,
@@ -1995,7 +1995,7 @@ async def test_handle_text_message_does_not_route_ambiguous_prompt_without_conte
         text="?",
     )
 
-    start_wai_task.assert_not_awaited()
+    assert contexts == []
     assert "Напиши вопрос полностью" in capture.messages[-1]["text"]
     assert (
         await db_session.execute(select(AgentRun).where(AgentRun.user_id == user.id))
@@ -2021,8 +2021,8 @@ async def test_handle_text_message_reports_pending_telegram_recording_context(
     db_session.add(account)
     await db_session.commit()
     capture = _TelegramCapture()
-    start_wai_task = AsyncMock()
-    monkeypatch.setattr(telegram_routes, "start_wai_task", start_wai_task)
+    contexts: list[Any] = []
+    _stub_telegram_turn(monkeypatch, "unexpected", contexts)
 
     await telegram_routes._handle_text_message(
         db_session,
@@ -2032,7 +2032,7 @@ async def test_handle_text_message_reports_pending_telegram_recording_context(
         text="?",
     )
 
-    start_wai_task.assert_not_awaited()
+    assert contexts == []
     assert "еще расшифровывается" in capture.messages[-1]["text"]
     assert (
         await db_session.execute(select(AgentRun).where(AgentRun.user_id == user.id))
