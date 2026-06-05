@@ -45,6 +45,44 @@ async def test_transcription_dispatches_to_deepgram_file_stt():
 
 
 @pytest.mark.asyncio
+async def test_transcription_accepts_usage_purpose_without_forwarding_to_provider(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    from app.core import transcription
+
+    sentry_breadcrumbs: list[dict[str, object]] = []
+    monkeypatch.setattr(
+        transcription,
+        "add_sentry_breadcrumb",
+        lambda **kwargs: sentry_breadcrumbs.append(kwargs),
+    )
+    transcribe = AsyncMock(return_value=["ok"])
+    monkeypatch.setattr(transcription, "deepgram_transcribe_audio_file", transcribe)
+
+    result = await transcription.transcribe_audio_file(
+        b"audio",
+        language="ru",
+        content_type="audio/mp4",
+        usage_purpose="recording",
+    )
+
+    assert result == ["ok"]
+    transcribe.assert_awaited_once_with(
+        b"audio",
+        language="ru",
+        content_type="audio/mp4",
+        channels=None,
+        model=DEEPGRAM_FILE_STT_MODEL,
+        keyterms=None,
+        max_channels=2,
+    )
+    assert any(
+        breadcrumb.get("data", {}).get("usage_purpose") == "recording"
+        for breadcrumb in sentry_breadcrumbs
+    )
+
+
+@pytest.mark.asyncio
 async def test_transcription_ignores_removed_user_file_stt_choice():
     user = type(
         "User",

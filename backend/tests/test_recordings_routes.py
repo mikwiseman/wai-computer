@@ -1251,6 +1251,56 @@ async def test_upload_size_mismatch_can_be_retried(
 
 
 @pytest.mark.asyncio
+async def test_processing_failed_audio_upload_can_be_retried(
+    client: AsyncClient,
+    auth_headers: dict,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """A server-side processing failure should not strand local audio forever."""
+    recording = await _create_recording(client, auth_headers, title=None)
+    recording_id = UUID(recording["id"])
+    stored = (
+        await db_session.execute(select(Recording).where(Recording.id == recording_id))
+    ).scalar_one()
+    stored.status = RecordingStatus.FAILED.value
+    stored.uploaded_at = datetime.now(timezone.utc)
+    stored.failure_code = "processing_failed"
+    stored.failure_message = "Imported audio processing failed"
+    await db_session.commit()
+
+    enqueue_processing = AsyncMock()
+    monkeypatch.setattr(
+        "app.api.routes.recordings.enqueue_recording_audio_processing",
+        enqueue_processing,
+    )
+
+    retry = await client.post(
+        f"/api/recordings/{recording['id']}/upload",
+        headers=auth_headers,
+        data={"client_duration_seconds": "103", "client_file_size_bytes": "13"},
+        files={"file": ("meeting.mp3", b"fake-mp3-data", "audio/mpeg")},
+    )
+
+    assert retry.status_code == 200
+    payload = retry.json()
+    assert payload["status"] == "processing"
+    assert payload["failure_code"] is None
+    assert payload["failure_message"] is None
+    enqueue_processing.assert_awaited_once()
+    _, enqueue_kwargs = enqueue_processing.await_args
+    assert enqueue_kwargs["recording_id"] == recording_id
+    assert enqueue_kwargs["client_duration_seconds"] == 103
+
+    refreshed = (
+        await db_session.execute(select(Recording).where(Recording.id == recording_id))
+    ).scalar_one()
+    assert refreshed.status == RecordingStatus.PROCESSING.value
+    assert refreshed.failure_code is None
+    assert refreshed.failure_message is None
+
+
+@pytest.mark.asyncio
 async def test_claim_audio_upload_rejects_ready_audio_backed_no_speech_recording(
     db_session: AsyncSession,
 ) -> None:
