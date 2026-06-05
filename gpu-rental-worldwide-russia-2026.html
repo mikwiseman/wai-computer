@@ -1,0 +1,598 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GPU rental options for WaiComputer ASR - worldwide and Russia</title>
+<style>
+  :root{
+    --bg:#fbfbf9;
+    --ink:#151512;
+    --muted:#67645e;
+    --faint:#918d86;
+    --line:#e4e0d8;
+    --line-strong:#24221f;
+    --card:#fff;
+    --good:#0a7a4f;
+    --warn:#a15b15;
+    --bad:#8b2d25;
+    --mark:#f8efca;
+    --mono:"SF Mono","JetBrains Mono",ui-monospace,Menlo,Consolas,monospace;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,Helvetica,Arial,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html{-webkit-text-size-adjust:100%}
+  body{
+    margin:0;
+    background:var(--bg);
+    color:var(--ink);
+    font-family:var(--sans);
+    font-size:15.5px;
+    line-height:1.55;
+    -webkit-font-smoothing:antialiased;
+    text-rendering:optimizeLegibility;
+  }
+  .wrap{max-width:1180px;margin:0 auto;padding:56px 24px 96px}
+  a{color:inherit;text-decoration:none;border-bottom:1px dotted var(--faint)}
+  a:hover{color:var(--good);border-bottom-color:var(--good)}
+  h1{font-size:38px;line-height:1.08;letter-spacing:0;margin:0;font-weight:720;max-width:14ch}
+  h2{font-size:23px;line-height:1.18;letter-spacing:0;margin:46px 0 0;font-weight:700}
+  h3{font-size:16px;line-height:1.25;letter-spacing:0;margin:26px 0 0;font-weight:700}
+  p{margin:12px 0 0;max-width:78ch}
+  .meta{margin-top:14px;color:var(--muted);font-family:var(--mono);font-size:12.5px;max-width:96ch}
+  .lede{font-size:18px;line-height:1.45;color:var(--muted);max-width:72ch;margin-top:18px}
+  .rule{height:1px;background:var(--line-strong);border:0;margin:28px 0 0}
+  .grid{
+    display:grid;
+    grid-template-columns:repeat(3,1fr);
+    gap:1px;
+    background:var(--line);
+    border:1px solid var(--line);
+    margin-top:30px;
+  }
+  .pick{background:var(--card);padding:18px 17px;min-height:148px}
+  .k{font-size:11px;letter-spacing:.09em;text-transform:uppercase;color:var(--faint);font-weight:760}
+  .v{font-size:19px;line-height:1.2;font-weight:720;margin-top:8px}
+  .d{font-size:12.8px;line-height:1.38;color:var(--muted);margin-top:8px}
+  .tag{
+    display:inline-block;
+    font-family:var(--mono);
+    font-size:11px;
+    line-height:1.2;
+    border:1px solid #cce5d6;
+    background:#eaf6ef;
+    color:var(--good);
+    padding:2px 6px;
+    border-radius:3px;
+    white-space:nowrap;
+  }
+  .tag.warn{border-color:#ead8bd;background:#fbf1df;color:var(--warn)}
+  .tag.bad{border-color:#ecd0cb;background:#fbebe8;color:var(--bad)}
+  .tbl{margin-top:17px;overflow-x:auto;border:1px solid var(--line);background:var(--card)}
+  table{border-collapse:collapse;width:100%;min-width:980px;font-size:13.4px}
+  th,td{padding:9px 11px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+  thead th{
+    font-size:11.3px;
+    letter-spacing:.04em;
+    text-transform:uppercase;
+    color:var(--muted);
+    border-bottom:1.5px solid var(--line-strong);
+    font-weight:760;
+    white-space:nowrap;
+  }
+  tbody tr:last-child td{border-bottom:0}
+  tbody tr:hover{background:#faf8f1}
+  .num{font-family:var(--mono);text-align:right;white-space:nowrap}
+  .best{background:#f1f8f3}
+  .test{background:#fbf8ed}
+  .heavy{background:#f8f4ef}
+  .muted{color:var(--muted)}
+  .good{color:var(--good);font-weight:720}
+  .warn{color:var(--warn);font-weight:720}
+  .bad{color:var(--bad);font-weight:720}
+  .note{margin-top:11px;color:var(--muted);font-size:12.8px;max-width:86ch}
+  .callout{
+    margin-top:18px;
+    border:1px solid var(--line);
+    border-left:3px solid var(--good);
+    background:var(--card);
+    padding:18px 20px;
+    max-width:940px;
+  }
+  .callout p:first-child{margin-top:0}
+  ul{margin:12px 0 0;padding:0;list-style:none;max-width:86ch}
+  li{position:relative;margin-top:8px;padding-left:20px}
+  li::before{content:"";position:absolute;left:2px;top:.7em;width:6px;height:6px;background:var(--ink);border-radius:50%}
+  mark{background:var(--mark);padding:.05em .22em;border-radius:2px}
+  footer{
+    margin-top:54px;
+    padding-top:18px;
+    border-top:1px solid var(--line);
+    color:var(--faint);
+    font-family:var(--mono);
+    font-size:12px;
+    line-height:1.65;
+  }
+  @media (max-width:860px){
+    .grid{grid-template-columns:1fr 1fr}
+    h1{font-size:32px;max-width:18ch}
+  }
+  @media (max-width:560px){
+    .wrap{padding:38px 14px 72px}
+    .grid{grid-template-columns:1fr}
+    h1{font-size:28px}
+    .lede{font-size:16.5px}
+  }
+  @media print{
+    body{background:#fff}
+    .pick,.tbl,.callout{break-inside:avoid}
+    tbody tr:hover{background:transparent}
+  }
+</style>
+</head>
+<body>
+<main class="wrap">
+  <header>
+    <h1>GPU rental options for ASR</h1>
+    <p class="lede">Worldwide and Russia comparison for running WaiComputer voice models: T-one for Russian live/telephony, GigaAM-v3 for Russian recordings, Parakeet/Whisper paths for English, and VibeVoice-ASR only for long meeting diarization experiments.</p>
+    <div class="meta">Checked 2026-06-05 &middot; monthly estimates use 730 hours or 30 days &middot; prices are public list prices, not capacity guarantees &middot; stock and GPU market prices move weekly</div>
+    <hr class="rule">
+  </header>
+
+  <section class="grid" aria-label="Shortlist">
+    <div class="pick">
+      <div class="k">First benchmark</div>
+      <div class="v"><a href="https://www.hyperstack.cloud/">Hyperstack A4000</a></div>
+      <div class="d">$0.15/hr &middot; about $109.50/mo. Cheapest managed global GPU I found with enough CUDA headroom for T-one and GigaAM.</div>
+    </div>
+    <div class="pick">
+      <div class="k">Simple global production</div>
+      <div class="v"><a href="https://www.runpod.io/pricing">RunPod A5000</a></div>
+      <div class="d">$0.27/hr &middot; about $197/mo. Better default than chasing marketplace hosts; 24 GB VRAM leaves room for batching and multiple models.</div>
+    </div>
+    <div class="pick">
+      <div class="k">Cheapest Russia test</div>
+      <div class="v"><a href="https://firstvds.ru/products/vps-vds-gpu">FirstVDS vGPU</a></div>
+      <div class="d">from 299 RUB/day &middot; about 8,970 RUB/mo. Good smoke-test path; benchmark latency and CUDA visibility before trusting production.</div>
+    </div>
+    <div class="pick">
+      <div class="k">Russia production</div>
+      <div class="v"><a href="https://cloudcompute.ru/prices/gpu/rtx-3090">CloudCompute RTX 3090</a></div>
+      <div class="d">40.04 RUB/hr &middot; 29,229 RUB/mo listed. Good local 24 GB GPU option if availability and persistence check out.</div>
+    </div>
+    <div class="pick">
+      <div class="k">Long meetings</div>
+      <div class="v"><a href="https://www.thundercompute.com/pricing">Thunder A6000/A100</a></div>
+      <div class="d">A6000 $0.35/hr or A100 $0.78/hr. Use for VibeVoice-ASR experiments, not for always-on T-one/GigaAM.</div>
+    </div>
+    <div class="pick">
+      <div class="k">Do not overbuy</div>
+      <div class="v">Avoid H100/A100 for live RU ASR</div>
+      <div class="d">T-one and GigaAM are small. A100/H100 only makes sense for VibeVoice-ASR, bulk batch spikes, or model training.</div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Model fit</h2>
+    <div class="tbl">
+      <table>
+        <thead>
+          <tr>
+            <th>Use case</th>
+            <th>Model</th>
+            <th>Why</th>
+            <th>GPU class</th>
+            <th>Minimum rental target</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr class="best">
+            <td>Russian live / dictation / calls</td>
+            <td><a href="https://huggingface.co/t-tech/T-one">T-one</a></td>
+            <td>Streaming-first Russian ASR; model card says 300 ms chunks and 71.7M params.</td>
+            <td>8-16 GB CUDA is enough; 24 GB is comfortable.</td>
+            <td>Hyperstack A4000, RunPod A5000, FirstVDS vGPU, CloudCompute 3090</td>
+          </tr>
+          <tr class="best">
+            <td>Russian recordings / accuracy</td>
+            <td><a href="https://huggingface.co/ai-sage/GigaAM-v3">GigaAM-v3</a></td>
+            <td>220-240M params; model card reports stronger Russian WER than Whisper across several sets.</td>
+            <td>8-16 GB CUDA is enough; 24 GB for batching.</td>
+            <td>Same as T-one; prefer 24 GB if running both models on one box.</td>
+          </tr>
+          <tr>
+            <td>English high-throughput batch</td>
+            <td><a href="https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3">Parakeet TDT 0.6B v3</a></td>
+            <td>Fast open model; use when English batch throughput matters more than Whisper compatibility.</td>
+            <td>16-24 GB CUDA</td>
+            <td>RunPod A5000 or L4</td>
+          </tr>
+          <tr>
+            <td>Drop-in Whisper path</td>
+            <td><a href="https://huggingface.co/openai/whisper-large-v3-turbo">Whisper large-v3-turbo</a></td>
+            <td>Good compatibility path; still chunked, not native streaming.</td>
+            <td>8-24 GB CUDA</td>
+            <td>Any option above; also compare with Groq API cost.</td>
+          </tr>
+          <tr class="heavy">
+            <td>Long meetings with speaker/timestamps</td>
+            <td><a href="https://huggingface.co/microsoft/VibeVoice-ASR">VibeVoice-ASR</a></td>
+            <td>9B params, 60-minute single-pass transcription, diarization, timestamps, 50+ languages.</td>
+            <td>4090/A6000 for tests; A100/H100 if serious.</td>
+            <td>Thunder A6000/A100, RunPod 4090/A100, Lambda A6000/A100</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="note">No fallback architecture assumed: pick the model by workload, benchmark on our own recordings, then deploy one explicit model path per route.</p>
+  </section>
+
+  <section>
+    <h2>Worldwide GPU rentals</h2>
+    <div class="tbl">
+      <table>
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Provider</th>
+            <th>Region / type</th>
+            <th>GPU / config</th>
+            <th class="num">Price</th>
+            <th class="num">Always-on month</th>
+            <th>Fit for WaiComputer</th>
+            <th>Source</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr class="best">
+            <td class="num">1</td>
+            <td>Hyperstack</td>
+            <td>Europe / North America &middot; managed VM</td>
+            <td>RTX A4000 16 GB &middot; up to 6 pCPU &middot; 24 GB RAM</td>
+            <td class="num">$0.15/hr</td>
+            <td class="num">$109.50</td>
+            <td><span class="tag">best first test</span> Cheapest managed global option; enough for T-one/GigaAM.</td>
+            <td><a href="https://www.hyperstack.cloud/">source</a></td>
+          </tr>
+          <tr class="best">
+            <td class="num">2</td>
+            <td>RunPod</td>
+            <td>30+ regions &middot; pod</td>
+            <td>RTX A5000 24 GB &middot; 9 vCPU &middot; 25 GB RAM</td>
+            <td class="num">$0.27/hr</td>
+            <td class="num">$197.10</td>
+            <td><span class="tag">best simple production</span> Clean global default for always-on ASR.</td>
+            <td><a href="https://www.runpod.io/pricing">source</a></td>
+          </tr>
+          <tr>
+            <td class="num">3</td>
+            <td>Thunder Compute</td>
+            <td>On-demand &middot; prototyping</td>
+            <td>RTX A6000 48 GB &middot; 4-6 vCPU &middot; 32-48 GB RAM</td>
+            <td class="num">$0.35/hr</td>
+            <td class="num">$255.50</td>
+            <td>Good VibeVoice-ASR experiment box; overkill for T-one.</td>
+            <td><a href="https://www.thundercompute.com/pricing">source</a></td>
+          </tr>
+          <tr>
+            <td class="num">4</td>
+            <td>RunPod</td>
+            <td>30+ regions &middot; pod</td>
+            <td>NVIDIA L4 24 GB &middot; 12 vCPU &middot; 50 GB RAM</td>
+            <td class="num">$0.39/hr</td>
+            <td class="num">$284.70</td>
+            <td>Clean inference card; less raw bandwidth than A5000/3090, but stable and efficient.</td>
+            <td><a href="https://www.runpod.io/pricing">source</a></td>
+          </tr>
+          <tr>
+            <td class="num">5</td>
+            <td>RunPod</td>
+            <td>30+ regions &middot; pod</td>
+            <td>RTX 3090 24 GB &middot; 16 vCPU &middot; 125 GB RAM</td>
+            <td class="num">$0.46/hr</td>
+            <td class="num">$335.80</td>
+            <td>Good throughput, but pricier than A5000 on RunPod today.</td>
+            <td><a href="https://www.runpod.io/pricing">source</a></td>
+          </tr>
+          <tr>
+            <td class="num">6</td>
+            <td>Hyperstack</td>
+            <td>Europe / North America &middot; managed VM</td>
+            <td>RTX A6000 48 GB &middot; up to 28 pCPU &middot; 58 GB RAM</td>
+            <td class="num">$0.50/hr</td>
+            <td class="num">$365.00</td>
+            <td>Useful if A4000 stock is absent or VibeVoice needs more VRAM.</td>
+            <td><a href="https://www.hyperstack.cloud/">source</a></td>
+          </tr>
+          <tr>
+            <td class="num">7</td>
+            <td>RunPod</td>
+            <td>30+ regions &middot; pod</td>
+            <td>RTX 4090 24 GB &middot; 6 vCPU &middot; 41 GB RAM</td>
+            <td class="num">$0.69/hr</td>
+            <td class="num">$503.70</td>
+            <td>High throughput for batch and VibeVoice tests; not the ASR baseline.</td>
+            <td><a href="https://www.runpod.io/pricing">source</a></td>
+          </tr>
+          <tr>
+            <td class="num">8</td>
+            <td>Lambda</td>
+            <td>Self-serve instance</td>
+            <td>Quadro RTX 6000 24 GB &middot; 14 vCPU &middot; 46 GiB RAM</td>
+            <td class="num">$0.69/hr</td>
+            <td class="num">$503.70</td>
+            <td>Reliable but not cheap for our small ASR models.</td>
+            <td><a href="https://lambda.ai/pricing">source</a></td>
+          </tr>
+          <tr>
+            <td class="num">9</td>
+            <td>Thunder Compute</td>
+            <td>On-demand &middot; prototyping</td>
+            <td>A100 80 GB &middot; 4-12 vCPU &middot; 32-96 GB RAM</td>
+            <td class="num">$0.78/hr</td>
+            <td class="num">$569.40</td>
+            <td><span class="tag warn">long meeting / training</span> Good for VibeVoice, not for baseline ASR.</td>
+            <td><a href="https://www.thundercompute.com/pricing">source</a></td>
+          </tr>
+          <tr>
+            <td class="num">10</td>
+            <td>Modal</td>
+            <td>Serverless GPU tasks</td>
+            <td>L4 GPU task, plus CPU/RAM metering</td>
+            <td class="num">$0.000222/sec</td>
+            <td class="num">~$583 GPU-only</td>
+            <td>Use for spiky batch jobs; loses for always-on streaming.</td>
+            <td><a href="https://modal.com/pricing">source</a></td>
+          </tr>
+          <tr>
+            <td class="num">11</td>
+            <td>OVHcloud</td>
+            <td>EU public cloud</td>
+            <td>L4 24 GiB instance</td>
+            <td class="num">GBP 0.74/hr ex. VAT</td>
+            <td class="num">~GBP 540.20</td>
+            <td>Mainstream EU option; too expensive versus Hyperstack/RunPod for this use.</td>
+            <td><a href="https://www.ovhcloud.com/en-gb/public-cloud/prices/">source</a></td>
+          </tr>
+          <tr>
+            <td class="num">12</td>
+            <td>Vast.ai</td>
+            <td>Worldwide marketplace</td>
+            <td>Varies: T4, 3090, 4090, A5000, A6000, A100, H100</td>
+            <td class="num">real-time</td>
+            <td class="num">real-time</td>
+            <td><span class="tag warn">cheapest when vetted</span> Good for batch/experiments; verify host reliability, storage, bandwidth, and interruption policy.</td>
+            <td><a href="https://docs.vast.ai/guides/instances/pricing">source</a></td>
+          </tr>
+          <tr>
+            <td class="num">13</td>
+            <td>TensorDock</td>
+            <td>Worldwide marketplace</td>
+            <td>Varies: A4000, A5000, 3090, 4090, H100 and more</td>
+            <td class="num">marketplace</td>
+            <td class="num">marketplace</td>
+            <td>Fallback marketplace if Vast/RunPod stock is bad; vet host and persistence.</td>
+            <td><a href="https://www.tensordock.com/">source</a></td>
+          </tr>
+          <tr>
+            <td class="num">14</td>
+            <td>Hetzner</td>
+            <td>EU dedicated GPU server</td>
+            <td>GEX44 &middot; RTX 4000 SFF Ada 20 GB &middot; i5-13500 &middot; 64 GB RAM</td>
+            <td class="num">configurator</td>
+            <td class="num">configurator</td>
+            <td>Good fixed EU server if we want one box, not short-lived rental. Confirm live price in configurator.</td>
+            <td><a href="https://www.hetzner.com/dedicated-rootserver/matrix-gpu/">source</a></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="note">Global conclusion: Hyperstack A4000 is the cheapest managed first benchmark. RunPod A5000 is the cleaner always-on production default. Marketplace providers can beat both on price, but they add host-quality risk and more operational checking.</p>
+  </section>
+
+  <section>
+    <h2>Russia GPU rentals</h2>
+    <div class="tbl">
+      <table>
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Provider</th>
+            <th>Type</th>
+            <th>GPU / config</th>
+            <th class="num">Price</th>
+            <th class="num">Month estimate</th>
+            <th>Fit for WaiComputer</th>
+            <th>Source</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr class="test">
+            <td class="num">1</td>
+            <td>FirstVDS</td>
+            <td>vGPU VDS</td>
+            <td>L40S virtualized profile</td>
+            <td class="num">from 299 RUB/day</td>
+            <td class="num">~8,970 RUB</td>
+            <td><span class="tag">cheapest test</span> Cheapest Russia GPU entry; verify CUDA, throughput, and noisy-neighbor behavior.</td>
+            <td><a href="https://firstvds.ru/products/vps-vds-gpu">source</a></td>
+          </tr>
+          <tr class="best">
+            <td class="num">2</td>
+            <td>HOSTKEY RU</td>
+            <td>Dedicated GPU server</td>
+            <td>1x 2000 PRO 16 GB &middot; 12 cores &middot; 64 GB RAM &middot; 1 TB NVMe</td>
+            <td class="num">16,000 RUB/mo</td>
+            <td class="num">16,000 RUB</td>
+            <td>Cheap fixed server for T-one/GigaAM if 16 GB VRAM is enough.</td>
+            <td><a href="https://hostkey.ru/documentation/server_order/bm_list/">source</a></td>
+          </tr>
+          <tr>
+            <td class="num">3</td>
+            <td>HOSTKEY RU</td>
+            <td>Dedicated GPU server</td>
+            <td>1x RTX 3080 10 GB &middot; 8 cores &middot; 64 GB RAM &middot; 512 GB NVMe</td>
+            <td class="num">16,264 RUB/mo</td>
+            <td class="num">16,264 RUB</td>
+            <td>Works for T-one, tighter for GigaAM batching and future models.</td>
+            <td><a href="https://hostkey.ru/documentation/server_order/bm_list/">source</a></td>
+          </tr>
+          <tr>
+            <td class="num">4</td>
+            <td>HOSTKEY RU</td>
+            <td>Dedicated GPU server</td>
+            <td>1x A5000 24 GB &middot; 24 cores &middot; 64 GB RAM &middot; 1 TB NVMe</td>
+            <td class="num">28,248 RUB/mo</td>
+            <td class="num">28,248 RUB</td>
+            <td>Good Russia fixed-box option with 24 GB VRAM.</td>
+            <td><a href="https://hostkey.ru/documentation/server_order/bm_list/">source</a></td>
+          </tr>
+          <tr class="best">
+            <td class="num">5</td>
+            <td>CloudCompute.ru</td>
+            <td>GPU cloud VM</td>
+            <td>1x RTX 3090 24 GB &middot; 10 vCPU</td>
+            <td class="num">40.04 RUB/hr</td>
+            <td class="num">29,229 RUB</td>
+            <td><span class="tag">best Russia 24 GB test</span> Cheapest listed 24 GB Russia hourly path found.</td>
+            <td><a href="https://cloudcompute.ru/prices/gpu/rtx-3090">source</a></td>
+          </tr>
+          <tr>
+            <td class="num">6</td>
+            <td>FirstVDS</td>
+            <td>GPU passthrough VDS</td>
+            <td>Physical GPU: L4, RTX 4090, RTX 5090, or L40S</td>
+            <td class="num">from 1,150 RUB/day</td>
+            <td class="num">~34,500 RUB</td>
+            <td>Explicit whole-GPU option; compare with CloudCompute and HOSTKEY before buying.</td>
+            <td><a href="https://firstvds.ru/products/vps-vds-gpu">source</a></td>
+          </tr>
+          <tr>
+            <td class="num">7</td>
+            <td>HOSTKEY RU</td>
+            <td>Dedicated GPU server</td>
+            <td>1x RTX 4090 24 GB &middot; 16 cores &middot; 64 GB RAM &middot; 1 TB NVMe</td>
+            <td class="num">29,104 RUB/mo</td>
+            <td class="num">29,104 RUB</td>
+            <td>Very strong for batch; overkill for T-one, reasonable if shared with other workloads.</td>
+            <td><a href="https://hostkey.ru/documentation/server_order/bm_list/">source</a></td>
+          </tr>
+          <tr>
+            <td class="num">8</td>
+            <td>Selectel</td>
+            <td>Cloud server GPU</td>
+            <td>1x T4 16 GB &middot; 4 vCPU &middot; 32 GB RAM</td>
+            <td class="num">53.48 RUB/hr</td>
+            <td class="num">~39,040 RUB</td>
+            <td>Good mainstream cloud if we already want Selectel; not cheapest.</td>
+            <td><a href="https://selectel.ru/services/cloud/servers/gpu/">source</a></td>
+          </tr>
+          <tr>
+            <td class="num">9</td>
+            <td>Selectel</td>
+            <td>Cloud server GPU</td>
+            <td>1x L4 24 GB &middot; 8 vCPU &middot; 32 GB RAM</td>
+            <td class="num">63.20 RUB/hr</td>
+            <td class="num">~46,136 RUB</td>
+            <td>Clean L4 option; more expensive than CloudCompute/Hostkey.</td>
+            <td><a href="https://selectel.ru/services/cloud/servers/gpu/">source</a></td>
+          </tr>
+          <tr>
+            <td class="num">10</td>
+            <td>Selectel</td>
+            <td>Cloud server GPU</td>
+            <td>1x A5000 24 GB &middot; 8 vCPU &middot; 32 GB RAM</td>
+            <td class="num">87.85 RUB/hr</td>
+            <td class="num">~64,131 RUB</td>
+            <td>Good card, but price is hard to justify for small ASR.</td>
+            <td><a href="https://selectel.ru/services/cloud/servers/gpu/">source</a></td>
+          </tr>
+          <tr>
+            <td class="num">11</td>
+            <td>Timeweb Cloud</td>
+            <td>GPU server by request</td>
+            <td>RTX 2080 Ti, 3080, 3090, 4090; A2/A30/A2000/A4000/A5000/A6000; T4; H100/L4 noted</td>
+            <td class="num">request</td>
+            <td class="num">min prepay 5,000 RUB</td>
+            <td>Use only if procurement/payment path is easiest; public page does not expose concrete SKUs.</td>
+            <td><a href="https://timeweb.cloud/services/gpu">source</a></td>
+          </tr>
+          <tr>
+            <td class="num">12</td>
+            <td>Yandex Cloud</td>
+            <td>Compute GPU VM</td>
+            <td>V100 32 GB, A100 80 GB, T4 16 GB, T4i 24 GB, H200-class platform</td>
+            <td class="num">pricing page</td>
+            <td class="num">pricing page</td>
+            <td>Enterprise/cloud-native option; older T4/V100/A100 lineup, quota and pricing must be checked in account.</td>
+            <td><a href="https://yandex.cloud/ru/docs/compute/concepts/gpus">source</a></td>
+          </tr>
+          <tr class="heavy">
+            <td class="num">13</td>
+            <td>Cloud.ru</td>
+            <td>Enterprise GPU VM</td>
+            <td>5x A100/H100 and larger multi-GPU configurations</td>
+            <td class="num">from 1,586 RUB/hr incl. VAT</td>
+            <td class="num">1M+ RUB</td>
+            <td><span class="tag bad">skip for ASR</span> Cluster-oriented; wrong cost shape for T-one/GigaAM.</td>
+            <td><a href="https://cloud.ru/documents/tariffs/evolution/evolution-compute-gpu">source</a></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="note">Russia conclusion: FirstVDS is the cheapest smoke-test entry; CloudCompute RTX 3090 is the most attractive listed 24 GB hourly option; HOSTKEY is cleaner for fixed monthly dedicated servers; Selectel/Yandex/Cloud.ru are more enterprise-cloud shaped.</p>
+  </section>
+
+  <section>
+    <h2>API alternative, not GPU rental</h2>
+    <div class="callout">
+      <p><strong><a href="https://groq.com/pricing">Groq Whisper large-v3-turbo</a> is $0.04 per transcribed audio-hour.</strong> It is not a T-one/GigaAM replacement for Russian quality, but it is so cheap that it should stay in the comparison for English, fallback Whisper, and burst workloads. A rented always-on $197/mo GPU must process roughly 4,925 audio-hours/month before it beats Groq on raw Whisper-turbo transcription price.</p>
+      <p>For Russian, the reason to self-host is model quality and control, not just compute cost. We need a direct benchmark on our real recordings before moving production traffic.</p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Recommended next move</h2>
+    <ul>
+      <li>Start outside Russia on <strong>Hyperstack A4000</strong> for the first benchmark: deploy T-one and GigaAM, run 50-100 real WaiComputer samples, record WER, latency, GPU utilization, cold-start time, and cost per audio-hour.</li>
+      <li>If the benchmark is good and the service must be always-on globally, move to <strong>RunPod A5000 24 GB</strong> for a cleaner production baseline.</li>
+      <li>If Russia hosting matters, test <strong>FirstVDS vGPU</strong> for cheap feasibility, then choose <strong>CloudCompute RTX 3090</strong> or <strong>HOSTKEY A5000/4090</strong> for production depending on persistence, network, and support.</li>
+      <li>Do not buy A100/H100 time until VibeVoice-ASR or training is explicitly in scope.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>Acceptance checklist for any rented GPU</h2>
+    <ul>
+      <li><code>nvidia-smi</code> shows the expected physical GPU, VRAM, driver, and CUDA runtime.</li>
+      <li>T-one streaming test runs for 30 minutes without dropped chunks or latency spikes.</li>
+      <li>GigaAM batch test processes long recordings without VRAM growth or worker crash.</li>
+      <li>Persistent volume survives stop/start; stopped storage billing is understood.</li>
+      <li>Provider supports private image or reproducible Docker deployment.</li>
+      <li>No silent fallback to CPU. If CUDA is unavailable, fail the health check.</li>
+      <li>Network path to wai.computer backend is stable; PII logging stays off.</li>
+    </ul>
+  </section>
+
+  <footer>
+    Sources checked: <a href="https://www.hyperstack.cloud/">Hyperstack</a> &middot;
+    <a href="https://www.runpod.io/pricing">RunPod</a> &middot;
+    <a href="https://www.thundercompute.com/pricing">Thunder Compute</a> &middot;
+    <a href="https://modal.com/pricing">Modal</a> &middot;
+    <a href="https://docs.vast.ai/guides/instances/pricing">Vast.ai docs</a> &middot;
+    <a href="https://lambda.ai/pricing">Lambda</a> &middot;
+    <a href="https://www.ovhcloud.com/en-gb/public-cloud/prices/">OVHcloud</a> &middot;
+    <a href="https://www.hetzner.com/dedicated-rootserver/matrix-gpu/">Hetzner</a> &middot;
+    <a href="https://firstvds.ru/products/vps-vds-gpu">FirstVDS</a> &middot;
+    <a href="https://hostkey.ru/documentation/server_order/bm_list/">HOSTKEY BM list</a> &middot;
+    <a href="https://cloudcompute.ru/prices/gpu/rtx-3090">CloudCompute</a> &middot;
+    <a href="https://selectel.ru/services/cloud/servers/gpu/">Selectel</a> &middot;
+    <a href="https://timeweb.cloud/services/gpu">Timeweb Cloud</a> &middot;
+    <a href="https://yandex.cloud/ru/docs/compute/concepts/gpus">Yandex Cloud</a> &middot;
+    <a href="https://cloud.ru/documents/tariffs/evolution/evolution-compute-gpu">Cloud.ru</a> &middot;
+    model cards: <a href="https://huggingface.co/t-tech/T-one">T-one</a>, <a href="https://huggingface.co/ai-sage/GigaAM-v3">GigaAM-v3</a>, <a href="https://huggingface.co/microsoft/VibeVoice-ASR">VibeVoice-ASR</a>.
+    Companion local files: <a href="whisper-gpu-research.html">whisper-gpu-research.html</a>, <a href="stt-model-picker-2026.html">stt-model-picker-2026.html</a>, <a href="t-one-hosting-options-2026.html">t-one-hosting-options-2026.html</a>.
+  </footer>
+</main>
+</body>
+</html>
