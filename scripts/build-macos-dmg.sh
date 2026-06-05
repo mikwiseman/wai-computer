@@ -26,6 +26,8 @@ NOTARY_ISSUER=${NOTARY_ISSUER:-}
 TIMESTAMP=$(date +%Y%m%d-%H%M%S)
 TMP_DIR=$(mktemp -d "${TMPDIR:-/tmp}/${APP_NAME}-release.XXXXXX")
 ARCHIVE_PATH="$TMP_DIR/${APP_NAME}.xcarchive"
+DERIVED_DATA_PATH=${MACOS_DERIVED_DATA_PATH:-"$TMP_DIR/DerivedData"}
+XCODEBUILD_JOBS=${MACOS_XCODEBUILD_JOBS:-1}
 BACKGROUND_PATH="$TMP_DIR/${APP_NAME}-dmg-background.png"
 DMG_PATH=""
 APP_PATH=""
@@ -379,6 +381,8 @@ fi
 
 echo "Archiving ${APP_NAME} with Developer ID signing (variant=${MACOS_VARIANT})..."
 xcodebuild archive \
+  -derivedDataPath "$DERIVED_DATA_PATH" \
+  -jobs "$XCODEBUILD_JOBS" \
   -project "$PROJECT_PATH" \
   -scheme "$SCHEME" \
   -configuration "$CONFIGURATION" \
