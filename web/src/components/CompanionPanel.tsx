@@ -205,6 +205,7 @@ export function CompanionPanel({
 
   const [chats, setChats] = useState<CompanionConversation[]>([]);
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
+  const [activeScope, setActiveScope] = useState<CompanionConversation["scope"]>(null);
   const [messages, setMessages] = useState<CompanionMessage[]>([]);
   const [streamingAssistant, setStreamingAssistant] =
     useState<StreamingAssistant | null>(null);
@@ -253,12 +254,14 @@ export function CompanionPanel({
   useEffect(() => {
     if (!activeChatId) {
       setMessages([]);
+      setActiveScope(null);
       return;
     }
     void (async () => {
       try {
         const detail = await getChat(activeChatId);
         setMessages(detail.messages);
+        setActiveScope(detail.scope);
         setStreamingAssistant(null);
       } catch (e) {
         setError(formatError(e, copy));
@@ -286,6 +289,7 @@ export function CompanionPanel({
       const chat = await createChat();
       setChats((prev) => [chat, ...prev]);
       setActiveChatId(chat.id);
+      setActiveScope(chat.scope);
       onChatCreated?.(chat);
     } catch (e) {
       setError(formatError(e, copy));
@@ -350,6 +354,7 @@ export function CompanionPanel({
         const chat = await createChat();
         setChats((prev) => [chat, ...prev]);
         setActiveChatId(chat.id);
+        setActiveScope(chat.scope);
         setMessages([]);
         onChatCreated?.(chat);
         chatId = chat.id;
@@ -500,11 +505,17 @@ export function CompanionPanel({
 
   const hasNoChats = chats.length === 0 && !activeChatId;
   const isEmptyActive = !!activeChatId && messages.length === 0 && !streamingAssistant;
+  const hasBrainScope = Boolean(activeScope?.brain_space_id);
 
   return (
     <section className="qa-panel">
       <header className="qa-panel__header">
         <h2>{copy.heading}</h2>
+        {hasBrainScope ? (
+          <span className="scope-chip">
+            {locale === "ru" ? "Мозг подключен" : "Brain attached"}
+          </span>
+        ) : null}
         {!embedded ? (
         <div style={{ display: "flex", gap: 8 }}>
           <button

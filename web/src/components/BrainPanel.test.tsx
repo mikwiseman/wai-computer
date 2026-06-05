@@ -5,35 +5,23 @@ import { BrainPanel } from "./BrainPanel";
 const mockGetBrainGraph = vi.fn();
 const mockListBrainSpaces = vi.fn();
 const mockGetBrainSpaceHome = vi.fn();
+const mockListBrainSpacePages = vi.fn();
 const mockListBrainReviewPacks = vi.fn();
 const mockAddBrainSpaceMember = vi.fn();
-const mockBuildBrainContext = vi.fn();
 const mockAcceptBrainReviewPack = vi.fn();
 const mockRejectBrainReviewPack = vi.fn();
 const mockExportBrainSpace = vi.fn();
-const mockListMemoryProposals = vi.fn();
-const mockAcceptMemoryProposal = vi.fn();
-const mockRejectMemoryProposal = vi.fn();
 
 vi.mock("@/lib/api", () => ({
   acceptBrainReviewPack: (...a: unknown[]) => mockAcceptBrainReviewPack(...a),
   addBrainSpaceMember: (...a: unknown[]) => mockAddBrainSpaceMember(...a),
-  buildBrainContext: (...a: unknown[]) => mockBuildBrainContext(...a),
+  exportBrainSpace: (...a: unknown[]) => mockExportBrainSpace(...a),
   getBrainGraph: (...a: unknown[]) => mockGetBrainGraph(...a),
   getBrainSpaceHome: (...a: unknown[]) => mockGetBrainSpaceHome(...a),
   listBrainReviewPacks: (...a: unknown[]) => mockListBrainReviewPacks(...a),
+  listBrainSpacePages: (...a: unknown[]) => mockListBrainSpacePages(...a),
   listBrainSpaces: (...a: unknown[]) => mockListBrainSpaces(...a),
   rejectBrainReviewPack: (...a: unknown[]) => mockRejectBrainReviewPack(...a),
-  exportBrainSpace: (...a: unknown[]) => mockExportBrainSpace(...a),
-  listMemoryProposals: (...a: unknown[]) => mockListMemoryProposals(...a),
-  acceptMemoryProposal: (...a: unknown[]) => mockAcceptMemoryProposal(...a),
-  rejectMemoryProposal: (...a: unknown[]) => mockRejectMemoryProposal(...a),
-}));
-
-// The force graph is canvas/WebGL — stub it; its mapping logic is tested in
-// BrainGraphView.test.tsx.
-vi.mock("@/components/BrainGraphView", () => ({
-  BrainGraphView: () => <div data-testid="brain-graph-stub">graph</div>,
 }));
 
 vi.mock("@/components/EntityWikiView", () => ({
@@ -44,16 +32,11 @@ vi.mock("@/components/EntityWikiView", () => ({
 
 function graph(overrides = {}) {
   return {
-    nodes: [
-      { id: "e1", label: "Anna", kind: "person", degree: 3 },
-      { id: "e2", label: "GPU", kind: "topic", degree: 5 },
-      { id: "e3", label: "Pricing", kind: "topic", degree: 1 },
-      { id: "item:i1", label: "Solar Note", kind: "item", degree: 0 },
-    ],
+    nodes: [],
     edges: [],
-    stats: { entities: 3, people: 1, topics: 2, items: 1, recordings: 1, mentions: 9 },
+    stats: { entities: 1, people: 1, topics: 0, items: 1, recordings: 1, mentions: 3 },
     overview: {
-      recordings: { total: 2, summarized: 1, organized: 1, unorganized: 1 },
+      recordings: { total: 1, summarized: 1, organized: 1, unorganized: 0 },
       materials: { total: 1, summarized: 1, organized: 1, unorganized: 0 },
       pending_review_count: 1,
       top_entities: [
@@ -66,44 +49,9 @@ function graph(overrides = {}) {
           material_count: 1,
         },
       ],
-      recent_sources: [
-        {
-          id: "recording:r1",
-          source_kind: "recording",
-          source_id: "r1",
-          title: "Launch sync",
-          entity_count: 2,
-          organized_at: null,
-        },
-      ],
+      recent_sources: [],
       llm_requests: 0,
     },
-    ...overrides,
-  };
-}
-
-function proposals(overrides = {}) {
-  return {
-    proposals: [
-      {
-        id: "p1",
-        kind: "memory_upsert",
-        risk: "high",
-        block_label: "human",
-        operation: "rewrite",
-        content: "Anna is the launch owner.",
-        target_line: null,
-        summary: "rewrite -> human",
-        confidence: 0.95,
-        authority: "self",
-        evidence: [{ source_kind: "recording", title: "Launch sync" }],
-        status: "pending",
-        decision_reason: null,
-        created_at: null,
-        decided_at: null,
-      },
-    ],
-    pending_count: 1,
     ...overrides,
   };
 }
@@ -129,43 +77,57 @@ function spaces(overrides = {}) {
   };
 }
 
+function claim() {
+  return {
+    id: "c1",
+    space_id: "s1",
+    page_id: "pg1",
+    kind: "workflow_rule",
+    status: "active",
+    text: "Use 40 minute intro sessions.",
+    confidence: 0.9,
+    authority: "self",
+    evidence: [],
+    source_refs: null,
+    created_at: null,
+    accepted_at: null,
+  };
+}
+
+function page() {
+  return {
+    id: "pg1",
+    space_id: "s1",
+    title: "Customer stage rules",
+    slug: "customer-stage-rules",
+    kind: "workflow",
+    status: "active",
+    markdown: "# Customer stage rules",
+    frontmatter: {},
+    version: 1,
+    claims: [claim()],
+    created_at: null,
+    updated_at: null,
+  };
+}
+
 function spaceHome(overrides = {}) {
   return {
     space: spaces().spaces[0],
-    page_count: 2,
+    page_count: 1,
     source_count: 1,
-    claim_counts: { fact: 1, workflow_rule: 1 },
+    claim_counts: { workflow_rule: 1 },
     source_counts: { item: 1 },
     pending_review_count: 1,
-    recent_pages: [
+    recent_pages: [page()],
+    sources: [
       {
-        id: "pg1",
+        id: "bs1",
         space_id: "s1",
-        title: "Customer stage rules",
-        slug: "customer-stage-rules",
-        kind: "workflow",
-        status: "active",
-        markdown: "# Customer stage rules",
-        frontmatter: {},
-        version: 1,
-        claims: [
-          {
-            id: "c1",
-            space_id: "s1",
-            page_id: "pg1",
-            kind: "workflow_rule",
-            status: "active",
-            text: "Use 40 minute intro sessions.",
-            confidence: 0.9,
-            authority: "self",
-            evidence: [],
-            source_refs: null,
-            created_at: null,
-            accepted_at: null,
-          },
-        ],
+        source_kind: "item",
+        source_id: "i1",
+        source_title: "Parent call notes",
         created_at: null,
-        updated_at: null,
       },
     ],
     engine_profiles: ["waibrain", "obsidian", "gbrain", "mempalace"],
@@ -204,6 +166,7 @@ describe("BrainPanel", () => {
     mockGetBrainGraph.mockResolvedValue(graph());
     mockListBrainSpaces.mockResolvedValue(spaces());
     mockGetBrainSpaceHome.mockResolvedValue(spaceHome());
+    mockListBrainSpacePages.mockResolvedValue({ pages: [page()] });
     mockListBrainReviewPacks.mockResolvedValue(reviewPacks());
     mockAddBrainSpaceMember.mockResolvedValue({
       id: "m1",
@@ -212,11 +175,6 @@ describe("BrainPanel", () => {
       role: "viewer",
       status: "active",
     });
-    mockBuildBrainContext.mockResolvedValue({
-      space: spaces().spaces[0],
-      markdown: "# Wai School context\n\n- Use 40 minute intro sessions.",
-      claim_count: 2,
-    });
     mockAcceptBrainReviewPack.mockResolvedValue({});
     mockRejectBrainReviewPack.mockResolvedValue({});
     mockExportBrainSpace.mockResolvedValue({
@@ -224,78 +182,60 @@ describe("BrainPanel", () => {
       profile: "obsidian",
       files: [{ path: "Customer stage rules.md", markdown: "# Customer stage rules" }],
     });
-    mockListMemoryProposals.mockResolvedValue(proposals());
-    mockAcceptMemoryProposal.mockResolvedValue({});
-    mockRejectMemoryProposal.mockResolvedValue({});
   });
 
-  it("renders the Brain home with use, review, knowledge, and source sections", async () => {
+  it("renders a clear Brain home without memory proposals or a map tab", async () => {
     render(<BrainPanel />);
     await waitFor(() =>
-      expect(screen.getByRole("heading", { name: "Use with Wai" })).toBeInTheDocument(),
+      expect(screen.getByRole("heading", { name: "Ask Wai with Wai School" })).toBeInTheDocument(),
     );
+
     expect(screen.getByRole("tab", { name: "Home" })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: "Knowledge" })).toBeInTheDocument();
-    expect(screen.getByRole("tab", { name: "Map" })).toBeInTheDocument();
-    expect(screen.queryByRole("tab", { name: "Wiki" })).not.toBeInTheDocument();
-    expect(screen.getByText("Brains")).toBeInTheDocument();
-    expect(screen.getByDisplayValue("Wai School")).toBeInTheDocument();
-    expect(screen.getByText("Review suggestions")).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Knowledge" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Sources" })).toBeInTheDocument();
-    expect(screen.queryByText("Prepare context")).not.toBeInTheDocument();
-    expect(screen.queryByText(/claims ready/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: "Map" })).not.toBeInTheDocument();
+    expect(screen.getByText("Project Knowledge")).toBeInTheDocument();
+    expect(screen.getByText("Review Knowledge")).toBeInTheDocument();
+    expect(screen.getByText("Wai Memory")).toBeInTheDocument();
+    expect(screen.queryByText("Memory suggestions")).not.toBeInTheDocument();
     expect(screen.getByText("Customer stage rules")).toBeInTheDocument();
     expect(screen.getByText("Bridge from Mik Personal")).toBeInTheDocument();
-    expect(screen.getByText("1 / 2")).toBeInTheDocument();
-    expect(screen.getByText("Anna is the launch owner.")).toBeInTheDocument();
-    expect(screen.getAllByText(/Launch sync/i).length).toBeGreaterThan(0);
-    expect(screen.getByText("1 recordings · 1 materials")).toBeInTheDocument();
+    expect(screen.getByText("Parent call notes")).toBeInTheDocument();
   });
 
-  it("opens the source behind a recently organized row", async () => {
+  it("opens linked sources from the Brain source list", async () => {
     const onOpenSource = vi.fn();
     render(<BrainPanel onOpenSource={onOpenSource} />);
-    await waitFor(() => expect(screen.getByText("Launch sync")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText("Parent call notes")).toBeInTheDocument());
 
-    fireEvent.click(screen.getByRole("button", { name: /Launch sync/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Parent call notes/i }));
 
-    expect(onOpenSource).toHaveBeenCalledWith("recording", "r1");
+    expect(onOpenSource).toHaveBeenCalledWith("item", "i1");
   });
 
-  it("accepts a knowledge suggestion and exports from Advanced", async () => {
+  it("opens Wai with the selected Brain scope directly", async () => {
+    const onOpenWai = vi.fn();
+    render(<BrainPanel onOpenWai={onOpenWai} />);
+    await waitFor(() => expect(screen.getByRole("button", { name: "Ask Wai" })).toBeInTheDocument());
+
+    fireEvent.click(screen.getByRole("button", { name: "Ask Wai" }));
+
+    await waitFor(() =>
+      expect(onOpenWai).toHaveBeenCalledWith({ spaceId: "s1", spaceName: "Wai School" }),
+    );
+  });
+
+  it("accepts knowledge suggestions and keeps export/share in Advanced", async () => {
     render(<BrainPanel />);
     await waitFor(() => expect(screen.getByText("Bridge from Mik Personal")).toBeInTheDocument());
-    fireEvent.click(screen.getByRole("button", { name: /Approve knowledge suggestion/i }));
+    fireEvent.click(screen.getByRole("button", { name: "Approve" }));
     await waitFor(() => expect(mockAcceptBrainReviewPack).toHaveBeenCalledWith("s1", "rp1"));
     expect(screen.queryByText("Bridge from Mik Personal")).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByText("Advanced"));
-    fireEvent.click(screen.getByRole("button", { name: "Export to Obsidian" }));
+    fireEvent.click(screen.getByRole("button", { name: "Obsidian" }));
     await waitFor(() => expect(mockExportBrainSpace).toHaveBeenCalledWith("s1", "obsidian"));
     expect(screen.getByText(/1 Markdown file is ready/i)).toBeInTheDocument();
-  });
 
-  it("uses approved Brain knowledge with Wai and shares from Advanced", async () => {
-    const onOpenWai = vi.fn();
-    render(<BrainPanel onOpenWai={onOpenWai} />);
-    await waitFor(() =>
-      expect(screen.getByRole("heading", { name: "Use with Wai" })).toBeInTheDocument(),
-    );
-
-    fireEvent.click(screen.getByRole("button", { name: "Use with Wai" }));
-    await waitFor(() =>
-      expect(mockBuildBrainContext).toHaveBeenCalledWith("s1", {
-        task: "Use this Brain as the source of truth.",
-        limit: 80,
-      }),
-    );
-    expect(screen.getByText(/2 approved items ready for Wai/i)).toBeInTheDocument();
-    expect(screen.getByText("What Wai will see")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Open Wai" }));
-    expect(onOpenWai).toHaveBeenCalled();
-
-    fireEvent.click(screen.getByText("Advanced"));
     fireEvent.change(screen.getByPlaceholderText("teammate@example.com"), {
       target: { value: "teammate@example.com" },
     });
@@ -307,25 +247,22 @@ describe("BrainPanel", () => {
         role: "viewer",
       }),
     );
-    expect(screen.getByText(/Shared with teammate@example.com as viewer/i)).toBeInTheDocument();
   });
 
-  it("renders categorized entities sorted by degree (sources excluded)", async () => {
+  it("shows approved knowledge and opens deeper entity detail from Knowledge", async () => {
     render(<BrainPanel />);
-    await waitFor(() => expect(screen.getByText("Anna")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText("Customer stage rules")).toBeInTheDocument());
     fireEvent.click(screen.getByRole("tab", { name: "Knowledge" }));
-    await waitFor(() => expect(screen.getByText("People")).toBeInTheDocument());
-    expect(screen.getByText("Topics")).toBeInTheDocument();
 
-    const topics = screen.getByText("Topics").closest("section") as HTMLElement;
-    const chips = topics.querySelectorAll(".brain-panel__chip span");
-    expect(chips[0].textContent).toBe("GPU"); // degree 5 first
-    expect(chips[1].textContent).toBe("Pricing"); // degree 1
+    expect(screen.getByText("Approved Pages")).toBeInTheDocument();
+    expect(screen.getAllByText("Use 40 minute intro sessions.")).toHaveLength(2);
+    expect(screen.getByText("Explore")).toBeInTheDocument();
 
-    expect(screen.queryByText("Solar Note")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /Anna/i }));
+    expect(screen.getByTestId("wiki-stub")).toHaveTextContent("wiki:e1");
   });
 
-  it("shows an empty state when there are no entities", async () => {
+  it("shows an empty state when nothing has been saved yet", async () => {
     mockGetBrainGraph.mockResolvedValue(
       graph({
         nodes: [],
@@ -340,33 +277,17 @@ describe("BrainPanel", () => {
         },
       }),
     );
-    mockListMemoryProposals.mockResolvedValue(proposals({ proposals: [], pending_count: 0 }));
+    mockListBrainSpaces.mockResolvedValue(spaces({ spaces: [] }));
     render(<BrainPanel />);
-    await waitFor(() =>
-      expect(screen.getByText(/Add recordings or materials/i)).toBeInTheDocument(),
-    );
+    await waitFor(() => expect(screen.getByText("Start with sources")).toBeInTheDocument());
   });
 
-  it("shows an error with a working retry (no silent fallback)", async () => {
+  it("shows an error with a working retry", async () => {
     mockGetBrainGraph.mockRejectedValueOnce(new Error("graph boom"));
     render(<BrainPanel />);
     await waitFor(() => expect(screen.getByText("graph boom")).toBeInTheDocument());
 
     fireEvent.click(screen.getByRole("button", { name: /Retry/i }));
-    await waitFor(() => expect(screen.getByText("Anna")).toBeInTheDocument());
-  });
-
-  it("switches to the Map tab", async () => {
-    render(<BrainPanel />);
-    await waitFor(() => expect(screen.getByText("Anna")).toBeInTheDocument());
-    fireEvent.click(screen.getByRole("tab", { name: "Map" }));
-    expect(screen.getByTestId("brain-graph-stub")).toBeInTheDocument();
-  });
-
-  it("opens the Knowledge detail for a clicked entity", async () => {
-    render(<BrainPanel />);
-    await waitFor(() => expect(screen.getByText("Anna")).toBeInTheDocument());
-    fireEvent.click(screen.getByText("Anna"));
-    expect(screen.getByTestId("wiki-stub")).toHaveTextContent("wiki:e1");
+    await waitFor(() => expect(screen.getByText("Customer stage rules")).toBeInTheDocument());
   });
 });

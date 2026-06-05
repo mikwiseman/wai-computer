@@ -263,6 +263,52 @@ class TestRunTurn:
         assert "2026-05-18" not in fake.calls[0]["instructions"]
         assert "Europe/Reykjavik" not in fake.calls[0]["instructions"]
 
+    async def test_brain_scope_injects_approved_context(
+        self, db_session, setup_user_and_chat
+    ):
+        from app.core import brain_spaces as brain_space_service
+
+        s = setup_user_and_chat
+        space = await brain_space_service.create_space(
+            db_session,
+            s["user"].id,
+            name="Ops Brain",
+        )
+        await brain_space_service.create_page(
+            db_session,
+            actor_user_id=s["user"].id,
+            space_id=space.id,
+            title="Session rules",
+            claims=[
+                {
+                    "kind": "workflow_rule",
+                    "text": "Use 40 minute intro sessions.",
+                    "confidence": 0.91,
+                    "authority": "self",
+                }
+            ],
+        )
+        s["conversation"].scope = {"brain_space_id": str(space.id)}
+        await db_session.flush()
+        fake = FakeOpenAI([_DeltaEvent("ok"), _completed("ok")])
+
+        await _collect(
+            run_turn(
+                db_session,
+                s["user"].id,
+                s["conversation"].id,
+                "What should I use?",
+                openai_client=fake,
+            )
+        )
+
+        first_input = fake.calls[0]["input"]
+        assert first_input[0]["role"] == "developer"
+        assert "scope: selected Brain" in first_input[0]["content"]
+        assert "brain: Ops Brain; approved items: 1" in first_input[0]["content"]
+        assert "<brain_context>" in first_input[0]["content"]
+        assert "Use 40 minute intro sessions." in first_input[0]["content"]
+
     async def test_stream_error_surfaces_without_second_request(
         self, db_session, setup_user_and_chat
     ):

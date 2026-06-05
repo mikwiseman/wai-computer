@@ -20,6 +20,7 @@ final class CompanionModelsTests: XCTestCase {
     func testCompanionScopeRoundTrip() throws {
         let scope = CompanionScope(
             recordingIds: ["rec-1", "rec-2"],
+            brainSpaceId: "brain-1",
             folderIds: ["f-1"],
             types: ["meeting"],
             speakers: ["alice"],
@@ -35,11 +36,12 @@ final class CompanionModelsTests: XCTestCase {
 
     func testCompanionScopeDecodesFromSnakeCase() throws {
         let json = """
-        {"recording_ids": ["a"], "folder_ids": ["f"], "types": ["t"], "speakers": ["s"]}
+        {"recording_ids": ["a"], "brain_space_id": "brain-1", "folder_ids": ["f"], "types": ["t"], "speakers": ["s"]}
         """.data(using: .utf8)!
 
         let scope = try decoder.decode(CompanionScope.self, from: json)
         XCTAssertEqual(scope.recordingIds, ["a"])
+        XCTAssertEqual(scope.brainSpaceId, "brain-1")
         XCTAssertEqual(scope.folderIds, ["f"])
         XCTAssertEqual(scope.types, ["t"])
         XCTAssertEqual(scope.speakers, ["s"])
@@ -51,6 +53,7 @@ final class CompanionModelsTests: XCTestCase {
         let json = "{}".data(using: .utf8)!
         let scope = try decoder.decode(CompanionScope.self, from: json)
         XCTAssertNil(scope.recordingIds)
+        XCTAssertNil(scope.brainSpaceId)
         XCTAssertNil(scope.folderIds)
         XCTAssertNil(scope.types)
         XCTAssertNil(scope.speakers)

@@ -644,6 +644,7 @@ export type CompanionMessageRole = "user" | "assistant" | "tool";
 
 export interface CompanionScope {
   recording_ids?: string[];
+  brain_space_id?: string;
   folder_ids?: string[];
   types?: string[];
   speakers?: string[];
@@ -1020,6 +1021,15 @@ export interface BrainPagesResponse {
   pages: BrainPage[];
 }
 
+export interface BrainSpaceSourceSummary {
+  id: string;
+  space_id: string;
+  source_kind: string;
+  source_id: string;
+  source_title: string | null;
+  created_at: string | null;
+}
+
 export interface BrainReviewPack {
   id: string;
   space_id: string;
@@ -1050,6 +1060,7 @@ export interface BrainSpaceHome {
   source_counts: Record<string, number>;
   pending_review_count: number;
   recent_pages: BrainPage[];
+  sources: BrainSpaceSourceSummary[];
   engine_profiles: string[];
 }
 

@@ -565,6 +565,16 @@ async def build_home(
             )
         ).scalars().all()
     )
+    sources = list(
+        (
+            await db.execute(
+                select(BrainSpaceSource)
+                .where(BrainSpaceSource.space_id == space_id)
+                .order_by(BrainSpaceSource.created_at.desc(), BrainSpaceSource.id.desc())
+                .limit(20)
+            )
+        ).scalars().all()
+    )
     return {
         "space": access.space,
         "role": access.role,
@@ -574,6 +584,7 @@ async def build_home(
         "source_counts": {kind: int(count) for kind, count in source_rows},
         "pending_review_count": pending_review_count,
         "recent_pages": recent_pages,
+        "sources": sources,
         "engine_profiles": sorted(ENGINE_PROFILES),
     }
 

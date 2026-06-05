@@ -16,6 +16,12 @@ from pydantic import BaseModel, Field
 from sqlalchemy import and_, select
 
 from app.api.deps import CurrentUser, Database
+from app.core.brain_spaces import (
+    BrainSpaceNotFoundError,
+    BrainSpacePermissionError,
+    BrainSpaceValidationError,
+    load_space_access,
+)
 from app.core.companion import (
     ActionProposedEvent,
     CompanionError,
@@ -62,11 +68,12 @@ COMPANION_TURN_SLOW_THRESHOLD_MS = 30_000
 class ConversationScope(BaseModel):
     """Filter applied to retrieval for every turn of this conversation.
 
-    Only `recording_ids` is enforced server-side; accepting more fields here
-    would silently fail at retrieval time, violating no-fallbacks.
+    Every accepted field must be enforced server-side. `recording_ids` narrows
+    recording retrieval; `brain_space_id` injects approved Brain knowledge.
     """
 
     recording_ids: list[str] | None = None
+    brain_space_id: str | None = None
 
 
 class CreateConversationRequest(BaseModel):
@@ -126,6 +133,41 @@ def _scope_to_jsonb(scope: ConversationScope | None) -> dict[str, Any] | None:
     if scope is None:
         return None
     return scope.model_dump(mode="json", exclude_none=True)
+
+
+async def _validated_scope_to_jsonb(
+    db: Database,
+    user_id: uuid.UUID,
+    scope: ConversationScope | None,
+) -> dict[str, Any] | None:
+    body = _scope_to_jsonb(scope)
+    if not body or not body.get("brain_space_id"):
+        return body
+    try:
+        brain_space_id = uuid.UUID(str(body["brain_space_id"]))
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Malformed brain_space_id: {exc}",
+        ) from exc
+    try:
+        await load_space_access(db, user_id, brain_space_id)
+    except BrainSpaceNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Brain scope not found",
+        ) from exc
+    except BrainSpacePermissionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Brain scope is not available to this user",
+        ) from exc
+    except BrainSpaceValidationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
+    return body
 
 
 def _to_summary(c: Conversation) -> ConversationSummary:
@@ -201,7 +243,7 @@ async def create_chat(
 ) -> ConversationSummary:
     chat = Conversation(
         user_id=user.id,
-        scope=_scope_to_jsonb(request.scope),
+        scope=await _validated_scope_to_jsonb(db, user.id, request.scope),
     )
     db.add(chat)
     await db.flush()
@@ -356,7 +398,7 @@ async def update_chat(
     if request.title is not None:
         chat.title = request.title
     if request.scope is not None:
-        chat.scope = _scope_to_jsonb(request.scope)
+        chat.scope = await _validated_scope_to_jsonb(db, user.id, request.scope)
     if request.pinned is not None:
         chat.pinned_at = datetime.now(timezone.utc) if request.pinned else None
     if request.archived is not None:

@@ -33,6 +33,7 @@ from app.core.companion import (
     _render_memory_section,
     _render_user_profile,
     _response_item_to_dict,
+    _scope_brain_space_uuid,
     _scope_recording_uuids,
     _summary_one_line,
     final_answer_schema,
@@ -367,6 +368,20 @@ def test_format_scope_no_recording_ids_field() -> None:
     assert out == "all of the user's recordings"
 
 
+def test_format_scope_with_brain_and_recordings() -> None:
+    out = _format_scope_for_session(
+        {"brain_space_id": str(uuid.uuid4()), "recording_ids": ["a", "b"]}
+    )
+    assert out == "selected Brain + 2 pinned recordings"
+
+
+def test_scope_brain_space_uuid_rejects_malformed_id() -> None:
+    with pytest.raises(CompanionError) as exc:
+        _scope_brain_space_uuid({"brain_space_id": "bad"})
+    assert exc.value.code == "invalid_scope"
+    assert "brain_space_id" in exc.value.message
+
+
 # ---------------------------------------------------------------------------
 # _build_session_developer_message
 # ---------------------------------------------------------------------------
@@ -382,6 +397,23 @@ def test_build_session_developer_message_with_scope_only() -> None:
     assert out is not None
     assert out["role"] == "developer"
     assert "scope: 1 pinned recording" in out["content"]
+
+
+def test_build_session_developer_message_with_brain_context() -> None:
+    out = _build_session_developer_message(
+        None,
+        {"brain_space_id": str(uuid.uuid4())},
+        brain_context={
+            "space": type("Space", (), {"name": "Ops Brain"})(),
+            "claim_count": 1,
+            "markdown": "# Ops context\n\n## Facts\n- Use 40 minute sessions.",
+        },
+    )
+    assert out is not None
+    assert "scope: selected Brain" in out["content"]
+    assert "brain: Ops Brain; approved items: 1" in out["content"]
+    assert "<brain_context>" in out["content"]
+    assert "Use 40 minute sessions." in out["content"]
 
 
 def test_build_session_developer_message_with_ctx_full() -> None:

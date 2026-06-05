@@ -400,6 +400,24 @@ public struct BrainReviewPacksResponse: Codable, Sendable, Equatable {
     }
 }
 
+public struct BrainSpaceSourceSummary: Codable, Sendable, Equatable, Identifiable {
+    public let id: String
+    public let spaceId: String
+    public let sourceKind: String
+    public let sourceId: String
+    public let sourceTitle: String?
+    public let createdAt: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case spaceId = "space_id"
+        case sourceKind = "source_kind"
+        case sourceId = "source_id"
+        case sourceTitle = "source_title"
+        case createdAt = "created_at"
+    }
+}
+
 public struct BrainSpaceHome: Codable, Sendable, Equatable {
     public let space: BrainSpace
     public let pageCount: Int
@@ -408,6 +426,7 @@ public struct BrainSpaceHome: Codable, Sendable, Equatable {
     public let sourceCounts: [String: Int]
     public let pendingReviewCount: Int
     public let recentPages: [BrainPage]
+    public let sources: [BrainSpaceSourceSummary]
     public let engineProfiles: [String]
 
     private enum CodingKeys: String, CodingKey {
@@ -418,6 +437,7 @@ public struct BrainSpaceHome: Codable, Sendable, Equatable {
         case sourceCounts = "source_counts"
         case pendingReviewCount = "pending_review_count"
         case recentPages = "recent_pages"
+        case sources
         case engineProfiles = "engine_profiles"
     }
 }

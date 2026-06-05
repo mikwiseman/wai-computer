@@ -919,8 +919,8 @@ struct MacMainView: View {
                 onOpenInbox: {
                     selectedSection = .inbox
                 },
-                onOpenWai: {
-                    selectedSection = .wai
+                onOpenWai: { space in
+                    openBrainChat(space)
                 }
             )
                 .environment(\.locale, MacDateFormatting.locale(for: languageManager.current))
@@ -1128,6 +1128,28 @@ struct MacMainView: View {
         selectedRecordingIds.removeAll()
         pendingInboxDetail = detail
         selectedSection = .inbox
+    }
+
+    private func openBrainChat(_ space: BrainSpace) {
+        let apiClient = appState.getAPIClient()
+        Task {
+            do {
+                let chat = try await apiClient.createCompanionChat(
+                    scope: CompanionScope(brainSpaceId: space.id)
+                )
+                await MainActor.run {
+                    prefetchedRecordingDetail = nil
+                    selectedRecordingIds.removeAll()
+                    pendingInboxDetail = InboxDetailRef(kind: .chat, id: chat.id)
+                    selectedSection = .wai
+                }
+            } catch {
+                await MainActor.run {
+                    recoveryNotice = error.localizedDescription
+                    scheduleRecoveryNoticeDismiss()
+                }
+            }
+        }
     }
 
     private func selectRecording(_ recordingId: String, in section: SidebarSection) {

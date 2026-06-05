@@ -463,7 +463,7 @@ final class APIClientNewEndpointsTests: XCTestCase {
 
             if path == "/api/brain/spaces/space-1/home" {
                 let payload = """
-                {"space":{"id":"space-1","owner_user_id":"user-1","name":"Wai School","slug":"wai-school","kind":"work","engine_profile":"waibrain","visibility":"private","description":null,"metadata":{},"role":"owner","created_at":"2026-06-04T09:00:00Z","updated_at":"2026-06-04T09:00:00Z"},"page_count":1,"source_count":1,"claim_counts":{"workflow_rule":1},"source_counts":{"item":1},"pending_review_count":1,"recent_pages":[{"id":"page-1","space_id":"space-1","title":"Customer stage rules","slug":"customer-stage-rules","kind":"workflow","status":"active","markdown":"---\\nwai_type: brain_page\\n---","frontmatter":{},"version":1,"claims":[{"id":"claim-1","space_id":"space-1","page_id":"page-1","kind":"workflow_rule","status":"active","text":"Use 40 minute intro sessions.","confidence":0.9,"authority":"self","salience":null,"evidence":[],"source_refs":[],"metadata":{}}],"created_at":"2026-06-04T09:00:00Z","updated_at":"2026-06-04T09:00:00Z"}],"engine_profiles":["waibrain","obsidian","gbrain","mempalace"]}
+                {"space":{"id":"space-1","owner_user_id":"user-1","name":"Wai School","slug":"wai-school","kind":"work","engine_profile":"waibrain","visibility":"private","description":null,"metadata":{},"role":"owner","created_at":"2026-06-04T09:00:00Z","updated_at":"2026-06-04T09:00:00Z"},"page_count":1,"source_count":1,"claim_counts":{"workflow_rule":1},"source_counts":{"item":1},"pending_review_count":1,"recent_pages":[{"id":"page-1","space_id":"space-1","title":"Customer stage rules","slug":"customer-stage-rules","kind":"workflow","status":"active","markdown":"---\\nwai_type: brain_page\\n---","frontmatter":{},"version":1,"claims":[{"id":"claim-1","space_id":"space-1","page_id":"page-1","kind":"workflow_rule","status":"active","text":"Use 40 minute intro sessions.","confidence":0.9,"authority":"self","salience":null,"evidence":[],"source_refs":[],"metadata":{}}],"created_at":"2026-06-04T09:00:00Z","updated_at":"2026-06-04T09:00:00Z"}],"sources":[{"id":"source-1","space_id":"space-1","source_kind":"item","source_id":"item-1","source_title":"Parent call notes","created_at":"2026-06-04T09:00:00Z"}],"engine_profiles":["waibrain","obsidian","gbrain","mempalace"]}
                 """.data(using: .utf8)!
                 return (response, payload)
             }
@@ -554,6 +554,7 @@ final class APIClientNewEndpointsTests: XCTestCase {
 
         let home = try await client.getBrainSpaceHome(spaceId: "space-1")
         XCTAssertEqual(home.recentPages.first?.claims.first?.text, "Use 40 minute intro sessions.")
+        XCTAssertEqual(home.sources.first?.sourceTitle, "Parent call notes")
 
         let pages = try await client.listBrainSpacePages(spaceId: "space-1")
         XCTAssertEqual(pages.pages.first?.title, "Customer stage rules")

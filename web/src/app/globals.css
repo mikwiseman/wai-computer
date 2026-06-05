@@ -2931,6 +2931,20 @@ a.primary-button[aria-disabled="true"]:hover {
   gap: 0.625rem;
 }
 
+.brain-panel__section--hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.875rem;
+  background: var(--panel);
+}
+
+.brain-panel__section--muted {
+  opacity: 0.82;
+}
+
 .brain-panel__section h3 {
   margin: 0;
   font-size: var(--font-body-size);
@@ -2946,6 +2960,33 @@ a.primary-button[aria-disabled="true"]:hover {
 .brain-panel__section-head span {
   color: var(--ink-faint);
   font-size: var(--font-label-small-size);
+}
+
+.brain-panel__eyebrow {
+  display: block;
+  margin-bottom: 0.25rem;
+  color: var(--accent);
+  font-size: var(--font-label-small-size);
+  font-weight: 700;
+}
+
+.brain-panel__link-button {
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  padding: 0.25rem 0.625rem;
+  background: var(--panel);
+  color: var(--accent);
+  font: inherit;
+  font-size: var(--font-body-small-size);
+  cursor: pointer;
+}
+
+.brain-panel__link-button:hover {
+  border-color: var(--accent);
+}
+
+.brain-panel__back-button {
+  width: fit-content;
 }
 
 .brain-panel__coverage {
@@ -3140,6 +3181,10 @@ a.primary-button[aria-disabled="true"]:hover {
 }
 
 @media (max-width: 760px) {
+  .brain-panel__section--hero {
+    grid-template-columns: 1fr;
+  }
+
   .brain-panel__workflow,
   .brain-panel__share-row {
     grid-template-columns: 1fr;
@@ -3245,12 +3290,14 @@ a.primary-button[aria-disabled="true"]:hover {
 }
 
 .brain-panel__proposal-actions button {
-  width: 1.875rem;
-  height: 1.875rem;
+  min-height: 1.875rem;
   border: 1px solid var(--border);
-  border-radius: 50%;
+  border-radius: 7px;
+  padding: 0 0.625rem;
   background: var(--panel);
   color: var(--ink-soft);
+  font: inherit;
+  font-size: var(--font-label-small-size);
   cursor: pointer;
 }
 

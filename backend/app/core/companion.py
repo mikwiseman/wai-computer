@@ -15,6 +15,7 @@ from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
+from app.core import brain_spaces as brain_space_service
 from app.core import user_memory as user_memory_module
 from app.core.companion_actions import propose_action
 from app.core.mcp_oauth import issue_companion_mcp_access_token
@@ -574,6 +575,21 @@ def _scope_recording_uuids(scope: dict[str, Any] | None) -> list[uuid.UUID] | No
         raise CompanionError(
             "invalid_scope",
             f"Conversation scope has malformed recording_ids: {exc}",
+        ) from exc
+
+
+def _scope_brain_space_uuid(scope: dict[str, Any] | None) -> uuid.UUID | None:
+    if not scope:
+        return None
+    raw = scope.get("brain_space_id")
+    if not raw:
+        return None
+    try:
+        return uuid.UUID(str(raw))
+    except (TypeError, ValueError) as exc:
+        raise CompanionError(
+            "invalid_scope",
+            f"Conversation scope has malformed brain_space_id: {exc}",
         ) from exc
 
 
@@ -1350,16 +1366,53 @@ def _format_weekday(iso_date: str) -> str:
 def _format_scope_for_session(scope: dict[str, Any] | None) -> str:
     if not scope:
         return "all of the user's recordings"
+    brain_id = scope.get("brain_space_id") if isinstance(scope, dict) else None
     rec_ids = scope.get("recording_ids") if isinstance(scope, dict) else None
+    parts: list[str] = []
+    if brain_id:
+        parts.append("selected Brain")
     if rec_ids:
         n = len(rec_ids)
-        return f"{n} pinned recording{'s' if n != 1 else ''}"
+        parts.append(f"{n} pinned recording{'s' if n != 1 else ''}")
+    if parts:
+        return " + ".join(parts)
     return "all of the user's recordings"
+
+
+async def _brain_context_for_scope(
+    db: AsyncSession,
+    user_id: uuid.UUID,
+    scope: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    space_id = _scope_brain_space_uuid(scope)
+    if space_id is None:
+        return None
+    try:
+        return await brain_space_service.build_context(
+            db,
+            user_id=user_id,
+            space_id=space_id,
+            limit=80,
+        )
+    except brain_space_service.BrainSpaceNotFoundError as exc:
+        raise CompanionError(
+            "invalid_scope",
+            "Conversation Brain scope is not available to this user.",
+        ) from exc
+    except brain_space_service.BrainSpacePermissionError as exc:
+        raise CompanionError(
+            "invalid_scope",
+            "Conversation Brain scope is not available to this user.",
+        ) from exc
+    except brain_space_service.BrainSpaceValidationError as exc:
+        raise CompanionError("invalid_scope", str(exc)) from exc
 
 
 def _build_session_developer_message(
     ctx: TurnContext | None,
     scope: dict[str, Any] | None,
+    *,
+    brain_context: dict[str, Any] | None = None,
 ) -> dict[str, Any] | None:
     """Render the per-turn developer message describing date / tz / scope /
     what the user is currently viewing. Goes in `input` (not `instructions`)
@@ -1368,7 +1421,7 @@ def _build_session_developer_message(
     Returns None when there is genuinely nothing to say (ctx is None and
     scope is empty) — keeps short test fixtures clean.
     """
-    if ctx is None and not scope:
+    if ctx is None and not scope and brain_context is None:
         return None
     ctx = ctx or TurnContext()
     lines: list[str] = ["<session>"]
@@ -1397,6 +1450,18 @@ def _build_session_developer_message(
         lines.append(
             f"user is currently viewing folder: {ctx.viewing_folder_name}"
         )
+    if brain_context is not None:
+        space = brain_context.get("space")
+        space_name = getattr(space, "name", None) or "selected Brain"
+        claim_count = int(brain_context.get("claim_count") or 0)
+        lines.append(f"brain: {space_name}; approved items: {claim_count}")
+        markdown = str(brain_context.get("markdown") or "").strip()
+        if markdown:
+            lines.append("<brain_context>")
+            lines.append(markdown)
+            lines.append("</brain_context>")
+        else:
+            lines.append("brain_context: no approved knowledge yet")
     lines.append("</session>")
     return {"role": "developer", "content": "\n".join(lines)}
 
@@ -1567,8 +1632,11 @@ async def run_turn(
 
     history = await _load_history(db, conv.id)
     base_input = _history_to_responses_input(history)
+    brain_context = await _brain_context_for_scope(db, user_id, conv.scope)
     session_message = _build_session_developer_message(
-        turn_context, conv.scope
+        turn_context,
+        conv.scope,
+        brain_context=brain_context,
     )
     response_input: list[dict[str, Any]] = []
     if session_message is not None:

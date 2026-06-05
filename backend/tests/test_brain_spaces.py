@@ -122,6 +122,9 @@ async def test_spaces_default_create_page_source_home_and_export(
     assert data["page_count"] == 1
     assert data["source_count"] == 1
     assert data["claim_counts"]["workflow_rule"] == 1
+    assert data["sources"][0]["source_kind"] == "item"
+    assert data["sources"][0]["source_id"] == str(item.id)
+    assert data["sources"][0]["source_title"] == "Parent call notes"
 
     export = await client.get(
         f"/api/brain/spaces/{space['id']}/export?profile=obsidian",

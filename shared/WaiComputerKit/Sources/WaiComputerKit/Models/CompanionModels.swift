@@ -2,6 +2,7 @@ import Foundation
 
 public struct CompanionScope: Codable, Sendable, Equatable {
     public var recordingIds: [String]?
+    public var brainSpaceId: String?
     public var folderIds: [String]?
     public var types: [String]?
     public var speakers: [String]?
@@ -10,6 +11,7 @@ public struct CompanionScope: Codable, Sendable, Equatable {
 
     public init(
         recordingIds: [String]? = nil,
+        brainSpaceId: String? = nil,
         folderIds: [String]? = nil,
         types: [String]? = nil,
         speakers: [String]? = nil,
@@ -17,6 +19,7 @@ public struct CompanionScope: Codable, Sendable, Equatable {
         dateTo: Date? = nil
     ) {
         self.recordingIds = recordingIds
+        self.brainSpaceId = brainSpaceId
         self.folderIds = folderIds
         self.types = types
         self.speakers = speakers
@@ -26,6 +29,7 @@ public struct CompanionScope: Codable, Sendable, Equatable {
 
     enum CodingKeys: String, CodingKey {
         case recordingIds = "recording_ids"
+        case brainSpaceId = "brain_space_id"
         case folderIds = "folder_ids"
         case types
         case speakers

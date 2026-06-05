@@ -71,6 +71,7 @@ import type {
   InboxRow,
   InboxSourceKind,
   InboxStatusFilter,
+  CompanionScope,
   Recording,
   RecordingDetail,
   RecordingType,
@@ -1647,10 +1648,10 @@ export function DashboardClient() {
     setPendingInboxSource(null);
   }, []);
 
-  const handleNewChat = useCallback(async () => {
+  const handleNewChat = useCallback(async (scope?: CompanionScope) => {
     setMessage(null);
     try {
-      const chat = await createChat();
+      const chat = await createChat(scope);
       setActiveFolderId(null);
       setSelectedRecording(null);
       setSelectedMode("active");
@@ -2058,7 +2059,7 @@ export function DashboardClient() {
               locale={locale}
               onError={setMessage}
               onOpenInbox={() => setView("inbox")}
-              onOpenWai={() => handleNewChat()}
+              onOpenWai={({ spaceId }) => handleNewChat({ brain_space_id: spaceId })}
               onOpenSource={(sourceKind, sourceId) => {
                 setActiveFolderId(null);
                 setSelectedRecording(null);

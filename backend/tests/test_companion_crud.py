@@ -33,13 +33,19 @@ class TestCreateChat:
         assert "created_at" in body
 
     async def test_create_with_scope(self, client: AsyncClient, auth_headers: dict):
-        # Only recording_ids is server-enforced; sending unenforced fields
-        # would silently fail at retrieval, so we accept just the supported one.
+        space_response = await client.post(
+            "/api/brain/spaces",
+            json={"name": "Companion Brain", "kind": "work"},
+            headers=auth_headers,
+        )
+        assert space_response.status_code == 201, space_response.text
+        space_id = space_response.json()["id"]
         scope = {
             "recording_ids": [
                 "11111111-1111-1111-1111-111111111111",
                 "22222222-2222-2222-2222-222222222222",
             ],
+            "brain_space_id": space_id,
         }
         response = await client.post(
             "/api/companion/chats",

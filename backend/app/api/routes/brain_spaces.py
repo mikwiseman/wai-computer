@@ -28,7 +28,13 @@ from app.core.brain_spaces import (
     match_spaces,
     reject_review_pack,
 )
-from app.models.brain_space import BrainClaim, BrainPage, BrainReviewPack, BrainSpace
+from app.models.brain_space import (
+    BrainClaim,
+    BrainPage,
+    BrainReviewPack,
+    BrainSpace,
+    BrainSpaceSource,
+)
 
 router = APIRouter(prefix="/brain/spaces", tags=["brain-spaces"])
 
@@ -128,6 +134,17 @@ def _claim_response(claim: BrainClaim) -> dict[str, Any]:
         "evidence": claim.evidence,
         "source_refs": claim.source_refs or [],
         "metadata": claim.metadata_ or {},
+    }
+
+
+def _space_source_response(source: BrainSpaceSource) -> dict[str, Any]:
+    return {
+        "id": str(source.id),
+        "space_id": str(source.space_id),
+        "source_kind": source.source_kind,
+        "source_id": str(source.source_id),
+        "source_title": source.source_title,
+        "created_at": source.created_at.isoformat() if source.created_at else None,
     }
 
 
@@ -236,13 +253,7 @@ async def add_space_source(
         )
     except Exception as exc:  # noqa: BLE001 - translated by type below.
         _raise_http(exc)
-    return {
-        "id": str(source.id),
-        "space_id": str(source.space_id),
-        "source_kind": source.source_kind,
-        "source_id": str(source.source_id),
-        "source_title": source.source_title,
-    }
+    return _space_source_response(source)
 
 
 @router.post("/{space_id}/pages", status_code=status.HTTP_201_CREATED)
@@ -297,6 +308,7 @@ async def get_space_home(
             await _page_response(db, page)
             for page in home["recent_pages"]
         ],
+        "sources": [_space_source_response(source) for source in home["sources"]],
     }
 
 
