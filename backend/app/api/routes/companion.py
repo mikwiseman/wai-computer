@@ -470,6 +470,7 @@ _EVENT_REQUIRED_CAPABILITY: dict[str, str] = {
     "desktop_action": _CLIENT_CAP_ACTIONS,
     "thinking": _CLIENT_CAP_CHAT_V2,
     "plan": _CLIENT_CAP_CHAT_V2,
+    "artifact": _CLIENT_CAP_CHAT_V2,
 }
 
 

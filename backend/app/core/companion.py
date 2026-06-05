@@ -40,6 +40,7 @@ COMPANION_AUTO_TITLE_MAX_CHARS = 72
 
 TOOL_CALL_CAP = 6
 HISTORY_WINDOW = 20
+ARTIFACT_MAX_CONTENT_CHARS = 60000
 SNIPPET_CHAR_CAP = 400
 
 _IDENTITY_SECTION = (
@@ -297,12 +298,27 @@ class PlanEvent:
     steps: list[dict[str, Any]] = field(default_factory=list)
 
 
+@dataclass(frozen=True)
+class ArtifactEvent:
+    """A self-contained document the agent produced (HTML page / Markdown doc /
+    code) for the user to preview and open — rendered as a preview card. Gated
+    behind agent_chat_v2."""
+
+    type: Literal["artifact"] = "artifact"
+    artifact_id: str = ""
+    title: str = ""
+    kind: str = "markdown"  # html | markdown | code
+    content: str = ""
+    language: str = ""
+
+
 CompanionEvent = (
     TurnStartEvent
     | ToolCallEvent
     | ToolResultEvent
     | ThinkingEvent
     | PlanEvent
+    | ArtifactEvent
     | TokenEvent
     | CitationEvent
     | MemoryUpdatedEvent
@@ -1651,6 +1667,53 @@ def _normalize_plan_steps(raw: Any) -> list[dict[str, str]]:
     return steps
 
 
+CREATE_ARTIFACT_NAME = "create_artifact"
+
+
+def _create_artifact_tool() -> dict[str, Any]:
+    """Always-on tool: the agent produces a self-contained document (HTML / Markdown
+    / code) shown as a preview card. Auto-run — it only emits a UI event."""
+    return {
+        "type": "function",
+        "name": CREATE_ARTIFACT_NAME,
+        "description": (
+            "Produce a self-contained document the user can preview and open: a web "
+            "page (kind=html — return a COMPLETE standalone HTML document), a written "
+            "document (kind=markdown), or code (kind=code, set language). Use this for "
+            "substantial generated content (a landing page, a draft, a script) instead "
+            "of dumping it inline — the user sees a live preview card. Keep the chat "
+            "reply short and refer to the artifact."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "title": {"type": "string"},
+                "kind": {"type": "string", "enum": ["html", "markdown", "code"]},
+                "content": {"type": "string"},
+                "language": {
+                    "type": "string",
+                    "description": "Programming language when kind=code (e.g. python).",
+                },
+            },
+            "required": ["title", "kind", "content"],
+            "additionalProperties": False,
+        },
+    }
+
+
+def _artifact_event_from_args(call_id: str | None, args: dict[str, Any]) -> ArtifactEvent:
+    kind = str(args.get("kind") or "markdown")
+    if kind not in ("html", "markdown", "code"):
+        kind = "markdown"
+    return ArtifactEvent(
+        artifact_id=str(call_id or uuid.uuid4().hex),
+        title=(str(args.get("title") or "").strip()[:120] or "Artifact"),
+        kind=kind,
+        content=str(args.get("content") or "")[:ARTIFACT_MAX_CONTENT_CHARS],
+        language=str(args.get("language") or "").strip()[:40],
+    )
+
+
 def _visible_action_tools(active_groups: set[str]) -> list[dict[str, Any]]:
     names = set(visible_tool_names(active_groups))
     return [d for n, d in _action_tool_defs().items() if n in names]
@@ -1897,6 +1960,7 @@ async def _run_actions_loop(
             mcp_tool,
             {"type": "web_search"},
             _update_plan_tool(),
+            _create_artifact_tool(),
         ]
         if requestable_groups("voice_default"):
             tools.append(request_tool_group_tool("voice_default"))
@@ -1999,6 +2063,15 @@ async def _run_actions_loop(
                 )
             elif cname == UPDATE_PLAN_NAME:
                 yield PlanEvent(steps=_normalize_plan_steps(cargs.get("steps")))
+                outputs.append(
+                    {
+                        "type": "function_call_output",
+                        "call_id": cid,
+                        "output": json.dumps({"ok": True}),
+                    }
+                )
+            elif cname == CREATE_ARTIFACT_NAME:
+                yield _artifact_event_from_args(cid, cargs)
                 outputs.append(
                     {
                         "type": "function_call_output",
