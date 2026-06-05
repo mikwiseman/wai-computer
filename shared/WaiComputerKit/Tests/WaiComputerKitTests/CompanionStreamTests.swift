@@ -19,7 +19,30 @@ final class CompanionStreamTests: XCTestCase {
         XCTAssertEqual(call, .toolCall(callId: "t1", tool: "search_transcripts"))
 
         let result = try parser.parse("event: tool_result\ndata: {\"call_id\":\"t1\",\"summary\":\"3 segments\"}")
-        XCTAssertEqual(result, .toolResult(callId: "t1", summary: "3 segments"))
+        XCTAssertEqual(result, .toolResult(callId: "t1", summary: "3 segments", ok: true))
+    }
+
+    func testParsesThinkingAndPlanFrames() throws {
+        let thinking = try parser.parse("event: thinking\ndata: {\"text\":\"Let me check.\"}")
+        XCTAssertEqual(thinking, .thinking(text: "Let me check."))
+
+        let plan = try parser.parse(
+            "event: plan\ndata: {\"steps\":[{\"title\":\"Search\",\"status\":\"in_progress\"},"
+            + "{\"title\":\"Summarize\",\"status\":\"pending\"}]}"
+        )
+        XCTAssertEqual(plan, .plan(steps: [
+            CompanionPlanStep(title: "Search", status: "in_progress"),
+            CompanionPlanStep(title: "Summarize", status: "pending"),
+        ]))
+    }
+
+    func testToolResultDefaultsOkTrueAndParsesOkFalse() throws {
+        let okMissing = try parser.parse("event: tool_result\ndata: {\"call_id\":\"t1\",\"summary\":\"Done\"}")
+        XCTAssertEqual(okMissing, .toolResult(callId: "t1", summary: "Done", ok: true))
+        let failed = try parser.parse(
+            "event: tool_result\ndata: {\"call_id\":\"t1\",\"summary\":\"Failed\",\"ok\":false}"
+        )
+        XCTAssertEqual(failed, .toolResult(callId: "t1", summary: "Failed", ok: false))
     }
 
     func testParsesTokenFrame() throws {

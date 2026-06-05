@@ -234,8 +234,10 @@ public struct CompanionConversationList: Codable, Sendable {
 
 public enum CompanionStreamEvent: Sendable, Equatable {
     case turnStart(messageId: String, conversationId: String)
+    case thinking(text: String)
     case toolCall(callId: String, tool: String)
-    case toolResult(callId: String, summary: String)
+    case toolResult(callId: String, summary: String, ok: Bool)
+    case plan(steps: [CompanionPlanStep])
     case token(text: String)
     case citation(CompanionStreamCitation)
     case memoryUpdated(block: String, operation: String)
@@ -245,6 +247,18 @@ public enum CompanionStreamEvent: Sendable, Equatable {
     case desktopAction(actionId: String, command: CompanionJSONValue, deviceTarget: String?)
     case done(messageId: String, model: String, latencyMs: Int)
     case error(code: String, message: String)
+}
+
+/// One step in the agent's working checklist, emitted by the update_plan tool
+/// and rendered as a live plan card with checkmarks.
+public struct CompanionPlanStep: Sendable, Equatable, Codable {
+    public let title: String
+    public let status: String   // pending | in_progress | done
+
+    public init(title: String, status: String) {
+        self.title = title
+        self.status = status
+    }
 }
 
 public struct CompanionStreamCitation: Sendable, Equatable {
@@ -281,5 +295,31 @@ public struct CompanionActionProposal: Sendable, Equatable {
         self.preview = preview
         self.expiresAt = expiresAt
         self.recipient = recipient
+    }
+}
+
+/// User's decision on a proposed action, sent to the /resolve route.
+public enum CompanionActionDecision: String, Sendable, Equatable {
+    case once
+    case always
+    case reject
+
+    public var wireValue: String { rawValue }
+}
+
+public struct ResolveCompanionActionRequest: Encodable, Sendable {
+    public let decision: String
+    public init(decision: String) { self.decision = decision }
+}
+
+public struct ResolveCompanionActionResponse: Decodable, Sendable, Equatable {
+    public let actionId: String
+    public let status: String       // executed | rejected | dispatched | failed
+    public let recipient: String?   // display name only, never a raw id
+
+    enum CodingKeys: String, CodingKey {
+        case actionId = "action_id"
+        case status
+        case recipient
     }
 }

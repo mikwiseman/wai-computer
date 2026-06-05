@@ -176,6 +176,7 @@ class ToolResultEvent:
     type: Literal["tool_result"] = "tool_result"
     call_id: str = ""
     summary: str = ""
+    ok: bool = True
 
 
 @dataclass(frozen=True)
@@ -274,10 +275,34 @@ class DesktopActionEvent:
     device_target: str | None = None
 
 
+@dataclass(frozen=True)
+class ThinkingEvent:
+    """A streamed reasoning-summary delta — the model's private thinking,
+    surfaced so the client can show a collapsible "Thinking" block. Gated behind
+    the agent_chat_v2 capability and only emitted when reasoning is requested
+    (chat), never on the low-latency voice path."""
+
+    type: Literal["thinking"] = "thinking"
+    text: str = ""
+
+
+@dataclass(frozen=True)
+class PlanEvent:
+    """The agent's working checklist for a multi-step task, posted/updated via
+    the update_plan tool so the client can render a live plan card with
+    checkmarks. Each step is {"title": str, "status": pending|in_progress|done}.
+    Gated behind agent_chat_v2."""
+
+    type: Literal["plan"] = "plan"
+    steps: list[dict[str, Any]] = field(default_factory=list)
+
+
 CompanionEvent = (
     TurnStartEvent
     | ToolCallEvent
     | ToolResultEvent
+    | ThinkingEvent
+    | PlanEvent
     | TokenEvent
     | CitationEvent
     | MemoryUpdatedEvent
@@ -1567,6 +1592,65 @@ def _action_tool_defs() -> dict[str, dict[str, Any]]:
     }
 
 
+UPDATE_PLAN_NAME = "update_plan"
+
+
+def _update_plan_tool() -> dict[str, Any]:
+    """Always-on tool: the model posts a short checklist so the client can show a
+    live plan card. Auto-run (no approval) — it only emits a UI event."""
+    return {
+        "type": "function",
+        "name": UPDATE_PLAN_NAME,
+        "description": (
+            "Post or update a SHORT checklist (2-6 steps) of what you will do "
+            "for a multi-step task, so the user can watch progress. Call it once "
+            "near the start with steps as 'pending'/'in_progress', then again to "
+            "mark steps 'done' as you finish them. Skip it for simple one-shot "
+            "answers — never use it for trivial replies."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "steps": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "title": {"type": "string"},
+                            "status": {
+                                "type": "string",
+                                "enum": ["pending", "in_progress", "done"],
+                            },
+                        },
+                        "required": ["title", "status"],
+                        "additionalProperties": False,
+                    },
+                },
+            },
+            "required": ["steps"],
+            "additionalProperties": False,
+        },
+    }
+
+
+def _normalize_plan_steps(raw: Any) -> list[dict[str, str]]:
+    """Coerce model-supplied plan steps to a safe, bounded shape for the client."""
+    if not isinstance(raw, list):
+        return []
+    steps: list[dict[str, str]] = []
+    for item in raw[:12]:
+        if not isinstance(item, dict):
+            continue
+        title = str(item.get("title") or "").strip()[:120]
+        if not title:
+            continue
+        status = str(item.get("status") or "pending")
+        if status not in ("pending", "in_progress", "done"):
+            status = "pending"
+        steps.append({"title": title, "status": status})
+    return steps
+
+
 def _visible_action_tools(active_groups: set[str]) -> list[dict[str, Any]]:
     names = set(visible_tool_names(active_groups))
     return [d for n, d in _action_tool_defs().items() if n in names]
@@ -1601,6 +1685,7 @@ async def run_turn(
     turn_context: TurnContext | None = None,
     openai_client=None,
     enable_actions: bool = False,
+    stream_reasoning: bool = False,
 ) -> AsyncIterator[CompanionEvent]:
     settings = get_settings()
     client = openai_client if openai_client is not None else get_openai_client()
@@ -1662,6 +1747,7 @@ async def run_turn(
             response_input,
             mcp_tool,
             started,
+            stream_reasoning,
         ):
             yield _evt
         return
@@ -1676,6 +1762,7 @@ async def run_turn(
         tools=[mcp_tool],
         prompt_cache_key=f"wai-companion-{user_id}",
         stream=True,
+        **({"reasoning": {"summary": "auto"}} if stream_reasoning else {}),
     )
 
     async for event in stream:
@@ -1690,6 +1777,20 @@ async def run_turn(
             assistant_text += delta
             if delta:
                 yield TokenEvent(text=delta)
+        elif event_type == "response.output_item.added":
+            _tc = _tool_call_event_from_item(_stream_event_item(event))
+            if _tc is not None:
+                yield _tc
+        elif event_type == "response.output_item.done":
+            _tr = _tool_result_event_from_item(_stream_event_item(event))
+            if _tr is not None:
+                yield _tr
+        elif event_type == "response.reasoning_summary_text.delta":
+            rdelta = getattr(event, "delta", None)
+            if rdelta is None and isinstance(event, dict):
+                rdelta = event.get("delta", "")
+            if rdelta:
+                yield ThinkingEvent(text=rdelta)
         elif event_type in ("response.completed", "response.done"):
             response_obj = getattr(event, "response", None)
             if response_obj is None and isinstance(event, dict):
@@ -1771,6 +1872,7 @@ async def _run_actions_loop(
     response_input: list[dict[str, Any]],
     mcp_tool: dict[str, Any],
     started: float,
+    stream_reasoning: bool = False,
 ) -> AsyncIterator[CompanionEvent]:
     """Bounded function-tool loop for action-capable turns.
 
@@ -1791,7 +1893,11 @@ async def _run_actions_loop(
         # = "find this on the internet" (runs server-side). Hosted results are
         # not interceptable, so the propose->commit write gate (every send/OS
         # action confirmed) is the lethal-trifecta control, not result-wrapping.
-        tools: list[dict[str, Any]] = [mcp_tool, {"type": "web_search"}]
+        tools: list[dict[str, Any]] = [
+            mcp_tool,
+            {"type": "web_search"},
+            _update_plan_tool(),
+        ]
         if requestable_groups("voice_default"):
             tools.append(request_tool_group_tool("voice_default"))
         tools.extend(_visible_action_tools(active_groups))
@@ -1804,6 +1910,8 @@ async def _run_actions_loop(
             stream=True,
             input=next_input,
         )
+        if stream_reasoning:
+            create_kwargs["reasoning"] = {"summary": "auto"}
         if prev_response_id is not None:
             create_kwargs["previous_response_id"] = prev_response_id
 
@@ -1822,6 +1930,20 @@ async def _run_actions_loop(
                 step_text += delta
                 if delta:
                     yield TokenEvent(text=delta)
+            elif etype == "response.output_item.added":
+                _tc = _tool_call_event_from_item(_stream_event_item(event))
+                if _tc is not None:
+                    yield _tc
+            elif etype == "response.output_item.done":
+                _tr = _tool_result_event_from_item(_stream_event_item(event))
+                if _tr is not None:
+                    yield _tr
+            elif etype == "response.reasoning_summary_text.delta":
+                rdelta = getattr(event, "delta", None)
+                if rdelta is None and isinstance(event, dict):
+                    rdelta = event.get("delta", "")
+                if rdelta:
+                    yield ThinkingEvent(text=rdelta)
             elif etype in ("response.completed", "response.done"):
                 completed = getattr(event, "response", None)
                 if completed is None and isinstance(event, dict):
@@ -1873,6 +1995,15 @@ async def _run_actions_loop(
                         "type": "function_call_output",
                         "call_id": cid,
                         "output": json.dumps({"ok": True, "attached": group}),
+                    }
+                )
+            elif cname == UPDATE_PLAN_NAME:
+                yield PlanEvent(steps=_normalize_plan_steps(cargs.get("steps")))
+                outputs.append(
+                    {
+                        "type": "function_call_output",
+                        "call_id": cid,
+                        "output": json.dumps({"ok": True}),
                     }
                 )
             elif is_mutating_tool_call(cname, cargs):
@@ -2060,6 +2191,99 @@ def _extract_tool_calls(response: Any) -> list[dict[str, Any]]:
                 }
             )
     return calls
+
+
+# ---- Streaming tool-activity helpers (mcp_call / web_search_call output items) ----
+# Hosted reads (the MCP brain query + the web_search tool) execute server-side
+# inside OpenAI, so they never appear as local function calls. They DO surface as
+# output items in the response stream — we turn each added/done item into a
+# ToolCall/ToolResult event so the client can render a live "tool action" card.
+# Write 'hands' are function calls and surface as ActionProposedEvent instead, so
+# they are deliberately ignored here (no double-surfacing).
+
+_STREAMED_TOOL_ITEM_TYPES = frozenset({"mcp_call", "web_search_call"})
+_TOOL_RESULT_LIST_KEYS = (
+    "segments",
+    "recordings",
+    "action_items",
+    "highlights",
+    "results",
+    "folders",
+    "matched_entities",
+)
+
+
+def _stream_event_item(event: Any) -> dict[str, Any] | None:
+    """Extract the output item carried by a response.output_item.* stream event."""
+    item = getattr(event, "item", None)
+    if item is None and isinstance(event, dict):
+        item = event.get("item")
+    if item is None:
+        return None
+    return _response_item_to_dict(item)
+
+
+def _tool_call_event_from_item(item: dict[str, Any] | None) -> ToolCallEvent | None:
+    if not item or item.get("type") not in _STREAMED_TOOL_ITEM_TYPES:
+        return None
+    call_id = str(item.get("id") or "")
+    if item.get("type") == "web_search_call":
+        action = item.get("action") or {}
+        query = str(action.get("query") or "") if isinstance(action, dict) else ""
+        return ToolCallEvent(
+            call_id=call_id, tool="web_search", args={"query": query} if query else {}
+        )
+    args: dict[str, Any] = {}
+    raw_args = item.get("arguments")
+    if isinstance(raw_args, str) and raw_args.strip():
+        try:
+            parsed = json.loads(raw_args)
+        except json.JSONDecodeError:
+            parsed = None
+        if isinstance(parsed, dict):
+            args = parsed
+    elif isinstance(raw_args, dict):
+        args = raw_args
+    return ToolCallEvent(call_id=call_id, tool=str(item.get("name") or "tool"), args=args)
+
+
+def _tool_result_event_from_item(item: dict[str, Any] | None) -> ToolResultEvent | None:
+    """Map a completed output item to a ToolResultEvent. The summary is a privacy
+    safe count/status only — never raw transcript or result content."""
+    if not item or item.get("type") not in _STREAMED_TOOL_ITEM_TYPES:
+        return None
+    call_id = str(item.get("id") or "")
+    if item.get("type") == "web_search_call":
+        status = str(item.get("status") or "completed")
+        ok = status not in ("failed", "incomplete", "error")
+        return ToolResultEvent(call_id=call_id, summary="Searched the web", ok=ok)
+    ok = not item.get("error")
+    return ToolResultEvent(
+        call_id=call_id,
+        summary=_summarize_tool_output(item.get("output"), ok=ok),
+        ok=ok,
+    )
+
+
+def _summarize_tool_output(output: Any, *, ok: bool) -> str:
+    if not ok:
+        return "Failed"
+    data: Any = output
+    if isinstance(output, str):
+        try:
+            data = json.loads(output)
+        except json.JSONDecodeError:
+            return "Done"
+    if isinstance(data, dict):
+        for key in _TOOL_RESULT_LIST_KEYS:
+            value = data.get(key)
+            if isinstance(value, list):
+                n = len(value)
+                return f"{n} result{'' if n == 1 else 's'}"
+    if isinstance(data, list):
+        n = len(data)
+        return f"{n} result{'' if n == 1 else 's'}"
+    return "Done"
 
 
 def _extract_text(response: Any) -> str:

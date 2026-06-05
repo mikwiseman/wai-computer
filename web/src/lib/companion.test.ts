@@ -192,7 +192,7 @@ describe("streamMessage SSE parser", () => {
     const [, init] = (global.fetch as ReturnType<typeof vi.fn>).mock.calls[0];
     expect(JSON.parse(init.body as string)).toEqual({
       content: "hello",
-      client_capabilities: ["actions_v1"],
+      client_capabilities: ["actions_v1", "agent_chat_v2"],
     });
   });
 
@@ -236,7 +236,7 @@ describe("streamMessage 401 refresh-and-retry", () => {
     const [, secondInit] = (global.fetch as ReturnType<typeof vi.fn>).mock.calls[1];
     expect(JSON.parse(secondInit.body as string)).toEqual({
       content: "hi",
-      client_capabilities: ["actions_v1"],
+      client_capabilities: ["actions_v1", "agent_chat_v2"],
     });
   });
 

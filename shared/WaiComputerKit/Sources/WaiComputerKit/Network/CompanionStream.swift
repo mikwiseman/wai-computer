@@ -79,12 +79,22 @@ public struct CompanionStreamParser: Sendable {
                     messageId: payload.messageId,
                     conversationId: payload.conversationId
                 )
+            case "thinking":
+                let payload = try decoder.decode(ThinkingPayload.self, from: data)
+                return .thinking(text: payload.text)
             case "tool_call":
                 let payload = try decoder.decode(ToolCallPayload.self, from: data)
                 return .toolCall(callId: payload.callId, tool: payload.tool)
             case "tool_result":
                 let payload = try decoder.decode(ToolResultPayload.self, from: data)
-                return .toolResult(callId: payload.callId, summary: payload.summary)
+                return .toolResult(
+                    callId: payload.callId,
+                    summary: payload.summary,
+                    ok: payload.ok ?? true
+                )
+            case "plan":
+                let payload = try decoder.decode(PlanPayload.self, from: data)
+                return .plan(steps: payload.steps)
             case "token":
                 let payload = try decoder.decode(TokenPayload.self, from: data)
                 return .token(text: payload.text)
@@ -189,14 +199,24 @@ public struct CompanionStreamParser: Sendable {
     private struct ToolResultPayload: Decodable {
         let callId: String
         let summary: String
+        let ok: Bool?
         enum CodingKeys: String, CodingKey {
             case callId = "call_id"
             case summary
+            case ok
         }
     }
 
     private struct TokenPayload: Decodable {
         let text: String
+    }
+
+    private struct ThinkingPayload: Decodable {
+        let text: String
+    }
+
+    private struct PlanPayload: Decodable {
+        let steps: [CompanionPlanStep]
     }
 
     private struct CitationPayload: Decodable {

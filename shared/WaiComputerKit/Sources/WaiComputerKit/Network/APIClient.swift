@@ -746,6 +746,22 @@ public actor APIClient {
         )
     }
 
+    /// Approve (once/always) or reject a pending Companion chat action. The side
+    /// effect runs exactly once on the server for an approval; rejection cascades
+    /// to siblings. `timeout == deny` is enforced server-side.
+    public func resolveCompanionAction(
+        chatId: String,
+        actionId: String,
+        decision: CompanionActionDecision
+    ) async throws -> ResolveCompanionActionResponse {
+        let body = ResolveCompanionActionRequest(decision: decision.wireValue)
+        return try await request(
+            .POST,
+            path: "/api/companion/chats/\(chatId)/actions/\(actionId)/resolve",
+            body: body
+        )
+    }
+
     /// Report the outcome of an agent-originated desktop action back to the cloud.
     public func reportAgentDesktopResult(
         agentId: String,
@@ -1828,7 +1844,7 @@ public actor APIClient {
         content: String,
         viewingRecordingId: String? = nil,
         viewingFolderId: String? = nil,
-        clientCapabilities: [String] = ["actions_v1"],
+        clientCapabilities: [String] = ["actions_v1", "agent_chat_v2"],
         now: Date = Date(),
         timeZone: TimeZone = .current,
         calendar: Calendar = .current
