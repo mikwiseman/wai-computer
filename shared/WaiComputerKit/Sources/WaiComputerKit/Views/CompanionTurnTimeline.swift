@@ -28,12 +28,14 @@ public enum CompanionActionResolution: Equatable, Sendable {
 /// One rendered block within an assistant turn. The SSE event stream is folded
 /// into an ordered list of these so the client can render openclaw-style cards:
 /// a collapsible Thinking block, a grouped "Tool actions · N steps" card, a live
-/// plan checklist, streamed assistant markdown, and inline approval cards.
+/// plan checklist, web source links, streamed assistant markdown, and inline
+/// approval cards.
 public enum CompanionTurnItem: Equatable, Identifiable, Sendable {
     case thinking(id: String, text: String)
     case tools(id: String, actions: [CompanionToolAction])
     case plan(id: String, steps: [CompanionPlanStep])
     case artifact(id: String, artifact: CompanionArtifact)
+    case webCitations(id: String, citations: [CompanionWebCitation])
     case text(id: String, markdown: String)
     case action(id: String, proposal: CompanionActionProposal, resolution: CompanionActionResolution?)
 
@@ -43,6 +45,7 @@ public enum CompanionTurnItem: Equatable, Identifiable, Sendable {
         case .tools(let id, _): return id
         case .plan(let id, _): return id
         case .artifact(let id, _): return id
+        case .webCitations(let id, _): return id
         case .text(let id, _): return id
         case .action(let id, _, _): return id
         }
@@ -73,6 +76,12 @@ public struct CompanionTurnReducer: Equatable, Sendable {
             if object["type"]?.stringValue == "tools",
                 let actions = storedToolActions(from: object["actions"]) {
                 items.append(.tools(id: "stored-tools-\(items.count)", actions: actions))
+            } else if object["type"]?.stringValue == "web_citations",
+                let citations = storedWebCitations(from: object["citations"]) {
+                items.append(.webCitations(
+                    id: "stored-web-citations-\(items.count)",
+                    citations: citations
+                ))
             } else if object["type"]?.stringValue == "artifact",
                 let artifactId = object["artifact_id"]?.stringValue,
                 let title = object["title"]?.stringValue,
@@ -147,6 +156,37 @@ public struct CompanionTurnReducer: Equatable, Sendable {
             return CompanionToolAction(callId: callId, tool: tool, summary: summary, ok: ok)
         }
         return actions.isEmpty ? nil : actions
+    }
+
+    private static func storedWebCitations(
+        from value: CompanionJSONValue?
+    ) -> [CompanionWebCitation]? {
+        guard case .array(let rawCitations) = value else { return nil }
+        let citations = rawCitations.compactMap { rawCitation -> CompanionWebCitation? in
+            guard case .object(let object) = rawCitation,
+                  let title = object["title"]?.stringValue,
+                  let url = object["url"]?.stringValue
+            else { return nil }
+
+            return CompanionWebCitation(
+                title: title,
+                url: url,
+                startIndex: intValue(from: object["start_index"]),
+                endIndex: intValue(from: object["end_index"])
+            )
+        }
+        return citations.isEmpty ? nil : citations
+    }
+
+    private static func intValue(from value: CompanionJSONValue?) -> Int? {
+        switch value {
+        case .some(.int(let value)):
+            return value
+        case .some(.double(let value)):
+            return Int(value)
+        default:
+            return nil
+        }
     }
 
     public static func toolCalls(
@@ -266,6 +306,8 @@ public struct CompanionTurnReducer: Equatable, Sendable {
             upsertPlan(steps)
         case .artifact(let artifact):
             items.append(.artifact(id: nextId("artifact"), artifact: artifact))
+        case .webCitations(let citations):
+            appendWebCitations(citations)
         case .token(let text):
             appendText(text)
         case .citation(let citation):
@@ -337,6 +379,11 @@ public struct CompanionTurnReducer: Equatable, Sendable {
         } else {
             items.append(.tools(id: nextId("tools"), actions: [action]))
         }
+    }
+
+    private mutating func appendWebCitations(_ citations: [CompanionWebCitation]) {
+        guard !citations.isEmpty else { return }
+        items.append(.webCitations(id: nextId("web-citations"), citations: citations))
     }
 
     private mutating func applyToolResult(callId: String, summary: String, ok: Bool) {

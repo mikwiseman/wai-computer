@@ -9,6 +9,7 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, AsyncIterator, Literal
+from urllib.parse import urlparse
 
 from fastapi import HTTPException, status
 from sqlalchemy import and_, select
@@ -42,6 +43,8 @@ TOOL_CALL_CAP = 6
 HISTORY_WINDOW = 20
 ARTIFACT_MAX_CONTENT_CHARS = 60000
 SNIPPET_CHAR_CAP = 400
+WEB_CITATION_MAX_TITLE_CHARS = 180
+WEB_CITATION_MAX_URL_CHARS = 2048
 
 _IDENTITY_SECTION = (
     "<identity>\n"
@@ -312,6 +315,19 @@ class ArtifactEvent:
     language: str = ""
 
 
+@dataclass(frozen=True)
+class WebCitationsEvent:
+    """Public web source links returned by the hosted web_search tool.
+
+    Responses API web search exposes these as url_citation annotations on the
+    completed message output item. They are separate from private transcript
+    citations and contain only public title/URL/span metadata.
+    """
+
+    type: Literal["web_citations"] = "web_citations"
+    citations: list[dict[str, Any]] = field(default_factory=list)
+
+
 CompanionEvent = (
     TurnStartEvent
     | ToolCallEvent
@@ -319,6 +335,7 @@ CompanionEvent = (
     | ThinkingEvent
     | PlanEvent
     | ArtifactEvent
+    | WebCitationsEvent
     | TokenEvent
     | CitationEvent
     | MemoryUpdatedEvent
@@ -1741,6 +1758,10 @@ def _stored_plan_tool_call(steps: list[dict[str, str]]) -> dict[str, Any]:
     return {"type": "plan", "steps": steps}
 
 
+def _stored_web_citations_tool_call(citations: list[dict[str, Any]]) -> dict[str, Any]:
+    return {"type": "web_citations", "citations": citations}
+
+
 def _upsert_stored_plan_tool_call(
     tool_calls: list[dict[str, Any]],
     item: dict[str, Any],
@@ -1991,8 +2012,16 @@ async def run_turn(
     latency_ms = int((time.monotonic() - started) * 1000)
 
     assistant_content = [{"type": "text", "text": assistant_text}]
+    web_citations = _extract_web_citations(completed_response_obj)
+    if web_citations:
+        yield WebCitationsEvent(citations=web_citations)
     mcp_context_items = _extract_mcp_context_items(completed_response_obj)
-    stored_tool_calls = persisted_tool_calls + mcp_context_items
+    stored_tool_calls = persisted_tool_calls
+    if web_citations:
+        stored_tool_calls = stored_tool_calls + [
+            _stored_web_citations_tool_call(web_citations)
+        ]
+    stored_tool_calls = stored_tool_calls + mcp_context_items
     assistant_msg = ChatMessage(
         conversation_id=conv.id,
         role="assistant",
@@ -2049,6 +2078,7 @@ async def _run_actions_loop(
     proposed = False
     proposed_preview: str | None = None
     persisted_tool_calls: list[dict[str, Any]] = []
+    web_citations: list[dict[str, Any]] = []
 
     for step in range(1, TOOL_CALL_CAP + 1):
         # mcp_tool = read access to the user's brain; the hosted web_search tool
@@ -2124,6 +2154,9 @@ async def _run_actions_loop(
                     if step_usage is None and isinstance(completed, dict):
                         step_usage = completed.get("usage")
                     usage = step_usage or usage
+                    _merge_web_citations(
+                        web_citations, _extract_web_citations(completed)
+                    )
                     if not step_text:
                         step_text = _extract_text(completed)
             elif etype in ("response.error", "error"):
@@ -2246,6 +2279,9 @@ async def _run_actions_loop(
             "empty_model_output",
             "Companion stream completed without emitting any text.",
         )
+    if web_citations:
+        yield WebCitationsEvent(citations=web_citations)
+        persisted_tool_calls.append(_stored_web_citations_tool_call(web_citations))
     assistant_msg = ChatMessage(
         conversation_id=conv.id,
         role="assistant",
@@ -2325,6 +2361,96 @@ def _extract_mcp_context_items(response_obj: Any) -> list[dict[str, Any]]:
     return items
 
 
+def _extract_web_citations(response_obj: Any) -> list[dict[str, Any]]:
+    """Extract public web_search url_citation annotations from a completed response."""
+    if response_obj is None:
+        return []
+    output = getattr(response_obj, "output", None)
+    if output is None and isinstance(response_obj, dict):
+        output = response_obj.get("output")
+    output = output or []
+
+    citations: list[dict[str, Any]] = []
+    seen_urls: set[str] = set()
+    for item in output:
+        data = _response_item_to_dict(item)
+        if data.get("type") != "message":
+            continue
+        content = data.get("content") or []
+        if not isinstance(content, list):
+            continue
+        for block in content:
+            block_data = _response_item_to_dict(block)
+            if block_data.get("type") != "output_text":
+                continue
+            annotations = block_data.get("annotations") or []
+            if not isinstance(annotations, list):
+                continue
+            for annotation in annotations:
+                annotation_data = _response_item_to_dict(annotation)
+                citation = _clean_web_citation(annotation_data)
+                if citation is None:
+                    continue
+                url = citation["url"]
+                if url in seen_urls:
+                    continue
+                seen_urls.add(url)
+                citations.append(citation)
+    return citations
+
+
+def _clean_web_citation(annotation: dict[str, Any]) -> dict[str, Any] | None:
+    if annotation.get("type") != "url_citation":
+        return None
+    raw_url = annotation.get("url")
+    if not isinstance(raw_url, str):
+        return None
+    url = raw_url.strip()
+    if len(url) > WEB_CITATION_MAX_URL_CHARS or not _is_http_url(url):
+        return None
+
+    raw_title = annotation.get("title")
+    title = (str(raw_title).strip() if raw_title is not None else "") or url
+    citation: dict[str, Any] = {
+        "title": title[:WEB_CITATION_MAX_TITLE_CHARS],
+        "url": url,
+    }
+    start_index = _int_or_none(annotation.get("start_index"))
+    end_index = _int_or_none(annotation.get("end_index"))
+    if start_index is not None:
+        citation["start_index"] = start_index
+    if end_index is not None:
+        citation["end_index"] = end_index
+    return citation
+
+
+def _is_http_url(url: str) -> bool:
+    parsed = urlparse(url)
+    return parsed.scheme in {"http", "https"} and bool(parsed.netloc)
+
+
+def _int_or_none(value: Any) -> int | None:
+    if isinstance(value, bool) or value is None:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _merge_web_citations(
+    destination: list[dict[str, Any]],
+    incoming: list[dict[str, Any]],
+) -> None:
+    seen_urls = {item.get("url") for item in destination if isinstance(item, dict)}
+    for citation in incoming:
+        url = citation.get("url")
+        if not isinstance(url, str) or url in seen_urls:
+            continue
+        seen_urls.add(url)
+        destination.append(citation)
+
+
 def _response_item_to_dict(item: Any) -> dict[str, Any]:
     if isinstance(item, dict):
         return item
@@ -2332,7 +2458,19 @@ def _response_item_to_dict(item: Any) -> dict[str, Any]:
     if callable(model_dump):
         return model_dump(mode="json", exclude_none=True)
     data: dict[str, Any] = {}
-    for key in ("id", "type", "server_label", "tools"):
+    for key in (
+        "id",
+        "type",
+        "server_label",
+        "tools",
+        "content",
+        "annotations",
+        "text",
+        "url",
+        "title",
+        "start_index",
+        "end_index",
+    ):
         value = getattr(item, key, None)
         if value is not None:
             data[key] = value

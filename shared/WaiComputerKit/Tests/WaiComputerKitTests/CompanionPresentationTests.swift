@@ -192,6 +192,27 @@ final class CompanionPresentationTests: XCTestCase {
         XCTAssertEqual(arts[0].title, "Landing")
     }
 
+    func testReducerAppendsWebCitations() {
+        let citations = [
+            CompanionWebCitation(
+                title: "Serverless GPU Inference | Runpod",
+                url: "https://www.runpod.io/serverless-gpu",
+                startIndex: 4,
+                endIndex: 10
+            ),
+        ]
+        let reducer = reduce([
+            .token(text: "Use Runpod."),
+            .webCitations(citations),
+        ])
+
+        XCTAssertEqual(reducer.items.count, 2)
+        guard case .webCitations(_, let restored) = reducer.items[1] else {
+            return XCTFail("expected web citations item")
+        }
+        XCTAssertEqual(restored, citations)
+    }
+
     func testStoredToolCallsRestoreArtifactTimelineItems() {
         let items = CompanionTurnReducer.storedItems(from: [
             .object([
@@ -330,6 +351,39 @@ final class CompanionPresentationTests: XCTestCase {
         XCTAssertEqual(actions, [
             CompanionToolAction(callId: "mcp_1", tool: "search", summary: "3 results", ok: true),
             CompanionToolAction(callId: "web_1", tool: "web_search"),
+        ])
+    }
+
+    func testStoredToolCallsRestoreWebCitationTimelineItems() {
+        let items = CompanionTurnReducer.storedItems(from: [
+            .object([
+                "type": .string("web_citations"),
+                "citations": .array([
+                    .object([
+                        "title": .string("Serverless GPU Inference | Runpod"),
+                        "url": .string("https://www.runpod.io/serverless-gpu"),
+                        "start_index": .int(4),
+                        "end_index": .int(10),
+                    ]),
+                    .object([
+                        "title": .string("Missing URL"),
+                    ]),
+                ]),
+            ]),
+        ])
+
+        XCTAssertEqual(items.count, 1)
+        guard case .webCitations(let id, let citations) = items[0] else {
+            return XCTFail("expected stored web citations item")
+        }
+        XCTAssertEqual(id, "stored-web-citations-0")
+        XCTAssertEqual(citations, [
+            CompanionWebCitation(
+                title: "Serverless GPU Inference | Runpod",
+                url: "https://www.runpod.io/serverless-gpu",
+                startIndex: 4,
+                endIndex: 10
+            ),
         ])
     }
 

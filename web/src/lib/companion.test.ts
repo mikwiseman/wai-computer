@@ -160,6 +160,7 @@ describe("streamMessage SSE parser", () => {
       "event: token\ndata: {\"text\":\"Hello \"}\n\n",
       "event: token\ndata: {\"text\":\"world.\"}\n\n",
       "event: citation\ndata: {\"index\":1,\"segment_id\":\"s1\",\"recording_id\":\"r1\",\"start_ms\":1000,\"end_ms\":2000,\"span_start\":0,\"span_end\":5}\n\n",
+      "event: web_citations\ndata: {\"citations\":[{\"title\":\"Runpod\",\"url\":\"https://www.runpod.io/serverless-gpu\",\"start_index\":0,\"end_index\":6}]}\n\n",
       "event: done\ndata: {\"message_id\":\"a1\",\"input_tokens\":10,\"output_tokens\":20,\"cached_tokens\":0,\"model\":\"gpt-5.5\",\"latency_ms\":1234}\n\n",
     ];
     const body = new ReadableStream<Uint8Array>({
@@ -187,6 +188,7 @@ describe("streamMessage SSE parser", () => {
       "token",
       "token",
       "citation",
+      "web_citations",
       "done",
     ]);
     const [, init] = (global.fetch as ReturnType<typeof vi.fn>).mock.calls[0];

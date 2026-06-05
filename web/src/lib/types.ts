@@ -704,6 +704,13 @@ export type CompanionArtifact = {
   language?: string;
 };
 
+export type CompanionWebCitation = {
+  title: string;
+  url: string;
+  start_index?: number;
+  end_index?: number;
+};
+
 export type CompanionEvent =
   | { type: "turn_start"; message_id: string; conversation_id: string }
   | { type: "thinking"; text: string }
@@ -718,6 +725,7 @@ export type CompanionEvent =
       content: string;
       language?: string;
     }
+  | { type: "web_citations"; citations: CompanionWebCitation[] }
   | { type: "token"; text: string }
   | {
       type: "citation";

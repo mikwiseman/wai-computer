@@ -24,6 +24,7 @@ from app.core.companion import (
     ToolCallEvent,
     ToolResultEvent,
     TurnContext,
+    WebCitationsEvent,
     run_turn,
     system_prompt_for,
 )
@@ -722,6 +723,121 @@ class TestRunTurn:
                     }
                 ],
             }
+        ]
+
+    async def test_run_turn_extracts_web_search_url_citations(
+        self, db_session, setup_user_and_chat
+    ):
+        """Responses web_search annotations become visible, durable source links.
+
+        The API exposes url_citation annotations on the message output item, not
+        as local function outputs, so the stream layer must extract them from the
+        completed response instead of relying on markdown the model may or may
+        not emit.
+        """
+        s = setup_user_and_chat
+        response_output = [
+            {
+                "type": "message",
+                "content": [
+                    {
+                        "type": "output_text",
+                        "text": "Use Runpod for serverless GPUs.",
+                        "annotations": [
+                            {
+                                "type": "url_citation",
+                                "start_index": 4,
+                                "end_index": 10,
+                                "url": "https://www.runpod.io/serverless-gpu",
+                                "title": "Serverless GPU Inference | Runpod",
+                            },
+                            {
+                                "type": "url_citation",
+                                "start_index": 15,
+                                "end_index": 28,
+                                "url": "javascript:alert(1)",
+                                "title": "Invalid URL",
+                            },
+                        ],
+                    }
+                ],
+            }
+        ]
+        fake = FakeOpenAI(
+            [
+                _OutputItemEvent(
+                    item={
+                        "type": "web_search_call",
+                        "id": "ws_1",
+                        "status": "in_progress",
+                        "action": {"type": "search", "query": "Runpod GPU pricing"},
+                    }
+                ),
+                _DeltaEvent("Use Runpod for serverless GPUs."),
+                _OutputItemEvent(
+                    item={
+                        "type": "web_search_call",
+                        "id": "ws_1",
+                        "status": "completed",
+                    },
+                    type="response.output_item.done",
+                ),
+                _completed("Use Runpod for serverless GPUs.", output=response_output),
+            ]
+        )
+
+        events = await _collect(
+            run_turn(
+                db_session,
+                s["user"].id,
+                s["conversation"].id,
+                "find GPU rental links",
+                openai_client=fake,
+            )
+        )
+
+        web_sources = [e for e in events if isinstance(e, WebCitationsEvent)]
+        assert len(web_sources) == 1
+        assert web_sources[0].citations == [
+            {
+                "title": "Serverless GPU Inference | Runpod",
+                "url": "https://www.runpod.io/serverless-gpu",
+                "start_index": 4,
+                "end_index": 10,
+            }
+        ]
+
+        assistant = (
+            await db_session.execute(
+                select(ChatMessage).where(
+                    ChatMessage.conversation_id == s["conversation"].id,
+                    ChatMessage.role == "assistant",
+                )
+            )
+        ).scalar_one()
+        assert assistant.tool_calls == [
+            {
+                "type": "tools",
+                "actions": [
+                    {
+                        "call_id": "ws_1",
+                        "tool": "web_search",
+                        "summary": "Searched the web",
+                        "ok": True,
+                    }
+                ],
+            },
+            {
+                "type": "web_citations",
+                "citations": [
+                    {
+                        "title": "Serverless GPU Inference | Runpod",
+                        "url": "https://www.runpod.io/serverless-gpu",
+                        "start_index": 4,
+                        "end_index": 10,
+                    }
+                ],
+            },
         ]
 
     async def test_actions_loop_persists_tool_actions_for_mcp_reads(

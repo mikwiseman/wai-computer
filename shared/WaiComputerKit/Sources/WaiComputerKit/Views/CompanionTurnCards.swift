@@ -68,6 +68,8 @@ struct CompanionTimelineView: View {
                     CompanionPlanCard(steps: steps, accent: accent)
                 case .artifact(_, let artifact):
                     CompanionArtifactCard(artifact: artifact, accent: accent)
+                case .webCitations(_, let citations):
+                    CompanionWebCitationsCard(citations: citations, accent: accent)
                 case .text(_, let markdown):
                     CompanionMarkdownText(text: markdown, accent: accent)
                 case .action(_, let proposal, let resolution):
@@ -267,6 +269,48 @@ struct CompanionPlanCard: View {
 }
 
 // MARK: - Action approval
+
+struct CompanionWebCitationsCard: View {
+    let citations: [CompanionWebCitation]
+    var accent: Color
+    @Environment(\.locale) private var locale
+
+    private var russian: Bool { companionLocaleIsRussian(locale) }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                Image(systemName: "link")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(accent)
+                Text(russian ? "Источники" : "Sources")
+                    .font(.system(size: 13, weight: .semibold))
+                Spacer(minLength: 0)
+            }
+            VStack(alignment: .leading, spacing: 6) {
+                ForEach(Array(citations.enumerated()), id: \.offset) { _, citation in
+                    if let url = URL(string: citation.url) {
+                        Link(destination: url) {
+                            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                                Text(citation.title)
+                                    .lineLimit(2)
+                                Image(systemName: "arrow.up.right")
+                                    .font(.system(size: 10, weight: .semibold))
+                            }
+                        }
+                        .font(.system(size: 14))
+                    }
+                }
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(accent.opacity(0.05))
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .overlay(RoundedRectangle(cornerRadius: 12).stroke(accent.opacity(0.16), lineWidth: 1))
+        .accessibilityIdentifier("wai-web-citations-card")
+    }
+}
 
 struct CompanionActionCard: View {
     let proposal: CompanionActionProposal

@@ -1,4 +1,9 @@
-import type { CompanionArtifact, CompanionEvent, CompanionPlanStep } from "./types";
+import type {
+  CompanionArtifact,
+  CompanionEvent,
+  CompanionPlanStep,
+  CompanionWebCitation,
+} from "./types";
 
 /** A single hosted-read tool invocation in a "Tool actions" card. */
 export type CompanionToolAction = {
@@ -34,6 +39,7 @@ export type CompanionTurnItem =
   | { kind: "tools"; id: string; actions: CompanionToolAction[] }
   | { kind: "plan"; id: string; steps: CompanionPlanStep[] }
   | { kind: "artifact"; id: string; artifact: CompanionArtifact }
+  | { kind: "web_citations"; id: string; citations: CompanionWebCitation[] }
   | { kind: "text"; id: string; markdown: string }
   | {
       kind: "action";
@@ -130,6 +136,29 @@ function storedToolActions(value: unknown): CompanionToolAction[] | null {
   return actions.length > 0 ? actions : null;
 }
 
+function numberField(record: Record<string, unknown>, key: string): number | undefined {
+  const value = record[key];
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function storedWebCitations(value: unknown): CompanionWebCitation[] | null {
+  if (!Array.isArray(value)) return null;
+  const citations: CompanionWebCitation[] = [];
+  for (const item of value) {
+    if (!isRecord(item)) continue;
+    const title = stringField(item, "title");
+    const url = stringField(item, "url");
+    if (!title || !url) continue;
+    citations.push({
+      title,
+      url,
+      start_index: numberField(item, "start_index"),
+      end_index: numberField(item, "end_index"),
+    });
+  }
+  return citations.length > 0 ? citations : null;
+}
+
 export function itemsFromStoredToolCalls(
   toolCalls: unknown[] | null | undefined,
 ): CompanionTurnItem[] {
@@ -146,6 +175,14 @@ export function itemsFromStoredToolCalls(
         kind: "tools",
         id: `stored-tools-${items.length}`,
         actions,
+      });
+    } else if (item.type === "web_citations") {
+      const citations = storedWebCitations(item.citations);
+      if (!citations) continue;
+      items.push({
+        kind: "web_citations",
+        id: `stored-web-citations-${items.length}`,
+        citations,
       });
     } else if (item.type === "artifact") {
       const artifactId = stringField(item, "artifact_id");
@@ -234,7 +271,8 @@ export function setStoredActionResolution(
  * Immutable fold of the Companion SSE event stream into ordered timeline items
  * (openclaw-style cards). Returns a NEW turn each call so React re-renders
  * cleanly. Coalesces consecutive thinking/token deltas, groups consecutive tool
- * calls, replaces the plan card in place, and resolves action proposals.
+ * calls, appends web sources, replaces the plan card in place, and resolves
+ * action proposals.
  */
 export function ingestEvent(turn: CompanionTurn, evt: CompanionEvent): CompanionTurn {
   const items = turn.items.slice();
@@ -299,6 +337,16 @@ export function ingestEvent(turn: CompanionTurn, evt: CompanionEvent): Companion
           content: evt.content,
           language: evt.language,
         },
+      });
+      return { ...turn, items, counter };
+    }
+    case "web_citations": {
+      const citations = storedWebCitations(evt.citations);
+      if (!citations) return turn;
+      items.push({
+        kind: "web_citations",
+        id: nextId("web-citations"),
+        citations,
       });
       return { ...turn, items, counter };
     }

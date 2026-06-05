@@ -8,6 +8,7 @@ import type {
   CompanionToolAction,
   CompanionTurnItem,
 } from "@/lib/companionTimeline";
+import type { CompanionWebCitation } from "@/lib/types";
 
 type Locale = "en" | "ru";
 type Decision = "once" | "always" | "reject";
@@ -63,6 +64,8 @@ export function CompanionTimeline({
             return <PlanCard key={item.id} steps={item.steps} locale={locale} />;
           case "artifact":
             return <ArtifactCard key={item.id} artifact={item.artifact} locale={locale} />;
+          case "web_citations":
+            return <WebCitationsCard key={item.id} citations={item.citations} locale={locale} />;
           case "text":
             return <Markdown key={item.id} text={item.markdown} />;
           case "action":
@@ -206,6 +209,36 @@ function PlanCard({
             <span style={{ textDecoration: s.status === "done" ? "line-through" : undefined }}>
               {s.title}
             </span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function WebCitationsCard({
+  citations,
+  locale,
+}: {
+  citations: CompanionWebCitation[];
+  locale: Locale;
+}) {
+  const ru = locale === "ru";
+  return (
+    <div className="wai-card wai-web-citations" data-testid="wai-web-citations-card">
+      <div className="wai-web-citations-head">
+        <span className="wai-card-icon wai-card-icon--web-citations" aria-hidden />
+        {ru ? "Источники" : "Sources"}
+      </div>
+      <ul className="wai-web-citation-list">
+        {citations.map((citation, i) => (
+          <li key={`${citation.url}-${i}`}>
+            <a href={citation.url} target="_blank" rel="noopener noreferrer">
+              <span>{citation.title}</span>
+              <span className="wai-web-citation-arrow" aria-hidden>
+                ↗
+              </span>
+            </a>
           </li>
         ))}
       </ul>

@@ -460,8 +460,9 @@ def _sse_format(event_obj: Any) -> bytes:
 # advertise the matching capability; older clients never receive an event they
 # cannot decode (the Swift CompanionStream parser THROWS on unknown types, so
 # this fails closed). actions_v1 = approval/desktop/narration; agent_chat_v2 =
-# the streaming agent surface (thinking + plan; tool_call/tool_result ride the
-# v1 union and stay ungated since both shipped clients already decode them).
+# the streaming agent surface (thinking, plan, artifacts, web citations;
+# tool_call/tool_result ride the v1 union and stay ungated since both shipped
+# clients already decode them).
 _CLIENT_CAP_ACTIONS = "actions_v1"
 _CLIENT_CAP_CHAT_V2 = "agent_chat_v2"
 _EVENT_REQUIRED_CAPABILITY: dict[str, str] = {
@@ -472,6 +473,7 @@ _EVENT_REQUIRED_CAPABILITY: dict[str, str] = {
     "thinking": _CLIENT_CAP_CHAT_V2,
     "plan": _CLIENT_CAP_CHAT_V2,
     "artifact": _CLIENT_CAP_CHAT_V2,
+    "web_citations": _CLIENT_CAP_CHAT_V2,
 }
 
 

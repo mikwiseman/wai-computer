@@ -98,6 +98,9 @@ public struct CompanionStreamParser: Sendable {
             case "artifact":
                 let payload = try decoder.decode(CompanionArtifact.self, from: data)
                 return .artifact(payload)
+            case "web_citations":
+                let payload = try decoder.decode(WebCitationsPayload.self, from: data)
+                return .webCitations(payload.citations)
             case "token":
                 let payload = try decoder.decode(TokenPayload.self, from: data)
                 return .token(text: payload.text)
@@ -239,6 +242,10 @@ public struct CompanionStreamParser: Sendable {
             case spanStart = "span_start"
             case spanEnd = "span_end"
         }
+    }
+
+    private struct WebCitationsPayload: Decodable {
+        let citations: [CompanionWebCitation]
     }
 
     private struct DonePayload: Decodable {

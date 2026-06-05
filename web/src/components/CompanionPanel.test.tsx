@@ -332,6 +332,17 @@ describe("CompanionPanel", () => {
                 },
               ],
             },
+            {
+              type: "web_citations",
+              citations: [
+                {
+                  title: "Serverless GPU Inference | Runpod",
+                  url: "https://www.runpod.io/serverless-gpu",
+                  start_index: 0,
+                  end_index: 6,
+                },
+              ],
+            },
           ],
           citations: [],
           model: "gpt-5.5",
@@ -351,6 +362,9 @@ describe("CompanionPanel", () => {
     expect(within(card).getByText("Searched your brain")).toBeInTheDocument();
     expect(within(card).getByText(/3 results/)).toBeInTheDocument();
     expect(screen.getByText("Found it.")).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: /Serverless GPU Inference \| Runpod/ }),
+    ).toHaveAttribute("href", "https://www.runpod.io/serverless-gpu");
   });
 
   it("streams a turn end-to-end, optimistically rendering user input and refetching", async () => {

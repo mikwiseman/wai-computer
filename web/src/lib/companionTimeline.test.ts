@@ -152,6 +152,34 @@ describe("companionTimeline reducer", () => {
     }
   });
 
+  it("appends web citation source items", () => {
+    const turn = reduce([
+      { type: "token", text: "Use Runpod." },
+      {
+        type: "web_citations",
+        citations: [
+          {
+            title: "Serverless GPU Inference | Runpod",
+            url: "https://www.runpod.io/serverless-gpu",
+            start_index: 4,
+            end_index: 10,
+          },
+        ],
+      },
+    ]);
+
+    expect(turn.items).toHaveLength(2);
+    expect(turn.items[1]).toMatchObject({
+      kind: "web_citations",
+      citations: [
+        {
+          title: "Serverless GPU Inference | Runpod",
+          url: "https://www.runpod.io/serverless-gpu",
+        },
+      ],
+    });
+  });
+
   it("restores stored artifact items from assistant tool calls", () => {
     const items = itemsFromStoredToolCalls([
       {
@@ -258,6 +286,39 @@ describe("companionTimeline reducer", () => {
       actions: [
         { call_id: "mcp_1", tool: "search", summary: "3 results", ok: true },
         { call_id: "web_1", tool: "web_search", summary: null, ok: null },
+      ],
+    });
+  });
+
+  it("restores stored web citation items from assistant tool calls", () => {
+    const items = itemsFromStoredToolCalls([
+      {
+        type: "web_citations",
+        citations: [
+          {
+            title: "Serverless GPU Inference | Runpod",
+            url: "https://www.runpod.io/serverless-gpu",
+            start_index: 4,
+            end_index: 10,
+          },
+          {
+            title: "Missing URL",
+          },
+        ],
+      },
+    ]);
+
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({
+      kind: "web_citations",
+      id: "stored-web-citations-0",
+      citations: [
+        {
+          title: "Serverless GPU Inference | Runpod",
+          url: "https://www.runpod.io/serverless-gpu",
+          start_index: 4,
+          end_index: 10,
+        },
       ],
     });
   });

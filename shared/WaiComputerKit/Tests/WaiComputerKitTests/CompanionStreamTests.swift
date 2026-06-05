@@ -50,6 +50,25 @@ final class CompanionStreamTests: XCTestCase {
         XCTAssertEqual(artifact.content, "<h1>Hi</h1>")
     }
 
+    func testParsesWebCitationsFrame() throws {
+        let event = try parser.parse(
+            "event: web_citations\ndata: {\"citations\":[{\"title\":\"Runpod\","
+            + "\"url\":\"https://www.runpod.io/serverless-gpu\","
+            + "\"start_index\":4,\"end_index\":10}]}"
+        )
+        guard case .webCitations(let citations) = event else {
+            return XCTFail("expected web citations event, got \(String(describing: event))")
+        }
+        XCTAssertEqual(citations, [
+            CompanionWebCitation(
+                title: "Runpod",
+                url: "https://www.runpod.io/serverless-gpu",
+                startIndex: 4,
+                endIndex: 10
+            ),
+        ])
+    }
+
     func testToolResultDefaultsOkTrueAndParsesOkFalse() throws {
         let okMissing = try parser.parse("event: tool_result\ndata: {\"call_id\":\"t1\",\"summary\":\"Done\"}")
         XCTAssertEqual(okMissing, .toolResult(callId: "t1", summary: "Done", ok: true))

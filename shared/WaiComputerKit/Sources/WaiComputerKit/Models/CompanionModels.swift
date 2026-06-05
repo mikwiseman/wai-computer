@@ -255,6 +255,7 @@ public enum CompanionStreamEvent: Sendable, Equatable {
     case toolResult(callId: String, summary: String, ok: Bool)
     case plan(steps: [CompanionPlanStep])
     case artifact(CompanionArtifact)
+    case webCitations([CompanionWebCitation])
     case token(text: String)
     case citation(CompanionStreamCitation)
     case memoryUpdated(block: String, operation: String)
@@ -320,6 +321,30 @@ public struct CompanionStreamCitation: Sendable, Equatable {
     public let endMs: Int?
     public let spanStart: Int
     public let spanEnd: Int
+}
+
+/// Public source link returned by the hosted web_search tool.
+public struct CompanionWebCitation: Sendable, Equatable, Codable, Identifiable {
+    public let title: String
+    public let url: String
+    public let startIndex: Int?
+    public let endIndex: Int?
+
+    public var id: String { url }
+
+    public init(title: String, url: String, startIndex: Int? = nil, endIndex: Int? = nil) {
+        self.title = title
+        self.url = url
+        self.startIndex = startIndex
+        self.endIndex = endIndex
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case title
+        case url
+        case startIndex = "start_index"
+        case endIndex = "end_index"
+    }
 }
 
 /// A mutating action (send / external write / desktop action) proposed by the
