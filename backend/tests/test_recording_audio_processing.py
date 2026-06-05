@@ -15,8 +15,23 @@ from app.core.recording_audio_processing import process_staged_recording_upload
 from app.core.transcript_utils import TranscriptResult
 from app.models.billing import UsageWeek
 from app.models.person import Person, RecordingSpeakerEmbedding
-from app.models.recording import Recording, RecordingStatus, Segment
+from app.models.recording import (
+    Recording,
+    RecordingStatus,
+    Segment,
+    SummaryGenerationJob,
+    SummaryGenerationStatus,
+)
 from app.models.user import User
+
+
+@pytest.fixture(autouse=True)
+def _stub_summary_enqueue(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        recording_audio_processing,
+        "_enqueue_recording_summary_generation",
+        lambda job_id: "celery-recording-summary",
+    )
 
 
 @pytest.mark.asyncio
@@ -96,8 +111,17 @@ async def test_process_staged_recording_upload_persists_canonical_segments(
     usage = (
         await db_session.execute(select(UsageWeek).where(UsageWeek.user_id == user.id))
     ).scalar_one()
+    summary_job = (
+        await db_session.execute(
+            select(SummaryGenerationJob).where(
+                SummaryGenerationJob.recording_id == recording.id
+            )
+        )
+    ).scalar_one()
     assert usage.words_used == 4
     assert recording.billed_word_count == 4
+    assert summary_job.status == SummaryGenerationStatus.QUEUED.value
+    assert summary_job.task_id == "celery-recording-summary"
     assert not staged_path.exists()
     transcribe.assert_awaited_once()
 

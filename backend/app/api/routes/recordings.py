@@ -25,7 +25,6 @@ from fastapi import (
 )
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import select, text, update
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
 
 from app.api.deps import CurrentUser, Database
@@ -69,14 +68,14 @@ from app.core.summary_audio import (
     summary_audio_hash,
 )
 from app.core.summary_generation import (
+    SummaryGenerationEnqueueError,
     apply_summary_result,
     build_summary_transcript,
     combine_summary_instructions,
     latest_summary_generation_job,
-    load_active_summary_generation_job,
     resolve_summary_language_preference,
     resolve_summary_style_preference,
-    summary_transcript_hash,
+    start_recording_summary_generation_job,
 )
 from app.core.voice_identification import (
     rematch_recording_speakers,
@@ -1034,8 +1033,6 @@ async def _persist_client_segments(
             recording.title = await generate_title(
                 transcript_text,
                 language=recording.language or "auto",
-                usage_user_id=recording.user_id,
-                usage_recording_id=recording.id,
             )
         except Exception as error:
             logger.warning("Title generation failed: %s", error)
@@ -2507,8 +2504,9 @@ async def save_transcript(
         )
         return _serialize_recording_detail(recording)
 
+    transcript_text = ""
     try:
-        await _persist_client_segments(
+        transcript_text = await _persist_client_segments(
             recording,
             db,
             request.segments,
@@ -2550,6 +2548,16 @@ async def save_transcript(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to save transcript",
         ) from error
+
+    if transcript_text.strip():
+        await start_recording_summary_generation_job(
+            db,
+            recording_id=recording_id,
+            user_id=user_id,
+            enqueue=enqueue_summary_generation,
+            skip_if_summary_exists=True,
+            raise_on_enqueue_error=False,
+        )
 
     db.expire_all()
     refreshed = await _load_recording_detail(recording_id, user_id, db, include_deleted=False)
@@ -2768,67 +2776,27 @@ async def start_summary_generation(
             detail="No transcript segments to summarize",
         )
 
-    active_job = await load_active_summary_generation_job(
-        db,
-        recording_id=recording.id,
-        user_id=user.id,
-    )
-    if active_job is not None:
-        return _serialize_summary_generation(
-            recording_id=recording.id,
-            summary=recording.summary,
-            job=active_job,
-        )
-
-    transcript = build_summary_transcript(recording.segments)
-    job = SummaryGenerationJob(
-        recording_id=recording.id,
-        user_id=user.id,
-        status=SummaryGenerationStatus.QUEUED.value,
-        stage="queued",
-        progress_percent=5,
-        transcript_hash=summary_transcript_hash(transcript),
-        instructions_override=request.instructions if request else None,
-    )
-    db.add(job)
     try:
-        await db.flush()
-    except IntegrityError:
-        await db.rollback()
-        active_job = await load_active_summary_generation_job(
+        job = await start_recording_summary_generation_job(
             db,
             recording_id=recording_id,
             user_id=user.id,
+            enqueue=enqueue_summary_generation,
+            instructions_override=request.instructions if request else None,
+            raise_on_enqueue_error=True,
         )
-        if active_job is None:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="Summary generation already changed",
-            )
-        return _serialize_summary_generation(
-            recording_id=recording_id,
-            summary=None,
-            job=active_job,
-        )
-    await db.commit()
-
-    try:
-        job.task_id = enqueue_summary_generation(job.id)
-    except Exception as exc:
+    except SummaryGenerationEnqueueError as exc:
         logger.exception("Failed to enqueue summary generation for recording %s", recording_id)
-        job.status = SummaryGenerationStatus.FAILED.value
-        job.stage = "failed"
-        job.progress_percent = 100
-        job.error_code = "summary_enqueue_failed"
-        job.error_message = "Failed to start summary generation."
-        job.failed_at = datetime.now(timezone.utc)
-        await db.commit()
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Failed to start summary generation",
         ) from exc
 
-    await db.commit()
+    if job is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No transcript segments to summarize",
+        )
     return _serialize_summary_generation(
         recording_id=recording.id,
         summary=recording.summary,
@@ -3023,8 +2991,6 @@ async def generate_summary(
                     user_id=user.id,
                 ),
             ),
-            usage_user_id=user.id,
-            usage_recording_id=recording.id,
         )
 
         await apply_summary_result(db, recording=recording, summary_result=summary_result)

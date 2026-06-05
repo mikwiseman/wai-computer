@@ -20,6 +20,7 @@ from app.models.recording import (
     Segment,
     Summary,
     SummaryGenerationJob,
+    SummaryGenerationStatus,
 )
 from app.models.user import User
 from tests.conftest import LEGAL_ACCEPTANCE
@@ -592,6 +593,60 @@ async def test_generate_summary_returns_friendly_503_when_summarizer_fails(
     assert response.json()["detail"] == (
         "We couldn't generate the summary right now. Please try again in a moment."
     )
+
+
+@pytest.mark.asyncio
+async def test_generate_summary_uses_current_cerebras_summarizer_signature(
+    client: AsyncClient,
+    auth_headers: dict,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    recording = await _create_recording(client, auth_headers)
+    recording_id = UUID(recording["id"])
+    db_session.add(
+        Segment(
+            recording_id=recording_id,
+            speaker="Speaker 1",
+            content="Summarize this with the current Cerebras call signature.",
+            start_ms=0,
+            end_ms=1000,
+            confidence=0.99,
+        )
+    )
+    await db_session.flush()
+
+    async def strict_summarizer(
+        transcript: str,
+        *,
+        language: str,
+        style: str,
+        instructions: str | None,
+    ) -> SummaryResult:
+        assert "current Cerebras call signature" in transcript
+        assert language == "en"
+        assert style == "medium"
+        return SummaryResult(
+            title="Current Signature",
+            summary="Summary generated with the current signature.",
+            key_points=["Current signature works"],
+            decisions=[],
+            action_items=[],
+            topics=["summaries"],
+            people_mentioned=[],
+            follow_up_questions=[],
+            sentiment="neutral",
+        )
+
+    monkeypatch.setattr("app.api.routes.recordings.summarize_transcript", strict_summarizer)
+
+    response = await client.post(
+        f"/api/recordings/{recording_id}/generate-summary",
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["summary"] == "Summary generated with the current signature."
 
 
 @pytest.mark.asyncio
@@ -1373,6 +1428,10 @@ async def test_save_transcript_persists_segments_before_audio_upload(
         "app.api.routes.recordings.generate_title",
         AsyncMock(return_value="Transcript First"),
     )
+    monkeypatch.setattr(
+        "app.api.routes.recordings.enqueue_summary_generation",
+        lambda job_id: "celery-transcript-first",
+    )
 
     response = await client.post(
         f"/api/recordings/{recording['id']}/transcript",
@@ -1396,6 +1455,126 @@ async def test_save_transcript_persists_segments_before_audio_upload(
     assert data["title"] == "Transcript First"
     assert data["duration_seconds"] == 3
     assert [segment["content"] for segment in data["segments"]] == ["Transcript saved first"]
+
+
+@pytest.mark.asyncio
+async def test_save_transcript_queues_summary_generation_automatically(
+    client: AsyncClient,
+    auth_headers: dict,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    recording = await _create_recording(client, auth_headers, title=None)
+    recording_id = UUID(recording["id"])
+
+    monkeypatch.setattr(
+        "app.api.routes.recordings.generate_embedding",
+        AsyncMock(return_value=[0.1] * 1536),
+    )
+    monkeypatch.setattr(
+        "app.api.routes.recordings.generate_title",
+        AsyncMock(return_value="Auto Summary Source"),
+    )
+    enqueued_job_ids: list[str] = []
+
+    def fake_enqueue(job_id: UUID) -> str:
+        enqueued_job_ids.append(str(job_id))
+        return "celery-auto-summary"
+
+    monkeypatch.setattr("app.api.routes.recordings.enqueue_summary_generation", fake_enqueue)
+
+    response = await client.post(
+        f"/api/recordings/{recording_id}/transcript",
+        headers=auth_headers,
+        json={
+            "duration_seconds": 4,
+            "segments": [
+                {
+                    "text": "Automatically summarize this saved voice note.",
+                    "speaker": "Speaker 1",
+                    "start_ms": 0,
+                    "end_ms": 3500,
+                    "confidence": 0.95,
+                }
+            ],
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    generation = response.json()["summary_generation"]
+    assert generation["status"] == SummaryGenerationStatus.QUEUED.value
+    assert generation["stage"] == "queued"
+    assert enqueued_job_ids == [generation["job_id"]]
+
+    job = await db_session.get(SummaryGenerationJob, UUID(generation["job_id"]))
+    assert job is not None
+    assert job.recording_id == recording_id
+    assert job.task_id == "celery-auto-summary"
+
+
+@pytest.mark.asyncio
+async def test_save_transcript_replaces_stale_active_summary_job(
+    client: AsyncClient,
+    auth_headers: dict,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    recording = await _create_recording(client, auth_headers, title=None)
+    recording_id = UUID(recording["id"])
+
+    stale_job = SummaryGenerationJob(
+        recording_id=recording_id,
+        user_id=(await db_session.get(Recording, recording_id)).user_id,
+        status=SummaryGenerationStatus.QUEUED.value,
+        stage="queued",
+        progress_percent=5,
+        transcript_hash="0" * 64,
+    )
+    db_session.add(stale_job)
+    await db_session.flush()
+
+    monkeypatch.setattr(
+        "app.api.routes.recordings.generate_embedding",
+        AsyncMock(return_value=[0.1] * 1536),
+    )
+    monkeypatch.setattr(
+        "app.api.routes.recordings.generate_title",
+        AsyncMock(return_value="Fresh Transcript"),
+    )
+    enqueued_job_ids: list[str] = []
+
+    def fake_enqueue(job_id: UUID) -> str:
+        enqueued_job_ids.append(str(job_id))
+        return "celery-fresh-summary"
+
+    monkeypatch.setattr("app.api.routes.recordings.enqueue_summary_generation", fake_enqueue)
+
+    response = await client.post(
+        f"/api/recordings/{recording_id}/transcript",
+        headers=auth_headers,
+        json={
+            "duration_seconds": 4,
+            "segments": [
+                {
+                    "text": "This new transcript should get a fresh summary job.",
+                    "speaker": "Speaker 1",
+                    "start_ms": 0,
+                    "end_ms": 3000,
+                    "confidence": 0.95,
+                }
+            ],
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    generation = response.json()["summary_generation"]
+    assert generation["job_id"] != str(stale_job.id)
+    assert generation["status"] == SummaryGenerationStatus.QUEUED.value
+    assert enqueued_job_ids == [generation["job_id"]]
+
+    await db_session.refresh(stale_job)
+    assert stale_job.status == SummaryGenerationStatus.FAILED.value
+    assert stale_job.error_code == "transcript_replaced"
 
 
 @pytest.mark.asyncio
@@ -1458,6 +1637,10 @@ async def test_save_transcript_accepts_empty_payload_without_erasing_existing_se
     monkeypatch.setattr(
         "app.api.routes.recordings.generate_embedding",
         AsyncMock(return_value=[0.1] * 1536),
+    )
+    monkeypatch.setattr(
+        "app.api.routes.recordings.enqueue_summary_generation",
+        lambda job_id: "celery-keep-transcript",
     )
 
     first_response = await client.post(
@@ -1722,6 +1905,10 @@ async def test_resaving_transcript_replaces_segments_summary_and_generated_actio
     monkeypatch.setattr(
         "app.api.routes.recordings.generate_title",
         AsyncMock(return_value="Recovered Recording"),
+    )
+    monkeypatch.setattr(
+        "app.api.routes.recordings.enqueue_summary_generation",
+        lambda job_id: "celery-recovered-summary",
     )
 
     first_save = await client.post(

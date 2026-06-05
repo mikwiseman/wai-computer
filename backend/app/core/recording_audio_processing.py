@@ -37,6 +37,10 @@ from app.core.speaker_name_extraction import (
     extract_speaker_names,
 )
 from app.core.summarizer import generate_title
+from app.core.summary_generation import (
+    fail_active_summary_generation_jobs,
+    start_recording_summary_generation_job,
+)
 from app.core.transcript_utils import TranscriptResult
 from app.core.transcription import transcribe_audio_file
 from app.core.transcription_guard import TranscriptionGuardError
@@ -132,8 +136,24 @@ def delete_staged_file(path: Path | str | None) -> None:
         logger.warning("Failed to delete staged audio %s: %s", path, error)
 
 
+def _enqueue_recording_summary_generation(job_id: UUID) -> str:
+    from app.tasks.celery_app import celery_app
+
+    result = celery_app.send_task(
+        "app.tasks.summary_generation.generate_recording_summary",
+        kwargs={"job_id": str(job_id)},
+    )
+    return str(result.id)
+
+
 async def reset_recording_processing_state(recording_id: UUID, db: AsyncSession) -> None:
     """Replace transcript-derived data before canonical transcript generation."""
+    await fail_active_summary_generation_jobs(
+        db,
+        recording_id=recording_id,
+        error_code="transcript_replaced",
+        error_message="Transcript was replaced before summary generation completed.",
+    )
     await db.execute(
         delete(ActionItem).where(
             ActionItem.recording_id == recording_id,
@@ -568,6 +588,14 @@ async def process_staged_recording_upload(
         recording.failure_code = None
         recording.failure_message = None
         await db.commit()
+        await start_recording_summary_generation_job(
+            db,
+            recording_id=recording_id,
+            user_id=user_id,
+            enqueue=_enqueue_recording_summary_generation,
+            skip_if_summary_exists=True,
+            raise_on_enqueue_error=False,
+        )
         delete_staged_file(staged_path)
         return
 
@@ -897,8 +925,6 @@ async def process_staged_recording_upload(
                 recording.title = await generate_title(
                     transcript_text,
                     language=recording.language or "auto",
-                    usage_user_id=user_id,
-                    usage_recording_id=recording_id,
                 )
             except Exception as exc:
                 logger.warning("Title generation failed: %s", exc)
@@ -919,6 +945,14 @@ async def process_staged_recording_upload(
         recording.failure_message = None
         await record_recording_transcript_words(db, recording, transcript_text)
         await db.commit()
+        await start_recording_summary_generation_job(
+            db,
+            recording_id=recording_id,
+            user_id=user_id,
+            enqueue=_enqueue_recording_summary_generation,
+            skip_if_summary_exists=True,
+            raise_on_enqueue_error=False,
+        )
         if embedding_failure_count:
             alert_data = {
                 "alert_code": "recording.embeddings.degraded",

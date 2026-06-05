@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
 from uuid import UUID
 
 from sqlalchemy import delete, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -29,6 +31,10 @@ ACTIVE_SUMMARY_GENERATION_STATUSES = {
     SummaryGenerationStatus.QUEUED.value,
     SummaryGenerationStatus.RUNNING.value,
 }
+
+
+class SummaryGenerationEnqueueError(RuntimeError):
+    """Raised when a summary job was created but could not be enqueued."""
 
 
 @dataclass(frozen=True)
@@ -121,6 +127,40 @@ async def load_active_summary_generation_job(
     return result.scalar_one_or_none()
 
 
+async def fail_active_summary_generation_jobs(
+    db: AsyncSession,
+    *,
+    recording_id: UUID,
+    user_id: UUID | None = None,
+    error_code: str,
+    error_message: str,
+) -> list[SummaryGenerationJob]:
+    """Fail queued/running summary jobs that are no longer valid."""
+    conditions = [
+        SummaryGenerationJob.recording_id == recording_id,
+        SummaryGenerationJob.status.in_(ACTIVE_SUMMARY_GENERATION_STATUSES),
+    ]
+    if user_id is not None:
+        conditions.append(SummaryGenerationJob.user_id == user_id)
+
+    jobs = (
+        await db.execute(
+            select(SummaryGenerationJob)
+            .where(*conditions)
+            .order_by(SummaryGenerationJob.created_at.asc())
+        )
+    ).scalars().all()
+    for job in jobs:
+        mark_summary_generation_failed(
+            job,
+            error_code=error_code,
+            error_message=error_message,
+        )
+    if jobs:
+        await db.flush()
+    return list(jobs)
+
+
 def latest_summary_generation_job(recording: Recording) -> SummaryGenerationJob | None:
     jobs = list(getattr(recording, "summary_generation_jobs", []) or [])
     if not jobs:
@@ -202,6 +242,96 @@ async def apply_summary_result(
         topics=summary_result.topics,
     )
     return summary
+
+
+async def start_recording_summary_generation_job(
+    db: AsyncSession,
+    *,
+    recording_id: UUID,
+    user_id: UUID,
+    enqueue: Callable[[UUID], str],
+    instructions_override: str | None = None,
+    skip_if_summary_exists: bool = False,
+    raise_on_enqueue_error: bool = True,
+) -> SummaryGenerationJob | None:
+    """Create and enqueue a durable summary job for the current transcript.
+
+    Returns ``None`` when the recording is missing or has no transcript segments.
+    The job row is committed before the Celery task is enqueued so workers can
+    load it immediately. Enqueue failures are written to the job row; callers can
+    choose whether to surface them as request errors.
+    """
+    recording = await _load_recording_for_generation(
+        db,
+        recording_id=recording_id,
+        user_id=user_id,
+        include_outputs=True,
+        lock=True,
+    )
+    if recording is None or not recording.segments:
+        return None
+
+    if skip_if_summary_exists and recording.summary is not None:
+        return latest_summary_generation_job(recording)
+
+    transcript = build_summary_transcript(recording.segments)
+    transcript_hash = summary_transcript_hash(transcript)
+
+    active_job = await load_active_summary_generation_job(
+        db,
+        recording_id=recording.id,
+        user_id=user_id,
+    )
+    if active_job is not None:
+        if active_job.transcript_hash == transcript_hash:
+            return active_job
+        mark_summary_generation_failed(
+            active_job,
+            error_code="stale_transcript",
+            error_message="Transcript changed before summary generation started.",
+        )
+        await db.flush()
+
+    job = SummaryGenerationJob(
+        recording_id=recording.id,
+        user_id=user_id,
+        status=SummaryGenerationStatus.QUEUED.value,
+        stage="queued",
+        progress_percent=5,
+        transcript_hash=transcript_hash,
+        instructions_override=instructions_override,
+    )
+    db.add(job)
+    try:
+        await db.flush()
+    except IntegrityError:
+        await db.rollback()
+        active_job = await load_active_summary_generation_job(
+            db,
+            recording_id=recording_id,
+            user_id=user_id,
+        )
+        if active_job is not None:
+            return active_job
+        raise
+
+    await db.commit()
+
+    try:
+        job.task_id = enqueue(job.id)
+    except Exception as exc:  # noqa: BLE001 - broker failure is persisted below.
+        mark_summary_generation_failed(
+            job,
+            error_code="summary_enqueue_failed",
+            error_message="Failed to start summary generation.",
+        )
+        await db.commit()
+        if raise_on_enqueue_error:
+            raise SummaryGenerationEnqueueError("Failed to start summary generation") from exc
+        return job
+
+    await db.commit()
+    return job
 
 
 async def prepare_summary_generation_payload(
@@ -400,6 +530,7 @@ async def _load_recording_for_generation(
         select(Recording)
         .where(Recording.id == recording_id, Recording.user_id == user_id)
         .options(*options)
+        .execution_options(populate_existing=True)
     )
     if lock:
         statement = statement.with_for_update()

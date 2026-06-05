@@ -714,8 +714,6 @@ async def import_media_as_recording(
                     user_id=user.id,
                 ),
             ),
-            usage_user_id=user.id,
-            usage_recording_id=recording.id,
         )
         if not explicit_title:
             generated_title = summary_result.title.strip()
