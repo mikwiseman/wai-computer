@@ -2750,6 +2750,8 @@ async def _route_media_message(
         max_command_seconds=settings.telegram_voice_command_max_seconds,
     )
     if decision is not None and decision.route == "file":
+        # Privacy-safe: only the route + reason tag, never the transcript.
+        logger.info("telegram voice routed route=file reason=%s", decision.reason)
         await _handle_media_message(
             db, client, message=message, account=account, media=media
         )
@@ -2806,6 +2808,9 @@ async def _route_media_message(
             decision = VoiceRouteDecision("file", "no_speech")
         else:
             decision = await classify_voice_transcript(transcribed.transcript_text)
+
+    # Privacy-safe: only the route + reason tag, never the transcript.
+    logger.info("telegram voice routed route=%s reason=%s", decision.route, decision.reason)
 
     if decision.route == "message" and transcribed.has_speech:
         await _handle_voice_as_message(
