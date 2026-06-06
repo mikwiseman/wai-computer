@@ -719,6 +719,7 @@ describe("DashboardClient", () => {
     render(<DashboardClient />);
     await waitForDashboardReady();
 
+    await waitFor(() => expect(screen.getByTestId("select-recording-r1")).toBeInTheDocument());
     await user.click(screen.getByTestId("select-recording-r1"));
     await waitFor(() => expect(screen.getByTestId("recording-detail")).toBeInTheDocument());
     await user.click(screen.getByRole("button", { name: "Create Lens" }));

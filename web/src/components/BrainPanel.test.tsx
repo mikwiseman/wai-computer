@@ -19,6 +19,10 @@ const mockExportBrainSpace = vi.fn();
 
 type MockFlowNode = {
   id: string;
+  position: {
+    x: number;
+    y: number;
+  };
   data: {
     onOpen?: () => void;
     node: {
@@ -45,6 +49,9 @@ vi.mock("@xyflow/react", async () => {
             {
               key: node.id,
               type: "button",
+              "data-node-id": node.id,
+              "data-x": String(node.position.x),
+              "data-y": String(node.position.y),
               onClick: node.data.onOpen,
               disabled: !node.data.onOpen,
             },
@@ -151,6 +158,68 @@ function projection(overrides = {}) {
     source_fingerprint: "mirror",
     ...overrides,
   };
+}
+
+function crowdedProjection() {
+  const sourceNodes = Array.from({ length: 12 }, (_, index) => ({
+    id: `source:item:item-${index + 1}`,
+    kind: "source",
+    title: `Source ${index + 1}`,
+    body: `Source detail ${index + 1}`,
+    lane: "sources",
+    source_kind: "item",
+    source_id: `item-${index + 1}`,
+    citation_ids: [`item:item-${index + 1}`],
+    position: { x: 0, y: 0 },
+  }));
+  const entityNodes = Array.from({ length: 12 }, (_, index) => ({
+    id: `entity:e${index + 1}`,
+    kind: "entity",
+    title: `Entity ${index + 1}`,
+    body: "project",
+    lane: "projects",
+    entity_id: `e${index + 1}`,
+    entity_type: "project",
+    citation_ids: [`item:item-${(index % 12) + 1}`],
+    position: { x: 0, y: 0 },
+  }));
+  const nodes = [
+    {
+      id: "lens:root",
+      kind: "lens",
+      title: "Project focus",
+      body: "What matters now",
+      lane: "center",
+      citation_ids: [],
+      position: { x: 0, y: 0 },
+    },
+    ...sourceNodes,
+    ...entityNodes,
+  ];
+
+  return projection({
+    title: "Crowded map",
+    summary: "Crowded map from 12 sources and 12 linked nodes.",
+    nodes,
+    edges: nodes
+      .filter((node) => node.id !== "lens:root")
+      .map((node) => ({
+        id: `edge:lens:root:${node.id}`,
+        source: "lens:root",
+        target: node.id,
+        kind: "supports",
+        label: "supports",
+        citation_ids: node.citation_ids,
+      })),
+    citations: sourceNodes.map((node) => ({
+      id: node.citation_ids[0],
+      source_kind: "item",
+      source_id: node.source_id,
+      title: node.title,
+      kind: "note",
+      created_at: "2026-06-05T10:00:00Z",
+    })),
+  });
 }
 
 function briefing(overrides = {}) {
@@ -453,6 +522,19 @@ describe("BrainPanel (Live Mirror)", () => {
 
     fireEvent.click(within(flow).getByRole("button", { name: "Anna" }));
     expect(screen.getByTestId("wiki-stub")).toHaveTextContent("wiki:e1");
+  });
+
+  it("keeps crowded maps readable with a focused canvas layout", async () => {
+    mockGetBrainMirror.mockResolvedValue(crowdedProjection());
+
+    render(<BrainPanel />);
+    await waitFor(() => expect(screen.getByText("10 on canvas · 15 more in Brain")).toBeInTheDocument());
+
+    const flow = screen.getByTestId("flow");
+    await waitFor(() => expect(within(flow).getAllByRole("button")).toHaveLength(10));
+    expect(within(flow).getByRole("button", { name: "Source 1" })).toHaveAttribute("data-x", "-420");
+    expect(within(flow).getByRole("button", { name: "Project focus" })).toHaveAttribute("data-x", "0");
+    expect(within(flow).getByRole("button", { name: "Entity 1" })).toHaveAttribute("data-x", "420");
   });
 
   it("keeps review, export, and share inside the curated disclosure", async () => {

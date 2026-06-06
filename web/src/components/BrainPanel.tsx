@@ -4,7 +4,6 @@ import {
   Background,
   Controls,
   Handle,
-  MiniMap,
   Position,
   ReactFlow,
   type Edge,
@@ -109,6 +108,27 @@ type MapNodeData = {
   node: BrainMapNode;
   citationCount: number;
   onOpen?: () => void;
+};
+
+type BrainMapCanvasFocus = {
+  projection: BrainMapProjection;
+  hiddenNodeCount: number;
+};
+
+type BrainMapCanvasColumn = "sources" | "center" | "knowledge" | "questions";
+
+const CANVAS_FOCUS_LIMIT = 10;
+const CANVAS_COLUMN_LIMITS: Record<BrainMapCanvasColumn, number> = {
+  sources: 4,
+  center: 2,
+  knowledge: 5,
+  questions: 3,
+};
+const CANVAS_COLUMN_X: Record<BrainMapCanvasColumn, number> = {
+  sources: -420,
+  center: 0,
+  knowledge: 420,
+  questions: 210,
 };
 
 function entityGlyph(type: EntityType | string): string {
@@ -484,6 +504,115 @@ function MapNodeCard(props: NodeProps) {
 
 const nodeTypes = { brainMapNode: MapNodeCard };
 
+function canvasColumnForNode(node: BrainMapNode): BrainMapCanvasColumn {
+  const lane = (node.lane ?? "").toLowerCase();
+  const kind = node.kind.toLowerCase();
+  if (kind === "source" || lane === "sources") return "sources";
+  if (kind === "lens" || lane === "center") return "center";
+  if (kind === "gap" || kind === "open_question" || lane.includes("gap") || lane.includes("question")) {
+    return "questions";
+  }
+  return "knowledge";
+}
+
+function briefingSourceKey(source: BrainMapBriefingSource): string {
+  return `${source.source_kind}:${source.source_id}`;
+}
+
+function nodeFocusScore(
+  node: BrainMapNode,
+  index: number,
+  briefing: BrainMapBriefing | null | undefined,
+): number {
+  let score = index / 1000;
+  if (node.kind === "lens") score -= 1000;
+
+  const sourceKey = node.source_kind && node.source_id ? `${node.source_kind}:${node.source_id}` : null;
+  if (sourceKey && briefing?.top_sources.some((source) => briefingSourceKey(source) === sourceKey)) {
+    score -= 200;
+  }
+  if (node.entity_id && briefing?.top_entities.some((entity) => entity.id === node.entity_id)) {
+    score -= 200;
+  }
+  score -= Math.min(node.citation_ids.length, 8) * 10;
+  return score;
+}
+
+function focusBrainMapProjection(projection: BrainMapProjection): BrainMapCanvasFocus {
+  if (projection.nodes.length <= CANVAS_FOCUS_LIMIT) {
+    return { projection, hiddenNodeCount: 0 };
+  }
+
+  const sortedNodes = projection.nodes
+    .map((node, index) => ({
+      node,
+      column: canvasColumnForNode(node),
+      score: nodeFocusScore(node, index, projection.briefing),
+    }))
+    .sort((a, b) => a.score - b.score);
+  const selectedIds = new Set<string>();
+
+  (Object.keys(CANVAS_COLUMN_LIMITS) as BrainMapCanvasColumn[]).forEach((column) => {
+    sortedNodes
+      .filter((entry) => entry.column === column)
+      .slice(0, CANVAS_COLUMN_LIMITS[column])
+      .forEach((entry) => selectedIds.add(entry.node.id));
+  });
+
+  sortedNodes.forEach((entry) => {
+    if (selectedIds.size < CANVAS_FOCUS_LIMIT) selectedIds.add(entry.node.id);
+  });
+
+  const nodes = projection.nodes.filter((node) => selectedIds.has(node.id));
+  const edges = projection.edges.filter(
+    (edge) => selectedIds.has(edge.source) && selectedIds.has(edge.target),
+  );
+  return {
+    projection: { ...projection, nodes, edges },
+    hiddenNodeCount: projection.nodes.length - nodes.length,
+  };
+}
+
+function hasReadableProjectionPositions(nodes: BrainMapNode[]): boolean {
+  if (nodes.length <= 1) return true;
+  const positions = nodes.map((node) => node.position).filter((position): position is BrainMapPosition => Boolean(position));
+  if (positions.length !== nodes.length) return false;
+
+  const xs = positions.map((position) => position.x);
+  const ys = positions.map((position) => position.y);
+  const width = Math.max(...xs) - Math.min(...xs);
+  const height = Math.max(...ys) - Math.min(...ys);
+  if (nodes.length > 4 && (width < 420 || height < 180)) return false;
+
+  let crowdedPairs = 0;
+  for (let i = 0; i < positions.length; i += 1) {
+    for (let j = i + 1; j < positions.length; j += 1) {
+      if (
+        Math.abs(positions[i].x - positions[j].x) < 190 &&
+        Math.abs(positions[i].y - positions[j].y) < 95
+      ) {
+        crowdedPairs += 1;
+      }
+    }
+  }
+
+  return crowdedPairs <= Math.max(1, Math.floor(nodes.length / 4));
+}
+
+function diagramPosition(
+  node: BrainMapNode,
+  columnIndex: number,
+  columnCount: number,
+): BrainMapPosition {
+  const column = canvasColumnForNode(node);
+  const spacing = column === "center" ? 150 : 146;
+  const y = (columnIndex - (columnCount - 1) / 2) * spacing;
+  return {
+    x: CANVAS_COLUMN_X[column],
+    y: Math.round(column === "questions" ? y + 340 : y),
+  };
+}
+
 function toFlowNodes(
   projection: BrainMapProjection,
   layout: Record<string, BrainMapPosition> | null | undefined,
@@ -492,16 +621,29 @@ function toFlowNodes(
     openEntity: (id: string, name: string) => void;
   },
 ): Node<MapNodeData>[] {
-  const laneCounts: Record<string, number> = {};
+  const columnCounts = projection.nodes.reduce<Record<BrainMapCanvasColumn, number>>(
+    (counts, node) => {
+      const column = canvasColumnForNode(node);
+      counts[column] += 1;
+      return counts;
+    },
+    { sources: 0, center: 0, knowledge: 0, questions: 0 },
+  );
+  const columnIndexes: Record<BrainMapCanvasColumn, number> = {
+    sources: 0,
+    center: 0,
+    knowledge: 0,
+    questions: 0,
+  };
+  const useProjectionPositions = hasReadableProjectionPositions(projection.nodes);
   return projection.nodes.map((node) => {
-    const lane = node.lane ?? "center";
-    const laneIndex = laneCounts[lane] ?? 0;
-    laneCounts[lane] = laneIndex + 1;
+    const column = canvasColumnForNode(node);
+    const columnIndex = columnIndexes[column];
+    columnIndexes[column] = columnIndex + 1;
     const override = layout?.[node.id];
-    const fallback = node.position ?? {
-      x: lane === "sources" ? -340 : lane === "center" ? 0 : 340,
-      y: lane === "center" ? 0 : -180 + laneIndex * 130,
-    };
+    const fallback = useProjectionPositions && node.position
+      ? node.position
+      : diagramPosition(node, columnIndex, columnCounts[column]);
     const onOpen =
       node.kind === "source" && node.source_kind && node.source_id
         ? () => handlers.openSource(node.source_kind as string, node.source_id as string)
@@ -530,8 +672,7 @@ function toFlowEdges(projection: BrainMapProjection): Edge[] {
     source: edge.source,
     target: edge.target,
     type: "smoothstep",
-    animated: edge.kind === "supports",
-    label: edge.label ?? undefined,
+    animated: false,
     style: {
       stroke:
         edge.kind === "mentions"
@@ -539,9 +680,8 @@ function toFlowEdges(projection: BrainMapProjection): Edge[] {
           : edge.kind === "related_to"
             ? "var(--ink-faint)"
             : "var(--ink-soft)",
-      strokeWidth: edge.kind === "supports" ? 1.8 : 1.2,
+      strokeWidth: edge.kind === "supports" ? 1.6 : 1.1,
     },
-    labelStyle: { fill: "var(--ink-soft)", fontSize: 11 },
   }));
 }
 
@@ -551,22 +691,25 @@ function BrainMapCanvas({
   onOpenSource,
   onOpenEntity,
   onLayoutChange,
+  t,
 }: {
   projection: BrainMapProjection;
   layout?: Record<string, BrainMapPosition> | null;
   onOpenSource: (kind: string, id: string) => void;
   onOpenEntity: (id: string, name: string) => void;
   onLayoutChange?: (layout: Record<string, BrainMapPosition>) => void;
+  t: Translator;
 }) {
   const [nodes, setNodes, onNodesChange] = useNodesState<Node<MapNodeData>>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
   const nodesRef = useRef<Node<MapNodeData>[]>([]);
+  const focused = useMemo(() => focusBrainMapProjection(projection), [projection]);
 
   useEffect(() => {
-    const nextNodes = toFlowNodes(projection, layout, { openSource: onOpenSource, openEntity: onOpenEntity });
+    const nextNodes = toFlowNodes(focused.projection, layout, { openSource: onOpenSource, openEntity: onOpenEntity });
     setNodes(nextNodes);
-    setEdges(toFlowEdges(projection));
-  }, [layout, onOpenEntity, onOpenSource, projection, setEdges, setNodes]);
+    setEdges(toFlowEdges(focused.projection));
+  }, [focused.projection, layout, onOpenEntity, onOpenSource, setEdges, setNodes]);
 
   useEffect(() => {
     nodesRef.current = nodes;
@@ -574,17 +717,23 @@ function BrainMapCanvas({
 
   const persistLayout = useCallback(() => {
     if (!onLayoutChange) return;
-    const next = Object.fromEntries(
-      nodesRef.current.map((node) => [
-        node.id,
-        { x: Math.round(node.position.x), y: Math.round(node.position.y) },
-      ]),
-    );
+    const next = { ...(layout ?? {}) };
+    nodesRef.current.forEach((node) => {
+      next[node.id] = { x: Math.round(node.position.x), y: Math.round(node.position.y) };
+    });
     onLayoutChange(next);
-  }, [onLayoutChange]);
+  }, [layout, onLayoutChange]);
 
   return (
     <div className="brain-map-canvas" data-testid="brain-map-canvas">
+      {focused.hiddenNodeCount > 0 ? (
+        <div className="brain-map-canvas__status" aria-live="polite">
+          {t(
+            `${focused.projection.nodes.length} on canvas · ${focused.hiddenNodeCount} more in Brain`,
+            `${focused.projection.nodes.length} на canvas · ещё ${focused.hiddenNodeCount} в Мозге`,
+          )}
+        </div>
+      ) : null}
       <ReactFlow
         nodes={nodes}
         edges={edges}
@@ -593,10 +742,11 @@ function BrainMapCanvas({
         onEdgesChange={onEdgesChange}
         onNodeDragStop={persistLayout}
         fitView
+        fitViewOptions={{ padding: 0.22 }}
         minZoom={0.25}
         maxZoom={1.7}
+        onlyRenderVisibleElements
       >
-        <MiniMap pannable zoomable />
         <Controls />
         <Background gap={18} size={1} />
       </ReactFlow>
@@ -1057,6 +1207,7 @@ export function BrainPanel({
                 onOpenSource={openSource}
                 onOpenEntity={(id, name) => setSelectedEntity({ id, name })}
                 onLayoutChange={activeMap ? (layout) => void persistLayout(layout) : undefined}
+                t={t}
               />
             ) : null}
           </main>
