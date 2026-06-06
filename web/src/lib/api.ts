@@ -34,6 +34,7 @@ import type {
   BrainSpaceMember,
   BrainSpaceHome,
   BrainSpacesResponse,
+  BrainSourceScope,
   ComparisonListEntry,
   EntityPage,
   Entity,
@@ -1024,10 +1025,13 @@ export function listEntities(params?: {
   return apiFetch<Entity[]>(`/api/entities${asQuery(params ?? {})}`);
 }
 
-export function askBrain(question: string): Promise<BrainAnswer> {
+export function askBrain(question: string, sourceScope?: BrainSourceScope): Promise<BrainAnswer> {
   return apiFetch<BrainAnswer>("/api/brain/ask", {
     method: "POST",
-    body: JSON.stringify({ question }),
+    body: JSON.stringify({
+      question,
+      ...(sourceScope ? { source_scope: sourceScope } : {}),
+    }),
   });
 }
 

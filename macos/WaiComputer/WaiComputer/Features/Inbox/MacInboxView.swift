@@ -41,6 +41,7 @@ struct MacInboxView: View {
     let pendingCommand: MacInboxCommand?
     let onStartRecording: () -> Void
     let onLibraryChanged: () async -> Void
+    let onOpenBrainMap: (String) -> Void
     let onPendingDetailConsumed: () -> Void
     let onPendingCommandConsumed: () -> Void
 
@@ -51,6 +52,11 @@ struct MacInboxView: View {
     @State private var focusedCreateMode: InboxCreateMode = .file
     @State private var askDraft: String = ""
     @State private var pendingChatMessage: String?
+    @State private var sourceBrainQuestion = ""
+    @State private var sourceBrainAnswer: BrainAnswer?
+    @State private var sourceBrainError: String?
+    @State private var isAskingSourceBrain = false
+    @State private var creatingSourceBrainMapId: String?
 
     init(
         apiClient: APIClient,
@@ -62,6 +68,7 @@ struct MacInboxView: View {
         pendingCommand: MacInboxCommand? = nil,
         onStartRecording: @escaping () -> Void,
         onLibraryChanged: @escaping () async -> Void,
+        onOpenBrainMap: @escaping (String) -> Void = { _ in },
         onPendingDetailConsumed: @escaping () -> Void = {},
         onPendingCommandConsumed: @escaping () -> Void = {}
     ) {
@@ -74,6 +81,7 @@ struct MacInboxView: View {
         self.pendingCommand = pendingCommand
         self.onStartRecording = onStartRecording
         self.onLibraryChanged = onLibraryChanged
+        self.onOpenBrainMap = onOpenBrainMap
         self.onPendingDetailConsumed = onPendingDetailConsumed
         self.onPendingCommandConsumed = onPendingCommandConsumed
         _model = StateObject(wrappedValue: MacInboxViewModel(
@@ -98,6 +106,15 @@ struct MacInboxView: View {
     private var selectedRowID: String? {
         guard let selectedDetail else { return nil }
         return "\(selectedDetail.kind.rawValue):\(selectedDetail.id)"
+    }
+
+    private var selectedSourceRow: InboxRow? {
+        guard let selectedDetail else { return nil }
+        return model.rows.first { row in
+            row.detail.kind == selectedDetail.kind
+                && row.detail.id == selectedDetail.id
+                && (row.sourceKind == .recording || row.sourceKind == .item)
+        }
     }
 
     var body: some View {
@@ -133,6 +150,9 @@ struct MacInboxView: View {
         }
         .onChangeCompat(of: model.rows) { _, _ in
             consumePendingDetailIfNeeded()
+        }
+        .onChangeCompat(of: selectedRowID) { _, _ in
+            resetSourceBrain()
         }
         .dropDestination(for: URL.self) { urls, _ in
             handleDroppedFiles(urls)
@@ -313,79 +333,100 @@ struct MacInboxView: View {
     @ViewBuilder
     private var detailPane: some View {
         if let selectedDetail {
-            switch selectedDetail.kind {
-            case .recording:
-                MacRecordingDetailView(
-                    recordingId: selectedDetail.id,
-                    initialDetail: nil,
-                    mode: .active,
-                    folders: folders,
-                    pendingTitleEditId: .constant(nil),
-                    onDelete: {
-                        self.selectedDetail = nil
-                        Task {
-                            await model.load()
-                            await onLibraryChanged()
-                        }
-                    },
-                    onRestore: {
-                        self.selectedDetail = nil
-                        Task {
-                            await model.load()
-                            await onLibraryChanged()
-                        }
-                    },
-                    onMoveToFolder: { _ in
-                        Task {
-                            await model.load()
-                            await onLibraryChanged()
-                        }
-                    },
-                    onDidRename: {
-                        Task {
-                            await model.load()
-                            await onLibraryChanged()
-                        }
-                    }
-                )
-                .id(selectedRowID)
-            case .item:
-                MacInboxItemDetail(
-                    apiClient: apiClient,
-                    itemId: selectedDetail.id,
-                    onDeleted: {
-                        self.selectedDetail = nil
-                        Task {
-                            await model.load()
-                            await onLibraryChanged()
-                        }
-                    },
-                    onUpdated: {}
-                )
-                    .id(selectedRowID)
-            case .chat:
-                CompanionView(
-                    apiClient: apiClient,
-                    recordings: recordings,
-                    initialChatId: selectedDetail.id,
-                    initialMessage: pendingChatMessage,
-                    onInitialMessageConsumed: { pendingChatMessage = nil },
-                    showsConversationSwitcher: false,
-                    viewingFolderId: folderId,
-                    onTurnCompleted: { completion in
-                        MacWaiTaskNotificationCenter.shared.notifyTaskFinished(
-                            title: t("Wai finished", "Wai закончил"),
-                            body: completion.preview ?? t("Your Wai task is ready.", "Задача Wai готова."),
-                            chatId: completion.chatId
-                        )
-                    }
-                )
-                .environment(\.locale, MacDateFormatting.locale(for: languageManager.current))
-                .companionAccentColor(Palette.accent)
-                .id(selectedRowID)
+            VStack(spacing: 0) {
+                if let row = selectedSourceRow {
+                    MacInboxSourceBrainPanel(
+                        row: row,
+                        question: $sourceBrainQuestion,
+                        answer: sourceBrainAnswer,
+                        errorMessage: sourceBrainError,
+                        isAsking: isAskingSourceBrain,
+                        isCreatingMap: creatingSourceBrainMapId == row.id,
+                        onAsk: { askBrainAboutSource(row) },
+                        onCreateMap: { createBrainMapFromSource(row) }
+                    )
+                    Divider()
+                }
+                selectedDetailView(selectedDetail)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             }
         } else {
             createPane
+        }
+    }
+
+    @ViewBuilder
+    private func selectedDetailView(_ selectedDetail: InboxDetailRef) -> some View {
+        switch selectedDetail.kind {
+        case .recording:
+            MacRecordingDetailView(
+                recordingId: selectedDetail.id,
+                initialDetail: nil,
+                mode: .active,
+                folders: folders,
+                pendingTitleEditId: .constant(nil),
+                onDelete: {
+                    self.selectedDetail = nil
+                    Task {
+                        await model.load()
+                        await onLibraryChanged()
+                    }
+                },
+                onRestore: {
+                    self.selectedDetail = nil
+                    Task {
+                        await model.load()
+                        await onLibraryChanged()
+                    }
+                },
+                onMoveToFolder: { _ in
+                    Task {
+                        await model.load()
+                        await onLibraryChanged()
+                    }
+                },
+                onDidRename: {
+                    Task {
+                        await model.load()
+                        await onLibraryChanged()
+                    }
+                }
+            )
+            .id(selectedRowID)
+        case .item:
+            MacInboxItemDetail(
+                apiClient: apiClient,
+                itemId: selectedDetail.id,
+                onDeleted: {
+                    self.selectedDetail = nil
+                    Task {
+                        await model.load()
+                        await onLibraryChanged()
+                    }
+                },
+                onUpdated: {}
+            )
+            .id(selectedRowID)
+        case .chat:
+            CompanionView(
+                apiClient: apiClient,
+                recordings: recordings,
+                initialChatId: selectedDetail.id,
+                initialMessage: pendingChatMessage,
+                onInitialMessageConsumed: { pendingChatMessage = nil },
+                showsConversationSwitcher: false,
+                viewingFolderId: folderId,
+                onTurnCompleted: { completion in
+                    MacWaiTaskNotificationCenter.shared.notifyTaskFinished(
+                        title: t("Wai finished", "Wai закончил"),
+                        body: completion.preview ?? t("Your Wai task is ready.", "Задача Wai готова."),
+                        chatId: completion.chatId
+                    )
+                }
+            )
+            .environment(\.locale, MacDateFormatting.locale(for: languageManager.current))
+            .companionAccentColor(Palette.accent)
+            .id(selectedRowID)
         }
     }
 
@@ -595,6 +636,84 @@ struct MacInboxView: View {
                 selectedDetail = detail
             }
         }
+    }
+
+    private func askBrainAboutSource(_ row: InboxRow) {
+        let question = sourceBrainQuestion.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !question.isEmpty, !isAskingSourceBrain else { return }
+        isAskingSourceBrain = true
+        sourceBrainError = nil
+        Task {
+            do {
+                let answer = try await apiClient.askBrain(
+                    question: question,
+                    sourceScope: brainSourceScope(for: row)
+                )
+                await MainActor.run {
+                    sourceBrainAnswer = answer
+                    sourceBrainError = nil
+                    isAskingSourceBrain = false
+                }
+            } catch {
+                await MainActor.run {
+                    sourceBrainError = error.localizedDescription
+                    isAskingSourceBrain = false
+                }
+            }
+        }
+    }
+
+    private func createBrainMapFromSource(_ row: InboxRow) {
+        guard creatingSourceBrainMapId == nil else { return }
+        creatingSourceBrainMapId = row.id
+        let prompt = "Map this source: \(brainSourceTitle(row))"
+        Task {
+            do {
+                let created = try await apiClient.createBrainMap(
+                    BrainMapCreateRequest(
+                        prompt: prompt,
+                        origin: "inbox",
+                        sourceScope: brainSourceScope(for: row)
+                    )
+                )
+                await MainActor.run {
+                    creatingSourceBrainMapId = nil
+                    onOpenBrainMap(created.id)
+                }
+            } catch {
+                await MainActor.run {
+                    sourceBrainError = error.localizedDescription
+                    creatingSourceBrainMapId = nil
+                }
+            }
+        }
+    }
+
+    private func brainSourceScope(for row: InboxRow) -> [String: JSONValue] {
+        [
+            "sources": .array([
+                .object([
+                    "source_kind": .string(row.sourceKind.rawValue),
+                    "source_id": .string(row.sourceId)
+                ])
+            ])
+        ]
+    }
+
+    private func brainSourceTitle(_ row: InboxRow) -> String {
+        let trimmed = (row.title ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmed.isEmpty {
+            return trimmed
+        }
+        return row.sourceLabel
+    }
+
+    private func resetSourceBrain() {
+        sourceBrainQuestion = ""
+        sourceBrainAnswer = nil
+        sourceBrainError = nil
+        isAskingSourceBrain = false
+        creatingSourceBrainMapId = nil
     }
 
     private func consumePendingCommandIfNeeded() {
@@ -950,12 +1069,12 @@ private struct MacInboxAskComposer: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: Spacing.sm) {
-            Text(t("Ask Wai", "Спросить Wai"))
+            Text(t("New Wai Session", "Новая сессия Wai"))
                 .font(Typography.headingMedium)
             TextField(
                 t(
-                    "Ask Wai to search, remember, plan, or act...",
-                    "Попросите Wai искать, помнить, планировать или действовать..."
+                    "Give Wai a task to search, remember, plan, or act...",
+                    "Дайте Wai задачу: искать, помнить, планировать или действовать..."
                 ),
                 text: $draft,
                 axis: .vertical
@@ -970,7 +1089,7 @@ private struct MacInboxAskComposer: View {
                     if isWorking {
                         ProgressView().controlSize(.small)
                     } else {
-                        Text(t("Ask", "Спросить"))
+                        Text(t("Start", "Начать"))
                     }
                 }
                 .buttonStyle(.borderedProminent)
@@ -990,6 +1109,156 @@ private struct MacInboxAskComposer: View {
                 .stroke(Palette.border, lineWidth: 1)
         )
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+
+    private func t(_ english: String, _ russian: String) -> String {
+        OnboardingL10n.text(english, russian, language: languageManager.current)
+    }
+}
+
+private struct MacInboxSourceBrainPanel: View {
+    let row: InboxRow
+    @Binding var question: String
+    let answer: BrainAnswer?
+    let errorMessage: String?
+    let isAsking: Bool
+    let isCreatingMap: Bool
+    let onAsk: () -> Void
+    let onCreateMap: () -> Void
+
+    @EnvironmentObject private var languageManager: LanguageManager
+
+    private var trimmedQuestion: String {
+        question.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Spacing.sm) {
+            HStack(alignment: .center, spacing: Spacing.sm) {
+                Image(systemName: row.sourceKind == .recording ? "waveform" : "doc.text")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(Palette.accent)
+                    .frame(width: 26, height: 26)
+                    .background(Palette.accentSubtle)
+                    .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(t("Brain for this source", "Мозг по этому источнику"))
+                        .font(Typography.headingMedium)
+                    Text(sourceTitle)
+                        .font(Typography.label)
+                        .foregroundStyle(Palette.textSecondary)
+                        .lineLimit(1)
+                }
+                Spacer()
+                Button(action: onCreateMap) {
+                    if isCreatingMap {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Label(t("Create Lens", "Создать линзу"), systemImage: "scope")
+                    }
+                }
+                .buttonStyle(.bordered)
+                .disabled(isCreatingMap || isAsking)
+                .accessibilityIdentifier("mac-inbox-source-brain-create-lens")
+            }
+
+            HStack(alignment: .top, spacing: Spacing.sm) {
+                TextField(prompt, text: $question, axis: .vertical)
+                    .textFieldStyle(.roundedBorder)
+                    .lineLimit(1...4)
+                    .onSubmit { if !trimmedQuestion.isEmpty { onAsk() } }
+                    .accessibilityIdentifier("mac-inbox-source-brain-question")
+
+                Button(action: onAsk) {
+                    if isAsking {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Label(t("Ask", "Спросить"), systemImage: "sparkles")
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(trimmedQuestion.isEmpty || isAsking || isCreatingMap)
+                .accessibilityIdentifier("mac-inbox-source-brain-ask")
+            }
+
+            if let errorMessage {
+                Text(errorMessage)
+                    .font(Typography.label)
+                    .foregroundStyle(.red)
+                    .textSelection(.enabled)
+            }
+
+            if let answer {
+                VStack(alignment: .leading, spacing: Spacing.xs) {
+                    Text(answer.answer)
+                        .font(Typography.bodySmall)
+                        .foregroundStyle(Palette.textPrimary)
+                        .textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
+                    if !answer.citations.isEmpty {
+                        HStack(spacing: Spacing.xs) {
+                            ForEach(answer.citations.prefix(3)) { citation in
+                                Text(citationLabel(citation))
+                                    .font(Typography.label)
+                                    .foregroundStyle(Palette.textSecondary)
+                                    .lineLimit(1)
+                                    .padding(.horizontal, Spacing.xs)
+                                    .padding(.vertical, 3)
+                                    .background(Palette.surfaceHover)
+                                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                            }
+                        }
+                    }
+                    if !answer.gaps.isEmpty {
+                        Text(answer.gaps.joined(separator: " "))
+                            .font(Typography.label)
+                            .foregroundStyle(Palette.textSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                .padding(Spacing.sm)
+                .background(Palette.surfaceHover)
+                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            }
+        }
+        .padding(.horizontal, Spacing.lg)
+        .padding(.vertical, Spacing.md)
+        .background(Palette.surfaceSubtle)
+    }
+
+    private var sourceTitle: String {
+        let trimmed = (row.title ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? row.sourceLabel : trimmed
+    }
+
+    private var prompt: String {
+        switch row.sourceKind {
+        case .recording:
+            return t("Ask this voice memo...", "Спросить эту запись...")
+        case .item:
+            return t("Ask this material...", "Спросить этот материал...")
+        case .chat:
+            return t("Ask this source...", "Спросить этот источник...")
+        }
+    }
+
+    private func citationLabel(_ citation: BrainAnswerCitation) -> String {
+        let title = citation.title?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let base: String
+        if let title, !title.isEmpty {
+            base = title
+        } else {
+            base = sourceTitle
+        }
+        guard let startMs = citation.startMs else {
+            return base
+        }
+        return "\(base) \(timestamp(startMs))"
+    }
+
+    private func timestamp(_ startMs: Int) -> String {
+        let totalSeconds = max(0, startMs / 1_000)
+        return String(format: "%d:%02d", totalSeconds / 60, totalSeconds % 60)
     }
 
     private func t(_ english: String, _ russian: String) -> String {

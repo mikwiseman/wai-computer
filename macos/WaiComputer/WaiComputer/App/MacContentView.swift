@@ -122,6 +122,7 @@ struct MacMainView: View {
     @State private var pendingRecordingSelectionAfterSectionChange: PendingRecordingSelection?
     @State private var pendingInboxDetail: InboxDetailRef?
     @State private var pendingInboxCommand: MacInboxCommand?
+    @State private var pendingBrainMapId: String?
 
     enum SidebarSection: Hashable {
         case inbox
@@ -845,6 +846,7 @@ struct MacMainView: View {
                 onLibraryChanged: {
                     await libraryViewModel.loadLibrary(apiClient: appState.getAPIClient())
                 },
+                onOpenBrainMap: openBrainMap,
                 onPendingDetailConsumed: {
                     pendingInboxDetail = nil
                 },
@@ -919,12 +921,16 @@ struct MacMainView: View {
         case .brain:
             MacBrainView(
                 apiClient: appState.getAPIClient(),
+                initialMapId: pendingBrainMapId,
                 onOpenSource: openBrainSource,
                 onOpenInbox: {
                     selectedSection = .inbox
                 },
                 onOpenWai: { space in
                     openBrainChat(space)
+                },
+                onInitialMapConsumed: {
+                    pendingBrainMapId = nil
                 }
             )
                 .environment(\.locale, MacDateFormatting.locale(for: languageManager.current))
@@ -1132,6 +1138,11 @@ struct MacMainView: View {
         selectedRecordingIds.removeAll()
         pendingInboxDetail = detail
         selectedSection = .inbox
+    }
+
+    private func openBrainMap(_ mapId: String) {
+        pendingBrainMapId = mapId
+        selectedSection = .brain
     }
 
     private func openBrainChat(_ space: BrainSpace) {

@@ -1447,9 +1447,12 @@ export interface BrainAnswer {
   freshness: BrainAnswerFreshness;
 }
 
-
-
-
+export interface BrainSourceScope {
+  sources: Array<{
+    source_kind: "recording" | "item";
+    source_id: string;
+  }>;
+}
 
 export interface StarRecordingResponse {
   id: string;

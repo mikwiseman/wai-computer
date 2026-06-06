@@ -182,6 +182,101 @@ async def test_ask_brain_uses_wider_pool_and_prefers_distinct_sources(
     ]
 
 
+async def test_source_scope_answers_only_from_selected_source(
+    db_session, monkeypatch
+) -> None:
+    user = await _make_user(db_session)
+    selected_id = uuid4()
+    other_id = uuid4()
+    scoped_calls: list[set[tuple[str, str]]] = []
+
+    async def fake_unified_search(_db, _user_id, _question, *, limit):
+        return [
+            _hit(
+                parent_id=other_id,
+                title="Other memo",
+                snippet="This unrelated source says the launch is blocked by budget.",
+            )
+        ]
+
+    async def fake_scoped_source_hits(_db, _user_id, allowed):
+        scoped_calls.append(allowed)
+        return [
+            SimpleNamespace(
+                source_kind="recording",
+                parent_id=str(selected_id),
+                chunk_id="scoped-recording",
+                title="Selected voice memo",
+                kind="note",
+                snippet="The selected voice memo says the blocker is legal review.",
+                score=1.0,
+                created_at="2026-06-06T12:00:00+00:00",
+            )
+        ]
+
+    monkeypatch.setattr(brain_ask, "unified_search", fake_unified_search)
+    monkeypatch.setattr(brain_ask, "_scoped_source_hits", fake_scoped_source_hits)
+    fake = _fake_cerebras(
+        {
+            "answer": "The selected memo says legal review is blocking launch [1].",
+            "citations": [1],
+            "gaps": [],
+        }
+    )
+
+    answer = await ask_brain(
+        db_session,
+        user.id,
+        "what blocks launch?",
+        cerebras_client=fake,
+        source_scope={
+            "sources": [
+                {"source_kind": "recording", "source_id": str(selected_id)}
+            ]
+        },
+    )
+
+    assert scoped_calls == [{("recording", str(selected_id))}]
+    assert answer.answer == "The selected memo says legal review is blocking launch [1]."
+    assert [citation.source_id for citation in answer.citations] == [str(selected_id)]
+    assert answer.citations[0].title == "Selected voice memo"
+
+
+async def test_empty_source_scope_does_not_fall_back_to_whole_brain(
+    db_session, monkeypatch
+) -> None:
+    user = await _make_user(db_session)
+    search_called = False
+
+    async def fake_unified_search(*_a, **_k):
+        nonlocal search_called
+        search_called = True
+        return [_hit(title="Whole Brain memo")]
+
+    async def fail_scoped_source_hits(*_a, **_k):
+        raise AssertionError("empty scope must not load scoped source hits")
+
+    monkeypatch.setattr(brain_ask, "unified_search", fake_unified_search)
+    monkeypatch.setattr(brain_ask, "_scoped_source_hits", fail_scoped_source_hits)
+    fake = _fake_cerebras(
+        {"answer": "should not be used", "citations": [], "gaps": []}
+    )
+
+    answer = await ask_brain(
+        db_session,
+        user.id,
+        "what blocks launch?",
+        cerebras_client=fake,
+        source_scope={"sources": []},
+    )
+
+    assert search_called is False
+    assert fake._state["calls"] == 0
+    assert answer.answer == ""
+    assert answer.citations == []
+    assert answer.gaps == ["Your Brain doesn't contain anything about this yet."]
+
+
 async def test_blank_question_short_circuits(db_session) -> None:
     user = await _make_user(db_session)
     answer = await ask_brain(db_session, user.id, "   ")

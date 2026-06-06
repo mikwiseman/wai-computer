@@ -521,6 +521,10 @@ final class APIClientNewEndpointsTests: XCTestCase {
 
             let body = try jsonBody(from: request)
             XCTAssertEqual(body["question"] as? String, "What changed in voice memos?")
+            let encodedScope = try XCTUnwrap(body["source_scope"] as? [String: Any])
+            let sources = try XCTUnwrap(encodedScope["sources"] as? [[String: Any]])
+            XCTAssertEqual(sources.first?["source_kind"] as? String, "recording")
+            XCTAssertEqual(sources.first?["source_id"] as? String, "rec-1")
 
             let response = HTTPURLResponse(
                 url: request.url!,
@@ -551,7 +555,18 @@ final class APIClientNewEndpointsTests: XCTestCase {
             return (response, payload)
         }
 
-        let answer = try await client.askBrain(question: "What changed in voice memos?")
+        let sourceScope: [String: JSONValue] = [
+            "sources": .array([
+                .object([
+                    "source_kind": .string("recording"),
+                    "source_id": .string("rec-1")
+                ])
+            ])
+        ]
+        let answer = try await client.askBrain(
+            question: "What changed in voice memos?",
+            sourceScope: sourceScope
+        )
 
         XCTAssertEqual(answer.answer, "Hiring risk changed after the latest voice memo.")
         XCTAssertEqual(answer.citations.first?.sourceKind, "recording")

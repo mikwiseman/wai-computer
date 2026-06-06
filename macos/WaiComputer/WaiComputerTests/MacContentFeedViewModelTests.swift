@@ -75,6 +75,29 @@ final class MacContentFeedViewModelTests: XCTestCase {
         XCTAssertFalse(source.contains("Прикрепить файл"))
     }
 
+    func testInboxSelectedSourceCanAskAndCreateScopedBrainLens() throws {
+        let source = try macSource("WaiComputer/Features/Inbox/MacInboxView.swift")
+
+        XCTAssertTrue(source.contains("MacInboxSourceBrainPanel("))
+        XCTAssertTrue(source.contains("apiClient.askBrain(\n                    question: question,\n                    sourceScope: brainSourceScope(for: row)"))
+        XCTAssertTrue(source.contains("BrainMapCreateRequest(\n                        prompt: prompt,\n                        origin: \"inbox\",\n                        sourceScope: brainSourceScope(for: row)"))
+        XCTAssertTrue(source.contains("onOpenBrainMap(created.id)"))
+        XCTAssertTrue(source.contains("\"source_kind\": .string(row.sourceKind.rawValue)"))
+        XCTAssertTrue(source.contains("\"source_id\": .string(row.sourceId)"))
+    }
+
+    func testInboxCreatedBrainLensOpensSelectedMapInBrain() throws {
+        let shellSource = try macSource("WaiComputer/App/MacContentView.swift")
+        let brainSource = try macSource("WaiComputer/Features/Brain/MacBrainView.swift")
+
+        XCTAssertTrue(shellSource.contains("@State private var pendingBrainMapId: String?"))
+        XCTAssertTrue(shellSource.contains("onOpenBrainMap: openBrainMap"))
+        XCTAssertTrue(shellSource.contains("initialMapId: pendingBrainMapId"))
+        XCTAssertTrue(shellSource.contains("pendingBrainMapId = mapId\n        selectedSection = .brain"))
+        XCTAssertTrue(brainSource.contains("func selectInitialMap(_ mapId: String?)"))
+        XCTAssertTrue(brainSource.contains("selectedMapId = mapId"))
+    }
+
     func testInboxCreatePaneDefaultsToFocusedUploadMode() throws {
         let source = try macSource("WaiComputer/Features/Inbox/MacInboxView.swift")
 

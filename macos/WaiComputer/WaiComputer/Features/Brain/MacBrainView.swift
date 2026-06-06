@@ -13,9 +13,11 @@ enum BrainPageFilter: String, CaseIterable {
 /// Inbox; Brain is the up-to-date visual surface.
 struct MacBrainView: View {
     let apiClient: APIClient
+    let initialMapId: String?
     let onOpenSource: (InboxDetailRef) -> Void
     let onOpenInbox: (() -> Void)?
     let onOpenWai: ((BrainSpace) -> Void)?
+    let onInitialMapConsumed: () -> Void
 
     @EnvironmentObject private var languageManager: LanguageManager
     @StateObject private var model: MacBrainViewModel
@@ -25,15 +27,22 @@ struct MacBrainView: View {
 
     init(
         apiClient: APIClient,
+        initialMapId: String? = nil,
         onOpenSource: @escaping (InboxDetailRef) -> Void = { _ in },
         onOpenInbox: (() -> Void)? = nil,
-        onOpenWai: ((BrainSpace) -> Void)? = nil
+        onOpenWai: ((BrainSpace) -> Void)? = nil,
+        onInitialMapConsumed: @escaping () -> Void = {}
     ) {
         self.apiClient = apiClient
+        self.initialMapId = initialMapId
         self.onOpenSource = onOpenSource
         self.onOpenInbox = onOpenInbox
         self.onOpenWai = onOpenWai
-        _model = StateObject(wrappedValue: MacBrainViewModel(apiClient: apiClient))
+        self.onInitialMapConsumed = onInitialMapConsumed
+        _model = StateObject(wrappedValue: MacBrainViewModel(
+            apiClient: apiClient,
+            initialMapId: initialMapId
+        ))
     }
 
     var body: some View {
@@ -43,8 +52,12 @@ struct MacBrainView: View {
             content
         }
         .task {
+            consumeInitialMapIfNeeded(initialMapId)
             await model.load()
             await model.refreshSelectedMapOnceIfNeeded()
+        }
+        .onChangeCompat(of: initialMapId) { _, next in
+            consumeInitialMapIfNeeded(next)
         }
         .onChangeCompat(of: model.selectedMapId) { _, _ in
             Task { await model.refreshSelectedMapOnceIfNeeded() }
@@ -53,6 +66,12 @@ struct MacBrainView: View {
             guard !model.loading else { return }
             Task { await model.loadSelectedSpace() }
         }
+    }
+
+    private func consumeInitialMapIfNeeded(_ mapId: String?) {
+        guard let mapId, !mapId.isEmpty else { return }
+        model.selectInitialMap(mapId)
+        onInitialMapConsumed()
     }
 
     private var header: some View {
@@ -1792,8 +1811,14 @@ final class MacBrainViewModel: ObservableObject {
     private let apiClient: APIClient
     private var autoRefreshedMapIds: Set<String> = []
 
-    init(apiClient: APIClient) {
+    init(apiClient: APIClient, initialMapId: String? = nil) {
         self.apiClient = apiClient
+        selectInitialMap(initialMapId)
+    }
+
+    func selectInitialMap(_ mapId: String?) {
+        guard let mapId, !mapId.isEmpty else { return }
+        selectedMapId = mapId
     }
 
     func load() async {

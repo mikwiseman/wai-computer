@@ -450,6 +450,27 @@ describe("api client wrappers", () => {
     expect(mockedApiFetch).toHaveBeenNthCalledWith(3, "/api/search/fts?q=roadmap&limit=11&offset=9");
   });
 
+  it("posts a source scope when asking Brain from a selected source", async () => {
+    const sourceScope = {
+      sources: [
+        {
+          source_kind: "recording" as const,
+          source_id: "rec-1",
+        },
+      ],
+    };
+
+    await api.askBrain("What changed?", sourceScope);
+
+    expect(mockedApiFetch).toHaveBeenCalledWith("/api/brain/ask", {
+      method: "POST",
+      body: JSON.stringify({
+        question: "What changed?",
+        source_scope: sourceScope,
+      }),
+    });
+  });
+
   it("calls change password endpoint", async () => {
     await api.changePassword("old", "new");
     expect(mockedApiFetch).toHaveBeenCalledWith("/api/settings/change-password", {

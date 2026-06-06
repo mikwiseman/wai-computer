@@ -23,6 +23,7 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
+from app.core.brain_maps import _allowed_scoped_sources, _scoped_source_hits
 from app.core.cerebras_chat import (
     chat_completion_parsed,
     get_cerebras_client,
@@ -112,14 +113,14 @@ async def _freshness_for(
     return AnswerFreshness(newest_source_at=newest, weeks_since=weeks, stale=weeks >= _STALE_WEEKS)
 
 
-def _excerpt_for_hit(index: int, hit: UnifiedHit) -> str:
+def _excerpt_for_hit(index: int, hit: UnifiedHit | Any) -> str:
     title = hit.title or ("Recording" if hit.source_kind == "recording" else "Material")
     source_label = "Recording" if hit.source_kind == "recording" else "Material"
     return f"[{index}] ({source_label}: {title}) {(hit.snippet or '')[:_EXCERPT_CHAR_CAP]}"
 
 
-def _diverse_hits(hits: list[UnifiedHit], limit: int) -> list[UnifiedHit]:
-    selected: list[UnifiedHit] = []
+def _diverse_hits(hits: list[UnifiedHit | Any], limit: int) -> list[UnifiedHit | Any]:
+    selected: list[UnifiedHit | Any] = []
     selected_chunk_ids: set[str] = set()
     per_source_counts: dict[tuple[str, str], int] = {}
     max_per_source = max(1, ASK_MAX_EXCERPTS_PER_SOURCE)
@@ -139,6 +140,33 @@ def _diverse_hits(hits: list[UnifiedHit], limit: int) -> list[UnifiedHit]:
     return selected
 
 
+async def _search_hits(
+    db: AsyncSession,
+    user_id: uuid.UUID,
+    question: str,
+    *,
+    source_scope: dict[str, Any] | None,
+    limit: int,
+) -> list[UnifiedHit | Any]:
+    search_pool_limit = max(limit, limit * ASK_SEARCH_POOL_MULTIPLIER)
+    if source_scope is None:
+        raw_hits = await unified_search(db, user_id, question, limit=search_pool_limit)
+        return _diverse_hits(raw_hits, limit)
+
+    allowed = _allowed_scoped_sources(source_scope)
+    if not allowed:
+        return []
+
+    raw_hits = await unified_search(db, user_id, question, limit=search_pool_limit)
+    scoped_hits = await _scoped_source_hits(db, user_id, allowed)
+    filtered = [hit for hit in raw_hits if (hit.source_kind, hit.parent_id) in allowed]
+    seen_sources = {(hit.source_kind, hit.parent_id) for hit in filtered}
+    filtered.extend(
+        hit for hit in scoped_hits if (hit.source_kind, hit.parent_id) not in seen_sources
+    )
+    return _diverse_hits(filtered, limit)
+
+
 async def ask_brain(
     db: AsyncSession,
     user_id: uuid.UUID,
@@ -147,6 +175,7 @@ async def ask_brain(
     cerebras_client: Any | None = None,
     limit: int = ASK_RETRIEVAL_LIMIT,
     now: datetime | None = None,
+    source_scope: dict[str, Any] | None = None,
 ) -> BrainAnswer:
     """Answer ``question`` from the user's recordings and items, cited, with honest gaps."""
     question = (question or "").strip()
@@ -154,9 +183,13 @@ async def ask_brain(
     if not question:
         return BrainAnswer(answer="", gaps=["Ask a question to search your Brain."])
 
-    search_pool_limit = max(limit, limit * ASK_SEARCH_POOL_MULTIPLIER)
-    raw_hits = await unified_search(db, user_id, question, limit=search_pool_limit)
-    hits = _diverse_hits(raw_hits, limit)
+    hits = await _search_hits(
+        db,
+        user_id,
+        question,
+        source_scope=source_scope,
+        limit=limit,
+    )
     if not hits:
         freshness = await _freshness_for([], now=now)
         return BrainAnswer(
@@ -173,7 +206,7 @@ async def ask_brain(
             source_kind=hit.source_kind,
             source_id=hit.parent_id,
             title=hit.title,
-            start_ms=hit.start_ms,
+            start_ms=getattr(hit, "start_ms", None),
         )
         excerpts.append(_excerpt_for_hit(i, hit))
 

@@ -343,6 +343,7 @@ async def get_brain_map_revisions_route(
 
 class BrainAskRequest(BaseModel):
     question: str
+    source_scope: dict[str, Any] | None = None
 
 
 class BrainAnswerCitationResponse(BaseModel):
@@ -372,7 +373,7 @@ async def ask_brain_route(
 ) -> BrainAnswerResponse:
     """Ask your Brain: one cited answer from your own recordings, with the
     gaps and staleness stated honestly — never an answer from outside them."""
-    answer = await ask_brain(db, user.id, request.question)
+    answer = await ask_brain(db, user.id, request.question, source_scope=request.source_scope)
     return BrainAnswerResponse(
         answer=answer.answer,
         citations=[BrainAnswerCitationResponse(**asdict(c)) for c in answer.citations],

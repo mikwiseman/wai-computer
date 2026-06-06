@@ -1,5 +1,20 @@
 import Foundation
 
+public struct BrainAskRequest: Codable, Sendable, Equatable {
+    public let question: String
+    public let sourceScope: [String: JSONValue]?
+
+    public init(question: String, sourceScope: [String: JSONValue]? = nil) {
+        self.question = question
+        self.sourceScope = sourceScope
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case question
+        case sourceScope = "source_scope"
+    }
+}
+
 /// Ask your Brain — one cited answer with honest gaps + a freshness read.
 public struct BrainAnswerCitation: Codable, Identifiable, Sendable {
     public let id: String

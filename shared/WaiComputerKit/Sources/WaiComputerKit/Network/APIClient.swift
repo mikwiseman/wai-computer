@@ -2294,8 +2294,15 @@ public actor APIClient {
     }
 
     /// Ask your Brain: one cited answer with honest gaps + freshness.
-    public func askBrain(question: String) async throws -> BrainAnswer {
-        return try await request(.POST, path: "/api/brain/ask", body: ["question": question])
+    public func askBrain(
+        question: String,
+        sourceScope: [String: JSONValue]? = nil
+    ) async throws -> BrainAnswer {
+        return try await request(
+            .POST,
+            path: "/api/brain/ask",
+            body: BrainAskRequest(question: question, sourceScope: sourceScope)
+        )
     }
 
     public func getEntity(id: String) async throws -> EntityDetail {
