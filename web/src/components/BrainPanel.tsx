@@ -115,21 +115,34 @@ type BrainMapCanvasFocus = {
   hiddenNodeCount: number;
 };
 
-type BrainMapCanvasColumn = "sources" | "center" | "knowledge" | "questions";
+type BrainMapCanvasColumn = "sources" | "center" | "signals" | "knowledge" | "questions";
 
 const CANVAS_FOCUS_LIMIT = 10;
+const CANVAS_COLUMN_ORDER: BrainMapCanvasColumn[] = ["center", "signals", "sources", "knowledge", "questions"];
 const CANVAS_COLUMN_LIMITS: Record<BrainMapCanvasColumn, number> = {
-  sources: 4,
-  center: 2,
-  knowledge: 5,
-  questions: 3,
+  sources: 3,
+  center: 1,
+  signals: 4,
+  knowledge: 2,
+  questions: 2,
 };
 const CANVAS_COLUMN_X: Record<BrainMapCanvasColumn, number> = {
   sources: -420,
   center: 0,
+  signals: 420,
   knowledge: 420,
   questions: 210,
 };
+const SCENARIO_SIGNAL_NODE_KINDS = new Set([
+  "decision",
+  "tradeoff",
+  "risk",
+  "next_step",
+  "open_question",
+  "timeline_event",
+  "deadline",
+  "commitment",
+]);
 
 function entityGlyph(type: EntityType | string): string {
   if (type === "person") return "P";
@@ -489,7 +502,7 @@ function MapNodeCard(props: NodeProps) {
       disabled={!data.onOpen}
     >
       <Handle type="target" position={Position.Left} />
-      <span className="brain-map-node__kind">{node.kind.replaceAll("_", " ")}</span>
+      <span className="brain-map-node__kind">{nodeKindLabel(node)}</span>
       <strong>{node.title}</strong>
       {node.body ? <small>{node.body}</small> : null}
       {data.citationCount > 0 ? (
@@ -504,11 +517,24 @@ function MapNodeCard(props: NodeProps) {
 
 const nodeTypes = { brainMapNode: MapNodeCard };
 
+function isScenarioSignalNode(node: BrainMapNode): boolean {
+  return SCENARIO_SIGNAL_NODE_KINDS.has(node.kind.toLowerCase());
+}
+
+function nodeKindLabel(node: BrainMapNode): string {
+  const kind = node.kind.toLowerCase();
+  if (kind === "next_step") return "next step";
+  if (kind === "open_question") return "open question";
+  if (kind === "timeline_event") return "event";
+  return kind.replaceAll("_", " ");
+}
+
 function canvasColumnForNode(node: BrainMapNode): BrainMapCanvasColumn {
   const lane = (node.lane ?? "").toLowerCase();
   const kind = node.kind.toLowerCase();
   if (kind === "source" || lane === "sources") return "sources";
   if (kind === "lens" || lane === "center") return "center";
+  if (isScenarioSignalNode(node)) return "signals";
   if (kind === "gap" || kind === "open_question" || lane.includes("gap") || lane.includes("question")) {
     return "questions";
   }
@@ -552,11 +578,13 @@ function focusBrainMapProjection(projection: BrainMapProjection): BrainMapCanvas
     .sort((a, b) => a.score - b.score);
   const selectedIds = new Set<string>();
 
-  (Object.keys(CANVAS_COLUMN_LIMITS) as BrainMapCanvasColumn[]).forEach((column) => {
+  CANVAS_COLUMN_ORDER.forEach((column) => {
     sortedNodes
       .filter((entry) => entry.column === column)
       .slice(0, CANVAS_COLUMN_LIMITS[column])
-      .forEach((entry) => selectedIds.add(entry.node.id));
+      .forEach((entry) => {
+        if (selectedIds.size < CANVAS_FOCUS_LIMIT) selectedIds.add(entry.node.id);
+      });
   });
 
   sortedNodes.forEach((entry) => {
@@ -603,12 +631,14 @@ function diagramPosition(
   node: BrainMapNode,
   columnIndex: number,
   columnCount: number,
+  columnCounts: Record<BrainMapCanvasColumn, number>,
 ): BrainMapPosition {
   const column = canvasColumnForNode(node);
   const spacing = column === "center" ? 150 : 146;
   const y = (columnIndex - (columnCount - 1) / 2) * spacing;
+  const x = column === "knowledge" && columnCounts.signals > 0 ? 660 : CANVAS_COLUMN_X[column];
   return {
-    x: CANVAS_COLUMN_X[column],
+    x,
     y: Math.round(column === "questions" ? y + 340 : y),
   };
 }
@@ -627,11 +657,12 @@ function toFlowNodes(
       counts[column] += 1;
       return counts;
     },
-    { sources: 0, center: 0, knowledge: 0, questions: 0 },
+    { sources: 0, center: 0, signals: 0, knowledge: 0, questions: 0 },
   );
   const columnIndexes: Record<BrainMapCanvasColumn, number> = {
     sources: 0,
     center: 0,
+    signals: 0,
     knowledge: 0,
     questions: 0,
   };
@@ -643,7 +674,7 @@ function toFlowNodes(
     const override = layout?.[node.id];
     const fallback = useProjectionPositions && node.position
       ? node.position
-      : diagramPosition(node, columnIndex, columnCounts[column]);
+      : diagramPosition(node, columnIndex, columnCounts[column], columnCounts);
     const onOpen =
       node.source_kind && node.source_id
         ? () => handlers.openSource(node.source_kind as string, node.source_id as string)
@@ -661,7 +692,7 @@ function toFlowNodes(
       },
       draggable: true,
       selectable: true,
-      zIndex: node.kind === "lens" ? 2 : 1,
+      zIndex: node.kind === "lens" ? 3 : isScenarioSignalNode(node) ? 2 : 1,
     } satisfies Node<MapNodeData>;
   });
 }

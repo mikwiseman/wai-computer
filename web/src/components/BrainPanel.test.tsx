@@ -222,6 +222,71 @@ function crowdedProjection() {
   });
 }
 
+function crowdedScenarioProjection() {
+  const baseProjection = crowdedProjection();
+  const signalNodes = [
+    {
+      id: "signal:decision:approved",
+      kind: "decision",
+      title: "Decision",
+      body: "Board approved the hiring plan.",
+      lane: "decisions",
+      source_kind: "item",
+      source_id: "item-1",
+      citation_ids: ["item:item-1"],
+      position: { x: 0, y: 0 },
+    },
+    {
+      id: "signal:risk:budget",
+      kind: "risk",
+      title: "Risk",
+      body: "Budget approval is not final.",
+      lane: "risks",
+      source_kind: "item",
+      source_id: "item-1",
+      citation_ids: ["item:item-1"],
+      position: { x: 0, y: 0 },
+    },
+    {
+      id: "signal:next-step:offer",
+      kind: "next_step",
+      title: "Next step",
+      body: "Send the candidate offer.",
+      lane: "next_steps",
+      source_kind: "item",
+      source_id: "item-1",
+      citation_ids: ["item:item-1"],
+      position: { x: 0, y: 0 },
+    },
+    {
+      id: "signal:question:onboarding",
+      kind: "open_question",
+      title: "Open question",
+      body: "Who owns onboarding?",
+      lane: "questions",
+      source_kind: "item",
+      source_id: "item-1",
+      citation_ids: ["item:item-1"],
+      position: { x: 0, y: 0 },
+    },
+  ];
+  return projection({
+    ...baseProjection,
+    nodes: [...baseProjection.nodes, ...signalNodes],
+    edges: [
+      ...baseProjection.edges,
+      ...signalNodes.map((node) => ({
+        id: `edge:lens:root:${node.id}`,
+        source: "lens:root",
+        target: node.id,
+        kind: node.kind,
+        label: node.title,
+        citation_ids: node.citation_ids,
+      })),
+    ],
+  });
+}
+
 function briefing(overrides = {}) {
   return {
     mode: "focused",
@@ -564,6 +629,20 @@ describe("BrainPanel (Live Mirror)", () => {
     expect(within(flow).getByRole("button", { name: "Source 1" })).toHaveAttribute("data-x", "-420");
     expect(within(flow).getByRole("button", { name: "Project focus" })).toHaveAttribute("data-x", "0");
     expect(within(flow).getByRole("button", { name: "Entity 1" })).toHaveAttribute("data-x", "420");
+  });
+
+  it("keeps scenario signal cards in focus on crowded maps", async () => {
+    mockGetBrainMirror.mockResolvedValue(crowdedScenarioProjection());
+
+    render(<BrainPanel />);
+    await waitFor(() => expect(screen.getByText("10 on canvas · 19 more in Brain")).toBeInTheDocument());
+
+    const flow = screen.getByTestId("flow");
+    await waitFor(() => expect(within(flow).getAllByRole("button")).toHaveLength(10));
+    expect(within(flow).getByRole("button", { name: "Decision" })).toHaveAttribute("data-x", "420");
+    expect(within(flow).getByRole("button", { name: "Risk" })).toHaveAttribute("data-x", "420");
+    expect(within(flow).getByRole("button", { name: "Next step" })).toHaveAttribute("data-x", "420");
+    expect(within(flow).getByRole("button", { name: "Open question" })).toHaveAttribute("data-x", "420");
   });
 
   it("keeps review, export, and share inside the curated disclosure", async () => {

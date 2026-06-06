@@ -3774,6 +3774,31 @@ a.primary-button[aria-disabled="true"]:hover {
   border-style: dashed;
 }
 
+.brain-map-node--decision,
+.brain-map-node--tradeoff,
+.brain-map-node--timeline_event,
+.brain-map-node--commitment {
+  border-color: color-mix(in srgb, var(--accent) 34%, var(--border));
+  background: color-mix(in srgb, var(--accent) 12%, var(--panel-raised));
+}
+
+.brain-map-node--risk {
+  border-color: color-mix(in srgb, var(--danger) 42%, var(--border));
+  background: color-mix(in srgb, var(--danger) 11%, var(--panel-raised));
+}
+
+.brain-map-node--next_step {
+  border-color: color-mix(in srgb, var(--success) 38%, var(--border));
+  background: color-mix(in srgb, var(--success) 10%, var(--panel-raised));
+}
+
+.brain-map-node--open_question,
+.brain-map-node--deadline {
+  border-style: dashed;
+  border-color: color-mix(in srgb, var(--accent) 38%, var(--border));
+  background: color-mix(in srgb, var(--accent) 8%, var(--panel-raised));
+}
+
 .brain-map-node__kind,
 .brain-map-node em,
 .brain-map-node small {
