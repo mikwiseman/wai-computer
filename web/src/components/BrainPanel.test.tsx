@@ -10,6 +10,7 @@ const mockCreateBrainMap = vi.fn();
 const mockUpdateBrainMap = vi.fn();
 const mockRefreshBrainMap = vi.fn();
 const mockAskBrain = vi.fn();
+const mockSyncBrain = vi.fn();
 const mockListEntities = vi.fn();
 const mockListBrainSpaces = vi.fn();
 const mockGetBrainSpaceHome = vi.fn();
@@ -88,6 +89,7 @@ vi.mock("@/lib/api", () => ({
   listEntities: (...a: unknown[]) => mockListEntities(...a),
   refreshBrainMap: (...a: unknown[]) => mockRefreshBrainMap(...a),
   rejectBrainReviewPack: (...a: unknown[]) => mockRejectBrainReviewPack(...a),
+  syncBrain: (...a: unknown[]) => mockSyncBrain(...a),
   updateBrainMap: (...a: unknown[]) => mockUpdateBrainMap(...a),
 }));
 
@@ -523,6 +525,16 @@ describe("BrainPanel (Live Mirror)", () => {
     mockListBrainMaps.mockResolvedValue({ maps: [] });
     mockCreateBrainMap.mockResolvedValue(brainMap());
     mockRefreshBrainMap.mockResolvedValue(revision({ id: "rev-2", revision_index: 2 }));
+    mockSyncBrain.mockResolvedValue({
+      recording_summaries_scanned: 2,
+      item_summaries_scanned: 1,
+      sources_with_entities: 1,
+      mentions_recorded: 2,
+      entity_mentions_before: 3,
+      entity_mentions_after: 5,
+      created_mentions: 2,
+      llm_requests: 0,
+    });
     mockUpdateBrainMap.mockImplementation((_id, input) => Promise.resolve(brainMap({ ...input })));
     mockAskBrain.mockResolvedValue({
       answer: "Budget approval is the main launch risk.",
@@ -563,6 +575,8 @@ describe("BrainPanel (Live Mirror)", () => {
     expect(screen.getByRole("button", { name: "Create Lens" })).toBeInTheDocument();
     expect(screen.getByRole("region", { name: "Source mirror" })).toBeInTheDocument();
     expect(screen.getByText("2 of 3 sources are linked into the mirror; 1 still need entities.")).toBeInTheDocument();
+    expect(screen.getByText("1 synced now")).toBeInTheDocument();
+    expect(mockSyncBrain).toHaveBeenCalledWith({ limit: 500 });
     expect(await screen.findByText("Launch notes")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Pages" })).toBeInTheDocument();
     expect(screen.getByText("Pricing")).toBeInTheDocument();

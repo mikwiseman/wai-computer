@@ -35,6 +35,7 @@ import type {
   BrainSpaceHome,
   BrainSpacesResponse,
   BrainSourceScope,
+  BrainSyncResult,
   ComparisonListEntry,
   EntityPage,
   Entity,
@@ -834,6 +835,13 @@ export function getBrainGraph(params?: {
   limit?: number;
 }): Promise<BrainGraph> {
   return apiFetch<BrainGraph>(`/api/brain/graph${asQuery(params ?? {})}`);
+}
+
+export function syncBrain(input: { limit?: number } = {}): Promise<BrainSyncResult> {
+  return apiFetch<BrainSyncResult>("/api/brain/sync", {
+    method: "POST",
+    body: JSON.stringify({ limit: input.limit ?? 500 }),
+  });
 }
 
 export function getBrainMirror(params?: { limit?: number }): Promise<BrainMapProjection> {

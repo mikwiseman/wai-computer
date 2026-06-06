@@ -128,6 +128,28 @@ public struct BrainOverview: Codable, Sendable {
     }
 }
 
+public struct BrainSyncResult: Codable, Sendable {
+    public let recordingSummariesScanned: Int
+    public let itemSummariesScanned: Int
+    public let sourcesWithEntities: Int
+    public let mentionsRecorded: Int
+    public let entityMentionsBefore: Int
+    public let entityMentionsAfter: Int
+    public let createdMentions: Int
+    public let llmRequests: Int
+
+    private enum CodingKeys: String, CodingKey {
+        case recordingSummariesScanned = "recording_summaries_scanned"
+        case itemSummariesScanned = "item_summaries_scanned"
+        case sourcesWithEntities = "sources_with_entities"
+        case mentionsRecorded = "mentions_recorded"
+        case entityMentionsBefore = "entity_mentions_before"
+        case entityMentionsAfter = "entity_mentions_after"
+        case createdMentions = "created_mentions"
+        case llmRequests = "llm_requests"
+    }
+}
+
 public struct BrainGraph: Codable, Sendable {
     public let nodes: [BrainGraphNode]
     public let edges: [BrainGraphEdge]

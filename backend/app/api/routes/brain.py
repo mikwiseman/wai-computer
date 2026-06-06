@@ -1,4 +1,4 @@
-"""Brain route — the compiled-wiki projection of canonical memory (read-only)."""
+"""Brain routes — compiled wiki, live mirror, maps, and zero-LLM graph sync."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from typing import Any
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Query, status
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.api.deps import CurrentUser, Database
 from app.core.brain import compile_brain
@@ -26,6 +26,7 @@ from app.core.brain_maps import (
     refresh_brain_map,
     update_brain_map,
 )
+from app.core.entity_graph import backfill_entity_mentions_from_existing_summaries
 from app.models.brain_map import BrainMap, BrainMapRevision
 
 router = APIRouter(prefix="/brain", tags=["brain"])
@@ -85,6 +86,41 @@ async def get_brain(user: CurrentUser, db: Database) -> BrainResponse:
         ],
         entity_count=projection.entity_count,
     )
+
+
+class BrainSyncRequest(BaseModel):
+    limit: int = Field(default=500, ge=1, le=2000)
+
+
+class BrainSyncResponse(BaseModel):
+    recording_summaries_scanned: int
+    item_summaries_scanned: int
+    sources_with_entities: int
+    mentions_recorded: int
+    entity_mentions_before: int
+    entity_mentions_after: int
+    created_mentions: int
+    llm_requests: int
+
+
+@router.post("/sync", response_model=BrainSyncResponse)
+async def sync_brain_route(
+    user: CurrentUser,
+    db: Database,
+    request: BrainSyncRequest | None = None,
+) -> BrainSyncResponse:
+    """Replay stored summary people/topics into the source graph for this user.
+
+    This is zero-LLM repair work for legacy recordings/materials whose summaries
+    predate graph seeding. It never summarizes new content and never fabricates
+    entities outside the saved summary fields.
+    """
+    result = await backfill_entity_mentions_from_existing_summaries(
+        db,
+        user_id=user.id,
+        limit=(request.limit if request else BrainSyncRequest().limit),
+    )
+    return BrainSyncResponse(**result.as_dict())
 
 
 class GraphNodeResponse(BaseModel):

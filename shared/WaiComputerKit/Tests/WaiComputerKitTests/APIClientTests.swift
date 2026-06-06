@@ -1714,6 +1714,33 @@ final class APIClientTests: XCTestCase {
         XCTAssertEqual(g.overview?.topEntities.first?.recordingCount, 1)
     }
 
+    func testSyncBrainPostsLimitAndDecodes() async throws {
+        let client = makeClient()
+        MockURLProtocol.requestHandler = { request in
+            XCTAssertEqual(request.httpMethod, "POST")
+            XCTAssertEqual(request.url?.path, "/api/brain/sync")
+            let json = try XCTUnwrap(self.bodyJSON(from: request))
+            XCTAssertEqual(json["limit"] as? Int, 250)
+            let response = HTTPURLResponse(
+                url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil
+            )!
+            let payload = """
+            {"recording_summaries_scanned":2,"item_summaries_scanned":1,\
+            "sources_with_entities":2,"mentions_recorded":4,\
+            "entity_mentions_before":3,"entity_mentions_after":7,\
+            "created_mentions":4,"llm_requests":0}
+            """.data(using: .utf8)!
+            return (response, payload)
+        }
+
+        let result = try await client.syncBrain(limit: 250)
+        XCTAssertEqual(result.recordingSummariesScanned, 2)
+        XCTAssertEqual(result.itemSummariesScanned, 1)
+        XCTAssertEqual(result.sourcesWithEntities, 2)
+        XCTAssertEqual(result.createdMentions, 4)
+        XCTAssertEqual(result.llmRequests, 0)
+    }
+
     func testGetEntityPageDecodes() async throws {
         let client = makeClient()
         MockURLProtocol.requestHandler = { request in

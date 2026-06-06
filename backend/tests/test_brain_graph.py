@@ -3,6 +3,7 @@
 from uuid import uuid4
 
 import pytest
+from sqlalchemy import select
 
 from app.core.brain_graph import build_brain_graph, build_entity_page
 from app.core.entity_graph import record_mention, upsert_entity
@@ -241,6 +242,90 @@ async def test_brain_graph_route_smoke(client, auth_headers) -> None:
     assert data["stats"]["entities"] == 0  # fresh user -> honest empty graph
     assert data["overview"]["recordings"]["total"] == 0
     assert data["overview"]["materials"]["total"] == 0
+
+
+async def test_brain_sync_route_backfills_existing_summary_entities(
+    client, db_session
+) -> None:
+    email = f"brain-sync-{uuid4().hex}@example.com"
+    registered = await client.post(
+        "/api/auth/register",
+        json={
+            "email": email,
+            "password": "testpassword123",
+            "accepted_legal_terms": True,
+            "legal_terms_version": "2026-05-22",
+            "legal_privacy_version": "2026-05-22",
+        },
+    )
+    assert registered.status_code == 200, registered.text
+    headers = {"Authorization": f"Bearer {registered.json()['access_token']}"}
+    user = (
+        await db_session.execute(select(User).where(User.email == email))
+    ).scalar_one()
+    recording = Recording(
+        user_id=user.id,
+        title="Legacy voice memo",
+        type="note",
+        status=RecordingStatus.READY.value,
+    )
+    db_session.add(recording)
+    await db_session.flush()
+    db_session.add(
+        Summary(
+            recording_id=recording.id,
+            summary="Mik discussed the roadmap.",
+            key_points=[],
+            decisions=[],
+            topics=["Roadmap"],
+            people_mentioned=["Mik"],
+        )
+    )
+    item, _ = await ingest_item(
+        db_session,
+        user.id,
+        source="paste",
+        title="Legacy material",
+        body="Anna owns launch planning",
+        embed=False,
+    )
+    db_session.add(
+        ItemSummary(
+            item_id=item.id,
+            summary="Anna owns launch planning.",
+            key_points=[],
+            decisions=[],
+            action_items=[],
+            topics=["Launch"],
+            people_mentioned=["Anna"],
+            highlights=[],
+            key_moments=[],
+        )
+    )
+    await db_session.flush()
+
+    synced = await client.post("/api/brain/sync", json={"limit": 20}, headers=headers)
+    assert synced.status_code == 200, synced.text
+    payload = synced.json()
+    assert payload["recording_summaries_scanned"] == 1
+    assert payload["item_summaries_scanned"] == 1
+    assert payload["sources_with_entities"] == 2
+    assert payload["created_mentions"] == 4
+    assert payload["llm_requests"] == 0
+
+    graph = await client.get("/api/brain/graph", headers=headers)
+    assert graph.status_code == 200, graph.text
+    overview = graph.json()["overview"]
+    assert overview["recordings"]["organized"] == 1
+    assert overview["recordings"]["unorganized"] == 0
+    assert overview["materials"]["organized"] == 1
+    assert overview["materials"]["unorganized"] == 0
+    assert {entity["name"] for entity in overview["top_entities"]} >= {
+        "Mik",
+        "Anna",
+        "Roadmap",
+        "Launch",
+    }
 
 
 async def test_build_entity_page_sources_and_related(db_session) -> None:

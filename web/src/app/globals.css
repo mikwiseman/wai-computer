@@ -3548,7 +3548,14 @@ a.primary-button[aria-disabled="true"]:hover {
   line-height: 1.35;
 }
 
-.brain-source-mirror__head > span {
+.brain-source-mirror__badges {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.35rem;
+}
+
+.brain-source-mirror__badges span {
   border: 1px solid var(--border);
   border-radius: 999px;
   padding: 0.2rem 0.55rem;

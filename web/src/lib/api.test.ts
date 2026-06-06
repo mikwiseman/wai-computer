@@ -693,6 +693,22 @@ describe("api client wrappers", () => {
     expect(mockedApiFetch).toHaveBeenCalledWith("/api/recordings/shared/share-token");
   });
 
+  it("calls syncBrain with a bounded default limit", async () => {
+    await api.syncBrain();
+    expect(mockedApiFetch).toHaveBeenCalledWith("/api/brain/sync", {
+      method: "POST",
+      body: JSON.stringify({ limit: 500 }),
+    });
+  });
+
+  it("calls syncBrain with a custom limit", async () => {
+    await api.syncBrain({ limit: 250 });
+    expect(mockedApiFetch).toHaveBeenCalledWith("/api/brain/sync", {
+      method: "POST",
+      body: JSON.stringify({ limit: 250 }),
+    });
+  });
+
   it("calls listFolders", async () => {
     await api.listFolders();
     expect(mockedApiFetch).toHaveBeenCalledWith("/api/folders");

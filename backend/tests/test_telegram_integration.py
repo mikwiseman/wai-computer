@@ -3338,7 +3338,12 @@ async def test_recent_assistant_text_returns_last_bot_message(db_session: AsyncS
     db_session.add(account)
     base = datetime(2026, 6, 6, 12, 0, tzinfo=timezone.utc)
     db_session.add(
-        ChatMessage(conversation_id=conv.id, role="assistant", content="first answer", created_at=base)
+        ChatMessage(
+            conversation_id=conv.id,
+            role="assistant",
+            content="first answer",
+            created_at=base,
+        )
     )
     db_session.add(
         ChatMessage(

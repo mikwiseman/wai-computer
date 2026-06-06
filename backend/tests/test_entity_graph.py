@@ -6,11 +6,13 @@ import pytest
 from sqlalchemy import select
 
 from app.core.entity_graph import (
+    backfill_entity_mentions_from_existing_summaries,
     record_mention,
     seed_entities_from_summary,
     upsert_entity,
 )
 from app.models.entity import Entity, EntityMention
+from app.models.recording import Recording, RecordingStatus, Summary
 from app.models.user import User
 
 pytestmark = pytest.mark.asyncio
@@ -103,3 +105,67 @@ async def test_seed_entities_from_summary_creates_people_and_topics(db_session) 
     ).scalars().all()
     assert len(mentions) == 4
     assert all(m.source_kind == "item" for m in mentions)
+
+
+async def test_backfill_prioritizes_missing_summary_mentions_under_limit(db_session) -> None:
+    user = await _make_user(db_session)
+    already_synced = Recording(
+        user_id=user.id,
+        title="Already synced",
+        type="note",
+        status=RecordingStatus.READY.value,
+    )
+    missing = Recording(
+        user_id=user.id,
+        title="Missing graph links",
+        type="note",
+        status=RecordingStatus.READY.value,
+    )
+    db_session.add_all([already_synced, missing])
+    await db_session.flush()
+    db_session.add_all(
+        [
+            Summary(
+                recording_id=already_synced.id,
+                summary="Anna discussed pricing.",
+                key_points=[],
+                decisions=[],
+                topics=["Pricing"],
+                people_mentioned=["Anna"],
+            ),
+            Summary(
+                recording_id=missing.id,
+                summary="Mik discussed launch.",
+                key_points=[],
+                decisions=[],
+                topics=["Launch"],
+                people_mentioned=["Mik"],
+            ),
+        ]
+    )
+    anna = await upsert_entity(db_session, user.id, type="person", name="Anna")
+    assert anna is not None
+    await record_mention(
+        db_session,
+        user_id=user.id,
+        entity_id=anna.id,
+        source_kind="recording",
+        source_id=already_synced.id,
+    )
+
+    result = await backfill_entity_mentions_from_existing_summaries(
+        db_session,
+        user.id,
+        limit=1,
+    )
+
+    assert result.recording_summaries_scanned == 1
+    assert result.item_summaries_scanned == 0
+    assert result.sources_with_entities == 1
+    assert result.created_mentions == 2
+    mentions = (
+        await db_session.execute(
+            select(EntityMention).where(EntityMention.source_id == missing.id)
+        )
+    ).scalars().all()
+    assert len(mentions) == 2

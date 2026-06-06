@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from types import SimpleNamespace
-
 import pytest
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -145,7 +143,11 @@ async def test_import_with_precomputed_skips_second_transcription(
     assert result.recording.status == RecordingStatus.READY.value
     assert result.transcript == "полный текст записи"
     segments = (
-        (await db_session.execute(select(Segment).where(Segment.recording_id == result.recording.id)))
+        (
+            await db_session.execute(
+                select(Segment).where(Segment.recording_id == result.recording.id)
+            )
+        )
         .scalars()
         .all()
     )

@@ -987,6 +987,17 @@ export interface BrainOverview {
   llm_requests: number;
 }
 
+export interface BrainSyncResult {
+  recording_summaries_scanned: number;
+  item_summaries_scanned: number;
+  sources_with_entities: number;
+  mentions_recorded: number;
+  entity_mentions_before: number;
+  entity_mentions_after: number;
+  created_mentions: number;
+  llm_requests: number;
+}
+
 export interface BrainGraph {
   nodes: BrainGraphNode[];
   edges: BrainGraphEdge[];

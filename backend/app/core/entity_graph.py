@@ -13,7 +13,7 @@ import logging
 from dataclasses import dataclass
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -204,6 +204,19 @@ async def backfill_entity_mentions_from_existing_summaries(
     """
     before = await _mention_count(db, user_id)
 
+    recording_has_entities = or_(
+        func.coalesce(func.jsonb_array_length(Summary.people_mentioned), 0) > 0,
+        func.coalesce(func.jsonb_array_length(Summary.topics), 0) > 0,
+    )
+    recording_missing_mentions = ~(
+        select(EntityMention.id)
+        .where(
+            EntityMention.user_id == Recording.user_id,
+            EntityMention.source_kind == "recording",
+            EntityMention.source_id == Summary.recording_id,
+        )
+        .exists()
+    )
     recording_stmt = (
         select(
             Recording.user_id,
@@ -212,7 +225,11 @@ async def backfill_entity_mentions_from_existing_summaries(
             Summary.topics,
         )
         .join(Recording, Recording.id == Summary.recording_id)
-        .where(Recording.deleted_at.is_(None))
+        .where(
+            Recording.deleted_at.is_(None),
+            recording_has_entities,
+            recording_missing_mentions,
+        )
         .order_by(Summary.updated_at.asc(), Summary.id.asc())
     )
     if user_id is not None:
@@ -222,10 +239,23 @@ async def backfill_entity_mentions_from_existing_summaries(
     recording_rows = (await db.execute(recording_stmt)).all()
 
     remaining = None if limit is None else max(limit - len(recording_rows), 0)
+    item_has_entities = or_(
+        func.coalesce(func.jsonb_array_length(ItemSummary.people_mentioned), 0) > 0,
+        func.coalesce(func.jsonb_array_length(ItemSummary.topics), 0) > 0,
+    )
+    item_missing_mentions = ~(
+        select(EntityMention.id)
+        .where(
+            EntityMention.user_id == Item.user_id,
+            EntityMention.source_kind == "item",
+            EntityMention.source_id == ItemSummary.item_id,
+        )
+        .exists()
+    )
     item_stmt = (
         select(Item.user_id, ItemSummary.item_id, ItemSummary.people_mentioned, ItemSummary.topics)
         .join(Item, Item.id == ItemSummary.item_id)
-        .where(Item.deleted_at.is_(None))
+        .where(Item.deleted_at.is_(None), item_has_entities, item_missing_mentions)
         .order_by(ItemSummary.updated_at.asc(), ItemSummary.id.asc())
     )
     if user_id is not None:

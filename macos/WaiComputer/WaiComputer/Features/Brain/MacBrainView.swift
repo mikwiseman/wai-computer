@@ -233,6 +233,12 @@ struct MacBrainView: View {
                             t("needs review", "на проверке")
                         )
                     }
+                    if let sync = model.brainSyncResult, sync.createdMentions > 0 {
+                        metricPill(
+                            "\(sync.sourcesWithEntities)",
+                            t("synced now", "связано сейчас")
+                        )
+                    }
                 }
 
                 HStack(spacing: Spacing.sm) {
@@ -1994,6 +2000,7 @@ final class MacBrainViewModel: ObservableObject {
     // Live mirror + generated maps
     @Published var mirror: BrainMapProjection?
     @Published var brainOverview: BrainOverview?
+    @Published var brainSyncResult: BrainSyncResult?
     @Published var maps: [BrainMap] = []
     @Published var selectedMapId = "mirror"
     @Published var lensPrompt = ""
@@ -2043,6 +2050,7 @@ final class MacBrainViewModel: ObservableObject {
         defer { loading = false }
         do {
             // No-fallback: a transient failure must NOT look like "empty brain".
+            let loadedSync = try await apiClient.syncBrain(limit: 500)
             async let mirrorRequest = apiClient.getBrainMirror(limit: 60)
             async let graphRequest = apiClient.getBrainGraph(limit: 200)
             async let mapsRequest = apiClient.listBrainMaps(limit: 50)
@@ -2053,6 +2061,7 @@ final class MacBrainViewModel: ObservableObject {
                 mapsRequest,
                 entitiesRequest
             )
+            brainSyncResult = loadedSync
             mirror = loadedMirror
             brainOverview = loadedGraph.overview
             maps = loadedMaps.maps

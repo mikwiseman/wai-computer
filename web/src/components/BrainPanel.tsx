@@ -28,6 +28,7 @@ import {
   listEntities,
   refreshBrainMap,
   rejectBrainReviewPack,
+  syncBrain,
   updateBrainMap,
 } from "@/lib/api";
 import type {
@@ -50,6 +51,7 @@ import type {
   BrainSpace,
   BrainSpaceHome,
   BrainSpaceSourceSummary,
+  BrainSyncResult,
   Entity,
   EntityType,
 } from "@/lib/types";
@@ -511,11 +513,13 @@ function BrainOverviewEntityRow({
 
 function BrainSourceMirrorPanel({
   overview,
+  syncResult,
   onOpenSource,
   onOpenEntity,
   t,
 }: {
   overview: BrainOverview;
+  syncResult: BrainSyncResult | null;
   onOpenSource: (kind: string, id: string) => void;
   onOpenEntity: (id: string, name: string) => void;
   t: Translator;
@@ -527,9 +531,14 @@ function BrainSourceMirrorPanel({
           <h3>{t("Source mirror", "Зеркало источников")}</h3>
           <p>{brainOverviewSummary(overview, t)}</p>
         </div>
-        {overview.pending_review_count > 0 ? (
-          <span>{overview.pending_review_count} {t("needs review", "на проверке")}</span>
-        ) : null}
+        <div className="brain-source-mirror__badges">
+          {overview.pending_review_count > 0 ? (
+            <span>{overview.pending_review_count} {t("needs review", "на проверке")}</span>
+          ) : null}
+          {syncResult && syncResult.created_mentions > 0 ? (
+            <span>{syncResult.sources_with_entities} {t("synced now", "связано сейчас")}</span>
+          ) : null}
+        </div>
       </div>
       <div className="brain-source-mirror__meters">
         <BrainSourceCoverageMeter
@@ -1123,6 +1132,7 @@ export function BrainPanel({
 
   const [mirror, setMirror] = useState<BrainMapProjection | null>(null);
   const [brainOverview, setBrainOverview] = useState<BrainOverview | null>(null);
+  const [brainSyncResult, setBrainSyncResult] = useState<BrainSyncResult | null>(null);
   const [maps, setMaps] = useState<BrainMap[]>([]);
   const [activeMapId, setActiveMapId] = useState<string>("mirror");
   const [lensPrompt, setLensPrompt] = useState("");
@@ -1191,6 +1201,7 @@ export function BrainPanel({
     if (!hasLoadedRef.current) setLoading(true);
     setError(null);
     try {
+      const syncResult = await syncBrain({ limit: 500 });
       const [mirrorProjection, graph, mapList, entityList, spaceList] = await Promise.all([
         getBrainMirror({ limit: 60 }),
         getBrainGraph({ limit: 200 }),
@@ -1198,6 +1209,7 @@ export function BrainPanel({
         listEntities({ limit: 200 }),
         listBrainSpaces(),
       ]);
+      setBrainSyncResult(syncResult);
       setMirror(mirrorProjection);
       setBrainOverview(graph.overview ?? null);
       setMaps(mapList.maps);
@@ -1586,6 +1598,7 @@ export function BrainPanel({
             {brainOverview ? (
               <BrainSourceMirrorPanel
                 overview={brainOverview}
+                syncResult={brainSyncResult}
                 onOpenSource={openSource}
                 onOpenEntity={(id, name) => setSelectedEntity({ id, name })}
                 t={t}
