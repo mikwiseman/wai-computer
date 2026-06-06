@@ -124,6 +124,64 @@ async def test_no_evidence_returns_honest_gap_without_calling_model(
     assert fake._state["calls"] == 0  # never paid for an LLM call
 
 
+async def test_ask_brain_uses_wider_pool_and_prefers_distinct_sources(
+    db_session, monkeypatch
+) -> None:
+    user = await _make_user(db_session)
+    first_recording_id = uuid4()
+    second_recording_id = uuid4()
+    item_id = uuid4()
+    calls: list[int] = []
+
+    async def fake_unified_search(_db, _user_id, _question, *, limit):
+        calls.append(limit)
+        return [
+            _hit(
+                parent_id=first_recording_id,
+                title="Long voice memo",
+                snippet=f"Repeated project detail {index}",
+            )
+            for index in range(5)
+        ] + [
+            _hit(
+                parent_id=second_recording_id,
+                title="Second voice memo",
+                snippet="A separate roadmap risk.",
+            ),
+            _hit(
+                source_kind="item",
+                parent_id=item_id,
+                title="Planning note",
+                snippet="A saved material about the same project.",
+                start_ms=None,
+            ),
+        ]
+
+    monkeypatch.setattr(brain_ask, "unified_search", fake_unified_search)
+    fake = _fake_cerebras(
+        {
+            "answer": "The project appears in three sources [1][2][3].",
+            "citations": [1, 2, 3],
+            "gaps": [],
+        }
+    )
+
+    answer = await ask_brain(
+        db_session,
+        user.id,
+        "what is happening with active projects?",
+        cerebras_client=fake,
+        limit=3,
+    )
+
+    assert calls == [3 * brain_ask.ASK_SEARCH_POOL_MULTIPLIER]
+    assert [citation.source_id for citation in answer.citations] == [
+        str(first_recording_id),
+        str(second_recording_id),
+        str(item_id),
+    ]
+
+
 async def test_blank_question_short_circuits(db_session) -> None:
     user = await _make_user(db_session)
     answer = await ask_brain(db_session, user.id, "   ")

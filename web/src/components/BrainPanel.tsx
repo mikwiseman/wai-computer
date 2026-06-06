@@ -297,9 +297,11 @@ function BrainAskPanel({
   error,
   asking,
   creatingLens,
+  suggestions,
   onQuestionChange,
   onAsk,
   onMap,
+  onAskSuggestion,
   onOpenCitation,
   t,
 }: {
@@ -308,9 +310,11 @@ function BrainAskPanel({
   error: string | null;
   asking: boolean;
   creatingLens: boolean;
+  suggestions: string[];
   onQuestionChange: (value: string) => void;
   onAsk: () => void;
   onMap: () => void;
+  onAskSuggestion: (question: string) => void;
   onOpenCitation: (citation: BrainAnswerCitation) => void;
   t: Translator;
 }) {
@@ -347,6 +351,23 @@ function BrainAskPanel({
             {creatingLens ? t("Mapping…", "Строю…") : t("Map it", "Карта")}
           </button>
         </div>
+        {suggestions.length > 0 ? (
+          <div
+            className="brain-ask-panel__suggestions"
+            aria-label={t("Suggested Brain questions", "Вопросы к мозгу")}
+          >
+            {suggestions.slice(0, 3).map((suggestion) => (
+              <button
+                key={suggestion}
+                type="button"
+                disabled={asking}
+                onClick={() => onAskSuggestion(suggestion)}
+              >
+                {suggestion}
+              </button>
+            ))}
+          </div>
+        ) : null}
       </form>
 
       {error ? <p className="brain-panel__error-text">{error}</p> : null}
@@ -1060,9 +1081,10 @@ export function BrainPanel({
     }
   }, [creatingLens, lensPrompt, onError]);
 
-  const askBrainQuestion = useCallback(async () => {
-    const question = brainQuestion.trim();
+  const askBrainQuestion = useCallback(async (questionOverride?: string) => {
+    const question = (questionOverride ?? brainQuestion).trim();
     if (!question || askingBrain) return;
+    setBrainQuestion(question);
     setAskingBrain(true);
     try {
       const answer = await askBrain(question);
@@ -1216,6 +1238,13 @@ export function BrainPanel({
     (sum, n) => sum + n,
     0,
   );
+  const askSuggestions = activeProjection?.briefing
+    ? localizedSuggestedQuestions(
+      activeProjection.map_type,
+      activeProjection.briefing.suggested_questions,
+      t,
+    )
+    : [];
   const sources = spaceHome?.sources ?? [];
   const hasAnything =
     entities.length > 0 ||
@@ -1379,9 +1408,11 @@ export function BrainPanel({
               error={brainAskError}
               asking={askingBrain}
               creatingLens={creatingLens}
+              suggestions={askSuggestions}
               onQuestionChange={setBrainQuestion}
               onAsk={() => void askBrainQuestion()}
               onMap={() => void createLens(brainQuestion)}
+              onAskSuggestion={(question) => void askBrainQuestion(question)}
               onOpenCitation={(citation) => openSource(citation.source_kind, citation.source_id)}
               t={t}
             />

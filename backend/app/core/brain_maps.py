@@ -485,6 +485,11 @@ async def _recent_hits(
             .limit(max(1, limit // 2))
         )
     ).all()
+    recording_snippets = (
+        await _scoped_recording_snippets(db, {rid for rid, *_rest in rec_rows})
+        if rec_rows
+        else {}
+    )
     hits: list[_EvidenceHit] = []
     for iid, title, url, body, kind, created_at in item_rows:
         hits.append(
@@ -507,7 +512,7 @@ async def _recent_hits(
                 chunk_id=str(rid),
                 title=title or "Recording",
                 kind=kind,
-                snippet="",
+                snippet=_shorten(recording_snippets.get(rid, ""), 280),
                 score=1.0,
                 created_at=created_at.isoformat() if created_at else None,
             )

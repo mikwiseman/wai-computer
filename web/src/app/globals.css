@@ -3567,6 +3567,34 @@ a.primary-button[aria-disabled="true"]:hover {
   gap: 0.5rem;
 }
 
+.brain-ask-panel__suggestions {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.brain-ask-panel__suggestions button {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0.35rem 0.65rem;
+  background: color-mix(in srgb, var(--panel) 82%, var(--accent) 18%);
+  color: var(--ink-muted);
+  font-size: var(--font-label-small-size);
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.brain-ask-panel__suggestions button:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
+  color: var(--ink);
+}
+
+.brain-ask-panel__suggestions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
 .brain-ask-answer {
   display: flex;
   flex-direction: column;

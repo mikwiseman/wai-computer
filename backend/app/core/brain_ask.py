@@ -34,6 +34,8 @@ from app.core.unified_search import UnifiedHit, unified_search
 logger = logging.getLogger(__name__)
 
 ASK_RETRIEVAL_LIMIT = 18
+ASK_SEARCH_POOL_MULTIPLIER = 3
+ASK_MAX_EXCERPTS_PER_SOURCE = 2
 _EXCERPT_CHAR_CAP = 600
 _STALE_WEEKS = 3
 
@@ -116,6 +118,27 @@ def _excerpt_for_hit(index: int, hit: UnifiedHit) -> str:
     return f"[{index}] ({source_label}: {title}) {(hit.snippet or '')[:_EXCERPT_CHAR_CAP]}"
 
 
+def _diverse_hits(hits: list[UnifiedHit], limit: int) -> list[UnifiedHit]:
+    selected: list[UnifiedHit] = []
+    selected_chunk_ids: set[str] = set()
+    per_source_counts: dict[tuple[str, str], int] = {}
+    max_per_source = max(1, ASK_MAX_EXCERPTS_PER_SOURCE)
+
+    for quota in range(1, max_per_source + 1):
+        for hit in hits:
+            if hit.chunk_id in selected_chunk_ids:
+                continue
+            source_key = (hit.source_kind, hit.parent_id)
+            if per_source_counts.get(source_key, 0) >= quota:
+                continue
+            selected.append(hit)
+            selected_chunk_ids.add(hit.chunk_id)
+            per_source_counts[source_key] = per_source_counts.get(source_key, 0) + 1
+            if len(selected) >= limit:
+                return selected
+    return selected
+
+
 async def ask_brain(
     db: AsyncSession,
     user_id: uuid.UUID,
@@ -131,7 +154,9 @@ async def ask_brain(
     if not question:
         return BrainAnswer(answer="", gaps=["Ask a question to search your Brain."])
 
-    hits = await unified_search(db, user_id, question, limit=limit)
+    search_pool_limit = max(limit, limit * ASK_SEARCH_POOL_MULTIPLIER)
+    raw_hits = await unified_search(db, user_id, question, limit=search_pool_limit)
+    hits = _diverse_hits(raw_hits, limit)
     if not hits:
         freshness = await _freshness_for([], now=now)
         return BrainAnswer(

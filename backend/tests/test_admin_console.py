@@ -100,7 +100,7 @@ async def test_admin_principal_allows_multiple_staff_roles(
 async def test_admin_ai_usage_rows_aggregate_filter_and_analyze(
     db_session: AsyncSession,
 ):
-    now = datetime.now(timezone.utc)
+    now = datetime(2026, 6, 6, 12, 0, tzinfo=timezone.utc)
     power_user = User(email="ai-usage-power@example.com", password_hash="x")
     other_user = User(email="ai-usage-other@example.com", password_hash="x")
     db_session.add_all([power_user, other_user])
@@ -308,7 +308,7 @@ async def test_admin_ai_usage_rows_aggregate_filter_and_analyze(
 async def test_admin_deepgram_usage_rows_combine_ledger_estimates_and_analyze(
     db_session: AsyncSession,
 ):
-    now = datetime.now(timezone.utc)
+    now = datetime(2026, 6, 6, 12, 0, tzinfo=timezone.utc)
     power_user = User(email="deepgram-power@example.com", password_hash="x")
     other_user = User(email="deepgram-other@example.com", password_hash="x")
     db_session.add_all([power_user, other_user])

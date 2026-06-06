@@ -158,6 +158,7 @@ function projection(overrides = {}) {
     freshness: { newest_source_at: "2026-06-05T10:00:00Z", weeks_since: 0, stale: false },
     stats: { entities: 1 },
     source_fingerprint: "mirror",
+    briefing: briefing(),
     ...overrides,
   };
 }
@@ -535,6 +536,16 @@ describe("BrainPanel (Live Mirror)", () => {
     );
   });
 
+  it("asks suggested Brain questions from the live mirror", async () => {
+    render(<BrainPanel />);
+    const askPanel = await screen.findByRole("region", { name: "Ask Brain" });
+
+    fireEvent.click(within(askPanel).getByRole("button", { name: "What are the active risks?" }));
+
+    await waitFor(() => expect(mockAskBrain).toHaveBeenCalledWith("What are the active risks?"));
+    expect(within(askPanel).getByLabelText("Question for Brain")).toHaveValue("What are the active risks?");
+  });
+
   it("creates a draft lens from the Brain surface", async () => {
     render(<BrainPanel />);
     await waitFor(() => expect(screen.getByRole("button", { name: "Create Lens" })).toBeInTheDocument());
@@ -644,7 +655,8 @@ describe("BrainPanel (Live Mirror)", () => {
     fireEvent.click(screen.getByRole("button", { name: "Ask Wai" }));
     expect(onOpenWai).toHaveBeenCalledWith({ spaceId: "s1", spaceName: "Wai School" });
 
-    fireEvent.click(screen.getByRole("button", { name: "What are the active risks?" }));
+    const briefingRegion = screen.getByRole("region", { name: "Map briefing" });
+    fireEvent.click(within(briefingRegion).getByRole("button", { name: "What are the active risks?" }));
     await waitFor(() =>
       expect(mockCreateBrainMap).toHaveBeenCalledWith({
         prompt: "What are the active risks?",

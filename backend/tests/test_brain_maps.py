@@ -301,6 +301,50 @@ async def test_source_scope_seeds_map_from_selected_inbox_voice_memo(
     assert revision.source_count == 1
 
 
+async def test_live_mirror_uses_recent_voice_memo_transcript_snippet(db_session) -> None:
+    user = await _make_user(db_session)
+    recording = Recording(
+        user_id=user.id,
+        title="Daily voice memo",
+        type="note",
+        status="ready",
+    )
+    db_session.add(recording)
+    await db_session.flush()
+    db_session.add_all(
+        [
+            Summary(
+                recording_id=recording.id,
+                summary="Project Atlas is waiting on security review.",
+                key_points=None,
+                decisions=None,
+                topics=None,
+                people_mentioned=None,
+                sentiment=None,
+            ),
+            Segment(
+                recording_id=recording.id,
+                content="Next step: Dima confirms the rollout checklist.",
+                speaker=None,
+                raw_label=None,
+                start_ms=0,
+                end_ms=2500,
+                confidence=None,
+            ),
+        ]
+    )
+    await db_session.flush()
+
+    projection = await brain_maps.build_live_mirror(db_session, user.id, limit=4)
+
+    source_node = next(n for n in projection["nodes"] if n["kind"] == "source")
+    assert source_node["source_kind"] == "recording"
+    assert source_node["source_id"] == str(recording.id)
+    assert source_node["title"] == "Daily voice memo"
+    assert "Project Atlas" in source_node["body"]
+    assert "security review" in source_node["body"]
+
+
 async def test_map_search_uses_wider_chunk_pool_and_deduplicates_sources(
     db_session, monkeypatch
 ) -> None:
