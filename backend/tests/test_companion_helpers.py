@@ -431,6 +431,29 @@ def test_build_session_developer_message_with_ctx_full() -> None:
     assert "viewing folder: Work" in out["content"]
 
 
+def test_build_session_developer_message_voice_reply_and_surface() -> None:
+    ctx = TurnContext(
+        client_local_date="2026-05-18",
+        input_modality="voice",
+        is_reply_to_assistant=True,
+        surface="telegram",
+    )
+    out = _build_session_developer_message(ctx, None)
+    assert out is not None
+    content = out["content"]
+    assert "spoke this as a voice note" in content
+    assert "replying to your previous message" in content
+    assert "Telegram chat" in content and "No markdown tables" in content
+
+
+def test_build_session_developer_message_text_default_has_no_modality_lines() -> None:
+    # The default text turn must not add modality/surface noise.
+    out = _build_session_developer_message(TurnContext(client_local_date="2026-05-18"), None)
+    assert out is not None
+    assert "voice note" not in out["content"]
+    assert "Telegram chat" not in out["content"]
+
+
 def test_build_session_developer_message_without_date_uses_fallback() -> None:
     ctx = TurnContext(client_local_date=None, client_timezone="UTC")
     out = _build_session_developer_message(ctx, None)

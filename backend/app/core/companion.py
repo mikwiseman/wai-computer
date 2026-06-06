@@ -451,6 +451,7 @@ class TurnContext:
     viewing_folder_name: str | None = None
     input_modality: str = "text"               # "text" | "voice"
     is_reply_to_assistant: bool = False
+    surface: str | None = None                  # "telegram" | "web" | "mac" | ...
 
 
 # ---------- Tool definitions advertised to the model ----------
@@ -1601,6 +1602,12 @@ def _build_session_developer_message(
         )
     if ctx.is_reply_to_assistant:
         lines.append("the user is replying to your previous message")
+    if ctx.surface == "telegram":
+        lines.append(
+            "surface: Telegram chat — keep replies short and chat-native. No "
+            "markdown tables or headings (they render as raw text here); use plain "
+            "sentences or simple '- ' bullets."
+        )
     if brain_context is not None:
         space = brain_context.get("space")
         space_name = getattr(space, "name", None) or "selected Brain"

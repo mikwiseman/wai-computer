@@ -2081,6 +2081,7 @@ def _telegram_turn_context(
         viewing_recording_title=recording_title,
         input_modality=input_modality,
         is_reply_to_assistant=is_reply_to_assistant,
+        surface="telegram",
     )
 
 
