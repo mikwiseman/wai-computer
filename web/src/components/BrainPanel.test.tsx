@@ -8,6 +8,7 @@ const mockListBrainMaps = vi.fn();
 const mockCreateBrainMap = vi.fn();
 const mockUpdateBrainMap = vi.fn();
 const mockRefreshBrainMap = vi.fn();
+const mockAskBrain = vi.fn();
 const mockListEntities = vi.fn();
 const mockListBrainSpaces = vi.fn();
 const mockGetBrainSpaceHome = vi.fn();
@@ -74,6 +75,7 @@ vi.mock("@xyflow/react", async () => {
 vi.mock("@/lib/api", () => ({
   acceptBrainReviewPack: (...a: unknown[]) => mockAcceptBrainReviewPack(...a),
   addBrainSpaceMember: (...a: unknown[]) => mockAddBrainSpaceMember(...a),
+  askBrain: (...a: unknown[]) => mockAskBrain(...a),
   createBrainMap: (...a: unknown[]) => mockCreateBrainMap(...a),
   exportBrainSpace: (...a: unknown[]) => mockExportBrainSpace(...a),
   getBrainMirror: (...a: unknown[]) => mockGetBrainMirror(...a),
@@ -462,6 +464,24 @@ describe("BrainPanel (Live Mirror)", () => {
     mockCreateBrainMap.mockResolvedValue(brainMap());
     mockRefreshBrainMap.mockResolvedValue(revision({ id: "rev-2", revision_index: 2 }));
     mockUpdateBrainMap.mockImplementation((_id, input) => Promise.resolve(brainMap({ ...input })));
+    mockAskBrain.mockResolvedValue({
+      answer: "Budget approval is the main launch risk.",
+      citations: [
+        {
+          id: "seg-1",
+          source_kind: "recording",
+          source_id: "rec-1",
+          title: "Launch review",
+          start_ms: 65000,
+        },
+      ],
+      gaps: ["Owner confirmation is missing."],
+      freshness: {
+        newest_source_at: "2026-06-05T10:00:00Z",
+        weeks_since: 0,
+        stale: false,
+      },
+    });
     mockListEntities.mockResolvedValue(entities());
     mockListBrainSpaces.mockResolvedValue(spaces());
     mockGetBrainSpaceHome.mockResolvedValue(spaceHome());
@@ -485,7 +505,34 @@ describe("BrainPanel (Live Mirror)", () => {
     expect(screen.getByRole("heading", { name: "Pages" })).toBeInTheDocument();
     expect(screen.getByText("Pricing")).toBeInTheDocument();
     expect(screen.getByText("Curated knowledge · Sources")).toBeInTheDocument();
-    expect(screen.queryByLabelText("Ask your Brain")).not.toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Ask Brain" })).toBeInTheDocument();
+  });
+
+  it("answers a Brain question with citations and maps the same question", async () => {
+    const onOpenSource = vi.fn();
+    render(<BrainPanel onOpenSource={onOpenSource} />);
+    const askPanel = await screen.findByRole("region", { name: "Ask Brain" });
+
+    fireEvent.change(within(askPanel).getByLabelText("Question for Brain"), {
+      target: { value: "What is blocking launch?" },
+    });
+    fireEvent.click(within(askPanel).getByRole("button", { name: "Ask Brain" }));
+
+    await waitFor(() => expect(mockAskBrain).toHaveBeenCalledWith("What is blocking launch?"));
+    expect(within(askPanel).getByText("Budget approval is the main launch risk.")).toBeInTheDocument();
+    expect(within(askPanel).getByText("Owner confirmation is missing.")).toBeInTheDocument();
+    expect(within(askPanel).getByRole("button", { name: "Launch review · 1:05" })).toBeInTheDocument();
+
+    fireEvent.click(within(askPanel).getByRole("button", { name: "Launch review · 1:05" }));
+    expect(onOpenSource).toHaveBeenCalledWith("recording", "rec-1");
+
+    fireEvent.click(within(askPanel).getByRole("button", { name: "Map it" }));
+    await waitFor(() =>
+      expect(mockCreateBrainMap).toHaveBeenCalledWith({
+        prompt: "What is blocking launch?",
+        origin: "brain",
+      }),
+    );
   });
 
   it("creates a draft lens from the Brain surface", async () => {

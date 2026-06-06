@@ -16,6 +16,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   acceptBrainReviewPack,
   addBrainSpaceMember,
+  askBrain,
   createBrainMap,
   exportBrainSpace,
   getBrainMirror,
@@ -29,6 +30,8 @@ import {
   updateBrainMap,
 } from "@/lib/api";
 import type {
+  BrainAnswer,
+  BrainAnswerCitation,
   BrainMap,
   BrainMapBriefing,
   BrainMapBriefingEntity,
@@ -176,6 +179,18 @@ function entityTypeLabel(type: string, t: Translator): string {
   return type;
 }
 
+function formatMs(ms: number): string {
+  const total = Math.floor(ms / 1000);
+  const m = Math.floor(total / 60);
+  const s = total % 60;
+  return `${m}:${s.toString().padStart(2, "0")}`;
+}
+
+function brainCitationLabel(citation: BrainAnswerCitation, t: Translator): string {
+  const title = citation.title || sourceKindLabel(citation.source_kind, t);
+  return citation.start_ms !== null ? `${title} · ${formatMs(citation.start_ms)}` : title;
+}
+
 function diffText(diff: BrainMapDiff | null, t: Translator): string {
   if (!diff || !diff.changed) return t("Current", "Актуально");
   const parts = [
@@ -209,6 +224,17 @@ function briefingFreshnessText(projection: BrainMapProjection, t: Translator): s
   }
   if (!projection.freshness.newest_source_at) return t("No dated source yet.", "Пока нет источника с датой.");
   return t("Evidence is current.", "Источники актуальны.");
+}
+
+function answerFreshnessText(answer: BrainAnswer, t: Translator): string {
+  if (answer.freshness.stale && answer.freshness.weeks_since !== null) {
+    return t(
+      `Newest cited source is ${answer.freshness.weeks_since} week(s) old.`,
+      `Самому новому источнику в ответе ${answer.freshness.weeks_since} нед.`,
+    );
+  }
+  if (!answer.freshness.newest_source_at) return t("No dated source in this answer.", "В ответе нет источника с датой.");
+  return t("Answer is tied to current sources.", "Ответ привязан к актуальным источникам.");
 }
 
 function hiddenFocusCount(briefing: BrainMapBriefing): number {
@@ -262,6 +288,96 @@ function localizedSuggestedQuestions(
     t("What should happen next?", "Что должно произойти дальше?"),
   ];
   return mapType === "project_state" || fallback.length === 0 ? localized : fallback;
+}
+
+function BrainAskPanel({
+  question,
+  answer,
+  error,
+  asking,
+  creatingLens,
+  onQuestionChange,
+  onAsk,
+  onMap,
+  onOpenCitation,
+  t,
+}: {
+  question: string;
+  answer: BrainAnswer | null;
+  error: string | null;
+  asking: boolean;
+  creatingLens: boolean;
+  onQuestionChange: (value: string) => void;
+  onAsk: () => void;
+  onMap: () => void;
+  onOpenCitation: (citation: BrainAnswerCitation) => void;
+  t: Translator;
+}) {
+  const canSubmit = Boolean(question.trim()) && !asking;
+  return (
+    <section className="brain-ask-panel" aria-label={t("Ask Brain", "Спросить мозг")}>
+      <form
+        className="brain-ask-panel__form"
+        onSubmit={(event) => {
+          event.preventDefault();
+          onAsk();
+        }}
+      >
+        <label>
+          <span>{t("Ask Brain", "Спросить мозг")}</span>
+          <textarea
+            value={question}
+            aria-label={t("Question for Brain", "Вопрос к мозгу")}
+            placeholder={t("What changed? What is blocked? Who owns the next step?", "Что изменилось? Что блокирует? Кто отвечает за следующий шаг?")}
+            rows={2}
+            onChange={(event) => onQuestionChange(event.target.value)}
+          />
+        </label>
+        <div className="brain-ask-panel__actions">
+          <button type="submit" className="wai-primary-button" disabled={!canSubmit}>
+            {asking ? t("Asking…", "Спрашиваю…") : t("Ask Brain", "Спросить")}
+          </button>
+          <button
+            type="button"
+            className="wai-secondary-button"
+            disabled={!question.trim() || creatingLens}
+            onClick={onMap}
+          >
+            {creatingLens ? t("Mapping…", "Строю…") : t("Map it", "Карта")}
+          </button>
+        </div>
+      </form>
+
+      {error ? <p className="brain-panel__error-text">{error}</p> : null}
+
+      {answer ? (
+        <article className="brain-ask-answer" aria-label={t("Brain answer", "Ответ мозга")}>
+          {answer.answer ? <p className="brain-ask-answer__text">{answer.answer}</p> : null}
+          <small>{answerFreshnessText(answer, t)}</small>
+          {answer.citations.length > 0 ? (
+            <div className="brain-ask-answer__citations" aria-label={t("Citations", "Источники")}>
+              {answer.citations.map((citation) => (
+                <button
+                  key={citation.id}
+                  type="button"
+                  onClick={() => onOpenCitation(citation)}
+                >
+                  {brainCitationLabel(citation, t)}
+                </button>
+              ))}
+            </div>
+          ) : null}
+          {answer.gaps.length > 0 ? (
+            <ul className="brain-ask-answer__gaps" aria-label={t("Gaps", "Пробелы")}>
+              {answer.gaps.map((gap) => (
+                <li key={gap}>{gap}</li>
+              ))}
+            </ul>
+          ) : null}
+        </article>
+      ) : null}
+    </section>
+  );
 }
 
 function BriefingMetric({
@@ -802,6 +918,10 @@ export function BrainPanel({
   const [showLensForm, setShowLensForm] = useState(false);
   const [creatingLens, setCreatingLens] = useState(false);
   const [refreshingId, setRefreshingId] = useState<string | null>(null);
+  const [brainQuestion, setBrainQuestion] = useState("");
+  const [brainAnswer, setBrainAnswer] = useState<BrainAnswer | null>(null);
+  const [askingBrain, setAskingBrain] = useState(false);
+  const [brainAskError, setBrainAskError] = useState<string | null>(null);
 
   const [entities, setEntities] = useState<Entity[]>([]);
   const [filter, setFilter] = useState<PageFilter>("all");
@@ -926,6 +1046,23 @@ export function BrainPanel({
       setCreatingLens(false);
     }
   }, [creatingLens, lensPrompt, onError]);
+
+  const askBrainQuestion = useCallback(async () => {
+    const question = brainQuestion.trim();
+    if (!question || askingBrain) return;
+    setAskingBrain(true);
+    try {
+      const answer = await askBrain(question);
+      setBrainAnswer(answer);
+      setBrainAskError(null);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Couldn't answer from Brain.";
+      setBrainAskError(message);
+      onError?.(message);
+    } finally {
+      setAskingBrain(false);
+    }
+  }, [askingBrain, brainQuestion, onError]);
 
   const persistLayout = useCallback(
     async (layout: Record<string, BrainMapPosition>) => {
@@ -1211,6 +1348,18 @@ export function BrainPanel({
                 <span>{activeProjection?.citations.length ?? 0} {t("sources", "источн.")}</span>
               </div>
             </div>
+            <BrainAskPanel
+              question={brainQuestion}
+              answer={brainAnswer}
+              error={brainAskError}
+              asking={askingBrain}
+              creatingLens={creatingLens}
+              onQuestionChange={setBrainQuestion}
+              onAsk={() => void askBrainQuestion()}
+              onMap={() => void createLens(brainQuestion)}
+              onOpenCitation={(citation) => openSource(citation.source_kind, citation.source_id)}
+              t={t}
+            />
             {activeMap && activeProjection ? (
               <BrainMapBriefingPanel
                 projection={activeProjection}
