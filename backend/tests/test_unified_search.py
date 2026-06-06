@@ -60,6 +60,8 @@ async def test_unified_search_returns_both_sources(db_session) -> None:
     kinds = {h.source_kind for h in hits}
     assert "recording" in kinds
     assert "item" in kinds
+    assert next(h for h in hits if h.source_kind == "recording").start_ms == 0
+    assert next(h for h in hits if h.source_kind == "item").start_ms is None
     # Every hit carries a usable parent id + snippet + score.
     for h in hits:
         assert h.parent_id

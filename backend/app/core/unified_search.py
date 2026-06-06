@@ -39,6 +39,8 @@ class UnifiedHit:
     snippet: str
     score: float
     created_at: str | None
+    start_ms: int | None = None
+    end_ms: int | None = None
 
 
 _UNIFIED_SQL = text(
@@ -46,7 +48,7 @@ _UNIFIED_SQL = text(
     WITH
     seg_fts AS (
         SELECT s.id AS chunk_id, s.recording_id AS parent_id, s.content,
-               r.title, r.type AS kind, r.created_at,
+               r.title, r.type AS kind, r.created_at, s.start_ms, s.end_ms,
                ROW_NUMBER() OVER (ORDER BY ts_rank(
                    to_tsvector('russian', lower(s.content COLLATE "und-x-icu")),
                    plainto_tsquery('russian', lower(:q COLLATE "und-x-icu"))) DESC) AS rn
@@ -57,7 +59,7 @@ _UNIFIED_SQL = text(
     ),
     seg_sem AS (
         SELECT s.id AS chunk_id, s.recording_id AS parent_id, s.content,
-               r.title, r.type AS kind, r.created_at,
+               r.title, r.type AS kind, r.created_at, s.start_ms, s.end_ms,
                ROW_NUMBER() OVER (ORDER BY s.embedding <=> CAST(:emb AS vector)) AS rn
         FROM segments s JOIN recordings r ON s.recording_id = r.id
         WHERE r.user_id = :uid AND r.deleted_at IS NULL AND s.embedding IS NOT NULL
@@ -66,7 +68,7 @@ _UNIFIED_SQL = text(
     ),
     item_fts AS (
         SELECT ic.id AS chunk_id, i.id AS parent_id, ic.content,
-               i.title, i.kind, i.created_at,
+               i.title, i.kind, i.created_at, NULL::integer AS start_ms, NULL::integer AS end_ms,
                ROW_NUMBER() OVER (ORDER BY ts_rank(
                    to_tsvector('russian', lower(ic.content COLLATE "und-x-icu")),
                    plainto_tsquery('russian', lower(:q COLLATE "und-x-icu"))) DESC) AS rn
@@ -77,7 +79,7 @@ _UNIFIED_SQL = text(
     ),
     item_sem AS (
         SELECT ic.id AS chunk_id, i.id AS parent_id, ic.content,
-               i.title, i.kind, i.created_at,
+               i.title, i.kind, i.created_at, NULL::integer AS start_ms, NULL::integer AS end_ms,
                ROW_NUMBER() OVER (ORDER BY ic.embedding <=> CAST(:emb AS vector)) AS rn
         FROM item_chunks ic JOIN items i ON ic.item_id = i.id
         WHERE i.user_id = :uid AND i.deleted_at IS NULL AND ic.embedding IS NOT NULL
@@ -91,6 +93,8 @@ _UNIFIED_SQL = text(
                COALESCE(f.title, s.title) AS title,
                COALESCE(f.kind, s.kind) AS kind,
                COALESCE(f.created_at, s.created_at) AS created_at,
+               COALESCE(f.start_ms, s.start_ms) AS start_ms,
+               COALESCE(f.end_ms, s.end_ms) AS end_ms,
                'recording' AS source_kind,
                COALESCE(1.0/(:k + f.rn), 0) + COALESCE(1.0/(:k + s.rn), 0) AS rrf
         FROM seg_fts f FULL OUTER JOIN seg_sem s ON f.chunk_id = s.chunk_id
@@ -102,6 +106,8 @@ _UNIFIED_SQL = text(
                COALESCE(f.title, s.title) AS title,
                COALESCE(f.kind, s.kind) AS kind,
                COALESCE(f.created_at, s.created_at) AS created_at,
+               NULL::integer AS start_ms,
+               NULL::integer AS end_ms,
                'item' AS source_kind,
                COALESCE(1.0/(:k + f.rn), 0) + COALESCE(1.0/(:k + s.rn), 0) AS rrf
         FROM item_fts f FULL OUTER JOIN item_sem s ON f.chunk_id = s.chunk_id
@@ -111,7 +117,7 @@ _UNIFIED_SQL = text(
         UNION ALL
         SELECT * FROM item_combined
     )
-    SELECT chunk_id, parent_id, content, title, kind, created_at, source_kind,
+    SELECT chunk_id, parent_id, content, title, kind, created_at, start_ms, end_ms, source_kind,
            rrf * (1.0 + :rw * exp(
                -GREATEST(EXTRACT(EPOCH FROM (now() - created_at)), 0)
                / (:halflife * 86400.0))) AS score
@@ -163,6 +169,8 @@ async def unified_search(
                 snippet=content[:280],
                 score=float(r.score),
                 created_at=r.created_at.isoformat() if r.created_at else None,
+                start_ms=r.start_ms,
+                end_ms=r.end_ms,
             )
         )
     return hits
