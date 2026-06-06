@@ -3512,6 +3512,86 @@ a.primary-button[aria-disabled="true"]:hover {
   background: var(--surface-subtle);
 }
 
+.brain-map-live-status {
+  display: grid;
+  grid-template-columns: minmax(0, 0.72fr) minmax(0, 1.28fr);
+  gap: 0.75rem;
+  align-items: stretch;
+  border-bottom: 1px solid var(--border);
+  padding: 0.75rem 1rem;
+  background: color-mix(in srgb, var(--panel) 88%, var(--success) 12%);
+}
+
+.brain-map-live-status--stale {
+  background: color-mix(in srgb, var(--panel) 88%, var(--danger) 12%);
+}
+
+.brain-map-live-status > div:first-child,
+.brain-map-live-status__metrics span {
+  min-width: 0;
+}
+
+.brain-map-live-status > div:first-child {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 0.2rem;
+}
+
+.brain-map-live-status span,
+.brain-map-live-status em {
+  color: var(--ink-soft);
+  font-size: var(--font-label-small-size);
+  font-style: normal;
+}
+
+.brain-map-live-status > div:first-child > span {
+  color: var(--accent);
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.brain-map-live-status strong,
+.brain-map-live-status p {
+  margin: 0;
+}
+
+.brain-map-live-status strong {
+  color: var(--ink);
+  font-size: var(--font-body-small-size);
+  line-height: 1.25;
+}
+
+.brain-map-live-status p {
+  color: var(--ink-soft);
+  font-size: var(--font-label-small-size);
+  line-height: 1.35;
+}
+
+.brain-map-live-status__metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+
+.brain-map-live-status__metrics span {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 0.12rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.45rem 0.55rem;
+  background: var(--panel);
+}
+
+.brain-map-live-status__metrics strong {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
 .brain-source-mirror {
   display: flex;
   flex-direction: column;
@@ -4396,6 +4476,7 @@ a.primary-button[aria-disabled="true"]:hover {
 
   .brain-map-briefing__top,
   .brain-map-briefing__evidence,
+  .brain-map-live-status,
   .brain-source-mirror__head,
   .brain-source-mirror__meters,
   .brain-source-mirror__lists {
@@ -4403,7 +4484,8 @@ a.primary-button[aria-disabled="true"]:hover {
   }
 
   .brain-map-briefing__metrics,
-  .brain-map-briefing__questions > div {
+  .brain-map-briefing__questions > div,
+  .brain-map-live-status__metrics {
     grid-template-columns: 1fr;
   }
 }

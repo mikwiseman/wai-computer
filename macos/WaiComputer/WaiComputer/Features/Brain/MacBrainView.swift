@@ -657,6 +657,9 @@ struct MacBrainView: View {
 
     private func generatedMapSurface(_ projection: BrainMapProjection) -> some View {
         VStack(alignment: .leading, spacing: Spacing.md) {
+            if let revision = model.activeMap?.currentRevision {
+                generatedLiveStatus(revision, projection: projection)
+            }
             if let briefing = projection.briefing {
                 generatedBriefing(briefing, projection: projection)
                 generatedDiagramPreview(projection)
@@ -666,6 +669,118 @@ struct MacBrainView: View {
                 mapCitationList(projection.citations.prefix(4).map { $0 })
             }
         }
+    }
+
+    private func generatedLiveStatus(
+        _ revision: BrainMapRevision,
+        projection: BrainMapProjection
+    ) -> some View {
+        let isRefreshing = model.refreshingMapId == model.activeMap?.id
+        let title: String
+        if isRefreshing {
+            title = t("Checking latest sources", "Проверяю новые источники")
+        } else if revision.diff.changed {
+            title = t("Updated from sources", "Обновлено из источников")
+        } else {
+            title = t("No source changes", "Источники не изменились")
+        }
+        let detail: String
+        if revision.diff.changed {
+            detail = t(
+                "\(mapChangeDetail(revision.diff)) since last refresh.",
+                "\(mapChangeDetail(revision.diff)) с последнего обновления."
+            )
+        } else {
+            detail = t(
+                "This diagram matched the latest source set.",
+                "Диаграмма совпала с последним набором источников."
+            )
+        }
+
+        return VStack(alignment: .leading, spacing: Spacing.sm) {
+            HStack(alignment: .top, spacing: Spacing.sm) {
+                Image(systemName: isRefreshing ? "arrow.triangle.2.circlepath" : "checkmark.seal")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(Palette.accent)
+                    .frame(width: 24, height: 24)
+                    .background(Palette.accentSubtle)
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                        .font(Typography.bodySmall.weight(.semibold))
+                        .foregroundStyle(Palette.textPrimary)
+                    Text(detail)
+                        .font(Typography.labelSmall)
+                        .foregroundStyle(Palette.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer()
+                Text(t("rev \(revision.revisionIndex)", "рев. \(revision.revisionIndex)"))
+                    .font(Typography.labelSmall.weight(.semibold))
+                    .foregroundStyle(Palette.textTertiary)
+                    .padding(.horizontal, Spacing.xs)
+                    .padding(.vertical, 3)
+                    .background(Color.primary.opacity(0.045))
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
+            }
+
+            HStack(alignment: .top, spacing: Spacing.sm) {
+                liveStatusMetric(
+                    value: mapChangeDetail(revision.diff),
+                    label: t("change", "изменения"),
+                    systemImage: "arrow.triangle.2.circlepath"
+                )
+                liveStatusMetric(
+                    value: mapFreshnessLabel(revision.freshness),
+                    label: t("freshness", "свежесть"),
+                    systemImage: "clock"
+                )
+                liveStatusMetric(
+                    value: mapWatchText(revision, projection: projection),
+                    label: t("watch next", "что проверить"),
+                    systemImage: "eye"
+                )
+            }
+        }
+        .padding(Spacing.sm)
+        .background(revision.freshness.stale ? Color.red.opacity(0.08) : Palette.accentSubtle)
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(
+                    revision.freshness.stale ? Color.red.opacity(0.22) : Palette.accent.opacity(0.16),
+                    lineWidth: 1
+                )
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+
+    private func liveStatusMetric(
+        value: String,
+        label: String,
+        systemImage: String
+    ) -> some View {
+        HStack(alignment: .top, spacing: Spacing.xs) {
+            Image(systemName: systemImage)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(Palette.accent)
+                .frame(width: 16)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(value)
+                    .font(Typography.labelSmall.weight(.semibold))
+                    .foregroundStyle(Palette.textPrimary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text(label)
+                    .font(Typography.labelSmall)
+                    .foregroundStyle(Palette.textSecondary)
+                    .lineLimit(1)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, Spacing.sm)
+        .padding(.vertical, Spacing.xs)
+        .background(Color.primary.opacity(0.045))
+        .clipShape(RoundedRectangle(cornerRadius: 8))
     }
 
     private func generatedDiagramPreview(_ projection: BrainMapProjection) -> some View {
@@ -1141,6 +1256,71 @@ struct MacBrainView: View {
         if diff.nodesAdded > 0 { parts.append("+\(diff.nodesAdded) " + t("cards", "карточек")) }
         if diff.edgesAdded > 0 { parts.append("+\(diff.edgesAdded) " + t("links", "связей")) }
         return parts.isEmpty ? t("Updated", "Обновлено") : parts.joined(separator: " · ")
+    }
+
+    private func signedChange(
+        added: Int,
+        removed: Int,
+        label: String,
+        labelRu: String
+    ) -> String? {
+        if added == 0 && removed == 0 { return nil }
+        let textLabel = t(label, labelRu)
+        if removed == 0 { return "+\(added) \(textLabel)" }
+        if added == 0 { return "-\(removed) \(textLabel)" }
+        return "+\(added) / -\(removed) \(textLabel)"
+    }
+
+    private func mapChangeDetail(_ diff: BrainMapDiff?) -> String {
+        guard let diff else { return t("No refresh yet", "Ещё не обновлялось") }
+        let parts = [
+            signedChange(added: diff.sourcesAdded, removed: diff.sourcesRemoved, label: "sources", labelRu: "источн."),
+            signedChange(added: diff.nodesAdded, removed: diff.nodesRemoved, label: "cards", labelRu: "карточек"),
+            signedChange(added: diff.edgesAdded, removed: diff.edgesRemoved, label: "links", labelRu: "связей")
+        ].compactMap { $0 }
+        if !parts.isEmpty { return parts.joined(separator: " · ") }
+        return t("No source changes", "Источники не изменились")
+    }
+
+    private func mapFreshnessLabel(_ freshness: BrainMapFreshness) -> String {
+        if let weeks = freshness.weeksSince {
+            if weeks == 0 {
+                return t("Newest source this week", "Новый источник на этой неделе")
+            }
+            return t("Newest source \(weeks) weeks old", "Новейшему источнику \(weeks) нед.")
+        }
+        if freshness.newestSourceAt == nil {
+            return t("No dated source", "Нет источника с датой")
+        }
+        return t("Current source set", "Актуальный набор источников")
+    }
+
+    private func mapWatchText(
+        _ revision: BrainMapRevision,
+        projection: BrainMapProjection
+    ) -> String {
+        if revision.freshness.stale {
+            return t(
+                "Ask what changed before relying on it.",
+                "Спроси, что изменилось, прежде чем полагаться."
+            )
+        }
+        if revision.diff.changed {
+            return t(
+                "Review new evidence, then keep the map if it still matches reality.",
+                "Проверь новые источники и сохрани карту, если она всё ещё верна."
+            )
+        }
+        if projection.briefing?.mode == "focused" {
+            return t(
+                "Open the sources list when you need the full picture.",
+                "Открой список источников, если нужна полная картина."
+            )
+        }
+        return t(
+            "Safe to use for the current source set.",
+            "Можно использовать для текущего набора источников."
+        )
     }
 
     // MARK: - Pages

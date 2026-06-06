@@ -39,6 +39,7 @@ import type {
   BrainMapBriefingEntity,
   BrainMapBriefingSource,
   BrainMapDiff,
+  BrainMapFreshness,
   BrainMapNode,
   BrainMapPosition,
   BrainMapProjection,
@@ -207,6 +208,67 @@ function diffText(diff: BrainMapDiff | null, t: Translator): string {
     diff.edges_added ? t(`+${diff.edges_added} links`, `+${diff.edges_added} связей`) : "",
   ].filter(Boolean);
   return parts.join(" · ") || t("Updated", "Обновлено");
+}
+
+function signedChange(added: number, removed: number, label: string, labelRu: string, t: Translator): string | null {
+  const parts: string[] = [];
+  if (added > 0) parts.push(`+${added}`);
+  if (removed > 0) parts.push(`-${removed}`);
+  if (parts.length === 0) return null;
+  return `${parts.join("/")} ${t(label, labelRu)}`;
+}
+
+function mapChangeDetail(diff: BrainMapDiff | null, t: Translator): string {
+  if (!diff || !diff.changed) return t("No source changes", "Без изменений");
+  const parts = [
+    signedChange(diff.sources_added, diff.sources_removed, "sources", "источн.", t),
+    signedChange(diff.nodes_added, diff.nodes_removed, "cards", "карточек", t),
+    signedChange(diff.edges_added, diff.edges_removed, "links", "связей", t),
+  ].filter((part): part is string => Boolean(part));
+  return parts.join(" · ") || t("Updated", "Обновлено");
+}
+
+function mapFreshnessLabel(freshness: BrainMapFreshness, t: Translator): string {
+  if (freshness.weeks_since !== null) {
+    if (freshness.weeks_since === 0) {
+      return t("Newest source this week", "Новый источник на этой неделе");
+    }
+    return t(
+      `Newest source ${freshness.weeks_since} weeks old`,
+      `Новому источнику недель: ${freshness.weeks_since}`,
+    );
+  }
+  if (!freshness.newest_source_at) return t("No dated sources", "Нет источников с датой");
+  return t("Current evidence", "Актуальные источники");
+}
+
+function mapWatchText(
+  revision: BrainMapRevision,
+  projection: BrainMapProjection,
+  t: Translator,
+): string {
+  if (revision.freshness.stale) {
+    return t(
+      "Ask what changed before relying on it.",
+      "Спросите, что изменилось, прежде чем опираться на карту.",
+    );
+  }
+  if (projection.citations.length === 0) {
+    return t(
+      "Add recordings or materials to ground this lens.",
+      "Добавьте записи или материалы, чтобы заземлить линзу.",
+    );
+  }
+  if (revision.diff.changed) {
+    return t(
+      "Review new evidence, then keep the map if it still matches reality.",
+      "Проверьте новые источники и сохраните карту, если она совпадает с реальностью.",
+    );
+  }
+  return t(
+    "Open it later; Wai will refresh the map against new sources.",
+    "Откройте позже: Wai обновит карту по новым источникам.",
+  );
 }
 
 function briefingFocusText(briefing: BrainMapBriefing, t: Translator): string {
@@ -821,6 +883,60 @@ function BrainLensTemplatesPanel({
             </button>
           );
         })}
+      </div>
+    </section>
+  );
+}
+
+function BrainMapLiveStatus({
+  revision,
+  projection,
+  refreshing,
+  t,
+}: {
+  revision: BrainMapRevision;
+  projection: BrainMapProjection;
+  refreshing: boolean;
+  t: Translator;
+}) {
+  const changeDetail = mapChangeDetail(revision.diff, t);
+  const title = refreshing
+    ? t("Checking latest sources", "Проверяю новые источники")
+    : revision.diff.changed
+      ? t("Updated from sources", "Обновлено из источников")
+      : t("No source changes", "Источники не изменились");
+  const body = revision.diff.changed
+    ? t(
+      `${changeDetail} since last refresh.`,
+      `${changeDetail} с прошлого обновления.`,
+    )
+    : t(
+      "This diagram matched the latest source set.",
+      "Карта совпадает с последним набором источников.",
+    );
+  return (
+    <section
+      className={`brain-map-live-status ${revision.freshness.stale ? "brain-map-live-status--stale" : ""}`}
+      aria-label={t("Map live status", "Живой статус карты")}
+    >
+      <div>
+        <span>{t("Live status", "Живой статус")}</span>
+        <strong>{title}</strong>
+        <p>{body}</p>
+      </div>
+      <div className="brain-map-live-status__metrics">
+        <span>
+          <strong>{changeDetail}</strong>
+          <em>{t("change", "изменение")}</em>
+        </span>
+        <span>
+          <strong>{mapFreshnessLabel(revision.freshness, t)}</strong>
+          <em>{t("freshness", "актуальность")}</em>
+        </span>
+        <span>
+          <strong>{mapWatchText(revision, projection, t)}</strong>
+          <em>{t("watch next", "следить дальше")}</em>
+        </span>
       </div>
     </section>
   );
@@ -1595,6 +1711,14 @@ export function BrainPanel({
                 <span>{activeProjection?.citations.length ?? 0} {t("sources", "источн.")}</span>
               </div>
             </div>
+            {activeMap?.current_revision && activeProjection ? (
+              <BrainMapLiveStatus
+                revision={activeMap.current_revision}
+                projection={activeProjection}
+                refreshing={refreshingId === activeMap.id}
+                t={t}
+              />
+            ) : null}
             {brainOverview ? (
               <BrainSourceMirrorPanel
                 overview={brainOverview}

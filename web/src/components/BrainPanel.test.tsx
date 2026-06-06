@@ -698,6 +698,48 @@ describe("BrainPanel (Live Mirror)", () => {
     await waitFor(() => expect(mockRefreshBrainMap).toHaveBeenCalledTimes(1));
     expect(mockRefreshBrainMap).toHaveBeenCalledWith("map-1");
     await waitFor(() => expect(screen.getAllByText("+2 sources").length).toBeGreaterThan(0));
+    expect(screen.getByText("Updated from sources")).toBeInTheDocument();
+    expect(screen.getByText("+2 sources since last refresh.")).toBeInTheDocument();
+    expect(screen.getByText("Review new evidence, then keep the map if it still matches reality.")).toBeInTheDocument();
+  });
+
+  it("flags stale generated maps with an explicit watch-next prompt", async () => {
+    const staleRevision = revision({
+      id: "rev-stale",
+      diff: {
+        nodes_added: 0,
+        nodes_removed: 0,
+        edges_added: 0,
+        edges_removed: 0,
+        sources_added: 0,
+        sources_removed: 0,
+        changed: false,
+      },
+      freshness: {
+        newest_source_at: "2026-05-01T10:00:00Z",
+        weeks_since: 4,
+        stale: true,
+      },
+    });
+    mockListBrainMaps.mockResolvedValue({
+      maps: [
+        brainMap({
+          status: "saved",
+          current_revision_id: staleRevision.id,
+          current_revision: staleRevision,
+        }),
+      ],
+    });
+    mockRefreshBrainMap.mockResolvedValue(staleRevision);
+
+    render(<BrainPanel />);
+    await waitFor(() => expect(screen.getByText("Hiring map")).toBeInTheDocument());
+
+    fireEvent.click(screen.getByRole("button", { name: /Hiring map/ }));
+
+    await waitFor(() => expect(screen.getByText("No source changes")).toBeInTheDocument());
+    expect(screen.getByText("Newest source 4 weeks old")).toBeInTheDocument();
+    expect(screen.getByText("Ask what changed before relying on it.")).toBeInTheDocument();
   });
 
   it("opens a requested map after loading maps", async () => {

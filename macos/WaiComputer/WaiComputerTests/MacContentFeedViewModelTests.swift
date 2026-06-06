@@ -98,6 +98,26 @@ final class MacContentFeedViewModelTests: XCTestCase {
         XCTAssertTrue(brainSource.contains("selectedMapId = mapId"))
     }
 
+    func testGeneratedBrainMapsShowLiveFreshnessBeforeDiagramPreview() throws {
+        let source = try macSource("WaiComputer/Features/Brain/MacBrainView.swift")
+
+        guard
+            let statusRange = source.range(of: "generatedLiveStatus(revision, projection: projection)"),
+            let previewRange = source.range(of: "generatedDiagramPreview(projection)")
+        else {
+            XCTFail("Generated Brain maps should show live status before the diagram preview.")
+            return
+        }
+
+        XCTAssertLessThan(statusRange.lowerBound, previewRange.lowerBound)
+        XCTAssertTrue(source.contains("\"Updated from sources\""))
+        XCTAssertTrue(source.contains("\"No source changes\""))
+        XCTAssertTrue(source.contains("\"Newest source \\(weeks) weeks old\""))
+        XCTAssertTrue(source.contains("\"Ask what changed before relying on it.\""))
+        XCTAssertTrue(source.contains("mapChangeDetail(revision.diff)"))
+        XCTAssertTrue(source.contains("mapWatchText(revision, projection: projection)"))
+    }
+
     func testInboxCreatePaneDefaultsToFocusedUploadMode() throws {
         let source = try macSource("WaiComputer/Features/Inbox/MacInboxView.swift")
 
