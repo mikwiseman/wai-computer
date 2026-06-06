@@ -424,6 +424,11 @@ struct MacBrainView: View {
         )
     }
 
+    private func brainOverviewTotalSources(_ overview: BrainOverview?) -> Int {
+        guard let overview else { return 0 }
+        return overview.recordings.total + overview.materials.total
+    }
+
     private func brainOverviewSourceDetail(_ source: BrainOverviewSource) -> String {
         if source.entityCount == 0 {
             return sourceKindLabel(source.sourceKind) + " · " + t("not linked yet", "пока без связей")
@@ -856,8 +861,73 @@ struct MacBrainView: View {
                     )
                 }
             }
+
+            mapCoverageLedger(briefing)
         }
         .padding(.bottom, Spacing.xs)
+    }
+
+    private func mapCoverageLedger(_ briefing: BrainMapBriefing) -> some View {
+        let hiddenSources = max(0, briefing.coverage.totalSources - briefing.coverage.visibleSources)
+        let hiddenEntities = max(0, briefing.coverage.totalEntities - briefing.coverage.visibleEntities)
+        return VStack(alignment: .leading, spacing: Spacing.sm) {
+            HStack(alignment: .top, spacing: Spacing.md) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(t("Coverage ledger", "Покрытие"))
+                        .font(Typography.labelSmall.weight(.semibold))
+                        .foregroundStyle(Palette.accent)
+                    Text(loadedMapCoverageText(briefing))
+                        .font(Typography.bodySmall.weight(.semibold))
+                        .foregroundStyle(Palette.textPrimary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text(hiddenSources > 0 || hiddenEntities > 0
+                        ? t(
+                            "The canvas stays focused; hidden sources remain in the evidence list.",
+                            "Canvas остаётся сфокусированным; скрытые источники остаются в списке доказательств."
+                        )
+                        : t(
+                            "Everything loaded for this map is visible.",
+                            "Всё загруженное для этой карты видно."
+                        ))
+                        .font(Typography.labelSmall)
+                        .foregroundStyle(Palette.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 0)
+            }
+
+            HStack(spacing: Spacing.sm) {
+                coverageTile(
+                    value: "\(briefing.coverage.totalSources)",
+                    label: t("loaded in map", "загружено"),
+                    systemImage: "tray.full"
+                )
+                coverageTile(
+                    value: "\(briefing.coverage.visibleSources)",
+                    label: t("source cards shown", "карточек источн."),
+                    systemImage: "rectangle.stack"
+                )
+                coverageTile(
+                    value: "\(hiddenSources)",
+                    label: t("sources evidence-only", "источн. вне canvas"),
+                    systemImage: "list.bullet.rectangle"
+                )
+                if let overview = model.brainOverview, brainOverviewTotalSources(overview) > 0 {
+                    coverageTile(
+                        value: "\(overview.recordings.total)/\(overview.materials.total)",
+                        label: t("voice/materials", "голос/материалы"),
+                        systemImage: "waveform"
+                    )
+                }
+            }
+        }
+        .padding(Spacing.sm)
+        .background(Palette.surfaceSubtle)
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(Color.primary.opacity(0.08), lineWidth: 1)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 8))
     }
 
     private func coverageTile(value: String, label: String, systemImage: String) -> some View {
@@ -1027,6 +1097,27 @@ struct MacBrainView: View {
     private func hiddenFocusCount(_ briefing: BrainMapBriefing) -> Int {
         max(0, briefing.coverage.totalSources - briefing.coverage.visibleSources)
             + max(0, briefing.coverage.totalEntities - briefing.coverage.visibleEntities)
+    }
+
+    private func sourceWord(_ count: Int) -> String {
+        if count == 1 {
+            return t("source", "источн.")
+        }
+        return t("sources", "источн.")
+    }
+
+    private func loadedMapCoverageText(_ briefing: BrainMapBriefing) -> String {
+        let wholeBrainTotal = brainOverviewTotalSources(model.brainOverview)
+        if wholeBrainTotal > briefing.coverage.totalSources {
+            return t(
+                "\(briefing.coverage.totalSources) \(sourceWord(briefing.coverage.totalSources)) loaded into this map from \(wholeBrainTotal) sources in Wai Brain.",
+                "\(briefing.coverage.totalSources) \(sourceWord(briefing.coverage.totalSources)) загружено в карту из \(wholeBrainTotal) источн. в Wai Brain."
+            )
+        }
+        return t(
+            "\(briefing.coverage.totalSources) \(sourceWord(briefing.coverage.totalSources)) loaded into this map.",
+            "\(briefing.coverage.totalSources) \(sourceWord(briefing.coverage.totalSources)) загружено в карту."
+        )
     }
 
     private func localizedSuggestedQuestions(

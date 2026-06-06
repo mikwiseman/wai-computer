@@ -312,6 +312,33 @@ function hiddenFocusCount(briefing: BrainMapBriefing): number {
     + Math.max(0, briefing.coverage.total_entities - briefing.coverage.visible_entities);
 }
 
+function brainOverviewTotalSources(overview: BrainOverview | null): number {
+  if (!overview) return 0;
+  return overview.recordings.total + overview.materials.total;
+}
+
+function sourceWord(count: number, t: Translator): string {
+  return count === 1 ? t("source", "источн.") : t("sources", "источн.");
+}
+
+function loadedMapCoverageText(
+  briefing: BrainMapBriefing,
+  overview: BrainOverview | null,
+  t: Translator,
+): string {
+  const wholeBrainTotal = brainOverviewTotalSources(overview);
+  if (wholeBrainTotal > briefing.coverage.total_sources) {
+    return t(
+      `${briefing.coverage.total_sources} ${sourceWord(briefing.coverage.total_sources, t)} loaded into this map from ${wholeBrainTotal} sources in Wai Brain.`,
+      `${briefing.coverage.total_sources} ${sourceWord(briefing.coverage.total_sources, t)} загружено в карту из ${wholeBrainTotal} источн. в Wai Brain.`,
+    );
+  }
+  return t(
+    `${briefing.coverage.total_sources} ${sourceWord(briefing.coverage.total_sources, t)} loaded into this map.`,
+    `${briefing.coverage.total_sources} ${sourceWord(briefing.coverage.total_sources, t)} загружено в карту.`,
+  );
+}
+
 function localizedSuggestedQuestions(
   mapType: string,
   fallback: string[],
@@ -713,8 +740,62 @@ function BriefingEntityRow({
   );
 }
 
+function BrainMapCoverageLedger({
+  briefing,
+  overview,
+  t,
+}: {
+  briefing: BrainMapBriefing;
+  overview: BrainOverview | null;
+  t: Translator;
+}) {
+  const hiddenSources = Math.max(0, briefing.coverage.total_sources - briefing.coverage.visible_sources);
+  const hiddenEntities = Math.max(0, briefing.coverage.total_entities - briefing.coverage.visible_entities);
+  const hasWholeBrain = brainOverviewTotalSources(overview) > 0;
+  return (
+    <div className="brain-map-coverage-ledger" aria-label={t("Map coverage ledger", "Покрытие карты")}>
+      <div>
+        <span>{t("Coverage ledger", "Покрытие")}</span>
+        <strong>{loadedMapCoverageText(briefing, overview, t)}</strong>
+        <p>
+          {hiddenSources > 0 || hiddenEntities > 0
+            ? t(
+              "The canvas stays focused; hidden sources remain in the evidence list.",
+              "Canvas остаётся сфокусированным; скрытые источники остаются в списке доказательств.",
+            )
+            : t(
+              "Everything loaded for this map is visible.",
+              "Всё загруженное для этой карты видно.",
+            )}
+        </p>
+      </div>
+      <div className="brain-map-coverage-ledger__stats">
+        <BriefingMetric
+          value={`${briefing.coverage.total_sources}`}
+          label={t("loaded in map", "загружено")}
+        />
+        <BriefingMetric
+          value={`${briefing.coverage.visible_sources}`}
+          label={t("source cards shown", "карточек источн.")}
+        />
+        <BriefingMetric
+          value={`${hiddenSources}`}
+          label={t("sources evidence-only", "источн. вне canvas")}
+        />
+        {hasWholeBrain && overview ? (
+          <BriefingMetric
+            value={`${overview.recordings.total}/${overview.materials.total}`}
+            label={t("voice/materials in Brain", "голос/материалы")}
+          />
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
 function BrainMapBriefingPanel({
   projection,
+  overview,
   selectedSpace,
   creatingLens,
   onAskNext,
@@ -724,6 +805,7 @@ function BrainMapBriefingPanel({
   t,
 }: {
   projection: BrainMapProjection;
+  overview: BrainOverview | null;
   selectedSpace: BrainSpace | null;
   creatingLens: boolean;
   onAskNext: (prompt: string) => void;
@@ -778,6 +860,8 @@ function BrainMapBriefingPanel({
           />
         ) : null}
       </div>
+
+      <BrainMapCoverageLedger briefing={briefing} overview={overview} t={t} />
 
       <div className="brain-map-briefing__evidence">
         <div>
@@ -1745,6 +1829,7 @@ export function BrainPanel({
             {activeMap && activeProjection ? (
               <BrainMapBriefingPanel
                 projection={activeProjection}
+                overview={brainOverview}
                 selectedSpace={selectedSpace}
                 creatingLens={creatingLens}
                 onAskNext={(prompt) => void createLens(prompt)}

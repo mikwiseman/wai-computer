@@ -3005,6 +3005,38 @@ function inboxStatusLabel(row: InboxRow, locale: Locale): string | null {
   return "archived";
 }
 
+function canCreateBrainLensFromInboxRow(
+  row: InboxRow | null,
+): row is InboxRow & { source_kind: "recording" | "item"; status: "ready" } {
+  return Boolean(
+    row &&
+      (row.source_kind === "recording" || row.source_kind === "item") &&
+      row.status === "ready",
+  );
+}
+
+function brainLensUnavailableText(row: InboxRow, locale: Locale): string | null {
+  if (row.status === "ready") return null;
+  if (row.status === "processing") {
+    return locale === "ru"
+      ? "Линза появится, когда источник будет готов."
+      : "Lens appears when this source is ready.";
+  }
+  if (row.status === "needs_input") {
+    return locale === "ru"
+      ? "Завершите источник перед созданием линзы."
+      : "Finish this source before creating a lens.";
+  }
+  if (row.status === "failed") {
+    return locale === "ru"
+      ? "Исправьте источник перед созданием линзы."
+      : "Fix this source before creating a lens.";
+  }
+  return locale === "ru"
+    ? "Линза недоступна для этого источника."
+    : "Lens is not available for this source.";
+}
+
 function sourceLabel(kind: InboxSourceKind, locale: Locale): string {
   if (locale === "ru") {
     if (kind === "recording") return "Запись";
@@ -3400,8 +3432,7 @@ function UniversalInboxPanel({
 
   async function handleCreateBrainMapFromSelectedSource() {
     if (
-      !selectedRow ||
-      (selectedRow.source_kind !== "recording" && selectedRow.source_kind !== "item") ||
+      !canCreateBrainLensFromInboxRow(selectedRow) ||
       creatingBrainMapSourceId
     ) {
       return;
@@ -3609,11 +3640,19 @@ function UniversalInboxPanel({
         selectedRow &&
         (selectedRow.source_kind === "recording" || selectedRow.source_kind === "item") ? (
           <div className="inbox-detail-actions">
-            <span>{sourceLabel(selectedRow.source_kind, locale)}</span>
+            <div className="inbox-detail-actions__copy">
+              <span>{sourceLabel(selectedRow.source_kind, locale)}</span>
+              {brainLensUnavailableText(selectedRow, locale) ? (
+                <small>{brainLensUnavailableText(selectedRow, locale)}</small>
+              ) : null}
+            </div>
             <button
               type="button"
               className="ghost-button compact-button"
-              disabled={creatingBrainMapSourceId === selectedRow.id}
+              disabled={
+                creatingBrainMapSourceId === selectedRow.id ||
+                !canCreateBrainLensFromInboxRow(selectedRow)
+              }
               onClick={() => void handleCreateBrainMapFromSelectedSource()}
             >
               {creatingBrainMapSourceId === selectedRow.id

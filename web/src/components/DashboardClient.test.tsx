@@ -742,6 +742,41 @@ describe("DashboardClient", () => {
     expect(screen.getByTestId("brain-panel")).toHaveTextContent("brain:map-from-inbox");
   });
 
+  it("waits for a processing voice memo before creating a Brain lens", async () => {
+    arrangeHappyPathMocks();
+    const user = userEvent.setup();
+    const processingRecording = {
+      ...baseRecording,
+      id: "voice-processing",
+      title: "Voice memo about roadmap",
+      status: "processing",
+    };
+    mockListRecordings.mockResolvedValue([processingRecording]);
+    mockListInbox.mockResolvedValue({
+      rows: [recordingInboxRow(processingRecording)],
+      next_cursor: null,
+      has_more: false,
+    });
+    mockGetRecording.mockResolvedValue({
+      ...baseRecordingDetail,
+      ...processingRecording,
+      segments: [],
+      summary: null,
+    });
+
+    render(<DashboardClient />);
+    await waitForDashboardReady();
+
+    await waitFor(() =>
+      expect(screen.getByTestId("select-recording-voice-processing")).toBeInTheDocument(),
+    );
+    await user.click(screen.getByTestId("select-recording-voice-processing"));
+
+    expect(screen.getByText("Lens appears when this source is ready.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Create Lens" })).toBeDisabled();
+    expect(mockCreateBrainMap).not.toHaveBeenCalled();
+  });
+
   it("renders untitled recording/detail fallbacks", async () => {
     const user = userEvent.setup();
 

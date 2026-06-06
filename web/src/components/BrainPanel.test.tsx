@@ -757,6 +757,14 @@ describe("BrainPanel (Live Mirror)", () => {
     const onOpenSource = vi.fn();
     const onOpenWai = vi.fn();
     mockListBrainMaps.mockResolvedValue({ maps: [brainMap()] });
+    mockGetBrainGraph.mockResolvedValue(
+      brainGraph({
+        overview: graphOverview({
+          recordings: { total: 20, summarized: 18, organized: 15, unorganized: 5 },
+          materials: { total: 6, summarized: 5, organized: 4, unorganized: 2 },
+        }),
+      }),
+    );
 
     render(<BrainPanel onOpenSource={onOpenSource} onOpenWai={onOpenWai} />);
     await waitFor(() => expect(screen.getByText("Hiring map")).toBeInTheDocument());
@@ -765,6 +773,9 @@ describe("BrainPanel (Live Mirror)", () => {
     expect(screen.getByText("Showing 3 of 12 sources and 8 of 24 nodes.")).toBeInTheDocument();
     expect(screen.getByText("3/12")).toBeInTheDocument();
     expect(screen.getByText("8/24")).toBeInTheDocument();
+    expect(screen.getByText("12 sources loaded into this map from 26 sources in Wai Brain.")).toBeInTheDocument();
+    expect(screen.getByText("The canvas stays focused; hidden sources remain in the evidence list.")).toBeInTheDocument();
+    expect(screen.getByText("20/6")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: /Launch notes material/i }));
     expect(onOpenSource).toHaveBeenCalledWith("item", "item-1");
