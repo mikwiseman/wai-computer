@@ -426,6 +426,8 @@ class TurnContext:
     client_timezone: str | None = None        # IANA, e.g. "Europe/Reykjavik"
     viewing_recording_title: str | None = None
     viewing_folder_name: str | None = None
+    input_modality: str = "text"               # "text" | "voice"
+    is_reply_to_assistant: bool = False
 
 
 # ---------- Tool definitions advertised to the model ----------
@@ -1568,6 +1570,14 @@ def _build_session_developer_message(
         lines.append(
             f"user is currently viewing folder: {ctx.viewing_folder_name}"
         )
+    if ctx.input_modality == "voice":
+        lines.append(
+            "input: the user spoke this as a voice note that was transcribed. "
+            "Treat it exactly as if they had typed it — answer or act on it; do "
+            "not describe the audio or mention that it was a voice message."
+        )
+    if ctx.is_reply_to_assistant:
+        lines.append("the user is replying to your previous message")
     if brain_context is not None:
         space = brain_context.get("space")
         space_name = getattr(space, "name", None) or "selected Brain"
