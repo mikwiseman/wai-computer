@@ -2524,11 +2524,29 @@ a.primary-button[aria-disabled="true"]:hover {
   border-radius: 999px;
   background: var(--ink-faint);
 }
+/* Status glyphs follow "silent success, loud failure": a completed read recedes
+ * (neutral), an in-flight one breathes (active), only a failure is loud. Keeps a
+ * multi-tool turn calm — the eye catches what's running or broken, not a column of
+ * green checks. */
 .wai-tool-status--running {
   background: var(--warning);
 }
+@media (prefers-reduced-motion: no-preference) {
+  .wai-tool-status--running {
+    animation: wai-tool-pulse 1.2s ease-in-out infinite;
+  }
+}
+@keyframes wai-tool-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.4;
+  }
+}
 .wai-tool-status--done {
-  background: var(--success);
+  background: var(--ink-faint);
 }
 .wai-tool-status--failed {
   background: var(--danger);

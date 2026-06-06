@@ -195,6 +195,9 @@ struct CompanionToolActionsCard: View {
         .accessibilityIdentifier("wai-tool-actions-card")
     }
 
+    // "Silent success, loud failure": a finished read recedes to a neutral dot,
+    // an in-flight one shows the spinner, only a failure is loud. A column of green
+    // checks reads as noise; this keeps the eye on what's running or broken.
     @ViewBuilder
     private func statusIcon(_ action: CompanionToolAction) -> some View {
         if action.isRunning {
@@ -204,9 +207,10 @@ struct CompanionToolActionsCard: View {
                 .font(.system(size: 12))
                 .foregroundStyle(.red)
         } else {
-            Image(systemName: "checkmark.circle.fill")
-                .font(.system(size: 12))
-                .foregroundStyle(.green)
+            Image(systemName: "circle.fill")
+                .font(.system(size: 6))
+                .foregroundStyle(.secondary.opacity(0.5))
+                .frame(width: 12)
         }
     }
 }
