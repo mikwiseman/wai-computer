@@ -3585,7 +3585,7 @@ a.primary-button[aria-disabled="true"]:hover {
 
 .brain-map-live-status__metrics {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 0.5rem;
 }
 
@@ -4343,12 +4343,28 @@ a.primary-button[aria-disabled="true"]:hover {
 }
 
 .brain-map-list__item small,
+.brain-map-list__meta,
+.brain-map-list__meta em,
 .brain-diff small,
 .brain-panel__entity-row em,
 .brain-panel__source-row em {
   color: var(--ink-soft);
   font-style: normal;
   font-size: var(--font-label-small-size);
+}
+
+.brain-map-list__meta {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0.12rem;
+  margin-top: 0.16rem;
+}
+
+.brain-map-list__meta em {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .brain-diff p {

@@ -339,6 +339,38 @@ function loadedMapCoverageText(
   );
 }
 
+function mapOriginLabel(origin: string, t: Translator): string {
+  if (origin === "inbox") return t("Inbox source", "Источник из инбокса");
+  if (origin === "agent") return t("Agent", "Агент");
+  if (origin === "wai") return "Wai";
+  return t("Brain lens", "Линза мозга");
+}
+
+function mapSourceCountText(revision: BrainMapRevision | null | undefined, t: Translator): string {
+  if (!revision) return t("not checked", "не проверено");
+  if (revision.source_count === 0) return t("no sources", "нет источников");
+  if (revision.source_count === 1) return t("1 source", "1 источн.");
+  return t(`${revision.source_count} sources`, `${revision.source_count} источн.`);
+}
+
+function mapCheckedDate(value: string | null | undefined, t: Translator): string {
+  if (!value) return t("not checked", "не проверено");
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return t("checked", "проверено");
+  return new Intl.DateTimeFormat(t("en-US", "ru-RU"), {
+    day: "numeric",
+    month: "short",
+  }).format(date);
+}
+
+function mapCheckedText(revision: BrainMapRevision | null | undefined, t: Translator): string {
+  if (!revision) return t("not checked yet", "ещё не проверено");
+  return t(
+    `checked ${mapCheckedDate(revision.compiled_at, t)}`,
+    `проверено ${mapCheckedDate(revision.compiled_at, t)}`,
+  );
+}
+
 function localizedSuggestedQuestions(
   mapType: string,
   fallback: string[],
@@ -1018,8 +1050,16 @@ function BrainMapLiveStatus({
           <em>{t("freshness", "актуальность")}</em>
         </span>
         <span>
+          <strong>{mapSourceCountText(revision, t)}</strong>
+          <em>{t("grounding", "основание")}</em>
+        </span>
+        <span>
           <strong>{mapWatchText(revision, projection, t)}</strong>
           <em>{t("watch next", "следить дальше")}</em>
+        </span>
+        <span>
+          <strong>{mapCheckedText(revision, t)}</strong>
+          <em>{t("last checked", "проверено")}</em>
         </span>
       </div>
     </section>
@@ -1883,8 +1923,12 @@ export function BrainPanel({
                   >
                     <strong>{map.title}</strong>
                     <small>
-                      {map.status} · {diffText(map.current_revision?.diff ?? null, t)}
+                      {mapOriginLabel(map.origin, t)} · {mapSourceCountText(map.current_revision, t)}
                     </small>
+                    <span className="brain-map-list__meta">
+                      <em>{diffText(map.current_revision?.diff ?? null, t)}</em>
+                      <em>{mapCheckedText(map.current_revision, t)}</em>
+                    </span>
                   </button>
                 ))}
               </div>

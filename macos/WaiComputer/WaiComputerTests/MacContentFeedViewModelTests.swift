@@ -120,6 +120,9 @@ final class MacContentFeedViewModelTests: XCTestCase {
         XCTAssertTrue(source.contains("\"Coverage ledger\""))
         XCTAssertTrue(source.contains("loaded into this map from"))
         XCTAssertTrue(source.contains("\"The canvas stays focused; hidden sources remain in the evidence list.\""))
+        XCTAssertTrue(source.contains("mapOriginLabel(map.origin)"))
+        XCTAssertTrue(source.contains("mapSourceCountText(map.currentRevision)"))
+        XCTAssertTrue(source.contains("mapCheckedText(map.currentRevision)"))
     }
 
     func testInboxCreatePaneDefaultsToFocusedUploadMode() throws {

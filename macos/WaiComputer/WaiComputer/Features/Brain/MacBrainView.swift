@@ -1280,20 +1280,27 @@ struct MacBrainView: View {
                 mapSelector(
                     id: "mirror",
                     title: t("Live Mirror", "Живое зеркало"),
-                    detail: t("always current", "всегда актуально")
+                    detail: t("always current", "всегда актуально"),
+                    subdetail: t("updates from sources", "обновляется из источников")
                 )
                 ForEach(model.maps) { map in
                     mapSelector(
                         id: map.id,
                         title: map.title,
-                        detail: "\(map.status) · \(diffSummary(map.currentRevision?.diff))"
+                        detail: "\(mapOriginLabel(map.origin)) · \(mapSourceCountText(map.currentRevision))",
+                        subdetail: "\(diffSummary(map.currentRevision?.diff)) · \(mapCheckedText(map.currentRevision))"
                     )
                 }
             }
         }
     }
 
-    private func mapSelector(id: String, title: String, detail: String) -> some View {
+    private func mapSelector(
+        id: String,
+        title: String,
+        detail: String,
+        subdetail: String? = nil
+    ) -> some View {
         let active = model.selectedMapId == id
         return Button {
             model.selectedMapId = id
@@ -1306,8 +1313,14 @@ struct MacBrainView: View {
                     .font(Typography.labelSmall)
                     .foregroundStyle(active ? Palette.textSecondary : Palette.textTertiary)
                     .lineLimit(1)
+                if let subdetail {
+                    Text(subdetail)
+                        .font(Typography.labelSmall)
+                        .foregroundStyle(Palette.textTertiary)
+                        .lineLimit(1)
+                }
             }
-            .frame(width: 168, alignment: .leading)
+            .frame(width: 184, alignment: .leading)
             .padding(.horizontal, Spacing.sm)
             .padding(.vertical, Spacing.xs)
             .background(active ? Palette.accentSubtle : Color.primary.opacity(0.045))
@@ -1347,6 +1360,28 @@ struct MacBrainView: View {
         if diff.nodesAdded > 0 { parts.append("+\(diff.nodesAdded) " + t("cards", "карточек")) }
         if diff.edgesAdded > 0 { parts.append("+\(diff.edgesAdded) " + t("links", "связей")) }
         return parts.isEmpty ? t("Updated", "Обновлено") : parts.joined(separator: " · ")
+    }
+
+    private func mapOriginLabel(_ origin: String) -> String {
+        switch origin {
+        case "inbox": return t("Inbox source", "Источник из инбокса")
+        case "agent": return t("Agent", "Агент")
+        case "wai": return "Wai"
+        default: return t("Brain lens", "Линза мозга")
+        }
+    }
+
+    private func mapSourceCountText(_ revision: BrainMapRevision?) -> String {
+        guard let revision else { return t("not checked", "не проверено") }
+        if revision.sourceCount == 0 { return t("no sources", "нет источников") }
+        if revision.sourceCount == 1 { return t("1 source", "1 источн.") }
+        return t("\(revision.sourceCount) sources", "\(revision.sourceCount) источн.")
+    }
+
+    private func mapCheckedText(_ revision: BrainMapRevision?) -> String {
+        guard let revision else { return t("not checked yet", "ещё не проверено") }
+        let date = String(revision.compiledAt.prefix(10))
+        return t("checked \(date)", "проверено \(date)")
     }
 
     private func signedChange(

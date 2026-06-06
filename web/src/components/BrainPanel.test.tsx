@@ -770,6 +770,9 @@ describe("BrainPanel (Live Mirror)", () => {
     await waitFor(() => expect(screen.getByText("Hiring map")).toBeInTheDocument());
 
     fireEvent.click(screen.getByRole("button", { name: /Hiring map/ }));
+    expect(screen.getByText("Brain lens · 1 source")).toBeInTheDocument();
+    expect(screen.getByText("grounding")).toBeInTheDocument();
+    expect(screen.getAllByText("checked Jun 5").length).toBeGreaterThan(0);
     expect(screen.getByText("Showing 3 of 12 sources and 8 of 24 nodes.")).toBeInTheDocument();
     expect(screen.getByText("3/12")).toBeInTheDocument();
     expect(screen.getByText("8/24")).toBeInTheDocument();
