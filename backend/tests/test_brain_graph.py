@@ -7,7 +7,9 @@ import pytest
 from app.core.brain_graph import build_brain_graph, build_entity_page
 from app.core.entity_graph import record_mention, upsert_entity
 from app.core.item_ingest import ingest_item
-from app.models.recording import Recording, RecordingStatus
+from app.models.brain_space import BrainReviewPack, BrainSpace
+from app.models.item import ItemSummary
+from app.models.recording import Recording, RecordingStatus, Summary
 from app.models.user import User
 
 pytestmark = pytest.mark.asyncio
@@ -88,6 +90,125 @@ async def test_graph_includes_item_and_recording_source_nodes(db_session) -> Non
     assert g.stats["recordings"] == 1
 
 
+async def test_graph_overview_reports_source_coverage(db_session) -> None:
+    user = await _make_user(db_session)
+    organized_rec = Recording(
+        user_id=user.id,
+        title="Launch voice memo",
+        type="note",
+        status=RecordingStatus.READY.value,
+    )
+    unorganized_rec = Recording(
+        user_id=user.id,
+        title="Raw project voice memo",
+        type="note",
+        status=RecordingStatus.READY.value,
+    )
+    db_session.add_all([organized_rec, unorganized_rec])
+    await db_session.flush()
+    db_session.add(
+        Summary(
+            recording_id=organized_rec.id,
+            summary="Launch memo summary",
+            key_points=[],
+            decisions=[],
+            topics=[],
+            people_mentioned=[],
+        )
+    )
+    item, _ = await ingest_item(
+        db_session,
+        user.id,
+        source="paste",
+        title="Project material",
+        body="Anna owns launch",
+        embed=False,
+    )
+    db_session.add(
+        ItemSummary(
+            item_id=item.id,
+            summary="Project material summary",
+            key_points=[],
+            decisions=[],
+            action_items=[],
+            topics=[],
+            people_mentioned=[],
+            highlights=[],
+            key_moments=[],
+        )
+    )
+    space = BrainSpace(
+        owner_user_id=user.id,
+        name="Personal",
+        slug=f"personal-{uuid4().hex}",
+        kind="personal",
+        engine_profile="waibrain",
+        visibility="private",
+    )
+    db_session.add(space)
+    await db_session.flush()
+    db_session.add(
+        BrainReviewPack(
+            space_id=space.id,
+            title="Review launch claims",
+            summary="Needs review",
+            proposals=[],
+            evidence=[],
+            created_by_user_id=user.id,
+        )
+    )
+
+    anna = await upsert_entity(db_session, user.id, type="person", name="Anna")
+    launch = await upsert_entity(db_session, user.id, type="project", name="Launch")
+    await record_mention(
+        db_session,
+        user_id=user.id,
+        entity_id=anna.id,
+        source_kind="recording",
+        source_id=organized_rec.id,
+    )
+    await record_mention(
+        db_session,
+        user_id=user.id,
+        entity_id=launch.id,
+        source_kind="recording",
+        source_id=organized_rec.id,
+    )
+    await record_mention(
+        db_session,
+        user_id=user.id,
+        entity_id=anna.id,
+        source_kind="item",
+        source_id=item.id,
+    )
+
+    graph = await build_brain_graph(db_session, user.id, include_sources=True)
+
+    assert graph.overview is not None
+    assert graph.overview.recordings.total == 2
+    assert graph.overview.recordings.summarized == 1
+    assert graph.overview.recordings.organized == 1
+    assert graph.overview.recordings.unorganized == 1
+    assert graph.overview.materials.total == 1
+    assert graph.overview.materials.summarized == 1
+    assert graph.overview.materials.organized == 1
+    assert graph.overview.materials.unorganized == 0
+    assert graph.overview.pending_review_count == 1
+    assert graph.overview.llm_requests == 0
+
+    anna_overview = next(entity for entity in graph.overview.top_entities if entity.name == "Anna")
+    assert anna_overview.source_count == 2
+    assert anna_overview.recording_count == 1
+    assert anna_overview.material_count == 1
+
+    recent_by_id = {source.id: source for source in graph.overview.recent_sources}
+    assert recent_by_id[f"recording:{organized_rec.id}"].entity_count == 2
+    assert recent_by_id[f"recording:{organized_rec.id}"].organized_at is not None
+    assert recent_by_id[f"recording:{unorganized_rec.id}"].entity_count == 0
+    assert recent_by_id[f"recording:{unorganized_rec.id}"].organized_at is None
+    assert recent_by_id[f"item:{item.id}"].title == "Project material"
+
+
 async def test_focus_returns_only_the_ego_graph(db_session) -> None:
     user = await _make_user(db_session)
     shared = uuid4()
@@ -116,8 +237,10 @@ async def test_brain_graph_route_smoke(client, auth_headers) -> None:
     resp = await client.get("/api/brain/graph", headers=auth_headers)
     assert resp.status_code == 200, resp.text
     data = resp.json()
-    assert {"nodes", "edges", "stats"} <= set(data)
+    assert {"nodes", "edges", "stats", "overview"} <= set(data)
     assert data["stats"]["entities"] == 0  # fresh user -> honest empty graph
+    assert data["overview"]["recordings"]["total"] == 0
+    assert data["overview"]["materials"]["total"] == 0
 
 
 async def test_build_entity_page_sources_and_related(db_session) -> None:

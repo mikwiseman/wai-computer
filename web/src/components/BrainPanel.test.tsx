@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { BrainPanel } from "./BrainPanel";
 
 const mockGetBrainMirror = vi.fn();
+const mockGetBrainGraph = vi.fn();
 const mockListBrainMaps = vi.fn();
 const mockCreateBrainMap = vi.fn();
 const mockUpdateBrainMap = vi.fn();
@@ -78,6 +79,7 @@ vi.mock("@/lib/api", () => ({
   askBrain: (...a: unknown[]) => mockAskBrain(...a),
   createBrainMap: (...a: unknown[]) => mockCreateBrainMap(...a),
   exportBrainSpace: (...a: unknown[]) => mockExportBrainSpace(...a),
+  getBrainGraph: (...a: unknown[]) => mockGetBrainGraph(...a),
   getBrainMirror: (...a: unknown[]) => mockGetBrainMirror(...a),
   getBrainSpaceHome: (...a: unknown[]) => mockGetBrainSpaceHome(...a),
   listBrainMaps: (...a: unknown[]) => mockListBrainMaps(...a),
@@ -159,6 +161,62 @@ function projection(overrides = {}) {
     stats: { entities: 1 },
     source_fingerprint: "mirror",
     briefing: briefing(),
+    ...overrides,
+  };
+}
+
+function graphOverview(overrides = {}) {
+  return {
+    recordings: { total: 2, summarized: 1, organized: 1, unorganized: 1 },
+    materials: { total: 1, summarized: 1, organized: 1, unorganized: 0 },
+    pending_review_count: 1,
+    top_entities: [
+      {
+        id: "e1",
+        name: "Anna",
+        type: "person",
+        source_count: 2,
+        recording_count: 1,
+        material_count: 1,
+      },
+    ],
+    recent_sources: [
+      {
+        id: "recording:r1",
+        source_kind: "recording",
+        source_id: "r1",
+        title: "Voice memo",
+        entity_count: 2,
+        organized_at: "2026-06-05T10:00:00Z",
+      },
+      {
+        id: "recording:r2",
+        source_kind: "recording",
+        source_id: "r2",
+        title: "Raw project voice memo",
+        entity_count: 0,
+        organized_at: null,
+      },
+      {
+        id: "item:item-1",
+        source_kind: "item",
+        source_id: "item-1",
+        title: "Project material",
+        entity_count: 1,
+        organized_at: "2026-06-05T10:00:00Z",
+      },
+    ],
+    llm_requests: 0,
+    ...overrides,
+  };
+}
+
+function brainGraph(overrides = {}) {
+  return {
+    nodes: [],
+    edges: [],
+    stats: { entities: 0 },
+    overview: graphOverview(),
     ...overrides,
   };
 }
@@ -461,6 +519,7 @@ describe("BrainPanel (Live Mirror)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockGetBrainMirror.mockResolvedValue(projection());
+    mockGetBrainGraph.mockResolvedValue(brainGraph());
     mockListBrainMaps.mockResolvedValue({ maps: [] });
     mockCreateBrainMap.mockResolvedValue(brainMap());
     mockRefreshBrainMap.mockResolvedValue(revision({ id: "rev-2", revision_index: 2 }));
@@ -502,6 +561,8 @@ describe("BrainPanel (Live Mirror)", () => {
     await waitFor(() => expect(screen.getByTestId("brain-map-canvas")).toBeInTheDocument());
 
     expect(screen.getByRole("button", { name: "Create Lens" })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Source mirror" })).toBeInTheDocument();
+    expect(screen.getByText("2 of 3 sources are linked into the mirror; 1 still need entities.")).toBeInTheDocument();
     expect(await screen.findByText("Launch notes")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Pages" })).toBeInTheDocument();
     expect(screen.getByText("Pricing")).toBeInTheDocument();
@@ -763,6 +824,17 @@ describe("BrainPanel (Live Mirror)", () => {
 
   it("shows an empty state when nothing has been saved yet", async () => {
     mockGetBrainMirror.mockResolvedValue(projection({ nodes: [], edges: [], citations: [] }));
+    mockGetBrainGraph.mockResolvedValue(
+      brainGraph({
+        overview: graphOverview({
+          recordings: { total: 0, summarized: 0, organized: 0, unorganized: 0 },
+          materials: { total: 0, summarized: 0, organized: 0, unorganized: 0 },
+          pending_review_count: 0,
+          top_entities: [],
+          recent_sources: [],
+        }),
+      }),
+    );
     mockListEntities.mockResolvedValue([]);
     mockListBrainSpaces.mockResolvedValue(spaces({ spaces: [] }));
     render(<BrainPanel />);

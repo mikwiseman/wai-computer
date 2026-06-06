@@ -101,10 +101,45 @@ class GraphEdgeResponse(BaseModel):
     weight: float
 
 
+class BrainSourceCoverageResponse(BaseModel):
+    total: int
+    summarized: int
+    organized: int
+    unorganized: int
+
+
+class BrainOverviewEntityResponse(BaseModel):
+    id: str
+    name: str
+    type: str
+    source_count: int
+    recording_count: int
+    material_count: int
+
+
+class BrainOverviewSourceResponse(BaseModel):
+    id: str
+    source_kind: str
+    source_id: str
+    title: str
+    entity_count: int
+    organized_at: str | None
+
+
+class BrainOverviewResponse(BaseModel):
+    recordings: BrainSourceCoverageResponse
+    materials: BrainSourceCoverageResponse
+    pending_review_count: int
+    top_entities: list[BrainOverviewEntityResponse]
+    recent_sources: list[BrainOverviewSourceResponse]
+    llm_requests: int
+
+
 class BrainGraphResponse(BaseModel):
     nodes: list[GraphNodeResponse]
     edges: list[GraphEdgeResponse]
     stats: dict[str, int]
+    overview: BrainOverviewResponse
 
 
 @router.get("/graph", response_model=BrainGraphResponse)
@@ -128,6 +163,7 @@ async def get_brain_graph(
         nodes=[GraphNodeResponse(**asdict(n)) for n in graph.nodes],
         edges=[GraphEdgeResponse(**asdict(e)) for e in graph.edges],
         stats=graph.stats,
+        overview=BrainOverviewResponse(**asdict(graph.overview)),
     )
 
 

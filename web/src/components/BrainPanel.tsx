@@ -19,6 +19,7 @@ import {
   askBrain,
   createBrainMap,
   exportBrainSpace,
+  getBrainGraph,
   getBrainMirror,
   getBrainSpaceHome,
   listBrainMaps,
@@ -41,7 +42,11 @@ import type {
   BrainMapPosition,
   BrainMapProjection,
   BrainMapRevision,
+  BrainOverview,
+  BrainOverviewEntity,
+  BrainOverviewSource,
   BrainReviewPack,
+  BrainSourceCoverage,
   BrainSpace,
   BrainSpaceHome,
   BrainSpaceSourceSummary,
@@ -398,6 +403,178 @@ function BrainAskPanel({
           ) : null}
         </article>
       ) : null}
+    </section>
+  );
+}
+
+function brainOverviewSummary(overview: BrainOverview, t: Translator): string {
+  const totalSources = overview.recordings.total + overview.materials.total;
+  const organizedSources = overview.recordings.organized + overview.materials.organized;
+  const unorganizedSources = overview.recordings.unorganized + overview.materials.unorganized;
+  if (totalSources === 0) {
+    return t("Brain is waiting for recordings and materials.", "Мозг ждёт записи и материалы.");
+  }
+  if (unorganizedSources > 0) {
+    return t(
+      `${organizedSources} of ${totalSources} sources are linked into the mirror; ${unorganizedSources} still need entities.`,
+      `${organizedSources} из ${totalSources} источн. связаны в зеркало; без сущностей: ${unorganizedSources}.`,
+    );
+  }
+  return t(
+    `All ${totalSources} sources are linked into the mirror.`,
+    `Все источники связаны в зеркало: ${totalSources}.`,
+  );
+}
+
+function BrainSourceCoverageMeter({
+  title,
+  coverage,
+  t,
+}: {
+  title: string;
+  coverage: BrainSourceCoverage;
+  t: Translator;
+}) {
+  const total = Math.max(coverage.total, 1);
+  return (
+    <div className="brain-source-mirror__meter">
+      <div>
+        <strong>{title}</strong>
+        <span>{coverage.organized}/{coverage.total}</span>
+      </div>
+      <div className="brain-source-mirror__bar" aria-hidden="true">
+        <span
+          className="brain-source-mirror__bar-summary"
+          style={{ width: `${(coverage.summarized / total) * 100}%` }}
+        />
+        <span
+          className="brain-source-mirror__bar-linked"
+          style={{ width: `${(coverage.organized / total) * 100}%` }}
+        />
+      </div>
+      <small>
+        {t(
+          `${coverage.summarized} summarized · ${coverage.organized} linked · ${coverage.unorganized} not linked`,
+          `${coverage.summarized} summary · ${coverage.organized} связано · ${coverage.unorganized} без связей`,
+        )}
+      </small>
+    </div>
+  );
+}
+
+function BrainOverviewSourceRow({
+  source,
+  onOpen,
+  t,
+}: {
+  source: BrainOverviewSource;
+  onOpen: (source: BrainOverviewSource) => void;
+  t: Translator;
+}) {
+  const linkedText = source.entity_count === 0
+    ? t("not linked yet", "пока без связей")
+    : t(`${source.entity_count} linked node(s)`, `${source.entity_count} связанных узл.`);
+  return (
+    <button
+      type="button"
+      className="brain-source-mirror__row"
+      onClick={() => onOpen(source)}
+    >
+      <strong>{source.title}</strong>
+      <em>{sourceKindLabel(source.source_kind, t)} · {linkedText}</em>
+    </button>
+  );
+}
+
+function BrainOverviewEntityRow({
+  entity,
+  onOpen,
+  t,
+}: {
+  entity: BrainOverviewEntity;
+  onOpen: (entity: BrainOverviewEntity) => void;
+  t: Translator;
+}) {
+  return (
+    <button
+      type="button"
+      className="brain-source-mirror__row"
+      onClick={() => onOpen(entity)}
+    >
+      <strong>{entity.name}</strong>
+      <em>
+        {entity.source_count} {t("sources", "источн.")} · {entity.recording_count} {t("voice", "голос")} · {entity.material_count} {t("material", "материал")}
+      </em>
+    </button>
+  );
+}
+
+function BrainSourceMirrorPanel({
+  overview,
+  onOpenSource,
+  onOpenEntity,
+  t,
+}: {
+  overview: BrainOverview;
+  onOpenSource: (kind: string, id: string) => void;
+  onOpenEntity: (id: string, name: string) => void;
+  t: Translator;
+}) {
+  return (
+    <section className="brain-source-mirror" aria-label={t("Source mirror", "Зеркало источников")}>
+      <div className="brain-source-mirror__head">
+        <div>
+          <h3>{t("Source mirror", "Зеркало источников")}</h3>
+          <p>{brainOverviewSummary(overview, t)}</p>
+        </div>
+        {overview.pending_review_count > 0 ? (
+          <span>{overview.pending_review_count} {t("needs review", "на проверке")}</span>
+        ) : null}
+      </div>
+      <div className="brain-source-mirror__meters">
+        <BrainSourceCoverageMeter
+          title={t("Voice memos", "Голосовые")}
+          coverage={overview.recordings}
+          t={t}
+        />
+        <BrainSourceCoverageMeter
+          title={t("Materials", "Материалы")}
+          coverage={overview.materials}
+          t={t}
+        />
+      </div>
+      <div className="brain-source-mirror__lists">
+        <div>
+          <h4>{t("Recent sources", "Свежие источники")}</h4>
+          {overview.recent_sources.length > 0 ? (
+            overview.recent_sources.slice(0, 5).map((source) => (
+              <BrainOverviewSourceRow
+                key={source.id}
+                source={source}
+                onOpen={(next) => onOpenSource(next.source_kind, next.source_id)}
+                t={t}
+              />
+            ))
+          ) : (
+            <p className="brain-panel__empty">{t("No recordings or materials yet.", "Записей и материалов пока нет.")}</p>
+          )}
+        </div>
+        <div>
+          <h4>{t("Strong anchors", "Сильные узлы")}</h4>
+          {overview.top_entities.length > 0 ? (
+            overview.top_entities.slice(0, 5).map((entity) => (
+              <BrainOverviewEntityRow
+                key={entity.id}
+                entity={entity}
+                onOpen={(next) => onOpenEntity(next.id, next.name)}
+                t={t}
+              />
+            ))
+          ) : (
+            <p className="brain-panel__empty">{t("No linked people, projects, or topics yet.", "Пока нет связанных людей, проектов или тем.")}</p>
+          )}
+        </div>
+      </div>
     </section>
   );
 }
@@ -945,6 +1122,7 @@ export function BrainPanel({
   const t = useCallback((en: string, ru: string) => (locale === "ru" ? ru : en), [locale]);
 
   const [mirror, setMirror] = useState<BrainMapProjection | null>(null);
+  const [brainOverview, setBrainOverview] = useState<BrainOverview | null>(null);
   const [maps, setMaps] = useState<BrainMap[]>([]);
   const [activeMapId, setActiveMapId] = useState<string>("mirror");
   const [lensPrompt, setLensPrompt] = useState("");
@@ -1013,13 +1191,15 @@ export function BrainPanel({
     if (!hasLoadedRef.current) setLoading(true);
     setError(null);
     try {
-      const [mirrorProjection, mapList, entityList, spaceList] = await Promise.all([
+      const [mirrorProjection, graph, mapList, entityList, spaceList] = await Promise.all([
         getBrainMirror({ limit: 60 }),
+        getBrainGraph({ limit: 200 }),
         listBrainMaps({ limit: 50 }),
         listEntities({ limit: 200 }),
         listBrainSpaces(),
       ]);
       setMirror(mirrorProjection);
+      setBrainOverview(graph.overview ?? null);
       setMaps(mapList.maps);
       if (initialMapId && mapList.maps.some((map) => map.id === initialMapId)) {
         setActiveMapId(initialMapId);
@@ -1248,6 +1428,7 @@ export function BrainPanel({
   const sources = spaceHome?.sources ?? [];
   const hasAnything =
     entities.length > 0 ||
+    ((brainOverview?.recordings.total ?? 0) + (brainOverview?.materials.total ?? 0)) > 0 ||
     maps.length > 0 ||
     approvedKnowledgeCount > 0 ||
     reviewPacks.length > 0 ||
@@ -1402,6 +1583,14 @@ export function BrainPanel({
                 <span>{activeProjection?.citations.length ?? 0} {t("sources", "источн.")}</span>
               </div>
             </div>
+            {brainOverview ? (
+              <BrainSourceMirrorPanel
+                overview={brainOverview}
+                onOpenSource={openSource}
+                onOpenEntity={(id, name) => setSelectedEntity({ id, name })}
+                t={t}
+              />
+            ) : null}
             <BrainAskPanel
               question={brainQuestion}
               answer={brainAnswer}

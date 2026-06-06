@@ -22,12 +22,13 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.brain_space import BrainReviewPack, BrainSpace
 from app.models.entity import Entity, EntityMention, EntityPageSnapshot
-from app.models.item import Item
-from app.models.recording import ActionItem, Recording
+from app.models.item import Item, ItemSummary
+from app.models.recording import ActionItem, Recording, Summary
 
 
 @dataclass
@@ -47,10 +48,49 @@ class GraphEdge:
 
 
 @dataclass
+class SourceCoverage:
+    total: int
+    summarized: int
+    organized: int
+    unorganized: int
+
+
+@dataclass
+class BrainOverviewEntity:
+    id: str
+    name: str
+    type: str
+    source_count: int
+    recording_count: int
+    material_count: int
+
+
+@dataclass
+class BrainOverviewSource:
+    id: str
+    source_kind: str
+    source_id: str
+    title: str
+    entity_count: int
+    organized_at: str | None
+
+
+@dataclass
+class BrainOverview:
+    recordings: SourceCoverage
+    materials: SourceCoverage
+    pending_review_count: int
+    top_entities: list[BrainOverviewEntity]
+    recent_sources: list[BrainOverviewSource]
+    llm_requests: int
+
+
+@dataclass
 class BrainGraph:
     nodes: list[GraphNode]
     edges: list[GraphEdge]
     stats: dict[str, int]
+    overview: BrainOverview
 
 
 async def build_brain_graph(
@@ -76,6 +116,7 @@ async def build_brain_graph(
                 EntityMention.entity_id,
                 EntityMention.source_kind,
                 EntityMention.source_id,
+                EntityMention.updated_at,
             ).where(EntityMention.user_id == user_id)
         )
     ).all()
@@ -83,7 +124,8 @@ async def build_brain_graph(
     degree: dict[str, int] = {}
     source_entities: dict[tuple[str, uuid.UUID], set[str]] = {}
     entity_sources: dict[str, set[tuple[str, uuid.UUID]]] = {}
-    for eid, kind, sid in mention_rows:
+    source_organized_at: dict[tuple[str, uuid.UUID], datetime] = {}
+    for eid, kind, sid, updated_at in mention_rows:
         e = str(eid)
         if e not in entity_meta:
             continue
@@ -91,6 +133,10 @@ async def build_brain_graph(
         degree[e] = degree.get(e, 0) + 1
         source_entities.setdefault(s, set()).add(e)
         entity_sources.setdefault(e, set()).add(s)
+        if updated_at is not None:
+            current = source_organized_at.get(s)
+            if current is None or updated_at > current:
+                source_organized_at[s] = updated_at
 
     # Which entities are in the view.
     if focus is not None:
@@ -193,7 +239,184 @@ async def build_brain_graph(
         "recordings": len(rec_ids),
         "mentions": len(mention_rows),
     }
-    return BrainGraph(nodes=nodes, edges=edges, stats=stats)
+    overview = await _build_brain_overview(
+        db,
+        user_id,
+        entity_meta=entity_meta,
+        entity_sources=entity_sources,
+        source_entities=source_entities,
+        source_organized_at=source_organized_at,
+    )
+    return BrainGraph(nodes=nodes, edges=edges, stats=stats, overview=overview)
+
+
+async def _build_brain_overview(
+    db: AsyncSession,
+    user_id: Any,
+    *,
+    entity_meta: dict[str, tuple[str, str]],
+    entity_sources: dict[str, set[tuple[str, uuid.UUID]]],
+    source_entities: dict[tuple[str, uuid.UUID], set[str]],
+    source_organized_at: dict[tuple[str, uuid.UUID], datetime],
+) -> BrainOverview:
+    recording_rows = (
+        await db.execute(
+            select(Recording.id, Recording.title, Recording.created_at, Recording.updated_at)
+            .where(Recording.user_id == user_id, Recording.deleted_at.is_(None))
+            .order_by(Recording.created_at.desc(), Recording.id.asc())
+        )
+    ).all()
+    item_rows = (
+        await db.execute(
+            select(Item.id, Item.title, Item.url, Item.occurred_at, Item.created_at)
+            .where(Item.user_id == user_id, Item.deleted_at.is_(None))
+            .order_by(Item.created_at.desc(), Item.id.asc())
+        )
+    ).all()
+
+    recording_ids = {rid for rid, _, _, _ in recording_rows}
+    item_ids = {iid for iid, _, _, _, _ in item_rows}
+
+    summarized_recording_ids: set[uuid.UUID] = set()
+    if recording_ids:
+        summarized_recording_ids = {
+            rid
+            for (rid,) in (
+                await db.execute(
+                    select(Summary.recording_id).where(
+                        Summary.recording_id.in_(recording_ids)
+                    )
+                )
+            ).all()
+        }
+
+    summarized_item_ids: set[uuid.UUID] = set()
+    if item_ids:
+        summarized_item_ids = {
+            iid
+            for (iid,) in (
+                await db.execute(
+                    select(ItemSummary.item_id).where(ItemSummary.item_id.in_(item_ids))
+                )
+            ).all()
+        }
+
+    organized_recording_ids = {
+        sid
+        for (kind, sid), ents in source_entities.items()
+        if kind == "recording" and sid in recording_ids and ents
+    }
+    organized_item_ids = {
+        sid
+        for (kind, sid), ents in source_entities.items()
+        if kind == "item" and sid in item_ids and ents
+    }
+
+    pending_review_count = int(
+        await db.scalar(
+            select(func.count(BrainReviewPack.id))
+            .join(BrainSpace, BrainSpace.id == BrainReviewPack.space_id)
+            .where(
+                BrainSpace.owner_user_id == user_id,
+                BrainReviewPack.status == "pending",
+            )
+        )
+        or 0
+    )
+
+    top_entities: list[BrainOverviewEntity] = []
+    for entity_id, sources in entity_sources.items():
+        if entity_id not in entity_meta:
+            continue
+        recording_count = sum(
+            1 for kind, sid in sources if kind == "recording" and sid in recording_ids
+        )
+        material_count = sum(1 for kind, sid in sources if kind == "item" and sid in item_ids)
+        source_count = recording_count + material_count
+        if source_count == 0:
+            continue
+        entity_type, name = entity_meta[entity_id]
+        top_entities.append(
+            BrainOverviewEntity(
+                id=entity_id,
+                name=name,
+                type=entity_type,
+                source_count=source_count,
+                recording_count=recording_count,
+                material_count=material_count,
+            )
+        )
+    top_entities.sort(
+        key=lambda entity: (
+            entity.source_count,
+            entity.recording_count,
+            entity.material_count,
+            entity.name.lower(),
+        ),
+        reverse=True,
+    )
+
+    recent_candidates: list[tuple[str, str, BrainOverviewSource]] = []
+    for rid, title, created_at, updated_at in recording_rows:
+        source_key = ("recording", rid)
+        source_id = f"recording:{rid}"
+        source_time = updated_at or created_at
+        recent_candidates.append(
+            (
+                source_time.isoformat() if source_time else "",
+                source_id,
+                BrainOverviewSource(
+                    id=source_id,
+                    source_kind="recording",
+                    source_id=str(rid),
+                    title=title or "Recording",
+                    entity_count=len(source_entities.get(source_key, set())),
+                    organized_at=_isoformat(source_organized_at.get(source_key)),
+                ),
+            )
+        )
+    for iid, title, url, occurred_at, created_at in item_rows:
+        source_key = ("item", iid)
+        source_id = f"item:{iid}"
+        source_time = occurred_at or created_at
+        recent_candidates.append(
+            (
+                source_time.isoformat() if source_time else "",
+                source_id,
+                BrainOverviewSource(
+                    id=source_id,
+                    source_kind="item",
+                    source_id=str(iid),
+                    title=title or url or "Untitled",
+                    entity_count=len(source_entities.get(source_key, set())),
+                    organized_at=_isoformat(source_organized_at.get(source_key)),
+                ),
+            )
+        )
+    recent_candidates.sort(key=lambda candidate: (candidate[0], candidate[1]), reverse=True)
+
+    return BrainOverview(
+        recordings=SourceCoverage(
+            total=len(recording_ids),
+            summarized=len(summarized_recording_ids),
+            organized=len(organized_recording_ids),
+            unorganized=max(0, len(recording_ids) - len(organized_recording_ids)),
+        ),
+        materials=SourceCoverage(
+            total=len(item_ids),
+            summarized=len(summarized_item_ids),
+            organized=len(organized_item_ids),
+            unorganized=max(0, len(item_ids) - len(organized_item_ids)),
+        ),
+        pending_review_count=pending_review_count,
+        top_entities=top_entities[:8],
+        recent_sources=[source for _, _, source in recent_candidates[:8]],
+        llm_requests=0,
+    )
+
+
+def _isoformat(value: datetime | None) -> str | None:
+    return value.isoformat() if value else None
 
 
 @dataclass

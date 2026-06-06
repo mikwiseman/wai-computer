@@ -192,6 +192,7 @@ struct MacBrainView: View {
                 }
             }
 
+            brainCoverageSection
             mapStrip
 
             if let projection = model.activeProjection {
@@ -209,6 +210,220 @@ struct MacBrainView: View {
         .padding(Spacing.md)
         .background(Palette.surfaceSubtle)
         .clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+
+    @ViewBuilder
+    private var brainCoverageSection: some View {
+        if let overview = model.brainOverview {
+            VStack(alignment: .leading, spacing: Spacing.sm) {
+                HStack(alignment: .firstTextBaseline, spacing: Spacing.sm) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(t("Source mirror", "Зеркало источников"))
+                            .font(Typography.label)
+                            .foregroundStyle(Palette.textSecondary)
+                        Text(brainCoverageSummary(overview))
+                            .font(Typography.bodySmall.weight(.medium))
+                            .foregroundStyle(Palette.textPrimary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Spacer()
+                    if overview.pendingReviewCount > 0 {
+                        metricPill(
+                            "\(overview.pendingReviewCount)",
+                            t("needs review", "на проверке")
+                        )
+                    }
+                }
+
+                HStack(spacing: Spacing.sm) {
+                    sourceCoverageMeter(
+                        title: t("Voice memos", "Голосовые"),
+                        coverage: overview.recordings,
+                        systemImage: "waveform"
+                    )
+                    sourceCoverageMeter(
+                        title: t("Materials", "Материалы"),
+                        coverage: overview.materials,
+                        systemImage: "doc.text"
+                    )
+                }
+
+                HStack(alignment: .top, spacing: Spacing.lg) {
+                    VStack(alignment: .leading, spacing: Spacing.xs) {
+                        Text(t("Recent sources", "Свежие источники"))
+                            .font(Typography.labelSmall.weight(.semibold))
+                            .foregroundStyle(Palette.textSecondary)
+                        if overview.recentSources.isEmpty {
+                            wikiEmpty(t("No recordings or materials yet.", "Записей и материалов пока нет."))
+                        } else {
+                            ForEach(overview.recentSources.prefix(5)) { source in
+                                Button {
+                                    openSource(kind: source.sourceKind, id: source.sourceId)
+                                } label: {
+                                    brainOverviewSourceRow(source)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .topLeading)
+
+                    VStack(alignment: .leading, spacing: Spacing.xs) {
+                        Text(t("Strong anchors", "Сильные узлы"))
+                            .font(Typography.labelSmall.weight(.semibold))
+                            .foregroundStyle(Palette.textSecondary)
+                        if overview.topEntities.isEmpty {
+                            wikiEmpty(t("No linked people, projects, or topics yet.",
+                                        "Пока нет связанных людей, проектов или тем."))
+                        } else {
+                            ForEach(overview.topEntities.prefix(5)) { entity in
+                                Button {
+                                    model.openEntity(id: entity.id, name: entity.name)
+                                } label: {
+                                    brainOverviewEntityRow(entity)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .topLeading)
+                }
+            }
+            .padding(Spacing.sm)
+            .overlay(
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(Color.primary.opacity(0.08), lineWidth: 1)
+            )
+        }
+    }
+
+    private func sourceCoverageMeter(
+        title: String,
+        coverage: BrainSourceCoverage,
+        systemImage: String
+    ) -> some View {
+        VStack(alignment: .leading, spacing: Spacing.xs) {
+            HStack(spacing: Spacing.xs) {
+                Image(systemName: systemImage)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(Palette.accent)
+                    .frame(width: 18)
+                Text(title)
+                    .font(Typography.labelSmall.weight(.semibold))
+                    .foregroundStyle(Palette.textPrimary)
+                Spacer()
+                Text("\(coverage.organized)/\(coverage.total)")
+                    .font(Typography.labelSmall.weight(.semibold))
+                    .foregroundStyle(Palette.textSecondary)
+            }
+
+            GeometryReader { geometry in
+                let total = max(coverage.total, 1)
+                let organizedWidth = geometry.size.width * CGFloat(coverage.organized) / CGFloat(total)
+                let summarizedWidth = geometry.size.width * CGFloat(coverage.summarized) / CGFloat(total)
+                ZStack(alignment: .leading) {
+                    Capsule().fill(Color.primary.opacity(0.06))
+                    Capsule()
+                        .fill(Palette.accent.opacity(0.20))
+                        .frame(width: summarizedWidth)
+                    Capsule()
+                        .fill(Palette.accent.opacity(0.75))
+                        .frame(width: organizedWidth)
+                }
+            }
+            .frame(height: 6)
+
+            Text(t(
+                "\(coverage.summarized) summarized · \(coverage.organized) linked · \(coverage.unorganized) not linked",
+                "\(coverage.summarized) summary · \(coverage.organized) связано · \(coverage.unorganized) без связей"
+            ))
+            .font(Typography.labelSmall)
+            .foregroundStyle(Palette.textSecondary)
+            .lineLimit(1)
+        }
+        .padding(Spacing.sm)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.primary.opacity(0.035))
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+
+    private func brainOverviewSourceRow(_ source: BrainOverviewSource) -> some View {
+        HStack(spacing: Spacing.xs) {
+            Image(systemName: source.sourceKind == "recording" ? "waveform" : "doc.text")
+                .font(.system(size: 11))
+                .foregroundStyle(source.entityCount > 0 ? Palette.accent : Palette.textTertiary)
+                .frame(width: 16)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(source.title)
+                    .font(Typography.bodySmall.weight(.medium))
+                    .foregroundStyle(Palette.textPrimary)
+                    .lineLimit(1)
+                Text(brainOverviewSourceDetail(source))
+                    .font(Typography.labelSmall)
+                    .foregroundStyle(Palette.textSecondary)
+                    .lineLimit(1)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(Spacing.xs)
+        .background(Color.primary.opacity(0.035))
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+
+    private func brainOverviewEntityRow(_ entity: BrainOverviewEntity) -> some View {
+        HStack(spacing: Spacing.xs) {
+            Image(systemName: entityIcon(entity.type))
+                .font(.system(size: 11))
+                .foregroundStyle(Palette.accent)
+                .frame(width: 16)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(entity.name)
+                    .font(Typography.bodySmall.weight(.medium))
+                    .foregroundStyle(Palette.textPrimary)
+                    .lineLimit(1)
+                Text(t(
+                    "\(entity.sourceCount) sources · \(entity.recordingCount) voice · \(entity.materialCount) material",
+                    "\(entity.sourceCount) источн. · голос: \(entity.recordingCount) · материалы: \(entity.materialCount)"
+                ))
+                .font(Typography.labelSmall)
+                .foregroundStyle(Palette.textSecondary)
+                .lineLimit(1)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(Spacing.xs)
+        .background(Color.primary.opacity(0.035))
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+
+    private func brainCoverageSummary(_ overview: BrainOverview) -> String {
+        let totalSources = overview.recordings.total + overview.materials.total
+        let organizedSources = overview.recordings.organized + overview.materials.organized
+        let unorganizedSources = overview.recordings.unorganized + overview.materials.unorganized
+        if totalSources == 0 {
+            return t(
+                "Brain is waiting for recordings and materials.",
+                "Мозг ждёт записи и материалы."
+            )
+        }
+        if unorganizedSources > 0 {
+            return t(
+                "\(organizedSources) of \(totalSources) sources are linked into the mirror; \(unorganizedSources) still need entities.",
+                "\(organizedSources) из \(totalSources) источн. связаны в зеркало; без сущностей: \(unorganizedSources)."
+            )
+        }
+        return t(
+            "All \(totalSources) sources are linked into the mirror.",
+            "Все источники связаны в зеркало: \(totalSources)."
+        )
+    }
+
+    private func brainOverviewSourceDetail(_ source: BrainOverviewSource) -> String {
+        if source.entityCount == 0 {
+            return sourceKindLabel(source.sourceKind) + " · " + t("not linked yet", "пока без связей")
+        }
+        return sourceKindLabel(source.sourceKind) + " · \(source.entityCount) "
+            + t("linked node(s)", "связанных узл.")
     }
 
     private func brainAskSection(_ projection: BrainMapProjection) -> some View {
@@ -1778,6 +1993,7 @@ final class MacBrainViewModel: ObservableObject {
 
     // Live mirror + generated maps
     @Published var mirror: BrainMapProjection?
+    @Published var brainOverview: BrainOverview?
     @Published var maps: [BrainMap] = []
     @Published var selectedMapId = "mirror"
     @Published var lensPrompt = ""
@@ -1828,14 +2044,17 @@ final class MacBrainViewModel: ObservableObject {
         do {
             // No-fallback: a transient failure must NOT look like "empty brain".
             async let mirrorRequest = apiClient.getBrainMirror(limit: 60)
+            async let graphRequest = apiClient.getBrainGraph(limit: 200)
             async let mapsRequest = apiClient.listBrainMaps(limit: 50)
             async let entitiesRequest = apiClient.listEntities(limit: 200)
-            let (loadedMirror, loadedMaps, loadedEntities) = try await (
+            let (loadedMirror, loadedGraph, loadedMaps, loadedEntities) = try await (
                 mirrorRequest,
+                graphRequest,
                 mapsRequest,
                 entitiesRequest
             )
             mirror = loadedMirror
+            brainOverview = loadedGraph.overview
             maps = loadedMaps.maps
             entities = loadedEntities
             if selectedMapId != "mirror", !maps.contains(where: { $0.id == selectedMapId }) {
@@ -1930,6 +2149,7 @@ final class MacBrainViewModel: ObservableObject {
 
     var hasAnything: Bool {
         !(mirror?.nodes.isEmpty ?? true)
+            || ((brainOverview?.recordings.total ?? 0) + (brainOverview?.materials.total ?? 0)) > 0
             || !maps.isEmpty
             || !entities.isEmpty
             || (spaceHome?.claimCounts.values.reduce(0, +) ?? 0) > 0
