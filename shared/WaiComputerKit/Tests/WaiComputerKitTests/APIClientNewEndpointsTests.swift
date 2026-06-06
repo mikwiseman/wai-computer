@@ -512,6 +512,55 @@ final class APIClientNewEndpointsTests: XCTestCase {
         )
     }
 
+    func testAskBrainPostsQuestionAndDecodesCitedAnswer() async throws {
+        let client = makeClient()
+
+        MockURLProtocol.requestHandler = { [self] request in
+            XCTAssertEqual(request.httpMethod, "POST")
+            XCTAssertEqual(request.url?.path, "/api/brain/ask")
+
+            let body = try jsonBody(from: request)
+            XCTAssertEqual(body["question"] as? String, "What changed in voice memos?")
+
+            let response = HTTPURLResponse(
+                url: request.url!,
+                statusCode: 200,
+                httpVersion: nil,
+                headerFields: nil
+            )!
+            let payload = """
+            {
+              "answer": "Hiring risk changed after the latest voice memo.",
+              "citations": [
+                {
+                  "id": "recording:rec-1:12000",
+                  "source_kind": "recording",
+                  "source_id": "rec-1",
+                  "title": "Voice memo",
+                  "start_ms": 12000
+                }
+              ],
+              "gaps": ["No owner was named."],
+              "freshness": {
+                "newest_source_at": "2026-06-06T12:00:00Z",
+                "weeks_since": 0,
+                "stale": false
+              }
+            }
+            """.data(using: .utf8)!
+            return (response, payload)
+        }
+
+        let answer = try await client.askBrain(question: "What changed in voice memos?")
+
+        XCTAssertEqual(answer.answer, "Hiring risk changed after the latest voice memo.")
+        XCTAssertEqual(answer.citations.first?.sourceKind, "recording")
+        XCTAssertEqual(answer.citations.first?.sourceId, "rec-1")
+        XCTAssertEqual(answer.citations.first?.startMs, 12_000)
+        XCTAssertEqual(answer.gaps, ["No owner was named."])
+        XCTAssertFalse(answer.freshness.stale)
+    }
+
     func testBrainSpaceEndpointsUseCanonicalSpaceRoutes() async throws {
         let client = makeClient()
         let seenPaths = RequestPathRecorder()

@@ -176,6 +176,7 @@ struct MacBrainView: View {
             mapStrip
 
             if let projection = model.activeProjection {
+                brainAskSection(projection)
                 if model.selectedMapId == "mirror" {
                     mirrorFocusSurface(projection)
                     mapStats(projection)
@@ -187,6 +188,150 @@ struct MacBrainView: View {
             }
         }
         .padding(Spacing.md)
+        .background(Palette.surfaceSubtle)
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+
+    private func brainAskSection(_ projection: BrainMapProjection) -> some View {
+        let suggestions = askSuggestions(for: projection)
+        return VStack(alignment: .leading, spacing: Spacing.sm) {
+            HStack(alignment: .firstTextBaseline, spacing: Spacing.sm) {
+                Text(t("Ask Brain", "Спросить мозг"))
+                    .font(Typography.headingSmall)
+                Spacer()
+                if let answer = model.brainAnswer {
+                    Text(answerFreshnessText(answer))
+                        .font(Typography.labelSmall)
+                        .foregroundStyle(Palette.textSecondary)
+                }
+            }
+
+            HStack(alignment: .top, spacing: Spacing.sm) {
+                TextField(
+                    t(
+                        "What changed? What is blocked? Who owns the next step?",
+                        "Что изменилось? Что блокирует? Кто отвечает за следующий шаг?"
+                    ),
+                    text: $model.brainQuestion,
+                    axis: .vertical
+                )
+                .textFieldStyle(.roundedBorder)
+                .lineLimit(2)
+                .onSubmit { Task { await model.askBrain() } }
+
+                VStack(spacing: Spacing.xs) {
+                    Button {
+                        Task { await model.askBrain() }
+                    } label: {
+                        Text(model.askingBrain ? t("Asking", "Спрашиваю") : t("Ask", "Спросить"))
+                            .frame(minWidth: 86)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(model.brainQuestion.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || model.askingBrain)
+
+                    Button {
+                        Task { await model.createLens(promptOverride: model.brainQuestion) }
+                    } label: {
+                        Text(model.creatingLens ? t("Mapping", "Строю") : t("Map it", "Карта"))
+                            .frame(minWidth: 86)
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(model.brainQuestion.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || model.creatingLens)
+                }
+            }
+
+            if !suggestions.isEmpty {
+                LazyVGrid(
+                    columns: [
+                        GridItem(.flexible(), spacing: Spacing.xs),
+                        GridItem(.flexible(), spacing: Spacing.xs),
+                        GridItem(.flexible(), spacing: Spacing.xs)
+                    ],
+                    alignment: .leading,
+                    spacing: Spacing.xs
+                ) {
+                    ForEach(suggestions.prefix(3), id: \.self) { question in
+                        Button {
+                            Task { await model.askBrain(questionOverride: question) }
+                        } label: {
+                            Text(question)
+                                .font(Typography.labelSmall)
+                                .foregroundStyle(Palette.textSecondary)
+                                .lineLimit(2)
+                                .frame(maxWidth: .infinity, minHeight: 40, alignment: .topLeading)
+                                .padding(.horizontal, Spacing.sm)
+                                .padding(.vertical, Spacing.xs)
+                                .background(Color.primary.opacity(0.045))
+                                .clipShape(RoundedRectangle(cornerRadius: 8))
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(model.askingBrain)
+                    }
+                }
+            }
+
+            if let error = model.brainAskError {
+                Text(error)
+                    .font(Typography.labelSmall)
+                    .foregroundStyle(.red)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            if let answer = model.brainAnswer {
+                brainAnswerView(answer)
+            }
+        }
+        .padding(Spacing.md)
+        .background(Color.primary.opacity(0.035))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(Color.primary.opacity(0.08), lineWidth: 1)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+
+    private func brainAnswerView(_ answer: BrainAnswer) -> some View {
+        VStack(alignment: .leading, spacing: Spacing.xs) {
+            if !answer.answer.isEmpty {
+                Text(answer.answer)
+                    .font(Typography.bodySmall)
+                    .foregroundStyle(Palette.textPrimary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            if !answer.citations.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: Spacing.xs) {
+                        ForEach(answer.citations) { citation in
+                            Button {
+                                openSource(kind: citation.sourceKind, id: citation.sourceId)
+                            } label: {
+                                Label(brainCitationLabel(citation), systemImage: citation.sourceKind == "recording" ? "waveform" : "doc.text")
+                                    .font(Typography.labelSmall)
+                            }
+                            .buttonStyle(.bordered)
+                        }
+                    }
+                }
+            }
+
+            if !answer.gaps.isEmpty {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(t("Gaps", "Пробелы"))
+                        .font(Typography.labelSmall.weight(.semibold))
+                        .foregroundStyle(Palette.textSecondary)
+                    ForEach(answer.gaps, id: \.self) { gap in
+                        Text(gap)
+                            .font(Typography.labelSmall)
+                            .foregroundStyle(Palette.textSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                .padding(.top, 2)
+            }
+        }
+        .padding(Spacing.sm)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .background(Palette.surfaceSubtle)
         .clipShape(RoundedRectangle(cornerRadius: 8))
     }
@@ -276,7 +421,6 @@ struct MacBrainView: View {
                 generatedBriefing(briefing, projection: projection)
                 generatedDiagramPreview(projection)
                 generatedEvidence(briefing)
-                generatedQuestions(briefing, projection: projection)
             } else {
                 generatedDiagramPreview(projection)
                 mapCitationList(projection.citations.prefix(4).map { $0 })
@@ -405,49 +549,6 @@ struct MacBrainView: View {
                     } else {
                         mapBriefingEntityList(briefing.topEntities)
                     }
-                }
-            }
-        }
-    }
-
-    private func generatedQuestions(
-        _ briefing: BrainMapBriefing,
-        projection: BrainMapProjection
-    ) -> some View {
-        let questions = localizedSuggestedQuestions(
-            mapType: projection.mapType,
-            fallback: briefing.suggestedQuestions
-        )
-        return VStack(alignment: .leading, spacing: Spacing.xs) {
-            Text(t("Ask next", "Следующие вопросы"))
-                .font(Typography.label)
-                .foregroundStyle(Palette.textSecondary)
-            LazyVGrid(
-                columns: [
-                    GridItem(.flexible(), spacing: Spacing.xs),
-                    GridItem(.flexible(), spacing: Spacing.xs),
-                    GridItem(.flexible(), spacing: Spacing.xs)
-                ],
-                alignment: .leading,
-                spacing: Spacing.xs
-            ) {
-                ForEach(questions.prefix(3), id: \.self) { question in
-                    Button {
-                        model.lensPrompt = question
-                        Task { await model.createLens() }
-                    } label: {
-                        Text(question)
-                            .font(Typography.labelSmall)
-                            .foregroundStyle(Palette.textSecondary)
-                            .lineLimit(2)
-                            .frame(maxWidth: .infinity, minHeight: 42, alignment: .topLeading)
-                            .padding(.horizontal, Spacing.sm)
-                            .padding(.vertical, Spacing.xs)
-                            .background(Color.primary.opacity(0.045))
-                            .clipShape(RoundedRectangle(cornerRadius: 8))
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(model.creatingLens)
                 }
             }
         }
@@ -616,6 +717,40 @@ struct MacBrainView: View {
             ]
             return fallback.isEmpty ? localized : fallback
         }
+    }
+
+    private func askSuggestions(for projection: BrainMapProjection) -> [String] {
+        localizedSuggestedQuestions(
+            mapType: projection.mapType,
+            fallback: projection.briefing?.suggestedQuestions ?? []
+        )
+    }
+
+    private func answerFreshnessText(_ answer: BrainAnswer) -> String {
+        if answer.freshness.stale, let weeks = answer.freshness.weeksSince {
+            return t(
+                "Newest evidence is \(weeks) week(s) old.",
+                "Самому новому источнику \(weeks) нед."
+            )
+        }
+        if answer.freshness.newestSourceAt == nil {
+            return t("No dated source.", "Нет источника с датой.")
+        }
+        return t("Evidence is current.", "Источники актуальны.")
+    }
+
+    private func brainCitationLabel(_ citation: BrainAnswerCitation) -> String {
+        let title = citation.title?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let base = (title?.isEmpty == false ? title : nil) ?? sourceKindLabel(citation.sourceKind)
+        guard let startMs = citation.startMs, citation.sourceKind == "recording" else {
+            return base
+        }
+        return "\(base) · \(timecode(milliseconds: startMs))"
+    }
+
+    private func timecode(milliseconds: Int) -> String {
+        let seconds = max(0, milliseconds / 1000)
+        return "\(seconds / 60):\(String(format: "%02d", seconds % 60))"
     }
 
     private func mapTypeLabel(_ mapType: String) -> String {
@@ -1629,6 +1764,10 @@ final class MacBrainViewModel: ObservableObject {
     @Published var lensPrompt = ""
     @Published var creatingLens = false
     @Published var refreshingMapId: String?
+    @Published var brainQuestion = ""
+    @Published var brainAnswer: BrainAnswer?
+    @Published var askingBrain = false
+    @Published var brainAskError: String?
 
     // Pages (entities)
     @Published var entities: [Entity] = []
@@ -1696,8 +1835,8 @@ final class MacBrainViewModel: ObservableObject {
         return activeMap?.currentRevision?.projection
     }
 
-    func createLens() async {
-        let prompt = lensPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
+    func createLens(promptOverride: String? = nil) async {
+        let prompt = (promptOverride ?? lensPrompt).trimmingCharacters(in: .whitespacesAndNewlines)
         guard !prompt.isEmpty, !creatingLens else { return }
         creatingLens = true
         defer { creatingLens = false }
@@ -1712,6 +1851,20 @@ final class MacBrainViewModel: ObservableObject {
             errorMessage = nil
         } catch {
             errorMessage = error.localizedDescription
+        }
+    }
+
+    func askBrain(questionOverride: String? = nil) async {
+        let question = (questionOverride ?? brainQuestion).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !question.isEmpty, !askingBrain else { return }
+        brainQuestion = question
+        askingBrain = true
+        defer { askingBrain = false }
+        do {
+            brainAnswer = try await apiClient.askBrain(question: question)
+            brainAskError = nil
+        } catch {
+            brainAskError = error.localizedDescription
         }
     }
 
