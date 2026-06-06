@@ -1,0 +1,153 @@
+"""Decoupled transcription for intent routing: transcribe once, reuse on import."""
+
+from __future__ import annotations
+
+from types import SimpleNamespace
+
+import pytest
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core.recording_import import (
+    TranscribedMedia,
+    import_media_as_recording,
+    transcribe_media_bytes,
+)
+from app.core.summarizer import SummaryResult
+from app.core.transcript_utils import TranscriptResult
+from app.models.recording import Recording, RecordingStatus, Segment
+from app.models.user import User
+
+
+async def _user(db: AsyncSession, email: str = "routing@example.com") -> User:
+    user = User(email=email, password_hash="hash", default_language="ru")
+    db.add(user)
+    await db.flush()
+    return user
+
+
+def _speech(text: str = "Привет из Telegram") -> TranscriptResult:
+    return TranscriptResult(
+        text=text, speaker="speaker_1", is_final=True, start_ms=0, end_ms=1200, confidence=0.95
+    )
+
+
+def test_transcribed_media_filters_no_speech_and_exposes_plain_text():
+    media = TranscribedMedia(
+        transcript_results=[_speech("один два три"), _speech("(no speech detected)"), _speech("")],
+        media_data=b"x",
+        media_content_type="audio/wav",
+        media_ext="wav",
+    )
+    # The no-speech placeholder and the empty segment drop out.
+    assert [tr.text for tr in media.speech_results] == ["один два три"]
+    assert media.has_speech is True
+    assert media.transcript_text == "один два три"
+
+
+@pytest.mark.asyncio
+async def test_transcribe_media_bytes_returns_transcript_without_persisting(
+    db_session: AsyncSession, monkeypatch
+):
+    user = await _user(db_session)
+    await db_session.commit()
+
+    async def fake_transcribe(*_args, **_kwargs):
+        return [_speech("сколько будет один плюс два")]
+
+    monkeypatch.setattr("app.core.recording_import.transcribe_audio_file", fake_transcribe)
+
+    result = await transcribe_media_bytes(
+        db=db_session,
+        user=user,
+        data=b"fake wav",
+        filename="voice.wav",
+        content_type="audio/wav",
+        language="ru",
+    )
+
+    assert isinstance(result, TranscribedMedia)
+    assert result.transcript_text == "сколько будет один плюс два"
+    assert result.media_ext == "wav"
+    # Nothing was filed: no recording rows exist for this user.
+    count = (
+        await db_session.execute(
+            select(func.count()).select_from(Recording).where(Recording.user_id == user.id)
+        )
+    ).scalar_one()
+    assert count == 0
+
+
+@pytest.mark.asyncio
+async def test_import_with_precomputed_skips_second_transcription(
+    db_session: AsyncSession, monkeypatch, tmp_path
+):
+    user = await _user(db_session, "routing-precomputed@example.com")
+    await db_session.commit()
+    monkeypatch.setattr("app.core.recording_import.settings.upload_staging_dir", str(tmp_path))
+
+    transcribe_calls = {"n": 0}
+
+    async def counting_transcribe(*_args, **_kwargs):
+        transcribe_calls["n"] += 1
+        return [_speech("полный текст записи")]
+
+    async def fake_embedding(_text: str, **_: object):
+        raise RuntimeError("embedding offline")
+
+    async def fake_identify(**_kwargs):
+        raise RuntimeError("voice id offline")
+
+    async def fake_summary(_transcript: str, **_kwargs):
+        return SummaryResult(
+            title="Запись",
+            summary="Саммари.",
+            key_points=[],
+            decisions=[],
+            action_items=[],
+            topics=[],
+            people_mentioned=[],
+            follow_up_questions=[],
+            sentiment="neutral",
+            highlights=[],
+        )
+
+    monkeypatch.setattr("app.core.recording_import.transcribe_audio_file", counting_transcribe)
+    monkeypatch.setattr("app.core.recording_import.generate_embedding", fake_embedding)
+    monkeypatch.setattr("app.core.recording_import.identify_speakers_for_recording", fake_identify)
+    monkeypatch.setattr("app.core.recording_import.summarize_transcript", fake_summary)
+
+    # First: transcribe for routing (1 STT call).
+    precomputed = await transcribe_media_bytes(
+        db=db_session,
+        user=user,
+        data=b"fake wav",
+        filename="voice.wav",
+        content_type="audio/wav",
+        language="ru",
+    )
+    assert transcribe_calls["n"] == 1
+
+    # Then: file it reusing the transcript — must NOT transcribe again.
+    result = await import_media_as_recording(
+        db=db_session,
+        user=user,
+        data=b"fake wav",
+        filename="voice.wav",
+        content_type="audio/wav",
+        title=None,
+        source_label="telegram",
+        language="ru",
+        precomputed=precomputed,
+    )
+
+    assert transcribe_calls["n"] == 1  # reused, not re-transcribed
+    assert result.recording.status == RecordingStatus.READY.value
+    assert result.transcript == "полный текст записи"
+    segments = (
+        (await db_session.execute(select(Segment).where(Segment.recording_id == result.recording.id)))
+        .scalars()
+        .all()
+    )
+    assert len(segments) == 1
+    assert segments[0].content == "полный текст записи"

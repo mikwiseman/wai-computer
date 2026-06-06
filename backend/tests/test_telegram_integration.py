@@ -38,7 +38,7 @@ from app.core.transcript_utils import TranscriptResult
 from app.core.unified_search import UnifiedHit
 from app.models.agent import Agent, AgentRun
 from app.models.billing import UsageWeek
-from app.models.companion import Conversation
+from app.models.companion import ChatMessage, Conversation
 from app.models.companion_pending_action import CompanionPendingAction
 from app.models.item import Item, ItemChunk, ItemSummary
 from app.models.recording import ActionItem, Highlight, Recording, RecordingStatus, Segment, Summary
@@ -3131,6 +3131,246 @@ async def test_handle_update_processes_linked_text_message(
     assert update.status == "completed"
 
 
+# --- cross-modal voice intent routing (via _handle_update) ---
+
+
+def _fake_transcribed(text: str):
+    from app.core.recording_import import TranscribedMedia
+
+    return TranscribedMedia(
+        transcript_results=[
+            TranscriptResult(
+                text=text, speaker=None, is_final=True, start_ms=0, end_ms=1000, confidence=0.9
+            )
+        ],
+        media_data=b"telegram audio",
+        media_content_type="audio/ogg",
+        media_ext="ogg",
+    )
+
+
+def _wire_voice_routing(
+    monkeypatch,
+    db_session,
+    capture,
+    *,
+    transcript="сколько будет один плюс два",
+    decision=None,
+    classify_raises=False,
+):
+    """Stub the heavy steps so _route_media_message can be driven end-to-end:
+    transcription, classification, recording import, and the agent turn."""
+
+    @asynccontextmanager
+    async def fake_db_context():
+        yield db_session
+
+    monkeypatch.setattr(telegram_routes, "TelegramBotClient", lambda: capture)
+    monkeypatch.setattr(telegram_routes, "get_db_context", fake_db_context)
+
+    transcribe_mock = AsyncMock(return_value=_fake_transcribed(transcript))
+    monkeypatch.setattr(telegram_routes, "transcribe_media_bytes", transcribe_mock)
+
+    import_mock = AsyncMock(
+        return_value=SimpleNamespace(
+            recording=SimpleNamespace(id=uuid4(), title="Запись"),
+            summary=None,
+            transcript="",
+        )
+    )
+    monkeypatch.setattr(telegram_routes, "import_media_as_recording", import_mock)
+
+    async def fake_classify(_transcript, **_kwargs):
+        if classify_raises:
+            raise AssertionError("classifier must not be called")
+        return decision or telegram_routes.VoiceRouteDecision("message", "assistant_high")
+
+    classify_mock = AsyncMock(side_effect=fake_classify)
+    monkeypatch.setattr(telegram_routes, "classify_voice_transcript", classify_mock)
+
+    return SimpleNamespace(
+        transcribe=transcribe_mock, import_=import_mock, classify=classify_mock
+    )
+
+
+def _voice_update(update_id: int, *, tid: int = 51, extra=None):
+    message = {
+        "message_id": update_id,
+        "from": {"id": tid},
+        "chat": {"id": tid, "type": "private"},
+        "voice": {"file_id": "file-id"},
+    }
+    if extra:
+        message.update(extra)
+    return {"update_id": update_id, "message": message}
+
+
+def _accepted_update(update_id: int) -> TelegramUpdate:
+    return TelegramUpdate(
+        update_id=update_id, status="accepted", received_at=datetime.now(timezone.utc)
+    )
+
+
+async def _voice_account(db_session, telegram_user_id=51):
+    user = await _user(db_session, f"voice-{telegram_user_id}@example.com")
+    db_session.add(
+        TelegramAccount(
+            user_id=user.id, telegram_user_id=telegram_user_id, telegram_chat_id=telegram_user_id
+        )
+    )
+    return user
+
+
+@pytest.mark.asyncio
+async def test_short_voice_command_routes_to_agent_not_library(db_session, monkeypatch):
+    await _voice_account(db_session)
+    db_session.add(_accepted_update(300))
+    await db_session.commit()
+    capture = _TelegramCapture()
+    contexts: list[Any] = []
+    mocks = _wire_voice_routing(monkeypatch, db_session, capture)
+    _stub_telegram_turn(monkeypatch, "1 + 2 = 3", contexts)
+
+    await telegram_routes._handle_update(_voice_update(300))
+
+    # Answered by the agent, NOT filed as a recording.
+    mocks.import_.assert_not_called()
+    assert any("1 + 2 = 3" in m["text"] for m in capture.messages)
+    # The transcript is echoed back for transparency.
+    assert any(m["text"].startswith("🎙") for m in capture.messages)
+    # The agent is told the message arrived as a voice note.
+    assert contexts and contexts[0].input_modality == "voice"
+    assert (await db_session.get(TelegramUpdate, 300)).status == "completed"
+
+
+@pytest.mark.asyncio
+async def test_short_voice_note_is_filed_as_recording(db_session, monkeypatch):
+    await _voice_account(db_session, 52)
+    db_session.add(_accepted_update(301))
+    await db_session.commit()
+    capture = _TelegramCapture()
+    mocks = _wire_voice_routing(
+        monkeypatch,
+        db_session,
+        capture,
+        transcript="сегодня обсудили роадмап и решили перенести релиз",
+        decision=telegram_routes.VoiceRouteDecision("file", "library_high"),
+    )
+    _stub_telegram_turn(monkeypatch, "should not run")
+
+    await telegram_routes._handle_update(_voice_update(301, tid=52))
+
+    # Filed, reusing the transcript we already produced (precomputed passed through).
+    mocks.import_.assert_awaited_once()
+    assert mocks.import_.await_args.kwargs["precomputed"] is not None
+
+
+@pytest.mark.asyncio
+async def test_forwarded_voice_is_filed_without_classification(db_session, monkeypatch):
+    await _voice_account(db_session, 53)
+    db_session.add(_accepted_update(302))
+    await db_session.commit()
+    capture = _TelegramCapture()
+    mocks = _wire_voice_routing(monkeypatch, db_session, capture, classify_raises=True)
+
+    await telegram_routes._handle_update(
+        _voice_update(302, tid=53, extra={"forward_origin": {"type": "user"}})
+    )
+
+    mocks.classify.assert_not_called()
+    mocks.transcribe.assert_not_called()  # metadata alone decided: file
+    mocks.import_.assert_awaited_once()
+    assert mocks.import_.await_args.kwargs.get("precomputed") is None
+
+
+@pytest.mark.asyncio
+async def test_long_voice_is_filed_without_classification(db_session, monkeypatch):
+    await _voice_account(db_session, 54)
+    db_session.add(_accepted_update(303))
+    await db_session.commit()
+    capture = _TelegramCapture()
+    mocks = _wire_voice_routing(monkeypatch, db_session, capture, classify_raises=True)
+
+    await telegram_routes._handle_update(
+        _voice_update(303, tid=54, extra={"voice": {"file_id": "file-id", "duration": 600}})
+    )
+
+    mocks.classify.assert_not_called()
+    mocks.import_.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_voice_reply_to_bot_routes_to_agent(db_session, monkeypatch):
+    await _voice_account(db_session, 55)
+    db_session.add(_accepted_update(304))
+    await db_session.commit()
+    capture = _TelegramCapture()
+    contexts: list[Any] = []
+    mocks = _wire_voice_routing(monkeypatch, db_session, capture, classify_raises=True)
+    _stub_telegram_turn(monkeypatch, "ответ", contexts)
+
+    await telegram_routes._handle_update(
+        _voice_update(
+            304,
+            tid=55,
+            extra={"reply_to_message": {"message_id": 9, "from": {"id": 1, "is_bot": True}}},
+        )
+    )
+
+    # Reply to the bot is conversational by metadata alone — no classifier call.
+    mocks.classify.assert_not_called()
+    mocks.import_.assert_not_called()
+    assert contexts and contexts[0].is_reply_to_assistant is True
+
+
+@pytest.mark.asyncio
+async def test_recent_assistant_text_returns_last_bot_message(db_session: AsyncSession):
+    user = await _user(db_session, "recent-asst@example.com")
+    conv = Conversation(user_id=user.id, title="Telegram", scope={"source": "telegram"})
+    db_session.add(conv)
+    await db_session.flush()
+    account = TelegramAccount(
+        user_id=user.id,
+        telegram_user_id=70,
+        telegram_chat_id=70,
+        companion_conversation_id=conv.id,
+    )
+    db_session.add(account)
+    base = datetime(2026, 6, 6, 12, 0, tzinfo=timezone.utc)
+    db_session.add(
+        ChatMessage(conversation_id=conv.id, role="assistant", content="first answer", created_at=base)
+    )
+    db_session.add(
+        ChatMessage(
+            conversation_id=conv.id,
+            role="user",
+            content="a question",
+            created_at=base + timedelta(minutes=1),
+        )
+    )
+    db_session.add(
+        ChatMessage(
+            conversation_id=conv.id,
+            role="assistant",
+            content="Which meeting — yesterday's or today's?",
+            created_at=base + timedelta(minutes=2),
+        )
+    )
+    await db_session.commit()
+
+    text = await telegram_routes._recent_assistant_text(db_session, account)
+    assert text == "Which meeting — yesterday's or today's?"
+
+
+@pytest.mark.asyncio
+async def test_recent_assistant_text_none_without_conversation(db_session: AsyncSession):
+    user = await _user(db_session, "recent-asst-none@example.com")
+    account = TelegramAccount(user_id=user.id, telegram_user_id=71, telegram_chat_id=71)
+    db_session.add(account)
+    await db_session.flush()
+    assert await telegram_routes._recent_assistant_text(db_session, account) is None
+
+
 @pytest.mark.asyncio
 async def test_handle_update_branches_and_failures(db_session: AsyncSession, monkeypatch):
     user = await _user(db_session, "update-branches@example.com")
@@ -3155,7 +3395,8 @@ async def test_handle_update_branches_and_failures(db_session: AsyncSession, mon
 
     monkeypatch.setattr(telegram_routes, "TelegramBotClient", lambda: capture)
     monkeypatch.setattr(telegram_routes, "get_db_context", fake_db_context)
-    monkeypatch.setattr(telegram_routes, "_handle_media_message", fake_media)
+    # _handle_update dispatches media through _route_media_message (the intent gate).
+    monkeypatch.setattr(telegram_routes, "_route_media_message", fake_media)
 
     await telegram_routes._handle_update({"update_id": "bad"})
     await telegram_routes._handle_update({"update_id": 101})
@@ -3198,7 +3439,7 @@ async def test_handle_update_branches_and_failures(db_session: AsyncSession, mon
     )
     monkeypatch.setattr(
         telegram_routes,
-        "_handle_media_message",
+        "_route_media_message",
         AsyncMock(side_effect=ValueError("boom")),
     )
     await telegram_routes._handle_update(

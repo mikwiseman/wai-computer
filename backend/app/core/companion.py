@@ -123,6 +123,28 @@ _ACTION_POLICY_SECTION = (
     "</action_policy>"
 )
 
+# Injected ONLY on action-capable turns, after <action_policy>. Distils the
+# execution-discipline + anti-fabrication contracts both Hermes (TASK_COMPLETION
+# guidance) and OpenClaw (GPT5_BEHAVIOR_CONTRACT) lean on, adapted to Wai's
+# second-brain surface. It reinforces — never contradicts — the calm
+# <answer_format> below, which still owns brevity and "don't narrate reasoning".
+_EXECUTION_BIAS_SECTION = (
+    "<execution_bias>\n"
+    "- Act this turn. When a request is answerable from the library, the web, or "
+    "your tools, look it up and answer — or propose the one action that moves it "
+    "forward. Never reply with only a plan or a promise to act later when a tool "
+    "can do it now.\n"
+    "- Prefer tool evidence over memory for the user's own data, the current date "
+    "or time, and any live fact. If a lookup returns nothing or looks thin, vary "
+    "the query, scope, or source once before concluding the corpus is silent.\n"
+    "- Never fabricate tool results, citations, recordings, or library content. If "
+    "you cannot find or do something, say so in one plain sentence — an honest "
+    "blocker always beats an invented answer.\n"
+    "- Don't narrate routine lookups; use the tool and answer. Narrate only right "
+    "before an action the user must approve.\n"
+    "</execution_bias>"
+)
+
 
 def _render_user_profile(user: User | None) -> str:
     """Compact <user_profile> block. Empty when there's no user (tests)."""
@@ -196,6 +218,7 @@ def system_prompt_for(
     sections.append(_TOOL_GUIDANCE_SECTION)
     if with_actions:
         sections.append(_ACTION_POLICY_SECTION)
+        sections.append(_EXECUTION_BIAS_SECTION)
     sections.append(_ANSWER_FORMAT_SECTION)
     return "\n\n".join(sections)
 
@@ -426,6 +449,9 @@ class TurnContext:
     client_timezone: str | None = None        # IANA, e.g. "Europe/Reykjavik"
     viewing_recording_title: str | None = None
     viewing_folder_name: str | None = None
+    input_modality: str = "text"               # "text" | "voice"
+    is_reply_to_assistant: bool = False
+    surface: str | None = None                  # "telegram" | "web" | "mac" | ...
 
 
 # ---------- Tool definitions advertised to the model ----------
@@ -1567,6 +1593,20 @@ def _build_session_developer_message(
     if ctx.viewing_folder_name:
         lines.append(
             f"user is currently viewing folder: {ctx.viewing_folder_name}"
+        )
+    if ctx.input_modality == "voice":
+        lines.append(
+            "input: the user spoke this as a voice note that was transcribed. "
+            "Treat it exactly as if they had typed it — answer or act on it; do "
+            "not describe the audio or mention that it was a voice message."
+        )
+    if ctx.is_reply_to_assistant:
+        lines.append("the user is replying to your previous message")
+    if ctx.surface == "telegram":
+        lines.append(
+            "surface: Telegram chat — keep replies short and chat-native. No "
+            "markdown tables or headings (they render as raw text here); use plain "
+            "sentences or simple '- ' bullets."
         )
     if brain_context is not None:
         space = brain_context.get("space")

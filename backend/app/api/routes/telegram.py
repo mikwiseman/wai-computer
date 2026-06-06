@@ -40,6 +40,7 @@ from app.core.companion import (
     ErrorEvent,
     TokenEvent,
     TurnContext,
+    _message_content_to_text,
     run_turn,
 )
 from app.core.companion_actions import (
@@ -67,7 +68,12 @@ from app.core.item_titles import clean_title, title_from_filename
 from app.core.mcp_tools import (
     list_recordings_for_mcp,
 )
-from app.core.recording_import import RecordingImportError, import_media_as_recording
+from app.core.recording_import import (
+    RecordingImportError,
+    TranscribedMedia,
+    import_media_as_recording,
+    transcribe_media_bytes,
+)
 from app.core.retry_policy import is_retryable_exception
 from app.core.source_fetch import classify_url, find_first_url
 from app.core.telegram_client import (
@@ -76,11 +82,16 @@ from app.core.telegram_client import (
     TelegramFileTooLargeError,
     telegram_chunks,
 )
+from app.core.telegram_intent import (
+    VoiceRouteDecision,
+    classify_voice_transcript,
+    route_voice_by_metadata,
+)
 from app.core.unified_search import UnifiedHit, unified_search
 from app.core.wai_agent import planner_for_agent
 from app.db.session import get_db_context
 from app.models.agent import Agent, AgentRun, AgentStep
-from app.models.companion import Conversation
+from app.models.companion import ChatMessage, Conversation
 from app.models.companion_pending_action import CompanionPendingAction
 from app.models.item import ItemSummary
 from app.models.reminder import UserReminder
@@ -2058,13 +2069,21 @@ def _telegram_context(ref_type: str, ref_id: UUID, title: str | None) -> dict[st
     }
 
 
-def _telegram_turn_context(context: Any) -> TurnContext:
-    if not isinstance(context, dict):
-        return TurnContext()
-    if context.get("ref_type") == "recording":
-        title = str(context.get("title") or "").strip() or None
-        return TurnContext(viewing_recording_title=title)
-    return TurnContext()
+def _telegram_turn_context(
+    context: Any,
+    *,
+    input_modality: str = "text",
+    is_reply_to_assistant: bool = False,
+) -> TurnContext:
+    recording_title: str | None = None
+    if isinstance(context, dict) and context.get("ref_type") == "recording":
+        recording_title = str(context.get("title") or "").strip() or None
+    return TurnContext(
+        viewing_recording_title=recording_title,
+        input_modality=input_modality,
+        is_reply_to_assistant=is_reply_to_assistant,
+        surface="telegram",
+    )
 
 
 def _apply_telegram_active_context_scope(
@@ -2427,6 +2446,7 @@ async def _handle_text_message(
     message: dict[str, Any],
     account: TelegramAccount,
     text: str,
+    input_modality: str = "text",
 ) -> None:
     chat_id = _telegram_chat_id(message)
     if chat_id is None:
@@ -2453,7 +2473,11 @@ async def _handle_text_message(
             account.user_id,
             conversation.id,
             text,
-            turn_context=_telegram_turn_context(account.active_context),
+            turn_context=_telegram_turn_context(
+                account.active_context,
+                input_modality=input_modality,
+                is_reply_to_assistant=_reply_is_from_assistant(message),
+            ),
             enable_actions=True,
         ):
             if isinstance(event, TokenEvent):
@@ -2642,7 +2666,94 @@ async def _handle_document_message(
     )
 
 
-async def _handle_media_message(
+def _is_forwarded(message: dict[str, Any]) -> bool:
+    """True when the message was forwarded from someone else — archived content, not
+    something the user is saying to Wai."""
+    return bool(
+        message.get("forward_origin")
+        or message.get("forward_from")
+        or message.get("forward_from_chat")
+        or message.get("forward_sender_name")
+    )
+
+
+def _reply_is_from_assistant(message: dict[str, Any]) -> bool:
+    """True when this message is a reply to one of the bot's own messages. In a
+    private 1:1 chat the only bot whose messages appear is Wai, so a reply to a bot
+    message is unambiguously conversational."""
+    reply = message.get("reply_to_message")
+    if not isinstance(reply, dict):
+        return False
+    sender = reply.get("from")
+    return isinstance(sender, dict) and bool(sender.get("is_bot"))
+
+
+async def _download_telegram_media(
+    db: AsyncSession,
+    client: TelegramBotClient,
+    *,
+    account: TelegramAccount,
+    message: dict[str, Any],
+    file_id: str,
+    status_message_id: int | None,
+) -> tuple[bytes, str | None] | None:
+    """Download a Telegram file with size guards. On failure it sends the too-large
+    reply, records the import-error context, clears any status message, and returns
+    None. Returns ``(data, file_path)`` on success."""
+    chat_id = _telegram_chat_id(message)
+
+    async def _too_large(*, reply: bool) -> None:
+        message_text = _telegram_file_too_large_message()
+        await _set_telegram_import_error_context(db, account, message=message_text)
+        await client.send_message(
+            chat_id,
+            message_text,
+            reply_to_message_id=message.get("message_id") if reply else None,
+        )
+        await _delete_status_message(client, chat_id=chat_id, message_id=status_message_id)
+
+    tg_file = await client.get_file(file_id)
+    if tg_file.file_size is not None and tg_file.file_size > settings.telegram_download_max_bytes:
+        await _too_large(reply=False)
+        return None
+    try:
+        data = await client.download_file(
+            tg_file, max_bytes=settings.telegram_download_max_bytes
+        )
+    except TelegramFileTooLargeError:
+        await _too_large(reply=True)
+        return None
+    if len(data) > settings.telegram_download_max_bytes:
+        await _too_large(reply=False)
+        return None
+    return data, tg_file.file_path
+
+
+async def _recent_assistant_text(db: AsyncSession, account: TelegramAccount) -> str | None:
+    """The bot's most recent message in this chat, so the voice classifier can tell a
+    short spoken reply (e.g. answering Wai's question) from a standalone note even
+    when the user didn't use Telegram's reply feature. Best-effort; None if no chat yet."""
+    conv_id = account.companion_conversation_id
+    if conv_id is None:
+        return None
+    row = (
+        await db.execute(
+            select(ChatMessage)
+            .where(
+                ChatMessage.conversation_id == conv_id,
+                ChatMessage.role == "assistant",
+            )
+            .order_by(ChatMessage.created_at.desc())
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+    if row is None:
+        return None
+    text = _message_content_to_text(row.content).strip()
+    return text or None
+
+
+async def _route_media_message(
     db: AsyncSession,
     client: TelegramBotClient,
     *,
@@ -2650,6 +2761,185 @@ async def _handle_media_message(
     account: TelegramAccount,
     media: dict[str, Any],
 ) -> None:
+    """Decide whether an incoming voice note is a library recording or a message to
+    Wai, then dispatch.
+
+    Non-voice media and the confident cases (forwarded, long-form) skip straight to
+    the historical import flow. A short voice note is transcribed once; if the
+    transcript is addressed to Wai it is answered like a typed message, otherwise it
+    is filed reusing that same download + transcript (no second STT pass)."""
+    decision = route_voice_by_metadata(
+        kind=str(media.get("kind") or "media"),
+        duration_seconds=_telegram_media_duration_seconds(media),
+        is_forwarded=_is_forwarded(message),
+        is_reply_to_assistant=_reply_is_from_assistant(message),
+        max_command_seconds=settings.telegram_voice_command_max_seconds,
+    )
+    if decision is not None and decision.route == "file":
+        # Privacy-safe: only the route + reason tag, never the transcript.
+        logger.info("telegram voice routed route=file reason=%s", decision.reason)
+        await _handle_media_message(
+            db, client, message=message, account=account, media=media
+        )
+        return
+
+    chat_id = _telegram_chat_id(message)
+    if chat_id is None:
+        return
+    user = await _ensure_active_user(db, client, message=message, account=account)
+    if user is None:
+        return
+    file_id = media.get("file_id")
+    if not isinstance(file_id, str):
+        return
+    file_size = media.get("file_size")
+    if isinstance(file_size, int) and file_size > settings.telegram_download_max_bytes:
+        await client.send_message(
+            chat_id,
+            _telegram_file_too_large_message(),
+            reply_to_message_id=message.get("message_id"),
+        )
+        return
+
+    action_task = asyncio.create_task(_send_chat_action_until_cancelled(client, chat_id))
+    try:
+        downloaded = await _download_telegram_media(
+            db, client, account=account, message=message, file_id=file_id, status_message_id=None
+        )
+        if downloaded is None:
+            return
+        data, file_path = downloaded
+        try:
+            transcribed = await transcribe_media_bytes(
+                db=db,
+                user=user,
+                data=data,
+                filename=media.get("file_name") or file_path,
+                content_type=media.get("mime_type"),
+                language=user.default_language,
+                duration_seconds=_telegram_media_duration_seconds(media),
+                source_label="telegram",
+            )
+        except RecordingImportError as exc:
+            await _set_telegram_import_error_context(db, account, message=exc.message)
+            await client.send_message(
+                chat_id, exc.message, reply_to_message_id=message.get("message_id")
+            )
+            return
+    finally:
+        await _stop_chat_action_task(action_task)
+
+    if decision is None:
+        if not transcribed.has_speech:
+            decision = VoiceRouteDecision("file", "no_speech")
+        else:
+            decision = await classify_voice_transcript(
+                transcribed.transcript_text,
+                recent_assistant_message=await _recent_assistant_text(db, account),
+            )
+
+    # Privacy-safe: only the route + reason tag, never the transcript.
+    logger.info("telegram voice routed route=%s reason=%s", decision.route, decision.reason)
+
+    if decision.route == "message" and transcribed.has_speech:
+        await _handle_voice_as_message(
+            db, client, message=message, account=account, transcript=transcribed.transcript_text
+        )
+        return
+
+    # File it, reusing the download + transcript we already produced.
+    await _handle_media_message(
+        db,
+        client,
+        message=message,
+        account=account,
+        media=media,
+        prefetched=(data, file_path),
+        precomputed=transcribed,
+    )
+
+
+async def _handle_voice_as_message(
+    db: AsyncSession,
+    client: TelegramBotClient,
+    *,
+    message: dict[str, Any],
+    account: TelegramAccount,
+    transcript: str,
+) -> None:
+    """A voice note addressed to Wai: echo what was heard (STT transparency), then
+    route the transcript through the same pipeline as a typed message."""
+    chat_id = _telegram_chat_id(message)
+    if chat_id is not None:
+        echo = transcript.strip()
+        if len(echo) > 600:
+            echo = echo[:600].rstrip() + "…"
+        await client.send_message(
+            chat_id,
+            f"🎙 <i>«{escape(echo)}»</i>",
+            reply_to_message_id=message.get("message_id"),
+            parse_mode="HTML",
+        )
+    await _route_text_like(
+        db,
+        client,
+        message=message,
+        account=account,
+        text=transcript,
+        input_modality="voice",
+    )
+
+
+async def _route_text_like(
+    db: AsyncSession,
+    client: TelegramBotClient,
+    *,
+    message: dict[str, Any],
+    account: TelegramAccount,
+    text: str,
+    input_modality: str = "text",
+) -> None:
+    """Route a typed-or-spoken message: structured command, URL ingest, or agent
+    turn. Shared by the text branch and voice notes routed to chat so both modalities
+    behave identically."""
+    text_intent = _text_intent(text)
+    forwarded_url = find_first_url(text)
+    if text_intent is not None:
+        intent, arg = text_intent
+        await _handle_account_command(
+            db, client, message=message, account=account, intent=intent, arg=arg
+        )
+    elif forwarded_url is not None:
+        await _handle_url_message(
+            db, client, message=message, account=account, url=forwarded_url
+        )
+    else:
+        await _handle_text_message(
+            db,
+            client,
+            message=message,
+            account=account,
+            text=text,
+            input_modality=input_modality,
+        )
+
+
+async def _handle_media_message(
+    db: AsyncSession,
+    client: TelegramBotClient,
+    *,
+    message: dict[str, Any],
+    account: TelegramAccount,
+    media: dict[str, Any],
+    prefetched: tuple[bytes, str | None] | None = None,
+    precomputed: TranscribedMedia | None = None,
+) -> None:
+    """Save media as a library recording.
+
+    ``prefetched`` / ``precomputed`` let intent routing hand over a voice note it
+    already downloaded and transcribed so it is filed without a second download or
+    STT pass; when both are None this is the unchanged historical import flow.
+    """
     chat_id = _telegram_chat_id(message)
     if chat_id is None:
         return
@@ -2683,31 +2973,20 @@ async def _handle_media_message(
         status_message_id=status_message_id,
     )
 
-    tg_file = await client.get_file(file_id)
-    if tg_file.file_size is not None and tg_file.file_size > settings.telegram_download_max_bytes:
-        too_large_message = _telegram_file_too_large_message()
-        await _set_telegram_import_error_context(db, account, message=too_large_message)
-        await client.send_message(chat_id, too_large_message)
-        await _delete_status_message(client, chat_id=chat_id, message_id=status_message_id)
-        return
-    try:
-        data = await client.download_file(tg_file, max_bytes=settings.telegram_download_max_bytes)
-        if len(data) > settings.telegram_download_max_bytes:
-            too_large_message = _telegram_file_too_large_message()
-            await _set_telegram_import_error_context(db, account, message=too_large_message)
-            await client.send_message(chat_id, too_large_message)
-            await _delete_status_message(client, chat_id=chat_id, message_id=status_message_id)
-            return
-    except TelegramFileTooLargeError:
-        too_large_message = _telegram_file_too_large_message()
-        await _set_telegram_import_error_context(db, account, message=too_large_message)
-        await client.send_message(
-            chat_id,
-            too_large_message,
-            reply_to_message_id=message.get("message_id"),
+    if prefetched is not None:
+        data, downloaded_file_path = prefetched
+    else:
+        downloaded = await _download_telegram_media(
+            db,
+            client,
+            account=account,
+            message=message,
+            file_id=file_id,
+            status_message_id=status_message_id,
         )
-        await _delete_status_message(client, chat_id=chat_id, message_id=status_message_id)
-        return
+        if downloaded is None:
+            return
+        data, downloaded_file_path = downloaded
 
     caption = str(message.get("caption") or "").strip()
     title = caption[:500] if caption else None
@@ -2717,12 +2996,13 @@ async def _handle_media_message(
             db=db,
             user=user,
             data=data,
-            filename=media.get("file_name") or tg_file.file_path,
+            filename=media.get("file_name") or downloaded_file_path,
             content_type=media.get("mime_type"),
             title=title,
             source_label="telegram",
             language=user.default_language,
             duration_seconds=_telegram_media_duration_seconds(media),
+            precomputed=precomputed,
         )
     except RecordingImportError as exc:
         logger.warning(
@@ -2854,7 +3134,7 @@ async def _handle_update(update: dict[str, Any]) -> None:
 
             media = _extract_media(message)
             if media is not None:
-                await _handle_media_message(
+                await _route_media_message(
                     db,
                     client,
                     message=message,
@@ -2903,34 +3183,14 @@ async def _handle_update(update: dict[str, Any]) -> None:
                         reply_to_message_id=message.get("message_id"),
                     )
                 else:
-                    text_intent = _text_intent(text)
-                    forwarded_url = find_first_url(text)
-                    if text_intent is not None:
-                        intent, arg = text_intent
-                        await _handle_account_command(
-                            db,
-                            client,
-                            message=message,
-                            account=account,
-                            intent=intent,
-                            arg=arg,
-                        )
-                    elif forwarded_url is not None:
-                        await _handle_url_message(
-                            db,
-                            client,
-                            message=message,
-                            account=account,
-                            url=forwarded_url,
-                        )
-                    else:
-                        await _handle_text_message(
-                            db,
-                            client,
-                            message=message,
-                            account=account,
-                            text=text,
-                        )
+                    await _route_text_like(
+                        db,
+                        client,
+                        message=message,
+                        account=account,
+                        text=text,
+                        input_modality="text",
+                    )
             await _mark_update(db, update_id, "completed")
         except (TelegramClientError, RecordingImportError) as exc:
             logger.warning(

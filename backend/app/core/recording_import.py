@@ -96,6 +96,37 @@ class ImportedRecordingResult:
     summary: Summary | None
 
 
+@dataclass(frozen=True)
+class TranscribedMedia:
+    """Normalised media bytes plus their transcript, produced WITHOUT persisting a
+    recording. Lets a caller transcribe once to inspect what was said (intent
+    routing), then either feed the text to the agent or hand these results back to
+    ``import_media_as_recording(precomputed=...)`` so the audio is never transcribed
+    twice."""
+
+    transcript_results: list[TranscriptResult]
+    media_data: bytes
+    media_content_type: str
+    media_ext: str
+
+    @property
+    def speech_results(self) -> list[TranscriptResult]:
+        return [
+            tr
+            for tr in self.transcript_results
+            if tr.text.strip() and not _is_no_speech_placeholder(tr.text)
+        ]
+
+    @property
+    def has_speech(self) -> bool:
+        return bool(self.speech_results)
+
+    @property
+    def transcript_text(self) -> str:
+        """Plain spoken text (no speaker labels) for classification / chat input."""
+        return " ".join(tr.text.strip() for tr in self.speech_results).strip()
+
+
 CONTENT_TYPE_TO_EXTENSION = {
     "audio/mpeg": "mp3",
     "audio/mp3": "mp3",
@@ -597,6 +628,54 @@ async def _mark_failed(
     return recording
 
 
+async def transcribe_media_bytes(
+    *,
+    db: AsyncSession,
+    user: User,
+    data: bytes,
+    filename: str | None,
+    content_type: str | None,
+    language: str | None = None,
+    duration_seconds: float | None = None,
+    source_label: str = "telegram_route",
+) -> TranscribedMedia:
+    """Normalise + transcribe media bytes WITHOUT creating a recording.
+
+    Flows through the same guarded ``_transcribe`` choke point as a real import (so
+    the Deepgram cost/abuse guards still apply) but persists nothing. Used to read a
+    voice note's content for intent routing; the returned results can be replayed
+    into ``import_media_as_recording(precomputed=...)`` so the audio is transcribed
+    exactly once whether it ends up filed or answered."""
+    if not data:
+        raise RecordingImportError("empty_file", "Файл пустой.")
+    ext = resolve_import_extension(filename, content_type)
+    normalized_content_type = (
+        (content_type or "").split(";")[0].strip().lower()
+        or EXTENSION_TO_CONTENT_TYPE.get(ext, "application/octet-stream")
+    )
+    media_data, media_content_type, media_ext = await _normalize_media_for_transcription(
+        data,
+        ext=ext,
+        content_type=normalized_content_type,
+    )
+    transcript_results = await _transcribe(
+        db=db,
+        data=media_data,
+        content_type=media_content_type,
+        language=_resolve_language(user, language) or "auto",
+        user=user,
+        audio_duration_seconds=duration_seconds,
+        recording_id=None,
+        source_label=source_label,
+    )
+    return TranscribedMedia(
+        transcript_results=transcript_results,
+        media_data=media_data,
+        media_content_type=media_content_type,
+        media_ext=media_ext,
+    )
+
+
 async def import_media_as_recording(
     *,
     db: AsyncSession,
@@ -609,8 +688,13 @@ async def import_media_as_recording(
     language: str | None = None,
     duration_seconds: float | None = None,
     recording: Recording | None = None,
+    precomputed: TranscribedMedia | None = None,
 ) -> ImportedRecordingResult:
-    """Create a library recording from external media bytes and process it."""
+    """Create a library recording from external media bytes and process it.
+
+    When ``precomputed`` is supplied the media has already been normalised and
+    transcribed by ``transcribe_media_bytes`` (intent routing): reuse those bytes
+    and transcript instead of paying for a second normalise + STT pass."""
     if not data:
         raise RecordingImportError("empty_file", "Файл пустой.")
     logger.info("external recording import started source=%s", source_label)
@@ -621,15 +705,20 @@ async def import_media_as_recording(
     try:
         ext = resolve_import_extension(filename, content_type)
         explicit_title = bool((title or "").strip())
-        normalized_content_type = (
-            (content_type or "").split(";")[0].strip().lower()
-            or EXTENSION_TO_CONTENT_TYPE.get(ext, "application/octet-stream")
-        )
-        media_data, media_content_type, media_ext = await _normalize_media_for_transcription(
-            data,
-            ext=ext,
-            content_type=normalized_content_type,
-        )
+        if precomputed is not None:
+            media_data = precomputed.media_data
+            media_content_type = precomputed.media_content_type
+            media_ext = precomputed.media_ext
+        else:
+            normalized_content_type = (
+                (content_type or "").split(";")[0].strip().lower()
+                or EXTENSION_TO_CONTENT_TYPE.get(ext, "application/octet-stream")
+            )
+            media_data, media_content_type, media_ext = await _normalize_media_for_transcription(
+                data,
+                ext=ext,
+                content_type=normalized_content_type,
+            )
         now = datetime.now(timezone.utc)
         if recording is None:
             recording = Recording(
@@ -672,16 +761,19 @@ async def import_media_as_recording(
         await db.execute(delete(ActionItem).where(ActionItem.recording_id == recording.id))
         await db.execute(delete(Highlight).where(Highlight.recording_id == recording.id))
 
-        transcript_results = await _transcribe(
-            db=db,
-            data=media_data,
-            content_type=media_content_type,
-            language=recording.language or "auto",
-            user=user,
-            audio_duration_seconds=duration_seconds,
-            recording_id=recording_id,
-            source_label=source_label,
-        )
+        if precomputed is not None:
+            transcript_results = precomputed.transcript_results
+        else:
+            transcript_results = await _transcribe(
+                db=db,
+                data=media_data,
+                content_type=media_content_type,
+                language=recording.language or "auto",
+                user=user,
+                audio_duration_seconds=duration_seconds,
+                recording_id=recording_id,
+                source_label=source_label,
+            )
         speech_results = [
             tr
             for tr in transcript_results
