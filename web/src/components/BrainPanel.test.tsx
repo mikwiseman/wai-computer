@@ -574,11 +574,44 @@ describe("BrainPanel (Live Mirror)", () => {
     await waitFor(() => expect(screen.getByText("Hiring map")).toBeInTheDocument());
 
     fireEvent.click(screen.getByRole("button", { name: /Hiring map/ }));
+    await waitFor(() => expect(mockRefreshBrainMap).toHaveBeenCalledWith("map-1"));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Refresh" })).not.toBeDisabled());
+    mockRefreshBrainMap.mockClear();
+
     fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
     await waitFor(() => expect(mockRefreshBrainMap).toHaveBeenCalledWith("map-1"));
 
     fireEvent.click(screen.getByRole("button", { name: "Keep" }));
     await waitFor(() => expect(mockUpdateBrainMap).toHaveBeenCalledWith("map-1", { status: "saved" }));
+  });
+
+  it("auto-refreshes generated maps when opened", async () => {
+    mockListBrainMaps.mockResolvedValue({ maps: [brainMap()] });
+    mockRefreshBrainMap.mockResolvedValue(
+      revision({
+        id: "rev-2",
+        revision_index: 2,
+        source_fingerprint: "def",
+        diff: {
+          nodes_added: 0,
+          nodes_removed: 0,
+          edges_added: 0,
+          edges_removed: 0,
+          sources_added: 2,
+          sources_removed: 0,
+          changed: true,
+        },
+      }),
+    );
+
+    render(<BrainPanel />);
+    await waitFor(() => expect(screen.getByText("Hiring map")).toBeInTheDocument());
+
+    fireEvent.click(screen.getByRole("button", { name: /Hiring map/ }));
+
+    await waitFor(() => expect(mockRefreshBrainMap).toHaveBeenCalledTimes(1));
+    expect(mockRefreshBrainMap).toHaveBeenCalledWith("map-1");
+    await waitFor(() => expect(screen.getAllByText("+2 sources").length).toBeGreaterThan(0));
   });
 
   it("opens a requested map after loading maps", async () => {

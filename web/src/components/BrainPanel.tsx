@@ -40,6 +40,7 @@ import type {
   BrainMapNode,
   BrainMapPosition,
   BrainMapProjection,
+  BrainMapRevision,
   BrainReviewPack,
   BrainSpace,
   BrainSpaceHome,
@@ -943,6 +944,7 @@ export function BrainPanel({
   const [error, setError] = useState<string | null>(null);
   const [curatedError, setCuratedError] = useState<string | null>(null);
   const hasLoadedRef = useRef(false);
+  const autoRefreshedMapIdsRef = useRef<Set<string>>(new Set());
 
   const selectedSpace = spaces.find((s) => s.id === selectedSpaceId) ?? null;
   const activeMap = maps.find((map) => map.id === activeMapId) ?? null;
@@ -1091,18 +1093,23 @@ export function BrainPanel({
     }
   }, [activeMap, onError]);
 
+  const applyMapRevision = useCallback((mapId: string, revision: BrainMapRevision) => {
+    setMaps((current) =>
+      current.map((map) =>
+        map.id === mapId
+          ? { ...map, current_revision_id: revision.id, current_revision: revision }
+          : map,
+      ),
+    );
+  }, []);
+
   const refreshActiveMap = useCallback(async () => {
     if (!activeMap || refreshingId) return;
-    setRefreshingId(activeMap.id);
+    const mapId = activeMap.id;
+    setRefreshingId(mapId);
     try {
-      const revision = await refreshBrainMap(activeMap.id);
-      setMaps((current) =>
-        current.map((map) =>
-          map.id === activeMap.id
-            ? { ...map, current_revision_id: revision.id, current_revision: revision }
-            : map,
-        ),
-      );
+      const revision = await refreshBrainMap(mapId);
+      applyMapRevision(mapId, revision);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Couldn't refresh this map.";
       setError(message);
@@ -1110,7 +1117,14 @@ export function BrainPanel({
     } finally {
       setRefreshingId(null);
     }
-  }, [activeMap, onError, refreshingId]);
+  }, [activeMap, applyMapRevision, onError, refreshingId]);
+
+  useEffect(() => {
+    if (!hasLoadedRef.current || !activeMap || refreshingId) return;
+    if (autoRefreshedMapIdsRef.current.has(activeMap.id)) return;
+    autoRefreshedMapIdsRef.current.add(activeMap.id);
+    void refreshActiveMap();
+  }, [activeMap, refreshActiveMap, refreshingId]);
 
   const decideReviewPack = useCallback(
     async (id: string, decision: "accept" | "reject") => {
