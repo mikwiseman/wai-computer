@@ -8,6 +8,7 @@ approval gate, but the action hands always do.
 
 from app.core.companion import (
     _ACTION_POLICY_SECTION,
+    _EXECUTION_BIAS_SECTION,
     _IDENTITY_SECTION,
     _IDENTITY_SECTION_WITH_ACTIONS,
     system_prompt_for,
@@ -43,6 +44,15 @@ def test_action_turn_swaps_identity_and_adds_policy():
 def test_action_policy_is_strictly_gated_by_with_actions():
     assert "<action_policy>" not in system_prompt_for(with_actions=False)
     assert "<action_policy>" in system_prompt_for(with_actions=True)
+
+
+def test_execution_bias_only_on_action_turns():
+    # Action turns gain the execution/anti-fabrication contract; read-only turns
+    # stay byte-identical (covered above) so the warm prompt cache is untouched.
+    assert _EXECUTION_BIAS_SECTION not in system_prompt_for(with_actions=False)
+    action_prompt = system_prompt_for(with_actions=True)
+    assert _EXECUTION_BIAS_SECTION in action_prompt
+    assert "Never fabricate" in action_prompt
 
 
 def test_user_profile_and_memory_still_render_with_actions():
