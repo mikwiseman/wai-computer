@@ -609,6 +609,27 @@ function BrainOverviewSourceRow({
   );
 }
 
+function BrainUnlinkedSourceRow({
+  source,
+  onOpen,
+  t,
+}: {
+  source: BrainOverviewSource;
+  onOpen: (source: BrainOverviewSource) => void;
+  t: Translator;
+}) {
+  return (
+    <button
+      type="button"
+      className="brain-source-mirror__row brain-source-mirror__row--needs-link"
+      onClick={() => onOpen(source)}
+    >
+      <strong>{source.title}</strong>
+      <em>{t("In Inbox · not in Brain yet", "В инбоксе · ещё не в Мозге")}</em>
+    </button>
+  );
+}
+
 function BrainOverviewEntityRow({
   entity,
   onOpen,
@@ -635,16 +656,27 @@ function BrainOverviewEntityRow({
 function BrainSourceMirrorPanel({
   overview,
   syncResult,
+  syncing,
   onOpenSource,
   onOpenEntity,
+  onSync,
   t,
 }: {
   overview: BrainOverview;
   syncResult: BrainSyncResult | null;
+  syncing: boolean;
   onOpenSource: (kind: string, id: string) => void;
   onOpenEntity: (id: string, name: string) => void;
+  onSync: () => void;
   t: Translator;
 }) {
+  const unlinkedTotal = overview.recordings.unorganized + overview.materials.unorganized;
+  const unlinkedRecentSources = overview.recent_sources
+    .filter((source) => source.entity_count === 0)
+    .slice(0, 4);
+  const linkedRecentSources = overview.recent_sources
+    .filter((source) => source.entity_count > 0)
+    .slice(0, 5);
   return (
     <section className="brain-source-mirror" aria-label={t("Source mirror", "Зеркало источников")}>
       <div className="brain-source-mirror__head">
@@ -652,12 +684,27 @@ function BrainSourceMirrorPanel({
           <h3>{t("Source mirror", "Зеркало источников")}</h3>
           <p>{brainOverviewSummary(overview, t)}</p>
         </div>
-        <div className="brain-source-mirror__badges">
-          {overview.pending_review_count > 0 ? (
-            <span>{overview.pending_review_count} {t("needs review", "на проверке")}</span>
-          ) : null}
-          {syncResult && syncResult.created_mentions > 0 ? (
-            <span>{syncResult.sources_with_entities} {t("synced now", "связано сейчас")}</span>
+        <div className="brain-source-mirror__actions">
+          <div className="brain-source-mirror__badges">
+            {overview.pending_review_count > 0 ? (
+              <span>{overview.pending_review_count} {t("needs review", "на проверке")}</span>
+            ) : null}
+            {unlinkedTotal > 0 ? (
+              <span>{unlinkedTotal} {t("not in Brain", "ещё не в Мозге")}</span>
+            ) : null}
+            {syncResult && syncResult.created_mentions > 0 ? (
+              <span>{syncResult.sources_with_entities} {t("synced now", "связано сейчас")}</span>
+            ) : null}
+          </div>
+          {unlinkedTotal > 0 ? (
+            <button
+              type="button"
+              className="wai-secondary-button brain-source-mirror__sync"
+              disabled={syncing}
+              onClick={onSync}
+            >
+              {syncing ? t("Linking…", "Связываю…") : t("Link summaries", "Связать summary")}
+            </button>
           ) : null}
         </div>
       </div>
@@ -673,11 +720,34 @@ function BrainSourceMirrorPanel({
           t={t}
         />
       </div>
+      {unlinkedRecentSources.length > 0 ? (
+        <div className="brain-source-mirror__needs">
+          <div>
+            <h4>{t("Needs linking", "Нужно связать")}</h4>
+            <p>
+              {t(
+                `${unlinkedTotal} source(s) are in Inbox but not part of the mirror yet.`,
+                `${unlinkedTotal} источн. есть в инбоксе, но ещё не в зеркале.`,
+              )}
+            </p>
+          </div>
+          <div className="brain-source-mirror__needs-list">
+            {unlinkedRecentSources.map((source) => (
+              <BrainUnlinkedSourceRow
+                key={source.id}
+                source={source}
+                onOpen={(next) => onOpenSource(next.source_kind, next.source_id)}
+                t={t}
+              />
+            ))}
+          </div>
+        </div>
+      ) : null}
       <div className="brain-source-mirror__lists">
         <div>
           <h4>{t("Recent sources", "Свежие источники")}</h4>
-          {overview.recent_sources.length > 0 ? (
-            overview.recent_sources.slice(0, 5).map((source) => (
+          {linkedRecentSources.length > 0 ? (
+            linkedRecentSources.map((source) => (
               <BrainOverviewSourceRow
                 key={source.id}
                 source={source}
@@ -686,7 +756,7 @@ function BrainSourceMirrorPanel({
               />
             ))
           ) : (
-            <p className="brain-panel__empty">{t("No recordings or materials yet.", "Записей и материалов пока нет.")}</p>
+            <p className="brain-panel__empty">{t("No linked recent sources yet.", "Пока нет свежих источников со связями.")}</p>
           )}
         </div>
         <div>
@@ -1379,6 +1449,7 @@ export function BrainPanel({
   const [showLensForm, setShowLensForm] = useState(false);
   const [creatingLens, setCreatingLens] = useState(false);
   const [refreshingId, setRefreshingId] = useState<string | null>(null);
+  const [linkingBrainSources, setLinkingBrainSources] = useState(false);
   const [brainQuestion, setBrainQuestion] = useState("");
   const [brainAnswer, setBrainAnswer] = useState<BrainAnswer | null>(null);
   const [askingBrain, setAskingBrain] = useState(false);
@@ -1474,6 +1545,32 @@ export function BrainPanel({
       setLoading(false);
     }
   }, [initialMapId, loadCurated, onError, selectedSpaceId]);
+
+  const repairBrainLinks = useCallback(async () => {
+    if (linkingBrainSources) return;
+    setLinkingBrainSources(true);
+    setError(null);
+    try {
+      const syncResult = await syncBrain({ limit: 500 });
+      const [mirrorProjection, graph, mapList, entityList] = await Promise.all([
+        getBrainMirror({ limit: 60 }),
+        getBrainGraph({ limit: 200 }),
+        listBrainMaps({ limit: 50 }),
+        listEntities({ limit: 200 }),
+      ]);
+      setBrainSyncResult(syncResult);
+      setMirror(mirrorProjection);
+      setBrainOverview(graph.overview ?? null);
+      setMaps(mapList.maps);
+      setEntities(entityList);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Couldn't link Brain sources.";
+      setError(message);
+      onError?.(message);
+    } finally {
+      setLinkingBrainSources(false);
+    }
+  }, [linkingBrainSources, onError]);
 
   useEffect(() => {
     void load();
@@ -1847,8 +1944,10 @@ export function BrainPanel({
               <BrainSourceMirrorPanel
                 overview={brainOverview}
                 syncResult={brainSyncResult}
+                syncing={linkingBrainSources}
                 onOpenSource={openSource}
                 onOpenEntity={(id, name) => setSelectedEntity({ id, name })}
+                onSync={() => void repairBrainLinks()}
                 t={t}
               />
             ) : null}

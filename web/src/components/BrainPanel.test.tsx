@@ -576,6 +576,12 @@ describe("BrainPanel (Live Mirror)", () => {
     expect(screen.getByRole("region", { name: "Source mirror" })).toBeInTheDocument();
     expect(screen.getByText("2 of 3 sources are linked into the mirror; 1 still need entities.")).toBeInTheDocument();
     expect(screen.getByText("1 synced now")).toBeInTheDocument();
+    expect(screen.getByText("Needs linking")).toBeInTheDocument();
+    expect(screen.getByText("Raw project voice memo")).toBeInTheDocument();
+    expect(screen.getByText("In Inbox · not in Brain yet")).toBeInTheDocument();
+    const syncCallsBeforeRepair = mockSyncBrain.mock.calls.length;
+    fireEvent.click(screen.getByRole("button", { name: "Link summaries" }));
+    await waitFor(() => expect(mockSyncBrain.mock.calls.length).toBeGreaterThan(syncCallsBeforeRepair));
     expect(mockSyncBrain).toHaveBeenCalledWith({ limit: 500 });
     expect(await screen.findByText("Launch notes")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Pages" })).toBeInTheDocument();

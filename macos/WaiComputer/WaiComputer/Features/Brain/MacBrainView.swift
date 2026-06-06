@@ -215,6 +215,8 @@ struct MacBrainView: View {
     @ViewBuilder
     private var brainCoverageSection: some View {
         if let overview = model.brainOverview {
+            let unlinkedSources = brainUnlinkedRecentSources(overview)
+            let linkedSources = brainLinkedRecentSources(overview)
             VStack(alignment: .leading, spacing: Spacing.sm) {
                 HStack(alignment: .firstTextBaseline, spacing: Spacing.sm) {
                     VStack(alignment: .leading, spacing: 2) {
@@ -239,6 +241,16 @@ struct MacBrainView: View {
                             t("synced now", "связано сейчас")
                         )
                     }
+                    if brainUnlinkedSourceCount(overview) > 0 {
+                        Button {
+                            Task { await model.repairBrainLinks() }
+                        } label: {
+                            Text(model.linkingBrainSources ? t("Linking", "Связываю") : t("Link summaries", "Связать summary"))
+                                .frame(minWidth: 96)
+                        }
+                        .buttonStyle(.bordered)
+                        .disabled(model.linkingBrainSources)
+                    }
                 }
 
                 HStack(spacing: Spacing.sm) {
@@ -254,15 +266,45 @@ struct MacBrainView: View {
                     )
                 }
 
+                if !unlinkedSources.isEmpty {
+                    VStack(alignment: .leading, spacing: Spacing.xs) {
+                        HStack(alignment: .firstTextBaseline, spacing: Spacing.xs) {
+                            Text(t("Needs linking", "Нужно связать"))
+                                .font(Typography.labelSmall.weight(.semibold))
+                                .foregroundStyle(Palette.textPrimary)
+                            Spacer()
+                            Text(t(
+                                "\(brainUnlinkedSourceCount(overview)) source(s)",
+                                "\(brainUnlinkedSourceCount(overview)) источн."
+                            ))
+                            .font(Typography.labelSmall)
+                            .foregroundStyle(Palette.textSecondary)
+                        }
+                        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: Spacing.xs) {
+                            ForEach(unlinkedSources) { source in
+                                Button {
+                                    openSource(kind: source.sourceKind, id: source.sourceId)
+                                } label: {
+                                    unlinkedBrainSourceRow(source)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                    }
+                    .padding(Spacing.sm)
+                    .background(Palette.accent.opacity(0.07))
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                }
+
                 HStack(alignment: .top, spacing: Spacing.lg) {
                     VStack(alignment: .leading, spacing: Spacing.xs) {
                         Text(t("Recent sources", "Свежие источники"))
                             .font(Typography.labelSmall.weight(.semibold))
                             .foregroundStyle(Palette.textSecondary)
-                        if overview.recentSources.isEmpty {
-                            wikiEmpty(t("No recordings or materials yet.", "Записей и материалов пока нет."))
+                        if linkedSources.isEmpty {
+                            wikiEmpty(t("No linked recent sources yet.", "Пока нет свежих источников со связями."))
                         } else {
-                            ForEach(overview.recentSources.prefix(5)) { source in
+                            ForEach(linkedSources) { source in
                                 Button {
                                     openSource(kind: source.sourceKind, id: source.sourceId)
                                 } label: {
@@ -376,6 +418,29 @@ struct MacBrainView: View {
         .clipShape(RoundedRectangle(cornerRadius: 8))
     }
 
+    private func unlinkedBrainSourceRow(_ source: BrainOverviewSource) -> some View {
+        HStack(spacing: Spacing.xs) {
+            Image(systemName: source.sourceKind == "recording" ? "waveform" : "doc.text")
+                .font(.system(size: 11))
+                .foregroundStyle(Palette.textTertiary)
+                .frame(width: 16)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(source.title)
+                    .font(Typography.bodySmall.weight(.medium))
+                    .foregroundStyle(Palette.textPrimary)
+                    .lineLimit(1)
+                Text(t("In Inbox · not in Brain yet", "В инбоксе · ещё не в Мозге"))
+                    .font(Typography.labelSmall)
+                    .foregroundStyle(Palette.textSecondary)
+                    .lineLimit(1)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(Spacing.xs)
+        .background(Color.primary.opacity(0.035))
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+
     private func brainOverviewEntityRow(_ entity: BrainOverviewEntity) -> some View {
         HStack(spacing: Spacing.xs) {
             Image(systemName: entityIcon(entity.type))
@@ -422,6 +487,18 @@ struct MacBrainView: View {
             "All \(totalSources) sources are linked into the mirror.",
             "Все источники связаны в зеркало: \(totalSources)."
         )
+    }
+
+    private func brainUnlinkedSourceCount(_ overview: BrainOverview) -> Int {
+        overview.recordings.unorganized + overview.materials.unorganized
+    }
+
+    private func brainUnlinkedRecentSources(_ overview: BrainOverview) -> [BrainOverviewSource] {
+        Array(overview.recentSources.filter { $0.entityCount == 0 }.prefix(4))
+    }
+
+    private func brainLinkedRecentSources(_ overview: BrainOverview) -> [BrainOverviewSource] {
+        Array(overview.recentSources.filter { $0.entityCount > 0 }.prefix(5))
     }
 
     private func brainOverviewTotalSources(_ overview: BrainOverview?) -> Int {
@@ -2312,6 +2389,7 @@ final class MacBrainViewModel: ObservableObject {
     @Published var lensPrompt = ""
     @Published var creatingLens = false
     @Published var refreshingMapId: String?
+    @Published var linkingBrainSources = false
     @Published var brainQuestion = ""
     @Published var brainAnswer: BrainAnswer?
     @Published var askingBrain = false
@@ -2381,6 +2459,36 @@ final class MacBrainViewModel: ObservableObject {
         }
         await loadSpaces()
         await loadSelectedSpace()
+    }
+
+    func repairBrainLinks() async {
+        guard !linkingBrainSources else { return }
+        linkingBrainSources = true
+        defer { linkingBrainSources = false }
+        do {
+            let loadedSync = try await apiClient.syncBrain(limit: 500)
+            async let mirrorRequest = apiClient.getBrainMirror(limit: 60)
+            async let graphRequest = apiClient.getBrainGraph(limit: 200)
+            async let mapsRequest = apiClient.listBrainMaps(limit: 50)
+            async let entitiesRequest = apiClient.listEntities(limit: 200)
+            let (loadedMirror, loadedGraph, loadedMaps, loadedEntities) = try await (
+                mirrorRequest,
+                graphRequest,
+                mapsRequest,
+                entitiesRequest
+            )
+            brainSyncResult = loadedSync
+            mirror = loadedMirror
+            brainOverview = loadedGraph.overview
+            maps = loadedMaps.maps
+            entities = loadedEntities
+            if selectedMapId != "mirror", !maps.contains(where: { $0.id == selectedMapId }) {
+                selectedMapId = "mirror"
+            }
+            errorMessage = nil
+        } catch {
+            errorMessage = error.localizedDescription
+        }
     }
 
     var activeMap: BrainMap? {

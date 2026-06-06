@@ -123,6 +123,10 @@ final class MacContentFeedViewModelTests: XCTestCase {
         XCTAssertTrue(source.contains("mapOriginLabel(map.origin)"))
         XCTAssertTrue(source.contains("mapSourceCountText(map.currentRevision)"))
         XCTAssertTrue(source.contains("mapCheckedText(map.currentRevision)"))
+        XCTAssertTrue(source.contains("\"Needs linking\""))
+        XCTAssertTrue(source.contains("\"In Inbox · not in Brain yet\""))
+        XCTAssertTrue(source.contains("\"Link summaries\""))
+        XCTAssertTrue(source.contains("repairBrainLinks()"))
     }
 
     func testInboxCreatePaneDefaultsToFocusedUploadMode() throws {
