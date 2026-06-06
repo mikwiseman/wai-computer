@@ -232,6 +232,119 @@ async def test_source_scope_seeds_map_from_selected_inbox_source(
     assert revision.source_count == 1
 
 
+async def test_decision_map_adds_cited_scenario_signal_cards(
+    db_session, monkeypatch
+) -> None:
+    user = await _make_user(db_session)
+    item, _ = await ingest_item(
+        db_session,
+        user.id,
+        source="paste",
+        title="Hiring decision",
+        body=(
+            "Board approved the hiring plan. Risk: budget approval is not final. "
+            "Next step: send the candidate offer. Open question: who owns onboarding?"
+        ),
+        embed=False,
+    )
+
+    async def fake_search(*_args, **_kwargs):
+        return [
+            _hit(
+                kind="item",
+                parent_id=item.id,
+                title="Hiring decision",
+                snippet=(
+                    "Board approved the hiring plan. Risk: budget approval is not final. "
+                    "Next step: send the candidate offer. Open question: who owns onboarding?"
+                ),
+            )
+        ]
+
+    monkeypatch.setattr(brain_maps, "unified_search", fake_search)
+
+    _brain_map, revision = await create_brain_map(
+        db_session,
+        user.id,
+        prompt="Map recent decisions with options, tradeoffs, blockers, and open questions",
+        origin="brain",
+    )
+    projection = revision.projection
+    signal_nodes = [
+        n
+        for n in projection["nodes"]
+        if n["kind"] in {"decision", "risk", "next_step", "open_question"}
+    ]
+    citation_id = f"item:{item.id}"
+
+    assert {node["kind"] for node in signal_nodes} == {
+        "decision",
+        "risk",
+        "next_step",
+        "open_question",
+    }
+    assert all(node["citation_ids"] == [citation_id] for node in signal_nodes)
+    assert any(node["title"] == "Decision" and "approved" in node["body"] for node in signal_nodes)
+    assert any(node["title"] == "Risk" and "budget" in node["body"] for node in signal_nodes)
+    assert any(
+        node["title"] == "Next step" and "candidate offer" in node["body"]
+        for node in signal_nodes
+    )
+    assert any(
+        node["title"] == "Open question" and "onboarding" in node["body"]
+        for node in signal_nodes
+    )
+
+
+async def test_timeline_map_adds_event_and_deadline_signal_cards(
+    db_session, monkeypatch
+) -> None:
+    user = await _make_user(db_session)
+    item, _ = await ingest_item(
+        db_session,
+        user.id,
+        source="paste",
+        title="Launch timeline",
+        body=(
+            "On May 1 pricing changed for the launch plan. "
+            "Deadline: publish the release notes by June 30."
+        ),
+        embed=False,
+    )
+
+    async def fake_search(*_args, **_kwargs):
+        return [
+            _hit(
+                kind="item",
+                parent_id=item.id,
+                title="Launch timeline",
+                snippet=(
+                    "On May 1 pricing changed for the launch plan. "
+                    "Deadline: publish the release notes by June 30."
+                ),
+            )
+        ]
+
+    monkeypatch.setattr(brain_maps, "unified_search", fake_search)
+
+    _brain_map, revision = await create_brain_map(
+        db_session,
+        user.id,
+        prompt="Create a timeline of the important changes, commitments, and deadlines",
+        origin="brain",
+    )
+    signal_nodes = [
+        n
+        for n in revision.projection["nodes"]
+        if n["kind"] in {"timeline_event", "deadline"}
+    ]
+
+    assert {node["kind"] for node in signal_nodes} == {"timeline_event", "deadline"}
+    assert all(node["citation_ids"] == [f"item:{item.id}"] for node in signal_nodes)
+    assert any("pricing changed" in node["body"] for node in signal_nodes)
+    assert any("June 30" in node["body"] for node in signal_nodes)
+
+
 async def test_projection_caps_large_brain_to_focused_diagram(db_session, monkeypatch) -> None:
     user = await _make_user(db_session)
     hits = []

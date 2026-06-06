@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import re
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -33,6 +34,7 @@ DEFAULT_MAP_LIMIT = 18
 MAX_VISIBLE_SOURCE_NODES = 3
 MAX_VISIBLE_ENTITY_NODES = 8
 MAX_RELATED_EDGES = 12
+MAX_SCENARIO_SIGNAL_NODES = 6
 
 
 class BrainMapError(Exception):
@@ -57,6 +59,122 @@ class _EvidenceHit:
     snippet: str
     score: float
     created_at: str | None
+
+
+@dataclass(frozen=True)
+class _ScenarioSignalRule:
+    kind: str
+    title: str
+    lane: str
+    keywords: tuple[str, ...]
+
+
+_SCENARIO_SIGNAL_RULES: dict[str, tuple[_ScenarioSignalRule, ...]] = {
+    "project_state": (
+        _ScenarioSignalRule(
+            "decision",
+            "Decision",
+            "decisions",
+            ("approved", "decided", "agreed", "greenlit", "решил", "решение", "соглас"),
+        ),
+        _ScenarioSignalRule(
+            "risk",
+            "Risk",
+            "risks",
+            ("risk", "blocker", "blocked", "concern", "not final", "риск", "блок"),
+        ),
+        _ScenarioSignalRule(
+            "next_step",
+            "Next step",
+            "next_steps",
+            ("next step", "action", "todo", "follow up", "need to", "should", "следующ", "нужно"),
+        ),
+    ),
+    "decision": (
+        _ScenarioSignalRule(
+            "decision",
+            "Decision",
+            "decisions",
+            ("approved", "decided", "decision", "agreed", "greenlit", "chose", "решил", "решение"),
+        ),
+        _ScenarioSignalRule(
+            "tradeoff",
+            "Tradeoff",
+            "tradeoffs",
+            ("tradeoff", "trade-off", "option", "alternative", "instead", "компромисс", "вариант"),
+        ),
+        _ScenarioSignalRule(
+            "risk",
+            "Risk",
+            "risks",
+            ("risk", "blocker", "blocked", "concern", "not final", "depends", "риск", "блок"),
+        ),
+        _ScenarioSignalRule(
+            "next_step",
+            "Next step",
+            "next_steps",
+            ("next step", "action", "todo", "follow up", "need to", "should", "следующ", "нужно"),
+        ),
+        _ScenarioSignalRule(
+            "open_question",
+            "Open question",
+            "questions",
+            (
+                "open question",
+                "question",
+                "unknown",
+                "unclear",
+                "who",
+                "whether",
+                "вопрос",
+                "непонят",
+            ),
+        ),
+    ),
+    "timeline": (
+        _ScenarioSignalRule(
+            "timeline_event",
+            "Event",
+            "timeline",
+            ("changed", "updated", "started", "launched", "approved", "met", "создан", "измен"),
+        ),
+        _ScenarioSignalRule(
+            "deadline",
+            "Deadline",
+            "deadlines",
+            ("deadline", "due", "by ", "before ", "дедлайн", "до "),
+        ),
+        _ScenarioSignalRule(
+            "commitment",
+            "Commitment",
+            "commitments",
+            ("committed", "promised", "agreed to", "обещ", "договор"),
+        ),
+    ),
+    "open_questions": (
+        _ScenarioSignalRule(
+            "open_question",
+            "Open question",
+            "questions",
+            (
+                "open question",
+                "question",
+                "unknown",
+                "unclear",
+                "who",
+                "whether",
+                "вопрос",
+                "непонят",
+            ),
+        ),
+        _ScenarioSignalRule(
+            "risk",
+            "Risk",
+            "risks",
+            ("risk", "blocker", "blocked", "concern", "depends", "риск", "блок"),
+        ),
+    ),
+}
 
 
 def _now() -> datetime:
@@ -93,6 +211,11 @@ def _source_node_id(source_kind: str, source_id: str | uuid.UUID) -> str:
 
 def _entity_node_id(entity_id: str | uuid.UUID) -> str:
     return f"entity:{entity_id}"
+
+
+def _signal_node_id(kind: str, citation_id: str, body: str) -> str:
+    digest = hashlib.sha1(f"{kind}\x00{citation_id}\x00{body}".encode("utf-8")).hexdigest()
+    return f"signal:{kind}:{digest[:12]}"
 
 
 def _node_key_set(projection: dict[str, Any] | None) -> set[str]:
@@ -446,6 +569,14 @@ def _layout_position(
         "topics": 340,
         "sources": -340,
         "gaps": 0,
+        "decisions": 340,
+        "tradeoffs": 340,
+        "risks": 340,
+        "next_steps": 340,
+        "questions": 340,
+        "timeline": 340,
+        "deadlines": 340,
+        "commitments": 340,
     }.get(lane, 0)
     lane_y_offset = {
         "center": 0,
@@ -454,6 +585,14 @@ def _layout_position(
         "topics": 220,
         "sources": -160,
         "gaps": 260,
+        "decisions": -240,
+        "tradeoffs": -80,
+        "risks": 80,
+        "next_steps": 240,
+        "questions": 400,
+        "timeline": -200,
+        "deadlines": 0,
+        "commitments": 200,
     }.get(lane, 0)
     return {"x": float(lane_x), "y": float(lane_y_offset + index * 120)}
 
@@ -464,6 +603,113 @@ def _entity_lane(entity_type: str) -> str:
     if entity_type in {"person", "organization"}:
         return "people"
     return "topics"
+
+
+def _sentence_candidates(text: str) -> list[str]:
+    normalized = _clean(text)
+    if not normalized:
+        return []
+    return [
+        sentence.strip(" -•")
+        for sentence in re.split(r"(?<=[.!?])\s+|\s+[•]\s+", normalized)
+        if sentence.strip(" -•")
+    ]
+
+
+def _scenario_rules(map_type: str) -> tuple[_ScenarioSignalRule, ...]:
+    return _SCENARIO_SIGNAL_RULES.get(map_type, ())
+
+
+def _scenario_signals_for_hit(
+    map_type: str,
+    hit: _EvidenceHit,
+) -> list[tuple[_ScenarioSignalRule, str]]:
+    rules = _scenario_rules(map_type)
+    if not rules:
+        return []
+    matches: list[tuple[_ScenarioSignalRule, str]] = []
+    seen_kinds: set[str] = set()
+    for sentence in _sentence_candidates(hit.snippet):
+        lowered = sentence.casefold()
+        for rule in rules:
+            if rule.kind in seen_kinds:
+                continue
+            if any(keyword in lowered for keyword in rule.keywords):
+                matches.append((rule, _shorten(sentence, 220)))
+                seen_kinds.add(rule.kind)
+                break
+        if len(matches) >= MAX_SCENARIO_SIGNAL_NODES:
+            break
+    return matches
+
+
+def _scenario_signal_projection(
+    *,
+    map_type: str,
+    source_items: list[tuple[tuple[str, uuid.UUID], dict[str, Any]]],
+    hit_by_source: dict[tuple[str, uuid.UUID], _EvidenceHit],
+    layout: dict[str, Any] | None,
+    lens_id: str,
+    visible_source_node_ids: set[str],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    if not _scenario_rules(map_type):
+        return [], []
+    nodes: list[dict[str, Any]] = []
+    edges: list[dict[str, Any]] = []
+    lane_counts: dict[str, int] = {}
+    seen: set[tuple[str, str]] = set()
+
+    for (source_kind, source_id), source in source_items:
+        hit = hit_by_source.get((source_kind, source_id))
+        if hit is None:
+            continue
+        citation_id = str(source["id"])
+        for rule, body in _scenario_signals_for_hit(map_type, hit):
+            key = (rule.kind, body.casefold())
+            if key in seen:
+                continue
+            seen.add(key)
+            index = lane_counts.get(rule.lane, 0)
+            lane_counts[rule.lane] = index + 1
+            node_id = _signal_node_id(rule.kind, citation_id, body)
+            nodes.append(
+                {
+                    "id": node_id,
+                    "kind": rule.kind,
+                    "title": rule.title,
+                    "body": body,
+                    "lane": rule.lane,
+                    "source_kind": source_kind,
+                    "source_id": str(source_id),
+                    "citation_ids": [citation_id],
+                    "position": _layout_position(layout, node_id, lane=rule.lane, index=index),
+                }
+            )
+            edges.append(
+                {
+                    "id": f"edge:{lens_id}:{node_id}",
+                    "source": lens_id,
+                    "target": node_id,
+                    "kind": rule.kind,
+                    "label": rule.title,
+                    "citation_ids": [citation_id],
+                }
+            )
+            source_node_id = _source_node_id(source_kind, source_id)
+            if source_node_id in visible_source_node_ids:
+                edges.append(
+                    {
+                        "id": f"edge:{source_node_id}:{node_id}",
+                        "source": source_node_id,
+                        "target": node_id,
+                        "kind": "supports",
+                        "label": "evidence",
+                        "citation_ids": [citation_id],
+                    }
+                )
+            if len(nodes) >= MAX_SCENARIO_SIGNAL_NODES:
+                return nodes, edges
+    return nodes, edges
 
 
 def _source_fingerprint(prompt: str, map_type: str, sources: list[dict[str, Any]]) -> str:
@@ -651,6 +897,17 @@ async def _build_projection(
             if related_edge_count >= MAX_RELATED_EDGES:
                 break
 
+    scenario_nodes, scenario_edges = _scenario_signal_projection(
+        map_type=map_type,
+        source_items=source_items,
+        hit_by_source=hit_by_source,
+        layout=layout,
+        lens_id=lens_id,
+        visible_source_node_ids=visible_source_node_ids,
+    )
+    nodes.extend(scenario_nodes)
+    edges.extend(scenario_edges)
+
     if hidden_source_count or hidden_entity_count:
         hidden_parts = []
         if hidden_source_count:
@@ -736,6 +993,7 @@ async def _build_projection(
             "visible_entity_count": len(visible_entity_items),
             "hidden_entity_count": hidden_entity_count,
             "related_edges_capped": 1 if related_edge_count >= MAX_RELATED_EDGES else 0,
+            "scenario_signal_count": len(scenario_nodes),
         },
     }
     return projection, _source_fingerprint(prompt, map_type, citations), citations, freshness

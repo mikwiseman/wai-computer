@@ -645,7 +645,7 @@ function toFlowNodes(
       ? node.position
       : diagramPosition(node, columnIndex, columnCounts[column]);
     const onOpen =
-      node.kind === "source" && node.source_kind && node.source_id
+      node.source_kind && node.source_id
         ? () => handlers.openSource(node.source_kind as string, node.source_id as string)
         : node.kind === "entity" && node.entity_id
           ? () => handlers.openEntity(node.entity_id as string, node.title)

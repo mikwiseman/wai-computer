@@ -524,6 +524,35 @@ describe("BrainPanel (Live Mirror)", () => {
     expect(screen.getByTestId("wiki-stub")).toHaveTextContent("wiki:e1");
   });
 
+  it("opens evidence sources from scenario signal cards", async () => {
+    const onOpenSource = vi.fn();
+    const baseProjection = projection();
+    mockGetBrainMirror.mockResolvedValue(
+      projection({
+        nodes: [
+          ...baseProjection.nodes,
+          {
+            id: "signal:risk:budget",
+            kind: "risk",
+            title: "Risk",
+            body: "Budget approval is not final.",
+            lane: "risks",
+            source_kind: "item",
+            source_id: "item-1",
+            citation_ids: ["item:item-1"],
+            position: { x: 340, y: 180 },
+          },
+        ],
+      }),
+    );
+
+    render(<BrainPanel onOpenSource={onOpenSource} />);
+    await waitFor(() => expect(screen.getByText("Risk")).toBeInTheDocument());
+
+    fireEvent.click(within(screen.getByTestId("flow")).getByRole("button", { name: "Risk" }));
+    expect(onOpenSource).toHaveBeenCalledWith("item", "item-1");
+  });
+
   it("keeps crowded maps readable with a focused canvas layout", async () => {
     mockGetBrainMirror.mockResolvedValue(crowdedProjection());
 
