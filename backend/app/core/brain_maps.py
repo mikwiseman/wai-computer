@@ -17,7 +17,7 @@ from app.core.unified_search import UnifiedHit, unified_search
 from app.models.brain_map import BrainMap, BrainMapRevision
 from app.models.entity import Entity, EntityMention
 from app.models.item import Item
-from app.models.recording import Recording
+from app.models.recording import Recording, Segment, Summary
 
 MAP_STATUS_VALUES = {"draft", "saved", "archived"}
 MAP_ORIGINS = {"brain", "inbox", "agent", "wai"}
@@ -30,11 +30,15 @@ MAP_TYPES = {
     "comparison",
     "open_questions",
 }
-DEFAULT_MAP_LIMIT = 18
+DEFAULT_MAP_LIMIT = 48
+MAP_SEARCH_CHUNK_POOL_MULTIPLIER = 3
 MAX_VISIBLE_SOURCE_NODES = 3
 MAX_VISIBLE_ENTITY_NODES = 8
 MAX_RELATED_EDGES = 12
 MAX_SCENARIO_SIGNAL_NODES = 6
+MAX_BRIEFING_SOURCE_ROWS = 12
+MAX_BRIEFING_ENTITY_ROWS = 12
+SCOPED_RECORDING_SNIPPET_CHARS = 1200
 
 
 class BrainMapError(Exception):
@@ -322,20 +326,35 @@ async def _search_hits(
     source_scope: dict[str, Any] | None,
     limit: int,
 ) -> list[_EvidenceHit]:
-    raw_hits = await unified_search(db, user_id, prompt, limit=limit)
+    search_pool_limit = max(limit, limit * MAP_SEARCH_CHUNK_POOL_MULTIPLIER)
+    raw_hits = await unified_search(db, user_id, prompt, limit=search_pool_limit)
     hits = [_coerce_hit(hit) for hit in raw_hits]
     if not source_scope:
-        return hits
+        return _distinct_source_hits(hits, limit)
     allowed = _allowed_scoped_sources(source_scope)
     if not allowed:
-        return hits
+        return _distinct_source_hits(hits, limit)
     scoped_hits = await _scoped_source_hits(db, user_id, allowed)
     filtered = [hit for hit in hits if (hit.source_kind, hit.parent_id) in allowed]
     seen = {(hit.source_kind, hit.parent_id) for hit in filtered}
     filtered.extend(
         hit for hit in scoped_hits if (hit.source_kind, hit.parent_id) not in seen
     )
-    return filtered[:limit]
+    return _distinct_source_hits(filtered, limit)
+
+
+def _distinct_source_hits(hits: list[_EvidenceHit], limit: int) -> list[_EvidenceHit]:
+    selected: list[_EvidenceHit] = []
+    seen_sources: set[tuple[str, str]] = set()
+    for hit in hits:
+        source_key = (hit.source_kind, hit.parent_id)
+        if source_key in seen_sources:
+            continue
+        seen_sources.add(source_key)
+        selected.append(hit)
+        if len(selected) >= limit:
+            break
+    return selected
 
 
 def _allowed_scoped_sources(source_scope: dict[str, Any]) -> set[tuple[str, str]]:
@@ -385,6 +404,7 @@ async def _scoped_source_hits(
                 )
             )
     if rec_ids:
+        recording_snippets = await _scoped_recording_snippets(db, rec_ids)
         rows = (
             await db.execute(
                 select(Recording.id, Recording.title, Recording.type, Recording.created_at)
@@ -403,12 +423,47 @@ async def _scoped_source_hits(
                     chunk_id=str(rid),
                     title=title or "Recording",
                     kind=kind,
-                    snippet="",
+                    snippet=_shorten(recording_snippets.get(rid, ""), 280),
                     score=1.0,
                     created_at=created_at.isoformat() if created_at else None,
                 )
             )
     return sorted(hits, key=lambda hit: hit.created_at or "", reverse=True)
+
+
+async def _scoped_recording_snippets(
+    db: AsyncSession, recording_ids: set[uuid.UUID]
+) -> dict[uuid.UUID, str]:
+    snippets: dict[uuid.UUID, list[str]] = {recording_id: [] for recording_id in recording_ids}
+    summary_rows = (
+        await db.execute(
+            select(Summary.recording_id, Summary.summary).where(
+                Summary.recording_id.in_(recording_ids)
+            )
+        )
+    ).all()
+    for recording_id, summary in summary_rows:
+        if summary:
+            snippets.setdefault(recording_id, []).append(summary)
+
+    segment_rows = (
+        await db.execute(
+            select(Segment.recording_id, Segment.content)
+            .where(Segment.recording_id.in_(recording_ids))
+            .order_by(Segment.recording_id, Segment.start_ms.asc().nulls_last(), Segment.id)
+        )
+    ).all()
+    for recording_id, content in segment_rows:
+        current = _clean(" ".join(snippets.setdefault(recording_id, [])))
+        if len(current) >= SCOPED_RECORDING_SNIPPET_CHARS:
+            continue
+        if content:
+            snippets[recording_id].append(content)
+
+    return {
+        recording_id: _shorten(" ".join(parts), SCOPED_RECORDING_SNIPPET_CHARS)
+        for recording_id, parts in snippets.items()
+    }
 
 
 async def _recent_hits(
@@ -1119,7 +1174,7 @@ def _projection_briefing(
             "kind": source.get("kind"),
             "created_at": source.get("created_at"),
         }
-        for _key, source in visible_source_items
+        for _key, source in source_items[:MAX_BRIEFING_SOURCE_ROWS]
     ]
     top_entities = [
         {
@@ -1128,7 +1183,7 @@ def _projection_briefing(
             "name": name,
             "citation_count": len(entity_citations.get(entity_id, set())),
         }
-        for entity_id, (entity_type, name) in visible_entity_items
+        for entity_id, (entity_type, name) in entity_items[:MAX_BRIEFING_ENTITY_ROWS]
     ]
     return {
         "mode": mode,

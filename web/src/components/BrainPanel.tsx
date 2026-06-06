@@ -472,6 +472,7 @@ function BrainMapBriefingPanel({
     t,
   );
   const hiddenCount = hiddenFocusCount(briefing);
+  const visibleTopSources = briefing.top_sources.slice(0, 12);
 
   return (
     <section className="brain-map-briefing" aria-label={t("Map briefing", "Бриф карты")}>
@@ -513,14 +514,24 @@ function BrainMapBriefingPanel({
         <div>
           <h4>{t("Evidence", "Источники")}</h4>
           {briefing.top_sources.length > 0 ? (
-            briefing.top_sources.slice(0, 4).map((source) => (
-              <BriefingSourceRow
-                key={source.id}
-                source={source}
-                onOpen={(next) => onOpenSource(next.source_kind, next.source_id)}
-                t={t}
-              />
-            ))
+            <>
+              {visibleTopSources.map((source) => (
+                <BriefingSourceRow
+                  key={source.id}
+                  source={source}
+                  onOpen={(next) => onOpenSource(next.source_kind, next.source_id)}
+                  t={t}
+                />
+              ))}
+              {briefing.coverage.total_sources > visibleTopSources.length ? (
+                <p className="brain-panel__empty">
+                  {t(
+                    `Showing ${visibleTopSources.length} of ${briefing.coverage.total_sources} loaded sources.`,
+                    `Показано ${visibleTopSources.length} из ${briefing.coverage.total_sources} загруженных источн.`,
+                  )}
+                </p>
+              ) : null}
+            </>
           ) : (
             <p className="brain-panel__empty">{t("No matching sources yet.", "Подходящих источников пока нет.")}</p>
           )}

@@ -42,7 +42,13 @@ struct MacBrainView: View {
             Divider()
             content
         }
-        .task { await model.load() }
+        .task {
+            await model.load()
+            await model.refreshSelectedMapOnceIfNeeded()
+        }
+        .onChangeCompat(of: model.selectedMapId) { _, _ in
+            Task { await model.refreshSelectedMapOnceIfNeeded() }
+        }
         .onChangeCompat(of: model.selectedSpaceId) { _, _ in
             guard !model.loading else { return }
             Task { await model.loadSelectedSpace() }
@@ -387,7 +393,7 @@ struct MacBrainView: View {
                     if briefing.topSources.isEmpty {
                         wikiEmpty(t("No matching sources yet.", "Подходящих источников пока нет."))
                     } else {
-                        mapBriefingSourceList(briefing.topSources)
+                        mapBriefingSourceList(briefing.topSources, totalSources: briefing.coverage.totalSources)
                     }
                 }
                 VStack(alignment: .leading, spacing: Spacing.xs) {
@@ -447,9 +453,9 @@ struct MacBrainView: View {
         }
     }
 
-    private func mapBriefingSourceList(_ sources: [BrainMapBriefingSource]) -> some View {
+    private func mapBriefingSourceList(_ sources: [BrainMapBriefingSource], totalSources: Int) -> some View {
         VStack(alignment: .leading, spacing: Spacing.xs) {
-            ForEach(sources.prefix(4)) { source in
+            ForEach(sources.prefix(12)) { source in
                 Button {
                     openSource(kind: source.sourceKind, id: source.sourceId)
                 } label: {
@@ -460,6 +466,14 @@ struct MacBrainView: View {
                     )
                 }
                 .buttonStyle(.plain)
+            }
+            if totalSources > sources.prefix(12).count {
+                Text(t(
+                    "Showing \(sources.prefix(12).count) of \(totalSources) loaded sources.",
+                    "Показано \(sources.prefix(12).count) из \(totalSources) загруженных источн."
+                ))
+                .font(Typography.labelSmall)
+                .foregroundStyle(Palette.textTertiary)
             }
         }
     }
@@ -1637,6 +1651,7 @@ final class MacBrainViewModel: ObservableObject {
     @Published var actingSpaceReviewPackIds: Set<String> = []
 
     private let apiClient: APIClient
+    private var autoRefreshedMapIds: Set<String> = []
 
     init(apiClient: APIClient) {
         self.apiClient = apiClient
@@ -1712,6 +1727,13 @@ final class MacBrainViewModel: ObservableObject {
         } catch {
             errorMessage = error.localizedDescription
         }
+    }
+
+    func refreshSelectedMapOnceIfNeeded() async {
+        guard let map = activeMap, refreshingMapId == nil else { return }
+        guard !autoRefreshedMapIds.contains(map.id) else { return }
+        autoRefreshedMapIds.insert(map.id)
+        await refreshActiveMap()
     }
 
     func keepActiveMap() async {

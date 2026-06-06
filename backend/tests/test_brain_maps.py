@@ -14,6 +14,7 @@ from app.core.brain_maps import create_brain_map, refresh_brain_map
 from app.core.entity_graph import record_mention, upsert_entity
 from app.core.item_ingest import ingest_item
 from app.models.agent import Agent, AgentRun
+from app.models.recording import Recording, Segment, Summary
 from app.models.user import User
 
 pytestmark = pytest.mark.asyncio
@@ -232,6 +233,127 @@ async def test_source_scope_seeds_map_from_selected_inbox_source(
     assert revision.source_count == 1
 
 
+async def test_source_scope_seeds_map_from_selected_inbox_voice_memo(
+    db_session, monkeypatch
+) -> None:
+    user = await _make_user(db_session)
+    recording = Recording(
+        user_id=user.id,
+        title="Voice memo about active projects",
+        type="note",
+        status="ready",
+    )
+    db_session.add(recording)
+    await db_session.flush()
+    db_session.add_all(
+        [
+            Summary(
+                recording_id=recording.id,
+                summary="Project Atlas launch has a staffing risk.",
+                key_points=None,
+                decisions=None,
+                topics=None,
+                people_mentioned=None,
+                sentiment=None,
+            ),
+            Segment(
+                recording_id=recording.id,
+                content="Decision: launch Project Atlas after the security review.",
+                speaker=None,
+                raw_label=None,
+                start_ms=0,
+                end_ms=3000,
+                confidence=None,
+            ),
+            Segment(
+                recording_id=recording.id,
+                content="Next step: ask Anna to confirm the rollout owner.",
+                speaker=None,
+                raw_label=None,
+                start_ms=3000,
+                end_ms=6000,
+                confidence=None,
+            ),
+        ]
+    )
+    await db_session.flush()
+
+    async def fake_search(*_args, **_kwargs):
+        return []
+
+    monkeypatch.setattr(brain_maps, "unified_search", fake_search)
+
+    brain_map, revision = await create_brain_map(
+        db_session,
+        user.id,
+        prompt="Map this voice memo",
+        origin="inbox",
+        source_scope={"sources": [{"source_kind": "recording", "source_id": str(recording.id)}]},
+    )
+
+    source_node = next(n for n in revision.projection["nodes"] if n["kind"] == "source")
+    assert brain_map.origin == "inbox"
+    assert source_node["source_kind"] == "recording"
+    assert source_node["source_id"] == str(recording.id)
+    assert source_node["title"] == "Voice memo about active projects"
+    assert "Project Atlas" in source_node["body"]
+    assert "security review" in source_node["body"]
+    assert revision.source_count == 1
+
+
+async def test_map_search_uses_wider_chunk_pool_and_deduplicates_sources(
+    db_session, monkeypatch
+) -> None:
+    user = await _make_user(db_session)
+    first_recording_id = uuid4()
+    second_recording_id = uuid4()
+    item_id = uuid4()
+    calls: list[int] = []
+
+    async def fake_search(_db, _user_id, _prompt, *, limit):
+        calls.append(limit)
+        return [
+            _hit(
+                kind="recording",
+                parent_id=first_recording_id,
+                chunk_id=uuid4(),
+                title="Long voice memo",
+                snippet=f"Repeated project segment {index}",
+            )
+            for index in range(5)
+        ] + [
+            _hit(
+                kind="recording",
+                parent_id=second_recording_id,
+                title="Second voice memo",
+                snippet="Another project from voice.",
+            ),
+            _hit(
+                kind="item",
+                parent_id=item_id,
+                title="Planning note",
+                snippet="Project note from inbox.",
+            ),
+        ]
+
+    monkeypatch.setattr(brain_maps, "unified_search", fake_search)
+
+    hits = await brain_maps._search_hits(
+        db_session,
+        user.id,
+        "active projects",
+        source_scope=None,
+        limit=3,
+    )
+
+    assert calls == [3 * brain_maps.MAP_SEARCH_CHUNK_POOL_MULTIPLIER]
+    assert [(hit.source_kind, hit.parent_id) for hit in hits] == [
+        ("recording", str(first_recording_id)),
+        ("recording", str(second_recording_id)),
+        ("item", str(item_id)),
+    ]
+
+
 async def test_decision_map_adds_cited_scenario_signal_cards(
     db_session, monkeypatch
 ) -> None:
@@ -419,6 +541,8 @@ async def test_projection_caps_large_brain_to_focused_diagram(db_session, monkey
         "visible_entities": 8,
         "total_entities": 24,
     }
+    assert len(projection["briefing"]["top_sources"]) == 12
+    assert len(projection["briefing"]["top_entities"]) == 12
     assert projection["briefing"]["top_sources"][0]["title"] == "Source 00"
     assert projection["briefing"]["suggested_questions"]
 
