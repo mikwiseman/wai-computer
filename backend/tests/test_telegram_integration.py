@@ -38,7 +38,7 @@ from app.core.transcript_utils import TranscriptResult
 from app.core.unified_search import UnifiedHit
 from app.models.agent import Agent, AgentRun
 from app.models.billing import UsageWeek
-from app.models.companion import Conversation
+from app.models.companion import ChatMessage, Conversation
 from app.models.companion_pending_action import CompanionPendingAction
 from app.models.item import Item, ItemChunk, ItemSummary
 from app.models.recording import ActionItem, Highlight, Recording, RecordingStatus, Segment, Summary
@@ -3321,6 +3321,54 @@ async def test_voice_reply_to_bot_routes_to_agent(db_session, monkeypatch):
     mocks.classify.assert_not_called()
     mocks.import_.assert_not_called()
     assert contexts and contexts[0].is_reply_to_assistant is True
+
+
+@pytest.mark.asyncio
+async def test_recent_assistant_text_returns_last_bot_message(db_session: AsyncSession):
+    user = await _user(db_session, "recent-asst@example.com")
+    conv = Conversation(user_id=user.id, title="Telegram", scope={"source": "telegram"})
+    db_session.add(conv)
+    await db_session.flush()
+    account = TelegramAccount(
+        user_id=user.id,
+        telegram_user_id=70,
+        telegram_chat_id=70,
+        companion_conversation_id=conv.id,
+    )
+    db_session.add(account)
+    base = datetime(2026, 6, 6, 12, 0, tzinfo=timezone.utc)
+    db_session.add(
+        ChatMessage(conversation_id=conv.id, role="assistant", content="first answer", created_at=base)
+    )
+    db_session.add(
+        ChatMessage(
+            conversation_id=conv.id,
+            role="user",
+            content="a question",
+            created_at=base + timedelta(minutes=1),
+        )
+    )
+    db_session.add(
+        ChatMessage(
+            conversation_id=conv.id,
+            role="assistant",
+            content="Which meeting — yesterday's or today's?",
+            created_at=base + timedelta(minutes=2),
+        )
+    )
+    await db_session.commit()
+
+    text = await telegram_routes._recent_assistant_text(db_session, account)
+    assert text == "Which meeting — yesterday's or today's?"
+
+
+@pytest.mark.asyncio
+async def test_recent_assistant_text_none_without_conversation(db_session: AsyncSession):
+    user = await _user(db_session, "recent-asst-none@example.com")
+    account = TelegramAccount(user_id=user.id, telegram_user_id=71, telegram_chat_id=71)
+    db_session.add(account)
+    await db_session.flush()
+    assert await telegram_routes._recent_assistant_text(db_session, account) is None
 
 
 @pytest.mark.asyncio

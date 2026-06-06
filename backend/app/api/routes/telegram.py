@@ -40,6 +40,7 @@ from app.core.companion import (
     ErrorEvent,
     TokenEvent,
     TurnContext,
+    _message_content_to_text,
     run_turn,
 )
 from app.core.companion_actions import (
@@ -90,7 +91,7 @@ from app.core.unified_search import UnifiedHit, unified_search
 from app.core.wai_agent import planner_for_agent
 from app.db.session import get_db_context
 from app.models.agent import Agent, AgentRun, AgentStep
-from app.models.companion import Conversation
+from app.models.companion import ChatMessage, Conversation
 from app.models.companion_pending_action import CompanionPendingAction
 from app.models.item import ItemSummary
 from app.models.reminder import UserReminder
@@ -2728,6 +2729,30 @@ async def _download_telegram_media(
     return data, tg_file.file_path
 
 
+async def _recent_assistant_text(db: AsyncSession, account: TelegramAccount) -> str | None:
+    """The bot's most recent message in this chat, so the voice classifier can tell a
+    short spoken reply (e.g. answering Wai's question) from a standalone note even
+    when the user didn't use Telegram's reply feature. Best-effort; None if no chat yet."""
+    conv_id = account.companion_conversation_id
+    if conv_id is None:
+        return None
+    row = (
+        await db.execute(
+            select(ChatMessage)
+            .where(
+                ChatMessage.conversation_id == conv_id,
+                ChatMessage.role == "assistant",
+            )
+            .order_by(ChatMessage.created_at.desc())
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+    if row is None:
+        return None
+    text = _message_content_to_text(row.content).strip()
+    return text or None
+
+
 async def _route_media_message(
     db: AsyncSession,
     client: TelegramBotClient,
@@ -2808,7 +2833,10 @@ async def _route_media_message(
         if not transcribed.has_speech:
             decision = VoiceRouteDecision("file", "no_speech")
         else:
-            decision = await classify_voice_transcript(transcribed.transcript_text)
+            decision = await classify_voice_transcript(
+                transcribed.transcript_text,
+                recent_assistant_message=await _recent_assistant_text(db, account),
+            )
 
     # Privacy-safe: only the route + reason tag, never the transcript.
     logger.info("telegram voice routed route=%s reason=%s", decision.route, decision.reason)
