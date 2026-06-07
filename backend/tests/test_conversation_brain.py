@@ -224,6 +224,49 @@ async def test_link_conversation_too_short(db_session) -> None:
     assert r.skipped_reason == "too_short"
 
 
+async def test_link_conversation_not_found(db_session) -> None:
+    user = await _make_user(db_session)
+    r = await link_conversation_to_brain(
+        db_session, user.id, uuid4(), entity_extractor=_default_extractor, embedder=_embedder
+    )
+    assert not r.linked
+    assert r.skipped_reason == "not_found"
+
+
+async def test_link_conversation_empty_text_marks_processed(db_session) -> None:
+    """Two complete messages with no extractable text -> processed (watermark
+    set, no chunks) so it isn't rescanned, but nothing is fabricated."""
+    user = await _make_user(db_session)
+    conv = Conversation(user_id=user.id, title="image only")
+    db_session.add(conv)
+    await db_session.flush()
+    for _ in range(2):
+        db_session.add(
+            ChatMessage(
+                conversation_id=conv.id,
+                role="user",
+                content=[{"type": "image", "url": "x"}],
+                status="complete",
+            )
+        )
+    await db_session.flush()
+
+    calls = {"n": 0}
+
+    async def never_called(_text):
+        calls["n"] += 1
+        return []
+
+    r = await link_conversation_to_brain(
+        db_session, user.id, conv.id, entity_extractor=never_called, embedder=_embedder
+    )
+    assert not r.linked
+    assert r.skipped_reason == "empty"
+    assert calls["n"] == 0  # extractor never invoked on empty text
+    await db_session.refresh(conv)
+    assert conv.brain_linked_message_count == 2  # marked processed
+
+
 async def test_link_conversation_force_relinks(db_session) -> None:
     user = await _make_user(db_session)
     conv = await _make_conversation(db_session, user, n_pairs=1)

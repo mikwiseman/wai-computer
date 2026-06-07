@@ -275,6 +275,12 @@ DATA_OWNERSHIP: tuple[TableOwnershipEntry, ...] = (
     ),
     TableOwnershipEntry("message_citations", "owned_exportable", "Companion citation links."),
     TableOwnershipEntry(
+        "conversation_chunks",
+        "owned_exportable",
+        "Embedded chat chunks that make conversations searchable in the Brain.",
+        contains_user_content=True,
+    ),
+    TableOwnershipEntry(
         "companion_pending_actions",
         "owned_exportable",
         "User-approved or pending desktop actions.",
