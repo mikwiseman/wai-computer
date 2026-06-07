@@ -837,10 +837,15 @@ export function getBrainGraph(params?: {
   return apiFetch<BrainGraph>(`/api/brain/graph${asQuery(params ?? {})}`);
 }
 
-export function syncBrain(input: { limit?: number } = {}): Promise<BrainSyncResult> {
+export function syncBrain(
+  input: { limit?: number; includeChats?: boolean } = {},
+): Promise<BrainSyncResult> {
   return apiFetch<BrainSyncResult>("/api/brain/sync", {
     method: "POST",
-    body: JSON.stringify({ limit: input.limit ?? 500 }),
+    body: JSON.stringify({
+      limit: input.limit ?? 500,
+      include_chats: input.includeChats ?? false,
+    }),
   });
 }
 

@@ -380,11 +380,28 @@ async def _build_brain_overview(
         for (kind, sid), ents in source_entities.items()
         if kind == "item" and sid in item_ids and ents
     }
+    # A chat is "organized" once it has been linked into the Brain — either it
+    # produced graph entities, OR it was processed (searchable chunks written)
+    # but had no nameable entity. The watermark is the honest "linked" signal,
+    # so an entity-less chat is not flagged "needs linking" forever.
+    processed_chat_ids: set[uuid.UUID] = set()
+    if chat_ids:
+        processed_chat_ids = {
+            cid
+            for (cid,) in (
+                await db.execute(
+                    select(Conversation.id).where(
+                        Conversation.id.in_(chat_ids),
+                        Conversation.brain_linked_message_count > 0,
+                    )
+                )
+            ).all()
+        }
     organized_chat_ids = {
         sid
         for (kind, sid), ents in source_entities.items()
         if kind == "chat" and sid in chat_ids and ents
-    }
+    } | processed_chat_ids
 
     pending_review_count = int(
         await db.scalar(

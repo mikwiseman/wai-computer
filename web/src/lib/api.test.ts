@@ -693,11 +693,11 @@ describe("api client wrappers", () => {
     expect(mockedApiFetch).toHaveBeenCalledWith("/api/recordings/shared/share-token");
   });
 
-  it("calls syncBrain with a bounded default limit", async () => {
+  it("calls syncBrain with a bounded default limit and no chats", async () => {
     await api.syncBrain();
     expect(mockedApiFetch).toHaveBeenCalledWith("/api/brain/sync", {
       method: "POST",
-      body: JSON.stringify({ limit: 500 }),
+      body: JSON.stringify({ limit: 500, include_chats: false }),
     });
   });
 
@@ -705,7 +705,15 @@ describe("api client wrappers", () => {
     await api.syncBrain({ limit: 250 });
     expect(mockedApiFetch).toHaveBeenCalledWith("/api/brain/sync", {
       method: "POST",
-      body: JSON.stringify({ limit: 250 }),
+      body: JSON.stringify({ limit: 250, include_chats: false }),
+    });
+  });
+
+  it("calls syncBrain with include_chats for the explicit link button", async () => {
+    await api.syncBrain({ limit: 500, includeChats: true });
+    expect(mockedApiFetch).toHaveBeenCalledWith("/api/brain/sync", {
+      method: "POST",
+      body: JSON.stringify({ limit: 500, include_chats: true }),
     });
   });
 

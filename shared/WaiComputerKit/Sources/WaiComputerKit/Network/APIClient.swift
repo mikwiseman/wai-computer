@@ -1512,11 +1512,23 @@ public actor APIClient {
         return try await request(.GET, path: "/api/brain")
     }
 
-    public func syncBrain(limit: Int = 500) async throws -> BrainSyncResult {
+    public func syncBrain(
+        limit: Int = 500,
+        includeChats: Bool = false
+    ) async throws -> BrainSyncResult {
         struct Body: Encodable {
             let limit: Int
+            let includeChats: Bool
+            enum CodingKeys: String, CodingKey {
+                case limit
+                case includeChats = "include_chats"
+            }
         }
-        return try await request(.POST, path: "/api/brain/sync", body: Body(limit: limit))
+        return try await request(
+            .POST,
+            path: "/api/brain/sync",
+            body: Body(limit: limit, includeChats: includeChats)
+        )
     }
 
     /// Force-graph-ready knowledge graph. `focus` returns the ego graph around

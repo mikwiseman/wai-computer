@@ -245,7 +245,7 @@ struct MacBrainView: View {
                         Button {
                             Task { await model.repairBrainLinks() }
                         } label: {
-                            Text(model.linkingBrainSources ? t("Linking", "Связываю") : t("Link summaries", "Связать summary"))
+                            Text(model.linkingBrainSources ? t("Linking", "Связываю") : t("Link now", "Связать сейчас"))
                                 .frame(minWidth: 96)
                         }
                         .buttonStyle(.bordered)
@@ -274,7 +274,7 @@ struct MacBrainView: View {
                 if !unlinkedSources.isEmpty {
                     VStack(alignment: .leading, spacing: Spacing.xs) {
                         HStack(alignment: .firstTextBaseline, spacing: Spacing.xs) {
-                            Text(t("Needs linking", "Нужно связать"))
+                            Text(t("Catching up", "В процессе"))
                                 .font(Typography.labelSmall.weight(.semibold))
                                 .foregroundStyle(Palette.textPrimary)
                             Spacer()
@@ -484,13 +484,13 @@ struct MacBrainView: View {
         }
         if unorganizedSources > 0 {
             return t(
-                "\(organizedSources) of \(totalSources) sources are linked into the mirror; \(unorganizedSources) still need entities.",
-                "\(organizedSources) из \(totalSources) источн. связаны в зеркало; без сущностей: \(unorganizedSources)."
+                "Wai links your recordings, materials, and chats automatically — \(organizedSources) of \(totalSources) done, \(unorganizedSources) catching up.",
+                "Wai связывает записи, материалы и чаты автоматически — готово \(organizedSources) из \(totalSources), ещё \(unorganizedSources) в процессе."
             )
         }
         return t(
-            "All \(totalSources) sources are linked into the mirror.",
-            "Все источники связаны в зеркало: \(totalSources)."
+            "Wai links everything automatically — all \(totalSources) sources are in your Brain.",
+            "Wai связывает всё автоматически — в Мозге все источники: \(totalSources)."
         )
     }
 
@@ -2484,7 +2484,9 @@ final class MacBrainViewModel: ObservableObject {
         linkingBrainSources = true
         defer { linkingBrainSources = false }
         do {
-            let loadedSync = try await apiClient.syncBrain(limit: 500)
+            // The explicit button also links never-linked chats (the auto-sync
+            // on open stays zero-LLM); new chats already auto-link on each turn.
+            let loadedSync = try await apiClient.syncBrain(limit: 500, includeChats: true)
             async let mirrorRequest = apiClient.getBrainMirror(limit: 60)
             async let graphRequest = apiClient.getBrainGraph(limit: 200)
             async let mapsRequest = apiClient.listBrainMaps(limit: 50)

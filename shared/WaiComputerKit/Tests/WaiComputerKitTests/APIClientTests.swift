@@ -1724,24 +1724,28 @@ final class APIClientTests: XCTestCase {
             XCTAssertEqual(request.url?.path, "/api/brain/sync")
             let json = try XCTUnwrap(self.bodyJSON(from: request))
             XCTAssertEqual(json["limit"] as? Int, 250)
+            XCTAssertEqual(json["include_chats"] as? Bool, true)
             let response = HTTPURLResponse(
                 url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil
             )!
             let payload = """
             {"recording_summaries_scanned":2,"item_summaries_scanned":1,\
-            "sources_with_entities":2,"mentions_recorded":4,\
-            "entity_mentions_before":3,"entity_mentions_after":7,\
-            "created_mentions":4,"llm_requests":0}
+            "sources_with_entities":3,"mentions_recorded":7,\
+            "entity_mentions_before":3,"entity_mentions_after":10,\
+            "created_mentions":7,"conversations_scanned":2,\
+            "conversations_linked":1,"llm_requests":1}
             """.data(using: .utf8)!
             return (response, payload)
         }
 
-        let result = try await client.syncBrain(limit: 250)
+        let result = try await client.syncBrain(limit: 250, includeChats: true)
         XCTAssertEqual(result.recordingSummariesScanned, 2)
         XCTAssertEqual(result.itemSummariesScanned, 1)
-        XCTAssertEqual(result.sourcesWithEntities, 2)
-        XCTAssertEqual(result.createdMentions, 4)
-        XCTAssertEqual(result.llmRequests, 0)
+        XCTAssertEqual(result.sourcesWithEntities, 3)
+        XCTAssertEqual(result.createdMentions, 7)
+        XCTAssertEqual(result.conversationsScanned, 2)
+        XCTAssertEqual(result.conversationsLinked, 1)
+        XCTAssertEqual(result.llmRequests, 1)
     }
 
     func testGetEntityPageDecodes() async throws {

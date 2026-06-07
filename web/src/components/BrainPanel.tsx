@@ -540,13 +540,13 @@ function brainOverviewSummary(overview: BrainOverview, t: Translator): string {
   }
   if (unorganizedSources > 0) {
     return t(
-      `${organizedSources} of ${totalSources} sources are linked into the mirror; ${unorganizedSources} still need entities.`,
-      `${organizedSources} из ${totalSources} источн. связаны в зеркало; без сущностей: ${unorganizedSources}.`,
+      `Wai links your recordings, materials, and chats automatically — ${organizedSources} of ${totalSources} done, ${unorganizedSources} catching up.`,
+      `Wai связывает записи, материалы и чаты автоматически — готово ${organizedSources} из ${totalSources}, ещё ${unorganizedSources} в процессе.`,
     );
   }
   return t(
-    `All ${totalSources} sources are linked into the mirror.`,
-    `Все источники связаны в зеркало: ${totalSources}.`,
+    `Wai links everything automatically — all ${totalSources} sources are in your Brain.`,
+    `Wai связывает всё автоматически — в Мозге все источники: ${totalSources}.`,
   );
 }
 
@@ -694,7 +694,7 @@ function BrainSourceMirrorPanel({
               <span>{overview.pending_review_count} {t("needs review", "на проверке")}</span>
             ) : null}
             {unlinkedTotal > 0 ? (
-              <span>{unlinkedTotal} {t("not in Brain", "ещё не в Мозге")}</span>
+              <span>{unlinkedTotal} {t("catching up", "связываются")}</span>
             ) : null}
             {syncResult && syncResult.created_mentions > 0 ? (
               <span>{syncResult.sources_with_entities} {t("synced now", "связано сейчас")}</span>
@@ -707,7 +707,7 @@ function BrainSourceMirrorPanel({
               disabled={syncing}
               onClick={onSync}
             >
-              {syncing ? t("Linking…", "Связываю…") : t("Link summaries", "Связать summary")}
+              {syncing ? t("Linking…", "Связываю…") : t("Link now", "Связать сейчас")}
             </button>
           ) : null}
         </div>
@@ -733,11 +733,11 @@ function BrainSourceMirrorPanel({
       {unlinkedRecentSources.length > 0 ? (
         <div className="brain-source-mirror__needs">
           <div>
-            <h4>{t("Needs linking", "Нужно связать")}</h4>
+            <h4>{t("Catching up", "В процессе")}</h4>
             <p>
               {t(
-                `${unlinkedTotal} source(s) are in Inbox but not part of the mirror yet.`,
-                `${unlinkedTotal} источн. есть в инбоксе, но ещё не в зеркале.`,
+                `${unlinkedTotal} source(s) will link on their own — or tap Link now to do it instantly.`,
+                `${unlinkedTotal} источн. свяжутся сами — или нажмите «Связать сейчас», чтобы сразу.`,
               )}
             </p>
           </div>
@@ -1561,7 +1561,9 @@ export function BrainPanel({
     setLinkingBrainSources(true);
     setError(null);
     try {
-      const syncResult = await syncBrain({ limit: 500 });
+      // The explicit button is the catch-up that also links never-linked
+      // chats (the auto-sync on open stays zero-LLM).
+      const syncResult = await syncBrain({ limit: 500, includeChats: true });
       const [mirrorProjection, graph, mapList, entityList] = await Promise.all([
         getBrainMirror({ limit: 60 }),
         getBrainGraph({ limit: 200 }),

@@ -140,6 +140,8 @@ public struct BrainSyncResult: Codable, Sendable {
     public let entityMentionsBefore: Int
     public let entityMentionsAfter: Int
     public let createdMentions: Int
+    public let conversationsScanned: Int
+    public let conversationsLinked: Int
     public let llmRequests: Int
 
     private enum CodingKeys: String, CodingKey {
@@ -150,6 +152,8 @@ public struct BrainSyncResult: Codable, Sendable {
         case entityMentionsBefore = "entity_mentions_before"
         case entityMentionsAfter = "entity_mentions_after"
         case createdMentions = "created_mentions"
+        case conversationsScanned = "conversations_scanned"
+        case conversationsLinked = "conversations_linked"
         case llmRequests = "llm_requests"
     }
 }

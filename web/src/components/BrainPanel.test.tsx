@@ -543,7 +543,9 @@ describe("BrainPanel (Live Mirror)", () => {
       entity_mentions_before: 3,
       entity_mentions_after: 5,
       created_mentions: 2,
-      llm_requests: 0,
+      conversations_scanned: 1,
+      conversations_linked: 1,
+      llm_requests: 1,
     });
     mockUpdateBrainMap.mockImplementation((_id, input) => Promise.resolve(brainMap({ ...input })));
     mockAskBrain.mockResolvedValue({
@@ -585,19 +587,23 @@ describe("BrainPanel (Live Mirror)", () => {
 
     expect(screen.getByRole("button", { name: "Create Lens" })).toBeInTheDocument();
     expect(screen.getByRole("region", { name: "Source mirror" })).toBeInTheDocument();
-    expect(screen.getByText("2 of 4 sources are linked into the mirror; 2 still need entities.")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "Wai links your recordings, materials, and chats automatically — 2 of 4 done, 2 catching up.",
+      ),
+    ).toBeInTheDocument();
     expect(screen.getByText("Wai chats")).toBeInTheDocument();
     expect(screen.getByText("1 synced now")).toBeInTheDocument();
-    expect(screen.getByText("Needs linking")).toBeInTheDocument();
+    expect(screen.getByText("Catching up")).toBeInTheDocument();
     expect(screen.getByText("Raw project voice memo")).toBeInTheDocument();
     expect(screen.getByText("Wai launch thread")).toBeInTheDocument();
     expect(screen.getAllByText("In Inbox · not in Brain yet").length).toBeGreaterThanOrEqual(2);
     fireEvent.click(screen.getByRole("button", { name: /Wai launch thread/i }));
     expect(onOpenSource).toHaveBeenCalledWith("chat", "c1");
     const syncCallsBeforeRepair = mockSyncBrain.mock.calls.length;
-    fireEvent.click(screen.getByRole("button", { name: "Link summaries" }));
+    fireEvent.click(screen.getByRole("button", { name: "Link now" }));
     await waitFor(() => expect(mockSyncBrain.mock.calls.length).toBeGreaterThan(syncCallsBeforeRepair));
-    expect(mockSyncBrain).toHaveBeenCalledWith({ limit: 500 });
+    expect(mockSyncBrain).toHaveBeenCalledWith({ limit: 500, includeChats: true });
     expect(await screen.findByText("Launch notes")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Pages" })).toBeInTheDocument();
     expect(screen.getByText("Pricing")).toBeInTheDocument();

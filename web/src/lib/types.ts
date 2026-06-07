@@ -997,6 +997,8 @@ export interface BrainSyncResult {
   entity_mentions_before: number;
   entity_mentions_after: number;
   created_mentions: number;
+  conversations_scanned: number;
+  conversations_linked: number;
   llm_requests: number;
 }
 
