@@ -18,6 +18,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.entity_reconcile import reconcile_person_entities
+from app.core.mcp_entity_extract import extract_graph
 from app.core.name_moderation import normalise_name
 from app.models.entity import Entity, EntityMention
 from app.models.item import Item, ItemSummary
@@ -50,15 +51,59 @@ class EntitySummaryBackfillResult:
         }
 
 
-async def upsert_entity(
-    db: AsyncSession, user_id: Any, *, type: str, name: str
-) -> Entity | None:
-    """Get-or-create an Entity, deduped EXACTLY on (user_id, type, normalised name).
+def _attach_identity(entity: Entity, key: str) -> None:
+    """Record a strong identity key (email/handle) on an entity, dedup-safe.
 
-    Returns ``None`` when the name normalises to empty. Race-safe: a concurrent
-    insert of the same key is caught (IntegrityError) and the winning row
-    returned, so two tasks extracting the same person never 500 or duplicate.
+    Reassigns ``metadata_`` so SQLAlchemy marks the JSONB column dirty.
     """
+    md = dict(entity.metadata_ or {})
+    keys = list(md.get("identity_keys") or [])
+    if key not in keys:
+        keys.append(key)
+        md["identity_keys"] = keys
+        entity.metadata_ = md
+
+
+async def _find_by_identity(
+    db: AsyncSession, user_id: Any, type: str, key: str
+) -> Entity | None:
+    """Find an existing entity carrying this strong identity key (email/handle)."""
+    return (
+        await db.execute(
+            select(Entity)
+            .where(
+                Entity.user_id == user_id,
+                Entity.type == type,
+                Entity.metadata_.contains({"identity_keys": [key]}),
+            )
+            .limit(1)
+        )
+    ).scalars().first()
+
+
+async def upsert_entity(
+    db: AsyncSession,
+    user_id: Any,
+    *,
+    type: str,
+    name: str,
+    identity_key: str | None = None,
+) -> Entity | None:
+    """Get-or-create an Entity, deduped on a strong identity key then EXACT name.
+
+    ``identity_key`` (an email address or chat handle) is the strong key: the
+    same person under a new display name but the same address collapses onto one
+    node. Without an identity match we dedup EXACTLY on (user_id, type,
+    normalised name); fuzzy / embedding-similar duplicates go to the Review
+    queue, never a silent merge. Returns ``None`` when there's nothing to key on.
+    Race-safe: a concurrent insert of the same key returns the winning row.
+    """
+    key = identity_key.lower() if identity_key else None
+    if key:
+        existing = await _find_by_identity(db, user_id, type, key)
+        if existing is not None:
+            return existing
+
     clean = normalise_name(name)
     if clean is None:
         return None
@@ -71,21 +116,31 @@ async def upsert_entity(
         )
     ).scalar_one_or_none()
     if found is not None:
+        if key:
+            _attach_identity(found, key)
         return found
 
-    entity = Entity(user_id=user_id, type=type, name=clean)
+    entity = Entity(
+        user_id=user_id,
+        type=type,
+        name=clean,
+        metadata_={"identity_keys": [key]} if key else None,
+    )
     try:
         async with db.begin_nested():
             db.add(entity)
             await db.flush()
     except IntegrityError:
-        return (
+        winner = (
             await db.execute(
                 select(Entity).where(
                     Entity.user_id == user_id, Entity.type == type, Entity.name == clean
                 )
             )
         ).scalar_one()
+        if key:
+            _attach_identity(winner, key)
+        return winner
     return entity
 
 
@@ -188,6 +243,55 @@ async def seed_entities_from_summary(
     if people:
         await reconcile_person_entities(db, user_id)
     return count
+
+
+@dataclass
+class MetadataSeedResult:
+    mentions_recorded: int
+    persons_seeded: int
+
+
+async def seed_entities_from_metadata(
+    db: AsyncSession,
+    user_id: Any,
+    *,
+    source_kind: str,
+    source_id: Any,
+    kind: str,
+    metadata: dict | None,
+) -> MetadataSeedResult:
+    """Promote a synced item's structured record into graph entities + mentions.
+
+    Zero-LLM: reads ``metadata`` (the raw tool record) per :func:`extract_graph`
+    and writes people/topics via the same idempotent ``upsert_entity`` /
+    ``record_mention`` path recordings use. Person dedup uses the email/handle
+    identity key, so the same human across Gmail + Telegram + Calendar collapses
+    onto one node. May raise :class:`ExtractorShapeError` (caller counts it).
+
+    Does NOT run speaker reconciliation here (that scans all entities); the
+    caller reconciles once per sync after all items are seeded.
+    """
+    graph = extract_graph(kind, metadata)
+    mentions = 0
+    persons = 0
+    for ent in graph.entities:
+        entity = await upsert_entity(
+            db, user_id, type=ent.type, name=ent.name, identity_key=ent.identity_key
+        )
+        if entity is None:
+            continue
+        await record_mention(
+            db,
+            user_id=user_id,
+            entity_id=entity.id,
+            source_kind=source_kind,
+            source_id=source_id,
+            context=ent.role,
+        )
+        mentions += 1
+        if ent.type == "person":
+            persons += 1
+    return MetadataSeedResult(mentions_recorded=mentions, persons_seeded=persons)
 
 
 async def _mention_count(db: AsyncSession, user_id: Any | None) -> int:

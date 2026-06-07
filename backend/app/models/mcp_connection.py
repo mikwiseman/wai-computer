@@ -121,6 +121,15 @@ class McpIngestionRun(Base, UUIDMixin):
     items_seen: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     items_created: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     items_skipped: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    # Linking observability: graph mentions written + structured-extractor
+    # failures (a spike flips the connection to a visible "degraded" state).
+    mentions_recorded: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+    extract_errors: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+    extract_error_sample: Mapped[dict | None] = mapped_column(JSONB)
     error_code: Mapped[str | None] = mapped_column(String(100))
     error_message: Mapped[str | None] = mapped_column(Text)
     started_at: Mapped[datetime] = mapped_column(

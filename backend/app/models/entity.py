@@ -29,6 +29,9 @@ class Entity(Base, UUIDMixin, TimestampMixin):
         # Exact dedup key for the upsert path (fuzzy duplicates go to Review,
         # never a silent merge).
         UniqueConstraint("user_id", "type", "name", name="uq_entities_user_type_name"),
+        # GIN index for strong-identity-key lookups (metadata @> {identity_keys:[...]})
+        # so resolving an emailer to an existing person stays cheap at scale.
+        Index("ix_entities_metadata_gin", "metadata", postgresql_using="gin"),
     )
 
     user_id: Mapped[uuid.UUID] = mapped_column(

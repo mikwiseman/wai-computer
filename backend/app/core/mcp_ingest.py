@@ -31,8 +31,10 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.entity_graph import reconcile_person_entities, seed_entities_from_metadata
 from app.core.item_ingest import ingest_item
 from app.core.mcp_client import McpClient, McpResource
+from app.core.mcp_entity_extract import ExtractorShapeError
 from app.core.mcp_item_map import dig, first_value, parse_records, record_to_item_kwargs
 from app.core.mcp_plan import FetchStep, IngestionPlan, plan_tools, resolve_plan_from_tools
 from app.core.mcp_recipes import match_recipe
@@ -64,6 +66,16 @@ class SyncResult:
 
 class DisallowedToolError(RuntimeError):
     """A plan tried to call a tool that isn't allow-listed or is a mutation."""
+
+
+@dataclass
+class _ToolStats:
+    seen: int = 0
+    created: int = 0
+    skipped: int = 0
+    mentions: int = 0      # graph mentions written from item metadata
+    persons: int = 0       # person mentions (drives a single end-of-sync reconcile)
+    errors: int = 0        # structured-extractor shape failures
 
 
 def _connection_token(connection: McpConnection) -> str | None:
@@ -144,12 +156,16 @@ async def sync_connection(
             if plan is None or not plan.steps:
                 final_status = "needs_setup"
             else:
-                t_seen, t_created, t_skipped = await _run_plan(
-                    db, connection, client, plan, embedder
-                )
-                seen += t_seen
-                created += t_created
-                skipped += t_skipped
+                stats = await _run_plan(db, connection, client, plan, embedder)
+                seen += stats.seen
+                created += stats.created
+                skipped += stats.skipped
+                run.mentions_recorded = stats.mentions
+                run.extract_errors = stats.errors
+                # A spike of structured-extractor failures means a provider
+                # format drift — flip to a visible "degraded" state, not silent.
+                if stats.errors and stats.seen and stats.errors / stats.seen > 0.25:
+                    final_status = "degraded"
 
         cursor_after = datetime.now(timezone.utc).isoformat()
         run.status = "succeeded"
@@ -164,6 +180,10 @@ async def sync_connection(
             connection.status = "needs_setup"
             connection.last_error = "no_readable_data_tools"
             run.error_code = "needs_setup"
+        elif final_status == "degraded":
+            connection.status = "degraded"
+            connection.last_error = "structured_extraction_failing"
+            run.error_code = "extract_degraded"
         else:
             connection.status = "active"
             connection.last_error = None
@@ -221,25 +241,23 @@ async def _run_plan(
     client: Any,
     plan: IngestionPlan,
     embedder: Embedder | None,
-) -> tuple[int, int, int]:
+) -> _ToolStats:
     allowed = plan_tools(plan)
     call = _guarded_call(allowed)
-    seen = created = skipped = 0
+    stats = _ToolStats()
     for step in plan.steps:
-        if seen >= MAX_RECORDS_PER_SYNC:
+        if stats.seen >= MAX_RECORDS_PER_SYNC:
             break
         scopes = await _scope_ids(call, client, step)
         for scope in scopes:
-            if seen >= MAX_RECORDS_PER_SYNC:
+            if stats.seen >= MAX_RECORDS_PER_SYNC:
                 break
-            s, c, k = await _drain_step(
-                db, connection, call, client, step, scope, embedder,
-                budget=MAX_RECORDS_PER_SYNC - seen,
-            )
-            seen += s
-            created += c
-            skipped += k
-    return seen, created, skipped
+            await _drain_step(db, connection, call, client, step, scope, embedder, stats)
+    # Link freshly-seeded people to known speakers once per sync (the scan is
+    # too heavy to run per item), idempotent + exact-name only.
+    if stats.persons > 0:
+        await reconcile_person_entities(db, connection.user_id)
+    return stats
 
 
 async def _scope_ids(call, client: Any, step: FetchStep) -> list[Any]:
@@ -266,14 +284,12 @@ async def _drain_step(
     step: FetchStep,
     scope: Any,
     embedder: Embedder | None,
-    *,
-    budget: int,
-) -> tuple[int, int, int]:
-    seen = created = skipped = 0
+    stats: _ToolStats,
+) -> None:
     cursor_val: Any = None
     stream_key = step.enumerate_tool if scope is None else f"{step.enumerate_tool}:{scope}"
     for _page in range(MAX_PAGES_PER_STEP):
-        if seen >= budget:
+        if stats.seen >= MAX_RECORDS_PER_SYNC:
             break
         args = dict(step.enumerate_args)
         if scope is not None and step.scope_arg:
@@ -288,18 +304,14 @@ async def _drain_step(
         if not records:
             break
         for record in records:
-            if seen >= budget:
+            if stats.seen >= MAX_RECORDS_PER_SYNC:
                 break
-            n_created, n_total = await _ingest_from_record(
-                db, connection, call, client, step, record, embedder, stream_key
+            await _ingest_from_record(
+                db, connection, call, client, step, record, embedder, stream_key, stats
             )
-            seen += n_total
-            created += n_created
-            skipped += n_total - n_created
         cursor_val = _next_cursor(raw, step.cursor)
         if not cursor_val:
             break
-    return seen, created, skipped
 
 
 async def _ingest_from_record(
@@ -311,10 +323,10 @@ async def _ingest_from_record(
     enum_record: dict,
     embedder: Embedder | None,
     stream_key: str,
-) -> tuple[int, int]:
-    """Ingest one enumerate row (fetching full content first if configured).
-
-    Returns ``(items_created, items_total)``.
+    stats: _ToolStats,
+) -> None:
+    """Ingest one enumerate row (fetching full content first if configured),
+    then seed graph entities from each created item's structured record.
     """
     records_to_ingest: list[dict] = [enum_record]
     if step.fetch_tool:
@@ -322,18 +334,21 @@ async def _ingest_from_record(
         if fetch_id is None:
             fetch_id = first_value(enum_record, step.field_map.source_ref + ["id", "uri", "path"])
         if fetch_id is None:
-            return 0, 1
+            stats.seen += 1
+            stats.skipped += 1
+            return
         try:
             fraw = await call(client, step.fetch_tool, {step.fetch_arg or "id": fetch_id})
         except DisallowedToolError:
             raise
         except Exception:  # noqa: BLE001 — skip a bad fetch, keep syncing
             logger.info("mcp fetch failed tool=%s", step.fetch_tool)
-            return 0, 1
+            stats.seen += 1
+            stats.skipped += 1
+            return
         fetched = parse_records(fraw, step.fetch_record_path)
         records_to_ingest = fetched or [enum_record]
 
-    n_created = n_total = 0
     for record in records_to_ingest:
         kw = record_to_item_kwargs(
             record, step=step, connection_id=str(connection.id), stream_key=stream_key
@@ -342,9 +357,9 @@ async def _ingest_from_record(
         body = redact_secrets(raw_body)
         if not body.strip():
             continue
-        n_total += 1
+        stats.seen += 1
         privacy = "secret" if contains_secret(raw_body) else connection.privacy_level
-        _item, was_created = await ingest_item(
+        item, was_created = await ingest_item(
             db,
             connection.user_id,
             source=f"mcp:{connection.id}",
@@ -361,9 +376,26 @@ async def _ingest_from_record(
             embed=True,
             embedder=embedder,
         )
-        if was_created:
-            n_created += 1
-    return n_created, n_total
+        if not was_created:
+            stats.skipped += 1
+            continue
+        stats.created += 1
+        # Zero-LLM structured linking from the raw record (only on create —
+        # re-syncs dedup before this point, so mentions never duplicate).
+        try:
+            seeded = await seed_entities_from_metadata(
+                db,
+                connection.user_id,
+                source_kind="item",
+                source_id=item.id,
+                kind=kw["kind"],
+                metadata=kw["metadata"],
+            )
+            stats.mentions += seeded.mentions_recorded
+            stats.persons += seeded.persons_seeded
+        except ExtractorShapeError:
+            stats.errors += 1
+            logger.info("mcp extract shape error kind=%s", kw["kind"])
 
 
 def _next_cursor(raw: str, cursor_spec) -> Any:
