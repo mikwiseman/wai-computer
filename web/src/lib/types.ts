@@ -1416,6 +1416,45 @@ export interface McpIngestionConnection {
   last_sync_at: string | null;
   last_error: string | null;
   created_at: string;
+  catalog_id: string | null;
+  source_type: string | null;
+  backfill_depth: string | null;
+  item_count: number;
+}
+
+// Hermes-style data-source catalog (GET /api/source-catalog). Keep in sync with
+// backend app/core/source_catalog.py and Swift Models/SourceCatalog.swift.
+export interface SourceCatalogCategory {
+  id: string;
+  name_en: string;
+  name_ru: string;
+}
+
+export interface SourceCatalogEntry {
+  id: string;
+  name: string;
+  category: string;
+  icon: string;
+  tagline_en: string;
+  tagline_ru: string;
+  syncs_en: string;
+  syncs_ru: string;
+  auth_type: string; // none | pat | oauth
+  server_url: string;
+  transport: string;
+  default_sync_interval_minutes: number;
+  setup_hint_en: string | null;
+  setup_hint_ru: string | null;
+  status: string; // available | coming_soon
+}
+
+export interface SourceCatalog {
+  version: number;
+  custom_supported: boolean;
+  backfill_depths: string[];
+  default_backfill_depth: string;
+  categories: SourceCatalogCategory[];
+  entries: SourceCatalogEntry[];
 }
 
 export interface Entity {

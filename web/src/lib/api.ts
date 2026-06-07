@@ -45,6 +45,7 @@ import type {
   Item,
   ItemListResponse,
   McpIngestionConnection,
+  SourceCatalog,
   UnifiedSearchResponse,
   BulkAction,
   BulkOperationResponse,
@@ -1107,14 +1108,20 @@ export function listMcpIngestionConnections(): Promise<McpIngestionConnection[]>
   return apiFetch<McpIngestionConnection[]>("/api/mcp-connections");
 }
 
+export function getSourceCatalog(): Promise<SourceCatalog> {
+  return apiFetch<SourceCatalog>("/api/source-catalog");
+}
+
 export function createMcpIngestionConnection(input: {
-  server_label: string;
-  server_url: string;
+  catalog_id?: string;
+  server_label?: string;
+  server_url?: string;
   transport?: string;
   auth_type?: string;
   auth_token?: string | null;
   sync_interval_minutes?: number;
   privacy_level?: string;
+  backfill_depth?: string;
 }): Promise<McpIngestionConnection> {
   return apiFetch<McpIngestionConnection>("/api/mcp-connections", {
     method: "POST",

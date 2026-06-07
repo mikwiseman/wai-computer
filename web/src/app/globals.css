@@ -7411,6 +7411,112 @@ a.primary-button[aria-disabled="true"]:hover {
   display: flex;
   gap: 0.4rem;
   flex: 0 0 auto;
+  flex-wrap: wrap;
+}
+
+/* Hermes-style source catalog */
+.mcp-cat-group {
+  margin-top: 1rem;
+}
+.mcp-cat-title {
+  font-size: var(--font-label-size, 0.8rem);
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--ink-soft, var(--text-secondary));
+  margin: 0 0 0.5rem;
+}
+.mcp-tile-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.5rem;
+}
+.mcp-tile {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-subtle, var(--panel));
+  padding: 0.7rem 0.85rem;
+}
+.mcp-tile-main {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+.mcp-tile-icon {
+  font-size: 1.4rem;
+  line-height: 1;
+  flex: 0 0 auto;
+}
+.mcp-tile-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+.mcp-tile-name {
+  font-weight: 600;
+  font-size: var(--font-body-size);
+}
+.mcp-tile-tagline {
+  font-size: var(--font-body-small-size);
+  color: var(--text-secondary);
+}
+.mcp-tile-action {
+  flex: 0 0 auto;
+}
+.mcp-tile-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.6rem;
+  padding-top: 0.6rem;
+  border-top: 1px solid var(--border);
+}
+.mcp-tile-form input {
+  flex: 1 1 180px;
+  min-width: 0;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel-soft, var(--panel));
+  font-size: var(--font-body-small-size);
+}
+.mcp-pill {
+  display: inline-block;
+  font-size: var(--font-caption-size, 0.72rem);
+  font-weight: 600;
+  padding: 0.2rem 0.55rem;
+  border-radius: 999px;
+}
+.mcp-pill-on {
+  color: var(--success, #2f8f5b);
+  background: color-mix(in srgb, var(--success, #2f8f5b) 14%, transparent);
+}
+.mcp-pill-soon {
+  color: var(--text-secondary);
+  background: var(--surface-hover, rgba(0, 0, 0, 0.06));
+}
+.mcp-depth {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: var(--font-body-small-size);
+  color: var(--text-secondary);
+}
+.mcp-depth select {
+  padding: 0.4rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel-soft, var(--panel));
+  font-size: var(--font-body-small-size);
+}
+.mcp-detail-danger {
+  color: var(--danger, #c0392b);
+}
+.mcp-disconnect {
+  color: var(--danger, #c0392b);
 }
 
 /* needs_input / failed item recovery — paste the text or retry the source. */
