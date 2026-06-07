@@ -36,9 +36,20 @@ class McpResource:
 
 
 @dataclass
+class McpTool:
+    """One advertised tool with the detail the ingestion planner needs."""
+
+    name: str
+    description: str | None = None
+    input_schema: dict | None = None
+    annotations: dict | None = None
+
+
+@dataclass
 class McpIntrospection:
     tools: list[str] = field(default_factory=list)
     resources: list[McpResource] = field(default_factory=list)
+    tool_specs: list[McpTool] = field(default_factory=list)
 
 
 @asynccontextmanager
@@ -64,7 +75,17 @@ class McpClient:
     async def introspect(self) -> McpIntrospection:
         async with _open_session(self.server_url, self.token) as session:
             tools_result = await session.list_tools()
-            tool_names = [t.name for t in getattr(tools_result, "tools", [])]
+            raw_tools = list(getattr(tools_result, "tools", []))
+            tool_names = [t.name for t in raw_tools]
+            tool_specs = [
+                McpTool(
+                    name=t.name,
+                    description=getattr(t, "description", None),
+                    input_schema=getattr(t, "inputSchema", None),
+                    annotations=_annotations_dict(getattr(t, "annotations", None)),
+                )
+                for t in raw_tools
+            ]
             resources: list[McpResource] = []
             try:
                 res_result = await session.list_resources()
@@ -79,7 +100,7 @@ class McpClient:
                     )
             except Exception as exc:  # noqa: BLE001 — server may not support resources
                 logger.info("mcp introspect: resources unavailable (%s)", type(exc).__name__)
-            return McpIntrospection(tools=tool_names, resources=resources)
+            return McpIntrospection(tools=tool_names, resources=resources, tool_specs=tool_specs)
 
     async def list_resources(self) -> list[McpResource]:
         async with _open_session(self.server_url, self.token) as session:
@@ -105,6 +126,20 @@ class McpClient:
         async with _open_session(self.server_url, self.token) as session:
             result = await session.call_tool(name, args)
             return _tool_text(result)
+
+
+def _annotations_dict(annotations: Any) -> dict | None:
+    """Normalize MCP ToolAnnotations (readOnlyHint/destructiveHint/...) to a dict."""
+    if annotations is None:
+        return None
+    if isinstance(annotations, dict):
+        return annotations
+    out: dict[str, Any] = {}
+    for key in ("readOnlyHint", "destructiveHint", "idempotentHint", "openWorldHint", "title"):
+        value = getattr(annotations, key, None)
+        if value is not None:
+            out[key] = value
+    return out or None
 
 
 def _resource_text(result: Any) -> str:
