@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.brain_graph import build_brain_graph
 from app.core.unified_search import UnifiedHit, unified_search
 from app.models.brain_map import BrainMap, BrainMapRevision
+from app.models.companion import ChatMessage, Conversation
 from app.models.entity import Entity, EntityMention
 from app.models.item import Item
 from app.models.recording import Recording, Segment, Summary
@@ -39,6 +40,7 @@ MAX_SCENARIO_SIGNAL_NODES = 6
 MAX_BRIEFING_SOURCE_ROWS = 12
 MAX_BRIEFING_ENTITY_ROWS = 12
 SCOPED_RECORDING_SNIPPET_CHARS = 1200
+SCOPED_CHAT_SNIPPET_CHARS = 1200
 
 
 class BrainMapError(Exception):
@@ -240,7 +242,7 @@ def _source_key_set(projection: dict[str, Any] | None) -> set[str]:
     return {
         str(c.get("id"))
         for c in projection.get("citations", [])
-        if c.get("source_kind") in {"item", "recording"} and c.get("id")
+        if c.get("source_kind") in {"item", "recording", "chat"} and c.get("id")
     }
 
 
@@ -362,7 +364,7 @@ def _allowed_scoped_sources(source_scope: dict[str, Any]) -> set[tuple[str, str]
         (str(ref.get("source_kind")), str(ref.get("source_id")))
         for ref in source_scope.get("sources", [])
         if isinstance(ref, dict)
-        and ref.get("source_kind") in {"item", "recording"}
+        and ref.get("source_kind") in {"item", "recording", "chat"}
         and ref.get("source_id")
     }
 
@@ -381,6 +383,11 @@ async def _scoped_source_hits(
         sid
         for kind, raw_id in allowed
         if kind == "recording" and (sid := _uuid_or_none(raw_id))
+    }
+    chat_ids = {
+        sid
+        for kind, raw_id in allowed
+        if kind == "chat" and (sid := _uuid_or_none(raw_id))
     }
     hits: list[_EvidenceHit] = []
     if item_ids:
@@ -428,6 +435,40 @@ async def _scoped_source_hits(
                     created_at=created_at.isoformat() if created_at else None,
                 )
             )
+    if chat_ids:
+        chat_snippets = await _scoped_chat_snippets(db, chat_ids)
+        activity_at = func.coalesce(
+            Conversation.last_message_at,
+            Conversation.updated_at,
+            Conversation.created_at,
+        )
+        rows = (
+            await db.execute(
+                select(
+                    Conversation.id,
+                    Conversation.title,
+                    activity_at.label("activity_at"),
+                ).where(
+                    Conversation.id.in_(chat_ids),
+                    Conversation.user_id == user_id,
+                    Conversation.deleted_at.is_(None),
+                    Conversation.archived_at.is_(None),
+                )
+            )
+        ).all()
+        for cid, title, source_time in rows:
+            hits.append(
+                _EvidenceHit(
+                    source_kind="chat",
+                    parent_id=str(cid),
+                    chunk_id=str(cid),
+                    title=title or "Wai thread",
+                    kind="chat",
+                    snippet=_shorten(chat_snippets.get(cid, ""), 280),
+                    score=1.0,
+                    created_at=source_time.isoformat() if source_time else None,
+                )
+            )
     return sorted(hits, key=lambda hit: hit.created_at or "", reverse=True)
 
 
@@ -466,15 +507,72 @@ async def _scoped_recording_snippets(
     }
 
 
+def _chat_message_text(content: Any) -> str:
+    if isinstance(content, str):
+        return _clean(content)
+    if isinstance(content, dict):
+        parts: list[str] = []
+        for key in ("text", "content", "output_text"):
+            value = content.get(key)
+            if isinstance(value, str):
+                parts.append(value)
+        return _clean(" ".join(parts))
+    if isinstance(content, list):
+        parts = []
+        for block in content:
+            if isinstance(block, str):
+                parts.append(block)
+            elif isinstance(block, dict):
+                for key in ("text", "content", "output_text"):
+                    value = block.get(key)
+                    if isinstance(value, str):
+                        parts.append(value)
+                        break
+        return _clean(" ".join(parts))
+    return ""
+
+
+async def _scoped_chat_snippets(
+    db: AsyncSession, chat_ids: set[uuid.UUID]
+) -> dict[uuid.UUID, str]:
+    snippets: dict[uuid.UUID, list[str]] = {chat_id: [] for chat_id in chat_ids}
+    rows = (
+        await db.execute(
+            select(ChatMessage.conversation_id, ChatMessage.role, ChatMessage.content)
+            .where(
+                ChatMessage.conversation_id.in_(chat_ids),
+                ChatMessage.role.in_(("user", "assistant")),
+                ChatMessage.status == "complete",
+            )
+            .order_by(ChatMessage.conversation_id, ChatMessage.created_at, ChatMessage.id)
+        )
+    ).all()
+    for conversation_id, role, content in rows:
+        current = _clean(" ".join(snippets.setdefault(conversation_id, [])))
+        if len(current) >= SCOPED_CHAT_SNIPPET_CHARS:
+            continue
+        text = _shorten(_chat_message_text(content), 500)
+        if not text:
+            continue
+        label = "User" if role == "user" else "Wai"
+        snippets[conversation_id].append(f"{label}: {text}")
+
+    return {
+        conversation_id: _shorten(" ".join(parts), SCOPED_CHAT_SNIPPET_CHARS)
+        for conversation_id, parts in snippets.items()
+    }
+
+
 async def _recent_hits(
     db: AsyncSession, user_id: uuid.UUID, *, limit: int
 ) -> list[_EvidenceHit]:
+    per_source_limit = max(1, limit // 3)
     item_rows = (
         await db.execute(
             select(Item.id, Item.title, Item.url, Item.body, Item.kind, Item.created_at)
             .where(Item.user_id == user_id, Item.deleted_at.is_(None))
             .order_by(Item.created_at.desc())
-            .limit(max(1, limit // 2))
+            .limit(per_source_limit)
         )
     ).all()
     rec_rows = (
@@ -482,12 +580,38 @@ async def _recent_hits(
             select(Recording.id, Recording.title, Recording.type, Recording.created_at)
             .where(Recording.user_id == user_id, Recording.deleted_at.is_(None))
             .order_by(Recording.created_at.desc())
-            .limit(max(1, limit // 2))
+            .limit(per_source_limit)
+        )
+    ).all()
+    chat_activity_at = func.coalesce(
+        Conversation.last_message_at,
+        Conversation.updated_at,
+        Conversation.created_at,
+    )
+    chat_rows = (
+        await db.execute(
+            select(
+                Conversation.id,
+                Conversation.title,
+                chat_activity_at.label("activity_at"),
+            )
+            .where(
+                Conversation.user_id == user_id,
+                Conversation.deleted_at.is_(None),
+                Conversation.archived_at.is_(None),
+            )
+            .order_by(chat_activity_at.desc(), Conversation.id.asc())
+            .limit(per_source_limit)
         )
     ).all()
     recording_snippets = (
         await _scoped_recording_snippets(db, {rid for rid, *_rest in rec_rows})
         if rec_rows
+        else {}
+    )
+    chat_snippets = (
+        await _scoped_chat_snippets(db, {cid for cid, *_rest in chat_rows})
+        if chat_rows
         else {}
     )
     hits: list[_EvidenceHit] = []
@@ -517,6 +641,19 @@ async def _recent_hits(
                 created_at=created_at.isoformat() if created_at else None,
             )
         )
+    for cid, title, activity_at in chat_rows:
+        hits.append(
+            _EvidenceHit(
+                source_kind="chat",
+                parent_id=str(cid),
+                chunk_id=str(cid),
+                title=title or "Wai thread",
+                kind="chat",
+                snippet=_shorten(chat_snippets.get(cid, ""), 280),
+                score=1.0,
+                created_at=activity_at.isoformat() if activity_at else None,
+            )
+        )
     return sorted(hits, key=lambda hit: hit.created_at or "", reverse=True)[:limit]
 
 
@@ -532,6 +669,11 @@ async def _owner_visible_sources(
         sid
         for hit in hits
         if hit.source_kind == "recording" and (sid := _uuid_or_none(hit.parent_id))
+    }
+    chat_ids = {
+        sid
+        for hit in hits
+        if hit.source_kind == "chat" and (sid := _uuid_or_none(hit.parent_id))
     }
     sources: dict[tuple[str, uuid.UUID], dict[str, Any]] = {}
     if item_ids:
@@ -570,6 +712,35 @@ async def _owner_visible_sources(
                 "kind": kind,
                 "created_at": created_at.isoformat() if created_at else None,
             }
+    if chat_ids:
+        activity_at = func.coalesce(
+            Conversation.last_message_at,
+            Conversation.updated_at,
+            Conversation.created_at,
+        )
+        rows = (
+            await db.execute(
+                select(
+                    Conversation.id,
+                    Conversation.title,
+                    activity_at.label("activity_at"),
+                ).where(
+                    Conversation.id.in_(chat_ids),
+                    Conversation.user_id == user_id,
+                    Conversation.deleted_at.is_(None),
+                    Conversation.archived_at.is_(None),
+                )
+            )
+        ).all()
+        for cid, title, source_time in rows:
+            sources[("chat", cid)] = {
+                "id": _citation_id("chat", cid),
+                "source_kind": "chat",
+                "source_id": str(cid),
+                "title": title or "Wai thread",
+                "kind": "chat",
+                "created_at": source_time.isoformat() if source_time else None,
+            }
     return sources
 
 
@@ -580,6 +751,7 @@ async def _mentions_for_sources(
 ) -> list[tuple[uuid.UUID, str, str, str, uuid.UUID, str | None]]:
     item_ids = {sid for kind, sid in source_keys if kind == "item"}
     rec_ids = {sid for kind, sid in source_keys if kind == "recording"}
+    chat_ids = {sid for kind, sid in source_keys if kind == "chat"}
     conditions = []
     if item_ids:
         conditions.append(
@@ -591,6 +763,10 @@ async def _mentions_for_sources(
     if rec_ids:
         conditions.append(
             and_(EntityMention.source_kind == "recording", EntityMention.source_id.in_(rec_ids))
+        )
+    if chat_ids:
+        conditions.append(
+            and_(EntityMention.source_kind == "chat", EntityMention.source_id.in_(chat_ids))
         )
     if not conditions:
         return []
@@ -1008,7 +1184,7 @@ async def _build_projection(
                 "id": gap_id,
                 "kind": "gap",
                 "title": "No matching evidence yet",
-                "body": "Wai could not find recordings or materials for this lens.",
+                "body": "Wai could not find recordings, materials, or chats for this lens.",
                 "lane": "gaps",
                 "citation_ids": [],
                 "position": _layout_position(layout, gap_id, lane="gaps", index=0),

@@ -199,3 +199,55 @@ async def test_wai_task_inline_creates_brain_map_for_map_requests(
     planned_steps = steps[0].payload["plan"]["steps"]
     assert planned_steps[1]["tool"] == "create_brain_map"
     assert planned_steps[2]["tool"] == "respond"
+
+
+async def test_wai_task_inline_carries_chat_context_to_brain_map(
+    client,
+    auth_headers,
+    db_session,
+    monkeypatch,
+):
+    async def fake_search(*_args, **_kwargs):
+        return []
+
+    monkeypatch.setattr("app.core.brain_maps.unified_search", fake_search)
+    chat_id = "11111111-1111-4111-8111-111111111111"
+
+    response = await client.post(
+        "/api/wai/tasks",
+        headers=auth_headers,
+        json={
+            "objective": "Create a map of this Wai thread",
+            "context": {"ref_type": "chat", "ref_id": chat_id},
+            "run_inline": True,
+            "idempotency_key": "chat-context-map",
+        },
+    )
+
+    assert response.status_code == 201, response.text
+    body = response.json()
+    brain_map_ref = body["run"]["result"]["brain_maps"][0]
+    stored = (
+        await db_session.execute(
+            select(BrainMap).where(BrainMap.id == UUID(brain_map_ref["map_id"]))
+        )
+    ).scalar_one()
+    assert stored.origin == "agent"
+    assert stored.source_scope["sources"] == [
+        {"source_kind": "chat", "source_id": chat_id}
+    ]
+
+    run_id = UUID(body["run"]["id"])
+    steps = list(
+        (
+            await db_session.execute(
+                select(AgentStep).where(AgentStep.run_id == run_id).order_by(AgentStep.idx)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    planned_steps = steps[0].payload["plan"]["steps"]
+    assert planned_steps[1]["args"]["source_scope"] == {
+        "sources": [{"source_kind": "chat", "source_id": chat_id}]
+    }

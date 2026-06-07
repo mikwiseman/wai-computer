@@ -7,10 +7,12 @@ function graph() {
       { id: "p1", label: "Anna", kind: "person", degree: 3 },
       { id: "t1", label: "GPU", kind: "topic", degree: 1 },
       { id: "item:i1", label: "Note", kind: "item", degree: 0 },
+      { id: "chat:c1", label: "Wai thread", kind: "chat", degree: 0 },
     ],
     edges: [
       { source: "p1", target: "t1", type: "cooccurrence", weight: 2 },
       { source: "item:i1", target: "p1", type: "mention", weight: 1 },
+      { source: "chat:c1", target: "p1", type: "mention", weight: 1 },
     ],
     stats: {},
   };
@@ -28,7 +30,8 @@ describe("buildForceGraph", () => {
   it("includes source nodes + mention edges when showSources is true", () => {
     const { nodes, links } = buildForceGraph(graph(), true);
     expect(nodes.map((n) => n.id)).toContain("item:i1");
-    expect(links).toHaveLength(2);
+    expect(nodes.map((n) => n.id)).toContain("chat:c1");
+    expect(links).toHaveLength(3);
   });
 
   it("sizes nodes by degree and colors by kind", () => {
@@ -53,6 +56,10 @@ describe("buildForceGraph", () => {
     expect(sourceRefFromGraphNode({ id: "recording:r1", kind: "recording" })).toEqual({
       sourceKind: "recording",
       sourceId: "r1",
+    });
+    expect(sourceRefFromGraphNode({ id: "chat:c1", kind: "chat" })).toEqual({
+      sourceKind: "chat",
+      sourceId: "c1",
     });
     expect(sourceRefFromGraphNode({ id: "p1", kind: "person" })).toBeNull();
   });

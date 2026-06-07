@@ -85,7 +85,7 @@ def _brain_map_source_scope(context: dict[str, Any] | None) -> dict[str, Any] | 
         return None
     ref_type = str(context.get("ref_type") or "").strip()
     ref_id = str(context.get("ref_id") or "").strip()
-    if ref_type not in {"recording", "item"} or not ref_id:
+    if ref_type not in {"recording", "item", "chat"} or not ref_id:
         return None
     return {"sources": [{"source_kind": ref_type, "source_id": ref_id}]}
 

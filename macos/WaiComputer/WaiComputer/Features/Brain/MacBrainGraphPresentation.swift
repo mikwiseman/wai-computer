@@ -190,7 +190,7 @@ struct MacBrainGraphPresentation {
     }
 
     static func isSource(_ kind: String) -> Bool {
-        kind == "item" || kind == "recording"
+        kind == "item" || kind == "recording" || kind == "chat"
     }
 
     static func nodePassesBaseFilters(
@@ -223,6 +223,7 @@ struct MacBrainGraphPresentation {
         switch kind {
         case "item": return 0
         case "recording": return 1
+        case "chat": return 2
         default: return 2
         }
     }

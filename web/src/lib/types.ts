@@ -967,6 +967,7 @@ export interface BrainOverviewEntity {
   source_count: number;
   recording_count: number;
   material_count: number;
+  chat_count: number;
 }
 
 export interface BrainOverviewSource {
@@ -981,6 +982,7 @@ export interface BrainOverviewSource {
 export interface BrainOverview {
   recordings: BrainSourceCoverage;
   materials: BrainSourceCoverage;
+  chats: BrainSourceCoverage;
   pending_review_count: number;
   top_entities: BrainOverviewEntity[];
   recent_sources: BrainOverviewSource[];
@@ -1460,7 +1462,7 @@ export interface BrainAnswer {
 
 export interface BrainSourceScope {
   sources: Array<{
-    source_kind: "recording" | "item";
+    source_kind: "recording" | "item" | "chat";
     source_id: string;
   }>;
 }

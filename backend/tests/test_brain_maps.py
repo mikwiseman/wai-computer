@@ -14,6 +14,7 @@ from app.core.brain_maps import create_brain_map, refresh_brain_map
 from app.core.entity_graph import record_mention, upsert_entity
 from app.core.item_ingest import ingest_item
 from app.models.agent import Agent, AgentRun
+from app.models.companion import ChatMessage, Conversation
 from app.models.recording import Recording, Segment, Summary
 from app.models.user import User
 
@@ -298,6 +299,58 @@ async def test_source_scope_seeds_map_from_selected_inbox_voice_memo(
     assert source_node["title"] == "Voice memo about active projects"
     assert "Project Atlas" in source_node["body"]
     assert "security review" in source_node["body"]
+    assert revision.source_count == 1
+
+
+async def test_source_scope_seeds_map_from_selected_wai_chat(
+    db_session, monkeypatch
+) -> None:
+    user = await _make_user(db_session)
+    chat = Conversation(user_id=user.id, title="Wai launch thread")
+    db_session.add(chat)
+    await db_session.flush()
+    db_session.add_all(
+        [
+            ChatMessage(
+                conversation_id=chat.id,
+                role="user",
+                content="Map Project Atlas risks.",
+            ),
+            ChatMessage(
+                conversation_id=chat.id,
+                role="assistant",
+                content=[
+                    {
+                        "type": "text",
+                        "text": "Project Atlas is blocked by legal review. Anna owns rollout.",
+                    }
+                ],
+            ),
+        ]
+    )
+    await db_session.flush()
+
+    async def fake_search(*_args, **_kwargs):
+        return []
+
+    monkeypatch.setattr(brain_maps, "unified_search", fake_search)
+
+    brain_map, revision = await create_brain_map(
+        db_session,
+        user.id,
+        prompt="Map this Wai thread",
+        origin="inbox",
+        source_scope={"sources": [{"source_kind": "chat", "source_id": str(chat.id)}]},
+    )
+
+    source_node = next(n for n in revision.projection["nodes"] if n["kind"] == "source")
+    assert brain_map.origin == "inbox"
+    assert source_node["source_kind"] == "chat"
+    assert source_node["source_id"] == str(chat.id)
+    assert source_node["title"] == "Wai launch thread"
+    assert "Project Atlas" in source_node["body"]
+    assert "Anna owns rollout" in source_node["body"]
+    assert revision.projection["citations"][0]["source_kind"] == "chat"
     assert revision.source_count == 1
 
 

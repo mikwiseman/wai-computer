@@ -124,7 +124,7 @@ class EntityMention(Base, UUIDMixin, TimestampMixin):
         ForeignKey("entities.id", ondelete="CASCADE"),
         nullable=False,
     )
-    # source_kind: "recording" | "item". source_id is polymorphic (no FK).
+    # source_kind: "recording" | "item" | "chat". source_id is polymorphic (no FK).
     source_kind: Mapped[str] = mapped_column(String(20), nullable=False)
     source_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
     # Optional finer-grained provenance (a segment / item_chunk).

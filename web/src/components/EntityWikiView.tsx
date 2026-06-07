@@ -8,7 +8,7 @@ interface EntityWikiViewProps {
   entityId: string;
   onNavigate: (id: string, name: string) => void;
   onError?: (message: string) => void;
-  onOpenSource?: (sourceKind: "recording" | "item", sourceId: string) => void;
+  onOpenSource?: (sourceKind: "recording" | "item" | "chat", sourceId: string) => void;
   locale?: string;
 }
 

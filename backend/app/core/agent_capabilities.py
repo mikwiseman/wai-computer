@@ -462,7 +462,7 @@ AGENT_TOOL_CONTRACTS: tuple[AgentToolContract, ...] = (
                                 "properties": {
                                     "source_kind": {
                                         "type": "string",
-                                        "enum": ["item", "recording"],
+                                        "enum": ["item", "recording", "chat"],
                                     },
                                     "source_id": {"type": "string"},
                                 },

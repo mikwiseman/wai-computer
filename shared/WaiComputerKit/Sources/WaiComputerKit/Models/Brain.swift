@@ -83,12 +83,14 @@ public struct BrainOverviewEntity: Codable, Identifiable, Sendable {
     public let sourceCount: Int
     public let recordingCount: Int
     public let materialCount: Int
+    public let chatCount: Int
 
     private enum CodingKeys: String, CodingKey {
         case id, name, type
         case sourceCount = "source_count"
         case recordingCount = "recording_count"
         case materialCount = "material_count"
+        case chatCount = "chat_count"
     }
 }
 
@@ -113,6 +115,7 @@ public struct BrainOverviewSource: Codable, Identifiable, Sendable {
 public struct BrainOverview: Codable, Sendable {
     public let recordings: BrainSourceCoverage
     public let materials: BrainSourceCoverage
+    public let chats: BrainSourceCoverage
     public let pendingReviewCount: Int
     public let topEntities: [BrainOverviewEntity]
     public let recentSources: [BrainOverviewSource]
@@ -121,6 +124,7 @@ public struct BrainOverview: Codable, Sendable {
     private enum CodingKeys: String, CodingKey {
         case recordings
         case materials
+        case chats
         case pendingReviewCount = "pending_review_count"
         case topEntities = "top_entities"
         case recentSources = "recent_sources"

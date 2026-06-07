@@ -26,6 +26,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.brain_space import BrainReviewPack, BrainSpace
+from app.models.companion import ChatMessage, Conversation
 from app.models.entity import Entity, EntityMention, EntityPageSnapshot
 from app.models.item import Item, ItemSummary
 from app.models.recording import ActionItem, Recording, Summary
@@ -63,6 +64,7 @@ class BrainOverviewEntity:
     source_count: int
     recording_count: int
     material_count: int
+    chat_count: int
 
 
 @dataclass
@@ -79,6 +81,7 @@ class BrainOverviewSource:
 class BrainOverview:
     recordings: SourceCoverage
     materials: SourceCoverage
+    chats: SourceCoverage
     pending_review_count: int
     top_entities: list[BrainOverviewEntity]
     recent_sources: list[BrainOverviewSource]
@@ -175,6 +178,7 @@ async def build_brain_graph(
 
     item_ids: set[uuid.UUID] = set()
     rec_ids: set[uuid.UUID] = set()
+    chat_ids: set[uuid.UUID] = set()
     if include_sources:
         for e in included:
             for kind, sid in entity_sources.get(e, set()):
@@ -182,8 +186,14 @@ async def build_brain_graph(
                     item_ids.add(sid)
                 elif kind == "recording":
                     rec_ids.add(sid)
+                elif kind == "chat":
+                    chat_ids.add(sid)
 
-        present: dict[str, set[uuid.UUID]] = {"item": set(), "recording": set()}
+        present: dict[str, set[uuid.UUID]] = {
+            "item": set(),
+            "recording": set(),
+            "chat": set(),
+        }
         if item_ids:
             rows = (
                 await db.execute(
@@ -220,6 +230,26 @@ async def build_brain_graph(
                         degree=0,
                     )
                 )
+        if chat_ids:
+            rows = (
+                await db.execute(
+                    select(Conversation.id, Conversation.title).where(
+                        Conversation.id.in_(chat_ids),
+                        Conversation.deleted_at.is_(None),
+                        Conversation.archived_at.is_(None),
+                    )
+                )
+            ).all()
+            for cid, title in rows:
+                present["chat"].add(cid)
+                nodes.append(
+                    GraphNode(
+                        id=f"chat:{cid}",
+                        label=(title or "Wai thread"),
+                        kind="chat",
+                        degree=0,
+                    )
+                )
 
         for (kind, sid), ents in source_entities.items():
             if kind not in present or sid not in present[kind]:
@@ -237,6 +267,7 @@ async def build_brain_graph(
         "topics": sum(1 for e in included if entity_meta[e][0] == "topic"),
         "items": len(item_ids),
         "recordings": len(rec_ids),
+        "chats": len(chat_ids),
         "mentions": len(mention_rows),
     }
     overview = await _build_brain_overview(
@@ -273,9 +304,30 @@ async def _build_brain_overview(
             .order_by(Item.created_at.desc(), Item.id.asc())
         )
     ).all()
+    chat_activity_at = func.coalesce(
+        Conversation.last_message_at,
+        Conversation.updated_at,
+        Conversation.created_at,
+    )
+    chat_rows = (
+        await db.execute(
+            select(
+                Conversation.id,
+                Conversation.title,
+                chat_activity_at.label("activity_at"),
+            )
+            .where(
+                Conversation.user_id == user_id,
+                Conversation.deleted_at.is_(None),
+                Conversation.archived_at.is_(None),
+            )
+            .order_by(chat_activity_at.desc(), Conversation.id.asc())
+        )
+    ).all()
 
     recording_ids = {rid for rid, _, _, _ in recording_rows}
     item_ids = {iid for iid, _, _, _, _ in item_rows}
+    chat_ids = {cid for cid, _, _ in chat_rows}
 
     summarized_recording_ids: set[uuid.UUID] = set()
     if recording_ids:
@@ -301,6 +353,23 @@ async def _build_brain_overview(
             ).all()
         }
 
+    summarized_chat_ids: set[uuid.UUID] = set()
+    if chat_ids:
+        summarized_chat_ids = {
+            cid
+            for (cid,) in (
+                await db.execute(
+                    select(ChatMessage.conversation_id)
+                    .where(
+                        ChatMessage.conversation_id.in_(chat_ids),
+                        ChatMessage.role.in_(("user", "assistant")),
+                        ChatMessage.status == "complete",
+                    )
+                    .distinct()
+                )
+            ).all()
+        }
+
     organized_recording_ids = {
         sid
         for (kind, sid), ents in source_entities.items()
@@ -310,6 +379,11 @@ async def _build_brain_overview(
         sid
         for (kind, sid), ents in source_entities.items()
         if kind == "item" and sid in item_ids and ents
+    }
+    organized_chat_ids = {
+        sid
+        for (kind, sid), ents in source_entities.items()
+        if kind == "chat" and sid in chat_ids and ents
     }
 
     pending_review_count = int(
@@ -332,7 +406,8 @@ async def _build_brain_overview(
             1 for kind, sid in sources if kind == "recording" and sid in recording_ids
         )
         material_count = sum(1 for kind, sid in sources if kind == "item" and sid in item_ids)
-        source_count = recording_count + material_count
+        chat_count = sum(1 for kind, sid in sources if kind == "chat" and sid in chat_ids)
+        source_count = recording_count + material_count + chat_count
         if source_count == 0:
             continue
         entity_type, name = entity_meta[entity_id]
@@ -344,6 +419,7 @@ async def _build_brain_overview(
                 source_count=source_count,
                 recording_count=recording_count,
                 material_count=material_count,
+                chat_count=chat_count,
             )
         )
     top_entities.sort(
@@ -351,6 +427,7 @@ async def _build_brain_overview(
             entity.source_count,
             entity.recording_count,
             entity.material_count,
+            entity.chat_count,
             entity.name.lower(),
         ),
         reverse=True,
@@ -393,6 +470,23 @@ async def _build_brain_overview(
                 ),
             )
         )
+    for cid, title, activity_at in chat_rows:
+        source_key = ("chat", cid)
+        source_id = f"chat:{cid}"
+        recent_candidates.append(
+            (
+                activity_at.isoformat() if activity_at else "",
+                source_id,
+                BrainOverviewSource(
+                    id=source_id,
+                    source_kind="chat",
+                    source_id=str(cid),
+                    title=title or "Wai thread",
+                    entity_count=len(source_entities.get(source_key, set())),
+                    organized_at=_isoformat(source_organized_at.get(source_key)),
+                ),
+            )
+        )
     recent_candidates.sort(key=lambda candidate: (candidate[0], candidate[1]), reverse=True)
 
     return BrainOverview(
@@ -407,6 +501,12 @@ async def _build_brain_overview(
             summarized=len(summarized_item_ids),
             organized=len(organized_item_ids),
             unorganized=max(0, len(item_ids) - len(organized_item_ids)),
+        ),
+        chats=SourceCoverage(
+            total=len(chat_ids),
+            summarized=len(summarized_chat_ids),
+            organized=len(organized_chat_ids),
+            unorganized=max(0, len(chat_ids) - len(organized_chat_ids)),
         ),
         pending_review_count=pending_review_count,
         top_entities=top_entities[:8],
@@ -624,6 +724,7 @@ async def build_entity_page(
 
     item_ids = {sid for kind, sid, _ in mentions if kind == "item"}
     rec_ids = {sid for kind, sid, _ in mentions if kind == "recording"}
+    chat_ids = {sid for kind, sid, _ in mentions if kind == "chat"}
     source_meta: dict[tuple[str, uuid.UUID], tuple[str, datetime | None]] = {}
     if item_ids:
         for iid, title, url, occurred_at, created_at in (
@@ -654,6 +755,26 @@ async def build_entity_page(
             )
         ).all():
             source_meta[("recording", rid)] = (title or "Recording", uploaded_at or created_at)
+    if chat_ids:
+        activity_at = func.coalesce(
+            Conversation.last_message_at,
+            Conversation.updated_at,
+            Conversation.created_at,
+        )
+        for cid, title, source_time in (
+            await db.execute(
+                select(
+                    Conversation.id,
+                    Conversation.title,
+                    activity_at.label("activity_at"),
+                ).where(
+                    Conversation.id.in_(chat_ids),
+                    Conversation.deleted_at.is_(None),
+                    Conversation.archived_at.is_(None),
+                )
+            )
+        ).all():
+            source_meta[("chat", cid)] = (title or "Wai thread", source_time)
 
     sources = [
         EntitySource(

@@ -3007,10 +3007,10 @@ function inboxStatusLabel(row: InboxRow, locale: Locale): string | null {
 
 function canCreateBrainLensFromInboxRow(
   row: InboxRow | null,
-): row is InboxRow & { source_kind: "recording" | "item"; status: "ready" } {
+): row is InboxRow & { source_kind: "recording" | "item" | "chat"; status: "ready" } {
   return Boolean(
     row &&
-      (row.source_kind === "recording" || row.source_kind === "item") &&
+      (row.source_kind === "recording" || row.source_kind === "item" || row.source_kind === "chat") &&
       row.status === "ready",
   );
 }
@@ -3579,6 +3579,8 @@ function UniversalInboxPanel({
                     data-testid={
                       row.source_kind === "recording"
                         ? `select-recording-${row.source_id}`
+                        : row.source_kind === "chat"
+                          ? `select-chat-${row.source_id}`
                         : undefined
                     }
                     onClick={() => {
@@ -3638,7 +3640,7 @@ function UniversalInboxPanel({
       <section className="inbox-detail-area" aria-label="Inbox detail">
         {!showCreate &&
         selectedRow &&
-        (selectedRow.source_kind === "recording" || selectedRow.source_kind === "item") ? (
+        (selectedRow.source_kind === "recording" || selectedRow.source_kind === "item" || selectedRow.source_kind === "chat") ? (
           <div className="inbox-detail-actions">
             <div className="inbox-detail-actions__copy">
               <span>{sourceLabel(selectedRow.source_kind, locale)}</span>

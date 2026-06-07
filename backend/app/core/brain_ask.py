@@ -1,14 +1,15 @@
 """Ask your Brain — a single-shot, cited answer with honest gaps (gbrain `think`).
 
 One question over the whole brain returns ONE synthesized answer where every
-substantive claim is cited to the exact recording or item, plus an explicit list
+substantive claim is cited to the exact recording, material, or Wai chat, plus an explicit list
 of what the brain *doesn't* know and a freshness read ("nothing added in 6
 weeks"). The honesty is the point: it never answers from outside the user's own
 Brain sources, and it says so when the material isn't there.
 
-Retrieval reuses the unified recordings + items search; synthesis is one cheap
-strict-JSON Cerebras call. Citations the model returns are validated
-against the retrieved set — an out-of-range cite is dropped, never rendered.
+Retrieval reuses unified recordings + items search and explicit scoped chat
+evidence; synthesis is one cheap strict-JSON Cerebras call. Citations the model
+returns are validated against the retrieved set — an out-of-range cite is
+dropped, never rendered.
 """
 
 from __future__ import annotations
@@ -43,7 +44,7 @@ _STALE_WEEKS = 3
 
 ASK_SYSTEM_PROMPT = (
     "You answer the user's question using ONLY the numbered excerpts from their "
-    "own recordings and saved materials, below. You are their sharp, trusted "
+    "own recordings, saved materials, and Wai chats below. You are their sharp, trusted "
     "colleague who remembers their Brain.\n\n"
     "Rules:\n"
     "- Cite every substantive claim with the excerpt number(s) it came from, like "
@@ -114,8 +115,17 @@ async def _freshness_for(
 
 
 def _excerpt_for_hit(index: int, hit: UnifiedHit | Any) -> str:
-    title = hit.title or ("Recording" if hit.source_kind == "recording" else "Material")
-    source_label = "Recording" if hit.source_kind == "recording" else "Material"
+    fallback_title = {
+        "recording": "Recording",
+        "item": "Material",
+        "chat": "Wai chat",
+    }.get(hit.source_kind, "Source")
+    title = hit.title or fallback_title
+    source_label = {
+        "recording": "Recording",
+        "item": "Material",
+        "chat": "Wai chat",
+    }.get(hit.source_kind, "Source")
     return f"[{index}] ({source_label}: {title}) {(hit.snippet or '')[:_EXCERPT_CHAR_CAP]}"
 
 
@@ -177,7 +187,7 @@ async def ask_brain(
     now: datetime | None = None,
     source_scope: dict[str, Any] | None = None,
 ) -> BrainAnswer:
-    """Answer ``question`` from the user's recordings and items, cited, with honest gaps."""
+    """Answer ``question`` from the user's recordings, items, and chats, cited, with honest gaps."""
     question = (question or "").strip()
     now = now or datetime.now(timezone.utc)
     if not question:

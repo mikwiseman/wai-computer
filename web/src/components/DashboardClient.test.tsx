@@ -742,6 +742,52 @@ describe("DashboardClient", () => {
     expect(screen.getByTestId("brain-panel")).toHaveTextContent("brain:map-from-inbox");
   });
 
+  it("opens the source-scoped Brain map created from a Wai chat in Inbox", async () => {
+    arrangeHappyPathMocks();
+    mockListInbox.mockResolvedValue({
+      rows: [
+        inboxRow({
+          id: "chat:c1",
+          source_kind: "chat",
+          source_id: "c1",
+          detail: { kind: "chat", id: "c1" },
+          title: "Wai launch thread",
+          source_label: "Wai",
+          sublabel: "Agent thread",
+          has_summary: null,
+          folder_id: null,
+        }),
+      ],
+      next_cursor: null,
+      has_more: false,
+    });
+    const user = userEvent.setup();
+
+    render(<DashboardClient />);
+    await waitForDashboardReady();
+
+    await waitFor(() => expect(screen.getByTestId("select-chat-c1")).toBeInTheDocument());
+    await user.click(screen.getByTestId("select-chat-c1"));
+    await user.click(screen.getByRole("button", { name: "Create Lens" }));
+
+    await waitFor(() =>
+      expect(mockCreateBrainMap).toHaveBeenCalledWith({
+        prompt: "Map this source: Wai launch thread",
+        origin: "inbox",
+        source_scope: {
+          sources: [
+            {
+              source_kind: "chat",
+              source_id: "c1",
+            },
+          ],
+        },
+      }),
+    );
+    expect(screen.getByTestId("workspace-title")).toHaveTextContent("Brain");
+    expect(screen.getByTestId("brain-panel")).toHaveTextContent("brain:map-from-inbox");
+  });
+
   it("waits for a processing voice memo before creating a Brain lens", async () => {
     arrangeHappyPathMocks();
     const user = userEvent.setup();

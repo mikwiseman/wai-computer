@@ -10,6 +10,7 @@ import pytest
 import app.core.brain_ask as brain_ask
 from app.core.brain_ask import ask_brain
 from app.core.unified_search import UnifiedHit
+from app.models.companion import ChatMessage, Conversation
 from app.models.user import User
 
 pytestmark = pytest.mark.asyncio
@@ -240,6 +241,61 @@ async def test_source_scope_answers_only_from_selected_source(
     assert answer.answer == "The selected memo says legal review is blocking launch [1]."
     assert [citation.source_id for citation in answer.citations] == [str(selected_id)]
     assert answer.citations[0].title == "Selected voice memo"
+
+
+async def test_source_scope_answers_from_selected_wai_chat(
+    db_session, monkeypatch
+) -> None:
+    user = await _make_user(db_session)
+    chat = Conversation(user_id=user.id, title="Wai launch thread")
+    db_session.add(chat)
+    await db_session.flush()
+    db_session.add_all(
+        [
+            ChatMessage(
+                conversation_id=chat.id,
+                role="user",
+                content={"text": "What blocks Project Atlas?"},
+            ),
+            ChatMessage(
+                conversation_id=chat.id,
+                role="assistant",
+                content=[
+                    {
+                        "type": "text",
+                        "text": "Project Atlas is blocked by legal review. Anna owns rollout.",
+                    }
+                ],
+            ),
+        ]
+    )
+    await db_session.flush()
+
+    async def empty_unified_search(*_a, **_k):
+        return []
+
+    monkeypatch.setattr(brain_ask, "unified_search", empty_unified_search)
+    fake = _fake_cerebras(
+        {
+            "answer": "Project Atlas is blocked by legal review [1].",
+            "citations": [1],
+            "gaps": [],
+        }
+    )
+
+    answer = await ask_brain(
+        db_session,
+        user.id,
+        "what blocks Project Atlas?",
+        cerebras_client=fake,
+        source_scope={"sources": [{"source_kind": "chat", "source_id": str(chat.id)}]},
+    )
+
+    assert answer.answer == "Project Atlas is blocked by legal review [1]."
+    assert [citation.source_kind for citation in answer.citations] == ["chat"]
+    assert [citation.source_id for citation in answer.citations] == [str(chat.id)]
+    assert answer.citations[0].title == "Wai launch thread"
+    assert answer.citations[0].start_ms is None
 
 
 async def test_empty_source_scope_does_not_fall_back_to_whole_brain(

@@ -136,8 +136,8 @@ struct MacBrainView: View {
                     Text(model.activeProjection?.title ?? t("Live Mirror", "Живое зеркало"))
                         .font(Typography.headingSmall)
                     Text(model.activeProjection?.summary ?? t(
-                        "Add recordings or materials from Inbox to build your Brain.",
-                        "Добавьте записи или материалы из инбокса."
+                        "Add recordings, materials, or Wai chats from Inbox to build your Brain.",
+                        "Добавьте записи, материалы или чаты Wai из инбокса."
                     ))
                     .font(Typography.bodySmall)
                     .foregroundStyle(Palette.textSecondary)
@@ -263,6 +263,11 @@ struct MacBrainView: View {
                         title: t("Materials", "Материалы"),
                         coverage: overview.materials,
                         systemImage: "doc.text"
+                    )
+                    sourceCoverageMeter(
+                        title: t("Wai chats", "Чаты Wai"),
+                        coverage: overview.chats,
+                        systemImage: "bubble.left.and.bubble.right"
                     )
                 }
 
@@ -397,7 +402,7 @@ struct MacBrainView: View {
 
     private func brainOverviewSourceRow(_ source: BrainOverviewSource) -> some View {
         HStack(spacing: Spacing.xs) {
-            Image(systemName: source.sourceKind == "recording" ? "waveform" : "doc.text")
+            Image(systemName: sourceKindSystemImage(source.sourceKind))
                 .font(.system(size: 11))
                 .foregroundStyle(source.entityCount > 0 ? Palette.accent : Palette.textTertiary)
                 .frame(width: 16)
@@ -420,7 +425,7 @@ struct MacBrainView: View {
 
     private func unlinkedBrainSourceRow(_ source: BrainOverviewSource) -> some View {
         HStack(spacing: Spacing.xs) {
-            Image(systemName: source.sourceKind == "recording" ? "waveform" : "doc.text")
+            Image(systemName: sourceKindSystemImage(source.sourceKind))
                 .font(.system(size: 11))
                 .foregroundStyle(Palette.textTertiary)
                 .frame(width: 16)
@@ -453,8 +458,8 @@ struct MacBrainView: View {
                     .foregroundStyle(Palette.textPrimary)
                     .lineLimit(1)
                 Text(t(
-                    "\(entity.sourceCount) sources · \(entity.recordingCount) voice · \(entity.materialCount) material",
-                    "\(entity.sourceCount) источн. · голос: \(entity.recordingCount) · материалы: \(entity.materialCount)"
+                    "\(entity.sourceCount) sources · \(entity.recordingCount) voice · \(entity.materialCount) material · \(entity.chatCount) chat",
+                    "\(entity.sourceCount) источн. · голос: \(entity.recordingCount) · материалы: \(entity.materialCount) · чаты: \(entity.chatCount)"
                 ))
                 .font(Typography.labelSmall)
                 .foregroundStyle(Palette.textSecondary)
@@ -468,13 +473,13 @@ struct MacBrainView: View {
     }
 
     private func brainCoverageSummary(_ overview: BrainOverview) -> String {
-        let totalSources = overview.recordings.total + overview.materials.total
-        let organizedSources = overview.recordings.organized + overview.materials.organized
-        let unorganizedSources = overview.recordings.unorganized + overview.materials.unorganized
+        let totalSources = brainOverviewTotalSources(overview)
+        let organizedSources = overview.recordings.organized + overview.materials.organized + overview.chats.organized
+        let unorganizedSources = overview.recordings.unorganized + overview.materials.unorganized + overview.chats.unorganized
         if totalSources == 0 {
             return t(
-                "Brain is waiting for recordings and materials.",
-                "Мозг ждёт записи и материалы."
+                "Brain is waiting for recordings, materials, or Wai chats.",
+                "Мозг ждёт записи, материалы или чаты Wai."
             )
         }
         if unorganizedSources > 0 {
@@ -490,7 +495,7 @@ struct MacBrainView: View {
     }
 
     private func brainUnlinkedSourceCount(_ overview: BrainOverview) -> Int {
-        overview.recordings.unorganized + overview.materials.unorganized
+        overview.recordings.unorganized + overview.materials.unorganized + overview.chats.unorganized
     }
 
     private func brainUnlinkedRecentSources(_ overview: BrainOverview) -> [BrainOverviewSource] {
@@ -503,7 +508,11 @@ struct MacBrainView: View {
 
     private func brainOverviewTotalSources(_ overview: BrainOverview?) -> Int {
         guard let overview else { return 0 }
-        return overview.recordings.total + overview.materials.total
+        return brainOverviewTotalSources(overview)
+    }
+
+    private func brainOverviewTotalSources(_ overview: BrainOverview) -> Int {
+        overview.recordings.total + overview.materials.total + overview.chats.total
     }
 
     private func brainOverviewSourceDetail(_ source: BrainOverviewSource) -> String {
@@ -628,7 +637,7 @@ struct MacBrainView: View {
                             Button {
                                 openSource(kind: citation.sourceKind, id: citation.sourceId)
                             } label: {
-                                Label(brainCitationLabel(citation), systemImage: citation.sourceKind == "recording" ? "waveform" : "doc.text")
+                                Label(brainCitationLabel(citation), systemImage: sourceKindSystemImage(citation.sourceKind))
                                     .font(Typography.labelSmall)
                             }
                             .buttonStyle(.bordered)
@@ -991,8 +1000,8 @@ struct MacBrainView: View {
                 )
                 if let overview = model.brainOverview, brainOverviewTotalSources(overview) > 0 {
                     coverageTile(
-                        value: "\(overview.recordings.total)/\(overview.materials.total)",
-                        label: t("voice/materials", "голос/материалы"),
+                        value: "\(overview.recordings.total)/\(overview.materials.total)/\(overview.chats.total)",
+                        label: t("voice/materials/chats", "голос/материалы/чаты"),
                         systemImage: "waveform"
                     )
                 }
@@ -1065,7 +1074,7 @@ struct MacBrainView: View {
                     mapSourceRow(
                         title: source.title,
                         detail: sourceKindLabel(source.sourceKind),
-                        systemImage: source.sourceKind == "recording" ? "waveform" : "doc.text"
+                        systemImage: sourceKindSystemImage(source.sourceKind)
                     )
                 }
                 .buttonStyle(.plain)
@@ -1111,7 +1120,7 @@ struct MacBrainView: View {
                     mapSourceRow(
                         title: citation.title,
                         detail: sourceKindLabel(citation.sourceKind),
-                        systemImage: citation.sourceKind == "recording" ? "waveform" : "doc.text"
+                        systemImage: sourceKindSystemImage(citation.sourceKind)
                     )
                 }
                 .buttonStyle(.plain)
@@ -1547,8 +1556,8 @@ struct MacBrainView: View {
 
             if model.visiblePages.isEmpty {
                 wikiEmpty(model.entities.isEmpty
-                    ? t("Pages appear as Wai finds people, projects, and topics in your recordings.",
-                        "Страницы появляются, когда Wai находит людей, проекты и темы в ваших записях.")
+                    ? t("Pages appear as Wai finds people, projects, and topics in your sources.",
+                        "Страницы появляются, когда Wai находит людей, проекты и темы в ваших источниках.")
                     : t("No pages match.", "Нет совпадений."))
             } else {
                 VStack(alignment: .leading, spacing: Spacing.xs) {
@@ -1675,7 +1684,7 @@ struct MacBrainView: View {
                     }
                 }
             } else {
-                wikiEmpty(t("Add recordings or materials from Inbox.", "Добавьте записи или материалы из инбокса."))
+                wikiEmpty(t("Add recordings, materials, or Wai chats from Inbox.", "Добавьте записи, материалы или чаты Wai из инбокса."))
             }
         }
     }
@@ -1803,7 +1812,7 @@ struct MacBrainView: View {
             openSource(kind: source.sourceKind, id: source.sourceId)
         } label: {
             HStack(spacing: Spacing.sm) {
-                Image(systemName: source.sourceKind == "recording" ? "waveform" : "doc.text")
+                Image(systemName: sourceKindSystemImage(source.sourceKind))
                     .font(.system(size: 11))
                     .foregroundStyle(Palette.accent)
                 VStack(alignment: .leading, spacing: 2) {
@@ -1827,8 +1836,8 @@ struct MacBrainView: View {
         VStack(alignment: .leading, spacing: Spacing.sm) {
             Text(t("Start with sources", "Начните с источников")).font(Typography.headingSmall)
             wikiEmpty(t(
-                "Add recordings or materials from Inbox to build your Brain.",
-                "Добавьте записи или материалы из инбокса."
+                "Add recordings, materials, or Wai chats from Inbox to build your Brain.",
+                "Добавьте записи, материалы или чаты Wai из инбокса."
             ))
             if let onOpenInbox {
                 Button(t("Open Inbox", "Открыть инбокс")) { onOpenInbox() }
@@ -2072,7 +2081,7 @@ struct MacBrainView: View {
 
     private func openSource(kind: String, id: String) {
         guard let sourceKind = InboxSourceKind(rawValue: kind) else { return }
-        guard sourceKind == .recording || sourceKind == .item else { return }
+        guard sourceKind == .recording || sourceKind == .item || sourceKind == .chat else { return }
         onOpenSource(InboxDetailRef(kind: sourceKind, id: id))
     }
 
@@ -2080,7 +2089,16 @@ struct MacBrainView: View {
         switch kind {
         case "recording": return t("recording", "запись")
         case "item": return t("material", "материал")
+        case "chat": return t("Wai chat", "чат Wai")
         default: return kind
+        }
+    }
+
+    private func sourceKindSystemImage(_ kind: String) -> String {
+        switch kind {
+        case "recording": return "waveform"
+        case "chat": return "bubble.left.and.bubble.right"
+        default: return "doc.text"
         }
     }
 
@@ -2572,7 +2590,9 @@ final class MacBrainViewModel: ObservableObject {
 
     var hasAnything: Bool {
         !(mirror?.nodes.isEmpty ?? true)
-            || ((brainOverview?.recordings.total ?? 0) + (brainOverview?.materials.total ?? 0)) > 0
+            || ((brainOverview?.recordings.total ?? 0)
+                + (brainOverview?.materials.total ?? 0)
+                + (brainOverview?.chats.total ?? 0)) > 0
             || !maps.isEmpty
             || !entities.isEmpty
             || (spaceHome?.claimCounts.values.reduce(0, +) ?? 0) > 0

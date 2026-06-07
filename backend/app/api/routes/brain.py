@@ -151,6 +151,7 @@ class BrainOverviewEntityResponse(BaseModel):
     source_count: int
     recording_count: int
     material_count: int
+    chat_count: int
 
 
 class BrainOverviewSourceResponse(BaseModel):
@@ -165,6 +166,7 @@ class BrainOverviewSourceResponse(BaseModel):
 class BrainOverviewResponse(BaseModel):
     recordings: BrainSourceCoverageResponse
     materials: BrainSourceCoverageResponse
+    chats: BrainSourceCoverageResponse
     pending_review_count: int
     top_entities: list[BrainOverviewEntityResponse]
     recent_sources: list[BrainOverviewSourceResponse]

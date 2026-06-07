@@ -370,7 +370,7 @@ struct MacBrainGraphView: View {
     }
 
     private func sourceDetail(for node: BrainGraphNode) -> InboxDetailRef? {
-        guard node.kind == "recording" || node.kind == "item",
+        guard MacBrainGraphPresentation.isSource(node.kind),
               let sourceKind = InboxSourceKind(rawValue: node.kind)
         else { return nil }
         let prefix = "\(node.kind):"
@@ -464,6 +464,7 @@ struct MacBrainGraphView: View {
         case "topic": return Palette.accent
         case "project": return .orange
         case "recording": return .purple
+        case "chat": return .brown
         case "item": return .gray
         default: return .secondary
         }
@@ -534,6 +535,7 @@ struct MacBrainGraphView: View {
         case "organization": return t("Organization", "Организация")
         case "item": return t("Material", "Материал")
         case "recording": return t("Recording", "Запись")
+        case "chat": return t("Wai chat", "чат Wai")
         default: return kind.capitalized
         }
     }
@@ -545,6 +547,7 @@ struct MacBrainGraphView: View {
         case "organization": return "building.2"
         case "recording": return "waveform"
         case "item": return "doc.text"
+        case "chat": return "bubble.left.and.bubble.right"
         default: return "tag"
         }
     }

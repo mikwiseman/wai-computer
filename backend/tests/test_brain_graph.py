@@ -9,6 +9,7 @@ from app.core.brain_graph import build_brain_graph, build_entity_page
 from app.core.entity_graph import record_mention, upsert_entity
 from app.core.item_ingest import ingest_item
 from app.models.brain_space import BrainReviewPack, BrainSpace
+from app.models.companion import ChatMessage, Conversation
 from app.models.item import ItemSummary
 from app.models.recording import Recording, RecordingStatus, Summary
 from app.models.user import User
@@ -65,7 +66,8 @@ async def test_graph_includes_item_and_recording_source_nodes(db_session) -> Non
         db_session, user.id, source="paste", title="Solar Note", body="about solar", embed=False
     )
     rec = Recording(user_id=user.id, type="note", status=RecordingStatus.READY.value)
-    db_session.add(rec)
+    chat = Conversation(user_id=user.id, title="Solar Wai thread")
+    db_session.add_all([rec, chat])
     await db_session.flush()
 
     anna = await upsert_entity(db_session, user.id, type="person", name="Anna")
@@ -75,20 +77,28 @@ async def test_graph_includes_item_and_recording_source_nodes(db_session) -> Non
     await record_mention(
         db_session, user_id=user.id, entity_id=anna.id, source_kind="recording", source_id=rec.id
     )
+    await record_mention(
+        db_session, user_id=user.id, entity_id=anna.id, source_kind="chat", source_id=chat.id
+    )
 
     g = await build_brain_graph(db_session, user.id, include_sources=True)
 
     kinds = {n.kind for n in g.nodes}
-    assert {"person", "item", "recording"} <= kinds
+    assert {"person", "item", "recording", "chat"} <= kinds
     item_node = next(n for n in g.nodes if n.kind == "item")
     assert item_node.id == f"item:{item.id}"
     assert item_node.label == "Solar Note"
+    chat_node = next(n for n in g.nodes if n.kind == "chat")
+    assert chat_node.id == f"chat:{chat.id}"
+    assert chat_node.label == "Solar Wai thread"
 
     mention_edges = {(e.source, e.target) for e in g.edges if e.type == "mention"}
     assert (f"item:{item.id}", str(anna.id)) in mention_edges
     assert (f"recording:{rec.id}", str(anna.id)) in mention_edges
+    assert (f"chat:{chat.id}", str(anna.id)) in mention_edges
     assert g.stats["items"] == 1
     assert g.stats["recordings"] == 1
+    assert g.stats["chats"] == 1
 
 
 async def test_graph_overview_reports_source_coverage(db_session) -> None:
@@ -138,6 +148,23 @@ async def test_graph_overview_reports_source_coverage(db_session) -> None:
             key_moments=[],
         )
     )
+    chat = Conversation(user_id=user.id, title="Wai launch thread")
+    db_session.add(chat)
+    await db_session.flush()
+    db_session.add_all(
+        [
+            ChatMessage(
+                conversation_id=chat.id,
+                role="user",
+                content="What blocks launch?",
+            ),
+            ChatMessage(
+                conversation_id=chat.id,
+                role="assistant",
+                content=[{"type": "text", "text": "Legal review blocks launch."}],
+            ),
+        ]
+    )
     space = BrainSpace(
         owner_user_id=user.id,
         name="Personal",
@@ -182,6 +209,13 @@ async def test_graph_overview_reports_source_coverage(db_session) -> None:
         source_kind="item",
         source_id=item.id,
     )
+    await record_mention(
+        db_session,
+        user_id=user.id,
+        entity_id=anna.id,
+        source_kind="chat",
+        source_id=chat.id,
+    )
 
     graph = await build_brain_graph(db_session, user.id, include_sources=True)
 
@@ -194,13 +228,18 @@ async def test_graph_overview_reports_source_coverage(db_session) -> None:
     assert graph.overview.materials.summarized == 1
     assert graph.overview.materials.organized == 1
     assert graph.overview.materials.unorganized == 0
+    assert graph.overview.chats.total == 1
+    assert graph.overview.chats.summarized == 1
+    assert graph.overview.chats.organized == 1
+    assert graph.overview.chats.unorganized == 0
     assert graph.overview.pending_review_count == 1
     assert graph.overview.llm_requests == 0
 
     anna_overview = next(entity for entity in graph.overview.top_entities if entity.name == "Anna")
-    assert anna_overview.source_count == 2
+    assert anna_overview.source_count == 3
     assert anna_overview.recording_count == 1
     assert anna_overview.material_count == 1
+    assert anna_overview.chat_count == 1
 
     recent_by_id = {source.id: source for source in graph.overview.recent_sources}
     assert recent_by_id[f"recording:{organized_rec.id}"].entity_count == 2
@@ -208,6 +247,8 @@ async def test_graph_overview_reports_source_coverage(db_session) -> None:
     assert recent_by_id[f"recording:{unorganized_rec.id}"].entity_count == 0
     assert recent_by_id[f"recording:{unorganized_rec.id}"].organized_at is None
     assert recent_by_id[f"item:{item.id}"].title == "Project material"
+    assert recent_by_id[f"chat:{chat.id}"].title == "Wai launch thread"
+    assert recent_by_id[f"chat:{chat.id}"].entity_count == 1
 
 
 async def test_focus_returns_only_the_ego_graph(db_session) -> None:
@@ -242,6 +283,7 @@ async def test_brain_graph_route_smoke(client, auth_headers) -> None:
     assert data["stats"]["entities"] == 0  # fresh user -> honest empty graph
     assert data["overview"]["recordings"]["total"] == 0
     assert data["overview"]["materials"]["total"] == 0
+    assert data["overview"]["chats"]["total"] == 0
 
 
 async def test_brain_sync_route_backfills_existing_summary_entities(

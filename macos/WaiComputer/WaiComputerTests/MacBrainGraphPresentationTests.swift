@@ -34,7 +34,7 @@ final class MacBrainGraphPresentationTests: XCTestCase {
 
         XCTAssertEqual(
             Set(presentation.visibleNodes.map(\.id)),
-            Set(["anna", "gpu", "item:note-1", "recording:call-1"])
+            Set(["anna", "gpu", "item:note-1", "recording:call-1", "chat:wai-1"])
         )
         XCTAssertTrue(presentation.visibleEdges.contains { $0.source == "anna" && $0.target == "gpu" })
         XCTAssertFalse(presentation.visibleNodes.contains { $0.id == "wai" })
@@ -49,7 +49,7 @@ final class MacBrainGraphPresentationTests: XCTestCase {
         XCTAssertEqual(details.node.label, "Anna")
         XCTAssertEqual(details.entityNeighbors.map(\.node.id), ["gpu", "wai"])
         XCTAssertEqual(details.entityNeighbors.map(\.sharedCount), [2, 1])
-        XCTAssertEqual(details.sourceNeighbors.map(\.node.id), ["item:note-1", "recording:call-1"])
+        XCTAssertEqual(details.sourceNeighbors.map(\.node.id), ["item:note-1", "recording:call-1", "chat:wai-1"])
     }
 
     func testSelectedEdgesExposeSelectedNodeNeighborhoodOnly() throws {
@@ -59,6 +59,7 @@ final class MacBrainGraphPresentationTests: XCTestCase {
         XCTAssertTrue(presentation.isHighlighted(nodeId: "anna"))
         XCTAssertTrue(presentation.isHighlighted(nodeId: "gpu"))
         XCTAssertTrue(presentation.isHighlighted(nodeId: "item:note-1"))
+        XCTAssertTrue(presentation.isHighlighted(nodeId: "chat:wai-1"))
         XCTAssertFalse(presentation.isHighlighted(nodeId: "recording:unrelated"))
         XCTAssertTrue(presentation.isHighlighted(edge: edge(source: "anna", target: "gpu", type: "cooccurrence")))
         XCTAssertFalse(presentation.isHighlighted(edge: edge(source: "recording:unrelated", target: "wai", type: "mention")))
@@ -73,6 +74,7 @@ final class MacBrainGraphPresentationTests: XCTestCase {
             {"id": "wai", "label": "WaiComputer", "kind": "project", "degree": 1},
             {"id": "item:note-1", "label": "Architecture note", "kind": "item", "degree": 0},
             {"id": "recording:call-1", "label": "Anna call", "kind": "recording", "degree": 0},
+            {"id": "chat:wai-1", "label": "Wai launch thread", "kind": "chat", "degree": 0},
             {"id": "recording:unrelated", "label": "Unrelated call", "kind": "recording", "degree": 0}
           ],
           "edges": [
@@ -81,9 +83,10 @@ final class MacBrainGraphPresentationTests: XCTestCase {
             {"source": "item:note-1", "target": "anna", "type": "mention", "weight": 1.0},
             {"source": "item:note-1", "target": "gpu", "type": "mention", "weight": 1.0},
             {"source": "recording:call-1", "target": "anna", "type": "mention", "weight": 1.0},
+            {"source": "chat:wai-1", "target": "anna", "type": "mention", "weight": 1.0},
             {"source": "recording:unrelated", "target": "wai", "type": "mention", "weight": 1.0}
           ],
-          "stats": {"entities": 3, "people": 1, "topics": 1, "projects": 1, "items": 1, "recordings": 2}
+          "stats": {"entities": 3, "people": 1, "topics": 1, "projects": 1, "items": 1, "recordings": 2, "chats": 1}
         }
         """.data(using: .utf8)!
         return try JSONDecoder().decode(BrainGraph.self, from: payload)

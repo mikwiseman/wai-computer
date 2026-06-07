@@ -62,7 +62,7 @@ interface BrainPanelProps {
   locale?: string;
   initialMapId?: string | null;
   onError?: (message: string) => void;
-  onOpenSource?: (sourceKind: "recording" | "item", sourceId: string) => void;
+  onOpenSource?: (sourceKind: "recording" | "item" | "chat", sourceId: string) => void;
   onOpenInbox?: () => void;
   onOpenWai?: (brain: { spaceId: string; spaceName: string }) => void | Promise<void>;
 }
@@ -177,6 +177,7 @@ function mapTypeLabel(type: string, t: Translator): string {
 function sourceKindLabel(kind: string, t: Translator): string {
   if (kind === "recording") return t("recording", "запись");
   if (kind === "item") return t("material", "материал");
+  if (kind === "chat") return t("Wai chat", "чат Wai");
   return kind;
 }
 
@@ -255,8 +256,8 @@ function mapWatchText(
   }
   if (projection.citations.length === 0) {
     return t(
-      "Add recordings or materials to ground this lens.",
-      "Добавьте записи или материалы, чтобы заземлить линзу.",
+      "Add recordings, materials, or Wai chats to ground this lens.",
+      "Добавьте записи, материалы или чаты Wai, чтобы заземлить линзу.",
     );
   }
   if (revision.diff.changed) {
@@ -314,7 +315,7 @@ function hiddenFocusCount(briefing: BrainMapBriefing): number {
 
 function brainOverviewTotalSources(overview: BrainOverview | null): number {
   if (!overview) return 0;
-  return overview.recordings.total + overview.materials.total;
+  return overview.recordings.total + overview.materials.total + overview.chats.total;
 }
 
 function sourceWord(count: number, t: Translator): string {
@@ -531,11 +532,11 @@ function BrainAskPanel({
 }
 
 function brainOverviewSummary(overview: BrainOverview, t: Translator): string {
-  const totalSources = overview.recordings.total + overview.materials.total;
-  const organizedSources = overview.recordings.organized + overview.materials.organized;
-  const unorganizedSources = overview.recordings.unorganized + overview.materials.unorganized;
+  const totalSources = brainOverviewTotalSources(overview);
+  const organizedSources = overview.recordings.organized + overview.materials.organized + overview.chats.organized;
+  const unorganizedSources = overview.recordings.unorganized + overview.materials.unorganized + overview.chats.unorganized;
   if (totalSources === 0) {
-    return t("Brain is waiting for recordings and materials.", "Мозг ждёт записи и материалы.");
+    return t("Brain is waiting for recordings, materials, or Wai chats.", "Мозг ждёт записи, материалы или чаты Wai.");
   }
   if (unorganizedSources > 0) {
     return t(
@@ -552,13 +553,16 @@ function brainOverviewSummary(overview: BrainOverview, t: Translator): string {
 function BrainSourceCoverageMeter({
   title,
   coverage,
+  summarizedLabel,
   t,
 }: {
   title: string;
   coverage: BrainSourceCoverage;
+  summarizedLabel?: string;
   t: Translator;
 }) {
   const total = Math.max(coverage.total, 1);
+  const summaryLabel = summarizedLabel ?? t("summarized", "summary");
   return (
     <div className="brain-source-mirror__meter">
       <div>
@@ -577,8 +581,8 @@ function BrainSourceCoverageMeter({
       </div>
       <small>
         {t(
-          `${coverage.summarized} summarized · ${coverage.organized} linked · ${coverage.unorganized} not linked`,
-          `${coverage.summarized} summary · ${coverage.organized} связано · ${coverage.unorganized} без связей`,
+          `${coverage.summarized} ${summaryLabel} · ${coverage.organized} linked · ${coverage.unorganized} not linked`,
+          `${coverage.summarized} ${summaryLabel} · ${coverage.organized} связано · ${coverage.unorganized} без связей`,
         )}
       </small>
     </div>
@@ -647,7 +651,7 @@ function BrainOverviewEntityRow({
     >
       <strong>{entity.name}</strong>
       <em>
-        {entity.source_count} {t("sources", "источн.")} · {entity.recording_count} {t("voice", "голос")} · {entity.material_count} {t("material", "материал")}
+        {entity.source_count} {t("sources", "источн.")} · {entity.recording_count} {t("voice", "голос")} · {entity.material_count} {t("material", "материал")} · {entity.chat_count} {t("chat", "чат")}
       </em>
     </button>
   );
@@ -670,7 +674,7 @@ function BrainSourceMirrorPanel({
   onSync: () => void;
   t: Translator;
 }) {
-  const unlinkedTotal = overview.recordings.unorganized + overview.materials.unorganized;
+  const unlinkedTotal = overview.recordings.unorganized + overview.materials.unorganized + overview.chats.unorganized;
   const unlinkedRecentSources = overview.recent_sources
     .filter((source) => source.entity_count === 0)
     .slice(0, 4);
@@ -717,6 +721,12 @@ function BrainSourceMirrorPanel({
         <BrainSourceCoverageMeter
           title={t("Materials", "Материалы")}
           coverage={overview.materials}
+          t={t}
+        />
+        <BrainSourceCoverageMeter
+          title={t("Wai chats", "Чаты Wai")}
+          coverage={overview.chats}
+          summarizedLabel={t("readable", "доступно")}
           t={t}
         />
       </div>
@@ -886,8 +896,8 @@ function BrainMapCoverageLedger({
         />
         {hasWholeBrain && overview ? (
           <BriefingMetric
-            value={`${overview.recordings.total}/${overview.materials.total}`}
-            label={t("voice/materials in Brain", "голос/материалы")}
+            value={`${overview.recordings.total}/${overview.materials.total}/${overview.chats.total}`}
+            label={t("voice/materials/chats in Brain", "голос/материалы/чаты")}
           />
         ) : null}
       </div>
@@ -1485,7 +1495,7 @@ export function BrainPanel({
 
   const openSource = useCallback(
     (sourceKind: string, sourceId: string) => {
-      if (sourceKind !== "recording" && sourceKind !== "item") return;
+      if (sourceKind !== "recording" && sourceKind !== "item" && sourceKind !== "chat") return;
       onOpenSource?.(sourceKind, sourceId);
     },
     [onOpenSource],
@@ -1777,7 +1787,7 @@ export function BrainPanel({
   const sources = spaceHome?.sources ?? [];
   const hasAnything =
     entities.length > 0 ||
-    ((brainOverview?.recordings.total ?? 0) + (brainOverview?.materials.total ?? 0)) > 0 ||
+    brainOverviewTotalSources(brainOverview) > 0 ||
     maps.length > 0 ||
     approvedKnowledgeCount > 0 ||
     reviewPacks.length > 0 ||
@@ -1811,7 +1821,7 @@ export function BrainPanel({
       onClick={() => openSource(source.source_kind, source.source_id)}
     >
       <strong>{source.source_title ?? t("Untitled source", "Источник без названия")}</strong>
-      <em>{source.source_kind === "recording" ? t("recording", "запись") : t("material", "материал")}</em>
+      <em>{sourceKindLabel(source.source_kind, t)}</em>
     </button>
   );
 
@@ -1911,7 +1921,7 @@ export function BrainPanel({
       {!hasAnything ? (
         <div className="brain-panel__empty-state">
           <h3>{t("Start with sources", "Начните с источников")}</h3>
-          <p>{t("Add recordings or materials from Inbox to build your Brain.", "Добавьте записи или материалы из инбокса.")}</p>
+          <p>{t("Add recordings, materials, or Wai chats from Inbox to build your Brain.", "Добавьте записи, материалы или чаты Wai из инбокса.")}</p>
           {onOpenInbox ? (
             <button type="button" className="wai-secondary-button" onClick={onOpenInbox}>
               {t("Open Inbox", "Открыть инбокс")}

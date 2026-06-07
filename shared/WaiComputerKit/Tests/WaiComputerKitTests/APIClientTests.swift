@@ -1697,8 +1697,9 @@ final class APIClientTests: XCTestCase {
             "stats":{"entities":1,"people":1},\
             "overview":{"recordings":{"total":2,"summarized":1,"organized":1,"unorganized":1},\
             "materials":{"total":1,"summarized":1,"organized":1,"unorganized":0},\
+            "chats":{"total":1,"summarized":1,"organized":0,"unorganized":1},\
             "pending_review_count":1,\
-            "top_entities":[{"id":"e1","name":"Anna","type":"person","source_count":2,"recording_count":1,"material_count":1}],\
+            "top_entities":[{"id":"e1","name":"Anna","type":"person","source_count":3,"recording_count":1,"material_count":1,"chat_count":1}],\
             "recent_sources":[{"id":"recording:r1","source_kind":"recording","source_id":"r1","title":"Launch sync","entity_count":2,"organized_at":null}],\
             "llm_requests":0}}
             """.data(using: .utf8)!
@@ -1710,8 +1711,10 @@ final class APIClientTests: XCTestCase {
         XCTAssertEqual(g.edges[0].type, "cooccurrence")
         XCTAssertEqual(g.stats["people"], 1)
         XCTAssertEqual(g.overview?.recordings.unorganized, 1)
+        XCTAssertEqual(g.overview?.chats.unorganized, 1)
         XCTAssertEqual(g.overview?.pendingReviewCount, 1)
         XCTAssertEqual(g.overview?.topEntities.first?.recordingCount, 1)
+        XCTAssertEqual(g.overview?.topEntities.first?.chatCount, 1)
     }
 
     func testSyncBrainPostsLimitAndDecodes() async throws {

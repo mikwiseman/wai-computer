@@ -13,10 +13,11 @@ const KIND_COLOR: Record<string, string> = {
   project: "#3da35d",
   item: "#9aa0a6",
   recording: "#a06bd4",
+  chat: "#c47a35",
 };
 
 const ENTITY_KINDS = new Set(["person", "topic", "project"]);
-const SOURCE_KINDS = new Set(["item", "recording"]);
+const SOURCE_KINDS = new Set(["item", "recording", "chat"]);
 
 export interface ForceGraphNode {
   id: string;
@@ -38,12 +39,12 @@ export interface ForceGraphLink {
 }
 
 /** Pure: map the API graph into react-force-graph's {nodes, links}, optionally
- *  dropping item/recording source nodes (and any edges that referenced them). */
+ *  dropping item/recording/chat source nodes (and any edges that referenced them). */
 export function buildForceGraph(
   graph: BrainGraph,
   showSources: boolean,
 ): { nodes: ForceGraphNode[]; links: ForceGraphLink[] } {
-  const keep = (kind: string) => showSources || (kind !== "item" && kind !== "recording");
+  const keep = (kind: string) => showSources || !SOURCE_KINDS.has(kind);
   const visibleNodes = graph.nodes.filter((n) => keep(n.kind));
   const labeledIds = new Set(
     [...visibleNodes]
@@ -70,13 +71,13 @@ export function buildForceGraph(
 
 export function sourceRefFromGraphNode(
   node: { id?: string | number; kind?: string },
-): { sourceKind: "item" | "recording"; sourceId: string } | null {
+): { sourceKind: "item" | "recording" | "chat"; sourceId: string } | null {
   if (!node || typeof node.id !== "string" || !node.kind || !SOURCE_KINDS.has(node.kind)) {
     return null;
   }
   const prefix = `${node.kind}:`;
   return {
-    sourceKind: node.kind as "item" | "recording",
+    sourceKind: node.kind as "item" | "recording" | "chat",
     sourceId: node.id.startsWith(prefix) ? node.id.slice(prefix.length) : node.id,
   };
 }
@@ -86,7 +87,7 @@ interface BrainGraphViewProps {
   showSources: boolean;
   onToggleSources: (value: boolean) => void;
   onFocusEntity: (entityId: string) => void;
-  onOpenSource?: (sourceKind: "recording" | "item", sourceId: string) => void;
+  onOpenSource?: (sourceKind: "recording" | "item" | "chat", sourceId: string) => void;
   focused: boolean;
   onResetFocus: () => void;
   locale?: string;

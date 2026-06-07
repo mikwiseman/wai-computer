@@ -171,6 +171,7 @@ function graphOverview(overrides = {}) {
   return {
     recordings: { total: 2, summarized: 1, organized: 1, unorganized: 1 },
     materials: { total: 1, summarized: 1, organized: 1, unorganized: 0 },
+    chats: { total: 1, summarized: 1, organized: 0, unorganized: 1 },
     pending_review_count: 1,
     top_entities: [
       {
@@ -180,6 +181,7 @@ function graphOverview(overrides = {}) {
         source_count: 2,
         recording_count: 1,
         material_count: 1,
+        chat_count: 0,
       },
     ],
     recent_sources: [
@@ -196,6 +198,14 @@ function graphOverview(overrides = {}) {
         source_kind: "recording",
         source_id: "r2",
         title: "Raw project voice memo",
+        entity_count: 0,
+        organized_at: null,
+      },
+      {
+        id: "chat:c1",
+        source_kind: "chat",
+        source_id: "c1",
+        title: "Wai launch thread",
         entity_count: 0,
         organized_at: null,
       },
@@ -569,16 +579,21 @@ describe("BrainPanel (Live Mirror)", () => {
   });
 
   it("opens on a live canvas with maps, pages, and curated knowledge demoted", async () => {
-    render(<BrainPanel />);
+    const onOpenSource = vi.fn();
+    render(<BrainPanel onOpenSource={onOpenSource} />);
     await waitFor(() => expect(screen.getByTestId("brain-map-canvas")).toBeInTheDocument());
 
     expect(screen.getByRole("button", { name: "Create Lens" })).toBeInTheDocument();
     expect(screen.getByRole("region", { name: "Source mirror" })).toBeInTheDocument();
-    expect(screen.getByText("2 of 3 sources are linked into the mirror; 1 still need entities.")).toBeInTheDocument();
+    expect(screen.getByText("2 of 4 sources are linked into the mirror; 2 still need entities.")).toBeInTheDocument();
+    expect(screen.getByText("Wai chats")).toBeInTheDocument();
     expect(screen.getByText("1 synced now")).toBeInTheDocument();
     expect(screen.getByText("Needs linking")).toBeInTheDocument();
     expect(screen.getByText("Raw project voice memo")).toBeInTheDocument();
-    expect(screen.getByText("In Inbox · not in Brain yet")).toBeInTheDocument();
+    expect(screen.getByText("Wai launch thread")).toBeInTheDocument();
+    expect(screen.getAllByText("In Inbox · not in Brain yet").length).toBeGreaterThanOrEqual(2);
+    fireEvent.click(screen.getByRole("button", { name: /Wai launch thread/i }));
+    expect(onOpenSource).toHaveBeenCalledWith("chat", "c1");
     const syncCallsBeforeRepair = mockSyncBrain.mock.calls.length;
     fireEvent.click(screen.getByRole("button", { name: "Link summaries" }));
     await waitFor(() => expect(mockSyncBrain.mock.calls.length).toBeGreaterThan(syncCallsBeforeRepair));
@@ -768,6 +783,7 @@ describe("BrainPanel (Live Mirror)", () => {
         overview: graphOverview({
           recordings: { total: 20, summarized: 18, organized: 15, unorganized: 5 },
           materials: { total: 6, summarized: 5, organized: 4, unorganized: 2 },
+          chats: { total: 1, summarized: 1, organized: 0, unorganized: 1 },
         }),
       }),
     );
@@ -782,9 +798,9 @@ describe("BrainPanel (Live Mirror)", () => {
     expect(screen.getByText("Showing 3 of 12 sources and 8 of 24 nodes.")).toBeInTheDocument();
     expect(screen.getByText("3/12")).toBeInTheDocument();
     expect(screen.getByText("8/24")).toBeInTheDocument();
-    expect(screen.getByText("12 sources loaded into this map from 26 sources in Wai Brain.")).toBeInTheDocument();
+    expect(screen.getByText("12 sources loaded into this map from 27 sources in Wai Brain.")).toBeInTheDocument();
     expect(screen.getByText("The canvas stays focused; hidden sources remain in the evidence list.")).toBeInTheDocument();
-    expect(screen.getByText("20/6")).toBeInTheDocument();
+    expect(screen.getByText("20/6/1")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: /Launch notes material/i }));
     expect(onOpenSource).toHaveBeenCalledWith("item", "item-1");
@@ -905,6 +921,7 @@ describe("BrainPanel (Live Mirror)", () => {
         overview: graphOverview({
           recordings: { total: 0, summarized: 0, organized: 0, unorganized: 0 },
           materials: { total: 0, summarized: 0, organized: 0, unorganized: 0 },
+          chats: { total: 0, summarized: 0, organized: 0, unorganized: 0 },
           pending_review_count: 0,
           top_entities: [],
           recent_sources: [],
