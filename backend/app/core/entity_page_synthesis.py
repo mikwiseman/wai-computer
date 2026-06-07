@@ -58,7 +58,10 @@ SYNTHESIS_SYSTEM_PROMPT = (
     "state of play, grounded ONLY in the numbered sources provided.\n\n"
     "Rules:\n"
     "- overview: 2-4 plain sentences — the 30-second state of play. Synthesize, "
-    "don't list. Present tense for what is true now.\n"
+    "don't list. Present tense for what is true now. Use `relationship_stats` "
+    "(source counts by kind + recency) for one cadence/recency sentence (e.g. "
+    "'mostly over email; ~12 exchanges; last contact 3 days ago') — but cite the "
+    "underlying sources for any specific claim, never the stats.\n"
     "- facts: durable, specific facts. Each MUST cite the source numbers it "
     "comes from in `sources` (e.g. [1,3]).\n"
     "- timeline: events worth remembering, newest-relevant first. Put any date "
@@ -119,14 +122,55 @@ def _coerce_occurred_at(raw: str) -> datetime | None:
     return None
 
 
+# Per-source-kind caps within the evidence budget so a mailbox of emails can't
+# crowd out the one meeting where the decision was actually made. Recordings
+# (richest, usually few) are uncapped; items/chats are bounded.
+_KIND_EVIDENCE_CAP = {"item": 15, "chat": 8}
+
+
+def _item_meta_line(kind: str | None, metadata: dict | None) -> str:
+    """A short deterministic provenance line for an item (no LLM, no PII logged).
+
+    Gives the model real context for mail/messages/events without a summary,
+    e.g. "email · from Alice <a@x.com> · 2026-05-03".
+    """
+    md = metadata if isinstance(metadata, dict) else {}
+
+    def first(*keys: str) -> str | None:
+        for k in keys:
+            v = md.get(k)
+            if isinstance(v, dict):
+                v = v.get("name") or v.get("email") or v.get("displayName")
+            if isinstance(v, str) and v.strip():
+                return v.strip()[:120]
+        return None
+
+    parts: list[str] = [kind or "item"]
+    if kind == "email":
+        if (frm := first("from", "sender", "fromAddress")):
+            parts.append(f"from {frm}")
+    elif kind == "event":
+        if (org := first("organizer", "creator")):
+            parts.append(f"organizer {org}")
+    elif kind == "message":
+        if (frm := first("from", "sender", "author")):
+            parts.append(f"from {frm}")
+    if (when := first("date", "occurred_at", "internalDate", "start", "sent_at")):
+        parts.append(when)
+    return " · ".join(parts)
+
+
 async def _gather_evidence(
     db: AsyncSession, user_id: uuid.UUID, entity_id: uuid.UUID
-) -> tuple[list[dict[str, Any]], dict[int, str]]:
-    """Build the numbered evidence pack + a {number -> citation_id} map.
+) -> tuple[list[dict[str, Any]], dict[int, str], dict[str, Any]]:
+    """Build the numbered evidence pack + a {number -> citation_id} map + stats.
 
-    One numbered source per distinct (kind, id) the entity is mentioned in,
-    carrying the mention context and — for recordings — the summary, so the
-    model has real material to compile from.
+    One numbered source per distinct (kind, id) the entity is mentioned in. For
+    recordings we hand the summary; for items (email/message/note/event) we hand
+    a kind-aware provenance line + a body snippet so the model has real material.
+    ``relationship_stats`` (deterministic counts by kind + recency) rides along
+    so the overview can read like a dossier ("mostly over email; last contact
+    3 days ago") without any extra LLM cost.
     """
     mentions = (
         await db.execute(
@@ -142,7 +186,7 @@ async def _gather_evidence(
         )
     ).all()
     if not mentions:
-        return [], {}
+        return [], {}, {}
 
     rec_ids = {sid for kind, sid, _, _ in mentions if kind == "recording"}
     item_ids = {sid for kind, sid, _, _ in mentions if kind == "item"}
@@ -160,16 +204,23 @@ async def _gather_evidence(
         ).all():
             rec_meta[rid] = (title or "Recording", summary_text, key_points)
 
-    item_meta: dict[uuid.UUID, str] = {}
+    item_meta: dict[uuid.UUID, dict[str, Any]] = {}
     if item_ids:
-        for iid, title, url in (
+        for iid, title, url, kind_, body, occurred_at, metadata_ in (
             await db.execute(
-                select(Item.id, Item.title, Item.url).where(
-                    Item.id.in_(item_ids), Item.deleted_at.is_(None)
-                )
+                select(
+                    Item.id, Item.title, Item.url, Item.kind, Item.body,
+                    Item.occurred_at, Item.metadata_,
+                ).where(Item.id.in_(item_ids), Item.deleted_at.is_(None))
             )
         ).all():
-            item_meta[iid] = title or url or "Untitled"
+            item_meta[iid] = {
+                "title": title or url or "Untitled",
+                "kind": kind_,
+                "body": body,
+                "occurred_at": occurred_at,
+                "metadata": metadata_,
+            }
 
     # Order: recordings with summaries first (richest), then by recency.
     ordered = sorted(
@@ -183,6 +234,7 @@ async def _gather_evidence(
     evidence: list[dict[str, Any]] = []
     number_to_citation: dict[int, str] = {}
     seen: set[tuple[str, uuid.UUID]] = set()
+    kind_counts: dict[str, int] = {}
     for kind, sid, context, _created in ordered:
         if (kind, sid) in seen:
             continue
@@ -190,7 +242,11 @@ async def _gather_evidence(
             continue
         if kind == "item" and sid not in item_meta:
             continue
+        cap = _KIND_EVIDENCE_CAP.get(kind)
+        if cap is not None and kind_counts.get(kind, 0) >= cap:
+            continue  # per-kind quota — don't let mail crowd out meetings
         seen.add((kind, sid))
+        kind_counts[kind] = kind_counts.get(kind, 0) + 1
         number = len(evidence) + 1
         if kind == "recording":
             title, summary_text, key_points = rec_meta[sid]
@@ -203,18 +259,41 @@ async def _gather_evidence(
                 "key_points": [str(p)[:200] for p in (key_points or [])][:8],
             }
         else:
+            meta = item_meta[sid]
             block = {
                 "n": number,
-                "kind": kind,
-                "title": item_meta[sid],
+                "kind": meta["kind"] or kind,
+                "title": meta["title"],
+                "meta": _item_meta_line(meta["kind"], meta["metadata"]),
                 "context": (context or "")[:_MAX_CONTEXT_CHARS],
+                "snippet": (meta["body"] or "")[:_MAX_SUMMARY_CHARS],
             }
         evidence.append(block)
         number_to_citation[number] = _citation_id(kind, sid)
         if len(evidence) >= MAX_EVIDENCE_SOURCES:
             break
 
-    return evidence, number_to_citation
+    stats = _relationship_stats(mentions)
+    return evidence, number_to_citation, stats
+
+
+def _relationship_stats(mentions: list[Any]) -> dict[str, Any]:
+    """Deterministic relationship cadence/recency from the entity's mentions."""
+    by_kind: dict[str, int] = {}
+    times: list[datetime] = []
+    for kind, _sid, _ctx, created in mentions:
+        by_kind[kind] = by_kind.get(kind, 0) + 1
+        if created:
+            times.append(created)
+    newest = max(times) if times else None
+    oldest = min(times) if times else None
+    now = datetime.now(timezone.utc)
+    return {
+        "total_sources": len(mentions),
+        "by_kind": by_kind,
+        "days_since_last": (now - newest).days if newest else None,
+        "span_days": (newest - oldest).days if newest and oldest else None,
+    }
 
 
 def _map_citations(
@@ -255,7 +334,7 @@ async def synthesize_entity_page(
         return None  # honest skeleton — nothing to compile, no LLM call
 
     valid_ids = {c.id for c in page.citations}
-    evidence, number_to_citation = await _gather_evidence(db, user_id, entity_id)
+    evidence, number_to_citation, stats = await _gather_evidence(db, user_id, entity_id)
     if not evidence:
         return None
 
@@ -263,6 +342,7 @@ async def synthesize_entity_page(
     client = cerebras_client if cerebras_client is not None else get_cerebras_client()
     user_payload = {
         "entity": {"name": entity.name, "type": entity.type},
+        "relationship_stats": stats,
         "sources": evidence,
     }
     response = await client.chat.completions.create(
