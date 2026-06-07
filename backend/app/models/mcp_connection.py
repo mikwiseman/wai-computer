@@ -46,6 +46,7 @@ class McpConnection(Base, UUIDMixin, TimestampMixin):
         UniqueConstraint("user_id", "server_url", name="uq_mcp_connections_user_url"),
         Index("ix_mcp_connections_user", "user_id"),
         Index("ix_mcp_connections_due", "enabled", "next_sync_at"),
+        Index("ix_mcp_connections_catalog", "user_id", "catalog_id"),
     )
 
     user_id: Mapped[uuid.UUID] = mapped_column(
@@ -71,6 +72,13 @@ class McpConnection(Base, UUIDMixin, TimestampMixin):
     allowed_tools: Mapped[list | None] = mapped_column(JSONB)
     # Snapshot of the server's advertised capabilities (tools/resources) at connect.
     capabilities: Mapped[dict | None] = mapped_column(JSONB)
+    # Catalog provenance: which Hermes catalog entry this came from (NULL = custom),
+    # a coarse source type for Brain filtering, and the resolved ingestion plan.
+    catalog_id: Mapped[str | None] = mapped_column(String(64))
+    source_type: Mapped[str | None] = mapped_column(String(64))
+    ingest_plan: Mapped[dict | None] = mapped_column(JSONB)
+    # How much history to pull on first connect (recent_30d|recent_90d|last_year|everything).
+    backfill_depth: Mapped[str | None] = mapped_column(String(20))
     # Privacy class applied to every Item ingested from this connection.
     privacy_level: Mapped[str] = mapped_column(
         String(20), nullable=False, default="internal", server_default="internal"
