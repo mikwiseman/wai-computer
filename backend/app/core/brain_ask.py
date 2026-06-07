@@ -130,23 +130,38 @@ def _excerpt_for_hit(index: int, hit: UnifiedHit | Any) -> str:
 
 
 def _diverse_hits(hits: list[UnifiedHit | Any], limit: int) -> list[UnifiedHit | Any]:
+    """Pick a diverse excerpt set: cap per source AND per source-kind so a noisy
+    mailbox (many ``item`` hits) can't crowd out the meeting/chat where the
+    decision was actually made. A second pass fills leftover slots without the
+    kind cap, so excerpts are never wasted when only one kind exists.
+    """
     selected: list[UnifiedHit | Any] = []
     selected_chunk_ids: set[str] = set()
     per_source_counts: dict[tuple[str, str], int] = {}
+    per_kind_counts: dict[str, int] = {}
     max_per_source = max(1, ASK_MAX_EXCERPTS_PER_SOURCE)
+    kind_cap = max(1, (limit * 3 + 4) // 5)  # ~60% — reserve slots for other kinds
 
-    for quota in range(1, max_per_source + 1):
-        for hit in hits:
-            if hit.chunk_id in selected_chunk_ids:
-                continue
-            source_key = (hit.source_kind, hit.parent_id)
-            if per_source_counts.get(source_key, 0) >= quota:
-                continue
-            selected.append(hit)
-            selected_chunk_ids.add(hit.chunk_id)
-            per_source_counts[source_key] = per_source_counts.get(source_key, 0) + 1
-            if len(selected) >= limit:
-                return selected
+    def _fill(enforce_kind_cap: bool) -> None:
+        for quota in range(1, max_per_source + 1):
+            for hit in hits:
+                if len(selected) >= limit:
+                    return
+                if hit.chunk_id in selected_chunk_ids:
+                    continue
+                source_key = (hit.source_kind, hit.parent_id)
+                if per_source_counts.get(source_key, 0) >= quota:
+                    continue
+                if enforce_kind_cap and per_kind_counts.get(hit.source_kind, 0) >= kind_cap:
+                    continue
+                selected.append(hit)
+                selected_chunk_ids.add(hit.chunk_id)
+                per_source_counts[source_key] = per_source_counts.get(source_key, 0) + 1
+                per_kind_counts[hit.source_kind] = per_kind_counts.get(hit.source_kind, 0) + 1
+
+    _fill(enforce_kind_cap=True)
+    if len(selected) < limit:
+        _fill(enforce_kind_cap=False)
     return selected
 
 
