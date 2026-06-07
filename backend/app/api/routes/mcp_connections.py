@@ -108,9 +108,17 @@ class ConnectionResponse(BaseModel):
     source_type: str | None = None
     backfill_depth: str | None = None
     item_count: int = 0
+    last_success_at: str | None = None
+    seconds_since_sync: int | None = None
+    consecutive_failures: int = 0
+    last_error_code: str | None = None
+    reconnect_required: bool = False
 
 
 def _response(c: McpConnection, item_count: int = 0) -> ConnectionResponse:
+    secs: int | None = None
+    if c.last_sync_at is not None:
+        secs = max(0, int((datetime.now(timezone.utc) - c.last_sync_at).total_seconds()))
     return ConnectionResponse(
         id=str(c.id),
         server_label=c.server_label,
@@ -131,6 +139,11 @@ def _response(c: McpConnection, item_count: int = 0) -> ConnectionResponse:
         source_type=c.source_type,
         backfill_depth=c.backfill_depth,
         item_count=item_count,
+        last_success_at=c.last_success_at.isoformat() if c.last_success_at else None,
+        seconds_since_sync=secs,
+        consecutive_failures=c.consecutive_failures,
+        last_error_code=c.last_error_code,
+        reconnect_required=c.status in ("error_terminal", "needs_setup"),
     )
 
 

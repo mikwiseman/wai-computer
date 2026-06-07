@@ -95,20 +95,30 @@ def sync_mcp_connection(self, *, connection_id: str) -> None:
                 pass
 
 
+def due_connections_query(now: datetime):
+    """Connections eligible for a sync now.
+
+    Excludes only TERMINAL/paused states — a transient error stays eligible so it
+    auto-retries (the old ``status != "error"`` disabled a connection forever
+    after a single transient blip). Oldest-due first, capped to bound a beat.
+    """
+    return (
+        select(McpConnection)
+        .where(
+            McpConnection.enabled.is_(True),
+            McpConnection.status.notin_(["paused", "error_terminal"]),
+            (McpConnection.next_sync_at.is_(None)) | (McpConnection.next_sync_at <= now),
+        )
+        .order_by(McpConnection.next_sync_at.asc().nulls_first())
+        .limit(200)
+    )
+
+
 async def _dispatch_due() -> int:
     now = datetime.now(timezone.utc)
     enqueued = 0
     async with get_db_context() as db:
-        due = (
-            await db.execute(
-                select(McpConnection).where(
-                    McpConnection.enabled.is_(True),
-                    McpConnection.status != "error",
-                    (McpConnection.next_sync_at.is_(None))
-                    | (McpConnection.next_sync_at <= now),
-                )
-            )
-        ).scalars().all()
+        due = (await db.execute(due_connections_query(now))).scalars().all()
         for conn in due:
             conn.next_sync_at = now + timedelta(minutes=conn.sync_interval_minutes)
             enqueued += 1

@@ -89,12 +89,21 @@ class McpConnection(Base, UUIDMixin, TimestampMixin):
         Integer, nullable=False, default=60, server_default="60"
     )
     last_sync_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_success_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     next_sync_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    # active | paused | error
+    # State machine: active | paused | needs_setup | degraded | error_transient
+    #                | error_terminal. A transient error stays eligible for the
+    #                beat (auto-retry with backoff); terminal stops + asks the
+    #                user to reconnect — never silently disabled forever.
     status: Mapped[str] = mapped_column(
         String(20), nullable=False, default="active", server_default="active"
     )
+    consecutive_failures: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
     last_error: Mapped[str | None] = mapped_column(Text)
+    last_error_code: Mapped[str | None] = mapped_column(String(100))
+    last_error_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     enabled: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=True, server_default=false()
     )

@@ -163,9 +163,13 @@ async def test_sync_failure_marks_run_and_connection(db_session) -> None:
         )
     ).scalar_one()
     assert run.status == "failed"
-    assert run.error_code == "RuntimeError"
-    assert conn.status == "error"
-    assert conn.last_error == "RuntimeError"
+    assert run.error_code == "sync_error"  # classified (was the raw type name)
+    # An unknown error is TRANSIENT: stays eligible for auto-retry with backoff,
+    # not disabled forever.
+    assert conn.status == "error_transient"
+    assert conn.last_error_code == "sync_error"
+    assert conn.consecutive_failures == 1
+    assert conn.next_sync_at is not None
 
 
 async def test_sync_skips_unreadable_resource_but_continues(db_session) -> None:

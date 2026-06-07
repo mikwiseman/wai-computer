@@ -24,9 +24,10 @@ from __future__ import annotations
 
 import json
 import logging
+import random
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -35,6 +36,7 @@ from app.core.entity_graph import reconcile_person_entities, seed_entities_from_
 from app.core.item_ingest import ingest_item
 from app.core.mcp_client import McpClient, McpResource
 from app.core.mcp_entity_extract import ExtractorShapeError
+from app.core.mcp_ingest_guard import mcp_ingestion_halted
 from app.core.mcp_item_map import dig, first_value, parse_records, record_to_item_kwargs
 from app.core.mcp_plan import FetchStep, IngestionPlan, plan_tools, resolve_plan_from_tools
 from app.core.mcp_recipes import match_recipe
@@ -48,11 +50,50 @@ logger = logging.getLogger(__name__)
 ClientFactory = Callable[[str, str | None], Any]
 Embedder = Callable[[list[str]], Awaitable[list[list[float]]]]
 
-# Defense-in-depth caps for the tool path (D4 adds the full Redis cost guard +
-# incremental watermarks; these keep a single run bounded in the meantime).
+# Defense-in-depth caps for the tool path (incremental watermarks are a planned
+# extension; these + content-hash dedup keep a single run bounded meanwhile).
 MAX_PAGES_PER_STEP = 50
 MAX_SCOPES_PER_STEP = 200
 MAX_RECORDS_PER_SYNC = 2000
+
+# State machine: how many consecutive transient failures before we give up and
+# flag the connection terminal (loud "reconnect needed") instead of retrying.
+MAX_TRANSIENT_FAILURES = 8
+_BACKOFF_CAP_MINUTES = 60
+_NEEDS_SETUP_REPROBE_MINUTES = 360  # re-probe an unreadable server ~every 6h
+
+# Error-message hints that mean "the user must act" (auth), not "retry later".
+_TERMINAL_HINTS = (
+    "401", "403", "unauthorized", "forbidden", "invalid_token", "invalid token",
+    "token expired", "expired", "invalid grant", "authentication failed",
+)
+
+
+def _jitter(minutes: float) -> float:
+    return max(1.0, minutes * random.uniform(0.85, 1.15))
+
+
+def _next_after(minutes: float) -> datetime:
+    return datetime.now(timezone.utc) + timedelta(minutes=_jitter(minutes))
+
+
+def _classify_error(exc: Exception) -> tuple[str, bool]:
+    """Map an exception to (classified_code, is_terminal). No PII in the code."""
+    name = type(exc).__name__
+    msg = str(exc).lower()
+    if name in ("InvalidToken", "InvalidSignature"):  # Fernet decrypt failure
+        return "decrypt_failed", True
+    if any(hint in msg for hint in _TERMINAL_HINTS):
+        return "auth_expired", True
+    if "timeout" in msg or name.endswith("TimeoutError"):
+        return "timeout", False
+    if "429" in msg or "rate limit" in msg:
+        return "rate_limited", False
+    if any(s in msg for s in ("500", "502", "503", "504", "gateway", "unavailable")):
+        return "provider_5xx", False
+    if "connect" in msg or "network" in msg or name in ("ConnectionError", "ConnectError"):
+        return "network", False
+    return "sync_error", False
 
 
 @dataclass
@@ -97,6 +138,12 @@ async def sync_connection(
     ``summarize=False`` by default: the sync captures raw items fast (signal-
     capture-first); the per-item summary task enriches them afterward.
     """
+    # Emergency kill-switch: defer (the dispatcher lease re-fires later), never
+    # a failed run — a halt is operational, not a connection fault.
+    if await mcp_ingestion_halted(connection.user_id):
+        logger.info("mcp sync halted by guard connection=%s", connection.id)
+        return SyncResult("", 0, 0, 0, "deferred")
+
     run = McpIngestionRun(
         connection_id=connection.id,
         status="running",
@@ -167,26 +214,36 @@ async def sync_connection(
                 if stats.errors and stats.seen and stats.errors / stats.seen > 0.25:
                     final_status = "degraded"
 
-        cursor_after = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(timezone.utc)
+        cursor_after = now.isoformat()
         run.status = "succeeded"
         run.cursor_after = cursor_after
         run.items_seen = seen
         run.items_created = created
         run.items_skipped = skipped
-        run.finished_at = datetime.now(timezone.utc)
+        run.finished_at = now
         connection.sync_cursor = cursor_after
-        connection.last_sync_at = datetime.now(timezone.utc)
+        connection.last_sync_at = now
+        connection.consecutive_failures = 0
         if final_status == "needs_setup":
+            # Read attempt succeeded mechanically but we can't read this server;
+            # stay visibly "needs_setup" and re-probe slowly (tools may appear).
             connection.status = "needs_setup"
             connection.last_error = "no_readable_data_tools"
+            connection.last_error_code = "needs_setup"
             run.error_code = "needs_setup"
-        elif final_status == "degraded":
-            connection.status = "degraded"
-            connection.last_error = "structured_extraction_failing"
-            run.error_code = "extract_degraded"
+            connection.next_sync_at = _next_after(_NEEDS_SETUP_REPROBE_MINUTES)
         else:
-            connection.status = "active"
+            connection.last_success_at = now
             connection.last_error = None
+            connection.last_error_code = None
+            connection.next_sync_at = _next_after(connection.sync_interval_minutes)
+            if final_status == "degraded":
+                connection.status = "degraded"
+                connection.last_error = "structured_extraction_failing"
+                run.error_code = "extract_degraded"
+            else:
+                connection.status = "active"
         await db.flush()
         logger.info(
             "mcp sync %s connection=%s seen=%s created=%s skipped=%s",
@@ -195,17 +252,38 @@ async def sync_connection(
         return SyncResult(str(run.id), seen, created, skipped, final_status)
 
     except Exception as exc:  # noqa: BLE001 — record failure on the run + connection
+        now = datetime.now(timezone.utc)
+        code, terminal = _classify_error(exc)
+        connection.consecutive_failures = (connection.consecutive_failures or 0) + 1
+        if connection.consecutive_failures >= MAX_TRANSIENT_FAILURES:
+            terminal = True  # give up retrying; ask the user to reconnect
         run.status = "failed"
-        run.error_code = type(exc).__name__
-        run.error_message = "sync failed"
+        run.error_code = code
+        run.error_message = None  # classified code + connection state carry the signal
         run.items_seen = seen
         run.items_created = created
         run.items_skipped = skipped
-        run.finished_at = datetime.now(timezone.utc)
-        connection.status = "error"
-        connection.last_error = type(exc).__name__
+        run.finished_at = now
+        connection.last_error = code
+        connection.last_error_code = code
+        connection.last_error_at = now
+        if terminal:
+            # Terminal (auth/decrypt or exhausted retries): stop + loud reconnect.
+            connection.status = "error_terminal"
+            connection.next_sync_at = None
+        else:
+            # Transient (network/5xx/timeout): stay eligible, back off + retry.
+            connection.status = "error_transient"
+            backoff = min(
+                connection.sync_interval_minutes * (2 ** connection.consecutive_failures),
+                _BACKOFF_CAP_MINUTES,
+            )
+            connection.next_sync_at = _next_after(backoff)
         await db.flush()
-        logger.warning("mcp sync failed connection=%s error=%s", connection.id, type(exc).__name__)
+        logger.warning(
+            "mcp sync failed connection=%s code=%s terminal=%s failures=%s",
+            connection.id, code, terminal, connection.consecutive_failures,
+        )
         raise
 
 
