@@ -26,8 +26,14 @@ from app.core.brain_maps import (
     refresh_brain_map,
     update_brain_map,
 )
+from app.core.conversation_brain import link_unlinked_conversations
 from app.core.entity_graph import backfill_entity_mentions_from_existing_summaries
 from app.models.brain_map import BrainMap, BrainMapRevision
+
+# Cap chat linking per explicit sync so the button (which extracts entities via
+# the LLM for never-linked chats) can never trigger a cost spike. New chats
+# auto-link on turn completion; this only chips at the legacy backlog.
+CHAT_SYNC_LIMIT = 50
 
 router = APIRouter(prefix="/brain", tags=["brain"])
 
@@ -90,6 +96,10 @@ async def get_brain(user: CurrentUser, db: Database) -> BrainResponse:
 
 class BrainSyncRequest(BaseModel):
     limit: int = Field(default=500, ge=1, le=2000)
+    # When true (the explicit "Link" button), also link never-linked Wai chats,
+    # which extracts entities via the LLM. Left false on the cheap auto-sync
+    # that runs on Brain open, so opening the Brain never spends tokens.
+    include_chats: bool = False
 
 
 class BrainSyncResponse(BaseModel):
@@ -100,6 +110,8 @@ class BrainSyncResponse(BaseModel):
     entity_mentions_before: int
     entity_mentions_after: int
     created_mentions: int
+    conversations_scanned: int
+    conversations_linked: int
     llm_requests: int
 
 
@@ -109,18 +121,36 @@ async def sync_brain_route(
     db: Database,
     request: BrainSyncRequest | None = None,
 ) -> BrainSyncResponse:
-    """Replay stored summary people/topics into the source graph for this user.
+    """Repair source->entity provenance so every source is a graph citizen.
 
-    This is zero-LLM repair work for legacy recordings/materials whose summaries
-    predate graph seeding. It never summarizes new content and never fabricates
-    entities outside the saved summary fields.
+    Recordings + materials are zero-LLM (replay stored summary people/topics).
+    When ``include_chats`` is set, never-linked Wai chats are extracted + linked
+    too (bounded by ``CHAT_SYNC_LIMIT``) — the explicit catch-up the "Link"
+    button runs. New chats already auto-link on turn completion.
     """
+    request = request or BrainSyncRequest()
     result = await backfill_entity_mentions_from_existing_summaries(
         db,
         user_id=user.id,
-        limit=(request.limit if request else BrainSyncRequest().limit),
+        limit=request.limit,
     )
-    return BrainSyncResponse(**result.as_dict())
+    payload = result.as_dict()
+    conversations_scanned = conversations_linked = 0
+    if request.include_chats:
+        sweep = await link_unlinked_conversations(
+            db, user.id, limit=min(request.limit, CHAT_SYNC_LIMIT)
+        )
+        conversations_scanned = sweep.conversations_scanned
+        conversations_linked = sweep.conversations_linked
+        payload["mentions_recorded"] += sweep.mentions_recorded
+        payload["created_mentions"] += sweep.mentions_recorded
+        payload["sources_with_entities"] += sweep.conversations_linked
+        payload["llm_requests"] += sweep.llm_requests
+    return BrainSyncResponse(
+        **payload,
+        conversations_scanned=conversations_scanned,
+        conversations_linked=conversations_linked,
+    )
 
 
 class GraphNodeResponse(BaseModel):

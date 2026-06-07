@@ -4,7 +4,17 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, func
+from pgvector.sqlalchemy import Vector
+from sqlalchemy import (
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    func,
+)
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -33,12 +43,24 @@ class Conversation(Base, UUIDMixin, TimestampMixin):
     deleted_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), index=True
     )
+    # Watermark for the auto-link-to-Brain job: the count of complete user +
+    # assistant messages at the last successful link. Lets the debounced job
+    # skip re-extracting when no new content arrived since.
+    brain_linked_message_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default="0", default=0
+    )
 
     messages: Mapped[list["ChatMessage"]] = relationship(
         "ChatMessage",
         back_populates="conversation",
         cascade="all, delete-orphan",
         order_by="ChatMessage.created_at",
+    )
+    chunks: Mapped[list["ConversationChunk"]] = relationship(
+        "ConversationChunk",
+        back_populates="conversation",
+        cascade="all, delete-orphan",
+        order_by="ConversationChunk.seq",
     )
 
 
@@ -129,4 +151,36 @@ class MessageCitation(Base, UUIDMixin):
 
     message: Mapped["ChatMessage"] = relationship(
         "ChatMessage", back_populates="citations"
+    )
+
+
+class ConversationChunk(Base, UUIDMixin):
+    """An embedded text chunk of a Wai chat (mirrors ItemChunk for items).
+
+    Makes a conversation a first-class search/Ask source: ``unified_search``
+    unions these chunks alongside recording segments and item chunks, so a
+    question over the Brain can cite what was said in chat. Rebuilt by the
+    auto-link job whenever the conversation accrues new messages.
+    """
+
+    __tablename__ = "conversation_chunks"
+    __table_args__ = (
+        Index("ix_conversation_chunks_conversation_id", "conversation_id"),
+        UniqueConstraint(
+            "conversation_id", "seq", name="uq_conversation_chunks_conversation_seq"
+        ),
+    )
+
+    conversation_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("conversations.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    # Order of the chunk within the conversation.
+    seq: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    embedding: Mapped[list[float] | None] = mapped_column(Vector(1536))
+
+    conversation: Mapped["Conversation"] = relationship(
+        "Conversation", back_populates="chunks"
     )

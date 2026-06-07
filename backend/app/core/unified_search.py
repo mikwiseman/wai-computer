@@ -1,13 +1,15 @@
-"""Unified RRF search across recordings (segments) AND items (item_chunks).
+"""Unified RRF search across recordings (segments), items (item_chunks), AND
+Wai chats (conversation_chunks).
 
-Powers the "search everything" box of the unified feed. Each source is ranked
-independently by FTS rank and by semantic distance; the two rank lists are
-fused with Reciprocal Rank Fusion (k=60), then a mild recency boost is applied
-so newer hits float up (wai-rocks recency boost; gbrain/wai-brain RRF).
+Powers the "search everything" box of the unified feed AND "Ask Brain". Each
+source is ranked independently by FTS rank and by semantic distance; the two
+rank lists are fused with Reciprocal Rank Fusion (k=60), then a mild recency
+boost is applied so newer hits float up (wai-rocks recency boost; gbrain/
+wai-brain RRF).
 
 Returns a flat list of ``UnifiedHit`` discriminated by ``source_kind``
-("recording" | "item"). Reuses the same Russian-FTS + pgvector machinery as
-the recordings-only ``/search`` route (no new infra).
+("recording" | "item" | "chat"). Reuses the same Russian-FTS + pgvector
+machinery as the recordings-only ``/search`` route (no new infra).
 """
 
 from __future__ import annotations
@@ -31,9 +33,9 @@ RECENCY_WEIGHT = 0.5  # how much recency can add on top of the RRF score
 
 @dataclass
 class UnifiedHit:
-    source_kind: str  # "recording" | "item"
-    parent_id: str  # recording_id or item_id
-    chunk_id: str  # segment_id or item_chunk_id
+    source_kind: str  # "recording" | "item" | "chat"
+    parent_id: str  # recording_id, item_id, or conversation_id
+    chunk_id: str  # segment_id, item_chunk_id, or conversation_chunk_id
     title: str | None
     kind: str  # recording.type or item.kind
     snippet: str
@@ -86,6 +88,31 @@ _UNIFIED_SQL = text(
         ORDER BY ic.embedding <=> CAST(:emb AS vector)
         LIMIT :pool
     ),
+    chat_fts AS (
+        SELECT cc.id AS chunk_id, c.id AS parent_id, cc.content,
+               c.title, 'chat' AS kind,
+               COALESCE(c.last_message_at, c.created_at) AS created_at,
+               NULL::integer AS start_ms, NULL::integer AS end_ms,
+               ROW_NUMBER() OVER (ORDER BY ts_rank(
+                   to_tsvector('russian', lower(cc.content COLLATE "und-x-icu")),
+                   plainto_tsquery('russian', lower(:q COLLATE "und-x-icu"))) DESC) AS rn
+        FROM conversation_chunks cc JOIN conversations c ON cc.conversation_id = c.id
+        WHERE c.user_id = :uid AND c.deleted_at IS NULL AND c.archived_at IS NULL
+          AND to_tsvector('russian', lower(cc.content COLLATE "und-x-icu"))
+              @@ plainto_tsquery('russian', lower(:q COLLATE "und-x-icu"))
+    ),
+    chat_sem AS (
+        SELECT cc.id AS chunk_id, c.id AS parent_id, cc.content,
+               c.title, 'chat' AS kind,
+               COALESCE(c.last_message_at, c.created_at) AS created_at,
+               NULL::integer AS start_ms, NULL::integer AS end_ms,
+               ROW_NUMBER() OVER (ORDER BY cc.embedding <=> CAST(:emb AS vector)) AS rn
+        FROM conversation_chunks cc JOIN conversations c ON cc.conversation_id = c.id
+        WHERE c.user_id = :uid AND c.deleted_at IS NULL AND c.archived_at IS NULL
+          AND cc.embedding IS NOT NULL
+        ORDER BY cc.embedding <=> CAST(:emb AS vector)
+        LIMIT :pool
+    ),
     seg_combined AS (
         SELECT COALESCE(f.chunk_id, s.chunk_id) AS chunk_id,
                COALESCE(f.parent_id, s.parent_id) AS parent_id,
@@ -112,10 +139,25 @@ _UNIFIED_SQL = text(
                COALESCE(1.0/(:k + f.rn), 0) + COALESCE(1.0/(:k + s.rn), 0) AS rrf
         FROM item_fts f FULL OUTER JOIN item_sem s ON f.chunk_id = s.chunk_id
     ),
+    chat_combined AS (
+        SELECT COALESCE(f.chunk_id, s.chunk_id) AS chunk_id,
+               COALESCE(f.parent_id, s.parent_id) AS parent_id,
+               COALESCE(f.content, s.content) AS content,
+               COALESCE(f.title, s.title) AS title,
+               COALESCE(f.kind, s.kind) AS kind,
+               COALESCE(f.created_at, s.created_at) AS created_at,
+               NULL::integer AS start_ms,
+               NULL::integer AS end_ms,
+               'chat' AS source_kind,
+               COALESCE(1.0/(:k + f.rn), 0) + COALESCE(1.0/(:k + s.rn), 0) AS rrf
+        FROM chat_fts f FULL OUTER JOIN chat_sem s ON f.chunk_id = s.chunk_id
+    ),
     unioned AS (
         SELECT * FROM seg_combined
         UNION ALL
         SELECT * FROM item_combined
+        UNION ALL
+        SELECT * FROM chat_combined
     )
     SELECT chunk_id, parent_id, content, title, kind, created_at, start_ms, end_ms, source_kind,
            rrf * (1.0 + :rw * exp(

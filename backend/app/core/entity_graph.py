@@ -154,15 +154,22 @@ async def seed_entities_from_summary(
     source_id: Any,
     people: list[str] | None,
     topics: list[str] | None,
+    projects: list[str] | None = None,
 ) -> int:
-    """Promote a summary's ``people_mentioned`` + ``topics`` into graph entities
-    and mentions — zero extra LLM cost — so the source becomes a graph citizen.
+    """Promote a summary's ``people_mentioned`` + ``topics`` (+ optional
+    ``projects``) into graph entities and mentions — zero extra LLM cost — so
+    the source becomes a graph citizen.
+
+    ``projects`` is only passed by chat linking, where the extractor
+    distinguishes projects from generic topics; recordings/items leave it
+    ``None`` and the behaviour is unchanged.
 
     Returns the number of mentions recorded.
     """
     count = 0
     for raw, etype in (
         *[(p, "person") for p in (people or [])],
+        *[(pr, "project") for pr in (projects or [])],
         *[(t, "topic") for t in (topics or [])],
     ):
         entity = await upsert_entity(db, user_id, type=etype, name=raw)

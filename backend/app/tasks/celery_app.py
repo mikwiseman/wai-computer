@@ -58,6 +58,7 @@ celery_app.conf.update(
         "app.tasks.billing_renewals",
         "app.tasks.comparison_generation",
         "app.tasks.consolidate_user_memory",
+        "app.tasks.conversation_linking",
         "app.tasks.embedding_backfill",
         "app.tasks.item_summary_generation",
         "app.tasks.mcp_sync",
@@ -76,6 +77,13 @@ celery_app.conf.beat_schedule = {
         # UTC covers most of Europe/Africa overnight.
         "task": "app.tasks.consolidate_user_memory.run",
         "schedule": crontab(hour=3, minute=0),
+    },
+    "link-unlinked-conversations-nightly": {
+        # Bounded backstop: chats auto-link on turn completion, but this links
+        # the legacy backlog (and anything a dropped enqueue missed) a little
+        # each night so the whole Brain converges without a cost spike.
+        "task": "app.tasks.conversation_linking.sweep_unlinked_conversations",
+        "schedule": crontab(hour=4, minute=0),
     },
     "embedding-backfill-every-30-minutes": {
         "task": "app.tasks.embedding_backfill.backfill_missing_segment_embeddings",

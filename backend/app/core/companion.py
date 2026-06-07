@@ -2093,7 +2093,32 @@ async def _finalize_assistant_message(
     conv.last_message_at = datetime.now(timezone.utc)
     await db.flush()
     await db.commit()
+    _enqueue_brain_link(conv.id, conv.user_id)
     return input_tokens, output_tokens, cached_tokens
+
+
+# Debounce window: rapid turns within this window coalesce — the first task to
+# run after the chat settles re-extracts the current state; later (now-stale)
+# enqueues see an unchanged watermark and no-op.
+_BRAIN_LINK_DEBOUNCE_SECONDS = 45
+
+
+def _enqueue_brain_link(conversation_id: uuid.UUID, user_id: uuid.UUID) -> None:
+    """Auto-link this chat into the Brain (entity mentions + searchable chunks).
+
+    Fire-and-forget: a turn must never fail because the broker is down. The
+    nightly sweep (``sweep_unlinked_conversations``) is the backstop, so a
+    dropped enqueue self-heals."""
+    try:
+        from app.tasks.celery_app import celery_app
+
+        celery_app.send_task(
+            "app.tasks.conversation_linking.link_conversation",
+            args=[str(conversation_id), str(user_id)],
+            countdown=_BRAIN_LINK_DEBOUNCE_SECONDS,
+        )
+    except Exception:  # pragma: no cover - broker hiccup; sweep backstops it
+        logger.warning("could not enqueue brain link for conversation")
 
 
 async def _fail_assistant_message(db: AsyncSession, message_id: uuid.UUID) -> None:

@@ -29,7 +29,12 @@ from app.models.brain_space import (
     BrainSpaceSource,
 )
 from app.models.commitment import Commitment
-from app.models.companion import ChatMessage, Conversation, MessageCitation
+from app.models.companion import (
+    ChatMessage,
+    Conversation,
+    ConversationChunk,
+    MessageCitation,
+)
 from app.models.companion_pending_action import CompanionPendingAction
 from app.models.comparison import ComparisonSet
 from app.models.deepgram_usage import DeepgramUsageEvent
@@ -150,6 +155,7 @@ __all__ = [
     "Commitment",
     "Conversation",
     "ChatMessage",
+    "ConversationChunk",
     "MessageCitation",
     "CompanionPendingAction",
     "Device",
