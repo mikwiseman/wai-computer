@@ -1731,23 +1731,45 @@ public actor APIClient {
 
     // MARK: - MCP Ingestion Connections (connect any MCP)
 
+    public func getSourceCatalog() async throws -> SourceCatalog {
+        return try await request(.GET, path: "/api/source-catalog")
+    }
+
     public func listMcpIngestionConnections() async throws -> [McpIngestionConnection] {
         return try await request(.GET, path: "/api/mcp-connections")
     }
 
+    /// Connect a custom MCP server (the "Add custom MCP (advanced)" path).
     public func createMcpIngestionConnection(
         serverLabel: String,
         serverUrl: String,
         authType: String = "none",
         authToken: String? = nil,
-        syncIntervalMinutes: Int = 60
+        syncIntervalMinutes: Int = 60,
+        backfillDepth: String? = nil
     ) async throws -> McpIngestionConnection {
         let payload = CreateMcpConnectionRequest(
             serverLabel: serverLabel,
             serverUrl: serverUrl,
             authType: authType,
             authToken: authToken,
-            syncIntervalMinutes: syncIntervalMinutes
+            syncIntervalMinutes: syncIntervalMinutes,
+            backfillDepth: backfillDepth
+        )
+        return try await request(.POST, path: "/api/mcp-connections", body: payload)
+    }
+
+    /// Connect a Hermes catalog tile — the server resolves URL/auth from the
+    /// catalog entry, so the client only sends the catalog id (+ token if PAT).
+    public func connectMcpSource(
+        catalogId: String,
+        authToken: String? = nil,
+        backfillDepth: String? = nil
+    ) async throws -> McpIngestionConnection {
+        let payload = CreateMcpConnectionRequest(
+            catalogId: catalogId,
+            authToken: authToken,
+            backfillDepth: backfillDepth
         )
         return try await request(.POST, path: "/api/mcp-connections", body: payload)
     }
@@ -2505,18 +2527,22 @@ private struct CreateItemRequest: Encodable {
 }
 
 private struct CreateMcpConnectionRequest: Encodable {
-    var serverLabel: String
-    var serverUrl: String
-    var authType: String
+    var catalogId: String?
+    var serverLabel: String?
+    var serverUrl: String?
+    var authType: String?
     var authToken: String?
-    var syncIntervalMinutes: Int
+    var syncIntervalMinutes: Int?
+    var backfillDepth: String?
 
     private enum CodingKeys: String, CodingKey {
+        case catalogId = "catalog_id"
         case serverLabel = "server_label"
         case serverUrl = "server_url"
         case authType = "auth_type"
         case authToken = "auth_token"
         case syncIntervalMinutes = "sync_interval_minutes"
+        case backfillDepth = "backfill_depth"
     }
 }
 
