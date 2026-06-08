@@ -1,3 +1,4 @@
+import AVFoundation
 import Foundation
 import WaiComputerKit
 
@@ -39,7 +40,11 @@ class RecordingDetailViewModel: ObservableObject {
     @Published var localRecoveryManifest: RecordingBackupManifest?
     @Published private var generatingSummaryRecordingId: String?
     @Published private var generatingSummaryAudioRecordingId: String?
+    @Published private var downloadingSummaryAudioRecordingId: String?
+    @Published private var playingSummaryAudioRecordingId: String?
 
+    private var summaryAudioPlayer: AVAudioPlayer?
+    private var summaryAudioPlaybackToken = UUID()
     private var loadGeneration = 0
 
     var transcriptAvailability: TranscriptAvailability {
@@ -57,6 +62,14 @@ class RecordingDetailViewModel: ObservableObject {
 
     func isGeneratingSummaryAudio(for recordingId: String) -> Bool {
         generatingSummaryAudioRecordingId == recordingId
+    }
+
+    func isDownloadingSummaryAudio(for recordingId: String) -> Bool {
+        downloadingSummaryAudioRecordingId == recordingId
+    }
+
+    func isPlayingSummaryAudio(for recordingId: String) -> Bool {
+        playingSummaryAudioRecordingId == recordingId
     }
 
     func loadDetail(recordingId: String, apiClient: APIClient, showLoading: Bool = true) async {
@@ -128,6 +141,73 @@ class RecordingDetailViewModel: ObservableObject {
         } catch {
             self.error = error.userFacingMessage(context: .library)
         }
+    }
+
+    /// Download the generated summary audio and play it (or stop it if already
+    /// playing). Mirrors `MacRecordingDetailViewModel.playOrStopSummaryAudio`,
+    /// with the iOS-specific `AVAudioSession` playback category so the audio is
+    /// audible even with the ring/silent switch in silent mode.
+    func playOrStopSummaryAudio(recordingId id: String, apiClient: APIClient) async {
+        if playingSummaryAudioRecordingId == id {
+            stopSummaryAudioPlayback(recordingId: id)
+            return
+        }
+
+        downloadingSummaryAudioRecordingId = id
+        defer {
+            if downloadingSummaryAudioRecordingId == id {
+                downloadingSummaryAudioRecordingId = nil
+            }
+        }
+
+        do {
+            let data = try await apiClient.downloadRecordingSummaryAudio(recordingId: id)
+            guard detail?.id == id else { return }
+            try playSummaryAudioData(data, sourceId: id)
+        } catch {
+            self.error = error.userFacingMessage(context: .library)
+        }
+    }
+
+    private func playSummaryAudioData(_ data: Data, sourceId: String) throws {
+        try AVAudioSession.sharedInstance().setCategory(.playback)
+        try AVAudioSession.sharedInstance().setActive(true)
+
+        let player = try AVAudioPlayer(data: data)
+        player.prepareToPlay()
+        guard player.play() else {
+            throw NSError(
+                domain: "IOSSummaryAudioPlayback",
+                code: 1,
+                userInfo: [NSLocalizedDescriptionKey: "Could not play summary audio."]
+            )
+        }
+
+        summaryAudioPlayer?.stop()
+        summaryAudioPlayer = player
+        playingSummaryAudioRecordingId = sourceId
+
+        let token = UUID()
+        summaryAudioPlaybackToken = token
+        let duration = max(player.duration, 0)
+        Task { @MainActor [weak self] in
+            if duration > 0 {
+                try? await Task.sleep(nanoseconds: UInt64((duration + 0.25) * 1_000_000_000))
+            } else {
+                try? await Task.sleep(for: .seconds(1))
+            }
+            guard self?.summaryAudioPlaybackToken == token else { return }
+            self?.playingSummaryAudioRecordingId = nil
+            self?.summaryAudioPlayer = nil
+        }
+    }
+
+    private func stopSummaryAudioPlayback(recordingId: String) {
+        guard playingSummaryAudioRecordingId == recordingId else { return }
+        summaryAudioPlaybackToken = UUID()
+        summaryAudioPlayer?.stop()
+        summaryAudioPlayer = nil
+        playingSummaryAudioRecordingId = nil
     }
 
     func refreshPendingDetailIfNeeded(recordingId: String, apiClient: APIClient) async {

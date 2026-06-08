@@ -18,17 +18,25 @@ struct TranscriptView: View {
                 LazyVStack(alignment: .leading, spacing: 16) {
                     HStack {
                         Spacer()
-                        Button {
-                            UIPasteboard.general.string = transcriptText
-                            copied = true
-                            Task {
-                                try? await Task.sleep(for: .seconds(1.5))
-                                copied = false
+                        // Single tap copies clean prose (the common case); the menu
+                        // exposes the timestamped variant without making it default.
+                        Menu {
+                            Button {
+                                copyTranscript(style: .plain)
+                            } label: {
+                                Label(t("Copy text", "Скопировать текст"), systemImage: "doc.on.doc")
+                            }
+                            Button {
+                                copyTranscript(style: .timestamped)
+                            } label: {
+                                Label(t("Copy with timestamps", "Скопировать с тайм-кодами"), systemImage: "clock")
                             }
                         } label: {
                             Image(systemName: copied ? "checkmark" : "doc.on.doc")
                                 .font(.caption)
                                 .foregroundStyle(copied ? .orange : .secondary)
+                        } primaryAction: {
+                            copyTranscript(style: .plain)
                         }
                         .accessibilityLabel(t("Copy transcript", "Скопировать расшифровку"))
                     }
@@ -104,8 +112,15 @@ struct TranscriptView: View {
         )
     }
 
-    private var transcriptText: String {
-        TranscriptRendering.transcriptText(segments, style: .plain, languageCode: speakerLanguageCode)
+    private func copyTranscript(style: TranscriptStyle) {
+        UIPasteboard.general.string = TranscriptRendering.transcriptText(
+            segments, style: style, languageCode: speakerLanguageCode
+        )
+        copied = true
+        Task {
+            try? await Task.sleep(for: .seconds(1.5))
+            copied = false
+        }
     }
 
     private var speakerLanguageCode: String {

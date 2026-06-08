@@ -384,6 +384,14 @@ struct TranscriptionSettingsView: View {
     @State private var settingsLoaded = false
     @State private var settingsError: String?
     @State private var dictationPostFilterEnabled = true
+    @State private var dictationCleanupLevel = "light"
+
+    private let cleanupOptions: [(label: String, value: String)] = [
+        ("None", "none"),
+        ("Light", "light"),
+        ("Medium", "medium"),
+        ("High", "high"),
+    ]
 
     private let languageOptions: [(label: String, value: String)] = [
         ("Auto-detect (Multi-language)", "multi"),
@@ -416,6 +424,22 @@ struct TranscriptionSettingsView: View {
                         Task { await saveDictationPostFilterEnabled(enabled) }
                     }
 
+                Picker("Cleanup level", selection: $dictationCleanupLevel) {
+                    ForEach(cleanupOptions, id: \.value) { option in
+                        Text(option.label).tag(option.value)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .disabled(!dictationPostFilterEnabled)
+                .onChange(of: dictationCleanupLevel) { _, level in
+                    guard settingsLoaded else { return }
+                    Task { await saveTranscriptionSettings(UpdateSettingsRequest(dictationCleanupLevel: level)) }
+                }
+
+                Text(cleanupDescription(dictationCleanupLevel))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
                 if let settingsError {
                     Text(settingsError)
                         .font(.caption)
@@ -431,6 +455,16 @@ struct TranscriptionSettingsView: View {
 
     private func applySettings(_ settings: UserSettings) {
         dictationPostFilterEnabled = settings.dictationPostFilterEnabled
+        dictationCleanupLevel = settings.dictationCleanupLevel
+    }
+
+    private func cleanupDescription(_ level: String) -> String {
+        switch level {
+        case "light": return "Removes filler words and fixes grammar."
+        case "medium": return "Edits for clarity and conciseness."
+        case "high": return "Rewrites for brevity and polish."
+        default: return "Inserts the dictated text after dictionary replacements."
+        }
     }
 
     private func loadSettings() async {

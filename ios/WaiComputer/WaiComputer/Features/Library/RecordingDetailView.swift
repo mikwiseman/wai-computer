@@ -183,6 +183,8 @@ struct RecordingDetailView: View {
                     audioState: viewModel.detail?.summaryAudio,
                     isGenerating: isGeneratingSummary,
                     isGeneratingAudio: isGeneratingSummaryAudio,
+                    isDownloadingAudio: viewModel.isDownloadingSummaryAudio(for: recording.id),
+                    isPlayingAudio: viewModel.isPlayingSummaryAudio(for: recording.id),
                     onGenerate: {
                         Task {
                             await viewModel.startSummaryGeneration(
@@ -194,6 +196,14 @@ struct RecordingDetailView: View {
                     onGenerateAudio: {
                         Task {
                             await viewModel.startSummaryAudioGeneration(
+                                recordingId: recording.id,
+                                apiClient: appState.getAPIClient()
+                            )
+                        }
+                    },
+                    onPlayAudio: {
+                        Task {
+                            await viewModel.playOrStopSummaryAudio(
                                 recordingId: recording.id,
                                 apiClient: appState.getAPIClient()
                             )
@@ -460,8 +470,11 @@ struct SummaryTabView: View {
     var audioState: SummaryAudioState?
     var isGenerating: Bool = false
     var isGeneratingAudio: Bool = false
+    var isDownloadingAudio: Bool = false
+    var isPlayingAudio: Bool = false
     let onGenerate: () -> Void
     let onGenerateAudio: () -> Void
+    var onPlayAudio: () -> Void = {}
     @EnvironmentObject private var languageManager: LanguageManager
     @State private var copiedSection: String?
 
@@ -503,10 +516,21 @@ struct SummaryTabView: View {
                         } else if audioState?.isFailed == true {
                             summaryAudioFailure
                         } else if audioState?.status == "succeeded" {
-                            Text(t("Audio ready", "Аудио готово"))
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .accessibilityIdentifier("summary-audio-ready")
+                            Button(action: onPlayAudio) {
+                                HStack(spacing: 6) {
+                                    if isDownloadingAudio {
+                                        ProgressView().controlSize(.small)
+                                    } else {
+                                        Image(systemName: isPlayingAudio ? "stop.fill" : "play.fill")
+                                    }
+                                    Text(isPlayingAudio
+                                         ? t("Stop", "Стоп")
+                                         : t("Play summary", "Слушать сводку"))
+                                }
+                            }
+                            .buttonStyle(.bordered)
+                            .disabled(isDownloadingAudio)
+                            .accessibilityIdentifier("summary-audio-ready")
                         }
                     }
 
