@@ -1,14 +1,100 @@
 "use client";
 
-import { type FormEvent, useCallback, useEffect, useState } from "react";
+import { type FormEvent, type ReactNode, useCallback, useEffect, useState } from "react";
 
 import { createApiKey, listApiKeys, revokeApiKey } from "@/lib/api";
 import type { ApiKey, ApiKeyCreated } from "@/lib/types";
 
-function formatDate(value: string | null): string {
-  if (!value) return "never";
+type Locale = "en" | "ru";
+
+interface Copy {
+  heading: string;
+  note: ReactNode;
+  placeholder: string;
+  create: string;
+  creating: string;
+  allowWrite: string;
+  createdNote: string;
+  copy: string;
+  copied: string;
+  done: string;
+  errLoad: string;
+  errCreate: string;
+  errRevoke: string;
+  loading: string;
+  empty: string;
+  lastUsed: string;
+  never: string;
+  revoke: string;
+  revoking: string;
+  writeBadge: string;
+}
+
+const COPY: Record<Locale, Copy> = {
+  en: {
+    heading: "API tokens",
+    note: (
+      <>
+        Static <code>wc_live_</code> Bearer tokens for headless access — a server, cron job, or an
+        agent (OpenClaw, Hermes) acting as a memory bank. Works on the REST API and the MCP
+        endpoint. Read-only by default; enable “save memories” to also let an agent write back via
+        the MCP <code>remember</code> tool. The REST API stays read-only either way.
+      </>
+    ),
+    placeholder: "Token name (e.g. openclaw-agent)",
+    create: "Create token",
+    creating: "Creating…",
+    allowWrite: "Allow this token to save memories (write access)",
+    createdNote: "Copy this token now — it won’t be shown again.",
+    copy: "Copy",
+    copied: "Copied",
+    done: "Done",
+    errLoad: "Couldn’t load API tokens.",
+    errCreate: "Couldn’t create the token.",
+    errRevoke: "Couldn’t revoke the token.",
+    loading: "Loading…",
+    empty: "No API tokens yet.",
+    lastUsed: "last used",
+    never: "never",
+    revoke: "Revoke",
+    revoking: "Revoking…",
+    writeBadge: "memory write",
+  },
+  ru: {
+    heading: "API-токены",
+    note: (
+      <>
+        Статичные Bearer-токены <code>wc_live_</code> для headless-доступа — сервер, cron-задача или
+        агент (OpenClaw, Hermes) в роли банка памяти. Работают в REST API и в MCP. По умолчанию
+        только для чтения; включите «сохранять память», чтобы агент мог записывать через
+        MCP-инструмент <code>remember</code>. REST API в любом случае остаётся только для чтения.
+      </>
+    ),
+    placeholder: "Название токена (например, openclaw-agent)",
+    create: "Создать токен",
+    creating: "Создаём…",
+    allowWrite: "Разрешить этому токену сохранять память (доступ на запись)",
+    createdNote: "Скопируйте токен сейчас — он больше не будет показан.",
+    copy: "Копировать",
+    copied: "Скопировано",
+    done: "Готово",
+    errLoad: "Не удалось загрузить API-токены.",
+    errCreate: "Не удалось создать токен.",
+    errRevoke: "Не удалось отозвать токен.",
+    loading: "Загрузка…",
+    empty: "Пока нет API-токенов.",
+    lastUsed: "последнее использование",
+    never: "никогда",
+    revoke: "Отозвать",
+    revoking: "Отзыв…",
+    writeBadge: "запись памяти",
+  },
+};
+
+function formatDate(value: string | null, never: string): string {
+  if (!value) return never;
   const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "never";
+  if (Number.isNaN(date.getTime())) return never;
   return date.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
 }
 
@@ -22,7 +108,12 @@ async function copyText(value: string): Promise<boolean> {
   }
 }
 
-export function ApiKeysSection() {
+interface ApiKeysSectionProps {
+  locale?: Locale;
+}
+
+export function ApiKeysSection({ locale = "en" }: ApiKeysSectionProps) {
+  const copy = COPY[locale];
   const [keys, setKeys] = useState<ApiKey[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [name, setName] = useState("");
@@ -37,10 +128,10 @@ export function ApiKeysSection() {
     try {
       setKeys(await listApiKeys());
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Couldn’t load API tokens.");
+      setError(err instanceof Error ? err.message : copy.errLoad);
       setKeys([]);
     }
-  }, []);
+  }, [copy.errLoad]);
 
   useEffect(() => {
     void load();
@@ -60,7 +151,7 @@ export function ApiKeysSection() {
       setAllowMemoryWrite(false);
       setKeys((current) => [key, ...(current ?? [])]);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Couldn’t create the token.");
+      setError(err instanceof Error ? err.message : copy.errCreate);
     } finally {
       setCreating(false);
     }
@@ -74,7 +165,7 @@ export function ApiKeysSection() {
       setKeys((current) => (current ?? []).filter((k) => k.id !== id));
       setCreated((current) => (current && current.id === id ? null : current));
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Couldn’t revoke the token.");
+      setError(err instanceof Error ? err.message : copy.errRevoke);
     } finally {
       setRevoking(null);
     }
@@ -82,19 +173,14 @@ export function ApiKeysSection() {
 
   return (
     <div className="settings-form api-keys-section" data-testid="api-keys-section">
-      <h3>API tokens</h3>
-      <p className="settings-note">
-        Static <code>wc_live_</code> Bearer tokens for headless access — a server, cron job, or an
-        agent (OpenClaw, Hermes) acting as a memory bank. Works on the REST API and the MCP
-        endpoint. Read-only by default; enable “save memories” to also let an agent write back via
-        the MCP <code>remember</code> tool. The REST API stays read-only either way.
-      </p>
+      <h3>{copy.heading}</h3>
+      <p className="settings-note">{copy.note}</p>
 
       <form className="api-key-create-row" onSubmit={handleCreate}>
         <input
           type="text"
           data-testid="api-key-name-input"
-          placeholder="Token name (e.g. openclaw-agent)"
+          placeholder={copy.placeholder}
           value={name}
           onChange={(event) => setName(event.target.value)}
         />
@@ -104,7 +190,7 @@ export function ApiKeysSection() {
           data-testid="api-key-create"
           disabled={creating || name.trim().length === 0}
         >
-          {creating ? "Creating…" : "Create token"}
+          {creating ? copy.creating : copy.create}
         </button>
       </form>
       <label className="api-key-write-toggle" data-testid="api-key-allow-write">
@@ -113,12 +199,12 @@ export function ApiKeysSection() {
           checked={allowMemoryWrite}
           onChange={(event) => setAllowMemoryWrite(event.target.checked)}
         />
-        <span>Allow this token to save memories (write access)</span>
+        <span>{copy.allowWrite}</span>
       </label>
 
       {created ? (
         <div className="api-key-created" data-testid="api-key-created-token" role="status">
-          <p className="api-key-created-note">Copy this token now — it won’t be shown again.</p>
+          <p className="api-key-created-note">{copy.createdNote}</p>
           <div className="api-key-token-row">
             <code className="api-key-token">{created.token}</code>
             <button
@@ -132,7 +218,7 @@ export function ApiKeysSection() {
                 }
               }}
             >
-              {copied ? "Copied" : "Copy"}
+              {copied ? copy.copied : copy.copy}
             </button>
             <button
               type="button"
@@ -140,7 +226,7 @@ export function ApiKeysSection() {
               data-testid="api-key-dismiss-token"
               onClick={() => setCreated(null)}
             >
-              Done
+              {copy.done}
             </button>
           </div>
         </div>
@@ -154,11 +240,11 @@ export function ApiKeysSection() {
 
       {keys === null ? (
         <p className="settings-note" data-testid="api-keys-loading">
-          Loading…
+          {copy.loading}
         </p>
       ) : keys.length === 0 ? (
         <p className="settings-note" data-testid="api-keys-empty">
-          No API tokens yet.
+          {copy.empty}
         </p>
       ) : (
         <ul className="mcp-connection-rows">
@@ -168,13 +254,16 @@ export function ApiKeysSection() {
                 <span className="mcp-connection-name">
                   {key.name}
                   {key.scopes?.includes("memory:write") ? (
-                    <span className="api-key-scope-badge" data-testid={`api-key-write-badge-${key.id}`}>
-                      memory write
+                    <span
+                      className="api-key-scope-badge"
+                      data-testid={`api-key-write-badge-${key.id}`}
+                    >
+                      {copy.writeBadge}
                     </span>
                   ) : null}
                 </span>
                 <span className="mcp-connection-detail">
-                  {key.prefix}…{key.last4} · last used {formatDate(key.last_used_at)}
+                  {key.prefix}…{key.last4} · {copy.lastUsed} {formatDate(key.last_used_at, copy.never)}
                 </span>
               </div>
               <button
@@ -184,7 +273,7 @@ export function ApiKeysSection() {
                 disabled={revoking === key.id}
                 onClick={() => void handleRevoke(key.id)}
               >
-                {revoking === key.id ? "Revoking…" : "Revoke"}
+                {revoking === key.id ? copy.revoking : copy.revoke}
               </button>
             </li>
           ))}

@@ -229,6 +229,9 @@ async def test_create_mcp_app_tool_handlers_use_authenticated_user_and_db(monkey
 
     ask = json.loads(await tools["ask"]("what did we decide"))
     search = json.loads(await tools["search"]("roadmap", limit=5, folder_ids=["f1"]))
+    # folder_ids=[] is "not None" → recordings path (folders apply to recordings only),
+    # NOT the unified branch.
+    json.loads(await tools["search"]("scoped", limit=6, folder_ids=[]))
     unified = json.loads(await tools["search"]("anything", limit=7))
     fetch = json.loads(await tools["fetch"]("r1"))
     folders = json.loads(await tools["list_folders"]())
@@ -252,6 +255,7 @@ async def test_create_mcp_app_tool_handlers_use_authenticated_user_and_db(monkey
     assert calls == [
         ("ask", "db-session", "user-123", "what did we decide"),
         ("search", "db-session", "user-123", "roadmap", 5, ["f1"]),
+        ("search", "db-session", "user-123", "scoped", 6, []),
         ("unified", "db-session", "user-123", "anything", 7),
         ("fetch", "db-session", "user-123", "r1"),
         ("folders", "db-session", "user-123"),

@@ -17,6 +17,8 @@ from app.api.deps import CurrentUser, Database, _extract_access_token, bearer_se
 from app.config import get_settings
 from app.core.mcp_oauth import (
     ACCESS_TOKEN_TYPE,
+    MCP_READ_SCOPE,
+    MCP_WRITE_SCOPE,
     McpAuthorizationRequestError,
     auto_complete_authorization_if_consented,
     complete_authorization_request,
@@ -67,12 +69,26 @@ def _consent_html(
     escaped_redirect_uri = html.escape(redirect_uri)
     escaped_request = html.escape(request_token)
     escaped_csrf = html.escape(csrf_token)
+    scope_copy = {
+        MCP_READ_SCOPE: (
+            "read your WaiComputer recordings, transcripts, summaries, notes, "
+            "chats, and action items."
+        ),
+        MCP_WRITE_SCOPE: (
+            "<strong>save new memories into your brain</strong> "
+            "(the agent can write, via the remember tool)."
+        ),
+    }
     scope_rows = "\n".join(
-        (
-            f"<li>{html.escape(scope)}: read your WaiComputer recordings, transcripts, "
-            "summaries, and action items.</li>"
-        )
+        f"<li>{html.escape(scope)}: "
+        f"{scope_copy.get(scope, 'access your WaiComputer library.')}</li>"
         for scope in scopes
+    )
+    grants_write = MCP_WRITE_SCOPE in scopes
+    access_summary = (
+        "read your library <strong>and save new memories</strong>"
+        if grants_write
+        else "read-only access to your library"
     )
     uri_markup = (
         f'<p class="client-uri">{escaped_uri}</p>'
@@ -162,7 +178,7 @@ def _consent_html(
   <main>
     <h1>Authorize {escaped_client}</h1>
     {uri_markup}
-    <p>This MCP client is requesting read-only access to your WaiComputer library.</p>
+    <p>This MCP client is requesting {access_summary}.</p>
     <ul>{scope_rows}</ul>
     <p class="redirect"><strong>Redirect URI</strong>{escaped_redirect_uri}</p>
     <form method="post" action="/api/mcp/oauth/consent">

@@ -228,6 +228,9 @@
     <string name="detail_processing">Обрабатываю…</string>
     <string name="detail_failed_retry">Загрузить заново</string>
     <string name="detail_share">Поделиться</string>
+    <string name="detail_copy_transcript">Скопировать расшифровку</string>
+    <string name="detail_transcript_copied">Расшифровка скопирована</string>
+    <string name="detail_transcript_copy_failed">Не удалось скопировать расшифровку</string>
     <string name="detail_move">Переместить</string>
     <string name="detail_untitled">Без названия</string>
     <string name="detail_sign_in_to_transcribe">Войди, чтобы расшифровать</string>

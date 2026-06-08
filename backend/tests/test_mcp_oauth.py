@@ -318,3 +318,32 @@ async def test_mcp_search_and_fetch_are_user_scoped(
     assert "connector roadmap" in fetched["text"]
 
     assert await fetch_recording_for_mcp(db_session, user_id, other_recording_id) is None
+
+
+def test_consent_html_discloses_write_scope() -> None:
+    """The consent page must NOT claim read-only when mcp:write is requested."""
+    from app.api.routes.mcp_oauth import _consent_html
+    from app.core.mcp_oauth import MCP_READ_SCOPE, MCP_WRITE_SCOPE
+
+    read_only = _consent_html(
+        request_token="r",
+        csrf_token="c",
+        client_name="Agent",
+        client_uri=None,
+        redirect_uri="https://x.test/cb",
+        scopes=[MCP_READ_SCOPE],
+    )
+    assert "read-only access to your library" in read_only
+    assert "save new memories" not in read_only
+
+    with_write = _consent_html(
+        request_token="r",
+        csrf_token="c",
+        client_name="Agent",
+        client_uri=None,
+        redirect_uri="https://x.test/cb",
+        scopes=[MCP_READ_SCOPE, MCP_WRITE_SCOPE],
+    )
+    assert "and save new memories" in with_write  # banner discloses write
+    assert "save new memories into your brain" in with_write  # per-scope row
+    assert "requesting read-only access" not in with_write

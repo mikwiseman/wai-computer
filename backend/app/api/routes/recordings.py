@@ -77,6 +77,12 @@ from app.core.summary_generation import (
     resolve_summary_style_preference,
     start_recording_summary_generation_job,
 )
+from app.core.transcript_utils import (
+    TranscriptStyle,
+    TranscriptTurn,
+    merge_segment_turns,
+    render_transcript_turns,
+)
 from app.core.voice_identification import (
     rematch_recording_speakers,
     store_voiceprint_from_recording_speaker,
@@ -1636,6 +1642,33 @@ def _segment_export_speaker(seg: Segment, locale: ExportLocale) -> str:
     return _humanize_speaker_label(seg.speaker or seg.raw_label, locale)
 
 
+def _segment_speaker_key(seg: Segment) -> str:
+    """Stable grouping identity for turn-merging (see merge_segment_turns).
+
+    Keyed on the assigned Person first so a turn never splits on a stale label, then on
+    the normalized diarization label (``speaker_0`` / ``Speaker 0`` -> ``speaker:0``) so
+    the same speaker merges regardless of casing. Unlabelled segments share the "" bucket.
+    """
+    if seg.person_id is not None:
+        return f"person:{seg.person_id}"
+    raw = (seg.speaker or seg.raw_label or "").strip()
+    match = _SPEAKER_LABEL_RE.match(raw)
+    if match is not None:
+        return f"speaker:{int(match.group(2))}"
+    return raw.lower()
+
+
+def _build_transcript_turns(recording: Recording, locale: ExportLocale) -> list[TranscriptTurn]:
+    """Merge a recording's segments into readable speaker turns for export/copy."""
+    return merge_segment_turns(
+        recording.segments,
+        resolve_speaker=lambda seg: (
+            _segment_speaker_key(seg),
+            _segment_export_speaker(seg, locale),
+        ),
+    )
+
+
 def _assigned_speaker_names(recording: Recording) -> dict[str, str]:
     """Map raw diarization labels (``speaker_0``) to their assigned Person name.
 
@@ -1774,24 +1807,34 @@ def _export_markdown(recording: Recording, locale: ExportLocale | None = None) -
             lines.append(f"- **[{category}]** {h.title}{speaker_part}")
         lines.append("")
 
-    # Transcript section
+    # Transcript section — merge consecutive same-speaker utterances into turns so the
+    # transcript reads as paragraphs (one bold label per turn) rather than a label on
+    # every pause-split fragment.
     lines.append(f"## {copy['transcript']}")
-    segments = sorted(recording.segments, key=lambda s: s.start_ms or 0)
-    for seg in segments:
-        speaker = _segment_export_speaker(seg, resolved_locale)
-        ts = _format_timestamp_short(seg.start_ms)
+    turn_lines: list[str] = []
+    for turn in _build_transcript_turns(recording, resolved_locale):
+        ts = _format_timestamp_short(turn.start_ms)
         ts_part = f" ({ts})" if ts else ""
-        lines.append(f"**{speaker}**{ts_part}: {seg.content}")
+        turn_lines.append(f"**{turn.speaker}**{ts_part}: {turn.text}")
+    lines.append("\n\n".join(turn_lines))
     lines.append("")
 
     return "\n".join(lines)
 
 
-def _export_txt(recording: Recording, locale: ExportLocale | None = None) -> str:
+def _export_txt(
+    recording: Recording,
+    locale: ExportLocale | None = None,
+    *,
+    style: TranscriptStyle = "plain",
+) -> str:
     """Export recording as plain text.
 
     Mirrors the Markdown export's sections (summary, highlights, transcript) so the
-    three export formats are consistent (124); only the formatting differs.
+    three export formats are consistent (124). The transcript honours ``style``:
+    ``plain`` (default) renders flowing prose — the "just give me the text" case,
+    dropping labels for a single-speaker recording — while ``timestamped`` keeps the
+    ``[Speaker, M:SS]`` layout, now merged per turn. See render_transcript_turns.
     """
     resolved_locale = _resolve_export_locale(recording, locale)
     copy = _EXPORT_COPY[resolved_locale]
@@ -1830,16 +1873,15 @@ def _export_txt(recording: Recording, locale: ExportLocale | None = None) -> str
             lines.append(f"- [{category}] {h.title}{suffix}")
         lines.append("")
 
-    # Transcript section.
+    # Transcript section — merged turns rendered in the requested style.
     lines.append(copy["transcript"])
-    segments = sorted(recording.segments, key=lambda s: s.start_ms or 0)
-    for seg in segments:
-        speaker = _segment_export_speaker(seg, resolved_locale)
-        ts = _format_timestamp_short(seg.start_ms)
-        if ts:
-            lines.append(f"[{speaker}, {ts}] {seg.content}")
-        else:
-            lines.append(f"[{speaker}] {seg.content}")
+    rendered = render_transcript_turns(
+        _build_transcript_turns(recording, resolved_locale),
+        style=style,
+        format_timestamp=_format_timestamp_short,
+    )
+    if rendered:
+        lines.append(rendered)
     lines.append("")
 
     return "\n".join(lines)
@@ -1913,8 +1955,13 @@ async def export_recording(
     db: Database,
     format: Literal["markdown", "txt", "srt"] = Query(...),
     locale: Literal["en", "ru"] | None = Query(None),
+    style: Literal["plain", "speakers", "timestamped"] | None = Query(None),
 ) -> Response:
-    """Export a recording transcript in the requested format."""
+    """Export a recording transcript in the requested format.
+
+    ``style`` applies to ``txt`` only and defaults to ``plain`` (clean prose). Pass
+    ``timestamped`` for the legacy ``[Speaker, M:SS]`` layout (now merged per turn).
+    """
     result = await db.execute(
         select(Recording)
         .where(Recording.id == recording_id, Recording.user_id == user.id)
@@ -1934,7 +1981,7 @@ async def export_recording(
         media_type = "text/markdown; charset=utf-8"
         ext = "md"
     elif format == "txt":
-        content = _export_txt(recording, locale)
+        content = _export_txt(recording, locale, style=style or "plain")
         media_type = "text/plain; charset=utf-8"
         ext = "txt"
     else:

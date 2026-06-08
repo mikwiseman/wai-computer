@@ -6,12 +6,11 @@ description: >-
   everything captured, and remember new facts. Use it before answering from
   assumptions, and whenever the user says "remember that…".
 homepage: https://wai.computer
-mcp:
-  waicomputer:
-    url: https://wai.computer/mcp
-    transport: streamable-http
-    auth: oauth
 ---
+
+<!-- OpenClaw skills don't auto-register MCP servers from frontmatter — the
+     server is added via the `openclaw mcp add` commands in Setup below. -->
+
 
 # WaiComputer brain
 

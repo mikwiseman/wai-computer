@@ -236,6 +236,9 @@
     <string name="detail_processing">Processing…</string>
     <string name="detail_failed_retry">Upload again</string>
     <string name="detail_share">Share</string>
+    <string name="detail_copy_transcript">Copy transcript</string>
+    <string name="detail_transcript_copied">Transcript copied</string>
+    <string name="detail_transcript_copy_failed">Couldn\'t copy transcript</string>
     <string name="detail_move">Move to folder</string>
     <string name="detail_untitled">Untitled</string>
     <string name="detail_sign_in_to_transcribe">Sign in to transcribe</string>

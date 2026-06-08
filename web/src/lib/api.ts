@@ -1294,10 +1294,14 @@ export function getRecordingAnalytics(): Promise<AnalyticsResponse> {
 export async function exportRecording(
   recordingId: string,
   format: ExportFormat,
-  options: { locale?: ExportLocale } = {},
+  options: { locale?: ExportLocale; style?: "plain" | "speakers" | "timestamped" } = {},
 ): Promise<Blob> {
   const response = await apiFetchResponse(
-    `/api/recordings/${recordingId}/export${asQuery({ format, locale: options.locale })}`,
+    `/api/recordings/${recordingId}/export${asQuery({
+      format,
+      locale: options.locale,
+      style: options.style,
+    })}`,
   );
   return response.blob();
 }

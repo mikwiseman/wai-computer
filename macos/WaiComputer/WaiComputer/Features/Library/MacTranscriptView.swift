@@ -25,9 +25,9 @@ struct MacTranscriptView: View {
                             copyTranscriptButton
                         }
 
-                        ForEach(segments) { segment in
+                        ForEach(TranscriptRendering.mergeTurns(segments, languageCode: speakerLanguageCode)) { turn in
                             SegmentRowView(
-                                segment: segment,
+                                segment: turn.displaySegment,
                                 recordingId: recordingId,
                                 onAssigned: onAssigned
                             )
@@ -96,14 +96,19 @@ struct MacTranscriptView: View {
         )
     }
 
-    private var transcriptText: String {
-        segments.map { seg in
-            let speaker = seg.userFacingSpeakerLabel(languageCode: speakerLanguageCode)
-                ?? t("Speaker", "Говорящий")
-            let timestamp = seg.formattedTimestamp
-            return "[\(speaker), \(timestamp)] \(seg.content)"
+    private func copyTranscript(style: TranscriptStyle) {
+        let text = TranscriptRendering.transcriptText(
+            segments,
+            style: style,
+            languageCode: speakerLanguageCode
+        )
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
+        copied = true
+        Task {
+            try? await Task.sleep(for: .seconds(1.5))
+            copied = false
         }
-        .joined(separator: "\n")
     }
 
     private var speakerLanguageCode: String {
@@ -116,19 +121,27 @@ struct MacTranscriptView: View {
     }
 
     private var copyTranscriptButton: some View {
-        Button {
-            NSPasteboard.general.clearContents()
-            NSPasteboard.general.setString(transcriptText, forType: .string)
-            copied = true
-            Task {
-                try? await Task.sleep(for: .seconds(1.5))
-                copied = false
+        // Single click copies clean prose (the common case); the menu exposes the
+        // timestamped variant without making it the default.
+        Menu {
+            Button {
+                copyTranscript(style: .plain)
+            } label: {
+                Label(t("Copy text", "Скопировать текст"), systemImage: "doc.on.doc")
+            }
+            Button {
+                copyTranscript(style: .timestamped)
+            } label: {
+                Label(t("Copy with timestamps", "Скопировать с тайм-кодами"), systemImage: "clock")
             }
         } label: {
             Label(copied ? t("Copied", "Скопировано") : t("Copy Transcript", "Скопировать расшифровку"), systemImage: copied ? "checkmark" : "doc.on.doc")
+        } primaryAction: {
+            copyTranscript(style: .plain)
         }
-        .buttonStyle(WaiGhostButtonStyle())
-        .help(copied ? t("Copied!", "Скопировано") : t("Copy transcript", "Скопировать расшифровку"))
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+        .help(t("Copy transcript", "Скопировать расшифровку"))
     }
 
     private func t(_ english: String, _ russian: String) -> String {

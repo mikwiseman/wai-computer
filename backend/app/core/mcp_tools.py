@@ -173,6 +173,9 @@ async def search_recordings_for_mcp(
                 "text": _first_match_snippet(_recording_search_text(recording), query),
                 "url": _recording_url(recording.id),
                 "metadata": {
+                    # Always present so a folder-scoped `search` hit carries the
+                    # same source_kind discriminator as the unified path.
+                    "source_kind": "recording",
                     "type": recording.type,
                     "created_at": _iso(recording.created_at),
                     "duration_seconds": recording.duration_seconds,

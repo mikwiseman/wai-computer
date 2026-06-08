@@ -2231,6 +2231,14 @@ a.primary-button[aria-disabled="true"]:hover {
   gap: 1rem;
 }
 
+/* Inline group for adjacent actions (e.g. the two transcript copy buttons). */
+.button-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
 /* Section header row — mirror Mac `waiSectionHeader()` modifier:
  * 11pt medium, tertiary text color, uppercase, tracked. */
 .section-heading-row h3,
@@ -3096,7 +3104,9 @@ a.primary-button[aria-disabled="true"]:hover {
   padding: 0.05rem 0.4rem;
   border-radius: 999px;
   background: var(--accent-soft, rgba(20, 130, 110, 0.12));
-  color: var(--accent, #14826e);
+  /* --accent-strong (not --accent) so the badge clears WCAG AA on every
+     accent tint — plain --accent fails on amber/green (~2:1). */
+  color: var(--accent-strong, #0f6f5c);
   font-size: 0.7rem;
   font-weight: 600;
   vertical-align: middle;

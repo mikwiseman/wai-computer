@@ -118,6 +118,51 @@ async def _create_recording_with_segments(
     return recording
 
 
+async def _create_monologue_recording(
+    client: AsyncClient,
+    headers: dict,
+    db_session: AsyncSession,
+) -> dict:
+    """Recording with three consecutive same-speaker fragments (the unreadable case)."""
+    recording = await _create_recording(client, headers, title="Solo Note", type_="note")
+    recording_id = UUID(recording["id"])
+    rec = (
+        await db_session.execute(select(Recording).where(Recording.id == recording_id))
+    ).scalar_one()
+    rec.duration_seconds = 12
+    db_session.add_all([
+        Segment(
+            recording_id=recording_id,
+            speaker="speaker_0",
+            raw_label="speaker_0",
+            content="Remarks on today's",
+            start_ms=0,
+            end_ms=2000,
+            confidence=0.9,
+        ),
+        Segment(
+            recording_id=recording_id,
+            speaker="speaker_0",
+            raw_label="speaker_0",
+            content="summary.",
+            start_ms=2000,
+            end_ms=4000,
+            confidence=0.9,
+        ),
+        Segment(
+            recording_id=recording_id,
+            speaker="speaker_0",
+            raw_label="speaker_0",
+            content="I will explain in detail.",
+            start_ms=4000,
+            end_ms=7000,
+            confidence=0.9,
+        ),
+    ])
+    await db_session.flush()
+    return recording
+
+
 @pytest.mark.asyncio
 async def test_export_markdown_localizes_russian_labels_and_speaker_tokens(
     client: AsyncClient,
@@ -200,7 +245,7 @@ async def test_export_uses_assigned_person_display_name_when_present(
     response = await client.get(
         f"/api/recordings/{recording['id']}/export",
         headers=auth_headers,
-        params={"format": "txt"},
+        params={"format": "txt", "style": "timestamped"},
     )
 
     assert response.status_code == 200
@@ -380,7 +425,7 @@ async def test_export_txt_format(
     auth_headers: dict,
     db_session: AsyncSession,
 ):
-    """Plain text export should include title, date, duration, and bracketed speaker lines."""
+    """Plain text export defaults to clean prose: merged, speaker-led turns, no timestamps."""
     recording = await _create_recording_with_segments(
         client, auth_headers, db_session,
     )
@@ -396,10 +441,10 @@ async def test_export_txt_format(
     body = response.text
     assert "Team Standup" in body
     assert "15:30" in body
-    assert "[Speaker 1, 0:00]" in body
-    assert "Hello everyone, welcome to the standup." in body
-    assert "[Speaker 2, 0:15]" in body
-    assert "Thanks for joining." in body
+    assert "Speaker 1: Hello everyone, welcome to the standup." in body
+    assert "Speaker 2: Thanks for joining. Let's review the sprint." in body
+    # The default is prose, not the old per-fragment timestamped layout.
+    assert "[Speaker 1, 0:00]" not in body
 
 
 @pytest.mark.asyncio
@@ -426,7 +471,70 @@ async def test_export_txt_includes_summary_and_highlights(
     body = response.text
     assert "Team discussed sprint progress" in body  # summary section present
     assert "Budget approved for Q3" in body  # highlight present
-    assert "[Speaker 1, 0:00]" in body  # transcript still present
+    assert "Speaker 1: Hello everyone" in body  # transcript still present (prose default)
+
+
+@pytest.mark.asyncio
+async def test_export_txt_plain_monologue_drops_labels(
+    client: AsyncClient,
+    auth_headers: dict,
+    db_session: AsyncSession,
+):
+    """A single-speaker recording exports as flowing prose with no speaker labels."""
+    recording = await _create_monologue_recording(client, auth_headers, db_session)
+
+    response = await client.get(
+        f"/api/recordings/{recording['id']}/export",
+        headers=auth_headers,
+        params={"format": "txt"},
+    )
+    assert response.status_code == 200
+    body = response.text
+    assert "Remarks on today's summary. I will explain in detail." in body
+    assert "Speaker 1:" not in body
+    assert "[Speaker 1" not in body
+
+
+@pytest.mark.asyncio
+async def test_export_txt_timestamped_merges_consecutive_turns(
+    client: AsyncClient,
+    auth_headers: dict,
+    db_session: AsyncSession,
+):
+    """style=timestamped keeps [Speaker, M:SS] but merges consecutive same-speaker utterances."""
+    recording = await _create_monologue_recording(client, auth_headers, db_session)
+
+    response = await client.get(
+        f"/api/recordings/{recording['id']}/export",
+        headers=auth_headers,
+        params={"format": "txt", "style": "timestamped"},
+    )
+    assert response.status_code == 200
+    body = response.text
+    # One merged line carrying all three fragments, not three separate timestamped lines.
+    assert (
+        "[Speaker 1, 0:00] Remarks on today's summary. I will explain in detail." in body
+    )
+
+
+@pytest.mark.asyncio
+async def test_export_markdown_merges_consecutive_same_speaker(
+    client: AsyncClient,
+    auth_headers: dict,
+    db_session: AsyncSession,
+):
+    """Markdown renders one bold label per merged turn, not per pause-split fragment."""
+    recording = await _create_monologue_recording(client, auth_headers, db_session)
+
+    response = await client.get(
+        f"/api/recordings/{recording['id']}/export",
+        headers=auth_headers,
+        params={"format": "markdown"},
+    )
+    assert response.status_code == 200
+    body = response.text
+    assert body.count("**Speaker 1**") == 1  # single turn, not three fragments
+    assert "Remarks on today's summary. I will explain in detail." in body
 
 
 # ---- SRT subtitle export ----

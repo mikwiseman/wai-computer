@@ -17,7 +17,7 @@ from app.core.mcp_brain_tools import (
     search_brain_for_mcp,
 )
 from app.models.companion import ChatMessage, Conversation
-from app.models.item import Item
+from app.models.item import Item, ItemSummary
 from app.models.recording import Recording, Segment
 from app.models.user import User
 
@@ -216,3 +216,50 @@ async def test_remember_for_mcp_rejects_empty_and_oversized(db_session) -> None:
         await remember_for_mcp(db_session, user.id, "   ")
     with pytest.raises(ValueError, match="too long"):
         await remember_for_mcp(db_session, user.id, "x" * (REMEMBER_MAX_CHARS + 1))
+
+
+async def test_fetch_document_cross_user_items_and_chats(db_session) -> None:
+    user = await _make_user(db_session)
+    other = await _make_user(db_session)
+    other_item, _ = await ingest_item(
+        db_session, other.id, source="paste", kind="note",
+        title="theirs", body="secret note", embedder=_embedder,
+    )
+    other_chat = await _make_chat(db_session, other, title="theirs", text="secret chat")
+    # An item/chat owned by another user must NOT be fetchable.
+    assert await fetch_document_for_mcp(db_session, user.id, other_item.id) is None
+    assert await fetch_document_for_mcp(db_session, user.id, other_chat.id) is None
+
+
+async def test_fetch_document_excludes_soft_deleted(db_session) -> None:
+    user = await _make_user(db_session)
+    rec = await _make_recording(db_session, user, title="gone", content="deleted content")
+    item, _ = await ingest_item(
+        db_session, user.id, source="paste", kind="note",
+        title="gone", body="deleted note", embedder=_embedder,
+    )
+    chat = await _make_chat(db_session, user, title="gone", text="deleted chat")
+    deleted = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    rec.deleted_at = deleted
+    item.deleted_at = deleted
+    chat.deleted_at = deleted
+    await db_session.flush()
+    assert await fetch_document_for_mcp(db_session, user.id, rec.id) is None
+    assert await fetch_document_for_mcp(db_session, user.id, item.id) is None
+    assert await fetch_document_for_mcp(db_session, user.id, chat.id) is None
+
+
+async def test_fetch_item_renders_summary_and_key_points(db_session) -> None:
+    user = await _make_user(db_session)
+    item, _ = await ingest_item(
+        db_session, user.id, source="paste", kind="note",
+        title="Plan", body="raw body", embedder=_embedder,
+    )
+    db_session.add(
+        ItemSummary(item_id=item.id, summary="The summary.", key_points=["alpha", "beta"])
+    )
+    await db_session.flush()
+    doc = await fetch_document_for_mcp(db_session, user.id, item.id)
+    assert doc is not None
+    assert "Summary:\nThe summary." in doc["text"]
+    assert "Key points:\n- alpha\n- beta" in doc["text"]

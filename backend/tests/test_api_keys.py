@@ -233,6 +233,66 @@ async def test_api_key_works_on_mcp_endpoint(
     }
 
 
+async def _mcp_tools_call(token: str, name: str, arguments: dict) -> dict:
+    """Drive the real /mcp ASGI app's tools/call with a wc_live_ PAT."""
+    app = create_mcp_app(get_settings())
+    async with app.router.lifespan_context(app):
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://localhost:3000") as mcp:
+            resp = await mcp.post(
+                "/mcp",
+                json={
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "method": "tools/call",
+                    "params": {"name": name, "arguments": arguments},
+                },
+                headers={
+                    "Authorization": f"Bearer {token}",
+                    "Accept": "application/json, text/event-stream",
+                },
+            )
+    assert resp.status_code == 200, resp.text
+    return resp.json()["result"]
+
+
+@pytest.mark.asyncio
+async def test_readonly_pat_remember_rejected_via_mcp(
+    client: AsyncClient, auth_headers: dict
+) -> None:
+    """A read-only PAT calling `remember` is rejected through the real scope chain
+    (verify_token → middleware → handler) before any write."""
+    token = (await _create_key(client, auth_headers, name="ro-agent"))["token"]
+    result = await _mcp_tools_call(token, "remember", {"text": "should be blocked"})
+    assert result.get("isError") is True
+    assert "read-only" in result["content"][0]["text"].lower()
+
+
+@pytest.mark.asyncio
+async def test_write_pat_remember_passes_scope_gate_via_mcp(
+    client: AsyncClient, auth_headers: dict, monkeypatch
+) -> None:
+    """A write-enabled PAT reaches the remember handler (the real verify_token →
+    mcp:write chain). remember_for_mcp is stubbed to avoid the shared-session
+    SAVEPOINT artifact; the point is the scope passes and the tool is invoked."""
+    import app.mcp_server as mcp_server
+
+    captured: dict = {}
+
+    async def fake_remember(db, user_id, text, *, title=None, source_url=None):
+        captured["text"] = text
+        return {"id": "i1", "created": True, "title": title, "url": "u"}
+
+    monkeypatch.setattr(mcp_server, "remember_for_mcp", fake_remember)
+
+    token = (await _create_key(client, auth_headers, name="rw-agent", allow_memory_write=True))[
+        "token"
+    ]
+    result = await _mcp_tools_call(token, "remember", {"text": "the launch is Friday"})
+    assert not result.get("isError")
+    assert captured["text"] == "the launch is Friday"
+
+
 @pytest.mark.asyncio
 async def test_recordings_updated_after_filter(
     client: AsyncClient, auth_headers: dict, db_session: AsyncSession

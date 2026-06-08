@@ -167,7 +167,9 @@ class WaiComputerMemoryProvider(MemoryProvider):
 
     # --- mirror built-in memory writes into the brain (write tokens only) -----
 
-    def on_memory_write(self, action: str, target: str, content: str) -> None:
+    def on_memory_write(self, action: str, target: str, content: str, metadata=None) -> None:
+        # Signature matches Hermes's MemoryProvider ABC, which passes a 4th
+        # `metadata` arg; omitting it raises TypeError on every built-in write.
         if action not in ("add", "update") or not (content or "").strip():
             return
 
