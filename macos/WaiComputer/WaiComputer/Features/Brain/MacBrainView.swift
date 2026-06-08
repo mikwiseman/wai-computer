@@ -1560,7 +1560,7 @@ struct MacBrainView: View {
                         "Страницы появляются, когда Wai находит людей, проекты и темы в ваших источниках.")
                     : t("No pages match.", "Нет совпадений."))
             } else {
-                VStack(alignment: .leading, spacing: Spacing.xs) {
+                LazyVStack(alignment: .leading, spacing: Spacing.xs) {
                     ForEach(model.visiblePages) { entity in
                         pageRow(entity)
                     }
@@ -2414,9 +2414,12 @@ final class MacBrainViewModel: ObservableObject {
     @Published var brainAskError: String?
 
     // Pages (entities)
-    @Published var entities: [Entity] = []
-    @Published var pageFilter: BrainPageFilter = .all
-    @Published var searchText = ""
+    @Published var entities: [Entity] = [] { didSet { recomputeVisiblePages() } }
+    @Published var pageFilter: BrainPageFilter = .all { didSet { recomputeVisiblePages() } }
+    @Published var searchText = "" { didSet { recomputeVisiblePages() } }
+    /// Memoized filtered pages. Recomputed only when entities / filter / query
+    /// change, instead of re-filtering the whole array on every body render.
+    @Published private(set) var visiblePages: [Entity] = []
     @Published var selectedEntity: SelectedEntity?
     @Published var entityPage: EntityPage?
     @Published var pageLoading = false
@@ -2602,9 +2605,9 @@ final class MacBrainViewModel: ObservableObject {
             || !(spaceHome?.sources.isEmpty ?? true)
     }
 
-    var visiblePages: [Entity] {
+    private func recomputeVisiblePages() {
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        return entities.filter { entity in
+        visiblePages = entities.filter { entity in
             (pageFilter == .all || entity.type.rawValue == pageFilter.rawValue)
                 && (query.isEmpty || entity.name.lowercased().contains(query))
         }

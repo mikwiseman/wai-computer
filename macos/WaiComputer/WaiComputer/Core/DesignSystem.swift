@@ -149,12 +149,51 @@ struct MacThemePreferences {
         }
     }
 
+    // Accent/appearance are read on hot paths (every row, every body pass, the
+    // NSTableView accent). Reading UserDefaults each time was a measurable scroll
+    // cost, so cache the resolved values and refresh only when defaults change.
+    private static let cache = MacThemeCache()
+
     static var currentAppearance: MacAppearanceMode {
-        MacThemePreferences().appearance
+        cache.appearance
     }
 
     static var currentAccent: MacAccentChoice {
-        MacThemePreferences().accent
+        cache.accent
+    }
+}
+
+/// Main-thread cache for theme preferences. Invalidated on any UserDefaults
+/// change (accent/appearance are set through UserDefaults), so it stays correct
+/// while avoiding a UserDefaults read on every accent lookup.
+private final class MacThemeCache {
+    private let prefs = MacThemePreferences()
+    private var cachedAccent: MacAccentChoice?
+    private var cachedAppearance: MacAppearanceMode?
+
+    init() {
+        NotificationCenter.default.addObserver(
+            forName: UserDefaults.didChangeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.cachedAccent = nil
+            self?.cachedAppearance = nil
+        }
+    }
+
+    var accent: MacAccentChoice {
+        if let cachedAccent { return cachedAccent }
+        let value = prefs.accent
+        cachedAccent = value
+        return value
+    }
+
+    var appearance: MacAppearanceMode {
+        if let cachedAppearance { return cachedAppearance }
+        let value = prefs.appearance
+        cachedAppearance = value
+        return value
     }
 }
 
