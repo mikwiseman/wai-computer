@@ -15,6 +15,8 @@ struct BrainHomeView: View {
     @StateObject private var feed: ContentFeedViewModel
     @State private var showLensForm = false
     @State private var showAdd = false
+    @State private var shareEmail = ""
+    @State private var shareRole = "viewer"
 
     let apiClient: APIClient
 
@@ -93,6 +95,9 @@ struct BrainHomeView: View {
                     liveMapSection
                     if model.hasAnything {
                         pagesSection
+                    }
+                    if model.spaceHome != nil || !model.spaceReviewPacks.isEmpty {
+                        curatedSection
                     }
                     moreLinks
                 }
@@ -624,6 +629,168 @@ struct BrainHomeView: View {
         .padding(Spacing.sm)
         .background(Palette.surfaceSubtle)
         .clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+
+    // MARK: - Curated knowledge (demoted, parity with macOS)
+
+    private var curatedSection: some View {
+        DisclosureGroup {
+            VStack(alignment: .leading, spacing: Spacing.lg) {
+                if model.spaces.count > 1 {
+                    Picker(t("Brain space", "Пространство"), selection: $model.selectedSpaceId) {
+                        ForEach(model.spaces) { space in
+                            Text(space.name).tag(space.id)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                }
+                if let error = model.spaceError {
+                    Text(error).font(Typography.bodySmall).foregroundStyle(.red)
+                }
+
+                // Review packs
+                VStack(alignment: .leading, spacing: Spacing.sm) {
+                    Text(t("Review", "Проверка")).font(Typography.label).foregroundStyle(Palette.textSecondary)
+                    if model.spaceReviewPacks.isEmpty {
+                        wikiEmpty(t("Nothing waiting for review.", "Нет знаний на проверку."))
+                    } else {
+                        ForEach(model.spaceReviewPacks) { pack in
+                            reviewPackRow(pack)
+                        }
+                    }
+                }
+
+                // Sources
+                if let home = model.spaceHome, !home.sources.isEmpty {
+                    VStack(alignment: .leading, spacing: Spacing.sm) {
+                        Text(t("Sources", "Источники")).font(Typography.label).foregroundStyle(Palette.textSecondary)
+                        ForEach(home.sources) { source in
+                            sourceLink(kind: source.sourceKind, id: source.sourceId) {
+                                curatedSourceRow(source)
+                            }
+                        }
+                    }
+                }
+
+                // Share + export
+                if let home = model.spaceHome {
+                    shareCard
+                    exportCard(home)
+                }
+            }
+            .padding(.top, Spacing.sm)
+        } label: {
+            Text(t("Curated knowledge · Sources", "Подтверждённые знания · Источники"))
+                .font(Typography.headingSmall)
+        }
+        .padding(Spacing.md)
+        .background(Palette.surfaceSubtle)
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+    }
+
+    private func reviewPackRow(_ pack: BrainReviewPack) -> some View {
+        let acting = model.actingSpaceReviewPackIds.contains(pack.id)
+        return VStack(alignment: .leading, spacing: Spacing.sm) {
+            VStack(alignment: .leading, spacing: Spacing.xxs) {
+                Text(pack.title).font(Typography.bodySmall.weight(.medium))
+                Text(pack.summary).font(Typography.labelSmall).foregroundStyle(Palette.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            HStack(spacing: Spacing.sm) {
+                Button(t("Ignore", "Игнорировать")) { Task { await model.rejectSpaceReviewPack(pack.id) } }
+                    .buttonStyle(.bordered).disabled(acting)
+                Button(t("Approve", "Подтвердить")) { Task { await model.acceptSpaceReviewPack(pack.id) } }
+                    .buttonStyle(.borderedProminent).disabled(acting)
+                Spacer()
+            }
+        }
+        .padding(Spacing.md)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.primary.opacity(0.035))
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+
+    private func curatedSourceRow(_ source: BrainSpaceSourceSummary) -> some View {
+        HStack(spacing: Spacing.sm) {
+            Image(systemName: sourceKindSystemImage(source.sourceKind)).font(.system(size: 11)).foregroundStyle(Palette.accent)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(source.sourceTitle ?? t("Untitled source", "Источник без названия"))
+                    .font(Typography.bodySmall.weight(.medium)).lineLimit(1)
+                Text(sourceKindLabel(source.sourceKind)).font(Typography.labelSmall).foregroundStyle(Palette.textSecondary)
+            }
+            Spacer()
+        }
+        .padding(Spacing.sm)
+        .background(Color.primary.opacity(0.035))
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+
+    private var shareCard: some View {
+        VStack(alignment: .leading, spacing: Spacing.xs) {
+            Label(t("Invite teammate", "Пригласить участника"), systemImage: "person.badge.plus")
+                .font(Typography.bodySmall.weight(.semibold))
+            TextField(t("teammate@example.com", "email@example.com"), text: $shareEmail)
+                .textFieldStyle(.roundedBorder)
+                .textInputAutocapitalization(.never)
+                .keyboardType(.emailAddress)
+            HStack(spacing: Spacing.sm) {
+                Picker(t("Role", "Роль"), selection: $shareRole) {
+                    Text(t("Viewer", "Читатель")).tag("viewer")
+                    Text(t("Editor", "Редактор")).tag("editor")
+                }
+                .pickerStyle(.segmented)
+                Button {
+                    Task {
+                        await model.shareSelectedSpace(email: shareEmail, role: shareRole)
+                        if model.shareMessage != nil { shareEmail = "" }
+                    }
+                } label: {
+                    Text(model.sharing ? t("Sharing", "Открываю") : t("Share", "Поделиться"))
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(model.sharing || shareEmail.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+            if let message = model.shareMessage {
+                Text(message).font(Typography.labelSmall).foregroundStyle(Palette.textSecondary)
+            }
+        }
+        .padding(Spacing.md)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.primary.opacity(0.035))
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+
+    private func exportCard(_ home: BrainSpaceHome) -> some View {
+        VStack(alignment: .leading, spacing: Spacing.xs) {
+            Label(t("Export notes", "Экспортировать заметки"), systemImage: "square.and.arrow.up")
+                .font(Typography.bodySmall.weight(.semibold))
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: Spacing.xs) {
+                    ForEach(home.engineProfiles, id: \.self) { profile in
+                        Button(exportProfileLabel(profile)) {
+                            Task { await model.exportSelectedSpace(profile: profile) }
+                        }
+                        .buttonStyle(.bordered)
+                    }
+                }
+            }
+            if let message = model.exportMessage {
+                Text(message).font(Typography.labelSmall).foregroundStyle(Palette.textSecondary)
+            }
+        }
+        .padding(Spacing.md)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.primary.opacity(0.035))
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+
+    private func exportProfileLabel(_ profile: String) -> String {
+        switch profile {
+        case "obsidian": return "Obsidian"
+        case "mempalace": return "MemPalace"
+        case "gbrain": return "GBrain"
+        default: return t("Export", "Экспорт")
+        }
     }
 
     // MARK: - More links
