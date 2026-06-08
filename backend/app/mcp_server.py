@@ -12,13 +12,17 @@ from mcp.server.fastmcp.server import TransportSecuritySettings
 from starlette.applications import Starlette
 
 from app.config import Settings
+from app.core.mcp_brain_tools import (
+    ask_brain_for_mcp,
+    fetch_document_for_mcp,
+    search_brain_for_mcp,
+)
 from app.core.mcp_oauth import (
     MCP_READ_SCOPE,
     mcp_oauth_provider,
     resolve_mcp_access_token_user_id,
 )
 from app.core.mcp_tools import (
-    fetch_recording_for_mcp,
     list_action_items_for_mcp,
     list_folders_for_mcp,
     list_recordings_for_mcp,
@@ -41,28 +45,35 @@ def _allowed_hosts(settings: Settings) -> list[str]:
 
 
 _INSTRUCTIONS = """\
-Read-only access to the authenticated user's WaiComputer library.
-
-Recordings are organised into folders. Each recording has a transcript, an
-AI-generated summary with key points, and structured action items.
+WaiComputer is the user's second brain — their long-term memory. It holds
+voice recordings (transcribed + summarised), saved notes and articles, and
+past Wai chats, all linked into one searchable knowledge base. Use it to
+recall what the user has captured before answering from your own assumptions.
 
 Tools:
-- search(query, limit=10, folder_ids=None): citation-friendly search across
-  recording titles, transcripts, and summaries. Use this first when the user
-  asks "what did I say / decide / agree about X". Pass folder_ids to scope
-  the search to specific folders.
-- fetch(id): the full document for one recording — summary, key points,
-  action items, and the diarised transcript. Use after search to read the
-  source material in detail.
-- list_folders(): the user's folders with non-deleted recording counts. Use
-  this to discover folder IDs before calling list_recordings or search with
-  folder_ids.
+- ask(question): the primary memory tool. Returns ONE cited answer synthesised
+  across everything the user has captured — recordings, notes, and chats —
+  plus an honest list of gaps and how stale the sources are. Ask it first
+  ("what did I decide about X", "what do I know about Y") before falling back
+  to raw search. Never invent an answer the brain doesn't support.
+- search(query, limit=10, folder_ids=None): unified search across recordings,
+  notes, and chats. Each hit has an id (fetchable), a snippet, and
+  metadata.source_kind. Pass folder_ids to scope to specific recording folders
+  (folders apply to recordings only).
+- fetch(id): the full document for one source by id — a recording (summary +
+  key points + action items + diarised transcript), a note, or a chat. Use
+  after ask/search to read the source material in detail.
+- remember(text, title=None, source_url=None): SAVE a new memory back into the
+  brain — a fact, decision, or note worth keeping. Only works when this
+  connection was granted write access; otherwise it returns a clear error and
+  the connection stays read-only. Use it when the user says "remember that…"
+  or when you learn a durable fact worth recalling later.
+- list_folders(): the user's recording folders with counts. Discover folder
+  IDs before a folder-scoped search or list_recordings.
 - list_recordings(folder_ids=None, limit=20, cursor=None): browse recordings
-  newest-first, optionally scoped to one or more folders. Use this when the
-  user wants to "see everything from folder X" rather than text-search.
+  newest-first, optionally scoped to folders.
 - list_action_items(status=None, folder_ids=None, limit=20, cursor=None):
-  list action items extracted from recordings. Filter by status
-  ("pending" / "completed") and/or folder.
+  list action items from recordings, filtered by status / folder.
 
 See Settings → MCP in any WaiComputer client for setup instructions.
 """
@@ -109,47 +120,70 @@ def create_mcp_app(settings: Settings) -> Starlette:
         return user_id
 
     @mcp.tool()
+    async def ask(question: str) -> str:
+        """Ask the user's second brain a question and get ONE cited answer.
+
+        Synthesises across everything captured — recordings, notes, and Wai
+        chats — and returns `{answer, citations, gaps, freshness}`. Each
+        citation has an id (fetchable), source_kind, title, and dashboard url.
+        `gaps` states what the brain does not contain; `freshness` says how old
+        the newest supporting source is. The answer is grounded in the user's
+        own data only — if the brain has nothing, `answer` is empty and `gaps`
+        explains. Prefer this over raw `search` when the user wants an answer
+        rather than a list of sources.
+        """
+        user_id = await _current_user_id()
+        async with get_db_context() as db:
+            result = await ask_brain_for_mcp(db, user_id, question)
+        return json.dumps(result, ensure_ascii=False)
+
+    @mcp.tool()
     async def search(
         query: str,
         limit: int = 10,
         folder_ids: list[str] | None = None,
     ) -> str:
-        """Search the authenticated user's WaiComputer recordings.
+        """Search the user's whole brain — recordings, notes, AND chats.
 
-        Returns up to `limit` matches whose title, transcript segments, or
-        summary contain the query string (case-insensitive substring).
-        Newest first. Each match has id, title, snippet text, dashboard url,
-        and metadata including folder_id, topics, and people_mentioned.
+        Returns `{"results": [...]}`, newest-relevant first. Each match has id
+        (fetchable via `fetch`), title, snippet text, a dashboard url, and
+        `metadata.source_kind` ("recording" | "item" | "chat") so you can tell a
+        meeting from a saved note from a Wai chat.
 
-        Use this when the user asks about content, decisions, or quotes — not
-        when they want to browse a folder (use list_recordings for that).
+        Use this when the user asks about content, decisions, or quotes and you
+        want the raw sources — for a synthesised answer, use `ask` instead.
 
-        Pass `folder_ids` (a list of UUID strings from list_folders) to
-        restrict the search to specific folders. An empty list returns no
-        results.
+        Pass `folder_ids` (UUID strings from list_folders) to restrict to
+        specific recording folders; folders apply to recordings only, so a
+        folder-scoped search returns recordings exclusively. An empty list
+        returns no results.
         """
         user_id = await _current_user_id()
         async with get_db_context() as db:
-            result = await search_recordings_for_mcp(
-                db, user_id, query, limit=limit, folder_ids=folder_ids
-            )
+            if folder_ids is not None:
+                result = await search_recordings_for_mcp(
+                    db, user_id, query, limit=limit, folder_ids=folder_ids
+                )
+            else:
+                result = await search_brain_for_mcp(db, user_id, query, limit=limit)
         return json.dumps(result, ensure_ascii=False)
 
     @mcp.tool()
     async def fetch(id: str) -> str:
-        """Fetch one authenticated-user WaiComputer recording by id.
+        """Fetch one brain document by id — a recording, note, or chat.
 
-        Returns the recording's title, full text (summary + key points +
-        action items + diarised transcript), dashboard url, and metadata.
-        Text may be truncated for very long recordings; metadata.truncated
-        indicates this. Use after `search` or `list_recordings` to read the
-        source material in detail.
+        Returns the source's title, full text, dashboard url, and metadata
+        (including `source_kind`). For a recording the text is summary + key
+        points + action items + diarised transcript; for a note it's the
+        summary + body; for a chat it's the message transcript. Text may be
+        truncated for very long sources (metadata.truncated). Use after `ask`,
+        `search`, or `list_recordings` to read source material in detail.
         """
         user_id = await _current_user_id()
         async with get_db_context() as db:
-            result = await fetch_recording_for_mcp(db, user_id, id)
+            result = await fetch_document_for_mcp(db, user_id, id)
         if result is None:
-            raise ValueError("Recording not found")
+            raise ValueError("Document not found")
         return json.dumps(result, ensure_ascii=False)
 
     @mcp.tool()

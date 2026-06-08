@@ -126,6 +126,7 @@ def test_create_mcp_app_registers_all_tools() -> None:
     tools = asyncio.run(captured_mcp["mcp"].list_tools())
     names = {tool.name for tool in tools}
     assert names == {
+        "ask",
         "search",
         "fetch",
         "list_folders",
@@ -174,9 +175,17 @@ async def test_create_mcp_app_tool_handlers_use_authenticated_user_and_db(monkey
         calls.append(("search", db, user_id, query, limit, folder_ids))
         return {"results": [{"id": "r1", "snippet": "match"}]}
 
-    async def fake_fetch(db, user_id, recording_id):
-        calls.append(("fetch", db, user_id, recording_id))
-        return {"id": recording_id, "title": "Recording"}
+    async def fake_unified_search(db, user_id, query, *, limit):
+        calls.append(("unified", db, user_id, query, limit))
+        return {"results": [{"id": "u1", "metadata": {"source_kind": "chat"}}]}
+
+    async def fake_ask(db, user_id, question):
+        calls.append(("ask", db, user_id, question))
+        return {"answer": "synth", "citations": [], "gaps": [], "freshness": {}}
+
+    async def fake_fetch(db, user_id, document_id):
+        calls.append(("fetch", db, user_id, document_id))
+        return {"id": document_id, "title": "Document"}
 
     async def fake_folders(db, user_id):
         calls.append(("folders", db, user_id))
@@ -199,7 +208,9 @@ async def test_create_mcp_app_tool_handlers_use_authenticated_user_and_db(monkey
     monkeypatch.setattr(mcp_server, "resolve_mcp_access_token_user_id", fake_resolve)
     monkeypatch.setattr(mcp_server, "get_db_context", fake_db_context)
     monkeypatch.setattr(mcp_server, "search_recordings_for_mcp", fake_search)
-    monkeypatch.setattr(mcp_server, "fetch_recording_for_mcp", fake_fetch)
+    monkeypatch.setattr(mcp_server, "search_brain_for_mcp", fake_unified_search)
+    monkeypatch.setattr(mcp_server, "ask_brain_for_mcp", fake_ask)
+    monkeypatch.setattr(mcp_server, "fetch_document_for_mcp", fake_fetch)
     monkeypatch.setattr(mcp_server, "list_folders_for_mcp", fake_folders)
     monkeypatch.setattr(mcp_server, "list_recordings_for_mcp", fake_recordings)
     monkeypatch.setattr(mcp_server, "list_action_items_for_mcp", fake_actions)
@@ -213,7 +224,9 @@ async def test_create_mcp_app_tool_handlers_use_authenticated_user_and_db(monkey
     app = mcp_server.create_mcp_app(settings)
     tools = app.tools
 
+    ask = json.loads(await tools["ask"]("what did we decide"))
     search = json.loads(await tools["search"]("roadmap", limit=5, folder_ids=["f1"]))
+    unified = json.loads(await tools["search"]("anything", limit=7))
     fetch = json.loads(await tools["fetch"]("r1"))
     folders = json.loads(await tools["list_folders"]())
     recordings = json.loads(await tools["list_recordings"](folder_ids=["f1"], limit=3, cursor="c1"))
@@ -226,13 +239,17 @@ async def test_create_mcp_app_tool_handlers_use_authenticated_user_and_db(monkey
         )
     )
 
-    assert search["results"][0]["snippet"] == "match"
-    assert fetch["title"] == "Recording"
+    assert ask["answer"] == "synth"
+    assert search["results"][0]["snippet"] == "match"  # folder-scoped → recordings path
+    assert unified["results"][0]["metadata"]["source_kind"] == "chat"  # folderless → unified
+    assert fetch["title"] == "Document"
     assert folders["folders"][0]["name"] == "Inbox"
     assert recordings["results"][0]["id"] == "r2"
     assert actions["results"][0]["task"] == "Follow up"
     assert calls == [
+        ("ask", "db-session", "user-123", "what did we decide"),
         ("search", "db-session", "user-123", "roadmap", 5, ["f1"]),
+        ("unified", "db-session", "user-123", "anything", 7),
         ("fetch", "db-session", "user-123", "r1"),
         ("folders", "db-session", "user-123"),
         ("recordings", "db-session", "user-123", ["f1"], 3, "c1"),
@@ -313,7 +330,7 @@ async def test_mcp_fetch_tool_rejects_missing_recording(monkeypatch) -> None:
     async def fake_resolve(_token: str):
         return "user-123"
 
-    async def missing_fetch(_db, _user_id, _recording_id):
+    async def missing_fetch(_db, _user_id, _document_id):
         return None
 
     monkeypatch.setattr(mcp_server, "FastMCP", lambda **kwargs: FakeFastMCP(**kwargs))
@@ -324,7 +341,7 @@ async def test_mcp_fetch_tool_rejects_missing_recording(monkeypatch) -> None:
     )
     monkeypatch.setattr(mcp_server, "resolve_mcp_access_token_user_id", fake_resolve)
     monkeypatch.setattr(mcp_server, "get_db_context", fake_db_context)
-    monkeypatch.setattr(mcp_server, "fetch_recording_for_mcp", missing_fetch)
+    monkeypatch.setattr(mcp_server, "fetch_document_for_mcp", missing_fetch)
 
     settings = SimpleNamespace(
         frontend_url="https://wai.computer",
@@ -334,5 +351,5 @@ async def test_mcp_fetch_tool_rejects_missing_recording(monkeypatch) -> None:
     )
     app = mcp_server.create_mcp_app(settings)
 
-    with pytest.raises(ValueError, match="Recording not found"):
+    with pytest.raises(ValueError, match="Document not found"):
         await app.tools["fetch"]("missing")
