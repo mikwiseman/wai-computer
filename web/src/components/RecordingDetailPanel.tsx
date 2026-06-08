@@ -11,7 +11,8 @@ import {
   startSummaryGeneration,
   updateRecording,
 } from "@/lib/api";
-import { formatSpeakerLabel } from "@/lib/format";
+import { formatSpeakerLabel, formatTimestamp } from "@/lib/format";
+import { transcriptText } from "@/lib/transcript";
 import type { Folder, RecordingDetail, Segment, Summary, SummaryAudio } from "@/lib/types";
 import { SpeakerChip } from "@/components/SpeakerChip";
 import { SummaryAudioControls } from "@/components/SummaryAudioControls";
@@ -61,6 +62,8 @@ interface DetailCopy {
   noTranscriptBody: string;
   transcriptHeading: string;
   copyTranscript: string;
+  copyWithTimestamps: string;
+  plainTextTimestamped: string;
   noSummaryTitle: string;
   generating: string;
   generateSummary: string;
@@ -118,6 +121,8 @@ const COPY: Record<DetailLocale, DetailCopy> = {
     noTranscriptBody: "This recording does not have transcript segments yet.",
     transcriptHeading: "Transcript",
     copyTranscript: "Copy Transcript",
+    copyWithTimestamps: "Copy with timestamps",
+    plainTextTimestamped: "Plain Text + timestamps",
     noSummaryTitle: "No Summary",
     generating: "Generating…",
     generateSummary: "Generate Summary",
@@ -173,6 +178,8 @@ const COPY: Record<DetailLocale, DetailCopy> = {
     noTranscriptBody: "У этой записи пока нет сегментов расшифровки.",
     transcriptHeading: "Расшифровка",
     copyTranscript: "Скопировать расшифровку",
+    copyWithTimestamps: "Скопировать с тайм-кодами",
+    plainTextTimestamped: "Текст с тайм-кодами",
     noSummaryTitle: "Нет резюме",
     generating: "Генерация…",
     generateSummary: "Сгенерировать резюме",
@@ -184,14 +191,6 @@ const COPY: Record<DetailLocale, DetailCopy> = {
     people: "Люди",
   },
 };
-
-function formatTimestamp(ms: number | null): string {
-  if (ms === null) return "";
-  const totalSeconds = Math.floor(ms / 1000);
-  const minutes = Math.floor(totalSeconds / 60);
-  const secs = totalSeconds % 60;
-  return `${minutes}:${secs.toString().padStart(2, "0")}`;
-}
 
 function formatDuration(seconds: number | null): string {
   if (!seconds || seconds <= 0) return "";
@@ -334,11 +333,14 @@ export function RecordingDetailPanel({
     }
   };
 
-  const handleExport = async (format: "markdown" | "txt" | "srt") => {
+  const handleExport = async (
+    format: "markdown" | "txt" | "srt",
+    style?: "timestamped",
+  ) => {
     setError(null);
     setNotice(null);
     try {
-      const blob = await exportRecording(recording.id, format, { locale });
+      const blob = await exportRecording(recording.id, format, { locale, style });
       const url = URL.createObjectURL(blob);
       const ext = format === "markdown" ? "md" : format;
       const title = recording.title ?? "recording";
@@ -506,8 +508,11 @@ export function RecordingDetailPanel({
                 className="select-button"
                 aria-label={copy.exportLabel}
                 onChange={(event) => {
-                  if (event.target.value) {
-                    void handleExport(event.target.value as "markdown" | "txt" | "srt");
+                  const value = event.target.value;
+                  if (value === "txt-timestamped") {
+                    void handleExport("txt", "timestamped");
+                  } else if (value) {
+                    void handleExport(value as "markdown" | "txt" | "srt");
                   }
                   event.target.value = "";
                 }}
@@ -518,6 +523,7 @@ export function RecordingDetailPanel({
                 </option>
                 <option value="markdown">Markdown</option>
                 <option value="txt">{copy.plainText}</option>
+                <option value="txt-timestamped">{copy.plainTextTimestamped}</option>
                 <option value="srt">SRT</option>
               </select>
               {onDelete ? (
@@ -689,19 +695,23 @@ function TranscriptTab({
     );
   }
 
-  const fullText = segments
-    .map((s) => {
-      const speaker = formatSpeakerLabel(s.speaker, s.raw_label, s.display_name);
-      const ts = formatTimestamp(s.start_ms);
-      return `[${speaker}, ${ts}] ${s.content}`;
-    })
-    .join("\n");
+  // Default copy is clean prose (merged turns, no per-fragment timestamp noise); a
+  // secondary button keeps the timestamped layout for those who want it.
+  const plainText = transcriptText(segments, "plain");
+  const timestampedText = transcriptText(segments, "timestamped");
 
   return (
     <div className="reading-stack">
       <div className="section-heading-row">
         <h3>{copy.transcriptHeading}</h3>
-        <CopyButton text={fullText} label={copy.copyTranscript} copiedLabel={copy.copied} />
+        <div className="button-row">
+          <CopyButton text={plainText} label={copy.copyTranscript} copiedLabel={copy.copied} />
+          <CopyButton
+            text={timestampedText}
+            label={copy.copyWithTimestamps}
+            copiedLabel={copy.copied}
+          />
+        </div>
       </div>
       {segments.map((segment) => {
         // When the diariser exposes raw machine labels like "speaker_0" /

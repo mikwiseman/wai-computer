@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { formatSpeakerLabel, stripInlineCodeMarkdown } from "./format";
+import { formatSpeakerLabel, formatTimestamp, stripInlineCodeMarkdown } from "./format";
 
 describe("formatSpeakerLabel", () => {
   it("prefers the human-assigned display name", () => {
@@ -50,5 +50,19 @@ describe("stripInlineCodeMarkdown", () => {
 
   it("handles empty input", () => {
     expect(stripInlineCodeMarkdown("")).toBe("");
+  });
+});
+
+describe("formatTimestamp", () => {
+  it("formats milliseconds as M:SS", () => {
+    expect(formatTimestamp(0)).toBe("0:00");
+    expect(formatTimestamp(5000)).toBe("0:05");
+    expect(formatTimestamp(75000)).toBe("1:15");
+    expect(formatTimestamp(930000)).toBe("15:30");
+  });
+
+  it("returns an empty string for null/undefined", () => {
+    expect(formatTimestamp(null)).toBe("");
+    expect(formatTimestamp(undefined)).toBe("");
   });
 });

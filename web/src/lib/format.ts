@@ -42,6 +42,20 @@ export function formatSpeakerLabel(
 }
 
 /**
+ * Formats a millisecond offset as `M:SS` (e.g. 75000 → "1:15"), or "" when absent.
+ *
+ * Mirrors the backend `_format_timestamp_short` so copied/exported transcripts read
+ * identically across surfaces.
+ */
+export function formatTimestamp(ms: number | null | undefined): string {
+  if (ms == null) return "";
+  const totalSeconds = Math.floor(ms / 1000);
+  const minutes = Math.floor(totalSeconds / 60);
+  const secs = totalSeconds % 60;
+  return `${minutes}:${secs.toString().padStart(2, "0")}`;
+}
+
+/**
  * Strips inline-code markdown backticks (e.g. `Minecraft` → Minecraft) so
  * read-only views render the transcript as plain prose rather than as a
  * code dump. Triple backtick code fences are not used in transcripts and

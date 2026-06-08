@@ -2231,6 +2231,14 @@ a.primary-button[aria-disabled="true"]:hover {
   gap: 1rem;
 }
 
+/* Inline group for adjacent actions (e.g. the two transcript copy buttons). */
+.button-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
 /* Section header row — mirror Mac `waiSectionHeader()` modifier:
  * 11pt medium, tertiary text color, uppercase, tracked. */
 .section-heading-row h3,
