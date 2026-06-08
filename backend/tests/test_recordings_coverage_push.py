@@ -834,7 +834,7 @@ async def test_export_recording_txt_format(
     auth_headers: dict,
     db_session: AsyncSession,
 ):
-    """Export as TXT should return plain text transcript."""
+    """Export as TXT (timestamped style) returns the transcript with a speaker label."""
     rec = await _create_recording(client, auth_headers, title="TXT Export")
     recording_id = UUID(rec["id"])
 
@@ -843,7 +843,7 @@ async def test_export_recording_txt_format(
     response = await client.get(
         f"/api/recordings/{rec['id']}/export",
         headers=auth_headers,
-        params={"format": "txt"},
+        params={"format": "txt", "style": "timestamped"},
     )
     assert response.status_code == 200
     assert "text/plain" in response.headers["content-type"]
