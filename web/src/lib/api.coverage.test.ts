@@ -339,19 +339,26 @@ describe("api MCP connections + API keys", () => {
     expect(mockedApiFetch).toHaveBeenCalledWith("/api/api-keys");
   });
 
-  it("createApiKey defaults expires_at to null", async () => {
+  it("createApiKey defaults expires_at to null and write off", async () => {
     await api.createApiKey("CI token");
     expect(mockedApiFetch).toHaveBeenCalledWith("/api/api-keys", {
       method: "POST",
-      body: JSON.stringify({ name: "CI token", expires_at: null }),
+      body: JSON.stringify({ name: "CI token", expires_at: null, allow_memory_write: false }),
     });
   });
 
-  it("createApiKey forwards an explicit expiry", async () => {
-    await api.createApiKey("CI token", "2026-12-31T00:00:00Z");
+  it("createApiKey forwards an explicit expiry and memory-write opt-in", async () => {
+    await api.createApiKey("CI token", {
+      expiresAt: "2026-12-31T00:00:00Z",
+      allowMemoryWrite: true,
+    });
     expect(mockedApiFetch).toHaveBeenCalledWith("/api/api-keys", {
       method: "POST",
-      body: JSON.stringify({ name: "CI token", expires_at: "2026-12-31T00:00:00Z" }),
+      body: JSON.stringify({
+        name: "CI token",
+        expires_at: "2026-12-31T00:00:00Z",
+        allow_memory_write: true,
+      }),
     });
   });
 

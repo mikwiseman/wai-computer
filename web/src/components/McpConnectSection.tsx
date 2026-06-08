@@ -8,7 +8,15 @@ import { McpSourcesPanel } from "./McpSourcesPanel";
 
 type Locale = "en" | "ru";
 
-type McpClient = "claudeai" | "cursor" | "chatgpt" | "claudecode" | "codex" | "bot";
+type McpClient =
+  | "openclaw"
+  | "hermes"
+  | "claudeai"
+  | "cursor"
+  | "chatgpt"
+  | "claudecode"
+  | "codex"
+  | "bot";
 
 type McpClientGuide = {
   id: McpClient;
@@ -26,6 +34,8 @@ interface Copy {
   copied: string;
   copySnippet: string;
   linkClaudeai: string;
+  stepsOpenclaw: string;
+  stepsHermes: string;
   stepsClaudeai: string;
   stepsCursor: string;
   stepsChatgpt: string;
@@ -37,13 +47,17 @@ interface Copy {
 const COPY: Record<Locale, Copy> = {
   en: {
     intro:
-      "WaiComputer exposes an MCP (Model Context Protocol) server. Connect any MCP-compatible AI assistant to give it read-only access to your recordings, transcripts, summaries, action items, and metadata. You approve each client by name on wai.computer and can revoke any time from the client itself.",
+      "Give your AI agent a brain. WaiComputer exposes an MCP (Model Context Protocol) server, so any agent — OpenClaw, Hermes, Claude, Cursor, … — can recall everything you've captured (ask your brain a cited question, search recordings, notes, and chats) and, if you allow it, remember new facts back. You approve each agent by name on wai.computer and can revoke any time.",
     endpointError: "Could not load the MCP endpoint for this server.",
     endpointLoading: "Loading MCP endpoint...",
     copyUrl: "Copy URL",
     copied: "Copied",
     copySnippet: "Copy snippet",
     linkClaudeai: "Open Connectors in Claude.ai",
+    stepsOpenclaw:
+      "Add WaiComputer as a remote MCP server, then approve the OAuth login in your browser — no token to copy. Your OpenClaw agent can now ask and search your whole brain. To let it remember new facts too, create a write-enabled token under “API tokens” below and use the header form.",
+    stepsHermes:
+      "Add WaiComputer under mcp_servers in ~/.hermes/config.yaml, then run /reload-mcp (or restart). Approve the OAuth login on first connect. For a true memory bank (read + write), create a write-enabled token under “API tokens” below and use the headers form instead.",
     stepsClaudeai:
       "Open Customize → Connectors and click the “+” button. Paste the URL, then approve the request on wai.computer when prompted.",
     stepsCursor:
@@ -59,13 +73,17 @@ const COPY: Record<Locale, Copy> = {
   },
   ru: {
     intro:
-      "WaiComputer предоставляет MCP-сервер (Model Context Protocol). Подключите любой совместимый с MCP ИИ-ассистент, чтобы дать ему доступ только для чтения к вашим записям, расшифровкам, резюме, задачам и метаданным. Каждый клиент вы подтверждаете по имени на wai.computer и можете отозвать доступ в любой момент из самого клиента.",
+      "Дайте вашему ИИ-агенту память. WaiComputer предоставляет MCP-сервер (Model Context Protocol), так что любой агент — OpenClaw, Hermes, Claude, Cursor, … — может вспоминать всё, что вы сохранили (задать вопрос мозгу с цитатами, искать по записям, заметкам и чатам) и, если вы разрешите, запоминать новые факты. Каждого агента вы подтверждаете по имени на wai.computer и можете отозвать доступ в любой момент.",
     endpointError: "Не удалось загрузить MCP-адрес для этого сервера.",
     endpointLoading: "Загрузка MCP-адреса...",
     copyUrl: "Скопировать URL",
     copied: "Скопировано",
     copySnippet: "Скопировать фрагмент",
     linkClaudeai: "Открыть «Коннекторы» в Claude.ai",
+    stepsOpenclaw:
+      "Добавьте WaiComputer как удалённый MCP-сервер и подтвердите вход через OAuth в браузере — токен копировать не нужно. Агент OpenClaw сможет спрашивать и искать по всему вашему мозгу. Чтобы он мог ещё и запоминать факты, создайте токен с правом записи в разделе «API-токены» ниже и используйте форму с заголовком.",
+    stepsHermes:
+      "Добавьте WaiComputer в mcp_servers в ~/.hermes/config.yaml и выполните /reload-mcp (или перезапустите). Подтвердите вход через OAuth при первом подключении. Для полноценного «банка памяти» (чтение + запись) создайте токен с правом записи в разделе «API-токены» ниже и используйте форму с headers.",
     stepsClaudeai:
       "Откройте «Настроить → Коннекторы» и нажмите «+». Вставьте URL и подтвердите запрос на wai.computer.",
     stepsCursor:
@@ -83,6 +101,53 @@ const COPY: Record<Locale, Copy> = {
 
 function clientGuides(mcpEndpointUrl: string, copy: Copy): McpClientGuide[] {
   return [
+  {
+    id: "openclaw",
+    label: "OpenClaw",
+    steps: copy.stepsOpenclaw,
+    snippet: {
+      language: "bash",
+      body: `# Recall your brain (OAuth — approve in your browser, no token to copy):
+openclaw mcp add waicomputer \\
+  --url ${mcpEndpointUrl} \\
+  --transport streamable-http \\
+  --auth oauth
+openclaw mcp login waicomputer
+
+# Memory bank (read + write) — use a write-enabled token instead:
+openclaw mcp add waicomputer \\
+  --url ${mcpEndpointUrl} \\
+  --transport streamable-http \\
+  --header "Authorization: Bearer wc_live_…"`,
+    },
+    externalLink: { label: "OpenClaw MCP docs", url: "https://docs.openclaw.ai/cli/mcp" },
+  },
+  {
+    id: "hermes",
+    label: "Hermes",
+    steps: copy.stepsHermes,
+    snippet: {
+      language: "yaml",
+      body: `# ~/.hermes/config.yaml — recall your brain (OAuth, approve in browser):
+mcp_servers:
+  waicomputer:
+    url: "${mcpEndpointUrl}"
+    auth: oauth
+
+# Memory bank (read + write) — use a write-enabled token instead:
+mcp_servers:
+  waicomputer:
+    url: "${mcpEndpointUrl}"
+    headers:
+      Authorization: "Bearer wc_live_…"
+
+# then in Hermes:  /reload-mcp`,
+    },
+    externalLink: {
+      label: "Hermes MCP docs",
+      url: "https://hermes-agent.nousresearch.com/docs/user-guide/features/mcp",
+    },
+  },
   {
     id: "claudeai",
     label: "Claude.ai",
@@ -181,7 +246,7 @@ interface McpConnectSectionProps {
 
 export function McpConnectSection({ locale = "en" }: McpConnectSectionProps) {
   const copy = COPY[locale];
-  const [selected, setSelected] = useState<McpClient>("claudeai");
+  const [selected, setSelected] = useState<McpClient>("openclaw");
   const [copied, setCopied] = useState<"endpoint" | "snippet" | null>(null);
   const [endpointUrl, setEndpointUrl] = useState<string | null>(null);
   const [endpointError, setEndpointError] = useState<string | null>(null);

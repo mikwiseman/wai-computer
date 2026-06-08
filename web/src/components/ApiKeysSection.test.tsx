@@ -56,11 +56,33 @@ describe("ApiKeysSection", () => {
     fireEvent.click(screen.getByTestId("api-key-create"));
 
     await waitFor(() => {
-      expect(mockedCreate).toHaveBeenCalledWith("meeting-collector");
+      expect(mockedCreate).toHaveBeenCalledWith("meeting-collector", { allowMemoryWrite: false });
     });
     const reveal = await screen.findByTestId("api-key-created-token");
     expect(reveal.textContent).toContain("wc_live_secret-value");
     expect(screen.getByTestId("api-key-key-1")).toBeTruthy();
+  });
+
+  it("opts into memory write when the toggle is checked", async () => {
+    mockedList.mockResolvedValue([]);
+    mockedCreate.mockResolvedValue({
+      ...sampleKey,
+      scopes: ["read", "memory:write"],
+      token: "wc_live_secret-value",
+    });
+    render(<ApiKeysSection />);
+    await screen.findByTestId("api-keys-empty");
+
+    fireEvent.change(screen.getByTestId("api-key-name-input"), {
+      target: { value: "openclaw-agent" },
+    });
+    fireEvent.click(screen.getByTestId("api-key-allow-write").querySelector("input")!);
+    fireEvent.click(screen.getByTestId("api-key-create"));
+
+    await waitFor(() => {
+      expect(mockedCreate).toHaveBeenCalledWith("openclaw-agent", { allowMemoryWrite: true });
+    });
+    expect(screen.getByTestId("api-key-write-badge-key-1")).toBeTruthy();
   });
 
   it("revokes a token and removes it from the list", async () => {

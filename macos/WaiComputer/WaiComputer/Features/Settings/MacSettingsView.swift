@@ -5,6 +5,8 @@ import SwiftUI
 import WaiComputerKit
 
 private enum McpClient: String, CaseIterable, Identifiable {
+    case openClaw = "OpenClaw"
+    case hermes = "Hermes"
     case claudeAI = "Claude.ai"
     case cursor = "Cursor"
     case chatGPT = "ChatGPT"
@@ -24,6 +26,54 @@ private struct McpClientGuide {
 private let mcpEndpointURL = "https://wai.computer/mcp"
 
 private let mcpClientGuides: [McpClient: McpClientGuide] = [
+    .openClaw: McpClientGuide(
+        stepsEnglish: "Add WaiComputer as a remote MCP server, then approve the OAuth login in your browser - no token to copy. Your OpenClaw agent can ask and search your whole brain. To let it remember new facts too, create a write-enabled token under API tokens on wai.computer and use the header form.",
+        stepsRussian: "Добавь WaiComputer как удалённый MCP-сервер и подтверди вход через OAuth в браузере - токен копировать не нужно. Агент OpenClaw сможет спрашивать и искать по всему мозгу. Чтобы он мог запоминать факты, создай токен с правом записи в разделе API-токены на wai.computer и используй форму с заголовком.",
+        snippet: """
+        # Recall your brain (OAuth - approve in your browser):
+        openclaw mcp add waicomputer \\
+          --url \(mcpEndpointURL) \\
+          --transport streamable-http \\
+          --auth oauth
+        openclaw mcp login waicomputer
+
+        # Memory bank (read + write) - use a write-enabled token instead:
+        openclaw mcp add waicomputer \\
+          --url \(mcpEndpointURL) \\
+          --transport streamable-http \\
+          --header "Authorization: Bearer wc_live_..."
+        """,
+        externalLink: (
+            englishLabel: "OpenClaw MCP docs",
+            russianLabel: "Документация OpenClaw MCP",
+            url: URL(string: "https://docs.openclaw.ai/cli/mcp")!
+        )
+    ),
+    .hermes: McpClientGuide(
+        stepsEnglish: "Add WaiComputer under mcp_servers in ~/.hermes/config.yaml, then run /reload-mcp. Approve the OAuth login on first connect. For a memory bank (read + write), create a write-enabled token under API tokens on wai.computer and use the headers form instead.",
+        stepsRussian: "Добавь WaiComputer в mcp_servers в ~/.hermes/config.yaml и выполни /reload-mcp. Подтверди OAuth-вход при первом подключении. Для банка памяти (чтение + запись) создай токен с правом записи в разделе API-токены на wai.computer и используй форму с headers.",
+        snippet: """
+        # ~/.hermes/config.yaml - recall your brain (OAuth, approve in browser):
+        mcp_servers:
+          waicomputer:
+            url: "\(mcpEndpointURL)"
+            auth: oauth
+
+        # Memory bank (read + write) - use a write-enabled token instead:
+        mcp_servers:
+          waicomputer:
+            url: "\(mcpEndpointURL)"
+            headers:
+              Authorization: "Bearer wc_live_..."
+
+        # then in Hermes:  /reload-mcp
+        """,
+        externalLink: (
+            englishLabel: "Hermes MCP docs",
+            russianLabel: "Документация Hermes MCP",
+            url: URL(string: "https://hermes-agent.nousresearch.com/docs/user-guide/features/mcp")!
+        )
+    ),
     .claudeAI: McpClientGuide(
         stepsEnglish: "Open Customize -> Connectors and click the + button, paste the URL, then approve the request on wai.computer when prompted.",
         stepsRussian: "Открой Customize -> Connectors, нажми +, вставь URL и подтверди запрос на wai.computer.",
@@ -119,7 +169,7 @@ struct MacSettingsView: View {
     @State private var summaryLanguage = "auto"
     @State private var summaryStyle = "medium"
     @State private var summaryInstructions = ""
-    @State private var mcpClient: McpClient = .claudeAI
+    @State private var mcpClient: McpClient = .openClaw
     @State private var mcpCopiedField: String?
     @State private var settingsLoaded = false
     @State private var settingsError: String?
@@ -1410,7 +1460,7 @@ struct MacSettingsView: View {
             } label: {
                 Text("settings.mcp.client", bundle: .main)
             }
-            .pickerStyle(.segmented)
+            .pickerStyle(.menu)
             .accessibilityIdentifier("settings-mcp-client-picker")
 
             if let guide = mcpClientGuides[mcpClient] {

@@ -1391,10 +1391,17 @@ export function listApiKeys(): Promise<ApiKey[]> {
   return apiFetch<ApiKey[]>("/api/api-keys");
 }
 
-export function createApiKey(name: string, expiresAt?: string | null): Promise<ApiKeyCreated> {
+export function createApiKey(
+  name: string,
+  options: { expiresAt?: string | null; allowMemoryWrite?: boolean } = {},
+): Promise<ApiKeyCreated> {
   return apiFetch<ApiKeyCreated>("/api/api-keys", {
     method: "POST",
-    body: JSON.stringify({ name, expires_at: expiresAt ?? null }),
+    body: JSON.stringify({
+      name,
+      expires_at: options.expiresAt ?? null,
+      allow_memory_write: options.allowMemoryWrite ?? false,
+    }),
   });
 }
 

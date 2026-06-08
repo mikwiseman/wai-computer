@@ -4,6 +4,8 @@ import UIKit
 private let mcpEndpointURL = "https://wai.computer/mcp"
 
 private enum McpClient: String, CaseIterable, Identifiable {
+    case openClaw = "OpenClaw"
+    case hermes = "Hermes"
     case claudeAI = "Claude.ai"
     case cursor = "Cursor"
     case chatGPT = "ChatGPT"
@@ -20,6 +22,50 @@ private struct McpClientGuide {
 }
 
 private let mcpClientGuides: [McpClient: McpClientGuide] = [
+    .openClaw: McpClientGuide(
+        steps: "Add WaiComputer as a remote MCP server, then approve the OAuth login in your browser — no token to copy. Your OpenClaw agent can ask and search your whole brain. To let it remember new facts too, create a write-enabled token under API tokens on wai.computer and use the header form.",
+        snippet: """
+        # Recall your brain (OAuth — approve in your browser):
+        openclaw mcp add waicomputer \\
+          --url \(mcpEndpointURL) \\
+          --transport streamable-http \\
+          --auth oauth
+        openclaw mcp login waicomputer
+
+        # Memory bank (read + write) — use a write-enabled token instead:
+        openclaw mcp add waicomputer \\
+          --url \(mcpEndpointURL) \\
+          --transport streamable-http \\
+          --header "Authorization: Bearer wc_live_…"
+        """,
+        externalLink: (
+            label: "OpenClaw MCP docs",
+            url: URL(string: "https://docs.openclaw.ai/cli/mcp")!
+        )
+    ),
+    .hermes: McpClientGuide(
+        steps: "Add WaiComputer under mcp_servers in ~/.hermes/config.yaml, then run /reload-mcp. Approve the OAuth login on first connect. For a memory bank (read + write), create a write-enabled token under API tokens on wai.computer and use the headers form instead.",
+        snippet: """
+        # ~/.hermes/config.yaml — recall your brain (OAuth, approve in browser):
+        mcp_servers:
+          waicomputer:
+            url: "\(mcpEndpointURL)"
+            auth: oauth
+
+        # Memory bank (read + write) — use a write-enabled token instead:
+        mcp_servers:
+          waicomputer:
+            url: "\(mcpEndpointURL)"
+            headers:
+              Authorization: "Bearer wc_live_…"
+
+        # then in Hermes:  /reload-mcp
+        """,
+        externalLink: (
+            label: "Hermes MCP docs",
+            url: URL(string: "https://hermes-agent.nousresearch.com/docs/user-guide/features/mcp")!
+        )
+    ),
     .claudeAI: McpClientGuide(
         steps: "Open Customize → Connectors and tap the “+” button, paste the URL, then approve the request on wai.computer when prompted.",
         snippet: nil,
@@ -75,7 +121,7 @@ private let mcpClientGuides: [McpClient: McpClientGuide] = [
 ]
 
 struct McpConnectView: View {
-    @State private var client: McpClient = .claudeAI
+    @State private var client: McpClient = .openClaw
     @State private var copiedField: String?
 
     var body: some View {
@@ -96,7 +142,7 @@ struct McpConnectView: View {
             } header: {
                 Text("Endpoint")
             } footer: {
-                Text("WaiComputer exposes an MCP (Model Context Protocol) server. Connect any MCP-compatible AI assistant to give it read-only access to your recordings, transcripts, summaries, action items, and metadata. You approve each client by name on wai.computer and can revoke any time from the client itself.")
+                Text("Give your AI agent a brain. WaiComputer exposes an MCP (Model Context Protocol) server, so any agent — OpenClaw, Hermes, Claude, Cursor, … — can recall everything you've captured (ask your brain a cited question, search recordings, notes, and chats) and, if you allow it, remember new facts back. You approve each agent by name on wai.computer and can revoke any time.")
             }
 
             Section {

@@ -72,8 +72,28 @@ describe("McpConnectSection", () => {
     expect(snippet.textContent).toContain("https://demo.self.example/mcp");
   });
 
-  it("defaults to the Claude.ai guide and exposes the external link", () => {
+  it("defaults to the OpenClaw guide with the connect command", async () => {
     render(<McpConnectSection />);
+    await screen.findByText("https://wai.computer/mcp");
+    expect(screen.getByTestId("mcp-guide-openclaw")).toBeTruthy();
+    const snippet = screen.getByText(/openclaw mcp add waicomputer/);
+    expect(snippet.textContent).toContain("https://wai.computer/mcp");
+    expect(snippet.textContent).toContain("--auth oauth");
+  });
+
+  it("offers a Hermes config snippet for the memory bank", async () => {
+    render(<McpConnectSection />);
+    await screen.findByText("https://wai.computer/mcp");
+    fireEvent.click(screen.getByRole("tab", { name: "Hermes" }));
+    expect(screen.getByTestId("mcp-guide-hermes")).toBeTruthy();
+    const snippet = screen.getByText(/mcp_servers:/);
+    expect(snippet.textContent).toContain("https://wai.computer/mcp");
+  });
+
+  it("still exposes the Claude.ai connector link", async () => {
+    render(<McpConnectSection />);
+    await screen.findByText("https://wai.computer/mcp");
+    fireEvent.click(screen.getByRole("tab", { name: "Claude.ai" }));
     expect(screen.getByTestId("mcp-guide-claudeai")).toBeTruthy();
     const link = screen.getByRole("link", { name: /Open Connectors in Claude\.ai/i }) as HTMLAnchorElement;
     expect(link.href).toBe("https://claude.ai/customize/connectors");

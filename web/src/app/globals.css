@@ -3068,6 +3068,32 @@ a.primary-button[aria-disabled="true"]:hover {
   align-items: center;
 }
 
+.api-key-write-toggle {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  margin-top: 0.6rem;
+  font-size: var(--font-label-size);
+  color: var(--ink-soft);
+  cursor: pointer;
+}
+
+.api-key-write-toggle input {
+  accent-color: var(--accent);
+}
+
+.api-key-scope-badge {
+  display: inline-block;
+  margin-left: 0.5rem;
+  padding: 0.05rem 0.4rem;
+  border-radius: 999px;
+  background: var(--accent-soft, rgba(20, 130, 110, 0.12));
+  color: var(--accent, #14826e);
+  font-size: 0.7rem;
+  font-weight: 600;
+  vertical-align: middle;
+}
+
 .api-key-create-row input {
   flex: 1;
   min-width: 0;

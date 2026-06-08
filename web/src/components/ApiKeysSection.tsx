@@ -26,6 +26,7 @@ export function ApiKeysSection() {
   const [keys, setKeys] = useState<ApiKey[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [name, setName] = useState("");
+  const [allowMemoryWrite, setAllowMemoryWrite] = useState(false);
   const [creating, setCreating] = useState(false);
   const [created, setCreated] = useState<ApiKeyCreated | null>(null);
   const [copied, setCopied] = useState(false);
@@ -52,10 +53,11 @@ export function ApiKeysSection() {
     setCreating(true);
     setError(null);
     try {
-      const key = await createApiKey(trimmed);
+      const key = await createApiKey(trimmed, { allowMemoryWrite });
       setCreated(key);
       setCopied(false);
       setName("");
+      setAllowMemoryWrite(false);
       setKeys((current) => [key, ...(current ?? [])]);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Couldn’t create the token.");
@@ -82,16 +84,17 @@ export function ApiKeysSection() {
     <div className="settings-form api-keys-section" data-testid="api-keys-section">
       <h3>API tokens</h3>
       <p className="settings-note">
-        Static <code>wc_live_</code> Bearer tokens for headless/automation access (read-only). Use
-        one for a server or cron job that pulls your recordings without a browser login — works on
-        the REST API and the MCP endpoint.
+        Static <code>wc_live_</code> Bearer tokens for headless access — a server, cron job, or an
+        agent (OpenClaw, Hermes) acting as a memory bank. Works on the REST API and the MCP
+        endpoint. Read-only by default; enable “save memories” to also let an agent write back via
+        the MCP <code>remember</code> tool. The REST API stays read-only either way.
       </p>
 
       <form className="api-key-create-row" onSubmit={handleCreate}>
         <input
           type="text"
           data-testid="api-key-name-input"
-          placeholder="Token name (e.g. meeting-collector)"
+          placeholder="Token name (e.g. openclaw-agent)"
           value={name}
           onChange={(event) => setName(event.target.value)}
         />
@@ -104,6 +107,14 @@ export function ApiKeysSection() {
           {creating ? "Creating…" : "Create token"}
         </button>
       </form>
+      <label className="api-key-write-toggle" data-testid="api-key-allow-write">
+        <input
+          type="checkbox"
+          checked={allowMemoryWrite}
+          onChange={(event) => setAllowMemoryWrite(event.target.checked)}
+        />
+        <span>Allow this token to save memories (write access)</span>
+      </label>
 
       {created ? (
         <div className="api-key-created" data-testid="api-key-created-token" role="status">
@@ -154,7 +165,14 @@ export function ApiKeysSection() {
           {keys.map((key) => (
             <li key={key.id} className="mcp-connection-row" data-testid={`api-key-${key.id}`}>
               <div className="mcp-connection-meta">
-                <span className="mcp-connection-name">{key.name}</span>
+                <span className="mcp-connection-name">
+                  {key.name}
+                  {key.scopes?.includes("memory:write") ? (
+                    <span className="api-key-scope-badge" data-testid={`api-key-write-badge-${key.id}`}>
+                      memory write
+                    </span>
+                  ) : null}
+                </span>
                 <span className="mcp-connection-detail">
                   {key.prefix}…{key.last4} · last used {formatDate(key.last_used_at)}
                 </span>

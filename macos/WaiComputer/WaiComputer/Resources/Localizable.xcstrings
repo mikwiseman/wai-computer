@@ -1273,8 +1273,8 @@
     "settings.mcp.hint" : {
       "extractionState" : "manual",
       "localizations" : {
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "WaiComputer exposes an MCP (Model Context Protocol) server. Connect any MCP-compatible AI assistant to give it read-only access to your recordings, transcripts, summaries, action items, and metadata. You approve each client by name on wai.computer and can revoke any time from the client itself." } },
-        "ru" : { "stringUnit" : { "state" : "translated", "value" : "WaiComputer работает как MCP-сервер (Model Context Protocol). Подключи любой MCP-совместимый AI-ассистент: он получит доступ только на чтение к твоим записям, расшифровкам, сводкам, задачам и метаданным. Каждый клиент нужно подтвердить по имени на wai.computer; доступ можно отозвать в любой момент." } }
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Give your AI agent a brain. WaiComputer exposes an MCP (Model Context Protocol) server, so any agent — OpenClaw, Hermes, Claude, Cursor, … — can recall everything you've captured (ask your brain a cited question, search recordings, notes, and chats) and, if you allow it, remember new facts back. You approve each agent by name on wai.computer and can revoke any time." } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Дай своему ИИ-агенту память. WaiComputer работает как MCP-сервер (Model Context Protocol), поэтому любой агент — OpenClaw, Hermes, Claude, Cursor, … — может вспоминать всё, что ты сохранил (задать вопрос мозгу с цитатами, искать по записям, заметкам и чатам) и, если разрешишь, запоминать новые факты. Каждого агента ты подтверждаешь по имени на wai.computer и можешь отозвать доступ в любой момент." } }
       }
     },
     "settings.mcp.client" : {
