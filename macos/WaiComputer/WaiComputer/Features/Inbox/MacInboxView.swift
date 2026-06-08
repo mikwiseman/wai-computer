@@ -3,6 +3,24 @@ import SwiftUI
 import UniformTypeIdentifiers
 import WaiComputerKit
 
+extension UTType {
+    /// In-app drag payload for moving a recording between folders.
+    /// Declared as an exported type in Info.plist so the identifier resolves
+    /// without a runtime warning.
+    static let waiRecordingMove = UTType(exportedAs: "is.waiwai.computer.recording-move")
+}
+
+/// Transferable identifier for dragging a recording row onto a folder
+/// (or onto Inbox / Trash) in the sidebar. Recordings are the only items that
+/// live in folders, so only recording rows vend this payload.
+struct RecordingDragItem: Codable, Transferable, Equatable {
+    let recordingId: String
+
+    static var transferRepresentation: some TransferRepresentation {
+        CodableRepresentation(contentType: .waiRecordingMove)
+    }
+}
+
 private enum InboxCreateMode {
     case record
     case file
@@ -37,6 +55,7 @@ struct MacInboxView: View {
     let folders: [Folder]
     let initialSourceKind: InboxSourceKind?
     let folderId: String?
+    let reloadToken: UUID
     let pendingDetail: InboxDetailRef?
     let pendingCommand: MacInboxCommand?
     let onStartRecording: () -> Void
@@ -50,6 +69,11 @@ struct MacInboxView: View {
     @State private var selectedDetail: InboxDetailRef?
     @State private var showingImporter = false
     @State private var focusedCreateMode: InboxCreateMode = .file
+    /// In a folder, the right pane is a calm "nothing selected" placeholder by
+    /// default (folders are for browsing). The add composer only appears when the
+    /// user explicitly chooses to add — this keeps the giant "Add to Inbox" wall
+    /// out of folder browsing. Always ignored in the Inbox (folderId == nil).
+    @State private var folderComposerActive = false
     @State private var askDraft: String = ""
     @State private var pendingChatMessage: String?
     @State private var sourceBrainQuestion = ""
@@ -64,6 +88,7 @@ struct MacInboxView: View {
         folders: [Folder],
         initialSourceKind: InboxSourceKind? = nil,
         folderId: String? = nil,
+        reloadToken: UUID = UUID(),
         pendingDetail: InboxDetailRef? = nil,
         pendingCommand: MacInboxCommand? = nil,
         onStartRecording: @escaping () -> Void,
@@ -77,6 +102,7 @@ struct MacInboxView: View {
         self.folders = folders
         self.initialSourceKind = initialSourceKind
         self.folderId = folderId
+        self.reloadToken = reloadToken
         self.pendingDetail = pendingDetail
         self.pendingCommand = pendingCommand
         self.onStartRecording = onStartRecording
@@ -138,9 +164,15 @@ struct MacInboxView: View {
             }
         }
         .onChangeCompat(of: folderId) { _, next in
+            folderComposerActive = false
             Task {
                 await model.configureScope(sourceKind: initialSourceKind, folderId: next)
             }
+        }
+        .onChangeCompat(of: reloadToken) { _, _ in
+            // A sidebar drag-and-drop move/trash happened — refresh the list so
+            // the moved recording leaves this view immediately.
+            Task { await model.load() }
         }
         .onChangeCompat(of: pendingDetail) { _, _ in
             consumePendingDetailIfNeeded()
@@ -153,6 +185,8 @@ struct MacInboxView: View {
         }
         .onChangeCompat(of: selectedRowID) { _, _ in
             resetSourceBrain()
+            // Picking or clearing a selection returns a folder to its calm placeholder.
+            folderComposerActive = false
         }
         .dropDestination(for: URL.self) { urls, _ in
             handleDroppedFiles(urls)
@@ -208,6 +242,7 @@ struct MacInboxView: View {
                 Button {
                     selectedDetail = nil
                     focusedCreateMode = .paste
+                    folderComposerActive = true
                 } label: {
                     Label(t("Paste Link or Text", "Вставить ссылку или текст"), systemImage: "link")
                 }
@@ -249,6 +284,20 @@ struct MacInboxView: View {
         return t(
             "Recordings, materials, and Wai agent threads in one place",
             "Записи, материалы и агентские диалоги Wai в одном месте"
+        )
+    }
+
+    private var createPaneTitle: String {
+        if let folder = scopedFolder {
+            return t("Add to \(folder.name)", "Добавить в \(folder.name)")
+        }
+        return t("Add to Inbox", "Добавить в Инбокс")
+    }
+
+    private var createPaneSubtitle: String {
+        t(
+            "Record, upload a file, paste a link or text, or give Wai a task.",
+            "Запишите, загрузите файл, вставьте ссылку или текст, или дайте Wai задачу."
         )
     }
 
@@ -299,11 +348,13 @@ struct MacInboxView: View {
             } else if model.rows.isEmpty {
                 MacInboxEmptyState(
                     sourceKind: model.sourceKind,
+                    folderName: scopedFolder?.name,
                     onRecord: onStartRecording,
                     onUpload: chooseFile,
                     onPaste: {
                         selectedDetail = nil
                         focusedCreateMode = .paste
+                        folderComposerActive = true
                     },
                     onChat: {
                         selectedDetail = nil
@@ -350,9 +401,46 @@ struct MacInboxView: View {
                 selectedDetailView(selectedDetail)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             }
+        } else if folderId != nil && !folderComposerActive {
+            // Browsing a folder with nothing selected: keep it calm, no capture wall.
+            folderDetailPlaceholder
         } else {
             createPane
         }
+    }
+
+    private var folderDetailPlaceholder: some View {
+        VStack(spacing: Spacing.lg) {
+            Image(systemName: "folder")
+                .font(.system(size: 28, weight: .semibold))
+                .foregroundStyle(Palette.accent)
+                .frame(width: 60, height: 60)
+                .background(Palette.accentSubtle)
+                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            VStack(spacing: Spacing.xxs) {
+                Text(scopedFolder?.name ?? t("Folder", "Папка"))
+                    .font(Typography.displaySmall)
+                Text(t(
+                    "Select a recording or material on the left to open it here.",
+                    "Выберите запись или материал слева, чтобы открыть здесь."
+                ))
+                .font(Typography.bodySmall)
+                .foregroundStyle(Palette.textSecondary)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: 360)
+            }
+            Button {
+                focusedCreateMode = .record
+                folderComposerActive = true
+            } label: {
+                Label(t("Add to This Folder", "Добавить в эту папку"), systemImage: "plus")
+            }
+            .buttonStyle(.bordered)
+            .accessibilityIdentifier("mac-folder-add")
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(Spacing.xl)
     }
 
     @ViewBuilder
@@ -435,22 +523,31 @@ struct MacInboxView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: Spacing.lg) {
                     HStack(alignment: .top, spacing: Spacing.md) {
-                        Image(systemName: "tray.full")
+                        Image(systemName: scopedFolder != nil ? "folder" : "tray.full")
                             .font(.system(size: 24, weight: .semibold))
                             .foregroundStyle(Palette.accent)
                             .frame(width: 42, height: 42)
                             .background(Palette.accentSubtle)
                             .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                         VStack(alignment: .leading, spacing: Spacing.xxs) {
-                            Text(t("Add to Inbox", "Добавить в Инбокс"))
+                            Text(createPaneTitle)
                                 .font(Typography.displaySmall)
-                            Text(t(
-                                "Record, upload a file, paste a link or text, or give Wai a task.",
-                                "Запишите, загрузите файл, вставьте ссылку или текст, или дайте Wai задачу."
-                            ))
-                            .font(Typography.bodySmall)
-                            .foregroundStyle(Palette.textSecondary)
-                            .fixedSize(horizontal: false, vertical: true)
+                            Text(createPaneSubtitle)
+                                .font(Typography.bodySmall)
+                                .foregroundStyle(Palette.textSecondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        Spacer(minLength: 0)
+                        if scopedFolder != nil {
+                            Button {
+                                folderComposerActive = false
+                            } label: {
+                                Image(systemName: "xmark")
+                                    .font(.system(size: 13, weight: .semibold))
+                            }
+                            .buttonStyle(.borderless)
+                            .help(t("Done", "Готово"))
+                            .accessibilityLabel(t("Close add panel", "Закрыть панель добавления"))
                         }
                     }
 
@@ -468,7 +565,10 @@ struct MacInboxView: View {
                             accent: Palette.accent,
                             isActive: focusedCreateMode == .record,
                             action: {
+                                // Recording needs no configuration — start immediately
+                                // instead of just switching the composer (felt like a no-op).
                                 focusedCreateMode = .record
+                                onStartRecording()
                             }
                         )
                         MacInboxCreateAction(
@@ -503,7 +603,9 @@ struct MacInboxView: View {
                     case .record:
                         MacInboxInlineActionComposer(
                             systemImage: "waveform",
-                            title: t("Record into Inbox", "Записать в Инбокс"),
+                            title: scopedFolder != nil
+                                ? t("Record into This Folder", "Записать в эту папку")
+                                : t("Record into Inbox", "Записать в Инбокс"),
                             message: t(
                                 "Start a new recording with microphone and system audio.",
                                 "Начните новую запись с микрофоном и звуком компьютера."
@@ -571,6 +673,7 @@ struct MacInboxView: View {
         }
         selectedDetail = nil
         focusedCreateMode = .file
+        folderComposerActive = true
         showingImporter = true
     }
 
@@ -584,6 +687,7 @@ struct MacInboxView: View {
         }
         selectedDetail = nil
         focusedCreateMode = .file
+        folderComposerActive = true
         model.selectUploadFile(url)
     }
 
@@ -1313,6 +1417,7 @@ private struct MacInboxCreateAction: View {
 
 private struct MacInboxEmptyState: View {
     let sourceKind: InboxSourceKind?
+    var folderName: String? = nil
     let onRecord: () -> Void
     let onUpload: () -> Void
     let onPaste: () -> Void
@@ -1387,7 +1492,9 @@ private struct MacInboxEmptyState: View {
         case .chat:
             return t("No Wai Threads Yet", "Диалогов Wai пока нет")
         case .none:
-            return t("Inbox Is Empty", "Инбокс пуст")
+            return folderName != nil
+                ? t("This Folder Is Empty", "Эта папка пуста")
+                : t("Inbox Is Empty", "Инбокс пуст")
         }
     }
 
@@ -1580,6 +1687,8 @@ private struct MacInboxRowsTable: NSViewRepresentable {
         tableView.delegate = context.coordinator
         tableView.target = context.coordinator
         tableView.action = #selector(Coordinator.rowClicked(_:))
+        // Let recording rows be dragged onto sidebar folders (move-to-folder).
+        tableView.setDraggingSourceOperationMask([.move, .copy], forLocal: true)
 
         let column = NSTableColumn(identifier: MacInboxTableMetrics.columnIdentifier)
         column.minWidth = 0
@@ -1609,7 +1718,7 @@ private struct MacInboxRowsTable: NSViewRepresentable {
         context.coordinator.onLoadMore = onLoadMore
         context.coordinator.update(
             rows: rows,
-            displayRows: rows.map { MacInboxDisplayRow(row: $0, language: language) },
+            language: language,
             selectedRowID: selectedRowID,
             accentChoice: accentChoice,
             canLoadMore: canLoadMore,
@@ -1635,6 +1744,8 @@ private struct MacInboxRowsTable: NSViewRepresentable {
         weak var scrollView: NSScrollView?
         private var rows: [InboxRow] = []
         private var displayRows: [MacInboxDisplayRow] = []
+        private var lastInputRows: [InboxRow] = []
+        private var lastLanguage: LanguageManager.SupportedLanguage?
         private var selectedRowID: String?
         private var accentChoice: MacAccentChoice = .system
         private var canLoadMore = false
@@ -1669,13 +1780,29 @@ private struct MacInboxRowsTable: NSViewRepresentable {
 
         func update(
             rows: [InboxRow],
-            displayRows: [MacInboxDisplayRow],
+            language: LanguageManager.SupportedLanguage,
             selectedRowID: String?,
             accentChoice: MacAccentChoice,
             canLoadMore: Bool,
             isLoadingMore: Bool
         ) {
-            let needsReload = self.displayRows != displayRows || self.accentChoice != accentChoice
+            // Memoize the (localize + date-format) row mapping. It is O(N) and
+            // previously ran on every SwiftUI invalidation — selection changes,
+            // the 2s status poll, any parent re-render — even when the underlying
+            // rows were byte-identical, which showed up as scroll jank.
+            let displayRows: [MacInboxDisplayRow]
+            if rows == lastInputRows, language == lastLanguage {
+                displayRows = self.displayRows
+            } else {
+                displayRows = rows.map { MacInboxDisplayRow(row: $0, language: language) }
+                lastInputRows = rows
+                lastLanguage = language
+            }
+
+            let accentChanged = self.accentChoice != accentChoice
+            let oldDisplayRows = self.displayRows
+            let rowsChanged = oldDisplayRows != displayRows
+
             self.rows = rows
             self.displayRows = displayRows
             self.selectedRowID = selectedRowID
@@ -1686,14 +1813,61 @@ private struct MacInboxRowsTable: NSViewRepresentable {
                 didRequestLoadMore = false
             }
 
-            if needsReload {
+            if accentChanged {
+                // Theme change re-tints every cell — full reload is correct and rare.
                 tableView?.reloadData()
+            } else if rowsChanged, let tableView {
+                applyRowChanges(from: oldDisplayRows, to: displayRows, in: tableView)
             }
             applySelection()
         }
 
+        /// Apply row changes incrementally so loading more pages keeps scroll
+        /// position and a single status change doesn't relayout the whole list.
+        private func applyRowChanges(
+            from old: [MacInboxDisplayRow],
+            to new: [MacInboxDisplayRow],
+            in tableView: NSTableView
+        ) {
+            // Pure append (pagination): insert only the new tail.
+            if new.count > old.count, Array(new.prefix(old.count)) == old {
+                tableView.insertRows(
+                    at: IndexSet(integersIn: old.count..<new.count),
+                    withAnimation: []
+                )
+                return
+            }
+            // Same length: reload only the rows that actually changed.
+            if new.count == old.count {
+                var changed = IndexSet()
+                for index in new.indices where new[index] != old[index] {
+                    changed.insert(index)
+                }
+                if changed.isEmpty { return }
+                if changed.count < new.count {
+                    tableView.reloadData(forRowIndexes: changed, columnIndexes: IndexSet(integer: 0))
+                    return
+                }
+            }
+            // Wholesale change (scope/source switch, deletions, reorder).
+            tableView.reloadData()
+        }
+
         func numberOfRows(in tableView: NSTableView) -> Int {
             displayRows.count
+        }
+
+        func tableView(_ tableView: NSTableView, pasteboardWriterForRow row: Int) -> NSPasteboardWriting? {
+            guard rows.indices.contains(row) else { return nil }
+            let source = rows[row]
+            // Only recordings live in folders, so only they are draggable to folders.
+            guard source.sourceKind == .recording else { return nil }
+            guard let data = try? JSONEncoder().encode(RecordingDragItem(recordingId: source.detail.id)) else {
+                return nil
+            }
+            let item = NSPasteboardItem()
+            item.setData(data, forType: NSPasteboard.PasteboardType(UTType.waiRecordingMove.identifier))
+            return item
         }
 
         func tableView(

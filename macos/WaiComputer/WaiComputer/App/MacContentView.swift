@@ -123,6 +123,11 @@ struct MacMainView: View {
     @State private var pendingInboxDetail: InboxDetailRef?
     @State private var pendingInboxCommand: MacInboxCommand?
     @State private var pendingBrainMapId: String?
+    /// Sidebar row currently highlighted as a drag-and-drop target (e.g.
+    /// "folder-<id>", "inbox", "trash"). Drives the drop highlight.
+    @State private var dropTargetIdentifier: String?
+    /// Bumped after a sidebar drag-and-drop move so the Inbox/folder list reloads.
+    @State private var inboxReloadToken = UUID()
 
     enum SidebarSection: Hashable {
         case inbox
@@ -247,8 +252,11 @@ struct MacMainView: View {
                         max: MacMainLayoutMetrics.listMaxWidth
                     )
             } detail: {
+                // No .id(detailPhaseKey) here: it forced a full rebuild of the
+                // detail subtree on every record start/stop and replaced (instead
+                // of cross-faded) the content. The cross-fade is handled inside
+                // detailColumn via .animation(value: detailPhaseKey).
                 detailColumn
-                    .id(detailPhaseKey)
             }
         } else {
             NavigationSplitView(columnVisibility: $columnVisibility) {
@@ -259,8 +267,11 @@ struct MacMainView: View {
                         max: MacMainLayoutMetrics.sidebarMaxWidth
                     )
             } detail: {
+                // No .id(detailPhaseKey) here: it forced a full rebuild of the
+                // detail subtree on every record start/stop and replaced (instead
+                // of cross-faded) the content. The cross-fade is handled inside
+                // detailColumn via .animation(value: detailPhaseKey).
                 detailColumn
-                    .id(detailPhaseKey)
             }
         }
     }
@@ -636,9 +647,31 @@ struct MacMainView: View {
     private var sidebarList: some View {
         List {
             Section {
-                sidebarRow(t("Inbox", "Инбокс"), icon: "tray.full", section: .inbox, identifier: "inbox")
+                sidebarRow(
+                    t("Inbox", "Инбокс"),
+                    icon: "tray.full",
+                    section: .inbox,
+                    identifier: "inbox",
+                    isDropTargeted: dropTargetIdentifier == "inbox"
+                )
+                .dropDestination(for: RecordingDragItem.self) { items, _ in
+                    handleRecordingDrop(items) { moveRecordings([$0], to: nil) }
+                } isTargeted: { targeted in
+                    updateDropTarget("inbox", targeted: targeted)
+                }
                 sidebarRow(t("Brain", "Мозг"), icon: "brain", section: .brain, identifier: "brain")
-                sidebarRow(t("Trash", "Корзина"), icon: "trash", section: .trash, identifier: "trash")
+                sidebarRow(
+                    t("Trash", "Корзина"),
+                    icon: "trash",
+                    section: .trash,
+                    identifier: "trash",
+                    isDropTargeted: dropTargetIdentifier == "trash"
+                )
+                .dropDestination(for: RecordingDragItem.self) { items, _ in
+                    handleRecordingDrop(items) { trashRecordings([$0]) }
+                } isTargeted: { targeted in
+                    updateDropTarget("trash", targeted: targeted)
+                }
             } header: {
                 Text(t("Workspace", "Рабочее"))
                     .waiSectionHeader()
@@ -683,7 +716,13 @@ struct MacMainView: View {
         .listStyle(.sidebar)
     }
 
-    private func sidebarRow(_ title: String, icon: String, section: SidebarSection, identifier: String) -> some View {
+    private func sidebarRow(
+        _ title: String,
+        icon: String,
+        section: SidebarSection,
+        identifier: String,
+        isDropTargeted: Bool = false
+    ) -> some View {
         Button {
             selectedSection = section
         } label: {
@@ -693,22 +732,50 @@ struct MacMainView: View {
         .contentShape(Rectangle())
         .accessibilityIdentifier("sidebar-\(identifier)")
         .listRowBackground(
-            selectedSection == section
-                ? Palette.accent.opacity(0.15)
-                : Color.clear
+            isDropTargeted
+                ? Palette.accent.opacity(0.32)
+                : (selectedSection == section ? Palette.accent.opacity(0.15) : Color.clear)
         )
     }
 
+    /// Move a dragged recording onto a sidebar target, refreshing the list afterwards.
+    private func handleRecordingDrop(_ items: [RecordingDragItem], move: (String) -> Void) -> Bool {
+        guard let item = items.first else { return false }
+        move(item.recordingId)
+        dropTargetIdentifier = nil
+        return true
+    }
+
     private func folderSidebarRow(_ folder: Folder) -> some View {
-        sidebarRow(folder.name, icon: "folder", section: .folder(folder.id), identifier: "folder-\(folder.id)")
-            .contextMenu {
-                Button(t("Rename…", "Переименовать…")) {
-                    beginRenameFolder(folder)
-                }
-                Button(t("Delete Folder", "Удалить папку"), role: .destructive) {
-                    folderPendingDeletion = folder
-                }
+        let dropKey = "folder-\(folder.id)"
+        return sidebarRow(
+            folder.name,
+            icon: "folder",
+            section: .folder(folder.id),
+            identifier: dropKey,
+            isDropTargeted: dropTargetIdentifier == dropKey
+        )
+        .contextMenu {
+            Button(t("Rename…", "Переименовать…")) {
+                beginRenameFolder(folder)
             }
+            Button(t("Delete Folder", "Удалить папку"), role: .destructive) {
+                folderPendingDeletion = folder
+            }
+        }
+        .dropDestination(for: RecordingDragItem.self) { items, _ in
+            handleRecordingDrop(items) { moveRecordings([$0], to: folder.id) }
+        } isTargeted: { targeted in
+            updateDropTarget(dropKey, targeted: targeted)
+        }
+    }
+
+    private func updateDropTarget(_ key: String, targeted: Bool) {
+        if targeted {
+            dropTargetIdentifier = key
+        } else if dropTargetIdentifier == key {
+            dropTargetIdentifier = nil
+        }
     }
 
     // MARK: - List Column
@@ -838,6 +905,7 @@ struct MacMainView: View {
                 folders: libraryViewModel.folders,
                 initialSourceKind: inboxInitialSourceKind,
                 folderId: currentFolderId,
+                reloadToken: inboxReloadToken,
                 pendingDetail: pendingInboxDetail,
                 pendingCommand: pendingInboxCommand,
                 onStartRecording: {
@@ -1284,6 +1352,7 @@ struct MacMainView: View {
         Task {
             await libraryViewModel.moveRecordings(ids: ids, to: folderId, apiClient: appState.getAPIClient())
             selectedRecordingIds.removeAll()
+            inboxReloadToken = UUID()
         }
     }
 
@@ -1293,6 +1362,7 @@ struct MacMainView: View {
             await libraryViewModel.trashRecordings(ids: ids, apiClient: appState.getAPIClient())
             selectedRecordingIds.subtract(ids)
             prefetchedRecordingDetail = nil
+            inboxReloadToken = UUID()
         }
     }
 

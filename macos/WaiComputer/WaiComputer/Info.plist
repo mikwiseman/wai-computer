@@ -47,5 +47,20 @@
 	<integer>3600</integer>
 	<key>WAIDownloadRegion</key>
 	<string>$(WAI_DOWNLOAD_REGION)</string>
+	<key>UTExportedTypeDeclarations</key>
+	<array>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>is.waiwai.computer.recording-move</string>
+			<key>UTTypeDescription</key>
+			<string>WaiComputer recording reference</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict/>
+		</dict>
+	</array>
 </dict>
 </plist>
