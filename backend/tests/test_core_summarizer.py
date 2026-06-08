@@ -535,6 +535,36 @@ async def test_summarize_transcript_single_pass_below_threshold(monkeypatch):
     assert calls == ["recording_summary"]
 
 
+def test_resolve_highlight_cites_source_segment():
+    from app.core.summarizer import resolve_highlight_timestamps
+
+    highlights = [{"title": "Launch approved", "description": "Alice said yes"}]
+    segments = [
+        {
+            "id": "seg-1",
+            "content": "Alice said the launch was approved",
+            "start_ms": 4000,
+            "end_ms": 5000,
+        },
+        {"id": "seg-2", "content": "unrelated chatter", "start_ms": 9000, "end_ms": 9500},
+    ]
+    resolved = resolve_highlight_timestamps(highlights, segments)
+    assert resolved[0]["start_ms"] == 4000
+    assert resolved[0]["source_segment_ids"] == ["seg-1"]
+
+
+def test_resolve_highlight_ungrounded_has_no_citation():
+    from app.core.summarizer import resolve_highlight_timestamps
+
+    highlights = [{"title": "Completely unrelated", "description": "zzz qqq"}]
+    segments = [{"id": "seg-1", "content": "Alice said the launch", "start_ms": 1, "end_ms": 2}]
+    resolved = resolve_highlight_timestamps(highlights, segments)
+    # No lexical overlap -> no citation and no timestamp; kept (flagged ungrounded).
+    assert "source_segment_ids" not in resolved[0]
+    assert resolved[0].get("start_ms") is None
+    assert resolved[0]["title"] == "Completely unrelated"
+
+
 async def test_summarize_transcript_map_reduces_above_threshold(monkeypatch):
     calls: list[str] = []
 

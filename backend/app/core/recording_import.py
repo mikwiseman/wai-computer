@@ -604,10 +604,21 @@ async def _persist_summary(
 
     raw_highlights = summary_result.highlights or []
     if raw_highlights:
+        # Flush so the just-persisted segments have ids, then cite each highlight
+        # back to the segment it is grounded in (verifiable, attach-not-drop).
+        await db.flush()
+        seg_rows = (
+            await db.execute(
+                select(
+                    Segment.id, Segment.content, Segment.start_ms, Segment.end_ms
+                ).where(Segment.recording_id == recording.id)
+            )
+        ).all()
         segment_dicts = [
-            {"content": tr.text, "start_ms": tr.start_ms, "end_ms": tr.end_ms}
-            for tr in transcript_results
+            {"id": str(s.id), "content": s.content, "start_ms": s.start_ms, "end_ms": s.end_ms}
+            for s in seg_rows
         ]
+        grounded_count = 0
         for hl in resolve_highlight_timestamps(raw_highlights, segment_dicts):
             title = str(hl.get("title", "")).strip()
             if not title:
@@ -615,6 +626,9 @@ async def _persist_summary(
             importance = hl.get("importance", "medium")
             if importance not in {"high", "medium", "low"}:
                 importance = "medium"
+            source_segment_ids = hl.get("source_segment_ids") or None
+            if source_segment_ids:
+                grounded_count += 1
             db.add(
                 Highlight(
                     recording_id=recording.id,
@@ -625,8 +639,14 @@ async def _persist_summary(
                     start_ms=hl.get("start_ms"),
                     end_ms=hl.get("end_ms"),
                     importance=importance,
+                    source_segment_ids=source_segment_ids,
                 )
             )
+        logger.info(
+            "highlight grounding total=%d grounded=%d",
+            len(raw_highlights),
+            grounded_count,
+        )
 
     # Seed the knowledge graph from the summary's people + topics (zero extra
     # LLM cost) so imported recordings join the graph too.

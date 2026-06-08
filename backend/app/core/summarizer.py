@@ -735,7 +735,14 @@ def resolve_highlight_timestamps(
     highlights: list[dict],
     segments: list[dict],
 ) -> list[dict]:
-    """Map each highlight to the best-matching segment's time range."""
+    """Ground each highlight to its best-matching transcript segment.
+
+    Attaches the segment's time range (start_ms/end_ms) and, when the segment
+    carries an ``id``, cites it in ``source_segment_ids`` — a verifiable link back
+    to the source. Highlights with no lexical match keep null timestamps and no
+    citation: they are left UNGROUNDED (flagged, never dropped) so the source can
+    be checked rather than silently trusted.
+    """
     if not segments:
         return highlights
 
@@ -762,6 +769,9 @@ def resolve_highlight_timestamps(
         if best_segment and best_score > 0:
             hl["start_ms"] = best_segment.get("start_ms")
             hl["end_ms"] = best_segment.get("end_ms")
+            seg_id = best_segment.get("id")
+            if seg_id is not None:
+                hl["source_segment_ids"] = [seg_id]
 
         resolved.append(hl)
     return resolved
