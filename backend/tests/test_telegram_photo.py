@@ -1,6 +1,10 @@
-"""Unit tests for Telegram photo / image-document extraction."""
+"""Unit tests for Telegram photo / image-document extraction + dispatch helpers."""
 
-from app.api.routes.telegram import _extract_photo
+from app.api.routes.telegram import (
+    _extract_photo,
+    _is_long_form_text,
+    _unsupported_message_kind,
+)
 
 
 def test_extract_photo_picks_largest_size():
@@ -41,3 +45,20 @@ def test_extract_photo_ignores_voice_and_empty():
     assert _extract_photo({"voice": {"file_id": "v"}}) is None
     assert _extract_photo({}) is None
     assert _extract_photo({"photo": []}) is None
+
+
+def test_unsupported_message_kind():
+    assert _unsupported_message_kind({"location": {"latitude": 1}}) == "геолокацию"
+    assert _unsupported_message_kind({"contact": {"phone_number": "1"}}) == "контакты"
+    assert _unsupported_message_kind({"poll": {"id": "p"}}) == "опросы"
+    assert _unsupported_message_kind({"sticker": {"file_id": "s"}}) == "стикеры"
+    # Capturable / normal types are not flagged.
+    assert _unsupported_message_kind({"text": "hi"}) is None
+    assert _unsupported_message_kind({"voice": {"file_id": "v"}}) is None
+    assert _unsupported_message_kind({"photo": [{"file_id": "p"}]}) is None
+
+
+def test_is_long_form_text():
+    assert _is_long_form_text("short note") is False
+    assert _is_long_form_text("x" * 400) is True
+    assert _is_long_form_text("  " + "y" * 401 + "  ") is True

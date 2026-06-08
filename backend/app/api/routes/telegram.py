@@ -2849,6 +2849,34 @@ def _is_forwarded(message: dict[str, Any]) -> bool:
     )
 
 
+FORWARDED_TEXT_MIN_CHARS = 400
+
+_UNSUPPORTED_MESSAGE_KINDS = {
+    "sticker": "стикеры",
+    "animation": "GIF и анимации",
+    "location": "геолокацию",
+    "venue": "места на карте",
+    "contact": "контакты",
+    "poll": "опросы",
+    "dice": "кубики и эмодзи-игры",
+    "story": "истории",
+    "game": "игры",
+}
+
+
+def _unsupported_message_kind(message: dict[str, Any]) -> str | None:
+    """Human label for a message type we knowingly don't ingest yet (else None)."""
+    for key, label in _UNSUPPORTED_MESSAGE_KINDS.items():
+        if message.get(key) is not None:
+            return label
+    return None
+
+
+def _is_long_form_text(text: str) -> bool:
+    """True for substantial pasted/forwarded prose worth saving as a material."""
+    return len(text.strip()) >= FORWARDED_TEXT_MIN_CHARS
+
+
 def _reply_is_from_assistant(message: dict[str, Any]) -> bool:
     """True when this message is a reply to one of the bot's own messages. In a
     private 1:1 chat the only bot whose messages appear is Wai, so a reply to a bot
@@ -3062,6 +3090,87 @@ async def _handle_voice_as_message(
     )
 
 
+async def _handle_forwarded_text(
+    db: AsyncSession,
+    client: TelegramBotClient,
+    *,
+    message: dict[str, Any],
+    account: TelegramAccount,
+    text: str,
+) -> None:
+    """Save substantial forwarded/pasted prose as a material with an AI summary."""
+    chat_id = _telegram_chat_id(message)
+    if chat_id is None:
+        return
+    if await _ensure_active_user(db, client, message=message, account=account) is None:
+        return
+
+    status_response = await client.send_message(
+        chat_id,
+        "Сохраняю в материалы и делаю краткое содержание.",
+        reply_to_message_id=message.get("message_id"),
+    )
+    status_message_id = _sent_message_id(status_response)
+    first_line = text.strip().splitlines()[0] if text.strip() else ""
+    message_id = message.get("message_id")
+    source_ref = f"telegram:text:{chat_id}:{message_id}" if isinstance(message_id, int) else None
+    try:
+        item, created = await ingest_item(
+            db,
+            account.user_id,
+            source="telegram",
+            source_ref=source_ref,
+            kind="note",
+            title=clean_title(first_line) or "Пересланный текст",
+            body=text,
+            metadata={"telegram": {"forwarded": True}},
+            embed=True,
+        )
+        await db.flush()
+    except Exception:  # noqa: BLE001 - failed import should be explicit to the sender.
+        logger.exception("telegram forwarded text ingest failed")
+        await _delete_status_message(client, chat_id=chat_id, message_id=status_message_id)
+        await client.send_message(
+            chat_id,
+            "Не смог сохранить текст в материалы. Попробуй позже.",
+            reply_to_message_id=message.get("message_id"),
+        )
+        return
+
+    summary = (
+        await db.execute(select(ItemSummary).where(ItemSummary.item_id == item.id))
+    ).scalar_one_or_none()
+    if created or summary is None:
+        action_task = asyncio.create_task(_send_chat_action_until_cancelled(client, chat_id))
+        try:
+            summary = await generate_item_summary(db, item)
+            await db.flush()
+        except Exception:  # noqa: BLE001 - keep the saved item and surface the failure.
+            logger.exception("telegram forwarded text summary failed")
+            await _delete_status_message(client, chat_id=chat_id, message_id=status_message_id)
+            await client.send_message(
+                chat_id,
+                "Сохранил текст, но не смог сделать краткое содержание. Попробуй позже.",
+                reply_to_message_id=message.get("message_id"),
+            )
+            return
+        finally:
+            await _stop_chat_action_task(action_task)
+
+    await _delete_status_message(client, chat_id=chat_id, message_id=status_message_id)
+    reply = format_item_reply(item, summary)
+    await _set_telegram_active_context(
+        db, account, ref_type="item", ref_id=item.id, title=item.title
+    )
+    await _send_chunks(
+        client,
+        chat_id,
+        reply,
+        reply_to_message_id=message.get("message_id"),
+        parse_mode="HTML",
+    )
+
+
 async def _route_text_like(
     db: AsyncSession,
     client: TelegramBotClient,
@@ -3071,9 +3180,9 @@ async def _route_text_like(
     text: str,
     input_modality: str = "text",
 ) -> None:
-    """Route a typed-or-spoken message: structured command, URL ingest, or agent
-    turn. Shared by the text branch and voice notes routed to chat so both modalities
-    behave identically."""
+    """Route a typed-or-spoken message: structured command, URL ingest, forwarded
+    long-form prose, or agent turn. Shared by the text branch and voice notes routed
+    to chat so both modalities behave identically."""
     text_intent = _text_intent(text)
     forwarded_url = find_first_url(text)
     if text_intent is not None:
@@ -3084,6 +3193,10 @@ async def _route_text_like(
     elif forwarded_url is not None:
         await _handle_url_message(
             db, client, message=message, account=account, url=forwarded_url
+        )
+    elif input_modality == "text" and _is_forwarded(message) and _is_long_form_text(text):
+        await _handle_forwarded_text(
+            db, client, message=message, account=account, text=text
         )
     else:
         await _handle_text_message(
@@ -3357,11 +3470,20 @@ async def _handle_update(update: dict[str, Any]) -> None:
             else:
                 text = _message_text(message)
                 if not text:
-                    await client.send_message(
-                        chat_id,
-                        "Пришли голосовое, видео, документ или вопрос текстом.",
-                        reply_to_message_id=message.get("message_id"),
-                    )
+                    unsupported = _unsupported_message_kind(message)
+                    if unsupported is not None:
+                        await client.send_message(
+                            chat_id,
+                            f"Пока не умею обрабатывать {unsupported}. "
+                            "Пришли голосовое, видео, фото, документ или текст.",
+                            reply_to_message_id=message.get("message_id"),
+                        )
+                    else:
+                        await client.send_message(
+                            chat_id,
+                            "Пришли голосовое, видео, фото, документ или вопрос текстом.",
+                            reply_to_message_id=message.get("message_id"),
+                        )
                 else:
                     await _route_text_like(
                         db,
