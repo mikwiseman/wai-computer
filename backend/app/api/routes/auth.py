@@ -5,8 +5,10 @@ from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Request, Response, status
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, EmailStr, field_validator
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import CurrentUser, Database
@@ -24,6 +26,7 @@ from app.core.rate_limit import (
 )
 from app.core.security import (
     create_access_token,
+    decode_email_verification_token,
     generate_magic_link_token,
     generate_refresh_token,
     hash_password,
@@ -634,6 +637,53 @@ async def verify_magic_link(
     _set_auth_cookies(response, access_token, refresh_token)
     logger.info("magic_link verification succeeded")
     return AuthResponse(access_token=access_token, refresh_token=refresh_token)
+
+
+def _email_confirm_page(message: str) -> str:
+    return (
+        "<!doctype html><html><head><meta charset='utf-8'>"
+        "<meta name='viewport' content='width=device-width,initial-scale=1'>"
+        "<title>WaiComputer</title></head>"
+        "<body style='font-family:system-ui;max-width:32rem;margin:4rem auto;"
+        f"padding:0 1rem;text-align:center'><h1 style='font-size:1.25rem'>{message}</h1>"
+        "</body></html>"
+    )
+
+
+@router.get("/email/confirm", response_class=HTMLResponse)
+async def confirm_email(token: str, db: Database) -> HTMLResponse:
+    """Confirm + attach an email to an account from an emailed verification link.
+
+    Backs the Telegram /email flow: the token carries the target user + pending
+    email, so only the inbox owner (who can open the link) can attach it.
+    """
+    decoded = decode_email_verification_token(token)
+    if decoded is None:
+        return HTMLResponse(
+            _email_confirm_page("Ссылка недействительна или устарела."), status_code=400
+        )
+    user_id, email = decoded
+    user = await db.get(User, user_id)
+    if user is None:
+        return HTMLResponse(_email_confirm_page("Аккаунт не найден."), status_code=404)
+    if user.email == email:
+        return HTMLResponse(_email_confirm_page("Email уже подтверждён."))
+    existing = (
+        await db.execute(select(User).where(User.email == email, User.id != user_id))
+    ).scalar_one_or_none()
+    if existing is not None:
+        return HTMLResponse(
+            _email_confirm_page("Этот email уже используется другим аккаунтом."),
+            status_code=409,
+        )
+    user.email = email
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        return HTMLResponse(_email_confirm_page("Этот email уже используется."), status_code=409)
+    logger.info("email confirmed for user_id=%s", user_id)
+    return HTMLResponse(_email_confirm_page("Email подтверждён. Можно закрыть страницу."))
 
 
 @router.post("/reset-password", response_model=MessageResponse)

@@ -161,6 +161,76 @@ async def test_consent_callback_rejects_bot(db_session: AsyncSession):
     assert not client.edits
 
 
+def test_email_verification_token_roundtrip():
+    from uuid import uuid4
+
+    from app.core.security import (
+        create_email_verification_token,
+        decode_email_verification_token,
+    )
+
+    uid = uuid4()
+    token = create_email_verification_token(uid, "a@b.com")
+    assert decode_email_verification_token(token) == (uid, "a@b.com")
+    assert decode_email_verification_token("garbage") is None
+
+
+@pytest.mark.asyncio
+async def test_email_command_sends_verification_without_setting_email(db_session, monkeypatch):
+    from app.api.routes import telegram as tg
+
+    user, account = await _provisioned_account(db_session, 560001)
+    sent: list[tuple[str, str]] = []
+
+    async def fake_send(to_email, token, *, locale="en"):
+        sent.append((to_email, locale))
+
+    monkeypatch.setattr("app.core.email.send_email_verification_email", fake_send)
+    client = _FakeClient()
+    msg = {"message_id": 1, "from": {"id": 560001}, "chat": {"id": 560001}}
+    await tg._handle_email_command(
+        db_session, client, message=msg, account=account, arg="Me@Example.com"
+    )
+    assert sent and sent[0][0] == "me@example.com"
+    assert client.messages and "me@example.com" in client.messages[-1][1]
+    # Verify-then-link: the email is NOT attached until the link is clicked.
+    await db_session.refresh(user)
+    assert user.email is None
+
+
+@pytest.mark.asyncio
+async def test_email_command_rejects_taken_email(db_session, monkeypatch):
+    from app.api.routes import telegram as tg
+
+    db_session.add(User(email="taken@example.com"))
+    await db_session.flush()
+    _user, account = await _provisioned_account(db_session, 560002)
+
+    async def fake_send(*a, **k):  # should never be called
+        raise AssertionError("must not send for a taken email")
+
+    monkeypatch.setattr("app.core.email.send_email_verification_email", fake_send)
+    client = _FakeClient()
+    msg = {"message_id": 1, "from": {"id": 560002}, "chat": {"id": 560002}}
+    await tg._handle_email_command(
+        db_session, client, message=msg, account=account, arg="taken@example.com"
+    )
+    assert client.messages and "уже привязан" in client.messages[-1][1]
+
+
+@pytest.mark.asyncio
+async def test_confirm_email_attaches_verified_address(db_session):
+    from app.api.routes.auth import confirm_email
+    from app.core.security import create_email_verification_token
+
+    user, _account = await _provisioned_account(db_session, 560003)
+    token = create_email_verification_token(user.id, "new@example.com")
+    resp = await confirm_email(token, db_session)
+    assert resp.status_code == 200
+    await db_session.refresh(user)
+    assert user.email == "new@example.com"
+
+
 @pytest.mark.asyncio
 async def test_multiple_emailless_users_coexist(db_session: AsyncSession):
     """The partial unique index must allow many NULL-email accounts."""

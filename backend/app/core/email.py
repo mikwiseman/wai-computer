@@ -364,3 +364,31 @@ async def send_renewal_reminder_email(
     return await _send_billing_email(
         to_email, copy["reminder_subject"], html, kind="renewal_reminder"
     )
+
+
+async def send_email_verification_email(to_email: str, token: str, *, locale: str = "en") -> None:
+    """Email a confirm link that, when clicked, attaches ``to_email`` to the account.
+
+    Used by the Telegram /email command so an emailless account can add a verified
+    email (NoAuth-safe: only the inbox owner can click the link).
+    """
+    settings = get_settings()
+    norm = _normalize_locale(locale)
+    confirm_url = f"{settings.frontend_url}/api/auth/email/confirm?token={token}"
+    if norm == "ru":
+        subject = "Подтверди email — WaiComputer"
+        html = (
+            "<p>Подтверди свой email для WaiComputer:</p>"
+            f'<p><a href="{confirm_url}">Подтвердить email</a></p>'
+            "<p>Ссылка действует 24 часа. Если это не ты — просто проигнорируй письмо.</p>"
+        )
+    else:
+        subject = "Confirm your email — WaiComputer"
+        html = (
+            "<p>Confirm your email for WaiComputer:</p>"
+            f'<p><a href="{confirm_url}">Confirm email</a></p>'
+            "<p>This link is valid for 24 hours. If this wasn't you, ignore this email.</p>"
+        )
+    loop = asyncio.get_running_loop()
+    func = functools.partial(_send_html_email_sync, to_email, subject, html)
+    await loop.run_in_executor(None, func)

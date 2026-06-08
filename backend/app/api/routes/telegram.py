@@ -156,6 +156,7 @@ TELEGRAM_BOT_COMMANDS = [
     {"command": "search", "description": "Поиск по записям и расшифровкам"},
     {"command": "web", "description": "Ссылка для входа в веб-версию"},
     {"command": "mcp", "description": "Получить MCP-токен для агентов"},
+    {"command": "email", "description": "Привязать email для входа и чеков"},
     {"command": "export", "description": "Скачать копию своих данных"},
     {"command": "delete", "description": "Удалить аккаунт и все данные"},
     {"command": "settings", "description": "Статус привязки и настройки"},
@@ -286,6 +287,7 @@ def _telegram_help_text(*, linked: bool) -> str:
         "/search <запрос> — поиск по записям, саммари и расшифровкам\n"
         "/web — ссылка для входа в веб-версию\n"
         "/mcp — MCP-токен для подключения агентов\n"
+        "/email you@example.com — привязать email\n"
         "/export — скачать копию своих данных\n"
         "/delete — удалить аккаунт и все данные\n"
         "/link — привязать уже существующий аккаунт\n"
@@ -2215,6 +2217,9 @@ async def _handle_account_command(
     if intent in {"mcp", "token"}:
         await _handle_mcp_command(db, client, message=message, account=account)
         return True
+    if intent == "email":
+        await _handle_email_command(db, client, message=message, account=account, arg=arg)
+        return True
     if intent == "export":
         await _handle_export_command(db, client, message=message, account=account)
         return True
@@ -2222,6 +2227,65 @@ async def _handle_account_command(
         await _send_delete_confirm(client, message=message)
         return True
     return False
+
+
+_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+
+async def _handle_email_command(
+    db: AsyncSession,
+    client: TelegramBotClient,
+    *,
+    message: dict[str, Any],
+    account: TelegramAccount,
+    arg: str,
+) -> None:
+    """Verify-then-link: email a confirm link that attaches the address on click."""
+    from app.core.email import send_email_verification_email
+    from app.core.security import create_email_verification_token
+
+    chat_id = _telegram_chat_id(message)
+    if chat_id is None:
+        return
+    user = await _ensure_active_user(db, client, message=message, account=account)
+    if user is None:
+        return
+    email = arg.strip().lower()
+    if not _EMAIL_RE.match(email):
+        await client.send_message(
+            chat_id,
+            "Формат: /email you@example.com",
+            reply_to_message_id=message.get("message_id"),
+        )
+        return
+    existing = (
+        await db.execute(select(User).where(User.email == email, User.id != account.user_id))
+    ).scalar_one_or_none()
+    if existing is not None:
+        await client.send_message(
+            chat_id,
+            "Этот email уже привязан к другому аккаунту WaiComputer. "
+            "Войди в тот аккаунт и привяжи Telegram оттуда.",
+            reply_to_message_id=message.get("message_id"),
+        )
+        return
+    token = create_email_verification_token(account.user_id, email)
+    locale = "ru" if (user.region or "") == "ru" else "en"
+    try:
+        await send_email_verification_email(email, token, locale=locale)
+    except Exception:  # noqa: BLE001 - surface the failure; never attach an unverified email.
+        logger.exception("email verification send failed")
+        await client.send_message(
+            chat_id,
+            "Не удалось отправить письмо. Попробуй позже.",
+            reply_to_message_id=message.get("message_id"),
+        )
+        return
+    await client.send_message(
+        chat_id,
+        f"Отправил письмо на {email}. Нажми ссылку в письме, чтобы подтвердить адрес.",
+        reply_to_message_id=message.get("message_id"),
+    )
 
 
 async def _handle_export_command(

@@ -65,3 +65,43 @@ def generate_refresh_token() -> str:
 def hash_refresh_token(token: str) -> str:
     """Hash a refresh token using SHA-256 for storage."""
     return hashlib.sha256(token.encode()).hexdigest()
+
+
+EMAIL_VERIFY_PURPOSE = "email_verify"
+
+
+def create_email_verification_token(
+    user_id: UUID, email: str, *, expires_minutes: int = 1440
+) -> str:
+    """Signed, self-contained token proving a user controls ``email`` (24h default).
+
+    Carries the target user + pending email so confirming the email never trusts an
+    unverified provider claim (NoAuth-safe) and needs no extra column.
+    """
+    now = datetime.now(timezone.utc)
+    to_encode = {
+        "sub": str(user_id),
+        "email": email,
+        "purpose": EMAIL_VERIFY_PURPOSE,
+        "iat": now,
+        "exp": now + timedelta(minutes=expires_minutes),
+    }
+    return jwt.encode(to_encode, settings.jwt_secret, algorithm=settings.jwt_algorithm)
+
+
+def decode_email_verification_token(token: str) -> tuple[UUID, str] | None:
+    """Return (user_id, email) for a valid email-verify token, else None."""
+    try:
+        payload = jwt.decode(token, settings.jwt_secret, algorithms=[settings.jwt_algorithm])
+    except JWTError:
+        return None
+    if payload.get("purpose") != EMAIL_VERIFY_PURPOSE:
+        return None
+    sub = payload.get("sub")
+    email = payload.get("email")
+    if not sub or not email:
+        return None
+    try:
+        return UUID(str(sub)), str(email)
+    except ValueError:
+        return None
