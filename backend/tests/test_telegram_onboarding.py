@@ -97,6 +97,63 @@ async def test_provision_rejects_bots_and_sentinels(db_session: AsyncSession):
     )
 
 
+class _FakeClient:
+    def __init__(self) -> None:
+        self.answered: list[tuple[str, str | None]] = []
+        self.edits: list[tuple[int, int, str]] = []
+        self.messages: list[tuple[int, str]] = []
+
+    async def answer_callback_query(self, callback_id, text=None):
+        self.answered.append((callback_id, text))
+
+    async def edit_message_text(self, chat_id, message_id, text, **_kwargs):
+        self.edits.append((chat_id, message_id, text))
+
+    async def send_message(self, chat_id, text, **_kwargs):
+        self.messages.append((chat_id, text))
+
+
+@pytest.mark.asyncio
+async def test_consent_callback_provisions_account(db_session: AsyncSession):
+    from app.api.routes.telegram import _handle_consent_callback
+
+    client = _FakeClient()
+    await _handle_consent_callback(
+        db_session,
+        client,
+        callback_id="cb1",
+        from_user={"id": 557001, "first_name": "Z", "language_code": "ru"},
+        chat_id=557001,
+        message_id=42,
+    )
+    account = (
+        await db_session.execute(
+            select(TelegramAccount).where(TelegramAccount.telegram_user_id == 557001)
+        )
+    ).scalar_one()
+    assert account.telegram_chat_id == 557001
+    assert client.answered == [("cb1", "Готово!")]
+    # The consent message is edited into a welcome (buttons removed).
+    assert client.edits and "создан" in client.edits[0][2]
+
+
+@pytest.mark.asyncio
+async def test_consent_callback_rejects_bot(db_session: AsyncSession):
+    from app.api.routes.telegram import _handle_consent_callback
+
+    client = _FakeClient()
+    await _handle_consent_callback(
+        db_session,
+        client,
+        callback_id="cb2",
+        from_user={"id": 999, "is_bot": True},
+        chat_id=999,
+        message_id=1,
+    )
+    assert client.answered == [("cb2", "Не удалось создать аккаунт.")]
+    assert not client.edits
+
+
 @pytest.mark.asyncio
 async def test_multiple_emailless_users_coexist(db_session: AsyncSession):
     """The partial unique index must allow many NULL-email accounts."""

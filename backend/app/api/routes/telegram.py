@@ -112,6 +112,9 @@ router = APIRouter(prefix="/telegram", tags=["telegram"])
 
 PAIRING_TTL = timedelta(minutes=15)
 PAIRING_PREFIX = "link_"
+CONSENT_CALLBACK_DATA = "consent:accept"
+TERMS_URL = "https://wai.computer/terms"
+PRIVACY_URL = "https://wai.computer/privacy"
 BOT_LINK_CODE_TTL = timedelta(minutes=15)
 BOT_LINK_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 BOT_LINK_CODE_LENGTH = 8
@@ -1158,6 +1161,73 @@ def _extract_photo(message: dict[str, Any]) -> dict[str, Any] | None:
     return None
 
 
+def _consent_inline_keyboard() -> dict[str, Any]:
+    return {
+        "inline_keyboard": [
+            [{"text": "✅ Принимаю и создаю аккаунт", "callback_data": CONSENT_CALLBACK_DATA}]
+        ]
+    }
+
+
+async def _send_consent_prompt(
+    client: TelegramBotClient,
+    *,
+    message: dict[str, Any],
+    lead: str | None = None,
+) -> None:
+    """Offer Telegram-only signup: a welcome + an inline Terms/Privacy consent tap."""
+    chat_id = _telegram_chat_id(message)
+    if chat_id is None:
+        return
+    intro = lead or (
+        "WaiComputer — твой второй мозг прямо в Telegram."
+    )
+    text = (
+        f"{intro}\n\n"
+        "Присылай голосовые, видео, фото, документы и ссылки — расшифрую, сделаю "
+        "краткое содержание, отвечу на вопросы и запомню важное.\n\n"
+        "Нажми кнопку, чтобы создать аккаунт. Это значит, что ты принимаешь "
+        f"Условия использования ({TERMS_URL}) и Политику конфиденциальности "
+        f"({PRIVACY_URL})."
+    )
+    await client.send_message(
+        chat_id,
+        text,
+        reply_to_message_id=message.get("message_id"),
+        reply_markup=_consent_inline_keyboard(),
+    )
+
+
+async def _handle_consent_callback(
+    db: AsyncSession,
+    client: TelegramBotClient,
+    *,
+    callback_id: str,
+    from_user: dict[str, Any] | None,
+    chat_id: int | None,
+    message_id: int | None,
+) -> None:
+    """Provision a Telegram-only account after the user taps the consent button."""
+    if not isinstance(from_user, dict) or chat_id is None:
+        await client.answer_callback_query(callback_id)
+        return
+    user = await provision_user_from_telegram(db, from_user=from_user, telegram_chat_id=chat_id)
+    if user is None:
+        await client.answer_callback_query(
+            callback_id, text="Не удалось создать аккаунт."
+        )
+        return
+    await client.answer_callback_query(callback_id, text="Готово!")
+    welcome = "Аккаунт WaiComputer создан. " + _telegram_help_text(linked=True)
+    if isinstance(message_id, int):
+        try:
+            await client.edit_message_text(chat_id, message_id, welcome)
+            return
+        except TelegramClientError:
+            logger.warning("consent welcome edit failed; sending fresh message")
+    await client.send_message(chat_id, welcome)
+
+
 async def _handle_start_command(
     db: AsyncSession,
     client: TelegramBotClient,
@@ -1188,12 +1258,8 @@ async def _handle_start_command(
     elif await _load_account(db, telegram_user_id):
         text = _telegram_help_text(linked=True)
     else:
-        await _send_bot_link_code(
-            db,
-            client,
-            message=message,
-            intro=_telegram_help_text(linked=False),
-        )
+        # Brand-new user: offer Telegram-only signup (consent tap -> provision).
+        await _send_consent_prompt(client, message=message)
         return
     await client.send_message(chat_id, text, reply_to_message_id=message.get("message_id"))
 
@@ -2480,6 +2546,17 @@ async def _handle_callback_query(
     if not isinstance(telegram_user_id, int) or not isinstance(data, str):
         await client.answer_callback_query(callback_id)
         return
+    # Consent tap: the user has NO account yet — provision before the account guard.
+    if data == CONSENT_CALLBACK_DATA:
+        await _handle_consent_callback(
+            db,
+            client,
+            callback_id=callback_id,
+            from_user=from_user if isinstance(from_user, dict) else None,
+            chat_id=chat_id,
+            message_id=message_id if isinstance(message_id, int) else None,
+        )
+        return
     account = await _load_account(db, telegram_user_id)
     if account is None:
         await client.answer_callback_query(
@@ -3445,7 +3522,7 @@ async def _handle_update(update: dict[str, Any]) -> None:
                 return
 
             command = _message_command(message)
-            if command and command[0] in {"/start", "/link"}:
+            if command and command[0] == "/start":
                 await _handle_start_command(
                     db,
                     client,
@@ -3456,25 +3533,34 @@ async def _handle_update(update: dict[str, Any]) -> None:
                 return
 
             account = await _load_account(db, telegram_user_id)
-            if command and command[0] == "/help":
-                if account is None:
+            if command and command[0] == "/link":
+                # Explicit: link this Telegram to an EXISTING WaiComputer account.
+                if account is not None:
+                    await _handle_help_command(client, message=message, linked=True)
+                else:
                     await _send_bot_link_code(
                         db,
                         client,
                         message=message,
-                        intro=_telegram_help_text(linked=False),
+                        intro="Чтобы привязать уже существующий аккаунт WaiComputer:",
                     )
+                await _mark_update(db, update_id, "completed")
+                return
+            if command and command[0] == "/help":
+                if account is None:
+                    await _send_consent_prompt(client, message=message)
                 else:
                     await _handle_help_command(client, message=message, linked=True)
                 await _mark_update(db, update_id, "completed")
                 return
 
             if account is None:
-                await _send_bot_link_code(
-                    db,
+                # First message from a brand-new user (e.g. a voice note before
+                # signup): offer account creation; they resend after the consent tap.
+                await _send_consent_prompt(
                     client,
                     message=message,
-                    intro="Сначала привяжи Telegram к WaiComputer.",
+                    lead="Похоже, у тебя ещё нет аккаунта WaiComputer.",
                 )
                 await _mark_update(db, update_id, "completed")
                 return

@@ -733,12 +733,14 @@ async def test_handle_start_command_existing_and_missing_link(db_session: AsyncS
 
     assert "Telegram привязан" in capture.messages[0]["text"]
     assert "/meetings" in capture.messages[0]["text"]
-    assert "код" in capture.messages[1]["text"]
+    # A brand-new user is offered Telegram-only signup (consent button), not a code.
+    assert "Условия" in capture.messages[1]["text"]
+    assert capture.messages[1]["reply_markup"]["inline_keyboard"]
     assert (
         await db_session.execute(
             select(TelegramBotLinkCode).where(TelegramBotLinkCode.telegram_user_id == 999)
         )
-    ).scalar_one()
+    ).scalar_one_or_none() is None
 
 
 @pytest.mark.asyncio
@@ -3462,7 +3464,8 @@ async def test_handle_update_branches_and_failures(db_session: AsyncSession, mon
     assert (await db_session.get(TelegramUpdate, 101)).status == "completed"
     assert (await db_session.get(TelegramUpdate, 102)).status == "completed"
     assert (await db_session.get(TelegramUpdate, 103)).status == "completed"
-    assert "Сначала привяжи" in capture.messages[0]["text"]
+    # Unlinked user's first message -> Telegram-only signup consent prompt.
+    assert "Условия" in capture.messages[0]["text"]
     assert "/meetings" in capture.messages[1]["text"]
     failed = await db_session.get(TelegramUpdate, 106)
     assert failed.status == "failed"
