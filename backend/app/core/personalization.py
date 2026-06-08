@@ -11,6 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.dictation import DictationDictionaryWord
+from app.models.entity import Entity
 from app.models.personalization import PersonalizationImportJob, PersonalizationTerm
 
 TERM_STATUS_VALUES = {"active", "candidate", "rejected"}
@@ -166,19 +167,63 @@ async def load_user_keyterms(
     return sanitize_keyterms(raw_terms, max_terms=250, max_chars=100, max_words=8, token_budget=900)
 
 
+async def load_user_entity_terms(
+    db: AsyncSession,
+    *,
+    user_id: UUID,
+    limit: int = 60,
+) -> list[str]:
+    """Recent person/project/organization names from the user's entity graph.
+
+    Widens the summary glossary so the summarizer can canonicalize close or
+    mis-transcribed proper nouns against names the user already uses.
+    """
+    result = await db.execute(
+        select(Entity.name)
+        .where(
+            Entity.user_id == user_id,
+            Entity.type.in_(("person", "project", "organization")),
+        )
+        .order_by(Entity.updated_at.desc())
+        .limit(limit)
+    )
+    return [name.strip() for name in result.scalars().all() if name and name.strip()]
+
+
+def _merge_glossary(*term_lists: list[str], cap: int = 80) -> list[str]:
+    """Case-insensitive merge of term lists preserving first-seen order, capped."""
+    seen: set[str] = set()
+    merged: list[str] = []
+    for terms in term_lists:
+        for term in terms:
+            key = term.casefold()
+            if key in seen:
+                continue
+            seen.add(key)
+            merged.append(term)
+            if len(merged) >= cap:
+                return merged
+    return merged
+
+
 async def summary_personalization_instructions(
     db: AsyncSession,
     *,
     user_id: UUID,
 ) -> str | None:
-    terms = await load_user_keyterms(db, user_id=user_id, purpose="summary")
-    if not terms:
+    approved = await load_user_keyterms(db, user_id=user_id, purpose="summary")
+    entities = await load_user_entity_terms(db, user_id=user_id)
+    glossary = _merge_glossary(approved, entities, cap=80)
+    if not glossary:
         return None
-    listed_terms = "\n".join(f"- {term}" for term in terms[:80])
+    listed_terms = "\n".join(f"- {term}" for term in glossary)
     return (
-        "Use the user's approved terminology when it appears in the transcript. "
-        "Do not add terms that are not supported by the transcript.\n\n"
-        f"Approved terminology:\n{listed_terms}"
+        "Known names and terms the user already uses (people, projects, products, "
+        "organizations). When a word in the transcript is clearly the same name as "
+        "one of these — including an obvious transcription error or close phonetic "
+        "match — use this known spelling instead. Never introduce a term that has "
+        "no support in the transcript, and never invent a name.\n\n"
+        f"Known terms:\n{listed_terms}"
     )
 
 

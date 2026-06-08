@@ -18,11 +18,13 @@ from app.api.routes.personalization import (
 )
 from app.core.personalization import (
     extract_candidate_terms,
+    load_user_entity_terms,
     load_user_keyterms,
     sanitize_keyterms,
     summary_personalization_instructions,
 )
 from app.models.dictation import DictationDictionaryWord
+from app.models.entity import Entity
 from app.models.personalization import PersonalizationImportJob, PersonalizationTerm
 from app.models.user import User
 from tests.conftest import LEGAL_ACCEPTANCE
@@ -389,7 +391,45 @@ async def test_summary_personalization_instructions_include_active_terms(
     )
 
     assert "WaiComputer" in instructions
-    assert "Use the user's approved terminology" in instructions
+    # Canonicalization directive: fix close/misspelled matches to known spellings.
+    assert "known spelling" in instructions
+    assert "transcription error" in instructions
+
+
+@pytest.mark.asyncio
+async def test_summary_personalization_instructions_include_entity_names(
+    db_session: AsyncSession,
+):
+    user_id = uuid4()
+    db_session.add(
+        User(
+            id=user_id,
+            email=f"entities-summary-{user_id}@example.com",
+            password_hash="hash",
+            **{
+                "legal_terms_version": LEGAL_ACCEPTANCE["legal_terms_version"],
+                "legal_privacy_version": LEGAL_ACCEPTANCE["legal_privacy_version"],
+            },
+        )
+    )
+    db_session.add_all(
+        [
+            Entity(user_id=user_id, type="organization", name="Meatful Cherity"),
+            Entity(user_id=user_id, type="person", name="Андрей"),
+            Entity(user_id=user_id, type="topic", name="generic topic"),  # excluded
+        ]
+    )
+    await db_session.flush()
+
+    entity_terms = await load_user_entity_terms(db_session, user_id=user_id)
+    assert "Meatful Cherity" in entity_terms
+    assert "Андрей" in entity_terms
+    assert "generic topic" not in entity_terms  # topics are not canonicalized
+
+    instructions = await summary_personalization_instructions(db_session, user_id=user_id)
+    assert instructions is not None
+    assert "Meatful Cherity" in instructions
+    assert "Андрей" in instructions
 
 
 @pytest.mark.asyncio
