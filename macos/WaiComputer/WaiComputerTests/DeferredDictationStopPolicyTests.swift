@@ -98,6 +98,62 @@ final class DeferredDictationStopPolicyTests: XCTestCase {
         )
     }
 
+    func testCleanupSpeculationReusesExactFinalTranscriptMatch() {
+        XCTAssertEqual(
+            DictationCleanupSpeculationPolicy.decision(
+                preliminaryRawText: "Clean this transcript.",
+                finalRawText: "Clean this transcript."
+            ),
+            .reuseSpeculative
+        )
+    }
+
+    func testCleanupSpeculationReusesNormalizedFinalTranscriptMatch() {
+        XCTAssertEqual(
+            DictationCleanupSpeculationPolicy.decision(
+                preliminaryRawText: "Clean this transcript",
+                finalRawText: "clean this transcript."
+            ),
+            .reuseSpeculative
+        )
+    }
+
+    func testCleanupSpeculationRestartsWhenFinalTranscriptDiffers() {
+        XCTAssertEqual(
+            DictationCleanupSpeculationPolicy.decision(
+                preliminaryRawText: "Clean this transcript.",
+                finalRawText: "Clean this transcript better."
+            ),
+            .restartWithFinal
+        )
+    }
+
+    func testCleanupSpeculationRestartsWithoutPreliminaryTranscript() {
+        XCTAssertEqual(
+            DictationCleanupSpeculationPolicy.decision(
+                preliminaryRawText: " ",
+                finalRawText: "Clean this transcript."
+            ),
+            .restartWithFinal
+        )
+    }
+
+    func testCleanupSpeculationBackfillsAlreadyAccumulatedPreviewOnReuse() {
+        XCTAssertEqual(
+            DictationCleanupSpeculationPreviewPolicy.visiblePreviewOnReuse(
+                storedPreview: "Cleaned text already streamed"
+            ),
+            "Cleaned text already streamed"
+        )
+    }
+
+    func testCleanupSpeculationUsesBlankPreviewWhenNoTokensHaveArrived() {
+        XCTAssertEqual(
+            DictationCleanupSpeculationPreviewPolicy.visiblePreviewOnReuse(storedPreview: nil),
+            ""
+        )
+    }
+
     func testFinalizationContinuesOnlyWhenNotCancelled() {
         XCTAssertTrue(
             DictationFinalizationContinuationPolicy.shouldContinue(
