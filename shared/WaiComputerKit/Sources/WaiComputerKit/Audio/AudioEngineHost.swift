@@ -51,9 +51,14 @@ public actor AudioEngineHost {
     }
 
     /// Start the engine and begin capturing into the pre-roll ring buffer.
-    /// Idempotent: subsequent calls are no-ops.
+    /// Idempotent when already warm AND running. If the engine died under us
+    /// (macOS 26 Tahoe aggressively fires AVAudioEngineConfigurationChange,
+    /// which stops the engine and removes the tap), a stale `preWarmed=true`
+    /// must NOT short-circuit recovery — otherwise dictation captures a silent,
+    /// dead mic forever ("Listening" with no words). Re-install the tap + restart.
     public func prewarm() async throws {
-        guard !preWarmed else { return }
+        if preWarmed && engine.isRunning { return }
+        preWarmed = false
 
         let input = engine.inputNode
         let nativeFormat = input.outputFormat(forBus: 0)
@@ -134,13 +139,17 @@ public actor AudioEngineHost {
                 "platform": "macOS",
             ]
         )
-        // When a lease is active and the engine has stopped itself, finish
-        // the live stream so the consumer's `for await` exits and the
-        // dictation flow can surface a real error to the user rather than
-        // sitting in front of a silent mic.
-        if !isRunning, let cont = liveContinuation {
-            cont.finish()
-            liveContinuation = nil
+        // The engine stopped itself. Finish any active live stream so the
+        // consumer's `for await` exits, and ALWAYS clear preWarmed — even with
+        // no active lease — so the next prewarm()/dictation fully re-installs
+        // the tap and restarts. Tahoe fires this while idle too, where there is
+        // no lease; leaving preWarmed=true there is exactly what made the next
+        // dictation capture a dead, silent mic.
+        if !isRunning {
+            if let cont = liveContinuation {
+                cont.finish()
+                liveContinuation = nil
+            }
             activeLease = nil
             preWarmed = false
         }
