@@ -69,6 +69,12 @@ DERIVED_OWNER_EDGES: dict[str, dict[str, str]] = {
         "parent_column": "id",
         "owner_column": "user_id",
     },
+    "conversation_chunks": {
+        "parent_table": "conversations",
+        "local_column": "conversation_id",
+        "parent_column": "id",
+        "owner_column": "user_id",
+    },
     "message_citations": {
         "parent_table": "chat_messages",
         "local_column": "message_id",
