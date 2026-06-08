@@ -359,6 +359,35 @@ class WaiApi(
             refresh = { authStore.refresh() },
         )
     }
+
+    private suspend fun authorizedText(
+        method: HttpMethod,
+        path: String,
+        query: List<Pair<String, String>> = emptyList(),
+    ): String = transport.textAuthorized(
+        method = method,
+        path = path,
+        query = query,
+        accessTokenProvider = { authStore.currentAccessToken() },
+        refresh = { authStore.refresh() },
+    )
+
+    /// Export a recording transcript. `format` is markdown|txt|srt; `style`
+    /// (txt only) is plain|speakers|timestamped and defaults to plain server-side.
+    suspend fun exportRecording(
+        id: String,
+        format: String,
+        locale: String? = null,
+        style: String? = null,
+    ): String = authorizedText(
+        method = HttpMethod.Get,
+        path = "/api/recordings/$id/export",
+        query = buildList {
+            add("format" to format)
+            locale?.let { add("locale" to it) }
+            style?.let { add("style" to it) }
+        },
+    )
 }
 
 interface AuthStoreContract {
@@ -408,6 +437,27 @@ class ApiTransport(
             throw ApiError.Unauthorized
         }
         return decode(second)
+    }
+
+    /// Authorized GET that returns the raw response body as text (refresh-on-401).
+    /// Used for transcript export, which returns text/plain rather than JSON.
+    internal suspend fun textAuthorized(
+        method: HttpMethod,
+        path: String,
+        query: List<Pair<String, String>> = emptyList(),
+        accessTokenProvider: suspend () -> String?,
+        refresh: suspend () -> Boolean,
+    ): String {
+        val first = execute(method, path, query, null, accessTokenProvider())
+        val response = if (first.status.value == 401) {
+            if (!refresh()) throw ApiError.Unauthorized
+            execute(method, path, query, null, accessTokenProvider()).also {
+                if (it.status.value == 401) throw ApiError.Unauthorized
+            }
+        } else {
+            first
+        }
+        return ensureSuccessOrThrow(response, path).bodyAsText()
     }
 
     internal suspend inline fun <reified T> authorizedUpload(

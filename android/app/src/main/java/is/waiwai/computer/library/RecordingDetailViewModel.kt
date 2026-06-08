@@ -106,6 +106,10 @@ class RecordingDetailViewModel(
     suspend fun listPeople(): List<`is`.waiwai.computer.data.Person> =
         runCatching { waiApi.listPeople() }.getOrElse { emptyList() }
 
+    /// Fetch the transcript as clean plain text (server-rendered prose) for copying.
+    suspend fun exportTranscript(style: String? = null): String =
+        waiApi.exportRecording(id = recordingId, format = "txt", style = style)
+
     fun moveToFolder(folderId: String?) {
         if (localOnly) return
         viewModelScope.launch {

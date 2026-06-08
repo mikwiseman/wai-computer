@@ -1,8 +1,12 @@
 package `is`.waiwai.computer.library
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import android.content.Intent
 import android.media.MediaPlayer
 import android.net.Uri
+import android.widget.Toast
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -51,6 +55,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -74,6 +79,7 @@ import `is`.waiwai.computer.ui.recordingStatusLabel
 import `is`.waiwai.computer.ui.recordingTypeLabel
 import `is`.waiwai.computer.ui.components.BannerCard
 import `is`.waiwai.computer.ui.components.BannerVariant
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -88,6 +94,7 @@ fun RecordingDetailScreen(
     val detail = uiState.detail
     val localManifest = uiState.localManifest
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
 
     var editableTitle by rememberSaveable(detail?.title, localManifest?.title) {
         mutableStateOf(detail?.title ?: localManifest?.title.orEmpty())
@@ -140,6 +147,37 @@ fun RecordingDetailScreen(
                                     shareRecording(context, detail, localManifest)
                                 },
                             )
+                            if (detail != null && detail.segments.isNotEmpty()) {
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(R.string.detail_copy_transcript)) },
+                                    onClick = {
+                                        showOverflow = false
+                                        scope.launch {
+                                            runCatching { viewModel.exportTranscript() }
+                                                .onSuccess { text ->
+                                                    val clipboard = context.getSystemService(
+                                                        Context.CLIPBOARD_SERVICE,
+                                                    ) as ClipboardManager
+                                                    clipboard.setPrimaryClip(
+                                                        ClipData.newPlainText("transcript", text),
+                                                    )
+                                                    Toast.makeText(
+                                                        context,
+                                                        R.string.detail_transcript_copied,
+                                                        Toast.LENGTH_SHORT,
+                                                    ).show()
+                                                }
+                                                .onFailure {
+                                                    Toast.makeText(
+                                                        context,
+                                                        R.string.detail_transcript_copy_failed,
+                                                        Toast.LENGTH_SHORT,
+                                                    ).show()
+                                                }
+                                        }
+                                    },
+                                )
+                            }
                             if (detail != null) {
                                 DropdownMenuItem(
                                     text = { Text(stringResource(R.string.detail_move)) },
