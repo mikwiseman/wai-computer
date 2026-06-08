@@ -107,6 +107,11 @@ class MacRecordingViewModel: ObservableObject {
 
     private var recording: Recording?
     private var apiClient: APIClient?
+    /// Bumped on every start attempt and when a start is aborted. A start that is
+    /// superseded (e.g. the user discards while audio capture is still preparing)
+    /// checks this before flipping to `.recording`, so a stuck/slow start can never
+    /// resurrect a phantom recording after the user has escaped it.
+    private var startGeneration = 0
     private var audioCapture: (any AudioCaptureProtocol)?
     private var audioEncoder: AudioEncoder?
     private var audioFileWriter: AudioFileWriter?
@@ -268,6 +273,8 @@ class MacRecordingViewModel: ObservableObject {
         audioEncoder = nil
 
         setPhase(.preparing)
+        startGeneration &+= 1
+        let activeStartGeneration = startGeneration
 
         #if DEBUG
         if testingMode.isRecordingFlow {
@@ -461,6 +468,15 @@ class MacRecordingViewModel: ObservableObject {
                 audioLog.info("Recording audio task finished")
             }
 
+            // If the user aborted while we were preparing (e.g. audio capture
+            // stalled), don't flip to .recording — tear down the orphaned capture
+            // and bail so the phase stays idle.
+            guard activeStartGeneration == startGeneration else {
+                audioLog.info("Abandoning superseded recording start")
+                await capture.stopRecording()
+                return
+            }
+
             startTimer()
 
             // Monitor system audio stall status for telemetry and the compact
@@ -638,6 +654,20 @@ class MacRecordingViewModel: ObservableObject {
     /// the cloud persistence step, deletes the partial server row, and removes
     /// the local audio file + backup so nothing about this take survives.
     func discardRecording() async {
+        // Allow escaping a start that is still preparing (e.g. audio capture
+        // stalled) — not only an active recording. Otherwise a stuck "Preparing
+        // recording…" would trap the user with a dead Record button.
+        if phase == .preparing {
+            startGeneration &+= 1
+            SentryHelper.addBreadcrumb(
+                category: "recording",
+                message: "recording start aborted while preparing",
+                data: ["recordingId": currentRecordingId ?? "unknown"]
+            )
+            await resetAfterStartFailure()
+            return
+        }
+
         guard phase == .recording else { return }
 
         SentryHelper.addBreadcrumb(

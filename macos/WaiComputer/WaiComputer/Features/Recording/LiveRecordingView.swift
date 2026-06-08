@@ -107,10 +107,19 @@ struct LiveRecordingView: View {
                 Spacer()
 
                 Button {
-                    showingDiscardConfirm = true
+                    // While still preparing nothing has been captured yet, so
+                    // abort immediately (no confirmation) — this is the escape
+                    // hatch from a stalled "Preparing recording…".
+                    if recordingVM.phase == .preparing {
+                        discardRecording()
+                    } else {
+                        showingDiscardConfirm = true
+                    }
                 } label: {
                     Label {
-                        Text(t("Discard", "Не сохранять"))
+                        Text(recordingVM.phase == .preparing
+                             ? t("Cancel", "Отмена")
+                             : t("Discard", "Не сохранять"))
                     } icon: {
                         Image(systemName: "trash")
                     }
@@ -118,7 +127,7 @@ struct LiveRecordingView: View {
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.large)
-                .disabled(!recordingVM.canStopRecording)
+                .disabled(!recordingVM.canStopRecording && recordingVM.phase != .preparing)
                 .accessibilityIdentifier("discard-recording-button")
 
                 Button(action: togglePause) {
