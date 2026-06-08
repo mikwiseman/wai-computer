@@ -473,3 +473,81 @@ class TestExtractEntities:
         with patch.object(summarizer_module.settings, "cerebras_api_key", ""):
             with pytest.raises(ValueError, match="CEREBRAS_API_KEY not configured"):
                 await extract_entities("Some transcript")
+
+
+def test_chunk_transcript_splits_with_overlap():
+    from app.core.summarizer import _chunk_transcript
+
+    text = "\n".join(f"line {i} " + "y" * 50 for i in range(50))
+    chunks = _chunk_transcript(text, max_chars=500, overlap_lines=2)
+    assert len(chunks) > 1
+    # The trailing lines of one chunk reappear at the start of the next (overlap).
+    last_line_of_first = chunks[0].split("\n")[-1]
+    assert last_line_of_first in chunks[1]
+
+
+def test_chunk_transcript_single_chunk_when_short():
+    from app.core.summarizer import _chunk_transcript
+
+    assert _chunk_transcript("a\nb\nc", max_chars=10_000) == ["a\nb\nc"]
+
+
+def test_dedup_strings_dedups_and_caps():
+    from app.core.summarizer import _dedup_strings
+
+    assert _dedup_strings(["A", "a", " A ", "B", ""], cap=10) == ["A", "B"]
+    assert _dedup_strings(["x"] * 20, cap=3) == ["x"]
+
+
+def test_dedup_dicts_by_key():
+    from app.core.summarizer import _dedup_dicts
+
+    items = [{"task": "Do X"}, {"task": "do x"}, {"task": "Y"}, {"task": ""}]
+    assert _dedup_dicts(items, "task", cap=10) == [{"task": "Do X"}, {"task": "Y"}]
+
+
+def _canned_summary(**overrides):
+    base = dict(
+        title="T",
+        summary="chunk summary",
+        key_points=["kp"],
+        decisions=[],
+        action_items=[{"task": "do x", "owner": None, "due": None, "priority": "medium"}],
+        topics=["topic"],
+        people_mentioned=[],
+        follow_up_questions=[],
+        sentiment="neutral",
+        highlights=[],
+    )
+    base.update(overrides)
+    return SummaryResult(**base)
+
+
+async def test_summarize_transcript_single_pass_below_threshold(monkeypatch):
+    calls: list[str] = []
+
+    async def fake_once(transcript, **kwargs):
+        calls.append(kwargs.get("name", "recording_summary"))
+        return _canned_summary()
+
+    monkeypatch.setattr(summarizer_module, "_summarize_transcript_once", fake_once)
+    await summarizer_module.summarize_transcript("short transcript")
+    assert calls == ["recording_summary"]
+
+
+async def test_summarize_transcript_map_reduces_above_threshold(monkeypatch):
+    calls: list[str] = []
+
+    async def fake_once(transcript, **kwargs):
+        calls.append(kwargs.get("name", "recording_summary"))
+        return _canned_summary(summary=f"sum-{len(calls)}")
+
+    monkeypatch.setattr(summarizer_module, "_summarize_transcript_once", fake_once)
+    big = ("speaker: " + "x" * 100 + "\n") * 800  # ~88k chars > threshold
+    result = await summarizer_module.summarize_transcript(big)
+
+    assert calls.count("recording_summary_chunk") >= 2
+    assert calls.count("recording_summary_reduce") == 1
+    # Identical per-chunk lists are deterministically deduped in the merge.
+    assert result.key_points == ["kp"]
+    assert len(result.action_items) == 1

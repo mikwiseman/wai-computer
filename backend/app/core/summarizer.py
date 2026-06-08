@@ -1,5 +1,6 @@
 """Cerebras-backed summarization, title generation, and entity extraction."""
 
+import asyncio
 import logging
 import re
 from dataclasses import dataclass
@@ -153,6 +154,14 @@ STYLE_INSTRUCTIONS = {
 DEFAULT_SUMMARY_LANGUAGE = "auto"
 DEFAULT_SUMMARY_STYLE = "medium"
 
+# Long transcripts that would overflow a single completion's context/budget are
+# summarized map-reduce: chunk -> per-chunk structured summary -> merge. Below the
+# threshold the original single pass is used unchanged.
+MAP_REDUCE_CHAR_THRESHOLD = 40_000
+MAP_REDUCE_CHUNK_CHARS = 28_000
+MAP_REDUCE_OVERLAP_LINES = 2
+MAP_REDUCE_MAX_CONCURRENCY = 4
+
 
 def _require_cerebras_key() -> None:
     if not settings.cerebras_api_key:
@@ -225,19 +234,15 @@ class SummaryResult:
     highlights: list[dict] | None = None
 
 
-async def summarize_transcript(
+async def _summarize_transcript_once(
     transcript: str,
     *,
     language: str = DEFAULT_SUMMARY_LANGUAGE,
     style: str = DEFAULT_SUMMARY_STYLE,
     instructions: str | None = None,
+    name: str = "recording_summary",
 ) -> SummaryResult:
-    """Summarize a transcript via Cerebras strict structured outputs."""
-    add_sentry_breadcrumb(
-        category="summarizer",
-        message="Summarizing transcript",
-        data={"transcript_length": len(transcript), "language": language, "style": style},
-    )
+    """One Cerebras strict-structured-output summarization pass."""
     _require_cerebras_key()
 
     prompt = build_summary_prompt(language=language, style=style, instructions=instructions)
@@ -247,10 +252,7 @@ async def summarize_transcript(
         response = await client.chat.completions.create(
             model=settings.cerebras_llm_model,
             messages=_summary_messages(prompt, transcript),
-            response_format=strict_json_response_format(
-                _SummarySchema,
-                name="recording_summary",
-            ),
+            response_format=strict_json_response_format(_SummarySchema, name=name),
             reasoning_effort="medium",
             max_completion_tokens=4096,
         )
@@ -267,8 +269,6 @@ async def summarize_transcript(
     except CerebrasResponseError as exc:
         raise SummarizationError(f"Summarization failed: {exc}") from exc
 
-    add_sentry_breadcrumb(category="summarizer", message="Summarization completed")
-
     return SummaryResult(
         title=parsed.title,
         summary=parsed.summary,
@@ -281,6 +281,166 @@ async def summarize_transcript(
         sentiment=parsed.sentiment,
         highlights=[h.model_dump() for h in parsed.highlights],
     )
+
+
+def _chunk_transcript(
+    transcript: str,
+    *,
+    max_chars: int = MAP_REDUCE_CHUNK_CHARS,
+    overlap_lines: int = MAP_REDUCE_OVERLAP_LINES,
+) -> list[str]:
+    """Split a (speaker-labeled) transcript on line boundaries into <=max_chars
+    chunks, carrying a few trailing lines into the next chunk for continuity."""
+    lines = transcript.split("\n")
+    chunks: list[str] = []
+    current: list[str] = []
+    size = 0
+    for line in lines:
+        if current and size + len(line) + 1 > max_chars:
+            chunks.append("\n".join(current))
+            current = current[-overlap_lines:] if overlap_lines > 0 else []
+            size = sum(len(x) + 1 for x in current)
+        current.append(line)
+        size += len(line) + 1
+    if current:
+        chunks.append("\n".join(current))
+    return chunks
+
+
+def _dedup_strings(items: list[str], cap: int) -> list[str]:
+    seen: set[str] = set()
+    out: list[str] = []
+    for item in items:
+        text = (item or "").strip()
+        key = text.casefold()
+        if not text or key in seen:
+            continue
+        seen.add(key)
+        out.append(text)
+        if len(out) >= cap:
+            break
+    return out
+
+
+def _dedup_dicts(items: list[dict], key_field: str, cap: int) -> list[dict]:
+    seen: set[str] = set()
+    out: list[dict] = []
+    for item in items:
+        key = str(item.get(key_field) or "").strip().casefold()
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        out.append(item)
+        if len(out) >= cap:
+            break
+    return out
+
+
+def _merge_partial_summaries(partials: list[SummaryResult]) -> dict:
+    """Deterministically union the structured list fields across chunk summaries."""
+    return {
+        "key_points": _dedup_strings([p for part in partials for p in part.key_points], cap=15),
+        "decisions": _dedup_dicts(
+            [d for part in partials for d in part.decisions], "decision", cap=20
+        ),
+        "action_items": _dedup_dicts(
+            [a for part in partials for a in part.action_items], "task", cap=30
+        ),
+        "topics": _dedup_strings([t for part in partials for t in part.topics], cap=20),
+        "people_mentioned": _dedup_strings(
+            [p for part in partials for p in part.people_mentioned], cap=30
+        ),
+        "follow_up_questions": _dedup_strings(
+            [q for part in partials for q in part.follow_up_questions], cap=10
+        ),
+        "highlights": _dedup_dicts(
+            [h for part in partials for h in (part.highlights or [])], "title", cap=10
+        ),
+    }
+
+
+async def _map_reduce_summarize(
+    transcript: str,
+    *,
+    language: str,
+    style: str,
+    instructions: str | None,
+) -> SummaryResult:
+    """Summarize a long transcript by chunk (map) then merge (reduce)."""
+    chunks = _chunk_transcript(transcript)
+    add_sentry_breadcrumb(
+        category="summarizer",
+        message="Map-reduce summarization",
+        data={"chunks": len(chunks), "transcript_length": len(transcript)},
+    )
+    semaphore = asyncio.Semaphore(MAP_REDUCE_MAX_CONCURRENCY)
+
+    async def _map_one(chunk: str) -> SummaryResult:
+        async with semaphore:
+            return await _summarize_transcript_once(
+                chunk,
+                language=language,
+                style=style,
+                instructions=instructions,
+                name="recording_summary_chunk",
+            )
+
+    partials = list(await asyncio.gather(*(_map_one(chunk) for chunk in chunks)))
+    merged = _merge_partial_summaries(partials)
+
+    # Reduce: synthesize ONE coherent overview from the chunk summaries. The list
+    # fields are already comprehensively merged above, so we keep only the
+    # synthesized prose + title + sentiment from this pass.
+    reduce_instructions = (
+        (instructions + "\n\n" if instructions else "")
+        + "The text below is an ordered set of section summaries of ONE longer "
+        "recording. Produce a single unified summary of the whole recording — do "
+        "not mention 'sections' and do not repeat the same point twice."
+    )
+    combined = "\n\n".join(p.summary.strip() for p in partials if p.summary.strip())
+    reduced = await _summarize_transcript_once(
+        combined,
+        language=language,
+        style=style,
+        instructions=reduce_instructions,
+        name="recording_summary_reduce",
+    )
+    return SummaryResult(
+        title=reduced.title,
+        summary=reduced.summary,
+        sentiment=reduced.sentiment,
+        **merged,
+    )
+
+
+async def summarize_transcript(
+    transcript: str,
+    *,
+    language: str = DEFAULT_SUMMARY_LANGUAGE,
+    style: str = DEFAULT_SUMMARY_STYLE,
+    instructions: str | None = None,
+) -> SummaryResult:
+    """Summarize a transcript via Cerebras strict structured outputs.
+
+    Transcripts longer than ``MAP_REDUCE_CHAR_THRESHOLD`` are summarized
+    map-reduce (chunk -> per-chunk summary -> merge) so a multi-hour recording
+    doesn't overflow a single completion; shorter ones use one pass.
+    """
+    add_sentry_breadcrumb(
+        category="summarizer",
+        message="Summarizing transcript",
+        data={"transcript_length": len(transcript), "language": language, "style": style},
+    )
+    if len(transcript) > MAP_REDUCE_CHAR_THRESHOLD:
+        result = await _map_reduce_summarize(
+            transcript, language=language, style=style, instructions=instructions
+        )
+    else:
+        result = await _summarize_transcript_once(
+            transcript, language=language, style=style, instructions=instructions
+        )
+    add_sentry_breadcrumb(category="summarizer", message="Summarization completed")
+    return result
 
 
 CONTENT_SUMMARY_INSTRUCTIONS = """\
