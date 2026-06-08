@@ -64,7 +64,7 @@ struct MainTabView: View {
 
             // Brain shows 3rd but keeps tag(4) so existing persisted selections
             // (Wai=2, Settings=3) are NOT disrupted for users updating from build 42.
-            SecondBrainView(apiClient: appState.getAPIClient())
+            BrainHomeView(apiClient: appState.getAPIClient())
                 .tabItem {
                     Label(t("Brain", "Мозг"), systemImage: "brain")
                 }

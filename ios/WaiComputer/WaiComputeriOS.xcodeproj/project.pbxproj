@@ -11,14 +11,18 @@
 		10D8C9DDE9D457C35CF9AA64 /* ContentFeedViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = C80473C1FB851ED45A5B9ACD /* ContentFeedViewModel.swift */; };
 		13FF112A2BDD0344A649E06D /* DictationLanguageStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0AFCA421DFEDB18DF1E3D245 /* DictationLanguageStore.swift */; };
 		2109D3C9652FA60E87786D87 /* RecordingViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = AEB1BE80746F32FBBE0D2BC4 /* RecordingViewModel.swift */; };
+		214DF5275740CAA4AB51BB4A /* BrainHomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = ABF50BDD78AA6530F50026F2 /* BrainHomeView.swift */; };
 		2CC3409C8A45B8D56F34330D /* TelegramSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CFD37BE95D0862C344C34B5F /* TelegramSettingsView.swift */; };
+		2D6318B8F24F7031CEB5B56B /* BrainViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 035A1DE58FB7A2E20B37545C /* BrainViewModel.swift */; };
 		2DA3BC479796D3F31E971995 /* AppIcon.icon in Resources */ = {isa = PBXBuildFile; fileRef = 958F2DC590527AAC94036EFC /* AppIcon.icon */; };
+		31FE3F3E231877B687059C19 /* CapturedFeedView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37C0842928365D975E2A27C3 /* CapturedFeedView.swift */; };
 		3781A67DB4EF9E827F3AEDAE /* DictationHistoryStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = C729626D2D9EBB512E95D0EC /* DictationHistoryStore.swift */; };
 		38308F96BE0E9466A8680685 /* OnboardingPage.swift in Sources */ = {isa = PBXBuildFile; fileRef = A530B1CC229C71FC31649323 /* OnboardingPage.swift */; };
 		386D86DC6CF31550CB5001D1 /* McpConnectView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 97968DE3F1803173874F4E13 /* McpConnectView.swift */; };
 		3D7F2033226F703D235266F6 /* AuthView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F6B263A0D64683E2F9852B6 /* AuthView.swift */; };
 		3DA78C2D779EB4FA151ECFAA /* WaiHomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1D1E8066A665D192CD1E2565 /* WaiHomeView.swift */; };
 		4EDFCAF02CC86441404829AF /* ImportViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = C7366D5C484D46DF7E63FC1A /* ImportViewModel.swift */; };
+		5454C06C81295A59C1C068B5 /* BrainMapDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 008D64A4C123B62FC15A68B7 /* BrainMapDetailView.swift */; };
 		62213ADBC65D730FC044CD81 /* McpIngestionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D4C54E1A6E542EBE5CDB1D3 /* McpIngestionView.swift */; };
 		62241C028CE52A11AABA64DD /* RecordingDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E73122302C84DBD8D22C976C /* RecordingDetailView.swift */; };
 		63F1EC864866520DD47E1FED /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A85E11C35CBE283D2101267D /* Assets.xcassets */; };
@@ -27,6 +31,8 @@
 		74CE1DBA1C1046B692CAE1ED /* MemoryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F46F1EB2F55B3A0AA57243D /* MemoryView.swift */; };
 		75E3229998D7DFC388CC094B /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B7BB5BFDB9B1891E6E23F36 /* SettingsView.swift */; };
 		7C66456F12577A61EB24EEEB /* OnboardingVoiceSetupSlide.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B6A7126A7E31E8C2012EE4D /* OnboardingVoiceSetupSlide.swift */; };
+		827BD093CB722E50DCAD61E4 /* EntityPageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D0D48DD13F78AA7E44201D0 /* EntityPageView.swift */; };
+		8446DC4D68B4D9C2CD2B58C3 /* BrainMapCanvasView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 072AD75D5979A2E8B20945AD /* BrainMapCanvasView.swift */; };
 		868DCF82A866D13B39A028CA /* IdentityAndVoiceSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0AFCC42054E51921AC81B22F /* IdentityAndVoiceSettingsView.swift */; };
 		8736AF12790E4BDB2978D0A0 /* ComparisonView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 76146A88299F9DC07D2FE431 /* ComparisonView.swift */; };
 		8E224459E08141B4403149E2 /* BillingStatusSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6E6940BF1D0BDFB73952CDCD /* BillingStatusSection.swift */; };
@@ -37,6 +43,7 @@
 		9FA96E914A0393CB63E62547 /* DictationDictionaryStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = E12DEC867C20F1C0219C0B62 /* DictationDictionaryStore.swift */; };
 		A465CD7F83CF7D0237E63BBA /* SpeakerChipButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = F371D8CDE93BE0F63E284A00 /* SpeakerChipButton.swift */; };
 		A693D68CC22495BFA746A93F /* DesignSystem.swift in Sources */ = {isa = PBXBuildFile; fileRef = 804113B280E47C43FBED2F85 /* DesignSystem.swift */; };
+		A822F35E599B102438B3E810 /* BrainGraphView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D909F2FFAC31432FF9050F7C /* BrainGraphView.swift */; };
 		B2D9ABA7135D805FC44861CB /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6DA5B50328D0A9CA110FA5D5 /* OnboardingView.swift */; };
 		C351FF53C6FA12EC2A1CDAD3 /* TranscriptView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6E5463A0F89C2F77AC9ED432 /* TranscriptView.swift */; };
 		C7EC953F1B7260398E446691 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 82B055BB2A3A8819F870F4A3 /* ContentView.swift */; };
@@ -48,13 +55,14 @@
 		E0DA3FD33295D787056B84B1 /* AppearanceSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F512F3E4DABAE0A57EAB068 /* AppearanceSettingsView.swift */; };
 		E31F1A407611387C583951C4 /* WaiComputerApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B86D0607E05D98135E4CAC0 /* WaiComputerApp.swift */; };
 		E352768522304B30567C3B72 /* RecordingDetailViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A771DCE464D8D7EE680CF3B3 /* RecordingDetailViewModel.swift */; };
-		E42ED41209D9D6AAD7AFE57A /* SecondBrainView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0125DD2333BE829BFD004DBE /* SecondBrainView.swift */; };
 		E4C6EFBB9EA09C3989A8B77A /* OnboardingSlide.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC1AD9426E8AD31AD09735D0 /* OnboardingSlide.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
-		0125DD2333BE829BFD004DBE /* SecondBrainView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SecondBrainView.swift; sourceTree = "<group>"; };
+		008D64A4C123B62FC15A68B7 /* BrainMapDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrainMapDetailView.swift; sourceTree = "<group>"; };
+		035A1DE58FB7A2E20B37545C /* BrainViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrainViewModel.swift; sourceTree = "<group>"; };
 		04AF9DEF6E6FC79C1049CE9F /* WaiComputer.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = WaiComputer.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		072AD75D5979A2E8B20945AD /* BrainMapCanvasView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrainMapCanvasView.swift; sourceTree = "<group>"; };
 		0AFCA421DFEDB18DF1E3D245 /* DictationLanguageStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DictationLanguageStore.swift; sourceTree = "<group>"; };
 		0AFCC42054E51921AC81B22F /* IdentityAndVoiceSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IdentityAndVoiceSettingsView.swift; sourceTree = "<group>"; };
 		121A5759092B96CD66C56311 /* LanguagePickerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LanguagePickerView.swift; sourceTree = "<group>"; };
@@ -62,9 +70,11 @@
 		1D1E8066A665D192CD1E2565 /* WaiHomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WaiHomeView.swift; sourceTree = "<group>"; };
 		26AAC86B9D61613536D5D6D3 /* AddAnythingSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddAnythingSheet.swift; sourceTree = "<group>"; };
 		33331DB5948E7060A6CCDAF0 /* DictationHistoryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DictationHistoryView.swift; sourceTree = "<group>"; };
+		37C0842928365D975E2A27C3 /* CapturedFeedView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CapturedFeedView.swift; sourceTree = "<group>"; };
 		47FC91502BD1FED9F6481949 /* AppLanguagePicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLanguagePicker.swift; sourceTree = "<group>"; };
 		557FE0F19DB6A0A7C4C806CB /* RecordingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingView.swift; sourceTree = "<group>"; };
 		58026BD1FB5E7D7747FA3F94 /* ReviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReviewView.swift; sourceTree = "<group>"; };
+		5D0D48DD13F78AA7E44201D0 /* EntityPageView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EntityPageView.swift; sourceTree = "<group>"; };
 		5D1C7BE633E65D2EB872797E /* AudioManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioManager.swift; sourceTree = "<group>"; };
 		5D4C54E1A6E542EBE5CDB1D3 /* McpIngestionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = McpIngestionView.swift; sourceTree = "<group>"; };
 		6B86D0607E05D98135E4CAC0 /* WaiComputerApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WaiComputerApp.swift; sourceTree = "<group>"; };
@@ -85,6 +95,7 @@
 		A530B1CC229C71FC31649323 /* OnboardingPage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingPage.swift; sourceTree = "<group>"; };
 		A771DCE464D8D7EE680CF3B3 /* RecordingDetailViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingDetailViewModel.swift; sourceTree = "<group>"; };
 		A85E11C35CBE283D2101267D /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		ABF50BDD78AA6530F50026F2 /* BrainHomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrainHomeView.swift; sourceTree = "<group>"; };
 		AEB1BE80746F32FBBE0D2BC4 /* RecordingViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingViewModel.swift; sourceTree = "<group>"; };
 		C2CE7B7688E7FF5BFAB1E8A4 /* LibraryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryView.swift; sourceTree = "<group>"; };
 		C729626D2D9EBB512E95D0EC /* DictationHistoryStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DictationHistoryStore.swift; sourceTree = "<group>"; };
@@ -92,6 +103,7 @@
 		C80473C1FB851ED45A5B9ACD /* ContentFeedViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentFeedViewModel.swift; sourceTree = "<group>"; };
 		CFD37BE95D0862C344C34B5F /* TelegramSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TelegramSettingsView.swift; sourceTree = "<group>"; };
 		D49D3185F51AF817EAB6246A /* DictationDictionaryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DictationDictionaryView.swift; sourceTree = "<group>"; };
+		D909F2FFAC31432FF9050F7C /* BrainGraphView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrainGraphView.swift; sourceTree = "<group>"; };
 		E12DEC867C20F1C0219C0B62 /* DictationDictionaryStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DictationDictionaryStore.swift; sourceTree = "<group>"; };
 		E73122302C84DBD8D22C976C /* RecordingDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingDetailView.swift; sourceTree = "<group>"; };
 		F371D8CDE93BE0F63E284A00 /* SpeakerChipButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeakerChipButton.swift; sourceTree = "<group>"; };
@@ -128,12 +140,18 @@
 			isa = PBXGroup;
 			children = (
 				26AAC86B9D61613536D5D6D3 /* AddAnythingSheet.swift */,
+				D909F2FFAC31432FF9050F7C /* BrainGraphView.swift */,
+				ABF50BDD78AA6530F50026F2 /* BrainHomeView.swift */,
+				072AD75D5979A2E8B20945AD /* BrainMapCanvasView.swift */,
+				008D64A4C123B62FC15A68B7 /* BrainMapDetailView.swift */,
+				035A1DE58FB7A2E20B37545C /* BrainViewModel.swift */,
+				37C0842928365D975E2A27C3 /* CapturedFeedView.swift */,
 				76146A88299F9DC07D2FE431 /* ComparisonView.swift */,
 				C80473C1FB851ED45A5B9ACD /* ContentFeedViewModel.swift */,
+				5D0D48DD13F78AA7E44201D0 /* EntityPageView.swift */,
 				6D70385DAB2C71AA828D303B /* ItemDetailView.swift */,
 				9F46F1EB2F55B3A0AA57243D /* MemoryView.swift */,
 				58026BD1FB5E7D7747FA3F94 /* ReviewView.swift */,
-				0125DD2333BE829BFD004DBE /* SecondBrainView.swift */,
 			);
 			path = Brain;
 			sourceTree = "<group>";
@@ -364,6 +382,12 @@
 				678A5D56234C78B8A3713A4C /* AudioManager.swift in Sources */,
 				3D7F2033226F703D235266F6 /* AuthView.swift in Sources */,
 				8E224459E08141B4403149E2 /* BillingStatusSection.swift in Sources */,
+				A822F35E599B102438B3E810 /* BrainGraphView.swift in Sources */,
+				214DF5275740CAA4AB51BB4A /* BrainHomeView.swift in Sources */,
+				8446DC4D68B4D9C2CD2B58C3 /* BrainMapCanvasView.swift in Sources */,
+				5454C06C81295A59C1C068B5 /* BrainMapDetailView.swift in Sources */,
+				2D6318B8F24F7031CEB5B56B /* BrainViewModel.swift in Sources */,
+				31FE3F3E231877B687059C19 /* CapturedFeedView.swift in Sources */,
 				8736AF12790E4BDB2978D0A0 /* ComparisonView.swift in Sources */,
 				10D8C9DDE9D457C35CF9AA64 /* ContentFeedViewModel.swift in Sources */,
 				C7EC953F1B7260398E446691 /* ContentView.swift in Sources */,
@@ -373,6 +397,7 @@
 				3781A67DB4EF9E827F3AEDAE /* DictationHistoryStore.swift in Sources */,
 				967A5E368C485EF073E65B6F /* DictationHistoryView.swift in Sources */,
 				13FF112A2BDD0344A649E06D /* DictationLanguageStore.swift in Sources */,
+				827BD093CB722E50DCAD61E4 /* EntityPageView.swift in Sources */,
 				868DCF82A866D13B39A028CA /* IdentityAndVoiceSettingsView.swift in Sources */,
 				4EDFCAF02CC86441404829AF /* ImportViewModel.swift in Sources */,
 				D2CE866B719126096CE058F8 /* ItemDetailView.swift in Sources */,
@@ -391,7 +416,6 @@
 				2109D3C9652FA60E87786D87 /* RecordingViewModel.swift in Sources */,
 				9C82AB94CF92C1EA9E411EBE /* ReviewView.swift in Sources */,
 				920371F4874ED2D071EA7AAF /* SearchView.swift in Sources */,
-				E42ED41209D9D6AAD7AFE57A /* SecondBrainView.swift in Sources */,
 				75E3229998D7DFC388CC094B /* SettingsView.swift in Sources */,
 				A465CD7F83CF7D0237E63BBA /* SpeakerChipButton.swift in Sources */,
 				2CC3409C8A45B8D56F34330D /* TelegramSettingsView.swift in Sources */,
