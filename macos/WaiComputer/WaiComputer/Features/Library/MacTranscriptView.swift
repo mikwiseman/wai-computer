@@ -25,9 +25,9 @@ struct MacTranscriptView: View {
                             copyTranscriptButton
                         }
 
-                        ForEach(segments) { segment in
+                        ForEach(TranscriptRendering.mergeTurns(segments, languageCode: speakerLanguageCode)) { turn in
                             SegmentRowView(
-                                segment: segment,
+                                segment: turn.displaySegment,
                                 recordingId: recordingId,
                                 onAssigned: onAssigned
                             )

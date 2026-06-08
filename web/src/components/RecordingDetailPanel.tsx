@@ -12,7 +12,7 @@ import {
   updateRecording,
 } from "@/lib/api";
 import { formatSpeakerLabel, formatTimestamp } from "@/lib/format";
-import { transcriptText } from "@/lib/transcript";
+import { mergeTurns, renderTranscript } from "@/lib/transcript";
 import type { Folder, RecordingDetail, Segment, Summary, SummaryAudio } from "@/lib/types";
 import { SpeakerChip } from "@/components/SpeakerChip";
 import { SummaryAudioControls } from "@/components/SummaryAudioControls";
@@ -695,10 +695,12 @@ function TranscriptTab({
     );
   }
 
-  // Default copy is clean prose (merged turns, no per-fragment timestamp noise); a
-  // secondary button keeps the timestamped layout for those who want it.
-  const plainText = transcriptText(segments, "plain");
-  const timestampedText = transcriptText(segments, "timestamped");
+  // Merge consecutive same-speaker utterances into turns once: this drives both the
+  // reading view (one card per turn) and the copy buttons — plain prose by default,
+  // timestamped on demand.
+  const turns = mergeTurns(segments);
+  const plainText = renderTranscript(turns, "plain");
+  const timestampedText = renderTranscript(turns, "timestamped");
 
   return (
     <div className="reading-stack">
@@ -713,35 +715,33 @@ function TranscriptTab({
           />
         </div>
       </div>
-      {segments.map((segment) => {
-        // When the diariser exposes raw machine labels like "speaker_0" /
-        // "Speaker 0" but no person has been assigned yet, render a friendly
-        // "Speaker 1" label via display_name. raw_label is preserved so the
-        // backend assign-speaker call still receives the original token.
-        const displaySegment =
-          !segment.display_name && !segment.person_id
+      {turns.map((turn) => {
+        const head = turn.segments[0];
+        if (!head) return null;
+        // When the diariser exposes raw machine labels like "speaker_0" but no
+        // person is assigned yet, render a friendly "Speaker 1" via display_name.
+        // raw_label is preserved so the backend assign-speaker call still receives
+        // the original token (assigning relabels the whole turn).
+        const chipSegment =
+          !head.display_name && !head.person_id
             ? {
-                ...segment,
-                display_name: formatSpeakerLabel(
-                  segment.speaker,
-                  segment.raw_label,
-                  null,
-                ),
+                ...head,
+                display_name: formatSpeakerLabel(head.speaker, head.raw_label, null),
               }
-            : segment;
+            : head;
         return (
-          <article key={segment.id} className="transcript-row">
+          <article key={head.id} className="transcript-row">
             <div className="metadata-row">
-              {segment.raw_label || segment.speaker ? (
+              {head.raw_label || head.speaker ? (
                 <SpeakerChip
-                  segment={displaySegment}
+                  segment={chipSegment}
                   recordingId={recordingId}
                   onUpdated={(detail) => onRecordingUpdate?.(detail)}
                 />
               ) : null}
-              <span className="mono">{formatTimestamp(segment.start_ms)}</span>
+              <span className="mono">{formatTimestamp(turn.startMs)}</span>
             </div>
-            <p>{segment.content}</p>
+            <p>{turn.text}</p>
           </article>
         );
       })}

@@ -150,4 +150,16 @@ final class TranscriptRenderingTests: XCTestCase {
     func testEmptyTurnsRenderEmptyString() {
         XCTAssertEqual(TranscriptRendering.renderTranscript([], style: .plain), "")
     }
+
+    func testDisplaySegmentCarriesMergedTextAndHeadMetadata() {
+        let turns = TranscriptRendering.mergeTurns(
+            [seg("Hello", speaker: "speaker_0", rawLabel: "speaker_0", startMs: 0),
+             seg("world.", speaker: "speaker_0", rawLabel: "speaker_0", startMs: 1000)],
+            languageCode: "en"
+        )
+        let display = turns[0].displaySegment
+        XCTAssertEqual(display.content, "Hello world.")
+        XCTAssertEqual(display.startMs, 0)
+        XCTAssertEqual(display.rawLabel, "speaker_0")
+    }
 }

@@ -773,9 +773,9 @@ struct MacRecordingDetailView: View {
                 transcriptEmptyState
             } else {
                 LazyVStack(alignment: .leading, spacing: Spacing.xl) {
-                    ForEach(detail.segments) { segment in
+                    ForEach(TranscriptRendering.mergeTurns(detail.segments, languageCode: speakerLanguageCode)) { turn in
                         SegmentRowView(
-                            segment: segment,
+                            segment: turn.displaySegment,
                             recordingId: detail.id,
                             onAssigned: { updated in
                                 viewModel.recordingDetail = updated

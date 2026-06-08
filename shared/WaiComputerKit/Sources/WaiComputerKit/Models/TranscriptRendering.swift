@@ -28,6 +28,26 @@ public struct TranscriptTurn: Identifiable, Sendable {
     public let segments: [Segment]
 
     public var id: String { segments.first?.id ?? key }
+
+    /// A single synthetic segment standing in for the whole turn: the first utterance's
+    /// speaker metadata (so the interactive speaker chip + assignment still work) with the
+    /// merged text and the turn's start. Lets row views render turns without modification.
+    public var displaySegment: Segment {
+        let head = segments.first
+        return Segment(
+            id: head?.id ?? key,
+            speaker: head?.speaker,
+            rawLabel: head?.rawLabel,
+            personId: head?.personId,
+            displayName: head?.displayName,
+            autoAssigned: head?.autoAssigned ?? false,
+            matchConfidence: head?.matchConfidence,
+            content: text,
+            startMs: startMs,
+            endMs: segments.last?.endMs,
+            confidence: head?.confidence
+        )
+    }
 }
 
 public enum TranscriptRendering {

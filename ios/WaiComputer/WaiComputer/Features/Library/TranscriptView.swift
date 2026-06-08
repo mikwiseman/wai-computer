@@ -33,9 +33,9 @@ struct TranscriptView: View {
                         .accessibilityLabel(t("Copy transcript", "Скопировать расшифровку"))
                     }
 
-                    ForEach(segments) { segment in
+                    ForEach(TranscriptRendering.mergeTurns(segments, languageCode: speakerLanguageCode)) { turn in
                         SegmentView(
-                            segment: segment,
+                            segment: turn.displaySegment,
                             recordingId: recordingId,
                             onAssigned: onAssigned
                         )
@@ -105,12 +105,7 @@ struct TranscriptView: View {
     }
 
     private var transcriptText: String {
-        segments.map { seg in
-            let speaker = seg.userFacingSpeakerLabel(languageCode: speakerLanguageCode)
-                ?? t("Speaker", "Говорящий")
-            let ts = seg.formattedTimestamp
-            return "[\(speaker), \(ts)] \(seg.content)"
-        }.joined(separator: "\n")
+        TranscriptRendering.transcriptText(segments, style: .plain, languageCode: speakerLanguageCode)
     }
 
     private var speakerLanguageCode: String {
