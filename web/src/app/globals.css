@@ -3068,18 +3068,26 @@ a.primary-button[aria-disabled="true"]:hover {
   align-items: center;
 }
 
-.api-key-write-toggle {
+.settings-form .api-key-write-toggle {
   display: flex;
-  gap: 0.5rem;
+  flex-direction: row;
   align-items: center;
+  justify-content: flex-start;
+  gap: 0.5rem;
   margin-top: 0.6rem;
   font-size: var(--font-label-size);
   color: var(--ink-soft);
   cursor: pointer;
 }
 
-.api-key-write-toggle input {
+.settings-form .api-key-write-toggle input[type="checkbox"] {
+  flex: 0 0 auto;
+  margin: 0;
   accent-color: var(--accent);
+}
+
+.settings-form .api-key-write-toggle span {
+  font-weight: 400;
 }
 
 .api-key-scope-badge {
