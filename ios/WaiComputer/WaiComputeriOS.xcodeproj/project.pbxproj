@@ -45,6 +45,7 @@
 		A693D68CC22495BFA746A93F /* DesignSystem.swift in Sources */ = {isa = PBXBuildFile; fileRef = 804113B280E47C43FBED2F85 /* DesignSystem.swift */; };
 		A822F35E599B102438B3E810 /* BrainGraphView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D909F2FFAC31432FF9050F7C /* BrainGraphView.swift */; };
 		B2D9ABA7135D805FC44861CB /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6DA5B50328D0A9CA110FA5D5 /* OnboardingView.swift */; };
+		BD61911547BD85924A9C4924 /* IOSWaiTaskNotificationCenter.swift in Sources */ = {isa = PBXBuildFile; fileRef = D29A727CBD911EDCD159FE8A /* IOSWaiTaskNotificationCenter.swift */; };
 		C351FF53C6FA12EC2A1CDAD3 /* TranscriptView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6E5463A0F89C2F77AC9ED432 /* TranscriptView.swift */; };
 		C7EC953F1B7260398E446691 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 82B055BB2A3A8819F870F4A3 /* ContentView.swift */; };
 		CA5632BCA73643F75B20D81B /* WaiComputerKit in Frameworks */ = {isa = PBXBuildFile; productRef = A3AFAEAAB050CDE2ED194992 /* WaiComputerKit */; };
@@ -102,6 +103,7 @@
 		C7366D5C484D46DF7E63FC1A /* ImportViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImportViewModel.swift; sourceTree = "<group>"; };
 		C80473C1FB851ED45A5B9ACD /* ContentFeedViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentFeedViewModel.swift; sourceTree = "<group>"; };
 		CFD37BE95D0862C344C34B5F /* TelegramSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TelegramSettingsView.swift; sourceTree = "<group>"; };
+		D29A727CBD911EDCD159FE8A /* IOSWaiTaskNotificationCenter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSWaiTaskNotificationCenter.swift; sourceTree = "<group>"; };
 		D49D3185F51AF817EAB6246A /* DictationDictionaryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DictationDictionaryView.swift; sourceTree = "<group>"; };
 		D909F2FFAC31432FF9050F7C /* BrainGraphView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrainGraphView.swift; sourceTree = "<group>"; };
 		E12DEC867C20F1C0219C0B62 /* DictationDictionaryStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DictationDictionaryStore.swift; sourceTree = "<group>"; };
@@ -235,6 +237,7 @@
 		6E380426B0AF2901D1431315 /* Wai */ = {
 			isa = PBXGroup;
 			children = (
+				D29A727CBD911EDCD159FE8A /* IOSWaiTaskNotificationCenter.swift */,
 				1D1E8066A665D192CD1E2565 /* WaiHomeView.swift */,
 			);
 			path = Wai;
@@ -398,6 +401,7 @@
 				967A5E368C485EF073E65B6F /* DictationHistoryView.swift in Sources */,
 				13FF112A2BDD0344A649E06D /* DictationLanguageStore.swift in Sources */,
 				827BD093CB722E50DCAD61E4 /* EntityPageView.swift in Sources */,
+				BD61911547BD85924A9C4924 /* IOSWaiTaskNotificationCenter.swift in Sources */,
 				868DCF82A866D13B39A028CA /* IdentityAndVoiceSettingsView.swift in Sources */,
 				4EDFCAF02CC86441404829AF /* ImportViewModel.swift in Sources */,
 				D2CE866B719126096CE058F8 /* ItemDetailView.swift in Sources */,

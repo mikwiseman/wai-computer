@@ -250,6 +250,16 @@ public struct CompanionView: View {
 
             if showsConversationSwitcher {
                 Button {
+                    Task { await newChat() }
+                } label: {
+                    Label(t("New thread", "Новый диалог"), systemImage: "square.and.pencil")
+                        .labelStyle(.iconOnly)
+                }
+                .buttonStyle(.bordered)
+                .help(t("New thread", "Новый диалог"))
+                .accessibilityIdentifier("wai-new-thread-button")
+
+                Button {
                     showChats.toggle()
                 } label: {
                     Label(showChats ? t("Hide threads", "Скрыть диалоги") : t("Show threads", "Показать диалоги"), systemImage: "bubble.left.and.bubble.right")

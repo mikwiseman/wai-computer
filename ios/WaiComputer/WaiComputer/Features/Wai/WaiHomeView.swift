@@ -22,7 +22,19 @@ struct WaiHomeView: View {
     }
 
     var body: some View {
-        CompanionView(apiClient: appState.getAPIClient(), recordings: recordings)
+        CompanionView(
+            apiClient: appState.getAPIClient(),
+            recordings: recordings,
+            onTurnCompleted: { completion in
+                // Mirror macOS: ping the user when an agent turn finishes while
+                // they're away from the app, deep-linking back to the Wai tab.
+                IOSWaiTaskNotificationCenter.shared.notifyTaskFinished(
+                    title: "Wai",
+                    body: completion.preview ?? t("Your task is ready.", "Задача готова."),
+                    chatId: completion.chatId
+                )
+            }
+        )
             .environment(\.locale, languageManager.preferredLocale)
             .companionAccentColor(Palette.accent)
             .overlay(alignment: .top) {
@@ -31,6 +43,7 @@ struct WaiHomeView: View {
                 }
             }
             .task {
+                IOSWaiTaskNotificationCenter.shared.configure()
                 await loadRecordings()
             }
     }
