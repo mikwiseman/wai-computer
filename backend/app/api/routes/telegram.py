@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import re
 import secrets
@@ -66,6 +67,7 @@ from app.core.item_summary import generate_item_summary
 from app.core.item_telegram import format_fetch_error_reply, format_item_reply
 from app.core.item_titles import clean_title, title_from_filename
 from app.core.mcp_tools import (
+    list_action_items_for_mcp,
     list_recordings_for_mcp,
 )
 from app.core.ocr import OcrError, ocr_image
@@ -113,6 +115,7 @@ router = APIRouter(prefix="/telegram", tags=["telegram"])
 PAIRING_TTL = timedelta(minutes=15)
 PAIRING_PREFIX = "link_"
 CONSENT_CALLBACK_DATA = "consent:accept"
+DELETE_CALLBACK_DATA = "account:delete"
 TERMS_URL = "https://wai.computer/terms"
 PRIVACY_URL = "https://wai.computer/privacy"
 BOT_LINK_CODE_TTL = timedelta(minutes=15)
@@ -153,6 +156,8 @@ TELEGRAM_BOT_COMMANDS = [
     {"command": "search", "description": "Поиск по записям и расшифровкам"},
     {"command": "web", "description": "Ссылка для входа в веб-версию"},
     {"command": "mcp", "description": "Получить MCP-токен для агентов"},
+    {"command": "export", "description": "Скачать копию своих данных"},
+    {"command": "delete", "description": "Удалить аккаунт и все данные"},
     {"command": "settings", "description": "Статус привязки и настройки"},
 ]
 CYRILLIC_SLUG_MAP = str.maketrans(
@@ -281,6 +286,8 @@ def _telegram_help_text(*, linked: bool) -> str:
         "/search <запрос> — поиск по записям, саммари и расшифровкам\n"
         "/web — ссылка для входа в веб-версию\n"
         "/mcp — MCP-токен для подключения агентов\n"
+        "/export — скачать копию своих данных\n"
+        "/delete — удалить аккаунт и все данные\n"
         "/link — привязать уже существующий аккаунт\n"
         "/settings — где управлять привязкой\n\n"
         "Можно без команд: «запомни люблю короткие ответы», "
@@ -2208,7 +2215,121 @@ async def _handle_account_command(
     if intent in {"mcp", "token"}:
         await _handle_mcp_command(db, client, message=message, account=account)
         return True
+    if intent == "export":
+        await _handle_export_command(db, client, message=message, account=account)
+        return True
+    if intent == "delete":
+        await _send_delete_confirm(client, message=message)
+        return True
     return False
+
+
+async def _handle_export_command(
+    db: AsyncSession,
+    client: TelegramBotClient,
+    *,
+    message: dict[str, Any],
+    account: TelegramAccount,
+) -> None:
+    """Send the user a JSON export of their data (recordings, action items, memory)."""
+    chat_id = _telegram_chat_id(message)
+    if chat_id is None:
+        return
+    if await _ensure_active_user(db, client, message=message, account=account) is None:
+        return
+    async def _all_pages(fetch) -> list:
+        items: list = []
+        cursor: str | None = None
+        for _ in range(100):  # safety cap (~2000 items)
+            page = await fetch(cursor)
+            items.extend(page.get("results", []))
+            cursor = page.get("next_cursor")
+            if not cursor:
+                break
+        return items
+
+    recordings = await _all_pages(
+        lambda c: list_recordings_for_mcp(db, account.user_id, limit=20, cursor=c)
+    )
+    action_items = await _all_pages(
+        lambda c: list_action_items_for_mcp(db, account.user_id, limit=20, cursor=c)
+    )
+    blocks = await user_memory_module.get_or_seed_blocks(db, account.user_id)
+    export = {
+        "recordings": recordings,
+        "action_items": action_items,
+        "memory": user_memory_module.render_for_prompt(blocks),
+    }
+    payload = json.dumps(export, ensure_ascii=False, indent=2, default=str).encode("utf-8")
+    await client.send_document(
+        chat_id,
+        filename="waicomputer-export.json",
+        data=payload,
+        reply_to_message_id=message.get("message_id"),
+    )
+    await client.send_message(
+        chat_id,
+        f"Экспорт готов: {len(recordings)} записей, {len(action_items)} задач.",
+        reply_to_message_id=message.get("message_id"),
+    )
+
+
+def _delete_inline_keyboard() -> dict[str, Any]:
+    return {
+        "inline_keyboard": [
+            [{"text": "🗑 Да, удалить навсегда", "callback_data": DELETE_CALLBACK_DATA}]
+        ]
+    }
+
+
+async def _send_delete_confirm(
+    client: TelegramBotClient,
+    *,
+    message: dict[str, Any],
+) -> None:
+    """Ask for an explicit tap before destructive account deletion."""
+    chat_id = _telegram_chat_id(message)
+    if chat_id is None:
+        return
+    await client.send_message(
+        chat_id,
+        (
+            "Удалить аккаунт WaiComputer и ВСЕ данные (записи, расшифровки, "
+            "саммари, задачи, память)? Это необратимо.\n\n"
+            "Сделай /export, если хочешь сначала скачать копию."
+        ),
+        reply_to_message_id=message.get("message_id"),
+        reply_markup=_delete_inline_keyboard(),
+    )
+
+
+async def _handle_delete_callback(
+    db: AsyncSession,
+    client: TelegramBotClient,
+    *,
+    account: TelegramAccount,
+    callback_id: str,
+    chat_id: int | None,
+    message_id: int | None,
+) -> None:
+    """Permanently delete the account after the confirm tap (cascades all data)."""
+    user = await db.get(User, account.user_id)
+    if user is None:
+        await client.answer_callback_query(callback_id, text="Аккаунт не найден.")
+        return
+    await db.delete(user)  # ON DELETE CASCADE removes recordings/items/telegram link
+    await db.commit()
+    await client.answer_callback_query(callback_id, text="Удалено.")
+    farewell = "Аккаунт и все данные удалены. Чтобы начать заново, отправь /start."
+    if chat_id is None:
+        return
+    if isinstance(message_id, int):
+        try:
+            await client.edit_message_text(chat_id, message_id, farewell)
+            return
+        except TelegramClientError:
+            logger.warning("delete farewell edit failed; sending fresh message")
+    await client.send_message(chat_id, farewell)
 
 
 async def _handle_web_login_command(
@@ -2646,6 +2767,16 @@ async def _handle_callback_query(
     if account is None:
         await client.answer_callback_query(
             callback_id, text="Сначала привяжи Telegram."
+        )
+        return
+    if data == DELETE_CALLBACK_DATA:
+        await _handle_delete_callback(
+            db,
+            client,
+            account=account,
+            callback_id=callback_id,
+            chat_id=chat_id,
+            message_id=message_id if isinstance(message_id, int) else None,
         )
         return
     parsed = _parse_action_callback(data)

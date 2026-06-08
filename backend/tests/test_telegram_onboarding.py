@@ -1,11 +1,14 @@
 """Tests for Telegram-only account provisioning (emailless signup)."""
 
+import json
+
 import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.routes.telegram import _guess_region, provision_user_from_telegram
 from app.models.telegram import TelegramAccount
+from app.models.user import User
 
 
 def test_guess_region():
@@ -102,6 +105,7 @@ class _FakeClient:
         self.answered: list[tuple[str, str | None]] = []
         self.edits: list[tuple[int, int, str]] = []
         self.messages: list[tuple[int, str]] = []
+        self.documents: list[tuple[str, bytes]] = []
 
     async def answer_callback_query(self, callback_id, text=None):
         self.answered.append((callback_id, text))
@@ -111,6 +115,9 @@ class _FakeClient:
 
     async def send_message(self, chat_id, text, **_kwargs):
         self.messages.append((chat_id, text))
+
+    async def send_document(self, chat_id, *, filename, data, **_kwargs):
+        self.documents.append((filename, data))
 
 
 @pytest.mark.asyncio
@@ -196,6 +203,49 @@ async def test_web_login_command_dms_verify_link(db_session: AsyncSession):
     assert user.magic_link_token is not None
     assert user.magic_link_expires is not None
     assert client.messages and "/auth/verify?token=" in client.messages[0][1]
+
+
+@pytest.mark.asyncio
+async def test_export_command_sends_data_dump(db_session: AsyncSession):
+    from app.api.routes.telegram import _handle_export_command
+
+    _user, account = await _provisioned_account(db_session, 559001)
+    client = _FakeClient()
+    msg = {"message_id": 1, "from": {"id": 559001}, "chat": {"id": 559001}}
+    await _handle_export_command(db_session, client, message=msg, account=account)
+    assert client.documents
+    filename, data = client.documents[0]
+    assert filename == "waicomputer-export.json"
+    payload = json.loads(data.decode("utf-8"))
+    assert "recordings" in payload
+    assert "action_items" in payload
+    assert "memory" in payload
+
+
+@pytest.mark.asyncio
+async def test_delete_callback_removes_account_and_data(db_session: AsyncSession):
+    from app.api.routes.telegram import _handle_delete_callback
+
+    user, account = await _provisioned_account(db_session, 559003)
+    user_id = user.id
+    client = _FakeClient()
+    await _handle_delete_callback(
+        db_session,
+        client,
+        account=account,
+        callback_id="cb",
+        chat_id=559003,
+        message_id=5,
+    )
+    assert client.answered == [("cb", "Удалено.")]
+    assert await db_session.get(User, user_id) is None
+    # The telegram_accounts row is cascade-deleted with the user.
+    gone = (
+        await db_session.execute(
+            select(TelegramAccount).where(TelegramAccount.telegram_user_id == 559003)
+        )
+    ).scalar_one_or_none()
+    assert gone is None
 
 
 @pytest.mark.asyncio
