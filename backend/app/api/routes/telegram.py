@@ -82,6 +82,7 @@ from app.core.telegram_client import (
     TelegramFileTooLargeError,
     telegram_chunks,
 )
+from app.core.telegram_format import telegram_html
 from app.core.telegram_intent import (
     VoiceRouteDecision,
     classify_voice_transcript,
@@ -683,18 +684,9 @@ def _format_import_summary_message(result: Any) -> str:
 
 
 def _telegram_summary_html(text: str) -> str:
-    lines: list[str] = []
-    for raw_line in text.splitlines():
-        line = raw_line.strip()
-        if not line:
-            lines.append("")
-            continue
-        escaped = escape(line)
-        if not line.startswith(("-", "•")) and line.endswith(":"):
-            lines.append(f"<b>{escaped}</b>")
-        else:
-            lines.append(escaped)
-    return "\n".join(lines).strip()
+    # Delegates to the shared, tested converter so markdown **bold**/bullets the
+    # model emits render as real Telegram HTML instead of literal asterisks.
+    return telegram_html(text)
 
 
 def _sent_message_id(response: Any) -> int | None:

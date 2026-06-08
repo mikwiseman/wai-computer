@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from html import escape
 
+from app.core.telegram_format import telegram_html, telegram_inline
 from app.models.item import Item, ItemSummary
 
 _MAX_MOMENTS = 8
@@ -23,16 +24,16 @@ def format_item_reply(item: Item, summary: ItemSummary | None) -> str:
 
     title = (item.title or "").strip()
     if title:
-        sections.append(f"<b>{escape(title)}</b>")
+        sections.append(f"<b>{telegram_inline(title)}</b>")
 
     if summary is not None and (summary.summary or "").strip():
-        sections.append(escape(summary.summary.strip()))
+        sections.append(telegram_html(summary.summary.strip()))
 
     moments = (summary.key_moments if summary else None) or []
     if moments:
         lines = ["<b>Key moments</b>"]
         for moment in moments[:_MAX_MOMENTS]:
-            label = escape(str(moment.get("moment") or "").strip())
+            label = telegram_inline(str(moment.get("moment") or "").strip())
             if not label:
                 continue
             ts = str(moment.get("timestamp") or "").strip()
@@ -43,7 +44,7 @@ def format_item_reply(item: Item, summary: ItemSummary | None) -> str:
 
     action_items = (summary.action_items if summary else None) or []
     todo_lines = [
-        escape(str(a.get("task") or "").strip())
+        telegram_inline(str(a.get("task") or "").strip())
         for a in action_items
         if str(a.get("task") or "").strip()
     ]
