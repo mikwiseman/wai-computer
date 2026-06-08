@@ -3,7 +3,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, String, Text
+from sqlalchemy import DateTime, ForeignKey, Index, String, Text, text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -24,9 +24,23 @@ class User(Base, UUIDMixin, TimestampMixin):
     """User account model."""
 
     __tablename__ = "users"
+    __table_args__ = (
+        # Real emails stay unique; Telegram-only accounts have NULL email and may
+        # coexist (a partial unique index, not a full UNIQUE constraint).
+        Index(
+            "uq_users_email_not_null",
+            "email",
+            unique=True,
+            postgresql_where=text("email IS NOT NULL"),
+        ),
+    )
 
-    email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, index=True)
+    # NULL for Telegram-only accounts (keyed by telegram_user_id); set when the
+    # user opts to add an email for web login / receipts / recovery.
+    email: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
     password_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # Where the account was created: web | magic | telegram (analytics + recovery).
+    signup_origin: Mapped[str | None] = mapped_column(String(20), nullable=True)
     # Public identity. Both are user-managed in Settings and stay NULL by default;
     # the voice-sharing directory feature surfaces them to other users only when
     # the user explicitly opts in.

@@ -249,7 +249,8 @@ class UserResponse(BaseModel):
     """Response with user info."""
 
     id: str
-    email: str
+    # NULL for Telegram-only accounts that have not added an email yet.
+    email: str | None = None
     created_at: datetime
     has_password: bool
     region: str

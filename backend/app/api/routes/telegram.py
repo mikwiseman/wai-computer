@@ -826,6 +826,74 @@ async def _apply_telegram_link(
     return account
 
 
+# Telegram sentinel ids that are NOT real people and must never key an account:
+# anonymous group admin (1087968824) and the Telegram service / channel
+# auto-forward account (777000).
+TELEGRAM_SENTINEL_USER_IDS = frozenset({1087968824, 777000})
+
+
+def _guess_region(language_code: str | None) -> str:
+    """Billing region from the Telegram client locale (drives payment provider)."""
+    return "ru" if str(language_code or "").strip().lower().startswith("ru") else "global"
+
+
+async def provision_user_from_telegram(
+    db: AsyncSession,
+    *,
+    from_user: dict[str, Any],
+    telegram_chat_id: int,
+) -> User | None:
+    """Create (or return the existing) WaiComputer account keyed by telegram_user_id.
+
+    Emailless and password-less; region inferred from the Telegram locale; legal
+    acceptance stamped with source='telegram'. Idempotent — re-provisioning returns
+    the already-linked user. Returns None for bots and Telegram sentinel ids (an
+    anonymous admin / the service account must never key a real account). Caller is
+    responsible for having obtained the in-chat Terms/Privacy consent first.
+    """
+    from app.api.routes.auth import _record_legal_acceptance
+
+    telegram_user_id = from_user.get("id")
+    if not isinstance(telegram_user_id, int):
+        return None
+    if from_user.get("is_bot") or telegram_user_id in TELEGRAM_SENTINEL_USER_IDS:
+        return None
+
+    existing = await _load_account(db, telegram_user_id)
+    if existing is not None:
+        return await db.get(User, existing.user_id)
+
+    locale = str(from_user.get("language_code") or "en")[:10]
+    user = User(
+        email=None,
+        password_hash=None,
+        region=_guess_region(from_user.get("language_code")),
+        first_name=from_user.get("first_name"),
+        last_name=from_user.get("last_name"),
+        signup_origin="telegram",
+    )
+    _record_legal_acceptance(user, locale=locale, source="telegram")
+    db.add(user)
+    try:
+        await db.flush()
+        await _apply_telegram_link(
+            db,
+            user_id=user.id,
+            telegram_user_id=telegram_user_id,
+            telegram_chat_id=telegram_chat_id,
+            username=from_user.get("username"),
+            first_name=from_user.get("first_name"),
+            last_name=from_user.get("last_name"),
+        )
+        await db.commit()
+    except IntegrityError:
+        # A concurrent /start won the race — return the account it created.
+        await db.rollback()
+        existing = await _load_account(db, telegram_user_id)
+        return await db.get(User, existing.user_id) if existing else None
+    return user
+
+
 async def _consume_pairing(
     db: AsyncSession,
     *,
