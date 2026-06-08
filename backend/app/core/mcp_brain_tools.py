@@ -281,14 +281,27 @@ async def remember_for_mcp(
         body=text,
         url=clean_url,
         dedup_key=clean_url or text,
+        # Agent-asserted memories rank BELOW first-party captures (default 0.5)
+        # and are tagged so synthesis/Review can weight + audit them.
+        authority_score=0.3,
+        metadata={"origin": "mcp_remember"},
         embed=True,
     )
     await db.flush()
     if created:
         await enqueue_item_processing(db, item)
-    return {
+    result = {
         "id": str(item.id),
         "created": created,
         "title": item.title,
         "url": _source_url("item", str(item.id)),
     }
+    # If background processing couldn't be enqueued, the memory IS saved but
+    # not yet fully linked — surface that loudly instead of implying success.
+    processing_error = (item.metadata_ or {}).get("processing_error")
+    if processing_error:
+        result["saved_but_processing_pending"] = True
+        result["warning"] = processing_error.get(
+            "message", "Saved, but background processing hasn't started yet."
+        )
+    return result

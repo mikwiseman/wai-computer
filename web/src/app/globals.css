@@ -3104,7 +3104,9 @@ a.primary-button[aria-disabled="true"]:hover {
   padding: 0.05rem 0.4rem;
   border-radius: 999px;
   background: var(--accent-soft, rgba(20, 130, 110, 0.12));
-  color: var(--accent, #14826e);
+  /* --accent-strong (not --accent) so the badge clears WCAG AA on every
+     accent tint — plain --accent fails on amber/green (~2:1). */
+  color: var(--accent-strong, #0f6f5c);
   font-size: 0.7rem;
   font-weight: 600;
   vertical-align: middle;

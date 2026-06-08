@@ -216,3 +216,34 @@ async def test_remember_for_mcp_rejects_empty_and_oversized(db_session) -> None:
         await remember_for_mcp(db_session, user.id, "   ")
     with pytest.raises(ValueError, match="too long"):
         await remember_for_mcp(db_session, user.id, "x" * (REMEMBER_MAX_CHARS + 1))
+
+
+async def test_fetch_document_cross_user_items_and_chats(db_session) -> None:
+    user = await _make_user(db_session)
+    other = await _make_user(db_session)
+    other_item, _ = await ingest_item(
+        db_session, other.id, source="paste", kind="note",
+        title="theirs", body="secret note", embedder=_embedder,
+    )
+    other_chat = await _make_chat(db_session, other, title="theirs", text="secret chat")
+    # An item/chat owned by another user must NOT be fetchable.
+    assert await fetch_document_for_mcp(db_session, user.id, other_item.id) is None
+    assert await fetch_document_for_mcp(db_session, user.id, other_chat.id) is None
+
+
+async def test_fetch_document_excludes_soft_deleted(db_session) -> None:
+    user = await _make_user(db_session)
+    rec = await _make_recording(db_session, user, title="gone", content="deleted content")
+    item, _ = await ingest_item(
+        db_session, user.id, source="paste", kind="note",
+        title="gone", body="deleted note", embedder=_embedder,
+    )
+    chat = await _make_chat(db_session, user, title="gone", text="deleted chat")
+    deleted = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    rec.deleted_at = deleted
+    item.deleted_at = deleted
+    chat.deleted_at = deleted
+    await db_session.flush()
+    assert await fetch_document_for_mcp(db_session, user.id, rec.id) is None
+    assert await fetch_document_for_mcp(db_session, user.id, item.id) is None
+    assert await fetch_document_for_mcp(db_session, user.id, chat.id) is None

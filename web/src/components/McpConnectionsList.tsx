@@ -26,7 +26,7 @@ const COPY: Record<Locale, Copy> = {
     errLoad: "Couldn’t load connected clients.",
     errRevoke: "Couldn’t revoke that client.",
     heading: "Connected clients",
-    note: "Apps you’ve approved for read-only access to your library. Revoke any you no longer use — access is cut off on wai.computer immediately.",
+    note: "Apps you’ve approved to read your library — and, where you granted it (the “memory write” badge), to save memories too. Revoke any you no longer use — access is cut off on wai.computer immediately.",
     loading: "Loading…",
     empty: "No clients connected yet.",
     lastActive: "last active",
@@ -38,7 +38,7 @@ const COPY: Record<Locale, Copy> = {
     errLoad: "Не удалось загрузить подключённые клиенты.",
     errRevoke: "Не удалось отозвать доступ клиента.",
     heading: "Подключённые клиенты",
-    note: "Приложения, которым вы разрешили доступ к библиотеке только для чтения. Отзовите те, которыми больше не пользуетесь — доступ на wai.computer прекращается сразу.",
+    note: "Приложения, которым вы разрешили читать вашу библиотеку — а где вы дали право (значок «memory write») — и сохранять память. Отзовите те, которыми больше не пользуетесь — доступ на wai.computer прекращается сразу.",
     loading: "Загрузка…",
     empty: "Пока нет подключённых клиентов.",
     lastActive: "последняя активность",
@@ -119,7 +119,17 @@ export function McpConnectionsList({ locale = "en" }: McpConnectionsListProps) {
               data-testid={`mcp-connection-${connection.client_id}`}
             >
               <div className="mcp-connection-meta">
-                <span className="mcp-connection-name">{connection.client_name}</span>
+                <span className="mcp-connection-name">
+                  {connection.client_name}
+                  {connection.scopes?.includes("mcp:write") ? (
+                    <span
+                      className="api-key-scope-badge"
+                      data-testid={`mcp-connection-write-${connection.client_id}`}
+                    >
+                      memory write
+                    </span>
+                  ) : null}
+                </span>
                 <span className="mcp-connection-detail">
                   {connection.scopes.join(", ")} · {copy.lastActive}{" "}
                   {formatDate(connection.last_active_at, copy.never)}
