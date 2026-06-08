@@ -213,7 +213,7 @@ struct MacRecordingDetailView: View {
         .help(copiedSection == section ? t("Copied!", "Скопировано") : title)
     }
 
-    private func exportRecording(format: String) async {
+    private func exportRecording(format: String, style: String? = nil) async {
         guard let id = viewModel.recordingDetail?.id else { return }
         do {
             let exportLocale =
@@ -222,7 +222,8 @@ struct MacRecordingDetailView: View {
             let content = try await appState.getAPIClient().exportRecording(
                 id: id,
                 format: format,
-                locale: exportLocale
+                locale: exportLocale,
+                style: style
             )
             let ext = format == "markdown" ? "md" : format
             let title = viewModel.recordingDetail?.title ?? "recording"
@@ -359,6 +360,9 @@ struct MacRecordingDetailView: View {
                     }
                     Button(t("Export Plain Text (.txt)", "Экспорт TXT (.txt)")) {
                         Task { await exportRecording(format: "txt") }
+                    }
+                    Button(t("Plain Text + timestamps (.txt)", "Текст с тайм-кодами (.txt)")) {
+                        Task { await exportRecording(format: "txt", style: "timestamped") }
                     }
                     Button(t("Export Subtitles (.srt)", "Экспорт субтитров (.srt)")) {
                         Task { await exportRecording(format: "srt") }
@@ -582,12 +586,7 @@ struct MacRecordingDetailView: View {
     }
 
     private func transcriptText(_ segments: [Segment]) -> String {
-        segments.map { segment in
-            let speaker = segment.userFacingSpeakerLabel(languageCode: speakerLanguageCode)
-                ?? t("Speaker", "Говорящий")
-            return "[\(speaker), \(segment.formattedTimestamp)] \(segment.content)"
-        }
-        .joined(separator: "\n")
+        TranscriptRendering.transcriptText(segments, style: .plain, languageCode: speakerLanguageCode)
     }
 
     private var speakerLanguageCode: String {
