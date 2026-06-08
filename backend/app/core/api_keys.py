@@ -19,6 +19,10 @@ from app.models.api_key import ApiKey
 
 API_KEY_PREFIX = "wc_live_"
 API_KEY_READ_SCOPE = "read"
+# Opt-in scope that unlocks the MCP ``remember`` write tool for a token. The
+# REST API stays read-only for every api key regardless (enforced in deps.py);
+# this only widens the MCP surface, and only when the user explicitly grants it.
+API_KEY_WRITE_SCOPE = "memory:write"
 
 
 def is_api_key(token: str) -> bool:

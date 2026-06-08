@@ -931,3 +931,56 @@ async def _create_pending_request(
     ))
     await db.flush()
     return request_token, csrf_token
+
+
+async def _make_api_key(db: AsyncSession, *, scopes: list[str]):
+    from app.core.api_keys import generate_api_key
+    from app.models.api_key import ApiKey
+    from app.models.user import User
+
+    user = User(email=f"pat-{uuid4().hex}@example.com", password_hash="x")
+    db.add(user)
+    await db.flush()
+    plaintext, token_hash_value, prefix, last4 = generate_api_key()
+    db.add(
+        ApiKey(
+            user_id=user.id,
+            name="agent",
+            token_hash=token_hash_value,
+            prefix=prefix,
+            last4=last4,
+            scopes=scopes,
+        )
+    )
+    await db.flush()
+    return user, plaintext
+
+
+@pytest.mark.asyncio
+async def test_verify_token_read_only_api_key_has_no_write_scope(
+    mcp_override_db: AsyncSession,
+) -> None:
+    from app.core.api_keys import API_KEY_READ_SCOPE
+    from app.core.mcp_oauth import MCP_READ_SCOPE, MCP_WRITE_SCOPE, mcp_oauth_provider
+
+    user, plaintext = await _make_api_key(mcp_override_db, scopes=[API_KEY_READ_SCOPE])
+    token = await mcp_oauth_provider.verify_token(plaintext)
+    assert token is not None
+    assert token.scopes == [MCP_READ_SCOPE]
+    assert MCP_WRITE_SCOPE not in token.scopes
+
+
+@pytest.mark.asyncio
+async def test_verify_token_maps_api_key_write_scope(
+    mcp_override_db: AsyncSession,
+) -> None:
+    from app.core.api_keys import API_KEY_READ_SCOPE, API_KEY_WRITE_SCOPE
+    from app.core.mcp_oauth import MCP_READ_SCOPE, MCP_WRITE_SCOPE, mcp_oauth_provider
+
+    user, plaintext = await _make_api_key(
+        mcp_override_db, scopes=[API_KEY_READ_SCOPE, API_KEY_WRITE_SCOPE]
+    )
+    token = await mcp_oauth_provider.verify_token(plaintext)
+    assert token is not None
+    assert MCP_READ_SCOPE in token.scopes
+    assert MCP_WRITE_SCOPE in token.scopes

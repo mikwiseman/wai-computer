@@ -52,7 +52,7 @@ from app.core.document_extract import (
     extract_document_text,
     resolve_document_extension,
 )
-from app.core.item_ingest import ingest_item
+from app.core.item_ingest import enqueue_item_processing, ingest_item
 from app.core.item_titles import clean_title, title_from_filename
 from app.core.summary_audio import (
     SUMMARY_AUDIO_SOURCE_ITEM,
@@ -245,22 +245,8 @@ def _item_response(item: Item, summary: ItemSummary | None) -> ItemResponse:
 
 
 async def _enqueue_item_summary(db: Database, item: Item) -> None:
-    """Enqueue background summarization. On broker failure, mark the item failed
-    with a visible error (no silent swallow) so the client can see + retry."""
-    try:
-        from app.tasks.item_summary_generation import generate_item_summary_task
-
-        generate_item_summary_task.delay(item_id=str(item.id))
-    except Exception as exc:  # noqa: BLE001 — broker down: fail loudly, never pretend success
-        logger.warning("item enqueue failed item=%s: %s", item.id, exc)
-        meta = dict(item.metadata_ or {})
-        meta["processing_error"] = {
-            "code": "enqueue_failed",
-            "message": "Couldn't start processing. Retry shortly.",
-        }
-        item.metadata_ = meta
-        item.state = "failed"
-        await db.flush()
+    """Enqueue background summarization (shared with the MCP ``remember`` tool)."""
+    await enqueue_item_processing(db, item)
 
 
 def enqueue_summary_audio_generation(artifact_id: UUID) -> str:

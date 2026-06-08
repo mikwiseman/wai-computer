@@ -1,19 +1,23 @@
 """Tests for the brain-level MCP tools (ask / search / fetch)."""
 
 from datetime import datetime, timezone
-from unittest.mock import patch
-from uuid import uuid4
+from unittest.mock import AsyncMock, patch
+from uuid import UUID, uuid4
 
 import pytest
+from sqlalchemy import select
 
 from app.core.brain_ask import AnswerCitation, AnswerFreshness, BrainAnswer
 from app.core.item_ingest import ingest_item
 from app.core.mcp_brain_tools import (
+    REMEMBER_MAX_CHARS,
     ask_brain_for_mcp,
     fetch_document_for_mcp,
+    remember_for_mcp,
     search_brain_for_mcp,
 )
 from app.models.companion import ChatMessage, Conversation
+from app.models.item import Item
 from app.models.recording import Recording, Segment
 from app.models.user import User
 
@@ -165,3 +169,50 @@ async def test_fetch_document_unknown_and_cross_user(db_session) -> None:
     assert await fetch_document_for_mcp(db_session, user.id, rec.id) is None  # cross-user
     assert await fetch_document_for_mcp(db_session, user.id, uuid4()) is None  # unknown
     assert await fetch_document_for_mcp(db_session, user.id, "not-a-uuid") is None  # malformed
+
+
+async def test_remember_for_mcp_creates_and_dedupes(db_session) -> None:
+    user = await _make_user(db_session)
+
+    async def _embed(texts):
+        return [[0.01] * 1536 for _ in texts]
+
+    with (
+        patch("app.core.item_ingest.generate_embeddings", _embed),
+        patch("app.core.mcp_brain_tools.enqueue_item_processing", new=AsyncMock()) as enqueue,
+    ):
+        result = await remember_for_mcp(
+            db_session, user.id, "the launch date is Friday", title="Launch"
+        )
+
+    assert result["created"] is True
+    assert result["title"] == "Launch"
+    assert f"item={result['id']}" in result["url"]
+    enqueue.assert_awaited_once()
+
+    item = (
+        await db_session.execute(select(Item).where(Item.id == UUID(result["id"])))
+    ).scalar_one()
+    assert item.kind == "note"
+    assert item.source == "agent"
+    assert item.body == "the launch date is Friday"
+
+    # Identical memory dedupes to the same item, no second enqueue.
+    with (
+        patch("app.core.item_ingest.generate_embeddings", _embed),
+        patch("app.core.mcp_brain_tools.enqueue_item_processing", new=AsyncMock()) as enqueue2,
+    ):
+        again = await remember_for_mcp(
+            db_session, user.id, "the launch date is Friday", title="Launch"
+        )
+    assert again["created"] is False
+    assert again["id"] == result["id"]
+    enqueue2.assert_not_awaited()
+
+
+async def test_remember_for_mcp_rejects_empty_and_oversized(db_session) -> None:
+    user = await _make_user(db_session)
+    with pytest.raises(ValueError, match="Nothing to remember"):
+        await remember_for_mcp(db_session, user.id, "   ")
+    with pytest.raises(ValueError, match="too long"):
+        await remember_for_mcp(db_session, user.id, "x" * (REMEMBER_MAX_CHARS + 1))

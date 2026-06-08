@@ -14,7 +14,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 
 from app.api.deps import Database, SessionUser
-from app.core.api_keys import API_KEY_READ_SCOPE, generate_api_key
+from app.core.api_keys import API_KEY_READ_SCOPE, API_KEY_WRITE_SCOPE, generate_api_key
 from app.models.api_key import ApiKey
 
 router = APIRouter(prefix="/api-keys", tags=["api-keys"])
@@ -23,6 +23,9 @@ router = APIRouter(prefix="/api-keys", tags=["api-keys"])
 class CreateApiKeyRequest(BaseModel):
     name: str = Field(min_length=1, max_length=255)
     expires_at: datetime | None = None
+    # Opt-in: also unlock the MCP `remember` write tool for an agent acting as a
+    # memory bank. The REST API stays read-only regardless. Default off.
+    allow_memory_write: bool = False
 
 
 class ApiKeyResponse(BaseModel):
@@ -57,12 +60,16 @@ async def list_api_keys(user: SessionUser, db: Database) -> list[ApiKey]:
 async def create_api_key(
     payload: CreateApiKeyRequest, user: SessionUser, db: Database
 ) -> ApiKeyCreatedResponse:
-    """Create a read-only API key; return the plaintext token once."""
+    """Create an API key (read-only by default; opt into memory write); return
+    the plaintext token once."""
     name = payload.name.strip()
     if not name:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Name is required"
         )
+    scopes = [API_KEY_READ_SCOPE]
+    if payload.allow_memory_write:
+        scopes.append(API_KEY_WRITE_SCOPE)
     plaintext, token_hash_value, prefix, last4 = generate_api_key()
     api_key = ApiKey(
         user_id=user.id,
@@ -70,7 +77,7 @@ async def create_api_key(
         token_hash=token_hash_value,
         prefix=prefix,
         last4=last4,
-        scopes=[API_KEY_READ_SCOPE],
+        scopes=scopes,
         expires_at=payload.expires_at,
     )
     db.add(api_key)

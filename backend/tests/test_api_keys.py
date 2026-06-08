@@ -43,10 +43,13 @@ async def _create_key(
     *,
     name: str = "CI bot",
     expires_at: str | None = None,
+    allow_memory_write: bool = False,
 ) -> dict:
     body: dict = {"name": name}
     if expires_at is not None:
         body["expires_at"] = expires_at
+    if allow_memory_write:
+        body["allow_memory_write"] = True
     response = await client.post("/api/api-keys", json=body, headers=auth_headers)
     assert response.status_code == 201, response.text
     return response.json()
@@ -113,6 +116,30 @@ async def test_api_key_cannot_access_agent_or_mac_edge_surfaces(
 @pytest.mark.asyncio
 async def test_api_key_is_read_only(client: AsyncClient, auth_headers: dict) -> None:
     token = (await _create_key(client, auth_headers))["token"]
+    response = await client.post(
+        "/api/recordings",
+        json={"title": "nope", "type": "note"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert response.status_code == 403, response.text
+
+
+@pytest.mark.asyncio
+async def test_create_with_memory_write_scope(client: AsyncClient, auth_headers: dict) -> None:
+    created = await _create_key(client, auth_headers, name="Agent", allow_memory_write=True)
+    assert created["scopes"] == ["read", "memory:write"]
+
+    listed = (await client.get("/api/api-keys", headers=auth_headers)).json()
+    assert listed[0]["scopes"] == ["read", "memory:write"]
+
+
+@pytest.mark.asyncio
+async def test_memory_write_key_still_read_only_on_rest(
+    client: AsyncClient, auth_headers: dict
+) -> None:
+    """The write scope unlocks the MCP `remember` tool only — the REST API stays
+    read-only for every api key, write scope or not."""
+    token = (await _create_key(client, auth_headers, allow_memory_write=True))["token"]
     response = await client.post(
         "/api/recordings",
         json={"title": "nope", "type": "note"},
@@ -196,8 +223,10 @@ async def test_api_key_works_on_mcp_endpoint(
     assert response.status_code == 200, response.text
     tool_names = {tool["name"] for tool in response.json()["result"]["tools"]}
     assert tool_names == {
+        "ask",
         "search",
         "fetch",
+        "remember",
         "list_folders",
         "list_recordings",
         "list_action_items",

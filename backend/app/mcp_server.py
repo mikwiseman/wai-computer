@@ -15,10 +15,13 @@ from app.config import Settings
 from app.core.mcp_brain_tools import (
     ask_brain_for_mcp,
     fetch_document_for_mcp,
+    remember_for_mcp,
     search_brain_for_mcp,
 )
 from app.core.mcp_oauth import (
     MCP_READ_SCOPE,
+    MCP_SCOPES,
+    MCP_WRITE_SCOPE,
     mcp_oauth_provider,
     resolve_mcp_access_token_user_id,
 )
@@ -96,7 +99,9 @@ def create_mcp_app(settings: Settings) -> Starlette:
             client_registration_options=ClientRegistrationOptions(
                 enabled=True,
                 client_secret_expiry_seconds=client_secret_seconds,
-                valid_scopes=[MCP_READ_SCOPE],
+                # Write is registerable + requestable, but never default: a
+                # client only gets it by explicitly asking for mcp:write.
+                valid_scopes=MCP_SCOPES,
                 default_scopes=[MCP_READ_SCOPE],
             ),
             revocation_options=RevocationOptions(enabled=True),
@@ -110,13 +115,19 @@ def create_mcp_app(settings: Settings) -> Starlette:
         stateless_http=True,
     )
 
-    async def _current_user_id():
+    async def _current_access():
+        """Resolve the authenticated user and the active access token (for scope
+        checks). Raises on a missing/invalid token."""
         access_token = get_access_token()
         if access_token is None:
             raise ValueError("MCP access token is required")
         user_id = await resolve_mcp_access_token_user_id(access_token.token)
         if user_id is None:
             raise ValueError("MCP access token is invalid")
+        return user_id, access_token
+
+    async def _current_user_id():
+        user_id, _ = await _current_access()
         return user_id
 
     @mcp.tool()
@@ -184,6 +195,37 @@ def create_mcp_app(settings: Settings) -> Starlette:
             result = await fetch_document_for_mcp(db, user_id, id)
         if result is None:
             raise ValueError("Document not found")
+        return json.dumps(result, ensure_ascii=False)
+
+    @mcp.tool()
+    async def remember(
+        text: str,
+        title: str | None = None,
+        source_url: str | None = None,
+    ) -> str:
+        """Save a new memory into the user's brain (requires write access).
+
+        Stores `text` as a note that flows into the same search + dossier
+        pipeline as everything else, so future `ask` / `search` calls can recall
+        it. Provide a short `title` and an optional `source_url`. Returns
+        `{id, created, title, url}`; `created=false` means an identical memory
+        already existed (no duplicate is made).
+
+        This tool only works when the connection was granted memory write
+        access — otherwise it returns an error and nothing is saved. Use it when
+        the user says "remember that…", or when you learn a durable fact worth
+        recalling later. Do not store secrets or transient chatter.
+        """
+        user_id, access_token = await _current_access()
+        if MCP_WRITE_SCOPE not in (access_token.scopes or []):
+            raise ValueError(
+                "This connection is read-only. Reconnect with memory write "
+                "access enabled (Settings → MCP) to save memories."
+            )
+        async with get_db_context() as db:
+            result = await remember_for_mcp(
+                db, user_id, text, title=title, source_url=source_url
+            )
         return json.dumps(result, ensure_ascii=False)
 
     @mcp.tool()

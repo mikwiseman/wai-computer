@@ -154,3 +154,27 @@ async def ingest_item(
         len(chunks),
     )
     return item, True
+
+
+async def enqueue_item_processing(db: AsyncSession, item: Item) -> None:
+    """Enqueue background processing for a freshly-created Item — fetch (if
+    URL-only), embed, summary + key-moments + entity linking.
+
+    Shared by the web "add anything" route and the MCP ``remember`` tool so a
+    saved memory flows through the identical pipeline as any captured item. On
+    broker failure, mark the item failed with a visible error (no silent
+    swallow) so the client can see + retry."""
+    try:
+        from app.tasks.item_summary_generation import generate_item_summary_task
+
+        generate_item_summary_task.delay(item_id=str(item.id))
+    except Exception as exc:  # noqa: BLE001 — broker down: fail loudly, never pretend success
+        logger.warning("item enqueue failed item=%s: %s", item.id, type(exc).__name__)
+        meta = dict(item.metadata_ or {})
+        meta["processing_error"] = {
+            "code": "enqueue_failed",
+            "message": "Couldn't start processing. Retry shortly.",
+        }
+        item.metadata_ = meta
+        item.state = "failed"
+        await db.flush()

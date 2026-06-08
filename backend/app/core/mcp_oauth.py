@@ -30,7 +30,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.config import get_settings
-from app.core.api_keys import is_api_key, resolve_api_key
+from app.core.api_keys import API_KEY_WRITE_SCOPE, is_api_key, resolve_api_key
 from app.db.session import get_db_context
 from app.models.mcp_oauth import (
     McpOAuthAuthorizationCode,
@@ -41,7 +41,11 @@ from app.models.mcp_oauth import (
 )
 
 MCP_READ_SCOPE = "mcp:read"
-MCP_SCOPES = [MCP_READ_SCOPE]
+# Opt-in write scope. A connection only gets it if the client explicitly
+# requests it (OAuth) or the user minted a write-enabled API token — read stays
+# the default everywhere, so existing connectors are never silently upgraded.
+MCP_WRITE_SCOPE = "mcp:write"
+MCP_SCOPES = [MCP_READ_SCOPE, MCP_WRITE_SCOPE]
 ACCESS_TOKEN_TYPE = "access"
 REFRESH_TOKEN_TYPE = "refresh"
 McpDbContextFactory = Callable[[], AsyncContextManager[AsyncSession]]
@@ -638,10 +642,13 @@ class WaiComputerMcpOAuthProvider(
                 api_key = await resolve_api_key(db, token)
                 if api_key is None:
                     return None
+                scopes = [MCP_READ_SCOPE]
+                if API_KEY_WRITE_SCOPE in (api_key.scopes or []):
+                    scopes.append(MCP_WRITE_SCOPE)
                 return AccessToken(
                     token=token,
                     client_id=f"api_key:{api_key.id}",
-                    scopes=[MCP_READ_SCOPE],
+                    scopes=scopes,
                     expires_at=_as_timestamp(api_key.expires_at) if api_key.expires_at else None,
                     resource=get_settings().mcp_resource_url_resolved,
                 )

@@ -95,8 +95,10 @@ def test_create_mcp_app_instructions_mention_tools() -> None:
 
     instructions = captured["instructions"]
     for tool_name in (
+        "ask",
         "search",
         "fetch",
+        "remember",
         "list_folders",
         "list_recordings",
         "list_action_items",
@@ -129,6 +131,7 @@ def test_create_mcp_app_registers_all_tools() -> None:
         "ask",
         "search",
         "fetch",
+        "remember",
         "list_folders",
         "list_recordings",
         "list_action_items",
@@ -353,3 +356,72 @@ async def test_mcp_fetch_tool_rejects_missing_recording(monkeypatch) -> None:
 
     with pytest.raises(ValueError, match="Document not found"):
         await app.tools["fetch"]("missing")
+
+
+@pytest.mark.asyncio
+async def test_mcp_remember_requires_write_scope(monkeypatch) -> None:
+    """`remember` writes only when the access token carries the mcp:write scope;
+    a read-only connection is rejected and nothing is saved."""
+
+    class FakeFastMCP:
+        def __init__(self, **kwargs):
+            self.tools: dict[str, object] = {}
+
+        def tool(self):
+            def decorator(func):
+                self.tools[func.__name__] = func
+                return func
+
+            return decorator
+
+        def streamable_http_app(self):
+            return self
+
+    @asynccontextmanager
+    async def fake_db_context():
+        yield "db-session"
+
+    async def fake_resolve(_token: str):
+        return "user-123"
+
+    saved: list[tuple] = []
+
+    async def fake_remember(db, user_id, text, *, title, source_url):
+        saved.append((user_id, text, title, source_url))
+        return {"id": "i1", "created": True, "title": title, "url": "u"}
+
+    monkeypatch.setattr(mcp_server, "FastMCP", lambda **kwargs: FakeFastMCP(**kwargs))
+    monkeypatch.setattr(mcp_server, "resolve_mcp_access_token_user_id", fake_resolve)
+    monkeypatch.setattr(mcp_server, "get_db_context", fake_db_context)
+    monkeypatch.setattr(mcp_server, "remember_for_mcp", fake_remember)
+
+    settings = SimpleNamespace(
+        frontend_url="https://wai.computer",
+        mcp_issuer_url_resolved="https://wai.computer",
+        mcp_resource_url_resolved="https://api.wai.computer/mcp",
+        mcp_client_secret_expire_days=30,
+    )
+
+    # Read-only token → rejected, nothing saved.
+    monkeypatch.setattr(
+        mcp_server,
+        "get_access_token",
+        lambda: SimpleNamespace(token="t", scopes=[mcp_server.MCP_READ_SCOPE]),
+    )
+    app = mcp_server.create_mcp_app(settings)
+    with pytest.raises(ValueError, match="read-only"):
+        await app.tools["remember"]("remember me")
+    assert saved == []
+
+    # Write-scoped token → saved.
+    monkeypatch.setattr(
+        mcp_server,
+        "get_access_token",
+        lambda: SimpleNamespace(
+            token="t", scopes=[mcp_server.MCP_READ_SCOPE, mcp_server.MCP_WRITE_SCOPE]
+        ),
+    )
+    app = mcp_server.create_mcp_app(settings)
+    out = json.loads(await app.tools["remember"]("remember me", title="T"))
+    assert out["created"] is True
+    assert saved == [("user-123", "remember me", "T", None)]

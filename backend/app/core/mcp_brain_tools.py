@@ -29,6 +29,7 @@ from sqlalchemy.orm import selectinload
 from app.config import get_settings
 from app.core.brain_ask import ask_brain
 from app.core.conversation_brain import _message_text
+from app.core.item_ingest import enqueue_item_processing, ingest_item
 from app.core.mcp_tools import (
     _as_uuid,
     _iso,
@@ -241,3 +242,53 @@ async def fetch_document_for_mcp(
         return item
 
     return await _fetch_chat_for_mcp(db, user_uuid, doc_uuid)
+
+
+async def remember_for_mcp(
+    db: AsyncSession,
+    user_id: str | UUID,
+    text: str,
+    *,
+    title: str | None = None,
+    source_url: str | None = None,
+) -> dict:
+    """Store a new memory back into the user's brain (the write half of a
+    memory bank).
+
+    The memory is saved as a note via the same :func:`ingest_item` intake the
+    web "add anything" capture uses, then enqueued for the same summary +
+    entity-linking pipeline — so a future ``ask`` / ``search`` can recall it.
+    Idempotent: an identical memory returns the existing item (``created`` is
+    False) rather than a duplicate. Caller is responsible for enforcing the
+    ``mcp:write`` scope before invoking this."""
+    text = (text or "").strip()
+    if not text:
+        raise ValueError("Nothing to remember — provide the memory text.")
+    if len(text) > REMEMBER_MAX_CHARS:
+        raise ValueError(
+            f"Memory is too long (>{REMEMBER_MAX_CHARS} characters). "
+            "Save large content as a recording or file import instead."
+        )
+
+    clean_title = (title or "").strip() or None
+    clean_url = (source_url or "").strip() or None
+    item, created = await ingest_item(
+        db,
+        _as_uuid(user_id),
+        source="agent",
+        kind="note",
+        title=clean_title,
+        body=text,
+        url=clean_url,
+        dedup_key=clean_url or text,
+        embed=True,
+    )
+    await db.flush()
+    if created:
+        await enqueue_item_processing(db, item)
+    return {
+        "id": str(item.id),
+        "created": created,
+        "title": item.title,
+        "url": _source_url("item", str(item.id)),
+    }
