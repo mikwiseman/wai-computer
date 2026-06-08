@@ -309,6 +309,33 @@ def _summary_style(user: User, *, source_label: str) -> str:
     return user.summary_style
 
 
+def _speaker_roster_instructions(speaker_names: dict[str, str]) -> str | None:
+    """Instruct the summarizer to attribute owners to the resolved speaker names."""
+    names = [name for name in dict.fromkeys(speaker_names.values()) if name]
+    if not names:
+        return None
+    listed = ", ".join(names)
+    return (
+        f"Named speakers in this recording: {listed}. Use these names verbatim. "
+        "For each action item set `owner` to the named speaker who commits to or is "
+        "assigned the task; if the owner is genuinely unclear, leave owner null — "
+        "never guess. Attribute decisions and highlights to the named speaker when "
+        "the transcript makes it clear."
+    )
+
+
+def _labeled_summary_transcript(
+    transcript_results: list[TranscriptResult],
+    speaker_names: dict[str, str],
+) -> str:
+    """Diarized transcript with raw speaker labels replaced by resolved names."""
+    lines: list[str] = []
+    for tr in transcript_results:
+        label = speaker_names.get(tr.speaker or "", "") or tr.speaker or "Speaker"
+        lines.append(f"{label}: {tr.text}")
+    return "\n".join(lines)
+
+
 async def _transcribe(
     *,
     db: AsyncSession,
@@ -440,7 +467,7 @@ async def _persist_segments(
     staged_path: Path,
     staged_size_bytes: int | None,
     transcript_results: list[TranscriptResult],
-) -> str:
+) -> tuple[str, dict[str, str]]:
     max_end_ms = max((tr.end_ms for tr in transcript_results), default=0)
     voice_identification_enabled = voice_identification_enabled_for_audio(
         recording_id=recording.id,
@@ -460,6 +487,7 @@ async def _persist_segments(
     except Exception:
         logger.exception("voice identification failed for imported recording")
 
+    extracted_names: dict = {}
     try:
         extracted_names = await extract_speaker_names(
             transcript_results=transcript_results,
@@ -520,7 +548,12 @@ async def _persist_segments(
 
     if max_end_ms > 0:
         recording.duration_seconds = max_end_ms // 1000
-    return " ".join(transcript_parts)
+    speaker_names = {
+        label: getattr(assignment, "name", "").strip()
+        for label, assignment in extracted_names.items()
+        if getattr(assignment, "name", "").strip()
+    }
+    return " ".join(transcript_parts), speaker_names
 
 
 async def _persist_summary(
@@ -786,7 +819,7 @@ async def import_media_as_recording(
             await _delete_staged_file(staged_path)
             return ImportedRecordingResult(recording=recording, transcript="", summary=None)
 
-        transcript = await _persist_segments(
+        transcript, speaker_names = await _persist_segments(
             db=db,
             user_id=user.id,
             recording=recording,
@@ -795,9 +828,7 @@ async def import_media_as_recording(
             transcript_results=speech_results,
         )
         summary_result = await summarize_transcript(
-            "\n".join(
-                f"{tr.speaker or 'Speaker'}: {tr.text}" for tr in speech_results
-            ),
+            _labeled_summary_transcript(speech_results, speaker_names),
             language=_summary_language(user, recording),
             style=_summary_style(user, source_label=source_label),
             instructions=combine_summary_instructions(
@@ -806,6 +837,7 @@ async def import_media_as_recording(
                     db,
                     user_id=user.id,
                 ),
+                override_instructions=_speaker_roster_instructions(speaker_names),
             ),
         )
         if not explicit_title:

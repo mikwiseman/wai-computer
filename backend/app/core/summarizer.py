@@ -116,6 +116,9 @@ Rules:
 - Keep descriptions specific: include names, dates, numbers, and quoted phrases
   when the transcript provides them.
 - Identify speakers when possible; leave the speaker null when it is unclear.
+- For action_items, set `owner` to the person responsible when the transcript
+  makes it clear (a named speaker who is assigned or commits to the task);
+  otherwise leave owner null. Never guess an owner.
 - The top-level title and each highlight title MUST be plain text: no markdown
   formatting (no **bold**, no *italics*, no _underscores_, no `code`, no #
   headings), and no surrounding quotes. Just the words.

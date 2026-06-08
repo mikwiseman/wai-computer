@@ -92,6 +92,32 @@ def test_summary_instructions_appends_telegram_block():
     )
 
 
+def test_speaker_roster_instructions():
+    from app.core.recording_import import _speaker_roster_instructions
+
+    assert _speaker_roster_instructions({}) is None
+    text = _speaker_roster_instructions({"speaker_0": "Дима", "speaker_1": "Слава"})
+    assert text is not None
+    assert "Дима" in text and "Слава" in text
+    assert "owner" in text
+    assert "never guess" in text.lower()
+
+
+def test_labeled_summary_transcript_uses_resolved_names():
+    from app.core.recording_import import _labeled_summary_transcript
+
+    results = [
+        SimpleNamespace(speaker="speaker_0", text="Я займусь продажами."),
+        SimpleNamespace(speaker="speaker_1", text="Хорошо."),
+        SimpleNamespace(speaker=None, text="Без спикера."),
+    ]
+    labeled = _labeled_summary_transcript(results, {"speaker_0": "Дима"})
+    assert "Дима: Я займусь продажами." in labeled
+    # Unmapped label keeps its raw label; None falls back to 'Speaker'.
+    assert "speaker_1: Хорошо." in labeled
+    assert "Speaker: Без спикера." in labeled
+
+
 def test_summary_style_forces_structured_for_telegram():
     from app.core.recording_import import _summary_style
 
