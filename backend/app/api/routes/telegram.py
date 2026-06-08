@@ -68,6 +68,7 @@ from app.core.item_titles import clean_title, title_from_filename
 from app.core.mcp_tools import (
     list_recordings_for_mcp,
 )
+from app.core.ocr import OcrError, ocr_image
 from app.core.recording_import import (
     RecordingImportError,
     TranscribedMedia,
@@ -1045,6 +1046,48 @@ def _extract_document(message: dict[str, Any]) -> dict[str, Any] | None:
     if ext not in SUPPORTED_DOCUMENT_EXTENSIONS:
         return None
     return {"kind": "document", "document_ext": ext, **document}
+
+
+_IMAGE_DOC_EXTENSIONS = (".jpg", ".jpeg", ".png", ".webp", ".gif", ".heic", ".bmp")
+
+
+def _extract_photo(message: dict[str, Any]) -> dict[str, Any] | None:
+    """A Telegram photo (largest size) or an image sent as a document."""
+    photos = message.get("photo")
+    if isinstance(photos, list) and photos:
+        largest: dict[str, Any] | None = None
+        best = -1
+        for size in photos:
+            if not isinstance(size, dict) or not size.get("file_id"):
+                continue
+            score = int(size.get("width") or 0) * int(size.get("height") or 0) or int(
+                size.get("file_size") or 0
+            )
+            if score >= best:
+                best = score
+                largest = size
+        if largest is not None:
+            return {
+                "kind": "photo",
+                "file_id": largest.get("file_id"),
+                "file_unique_id": largest.get("file_unique_id"),
+                "file_size": largest.get("file_size"),
+                "mime_type": "image/jpeg",
+            }
+    document = message.get("document")
+    if isinstance(document, dict) and document.get("file_id"):
+        mime = str(document.get("mime_type") or "").lower()
+        name = str(document.get("file_name") or "").lower()
+        if mime.startswith("image/") or name.endswith(_IMAGE_DOC_EXTENSIONS):
+            return {
+                "kind": "photo_document",
+                "file_id": document.get("file_id"),
+                "file_unique_id": document.get("file_unique_id"),
+                "file_size": document.get("file_size"),
+                "mime_type": mime or "image/jpeg",
+                "file_name": document.get("file_name"),
+            }
+    return None
 
 
 async def _handle_start_command(
@@ -2658,6 +2701,143 @@ async def _handle_document_message(
     )
 
 
+async def _handle_photo_message(
+    db: AsyncSession,
+    client: TelegramBotClient,
+    *,
+    message: dict[str, Any],
+    account: TelegramAccount,
+    photo: dict[str, Any],
+) -> None:
+    chat_id = _telegram_chat_id(message)
+    if chat_id is None:
+        return
+    if await _ensure_active_user(db, client, message=message, account=account) is None:
+        return
+
+    file_id = photo.get("file_id")
+    if not isinstance(file_id, str):
+        return
+    file_size = photo.get("file_size")
+    if isinstance(file_size, int) and file_size > settings.telegram_download_max_bytes:
+        await client.send_message(
+            chat_id,
+            _telegram_file_too_large_message(),
+            reply_to_message_id=message.get("message_id"),
+        )
+        return
+
+    status_response = await client.send_message(
+        chat_id,
+        "Принял фото. Распознаю и делаю краткое содержание.",
+        reply_to_message_id=message.get("message_id"),
+    )
+    status_message_id = _sent_message_id(status_response)
+    try:
+        tg_file = await client.get_file(file_id)
+        if (
+            tg_file.file_size is not None
+            and tg_file.file_size > settings.telegram_download_max_bytes
+        ):
+            await client.send_message(chat_id, _telegram_file_too_large_message())
+            return
+        data = await client.download_file(tg_file, max_bytes=settings.telegram_download_max_bytes)
+        if len(data) > settings.telegram_download_max_bytes:
+            await client.send_message(chat_id, _telegram_file_too_large_message())
+            return
+        body = await ocr_image(data, mime_type=str(photo.get("mime_type") or "image/jpeg"))
+    except TelegramFileTooLargeError:
+        await client.send_message(
+            chat_id,
+            _telegram_file_too_large_message(),
+            reply_to_message_id=message.get("message_id"),
+        )
+        return
+    except OcrError:
+        await client.send_message(
+            chat_id,
+            "Не смог распознать фото. Попробуй ещё раз позже.",
+            reply_to_message_id=message.get("message_id"),
+        )
+        return
+    finally:
+        await _delete_status_message(client, chat_id=chat_id, message_id=status_message_id)
+
+    if not body.strip():
+        await client.send_message(
+            chat_id,
+            "На фото не нашёл текста или распознаваемого содержания.",
+            reply_to_message_id=message.get("message_id"),
+        )
+        return
+
+    caption = str(message.get("caption") or "").strip()
+    source_ref = str(photo.get("file_unique_id") or file_id)
+    try:
+        item, created = await ingest_item(
+            db,
+            account.user_id,
+            source="telegram",
+            source_ref=source_ref,
+            kind="image",
+            title=clean_title(caption) or "Фото",
+            body=(f"{caption}\n\n{body}".strip() if caption else body),
+            metadata={
+                "telegram": {
+                    "file_unique_id": photo.get("file_unique_id"),
+                    "mime_type": photo.get("mime_type"),
+                    "kind": photo.get("kind"),
+                    "size": len(data),
+                }
+            },
+            embed=True,
+        )
+        await db.flush()
+    except Exception:  # noqa: BLE001 - failed import should be explicit to the sender.
+        logger.exception("telegram photo ingest failed")
+        await client.send_message(
+            chat_id,
+            "Не смог сохранить фото в материалы. Попробуй позже.",
+            reply_to_message_id=message.get("message_id"),
+        )
+        return
+
+    summary = (
+        await db.execute(select(ItemSummary).where(ItemSummary.item_id == item.id))
+    ).scalar_one_or_none()
+    if created or summary is None:
+        action_task = asyncio.create_task(_send_chat_action_until_cancelled(client, chat_id))
+        try:
+            summary = await generate_item_summary(db, item)
+            await db.flush()
+        except Exception:  # noqa: BLE001 - keep the saved item and surface the failure.
+            logger.exception("telegram photo processing failed")
+            await client.send_message(
+                chat_id,
+                "Сохранил фото, но не смог сделать краткое содержание. Попробуй позже.",
+                reply_to_message_id=message.get("message_id"),
+            )
+            return
+        finally:
+            await _stop_chat_action_task(action_task)
+
+    reply = format_item_reply(item, summary)
+    await _set_telegram_active_context(
+        db,
+        account,
+        ref_type="item",
+        ref_id=item.id,
+        title=item.title,
+    )
+    await _send_chunks(
+        client,
+        chat_id,
+        reply,
+        reply_to_message_id=message.get("message_id"),
+        parse_mode="HTML",
+    )
+
+
 def _is_forwarded(message: dict[str, Any]) -> bool:
     """True when the message was forwarded from someone else — archived content, not
     something the user is saying to Wai."""
@@ -3132,6 +3312,14 @@ async def _handle_update(update: dict[str, Any]) -> None:
                     message=message,
                     account=account,
                     media=media,
+                )
+            elif (photo := _extract_photo(message)) is not None:
+                await _handle_photo_message(
+                    db,
+                    client,
+                    message=message,
+                    account=account,
+                    photo=photo,
                 )
             elif (document := _extract_document(message)) is not None:
                 await _handle_document_message(

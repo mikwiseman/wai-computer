@@ -74,3 +74,61 @@ async def ocr_pdf(data: bytes, *, model: str | None = None) -> str:
         # The model returned no text — the document genuinely has none (not an
         # error). The caller treats an empty body as "no readable text".
         return ""
+
+
+_IMAGE_INSTRUCTION = (
+    "You are given a single image. First write one line describing what the image "
+    "shows. Then, if the image contains any text, add a line 'Text:' and transcribe "
+    "ALL visible text verbatim in reading order (every word, number, label, and "
+    "table cell). If there is no text, omit the Text section. Do not summarise, "
+    "translate, or add commentary beyond the one-line description."
+)
+
+_IMAGE_MIME_ALLOWLIST = {"image/jpeg", "image/png", "image/webp", "image/gif"}
+
+
+async def ocr_image(
+    data: bytes,
+    *,
+    mime_type: str = "image/jpeg",
+    model: str | None = None,
+) -> str:
+    """Describe + OCR an image via the vision LLM (gpt-5.5).
+
+    Returns a one-line description followed by any transcribed text, so a photo
+    can be ingested and summarised like any other content. Raises
+    :class:`OcrError` on an API failure — never a silent empty on error.
+    """
+    if not data:
+        return ""
+    settings = get_settings()
+    client = get_openai_client()
+    encoded = base64.b64encode(data).decode("ascii")
+    mime = (mime_type or "image/jpeg").split(";")[0].strip().lower()
+    if mime not in _IMAGE_MIME_ALLOWLIST:
+        mime = "image/jpeg"
+    try:
+        response = await client.responses.create(
+            model=model or settings.openai_llm_model,
+            input=[
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "input_text", "text": _IMAGE_INSTRUCTION},
+                        {
+                            "type": "input_image",
+                            "image_url": f"data:{mime};base64,{encoded}",
+                        },
+                    ],
+                }
+            ],
+        )
+        ensure_response_completed(response, operation="Image OCR")
+    except Exception as exc:  # noqa: BLE001 — surface any failure as a typed OcrError
+        logger.warning("image OCR failed error_type=%s", type(exc).__name__)
+        raise OcrError(f"Image OCR request failed: {type(exc).__name__}") from exc
+
+    try:
+        return response_output_text(response).strip()
+    except OpenAIResponseError:
+        return ""
