@@ -17,7 +17,7 @@ from app.core.mcp_brain_tools import (
     search_brain_for_mcp,
 )
 from app.models.companion import ChatMessage, Conversation
-from app.models.item import Item
+from app.models.item import Item, ItemSummary
 from app.models.recording import Recording, Segment
 from app.models.user import User
 
@@ -247,3 +247,19 @@ async def test_fetch_document_excludes_soft_deleted(db_session) -> None:
     assert await fetch_document_for_mcp(db_session, user.id, rec.id) is None
     assert await fetch_document_for_mcp(db_session, user.id, item.id) is None
     assert await fetch_document_for_mcp(db_session, user.id, chat.id) is None
+
+
+async def test_fetch_item_renders_summary_and_key_points(db_session) -> None:
+    user = await _make_user(db_session)
+    item, _ = await ingest_item(
+        db_session, user.id, source="paste", kind="note",
+        title="Plan", body="raw body", embedder=_embedder,
+    )
+    db_session.add(
+        ItemSummary(item_id=item.id, summary="The summary.", key_points=["alpha", "beta"])
+    )
+    await db_session.flush()
+    doc = await fetch_document_for_mcp(db_session, user.id, item.id)
+    assert doc is not None
+    assert "Summary:\nThe summary." in doc["text"]
+    assert "Key points:\n- alpha\n- beta" in doc["text"]

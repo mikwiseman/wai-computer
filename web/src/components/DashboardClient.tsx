@@ -2969,7 +2969,7 @@ export function DashboardClient() {
             <p>{copy.settings.developerGroupBody}</p>
           </header>
           <McpConnectSection locale={locale} />
-          <ApiKeysSection />
+          <ApiKeysSection locale={locale} />
         </div>
       </section>
     );
