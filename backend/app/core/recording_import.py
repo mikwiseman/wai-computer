@@ -53,30 +53,29 @@ logger = logging.getLogger(__name__)
 settings = get_settings()
 
 TELEGRAM_IMPORT_SUMMARY_INSTRUCTIONS = """\
-For Telegram voice/audio imports, the summary field is the complete
-Telegram-facing response. This instruction overrides the normal STYLE brevity
-rules for the summary field: do not write a 2-3 sentence abstract.
+For Telegram voice/audio imports, the `summary` field IS the complete
+Telegram-facing message. Make it scannable at a glance — NEVER a prose
+paragraph. This overrides any sentence-count style rule for `summary`.
 
 Use the transcript's dominant language. Preserve concrete dates, week numbers,
-names, projects, outcomes, and commitments in the title and summary. Keep the
-summary between 1000 and 3500 characters when the transcript has enough detail.
+names, projects, numbers, outcomes, and commitments verbatim.
 
-For weekly reflections, use this sectioned format when those themes are present:
-Что понравилось / достижения:
-- ...
+First decide what KIND of recording this is, then structure `summary` for it:
+- plan / to-do: group the tasks under short thematic section headers; LEAD with
+  the concrete actions and put any context after them.
+- meeting / call: lead with Decisions and Action items (who does what by when),
+  then Open questions.
+- lecture / talk: a short outline of the topics with the key takeaways.
+- weekly reflection: the four sections Что понравилось / Что не понравилось /
+  Что продолжать / Что изменить.
+- note / idea / other: the key points, most important first.
 
-Что не понравилось / проблемы недели:
-- ...
-
-Что продолжать делать:
-- ...
-
-Что изменить / решения:
-- ...
-
-Do not use generic sections like "Ключевые пункты" or "Темы" for weekly
-reflections. For non-reflection audio, choose concrete section headings from
-the transcript instead of generic labels.
+Telegram formatting for `summary`:
+- Start each section with a short bold header in Markdown, e.g. **1) Продажи**.
+- Put the items under a header on their own lines starting with "- ".
+- Most actionable content first; no greeting, no preamble, no meta-commentary.
+- Length follows the content: a one-line note stays one line — never pad to a
+  target length, never invent detail to fill sections.
 """
 
 
@@ -304,7 +303,9 @@ def _summary_instructions(user: User, *, source_label: str) -> str | None:
 
 def _summary_style(user: User, *, source_label: str) -> str:
     if source_label == "telegram":
-        return "detailed"
+        # Structure-first (no sentence-count) so the model groups the summary into
+        # scannable sections instead of the prose paragraph 'detailed' produces.
+        return "structured"
     return user.summary_style
 
 

@@ -260,6 +260,20 @@ class TestBuildSummaryPrompt:
         prompt = build_summary_prompt(style="detailed")
         assert "4-6 sentence" in prompt
 
+    def test_structured_style_has_no_sentence_count(self):
+        prompt = build_summary_prompt(style="structured")
+        # No positive sentence-count directive (the bug that forced prose).
+        assert "2-3 sentence" not in prompt
+        assert "4-6 sentence" not in prompt
+        assert "1-2 sentences" not in prompt
+        assert "Cover the content completely" in prompt
+
+    def test_base_framing_is_kind_neutral_not_meeting_only(self):
+        # Was "You summarize a meeting transcript"; must not bias non-meeting audio.
+        prompt = build_summary_prompt()
+        assert "a meeting transcript. " not in prompt
+        assert "voice note" in prompt
+
     def test_language_directive(self):
         prompt = build_summary_prompt(language="ru")
         assert "OUTPUT LANGUAGE" in prompt

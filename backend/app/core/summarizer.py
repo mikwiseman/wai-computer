@@ -104,8 +104,8 @@ class _KeyMomentsSchema(BaseModel):
 
 
 SUMMARY_INSTRUCTIONS = """\
-You summarize a meeting transcript. Output one structured object that follows the
-provided schema.
+You summarize a transcript (a meeting, conversation, lecture, voice note, or
+spoken plan). Output one structured object that follows the provided schema.
 
 Rules:
 - Do not invent facts. Only include information that is actually present in the
@@ -138,6 +138,12 @@ STYLE_INSTRUCTIONS = {
         "Write a thorough 4-6 sentence summary. "
         "Include all key points discussed (up to 15). "
         "Provide detailed context for decisions and action items."
+    ),
+    "structured": (
+        "Cover the content completely — every distinct point, decision, and action, "
+        "with no padding. Do NOT target a sentence count: the length follows the "
+        "content, so a one-line note stays one line and a long meeting gets full "
+        "coverage."
     ),
 }
 

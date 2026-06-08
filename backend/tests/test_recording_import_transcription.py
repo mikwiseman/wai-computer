@@ -92,9 +92,24 @@ def test_summary_instructions_appends_telegram_block():
     )
 
 
-def test_summary_style_forces_detailed_for_telegram():
+def test_summary_style_forces_structured_for_telegram():
     from app.core.recording_import import _summary_style
 
     user = SimpleNamespace(summary_style="medium")
-    assert _summary_style(user, source_label="telegram") == "detailed"
+    # Telegram gets the structure-first style (scannable sections), not a paragraph.
+    assert _summary_style(user, source_label="telegram") == "structured"
     assert _summary_style(user, source_label="web") == "medium"
+
+
+def test_telegram_summary_instructions_are_scannable_and_kind_aware():
+    from app.core.recording_import import TELEGRAM_IMPORT_SUMMARY_INSTRUCTIONS
+
+    instructions = TELEGRAM_IMPORT_SUMMARY_INSTRUCTIONS
+    # No fixed character floor anymore (was "between 1000 and 3500 characters").
+    assert "1000" not in instructions
+    assert "3500" not in instructions
+    # Kind-aware + scannable: bold markdown headers, dash bullets, action-first.
+    assert "KIND" in instructions
+    assert "**" in instructions  # instructs Markdown bold section headers
+    assert "- " in instructions  # instructs dash bullets
+    assert "plan" in instructions and "meeting" in instructions and "lecture" in instructions
