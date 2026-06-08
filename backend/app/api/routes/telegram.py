@@ -151,6 +151,8 @@ TELEGRAM_BOT_COMMANDS = [
     {"command": "reject", "description": "Отклонить действие"},
     {"command": "meetings", "description": "Последние встречи"},
     {"command": "search", "description": "Поиск по записям и расшифровкам"},
+    {"command": "web", "description": "Ссылка для входа в веб-версию"},
+    {"command": "mcp", "description": "Получить MCP-токен для агентов"},
     {"command": "settings", "description": "Статус привязки и настройки"},
 ]
 CYRILLIC_SLUG_MAP = str.maketrans(
@@ -277,7 +279,9 @@ def _telegram_help_text(*, linked: bool) -> str:
         "/reject <action_id> — отклонить действие\n"
         "/meetings — последние встречи\n"
         "/search <запрос> — поиск по записям, саммари и расшифровкам\n"
-        "/link — получить новый код привязки\n"
+        "/web — ссылка для входа в веб-версию\n"
+        "/mcp — MCP-токен для подключения агентов\n"
+        "/link — привязать уже существующий аккаунт\n"
         "/settings — где управлять привязкой\n\n"
         "Можно без команд: «запомни люблю короткие ответы», "
         "«покажи последние встречи», «найди дорожная карта». "
@@ -2198,7 +2202,88 @@ async def _handle_account_command(
     if intent == "settings":
         await _handle_settings_command(client, message=message, linked=True)
         return True
+    if intent in {"web", "login"}:
+        await _handle_web_login_command(db, client, message=message, account=account)
+        return True
+    if intent in {"mcp", "token"}:
+        await _handle_mcp_command(db, client, message=message, account=account)
+        return True
     return False
+
+
+async def _handle_web_login_command(
+    db: AsyncSession,
+    client: TelegramBotClient,
+    *,
+    message: dict[str, Any],
+    account: TelegramAccount,
+) -> None:
+    """DM a one-time web sign-in link (reuses the magic-link verify flow)."""
+    from app.api.routes.auth import _new_magic_token
+
+    chat_id = _telegram_chat_id(message)
+    if chat_id is None:
+        return
+    user = await _ensure_active_user(db, client, message=message, account=account)
+    if user is None:
+        return
+    token = _new_magic_token()
+    user.magic_link_token = token
+    user.magic_link_expires = datetime.now(timezone.utc) + timedelta(minutes=15)
+    await db.flush()
+    await db.commit()
+    url = f"{settings.frontend_url}/auth/verify?token={token}"
+    await client.send_message(
+        chat_id,
+        (
+            "Ссылка для входа в веб-версию WaiComputer (одноразовая, действует "
+            f"15 минут):\n\n{url}\n\n"
+            "Открой её на компьютере, чтобы пользоваться WaiComputer в браузере."
+        ),
+        reply_to_message_id=message.get("message_id"),
+    )
+
+
+async def _handle_mcp_command(
+    db: AsyncSession,
+    client: TelegramBotClient,
+    *,
+    message: dict[str, Any],
+    account: TelegramAccount,
+) -> None:
+    """Mint a read-only wc_live_ MCP token in the trusted bot context and DM it once."""
+    from app.core.api_keys import API_KEY_READ_SCOPE, generate_api_key
+    from app.models.api_key import ApiKey
+
+    chat_id = _telegram_chat_id(message)
+    if chat_id is None:
+        return
+    if await _ensure_active_user(db, client, message=message, account=account) is None:
+        return
+    plaintext, token_hash_value, prefix, last4 = generate_api_key()
+    db.add(
+        ApiKey(
+            user_id=account.user_id,
+            name="Telegram",
+            token_hash=token_hash_value,
+            prefix=prefix,
+            last4=last4,
+            scopes=[API_KEY_READ_SCOPE],
+        )
+    )
+    await db.flush()
+    await db.commit()
+    await client.send_message(
+        chat_id,
+        (
+            "Твой read-only MCP-токен (показываю один раз — сохрани его):\n\n"
+            f"<code>{escape(plaintext)}</code>\n\n"
+            "MCP URL: https://wai.computer/mcp\n"
+            "Подключай как Bearer-токен. Управлять ключами — в Settings → API tokens."
+        ),
+        reply_to_message_id=message.get("message_id"),
+        parse_mode="HTML",
+    )
 
 
 async def _ensure_telegram_conversation(

@@ -166,3 +166,53 @@ async def test_multiple_emailless_users_coexist(db_session: AsyncSession):
     assert u1 is not None and u2 is not None
     assert u1.id != u2.id
     assert u1.email is None and u2.email is None
+
+
+async def _provisioned_account(db_session: AsyncSession, telegram_user_id: int):
+    user = await provision_user_from_telegram(
+        db_session,
+        from_user={"id": telegram_user_id, "first_name": "T"},
+        telegram_chat_id=telegram_user_id,
+    )
+    account = (
+        await db_session.execute(
+            select(TelegramAccount).where(
+                TelegramAccount.telegram_user_id == telegram_user_id
+            )
+        )
+    ).scalar_one()
+    return user, account
+
+
+@pytest.mark.asyncio
+async def test_web_login_command_dms_verify_link(db_session: AsyncSession):
+    from app.api.routes.telegram import _handle_web_login_command
+
+    user, account = await _provisioned_account(db_session, 558001)
+    client = _FakeClient()
+    msg = {"message_id": 1, "from": {"id": 558001}, "chat": {"id": 558001}}
+    await _handle_web_login_command(db_session, client, message=msg, account=account)
+    await db_session.refresh(user)
+    assert user.magic_link_token is not None
+    assert user.magic_link_expires is not None
+    assert client.messages and "/auth/verify?token=" in client.messages[0][1]
+
+
+@pytest.mark.asyncio
+async def test_mcp_command_mints_readonly_token(db_session: AsyncSession):
+    from app.api.routes.telegram import _handle_mcp_command
+    from app.core.api_keys import API_KEY_READ_SCOPE
+    from app.models.api_key import ApiKey
+
+    user, account = await _provisioned_account(db_session, 558002)
+    client = _FakeClient()
+    msg = {"message_id": 1, "from": {"id": 558002}, "chat": {"id": 558002}}
+    await _handle_mcp_command(db_session, client, message=msg, account=account)
+    key = (
+        await db_session.execute(select(ApiKey).where(ApiKey.user_id == user.id))
+    ).scalar_one()
+    assert key.scopes == [API_KEY_READ_SCOPE]
+    assert key.prefix.startswith("wc_live_")
+    assert client.messages
+    assert "wc_live_" in client.messages[0][1]
+    assert "wai.computer/mcp" in client.messages[0][1]
