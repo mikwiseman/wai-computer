@@ -1,0 +1,10 @@
+name: waicomputer
+version: 0.1.0
+description: "Use your WaiComputer second brain (recordings, notes, chats) as Hermes long-term memory — auto-recall + ask/search/remember tools."
+pip_dependencies:
+  - httpx
+hooks:
+  - system_prompt_block
+  - prefetch
+  - on_memory_write
+  - shutdown

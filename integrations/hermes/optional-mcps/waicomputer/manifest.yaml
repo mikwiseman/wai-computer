@@ -1,0 +1,48 @@
+# Nous-approved MCP catalog entry — DRAFT for submission to NousResearch/hermes-agent.
+# Presence in optional-mcps/ = approval (merged via PR review). Copy this dir to
+# optional-mcps/waicomputer/ in the hermes-agent repo and open a PR.
+manifest_version: 1
+
+name: waicomputer
+description: Recall, search, and save memories in your WaiComputer second brain (recordings, notes, and chats).
+source: https://wai.computer/mcp
+
+# WaiComputer ships a remote MCP server with native OAuth 2.1 + Dynamic Client
+# Registration over Streamable HTTP. Hermes's MCP client + mcp_oauth_manager
+# handle discovery, PKCE, token exchange, and refresh — nothing to install
+# locally.
+transport:
+  type: http
+  url: https://wai.computer/mcp
+
+auth:
+  type: oauth
+  # No `provider:` — this is native MCP OAuth (case 1), not a third-party
+  # provider. The MCP client triggers the browser flow on the first probe /
+  # first connect, and you approve the connection by name on wai.computer.
+  #
+  # Headless alternative (no browser): instead of OAuth, set a static header
+  # with a WaiComputer API token (wc_live_…) created under Settings → MCP →
+  # API tokens. A read-only token enables ask/search/fetch; tick "Allow this
+  # token to save memories" to also enable `remember`. To use the token form,
+  # drop `auth:` and add:
+  #   headers:
+  #     Authorization: "Bearer wc_live_…"
+
+# Tool surface (7): ask, search, fetch, remember, list_folders,
+# list_recordings, list_action_items. `remember` only writes when the
+# connection was granted memory:write; otherwise it returns a clear read-only
+# error and nothing is saved. We leave `default_enabled` unset so the
+# install-time checklist starts with everything pre-checked — prune what you
+# don't want (e.g. uncheck `remember` to keep a recall-only connection).
+
+post_install: |
+  On first connection, Hermes opens a browser to approve the WaiComputer
+  connection (or uses your wc_live_ bearer token if you chose the header form).
+  After auth, restart your Hermes session so the WaiComputer tools load.
+
+  Try: "ask my brain what I decided about the Q3 launch" → the `ask` tool
+  returns one cited answer across your recordings, notes, and chats.
+
+  Re-run the tool checklist any time with:
+    hermes mcp configure waicomputer
