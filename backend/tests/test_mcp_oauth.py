@@ -168,9 +168,13 @@ async def test_mcp_oauth_consent_and_token_exchange(
             )
     assert tools_response.status_code == 200, tools_response.text
     tool_names = {tool["name"] for tool in tools_response.json()["result"]["tools"]}
+    # All tools are advertised regardless of scope; `remember`'s write is gated
+    # at call time, not at listing time (this connection holds only mcp:read).
     assert tool_names == {
+        "ask",
         "search",
         "fetch",
+        "remember",
         "list_folders",
         "list_recordings",
         "list_action_items",
