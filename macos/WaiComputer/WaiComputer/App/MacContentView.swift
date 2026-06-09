@@ -1006,9 +1006,14 @@ struct MacMainView: View {
             MacReviewView(apiClient: appState.getAPIClient())
                 .environment(\.locale, MacDateFormatting.locale(for: languageManager.current))
         case .search:
-            MacSearchView { recordingId in
-                openSearchResult(recordingId)
-            }
+            MacSearchView(
+                onOpenRecording: { recordingId in
+                    openSearchResult(recordingId)
+                },
+                onOpenItem: { itemId in
+                    openBrainSource(InboxDetailRef(kind: .item, id: itemId))
+                }
+            )
         case .history:
             DictationHistoryView()
         case .dictionary:

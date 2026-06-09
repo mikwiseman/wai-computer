@@ -5,10 +5,16 @@ struct MacSearchView: View {
     @EnvironmentObject var appState: MacAppState
     @EnvironmentObject private var languageManager: LanguageManager
     @StateObject private var viewModel = MacSearchViewModel()
+    @FocusState private var searchFieldFocused: Bool
     let onOpenRecording: (String) -> Void
+    let onOpenItem: (String) -> Void
 
-    init(onOpenRecording: @escaping (String) -> Void = { _ in }) {
+    init(
+        onOpenRecording: @escaping (String) -> Void = { _ in },
+        onOpenItem: @escaping (String) -> Void = { _ in }
+    ) {
         self.onOpenRecording = onOpenRecording
+        self.onOpenItem = onOpenItem
     }
 
     var body: some View {
@@ -21,6 +27,7 @@ struct MacSearchView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .onAppear { searchFieldFocused = true }
     }
 
     private var searchHeader: some View {
@@ -32,6 +39,7 @@ struct MacSearchView: View {
                 TextField(t("Search recordings...", "Искать в записях..."), text: $viewModel.query)
                     .textFieldStyle(.plain)
                     .font(Typography.headingMedium)
+                    .focused($searchFieldFocused)
                     .onSubmit {
                         performSearch()
                     }
@@ -39,8 +47,8 @@ struct MacSearchView: View {
 
                 if !viewModel.query.isEmpty {
                     Button {
-                        viewModel.query = ""
-                        viewModel.results = []
+                        viewModel.clear()
+                        searchFieldFocused = true
                     } label: {
                         Image(systemName: "xmark.circle.fill")
                             .foregroundStyle(Palette.textTertiary)
@@ -130,7 +138,12 @@ struct MacSearchView: View {
         } else {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: Spacing.sm) {
-                    Text(resultsCountText(viewModel.totalResults))
+                    Text(resultsCountText(
+                        shown: viewModel.scope == .everything
+                            ? viewModel.unifiedResults.count
+                            : viewModel.results.count,
+                        total: viewModel.totalResults
+                    ))
                         .font(Typography.label)
                         .foregroundStyle(Palette.textTertiary)
                         .padding(.horizontal, Spacing.lg)
@@ -160,21 +173,23 @@ struct MacSearchView: View {
         viewModel.scope == .everything ? viewModel.unifiedResults.isEmpty : viewModel.results.isEmpty
     }
 
-    /// Route a unified hit: recordings open in the detail pane; items switch to
-    /// the Content section (which loads + can show the item).
+    /// Route a unified hit: recordings open in the detail pane; items open the
+    /// material detail (previously this dropped the id and just landed in Inbox).
     private func openUnifiedHit(_ hit: UnifiedHit) {
         if hit.sourceKind == "recording" {
             onOpenRecording(hit.parentId)
         } else {
-            NotificationCenter.default.post(name: .init("navigateTo"), object: "content")
+            onOpenItem(hit.parentId)
         }
     }
 
-    private func resultsCountText(_ count: Int) -> String {
-        if OnboardingL10n.language(for: languageManager.current) == .russian {
-            return "Найдено: \(count)"
+    private func resultsCountText(shown: Int, total: Int) -> String {
+        let russian = OnboardingL10n.language(for: languageManager.current) == .russian
+        // Be honest when more results exist than are shown (no pagination yet).
+        if shown < total {
+            return russian ? "Показано \(shown) из \(total)" : "Showing \(shown) of \(total)"
         }
-        return "\(count) result\(count == 1 ? "" : "s")"
+        return russian ? "Найдено: \(total)" : "\(total) result\(total == 1 ? "" : "s")"
     }
 
     private func performSearch() {
@@ -308,7 +323,6 @@ enum MacSearchPresentation {
 
 // MARK: - ViewModel
 
-@MainActor
 enum SearchScope: Hashable {
     case recordings
     case everything
@@ -358,5 +372,17 @@ class MacSearchViewModel: ObservableObject {
         }
 
         isLoading = false
+    }
+
+    /// Reset every result/error/searched flag so clearing the field returns a
+    /// clean slate. Previously only `query` + `results` were reset, leaving
+    /// `unifiedResults`, `totalResults`, and a stale error on screen.
+    func clear() {
+        query = ""
+        results = []
+        unifiedResults = []
+        totalResults = 0
+        error = nil
+        hasSearched = false
     }
 }
