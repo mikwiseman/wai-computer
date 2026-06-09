@@ -159,3 +159,30 @@ async def test_unified_search_max_pool_collapses_per_parent(db_session) -> None:
         h for h in legacy if h.source_kind == "recording" and h.parent_id == str(rec.id)
     ]
     assert len(rec_chunks_legacy) >= 2, "legacy path should keep multiple chunks per parent"
+
+
+async def test_ranking_v2_authority_reorders_when_enabled(db_session, monkeypatch) -> None:
+    """With the trust-weighted ranking flag ON, a higher-authority source outranks
+    a lower-authority one at equal relevance. (OFF is covered by every other test.)"""
+    from app.core import unified_search as us
+
+    user = await _make_user(db_session)
+    low, _ = await ingest_item(
+        db_session, user.id, source="agent", kind="note", title="Low",
+        body="the quarterly budget plan alpha", authority_score=0.3, embedder=_embedder,
+    )
+    high, _ = await ingest_item(
+        db_session, user.id, source="paste", kind="note", title="High",
+        body="the quarterly budget plan beta", authority_score=0.9, embedder=_embedder,
+    )
+    await db_session.flush()
+
+    monkeypatch.setattr(
+        us, "get_settings", lambda: type("S", (), {"brain_ranking_v2_enabled": True})()
+    )
+    with patch("app.core.unified_search.generate_embedding", return_value=[0.02] * 1536):
+        hits = await us.unified_search(
+            db_session, user.id, "quarterly budget", limit=10, per_parent_limit=1
+        )
+    order = [h.parent_id for h in hits if h.source_kind == "item"]
+    assert order.index(str(high.id)) < order.index(str(low.id))

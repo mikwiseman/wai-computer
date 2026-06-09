@@ -21,6 +21,7 @@ from dataclasses import dataclass
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import get_settings
 from app.core.embeddings import format_embedding, generate_embedding
 
 logger = logging.getLogger(__name__)
@@ -164,7 +165,29 @@ _UNIFIED_SQL = text(
         SELECT chunk_id, parent_id, content, title, kind, created_at, start_ms, end_ms, source_kind,
                rrf * (1.0 + :rw * exp(
                    -GREATEST(EXTRACT(EPOCH FROM (now() - created_at)), 0)
-                   / (:halflife * 86400.0))) AS score
+                   / (:halflife * 86400.0)))
+               -- Trust-weighted ranking (P4), gated: a clamped authority×salience
+               -- multiplier per source. :ranking_v2=0 -> ×1.0 (byte-identical).
+               * CASE WHEN :ranking_v2 = 1 THEN
+                     GREATEST(0.5, LEAST(1.5, 0.5 + COALESCE(
+                         CASE source_kind
+                             WHEN 'item' THEN
+                                 (SELECT authority_score FROM items WHERE id = parent_id)
+                             WHEN 'recording' THEN
+                                 (SELECT authority_score FROM recordings WHERE id = parent_id)
+                             WHEN 'chat' THEN
+                                 (SELECT authority_score FROM conversations WHERE id = parent_id)
+                         END, 0.5)))
+                   * GREATEST(0.75, LEAST(1.25, 0.5 + COALESCE(
+                         CASE source_kind
+                             WHEN 'item' THEN
+                                 (SELECT salience_score FROM items WHERE id = parent_id)
+                             WHEN 'recording' THEN
+                                 (SELECT salience_score FROM recordings WHERE id = parent_id)
+                             WHEN 'chat' THEN
+                                 (SELECT salience_score FROM conversations WHERE id = parent_id)
+                         END, 0.5)))
+                 ELSE 1.0 END AS score
         FROM unioned
     ),
     -- Per-page max-pool (gbrain RETRIEVAL_MAXPOOL): keep only the best
@@ -209,6 +232,7 @@ async def unified_search(
         return []
     embedding = format_embedding(await generate_embedding(query))
     pool = max(limit * 3, 30)
+    ranking_v2 = 1 if get_settings().brain_ranking_v2_enabled else 0
     rows = (
         await db.execute(
             _UNIFIED_SQL,
@@ -222,6 +246,7 @@ async def unified_search(
                 "rw": RECENCY_WEIGHT,
                 "halflife": RECENCY_HALF_LIFE_DAYS,
                 "per_parent": per_parent_limit,
+                "ranking_v2": ranking_v2,
             },
         )
     ).fetchall()

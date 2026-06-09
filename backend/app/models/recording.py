@@ -119,6 +119,11 @@ class Recording(Base, UUIDMixin, TimestampMixin):
         DateTime(timezone=True),
         nullable=True,
     )
+    # Trust/salience signals for the P4 ranking multiplier (neutral defaults).
+    authority_score: Mapped[float] = mapped_column(
+        Float, nullable=False, server_default="0.5", default=0.5
+    )
+    salience_score: Mapped[float | None] = mapped_column(Float)
 
     # Relationships
     user: Mapped["User"] = relationship("User", back_populates="recordings")

@@ -7,6 +7,7 @@ from typing import Any
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
     DateTime,
+    Float,
     ForeignKey,
     Index,
     Integer,
@@ -49,6 +50,11 @@ class Conversation(Base, UUIDMixin, TimestampMixin):
     brain_linked_message_count: Mapped[int] = mapped_column(
         Integer, nullable=False, server_default="0", default=0
     )
+    # Trust/salience signals for the P4 ranking multiplier (neutral defaults).
+    authority_score: Mapped[float] = mapped_column(
+        Float, nullable=False, server_default="0.5", default=0.5
+    )
+    salience_score: Mapped[float | None] = mapped_column(Float)
 
     messages: Mapped[list["ChatMessage"]] = relationship(
         "ChatMessage",

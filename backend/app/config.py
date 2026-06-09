@@ -72,6 +72,11 @@ class Settings(BaseSettings):
     reranker_max_candidates: int = 100
     reranker_confidence_threshold: float = 0.3  # drop calibrated relevance below this
 
+    # Trust-weighted ranking (P4): fold clamped authority×salience into unified
+    # search scoring. OFF by default; flip only after validating on real data via
+    # the eval harness (accuracy-per-dollar must not regress).
+    brain_ranking_v2_enabled: bool = False
+
     # Deepgram — realtime dictation, live transcription, and batch file STT.
     deepgram_api_key: str = ""
 
