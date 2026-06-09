@@ -121,7 +121,9 @@ Rules:
   canonical name in the nominative case (именительный падеж). Merge grammatical
   cases, short forms, and diminutives of the SAME person into one entry
   (e.g. «Коля»/«Колей» -> «Коля»; «Лёша»/«Лёш»/«Леша» -> «Лёша»). Prefer the
-  fullest proper form actually used. Never list the same person twice.
+  fullest proper form actually used. Never list the same person twice. Exclude
+  diarization speaker labels (speaker_0, Speaker 1) and placeholders — only real
+  people named in the content.
 - For action_items, set `owner` to the person responsible when the transcript
   makes it clear (a named speaker who is assigned or commits to the task);
   otherwise leave owner null. Never guess an owner.
@@ -281,7 +283,7 @@ async def _summarize_transcript_once(
         decisions=[d.model_dump() for d in parsed.decisions],
         action_items=[a.model_dump() for a in parsed.action_items],
         topics=parsed.topics,
-        people_mentioned=parsed.people_mentioned,
+        people_mentioned=_strip_speaker_labels(parsed.people_mentioned),
         follow_up_questions=parsed.follow_up_questions,
         sentiment=parsed.sentiment,
         highlights=[h.model_dump() for h in parsed.highlights],
@@ -364,6 +366,69 @@ def _merge_partial_summaries(partials: list[SummaryResult]) -> dict:
     }
 
 
+_SPEAKER_LABEL_RE = re.compile(r"^\s*(?:speaker|спикер|участник)[\s_\-]*\d*\s*$", re.IGNORECASE)
+
+
+def _strip_speaker_labels(names: list[str]) -> list[str]:
+    """Drop diarization placeholders (speaker_0, "Speaker 1", "спикер 2") — never
+    real people — that can leak into people_mentioned from speaker-labeled lines."""
+    return [n for n in names if n and not _SPEAKER_LABEL_RE.match(n)]
+
+
+class _PeopleSchema(BaseModel):
+    people: list[str] = Field(max_length=30)
+
+
+PEOPLE_CANONICALIZATION_INSTRUCTIONS = """\
+You are given a list of person names extracted from ONE recording. They may
+contain Russian grammatical-case forms, short forms, and diminutives of the same
+person, plus duplicates and stray non-names.
+
+Return a clean list:
+- Each distinct REAL person exactly once, by their canonical name in the
+  nominative case (именительный падеж). Merge case-forms, short forms, and
+  diminutives of the same person into one entry (Коля/Колей -> Коля;
+  Лёша/Лёш/Леша -> Лёша). Prefer the fullest proper form present.
+- Drop anything that is not a real person name — diarization speaker labels
+  (speaker_0, Speaker 1, спикер 2) and placeholders.
+- Do not invent anyone who is not in the input.
+
+Names:
+"""
+
+
+async def _canonicalize_people_names(names: list[str], *, language: str) -> list[str]:
+    """Collapse Russian case-forms/short-forms/diminutives of the same person into a
+    single canonical nominative entry and drop non-name placeholders.
+
+    Used after the map-reduce merge, where per-chunk canonicalization can't dedupe
+    people across chunks. Operates on the (clean, complete) merged union — not the
+    reduce prose — so diarization speaker labels are never re-introduced.
+    """
+    cleaned = _dedup_strings(_strip_speaker_labels(names), cap=30)
+    if len(cleaned) < 2:
+        return cleaned
+    client = get_cerebras_client()
+    try:
+        response = await client.chat.completions.create(
+            model=settings.cerebras_llm_model,
+            messages=_summary_messages(PEOPLE_CANONICALIZATION_INSTRUCTIONS, "\n".join(cleaned)),
+            response_format=strict_json_response_format(_PeopleSchema, name="people_canon"),
+            reasoning_effort="low",
+            max_completion_tokens=512,
+        )
+    except Exception as exc:  # noqa: BLE001 — capture for breadcrumbs then re-raise
+        capture_sentry_exception(exc)
+        raise SummarizationError(f"People canonicalization failed: {exc}") from exc
+    try:
+        parsed = chat_completion_parsed(
+            response, _PeopleSchema, operation="People canonicalization"
+        )
+    except CerebrasResponseError as exc:
+        raise SummarizationError(f"People canonicalization failed: {exc}") from exc
+    return _dedup_strings(_strip_speaker_labels(parsed.people), cap=30)
+
+
 async def _map_reduce_summarize(
     transcript: str,
     *,
@@ -395,8 +460,7 @@ async def _map_reduce_summarize(
 
     # Reduce: synthesize ONE coherent overview from the chunk summaries. The list
     # fields are already comprehensively merged above, so we keep only the
-    # synthesized prose + title + sentiment from this pass — plus a canonicalized
-    # people list (see below).
+    # synthesized prose + title + sentiment from this pass.
     reduce_instructions = (
         (instructions + "\n\n" if instructions else "")
         + "The text below is an ordered set of section summaries of ONE longer "
@@ -404,18 +468,6 @@ async def _map_reduce_summarize(
         "not mention 'sections' and do not repeat the same point twice."
     )
     combined = "\n\n".join(p.summary.strip() for p in partials if p.summary.strip())
-    # Per-chunk canonicalization can't collapse people ACROSS chunks: the
-    # deterministic merge unions raw chunk outputs, so Russian grammatical-case and
-    # ё/е variants of one person survive (Коля/Колей, Лёша/Леша). Feed the full
-    # union into the reduce pass so its people_mentioned returns deduped to one
-    # canonical nominative entry per person.
-    people_union = merged["people_mentioned"]
-    if people_union:
-        combined += (
-            "\n\nPeople mentioned across the recording — collapse grammatical "
-            "cases, short forms, and diminutives of the same person into a single "
-            "canonical nominative entry and drop duplicates: " + ", ".join(people_union)
-        )
     reduced = await _summarize_transcript_once(
         combined,
         language=language,
@@ -423,9 +475,14 @@ async def _map_reduce_summarize(
         instructions=reduce_instructions,
         name="recording_summary_reduce",
     )
-    # Prefer the reduce's canonicalized people list; keep the complete union only
-    # if the reduce surfaced no people at all.
-    merged["people_mentioned"] = _dedup_strings(reduced.people_mentioned or people_union, cap=30)
+    # Per-chunk canonicalization can't collapse people ACROSS chunks: the
+    # deterministic merge unions raw chunk outputs, so Russian grammatical-case and
+    # ё/е variants of one person survive (Коля/Колей, Лёша/Леша). Canonicalize the
+    # COMPLETE, already-clean chunk union directly — re-extracting people from the
+    # reduce prose instead would re-introduce diarization speaker labels.
+    merged["people_mentioned"] = await _canonicalize_people_names(
+        merged["people_mentioned"], language=language
+    )
     return SummaryResult(
         title=reduced.title,
         summary=reduced.summary,
@@ -593,7 +650,7 @@ async def summarize_content(
         decisions=[d.model_dump() for d in parsed.decisions],
         action_items=[a.model_dump() for a in parsed.action_items],
         topics=parsed.topics,
-        people_mentioned=parsed.people_mentioned,
+        people_mentioned=_strip_speaker_labels(parsed.people_mentioned),
         follow_up_questions=parsed.follow_up_questions,
         sentiment=parsed.sentiment,
         highlights=[h.model_dump() for h in parsed.highlights],

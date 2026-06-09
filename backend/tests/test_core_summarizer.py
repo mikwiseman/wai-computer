@@ -535,32 +535,71 @@ async def test_summarize_transcript_single_pass_below_threshold(monkeypatch):
     assert calls == ["recording_summary"]
 
 
-async def test_map_reduce_canonicalizes_people_across_chunks(monkeypatch):
-    """Long (map-reduce) transcripts: cross-chunk Russian name variants are
-    collapsed via the reduce pass, not left duplicated by the deterministic merge."""
-    reduce_inputs: list[str] = []
+async def test_map_reduce_canonicalizes_people_from_clean_union(monkeypatch):
+    """Long (map-reduce) transcripts: people are canonicalized from the clean,
+    complete chunk union — NOT re-extracted from the reduce prose, which would
+    re-introduce diarization speaker labels."""
+    seen_union: list[list[str]] = []
 
     async def fake_once(transcript, **kwargs):
         if kwargs.get("name") == "recording_summary_reduce":
-            reduce_inputs.append(transcript)
+            # Reduce prose surfaces speaker labels; its people list must be ignored.
             return _canned_summary(
-                title="Final", summary="unified", people_mentioned=["Коля", "Лёша"]
+                title="Final", summary="unified", people_mentioned=["speaker_0", "speaker_1"]
             )
-        # Every chunk emits cross-chunk case-forms/ё-е variants of the same people.
         return _canned_summary(people_mentioned=["Коля", "Колей", "Лёша", "Леша"])
 
+    async def fake_canon(names, *, language):
+        seen_union.append(list(names))
+        return ["Коля", "Лёша"]
+
     monkeypatch.setattr(summarizer_module, "_summarize_transcript_once", fake_once)
+    monkeypatch.setattr(summarizer_module, "_canonicalize_people_names", fake_canon)
 
     long_transcript = "\n".join("разговор о делах" for _ in range(4000))
     assert len(long_transcript) > summarizer_module.MAP_REDUCE_CHAR_THRESHOLD
 
     result = await summarizer_module.summarize_transcript(long_transcript)
 
-    # The reduce pass was handed the full merged people union to canonicalize...
-    assert reduce_inputs and "Колей" in reduce_inputs[0] and "Леша" in reduce_inputs[0]
-    # ...and the final list is its deduped canonical output, not the raw union.
+    # Canonicalization received the merged chunk union (the dupes), not the reduce's people.
+    assert seen_union and set(seen_union[0]) == {"Коля", "Колей", "Лёша", "Леша"}
+    # Final people = canonicalized union; the reduce's speaker_* people are discarded.
     assert result.people_mentioned == ["Коля", "Лёша"]
     assert result.title == "Final"
+
+
+def test_strip_speaker_labels_drops_diarization_placeholders():
+    from app.core.summarizer import _strip_speaker_labels
+
+    assert _strip_speaker_labels(
+        ["Коля", "speaker_0", "Speaker 1", "спикер 2", "speaker", "Анна"]
+    ) == ["Коля", "Анна"]
+
+
+async def test_canonicalize_people_names_short_circuits_without_llm(monkeypatch):
+    """Fewer than 2 real names after stripping labels → no LLM call."""
+    from app.core.summarizer import _canonicalize_people_names
+
+    def boom():  # pragma: no cover - must not be called
+        raise AssertionError("LLM should not be called")
+
+    monkeypatch.setattr(summarizer_module, "get_cerebras_client", boom)
+    assert await _canonicalize_people_names(
+        ["speaker_0", "speaker_1", "Коля"], language="ru"
+    ) == ["Коля"]
+    assert await _canonicalize_people_names([], language="ru") == []
+
+
+async def test_canonicalize_people_names_uses_llm_and_cleans_output():
+    """2+ names → LLM canonicalizes; result is deduped and label-stripped."""
+    from app.core.summarizer import _canonicalize_people_names, _PeopleSchema
+
+    mock_response = _parsed_response(_PeopleSchema(people=["Коля", "Коля", "Лёша", "speaker_0"]))
+    mock_client = MagicMock()
+    mock_client.chat.completions.create = AsyncMock(return_value=mock_response)
+    with patch("app.core.summarizer.get_cerebras_client", return_value=mock_client):
+        out = await _canonicalize_people_names(["Коля", "Колей", "Лёша", "Леша"], language="ru")
+    assert out == ["Коля", "Лёша"]
 
 
 def test_resolve_highlight_cites_source_segment():
