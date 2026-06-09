@@ -395,7 +395,8 @@ async def _map_reduce_summarize(
 
     # Reduce: synthesize ONE coherent overview from the chunk summaries. The list
     # fields are already comprehensively merged above, so we keep only the
-    # synthesized prose + title + sentiment from this pass.
+    # synthesized prose + title + sentiment from this pass — plus a canonicalized
+    # people list (see below).
     reduce_instructions = (
         (instructions + "\n\n" if instructions else "")
         + "The text below is an ordered set of section summaries of ONE longer "
@@ -403,6 +404,18 @@ async def _map_reduce_summarize(
         "not mention 'sections' and do not repeat the same point twice."
     )
     combined = "\n\n".join(p.summary.strip() for p in partials if p.summary.strip())
+    # Per-chunk canonicalization can't collapse people ACROSS chunks: the
+    # deterministic merge unions raw chunk outputs, so Russian grammatical-case and
+    # ё/е variants of one person survive (Коля/Колей, Лёша/Леша). Feed the full
+    # union into the reduce pass so its people_mentioned returns deduped to one
+    # canonical nominative entry per person.
+    people_union = merged["people_mentioned"]
+    if people_union:
+        combined += (
+            "\n\nPeople mentioned across the recording — collapse grammatical "
+            "cases, short forms, and diminutives of the same person into a single "
+            "canonical nominative entry and drop duplicates: " + ", ".join(people_union)
+        )
     reduced = await _summarize_transcript_once(
         combined,
         language=language,
@@ -410,6 +423,9 @@ async def _map_reduce_summarize(
         instructions=reduce_instructions,
         name="recording_summary_reduce",
     )
+    # Prefer the reduce's canonicalized people list; keep the complete union only
+    # if the reduce surfaced no people at all.
+    merged["people_mentioned"] = _dedup_strings(reduced.people_mentioned or people_union, cap=30)
     return SummaryResult(
         title=reduced.title,
         summary=reduced.summary,

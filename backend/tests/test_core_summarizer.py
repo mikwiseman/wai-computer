@@ -535,6 +535,34 @@ async def test_summarize_transcript_single_pass_below_threshold(monkeypatch):
     assert calls == ["recording_summary"]
 
 
+async def test_map_reduce_canonicalizes_people_across_chunks(monkeypatch):
+    """Long (map-reduce) transcripts: cross-chunk Russian name variants are
+    collapsed via the reduce pass, not left duplicated by the deterministic merge."""
+    reduce_inputs: list[str] = []
+
+    async def fake_once(transcript, **kwargs):
+        if kwargs.get("name") == "recording_summary_reduce":
+            reduce_inputs.append(transcript)
+            return _canned_summary(
+                title="Final", summary="unified", people_mentioned=["Коля", "Лёша"]
+            )
+        # Every chunk emits cross-chunk case-forms/ё-е variants of the same people.
+        return _canned_summary(people_mentioned=["Коля", "Колей", "Лёша", "Леша"])
+
+    monkeypatch.setattr(summarizer_module, "_summarize_transcript_once", fake_once)
+
+    long_transcript = "\n".join("разговор о делах" for _ in range(4000))
+    assert len(long_transcript) > summarizer_module.MAP_REDUCE_CHAR_THRESHOLD
+
+    result = await summarizer_module.summarize_transcript(long_transcript)
+
+    # The reduce pass was handed the full merged people union to canonicalize...
+    assert reduce_inputs and "Колей" in reduce_inputs[0] and "Леша" in reduce_inputs[0]
+    # ...and the final list is its deduped canonical output, not the raw union.
+    assert result.people_mentioned == ["Коля", "Лёша"]
+    assert result.title == "Final"
+
+
 def test_resolve_highlight_cites_source_segment():
     from app.core.summarizer import resolve_highlight_timestamps
 
