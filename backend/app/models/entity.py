@@ -14,6 +14,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     func,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -171,6 +172,63 @@ class EntityPageSnapshot(Base, UUIDMixin, TimestampMixin):
 
     user: Mapped["User"] = relationship("User")
     entity: Mapped["Entity"] = relationship("Entity")
+
+
+class EntityFact(Base, UUIDMixin, TimestampMixin):
+    """A bi-temporal asserted fact: (subject) predicate (object) with a validity
+    window. Unlike EntityRelation (a typed co-mention edge) this is a stated fact
+    about the world. CURRENT iff ``invalid_at IS NULL``; supersession CLOSES the
+    window (sets ``invalid_at`` + ``superseded_by_id``) and never deletes — so
+    "what's true now" is a query and history is preserved (Graphiti supersede-not-
+    delete; mem0-v3 keep-history, done safely). ``created_at`` (TimestampMixin) is
+    ingest/transaction time; ``valid_at``/``invalid_at`` is world time."""
+
+    __tablename__ = "entity_facts"
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id",
+            "subject_entity_id",
+            "predicate",
+            "object_text",
+            name="uq_entity_facts_triple",
+        ),
+        Index(
+            "ix_entity_facts_current",
+            "user_id",
+            "subject_entity_id",
+            postgresql_where=text("invalid_at IS NULL"),
+        ),
+    )
+
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    subject_entity_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("entities.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    predicate: Mapped[str] = mapped_column(String(100), nullable=False)  # lowercase snake_case
+    object_text: Mapped[str] = mapped_column(Text, nullable=False)
+    object_entity_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("entities.id", ondelete="SET NULL")
+    )
+    # Provenance (polymorphic, like EntityMention): which source asserted the fact.
+    source_kind: Mapped[str | None] = mapped_column(String(20))
+    source_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    confidence: Mapped[float] = mapped_column(
+        Float, nullable=False, default=1.0, server_default="1.0"
+    )
+    importance: Mapped[float] = mapped_column(
+        Float, nullable=False, default=0.5, server_default="0.5"
+    )
+    valid_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    invalid_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    superseded_by_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("entity_facts.id", ondelete="SET NULL")
+    )
+    content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
 
 
 class Tag(Base, UUIDMixin):

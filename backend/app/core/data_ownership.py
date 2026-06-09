@@ -179,6 +179,12 @@ DATA_OWNERSHIP: tuple[TableOwnershipEntry, ...] = (
     ),
     TableOwnershipEntry("entity_relations", "owned_exportable", "User brain graph relations."),
     TableOwnershipEntry(
+        "entity_facts",
+        "owned_exportable",
+        "Bi-temporal asserted facts about the user's entities.",
+        contains_user_content=True,
+    ),
+    TableOwnershipEntry(
         "entity_mentions",
         "owned_exportable",
         "Entity mentions linked to user content.",
