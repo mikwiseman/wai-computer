@@ -72,6 +72,23 @@ final class DictationDictionaryStore: ObservableObject {
         }
     }
 
+    /// Edit an existing entry. Implemented as delete-then-add so it reuses the
+    /// tested server sync paths (the `add` dedupe is keyed on `word`, so editing
+    /// only the replacement would otherwise be silently rejected). Returns false
+    /// if the new word collides with a *different* existing entry.
+    @discardableResult
+    func update(_ word: DictionaryWord, newWord: String, newReplacement: String?) -> Bool {
+        let trimmed = newWord.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return false }
+        if words.contains(where: { $0.id != word.id && $0.word.lowercased() == trimmed.lowercased() }) {
+            return false
+        }
+        delete(word)
+        let replacement = newReplacement?.trimmingCharacters(in: .whitespacesAndNewlines)
+        add(word: trimmed, replacement: (replacement?.isEmpty == false) ? replacement : nil)
+        return true
+    }
+
     func delete(_ word: DictionaryWord) {
         words.removeAll { $0.id == word.id }
         save()

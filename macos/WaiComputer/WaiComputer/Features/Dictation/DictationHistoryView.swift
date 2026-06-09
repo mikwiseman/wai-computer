@@ -184,6 +184,8 @@ private struct HistoryEntryRow: View {
     let entry: DictationHistoryEntry
     let onDelete: () -> Void
     @State private var isCopied = false
+    @State private var isHovered = false
+    @State private var isExpanded = false
 
     var body: some View {
         HStack(alignment: .top, spacing: Spacing.md) {
@@ -200,8 +202,11 @@ private struct HistoryEntryRow: View {
             Text(entry.displayText)
                 .font(Typography.body)
                 .foregroundStyle(Palette.textPrimary)
-                .lineLimit(4)
+                .textSelection(.enabled)
+                .lineLimit(isExpanded ? nil : 4)
                 .frame(maxWidth: .infinity, alignment: .leading)
+                .help(t("Click to expand", "Нажмите, чтобы развернуть"))
+                .onTapGesture { isExpanded.toggle() }
 
             HStack(spacing: Spacing.sm) {
                 Button {
@@ -226,7 +231,9 @@ private struct HistoryEntryRow: View {
         }
         .padding(.horizontal, Spacing.xl)
         .padding(.vertical, Spacing.md)
+        .background(isHovered ? Palette.surfaceHover : Color.clear)
         .contentShape(Rectangle())
+        .onHover { isHovered = $0 }
     }
 
     private func t(_ english: String, _ russian: String) -> String {

@@ -7,6 +7,7 @@ struct DictationDictionaryView: View {
     @State private var newWord = ""
     @State private var newReplacement = ""
     @State private var searchText = ""
+    @State private var editingWord: DictionaryWord?
 
     /// SuperWhisper warns that very long vocabulary lists confuse the model
     /// and degrade language detection. ~50 entries on the wire is the
@@ -131,7 +132,7 @@ struct DictationDictionaryView: View {
                 TextField(t("Word or phrase...", "Слово или фраза..."), text: $newWord)
                     .textFieldStyle(.roundedBorder)
                     .font(Typography.body)
-                    .onSubmit { addWord() }
+                    .onSubmit { commitWord() }
 
                 Image(systemName: "arrow.right")
                     .font(.caption)
@@ -140,9 +141,14 @@ struct DictationDictionaryView: View {
                 TextField(t("Replace with... (optional)", "Заменять на... (необязательно)"), text: $newReplacement)
                     .textFieldStyle(.roundedBorder)
                     .font(Typography.body)
-                    .onSubmit { addWord() }
+                    .onSubmit { commitWord() }
 
-                Button(t("Add", "Добавить")) { addWord() }
+                if editingWord != nil {
+                    Button(t("Cancel", "Отмена")) { cancelEdit() }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(Palette.textSecondary)
+                }
+                Button(editingWord == nil ? t("Add", "Добавить") : t("Save", "Сохранить")) { commitWord() }
                     .disabled(newWord.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
             HStack(spacing: 6) {
@@ -189,6 +195,13 @@ struct DictationDictionaryView: View {
             .help(t("Remove word", "Удалить слово"))
         }
         .padding(.vertical, Spacing.xs)
+        .contentShape(Rectangle())
+        .contextMenu {
+            Button(t("Edit…", "Изменить…")) { beginEdit(word) }
+            Button(t("Remove word", "Удалить слово"), role: .destructive) {
+                dictionaryStore.delete(word)
+            }
+        }
     }
 
     @ViewBuilder
@@ -221,6 +234,32 @@ struct DictationDictionaryView: View {
         let replacementTrimmed = newReplacement.trimmingCharacters(in: .whitespacesAndNewlines)
         let replacement = replacementTrimmed.isEmpty ? nil : replacementTrimmed
         dictionaryStore.add(word: trimmed, replacement: replacement)
+        newWord = ""
+        newReplacement = ""
+    }
+
+    private func commitWord() {
+        if let editing = editingWord {
+            let replacementTrimmed = newReplacement.trimmingCharacters(in: .whitespacesAndNewlines)
+            let ok = dictionaryStore.update(
+                editing,
+                newWord: newWord,
+                newReplacement: replacementTrimmed.isEmpty ? nil : replacementTrimmed
+            )
+            if ok { cancelEdit() }
+        } else {
+            addWord()
+        }
+    }
+
+    private func beginEdit(_ word: DictionaryWord) {
+        editingWord = word
+        newWord = word.word
+        newReplacement = word.replacement ?? ""
+    }
+
+    private func cancelEdit() {
+        editingWord = nil
         newWord = ""
         newReplacement = ""
     }
