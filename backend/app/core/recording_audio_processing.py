@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.billing.quota import record_recording_transcript_words
 from app.config import get_settings
+from app.core.content import with_title_context
 from app.core.deepgram_usage import (
     effective_billable_seconds,
     provider_error_code,
@@ -1067,7 +1068,7 @@ async def process_staged_recording_upload(
                 continue
             try:
                 segment.embedding = await generate_embedding(
-                    text,
+                    with_title_context(recording.title, text),
                     usage_user_id=user_id,
                     usage_recording_id=recording_id,
                     usage_feature="recording",

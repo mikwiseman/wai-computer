@@ -129,3 +129,17 @@ def chunk_with_header(
 
     prefix = f"{header} › " if header else ""
     return [f"{prefix}{chunk.strip()}" for chunk in raw if chunk.strip()]
+
+
+def with_title_context(title: str | None, text: str) -> str:
+    """Prefix ``text`` with a "title › " context header for embedding.
+
+    Mirrors :func:`chunk_with_header` for the voice/segment path: a short
+    transcript line carries its recording's topic into the vector, so a line like
+    "he agreed to the cheaper option" becomes findable under the recording's
+    subject. Returns ``text`` unchanged when there's no title. Only the EMBEDDED
+    text is wrapped — the displayed transcript stays raw, and the query is never
+    wrapped (the contextual-retrieval asymmetry).
+    """
+    header = (title or "").strip()
+    return f"{header} › {text}" if header else text

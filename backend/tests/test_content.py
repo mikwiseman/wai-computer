@@ -8,6 +8,7 @@ from app.core.content import (
     is_near_duplicate,
     normalize_text,
     simhash64,
+    with_title_context,
 )
 
 
@@ -85,3 +86,11 @@ def test_chunk_long_body_splits_and_prefixes_each() -> None:
 def test_chunk_without_title_has_no_prefix() -> None:
     chunks = chunk_with_header(None, "Body only, no title here.")
     assert chunks == ["Body only, no title here."]
+
+
+def test_with_title_context_wraps_for_embedding() -> None:
+    # Voice/segment path: embed with the recording's topic; raw transcript stays raw.
+    assert with_title_context("Budget meeting", "he agreed") == "Budget meeting › he agreed"
+    assert with_title_context(None, "x") == "x"
+    assert with_title_context("   ", "x") == "x"  # blank title -> no prefix
+    assert with_title_context("  Topic  ", "line") == "Topic › line"  # trimmed
