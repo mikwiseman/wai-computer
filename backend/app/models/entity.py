@@ -185,17 +185,17 @@ class EntityFact(Base, UUIDMixin, TimestampMixin):
 
     __tablename__ = "entity_facts"
     __table_args__ = (
-        UniqueConstraint(
+        # At most ONE *current* fact per (subject, predicate, object); superseded
+        # (invalid) rows are exempt, so a fact can be re-asserted after it was
+        # invalidated. The leading (user_id, subject_entity_id) columns also serve
+        # the load-current-facts-for-a-subject query.
+        Index(
+            "uq_entity_facts_current_triple",
             "user_id",
             "subject_entity_id",
             "predicate",
             "object_text",
-            name="uq_entity_facts_triple",
-        ),
-        Index(
-            "ix_entity_facts_current",
-            "user_id",
-            "subject_entity_id",
+            unique=True,
             postgresql_where=text("invalid_at IS NULL"),
         ),
     )

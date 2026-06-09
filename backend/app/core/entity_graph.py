@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import Any
 
 from sqlalchemy import func, or_, select
@@ -18,9 +19,15 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.entity_reconcile import reconcile_person_entities
+from app.core.fact_pipeline import (
+    CurrentFact,
+    ExtractedFact,
+    decide_fact_actions,
+    normalize_predicate,
+)
 from app.core.mcp_entity_extract import extract_graph
 from app.core.name_moderation import normalise_name
-from app.models.entity import Entity, EntityMention, EntityRelation
+from app.models.entity import Entity, EntityFact, EntityMention, EntityRelation
 from app.models.item import Item, ItemSummary
 from app.models.recording import Recording, Segment, Summary
 
@@ -662,4 +669,87 @@ async def backfill_entity_extraction_for_recordings(
         mentions_recorded=mentions,
         relations_recorded=relations,
         llm_requests=llm_requests,
+    )
+
+
+@dataclass
+class FactReconcileResult:
+    added: int
+    superseded: int
+    noop: int
+    # (new_fact_id, conflicting_existing_id) pairs the caller routes to review.
+    conflicts: list[tuple[str, str]]
+
+
+async def apply_fact_reconcile(
+    db: AsyncSession,
+    user_id: Any,
+    subject_entity_id: Any,
+    facts: list[ExtractedFact],
+    *,
+    source_kind: str | None = None,
+    source_id: Any | None = None,
+    now: datetime | None = None,
+) -> FactReconcileResult:
+    """Reconcile extracted facts for one subject into ``entity_facts`` —
+    supersede, never delete.
+
+    Loads the subject's currently-valid facts, classifies each new fact
+    (NOOP/ADD/SUPERSEDE/CONFLICT via :func:`decide_fact_actions`), writes new rows,
+    and CLOSES superseded windows (sets ``invalid_at`` + ``superseded_by_id``).
+    Returns counts plus the conflicts to route to a review proposal. Pure
+    persistence of the decision — no LLM, no extraction here.
+    """
+    now = now or datetime.now(timezone.utc)
+    current_rows = (
+        await db.execute(
+            select(EntityFact).where(
+                EntityFact.user_id == user_id,
+                EntityFact.subject_entity_id == subject_entity_id,
+                EntityFact.invalid_at.is_(None),
+            )
+        )
+    ).scalars().all()
+    current = [
+        CurrentFact(
+            id=str(row.id),
+            predicate=row.predicate,
+            object_text=row.object_text,
+            content_hash=row.content_hash,
+        )
+        for row in current_rows
+    ]
+    by_id = {str(row.id): row for row in current_rows}
+
+    added = superseded = noop = 0
+    conflicts: list[tuple[str, str]] = []
+    for decision in decide_fact_actions(facts, current):
+        if decision.action == "noop":
+            noop += 1
+            continue
+        new_fact = EntityFact(
+            user_id=user_id,
+            subject_entity_id=subject_entity_id,
+            predicate=normalize_predicate(decision.fact.predicate),
+            object_text=decision.fact.object_text.strip(),
+            source_kind=source_kind,
+            source_id=source_id,
+            confidence=decision.fact.confidence,
+            importance=decision.fact.importance,
+            valid_at=decision.fact.valid_at,
+            content_hash=decision.fact.content_hash,
+        )
+        db.add(new_fact)
+        await db.flush()
+        added += 1
+        if decision.action == "supersede" and decision.supersedes_id in by_id:
+            old = by_id[decision.supersedes_id]
+            old.invalid_at = decision.fact.valid_at or now
+            old.superseded_by_id = new_fact.id
+            superseded += 1
+        elif decision.action == "conflict":
+            conflicts.append((str(new_fact.id), decision.supersedes_id or ""))
+    await db.flush()
+    return FactReconcileResult(
+        added=added, superseded=superseded, noop=noop, conflicts=conflicts
     )

@@ -22,6 +22,7 @@ decisions.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -79,19 +80,30 @@ def _norm(value: str | None) -> str:
     return (value or "").strip().lower()
 
 
+_PREDICATE_RE = re.compile(r"[^a-z0-9]+")
+
+
+def normalize_predicate(predicate: str | None) -> str:
+    """Lowercase snake_case a predicate so 'Works At' / 'works-at' / 'works_at'
+    all collapse to one key (keeps the fact triple stable across phrasings)."""
+    return _PREDICATE_RE.sub("_", (predicate or "").strip().lower()).strip("_")
+
+
 def decide_fact_actions(
     new_facts: list[ExtractedFact], current_facts: list[CurrentFact]
 ) -> list[FactDecision]:
     """Pure reconciliation: classify each new fact against the current ones."""
     seen_hashes = {f.content_hash for f in current_facts}
-    by_pred_obj = {(_norm(f.predicate), _norm(f.object_text)): f for f in current_facts}
+    by_pred_obj = {
+        (normalize_predicate(f.predicate), _norm(f.object_text)): f for f in current_facts
+    }
     by_pred: dict[str, list[CurrentFact]] = {}
     for f in current_facts:
-        by_pred.setdefault(_norm(f.predicate), []).append(f)
+        by_pred.setdefault(normalize_predicate(f.predicate), []).append(f)
 
     decisions: list[FactDecision] = []
     for nf in new_facts:
-        pred, obj = _norm(nf.predicate), _norm(nf.object_text)
+        pred, obj = normalize_predicate(nf.predicate), _norm(nf.object_text)
 
         if nf.content_hash in seen_hashes or (pred, obj) in by_pred_obj:
             decisions.append(FactDecision("noop", nf))

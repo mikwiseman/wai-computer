@@ -57,25 +57,23 @@ def upgrade() -> None:
             sa.ForeignKey("entity_facts.id", ondelete="SET NULL"), nullable=True,
         ),
         sa.Column("content_hash", sa.String(length=64), nullable=False),
-        sa.UniqueConstraint(
-            "user_id", "subject_entity_id", "predicate", "object_text",
-            name="uq_entity_facts_triple",
-        ),
     )
     op.create_index("ix_entity_facts_user_id", "entity_facts", ["user_id"])
     op.create_index(
         "ix_entity_facts_subject_entity_id", "entity_facts", ["subject_entity_id"]
     )
+    # One CURRENT fact per (subject, predicate, object); superseded rows exempt.
     op.create_index(
-        "ix_entity_facts_current",
+        "uq_entity_facts_current_triple",
         "entity_facts",
-        ["user_id", "subject_entity_id"],
+        ["user_id", "subject_entity_id", "predicate", "object_text"],
+        unique=True,
         postgresql_where=sa.text("invalid_at IS NULL"),
     )
 
 
 def downgrade() -> None:
-    op.drop_index("ix_entity_facts_current", table_name="entity_facts")
+    op.drop_index("uq_entity_facts_current_triple", table_name="entity_facts")
     op.drop_index("ix_entity_facts_subject_entity_id", table_name="entity_facts")
     op.drop_index("ix_entity_facts_user_id", table_name="entity_facts")
     op.drop_table("entity_facts")

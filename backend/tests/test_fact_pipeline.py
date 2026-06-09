@@ -3,7 +3,9 @@
 from uuid import uuid4
 
 import pytest
+from sqlalchemy import select
 
+from app.core.entity_graph import apply_fact_reconcile
 from app.core.fact_pipeline import CurrentFact, ExtractedFact, decide_fact_actions
 from app.models.entity import Entity, EntityFact
 from app.models.user import User
@@ -65,3 +67,88 @@ async def test_entity_fact_persists_current_by_default(db_session) -> None:
     await db_session.flush()
     assert fact.id is not None
     assert fact.invalid_at is None  # CURRENT iff invalid_at IS NULL
+
+
+async def _user_and_entity(db):
+    user = User(email=f"af-{uuid4().hex}@example.com", password_hash="x")
+    db.add(user)
+    await db.flush()
+    entity = Entity(user_id=user.id, type="person", name="Pavel")
+    db.add(entity)
+    await db.flush()
+    return user, entity
+
+
+def _xf(pred: str, obj: str, **kw) -> ExtractedFact:
+    return ExtractedFact(predicate=pred, object_text=obj, content_hash=f"{pred}|{obj}", **kw)
+
+
+async def _current(db, user_id, subject_id) -> list[EntityFact]:
+    return list(
+        (
+            await db.execute(
+                select(EntityFact).where(
+                    EntityFact.user_id == user_id,
+                    EntityFact.subject_entity_id == subject_id,
+                    EntityFact.invalid_at.is_(None),
+                )
+            )
+        ).scalars().all()
+    )
+
+
+@pytest.mark.asyncio
+async def test_apply_add_then_supersede_preserves_history(db_session) -> None:
+    user, entity = await _user_and_entity(db_session)
+    r1 = await apply_fact_reconcile(db_session, user.id, entity.id, [_xf("works_at", "Acme")])
+    assert r1.added == 1
+
+    r2 = await apply_fact_reconcile(db_session, user.id, entity.id, [_xf("works_at", "Globex")])
+    assert r2.added == 1 and r2.superseded == 1
+
+    cur = await _current(db_session, user.id, entity.id)
+    assert {c.object_text for c in cur} == {"Globex"}  # only the current value
+    allrows = (
+        await db_session.execute(
+            select(EntityFact).where(EntityFact.subject_entity_id == entity.id)
+        )
+    ).scalars().all()
+    assert len(allrows) == 2  # nothing deleted
+    acme = next(r for r in allrows if r.object_text == "Acme")
+    assert acme.invalid_at is not None and acme.superseded_by_id is not None
+
+
+@pytest.mark.asyncio
+async def test_apply_can_reassert_a_superseded_fact(db_session) -> None:
+    user, entity = await _user_and_entity(db_session)
+    await apply_fact_reconcile(db_session, user.id, entity.id, [_xf("works_at", "Acme")])
+    await apply_fact_reconcile(db_session, user.id, entity.id, [_xf("works_at", "Globex")])
+    # Re-asserting Acme is allowed (partial unique only blocks a CURRENT duplicate).
+    r = await apply_fact_reconcile(db_session, user.id, entity.id, [_xf("works_at", "Acme")])
+    assert r.added == 1 and r.superseded == 1
+    assert {c.object_text for c in await _current(db_session, user.id, entity.id)} == {"Acme"}
+
+
+@pytest.mark.asyncio
+async def test_apply_noop_on_existing_current_fact(db_session) -> None:
+    user, entity = await _user_and_entity(db_session)
+    await apply_fact_reconcile(db_session, user.id, entity.id, [_xf("knows", "Alice")])
+    r = await apply_fact_reconcile(db_session, user.id, entity.id, [_xf("knows", "Alice")])
+    assert r.noop == 1 and r.added == 0
+
+
+@pytest.mark.asyncio
+async def test_apply_conflict_when_multiple_current_single_valued(db_session) -> None:
+    user, entity = await _user_and_entity(db_session)
+    # Seed an inconsistent state: two CURRENT single-valued facts (allowed — the
+    # partial unique index is per-object, not per-predicate).
+    for obj, h in [("Acme", "a"), ("Globex", "b")]:
+        db_session.add(
+            EntityFact(
+                user_id=user.id, subject_entity_id=entity.id,
+                predicate="works_at", object_text=obj, content_hash=h,
+            )
+        )
+    await db_session.flush()
+    r = await apply_fact_reconcile(db_session, user.id, entity.id, [_xf("works_at", "Initech")])
+    assert r.added == 1 and r.superseded == 0 and len(r.conflicts) == 1
