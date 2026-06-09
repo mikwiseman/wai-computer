@@ -83,6 +83,9 @@ public struct DictionaryWordDTO: Codable, Sendable, Identifiable {
     public let clientWordID: UUID
     public let word: String
     public let replacement: String?
+    /// How the entry was created: "manual" or "learned" (auto-suggested from
+    /// repeated edits, then accepted). Defaults to "manual" for older rows.
+    public let origin: String
     public let occurredAt: Date
 
     public var id: UUID { clientWordID }
@@ -91,18 +94,30 @@ public struct DictionaryWordDTO: Codable, Sendable, Identifiable {
         clientWordID: UUID,
         word: String,
         replacement: String?,
+        origin: String = "manual",
         occurredAt: Date
     ) {
         self.clientWordID = clientWordID
         self.word = word
         self.replacement = replacement
+        self.origin = origin
         self.occurredAt = occurredAt
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        clientWordID = try c.decode(UUID.self, forKey: .clientWordID)
+        word = try c.decode(String.self, forKey: .word)
+        replacement = try c.decodeIfPresent(String.self, forKey: .replacement)
+        origin = try c.decodeIfPresent(String.self, forKey: .origin) ?? "manual"
+        occurredAt = try c.decode(Date.self, forKey: .occurredAt)
     }
 
     private enum CodingKeys: String, CodingKey {
         case clientWordID = "client_word_id"
         case word
         case replacement
+        case origin
         case occurredAt = "occurred_at"
     }
 }
@@ -111,17 +126,20 @@ public struct CreateDictionaryWordRequest: Codable, Sendable {
     public let clientWordID: UUID
     public let word: String
     public let replacement: String?
+    public let origin: String
     public let occurredAt: String
 
     public init(
         clientWordID: UUID,
         word: String,
         replacement: String?,
+        origin: String = "manual",
         occurredAt: String
     ) {
         self.clientWordID = clientWordID
         self.word = word
         self.replacement = replacement
+        self.origin = origin
         self.occurredAt = occurredAt
     }
 
@@ -129,6 +147,7 @@ public struct CreateDictionaryWordRequest: Codable, Sendable {
         case clientWordID = "client_word_id"
         case word
         case replacement
+        case origin
         case occurredAt = "occurred_at"
     }
 }
