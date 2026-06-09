@@ -56,6 +56,11 @@ class User(Base, UUIDMixin, TimestampMixin):
     )
     magic_link_token: Mapped[str | None] = mapped_column(String(255), nullable=True)
     magic_link_expires: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Brain feed watermark — when the user last opened the Brain (P0b "since you
+    # last looked").
+    brain_last_seen_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     default_language: Mapped[str] = mapped_column(
         String(10), default="multi", server_default="multi"
     )

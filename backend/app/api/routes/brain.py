@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 from uuid import UUID
 
@@ -13,6 +13,7 @@ from pydantic import BaseModel, Field
 from app.api.deps import CurrentUser, Database
 from app.core.brain import compile_brain
 from app.core.brain_ask import ask_brain
+from app.core.brain_feed import count_new_since_last_seen, get_brain_feed
 from app.core.brain_graph import build_brain_graph
 from app.core.brain_maps import (
     BrainMapError,
@@ -113,6 +114,69 @@ class BrainSyncResponse(BaseModel):
     conversations_scanned: int
     conversations_linked: int
     llm_requests: int
+
+
+class FeedCardResponse(BaseModel):
+    id: str
+    source_kind: str
+    source_id: str
+    title: str
+    summary: str
+    source_time: str | None
+    is_new: bool
+
+
+class BrainFeedResponse(BaseModel):
+    cards: list[FeedCardResponse]
+    next_cursor: str | None
+
+
+class SinceLastSeenResponse(BaseModel):
+    new_count: int
+    last_seen: str | None
+
+
+class SeenResponse(BaseModel):
+    seen_at: str
+
+
+@router.get("/feed", response_model=BrainFeedResponse)
+async def get_brain_feed_route(
+    user: CurrentUser,
+    db: Database,
+    cursor: str | None = Query(default=None),
+    limit: int = Query(default=24, ge=1, le=100),
+) -> BrainFeedResponse:
+    """Calm home feed: recency-ordered source cards with two-line stored summaries
+    (zero LLM). Cursor-paginated; ``is_new`` flags sources newer than the watermark."""
+    feed = await get_brain_feed(
+        db, user.id, limit=limit, cursor=cursor, last_seen=user.brain_last_seen_at
+    )
+    return BrainFeedResponse(
+        cards=[FeedCardResponse(**asdict(card)) for card in feed.cards],
+        next_cursor=feed.next_cursor,
+    )
+
+
+@router.get("/since-last-seen", response_model=SinceLastSeenResponse)
+async def brain_since_last_seen_route(
+    user: CurrentUser, db: Database
+) -> SinceLastSeenResponse:
+    """How many sources are new since the user last opened the Brain."""
+    new_count = await count_new_since_last_seen(db, user.id, last_seen=user.brain_last_seen_at)
+    return SinceLastSeenResponse(
+        new_count=new_count,
+        last_seen=user.brain_last_seen_at.isoformat() if user.brain_last_seen_at else None,
+    )
+
+
+@router.post("/seen", response_model=SeenResponse)
+async def mark_brain_seen_route(user: CurrentUser, db: Database) -> SeenResponse:
+    """Stamp the Brain-seen watermark to now (called when the user opens the Brain)."""
+    now = datetime.now(timezone.utc)
+    user.brain_last_seen_at = now
+    await db.flush()
+    return SeenResponse(seen_at=now.isoformat())
 
 
 @router.post("/sync", response_model=BrainSyncResponse)
