@@ -171,10 +171,12 @@ async def test_mcp_oauth_consent_and_token_exchange(
     # All tools are advertised regardless of scope; `remember`'s write is gated
     # at call time, not at listing time (this connection holds only mcp:read).
     assert tool_names == {
+        "wake_up",
         "ask",
         "search",
         "fetch",
         "remember",
+        "forget",
         "list_folders",
         "list_recordings",
         "list_action_items",

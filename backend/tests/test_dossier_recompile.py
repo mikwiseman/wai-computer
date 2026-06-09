@@ -19,7 +19,16 @@ async def _user(db) -> User:
     return user
 
 
-async def test_record_mention_marks_entity_dossier_dirty(db_session) -> None:
+def _enable_recompile(monkeypatch) -> None:
+    from app.core import entity_graph as eg
+
+    monkeypatch.setattr(
+        eg, "get_settings", lambda: type("S", (), {"brain_dossier_recompile_enabled": True})()
+    )
+
+
+async def test_record_mention_marks_entity_dossier_dirty(db_session, monkeypatch) -> None:
+    _enable_recompile(monkeypatch)
     user = await _user(db_session)
     entity = await upsert_entity(db_session, user.id, type="person", name="Pavel")
     await record_mention(
@@ -29,7 +38,8 @@ async def test_record_mention_marks_entity_dossier_dirty(db_session) -> None:
     assert entity.dossier_dirty is True
 
 
-async def test_record_relation_marks_both_entities_dirty(db_session) -> None:
+async def test_record_relation_marks_both_entities_dirty(db_session, monkeypatch) -> None:
+    _enable_recompile(monkeypatch)
     user = await _user(db_session)
     alice = await upsert_entity(db_session, user.id, type="person", name="Alice")
     apollo = await upsert_entity(db_session, user.id, type="project", name="Apollo")

@@ -18,6 +18,7 @@ from sqlalchemy import func, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import get_settings
 from app.core.entity_reconcile import reconcile_person_entities
 from app.core.fact_pipeline import (
     CurrentFact,
@@ -258,7 +259,14 @@ async def record_relation(
 
 async def _mark_dossier_dirty(db: AsyncSession, *entity_ids: Any) -> None:
     """Flip touched entities' dossiers dirty so the bounded sweep (P3) refreshes
-    them. Cheap UPDATE, no LLM; called only when a NEW mention/relation lands."""
+    them. Cheap UPDATE, no LLM; called only when a NEW mention/relation lands.
+
+    Gated by the recompile flag so the zero-LLM bulk-sync path stays write-cheap
+    when the feature is off — entity pages still compile on-demand when viewed
+    (``ensure_entity_page``), so nothing goes stale; the sweep is just proactive.
+    """
+    if not get_settings().brain_dossier_recompile_enabled:
+        return
     ids = [eid for eid in entity_ids if eid is not None]
     if not ids:
         return

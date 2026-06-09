@@ -223,10 +223,12 @@ async def test_api_key_works_on_mcp_endpoint(
     assert response.status_code == 200, response.text
     tool_names = {tool["name"] for tool in response.json()["result"]["tools"]}
     assert tool_names == {
+        "wake_up",
         "ask",
         "search",
         "fetch",
         "remember",
+        "forget",
         "list_folders",
         "list_recordings",
         "list_action_items",
