@@ -784,6 +784,7 @@ async def import_media_as_recording(
             recording = Recording(
                 user_id=user.id,
                 title=title,
+                title_auto_generated=not explicit_title,
                 type="note",
                 status=RecordingStatus.PROCESSING.value,
                 uploaded_at=now,
@@ -794,6 +795,7 @@ async def import_media_as_recording(
         else:
             if title is not None:
                 recording.title = title
+                recording.title_auto_generated = not explicit_title
             recording.status = RecordingStatus.PROCESSING.value
             recording.uploaded_at = now
             recording.language = _resolve_language(user, language)

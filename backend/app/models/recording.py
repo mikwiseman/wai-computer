@@ -77,6 +77,15 @@ class Recording(Base, UUIDMixin, TimestampMixin):
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
     )
     title: Mapped[str | None] = mapped_column(String(500))
+    # True while the title is auto-generated (provisional or summary-derived); a
+    # user rename flips it False so the authoritative summary title never clobbers
+    # a manual one. See apply_summary_result + update_recording.
+    title_auto_generated: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=True,
+        server_default=text("true"),
+    )
     type: Mapped[str] = mapped_column(String(50), nullable=False)  # meeting, note, reflection
     audio_url: Mapped[str | None] = mapped_column(String(1000))
     status: Mapped[str] = mapped_column(

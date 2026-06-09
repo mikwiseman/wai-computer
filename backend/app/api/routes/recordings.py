@@ -1474,6 +1474,9 @@ async def create_recording(
     recording = Recording(
         user_id=user.id,
         title=request.title,
+        # A user-provided title is theirs to keep; an empty one will be
+        # auto-generated and may be replaced by the summary title.
+        title_auto_generated=not bool(request.title and request.title.strip()),
         type=request.type,
         language=language,
         folder_id=folder.id if folder else None,
@@ -2105,6 +2108,8 @@ async def update_recording(
 
     if request.title is not None:
         recording.title = request.title
+        # A manual rename is authoritative — never let a later summary overwrite it.
+        recording.title_auto_generated = False
     if request.type is not None:
         recording.type = request.type
     if "folder_id" in request.model_fields_set:

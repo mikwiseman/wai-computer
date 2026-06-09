@@ -374,10 +374,14 @@ async def _handle_media_upload(
         staged.unlink(missing_ok=True)
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Empty file.")
 
-    display_title = clean_title(title) or title_from_filename(filename)
+    user_title = clean_title(title)
+    display_title = user_title or title_from_filename(filename)
     recording = Recording(
         user_id=user.id,
         title=display_title,
+        # A filename-derived title is a placeholder the summary may improve; a
+        # real user-provided title is authoritative and kept.
+        title_auto_generated=not bool(user_title),
         type="note",
         status=RecordingStatus.PROCESSING.value,
         uploaded_at=datetime.now(timezone.utc),

@@ -117,6 +117,11 @@ Rules:
 - Keep descriptions specific: include names, dates, numbers, and quoted phrases
   when the transcript provides them.
 - Identify speakers when possible; leave the speaker null when it is unclear.
+- For people_mentioned, list each distinct person exactly once, using their
+  canonical name in the nominative case (именительный падеж). Merge grammatical
+  cases, short forms, and diminutives of the SAME person into one entry
+  (e.g. «Коля»/«Колей» -> «Коля»; «Лёша»/«Лёш»/«Леша» -> «Лёша»). Prefer the
+  fullest proper form actually used. Never list the same person twice.
 - For action_items, set `owner` to the person responsible when the transcript
   makes it clear (a named speaker who is assigned or commits to the task);
   otherwise leave owner null. Never guess an owner.
@@ -455,6 +460,10 @@ Rules:
 - Hard caps: key_points <= 15, decisions <= 20, action_items <= 30, topics <=
   20, people_mentioned <= 30, follow_up_questions <= 10, highlights <= 10.
 - Keep descriptions specific: names, dates, numbers, quoted phrases.
+- For people_mentioned, list each distinct person once, using their canonical
+  name in the nominative case; merge grammatical cases, short forms, and
+  diminutives of the same person (e.g. «Коля»/«Колей» -> «Коля»). Never list the
+  same person twice.
 - The top-level title and each highlight title MUST be plain text: no markdown,
   no surrounding quotes.
 - action_items: only extract genuine tasks/next-steps the content implies for
@@ -683,6 +692,30 @@ def resolve_key_moment_timestamps(
     return moments
 
 
+TITLE_SAMPLE_MAX_CHARS = 6000
+
+
+def _title_sample(transcript: str, *, max_chars: int = TITLE_SAMPLE_MAX_CHARS) -> str:
+    """Representative excerpt for title generation.
+
+    Titling on only the opening of a recording lets greetings / small-talk
+    dominate (a 42-min gamification interview was titled after its opening
+    weather chit-chat). For long transcripts we stitch head + middle + tail so
+    the main subject is visible wherever it sits; shorter ones are used whole.
+    """
+    text = transcript.strip()
+    if len(text) <= max_chars:
+        return text
+    head_len = max_chars * 5 // 12
+    mid_len = max_chars * 4 // 12
+    tail_len = max_chars - head_len - mid_len
+    mid_start = (len(text) - mid_len) // 2
+    head = text[:head_len]
+    middle = text[mid_start : mid_start + mid_len]
+    tail = text[len(text) - tail_len :]
+    return f"{head}\n[...]\n{middle}\n[...]\n{tail}"
+
+
 async def generate_title(
     transcript: str,
     *,
@@ -692,7 +725,7 @@ async def generate_title(
     add_sentry_breadcrumb(category="summarizer", message="Generating title")
     _require_cerebras_key()
 
-    snippet = transcript[:500]
+    snippet = _title_sample(transcript)
     language_instruction = (
         f"Write the title in {language}."
         if language and language not in {DEFAULT_SUMMARY_LANGUAGE, "multi"}
@@ -714,10 +747,14 @@ async def generate_title(
                 {
                     "role": "user",
                     "content": (
-                        "Generate a short title (3-7 words) for this audio recording "
-                        "based on its transcript. Return ONLY the plain title text — "
-                        "no markdown formatting (no **bold**, no *italics*, no "
-                        "asterisks, no quotes, no #), nothing else. "
+                        "Generate a short title (3-7 words) for this audio recording. "
+                        "Base it on the MAIN subject or purpose of the recording. "
+                        "Ignore opening greetings and small talk (weather, travel, "
+                        "health, logistics, scheduling) and closing remarks — they are "
+                        "not what the recording is about. The transcript below may be "
+                        "excerpts taken from across the recording. Return ONLY the plain "
+                        "title text — no markdown formatting (no **bold**, no *italics*, "
+                        "no asterisks, no quotes, no #), nothing else. "
                         f"{language_instruction}\n\nTranscript:\n{snippet}"
                     ),
                 },
@@ -779,7 +816,10 @@ def resolve_highlight_timestamps(
 
 ENTITY_EXTRACTION_PROMPT = """\
 Extract entities from this transcript. Focus on:
-- People mentioned by name
+- People mentioned by name. Use each person's canonical name in the nominative
+  case (именительный падеж), once. Merge grammatical cases, short forms, and
+  diminutives of the same person (e.g. «Коля»/«Колей» -> «Коля»; «Лёша»/«Лёш» ->
+  «Лёша»). Never emit the same person as two entities.
 - Projects or products discussed
 - Topics and themes
 - Organizations or companies

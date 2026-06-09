@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.summarizer import SummaryResult
 from app.core.summary_generation import (
+    apply_summary_result,
     build_summary_transcript,
     fail_summary_generation_job,
     latest_summary_generation_job,
@@ -302,6 +303,45 @@ async def test_apply_and_persist_summary_result_replaces_generated_outputs(
     ).scalars().all()
     assert len(mentions) == 2
     assert all(m.source_kind == "recording" for m in mentions)
+
+
+@pytest.mark.asyncio
+async def test_apply_summary_result_overrides_auto_title(db_session: AsyncSession) -> None:
+    """An auto-generated (or empty) title is replaced by the authoritative
+    full-transcript summary title."""
+    user = await _user(db_session)
+    recording = await _recording(db_session, user)  # title=None, flag defaults True
+    # apply_summary_result reads these relationships synchronously — eager-load
+    # them so the call doesn't lazy-load under the async session.
+    await db_session.refresh(recording, ["summary", "segments", "action_items", "highlights"])
+    assert recording.title is None
+    assert recording.title_auto_generated is True
+
+    await apply_summary_result(
+        db_session, recording=recording, summary_result=_summary_result()
+    )
+
+    assert recording.title == "Generated title"
+    # Still system-owned — a future, better summary may refine it again.
+    assert recording.title_auto_generated is True
+
+
+@pytest.mark.asyncio
+async def test_apply_summary_result_keeps_user_renamed_title(db_session: AsyncSession) -> None:
+    """A manually renamed title (title_auto_generated=False) is never clobbered."""
+    user = await _user(db_session)
+    recording = await _recording(db_session, user)
+    recording.title = "Интервью о геймификации"
+    recording.title_auto_generated = False
+    await db_session.flush()
+    await db_session.refresh(recording, ["summary", "segments", "action_items", "highlights"])
+
+    await apply_summary_result(
+        db_session, recording=recording, summary_result=_summary_result()
+    )
+
+    assert recording.title == "Интервью о геймификации"
+    assert recording.title_auto_generated is False
 
 
 @pytest.mark.asyncio

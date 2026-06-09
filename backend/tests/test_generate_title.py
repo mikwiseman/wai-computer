@@ -53,13 +53,17 @@ async def test_generate_title_returns_whitespace_stripped_text():
 
 
 @pytest.mark.asyncio
-async def test_generate_title_uses_first_500_chars():
-    """Should use only the first 500 characters of transcript."""
-    long_transcript = "x" * 1000
+async def test_generate_title_samples_across_long_transcript():
+    """Long transcripts are sampled across head + middle + tail (not just the
+    opening), and the prompt steers the model away from small-talk — so a topic
+    that surfaces late isn't lost to the recording's opening chit-chat."""
+    filler = "обсуждаем разные мелочи "  # neutral small-talk-ish padding
+    long_transcript = "СТАРТ_МЕТКА " + filler * 600 + "ХВОСТ_МЕТКА"
+    assert len(long_transcript) > 6000  # well past the sampling cap
 
     mock_client = MagicMock()
     mock_client.chat.completions.create = AsyncMock(
-        return_value=_make_response("Short Title")
+        return_value=_make_response("Тема записи")
     )
 
     with (
@@ -72,8 +76,45 @@ async def test_generate_title_uses_first_500_chars():
         await generate_title(long_transcript)
 
         content = mock_client.chat.completions.create.await_args.kwargs["messages"][1]["content"]
-        assert long_transcript[:500] in content
-        assert long_transcript[:501] not in content
+        # The tail reached the model — impossible under the old transcript[:500].
+        assert "ХВОСТ_МЕТКА" in content
+        assert "СТАРТ_МЕТКА" in content
+        # And the prompt tells the model to title by subject, not opening small-talk.
+        assert "MAIN subject" in content
+        assert "small talk" in content
+
+
+def test_title_sample_uses_whole_text_when_short():
+    """Short transcripts are passed through untouched."""
+    from app.core.summarizer import _title_sample
+
+    text = "Короткая запись про геймификацию."
+    assert _title_sample(text) == text
+
+
+def test_title_sample_spans_head_middle_tail_for_long_text():
+    """A long transcript yields a bounded head+middle+tail excerpt, not the head alone."""
+    from app.core.summarizer import TITLE_SAMPLE_MAX_CHARS, _title_sample
+
+    side = "блаблабла " * 1000  # 10k chars per side
+    text = "НАЧАЛО_ТЕМА " + side + " СЕРЕДИНА_ТЕМА " + side + " КОНЕЦ_ТЕМА"
+    assert len(text) > TITLE_SAMPLE_MAX_CHARS
+
+    sample = _title_sample(text)
+    assert "НАЧАЛО_ТЕМА" in sample
+    assert "СЕРЕДИНА_ТЕМА" in sample
+    assert "КОНЕЦ_ТЕМА" in sample
+    assert "[...]" in sample  # head/middle/tail joined by an elision marker
+    assert len(sample) < len(text)  # we did NOT send the whole transcript
+
+
+def test_summary_prompt_requires_canonical_deduplicated_people():
+    """The summary prompt must instruct one canonical, nominative entry per person
+    so Russian case-forms/diminutives (Коля/Колей, Лёша/Лёш) don't duplicate."""
+    prompt = build_summary_prompt(language="auto")
+    assert "people_mentioned" in prompt
+    assert "nominative case" in prompt
+    assert "Never list the same person twice" in prompt
 
 
 @pytest.mark.asyncio

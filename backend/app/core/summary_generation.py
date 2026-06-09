@@ -209,7 +209,10 @@ async def apply_summary_result(
         db.add(summary)
         recording.summary = summary
 
-    if not recording.title:
+    # The full-transcript summary title is the authoritative one — it replaces the
+    # provisional title from generate_title (which sees only an excerpt). A user
+    # rename sets title_auto_generated=False, so manual titles are never clobbered.
+    if recording.title_auto_generated:
         recording.title = summary_result.title
 
     await db.execute(
