@@ -90,7 +90,7 @@ async def unified_search_route(
         message="Unified search",
         data={**safe_query_metadata(q), "limit": limit},
     )
-    hits = await unified_search(db, user.id, q, limit=limit)
+    hits = await unified_search(db, user.id, q, limit=limit, per_parent_limit=1)
     latency_ms = round((perf_counter() - started_at) * 1000)
     if latency_ms >= SEARCH_SLOW_THRESHOLD_MS:
         capture_sentry_anomaly(

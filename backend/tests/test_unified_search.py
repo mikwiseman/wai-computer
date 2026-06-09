@@ -110,3 +110,52 @@ async def test_unified_search_route(client, auth_headers, db_session) -> None:
     data = resp.json()
     assert data["total"] >= 1
     assert any(r["source_kind"] == "item" for r in data["results"])
+
+
+async def _add_segment(db, rec, *, content, start_ms) -> None:
+    db.add(
+        Segment(
+            recording_id=rec.id,
+            content=content,
+            start_ms=start_ms,
+            end_ms=start_ms + 1000,
+            embedding=[0.02] * 1536,
+        )
+    )
+    await db.flush()
+
+
+async def test_unified_search_max_pool_collapses_per_parent(db_session) -> None:
+    """per_parent_limit=1 keeps one chunk per source so a long recording with
+    many matching segments can't bury a short note; the legacy default (None)
+    keeps every chunk."""
+    from app.core.unified_search import unified_search
+
+    user = await _make_user(db_session)
+    rec = await _make_recording_with_segment(
+        db_session, user, title="Long Budget Meeting", content="the quarterly budget intro"
+    )
+    await _add_segment(db_session, rec, content="more quarterly budget discussion", start_ms=2000)
+    await _add_segment(db_session, rec, content="final quarterly budget decisions", start_ms=4000)
+    await ingest_item(
+        db_session, user.id, source="paste", kind="note", title="Budget Note",
+        body="a short note about the quarterly budget", embedder=_embedder,
+    )
+
+    with patch("app.core.unified_search.generate_embedding", return_value=[0.02] * 1536):
+        deduped = await unified_search(
+            db_session, user.id, "quarterly budget", limit=10, per_parent_limit=1
+        )
+        legacy = await unified_search(db_session, user.id, "quarterly budget", limit=10)
+
+    # Max-pool: at most one hit per (source_kind, parent_id).
+    seen = [(h.source_kind, h.parent_id) for h in deduped]
+    assert len(seen) == len(set(seen)), f"duplicate parents leaked: {seen}"
+    # The long recording must not crowd out the short note.
+    assert any(h.source_kind == "item" for h in deduped)
+    assert any(h.source_kind == "recording" and h.parent_id == str(rec.id) for h in deduped)
+    # Legacy path (no per_parent_limit) keeps multiple chunks of the same recording.
+    rec_chunks_legacy = [
+        h for h in legacy if h.source_kind == "recording" and h.parent_id == str(rec.id)
+    ]
+    assert len(rec_chunks_legacy) >= 2, "legacy path should keep multiple chunks per parent"

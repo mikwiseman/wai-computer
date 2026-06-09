@@ -107,7 +107,7 @@ async def search_brain_for_mcp(
         return {"results": []}
     _validate_limit(limit, settings.mcp_max_search_results)
 
-    hits = await unified_search(db, _as_uuid(user_id), query, limit=limit)
+    hits = await unified_search(db, _as_uuid(user_id), query, limit=limit, per_parent_limit=1)
     return {
         "results": [
             {

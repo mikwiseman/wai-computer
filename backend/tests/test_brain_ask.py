@@ -134,7 +134,7 @@ async def test_ask_brain_uses_wider_pool_and_prefers_distinct_sources(
     item_id = uuid4()
     calls: list[int] = []
 
-    async def fake_unified_search(_db, _user_id, _question, *, limit):
+    async def fake_unified_search(_db, _user_id, _question, *, limit, per_parent_limit=None):
         calls.append(limit)
         return [
             _hit(
@@ -191,7 +191,7 @@ async def test_source_scope_answers_only_from_selected_source(
     other_id = uuid4()
     scoped_calls: list[set[tuple[str, str]]] = []
 
-    async def fake_unified_search(_db, _user_id, _question, *, limit):
+    async def fake_unified_search(_db, _user_id, _question, *, limit, per_parent_limit=None):
         return [
             _hit(
                 parent_id=other_id,

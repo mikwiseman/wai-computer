@@ -158,12 +158,31 @@ _UNIFIED_SQL = text(
         SELECT * FROM item_combined
         UNION ALL
         SELECT * FROM chat_combined
+    ),
+    scored AS (
+        SELECT chunk_id, parent_id, content, title, kind, created_at, start_ms, end_ms, source_kind,
+               rrf * (1.0 + :rw * exp(
+                   -GREATEST(EXTRACT(EPOCH FROM (now() - created_at)), 0)
+                   / (:halflife * 86400.0))) AS score
+        FROM unioned
+    ),
+    -- Per-page max-pool (gbrain RETRIEVAL_MAXPOOL): keep only the best
+    -- ``:per_parent`` chunk(s) per (source_kind, parent_id) so one long recording
+    -- with many mediocre chunks can't occupy multiple top-K slots and bury a
+    -- short note. A NULL ``:per_parent`` keeps every chunk (byte-identical to the
+    -- pre-max-pool behaviour); search surfaces pass 1, Ask passes 2.
+    ranked AS (
+        SELECT *,
+               ROW_NUMBER() OVER (
+                   PARTITION BY source_kind, parent_id ORDER BY score DESC, chunk_id
+               ) AS parent_rank
+        FROM scored
     )
-    SELECT chunk_id, parent_id, content, title, kind, created_at, start_ms, end_ms, source_kind,
-           rrf * (1.0 + :rw * exp(
-               -GREATEST(EXTRACT(EPOCH FROM (now() - created_at)), 0)
-               / (:halflife * 86400.0))) AS score
-    FROM unioned
+    SELECT chunk_id, parent_id, content, title, kind, created_at,
+           start_ms, end_ms, source_kind, score
+    FROM ranked
+    WHERE CAST(:per_parent AS integer) IS NULL
+       OR parent_rank <= CAST(:per_parent AS integer)
     ORDER BY score DESC
     LIMIT :limit
     """
@@ -176,8 +195,15 @@ async def unified_search(
     query: str,
     *,
     limit: int = 20,
+    per_parent_limit: int | None = None,
 ) -> list[UnifiedHit]:
-    """RRF search over recordings + items, recency-boosted. Empty query -> []."""
+    """RRF search over recordings + items + chats, recency-boosted. Empty query -> [].
+
+    ``per_parent_limit`` applies a per-page max-pool: at most that many chunks per
+    (source_kind, parent_id) survive, keeping each source's strongest chunk(s) so a
+    long recording can't crowd out short notes. ``None`` (default) keeps every
+    chunk (legacy behaviour); search surfaces pass 1, Ask passes 2.
+    """
     if not query.strip():
         return []
     embedding = format_embedding(await generate_embedding(query))
@@ -194,6 +220,7 @@ async def unified_search(
                 "limit": limit,
                 "rw": RECENCY_WEIGHT,
                 "halflife": RECENCY_HALF_LIFE_DAYS,
+                "per_parent": per_parent_limit,
             },
         )
     ).fetchall()

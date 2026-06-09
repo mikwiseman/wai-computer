@@ -175,14 +175,18 @@ async def _search_hits(
 ) -> list[UnifiedHit | Any]:
     search_pool_limit = max(limit, limit * ASK_SEARCH_POOL_MULTIPLIER)
     if source_scope is None:
-        raw_hits = await unified_search(db, user_id, question, limit=search_pool_limit)
+        raw_hits = await unified_search(
+            db, user_id, question, limit=search_pool_limit, per_parent_limit=2
+        )
         return _diverse_hits(raw_hits, limit)
 
     allowed = _allowed_scoped_sources(source_scope)
     if not allowed:
         return []
 
-    raw_hits = await unified_search(db, user_id, question, limit=search_pool_limit)
+    raw_hits = await unified_search(
+        db, user_id, question, limit=search_pool_limit, per_parent_limit=2
+    )
     scoped_hits = await _scoped_source_hits(db, user_id, allowed)
     filtered = [hit for hit in raw_hits if (hit.source_kind, hit.parent_id) in allowed]
     seen_sources = {(hit.source_kind, hit.parent_id) for hit in filtered}
