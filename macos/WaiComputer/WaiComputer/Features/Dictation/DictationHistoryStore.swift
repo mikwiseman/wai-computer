@@ -70,6 +70,29 @@ final class DictationHistoryStore: ObservableObject {
         }
     }
 
+    /// Apply a user's correction to a past dictation. Updates the local entry's
+    /// text so the review reflects the fix; the caller feeds the learning signal
+    /// to the engine. Kept local-only — the original already exists server-side
+    /// and the POST endpoint is create-idempotent (it would return the stale
+    /// copy, not update it), so re-pushing is a no-op we skip.
+    @discardableResult
+    func applyCorrection(to entry: DictationHistoryEntry, correctedText: String) -> Bool {
+        let trimmed = correctedText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, trimmed != entry.displayText else { return false }
+        guard let idx = entries.firstIndex(where: { $0.id == entry.id }) else { return false }
+        let old = entries[idx]
+        entries[idx] = DictationHistoryEntry(
+            id: old.id,
+            timestamp: old.timestamp,
+            rawText: old.rawText,
+            cleanedText: trimmed,
+            durationSeconds: old.durationSeconds,
+            wordCount: trimmed.split(separator: " ").count
+        )
+        save()
+        return true
+    }
+
     func delete(_ entry: DictationHistoryEntry) {
         entries.removeAll { $0.id == entry.id }
         save()

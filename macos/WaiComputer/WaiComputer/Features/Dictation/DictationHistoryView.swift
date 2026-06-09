@@ -4,6 +4,7 @@ import WaiComputerKit
 struct DictationHistoryView: View {
     @EnvironmentObject private var historyStore: DictationHistoryStore
     @EnvironmentObject private var languageManager: LanguageManager
+    @EnvironmentObject private var learningEngine: DictionaryLearningEngine
     @State private var searchText = ""
     @State private var showClearAllConfirmation = false
 
@@ -68,9 +69,11 @@ struct DictationHistoryView: View {
                         ForEach(groupedByDay, id: \.date) { group in
                             Section {
                                 ForEach(group.entries) { entry in
-                                    HistoryEntryRow(entry: entry, onDelete: {
-                                        historyStore.delete(entry)
-                                    })
+                                    HistoryEntryRow(
+                                        entry: entry,
+                                        onDelete: { historyStore.delete(entry) },
+                                        onCorrect: { newText in applyCorrection(to: entry, newText: newText) }
+                                    )
                                 }
                             } header: {
                                 Text(group.label)
@@ -172,6 +175,19 @@ struct DictationHistoryView: View {
         return "\(count) dictation\(count == 1 ? "" : "s")"
     }
 
+    /// A correction the user made while reviewing a past dictation. Persists the
+    /// fixed text locally and teaches the dictionary on-device (when enabled).
+    private func applyCorrection(to entry: DictationHistoryEntry, newText: String) {
+        let original = entry.displayText
+        guard historyStore.applyCorrection(to: entry, correctedText: newText) else { return }
+        let learnEnabled = UserDefaults.standard.object(
+            forKey: DictationEditWatcher.enabledDefaultsKey
+        ) as? Bool ?? true
+        if learnEnabled {
+            learningEngine.observeEdit(produced: original, edited: newText, language: nil)
+        }
+    }
+
     private func t(_ english: String, _ russian: String) -> String {
         OnboardingL10n.text(english, russian, language: languageManager.current)
     }
@@ -183,9 +199,12 @@ private struct HistoryEntryRow: View {
     @EnvironmentObject private var languageManager: LanguageManager
     let entry: DictationHistoryEntry
     let onDelete: () -> Void
+    let onCorrect: (String) -> Void
     @State private var isCopied = false
     @State private var isHovered = false
     @State private var isExpanded = false
+    @State private var isEditing = false
+    @State private var draft = ""
 
     var body: some View {
         HStack(alignment: .top, spacing: Spacing.md) {
@@ -199,16 +218,44 @@ private struct HistoryEntryRow: View {
                 .foregroundStyle(Palette.textTertiary)
                 .frame(width: 60, alignment: .leading)
 
-            Text(entry.displayText)
-                .font(Typography.body)
-                .foregroundStyle(Palette.textPrimary)
-                .textSelection(.enabled)
-                .lineLimit(isExpanded ? nil : 4)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .help(t("Click to expand", "Нажмите, чтобы развернуть"))
-                .onTapGesture { isExpanded.toggle() }
+            if isEditing {
+                TextField("", text: $draft, axis: .vertical)
+                    .textFieldStyle(.plain)
+                    .font(Typography.body)
+                    .foregroundStyle(Palette.textPrimary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .onSubmit { commitEdit() }
+            } else {
+                Text(entry.displayText)
+                    .font(Typography.body)
+                    .foregroundStyle(Palette.textPrimary)
+                    .textSelection(.enabled)
+                    .lineLimit(isExpanded ? nil : 4)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .help(t("Click to expand", "Нажмите, чтобы развернуть"))
+                    .onTapGesture { isExpanded.toggle() }
+            }
 
             HStack(spacing: Spacing.sm) {
+                if isEditing {
+                    Button { commitEdit() } label: {
+                        Image(systemName: "checkmark.circle")
+                            .foregroundStyle(.green)
+                    }
+                    .buttonStyle(.plain)
+                    .help(t("Save correction", "Сохранить исправление"))
+                } else {
+                    Button {
+                        draft = entry.displayText
+                        isEditing = true
+                    } label: {
+                        Image(systemName: "pencil")
+                            .foregroundStyle(Palette.textSecondary)
+                    }
+                    .buttonStyle(.plain)
+                    .help(t("Fix this dictation & teach the dictionary", "Исправить диктовку и научить словарь"))
+                }
+
                 Button {
                     NSPasteboard.general.clearContents()
                     NSPasteboard.general.setString(entry.displayText, forType: .string)
@@ -234,6 +281,13 @@ private struct HistoryEntryRow: View {
         .background(isHovered ? Palette.surfaceHover : Color.clear)
         .contentShape(Rectangle())
         .onHover { isHovered = $0 }
+    }
+
+    private func commitEdit() {
+        let trimmed = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        isEditing = false
+        guard !trimmed.isEmpty, trimmed != entry.displayText else { return }
+        onCorrect(trimmed)
     }
 
     private func t(_ english: String, _ russian: String) -> String {
