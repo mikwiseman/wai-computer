@@ -56,6 +56,7 @@ struct BillingSection: View {
     @State private var actionError: String?
     @State private var checkoutInFlight = false
     @State private var cancelInFlight = false
+    @State private var showingCancelConfirmation = false
     @State private var regionUpdateInFlight = false
     @State private var promoCode = ""
     @State private var promoInFlight = false
@@ -123,6 +124,21 @@ struct BillingSection: View {
         }
         .onDisappear {
             stopCheckoutRefreshPolling()
+        }
+        .confirmationDialog(
+            t("Cancel subscription?", "Отменить подписку?"),
+            isPresented: $showingCancelConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button(t("Cancel subscription", "Отменить подписку"), role: .destructive) {
+                Task { await cancelSubscription() }
+            }
+            Button(t("Keep subscription", "Оставить подписку"), role: .cancel) {}
+        } message: {
+            Text(t(
+                "Pro stays active until the end of the current period, then won't renew.",
+                "Pro останется активным до конца текущего периода, после чего не продлится."
+            ))
         }
     }
 
@@ -331,7 +347,7 @@ struct BillingSection: View {
             HStack {
                 Spacer()
                 Button(role: .destructive) {
-                    Task { await cancelSubscription() }
+                    showingCancelConfirmation = true
                 } label: {
                     if cancelInFlight {
                         ProgressView().controlSize(.small)

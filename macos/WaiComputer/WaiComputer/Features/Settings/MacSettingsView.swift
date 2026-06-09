@@ -493,6 +493,7 @@ struct MacSettingsView: View {
             }
             .font(Typography.body)
             .onChangeCompat(of: summaryLanguage) { _, newValue in
+                guard settingsLoaded else { return }
                 Task { await saveSummarySettings(language: newValue) }
             }
 
@@ -505,6 +506,7 @@ struct MacSettingsView: View {
             }
             .font(Typography.body)
             .onChangeCompat(of: summaryStyle) { _, newValue in
+                guard settingsLoaded else { return }
                 Task { await saveSummarySettings(style: newValue) }
             }
 
@@ -519,6 +521,7 @@ struct MacSettingsView: View {
                     .background(Palette.surfaceSubtle)
                     .cornerRadius(6)
                     .onChangeCompat(of: summaryInstructions) { _, _ in
+                        guard settingsLoaded else { return }
                         Task { await saveSummarySettings(instructions: summaryInstructions) }
                     }
                 Text("settings.summary.customExample", bundle: .main)

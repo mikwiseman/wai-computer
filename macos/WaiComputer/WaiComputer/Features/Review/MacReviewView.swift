@@ -21,6 +21,14 @@ struct MacReviewView: View {
         Group {
             if model.loading {
                 ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if case .load = model.error {
+                // A failed initial load must not masquerade as the success
+                // empty state ("All caught up").
+                ContentUnavailableViewCompat(
+                    t("Couldn't load", "Не удалось загрузить"),
+                    systemImage: "exclamationmark.triangle",
+                    description: Text(errorText(.load))
+                )
             } else if model.proposals.isEmpty {
                 ContentUnavailableViewCompat(
                     t("All caught up", "Всё разобрано"),
