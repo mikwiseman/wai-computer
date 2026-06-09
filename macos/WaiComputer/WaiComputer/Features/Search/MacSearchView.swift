@@ -214,6 +214,7 @@ struct SearchResultRow: View {
     @EnvironmentObject private var languageManager: LanguageManager
     let result: SearchResult
     let onOpen: () -> Void
+    @State private var isHovered = false
 
     var body: some View {
         Button(action: onOpen) {
@@ -241,11 +242,14 @@ struct SearchResultRow: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, Spacing.lg)
             .padding(.vertical, Spacing.md)
+            .background(isHovered ? Palette.surfaceHover : Color.clear)
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(Rectangle())
+        .onHover { isHovered = $0 }
         .accessibilityIdentifier(MacSearchPresentation.resultRowIdentifier(recordingId: result.recordingId))
     }
 
@@ -272,6 +276,7 @@ struct UnifiedResultRow: View {
     @EnvironmentObject private var languageManager: LanguageManager
     let hit: UnifiedHit
     let onOpen: () -> Void
+    @State private var isHovered = false
 
     var body: some View {
         Button(action: onOpen) {
@@ -298,10 +303,13 @@ struct UnifiedResultRow: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, Spacing.lg)
             .padding(.vertical, Spacing.md)
+            .background(isHovered ? Palette.surfaceHover : Color.clear)
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .frame(maxWidth: .infinity, alignment: .leading)
+        .onHover { isHovered = $0 }
         .accessibilityIdentifier("unified-result-\(hit.chunkId)")
     }
 
