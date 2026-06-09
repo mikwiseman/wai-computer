@@ -63,6 +63,7 @@ celery_app.conf.update(
         "app.tasks.item_summary_generation",
         "app.tasks.mcp_sync",
         "app.tasks.media_import",
+        "app.tasks.recompile_entity_dossiers",
         "app.tasks.recording_audio_processing",
         "app.tasks.summary_audio_generation",
         "app.tasks.summary_generation",
@@ -77,6 +78,12 @@ celery_app.conf.beat_schedule = {
         # UTC covers most of Europe/Africa overnight.
         "task": "app.tasks.consolidate_user_memory.run",
         "schedule": crontab(hour=3, minute=0),
+    },
+    "recompile-dirty-dossiers-hourly": {
+        # O(changed) living-wiki refresh: bounded + cache-aware. OFF by default
+        # (brain_dossier_recompile_enabled); the task no-ops when disabled.
+        "task": "app.tasks.recompile_entity_dossiers.run",
+        "schedule": crontab(minute=0),
     },
     "link-unlinked-conversations-nightly": {
         # Bounded backstop: chats auto-link on turn completion, but this links

@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import func, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -205,6 +205,7 @@ async def record_mention(
                 )
             )
         ).scalar_one()
+    await _mark_dossier_dirty(db, entity_id)
     return mention
 
 
@@ -251,7 +252,21 @@ async def record_relation(
     )
     db.add(relation)
     await db.flush()
+    await _mark_dossier_dirty(db, source_entity_id, target_entity_id)
     return relation
+
+
+async def _mark_dossier_dirty(db: AsyncSession, *entity_ids: Any) -> None:
+    """Flip touched entities' dossiers dirty so the bounded sweep (P3) refreshes
+    them. Cheap UPDATE, no LLM; called only when a NEW mention/relation lands."""
+    ids = [eid for eid in entity_ids if eid is not None]
+    if not ids:
+        return
+    await db.execute(
+        update(Entity)
+        .where(Entity.id.in_(ids))
+        .values(dossier_dirty=True, dossier_dirty_at=datetime.now(timezone.utc))
+    )
 
 
 async def seed_entities_from_summary(

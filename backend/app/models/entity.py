@@ -5,6 +5,7 @@ from datetime import datetime
 
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
+    Boolean,
     DateTime,
     Float,
     ForeignKey,
@@ -33,6 +34,13 @@ class Entity(Base, UUIDMixin, TimestampMixin):
         # GIN index for strong-identity-key lookups (metadata @> {identity_keys:[...]})
         # so resolving an emailer to an existing person stays cheap at scale.
         Index("ix_entities_metadata_gin", "metadata", postgresql_using="gin"),
+        # Partial index for the O(changed) dossier-recompile sweep (P3): only the
+        # rows whose dossier needs refreshing are scanned.
+        Index(
+            "ix_entities_dossier_dirty",
+            "dossier_dirty",
+            postgresql_where=text("dossier_dirty"),
+        ),
     )
 
     user_id: Mapped[uuid.UUID] = mapped_column(
@@ -42,6 +50,13 @@ class Entity(Base, UUIDMixin, TimestampMixin):
     name: Mapped[str] = mapped_column(String(500), nullable=False)
     metadata_: Mapped[dict | None] = mapped_column("metadata", JSONB)
     embedding: Mapped[list[float] | None] = mapped_column(Vector(1536))
+    # Dossier freshness (P3): flipped true when a new mention/relation lands so the
+    # bounded sweep refreshes the living dossier. The sweep is cache-aware
+    # (ensure_entity_page) so an unchanged fingerprint costs no LLM.
+    dossier_dirty: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default="false", default=False
+    )
+    dossier_dirty_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     # Relationships
     user: Mapped["User"] = relationship("User", back_populates="entities")

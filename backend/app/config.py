@@ -77,6 +77,11 @@ class Settings(BaseSettings):
     # the eval harness (accuracy-per-dollar must not regress).
     brain_ranking_v2_enabled: bool = False
 
+    # Living-wiki dossier recompile sweep (P3): bounded, cache-aware hourly refresh
+    # of dirty entity dossiers. OFF by default (LLM cost on genuinely-changed
+    # dossiers); enable deliberately.
+    brain_dossier_recompile_enabled: bool = False
+
     # Deepgram — realtime dictation, live transcription, and batch file STT.
     deepgram_api_key: str = ""
 
