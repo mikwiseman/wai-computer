@@ -31,6 +31,7 @@ from app.core.cerebras_chat import (
     strict_json_response_format,
 )
 from app.core.observability import safe_text_digest
+from app.core.reranker import Reranker, get_reranker, rerank_hits
 from app.core.unified_search import UnifiedHit, unified_search
 
 logger = logging.getLogger(__name__)
@@ -172,13 +173,35 @@ async def _search_hits(
     *,
     source_scope: dict[str, Any] | None,
     limit: int,
+    reranker: Reranker | None = None,
+    settings: Any | None = None,
 ) -> list[UnifiedHit | Any]:
-    search_pool_limit = max(limit, limit * ASK_SEARCH_POOL_MULTIPLIER)
+    # When reranking, over-retrieve a wider candidate pool (the reranker is what
+    # makes a big pool affordable), then rerank + diversity trim it back down.
+    if reranker is not None and settings is not None:
+        search_pool_limit = min(
+            limit * settings.reranker_overfetch, settings.reranker_max_candidates
+        )
+    else:
+        search_pool_limit = max(limit, limit * ASK_SEARCH_POOL_MULTIPLIER)
+
+    async def _maybe_rerank(candidates: list[UnifiedHit | Any]) -> list[UnifiedHit | Any]:
+        if reranker is None or settings is None or not candidates:
+            return candidates
+        reranked, _tokens = await rerank_hits(
+            question,
+            candidates,
+            reranker=reranker,
+            top_k=len(candidates),
+            confidence_threshold=settings.reranker_confidence_threshold,
+        )
+        return reranked
+
     if source_scope is None:
         raw_hits = await unified_search(
             db, user_id, question, limit=search_pool_limit, per_parent_limit=2
         )
-        return _diverse_hits(raw_hits, limit)
+        return _diverse_hits(await _maybe_rerank(raw_hits), limit)
 
     allowed = _allowed_scoped_sources(source_scope)
     if not allowed:
@@ -193,7 +216,7 @@ async def _search_hits(
     filtered.extend(
         hit for hit in scoped_hits if (hit.source_kind, hit.parent_id) not in seen_sources
     )
-    return _diverse_hits(filtered, limit)
+    return _diverse_hits(await _maybe_rerank(filtered), limit)
 
 
 async def ask_brain(
@@ -202,6 +225,7 @@ async def ask_brain(
     question: str,
     *,
     cerebras_client: Any | None = None,
+    reranker: Reranker | None = None,
     limit: int = ASK_RETRIEVAL_LIMIT,
     now: datetime | None = None,
     source_scope: dict[str, Any] | None = None,
@@ -212,12 +236,17 @@ async def ask_brain(
     if not question:
         return BrainAnswer(answer="", gaps=["Ask a question to search your Brain."])
 
+    settings = get_settings()
+    # None default -> use the configured reranker (None when disabled). Tests inject a fake.
+    effective_reranker = reranker if reranker is not None else get_reranker(settings)
     hits = await _search_hits(
         db,
         user_id,
         question,
         source_scope=source_scope,
         limit=limit,
+        reranker=effective_reranker,
+        settings=settings,
     )
     if not hits:
         freshness = await _freshness_for([], now=now)
@@ -239,7 +268,6 @@ async def ask_brain(
         )
         excerpts.append(_excerpt_for_hit(i, hit))
 
-    settings = get_settings()
     client = cerebras_client if cerebras_client is not None else get_cerebras_client()
     user_content = f"Question: {question}\n\nExcerpts:\n" + "\n".join(excerpts)
     response = await client.chat.completions.create(

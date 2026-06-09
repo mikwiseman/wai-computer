@@ -61,6 +61,17 @@ class Settings(BaseSettings):
     cerebras_api_base_url: str = "https://api.cerebras.ai/v1"
     cerebras_llm_model: str = "gpt-oss-120b"
 
+    # Reranker (P1) — ZeroEntropy zerank-2 cross-encoder, the accuracy-per-dollar
+    # lever. OFF by default; flip only after a Russian A/B beats OFF on precision
+    # AND $/answer. Calibrated relevance scores enable the confidence token-budget.
+    reranker_enabled: bool = False
+    zeroentropy_api_key: str = ""
+    zeroentropy_base_url: str = "https://api.zeroentropy.dev/v1"
+    reranker_model: str = "zerank-2"
+    reranker_overfetch: int = 8  # candidate pool = limit * this (capped by max below)
+    reranker_max_candidates: int = 100
+    reranker_confidence_threshold: float = 0.3  # drop calibrated relevance below this
+
     # Deepgram — realtime dictation, live transcription, and batch file STT.
     deepgram_api_key: str = ""
 
