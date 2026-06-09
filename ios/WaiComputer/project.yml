@@ -25,8 +25,8 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: is.waiwai.computer
         DEVELOPMENT_TEAM: <apple-team-id>
-        MARKETING_VERSION: "1.4.2"
-        CURRENT_PROJECT_VERSION: "45"
+        MARKETING_VERSION: "1.4.3"
+        CURRENT_PROJECT_VERSION: "46"
         INFOPLIST_FILE: WaiComputer/Info.plist
         SWIFT_VERSION: "5.9"
         IPHONEOS_DEPLOYMENT_TARGET: "17.0"
