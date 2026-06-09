@@ -421,8 +421,19 @@ RELEASE_DIR="$RELEASE_ROOT/${RELEASE_SLUG}"
 mkdir -p "$RELEASE_DIR"
 
 if [[ "$MACOS_VARIANT" == "global" ]]; then
-  echo "Uploading macOS dSYMs to Sentry..."
-  "$ROOT_DIR/scripts/sentry-upload-debug-files.sh" waicomputer-macos "$ARCHIVE_PATH/dSYMs"
+  if [[ "${MACOS_SKIP_SENTRY_DSYM:-0}" == "1" ]]; then
+    # Opt-in escape hatch for when Sentry is unreachable (the upload is a hard,
+    # mid-pipeline step that otherwise aborts an otherwise-shippable release).
+    # Preserve the dSYMs next to the DMG so they can be backfilled later:
+    #   SENTRY_AUTH_TOKEN=… scripts/sentry-upload-debug-files.sh waicomputer-macos "$RELEASE_DIR/dSYMs"
+    echo "WARNING: MACOS_SKIP_SENTRY_DSYM=1 — skipping the Sentry dSYM upload."
+    echo "         Crash reports for ${RELEASE_SLUG} will NOT symbolicate until backfilled."
+    echo "         Preserving dSYMs at: $RELEASE_DIR/dSYMs"
+    cp -R "$ARCHIVE_PATH/dSYMs" "$RELEASE_DIR/dSYMs"
+  else
+    echo "Uploading macOS dSYMs to Sentry..."
+    "$ROOT_DIR/scripts/sentry-upload-debug-files.sh" waicomputer-macos "$ARCHIVE_PATH/dSYMs"
+  fi
 fi
 
 APP_BINARY="$APP_PATH/Contents/MacOS/${APP_NAME}"
