@@ -9,6 +9,7 @@ interface EntityWikiViewProps {
   onNavigate: (id: string, name: string) => void;
   onError?: (message: string) => void;
   onOpenSource?: (sourceKind: "recording" | "item" | "chat", sourceId: string) => void;
+  onAskWai?: (entityId: string, name: string) => void;
   locale?: string;
 }
 
@@ -42,6 +43,7 @@ export function EntityWikiView({
   onNavigate,
   onError,
   onOpenSource,
+  onAskWai,
   locale = "en",
 }: EntityWikiViewProps) {
   const t = useCallback(
@@ -109,6 +111,15 @@ export function EntityWikiView({
         <p className="brain-wiki__meta">
           {page.mention_count} {t("mentions", "упоминаний")}
         </p>
+        {onAskWai ? (
+          <button
+            type="button"
+            className="wai-primary-button brain-wiki__ask-wai"
+            onClick={() => onAskWai(entityId, page.name)}
+          >
+            {t(`Ask Wai about ${page.name}`, `Спросить Wai про ${page.name}`)}
+          </button>
+        ) : null}
       </header>
 
       <section className="brain-wiki__section brain-wiki__overview">

@@ -919,7 +919,9 @@ export function DashboardClient() {
   const [pendingInboxSource, setPendingInboxSource] = useState<PendingInboxSource | null>(
     null,
   );
-  const [pendingBrainMapId, setPendingBrainMapId] = useState<string | null>(null);
+  // Legacy Inbox→Brain-map deep-link target. Brain is now a wiki (no maps), so
+  // the value is unread; the setter stays wired so the callbacks still compile.
+  const [, setPendingBrainMapId] = useState<string | null>(null);
   const [accountSettings, setAccountSettings] = useState<UserSettings | null>(null);
   const [transcriptionOptions, setTranscriptionOptions] = useState<TranscriptionOptions | null>(
     null,
@@ -2071,10 +2073,9 @@ export function DashboardClient() {
           <section className="tool-panel">
             <BrainPanel
               locale={locale}
-              initialMapId={pendingBrainMapId}
               onError={setMessage}
               onOpenInbox={() => setView("inbox")}
-              onOpenWai={({ spaceId }) => handleNewChat({ brain_space_id: spaceId })}
+              onAskWaiAboutEntity={(entityId) => handleNewChat({ entity_id: entityId })}
               onOpenSource={(sourceKind, sourceId) => {
                 setActiveFolderId(null);
                 setSelectedRecording(null);

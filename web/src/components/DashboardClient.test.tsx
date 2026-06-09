@@ -78,9 +78,7 @@ vi.mock("next/navigation", () => ({
 }));
 
 vi.mock("./BrainPanel", () => ({
-  BrainPanel: ({ initialMapId }: { initialMapId?: string | null }) => (
-    <div data-testid="brain-panel">brain:{initialMapId ?? "mirror"}</div>
-  ),
+  BrainPanel: () => <div data-testid="brain-panel">brain</div>,
 }));
 
 vi.mock("@/lib/api", () => ({
@@ -712,7 +710,7 @@ describe("DashboardClient", () => {
     });
   }, 15_000);
 
-  it("opens the source-scoped Brain map created from Inbox", async () => {
+  it("creates a source-scoped Brain map from Inbox and opens Brain", async () => {
     arrangeHappyPathMocks();
     const user = userEvent.setup();
 
@@ -738,11 +736,13 @@ describe("DashboardClient", () => {
         },
       }),
     );
+    // Brain is the wiki now — creating a lens navigates there (the map no longer
+    // auto-opens; maps were cut from Brain).
     expect(screen.getByTestId("workspace-title")).toHaveTextContent("Brain");
-    expect(screen.getByTestId("brain-panel")).toHaveTextContent("brain:map-from-inbox");
+    expect(screen.getByTestId("brain-panel")).toBeInTheDocument();
   });
 
-  it("opens the source-scoped Brain map created from a Wai chat in Inbox", async () => {
+  it("creates a source-scoped Brain map from a Wai chat in Inbox and opens Brain", async () => {
     arrangeHappyPathMocks();
     mockListInbox.mockResolvedValue({
       rows: [
@@ -785,7 +785,7 @@ describe("DashboardClient", () => {
       }),
     );
     expect(screen.getByTestId("workspace-title")).toHaveTextContent("Brain");
-    expect(screen.getByTestId("brain-panel")).toHaveTextContent("brain:map-from-inbox");
+    expect(screen.getByTestId("brain-panel")).toBeInTheDocument();
   });
 
   it("waits for a processing voice memo before creating a Brain lens", async () => {

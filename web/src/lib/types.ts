@@ -645,6 +645,8 @@ export type CompanionMessageRole = "user" | "assistant" | "tool";
 export interface CompanionScope {
   recording_ids?: string[];
   brain_space_id?: string;
+  // "Ask Wai about X" scopes the chat to one entity's compiled page.
+  entity_id?: string;
   folder_ids?: string[];
   types?: string[];
   speakers?: string[];
@@ -1466,6 +1468,8 @@ export interface Entity {
   // How many sources mention this entity — powers Pages ranking + "N sources".
   mention_count?: number;
   source_count?: number;
+  // First line of the compiled page (when one exists) — the wiki card subtitle.
+  overview_snippet?: string;
 }
 
 export interface EntityDetail extends Entity {
