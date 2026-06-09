@@ -27,6 +27,7 @@ from app.api.routes import (
     folders,
     inbox,
     items,
+    mcp_connect,
     mcp_connections,
     mcp_oauth,
     memory_proposals,
@@ -213,6 +214,7 @@ app.include_router(folders.router, prefix="/api")
 app.include_router(inbox.router, prefix="/api")
 app.include_router(items.router, prefix="/api")
 app.include_router(comparisons.router, prefix="/api")
+app.include_router(mcp_connect.router, prefix="/api")
 app.include_router(mcp_connections.router, prefix="/api")
 app.include_router(source_catalog.router, prefix="/api")
 app.include_router(memory_proposals.router, prefix="/api")
