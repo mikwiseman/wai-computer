@@ -268,6 +268,60 @@ final class MacRecordingDetailViewModelTests: XCTestCase {
         XCTAssertFalse(viewModel.isPlayingSummaryAudio(for: recordingId))
     }
 
+    func testTranscriptTurnsMergeAndMemoizeWithInvalidationOnSpeakerChange() {
+        let segments = [
+            Segment(id: "s1", speaker: "Speaker 1", rawLabel: "speaker_1", content: "Hello there.", startMs: 0, endMs: 1_000),
+            Segment(id: "s2", speaker: "Speaker 1", rawLabel: "speaker_1", content: "How are you?", startMs: 1_000, endMs: 2_000),
+            Segment(id: "s3", speaker: "Speaker 2", rawLabel: "speaker_2", content: "I am well.", startMs: 2_000, endMs: 3_000),
+        ]
+        let detail = RecordingDetail(
+            id: "rec-memo",
+            title: "Memo",
+            type: .meeting,
+            status: .ready,
+            createdAt: Date(timeIntervalSince1970: 1_709_292_000),
+            segments: segments
+        )
+        let viewModel = MacRecordingDetailViewModel(initialDetail: detail)
+
+        // Consecutive same-speaker utterances merge into one turn → 2 turns.
+        let first = viewModel.transcriptTurns(languageCode: "en")
+        XCTAssertEqual(first.count, 2)
+        XCTAssertEqual(first.first?.text, "Hello there. How are you?")
+
+        // Repeated call (the memoized path) returns identical turns.
+        let second = viewModel.transcriptTurns(languageCode: "en")
+        XCTAssertEqual(second.map(\.id), first.map(\.id))
+        XCTAssertEqual(second.map(\.text), first.map(\.text))
+
+        // Reassigning every utterance to one person must invalidate the cache and
+        // regroup into a single turn (guards against stale memoized turns after a
+        // speaker assignment).
+        let reassigned = segments.map { segment in
+            Segment(
+                id: segment.id,
+                speaker: segment.speaker,
+                rawLabel: segment.rawLabel,
+                personId: "person-1",
+                content: segment.content,
+                startMs: segment.startMs,
+                endMs: segment.endMs
+            )
+        }
+        viewModel.recordingDetail = RecordingDetail(
+            id: "rec-memo",
+            title: "Memo",
+            type: .meeting,
+            status: .ready,
+            createdAt: Date(timeIntervalSince1970: 1_709_292_000),
+            segments: reassigned
+        )
+
+        let afterReassign = viewModel.transcriptTurns(languageCode: "en")
+        XCTAssertEqual(afterReassign.count, 1, "cache must invalidate when speaker assignments change")
+        XCTAssertEqual(afterReassign.first?.text, "Hello there. How are you? I am well.")
+    }
+
     private func makeDetail(id: String, title: String) -> RecordingDetail {
         RecordingDetail(
             id: id,

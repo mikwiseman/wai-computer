@@ -65,6 +65,14 @@ class MacRecordingDetailViewModel: ObservableObject {
     private var summaryAudioPlaybackToken = UUID()
     private var loadGeneration = 0
 
+    // Memoized transcript turns. `mergeTurns` sorts + groups (O(n log n)); it used
+    // to re-run on every SwiftUI body pass (selection, the auto-refresh poll,
+    // summary-audio state) which was a major scroll-jank source on long
+    // transcripts. Recompute only when the transcript content, speaker
+    // assignments, or display language actually change.
+    private var cachedTurns: [TranscriptTurn] = []
+    private var cachedTurnsKey: Int?
+
     init(
         initialDetail: RecordingDetail? = nil,
         summaryAudioPlayerFactory: @escaping (Data) throws -> any MacSummaryAudioPlaying = MacSummaryAudioPlayback.makePlayer
@@ -80,6 +88,31 @@ class MacRecordingDetailViewModel: ObservableObject {
             status: detail.status,
             localRecoveryManifest: localRecoveryManifest
         )
+    }
+
+    /// Merged, render-ready transcript turns — memoized (see `cachedTurns`). The
+    /// view calls this once per body pass; the work only happens when the cache
+    /// key (content + speaker assignments + language) changes.
+    func transcriptTurns(languageCode: String) -> [TranscriptTurn] {
+        let segments = recordingDetail?.segments ?? []
+        var hasher = Hasher()
+        hasher.combine(languageCode)
+        for segment in segments {
+            hasher.combine(segment.id)
+            hasher.combine(segment.personId)
+            hasher.combine(segment.rawLabel)
+            hasher.combine(segment.speaker)
+            hasher.combine(segment.displayName)
+            hasher.combine(segment.startMs)
+        }
+        let key = hasher.finalize()
+        if key == cachedTurnsKey {
+            return cachedTurns
+        }
+        let turns = TranscriptRendering.mergeTurns(segments, languageCode: languageCode)
+        cachedTurns = turns
+        cachedTurnsKey = key
+        return turns
     }
 
     func isGeneratingSummary(for recordingId: String) -> Bool {

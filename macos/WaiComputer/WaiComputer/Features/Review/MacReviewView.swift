@@ -46,8 +46,11 @@ struct MacReviewView: View {
     }
 
     private var content: some View {
+        // Single LazyVStack as the ScrollView's direct child so proposal cards
+        // are realized lazily. A nested VStack-of-cards inside the outer VStack
+        // would defeat laziness and render every proposal up front.
         ScrollView {
-            VStack(alignment: .leading, spacing: Spacing.xl) {
+            LazyVStack(alignment: .leading, spacing: Spacing.sm) {
                 VStack(alignment: .leading, spacing: Spacing.xs) {
                     Text(t("Review", "На проверку"))
                         .font(Typography.displaySmall)
@@ -56,17 +59,19 @@ struct MacReviewView: View {
                         .font(Typography.bodySmall)
                         .foregroundStyle(Palette.textSecondary)
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.bottom, Spacing.lg)
 
                 if let error = model.error {
                     Text(errorText(error))
                         .font(Typography.bodySmall)
                         .foregroundStyle(.red)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.bottom, Spacing.lg)
                 }
 
-                VStack(spacing: Spacing.sm) {
-                    ForEach(model.proposals) { proposal in
-                        proposalCard(proposal)
-                    }
+                ForEach(model.proposals) { proposal in
+                    proposalCard(proposal)
                 }
             }
             .padding(Spacing.xl)

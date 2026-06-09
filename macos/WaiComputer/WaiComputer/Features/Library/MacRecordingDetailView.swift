@@ -198,11 +198,11 @@ struct MacRecordingDetailView: View {
     private func copyActionButton(
         title: String,
         copiedTitle: String,
-        text: String,
+        text: @escaping @autoclosure () -> String,
         section: String
     ) -> some View {
         Button {
-            copyToClipboard(text, section: section)
+            copyToClipboard(text(), section: section)
         } label: {
             Label(
                 copiedSection == section ? copiedTitle : title,
@@ -557,10 +557,34 @@ struct MacRecordingDetailView: View {
     }
 
     private func recordingDetailContent(_ detail: RecordingDetail) -> some View {
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: Spacing.xxxl) {
+        // One LazyVStack whose direct children are the summary, the transcript
+        // header, and each transcript turn. The transcript previously lived in a
+        // *nested* LazyVStack (inside transcriptSection's VStack inside this
+        // LazyVStack); on macOS that defeats laziness — every turn is realized at
+        // once, each building a SpeakerChipView (popover/help) + selectable Text,
+        // which was the multi-second freeze on long recordings. Flattening makes
+        // the turns genuine, direct lazy children so only visible rows are built.
+        let turns = viewModel.transcriptTurns(languageCode: speakerLanguageCode)
+        return ScrollView {
+            LazyVStack(alignment: .leading, spacing: Spacing.xl) {
                 summarySection(detail)
-                transcriptSection(detail)
+                    .padding(.bottom, Spacing.xl)
+
+                transcriptHeader(detail)
+
+                if detail.segments.isEmpty {
+                    transcriptEmptyState
+                } else {
+                    ForEach(turns) { turn in
+                        SegmentRowView(
+                            segment: turn.displaySegment,
+                            recordingId: detail.id,
+                            onAssigned: { updated in
+                                viewModel.recordingDetail = updated
+                            }
+                        )
+                    }
+                }
             }
             .padding(.horizontal, Spacing.xxl)
             .padding(.vertical, Spacing.xl)
@@ -743,45 +767,26 @@ struct MacRecordingDetailView: View {
         .clipShape(RoundedRectangle(cornerRadius: 8))
     }
 
-    @ViewBuilder
-    private func transcriptSection(_ detail: RecordingDetail) -> some View {
-        VStack(alignment: .leading, spacing: Spacing.lg) {
-            HStack(alignment: .center, spacing: Spacing.md) {
-                Label(t("Transcript", "Расшифровка"), systemImage: "text.alignleft")
-                    .waiSectionHeader()
-                Spacer()
-                if !detail.segments.isEmpty {
-                    ViewThatFits(in: .horizontal) {
-                        copyActionButton(
-                            title: t("Copy Transcript", "Скопировать расшифровку"),
-                            copiedTitle: t("Copied", "Скопировано"),
-                            text: transcriptText(detail.segments),
-                            section: "transcript-all"
-                        )
-                        Button {
-                            copyToClipboard(transcriptText(detail.segments), section: "transcript-all")
-                        } label: {
-                            Image(systemName: copiedSection == "transcript-all" ? "checkmark" : "doc.on.doc")
-                        }
-                        .buttonStyle(WaiGhostButtonStyle())
-                        .help(t("Copy transcript", "Скопировать расшифровку"))
+    private func transcriptHeader(_ detail: RecordingDetail) -> some View {
+        HStack(alignment: .center, spacing: Spacing.md) {
+            Label(t("Transcript", "Расшифровка"), systemImage: "text.alignleft")
+                .waiSectionHeader()
+            Spacer()
+            if !detail.segments.isEmpty {
+                ViewThatFits(in: .horizontal) {
+                    copyActionButton(
+                        title: t("Copy Transcript", "Скопировать расшифровку"),
+                        copiedTitle: t("Copied", "Скопировано"),
+                        text: transcriptText(detail.segments),
+                        section: "transcript-all"
+                    )
+                    Button {
+                        copyToClipboard(transcriptText(detail.segments), section: "transcript-all")
+                    } label: {
+                        Image(systemName: copiedSection == "transcript-all" ? "checkmark" : "doc.on.doc")
                     }
-                }
-            }
-
-            if detail.segments.isEmpty {
-                transcriptEmptyState
-            } else {
-                LazyVStack(alignment: .leading, spacing: Spacing.xl) {
-                    ForEach(TranscriptRendering.mergeTurns(detail.segments, languageCode: speakerLanguageCode)) { turn in
-                        SegmentRowView(
-                            segment: turn.displaySegment,
-                            recordingId: detail.id,
-                            onAssigned: { updated in
-                                viewModel.recordingDetail = updated
-                            }
-                        )
-                    }
+                    .buttonStyle(WaiGhostButtonStyle())
+                    .help(t("Copy transcript", "Скопировать расшифровку"))
                 }
             }
         }
