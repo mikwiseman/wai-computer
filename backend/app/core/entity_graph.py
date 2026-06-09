@@ -20,9 +20,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.entity_reconcile import reconcile_person_entities
 from app.core.mcp_entity_extract import extract_graph
 from app.core.name_moderation import normalise_name
-from app.models.entity import Entity, EntityMention
+from app.models.entity import Entity, EntityMention, EntityRelation
 from app.models.item import Item, ItemSummary
-from app.models.recording import Recording, Summary
+from app.models.recording import Recording, Segment, Summary
 
 logger = logging.getLogger(__name__)
 
@@ -201,6 +201,52 @@ async def record_mention(
     return mention
 
 
+async def record_relation(
+    db: AsyncSession,
+    *,
+    source_entity_id: Any,
+    target_entity_id: Any,
+    relation_type: str | None,
+    recording_id: Any | None = None,
+    context: str | None = None,
+) -> EntityRelation | None:
+    """Idempotently record an entity->entity edge.
+
+    This is the edge every extraction path silently dropped until now (the
+    extractor returns ``relations`` but no caller persisted them, so entity
+    pages always rendered an empty "related" section). ``EntityRelation`` has no
+    unique constraint, so dedup is a select-before-insert on
+    ``(source_id, target_id, relation_type)``. Self-loops are skipped.
+    """
+    if source_entity_id == target_entity_id:
+        return None
+    existing = (
+        await db.execute(
+            select(EntityRelation).where(
+                EntityRelation.source_id == source_entity_id,
+                EntityRelation.target_id == target_entity_id,
+                EntityRelation.relation_type == relation_type,
+            )
+        )
+    ).scalars().first()
+    if existing is not None:
+        if recording_id is not None:
+            existing.recording_id = recording_id
+        if context:
+            existing.context = context
+        return existing
+    relation = EntityRelation(
+        source_id=source_entity_id,
+        target_id=target_entity_id,
+        relation_type=relation_type,
+        recording_id=recording_id,
+        context=context,
+    )
+    db.add(relation)
+    await db.flush()
+    return relation
+
+
 async def seed_entities_from_summary(
     db: AsyncSession,
     user_id: Any,
@@ -243,6 +289,107 @@ async def seed_entities_from_summary(
     if people:
         await reconcile_person_entities(db, user_id)
     return count
+
+
+_EXTRACTION_ENTITY_TYPES = {"person", "topic", "project", "organization"}
+# Cap the transcript fed to extraction so the +1 Cerebras call stays bounded.
+_EXTRACTION_TRANSCRIPT_CAP = 24000
+
+
+@dataclass
+class ExtractionSeedResult:
+    mentions_recorded: int
+    relations_recorded: int
+    persons_seeded: int
+
+    def as_dict(self) -> dict[str, int]:
+        return {
+            "mentions_recorded": self.mentions_recorded,
+            "relations_recorded": self.relations_recorded,
+            "persons_seeded": self.persons_seeded,
+        }
+
+
+async def seed_entities_from_extraction(
+    db: AsyncSession,
+    user_id: Any,
+    *,
+    source_kind: str,
+    source_id: Any,
+    entities: list[Any],
+    recording_id: Any | None = None,
+) -> ExtractionSeedResult:
+    """Promote TYPED extracted entities (and their relations) into the graph.
+
+    Unlike :func:`seed_entities_from_summary` (which collapses organization /
+    project into a generic ``topic`` node and drops relations entirely), this
+    keeps ``person / project / topic / organization`` DISTINCT and writes
+    ``EntityRelation`` edges between co-extracted entities — so entity wiki pages
+    finally render a non-empty "related" section.
+
+    ``entities`` is a list of :class:`app.core.summarizer.EntityResult`
+    (``name``, ``type``, ``context``, ``relations=[{related_to, relation_type}]``).
+    Relations resolve ONLY against the entities seeded in this call — no
+    fabricated target nodes.
+    """
+    name_to_entity: dict[str, Entity] = {}
+    mentions = 0
+    persons = 0
+    for ext in entities:
+        name = (getattr(ext, "name", "") or "").strip()
+        if not name:
+            continue
+        etype = (getattr(ext, "type", "") or "").strip().lower()
+        if etype not in _EXTRACTION_ENTITY_TYPES:
+            etype = "topic"
+        context = (getattr(ext, "context", "") or "").strip() or None
+        entity = await upsert_entity(db, user_id, type=etype, name=name)
+        if entity is None:
+            continue
+        await record_mention(
+            db,
+            user_id=user_id,
+            entity_id=entity.id,
+            source_kind=source_kind,
+            source_id=source_id,
+            context=context,
+        )
+        mentions += 1
+        if etype == "person":
+            persons += 1
+        key = normalise_name(name)
+        if key:
+            name_to_entity[key] = entity
+
+    relations = 0
+    for ext in entities:
+        src_key = normalise_name((getattr(ext, "name", "") or ""))
+        src = name_to_entity.get(src_key) if src_key else None
+        if src is None:
+            continue
+        context = (getattr(ext, "context", "") or "").strip() or None
+        for rel in (getattr(ext, "relations", None) or []):
+            target_key = normalise_name((rel.get("related_to") or "").strip())
+            target = name_to_entity.get(target_key) if target_key else None
+            if target is None or target.id == src.id:
+                continue
+            await record_relation(
+                db,
+                source_entity_id=src.id,
+                target_entity_id=target.id,
+                relation_type=rel.get("relation_type"),
+                recording_id=recording_id,
+                context=context,
+            )
+            relations += 1
+
+    if persons:
+        await reconcile_person_entities(db, user_id)
+    return ExtractionSeedResult(
+        mentions_recorded=mentions,
+        relations_recorded=relations,
+        persons_seeded=persons,
+    )
 
 
 @dataclass
@@ -413,4 +560,106 @@ async def backfill_entity_mentions_from_existing_summaries(
         entity_mentions_before=before,
         entity_mentions_after=after,
         created_mentions=max(after - before, 0),
+    )
+
+
+@dataclass
+class EntityExtractionBackfillResult:
+    recordings_scanned: int
+    recordings_extracted: int
+    mentions_recorded: int
+    relations_recorded: int
+    llm_requests: int = 0
+
+    def as_dict(self) -> dict[str, int]:
+        return {
+            "recordings_scanned": self.recordings_scanned,
+            "recordings_extracted": self.recordings_extracted,
+            "mentions_recorded": self.mentions_recorded,
+            "relations_recorded": self.relations_recorded,
+            "llm_requests": self.llm_requests,
+        }
+
+
+async def backfill_entity_extraction_for_recordings(
+    db: AsyncSession,
+    user_id: Any | None = None,
+    *,
+    limit: int | None = None,
+    extractor=None,
+) -> EntityExtractionBackfillResult:
+    """Run rich entity + relation extraction over EXISTING recordings.
+
+    Targets recordings that have a transcript + summary but no
+    ``EntityRelation.recording_id`` yet (relations are the new artifact, so their
+    absence marks "not richly extracted"). Operator-gated by ``limit`` — it
+    spends one Cerebras call per recording, so it never runs on a beat schedule.
+    Per-recording failures are isolated and logged.
+    """
+    from app.core.summarizer import extract_entities  # lazy: avoid import cycle
+    from app.core.summary_generation import build_summary_transcript
+
+    extract = extractor or extract_entities
+
+    has_relation = (
+        select(EntityRelation.id)
+        .where(EntityRelation.recording_id == Recording.id)
+        .exists()
+    )
+    stmt = (
+        select(Recording.id, Recording.user_id)
+        .join(Summary, Summary.recording_id == Recording.id)
+        .where(Recording.deleted_at.is_(None), ~has_relation)
+        .order_by(Recording.created_at.asc(), Recording.id.asc())
+    )
+    if user_id is not None:
+        stmt = stmt.where(Recording.user_id == user_id)
+    if limit is not None:
+        stmt = stmt.limit(limit)
+    rows = (await db.execute(stmt)).all()
+
+    recordings_extracted = 0
+    mentions = 0
+    relations = 0
+    llm_requests = 0
+    for rec_id, owner_id in rows:
+        segments = (
+            await db.execute(
+                select(Segment)
+                .where(Segment.recording_id == rec_id)
+                .order_by(Segment.start_ms.asc())
+            )
+        ).scalars().all()
+        if not segments:
+            continue
+        transcript = build_summary_transcript(segments)
+        if not transcript:
+            continue
+        try:
+            extracted = await extract(transcript[:_EXTRACTION_TRANSCRIPT_CAP])
+            llm_requests += 1
+        except Exception as exc:  # noqa: BLE001 — per-recording isolation; log + continue
+            logger.warning(
+                "entity extraction backfill failed recording=%s err=%s", rec_id, exc
+            )
+            continue
+        result = await seed_entities_from_extraction(
+            db,
+            owner_id,
+            source_kind="recording",
+            source_id=rec_id,
+            entities=extracted,
+            recording_id=rec_id,
+        )
+        mentions += result.mentions_recorded
+        relations += result.relations_recorded
+        if result.mentions_recorded or result.relations_recorded:
+            recordings_extracted += 1
+    await db.flush()
+    return EntityExtractionBackfillResult(
+        recordings_scanned=len(rows),
+        recordings_extracted=recordings_extracted,
+        mentions_recorded=mentions,
+        relations_recorded=relations,
+        llm_requests=llm_requests,
     )

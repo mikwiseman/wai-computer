@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
@@ -13,9 +14,14 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.core.entity_graph import seed_entities_from_summary
+from app.core.entity_graph import seed_entities_from_extraction, seed_entities_from_summary
 from app.core.personalization import summary_personalization_instructions
-from app.core.summarizer import SummaryResult, resolve_highlight_timestamps, summarize_transcript
+from app.core.summarizer import (
+    SummaryResult,
+    extract_entities,
+    resolve_highlight_timestamps,
+    summarize_transcript,
+)
 from app.models.highlight import Highlight
 from app.models.recording import (
     ActionItem,
@@ -27,6 +33,12 @@ from app.models.recording import (
     SummaryGenerationStatus,
 )
 from app.models.user import User
+
+logger = logging.getLogger(__name__)
+
+# Cap the transcript fed to entity extraction (the +1 Cerebras call) so token
+# cost stays bounded on long recordings.
+_ENTITY_EXTRACTION_TRANSCRIPT_CAP = 24000
 
 ACTIVE_SUMMARY_GENERATION_STATUSES = {
     SummaryGenerationStatus.QUEUED.value,
@@ -174,6 +186,7 @@ async def apply_summary_result(
     *,
     recording: Recording,
     summary_result: SummaryResult,
+    entity_extractor=None,
 ) -> Summary:
     if recording.summary:
         recording.summary.summary = summary_result.summary
@@ -232,16 +245,42 @@ async def apply_summary_result(
     recording.updated_at = datetime.now(timezone.utc)
     await db.flush()
 
-    # Seed the knowledge graph from the summary's people + topics (zero extra
-    # LLM cost) so recordings are first-class graph citizens alongside items.
-    await seed_entities_from_summary(
-        db,
-        recording.user_id,
-        source_kind="recording",
-        source_id=recording.id,
-        people=summary_result.people_mentioned,
-        topics=summary_result.topics,
-    )
+    # Wire the knowledge graph from the transcript: rich, TYPED entities
+    # (person / project / topic / organization) plus entity->entity relations,
+    # so entity wiki pages render a populated "related" section. Extraction is
+    # the +1 Cerebras call; if it fails we keep the zero-cost summary seed
+    # (people/topics) so the recording still joins the graph — the failure is
+    # logged, never silently swallowed.
+    extractor = entity_extractor or extract_entities
+    try:
+        transcript = build_summary_transcript(recording.segments)
+        extracted = (
+            await extractor(transcript[:_ENTITY_EXTRACTION_TRANSCRIPT_CAP])
+            if transcript
+            else []
+        )
+        await seed_entities_from_extraction(
+            db,
+            recording.user_id,
+            source_kind="recording",
+            source_id=recording.id,
+            entities=extracted,
+            recording_id=recording.id,
+        )
+    except Exception as exc:  # noqa: BLE001 — enrichment is best-effort; keep the floor
+        logger.warning(
+            "entity extraction failed recording=%s err=%s; seeding from summary",
+            recording.id,
+            exc,
+        )
+        await seed_entities_from_summary(
+            db,
+            recording.user_id,
+            source_kind="recording",
+            source_id=recording.id,
+            people=summary_result.people_mentioned,
+            topics=summary_result.topics,
+        )
     return summary
 
 

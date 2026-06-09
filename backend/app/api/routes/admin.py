@@ -19,7 +19,10 @@ from app.billing.providers.stripe_provider import StripeProvider
 from app.billing.providers.tinkoff_provider import TinkoffProvider
 from app.config import get_settings
 from app.core.embedding_backfill import backfill_missing_segment_embeddings
-from app.core.entity_graph import backfill_entity_mentions_from_existing_summaries
+from app.core.entity_graph import (
+    backfill_entity_extraction_for_recordings,
+    backfill_entity_mentions_from_existing_summaries,
+)
 from app.core.observability import get_release_version, get_sentry_runtime
 from app.models.admin import AdminAuditLog, AdminRole, StaffMember
 from app.models.ai_usage import AiUsageEvent
@@ -411,6 +414,14 @@ class AdminBrainBackfillResponse(BaseModel):
     entity_mentions_before: int
     entity_mentions_after: int
     created_mentions: int
+    llm_requests: int
+
+
+class AdminBrainExtractionBackfillResponse(BaseModel):
+    recordings_scanned: int
+    recordings_extracted: int
+    mentions_recorded: int
+    relations_recorded: int
     llm_requests: int
 
 
@@ -3126,6 +3137,37 @@ async def run_admin_brain_backfill(
     )
     await db.commit()
     return AdminBrainBackfillResponse(**payload)
+
+
+@router.post(
+    "/brain/backfill-extraction", response_model=AdminBrainExtractionBackfillResponse
+)
+async def run_admin_brain_extraction_backfill(
+    request: AdminBrainBackfillRequest,
+    db: Database,
+    admin: CurrentAdmin,
+) -> AdminBrainExtractionBackfillResponse:
+    """Run rich entity + relation extraction over existing recordings.
+
+    Operator-gated by ``limit`` — this spends one Cerebras call per recording, so
+    backfill the legacy library in deliberate batches.
+    """
+    result = await backfill_entity_extraction_for_recordings(
+        db,
+        user_id=request.user_id,
+        limit=request.limit,
+    )
+    payload = result.as_dict()
+    await _audit(
+        db,
+        admin,
+        action="brain.backfill_extraction",
+        target_type="brain",
+        target_id=str(request.user_id) if request.user_id else None,
+        details=payload,
+    )
+    await db.commit()
+    return AdminBrainExtractionBackfillResponse(**payload)
 
 
 @router.get("/audit")
