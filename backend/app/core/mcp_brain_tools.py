@@ -38,6 +38,7 @@ from app.core.mcp_tools import (
     _validate_limit,
     fetch_recording_for_mcp,
 )
+from app.core.reranker import get_reranker, rerank_hits
 from app.core.unified_search import unified_search
 from app.models.companion import ChatMessage, Conversation
 from app.models.entity import Entity, EntityMention
@@ -162,7 +163,20 @@ async def search_brain_for_mcp(
         return {"results": []}
     _validate_limit(limit, settings.mcp_max_search_results)
 
-    hits = await unified_search(db, _as_uuid(user_id), query, limit=limit, per_parent_limit=1)
+    # Agents (not the as-you-type web box) get reranked results when enabled:
+    # over-retrieve a wider pool, then rerank to the requested limit.
+    reranker = get_reranker(settings)
+    pool = (
+        min(limit * settings.reranker_overfetch, settings.reranker_max_candidates)
+        if reranker
+        else limit
+    )
+    hits = await unified_search(db, _as_uuid(user_id), query, limit=pool, per_parent_limit=1)
+    if reranker:
+        hits, _tokens = await rerank_hits(
+            query, hits, reranker=reranker, top_k=limit,
+            confidence_threshold=settings.reranker_confidence_threshold,
+        )
     return {
         "results": [
             {
