@@ -172,6 +172,9 @@ def supports_dictation(language: str) -> bool:
     return language == "en" or language.startswith("en-")
 
 
+DEEPGRAM_MAX_REPLACEMENTS = 200
+
+
 def sanitize_deepgram_keyterms(keyterms: list[str] | None) -> list[str]:
     if not keyterms:
         return []
@@ -184,6 +187,34 @@ def sanitize_deepgram_keyterms(keyterms: list[str] | None) -> list[str]:
     )
 
 
+def sanitize_deepgram_replacements(
+    replacements: list[tuple[str, str]] | None,
+) -> list[tuple[str, str]]:
+    """Normalize find/replace pairs for Deepgram's find-and-replace.
+
+    Deepgram matches the FIND term case-insensitively but requires it supplied
+    lowercase, so we lowercase it here. A pair that would replace a word with
+    itself (case-insensitively) is dropped — it can only cost tokens and risk a
+    no-op rewrite. De-duped by find and capped to keep the URL bounded.
+    """
+    if not replacements:
+        return []
+    sanitized: list[tuple[str, str]] = []
+    seen: set[str] = set()
+    for find, replace in replacements:
+        find_clean = find.strip().lower()
+        replace_clean = replace.strip()
+        if not find_clean or find_clean in seen:
+            continue
+        if find_clean.casefold() == replace_clean.casefold():
+            continue
+        seen.add(find_clean)
+        sanitized.append((find_clean, replace_clean))
+        if len(sanitized) >= DEEPGRAM_MAX_REPLACEMENTS:
+            break
+    return sanitized
+
+
 def build_realtime_websocket_url(
     *,
     language: str,
@@ -191,6 +222,7 @@ def build_realtime_websocket_url(
     purpose: Literal["recording", "dictation"],
     model: str = DEEPGRAM_REALTIME_MODEL,
     keyterms: list[str] | None = None,
+    replacements: list[tuple[str, str]] | None = None,
 ) -> str:
     resolved_language = normalize_deepgram_language(language)
     endpointing_ms = (
@@ -228,6 +260,10 @@ def build_realtime_websocket_url(
     if supports_numerals(resolved_language):
         params.append(("numerals", "true"))
     params.extend(("keyterm", keyterm) for keyterm in sanitize_deepgram_keyterms(keyterms))
+    params.extend(
+        ("replace", f"{find}:{replace}")
+        for find, replace in sanitize_deepgram_replacements(replacements)
+    )
     return f"{DEEPGRAM_REALTIME_WS_URL}?{urlencode(params)}"
 
 
@@ -258,6 +294,7 @@ def build_batch_url(
     channels: int = DEEPGRAM_REALTIME_CHANNELS,
     model: str = DEEPGRAM_BATCH_MODEL,
     keyterms: list[str] | None = None,
+    replacements: list[tuple[str, str]] | None = None,
 ) -> str:
     """Build the Deepgram pre-recorded transcription URL for file STT."""
     resolved_language = normalize_deepgram_language(language)
@@ -286,6 +323,10 @@ def build_batch_url(
     if supports_numerals(resolved_language):
         params.append(("numerals", "true"))
     params.extend(("keyterm", keyterm) for keyterm in sanitize_deepgram_keyterms(keyterms))
+    params.extend(
+        ("replace", f"{find}:{replace}")
+        for find, replace in sanitize_deepgram_replacements(replacements)
+    )
     return f"{DEEPGRAM_BATCH_URL}?{urlencode(params)}"
 
 
@@ -367,6 +408,7 @@ async def transcribe_audio_file(
     channels: int | None = None,
     model: str | None = None,
     keyterms: list[str] | None = None,
+    replacements: list[tuple[str, str]] | None = None,
     max_channels: int | None = None,
 ) -> list[TranscriptResult]:
     """Transcribe an uploaded audio file with Deepgram pre-recorded STT."""
@@ -401,6 +443,7 @@ async def transcribe_audio_file(
         channels=channel_count,
         model=model or DEEPGRAM_BATCH_MODEL,
         keyterms=keyterms,
+        replacements=replacements,
     )
 
     async with httpx.AsyncClient(timeout=DEEPGRAM_BATCH_TIMEOUT_SECONDS) as client:

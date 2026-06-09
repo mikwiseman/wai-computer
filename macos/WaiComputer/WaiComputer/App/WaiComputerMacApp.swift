@@ -31,6 +31,7 @@ struct WaiComputerMacApp: App {
     @StateObject private var historyStore: DictationHistoryStore
     @StateObject private var dictionaryStore: DictationDictionaryStore
     @StateObject private var languageStore: DictationLanguageStore
+    @StateObject private var learningEngine: DictionaryLearningEngine
     @AppStorage(BetaChannelStore.userDefaultsKey) private var receiveBetaUpdates = false
     @AppStorage(MacThemePreferences.appearanceKey) private var appearanceModeRawValue = MacThemePreferences.defaultAppearance.rawValue
     @AppStorage(MacThemePreferences.accentKey) private var accentChoiceRawValue = MacThemePreferences.defaultAccent.rawValue
@@ -56,6 +57,10 @@ struct WaiComputerMacApp: App {
         dictation.historyStore = history
         dictation.dictionaryStore = dictionary
         dictation.languageStore = languages
+        let learningEngine = DictionaryLearningEngine(lexicon: MacLexiconChecker())
+        let editWatcher = DictationEditWatcher(engine: learningEngine)
+        dictation.learningEngine = learningEngine
+        dictation.editWatcher = editWatcher
         let appState = MacAppState(
             recordingViewModel: recordingViewModel,
             dictationManager: dictation,
@@ -85,6 +90,7 @@ struct WaiComputerMacApp: App {
         _historyStore = StateObject(wrappedValue: history)
         _dictionaryStore = StateObject(wrappedValue: dictionary)
         _languageStore = StateObject(wrappedValue: languages)
+        _learningEngine = StateObject(wrappedValue: learningEngine)
         _appState = StateObject(wrappedValue: appState)
     }
 
@@ -109,6 +115,7 @@ struct WaiComputerMacApp: App {
                 .environmentObject(historyStore)
                 .environmentObject(dictionaryStore)
                 .environmentObject(languageStore)
+                .environmentObject(learningEngine)
                 .preferredColorScheme(selectedAppearanceMode.preferredColorScheme)
                 .tint(selectedAccentChoice.tintColor)
                 .onAppear {

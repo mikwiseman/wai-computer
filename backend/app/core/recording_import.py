@@ -24,7 +24,11 @@ from app.core.deepgram_usage import (
 )
 from app.core.embeddings import generate_embedding
 from app.core.error_sanitizer import sanitize_failure_message
-from app.core.personalization import load_user_keyterms, summary_personalization_instructions
+from app.core.personalization import (
+    load_user_keyterms,
+    load_user_replacements,
+    summary_personalization_instructions,
+)
 from app.core.recording_audio_processing import (
     apply_no_speech_failure,
     voice_identification_enabled_for_audio,
@@ -348,6 +352,7 @@ async def _transcribe(
     source_label: str = "upload",
 ) -> list[TranscriptResult]:
     keyterms = await load_user_keyterms(db, user_id=user.id, purpose="recording")
+    replacements = await load_user_replacements(db, user_id=user.id)
     deepgram_addons = ["speaker_diarization"]
     if keyterms:
         deepgram_addons.append("keyterm_prompting")
@@ -358,6 +363,7 @@ async def _transcribe(
             language=language,
             content_type=content_type,
             keyterms=keyterms,
+            replacements=replacements,
             user_id=str(user.id),
             audio_duration_seconds=audio_duration_seconds,
             usage_purpose=source_label,

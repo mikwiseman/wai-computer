@@ -4,6 +4,7 @@ import WaiComputerKit
 struct DictationDictionaryView: View {
     @EnvironmentObject private var dictionaryStore: DictationDictionaryStore
     @EnvironmentObject private var languageManager: LanguageManager
+    @EnvironmentObject private var learningEngine: DictionaryLearningEngine
     @State private var newWord = ""
     @State private var newReplacement = ""
     @State private var searchText = ""
@@ -41,6 +42,12 @@ struct DictationDictionaryView: View {
             .padding(Spacing.xl)
 
             Divider()
+
+            // Suggestions learned from the user's edits (one-tap accept).
+            if !learningEngine.suggestions.isEmpty {
+                suggestionsSection
+                Divider()
+            }
 
             // Search
             if !dictionaryStore.words.isEmpty {
@@ -86,6 +93,87 @@ struct DictationDictionaryView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    @ViewBuilder
+    private var suggestionsSection: some View {
+        VStack(alignment: .leading, spacing: Spacing.sm) {
+            HStack(spacing: 6) {
+                Image(systemName: "sparkles")
+                    .font(.caption)
+                    .foregroundStyle(Palette.accent)
+                Text(t("Suggested from your edits", "Подсказки из твоих правок"))
+                    .font(Typography.label)
+                    .foregroundStyle(Palette.textSecondary)
+            }
+            ForEach(learningEngine.suggestions) { suggestion in
+                suggestionRow(suggestion)
+            }
+        }
+        .padding(.horizontal, Spacing.xl)
+        .padding(.vertical, Spacing.md)
+    }
+
+    @ViewBuilder
+    private func suggestionRow(_ suggestion: DictionarySuggestion) -> some View {
+        HStack(spacing: Spacing.sm) {
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 6) {
+                    Text(suggestion.corrected)
+                        .font(Typography.body.weight(.semibold))
+                        .foregroundStyle(Palette.textPrimary)
+                    Text(verbatim: "·")
+                        .foregroundStyle(Palette.textTertiary)
+                    Text(correctedCountText(suggestion.hitCount))
+                        .font(Typography.caption)
+                        .foregroundStyle(Palette.textTertiary)
+                }
+                Text(t("Heard “\(suggestion.original)”", "Распознано «\(suggestion.original)»"))
+                    .font(Typography.caption)
+                    .foregroundStyle(Palette.textTertiary)
+            }
+
+            Spacer()
+
+            Button(t("Add", "Добавить")) {
+                dictionaryStore.add(word: suggestion.corrected, origin: "learned")
+                learningEngine.accept(suggestion)
+            }
+            .help(t("Add as a recognition hint", "Добавить как подсказку распознавания"))
+
+            Button(t("Replace", "Замена")) {
+                dictionaryStore.learnReplacement(word: suggestion.original, replacement: suggestion.corrected)
+                learningEngine.accept(suggestion)
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(Palette.accent)
+            .help(t(
+                "Always replace “\(suggestion.original)” with “\(suggestion.corrected)”",
+                "Всегда заменять «\(suggestion.original)» на «\(suggestion.corrected)»"
+            ))
+
+            Button {
+                learningEngine.dismiss(suggestion)
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.caption)
+                    .foregroundStyle(Palette.textTertiary)
+            }
+            .buttonStyle(.plain)
+            .help(t("Dismiss", "Скрыть"))
+        }
+        .padding(Spacing.sm)
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(Palette.accent.opacity(0.08))
+        )
+    }
+
+    private func correctedCountText(_ count: Int) -> String {
+        if OnboardingL10n.language(for: languageManager.current) == .russian {
+            return "исправлено \(count)×"
+        }
+        return "corrected \(count)×"
     }
 
     @ViewBuilder
@@ -169,6 +257,13 @@ struct DictationDictionaryView: View {
             Text(word.word)
                 .font(Typography.body)
                 .foregroundStyle(Palette.textPrimary)
+
+            if word.isLearned {
+                Image(systemName: "sparkles")
+                    .font(.caption2)
+                    .foregroundStyle(Palette.accent)
+                    .help(t("Learned from your edits", "Выучено из твоих правок"))
+            }
 
             if let replacement = word.replacement, replacement != word.word {
                 Image(systemName: "arrow.right")

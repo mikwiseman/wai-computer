@@ -11,6 +11,7 @@
 		063CEA1A90D4FC6E524DE28C /* OnboardingWelcomeSlide.swift in Sources */ = {isa = PBXBuildFile; fileRef = DC1ECB5B3DBC8E7FE4CB148C /* OnboardingWelcomeSlide.swift */; };
 		08033280F054668F12DCA45E /* DictationDictionaryStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20042A89F03C6CC80491D13F /* DictationDictionaryStore.swift */; };
 		0AF57CF86C3DB79055210578 /* DictationSettingsCopy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4138C52CEA5CA91C25C9E0C9 /* DictationSettingsCopy.swift */; };
+		0F9FDE2F754BE56C4CB35BE2 /* MacLexiconChecker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 076FC5A6C8BDB89E6A5CA073 /* MacLexiconChecker.swift */; };
 		1054D58359DC993D9CCA56B7 /* DictationStartupAudioBufferTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1EC2C1264073BF77C0F1688B /* DictationStartupAudioBufferTests.swift */; };
 		13520163768E2BD45231E1D7 /* ImportUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 66FA75D8ABA621613DBC2F59 /* ImportUITests.swift */; };
 		14670A5C04053EC1B99750B0 /* DictationHistoryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72DC15C789AC6D3DE96B7454 /* DictationHistoryView.swift */; };
@@ -36,6 +37,7 @@
 		42746C284DD89EAAE6F30B25 /* DictationContextCollectorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1D101C366A34833C8FB33BC6 /* DictationContextCollectorTests.swift */; };
 		430254DE6ECBC18D3046F0FB /* GlobalHotkeyManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 346A9D9E86B068DC328963E4 /* GlobalHotkeyManager.swift */; };
 		43EC3AD5602AE97CF97F22B2 /* MacContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A467DA7396A262853AB8271 /* MacContentView.swift */; };
+		43ED9C9F139CA04F0319965A /* DictationEditWatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = 32965A70EEABADD01D4A77DD /* DictationEditWatcher.swift */; };
 		46BE292270D1BB89FB202981 /* BetaChannelStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9BFE1773C36640DCD060CE4B /* BetaChannelStore.swift */; };
 		48A223F36F6D51274C0EA4DF /* MacRecordingDetailViewModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CBF4008D0F99ABDDF4CFE682 /* MacRecordingDetailViewModelTests.swift */; };
 		49CB40DF915232AA363BFA6E /* MacInboxViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4DE5DAC3D629BBD3497E51F8 /* MacInboxViewModel.swift */; };
@@ -138,6 +140,7 @@
 		010A1CB6C20DE6517AA54CD3 /* PaymentModeToggle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaymentModeToggle.swift; sourceTree = "<group>"; };
 		0360B0E138565421000ECA14 /* OnboardingPermissionUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingPermissionUITests.swift; sourceTree = "<group>"; };
 		03834876FDCAB071C9C43F0B /* SpeakerChipView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeakerChipView.swift; sourceTree = "<group>"; };
+		076FC5A6C8BDB89E6A5CA073 /* MacLexiconChecker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacLexiconChecker.swift; sourceTree = "<group>"; };
 		07D1B3EF81EEF7134E5BE0F2 /* BetaChannelStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BetaChannelStoreTests.swift; sourceTree = "<group>"; };
 		106D8912FB53CF959C37C5D7 /* AuthFlowUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthFlowUITests.swift; sourceTree = "<group>"; };
 		10E4E623F7FC6EEBED7495A6 /* WaiComputerKit */ = {isa = PBXFileReference; lastKnownFileType = folder; name = WaiComputerKit; path = ../../shared/WaiComputerKit; sourceTree = SOURCE_ROOT; };
@@ -154,6 +157,7 @@
 		2A7F640CE73D365119CD0E02 /* DictationManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DictationManager.swift; sourceTree = "<group>"; };
 		2F1ABFAB94BE684BE4551196 /* MacContentFeedView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacContentFeedView.swift; sourceTree = "<group>"; };
 		31B51F48FF32F6BC868F2C12 /* WaiComputer.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = WaiComputer.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		32965A70EEABADD01D4A77DD /* DictationEditWatcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DictationEditWatcher.swift; sourceTree = "<group>"; };
 		333FE049E4A66D6B5617FB7E /* MacReviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacReviewView.swift; sourceTree = "<group>"; };
 		346A9D9E86B068DC328963E4 /* GlobalHotkeyManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalHotkeyManager.swift; sourceTree = "<group>"; };
 		3996AAFF9389472FC679B74E /* OnboardingHotkeyPickerSlide.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingHotkeyPickerSlide.swift; sourceTree = "<group>"; };
@@ -303,6 +307,7 @@
 				C8CF28431931F926527ADB97 /* DictationCopy.swift */,
 				20042A89F03C6CC80491D13F /* DictationDictionaryStore.swift */,
 				D19C3473AF09E961E61B2F22 /* DictationDictionaryView.swift */,
+				32965A70EEABADD01D4A77DD /* DictationEditWatcher.swift */,
 				A75D539F70136F36847122EB /* DictationHistoryStore.swift */,
 				72DC15C789AC6D3DE96B7454 /* DictationHistoryView.swift */,
 				49041A92859260A8AC12767C /* DictationLanguageStore.swift */,
@@ -312,6 +317,7 @@
 				5A0125EA16CB215F68025382 /* DictationStartupAudioBuffer.swift */,
 				346A9D9E86B068DC328963E4 /* GlobalHotkeyManager.swift */,
 				168C1BFCC7BF45C935DAFEAA /* LanguagePickerView.swift */,
+				076FC5A6C8BDB89E6A5CA073 /* MacLexiconChecker.swift */,
 				F560C57D16BE3A93BBAF6818 /* TextInserter.swift */,
 				8F3871334A007A9CE3343C34 /* TranslationLanguageStore.swift */,
 			);
@@ -669,6 +675,7 @@
 				3CDB378E9E5BE4BC61E1C0E1 /* DictationCopy.swift in Sources */,
 				08033280F054668F12DCA45E /* DictationDictionaryStore.swift in Sources */,
 				6E344544C36E05B5FE529ED5 /* DictationDictionaryView.swift in Sources */,
+				43ED9C9F139CA04F0319965A /* DictationEditWatcher.swift in Sources */,
 				FDFC6C1C2F8D256C0EDED048 /* DictationHistoryStore.swift in Sources */,
 				14670A5C04053EC1B99750B0 /* DictationHistoryView.swift in Sources */,
 				D07E5859051F05165917CAEC /* DictationLanguageStore.swift in Sources */,
@@ -690,6 +697,7 @@
 				737DBA9EE4BF9DB83DC64BE8 /* MacInboxView.swift in Sources */,
 				49CB40DF915232AA363BFA6E /* MacInboxViewModel.swift in Sources */,
 				CC9651D914CA0B1A697A0B83 /* MacItemDetailView.swift in Sources */,
+				0F9FDE2F754BE56C4CB35BE2 /* MacLexiconChecker.swift in Sources */,
 				50402BE88225CADE945CA60D /* MacLibraryViewModel.swift in Sources */,
 				C0861985916B2F16D1BC9952 /* MacOnboardingDefaultsSnapshot.swift in Sources */,
 				35D27A6B97D674251A725039 /* MacRecordingDetailView.swift in Sources */,

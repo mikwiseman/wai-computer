@@ -25,6 +25,11 @@ async def test_import_transcription_uses_locked_file_stt_runtime(monkeypatch):
         "load_user_keyterms",
         AsyncMock(return_value=[]),
     )
+    monkeypatch.setattr(
+        recording_import,
+        "load_user_replacements",
+        AsyncMock(return_value=[]),
+    )
 
     await recording_import._transcribe(
         db=object(),
@@ -43,6 +48,7 @@ async def test_import_transcription_uses_locked_file_stt_runtime(monkeypatch):
     assert kwargs["language"] == "auto"
     assert kwargs["content_type"] == "audio/wav"
     assert kwargs["keyterms"] == []
+    assert kwargs["replacements"] == []
     assert "provider" not in kwargs
     assert "model" not in kwargs
 

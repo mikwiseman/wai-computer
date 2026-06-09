@@ -57,6 +57,9 @@ class DictationDictionaryWord(Base, UUIDMixin, TimestampMixin):
     client_word_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
     word: Mapped[str] = mapped_column(String(200), nullable=False)
     replacement: Mapped[str | None] = mapped_column(String(200))
+    # "manual" = the user typed it; "learned" = auto-suggested from edits then
+    # accepted. Surfaced as a ✨ marker on clients and synced across Macs.
+    origin: Mapped[str] = mapped_column(String(16), nullable=False, server_default="manual")
     occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
     user: Mapped["User"] = relationship("User", back_populates="dictation_dictionary_words")

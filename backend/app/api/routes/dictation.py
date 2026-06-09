@@ -1047,6 +1047,7 @@ class DictionaryWordResponse(BaseModel):
     client_word_id: UUID
     word: str
     replacement: str | None = None
+    origin: str = "manual"
     occurred_at: datetime
 
 
@@ -1054,6 +1055,7 @@ class CreateDictionaryWordRequest(BaseModel):
     client_word_id: UUID
     word: str = Field(min_length=1, max_length=200)
     replacement: str | None = Field(default=None, max_length=200)
+    origin: str = Field(default="manual", max_length=16)
     occurred_at: datetime
 
 
@@ -1073,6 +1075,7 @@ def _serialize_word(word: DictationDictionaryWord) -> DictionaryWordResponse:
         client_word_id=word.client_word_id,
         word=word.word,
         replacement=word.replacement,
+        origin=word.origin,
         occurred_at=word.occurred_at,
     )
 
@@ -1212,6 +1215,7 @@ async def create_dictionary_word(
         client_word_id=request.client_word_id,
         word=request.word,
         replacement=request.replacement,
+        origin=request.origin,
         occurred_at=request.occurred_at,
     )
     db.add(word)

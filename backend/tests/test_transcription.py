@@ -40,6 +40,7 @@ async def test_transcription_dispatches_to_deepgram_file_stt():
         channels=None,
         model=DEEPGRAM_FILE_STT_MODEL,
         keyterms=None,
+        replacements=None,
         max_channels=2,
     )
 
@@ -74,6 +75,7 @@ async def test_transcription_accepts_usage_purpose_without_forwarding_to_provide
         channels=None,
         model=DEEPGRAM_FILE_STT_MODEL,
         keyterms=None,
+        replacements=None,
         max_channels=2,
     )
     assert any(
@@ -111,6 +113,7 @@ async def test_transcription_ignores_removed_user_file_stt_choice():
         channels=1,
         model=DEEPGRAM_FILE_STT_MODEL,
         keyterms=None,
+        replacements=None,
         max_channels=2,
     )
 

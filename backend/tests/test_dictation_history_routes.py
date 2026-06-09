@@ -226,6 +226,35 @@ async def test_post_word_creates_and_list_returns_it(client: AsyncClient):
 
 
 @pytest.mark.asyncio
+async def test_post_word_defaults_origin_to_manual(client: AsyncClient):
+    """Origin defaults to ``manual`` when the client omits it (backward compat)."""
+    headers = await _register(client, "dict.origin.default@example.com")
+    payload = _word_payload(word="defaulted")
+    assert "origin" not in payload
+
+    create = await client.post("/api/dictation/dictionary", headers=headers, json=payload)
+    assert create.status_code == 201
+    assert create.json()["origin"] == "manual"
+
+    listed = await client.get("/api/dictation/dictionary", headers=headers)
+    assert listed.json()[0]["origin"] == "manual"
+
+
+@pytest.mark.asyncio
+async def test_post_word_round_trips_learned_origin(client: AsyncClient):
+    """An explicit ``learned`` origin persists and round-trips through list."""
+    headers = await _register(client, "dict.origin.learned@example.com")
+    payload = _word_payload(word="autosuggested", origin="learned")
+
+    create = await client.post("/api/dictation/dictionary", headers=headers, json=payload)
+    assert create.status_code == 201
+    assert create.json()["origin"] == "learned"
+
+    listed = await client.get("/api/dictation/dictionary", headers=headers)
+    assert listed.json()[0]["origin"] == "learned"
+
+
+@pytest.mark.asyncio
 async def test_post_word_is_idempotent_by_client_word_id(client: AsyncClient):
     headers = await _register(client, "dict.idempotent@example.com")
     payload = _word_payload(word="kubernetes")

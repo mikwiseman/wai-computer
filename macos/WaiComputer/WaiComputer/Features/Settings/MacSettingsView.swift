@@ -164,6 +164,7 @@ struct MacSettingsView: View {
     @AppStorage(MacThemePreferences.accentKey) private var accentChoiceRawValue = MacThemePreferences.defaultAccent.rawValue
     @AppStorage(MacPresentationSettings.showDockIconWhenMainWindowClosedKey) private var showDockIconWhenMainWindowClosed = false
     @AppStorage("desktopComputerUseEnabled") private var computerUseEnabled = false
+    @AppStorage("dictationLearnFromEdits") private var learnFromEditsEnabled = true
     @AppStorage(BetaChannelStore.userDefaultsKey) private var receiveBetaUpdates = false
     @EnvironmentObject var languageStore: DictationLanguageStore
     @State private var summaryLanguage = "auto"
@@ -632,6 +633,22 @@ struct MacSettingsView: View {
                 t(
                     "Uses the active app and nearby textbox text to format dictation for email, chat, code, and notes.",
                     "Учитывает активное приложение и текст рядом с курсором, чтобы форматировать диктовку для почты, чатов, кода и заметок."
+                )
+            )
+                .font(Typography.caption)
+                .foregroundStyle(Palette.textTertiary)
+
+            Toggle(isOn: $learnFromEditsEnabled) {
+                Text(t("Suggest words from my edits", "Подсказывать слова из моих правок"))
+            }
+                .font(Typography.body)
+                .disabled(!dictationManager.isFeatureEnabled)
+                .accessibilityIdentifier("settings-dictation-learn-from-edits-toggle")
+
+            Text(
+                t(
+                    "When you repeatedly fix the same misheard word after dictation, WaiComputer offers to add it to your Dictionary. Learning happens on your Mac — your edits never leave the device.",
+                    "Когда ты несколько раз исправляешь одно и то же неверно распознанное слово, WaiComputer предложит добавить его в словарь. Обучение происходит на твоём Mac — правки не покидают устройство."
                 )
             )
                 .font(Typography.caption)

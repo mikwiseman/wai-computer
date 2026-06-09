@@ -8,20 +8,34 @@ struct DictionaryWord: Identifiable, Codable, Hashable {
     let id: UUID
     var word: String
     var replacement: String?
+    /// "manual" or "learned" (accepted from an auto-suggestion).
+    var origin: String
     let createdAt: Date
 
-    init(word: String, replacement: String? = nil) {
+    init(word: String, replacement: String? = nil, origin: String = "manual") {
         self.id = UUID()
         self.word = word
         self.replacement = replacement
+        self.origin = origin
         self.createdAt = Date()
     }
 
-    init(id: UUID, word: String, replacement: String?, createdAt: Date) {
+    init(id: UUID, word: String, replacement: String?, origin: String = "manual", createdAt: Date) {
         self.id = id
         self.word = word
         self.replacement = replacement
+        self.origin = origin
         self.createdAt = createdAt
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(UUID.self, forKey: .id)
+        word = try c.decode(String.self, forKey: .word)
+        replacement = try c.decodeIfPresent(String.self, forKey: .replacement)
+        // Older local caches predate `origin`; default them to manual.
+        origin = try c.decodeIfPresent(String.self, forKey: .origin) ?? "manual"
+        createdAt = try c.decode(Date.self, forKey: .createdAt)
     }
 
     /// Words without replacement are vocabulary boosters (improve recognition).
@@ -29,6 +43,9 @@ struct DictionaryWord: Identifiable, Codable, Hashable {
     var isReplacement: Bool {
         replacement != nil && replacement != word
     }
+
+    /// True for entries auto-learned from the user's repeated edits.
+    var isLearned: Bool { origin == "learned" }
 }
 
 @MainActor
@@ -56,12 +73,13 @@ final class DictationDictionaryStore: ObservableObject {
         self.apiClient = apiClient
     }
 
-    func add(word: String, replacement: String? = nil) {
+    @discardableResult
+    func add(word: String, replacement: String? = nil, origin: String = "manual") -> Bool {
         let trimmed = word.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
-        guard !words.contains(where: { $0.word.lowercased() == trimmed.lowercased() }) else { return }
+        guard !trimmed.isEmpty else { return false }
+        guard !words.contains(where: { $0.word.lowercased() == trimmed.lowercased() }) else { return false }
 
-        let entry = DictionaryWord(word: trimmed, replacement: replacement)
+        let entry = DictionaryWord(word: trimmed, replacement: replacement, origin: origin)
         words.append(entry)
         words.sort { $0.word.localizedCaseInsensitiveCompare($1.word) == .orderedAscending }
         save()
@@ -70,6 +88,20 @@ final class DictationDictionaryStore: ObservableObject {
         if apiClient != nil {
             Task { await self.pushWord(entry) }
         }
+        return true
+    }
+
+    /// Add a learned replacement rule, upgrading an existing same-word entry
+    /// (e.g. a bias booster) to carry the replacement instead of silently
+    /// dropping the user's request on a name collision. Always yields a rule.
+    func learnReplacement(word: String, replacement: String) {
+        let trimmed = word.trimmingCharacters(in: .whitespacesAndNewlines)
+        let replacementTrimmed = replacement.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, !replacementTrimmed.isEmpty else { return }
+        if let existing = words.first(where: { $0.word.lowercased() == trimmed.lowercased() }) {
+            delete(existing)
+        }
+        add(word: trimmed, replacement: replacementTrimmed, origin: "learned")
     }
 
     /// Edit an existing entry. Implemented as delete-then-add so it reuses the
@@ -137,6 +169,7 @@ final class DictationDictionaryStore: ObservableObject {
                     id: dto.clientWordID,
                     word: dto.word,
                     replacement: dto.replacement,
+                    origin: dto.origin,
                     createdAt: dto.occurredAt
                 )
             )
@@ -198,6 +231,7 @@ final class DictationDictionaryStore: ObservableObject {
             clientWordID: word.id,
             word: word.word,
             replacement: word.replacement,
+            origin: word.origin,
             occurredAt: Self.iso8601.string(from: word.createdAt)
         )
         do {

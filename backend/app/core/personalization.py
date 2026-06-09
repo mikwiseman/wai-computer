@@ -69,6 +69,37 @@ class TermCandidate:
     frequency: int
 
 
+def _is_cyrillic_char(char: str) -> bool:
+    """True for characters in the Cyrillic Unicode blocks.
+
+    Covers the main block (U+0400–U+04FF) and Cyrillic Supplement
+    (U+0500–U+052F), which together hold Russian and the other Cyrillic
+    scripts the dictionary realistically carries.
+    """
+    code_point = ord(char)
+    return 0x0400 <= code_point <= 0x052F
+
+
+def estimate_keyterm_tokens(term: str) -> int:
+    """Estimate Deepgram subword tokens for a keyterm.
+
+    Deepgram's 500-token keyterm cap counts SUBWORD tokens, not whitespace
+    words. Cyrillic tokenizes far denser (~2 chars/token) than Latin
+    (~4 chars/token), so a Russian dictionary that looks small by word count
+    silently blows past 500 and Deepgram returns HTTP 400. We sum a deliberate
+    over-estimate per whitespace word so the budget clamps before the API does.
+    """
+    total = 0
+    for word in term.split():
+        cyrillic = sum(1 for char in word if _is_cyrillic_char(char))
+        # Treat the word as Cyrillic-heavy when most of it is Cyrillic.
+        if cyrillic * 2 >= len(word):
+            total += -(-len(word) // 2) + 1  # ceil(len/2) + 1
+        else:
+            total += -(-len(word) // 4) + 1  # ceil(len/4) + 1
+    return total
+
+
 def clean_term(term: str) -> str:
     cleaned = _MULTISPACE_RE.sub(" ", term.strip(_STRIP_CHARS))
     if len(cleaned) > 200:
@@ -121,7 +152,7 @@ def sanitize_keyterms(
         if max_words is not None and len(term.split()) > max_words:
             continue
         if token_budget is not None:
-            term_budget = len(term.split())
+            term_budget = estimate_keyterm_tokens(term)
             if used_budget + term_budget > token_budget:
                 continue
             used_budget += term_budget
@@ -164,7 +195,38 @@ async def load_user_keyterms(
         if word.replacement:
             raw_terms.append(word.replacement)
 
-    return sanitize_keyterms(raw_terms, max_terms=250, max_chars=100, max_words=8, token_budget=900)
+    return sanitize_keyterms(raw_terms, max_terms=100, max_chars=100, max_words=8, token_budget=500)
+
+
+async def load_user_replacements(
+    db: AsyncSession,
+    *,
+    user_id: UUID,
+) -> list[tuple[str, str]]:
+    """Load (word, replacement) pairs for Deepgram find-and-replace.
+
+    Only dictionary words that carry a real replacement distinct from the word
+    itself are returned, newest first, capped to keep the request bounded. The
+    actual lowercasing/de-duping Deepgram requires happens in
+    ``sanitize_deepgram_replacements`` at URL-build time.
+    """
+    result = await db.execute(
+        select(DictationDictionaryWord)
+        .where(DictationDictionaryWord.user_id == user_id)
+        .order_by(DictationDictionaryWord.updated_at.desc())
+    )
+    pairs: list[tuple[str, str]] = []
+    for word in result.scalars():
+        replacement = (word.replacement or "").strip()
+        source = (word.word or "").strip()
+        if not source or not replacement:
+            continue
+        if source.casefold() == replacement.casefold():
+            continue
+        pairs.append((source, replacement))
+        if len(pairs) >= 200:
+            break
+    return pairs
 
 
 async def load_user_entity_terms(
