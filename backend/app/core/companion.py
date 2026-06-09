@@ -732,6 +732,21 @@ def _scope_brain_space_uuid(scope: dict[str, Any] | None) -> uuid.UUID | None:
         ) from exc
 
 
+def _scope_entity_uuid(scope: dict[str, Any] | None) -> uuid.UUID | None:
+    if not scope:
+        return None
+    raw = scope.get("entity_id")
+    if not raw:
+        return None
+    try:
+        return uuid.UUID(str(raw))
+    except (TypeError, ValueError) as exc:
+        raise CompanionError(
+            "invalid_scope",
+            f"Conversation scope has malformed entity_id: {exc}",
+        ) from exc
+
+
 def _intersect_recording_ids(
     explicit: list[uuid.UUID] | None,
     scope: list[uuid.UUID] | None,
@@ -1511,10 +1526,13 @@ def _format_scope_for_session(scope: dict[str, Any] | None) -> str:
     if not scope:
         return "all of the user's recordings"
     brain_id = scope.get("brain_space_id") if isinstance(scope, dict) else None
+    entity_id = scope.get("entity_id") if isinstance(scope, dict) else None
     rec_ids = scope.get("recording_ids") if isinstance(scope, dict) else None
     parts: list[str] = []
     if brain_id:
         parts.append("selected Brain")
+    if entity_id:
+        parts.append("a Brain page")
     if rec_ids:
         n = len(rec_ids)
         parts.append(f"{n} pinned recording{'s' if n != 1 else ''}")
@@ -1529,27 +1547,77 @@ async def _brain_context_for_scope(
     scope: dict[str, Any] | None,
 ) -> dict[str, Any] | None:
     space_id = _scope_brain_space_uuid(scope)
-    if space_id is None:
-        return None
-    try:
-        return await brain_space_service.build_context(
-            db,
-            user_id=user_id,
-            space_id=space_id,
-            limit=80,
+    if space_id is not None:
+        try:
+            return await brain_space_service.build_context(
+                db,
+                user_id=user_id,
+                space_id=space_id,
+                limit=80,
+            )
+        except brain_space_service.BrainSpaceNotFoundError as exc:
+            raise CompanionError(
+                "invalid_scope",
+                "Conversation Brain scope is not available to this user.",
+            ) from exc
+        except brain_space_service.BrainSpacePermissionError as exc:
+            raise CompanionError(
+                "invalid_scope",
+                "Conversation Brain scope is not available to this user.",
+            ) from exc
+        except brain_space_service.BrainSpaceValidationError as exc:
+            raise CompanionError("invalid_scope", str(exc)) from exc
+    entity_id = _scope_entity_uuid(scope)
+    if entity_id is not None:
+        return await _entity_brain_context(db, user_id, entity_id)
+    return None
+
+
+def _render_entity_dossier_markdown(page: Any) -> str:
+    """Flatten a compiled EntityPage into the markdown injected into the session
+    message, so "Ask Wai about X" opens with the entity's cited dossier in
+    context (compiled-truth above; the agent can still search for more)."""
+    lines: list[str] = [f"# {page.name} ({page.type})"]
+    overview = (page.overview or "").strip()
+    if overview:
+        lines.append(overview)
+    facts = [f.text for f in (page.facts or []) if getattr(f, "text", None)]
+    if facts:
+        lines.append("## Facts")
+        lines.extend(f"- {text}" for text in facts)
+    timeline = [ev for ev in (page.timeline or []) if getattr(ev, "title", None)]
+    if timeline:
+        lines.append("## Timeline")
+        for ev in timeline:
+            desc = (getattr(ev, "description", None) or "").strip()
+            lines.append(f"- {ev.title}" + (f" — {desc}" if desc else ""))
+    questions = [q.text for q in (page.questions or []) if getattr(q, "text", None)]
+    if questions:
+        lines.append("## Open questions")
+        lines.extend(f"- {text}" for text in questions)
+    return "\n".join(lines).strip()
+
+
+async def _entity_brain_context(
+    db: AsyncSession,
+    user_id: uuid.UUID,
+    entity_id: uuid.UUID,
+) -> dict[str, Any]:
+    from types import SimpleNamespace
+
+    from app.core.entity_page_synthesis import ensure_entity_page
+
+    page = await ensure_entity_page(db, user_id, entity_id)
+    if page is None:
+        raise CompanionError(
+            "invalid_scope",
+            "Conversation entity scope is not available to this user.",
         )
-    except brain_space_service.BrainSpaceNotFoundError as exc:
-        raise CompanionError(
-            "invalid_scope",
-            "Conversation Brain scope is not available to this user.",
-        ) from exc
-    except brain_space_service.BrainSpacePermissionError as exc:
-        raise CompanionError(
-            "invalid_scope",
-            "Conversation Brain scope is not available to this user.",
-        ) from exc
-    except brain_space_service.BrainSpaceValidationError as exc:
-        raise CompanionError("invalid_scope", str(exc)) from exc
+    return {
+        "space": SimpleNamespace(name=page.name or "this page"),
+        "markdown": _render_entity_dossier_markdown(page),
+        "claim_count": len(page.facts or []),
+    }
 
 
 def _build_session_developer_message(

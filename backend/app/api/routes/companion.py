@@ -52,6 +52,7 @@ from app.core.observability import (
 from app.core.wai_agent import run_wai_run_inline, start_wai_task
 from app.models.companion import ChatMessage, Conversation, MessageCitation
 from app.models.companion_pending_action import CompanionPendingAction
+from app.models.entity import Entity
 from app.models.recording import Folder, Recording
 
 logger = logging.getLogger(__name__)
@@ -78,6 +79,9 @@ class ConversationScope(BaseModel):
 
     recording_ids: list[str] | None = None
     brain_space_id: str | None = None
+    # An entity (person / project / topic / organization): "Ask Wai about X"
+    # scopes the chat to that entity's compiled page. Server-enforced (ownership).
+    entity_id: str | None = None
 
 
 class CreateConversationRequest(BaseModel):
@@ -148,32 +152,49 @@ async def _validated_scope_to_jsonb(
     scope: ConversationScope | None,
 ) -> dict[str, Any] | None:
     body = _scope_to_jsonb(scope)
-    if not body or not body.get("brain_space_id"):
+    if not body:
         return body
-    try:
-        brain_space_id = uuid.UUID(str(body["brain_space_id"]))
-    except (TypeError, ValueError) as exc:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=f"Malformed brain_space_id: {exc}",
-        ) from exc
-    try:
-        await load_space_access(db, user_id, brain_space_id)
-    except BrainSpaceNotFoundError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Brain scope not found",
-        ) from exc
-    except BrainSpacePermissionError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Brain scope is not available to this user",
-        ) from exc
-    except BrainSpaceValidationError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=str(exc),
-        ) from exc
+    if body.get("brain_space_id"):
+        try:
+            brain_space_id = uuid.UUID(str(body["brain_space_id"]))
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"Malformed brain_space_id: {exc}",
+            ) from exc
+        try:
+            await load_space_access(db, user_id, brain_space_id)
+        except BrainSpaceNotFoundError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Brain scope not found",
+            ) from exc
+        except BrainSpacePermissionError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Brain scope is not available to this user",
+            ) from exc
+        except BrainSpaceValidationError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=str(exc),
+            ) from exc
+    if body.get("entity_id"):
+        try:
+            entity_id = uuid.UUID(str(body["entity_id"]))
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"Malformed entity_id: {exc}",
+            ) from exc
+        owned = await db.scalar(
+            select(Entity.id).where(Entity.id == entity_id, Entity.user_id == user_id)
+        )
+        if owned is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Entity scope not found",
+            )
     return body
 
 

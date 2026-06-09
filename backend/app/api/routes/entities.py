@@ -13,7 +13,7 @@ from sqlalchemy.orm import selectinload
 from app.api.deps import CurrentUser, Database
 from app.core.entity_dedup import find_duplicate_entity_candidates, merge_entities
 from app.core.entity_page_synthesis import ensure_entity_page
-from app.models.entity import Entity, EntityMention, EntityRelation
+from app.models.entity import Entity, EntityMention, EntityPageSnapshot, EntityRelation
 
 router = APIRouter(prefix="/entities", tags=["entities"])
 
@@ -40,12 +40,27 @@ class EntityResponse(BaseModel):
     # How many sources mention this entity — powers Pages ranking + "12 sources".
     mention_count: int = 0
     source_count: int = 0
+    # First line of the compiled page (when one exists) — the wiki card subtitle.
+    overview_snippet: str | None = None
 
 
 class EntityDetailResponse(EntityResponse):
     """Detailed response for an entity with relations."""
 
     relations: list[EntityRelationResponse]
+
+
+def _overview_snippet(overview: str | None, limit: int = 160) -> str | None:
+    """First ~160 chars of a compiled page overview, trimmed on a word boundary."""
+    if not overview:
+        return None
+    text = overview.strip()
+    if not text:
+        return None
+    if len(text) <= limit:
+        return text
+    cut = text[:limit].rsplit(" ", 1)[0].rstrip()
+    return (cut or text[:limit].rstrip()) + "…"
 
 
 @router.get("", response_model=list[EntityResponse])
@@ -72,8 +87,9 @@ async def list_entities(
     )
     source_count = func.coalesce(counts.c.n, 0)
     query = (
-        select(Entity, source_count.label("source_count"))
+        select(Entity, source_count.label("source_count"), EntityPageSnapshot.overview)
         .outerjoin(counts, counts.c.entity_id == Entity.id)
+        .outerjoin(EntityPageSnapshot, EntityPageSnapshot.entity_id == Entity.id)
         .where(Entity.user_id == user.id)
     )
     if type:
@@ -95,8 +111,9 @@ async def list_entities(
             created_at=e.created_at,
             mention_count=int(n),
             source_count=int(n),
+            overview_snippet=_overview_snippet(overview),
         )
-        for e, n in rows
+        for e, n, overview in rows
     ]
 
 
