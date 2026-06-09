@@ -783,6 +783,9 @@ struct MacMainView: View {
     @ViewBuilder
     private var listColumn: some View {
         if hasListColumn {
+            // Filter+sort once per render instead of three times (count, empty
+            // check, and the list itself each re-derived it).
+            let displayed = displayedRecordings
             VStack(spacing: 0) {
                 HStack(spacing: Spacing.sm) {
                     Text(currentListTitle)
@@ -790,7 +793,7 @@ struct MacMainView: View {
                         .lineLimit(1)
                         .accessibilityIdentifier("library-list-title")
 
-                    Text("\(displayedRecordings.count)")
+                    Text("\(displayed.count)")
                         .font(Typography.label)
                         .foregroundStyle(Palette.textSecondary)
 
@@ -819,7 +822,7 @@ struct MacMainView: View {
                 if libraryViewModel.isLoading {
                     ProgressView()
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
-                } else if displayedRecordings.isEmpty {
+                } else if displayed.isEmpty {
                     ContentUnavailableViewCompat(
                         isTrashSection ? t("Trash is Empty", "Корзина пуста") : t("No Recordings", "Нет записей"),
                         systemImage: isTrashSection ? "trash" : "waveform",
@@ -828,7 +831,7 @@ struct MacMainView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
                     RecordingListView(
-                        recordings: displayedRecordings,
+                        recordings: displayed,
                         folders: libraryViewModel.folders,
                         localRecoveryRecordingIDs: libraryViewModel.localRecoveryRecordingIDs,
                         permanentLocalFailureRecordingIDs: libraryViewModel.permanentLocalFailureRecordingIDs,

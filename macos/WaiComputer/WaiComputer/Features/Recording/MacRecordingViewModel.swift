@@ -1375,9 +1375,14 @@ class MacRecordingViewModel: ObservableObject {
                 interimText = segment.text
                 interimSpeaker = segment.speaker
             }
-            currentTranscript = buildTranscriptText()
-            committedTranscript = buildCommittedTranscriptText()
-            interimTranscript = buildInterimTranscriptText()
+            // Build each piece once and reuse — buildTranscriptText() used to
+            // re-run the committed + interim joins, so the full O(N) join ran
+            // twice per transcript event (several times a second during speech).
+            let committed = buildCommittedTranscriptText()
+            let interim = buildInterimTranscriptText()
+            committedTranscript = committed
+            interimTranscript = interim
+            currentTranscript = combinedTranscript(committed: committed, interim: interim)
         case .disconnected(let err):
             if let err, phase == .recording {
                 await continueRecordingWithoutLiveTranscription(
@@ -1438,10 +1443,9 @@ class MacRecordingViewModel: ObservableObject {
         await webSocketManager?.stopRealtimeStreamingForLocalRecording(reason: reason)
     }
 
-    /// Show speaker labels only when realtime metadata actually contains them.
-    private func buildTranscriptText() -> String {
-        let committed = buildCommittedTranscriptText()
-        let interim = buildInterimTranscriptText()
+    /// Combine already-built committed + interim text for the full live
+    /// transcript. Takes the pieces as parameters so callers can build each once.
+    private func combinedTranscript(committed: String, interim: String) -> String {
         if interim.isEmpty { return committed }
         if committed.isEmpty { return interim }
         // Speaker mode uses paragraph break, single-channel uses space.
