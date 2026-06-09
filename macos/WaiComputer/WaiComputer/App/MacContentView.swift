@@ -992,16 +992,12 @@ struct MacMainView: View {
         case .brain:
             MacBrainView(
                 apiClient: appState.getAPIClient(),
-                initialMapId: pendingBrainMapId,
                 onOpenSource: openBrainSource,
                 onOpenInbox: {
                     selectedSection = .inbox
                 },
-                onOpenWai: { space in
-                    openBrainChat(space)
-                },
-                onInitialMapConsumed: {
-                    pendingBrainMapId = nil
+                onAskWaiAboutEntity: { entityId, _ in
+                    openBrainChatForEntity(entityId: entityId)
                 }
             )
                 .environment(\.locale, MacDateFormatting.locale(for: languageManager.current))
@@ -1221,12 +1217,12 @@ struct MacMainView: View {
         selectedSection = .brain
     }
 
-    private func openBrainChat(_ space: BrainSpace) {
+    private func openBrainChatForEntity(entityId: String) {
         let apiClient = appState.getAPIClient()
         Task {
             do {
                 let chat = try await apiClient.createCompanionChat(
-                    scope: CompanionScope(brainSpaceId: space.id)
+                    scope: CompanionScope(entityId: entityId)
                 )
                 await MainActor.run {
                     prefetchedRecordingDetail = nil

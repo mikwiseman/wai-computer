@@ -86,46 +86,22 @@ final class MacContentFeedViewModelTests: XCTestCase {
         XCTAssertTrue(source.contains("\"source_id\": .string(row.sourceId)"))
     }
 
-    func testInboxCreatedBrainLensOpensSelectedMapInBrain() throws {
+    func testBrainIsAReadOnlyWikiWithAskWaiDeepLink() throws {
         let shellSource = try macSource("WaiComputer/App/MacContentView.swift")
         let brainSource = try macSource("WaiComputer/Features/Brain/MacBrainView.swift")
 
-        XCTAssertTrue(shellSource.contains("@State private var pendingBrainMapId: String?"))
-        XCTAssertTrue(shellSource.contains("onOpenBrainMap: openBrainMap"))
-        XCTAssertTrue(shellSource.contains("initialMapId: pendingBrainMapId"))
-        XCTAssertTrue(shellSource.contains("pendingBrainMapId = mapId\n        selectedSection = .brain"))
-        XCTAssertTrue(brainSource.contains("func selectInitialMap(_ mapId: String?)"))
-        XCTAssertTrue(brainSource.contains("selectedMapId = mapId"))
-    }
-
-    func testGeneratedBrainMapsShowLiveFreshnessBeforeDiagramPreview() throws {
-        let source = try macSource("WaiComputer/Features/Brain/MacBrainView.swift")
-
-        guard
-            let statusRange = source.range(of: "generatedLiveStatus(revision, projection: projection)"),
-            let previewRange = source.range(of: "generatedDiagramPreview(projection)")
-        else {
-            XCTFail("Generated Brain maps should show live status before the diagram preview.")
-            return
-        }
-
-        XCTAssertLessThan(statusRange.lowerBound, previewRange.lowerBound)
-        XCTAssertTrue(source.contains("\"Updated from sources\""))
-        XCTAssertTrue(source.contains("\"No source changes\""))
-        XCTAssertTrue(source.contains("\"Newest source \\(weeks) weeks old\""))
-        XCTAssertTrue(source.contains("\"Ask what changed before relying on it.\""))
-        XCTAssertTrue(source.contains("mapChangeDetail(revision.diff)"))
-        XCTAssertTrue(source.contains("mapWatchText(revision, projection: projection)"))
-        XCTAssertTrue(source.contains("mapCoverageLedger(briefing)"))
-        XCTAssertTrue(source.contains("\"Coverage ledger\""))
-        XCTAssertTrue(source.contains("loaded into this map from"))
-        XCTAssertTrue(source.contains("\"The canvas stays focused; hidden sources remain in the evidence list.\""))
-        XCTAssertTrue(source.contains("mapOriginLabel(map.origin)"))
-        XCTAssertTrue(source.contains("mapSourceCountText(map.currentRevision)"))
-        XCTAssertTrue(source.contains("mapCheckedText(map.currentRevision)"))
-        XCTAssertTrue(source.contains("\"In Inbox · not in Brain yet\""))
-        XCTAssertTrue(source.contains("\"Link now\""))
-        XCTAssertTrue(source.contains("repairBrainLinks()"))
+        // Brain is the wiki: a browsable Pages index → cited dossier, no cockpit.
+        XCTAssertTrue(brainSource.contains("private var pagesSection: some View"))
+        XCTAssertTrue(brainSource.contains("private func wikiBody(_ page: EntityPage)"))
+        XCTAssertTrue(brainSource.contains("onAskWaiAboutEntity"))
+        // The cockpit is gone — no Ask box, maps, coverage meters, or live status.
+        XCTAssertFalse(brainSource.contains("brainAskSection"))
+        XCTAssertFalse(brainSource.contains("liveMapSection"))
+        XCTAssertFalse(brainSource.contains("mapCoverageLedger"))
+        XCTAssertFalse(brainSource.contains("generatedLiveStatus"))
+        // "Ask Wai about X" deep-links into an entity-scoped companion chat.
+        XCTAssertTrue(shellSource.contains("openBrainChatForEntity(entityId:"))
+        XCTAssertTrue(shellSource.contains("CompanionScope(entityId: entityId)"))
     }
 
     func testInboxCreatePaneDefaultsToFocusedUploadMode() throws {

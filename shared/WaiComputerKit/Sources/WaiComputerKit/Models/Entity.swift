@@ -17,6 +17,8 @@ public struct Entity: Codable, Identifiable, Sendable {
     /// How many sources mention this entity — powers Pages ranking + "N sources".
     public let mentionCount: Int?
     public let sourceCount: Int?
+    /// First line of the compiled page, when one exists — the wiki card subtitle.
+    public let overviewSnippet: String?
 
     public init(
         id: String,
@@ -24,7 +26,8 @@ public struct Entity: Codable, Identifiable, Sendable {
         name: String,
         metadata: [String: String]? = nil,
         mentionCount: Int? = nil,
-        sourceCount: Int? = nil
+        sourceCount: Int? = nil,
+        overviewSnippet: String? = nil
     ) {
         self.id = id
         self.type = type
@@ -32,12 +35,14 @@ public struct Entity: Codable, Identifiable, Sendable {
         self.metadata = metadata
         self.mentionCount = mentionCount
         self.sourceCount = sourceCount
+        self.overviewSnippet = overviewSnippet
     }
 
     private enum CodingKeys: String, CodingKey {
         case id, type, name, metadata
         case mentionCount = "mention_count"
         case sourceCount = "source_count"
+        case overviewSnippet = "overview_snippet"
     }
 }
 

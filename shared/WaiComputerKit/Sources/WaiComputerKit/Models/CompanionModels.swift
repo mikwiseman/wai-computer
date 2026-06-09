@@ -3,6 +3,9 @@ import Foundation
 public struct CompanionScope: Codable, Sendable, Equatable {
     public var recordingIds: [String]?
     public var brainSpaceId: String?
+    /// An entity (person / project / topic / organization): "Ask Wai about X"
+    /// opens the chat already grounded in that entity's compiled Brain page.
+    public var entityId: String?
     public var folderIds: [String]?
     public var types: [String]?
     public var speakers: [String]?
@@ -12,6 +15,7 @@ public struct CompanionScope: Codable, Sendable, Equatable {
     public init(
         recordingIds: [String]? = nil,
         brainSpaceId: String? = nil,
+        entityId: String? = nil,
         folderIds: [String]? = nil,
         types: [String]? = nil,
         speakers: [String]? = nil,
@@ -20,6 +24,7 @@ public struct CompanionScope: Codable, Sendable, Equatable {
     ) {
         self.recordingIds = recordingIds
         self.brainSpaceId = brainSpaceId
+        self.entityId = entityId
         self.folderIds = folderIds
         self.types = types
         self.speakers = speakers
@@ -30,6 +35,7 @@ public struct CompanionScope: Codable, Sendable, Equatable {
     enum CodingKeys: String, CodingKey {
         case recordingIds = "recording_ids"
         case brainSpaceId = "brain_space_id"
+        case entityId = "entity_id"
         case folderIds = "folder_ids"
         case types
         case speakers
