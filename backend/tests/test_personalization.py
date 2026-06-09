@@ -17,9 +17,11 @@ from app.api.routes.personalization import (
     update_personalization_term,
 )
 from app.core.personalization import (
+    estimate_keyterm_tokens,
     extract_candidate_terms,
     load_user_entity_terms,
     load_user_keyterms,
+    load_user_replacements,
     sanitize_keyterms,
     summary_personalization_instructions,
 )
@@ -41,15 +43,55 @@ def test_extract_candidate_terms_counts_domain_terms_without_common_words() -> N
 
 
 def test_sanitize_keyterms_truncates_dedupes_and_respects_budget() -> None:
+    # Budget is in estimated Deepgram subword tokens (not whitespace words):
+    # "x"*200 ≈ 51 tokens, "Alpha Beta Gamma" ≈ 8 (used 59), then "One Two Three"
+    # ≈ 7 would exceed 60 and is dropped. "alpha beta gamma" dedupes term 2.
     terms = sanitize_keyterms(
         ["  " + "x" * 220, "Alpha Beta Gamma", "alpha beta gamma", "One Two Three"],
         max_terms=10,
         max_chars=200,
         max_words=4,
-        token_budget=5,
+        token_budget=60,
     )
 
     assert terms == ["x" * 200, "Alpha Beta Gamma"]
+
+
+def test_estimate_keyterm_tokens_counts_cyrillic_heavier_than_latin() -> None:
+    # Same character length, denser tokenization for Cyrillic: ceil(16/2)+1=9
+    # for Cyrillic vs ceil(16/4)+1=5 for Latin.
+    cyrillic = estimate_keyterm_tokens("аббревиатураслово")  # 17 Cyrillic chars
+    latin = estimate_keyterm_tokens("abbreviationword")  # 16 Latin chars
+    assert cyrillic > latin
+
+    # Multi-word terms sum the per-word estimate.
+    two_words = estimate_keyterm_tokens("слово слово")
+    one_word = estimate_keyterm_tokens("слово")
+    assert two_words == 2 * one_word
+
+
+def test_sanitize_keyterms_budget_truncates_russian_before_latin() -> None:
+    # A pile of distinct long Russian words must be cut down to fit 500 subword
+    # tokens — and far fewer of them fit than equally-long Latin words, because
+    # Cyrillic is counted ~twice as dense. This is the exact prod-400 fix:
+    # naive word-counting let Russian dictionaries silently exceed Deepgram's cap.
+    russian_words = [f"длинноесловоодно{index:03d}" for index in range(120)]
+    latin_words = [f"verylongwordone{index:03d}" for index in range(120)]
+
+    russian = sanitize_keyterms(
+        russian_words, max_terms=1000, max_chars=100, max_words=8, token_budget=500
+    )
+    latin = sanitize_keyterms(
+        latin_words, max_terms=1000, max_chars=100, max_words=8, token_budget=500
+    )
+
+    # Both are clamped by the budget (not by max_terms), so neither is the full 120.
+    assert len(russian) < 120
+    assert len(latin) < 120
+    # Russian costs more per word, so strictly fewer fit inside the same budget.
+    assert len(russian) < len(latin)
+    # And the kept Russian terms genuinely fit under the cap (no prod 400).
+    assert sum(estimate_keyterm_tokens(term) for term in russian) <= 500
 
 
 def test_personalization_request_models_normalize_optional_fields() -> None:
@@ -499,6 +541,57 @@ async def test_load_user_keyterms_includes_replacements_and_dictation_dictionary
     keyterms = await load_user_keyterms(db_session, user_id=user_id, purpose="recording")
 
     assert {"WaiCompyuter", "WaiComputer", "Bolnichny", "больничный"} <= set(keyterms)
+
+
+@pytest.mark.asyncio
+async def test_load_user_replacements_returns_only_real_distinct_pairs(
+    db_session: AsyncSession,
+):
+    user_id = uuid4()
+    db_session.add(
+        User(
+            id=user_id,
+            email=f"replacements-{user_id}@example.com",
+            password_hash="hash",
+            **{
+                "legal_terms_version": LEGAL_ACCEPTANCE["legal_terms_version"],
+                "legal_privacy_version": LEGAL_ACCEPTANCE["legal_privacy_version"],
+            },
+        )
+    )
+    db_session.add_all(
+        [
+            # Real find→replace: kept.
+            DictationDictionaryWord(
+                user_id=user_id,
+                client_word_id=uuid4(),
+                word="Bolnichny",
+                replacement="больничный",
+                occurred_at=datetime.now(timezone.utc),
+            ),
+            # No replacement: skipped (it is only a keyterm, not a rewrite).
+            DictationDictionaryWord(
+                user_id=user_id,
+                client_word_id=uuid4(),
+                word="kubernetes",
+                replacement=None,
+                occurred_at=datetime.now(timezone.utc),
+            ),
+            # Replacement equals the word (case-insensitively): skipped no-op.
+            DictationDictionaryWord(
+                user_id=user_id,
+                client_word_id=uuid4(),
+                word="WaiComputer",
+                replacement="waicomputer",
+                occurred_at=datetime.now(timezone.utc),
+            ),
+        ]
+    )
+    await db_session.flush()
+
+    pairs = await load_user_replacements(db_session, user_id=user_id)
+
+    assert pairs == [("Bolnichny", "больничный")]
 
 
 @pytest.mark.asyncio

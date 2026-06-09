@@ -5,7 +5,11 @@ from unittest.mock import AsyncMock, patch
 import httpx
 import pytest
 
-from app.core.deepgram import build_batch_url, transcribe_audio_file
+from app.core.deepgram import (
+    build_batch_url,
+    sanitize_deepgram_replacements,
+    transcribe_audio_file,
+)
 from app.core.transcript_utils import TranscriptResult
 
 
@@ -67,6 +71,43 @@ def test_build_batch_url_repeats_sanitized_keyterms() -> None:
 
     assert url.count("keyterm=") == 1
     assert "keyterm=WaiComputer" in url
+
+
+def test_sanitize_deepgram_replacements_lowercases_find_and_drops_noops() -> None:
+    pairs = sanitize_deepgram_replacements(
+        [
+            ("  WaiCompyuter ", "  WaiComputer "),  # trimmed; find lowercased
+            ("kubernetes", "kubernetes"),  # find == replace → dropped
+            ("Foo", "foo"),  # find == replace case-insensitively → dropped
+            ("   ", "something"),  # empty find → dropped
+            ("WAICOMPYUTER", "Other"),  # duplicate find (after lowercasing) → dropped
+        ]
+    )
+
+    assert pairs == [("waicompyuter", "WaiComputer")]
+
+
+def test_sanitize_deepgram_replacements_caps_at_200() -> None:
+    many = [(f"find{index:04d}", f"Replace{index:04d}") for index in range(250)]
+
+    pairs = sanitize_deepgram_replacements(many)
+
+    assert len(pairs) == 200
+    assert pairs[0] == ("find0000", "Replace0000")
+
+
+def test_build_batch_url_includes_replace_pairs() -> None:
+    url = build_batch_url(
+        language="multi",
+        multichannel=False,
+        replacements=[("Bolnichny", "больничный"), ("Wai", "WaiComputer")],
+    )
+
+    # Each sanitized pair becomes a repeated replace=find:replace param
+    # (colon URL-encoded to %3A; find is lowercased).
+    assert url.count("replace=") == 2
+    assert "replace=wai%3AWaiComputer" in url
+    assert "replace=bolnichny%3A" in url
 
 
 @pytest.mark.asyncio

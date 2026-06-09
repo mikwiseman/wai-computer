@@ -30,7 +30,7 @@ from app.core.observability import (
     capture_sentry_message,
     fingerprint_text,
 )
-from app.core.personalization import load_user_keyterms
+from app.core.personalization import load_user_keyterms, load_user_replacements
 from app.core.retry_policy import is_retryable_exception
 from app.core.speaker_name_extraction import (
     apply_extracted_names,
@@ -722,6 +722,7 @@ async def process_staged_recording_upload(
                 },
             )
             keyterms = await load_user_keyterms(db, user_id=user_id, purpose="recording")
+            replacements = await load_user_replacements(db, user_id=user_id)
             deepgram_addons = ["speaker_diarization"]
             if keyterms:
                 deepgram_addons.append("keyterm_prompting")
@@ -738,6 +739,7 @@ async def process_staged_recording_upload(
                     content_type=content_type,
                     audio_duration_seconds=provider_audio_seconds,
                     keyterms=keyterms,
+                    replacements=replacements,
                     user_id=str(user_id),
                     usage_purpose="recording",
                 )
