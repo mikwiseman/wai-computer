@@ -170,6 +170,10 @@ final class DictationManager: ObservableObject {
     var historyStore: DictationHistoryStore?
     var dictionaryStore: DictationDictionaryStore?
     var languageStore: DictationLanguageStore?
+    /// Learns dictionary suggestions from how the user edits dictated text.
+    var learningEngine: DictionaryLearningEngine?
+    /// Watches the paste target after insertion to capture those edits.
+    var editWatcher: DictationEditWatcher?
     let translationLanguageStore = TranslationLanguageStore()
     let hotkeyManager = GlobalHotkeyManager()
 
@@ -516,6 +520,10 @@ final class DictationManager: ObservableObject {
             return
         }
         guard canBeginExternalDictation() else { return }
+
+        // Capture how the user edited the PREVIOUS dictation before this one
+        // moves focus / replaces the target-field context.
+        editWatcher?.flush()
 
         activeMode = mode
         if mode == .askAnything {
@@ -1230,6 +1238,15 @@ final class DictationManager: ObservableObject {
                 "automaticPaste": true,
             ])
             NSSound(named: NSSound.Name("Pop"))?.play()
+            // Start watching the field we just pasted into so a later edit can
+            // teach the dictionary. Dictation only — translate/ask aren't "what
+            // you said", so their edits aren't vocabulary corrections.
+            if activeMode == .dictation {
+                editWatcher?.noteInsertion(
+                    produced: textToInsert,
+                    language: currentDictationLanguage()
+                )
+            }
         } catch {
             instrumentationSession?.event(.insertionCompleted, data: [
                 "chars": textToInsert.count,
