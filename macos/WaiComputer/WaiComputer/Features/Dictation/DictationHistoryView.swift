@@ -5,6 +5,7 @@ struct DictationHistoryView: View {
     @EnvironmentObject private var historyStore: DictationHistoryStore
     @EnvironmentObject private var languageManager: LanguageManager
     @State private var searchText = ""
+    @State private var showClearAllConfirmation = false
 
     private var filteredEntries: [DictationHistoryEntry] {
         if searchText.isEmpty { return historyStore.entries }
@@ -90,11 +91,26 @@ struct DictationHistoryView: View {
             ToolbarItem(placement: .primaryAction) {
                 if !historyStore.entries.isEmpty {
                     Button(t("Clear All", "Очистить все")) {
-                        Task { await historyStore.deleteAll() }
+                        showClearAllConfirmation = true
                     }
                     .foregroundStyle(.red)
                 }
             }
+        }
+        .confirmationDialog(
+            t("Clear all dictation history?", "Очистить всю историю диктовки?"),
+            isPresented: $showClearAllConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button(t("Clear All", "Очистить все"), role: .destructive) {
+                Task { await historyStore.deleteAll() }
+            }
+            Button(t("Cancel", "Отмена"), role: .cancel) {}
+        } message: {
+            Text(t(
+                "This deletes every dictation on all your devices. This can't be undone.",
+                "Это удалит все диктовки на всех твоих устройствах. Это нельзя отменить."
+            ))
         }
     }
 

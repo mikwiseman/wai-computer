@@ -145,15 +145,27 @@ final class DictationDictionaryStore: ObservableObject {
         words.map(\.word)
     }
 
-    /// Apply replacement rules to transcribed text
+    /// Apply replacement rules to transcribed text.
+    ///
+    /// Matches whole words only. A literal substring replace would rewrite
+    /// inside words ("cat" → "dog" turning "category" into "dogegory"), so we
+    /// anchor on Unicode word boundaries — `.useUnicodeWordBoundaries` is
+    /// essential or `\b` is ASCII-only and never fires between Cyrillic letters.
     func applyReplacements(to text: String) -> String {
         var result = text
         for word in words where word.isReplacement {
-            guard let replacement = word.replacement else { continue }
-            result = result.replacingOccurrences(
-                of: word.word,
-                with: replacement,
-                options: [.caseInsensitive]
+            guard let replacement = word.replacement,
+                  !word.word.isEmpty else { continue }
+            let pattern = "\\b" + NSRegularExpression.escapedPattern(for: word.word) + "\\b"
+            guard let regex = try? NSRegularExpression(
+                pattern: pattern,
+                options: [.caseInsensitive, .useUnicodeWordBoundaries]
+            ) else { continue }
+            let range = NSRange(result.startIndex..., in: result)
+            result = regex.stringByReplacingMatches(
+                in: result,
+                range: range,
+                withTemplate: NSRegularExpression.escapedTemplate(for: replacement)
             )
         }
         return result
