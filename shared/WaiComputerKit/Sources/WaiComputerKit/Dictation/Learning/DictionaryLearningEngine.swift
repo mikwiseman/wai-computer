@@ -75,7 +75,7 @@ public final class DictionaryLearningEngine: ObservableObject {
         // stale hit.
         pruneExpired(now: now)
         for pair in result.pairs {
-            let key = Self.key(original: pair.original, corrected: pair.corrected, language: pair.language)
+            let key = Self.key(original: pair.original, corrected: pair.corrected)
             if suppressed.contains(key) { continue }
             if let index = entries.firstIndex(where: { $0.key == key }) {
                 entries[index].count += 1
@@ -124,11 +124,7 @@ public final class DictionaryLearningEngine: ObservableObject {
     // MARK: - Internals
 
     private func suppressAndRemove(_ suggestion: DictionarySuggestion) {
-        let key = Self.key(
-            original: suggestion.original,
-            corrected: suggestion.corrected,
-            language: suggestion.language
-        )
+        let key = Self.key(original: suggestion.original, corrected: suggestion.corrected)
         suppressed.insert(key)
         entries.removeAll { $0.key == key }
         save()
@@ -159,8 +155,11 @@ public final class DictionaryLearningEngine: ObservableObject {
             }
     }
 
-    private static func key(original: String, corrected: String, language: String?) -> String {
-        TokenAlignment.normalize(original) + "→" + TokenAlignment.normalize(corrected) + "|" + (language ?? "")
+    private static func key(original: String, corrected: String) -> String {
+        // Language-insensitive on purpose: the AX monitor tags a best-effort
+        // language while history-row edits can't, so both surfaces must converge
+        // on one recurrence counter. Language is kept only as entry metadata.
+        TokenAlignment.normalize(original) + "→" + TokenAlignment.normalize(corrected)
     }
 
     // MARK: - Persistence (on-device only, never synced)

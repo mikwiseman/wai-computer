@@ -9,8 +9,11 @@ import os
 /// "monitor the text box where it pastes text to detect edits."
 ///
 /// Reuses the Accessibility trust the app already holds for paste insertion, so
-/// no new permission. Privacy: it never reads secure fields, never persists the
-/// field's surrounding text (only the engine's extracted token pairs survive),
+/// no new permission. Privacy: it skips native secure text fields
+/// (NSSecureTextField); web/Electron password fields aren't always AX-flagged as
+/// secure, but the watcher only arms after WE paste dictated text in dictation
+/// mode and the read value never leaves on-device diffing. It never persists the
+/// field's surrounding text — only the engine's extracted token pairs survive —
 /// and is gated by a Settings toggle.
 @MainActor
 final class DictationEditWatcher {

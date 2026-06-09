@@ -73,10 +73,11 @@ final class DictationDictionaryStore: ObservableObject {
         self.apiClient = apiClient
     }
 
-    func add(word: String, replacement: String? = nil, origin: String = "manual") {
+    @discardableResult
+    func add(word: String, replacement: String? = nil, origin: String = "manual") -> Bool {
         let trimmed = word.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
-        guard !words.contains(where: { $0.word.lowercased() == trimmed.lowercased() }) else { return }
+        guard !trimmed.isEmpty else { return false }
+        guard !words.contains(where: { $0.word.lowercased() == trimmed.lowercased() }) else { return false }
 
         let entry = DictionaryWord(word: trimmed, replacement: replacement, origin: origin)
         words.append(entry)
@@ -87,6 +88,20 @@ final class DictationDictionaryStore: ObservableObject {
         if apiClient != nil {
             Task { await self.pushWord(entry) }
         }
+        return true
+    }
+
+    /// Add a learned replacement rule, upgrading an existing same-word entry
+    /// (e.g. a bias booster) to carry the replacement instead of silently
+    /// dropping the user's request on a name collision. Always yields a rule.
+    func learnReplacement(word: String, replacement: String) {
+        let trimmed = word.trimmingCharacters(in: .whitespacesAndNewlines)
+        let replacementTrimmed = replacement.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, !replacementTrimmed.isEmpty else { return }
+        if let existing = words.first(where: { $0.word.lowercased() == trimmed.lowercased() }) {
+            delete(existing)
+        }
+        add(word: trimmed, replacement: replacementTrimmed, origin: "learned")
     }
 
     /// Edit an existing entry. Implemented as delete-then-add so it reuses the

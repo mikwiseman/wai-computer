@@ -36,7 +36,7 @@ Decisions (Mik, 2026-06-09):
 ## Privacy (hard rule — AGENTS.md: never log transcript text)
 
 - All diffing/extraction happens **on-device**. We persist only **token pairs + counts** in a local, never-synced, never-logged ledger (`Application Support/WaiComputer/dictation_learning_ledger.json`), pruned to the 30-day window. **No sentences, no surrounding context, ever.**
-- AX monitor **never reads secure/password fields** and is gated by a Settings toggle.
+- AX monitor **skips native secure text fields** (`NSSecureTextField`) and is gated by a Settings toggle. Web/Electron password fields aren't always AX-flagged as secure — but the watcher only arms after we paste dictated text in dictation mode, the read value never leaves on-device extraction, and only token pairs persist, so nothing sensitive is stored or logged.
 - Only the *accepted* word (the same sensitivity as the existing dictionary) is written + synced. Telemetry carries content-free events only (`type=proper_noun`, length bucket) — never the word.
 
 ## Architecture / file map

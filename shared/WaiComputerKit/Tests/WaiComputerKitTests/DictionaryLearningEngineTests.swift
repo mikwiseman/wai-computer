@@ -62,6 +62,16 @@ final class DictionaryLearningEngineTests: XCTestCase {
         XCTAssertEqual(engine.suggestions.first?.hitCount, 2)
     }
 
+    func testCorrectionsConvergeAcrossLanguageHints() {
+        let engine = makeEngine(clock: TestClock(Date()))
+        // Same correction seen via the AX monitor (tagged "multi") and a history
+        // edit (nil) must accumulate to one counter, not split below threshold.
+        engine.observeEdit(produced: "let's use sigma here", edited: "let's use Figma here", language: "multi")
+        engine.observeEdit(produced: "let's use sigma here", edited: "let's use Figma here", language: nil)
+        XCTAssertEqual(engine.suggestions.count, 1)
+        XCTAssertEqual(engine.suggestions.first?.corrected, "Figma")
+    }
+
     func testDismissSuppressesEvenOnFurtherEdits() {
         let engine = makeEngine(clock: TestClock(Date()))
         observeFigmaFix(engine)

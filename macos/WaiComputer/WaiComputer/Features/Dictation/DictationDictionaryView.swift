@@ -142,7 +142,7 @@ struct DictationDictionaryView: View {
             .help(t("Add as a recognition hint", "Добавить как подсказку распознавания"))
 
             Button(t("Replace", "Замена")) {
-                dictionaryStore.add(word: suggestion.original, replacement: suggestion.corrected, origin: "learned")
+                dictionaryStore.learnReplacement(word: suggestion.original, replacement: suggestion.corrected)
                 learningEngine.accept(suggestion)
             }
             .buttonStyle(.plain)

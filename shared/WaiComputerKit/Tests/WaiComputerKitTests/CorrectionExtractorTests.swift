@@ -64,6 +64,17 @@ final class CorrectionExtractorTests: XCTestCase {
         XCTAssertEqual(result.pairs.first?.corrected, "Figma")
     }
 
+    func testDowncasingProperNounIsNotLearned() {
+        let extractor = makeExtractor(known: ["i", "opened", "today", "love", "apps"])
+        XCTAssertTrue(
+            extractor.extract(produced: "i opened Figma today", edited: "i opened figma today", language: "en").pairs.isEmpty,
+            "down-casing an OOV proper noun must not be learned"
+        )
+        XCTAssertTrue(
+            extractor.extract(produced: "love iOS apps", edited: "love ios apps", language: "en").pairs.isEmpty
+        )
+    }
+
     func testSentenceStartCapitalizationOfCommonWordIsNotLearned() {
         let extractor = makeExtractor(known: ["hello", "world"])
         let result = extractor.extract(

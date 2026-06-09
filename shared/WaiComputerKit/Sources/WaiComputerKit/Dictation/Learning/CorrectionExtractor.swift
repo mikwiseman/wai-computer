@@ -119,7 +119,8 @@ public struct CorrectionExtractor: Sendable {
         // for OOV terms — so sentence-start capitalization of common words
         // ("hello" → "Hello") is never learned.
         if producedTokens.count == editedTokens.count {
-            for (p, e) in zip(producedTokens, editedTokens) where p != e && p.lowercased() == e.lowercased() {
+            for (p, e) in zip(producedTokens, editedTokens)
+            where p != e && p.lowercased() == e.lowercased() && addsCapitalization(from: p, to: e) {
                 consider(from: p, to: e, casing: true)
             }
         }
@@ -151,6 +152,15 @@ public struct CorrectionExtractor: Sendable {
             return false
         }
         return true
+    }
+
+    /// Only learn capitalization that ADDS case — `to` gains an uppercase letter
+    /// that `from` lacked. Rejects down-casing ("Figma"→"figma", "iOS"→"ios"),
+    /// which would otherwise teach a regression the post-STT replace then applies.
+    private func addsCapitalization(from: String, to: String) -> Bool {
+        let fromAllLowercase = !from.contains { $0.isUppercase }
+        let toHasUppercase = to.contains { $0.isUppercase }
+        return fromAllLowercase && toHasUppercase
     }
 
     /// Gate for a pure-capitalization correction (same letters, different case).
