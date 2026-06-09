@@ -109,6 +109,22 @@ enum MacAccentChoice: String, CaseIterable, Identifiable {
             return Color(nsColor: .systemGray)
         }
     }
+
+    /// Foreground for text/icons drawn on top of `color`. Hardcoded white fails
+    /// WCAG AA on the lighter accents (amber/green/gray ≈ 2.1–3.3:1), so pick
+    /// whichever of black/white has the higher contrast against this accent.
+    var onAccentColor: Color {
+        guard let ns = NSColor(color).usingColorSpace(.sRGB) else { return .white }
+        func lin(_ c: CGFloat) -> CGFloat {
+            c <= 0.03928 ? c / 12.92 : pow((c + 0.055) / 1.055, 2.4)
+        }
+        let luminance = 0.2126 * lin(ns.redComponent)
+            + 0.7152 * lin(ns.greenComponent)
+            + 0.0722 * lin(ns.blueComponent)
+        let blackContrast = (luminance + 0.05) / 0.05
+        let whiteContrast = 1.05 / (luminance + 0.05)
+        return blackContrast >= whiteContrast ? .black : .white
+    }
 }
 
 struct MacThemePreferences {
@@ -243,6 +259,8 @@ enum Palette {
     /// App-wide accent. The concrete color is selected in Settings and sourced
     /// from AppKit system colors so light, dark, and increased contrast stay adaptive.
     static var accent: Color { MacThemePreferences.currentAccent.color }
+    /// WCAG-safe foreground for content drawn on top of `accent`.
+    static var onAccent: Color { MacThemePreferences.currentAccent.onAccentColor }
     /// Accent at 10% opacity — subtle backgrounds
     static var accentSubtle: Color { accent.opacity(0.10) }
 
@@ -320,7 +338,7 @@ struct WaiPrimaryButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(Typography.headingSmall)
-            .foregroundStyle(.white)
+            .foregroundStyle(Palette.onAccent)
             .padding(.horizontal, Spacing.xl)
             .padding(.vertical, Spacing.md)
             .background(isDisabled ? Palette.accent.opacity(0.4) : Palette.accent)

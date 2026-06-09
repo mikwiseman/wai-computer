@@ -82,9 +82,12 @@ struct LiveRecordingView: View {
                                     Text(recordingVM.interimTranscript)
                                         .font(Typography.reading.italic())
                                         .lineSpacing(6)
-                                        .foregroundStyle(Palette.textTertiary)
+                                        .foregroundStyle(Palette.textSecondary)
                                         .textSelection(.enabled)
-                                        .accessibilityLabel(Text("recording.transcript.interim", bundle: .main))
+                                        .accessibilityLabel(t(
+                                            "Interim transcript — may change as you speak",
+                                            "Промежуточная расшифровка — текст может уточняться"
+                                        ))
                                 }
                             }
                             .padding(.horizontal, Spacing.xxl)
@@ -172,21 +175,24 @@ struct LiveRecordingView: View {
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("live-recording-view")
         .confirmationDialog(
-            Text("recording.discardConfirm.title", bundle: .main),
+            t("Discard this recording?", "Удалить эту запись?"),
             isPresented: $showingDiscardConfirm,
             titleVisibility: .visible
         ) {
             Button(role: .destructive) {
                 discardRecording()
             } label: {
-                Text("recording.discardConfirm.confirm", bundle: .main)
+                Text(t("Discard", "Удалить запись"))
             }
             .accessibilityIdentifier("discard-recording-confirm")
             Button(role: .cancel) { } label: {
-                Text("recording.cancel", bundle: .main)
+                Text(t("Cancel", "Отмена"))
             }
         } message: {
-            Text("recording.discardConfirm.body", bundle: .main)
+            Text(t(
+                "Audio and transcript will be deleted. This can't be undone.",
+                "Аудио и расшифровка будут удалены. Восстановить их нельзя."
+            ))
         }
     }
 
