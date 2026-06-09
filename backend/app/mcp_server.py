@@ -17,6 +17,7 @@ from app.core.mcp_brain_tools import (
     fetch_document_for_mcp,
     remember_for_mcp,
     search_brain_for_mcp,
+    wake_up_for_mcp,
 )
 from app.core.mcp_oauth import (
     MCP_READ_SCOPE,
@@ -54,6 +55,10 @@ past Wai chats, all linked into one searchable knowledge base. Use it to
 recall what the user has captured before answering from your own assumptions.
 
 Tools:
+- wake_up(): call ONCE at the start of a session, first. Returns the user's
+  profile (durable facts), the folder + top-entity taxonomy for scoping, and the
+  usage protocol — cheaply. Then, before asserting anything about the user,
+  recall first (ask/search); never guess.
 - ask(question): the primary memory tool. Returns ONE cited answer synthesised
   across everything the user has captured — recordings, notes, and chats —
   plus an honest list of gaps and how stale the sources are. Ask it first
@@ -129,6 +134,21 @@ def create_mcp_app(settings: Settings) -> Starlette:
     async def _current_user_id():
         user_id, _ = await _current_access()
         return user_id
+
+    @mcp.tool()
+    async def wake_up() -> str:
+        """Load the user's profile + brain taxonomy + protocol — call ONCE per session, first.
+
+        Returns `{profile, taxonomy, protocol}`: a compact durable-memory profile
+        (~800 tokens) so you boot knowing the user, the folder + top-entity
+        taxonomy for scoping `search`, and the recall-before-asserting protocol.
+        Cheap (no LLM). Call it at the start of a session before answering anything
+        about the user, then prefer `ask` over raw `search`.
+        """
+        user_id = await _current_user_id()
+        async with get_db_context() as db:
+            result = await wake_up_for_mcp(db, user_id)
+        return json.dumps(result, ensure_ascii=False)
 
     @mcp.tool()
     async def ask(question: str) -> str:

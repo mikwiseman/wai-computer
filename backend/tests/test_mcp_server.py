@@ -95,6 +95,7 @@ def test_create_mcp_app_instructions_mention_tools() -> None:
 
     instructions = captured["instructions"]
     for tool_name in (
+        "wake_up",
         "ask",
         "search",
         "fetch",
@@ -128,6 +129,7 @@ def test_create_mcp_app_registers_all_tools() -> None:
     tools = asyncio.run(captured_mcp["mcp"].list_tools())
     names = {tool.name for tool in tools}
     assert names == {
+        "wake_up",
         "ask",
         "search",
         "fetch",

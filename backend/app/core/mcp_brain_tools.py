@@ -22,11 +22,12 @@ from __future__ import annotations
 import logging
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.config import get_settings
+from app.core import user_memory
 from app.core.brain_ask import ask_brain
 from app.core.conversation_brain import _message_text
 from app.core.item_ingest import enqueue_item_processing, ingest_item
@@ -39,7 +40,9 @@ from app.core.mcp_tools import (
 )
 from app.core.unified_search import unified_search
 from app.models.companion import ChatMessage, Conversation
+from app.models.entity import Entity, EntityMention
 from app.models.item import Item, ItemSummary
+from app.models.recording import Folder
 
 logger = logging.getLogger(__name__)
 
@@ -60,6 +63,58 @@ def _source_url(source_kind: str, source_id: str) -> str:
     base = get_settings().frontend_url.rstrip("/")
     key = _SOURCE_QUERY_KEY.get(source_kind, "recording")
     return f"{base}/dashboard?{key}={source_id}"
+
+
+_WAKE_PROTOCOL = (
+    "Wai is the user's second brain. On a new session call wake_up() ONCE to load "
+    "their profile + taxonomy. Before asserting any fact about the user's life, "
+    "people, projects, or past decisions, call ask() (or search()) FIRST and ground "
+    "the answer in what it returns — never guess. Use remember() only for durable "
+    "facts the user asked to keep. Wrong is worse than slow."
+)
+# ~800 tokens — a cheap always-on identity payload, not the whole brain.
+_PROFILE_CHAR_CAP = 3200
+_WAKE_TOP_ENTITIES = 12
+
+
+async def wake_up_for_mcp(db: AsyncSession, user_id: str | UUID) -> dict:
+    """A cheap wake-up payload so a connecting agent boots 'knowing the user'.
+
+    Returns ``{profile, taxonomy, protocol}``: the compiled durable memory blocks
+    (~800 tokens), the folder + top-entity taxonomy for scoping, and the
+    recall-before-asserting protocol. Zero new LLM — it reads already-compiled
+    state, so it is the token-cheap way to make a connected agent context-aware on
+    its first turn.
+    """
+    user_uuid = _as_uuid(user_id)
+    blocks = await user_memory.get_or_seed_blocks(db, user_uuid)
+    profile = user_memory.render_for_prompt(blocks)[:_PROFILE_CHAR_CAP]
+
+    folders = (
+        await db.execute(
+            select(Folder.name).where(Folder.user_id == user_uuid).order_by(Folder.name)
+        )
+    ).scalars().all()
+
+    entity_rows = (
+        await db.execute(
+            select(Entity.name, func.count(EntityMention.id).label("mentions"))
+            .join(EntityMention, EntityMention.entity_id == Entity.id)
+            .where(Entity.user_id == user_uuid)
+            .group_by(Entity.id, Entity.name)
+            .order_by(desc("mentions"))
+            .limit(_WAKE_TOP_ENTITIES)
+        )
+    ).all()
+
+    return {
+        "profile": profile,
+        "taxonomy": {
+            "folders": list(folders),
+            "top_entities": [name for (name, _count) in entity_rows],
+        },
+        "protocol": _WAKE_PROTOCOL,
+    }
 
 
 async def ask_brain_for_mcp(db: AsyncSession, user_id: str | UUID, question: str) -> dict:
