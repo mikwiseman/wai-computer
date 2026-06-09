@@ -84,12 +84,24 @@ struct MacBrainView: View {
     // MARK: - Wiki index
 
     private var unifiedView: some View {
+        // One LazyVStack as the ScrollView's direct child so wiki page rows are
+        // realized lazily. Nesting the page list inside pagesSection's VStack
+        // defeated laziness on macOS — every page rendered up front.
         ScrollView {
-            VStack(alignment: .leading, spacing: Spacing.xl) {
+            LazyVStack(alignment: .leading, spacing: Spacing.xs) {
                 if model.entities.isEmpty {
                     startWithSources
                 } else {
-                    pagesSection
+                    pagesSectionHeader
+                        .padding(.bottom, Spacing.xs)
+
+                    if model.visiblePages.isEmpty {
+                        wikiEmpty(t("No pages match.", "Нет совпадений."))
+                    } else {
+                        ForEach(model.visiblePages) { entity in
+                            pageRow(entity)
+                        }
+                    }
                 }
             }
             .padding(Spacing.xl)
@@ -98,7 +110,7 @@ struct MacBrainView: View {
         }
     }
 
-    private var pagesSection: some View {
+    private var pagesSectionHeader: some View {
         VStack(alignment: .leading, spacing: Spacing.sm) {
             HStack {
                 Text(t("Pages", "Страницы")).font(Typography.headingSmall)
@@ -114,19 +126,6 @@ struct MacBrainView: View {
                 text: $model.searchText
             )
             .textFieldStyle(.roundedBorder)
-
-            if model.visiblePages.isEmpty {
-                wikiEmpty(model.entities.isEmpty
-                    ? t("Pages appear as Wai finds people, projects, and topics in your sources.",
-                        "Страницы появляются, когда Wai находит людей, проекты и темы в ваших источниках.")
-                    : t("No pages match.", "Нет совпадений."))
-            } else {
-                LazyVStack(alignment: .leading, spacing: Spacing.xs) {
-                    ForEach(model.visiblePages) { entity in
-                        pageRow(entity)
-                    }
-                }
-            }
         }
     }
 
