@@ -51,6 +51,11 @@ logger = logging.getLogger(__name__)
 # into the note store (use the recording/file import path for big content).
 REMEMBER_MAX_CHARS = 20_000
 
+# Cosine distance under which a new memory is treated as a near-duplicate of an
+# existing one — the create_safety="exists" signal so a writing agent can skip
+# re-saving a fact it (or the user) already captured.
+CREATE_SAFETY_MAX_DISTANCE = 0.1
+
 _SOURCE_QUERY_KEY = {"recording": "recording", "item": "item", "chat": "chat"}
 _DEFAULT_TITLE = {
     "recording": "Untitled Recording",
@@ -359,12 +364,18 @@ async def remember_for_mcp(
     await db.flush()
     if created:
         await enqueue_item_processing(db, item)
+    safety, similar_id = await _assess_create_safety(db, item, created)
     result = {
         "id": str(item.id),
         "created": created,
         "title": item.title,
         "url": _source_url("item", str(item.id)),
+        # "exists" (a near-duplicate is already stored) | "novel" | "unknown" —
+        # lets a writing agent avoid re-saving a fact the brain already holds.
+        "create_safety": safety,
     }
+    if similar_id and similar_id != str(item.id):
+        result["similar_id"] = similar_id
     # If background processing couldn't be enqueued, the memory IS saved but
     # not yet fully linked — surface that loudly instead of implying success.
     processing_error = (item.metadata_ or {}).get("processing_error")
@@ -399,3 +410,35 @@ async def forget_for_mcp(db: AsyncSession, user_id: str | UUID, id: str) -> dict
     item.state = "archived"
     await db.flush()
     return {"forgotten": True, "id": str(item.id)}
+
+
+async def _assess_create_safety(
+    db: AsyncSession, item: Item, created: bool
+) -> tuple[str, str | None]:
+    """Tell a writing agent whether this memory likely already exists.
+
+    "exists" (+ similar_id) lets the agent skip a near-duplicate write; "novel"
+    means genuinely new; "unknown" when we can't tell. Reuses the item's own doc
+    embedding (already computed at ingest) + one pgvector nearest-neighbour query
+    — no extra LLM/embedding call."""
+    if not created:
+        return "exists", str(item.id)
+    if item.embedding is None:
+        return "unknown", None
+    row = (
+        await db.execute(
+            select(Item.id, Item.embedding.cosine_distance(item.embedding).label("dist"))
+            .where(
+                Item.user_id == item.user_id,
+                Item.id != item.id,
+                Item.deleted_at.is_(None),
+                Item.embedding.is_not(None),
+                Item.state.is_distinct_from("archived"),
+            )
+            .order_by("dist")
+            .limit(1)
+        )
+    ).first()
+    if row is not None and row.dist is not None and row.dist < CREATE_SAFETY_MAX_DISTANCE:
+        return "exists", str(row.id)
+    return "novel", None
