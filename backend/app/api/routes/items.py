@@ -787,6 +787,47 @@ async def reprocess_item(
     return _item_response(item, summary)
 
 
+async def _load_owned_item(db: Database, item_id: UUID, user: CurrentUser) -> Item:
+    item = (
+        await db.execute(
+            select(Item).where(
+                Item.id == item_id, Item.user_id == user.id, Item.deleted_at.is_(None)
+            )
+        )
+    ).scalar_one_or_none()
+    if item is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Item not found")
+    return item
+
+
+async def _item_with_summary(db: Database, item: Item) -> ItemResponse:
+    summary = (
+        await db.execute(select(ItemSummary).where(ItemSummary.item_id == item.id))
+    ).scalar_one_or_none()
+    return _item_response(item, summary)
+
+
+@router.post("/{item_id}/forget", response_model=ItemResponse)
+async def forget_item(item_id: UUID, user: CurrentUser, db: Database) -> ItemResponse:
+    """Archive an item so it stops surfacing in recall (search / feed / Ask),
+    reversibly. Unlike delete (soft-delete), forget keeps the row + content and is
+    restorable — the "Forget this" trust affordance, symmetric with remember()."""
+    item = await _load_owned_item(db, item_id, user)
+    item.state = "archived"
+    await db.flush()
+    return await _item_with_summary(db, item)
+
+
+@router.post("/{item_id}/restore", response_model=ItemResponse)
+async def restore_item(item_id: UUID, user: CurrentUser, db: Database) -> ItemResponse:
+    """Un-archive a forgotten item so it surfaces in recall again."""
+    item = await _load_owned_item(db, item_id, user)
+    if item.state == "archived":
+        item.state = "raw"
+        await db.flush()
+    return await _item_with_summary(db, item)
+
+
 @router.delete(
     "/{item_id}",
     status_code=status.HTTP_204_NO_CONTENT,

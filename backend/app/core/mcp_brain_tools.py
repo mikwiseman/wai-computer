@@ -374,3 +374,28 @@ async def remember_for_mcp(
             "message", "Saved, but background processing hasn't started yet."
         )
     return result
+
+
+async def forget_for_mcp(db: AsyncSession, user_id: str | UUID, id: str) -> dict:
+    """Archive a memory so it stops surfacing in recall — the write-side mirror of
+    remember(). Reversible (the item is kept, not deleted) and applies only to
+    saved notes/items (recordings + chats aren't agent-forgettable via MCP).
+    Caller enforces the ``mcp:write`` scope."""
+    try:
+        item_uuid = _as_uuid(id)
+    except (ValueError, AttributeError):
+        raise ValueError("forget expects a memory id from search/remember.") from None
+    item = (
+        await db.execute(
+            select(Item).where(
+                Item.id == item_uuid,
+                Item.user_id == _as_uuid(user_id),
+                Item.deleted_at.is_(None),
+            )
+        )
+    ).scalar_one_or_none()
+    if item is None:
+        raise ValueError("No such memory to forget (only saved notes/items can be forgotten).")
+    item.state = "archived"
+    await db.flush()
+    return {"forgotten": True, "id": str(item.id)}

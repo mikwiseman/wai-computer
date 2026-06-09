@@ -15,6 +15,7 @@ from app.config import Settings
 from app.core.mcp_brain_tools import (
     ask_brain_for_mcp,
     fetch_document_for_mcp,
+    forget_for_mcp,
     remember_for_mcp,
     search_brain_for_mcp,
     wake_up_for_mcp,
@@ -76,6 +77,9 @@ Tools:
   connection was granted write access; otherwise it returns a clear error and
   the connection stays read-only. Use it when the user says "remember that…"
   or when you learn a durable fact worth recalling later.
+- forget(id): the mirror of remember — archive a saved memory by id (from
+  search/remember) so it stops surfacing. Reversible, write-access only, applies
+  to saved notes. Use when a memory is wrong/outdated or the user says "forget…".
 - list_folders(): the user's recording folders with counts. Discover folder
   IDs before a folder-scoped search or list_recordings.
 - list_recordings(folder_ids=None, limit=20, cursor=None): browse recordings
@@ -246,6 +250,26 @@ def create_mcp_app(settings: Settings) -> Starlette:
             result = await remember_for_mcp(
                 db, user_id, text, title=title, source_url=source_url
             )
+        return json.dumps(result, ensure_ascii=False)
+
+    @mcp.tool()
+    async def forget(id: str) -> str:
+        """Forget a saved memory by id so it stops surfacing (requires write access).
+
+        The write-side mirror of `remember`: archives the note/item with this id
+        (from `search` / `remember`) so future `ask` / `search` no longer surface
+        it. Reversible (content is kept, not deleted) and only applies to saved
+        notes/items. Returns `{forgotten, id}`. Use when the user says "forget
+        that…" or a saved memory is wrong or outdated.
+        """
+        user_id, access_token = await _current_access()
+        if MCP_WRITE_SCOPE not in (access_token.scopes or []):
+            raise ValueError(
+                "This connection is read-only. Reconnect with memory write "
+                "access enabled (Settings → MCP) to forget memories."
+            )
+        async with get_db_context() as db:
+            result = await forget_for_mcp(db, user_id, id)
         return json.dumps(result, ensure_ascii=False)
 
     @mcp.tool()

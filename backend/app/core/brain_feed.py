@@ -37,7 +37,7 @@ _FEED_SQL = text(
                COALESCE(i.occurred_at, i.created_at)
         FROM items i
         LEFT JOIN item_summaries isum ON isum.item_id = i.id
-        WHERE i.user_id = :uid AND i.deleted_at IS NULL
+        WHERE i.user_id = :uid AND i.deleted_at IS NULL AND i.state IS DISTINCT FROM 'archived'
         UNION ALL
         SELECT 'chat', c.id::text,
                COALESCE(c.title, 'Wai thread'),

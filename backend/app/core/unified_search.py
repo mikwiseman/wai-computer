@@ -75,7 +75,7 @@ _UNIFIED_SQL = text(
                    to_tsvector('russian', lower(ic.content COLLATE "und-x-icu")),
                    plainto_tsquery('russian', lower(:q COLLATE "und-x-icu"))) DESC) AS rn
         FROM item_chunks ic JOIN items i ON ic.item_id = i.id
-        WHERE i.user_id = :uid AND i.deleted_at IS NULL
+        WHERE i.user_id = :uid AND i.deleted_at IS NULL AND i.state IS DISTINCT FROM 'archived'
           AND to_tsvector('russian', lower(ic.content COLLATE "und-x-icu"))
               @@ plainto_tsquery('russian', lower(:q COLLATE "und-x-icu"))
     ),
@@ -84,7 +84,8 @@ _UNIFIED_SQL = text(
                i.title, i.kind, i.created_at, NULL::integer AS start_ms, NULL::integer AS end_ms,
                ROW_NUMBER() OVER (ORDER BY ic.embedding <=> CAST(:emb AS vector)) AS rn
         FROM item_chunks ic JOIN items i ON ic.item_id = i.id
-        WHERE i.user_id = :uid AND i.deleted_at IS NULL AND ic.embedding IS NOT NULL
+        WHERE i.user_id = :uid AND i.deleted_at IS NULL AND i.state IS DISTINCT FROM 'archived'
+          AND ic.embedding IS NOT NULL
         ORDER BY ic.embedding <=> CAST(:emb AS vector)
         LIMIT :pool
     ),
