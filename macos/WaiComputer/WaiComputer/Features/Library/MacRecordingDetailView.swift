@@ -557,23 +557,28 @@ struct MacRecordingDetailView: View {
     }
 
     private func recordingDetailContent(_ detail: RecordingDetail) -> some View {
-        // One LazyVStack whose direct children are the summary, the transcript
-        // header, and each transcript turn. The transcript previously lived in a
-        // *nested* LazyVStack (inside transcriptSection's VStack inside this
-        // LazyVStack); on macOS that defeats laziness — every turn is realized at
-        // once, each building a SpeakerChipView (popover/help) + selectable Text,
-        // which was the multi-second freeze on long recordings. Flattening makes
-        // the turns genuine, direct lazy children so only visible rows are built.
+        // The summary + transcript live in a List (NSTableView-backed) rather
+        // than a ScrollView + LazyVStack. A lazy stack never recycles: every
+        // turn that scrolls past stays a live view, and each wheel event grows
+        // the scroll content, which invalidates the window's root hosting view
+        // and re-runs sizeThatFits over the whole realized tree (~70ms per
+        // event on a 1-hour meeting — felt as scrolling that freezes). List
+        // rows are measured and reused by AppKit, so scrolling stays out of
+        // SwiftUI layout entirely.
         let turns = viewModel.transcriptTurns(languageCode: speakerLanguageCode)
-        return ScrollView {
-            LazyVStack(alignment: .leading, spacing: Spacing.xl) {
+        return List {
+            Group {
                 summarySection(detail)
-                    .padding(.bottom, Spacing.xl)
+                    .padding(.top, Spacing.xl)
+                    .padding(.bottom, Spacing.xl + Spacing.xl / 2)
 
                 transcriptHeader(detail)
+                    .padding(.vertical, Spacing.xl / 2)
 
                 if detail.segments.isEmpty {
                     transcriptEmptyState
+                        .padding(.top, Spacing.xl / 2)
+                        .padding(.bottom, Spacing.xl)
                 } else {
                     ForEach(turns) { turn in
                         SegmentRowView(
@@ -583,14 +588,23 @@ struct MacRecordingDetailView: View {
                                 viewModel.recordingDetail = updated
                             }
                         )
+                        .padding(.vertical, Spacing.xl / 2)
                     }
                 }
             }
-            .padding(.horizontal, Spacing.xxl)
-            .padding(.vertical, Spacing.xl)
             .frame(maxWidth: 920, alignment: .leading)
-            .frame(maxWidth: .infinity, alignment: .topLeading)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .listRowInsets(EdgeInsets(
+                top: 0,
+                leading: Spacing.xxl,
+                bottom: 0,
+                trailing: Spacing.xxl
+            ))
+            .listRowSeparator(.hidden)
+            .listRowBackground(Color.clear)
         }
+        .listStyle(.plain)
+        .scrollContentBackground(.hidden)
         .accessibilityIdentifier("recording-detail-content")
     }
 

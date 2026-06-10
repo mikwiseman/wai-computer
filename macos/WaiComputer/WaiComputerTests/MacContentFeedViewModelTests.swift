@@ -266,7 +266,7 @@ final class MacContentFeedViewModelTests: XCTestCase {
         let source = try macSource("WaiComputer/Features/Library/MacRecordingDetailView.swift")
 
         XCTAssertFalse(source.contains("WaiTabBar("))
-        XCTAssertBefore("summarySection(detail)", "transcriptSection(detail)", in: source)
+        XCTAssertBefore("summarySection(detail)", "transcriptHeader(detail)", in: source)
     }
 
     func testRecordingDetailExposesSummaryAudioInHeaderActions() throws {
