@@ -69,3 +69,34 @@ def test_format_fetch_error_reply_escapes() -> None:
     out = format_fetch_error_reply("Instagram doesn't allow <apps> & bots")
     assert "&lt;apps&gt;" in out
     assert "&amp;" in out
+
+
+def test_format_reply_youtube_moments_deep_link_into_video() -> None:
+    item = _item()
+    item.metadata_ = {"video_id": "dQw4w9WgXcQ", "transcript_source": "captions"}
+    summary = ItemSummary(
+        item_id=None,
+        summary="s",
+        key_moments=[
+            {
+                "timestamp": "01:10",
+                "moment": "Big reveal",
+                "importance": "high",
+                "start_ms": 70_000,
+            },
+            # No start_ms -> plain [ts], never a broken link.
+            {"timestamp": "02:00", "moment": "Wrap up", "importance": "low"},
+        ],
+        action_items=[],
+    )
+    out = format_item_reply(item, summary)
+    assert '<a href="https://youtu.be/dQw4w9WgXcQ?t=70">[01:10]</a> Big reveal' in out
+    assert "[02:00] Wrap up" in out
+
+
+def test_format_reply_discloses_audio_stt_fallback() -> None:
+    item = _item()
+    item.metadata_ = {"video_id": "abc", "transcript_source": "audio_stt"}
+    summary = ItemSummary(item_id=None, summary="s", key_moments=[], action_items=[])
+    out = format_item_reply(item, summary)
+    assert "transcribed the audio" in out

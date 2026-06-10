@@ -74,10 +74,18 @@ async def test_tiktok_raises_share_required() -> None:
     assert ei.value.code == "tiktok_share_required"
 
 
+_CAPTION_SEGMENTS = [
+    {"content": "hello world", "start_ms": 0, "end_ms": 2000},
+    {"content": "transcript", "start_ms": 2000, "end_ms": 3500},
+]
+
+
 @pytest.mark.asyncio
 async def test_youtube_fetches_transcript() -> None:
     with patch.object(
-        source_fetch, "_fetch_youtube_transcript", return_value=("hello world transcript", "en")
+        source_fetch,
+        "_fetch_youtube_transcript",
+        return_value=("hello world transcript", "en", _CAPTION_SEGMENTS),
     ):
         content = await fetch_url("https://youtu.be/dQw4w9WgXcQ")
     assert content.source_type == "youtube"
@@ -85,10 +93,14 @@ async def test_youtube_fetches_transcript() -> None:
     assert content.body == "hello world transcript"
     assert content.metadata["video_id"] == "dQw4w9WgXcQ"
     assert content.metadata["language"] == "en"
+    assert content.metadata["transcript_source"] == "captions"
+    assert content.metadata["segments"] == _CAPTION_SEGMENTS
 
 
 @pytest.mark.asyncio
 async def test_youtube_no_transcript_propagates_friendly_error() -> None:
+    """Without a user to bill STT to, the no-captions error surfaces as-is."""
+
     def _boom(_vid):
         raise SourceFetchError("no transcript", code="youtube_no_transcript")
 
@@ -96,6 +108,126 @@ async def test_youtube_no_transcript_propagates_friendly_error() -> None:
         with pytest.raises(SourceFetchError) as ei:
             await fetch_url("https://youtu.be/dQw4w9WgXcQ")
     assert ei.value.code == "youtube_no_transcript"
+
+
+@pytest.mark.asyncio
+async def test_youtube_no_captions_falls_back_to_audio_stt() -> None:
+    """No captions + a billable user -> audio download + file STT, disclosed."""
+
+    def _boom(_vid):
+        raise SourceFetchError("no transcript", code="youtube_no_transcript")
+
+    async def _fake_stt(url, vid, stt_user_id):
+        assert vid == "dQw4w9WgXcQ"
+        assert stt_user_id == "user-1"
+        return (
+            "spoken words",
+            None,
+            [{"content": "spoken words", "start_ms": 0, "end_ms": 1500}],
+        )
+
+    with (
+        patch.object(source_fetch, "_fetch_youtube_transcript", side_effect=_boom),
+        patch.object(source_fetch, "_transcribe_youtube_audio", side_effect=_fake_stt),
+    ):
+        content = await fetch_url(
+            "https://youtu.be/dQw4w9WgXcQ", stt_user_id="user-1"
+        )
+    assert content.body == "spoken words"
+    assert content.metadata["transcript_source"] == "audio_stt"
+
+
+@pytest.mark.asyncio
+async def test_youtube_blocked_falls_back_to_audio_stt() -> None:
+    """A blocked server IP also tries the audio path before giving up."""
+
+    def _blocked(_vid):
+        raise SourceFetchError("blocked", code="youtube_blocked")
+
+    async def _fake_stt(url, vid, stt_user_id):
+        return ("recovered", None, [])
+
+    with (
+        patch.object(source_fetch, "_fetch_youtube_transcript", side_effect=_blocked),
+        patch.object(source_fetch, "_transcribe_youtube_audio", side_effect=_fake_stt),
+    ):
+        content = await fetch_url(
+            "https://youtu.be/dQw4w9WgXcQ", stt_user_id="user-1"
+        )
+    assert content.metadata["transcript_source"] == "audio_stt"
+
+
+@pytest.mark.asyncio
+async def test_youtube_unavailable_does_not_fall_back() -> None:
+    """Private/removed videos can't be recovered by downloading audio."""
+
+    def _gone(_vid):
+        raise SourceFetchError("gone", code="youtube_unavailable")
+
+    async def _should_not_run(url, vid, stt_user_id):  # pragma: no cover
+        raise AssertionError("audio fallback must not run for unavailable videos")
+
+    with (
+        patch.object(source_fetch, "_fetch_youtube_transcript", side_effect=_gone),
+        patch.object(
+            source_fetch, "_transcribe_youtube_audio", side_effect=_should_not_run
+        ),
+    ):
+        with pytest.raises(SourceFetchError) as ei:
+            await fetch_url("https://youtu.be/dQw4w9WgXcQ", stt_user_id="user-1")
+    assert ei.value.code == "youtube_unavailable"
+
+
+@pytest.mark.asyncio
+async def test_youtube_fallback_disabled_by_config(monkeypatch) -> None:
+    from app.config import get_settings
+
+    def _boom(_vid):
+        raise SourceFetchError("no transcript", code="youtube_no_transcript")
+
+    settings = get_settings()
+    monkeypatch.setattr(settings, "youtube_audio_fallback_enabled", False)
+    with patch.object(source_fetch, "_fetch_youtube_transcript", side_effect=_boom):
+        with pytest.raises(SourceFetchError) as ei:
+            await fetch_url("https://youtu.be/dQw4w9WgXcQ", stt_user_id="user-1")
+    assert ei.value.code == "youtube_no_transcript"
+
+
+def test_pick_transcript_prefers_ru_en_then_manual_then_any() -> None:
+    from youtube_transcript_api._errors import NoTranscriptFound
+
+    class FakeTranscript:
+        def __init__(self, language_code, is_generated):
+            self.language_code = language_code
+            self.is_generated = is_generated
+
+    class FakeList:
+        def __init__(self, transcripts, preferred=None):
+            self._transcripts = transcripts
+            self._preferred = preferred
+
+        def __iter__(self):
+            return iter(self._transcripts)
+
+        def find_transcript(self, codes):
+            if self._preferred is not None:
+                return self._preferred
+            raise NoTranscriptFound("vid", codes, None)
+
+    ru = FakeTranscript("ru", False)
+    de_manual = FakeTranscript("de", False)
+    fr_auto = FakeTranscript("fr", True)
+
+    # Preferred language wins when available.
+    assert source_fetch._pick_transcript(FakeList([fr_auto, ru], preferred=ru)) is ru
+    # No ru/en -> first manually created transcript.
+    assert (
+        source_fetch._pick_transcript(FakeList([fr_auto, de_manual])) is de_manual
+    )
+    # Only auto-generated left -> take it rather than failing.
+    assert source_fetch._pick_transcript(FakeList([fr_auto])) is fr_auto
+    # Nothing at all -> None (caller raises the friendly error).
+    assert source_fetch._pick_transcript(FakeList([])) is None
 
 
 @pytest.mark.asyncio
@@ -155,3 +287,169 @@ async def test_pdf_url_no_text_raises() -> None:
         with pytest.raises(SourceFetchError) as ei:
             await fetch_url("https://example.com/scan.pdf")
     assert ei.value.code == "pdf_no_text"
+
+
+# --- Audio fallback helpers (seams mocked) ----------------------------------
+
+
+def test_youtube_api_uses_proxy_when_configured(monkeypatch) -> None:
+    from app.config import get_settings
+
+    settings = get_settings()
+    monkeypatch.setattr(settings, "youtube_proxy_url", "http://user:pass@proxy:1000")
+    api = source_fetch._youtube_api()
+    assert api is not None  # constructed with GenericProxyConfig without raising
+
+    monkeypatch.setattr(settings, "youtube_proxy_url", "")
+    assert source_fetch._youtube_api() is not None
+
+
+@pytest.mark.asyncio
+async def test_transcribe_youtube_audio_builds_segments(monkeypatch) -> None:
+    from app.core.transcript_utils import TranscriptResult
+
+    def fake_download(url):
+        return b"audio-bytes", "audio/mp4", 12.5
+
+    async def fake_stt(data, **kwargs):
+        assert data == b"audio-bytes"
+        assert kwargs["user_id"] == "u1"
+        assert kwargs["content_type"] == "audio/mp4"
+        assert kwargs["audio_duration_seconds"] == 12.5
+        return [
+            TranscriptResult(
+                text="hello", speaker=None, is_final=True,
+                start_ms=0, end_ms=900, confidence=0.9,
+            ),
+            TranscriptResult(
+                text="  ", speaker=None, is_final=True,
+                start_ms=900, end_ms=1000, confidence=0.9,
+            ),
+            TranscriptResult(
+                text="there", speaker=None, is_final=True,
+                start_ms=1000, end_ms=1800, confidence=0.9,
+            ),
+        ]
+
+    monkeypatch.setattr(source_fetch, "_download_youtube_audio", fake_download)
+    with patch("app.core.transcription.transcribe_audio_file", side_effect=fake_stt):
+        text, language, segments = await source_fetch._transcribe_youtube_audio(
+            "https://youtu.be/abc", "abc", "u1"
+        )
+    assert text == "hello there"
+    assert language is None
+    assert segments == [
+        {"content": "hello", "start_ms": 0, "end_ms": 900},
+        {"content": "there", "start_ms": 1000, "end_ms": 1800},
+    ]
+
+
+@pytest.mark.asyncio
+async def test_transcribe_youtube_audio_no_speech_raises(monkeypatch) -> None:
+    def fake_download(url):
+        return b"a", "audio/mp4", 1.0
+
+    async def fake_stt(data, **kwargs):
+        return []
+
+    monkeypatch.setattr(source_fetch, "_download_youtube_audio", fake_download)
+    with patch("app.core.transcription.transcribe_audio_file", side_effect=fake_stt):
+        with pytest.raises(SourceFetchError) as ei:
+            await source_fetch._transcribe_youtube_audio(
+                "https://youtu.be/abc", "abc", "u1"
+            )
+    assert ei.value.code == "youtube_audio_no_speech"
+
+
+def test_download_youtube_audio_happy_path(tmp_path, monkeypatch) -> None:
+    import sys
+    from types import SimpleNamespace
+
+    class FakeYDL:
+        def __init__(self, opts):
+            self.opts = opts
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def extract_info(self, url, download):
+            out = self.opts["outtmpl"].replace("%(ext)s", "m4a")
+            from pathlib import Path
+
+            Path(out).write_bytes(b"fake-m4a")
+            return {"duration": 33}
+
+    class FakeDownloadError(Exception):
+        pass
+
+    fake_mod = SimpleNamespace(
+        YoutubeDL=FakeYDL, utils=SimpleNamespace(DownloadError=FakeDownloadError)
+    )
+    with patch.dict(sys.modules, {"yt_dlp": fake_mod, "yt_dlp.utils": fake_mod.utils}):
+        data, content_type, duration = source_fetch._download_youtube_audio(
+            "https://youtu.be/abc"
+        )
+    assert data == b"fake-m4a"
+    assert content_type == "audio/mp4"
+    assert duration == 33.0
+
+
+def test_download_youtube_audio_failure_raises(monkeypatch) -> None:
+    import sys
+    from types import SimpleNamespace
+
+    class FakeDownloadError(Exception):
+        pass
+
+    class FailingYDL:
+        def __init__(self, opts):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def extract_info(self, url, download):
+            raise FakeDownloadError("nope")
+
+    fake_mod = SimpleNamespace(
+        YoutubeDL=FailingYDL, utils=SimpleNamespace(DownloadError=FakeDownloadError)
+    )
+    with patch.dict(sys.modules, {"yt_dlp": fake_mod, "yt_dlp.utils": fake_mod.utils}):
+        with pytest.raises(SourceFetchError) as ei:
+            source_fetch._download_youtube_audio("https://youtu.be/abc")
+    assert ei.value.code == "youtube_audio_download_failed"
+
+
+def test_download_youtube_audio_filtered_out_raises(monkeypatch) -> None:
+    import sys
+    from types import SimpleNamespace
+
+    class SkippingYDL:
+        """Simulates yt-dlp skipping the download (too long / too large)."""
+
+        def __init__(self, opts):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def extract_info(self, url, download):
+            return {"duration": 99999}  # filtered: no file written
+
+    fake_mod = SimpleNamespace(
+        YoutubeDL=SkippingYDL,
+        utils=SimpleNamespace(DownloadError=type("E", (Exception,), {})),
+    )
+    with patch.dict(sys.modules, {"yt_dlp": fake_mod, "yt_dlp.utils": fake_mod.utils}):
+        with pytest.raises(SourceFetchError) as ei:
+            source_fetch._download_youtube_audio("https://youtu.be/abc")
+    assert ei.value.code == "youtube_audio_too_large"

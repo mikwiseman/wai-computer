@@ -75,7 +75,7 @@ async def test_process_url_item_fetches_then_summarizes(db_session, monkeypatch)
     )
     assert item.body is None
 
-    async def fake_fetch(u: str) -> FetchedContent:
+    async def fake_fetch(u: str, **kwargs) -> FetchedContent:
         assert u == url
         return FetchedContent(
             source_type="article", kind="article", url=u,
@@ -114,7 +114,7 @@ async def test_process_fetch_error_marks_needs_input(db_session) -> None:
         dedup_key=url, body=None, embed=False,
     )
 
-    async def fake_fetch(u: str) -> FetchedContent:
+    async def fake_fetch(u: str, **kwargs) -> FetchedContent:
         raise SourceFetchError("Share the file", code="instagram_share_required")
 
     result = await process_item(
@@ -137,7 +137,7 @@ async def test_process_body_item_skips_fetch(db_session, monkeypatch) -> None:
         body="already has a body of text", embedder=_fake_embedder,
     )
 
-    async def fail_fetch(u: str):
+    async def fail_fetch(u: str, **kwargs):
         raise AssertionError("should not fetch when body present")
 
     _patch_summary(monkeypatch)

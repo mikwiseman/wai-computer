@@ -14,11 +14,21 @@ from app.models.item import Item, ItemSummary
 _MAX_MOMENTS = 8
 
 
+def _youtube_moment_link(item: Item) -> str | None:
+    """Base URL for deep-linking key moments into a YouTube video."""
+    meta = item.metadata_ or {}
+    video_id = str(meta.get("video_id") or "").strip()
+    if not video_id:
+        return None
+    return f"https://youtu.be/{video_id}"
+
+
 def format_item_reply(item: Item, summary: ItemSummary | None) -> str:
     """Build the HTML reply body for a forwarded link / pasted content.
 
     Layout: title, one-paragraph summary, then a compact key-moments list
     (Telegram has no real tables, so each moment is a line: ``• [ts] moment``).
+    YouTube key moments deep-link into the video at the moment's timestamp.
     """
     sections: list[str] = []
 
@@ -26,18 +36,31 @@ def format_item_reply(item: Item, summary: ItemSummary | None) -> str:
     if title:
         sections.append(f"<b>{telegram_inline(title)}</b>")
 
+    if (item.metadata_ or {}).get("transcript_source") == "audio_stt":
+        sections.append(
+            "<i>No captions on this video — I transcribed the audio.</i>"
+        )
+
     if summary is not None and (summary.summary or "").strip():
         sections.append(telegram_html(summary.summary.strip()))
 
     moments = (summary.key_moments if summary else None) or []
     if moments:
+        video_url = _youtube_moment_link(item)
         lines = ["<b>Key moments</b>"]
         for moment in moments[:_MAX_MOMENTS]:
             label = telegram_inline(str(moment.get("moment") or "").strip())
             if not label:
                 continue
             ts = str(moment.get("timestamp") or "").strip()
-            prefix = f"[{escape(ts)}] " if ts else "• "
+            start_ms = moment.get("start_ms")
+            if ts and video_url and isinstance(start_ms, int):
+                seconds = max(start_ms // 1000, 0)
+                prefix = f'<a href="{video_url}?t={seconds}">[{escape(ts)}]</a> '
+            elif ts:
+                prefix = f"[{escape(ts)}] "
+            else:
+                prefix = "• "
             lines.append(f"{prefix}{label}")
         if len(lines) > 1:
             sections.append("\n".join(lines))

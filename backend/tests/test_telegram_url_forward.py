@@ -80,7 +80,7 @@ async def test_forward_youtube_link_replies_with_summary(db_session, monkeypatch
     account = await _linked_account(db_session)
     _stub_llm(monkeypatch)
 
-    async def fake_fetch(url):
+    async def fake_fetch(url, **kwargs):
         return FetchedContent(
             source_type="youtube", kind="video", url=url,
             title=None, body="A long transcript about solar power.",
@@ -115,7 +115,7 @@ async def test_forward_youtube_link_replies_with_summary(db_session, monkeypatch
 async def test_forward_instagram_link_replies_share_required(db_session, monkeypatch) -> None:
     account = await _linked_account(db_session)
 
-    async def fake_fetch(url):
+    async def fake_fetch(url, **kwargs):
         raise SourceFetchError(
             "Instagram doesn't allow apps to read its posts. Share the file.",
             code="instagram_share_required",
@@ -140,7 +140,7 @@ async def test_forward_same_link_twice_is_idempotent(db_session, monkeypatch) ->
     _stub_llm(monkeypatch)
     calls = {"n": 0}
 
-    async def fake_fetch(url):
+    async def fake_fetch(url, **kwargs):
         calls["n"] += 1
         return FetchedContent(
             source_type="article", kind="article", url=url,

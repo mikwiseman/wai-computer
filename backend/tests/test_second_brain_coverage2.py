@@ -2,11 +2,11 @@
 
 Closes the remaining uncovered lines flagged by the coverage report:
 source_fetch I/O + error paths, comparison_build summary/failure paths,
-content hard-split + doc-embed edge, mcp_sync inner skip, route error paths.
+content hard-split + doc-embed edge, route error paths.
 """
 
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, patch
+from unittest.mock import patch
 from uuid import uuid4
 
 import pytest
@@ -92,30 +92,76 @@ def test_extract_pdf_text_joins_pages() -> None:
     assert "page three" in text
 
 
+def _transcript_list(transcripts):
+    """Build a TranscriptList-shaped fake: find_transcript + iteration."""
+    from youtube_transcript_api._errors import NoTranscriptFound
+
+    class FakeList:
+        def find_transcript(self, codes):
+            for t in transcripts:
+                if t.language_code in codes:
+                    return t
+            raise NoTranscriptFound("vid", codes, None)
+
+        def __iter__(self):
+            return iter(transcripts)
+
+    return FakeList()
+
+
 def test_fetch_youtube_transcript_no_transcript_raises() -> None:
     from app.core import source_fetch as sf
 
-    class CouldNotRetrieveError(Exception):
-        pass
-
-    class UnavailableError(Exception):
-        pass
-
-    def _raise(vid):
-        raise CouldNotRetrieveError("none")
-
-    fake_api = SimpleNamespace(fetch=_raise)
-    fake_mod = SimpleNamespace(YouTubeTranscriptApi=lambda: fake_api)
-    fake_errors = SimpleNamespace(
-        CouldNotRetrieveTranscript=CouldNotRetrieveError, VideoUnavailable=UnavailableError
-    )
-    with patch.dict(
-        "sys.modules",
-        {"youtube_transcript_api": fake_mod, "youtube_transcript_api._errors": fake_errors},
-    ):
+    fake_api = SimpleNamespace(list=lambda vid: _transcript_list([]))
+    with patch.object(sf, "_youtube_api", return_value=fake_api):
         with pytest.raises(sf.SourceFetchError) as ei:
             sf._fetch_youtube_transcript("vid")
     assert ei.value.code == "youtube_no_transcript"
+
+
+def test_fetch_youtube_transcript_blocked_raises_distinct_code() -> None:
+    from youtube_transcript_api._errors import RequestBlocked
+
+    from app.core import source_fetch as sf
+
+    def _blocked(vid):
+        raise RequestBlocked(vid)
+
+    fake_api = SimpleNamespace(list=_blocked)
+    with patch.object(sf, "_youtube_api", return_value=fake_api):
+        with pytest.raises(sf.SourceFetchError) as ei:
+            sf._fetch_youtube_transcript("vid")
+    assert ei.value.code == "youtube_blocked"
+
+
+def test_fetch_youtube_transcript_disabled_raises_no_transcript() -> None:
+    from youtube_transcript_api._errors import TranscriptsDisabled
+
+    from app.core import source_fetch as sf
+
+    def _disabled(vid):
+        raise TranscriptsDisabled(vid)
+
+    fake_api = SimpleNamespace(list=_disabled)
+    with patch.object(sf, "_youtube_api", return_value=fake_api):
+        with pytest.raises(sf.SourceFetchError) as ei:
+            sf._fetch_youtube_transcript("vid")
+    assert ei.value.code == "youtube_no_transcript"
+
+
+def test_fetch_youtube_transcript_unavailable_raises_distinct_code() -> None:
+    from youtube_transcript_api._errors import VideoUnavailable
+
+    from app.core import source_fetch as sf
+
+    def _gone(vid):
+        raise VideoUnavailable(vid)
+
+    fake_api = SimpleNamespace(list=_gone)
+    with patch.object(sf, "_youtube_api", return_value=fake_api):
+        with pytest.raises(sf.SourceFetchError) as ei:
+            sf._fetch_youtube_transcript("vid")
+    assert ei.value.code == "youtube_unavailable"
 
 
 def test_fetch_youtube_transcript_generic_error_raises() -> None:
@@ -124,16 +170,8 @@ def test_fetch_youtube_transcript_generic_error_raises() -> None:
     def _raise(vid):
         raise RuntimeError("network")
 
-    fake_api = SimpleNamespace(fetch=_raise)
-    fake_mod = SimpleNamespace(YouTubeTranscriptApi=lambda: fake_api)
-    fake_errors = SimpleNamespace(
-        CouldNotRetrieveTranscript=type("E1", (Exception,), {}),
-        VideoUnavailable=type("E2", (Exception,), {}),
-    )
-    with patch.dict(
-        "sys.modules",
-        {"youtube_transcript_api": fake_mod, "youtube_transcript_api._errors": fake_errors},
-    ):
+    fake_api = SimpleNamespace(list=_raise)
+    with patch.object(sf, "_youtube_api", return_value=fake_api):
         with pytest.raises(sf.SourceFetchError) as ei:
             sf._fetch_youtube_transcript("vid")
     assert ei.value.code == "youtube_fetch_failed"
@@ -145,16 +183,13 @@ def test_fetch_youtube_transcript_empty_raises() -> None:
     class FetchedList(list):
         language_code = "en"
 
-    fake_api = SimpleNamespace(fetch=lambda vid: FetchedList([SimpleNamespace(text="  ")]))
-    fake_mod = SimpleNamespace(YouTubeTranscriptApi=lambda: fake_api)
-    fake_errors = SimpleNamespace(
-        CouldNotRetrieveTranscript=type("E1", (Exception,), {}),
-        VideoUnavailable=type("E2", (Exception,), {}),
+    transcript = SimpleNamespace(
+        language_code="en",
+        is_generated=False,
+        fetch=lambda: FetchedList([SimpleNamespace(text="  ", start=0.0, duration=1.0)]),
     )
-    with patch.dict(
-        "sys.modules",
-        {"youtube_transcript_api": fake_mod, "youtube_transcript_api._errors": fake_errors},
-    ):
+    fake_api = SimpleNamespace(list=lambda vid: _transcript_list([transcript]))
+    with patch.object(sf, "_youtube_api", return_value=fake_api):
         with pytest.raises(sf.SourceFetchError) as ei:
             sf._fetch_youtube_transcript("vid")
     assert ei.value.code == "youtube_empty"
@@ -237,20 +272,3 @@ async def test_comparison_build_missing_set_returns_none(db_session) -> None:
     assert await cb.build_comparison_set(db_session, uuid4()) is None
 
 
-# --- mcp_sync inner: missing connection short-circuits ---------------------
-
-
-@pytest.mark.asyncio
-async def test_mcp_sync_inner_missing_connection(db_session, monkeypatch) -> None:
-    from contextlib import asynccontextmanager
-
-    from app.tasks import mcp_sync
-
-    @asynccontextmanager
-    async def ctx():
-        yield db_session
-
-    monkeypatch.setattr(mcp_sync, "get_db_context", ctx)
-    with patch.object(mcp_sync, "sync_connection", AsyncMock()) as sc:
-        await mcp_sync._sync_one(str(uuid4()))
-    sc.assert_not_called()

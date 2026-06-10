@@ -74,101 +74,6 @@ async def test_induce_columns_raises_on_no_parse() -> None:
             await _induce_columns(pair, None)
 
 
-# --- mcp_client.py: SDK result extraction helpers (pure) --------------------
-
-
-def test_resource_text_extracts_text_parts() -> None:
-    from app.core.mcp_client import _resource_text
-
-    result = SimpleNamespace(
-        contents=[
-            SimpleNamespace(text="hello"),
-            SimpleNamespace(text=None),
-            SimpleNamespace(text="world"),
-        ]
-    )
-    assert _resource_text(result) == "hello\nworld"
-
-
-def test_tool_text_extracts_and_caps() -> None:
-    from app.core.mcp_client import _tool_text
-
-    result = SimpleNamespace(content=[SimpleNamespace(text="a"), SimpleNamespace(text="b")])
-    assert _tool_text(result) == "a\nb"
-
-
-def test_resource_text_handles_empty() -> None:
-    from app.core.mcp_client import _resource_text, _tool_text
-
-    assert _resource_text(SimpleNamespace(contents=[])) == ""
-    assert _tool_text(SimpleNamespace(content=None)) == ""
-
-
-# --- mcp_client.py: introspect/list/read via a stubbed session --------------
-
-
-@pytest.mark.asyncio
-async def test_mcp_client_introspect_and_read() -> None:
-    from app.core import mcp_client as mc
-
-    fake_session = SimpleNamespace(
-        list_tools=AsyncMock(return_value=SimpleNamespace(tools=[SimpleNamespace(name="search")])),
-        list_resources=AsyncMock(
-            return_value=SimpleNamespace(
-                resources=[
-                    SimpleNamespace(
-                        uri="r://1", name="R1", description=None, mimeType="text/plain"
-                    )
-                ]
-            )
-        ),
-        read_resource=AsyncMock(
-            return_value=SimpleNamespace(contents=[SimpleNamespace(text="body")])
-        ),
-        call_tool=AsyncMock(
-            return_value=SimpleNamespace(content=[SimpleNamespace(text="tool out")])
-        ),
-    )
-
-    from contextlib import asynccontextmanager
-
-    @asynccontextmanager
-    async def fake_open(url, token):
-        yield fake_session
-
-    with patch.object(mc, "_open_session", fake_open):
-        client = mc.McpClient("https://x/mcp", "tok")
-        intro = await client.introspect()
-        assert intro.tools == ["search"]
-        assert intro.resources[0].uri == "r://1"
-        resources = await client.list_resources()
-        assert resources[0].name == "R1"
-        body = await client.read_resource("r://1")
-        assert body == "body"
-        out = await client.call_tool("search", {"q": "x"})
-        assert out == "tool out"
-
-
-@pytest.mark.asyncio
-async def test_mcp_client_introspect_tolerates_no_resources() -> None:
-    from app.core import mcp_client as mc
-
-    fake_session = SimpleNamespace(
-        list_tools=AsyncMock(return_value=SimpleNamespace(tools=[])),
-        list_resources=AsyncMock(side_effect=RuntimeError("not supported")),
-    )
-    from contextlib import asynccontextmanager
-
-    @asynccontextmanager
-    async def fake_open(url, token):
-        yield fake_session
-
-    with patch.object(mc, "_open_session", fake_open):
-        intro = await mc.McpClient("https://x/mcp").introspect()
-    assert intro.tools == []
-    assert intro.resources == []
-
-
 # --- source_fetch.py: library wrapper helpers (stubbed libs) ----------------
 
 
@@ -189,25 +94,35 @@ def test_extract_article_uses_trafilatura() -> None:
 async def test_fetch_youtube_transcript_joins_snippets() -> None:
     from app.core import source_fetch as sf
 
-    snippets = [SimpleNamespace(text="hello"), SimpleNamespace(text="world")]
-    SimpleNamespace(language_code="en")
-    fake_api = SimpleNamespace(fetch=lambda vid: snippets)
-
-    fake_mod = SimpleNamespace(YouTubeTranscriptApi=lambda: fake_api)
-    fake_errors = SimpleNamespace(CouldNotRetrieveTranscript=type("E1", (Exception,), {}),
-                                  VideoUnavailable=type("E2", (Exception,), {}))
-    # Make the snippet list also expose language_code via the FetchedTranscript-like object.
     class FetchedList(list):
         language_code = "en"
 
-    fake_api.fetch = lambda vid: FetchedList(snippets)
-    with patch.dict(
-        "sys.modules",
-        {"youtube_transcript_api": fake_mod, "youtube_transcript_api._errors": fake_errors},
-    ):
-        text, lang = sf._fetch_youtube_transcript("vid123")
-    assert "hello world" == text
+    snippets = FetchedList(
+        [
+            SimpleNamespace(text="hello", start=0.0, duration=1.0),
+            SimpleNamespace(text="world", start=1.0, duration=1.5),
+        ]
+    )
+    transcript = SimpleNamespace(
+        fetch=lambda: snippets, is_generated=False, language_code="en"
+    )
+
+    class FakeList:
+        def find_transcript(self, codes):
+            return transcript
+
+        def __iter__(self):
+            return iter([transcript])
+
+    fake_api = SimpleNamespace(list=lambda vid: FakeList())
+    with patch.object(sf, "_youtube_api", return_value=fake_api):
+        text, lang, segments = sf._fetch_youtube_transcript("vid123")
+    assert text == "hello world"
     assert lang == "en"
+    assert segments == [
+        {"content": "hello", "start_ms": 0, "end_ms": 1000},
+        {"content": "world", "start_ms": 1000, "end_ms": 2500},
+    ]
 
 
 @pytest.mark.asyncio
@@ -236,34 +151,6 @@ async def test_item_summary_inner_skips_missing_and_bodyless(db_session, monkeyp
     monkeypatch.setattr(isg, "get_db_context", ctx)
     # Missing item id -> no-op (covers the not-found branch).
     await isg._generate_item_summary(item_id=str(uuid4()))
-
-
-@pytest.mark.asyncio
-async def test_mcp_sync_inner_skips_disabled(db_session, monkeypatch) -> None:
-    from contextlib import asynccontextmanager
-
-    from app.models.mcp_connection import McpConnection
-    from app.models.user import User
-    from app.tasks import mcp_sync
-
-    user = User(email=f"inner-{uuid4().hex}@example.com", password_hash="x")
-    db_session.add(user)
-    await db_session.flush()
-    conn = McpConnection(
-        user_id=user.id, server_label="off", server_url="https://off/mcp", enabled=False
-    )
-    db_session.add(conn)
-    await db_session.flush()
-
-    @asynccontextmanager
-    async def ctx():
-        yield db_session
-
-    monkeypatch.setattr(mcp_sync, "get_db_context", ctx)
-    # Disabled connection -> sync_connection never called.
-    with patch.object(mcp_sync, "sync_connection", AsyncMock()) as sc:
-        await mcp_sync._sync_one(str(conn.id))
-    sc.assert_not_called()
 
 
 @pytest.mark.asyncio

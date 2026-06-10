@@ -12,8 +12,11 @@ Design (per AGENTS.md "no silent fallback"):
 - Instagram and TikTok forbid programmatic content extraction, so we DO NOT
   scrape them; we raise ``SourceFetchError`` asking the user to share the file
   or paste the caption. (ToS-safe by design.)
-- YouTube uses captions only (youtube-transcript-api, instance API); audio
-  download -> Deepgram is a later enhancement.
+- YouTube prefers captions (youtube-transcript-api, manual before generated,
+  ru/en before other languages, optional proxy for blocked server IPs). When a
+  video has no captions at all, the explicit audio fallback downloads the audio
+  (yt-dlp) and runs the regular budget-guarded file-STT path — the result is
+  labeled so replies can disclose it.
 
 Network/library calls live behind module-level functions so unit tests inject
 fakes without hitting the network.
@@ -123,21 +126,91 @@ async def _http_get(url: str) -> tuple[bytes, str]:
         return resp.content, resp.headers.get("content-type", "")
 
 
-def _fetch_youtube_transcript(video_id: str) -> tuple[str, str | None]:
-    """Return (joined_transcript_text, language) using the v1.x instance API.
+_YOUTUBE_PREFERRED_LANGUAGES = ["ru", "en"]
 
-    Raises SourceFetchError with a friendly message on the known failure modes.
-    """
+
+def _youtube_api():
+    """Build a YouTubeTranscriptApi honoring the configured proxy (seam)."""
     from youtube_transcript_api import YouTubeTranscriptApi
+    from youtube_transcript_api.proxies import GenericProxyConfig
+
+    from app.config import get_settings
+
+    proxy_url = get_settings().youtube_proxy_url.strip()
+    proxy_config = (
+        GenericProxyConfig(http_url=proxy_url, https_url=proxy_url)
+        if proxy_url
+        else None
+    )
+    return YouTubeTranscriptApi(proxy_config=proxy_config)
+
+
+def _pick_transcript(transcript_list):
+    """Choose the best transcript: ru/en first (manual before generated within
+    each language per the library's ordering), then any manual, then any."""
+    from youtube_transcript_api._errors import NoTranscriptFound
+
+    try:
+        return transcript_list.find_transcript(_YOUTUBE_PREFERRED_LANGUAGES)
+    except NoTranscriptFound:
+        pass
+    manual = [t for t in transcript_list if not getattr(t, "is_generated", False)]
+    if manual:
+        return manual[0]
+    any_transcripts = list(transcript_list)
+    if any_transcripts:
+        return any_transcripts[0]
+    return None
+
+
+def _fetch_youtube_transcript(
+    video_id: str,
+) -> tuple[str, str | None, list[dict]]:
+    """Return (joined_text, language, time-coded segments) from captions.
+
+    Raises SourceFetchError with a distinct, user-facing message per failure
+    mode so the bot reply (and the audio fallback decision) can be precise.
+    """
     from youtube_transcript_api._errors import (
         CouldNotRetrieveTranscript,
+        IpBlocked,
+        NoTranscriptFound,
+        RequestBlocked,
+        TranscriptsDisabled,
         VideoUnavailable,
     )
 
     try:
-        api = YouTubeTranscriptApi()
-        fetched = api.fetch(video_id)
-    except (CouldNotRetrieveTranscript, VideoUnavailable) as exc:
+        api = _youtube_api()
+        transcript_list = api.list(video_id)
+        transcript = _pick_transcript(transcript_list)
+        if transcript is None:
+            raise NoTranscriptFound(video_id, _YOUTUBE_PREFERRED_LANGUAGES, None)
+        fetched = transcript.fetch()
+    except (RequestBlocked, IpBlocked) as exc:
+        raise SourceFetchError(
+            "YouTube is blocking transcript requests from this server. "
+            "I'll try transcribing the audio instead.",
+            code="youtube_blocked",
+        ) from exc
+    except TranscriptsDisabled as exc:
+        raise SourceFetchError(
+            "Subtitles are disabled for this video. I'll try transcribing "
+            "the audio instead.",
+            code="youtube_no_transcript",
+        ) from exc
+    except VideoUnavailable as exc:
+        raise SourceFetchError(
+            "This video is unavailable (private, removed, or region-locked).",
+            code="youtube_unavailable",
+        ) from exc
+    except NoTranscriptFound as exc:
+        raise SourceFetchError(
+            "This video has no captions. I'll try transcribing the audio "
+            "instead.",
+            code="youtube_no_transcript",
+        ) from exc
+    except CouldNotRetrieveTranscript as exc:
         raise SourceFetchError(
             "This video has no available transcript. Share the file and I'll "
             "transcribe it.",
@@ -156,7 +229,142 @@ def _fetch_youtube_transcript(video_id: str) -> tuple[str, str | None]:
         raise SourceFetchError(
             "This video's transcript was empty.", code="youtube_empty"
         )
-    return text, language
+    segments = _caption_segments(snippets)
+    return text, language, segments
+
+
+def _caption_segments(snippets) -> list[dict]:
+    """Convert caption snippets to {content, start_ms, end_ms} segments so the
+    key-moments table gets real video timestamps (deep-linkable)."""
+    segments: list[dict] = []
+    for s in snippets:
+        content = (getattr(s, "text", "") or "").strip()
+        if not content:
+            continue
+        start = float(getattr(s, "start", 0.0) or 0.0)
+        duration = float(getattr(s, "duration", 0.0) or 0.0)
+        segments.append(
+            {
+                "content": content,
+                "start_ms": int(start * 1000),
+                "end_ms": int((start + duration) * 1000),
+            }
+        )
+    return segments
+
+
+def _download_youtube_audio(url: str) -> tuple[bytes, str, float | None]:
+    """Download a video's audio track via yt-dlp (seam for tests).
+
+    Returns (audio_bytes, content_type, duration_seconds). Honors the
+    configured proxy and the size/duration caps. Raises SourceFetchError with
+    a user-facing message on every failure mode.
+    """
+    import tempfile
+    from pathlib import Path
+
+    import yt_dlp
+
+    from app.config import get_settings
+
+    settings = get_settings()
+    max_bytes = settings.youtube_audio_max_bytes
+    max_seconds = settings.youtube_audio_max_seconds
+
+    def _too_long_filter(info, *, incomplete):
+        duration = info.get("duration")
+        if duration and max_seconds > 0 and duration > max_seconds:
+            return f"video is longer than {max_seconds}s"
+        return None
+
+    with tempfile.TemporaryDirectory(prefix="yt-audio-") as tmp:
+        opts: dict = {
+            "format": "bestaudio[ext=m4a]/bestaudio/best",
+            "outtmpl": str(Path(tmp) / "audio.%(ext)s"),
+            "max_filesize": max_bytes,
+            "match_filter": _too_long_filter,
+            "noplaylist": True,
+            "quiet": True,
+            "no_warnings": True,
+        }
+        proxy_url = settings.youtube_proxy_url.strip()
+        if proxy_url:
+            opts["proxy"] = proxy_url
+        try:
+            with yt_dlp.YoutubeDL(opts) as ydl:
+                info = ydl.extract_info(url, download=True)
+        except yt_dlp.utils.DownloadError as exc:
+            raise SourceFetchError(
+                "Couldn't download this video's audio for transcription. "
+                "Share the file and I'll transcribe it.",
+                code="youtube_audio_download_failed",
+            ) from exc
+
+        files = sorted(Path(tmp).glob("audio.*"))
+        if not files:
+            raise SourceFetchError(
+                "This video is longer or larger than the transcription limit. "
+                "Share a shorter clip and I'll transcribe it.",
+                code="youtube_audio_too_large",
+            )
+        data = files[0].read_bytes()
+        if max_bytes > 0 and len(data) > max_bytes:
+            raise SourceFetchError(
+                "This video's audio exceeds the transcription size limit.",
+                code="youtube_audio_too_large",
+            )
+        ext = files[0].suffix.lstrip(".").lower()
+        content_type = {
+            "m4a": "audio/mp4",
+            "mp4": "audio/mp4",
+            "webm": "audio/webm",
+            "opus": "audio/ogg",
+            "ogg": "audio/ogg",
+            "mp3": "audio/mpeg",
+        }.get(ext, "audio/mp4")
+        duration = info.get("duration") if isinstance(info, dict) else None
+        return data, content_type, float(duration) if duration else None
+
+
+async def _transcribe_youtube_audio(
+    url: str, video_id: str, stt_user_id: str
+) -> tuple[str, str | None, list[dict]]:
+    """No-captions recovery: download audio and run the guarded file-STT path.
+
+    Returns (text, language, segments). The caller labels the result so user
+    replies disclose that the transcript came from audio, not captions.
+    """
+    import asyncio
+
+    from app.core.transcription import transcribe_audio_file
+
+    data, content_type, duration = await asyncio.to_thread(
+        _download_youtube_audio, url
+    )
+    results = await transcribe_audio_file(
+        data,
+        language="multi",
+        content_type=content_type,
+        user_id=stt_user_id,
+        audio_duration_seconds=duration,
+        usage_purpose="youtube_audio_fallback",
+    )
+    segments = [
+        {
+            "content": r.text,
+            "start_ms": r.start_ms,
+            "end_ms": r.end_ms,
+        }
+        for r in results
+        if (r.text or "").strip()
+    ]
+    text = " ".join(s["content"] for s in segments).strip()
+    if not text:
+        raise SourceFetchError(
+            "No speech was detected in this video's audio.",
+            code="youtube_audio_no_speech",
+        )
+    return text, None, segments
 
 
 def _extract_article(html: str, url: str) -> tuple[str | None, str | None]:
@@ -209,20 +417,46 @@ def _pdf_page_count(data: bytes) -> int:
 # ---------------------------------------------------------------------------
 
 
-async def _fetch_youtube(url: str) -> FetchedContent:
+_AUDIO_FALLBACK_CODES = {"youtube_no_transcript", "youtube_blocked"}
+
+
+async def _fetch_youtube(url: str, stt_user_id: str | None = None) -> FetchedContent:
     vid = youtube_video_id(url)
     if not vid:
         raise SourceFetchError(
             "That doesn't look like a YouTube video link.", code="youtube_bad_url"
         )
-    text, language = _fetch_youtube_transcript(vid)
+
+    from app.config import get_settings
+
+    transcript_source = "captions"
+    try:
+        text, language, segments = _fetch_youtube_transcript(vid)
+    except SourceFetchError as exc:
+        fallback_allowed = (
+            get_settings().youtube_audio_fallback_enabled
+            and stt_user_id is not None
+            and exc.code in _AUDIO_FALLBACK_CODES
+        )
+        if not fallback_allowed:
+            raise
+        text, language, segments = await _transcribe_youtube_audio(
+            url, vid, stt_user_id
+        )
+        transcript_source = "audio_stt"
+
     return FetchedContent(
         source_type="youtube",
         kind="video",
         url=url,
         title=None,  # filled by the summarizer's generated title
         body=text,
-        metadata={"video_id": vid, "language": language},
+        metadata={
+            "video_id": vid,
+            "language": language,
+            "segments": segments,
+            "transcript_source": transcript_source,
+        },
     )
 
 
@@ -283,11 +517,16 @@ async def _fetch_blocked(url: str, platform: str) -> FetchedContent:
 # ---------------------------------------------------------------------------
 
 
-async def fetch_url(url: str) -> FetchedContent:
-    """Fetch + normalize content behind a URL. Raises SourceFetchError on failure."""
+async def fetch_url(url: str, *, stt_user_id: str | None = None) -> FetchedContent:
+    """Fetch + normalize content behind a URL. Raises SourceFetchError on failure.
+
+    ``stt_user_id`` enables the budget-guarded YouTube audio fallback (the
+    transcription minute budget is metered per user, so the fallback only runs
+    when the caller can attribute the cost).
+    """
     source_type = classify_url(url)
     if source_type == "youtube":
-        return await _fetch_youtube(url)
+        return await _fetch_youtube(url, stt_user_id=stt_user_id)
     if source_type == "instagram":
         return await _fetch_blocked(url, "Instagram")
     if source_type == "tiktok":

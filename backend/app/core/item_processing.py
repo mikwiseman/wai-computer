@@ -29,7 +29,7 @@ from app.models.item import Item, ItemChunk
 logger = logging.getLogger(__name__)
 
 Embedder = Callable[[list[str]], Awaitable[list[list[float]]]]
-Fetcher = Callable[[str], Awaitable[FetchedContent]]
+Fetcher = Callable[..., Awaitable[FetchedContent]]
 
 
 async def _embed_item_chunks(
@@ -67,7 +67,7 @@ async def process_item(
     needs_fetch = bool((item.url or "").strip()) and not (item.body or "").strip()
     if needs_fetch:
         try:
-            fetched = await fetch_fn(item.url)
+            fetched = await fetch_fn(item.url, stt_user_id=str(item.user_id))
         except SourceFetchError as exc:
             meta = dict(item.metadata_ or {})
             meta["fetch_error"] = {"code": exc.code, "message": exc.message}
