@@ -180,7 +180,7 @@ struct MacSettingsView: View {
     @State private var serverDataAuthMethod: SelfHostAuthMethod = .password
     @State private var serverDataSSHPassword = ""
     @State private var serverDataSSHPublicKey = ""
-    @State private var serverDataShowAdvancedDomain = false
+    @State private var serverDataShowAdvanced = false
     @State private var billingRefreshID = 0
     @State private var billingReturnRefreshTask: Task<Void, Never>?
     @AppStorage(PaymentModeStore.userDefaultsKey) private var paymentModeEnabled = false
@@ -905,52 +905,54 @@ struct MacSettingsView: View {
     }
 
     private var serverDataSetupForm: some View {
-        VStack(alignment: .leading, spacing: Spacing.sm) {
-            Text(t("Move to my server", "Перенести на мой сервер"))
-                .font(Typography.body.weight(.semibold))
-
-            LabeledContent {
-                TextField("203.0.113.10", text: $serverDataVPSAddress)
-                    .textFieldStyle(.roundedBorder)
-                    .disabled(serverDataSubmitting)
-                    .accessibilityIdentifier("settings-server-data-vps-ip-field")
-            } label: {
-                Text(t("VPS IP address", "IP VPS"))
+        VStack(alignment: .leading, spacing: Spacing.md) {
+            VStack(alignment: .leading, spacing: Spacing.xxs) {
+                Text(t("Move to my server", "Перенести на мой сервер"))
+                    .font(Typography.body.weight(.semibold))
+                Text(t(
+                    "Any Ubuntu VPS works — from about €4/month at Hetzner, Timeweb, and others. Your provider's welcome email has the two things you need: the server's IP address and the root password.",
+                    "Подойдёт любой VPS с Ubuntu — от ~4 € в месяц у Hetzner, Timeweb и других. В письме от провайдера есть всё, что нужно: IP-адрес сервера и пароль root."
+                ))
+                .font(Typography.caption)
+                .foregroundStyle(Palette.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
             }
 
-            LabeledContent {
-                TextField("root", text: $serverDataSSHUser)
-                    .textFieldStyle(.roundedBorder)
-                    .disabled(serverDataSubmitting)
-                    .accessibilityIdentifier("settings-server-data-ssh-user-field")
-            } label: {
-                Text(t("SSH user", "SSH пользователь"))
-            }
-
-            Picker(selection: $serverDataAuthMethod) {
-                Text(t("Temporary password", "Временный пароль"))
-                    .tag(SelfHostAuthMethod.password)
-                Text(t("SSH key", "SSH ключ"))
-                    .tag(SelfHostAuthMethod.sshKey)
-            } label: {
-                Text(t("SSH method", "Метод SSH"))
-            }
-            .pickerStyle(.segmented)
-            .disabled(serverDataSubmitting)
-            .accessibilityIdentifier("settings-server-data-auth-method-picker")
-
-            if serverDataAuthMethod == .password {
+            VStack(alignment: .leading, spacing: Spacing.xxs) {
                 LabeledContent {
-                    SecureField(t("Temporary password", "Временный пароль"), text: $serverDataSSHPassword)
+                    TextField("203.0.113.10", text: $serverDataVPSAddress)
                         .textFieldStyle(.roundedBorder)
                         .disabled(serverDataSubmitting)
-                        .accessibilityIdentifier("settings-server-data-ssh-password-field")
+                        .accessibilityIdentifier("settings-server-data-vps-ip-field")
                 } label: {
-                    Text(t("Temporary password", "Временный пароль"))
+                    Text(t("Server address", "Адрес сервера"))
+                }
+                Text(t("The IP address from your provider's email.", "IP-адрес из письма провайдера."))
+                    .font(Typography.caption)
+                    .foregroundStyle(Palette.textTertiary)
+            }
+
+            if serverDataAuthMethod == .password {
+                VStack(alignment: .leading, spacing: Spacing.xxs) {
+                    LabeledContent {
+                        SecureField("", text: $serverDataSSHPassword)
+                            .textFieldStyle(.roundedBorder)
+                            .disabled(serverDataSubmitting)
+                            .accessibilityIdentifier("settings-server-data-ssh-password-field")
+                    } label: {
+                        Text(t("Root password", "Пароль root"))
+                    }
+                    Text(t(
+                        "The one your provider sent. It is used once for setup — password login can be turned off after the move.",
+                        "Тот, что прислал провайдер. Нужен один раз для настройки — после переноса вход по паролю можно отключить."
+                    ))
+                    .font(Typography.caption)
+                    .foregroundStyle(Palette.textTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
                 }
             } else {
                 VStack(alignment: .leading, spacing: Spacing.xs) {
-                    Text(t("SSH public key installed on the VPS", "Публичный SSH ключ на VPS"))
+                    Text(t("SSH public key installed on the VPS", "Публичный SSH-ключ на VPS"))
                         .font(Typography.caption.weight(.semibold))
                     TextEditor(text: $serverDataSSHPublicKey)
                         .font(.system(.body, design: .monospaced))
@@ -964,28 +966,55 @@ struct MacSettingsView: View {
                 }
             }
 
-            DisclosureGroup(isExpanded: $serverDataShowAdvancedDomain) {
-                VStack(alignment: .leading, spacing: Spacing.xs) {
-                    LabeledContent {
-                        TextField("demo.example.com", text: $serverDataPublicDomain)
-                            .textFieldStyle(.roundedBorder)
-                            .disabled(serverDataSubmitting)
-                            .accessibilityIdentifier("settings-server-data-public-domain-field")
+            DisclosureGroup(isExpanded: $serverDataShowAdvanced) {
+                VStack(alignment: .leading, spacing: Spacing.sm) {
+                    Picker(selection: $serverDataAuthMethod) {
+                        Text(t("Root password", "Пароль root"))
+                            .tag(SelfHostAuthMethod.password)
+                        Text(t("SSH key", "SSH-ключ"))
+                            .tag(SelfHostAuthMethod.sshKey)
                     } label: {
-                        Text(t("Public domain", "Публичный домен"))
+                        Text(t("Connect with", "Способ подключения"))
+                    }
+                    .pickerStyle(.segmented)
+                    .disabled(serverDataSubmitting)
+                    .accessibilityIdentifier("settings-server-data-auth-method-picker")
+
+                    VStack(alignment: .leading, spacing: Spacing.xxs) {
+                        LabeledContent {
+                            TextField("root", text: $serverDataSSHUser)
+                                .textFieldStyle(.roundedBorder)
+                                .disabled(serverDataSubmitting)
+                                .accessibilityIdentifier("settings-server-data-ssh-user-field")
+                        } label: {
+                            Text(t("SSH user", "SSH-пользователь"))
+                        }
+                        Text(t("Leave root unless you know you need another user.", "Оставьте root, если не уверены."))
+                            .font(Typography.caption)
+                            .foregroundStyle(Palette.textTertiary)
                     }
 
-                    Text(t(
-                        "Optional. Use this only if DNS already points to the VPS; otherwise add it later.",
-                        "Необязательно. Укажите, только если DNS уже направлен на VPS; иначе добавите позже."
-                    ))
-                    .font(Typography.caption)
-                    .foregroundStyle(Palette.textTertiary)
-                    .fixedSize(horizontal: false, vertical: true)
+                    VStack(alignment: .leading, spacing: Spacing.xxs) {
+                        LabeledContent {
+                            TextField("demo.example.com", text: $serverDataPublicDomain)
+                                .textFieldStyle(.roundedBorder)
+                                .disabled(serverDataSubmitting)
+                                .accessibilityIdentifier("settings-server-data-public-domain-field")
+                        } label: {
+                            Text(t("Public domain", "Публичный домен"))
+                        }
+                        Text(t(
+                            "Optional. Use this only if DNS already points to the VPS; otherwise add it later.",
+                            "Необязательно. Укажите, только если DNS уже направлен на VPS; иначе добавите позже."
+                        ))
+                        .font(Typography.caption)
+                        .foregroundStyle(Palette.textTertiary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    }
                 }
                 .padding(.top, Spacing.xs)
             } label: {
-                Text(t("Optional public domain", "Необязательный публичный домен"))
+                Text(t("Advanced", "Дополнительно"))
                     .font(Typography.caption.weight(.semibold))
             }
             .accessibilityIdentifier("settings-server-data-domain-disclosure")
@@ -994,7 +1023,7 @@ struct MacSettingsView: View {
                 Button {
                     Task { await startServerDataSetupCheck() }
                 } label: {
-                    Text(serverDataSubmitting ? t("Checking...", "Проверяем...") : t("Check setup", "Проверить настройку"))
+                    Text(serverDataSubmitting ? t("Checking...", "Проверяем...") : t("Check server", "Проверить сервер"))
                 }
                 .disabled(!serverDataCanSubmit || serverDataSubmitting)
                 .accessibilityIdentifier("settings-server-data-check-button")
@@ -1002,6 +1031,16 @@ struct MacSettingsView: View {
                 if serverDataSubmitting {
                     ProgressView()
                         .controlSize(.small)
+                }
+
+                if !serverDataCanSubmit && !serverDataSubmitting {
+                    Text(serverDataAuthMethod == .password
+                        ? t("Enter the address and root password to continue.",
+                            "Заполните адрес и пароль root, чтобы продолжить.")
+                        : t("Enter the address and SSH key to continue.",
+                            "Заполните адрес и SSH-ключ, чтобы продолжить."))
+                    .font(Typography.caption)
+                    .foregroundStyle(Palette.textTertiary)
                 }
             }
         }
