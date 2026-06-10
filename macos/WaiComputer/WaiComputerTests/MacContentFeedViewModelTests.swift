@@ -67,21 +67,50 @@ final class MacContentFeedViewModelTests: XCTestCase {
         let source = try macSource("WaiComputer/Features/Inbox/MacInboxView.swift")
 
         XCTAssertTrue(source.contains("MacInboxFileComposer("))
-        XCTAssertTrue(source.contains("Upload File to Inbox"))
         XCTAssertTrue(source.contains("mac-inbox-selected-file"))
         XCTAssertTrue(source.contains("mac-inbox-upload-primary-button"))
+        XCTAssertTrue(source.contains("mac-inbox-upload-choose-button"))
         XCTAssertTrue(source.contains("mac-inbox-upload-progress"))
         XCTAssertFalse(source.contains("Attach File"))
         XCTAssertFalse(source.contains("Прикрепить файл"))
+        // "Загрузить файл" must appear exactly once in the composer: on the
+        // mode card. The old pane repeated it as a panel title and again in
+        // the primary button.
+        XCTAssertFalse(source.contains("Upload File to Inbox"))
+        XCTAssertFalse(source.contains("Загрузить файл в Инбокс"))
+        XCTAssertFalse(source.contains("t(\"Upload a file\", \"Загрузить файл\")"))
+        // The chooser is the drop zone itself — no second "Browse..." button
+        // duplicating the primary action.
+        XCTAssertFalse(source.contains("Browse..."))
+        XCTAssertFalse(source.contains("Обзор..."))
     }
 
-    func testInboxCreatePaneDefaultsToFocusedUploadMode() throws {
+    func testInboxCreatePaneDefaultsToRecordAndFollowsScope() throws {
         let source = try macSource("WaiComputer/Features/Inbox/MacInboxView.swift")
 
-        XCTAssertTrue(source.contains("@State private var focusedCreateMode: InboxCreateMode = .file"))
+        XCTAssertTrue(source.contains("@State private var focusedCreateMode: InboxCreateMode = .record"))
+        XCTAssertTrue(source.contains("Self.defaultCreateMode(for: initialSourceKind)"))
         XCTAssertTrue(source.contains("isActive: focusedCreateMode == .file"))
         XCTAssertTrue(source.contains("case .file:"))
         XCTAssertFalse(source.contains("activeCreateMode"))
+        // The composer only offers actions matching the current source scope.
+        XCTAssertTrue(source.contains("private var allowedCreateModes: [InboxCreateMode]"))
+        XCTAssertTrue(source.contains("if allowedCreateModes.contains(.record)"))
+        XCTAssertTrue(source.contains("if allowedCreateModes.contains(.ask)"))
+    }
+
+    func testInboxSourceFilterPutsAllLastAndShellDefaultsInboxToRecordings() throws {
+        let inboxSource = try macSource("WaiComputer/Features/Inbox/MacInboxView.swift")
+        let shellSource = try macSource("WaiComputer/App/MacContentView.swift")
+
+        // Все is the last segment, Записи the first.
+        let recordingsTag = inboxSource.range(of: "tag(Optional.some(InboxSourceKind.recording))")
+        let allTag = inboxSource.range(of: "tag(Optional<InboxSourceKind>.none)")
+        let recordingsIndex = try XCTUnwrap(recordingsTag).lowerBound
+        let allIndex = try XCTUnwrap(allTag).lowerBound
+        XCTAssertLessThan(recordingsIndex, allIndex)
+        // Opening the Inbox section starts scoped to recordings.
+        XCTAssertTrue(shellSource.contains("case .inbox, .allRecordings:\n            return .recording"))
     }
 
     func testCommandNOpensInboxCreatePaneInsteadOfStartingRecording() throws {

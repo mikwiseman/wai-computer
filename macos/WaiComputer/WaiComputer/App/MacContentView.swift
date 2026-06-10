@@ -998,7 +998,7 @@ struct MacMainView: View {
 
     private var inboxInitialSourceKind: InboxSourceKind? {
         switch selectedSection {
-        case .allRecordings:
+        case .inbox, .allRecordings:
             return .recording
         case .content:
             return .item
