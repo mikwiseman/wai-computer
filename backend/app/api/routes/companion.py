@@ -16,6 +16,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import and_, select
 
 from app.api.deps import CurrentUser, Database
+from app.api.routes.items import _require_folder
 from app.core.agent_runtime import is_retrying_agent_run
 from app.core.brain_spaces import (
     BrainSpaceNotFoundError,
@@ -93,6 +94,9 @@ class UpdateConversationRequest(BaseModel):
     scope: ConversationScope | None = None
     pinned: bool | None = None
     archived: bool | None = None
+    # Tri-state via model_fields_set: absent = keep, null = move out of
+    # folder, uuid = move into that folder.
+    folder_id: uuid.UUID | None = None
 
 
 class CitationResponse(BaseModel):
@@ -125,6 +129,7 @@ class ConversationSummary(BaseModel):
     id: str
     title: str | None
     scope: dict[str, Any] | None
+    folder_id: str | None
     pinned_at: datetime | None
     last_message_at: datetime | None
     archived_at: datetime | None
@@ -203,6 +208,7 @@ def _to_summary(c: Conversation) -> ConversationSummary:
         id=str(c.id),
         title=c.title,
         scope=c.scope,
+        folder_id=str(c.folder_id) if c.folder_id else None,
         pinned_at=c.pinned_at,
         last_message_at=c.last_message_at,
         archived_at=c.archived_at,
@@ -432,6 +438,9 @@ async def update_chat(
         chat.pinned_at = datetime.now(timezone.utc) if request.pinned else None
     if request.archived is not None:
         chat.archived_at = datetime.now(timezone.utc) if request.archived else None
+    if "folder_id" in request.model_fields_set:
+        folder = await _require_folder(request.folder_id, user.id, db)
+        chat.folder_id = folder.id if folder is not None else None
 
     await db.flush()
     await db.refresh(chat)

@@ -203,6 +203,72 @@ class TestPatchChat:
         assert response.status_code == 200
         assert response.json()["title"] == "Standup recap"
 
+    async def test_move_to_folder_and_back(
+        self, client: AsyncClient, auth_headers: dict
+    ):
+        created = (
+            await client.post(
+                "/api/companion/chats", json={}, headers=auth_headers
+            )
+        ).json()
+        folder_resp = await client.post(
+            "/api/folders", json={"name": "Agent runs"}, headers=auth_headers
+        )
+        assert folder_resp.status_code == 201, folder_resp.text
+        folder_id = folder_resp.json()["id"]
+
+        moved = await client.patch(
+            f"/api/companion/chats/{created['id']}",
+            json={"folder_id": folder_id},
+            headers=auth_headers,
+        )
+        assert moved.status_code == 200, moved.text
+        assert moved.json()["folder_id"] == folder_id
+
+        unfiled = await client.patch(
+            f"/api/companion/chats/{created['id']}",
+            json={"folder_id": None},
+            headers=auth_headers,
+        )
+        assert unfiled.status_code == 200
+        assert unfiled.json()["folder_id"] is None
+
+    async def test_move_to_unknown_folder_returns_404(
+        self, client: AsyncClient, auth_headers: dict
+    ):
+        created = (
+            await client.post(
+                "/api/companion/chats", json={}, headers=auth_headers
+            )
+        ).json()
+        response = await client.patch(
+            f"/api/companion/chats/{created['id']}",
+            json={"folder_id": str(uuid4())},
+            headers=auth_headers,
+        )
+        assert response.status_code == 404
+
+    async def test_move_to_another_users_folder_returns_404(
+        self,
+        client: AsyncClient,
+        auth_headers: dict,
+        second_auth_headers: dict,
+    ):
+        created = (
+            await client.post(
+                "/api/companion/chats", json={}, headers=auth_headers
+            )
+        ).json()
+        foreign_folder = await client.post(
+            "/api/folders", json={"name": "Not yours"}, headers=second_auth_headers
+        )
+        response = await client.patch(
+            f"/api/companion/chats/{created['id']}",
+            json={"folder_id": foreign_folder.json()["id"]},
+            headers=auth_headers,
+        )
+        assert response.status_code == 404
+
     async def test_pin_then_unpin(
         self, client: AsyncClient, auth_headers: dict
     ):

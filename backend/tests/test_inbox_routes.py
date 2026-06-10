@@ -503,3 +503,52 @@ async def test_inbox_is_scoped_to_authenticated_user(
     resp = await client.get("/api/inbox", headers=other_headers)
     assert resp.status_code == 200
     assert resp.json()["rows"] == []
+
+
+async def test_inbox_folder_scope_includes_filed_chats(
+    client: AsyncClient, auth_headers: dict
+) -> None:
+    """A Wai chat filed into a folder shows up in that folder's inbox scope."""
+    folder_resp = await client.post(
+        "/api/folders", json={"name": "Launch"}, headers=auth_headers
+    )
+    assert folder_resp.status_code == 201, folder_resp.text
+    folder_id = folder_resp.json()["id"]
+
+    chat_resp = await client.post(
+        "/api/companion/chats", json={}, headers=auth_headers
+    )
+    assert chat_resp.status_code == 201, chat_resp.text
+    chat_id = chat_resp.json()["id"]
+
+    moved = await client.patch(
+        f"/api/companion/chats/{chat_id}",
+        json={"folder_id": folder_id},
+        headers=auth_headers,
+    )
+    assert moved.status_code == 200, moved.text
+
+    scoped = await client.get(
+        "/api/inbox", headers=auth_headers, params={"folder_id": folder_id}
+    )
+    assert scoped.status_code == 200
+    scoped_rows = scoped.json()["rows"]
+    chat_row = next(
+        (row for row in scoped_rows if row["id"] == f"chat:{chat_id}"), None
+    )
+    assert chat_row is not None, "filed chat must appear in folder scope"
+    assert chat_row["folder_id"] == folder_id
+
+    chats_only = await client.get(
+        "/api/inbox",
+        headers=auth_headers,
+        params={"folder_id": folder_id, "source_kind": "chat"},
+    )
+    assert chats_only.status_code == 200
+    assert {row["id"] for row in chats_only.json()["rows"]} == {f"chat:{chat_id}"}
+
+    # The unscoped chat list still includes the filed chat.
+    all_chats = await client.get(
+        "/api/inbox", headers=auth_headers, params={"source_kind": "chat"}
+    )
+    assert f"chat:{chat_id}" in {row["id"] for row in all_chats.json()["rows"]}

@@ -1,4 +1,4 @@
-"""Folder routes for organizing recordings."""
+"""Folder routes for organizing recordings, materials, and Wai chats."""
 
 from datetime import datetime
 from uuid import UUID
@@ -9,6 +9,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import selectinload
 
 from app.api.deps import CurrentUser, Database
+from app.models.companion import Conversation
 from app.models.item import Item
 from app.models.recording import Folder, Recording
 
@@ -21,8 +22,8 @@ class FolderResponse(BaseModel):
     id: str
     name: str
     created_at: datetime
-    # Recordings + materials currently filed in the folder (trash excluded) —
-    # drives the sidebar counts on every client.
+    # Recordings, materials, and Wai chats currently filed in the folder
+    # (trash excluded) — drives the sidebar counts on every client.
     item_count: int = 0
 
 
@@ -78,12 +79,24 @@ async def _folder_content_counts(db: Database, user_id: UUID) -> dict[str, int]:
     )
     for folder_id, count in item_rows.all():
         counts[str(folder_id)] = counts.get(str(folder_id), 0) + int(count)
+    chat_rows = await db.execute(
+        select(Conversation.folder_id, func.count())
+        .where(
+            Conversation.user_id == user_id,
+            Conversation.deleted_at.is_(None),
+            Conversation.archived_at.is_(None),
+            Conversation.folder_id.is_not(None),
+        )
+        .group_by(Conversation.folder_id)
+    )
+    for folder_id, count in chat_rows.all():
+        counts[str(folder_id)] = counts.get(str(folder_id), 0) + int(count)
     return counts
 
 
 @router.get("", response_model=list[FolderResponse])
 async def list_folders(user: CurrentUser, db: Database) -> list[FolderResponse]:
-    """List folders for the current user, with recording+material counts."""
+    """List folders for the current user, with recording+material+chat counts."""
     result = await db.execute(
         select(Folder)
         .where(Folder.user_id == user.id)
@@ -159,6 +172,14 @@ async def delete_folder(
     )
     for item in item_result.scalars().all():
         item.folder_id = None
+
+    chat_result = await db.execute(
+        select(Conversation).where(
+            Conversation.user_id == user.id, Conversation.folder_id == folder.id
+        )
+    )
+    for chat in chat_result.scalars().all():
+        chat.folder_id = None
 
     await db.delete(folder)
     await db.flush()

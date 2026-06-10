@@ -33,6 +33,13 @@ class Conversation(Base, UUIDMixin, TimestampMixin):
         nullable=False,
         index=True,
     )
+    # Chats can be filed into folders alongside recordings and materials —
+    # the inbox folder scope and sidebar drag-and-drop rely on it.
+    folder_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("folders.id", ondelete="SET NULL"),
+        index=True,
+    )
     title: Mapped[str | None] = mapped_column(String(500))
     # scope: {recording_ids?, folder_ids?, types?, speakers?, date_from?, date_to?}
     scope: Mapped[dict[str, Any] | None] = mapped_column(JSONB)

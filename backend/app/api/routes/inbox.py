@@ -182,13 +182,8 @@ def _item_processing_error_clause():
 def _source_allowed(
     wanted: InboxSourceKind | None,
     source_kind: InboxSourceKind,
-    folder_id: uuid.UUID | None,
 ) -> bool:
-    if wanted is not None and wanted != source_kind:
-        return False
-    if folder_id is not None and source_kind == "chat":
-        return False
-    return True
+    return wanted is None or wanted == source_kind
 
 
 async def _recording_rows(
@@ -343,6 +338,7 @@ async def _chat_rows(
     limit: int,
     cursor: InboxCursor | None,
     status_filter: InboxStatusFilter | None,
+    folder_id: uuid.UUID | None,
 ) -> list[InboxRow]:
     if status_filter not in (None, "ready"):
         return []
@@ -352,6 +348,8 @@ async def _chat_rows(
         Conversation.deleted_at.is_(None),
         Conversation.archived_at.is_(None),
     )
+    if folder_id is not None:
+        stmt = stmt.where(Conversation.folder_id == folder_id)
     if cursor is not None:
         stmt = stmt.where(_cursor_clause(activity_expr, "chat", cursor))
 
@@ -376,7 +374,7 @@ async def _chat_rows(
                 status="ready",
                 source_status=None,
                 error=None,
-                folder_id=None,
+                folder_id=str(chat.folder_id) if chat.folder_id else None,
                 duration_seconds=None,
                 language=None,
                 has_summary=None,
@@ -401,7 +399,7 @@ async def list_inbox(
 ) -> InboxResponse:
     decoded_cursor = _decode_cursor(cursor)
     rows: list[InboxRow] = []
-    if _source_allowed(source_kind, "recording", folder_id):
+    if _source_allowed(source_kind, "recording"):
         rows.extend(
             await _recording_rows(
                 db,
@@ -412,7 +410,7 @@ async def list_inbox(
                 folder_id,
             )
         )
-    if _source_allowed(source_kind, "item", folder_id):
+    if _source_allowed(source_kind, "item"):
         rows.extend(
             await _item_rows(
                 db,
@@ -423,8 +421,10 @@ async def list_inbox(
                 folder_id,
             )
         )
-    if _source_allowed(source_kind, "chat", folder_id):
-        rows.extend(await _chat_rows(db, user.id, limit, decoded_cursor, status))
+    if _source_allowed(source_kind, "chat"):
+        rows.extend(
+            await _chat_rows(db, user.id, limit, decoded_cursor, status, folder_id)
+        )
 
     rows.sort(key=_sort_key, reverse=True)
     has_more = len(rows) > limit

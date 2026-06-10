@@ -163,3 +163,36 @@ async def test_create_multiple_folders_sorted_alphabetically(
     assert response.status_code == 200
     names = [folder["name"] for folder in response.json()]
     assert names == sorted(names)
+
+
+@pytest.mark.asyncio
+async def test_folder_counts_and_delete_cover_chats(
+    client: AsyncClient, auth_headers: dict
+) -> None:
+    """Filed Wai chats count toward the folder badge and survive folder deletion unfiled."""
+    folder = await _create_folder(client, auth_headers, name="Chats")
+    chat = (
+        await client.post("/api/companion/chats", json={}, headers=auth_headers)
+    ).json()
+    moved = await client.patch(
+        f"/api/companion/chats/{chat['id']}",
+        json={"folder_id": folder["id"]},
+        headers=auth_headers,
+    )
+    assert moved.status_code == 200, moved.text
+
+    listed = await client.get("/api/folders", headers=auth_headers)
+    assert listed.status_code == 200
+    target = next(f for f in listed.json() if f["id"] == folder["id"])
+    assert target["item_count"] == 1
+
+    delete_response = await client.delete(
+        f"/api/folders/{folder['id']}", headers=auth_headers
+    )
+    assert delete_response.status_code == 204
+
+    detail = await client.get(
+        f"/api/companion/chats/{chat['id']}", headers=auth_headers
+    )
+    assert detail.status_code == 200
+    assert detail.json()["folder_id"] is None
