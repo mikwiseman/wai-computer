@@ -389,3 +389,64 @@ async def test_resolve_route_reports_actuation_error(
     assert r.status_code == 400, r.text
     await db_session.refresh(row)
     assert row.status == "failed"
+
+
+async def test_resolution_marking_skips_unrelated_tool_calls(
+    client, auth_headers, db_session
+):
+    """_mark_stored_action_resolution only annotates the matching
+    action_proposed item: non-list tool_calls payloads and unrelated items are
+    left byte-for-byte untouched."""
+    uid = await _user_id(client, auth_headers)
+    conv_id = await _new_conv(db_session, uid)
+    row = await _pending(db_session, uid, conv_id)
+
+    odd_shape = ChatMessage(
+        conversation_id=conv_id,
+        role="assistant",
+        content=[{"type": "text", "text": "legacy payload"}],
+        tool_calls={"type": "legacy_blob"},  # dict, not a list — must be skipped
+    )
+    mixed = ChatMessage(
+        conversation_id=conv_id,
+        role="assistant",
+        content=[{"type": "text", "text": "Waiting for your approval."}],
+        tool_calls=[
+            {"type": "tools", "actions": [{"tool": "search", "ok": True}]},
+            {
+                "type": "action_proposed",
+                "action_id": str(uuid4()),  # a DIFFERENT action — untouched
+                "kind": "send",
+                "tool": "send_message_telegram",
+                "preview": "Other action",
+            },
+            {
+                "type": "action_proposed",
+                "action_id": str(row.id),
+                "kind": "send",
+                "tool": "send_message_telegram",
+                "preview": "Send to you: running late",
+            },
+        ],
+    )
+    db_session.add_all([odd_shape, mixed])
+    await db_session.flush()
+
+    r = await client.post(
+        f"/api/companion/chats/{conv_id}/actions/{row.id}/resolve",
+        json={"decision": "reject"},
+        headers=auth_headers,
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["status"] == "rejected"
+
+    await db_session.refresh(odd_shape)
+    await db_session.refresh(mixed)
+    assert odd_shape.tool_calls == {"type": "legacy_blob"}
+    assert "resolution" not in mixed.tool_calls[0]
+    assert "resolution" not in mixed.tool_calls[1]
+    assert mixed.tool_calls[2]["resolution"] == {
+        "state": "resolved",
+        "status": "rejected",
+        "detail": "",
+    }
