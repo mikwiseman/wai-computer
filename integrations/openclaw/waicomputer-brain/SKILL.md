@@ -44,9 +44,11 @@ openclaw mcp add waicomputer \
 
 ## Tools
 
-- `ask(question)` — **start here.** One cited answer synthesised across the
-  user's whole brain (recordings + notes + chats), with an honest list of gaps.
-- `search(query)` — raw matching snippets across the brain (each with an id).
+- `ask(question, folder_ids?)` — **start here.** One cited answer synthesised
+  across the user's whole brain (recordings + notes + chats), with an honest
+  list of gaps.
+- `search(query, folder_ids?)` — raw matching snippets across the brain (each
+  with an id).
 - `fetch(id)` — open one recording / note / chat in full.
 - `remember(text, title?, source_url?)` — save a durable fact back into the
   brain. Only works with a write-enabled connection; otherwise it returns a
@@ -58,6 +60,10 @@ openclaw mcp add waicomputer \
 - **Before answering anything about the user's life, work, decisions, or
   history** — call `ask` first instead of guessing. The brain is the source of
   truth for "what did I decide / say / agree about X".
+- When the user scopes a request to a project ("in my Falcone folder…"),
+  call `list_folders` once, then pass the folder's id as `folder_ids` to
+  `ask`/`search` — the folder's recordings + materials become the entire
+  knowledge base for that question.
 - When the user says **"remember that…"**, or you learn a durable fact worth
   recalling later, call `remember`. Don't store secrets or transient chatter.
 - When you need exact quotes or to read a source in full, `search` then `fetch`.

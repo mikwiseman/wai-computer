@@ -24,8 +24,22 @@ It's a **two-sided connection over one link** (`https://wai.computer/mcp`):
   token to save memories"** (Settings → MCP → API tokens). The REST API stays
   read-only regardless.
 
-The MCP tool surface (7): `ask`, `search`, `fetch`, `remember`, `list_folders`,
-`list_recordings`, `list_action_items`.
+The MCP tool surface (9): `wake_up`, `ask`, `search`, `fetch`, `remember`,
+`forget`, `list_folders`, `list_recordings`, `list_action_items`.
+
+### Point an agent at a folder
+
+`ask` and `search` accept `folder_ids` (from `list_folders`), so any folder
+becomes a scoped knowledge base for an agent: a "Falcone" project folder, a
+"Standups" folder, an "Investors" folder. The agent answers from that folder's
+recordings + saved materials alone — optimal context, no cross-project noise:
+
+```jsonc
+// "What's the latest decision in my Falcone folder?"
+{ "name": "ask", "arguments": {
+    "question": "what did we decide about pricing?",
+    "folder_ids": ["<folder-uuid-from-list_folders>"] } }
+```
 
 ## Quick connect
 
