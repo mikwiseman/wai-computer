@@ -137,10 +137,6 @@ struct SettingsView: View {
                     NavigationLink(destination: McpConnectView()) {
                         Label("MCP", systemImage: "link.circle")
                     }
-
-                    NavigationLink(destination: McpIngestionView()) {
-                        Label(t("Data sources", "Источники данных"), systemImage: "square.stack.3d.down.right")
-                    }
                 }
 
                 if !isScreenshotMode {

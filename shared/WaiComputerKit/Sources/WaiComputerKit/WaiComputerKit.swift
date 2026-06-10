@@ -11,7 +11,6 @@ public typealias WKFolder = Folder
 public typealias WKSegment = Segment
 public typealias WKSummary = Summary
 public typealias WKActionItem = ActionItem
-public typealias WKEntity = Entity
 public typealias WKSearchResult = SearchResult
 public typealias WKAPIClient = APIClient
 public typealias WKWebSocketManager = WebSocketManager

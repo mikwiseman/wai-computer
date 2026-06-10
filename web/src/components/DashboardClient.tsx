@@ -14,7 +14,6 @@ import {
   bulkRecordingOperation,
   changePassword,
   claimTelegramLinkCode,
-  createBrainMap,
   createDictionaryWord,
   createFolder,
   createRecording,
@@ -57,7 +56,6 @@ import { TranscriptionSettingsPanel } from "@/components/TranscriptionSettingsPa
 import { DictationStatsHeader } from "@/components/DictationStatsHeader";
 import { DeleteAccountSection } from "@/components/DeleteAccountSection";
 import { AddAnythingPanel } from "@/components/AddAnythingPanel";
-import { BrainPanel } from "@/components/BrainPanel";
 import { DictatePanel } from "@/components/DictatePanel";
 import { PasswordField } from "@/components/PasswordField";
 import { Skeleton } from "@/components/Skeleton";
@@ -72,7 +70,6 @@ import type {
   InboxRow,
   InboxSourceKind,
   InboxStatusFilter,
-  CompanionScope,
   Recording,
   RecordingDetail,
   RecordingType,
@@ -91,7 +88,6 @@ type DashboardView =
   | "wai"
   | "add"
   | "content"
-  | "brain"
   | "library"
   | "folder"
   | "trash"
@@ -115,7 +111,6 @@ const DASHBOARD_VIEW_KEYS = [
   "wai",
   "add",
   "content",
-  "brain",
   "library",
   "trash",
   "search",
@@ -921,7 +916,6 @@ export function DashboardClient() {
   );
   // Legacy Inbox→Brain-map deep-link target. Brain is now a wiki (no maps), so
   // the value is unread; the setter stays wired so the callbacks still compile.
-  const [, setPendingBrainMapId] = useState<string | null>(null);
   const [accountSettings, setAccountSettings] = useState<UserSettings | null>(null);
   const [transcriptionOptions, setTranscriptionOptions] = useState<TranscriptionOptions | null>(
     null,
@@ -1652,24 +1646,6 @@ export function DashboardClient() {
     setPendingInboxSource(null);
   }, []);
 
-  const handleNewChat = useCallback(async (scope?: CompanionScope) => {
-    setMessage(null);
-    try {
-      const chat = await createChat(scope);
-      setActiveFolderId(null);
-      setSelectedRecording(null);
-      setSelectedMode("active");
-      setPendingInboxSource({
-        sourceKind: "chat",
-        sourceId: chat.id,
-        nonce: Date.now(),
-      });
-      setView("inbox");
-    } catch (error: unknown) {
-      setMessage(formatError(error));
-    }
-  }, []);
-
   useKeyboardShortcuts({
     "/": focusSearchInput,
     n: focusRecorder,
@@ -1726,11 +1702,6 @@ export function DashboardClient() {
         {
           key: "inbox",
           label: copy.nav.inbox.label,
-          count: null,
-        },
-        {
-          key: "brain",
-          label: locale === "ru" ? "Мозг" : "Brain",
           count: null,
         },
         {
@@ -2012,10 +1983,6 @@ export function DashboardClient() {
             onRefreshRecordings={loadRecordingsState}
             onItemsChanged={() => setItemsReloadKey((key) => key + 1)}
             onError={setMessage}
-            onOpenBrain={(mapId) => {
-              setPendingBrainMapId(mapId ?? null);
-              setView("brain");
-            }}
           />
         ) : null}
         {view === "library" || view === "wai" || view === "add" || view === "content" ? (
@@ -2037,10 +2004,6 @@ export function DashboardClient() {
             onRefreshRecordings={loadRecordingsState}
             onItemsChanged={() => setItemsReloadKey((key) => key + 1)}
             onError={setMessage}
-            onOpenBrain={(mapId) => {
-              setPendingBrainMapId(mapId ?? null);
-              setView("brain");
-            }}
           />
         ) : null}
         {view === "folder" && currentFolder ? (
@@ -2061,35 +2024,10 @@ export function DashboardClient() {
             onRefreshRecordings={loadRecordingsState}
             onItemsChanged={() => setItemsReloadKey((key) => key + 1)}
             onError={setMessage}
-            onOpenBrain={(mapId) => {
-              setPendingBrainMapId(mapId ?? null);
-              setView("brain");
-            }}
           />
         ) : null}
         {view === "trash" ? renderLibrary("trash", trashRecordings) : null}
         {view === "search" ? renderSearchView() : null}
-        {view === "brain" ? (
-          <section className="tool-panel">
-            <BrainPanel
-              locale={locale}
-              onError={setMessage}
-              onOpenInbox={() => setView("inbox")}
-              onAskWaiAboutEntity={(entityId) => handleNewChat({ entity_id: entityId })}
-              onOpenSource={(sourceKind, sourceId) => {
-                setActiveFolderId(null);
-                setSelectedRecording(null);
-                setSelectedMode("active");
-                setPendingInboxSource({
-                  sourceKind,
-                  sourceId,
-                  nonce: Date.now(),
-                });
-                setView("inbox");
-              }}
-            />
-          </section>
-        ) : null}
         {view === "dictate" ? <DictatePanel locale={locale} /> : null}
         {view === "history" ? renderHistoryView() : null}
         {view === "dictionary" ? renderDictionaryView() : null}
@@ -3006,38 +2944,6 @@ function inboxStatusLabel(row: InboxRow, locale: Locale): string | null {
   return "archived";
 }
 
-function canCreateBrainLensFromInboxRow(
-  row: InboxRow | null,
-): row is InboxRow & { source_kind: "recording" | "item" | "chat"; status: "ready" } {
-  return Boolean(
-    row &&
-      (row.source_kind === "recording" || row.source_kind === "item" || row.source_kind === "chat") &&
-      row.status === "ready",
-  );
-}
-
-function brainLensUnavailableText(row: InboxRow, locale: Locale): string | null {
-  if (row.status === "ready") return null;
-  if (row.status === "processing") {
-    return locale === "ru"
-      ? "Линза появится, когда источник будет готов."
-      : "Lens appears when this source is ready.";
-  }
-  if (row.status === "needs_input") {
-    return locale === "ru"
-      ? "Завершите источник перед созданием линзы."
-      : "Finish this source before creating a lens.";
-  }
-  if (row.status === "failed") {
-    return locale === "ru"
-      ? "Исправьте источник перед созданием линзы."
-      : "Fix this source before creating a lens.";
-  }
-  return locale === "ru"
-    ? "Линза недоступна для этого источника."
-    : "Lens is not available for this source.";
-}
-
 function sourceLabel(kind: InboxSourceKind, locale: Locale): string {
   if (locale === "ru") {
     if (kind === "recording") return "Запись";
@@ -3145,7 +3051,6 @@ function UniversalInboxPanel({
   onRefreshRecordings,
   onItemsChanged,
   onError,
-  onOpenBrain,
 }: {
   locale: Locale;
   copy: DashboardCopy;
@@ -3172,7 +3077,6 @@ function UniversalInboxPanel({
   onRefreshRecordings: () => Promise<void>;
   onItemsChanged: () => void;
   onError: (message: string | null) => void;
-  onOpenBrain?: (mapId?: string) => void;
 }) {
   const [rows, setRows] = useState<InboxRow[]>([]);
   const [selectedRow, setSelectedRow] = useState<InboxRow | null>(null);
@@ -3186,7 +3090,6 @@ function UniversalInboxPanel({
   const [loadingMore, setLoadingMore] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
-  const [creatingBrainMapSourceId, setCreatingBrainMapSourceId] = useState<string | null>(null);
   // Type-and-go: the inbox composer's draft + the first message handed to a
   // freshly created chat so the agent starts on the user's first line.
   const [chatDraft, setChatDraft] = useState("");
@@ -3431,37 +3334,6 @@ function UniversalInboxPanel({
     }
   }
 
-  async function handleCreateBrainMapFromSelectedSource() {
-    if (
-      !canCreateBrainLensFromInboxRow(selectedRow) ||
-      creatingBrainMapSourceId
-    ) {
-      return;
-    }
-    onError(null);
-    setCreatingBrainMapSourceId(selectedRow.id);
-    try {
-      const title = inboxTitle(selectedRow, locale);
-      const created = await createBrainMap({
-        prompt: locale === "ru" ? `Сделай карту: ${title}` : `Map this source: ${title}`,
-        origin: "inbox",
-        source_scope: {
-          sources: [
-            {
-              source_kind: selectedRow.source_kind,
-              source_id: selectedRow.source_id,
-            },
-          ],
-        },
-      });
-      onOpenBrain?.(created.id);
-    } catch (error: unknown) {
-      onError(formatError(error));
-    } finally {
-      setCreatingBrainMapSourceId(null);
-    }
-  }
-
   const sourceFilters: Array<{ key: InboxFilterKind; label: string }> = [
     { key: "all", label: locale === "ru" ? "Все" : "All" },
     { key: "recording", label: locale === "ru" ? "Записи" : "Recordings" },
@@ -3639,35 +3511,6 @@ function UniversalInboxPanel({
       </section>
 
       <section className="inbox-detail-area" aria-label="Inbox detail">
-        {!showCreate &&
-        selectedRow &&
-        (selectedRow.source_kind === "recording" || selectedRow.source_kind === "item" || selectedRow.source_kind === "chat") ? (
-          <div className="inbox-detail-actions">
-            <div className="inbox-detail-actions__copy">
-              <span>{sourceLabel(selectedRow.source_kind, locale)}</span>
-              {brainLensUnavailableText(selectedRow, locale) ? (
-                <small>{brainLensUnavailableText(selectedRow, locale)}</small>
-              ) : null}
-            </div>
-            <button
-              type="button"
-              className="ghost-button compact-button"
-              disabled={
-                creatingBrainMapSourceId === selectedRow.id ||
-                !canCreateBrainLensFromInboxRow(selectedRow)
-              }
-              onClick={() => void handleCreateBrainMapFromSelectedSource()}
-            >
-              {creatingBrainMapSourceId === selectedRow.id
-                ? locale === "ru"
-                  ? "Создаю..."
-                  : "Creating..."
-                : locale === "ru"
-                  ? "Создать линзу"
-                  : "Create Lens"}
-            </button>
-          </div>
-        ) : null}
         {showCreate || !selectedRow ? (
           <div className="inbox-create">
             <header className="inbox-create__header">

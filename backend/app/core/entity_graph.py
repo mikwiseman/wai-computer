@@ -26,7 +26,6 @@ from app.core.fact_pipeline import (
     decide_fact_actions,
     normalize_predicate,
 )
-from app.core.mcp_entity_extract import extract_graph
 from app.core.name_moderation import normalise_name
 from app.models.entity import Entity, EntityFact, EntityMention, EntityRelation
 from app.models.item import Item, ItemSummary
@@ -420,55 +419,6 @@ async def seed_entities_from_extraction(
         relations_recorded=relations,
         persons_seeded=persons,
     )
-
-
-@dataclass
-class MetadataSeedResult:
-    mentions_recorded: int
-    persons_seeded: int
-
-
-async def seed_entities_from_metadata(
-    db: AsyncSession,
-    user_id: Any,
-    *,
-    source_kind: str,
-    source_id: Any,
-    kind: str,
-    metadata: dict | None,
-) -> MetadataSeedResult:
-    """Promote a synced item's structured record into graph entities + mentions.
-
-    Zero-LLM: reads ``metadata`` (the raw tool record) per :func:`extract_graph`
-    and writes people/topics via the same idempotent ``upsert_entity`` /
-    ``record_mention`` path recordings use. Person dedup uses the email/handle
-    identity key, so the same human across Gmail + Telegram + Calendar collapses
-    onto one node. May raise :class:`ExtractorShapeError` (caller counts it).
-
-    Does NOT run speaker reconciliation here (that scans all entities); the
-    caller reconciles once per sync after all items are seeded.
-    """
-    graph = extract_graph(kind, metadata)
-    mentions = 0
-    persons = 0
-    for ent in graph.entities:
-        entity = await upsert_entity(
-            db, user_id, type=ent.type, name=ent.name, identity_key=ent.identity_key
-        )
-        if entity is None:
-            continue
-        await record_mention(
-            db,
-            user_id=user_id,
-            entity_id=entity.id,
-            source_kind=source_kind,
-            source_id=source_id,
-            context=ent.role,
-        )
-        mentions += 1
-        if ent.type == "person":
-            persons += 1
-    return MetadataSeedResult(mentions_recorded=mentions, persons_seeded=persons)
 
 
 async def _mention_count(db: AsyncSession, user_id: Any | None) -> int:

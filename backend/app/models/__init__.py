@@ -50,7 +50,6 @@ from app.models.entity import (
 )
 from app.models.highlight import Highlight
 from app.models.item import Item, ItemChunk, ItemSummary
-from app.models.mcp_connection import McpConnection, McpIngestionRun
 from app.models.mcp_oauth import (
     McpOAuthAuthorizationCode,
     McpOAuthAuthorizationRequest,
@@ -133,8 +132,6 @@ __all__ = [
     "ItemChunk",
     "ItemSummary",
     "ComparisonSet",
-    "McpConnection",
-    "McpIngestionRun",
     "MemoryProposal",
     "Person",
     "PublicVoiceprint",

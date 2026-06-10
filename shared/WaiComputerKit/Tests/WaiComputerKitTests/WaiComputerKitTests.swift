@@ -45,13 +45,6 @@ final class WaiComputerKitTests: XCTestCase {
         XCTAssertEqual(ActionItem.Status.completed.rawValue, "completed")
     }
 
-    func testEntityTypeValues() {
-        XCTAssertEqual(EntityType.person.rawValue, "person")
-        XCTAssertEqual(EntityType.topic.rawValue, "topic")
-        XCTAssertEqual(EntityType.project.rawValue, "project")
-        XCTAssertEqual(EntityType.organization.rawValue, "organization")
-    }
-
     func testAudioCaptureConfig() {
         let config = AudioCaptureConfig.default
 

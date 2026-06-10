@@ -13,8 +13,6 @@ import type {
   DictationEntry,
   DigestActionItem,
   DigestHighlight,
-  Entity,
-  EntityDetail,
   Folder,
   Highlight,
   HighlightCategory,
@@ -569,43 +567,6 @@ describe("types-sync: TranscriptStatsResponse and TranscriptSearchResponse", () 
   });
 });
 
-
-describe("types-sync: Entity and EntityDetail", () => {
-  it("Entity matches backend schema", () => {
-    const entity: Entity = {
-      id: "e1",
-      type: "topic",
-      name: "Roadmap",
-      metadata: { source: "auto" },
-      created_at: "2026-03-01T00:00:00Z",
-    };
-
-    expectExactKeys(entity, ["id", "type", "name", "metadata", "created_at"]);
-  });
-
-  it("EntityDetail extends Entity with relations", () => {
-    const detail: EntityDetail = {
-      id: "e1",
-      type: "person",
-      name: "Alice",
-      metadata: null,
-      created_at: "2026-03-01T00:00:00Z",
-      relations: [
-        {
-          id: "rel1",
-          target_id: "e2",
-          target_type: "organization",
-          target_name: "Acme Corp",
-          relation_type: "works_at",
-          context: "mentioned in Sprint Planning",
-        },
-      ],
-    };
-
-    expect(detail.relations).toHaveLength(1);
-    expect(detail.relations[0].target_type).toBe("organization");
-  });
-});
 
 describe("types-sync: RelatedRecordingsResponse", () => {
   it("RelatedRecordingsResponse matches backend schema", () => {

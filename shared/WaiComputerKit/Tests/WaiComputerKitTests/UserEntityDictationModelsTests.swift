@@ -1,7 +1,7 @@
 import XCTest
 @testable import WaiComputerKit
 
-/// Decoding tests for User, AuthResponse, Settings, Entity, Dictation, and other
+/// Decoding tests for User, AuthResponse, Settings, Dictation, and other
 /// model wrappers that aren't covered by ModelTests / ModelEdgeCaseTests / NewFieldsModelTests.
 final class UserEntityDictationModelsTests: XCTestCase {
 
@@ -240,61 +240,6 @@ final class UserEntityDictationModelsTests: XCTestCase {
         XCTAssertEqual(opts.dictationLiveSTT.count, 1)
         XCTAssertEqual(opts.dictationLiveSTT[0].provider, "o")
         XCTAssertEqual(opts.recordingLiveSTT.count, 0)
-    }
-
-    // MARK: - Entity
-
-    func testEntityTypeRawValues() {
-        XCTAssertEqual(EntityType.person.rawValue, "person")
-        XCTAssertEqual(EntityType.topic.rawValue, "topic")
-        XCTAssertEqual(EntityType.project.rawValue, "project")
-        XCTAssertEqual(EntityType.organization.rawValue, "organization")
-    }
-
-    func testEntityTypeAllCases() {
-        XCTAssertEqual(EntityType.allCases.count, 4)
-    }
-
-    func testEntityDecodes() throws {
-        let json = """
-        {"id":"e1","type":"person","name":"Mik","metadata":{"role":"founder"}}
-        """.data(using: .utf8)!
-        let e = try decoder.decode(Entity.self, from: json)
-        XCTAssertEqual(e.id, "e1")
-        XCTAssertEqual(e.type, .person)
-        XCTAssertEqual(e.name, "Mik")
-        XCTAssertEqual(e.metadata?["role"], "founder")
-    }
-
-    func testEntityWithNoMetadata() throws {
-        let json = """
-        {"id":"e1","type":"topic","name":"Audio"}
-        """.data(using: .utf8)!
-        let e = try decoder.decode(Entity.self, from: json)
-        XCTAssertNil(e.metadata)
-    }
-
-    func testEntityRelationSnakeCase() throws {
-        let json = """
-        {"id":"r1","target_id":"e2","target_name":"OpenAI","target_type":"organization",
-         "relation_type":"works_with","context":"realtime API"}
-        """.data(using: .utf8)!
-        let r = try decoder.decode(EntityRelation.self, from: json)
-        XCTAssertEqual(r.targetId, "e2")
-        XCTAssertEqual(r.targetType, .organization)
-        XCTAssertEqual(r.relationType, "works_with")
-        XCTAssertEqual(r.context, "realtime API")
-    }
-
-    func testEntityDetailDecodes() throws {
-        let json = """
-        {"id":"e1","type":"person","name":"Mik","metadata":null,
-         "relations":[{"id":"r1","target_id":"e2","target_name":"OpenAI",
-                       "target_type":"organization","relation_type":null,"context":null}]}
-        """.data(using: .utf8)!
-        let d = try decoder.decode(EntityDetail.self, from: json)
-        XCTAssertEqual(d.relations.count, 1)
-        XCTAssertEqual(d.relations[0].targetName, "OpenAI")
     }
 
     // MARK: - Dictation DTOs

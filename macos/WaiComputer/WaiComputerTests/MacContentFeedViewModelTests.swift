@@ -75,35 +75,6 @@ final class MacContentFeedViewModelTests: XCTestCase {
         XCTAssertFalse(source.contains("Прикрепить файл"))
     }
 
-    func testInboxSelectedSourceCanAskAndCreateScopedBrainLens() throws {
-        let source = try macSource("WaiComputer/Features/Inbox/MacInboxView.swift")
-
-        XCTAssertTrue(source.contains("MacInboxSourceBrainPanel("))
-        XCTAssertTrue(source.contains("apiClient.askBrain(\n                    question: question,\n                    sourceScope: brainSourceScope(for: row)"))
-        XCTAssertTrue(source.contains("BrainMapCreateRequest(\n                        prompt: prompt,\n                        origin: \"inbox\",\n                        sourceScope: brainSourceScope(for: row)"))
-        XCTAssertTrue(source.contains("onOpenBrainMap(created.id)"))
-        XCTAssertTrue(source.contains("\"source_kind\": .string(row.sourceKind.rawValue)"))
-        XCTAssertTrue(source.contains("\"source_id\": .string(row.sourceId)"))
-    }
-
-    func testBrainIsAReadOnlyWikiWithAskWaiDeepLink() throws {
-        let shellSource = try macSource("WaiComputer/App/MacContentView.swift")
-        let brainSource = try macSource("WaiComputer/Features/Brain/MacBrainView.swift")
-
-        // Brain is the wiki: a browsable Pages index → cited dossier, no cockpit.
-        XCTAssertTrue(brainSource.contains("private var pagesSection: some View"))
-        XCTAssertTrue(brainSource.contains("private func wikiBody(_ page: EntityPage)"))
-        XCTAssertTrue(brainSource.contains("onAskWaiAboutEntity"))
-        // The cockpit is gone — no Ask box, maps, coverage meters, or live status.
-        XCTAssertFalse(brainSource.contains("brainAskSection"))
-        XCTAssertFalse(brainSource.contains("liveMapSection"))
-        XCTAssertFalse(brainSource.contains("mapCoverageLedger"))
-        XCTAssertFalse(brainSource.contains("generatedLiveStatus"))
-        // "Ask Wai about X" deep-links into an entity-scoped companion chat.
-        XCTAssertTrue(shellSource.contains("openBrainChatForEntity(entityId:"))
-        XCTAssertTrue(shellSource.contains("CompanionScope(entityId: entityId)"))
-    }
-
     func testInboxCreatePaneDefaultsToFocusedUploadMode() throws {
         let source = try macSource("WaiComputer/Features/Inbox/MacInboxView.swift")
 
@@ -148,10 +119,9 @@ final class MacContentFeedViewModelTests: XCTestCase {
         let source = try macSource("WaiComputer/App/WaiComputerMacApp.swift")
 
         XCTAssertBefore("object: \"inbox\"", ".keyboardShortcut(\"1\", modifiers: .command)", in: source)
-        XCTAssertBefore("object: \"brain\"", ".keyboardShortcut(\"2\", modifiers: .command)", in: source)
-        XCTAssertBefore("object: \"trash\"", ".keyboardShortcut(\"3\", modifiers: .command)", in: source)
-        XCTAssertBefore("object: \"history\"", ".keyboardShortcut(\"4\", modifiers: .command)", in: source)
-        XCTAssertBefore("object: \"dictionary\"", ".keyboardShortcut(\"5\", modifiers: .command)", in: source)
+        XCTAssertBefore("object: \"trash\"", ".keyboardShortcut(\"2\", modifiers: .command)", in: source)
+        XCTAssertBefore("object: \"history\"", ".keyboardShortcut(\"3\", modifiers: .command)", in: source)
+        XCTAssertBefore("object: \"dictionary\"", ".keyboardShortcut(\"4\", modifiers: .command)", in: source)
         XCTAssertTrue(source.contains("CommandMenu(t(\"Navigate\", \"Переход\"))"))
         XCTAssertTrue(source.contains("Button(t(\"New Folder\", \"Новая папка\"))"))
         XCTAssertTrue(source.contains(".keyboardShortcut(\"n\", modifiers: [.command, .shift])"))

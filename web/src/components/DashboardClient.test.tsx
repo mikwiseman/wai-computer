@@ -34,10 +34,6 @@ const mockRevokeMcpConnection = vi.fn();
 const mockGetSystemInfo = vi.fn();
 const mockGetDataOwnershipMap = vi.fn();
 const mockStartSelfHostProvision = vi.fn();
-const mockListMcpIngestionConnections = vi.fn();
-const mockCreateMcpIngestionConnection = vi.fn();
-const mockUpdateMcpIngestionConnection = vi.fn();
-const mockSyncMcpIngestionConnection = vi.fn();
 const mockListApiKeys = vi.fn();
 const mockCreateApiKey = vi.fn();
 const mockRevokeApiKey = vi.fn();
@@ -71,14 +67,9 @@ const mockResolveAgentAction = vi.fn();
 const mockListReminders = vi.fn();
 const mockCreateReminder = vi.fn();
 const mockCancelReminder = vi.fn();
-const mockCreateBrainMap = vi.fn();
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ replace: mockReplace }),
-}));
-
-vi.mock("./BrainPanel", () => ({
-  BrainPanel: () => <div data-testid="brain-panel">brain</div>,
 }));
 
 vi.mock("@/lib/api", () => ({
@@ -86,7 +77,6 @@ vi.mock("@/lib/api", () => ({
   listInbox: (...args: unknown[]) => mockListInbox(...args),
   listRecordings: (...args: unknown[]) => mockListRecordings(...args),
   createRecording: (...args: unknown[]) => mockCreateRecording(...args),
-  createBrainMap: (...args: unknown[]) => mockCreateBrainMap(...args),
   deleteRecording: (...args: unknown[]) => mockDeleteRecording(...args),
   restoreRecording: (...args: unknown[]) => mockRestoreRecording(...args),
   bulkRecordingOperation: (...args: unknown[]) => mockBulkRecordingOperation(...args),
@@ -114,14 +104,6 @@ vi.mock("@/lib/api", () => ({
   getSystemInfo: (...args: unknown[]) => mockGetSystemInfo(...args),
   getDataOwnershipMap: (...args: unknown[]) => mockGetDataOwnershipMap(...args),
   startSelfHostProvision: (...args: unknown[]) => mockStartSelfHostProvision(...args),
-  listMcpIngestionConnections: (...args: unknown[]) =>
-    mockListMcpIngestionConnections(...args),
-  createMcpIngestionConnection: (...args: unknown[]) =>
-    mockCreateMcpIngestionConnection(...args),
-  updateMcpIngestionConnection: (...args: unknown[]) =>
-    mockUpdateMcpIngestionConnection(...args),
-  syncMcpIngestionConnection: (...args: unknown[]) =>
-    mockSyncMcpIngestionConnection(...args),
   listApiKeys: (...args: unknown[]) => mockListApiKeys(...args),
   createApiKey: (...args: unknown[]) => mockCreateApiKey(...args),
   revokeApiKey: (...args: unknown[]) => mockRevokeApiKey(...args),
@@ -392,10 +374,6 @@ function arrangeHappyPathMocks() {
     message: "Provisioning inputs are valid.",
     steps: [],
   });
-  mockListMcpIngestionConnections.mockResolvedValue([]);
-  mockCreateMcpIngestionConnection.mockResolvedValue({});
-  mockUpdateMcpIngestionConnection.mockResolvedValue({});
-  mockSyncMcpIngestionConnection.mockResolvedValue({ status: "queued" });
   mockListApiKeys.mockResolvedValue([]);
   mockCreateApiKey.mockResolvedValue({});
   mockRevokeApiKey.mockResolvedValue(undefined);
@@ -424,10 +402,6 @@ function arrangeHappyPathMocks() {
   mockCreateItem.mockResolvedValue({});
   mockGetItem.mockResolvedValue({});
   mockUploadItem.mockResolvedValue({ kind: "item", item: {} });
-  mockCreateBrainMap.mockResolvedValue({
-    id: "map-from-inbox",
-    title: "Map this source",
-  });
 }
 
 function createDeferred<T>() {
@@ -528,7 +502,6 @@ describe("DashboardClient", () => {
       mockListReminders,
       mockCreateReminder,
       mockCancelReminder,
-      mockCreateBrainMap,
       mockReplace,
     ].forEach((fn) => fn.mockReset());
     mockListInbox.mockResolvedValue(baseInboxResponse);
@@ -709,119 +682,6 @@ describe("DashboardClient", () => {
       expect(screen.getByTestId("dashboard-message")).toHaveTextContent("Logout failed");
     });
   }, 15_000);
-
-  it("creates a source-scoped Brain map from Inbox and opens Brain", async () => {
-    arrangeHappyPathMocks();
-    const user = userEvent.setup();
-
-    render(<DashboardClient />);
-    await waitForDashboardReady();
-
-    await waitFor(() => expect(screen.getByTestId("select-recording-r1")).toBeInTheDocument());
-    await user.click(screen.getByTestId("select-recording-r1"));
-    await waitFor(() => expect(screen.getByTestId("recording-detail")).toBeInTheDocument());
-    await user.click(screen.getByRole("button", { name: "Create Lens" }));
-
-    await waitFor(() =>
-      expect(mockCreateBrainMap).toHaveBeenCalledWith({
-        prompt: "Map this source: Planning",
-        origin: "inbox",
-        source_scope: {
-          sources: [
-            {
-              source_kind: "recording",
-              source_id: "r1",
-            },
-          ],
-        },
-      }),
-    );
-    // Brain is the wiki now — creating a lens navigates there (the map no longer
-    // auto-opens; maps were cut from Brain).
-    expect(screen.getByTestId("workspace-title")).toHaveTextContent("Brain");
-    expect(screen.getByTestId("brain-panel")).toBeInTheDocument();
-  });
-
-  it("creates a source-scoped Brain map from a Wai chat in Inbox and opens Brain", async () => {
-    arrangeHappyPathMocks();
-    mockListInbox.mockResolvedValue({
-      rows: [
-        inboxRow({
-          id: "chat:c1",
-          source_kind: "chat",
-          source_id: "c1",
-          detail: { kind: "chat", id: "c1" },
-          title: "Wai launch thread",
-          source_label: "Wai",
-          sublabel: "Agent thread",
-          has_summary: null,
-          folder_id: null,
-        }),
-      ],
-      next_cursor: null,
-      has_more: false,
-    });
-    const user = userEvent.setup();
-
-    render(<DashboardClient />);
-    await waitForDashboardReady();
-
-    await waitFor(() => expect(screen.getByTestId("select-chat-c1")).toBeInTheDocument());
-    await user.click(screen.getByTestId("select-chat-c1"));
-    await user.click(screen.getByRole("button", { name: "Create Lens" }));
-
-    await waitFor(() =>
-      expect(mockCreateBrainMap).toHaveBeenCalledWith({
-        prompt: "Map this source: Wai launch thread",
-        origin: "inbox",
-        source_scope: {
-          sources: [
-            {
-              source_kind: "chat",
-              source_id: "c1",
-            },
-          ],
-        },
-      }),
-    );
-    expect(screen.getByTestId("workspace-title")).toHaveTextContent("Brain");
-    expect(screen.getByTestId("brain-panel")).toBeInTheDocument();
-  });
-
-  it("waits for a processing voice memo before creating a Brain lens", async () => {
-    arrangeHappyPathMocks();
-    const user = userEvent.setup();
-    const processingRecording = {
-      ...baseRecording,
-      id: "voice-processing",
-      title: "Voice memo about roadmap",
-      status: "processing",
-    };
-    mockListRecordings.mockResolvedValue([processingRecording]);
-    mockListInbox.mockResolvedValue({
-      rows: [recordingInboxRow(processingRecording)],
-      next_cursor: null,
-      has_more: false,
-    });
-    mockGetRecording.mockResolvedValue({
-      ...baseRecordingDetail,
-      ...processingRecording,
-      segments: [],
-      summary: null,
-    });
-
-    render(<DashboardClient />);
-    await waitForDashboardReady();
-
-    await waitFor(() =>
-      expect(screen.getByTestId("select-recording-voice-processing")).toBeInTheDocument(),
-    );
-    await user.click(screen.getByTestId("select-recording-voice-processing"));
-
-    expect(screen.getByText("Lens appears when this source is ready.")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Create Lens" })).toBeDisabled();
-    expect(mockCreateBrainMap).not.toHaveBeenCalled();
-  });
 
   it("renders untitled recording/detail fallbacks", async () => {
     const user = userEvent.setup();

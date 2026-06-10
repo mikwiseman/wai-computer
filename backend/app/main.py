@@ -28,7 +28,6 @@ from app.api.routes import (
     inbox,
     items,
     mcp_connect,
-    mcp_connections,
     mcp_oauth,
     memory_proposals,
     people,
@@ -39,7 +38,6 @@ from app.api.routes import (
     reminders,
     search,
     sentry_webhook,
-    source_catalog,
     system,
     telegram,
     voice_enrollment,
@@ -215,8 +213,6 @@ app.include_router(inbox.router, prefix="/api")
 app.include_router(items.router, prefix="/api")
 app.include_router(comparisons.router, prefix="/api")
 app.include_router(mcp_connect.router, prefix="/api")
-app.include_router(mcp_connections.router, prefix="/api")
-app.include_router(source_catalog.router, prefix="/api")
 app.include_router(memory_proposals.router, prefix="/api")
 app.include_router(brain_spaces.router, prefix="/api")
 app.include_router(brain.router, prefix="/api")

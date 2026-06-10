@@ -1,8 +1,8 @@
 """Regression tests for the two prod Celery failures found 2026-06-01.
 
-1. Beat scheduled ``app.tasks.mcp_sync.dispatch_due_mcp_syncs`` but that module
-   was missing from ``celery_app.conf.imports`` → the task was never registered
-   → ``KeyError`` on every 5-minute dispatch.
+1. Beat scheduled a task whose module was missing from
+   ``celery_app.conf.imports`` → the task was never registered
+   → ``KeyError`` on every scheduled dispatch.
 2. ``app.db.session`` tracked the event loop by ``id(loop)``. CPython recycles a
    freed loop's address, so a Celery task wrapping each run in ``asyncio.run()``
    (e.g. ``recover_stale_recording_processing``, every minute) could get a new
@@ -25,13 +25,6 @@ def test_every_beat_scheduled_task_is_registered():
         "beat references tasks that aren't registered — add their module to "
         f"celery_app.conf.imports: {missing}"
     )
-
-
-def test_mcp_sync_dispatch_task_registered():
-    from app.tasks.celery_app import celery_app
-
-    celery_app.loader.import_default_modules()
-    assert "app.tasks.mcp_sync.dispatch_due_mcp_syncs" in celery_app.tasks
 
 
 def test_summary_audio_generation_task_registered():

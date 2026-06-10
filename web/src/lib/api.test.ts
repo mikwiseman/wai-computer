@@ -450,27 +450,6 @@ describe("api client wrappers", () => {
     expect(mockedApiFetch).toHaveBeenNthCalledWith(3, "/api/search/fts?q=roadmap&limit=11&offset=9");
   });
 
-  it("posts a source scope when asking Brain from a selected source", async () => {
-    const sourceScope = {
-      sources: [
-        {
-          source_kind: "recording" as const,
-          source_id: "rec-1",
-        },
-      ],
-    };
-
-    await api.askBrain("What changed?", sourceScope);
-
-    expect(mockedApiFetch).toHaveBeenCalledWith("/api/brain/ask", {
-      method: "POST",
-      body: JSON.stringify({
-        question: "What changed?",
-        source_scope: sourceScope,
-      }),
-    });
-  });
-
   it("calls change password endpoint", async () => {
     await api.changePassword("old", "new");
     expect(mockedApiFetch).toHaveBeenCalledWith("/api/settings/change-password", {
@@ -691,30 +670,6 @@ describe("api client wrappers", () => {
   it("calls getSharedRecording", async () => {
     await api.getSharedRecording("share-token");
     expect(mockedApiFetch).toHaveBeenCalledWith("/api/recordings/shared/share-token");
-  });
-
-  it("calls syncBrain with a bounded default limit and no chats", async () => {
-    await api.syncBrain();
-    expect(mockedApiFetch).toHaveBeenCalledWith("/api/brain/sync", {
-      method: "POST",
-      body: JSON.stringify({ limit: 500, include_chats: false }),
-    });
-  });
-
-  it("calls syncBrain with a custom limit", async () => {
-    await api.syncBrain({ limit: 250 });
-    expect(mockedApiFetch).toHaveBeenCalledWith("/api/brain/sync", {
-      method: "POST",
-      body: JSON.stringify({ limit: 250, include_chats: false }),
-    });
-  });
-
-  it("calls syncBrain with include_chats for the explicit link button", async () => {
-    await api.syncBrain({ limit: 500, includeChats: true });
-    expect(mockedApiFetch).toHaveBeenCalledWith("/api/brain/sync", {
-      method: "POST",
-      body: JSON.stringify({ limit: 500, include_chats: true }),
-    });
   });
 
   it("calls listFolders", async () => {

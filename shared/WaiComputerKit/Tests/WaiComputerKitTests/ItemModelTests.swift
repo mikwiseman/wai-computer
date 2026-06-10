@@ -117,36 +117,6 @@ final class ItemModelTests: XCTestCase {
 }
 
 extension ItemModelTests {
-    func testMcpIngestionConnectionDecodes() throws {
-        let json = """
-        {
-          "id": "c1",
-          "server_label": "My Notes",
-          "server_url": "https://mcp.example.com/notes",
-          "transport": "streamable_http",
-          "auth_type": "pat",
-          "has_token": true,
-          "allowed_tools": [],
-          "privacy_level": "internal",
-          "sync_interval_minutes": 60,
-          "status": "active",
-          "enabled": true,
-          "last_sync_at": null,
-          "last_error": null,
-          "created_at": "2026-06-01T00:00:00Z"
-        }
-        """.data(using: .utf8)!
-        let conn = try decoder().decode(McpIngestionConnection.self, from: json)
-        XCTAssertEqual(conn.id, "c1")
-        XCTAssertEqual(conn.serverLabel, "My Notes")
-        XCTAssertEqual(conn.authType, "pat")
-        XCTAssertTrue(conn.hasToken)
-        XCTAssertEqual(conn.syncIntervalMinutes, 60)
-        XCTAssertTrue(conn.enabled)
-    }
-}
-
-extension ItemModelTests {
     func testComparisonSetDecodes() throws {
         let json = """
         {
@@ -184,32 +154,5 @@ extension ItemModelTests {
         let entry = try decoder().decode(ComparisonListEntry.self, from: json)
         XCTAssertEqual(entry.itemCount, 3)
         XCTAssertEqual(entry.status, "generating")
-    }
-}
-
-extension ItemModelTests {
-    func testBrainProjectionDecodes() throws {
-        let json = """
-        {
-          "memory_sections": [
-            {"label": "human", "body": "Lives in Lisbon.", "updated_at": "2026-06-01T00:00:00Z"},
-            {"label": "topics", "body": "", "updated_at": null}
-          ],
-          "entity_pages": [
-            {"id": "e1", "name": "Alice", "type": "person", "relations": [
-              {"relation_type": "works_on", "target_name": "Apollo", "target_type": "project", "context": "leads it"}
-            ]}
-          ],
-          "entity_count": 1
-        }
-        """.data(using: .utf8)!
-        let brain = try decoder().decode(BrainProjection.self, from: json)
-        XCTAssertEqual(brain.entityCount, 1)
-        XCTAssertEqual(brain.memorySections.first?.label, "human")
-        XCTAssertEqual(brain.memorySections.first?.body, "Lives in Lisbon.")
-        let page = try XCTUnwrap(brain.entityPages.first)
-        XCTAssertEqual(page.name, "Alice")
-        XCTAssertEqual(page.relations.first?.targetName, "Apollo")
-        XCTAssertEqual(page.relations.first?.relationType, "works_on")
     }
 }

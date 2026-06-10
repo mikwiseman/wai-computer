@@ -311,13 +311,6 @@ DATA_OWNERSHIP: tuple[TableOwnershipEntry, ...] = (
         contains_user_content=True,
     ),
     TableOwnershipEntry(
-        "mcp_connections",
-        "owned_exportable",
-        "Connected MCP ingestion source metadata; encrypted secrets need rewrap.",
-        requires_reconnect=True,
-    ),
-    TableOwnershipEntry("mcp_ingestion_runs", "owned_exportable", "MCP ingestion job state."),
-    TableOwnershipEntry(
         "mcp_oauth_clients",
         "self_host_local",
         "MCP OAuth dynamic client registrations are server-local.",

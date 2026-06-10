@@ -4,7 +4,6 @@ import { useEffect, useMemo, useState } from "react";
 
 import { getSystemInfo } from "@/lib/api";
 import { McpConnectionsList } from "./McpConnectionsList";
-import { McpSourcesPanel } from "./McpSourcesPanel";
 
 type Locale = "en" | "ru";
 
@@ -353,7 +352,6 @@ export function McpConnectSection({ locale = "en" }: McpConnectSectionProps) {
       </div>
 
       <McpConnectionsList locale={locale} />
-      <McpSourcesPanel locale={locale} />
     </div>
   );
 }

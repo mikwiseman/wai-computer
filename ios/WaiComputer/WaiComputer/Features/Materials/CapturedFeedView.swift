@@ -1,10 +1,8 @@
 import SwiftUI
 import WaiComputerKit
 
-/// The captured-items feed (links, notes, files, MCP-ingested rows) — extracted
-/// from the old `SecondBrainView` so it can live inside the Brain tab's single
-/// navigation stack. Adds the multi-select → Compare flow that previously had no
-/// UI surface on iOS (the view model already exposed it).
+/// The captured-items feed (links, notes, files) — the Materials tab's main
+/// list. Includes the multi-select → Compare flow.
 struct CapturedFeedView: View {
     @EnvironmentObject private var languageManager: LanguageManager
     @ObservedObject var model: ContentFeedViewModel
@@ -52,7 +50,7 @@ struct CapturedFeedView: View {
             }
         }
         .listStyle(.insetGrouped)
-        .navigationTitle(t("Captured", "Сохранённое"))
+        .navigationTitle(t("Materials", "Материалы"))
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {

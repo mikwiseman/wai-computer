@@ -249,25 +249,20 @@ struct WaiComputerMacApp: App {
                 }
                 .keyboardShortcut("1", modifiers: .command)
 
-                Button(t("Brain", "Мозг")) {
-                    NotificationCenter.default.post(name: .init("navigateTo"), object: "brain")
-                }
-                .keyboardShortcut("2", modifiers: .command)
-
                 Button(t("Trash", "Корзина")) {
                     NotificationCenter.default.post(name: .init("navigateTo"), object: "trash")
                 }
-                .keyboardShortcut("3", modifiers: .command)
+                .keyboardShortcut("2", modifiers: .command)
 
                 Button(t("History", "История")) {
                     NotificationCenter.default.post(name: .init("navigateTo"), object: "history")
                 }
-                .keyboardShortcut("4", modifiers: .command)
+                .keyboardShortcut("3", modifiers: .command)
 
                 Button(t("Dictionary", "Словарь")) {
                     NotificationCenter.default.post(name: .init("navigateTo"), object: "dictionary")
                 }
-                .keyboardShortcut("5", modifiers: .command)
+                .keyboardShortcut("4", modifiers: .command)
 
                 Divider()
 

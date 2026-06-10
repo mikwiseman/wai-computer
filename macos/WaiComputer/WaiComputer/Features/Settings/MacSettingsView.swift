@@ -348,7 +348,6 @@ struct MacSettingsView: View {
         serverDataSection
         telegramSection
         mcpConnectSection
-        McpIngestionSection()
     }
 
     @ViewBuilder

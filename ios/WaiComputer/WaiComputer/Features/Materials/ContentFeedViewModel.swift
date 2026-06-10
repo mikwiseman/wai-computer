@@ -1,9 +1,9 @@
 import Foundation
 import WaiComputerKit
 
-/// Drives the iOS Content feed (the "Brain" tab home): add-anything capture,
-/// kind filtering, the item list, and multi-select → compare. Mirrors the
-/// macOS MacContentFeedViewModel; the per-item detail loads itself on push.
+/// Drives the iOS Materials feed (the captured-items inbox): add-anything
+/// capture, kind filtering, the item list, and multi-select → compare. Mirrors
+/// the macOS MacContentFeedViewModel; the per-item detail loads itself on push.
 @MainActor
 final class ContentFeedViewModel: ObservableObject {
     @Published var entries: [ItemListEntry] = []
@@ -11,7 +11,6 @@ final class ContentFeedViewModel: ObservableObject {
     @Published var isLoading = false
     @Published var isAdding = false
     @Published var errorMessage: String?
-    @Published var pendingReviewCount = 0
 
     // Unified "search everything" (recordings + items)
     @Published var query = ""
@@ -38,10 +37,6 @@ final class ContentFeedViewModel: ObservableObject {
             errorMessage = nil
         } catch {
             errorMessage = error.localizedDescription
-        }
-        // Best-effort review badge; never blocks the feed.
-        if let count = try? await apiClient.listMemoryProposals(status: "pending").pendingCount {
-            pendingReviewCount = count
         }
     }
 

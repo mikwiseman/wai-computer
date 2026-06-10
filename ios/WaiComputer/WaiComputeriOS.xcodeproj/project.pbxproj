@@ -23,7 +23,6 @@
 		3DA78C2D779EB4FA151ECFAA /* WaiHomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1D1E8066A665D192CD1E2565 /* WaiHomeView.swift */; };
 		4EDFCAF02CC86441404829AF /* ImportViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = C7366D5C484D46DF7E63FC1A /* ImportViewModel.swift */; };
 		5454C06C81295A59C1C068B5 /* BrainMapDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 008D64A4C123B62FC15A68B7 /* BrainMapDetailView.swift */; };
-		62213ADBC65D730FC044CD81 /* McpIngestionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D4C54E1A6E542EBE5CDB1D3 /* McpIngestionView.swift */; };
 		62241C028CE52A11AABA64DD /* RecordingDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E73122302C84DBD8D22C976C /* RecordingDetailView.swift */; };
 		63F1EC864866520DD47E1FED /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A85E11C35CBE283D2101267D /* Assets.xcassets */; };
 		678A5D56234C78B8A3713A4C /* AudioManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D1C7BE633E65D2EB872797E /* AudioManager.swift */; };
@@ -77,7 +76,6 @@
 		58026BD1FB5E7D7747FA3F94 /* ReviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReviewView.swift; sourceTree = "<group>"; };
 		5D0D48DD13F78AA7E44201D0 /* EntityPageView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EntityPageView.swift; sourceTree = "<group>"; };
 		5D1C7BE633E65D2EB872797E /* AudioManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioManager.swift; sourceTree = "<group>"; };
-		5D4C54E1A6E542EBE5CDB1D3 /* McpIngestionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = McpIngestionView.swift; sourceTree = "<group>"; };
 		6B86D0607E05D98135E4CAC0 /* WaiComputerApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WaiComputerApp.swift; sourceTree = "<group>"; };
 		6C9E3265171CC15BA875FA7A /* WaiComputerKit */ = {isa = PBXFileReference; lastKnownFileType = folder; name = WaiComputerKit; path = ../../shared/WaiComputerKit; sourceTree = SOURCE_ROOT; };
 		6D70385DAB2C71AA828D303B /* ItemDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ItemDetailView.swift; sourceTree = "<group>"; };
@@ -165,7 +163,6 @@
 				47FC91502BD1FED9F6481949 /* AppLanguagePicker.swift */,
 				0AFCC42054E51921AC81B22F /* IdentityAndVoiceSettingsView.swift */,
 				97968DE3F1803173874F4E13 /* McpConnectView.swift */,
-				5D4C54E1A6E542EBE5CDB1D3 /* McpIngestionView.swift */,
 				1B7BB5BFDB9B1891E6E23F36 /* SettingsView.swift */,
 				CFD37BE95D0862C344C34B5F /* TelegramSettingsView.swift */,
 			);
@@ -408,7 +405,6 @@
 				CC4E23482FD719666989EEBF /* LanguagePickerView.swift in Sources */,
 				DBF70B6B782A9D85F3BF2E0E /* LibraryView.swift in Sources */,
 				386D86DC6CF31550CB5001D1 /* McpConnectView.swift in Sources */,
-				62213ADBC65D730FC044CD81 /* McpIngestionView.swift in Sources */,
 				74CE1DBA1C1046B692CAE1ED /* MemoryView.swift in Sources */,
 				38308F96BE0E9466A8680685 /* OnboardingPage.swift in Sources */,
 				E4C6EFBB9EA09C3989A8B77A /* OnboardingSlide.swift in Sources */,

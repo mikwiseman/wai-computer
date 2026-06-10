@@ -117,12 +117,6 @@ DERIVED_OWNER_EDGES: dict[str, dict[str, str]] = {
         "parent_column": "id",
         "owner_column": "user_id",
     },
-    "mcp_ingestion_runs": {
-        "parent_table": "mcp_connections",
-        "local_column": "connection_id",
-        "parent_column": "id",
-        "owner_column": "user_id",
-    },
     "billing_invoices": {
         "parent_table": "billing_subscriptions",
         "local_column": "subscription_id",

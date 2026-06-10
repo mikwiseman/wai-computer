@@ -122,7 +122,6 @@ struct MacMainView: View {
     @State private var pendingRecordingSelectionAfterSectionChange: PendingRecordingSelection?
     @State private var pendingInboxDetail: InboxDetailRef?
     @State private var pendingInboxCommand: MacInboxCommand?
-    @State private var pendingBrainMapId: String?
     /// Sidebar row currently highlighted as a drag-and-drop target (e.g.
     /// "folder-<id>", "inbox", "trash"). Drives the drop highlight.
     @State private var dropTargetIdentifier: String?
@@ -135,8 +134,6 @@ struct MacMainView: View {
         case folder(String)
         case trash
         case content
-        case brain
-        case review
         case search
         case history
         case dictionary
@@ -153,7 +150,7 @@ struct MacMainView: View {
         switch selectedSection {
         case .trash, .none:
             return true
-        case .inbox, .allRecordings, .folder(_), .content, .brain, .review, .search, .history, .dictionary, .wai, .settings:
+        case .inbox, .allRecordings, .folder(_), .content, .search, .history, .dictionary, .wai, .settings:
             return false
         }
     }
@@ -203,10 +200,6 @@ struct MacMainView: View {
             return t("Trash", "Корзина")
         case .content:
             return t("Inbox", "Инбокс")
-        case .brain:
-            return t("Brain", "Мозг")
-        case .review:
-            return t("Brain", "Мозг")
         case .search:
             return t("Search", "Поиск")
         case .history:
@@ -553,8 +546,6 @@ struct MacMainView: View {
             case "inbox": selectedSection = .inbox
             case "allRecordings": selectedSection = .inbox
             case "content": selectedSection = .inbox
-            case "brain": selectedSection = .brain
-            case "review": selectedSection = .brain
             case "history": selectedSection = .history
             case "dictionary": selectedSection = .dictionary
             case "agents": selectedSection = .inbox
@@ -659,7 +650,6 @@ struct MacMainView: View {
                 } isTargeted: { targeted in
                     updateDropTarget("inbox", targeted: targeted)
                 }
-                sidebarRow(t("Brain", "Мозг"), icon: "brain", section: .brain, identifier: "brain")
                 sidebarRow(
                     t("Trash", "Корзина"),
                     icon: "trash",
@@ -917,7 +907,6 @@ struct MacMainView: View {
                 onLibraryChanged: {
                     await libraryViewModel.loadLibrary(apiClient: appState.getAPIClient())
                 },
-                onOpenBrainMap: openBrainMap,
                 onPendingDetailConsumed: {
                     pendingInboxDetail = nil
                 },
@@ -989,28 +978,13 @@ struct MacMainView: View {
                     isImporting: importViewModel.isImporting
                 )
             }
-        case .brain:
-            MacBrainView(
-                apiClient: appState.getAPIClient(),
-                onOpenSource: openBrainSource,
-                onOpenInbox: {
-                    selectedSection = .inbox
-                },
-                onAskWaiAboutEntity: { entityId, _ in
-                    openBrainChatForEntity(entityId: entityId)
-                }
-            )
-                .environment(\.locale, MacDateFormatting.locale(for: languageManager.current))
-        case .review:
-            MacReviewView(apiClient: appState.getAPIClient())
-                .environment(\.locale, MacDateFormatting.locale(for: languageManager.current))
         case .search:
             MacSearchView(
                 onOpenRecording: { recordingId in
                     openSearchResult(recordingId)
                 },
                 onOpenItem: { itemId in
-                    openBrainSource(InboxDetailRef(kind: .item, id: itemId))
+                    openInboxSource(InboxDetailRef(kind: .item, id: itemId))
                 }
             )
         case .history:
@@ -1205,38 +1179,11 @@ struct MacMainView: View {
         selectRecording(recordingId, in: .inbox)
     }
 
-    private func openBrainSource(_ detail: InboxDetailRef) {
+    private func openInboxSource(_ detail: InboxDetailRef) {
         prefetchedRecordingDetail = nil
         selectedRecordingIds.removeAll()
         pendingInboxDetail = detail
         selectedSection = .inbox
-    }
-
-    private func openBrainMap(_ mapId: String) {
-        pendingBrainMapId = mapId
-        selectedSection = .brain
-    }
-
-    private func openBrainChatForEntity(entityId: String) {
-        let apiClient = appState.getAPIClient()
-        Task {
-            do {
-                let chat = try await apiClient.createCompanionChat(
-                    scope: CompanionScope(entityId: entityId)
-                )
-                await MainActor.run {
-                    prefetchedRecordingDetail = nil
-                    selectedRecordingIds.removeAll()
-                    pendingInboxDetail = InboxDetailRef(kind: .chat, id: chat.id)
-                    selectedSection = .wai
-                }
-            } catch {
-                await MainActor.run {
-                    recoveryNotice = error.localizedDescription
-                    scheduleRecoveryNoticeDismiss()
-                }
-            }
-        }
     }
 
     private func openInboxChat(_ chatId: String) {

@@ -61,7 +61,6 @@ celery_app.conf.update(
         "app.tasks.conversation_linking",
         "app.tasks.embedding_backfill",
         "app.tasks.item_summary_generation",
-        "app.tasks.mcp_sync",
         "app.tasks.media_import",
         "app.tasks.recompile_entity_dossiers",
         "app.tasks.recording_audio_processing",
@@ -113,11 +112,6 @@ celery_app.conf.beat_schedule = {
         "task": "app.tasks.summary_generation.recover_missing_summary_generation_jobs",
         "schedule": timedelta(minutes=15),
         "kwargs": {"limit": 5},
-    },
-    "mcp-sync-dispatch-every-5-minutes": {
-        # Enqueue ingestion for any connected MCP server whose sync is due.
-        "task": "app.tasks.mcp_sync.dispatch_due_mcp_syncs",
-        "schedule": timedelta(minutes=5),
     },
     "agent-dispatch-every-minute": {
         "task": "app.tasks.agents.dispatch_due_agents",
