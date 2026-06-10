@@ -52,50 +52,57 @@ final class DeferredDictationStopPolicyTests: XCTestCase {
         )
     }
 
-    func testCleanupDisabledUsesRawTranscript() throws {
-        let text = try DictationCleanupPolicy.textToInsert(
+    func testCleanupDisabledUsesRawTranscript() {
+        let resolution = DictationCleanupPolicy.resolve(
             rawText: "raw transcript",
             cleanupEnabled: false,
             cleanedText: nil,
             cleanupError: nil
         )
 
-        XCTAssertEqual(text, "raw transcript")
+        XCTAssertEqual(resolution.text, "raw transcript")
+        XCTAssertNil(resolution.cleanupFallbackNotice)
     }
 
-    func testCleanupEnabledUsesCleanedTranscript() throws {
-        let text = try DictationCleanupPolicy.textToInsert(
+    func testCleanupEnabledUsesCleanedTranscript() {
+        let resolution = DictationCleanupPolicy.resolve(
             rawText: "raw transcript",
             cleanupEnabled: true,
             cleanedText: "Cleaned transcript.",
             cleanupError: nil
         )
 
-        XCTAssertEqual(text, "Cleaned transcript.")
+        XCTAssertEqual(resolution.text, "Cleaned transcript.")
+        XCTAssertNil(resolution.cleanupFallbackNotice)
     }
 
-    func testCleanupEnabledFailureAbortsInsteadOfUsingRawTranscript() {
-        XCTAssertThrowsError(
-            try DictationCleanupPolicy.textToInsert(
-                rawText: "raw transcript",
-                cleanupEnabled: true,
-                cleanedText: nil,
-                cleanupError: URLError(.cannotConnectToHost)
-            )
-        ) { error in
-            XCTAssertEqual((error as? URLError)?.code, .cannotConnectToHost)
-        }
-    }
-
-    func testCleanupEnabledBlankResultAbortsInsteadOfInsertingEmptyText() {
-        XCTAssertThrowsError(
-            try DictationCleanupPolicy.textToInsert(
-                rawText: "raw transcript",
-                cleanupEnabled: true,
-                cleanedText: "   ",
-                cleanupError: nil
-            )
+    func testCleanupEnabledFailureInsertsRawTranscriptWithNotice() {
+        // Words are never dropped because the post-processor was down: the raw
+        // transcript lands and the degradation is reported via the notice.
+        let resolution = DictationCleanupPolicy.resolve(
+            rawText: "raw transcript",
+            cleanupEnabled: true,
+            cleanedText: nil,
+            cleanupError: URLError(.cannotConnectToHost)
         )
+
+        XCTAssertEqual(resolution.text, "raw transcript")
+        XCTAssertEqual(
+            resolution.cleanupFallbackNotice,
+            DictationCleanupPolicy.fallbackNotice
+        )
+    }
+
+    func testCleanupEnabledBlankResultInsertsRawTranscriptWithNotice() {
+        let resolution = DictationCleanupPolicy.resolve(
+            rawText: "raw transcript",
+            cleanupEnabled: true,
+            cleanedText: "   ",
+            cleanupError: nil
+        )
+
+        XCTAssertEqual(resolution.text, "raw transcript")
+        XCTAssertNotNil(resolution.cleanupFallbackNotice)
     }
 
     func testCleanupSpeculationReusesExactFinalTranscriptMatch() {

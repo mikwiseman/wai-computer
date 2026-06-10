@@ -689,49 +689,78 @@ final class DictationManager: ObservableObject {
             refreshSettingsAndPrefetchIfNeeded(apiClient: apiClient, reason: "start")
 
             let language = currentDictationLanguage()
-            let sessionConfig = try await takeDictationSessionConfig(
-                language: language,
-                session: session,
-                apiClient: apiClient
-            )
-            guard state == .connecting else {
-                await startupAudioBuffer.close()
-                return
-            }
-
-            guard sessionConfig.provider == Self.liveSTTProvider else {
-                throw ProviderError.unsupportedModel(sessionConfig.provider)
-            }
-            guard sessionConfig.model == Self.liveSTTModel else {
-                throw ProviderError.unsupportedModel(sessionConfig.model)
-            }
-            guard sessionConfig.sampleRate == Self.liveSTTSampleRate else {
-                throw ProviderError.transcriberInternal(
-                    message: "Deepgram realtime session returned unsupported sample_rate=\(sessionConfig.sampleRate)"
-                )
-            }
-
             let keyTerms = dictionaryStore?.vocabularyList ?? []
-            let provider = ProviderBackedRealtimeSession(
-                config: sessionConfig,
-                keyTerms: keyTerms
-            )
-            providerSession = provider
-            session.event(.providerConnecting, data: [
-                "provider": sessionConfig.provider,
-                "model": sessionConfig.model,
-                "language": sessionConfig.language,
-                "key_terms_count": keyTerms.count,
-            ])
-            let stream = provider.events
-            sessionEventTask = Task { [weak self] in
-                guard let self else { return }
-                for await event in stream {
-                    await self.handleProviderEvent(event)
+            var provider: ProviderBackedRealtimeSession
+            var mintAttempt = 0
+            while true {
+                let sessionConfig = try await takeDictationSessionConfig(
+                    language: language,
+                    session: session,
+                    apiClient: apiClient
+                )
+                guard state == .connecting else {
+                    await startupAudioBuffer.close()
+                    return
+                }
+
+                guard sessionConfig.provider == Self.liveSTTProvider else {
+                    throw ProviderError.unsupportedModel(sessionConfig.provider)
+                }
+                guard sessionConfig.model == Self.liveSTTModel else {
+                    throw ProviderError.unsupportedModel(sessionConfig.model)
+                }
+                guard sessionConfig.sampleRate == Self.liveSTTSampleRate else {
+                    throw ProviderError.transcriberInternal(
+                        message: "Deepgram realtime session returned unsupported sample_rate=\(sessionConfig.sampleRate)"
+                    )
+                }
+
+                provider = ProviderBackedRealtimeSession(
+                    config: sessionConfig,
+                    keyTerms: keyTerms
+                )
+                providerSession = provider
+                session.event(.providerConnecting, data: [
+                    "provider": sessionConfig.provider,
+                    "model": sessionConfig.model,
+                    "language": sessionConfig.language,
+                    "key_terms_count": keyTerms.count,
+                    "mint_attempt": mintAttempt,
+                ])
+                let stream = provider.events
+                sessionEventTask = Task { [weak self] in
+                    guard let self else { return }
+                    for await event in stream {
+                        await self.handleProviderEvent(event)
+                    }
+                }
+
+                do {
+                    try await provider.open()
+                    break
+                } catch ProviderError.authError(let server) where mintAttempt == 0 {
+                    // A prefetched token can outlive its validity. One fresh
+                    // mint distinguishes a stale token from real auth breakage
+                    // instead of failing the press outright.
+                    mintAttempt += 1
+                    sessionEventTask?.cancel()
+                    sessionEventTask = nil
+                    providerSession = nil
+                    if let sessionConfigVault {
+                        await sessionConfigVault.clear()
+                    }
+                    SentryHelper.addBreadcrumb(
+                        category: "dictation.session",
+                        message: "auth error — re-minting realtime token",
+                        level: .warning,
+                        data: ["server": server ?? ""]
+                    )
+                    guard state == .connecting else {
+                        await startupAudioBuffer.close()
+                        return
+                    }
                 }
             }
-
-            try await provider.open()
             guard state == .connecting else {
                 await startupAudioBuffer.close()
                 return
@@ -744,7 +773,7 @@ final class DictationManager: ObservableObject {
                 )
                 if snapshot.chunks == startupFlush.chunks {
                     session.event(.audioFirstChunkSent, data: [
-                        "provider": sessionConfig.provider,
+                        "provider": Self.liveSTTProvider,
                         "bytes": startupFlush.bytes,
                         "startupBuffered": true,
                         "startupBufferedChunks": startupFlush.chunks,
@@ -1075,34 +1104,39 @@ final class DictationManager: ObservableObject {
             }
         }
 
-        let textToInsert: String
-        do {
-            textToInsert = try DictationCleanupPolicy.textToInsert(
-                rawText: rawText,
-                cleanupEnabled: cleanupEnabled,
-                cleanedText: cleanedText,
-                cleanupError: cleanupError
+        let resolution = DictationCleanupPolicy.resolve(
+            rawText: rawText,
+            cleanupEnabled: cleanupEnabled,
+            cleanedText: cleanedText,
+            cleanupError: cleanupError
+        )
+        if resolution.cleanupFallbackNotice != nil {
+            // The user's words still land (raw transcript); the degradation is
+            // reported, not silent — and telemetry keeps the failure visible.
+            log.error("AI cleanup failed — inserting raw transcript")
+            let reportedError = cleanupError ?? NSError(
+                domain: "is.waiwai.computer.dictation.cleanup",
+                code: 1,
+                userInfo: [NSLocalizedDescriptionKey: "Dictation cleanup did not return text."]
             )
-        } catch {
-            log.error("AI cleanup failed")
-            self.error = error.userFacingMessage(context: .dictation)
-            instrumentationSession?.failure(error, extras: [
-                "stage": "cleanup",
+            instrumentationSession?.event(.cleanupCompleted, data: [
+                "rawChars": rawText.count,
+                "fallback": "raw_text",
+            ])
+            SentryHelper.captureError(reportedError, extras: [
+                "context": "dictation.cleanup.raw_fallback",
                 "rawChars": rawText.count,
             ])
-            instrumentationSession = nil
-            SentryHelper.captureError(error, extras: [
-                "context": "dictation.cleanup",
-                "rawChars": rawText.count,
-            ])
-            return
         }
 
         await insertFinalText(
-            textToInsert,
+            resolution.text,
             rawText: rawText,
-            cleanedText: textToInsert != rawText ? textToInsert : nil
+            cleanedText: resolution.text != rawText ? resolution.text : nil
         )
+        if let notice = resolution.cleanupFallbackNotice {
+            self.error = notice
+        }
     }
 
     private func translateAndInsert(rawText: String) async {

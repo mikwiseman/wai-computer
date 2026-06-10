@@ -409,25 +409,34 @@ enum DictationFinalizationPolicy {
 }
 
 enum DictationCleanupPolicy {
-    static func textToInsert(
+    /// What to insert, and whether to tell the user cleanup was skipped.
+    struct Resolution: Equatable {
+        let text: String
+        /// Non-nil when AI cleanup failed (or returned nothing) and the raw
+        /// transcript was inserted instead. The user's words are never dropped
+        /// because a post-processor was down — the caller surfaces this notice
+        /// so the degradation is explicit, not silent.
+        let cleanupFallbackNotice: String?
+    }
+
+    static let fallbackNotice =
+        "AI cleanup was unavailable — inserted your raw transcript."
+
+    static func resolve(
         rawText: String,
         cleanupEnabled: Bool,
         cleanedText: String?,
         cleanupError: Error?
-    ) throws -> String {
-        guard cleanupEnabled else { return rawText }
-        if let cleanupError {
-            throw cleanupError
+    ) -> Resolution {
+        guard cleanupEnabled else {
+            return Resolution(text: rawText, cleanupFallbackNotice: nil)
         }
-        guard let cleanedText,
-              !cleanedText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            throw NSError(
-                domain: "is.waiwai.computer.dictation.cleanup",
-                code: 1,
-                userInfo: [NSLocalizedDescriptionKey: "Dictation cleanup did not return text."]
-            )
+        if cleanupError == nil,
+           let cleanedText,
+           !cleanedText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return Resolution(text: cleanedText, cleanupFallbackNotice: nil)
         }
-        return cleanedText
+        return Resolution(text: rawText, cleanupFallbackNotice: Self.fallbackNotice)
     }
 }
 
