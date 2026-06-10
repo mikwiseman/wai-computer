@@ -657,3 +657,58 @@ async def test_reprocess_nothing_to_process_422(client, auth_headers, db_session
     await db_session.flush()
     r = await client.post(f"/api/items/{iid}/reprocess", json={}, headers=auth_headers)
     assert r.status_code == 422
+
+
+async def test_patch_item_moves_between_folders_and_clears(client, auth_headers) -> None:
+    folder = await _create_folder(client, auth_headers, name="Research")
+    created = await client.post(
+        "/api/items",
+        json={"source": "paste", "kind": "note", "body": "filed note"},
+        headers=auth_headers,
+    )
+    item_id = created.json()["id"]
+    assert created.json()["folder_id"] is None
+
+    moved = await client.patch(
+        f"/api/items/{item_id}", json={"folder_id": folder["id"]}, headers=auth_headers
+    )
+    assert moved.status_code == 200, moved.text
+    assert moved.json()["folder_id"] == folder["id"]
+
+    cleared = await client.patch(
+        f"/api/items/{item_id}", json={"folder_id": None}, headers=auth_headers
+    )
+    assert cleared.status_code == 200
+    assert cleared.json()["folder_id"] is None
+
+    # Empty body -> folder untouched (distinguishes "absent" from "null").
+    moved_again = await client.patch(
+        f"/api/items/{item_id}", json={"folder_id": folder["id"]}, headers=auth_headers
+    )
+    assert moved_again.json()["folder_id"] == folder["id"]
+    untouched = await client.patch(f"/api/items/{item_id}", json={}, headers=auth_headers)
+    assert untouched.status_code == 200
+    assert untouched.json()["folder_id"] == folder["id"]
+
+
+async def test_patch_item_rejects_foreign_folder_and_missing_item(client, auth_headers) -> None:
+    created = await client.post(
+        "/api/items",
+        json={"source": "paste", "kind": "note", "body": "x"},
+        headers=auth_headers,
+    )
+    item_id = created.json()["id"]
+
+    other_headers = await _register_headers(client)
+    foreign_folder = await _create_folder(client, other_headers, name="Foreign")
+    resp = await client.patch(
+        f"/api/items/{item_id}",
+        json={"folder_id": foreign_folder["id"]},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 404
+
+    missing = await client.patch(
+        f"/api/items/{uuid4()}", json={"folder_id": None}, headers=auth_headers
+    )
+    assert missing.status_code == 404

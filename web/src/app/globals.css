@@ -1278,8 +1278,19 @@ a.primary-button[aria-disabled="true"]:hover {
   padding: 0.45rem;
 }
 
+.inbox-list li {
+  display: flex;
+  align-items: stretch;
+  gap: 0.5rem;
+}
+
 .inbox-list li + li {
   margin-top: 0.25rem;
+}
+
+.inbox-list li > .inbox-row {
+  flex: 1;
+  min-width: 0;
 }
 
 .inbox-row {
@@ -6834,17 +6845,21 @@ a.primary-button[aria-disabled="true"]:hover {
   flex-shrink: 0;
 }
 
-/* Drag affordances on draggable recording rows. */
-.recording-row[draggable="true"] {
+/* Drag affordances on draggable recording and inbox rows. */
+.recording-row[draggable="true"],
+.inbox-row[draggable="true"] {
   cursor: grab;
 }
 
-.recording-row[draggable="true"]:active {
+.recording-row[draggable="true"]:active,
+.inbox-row[draggable="true"]:active {
   cursor: grabbing;
 }
 
-/* Folder-list item highlights while a recording is being dragged over it. */
-.sidebar-folder-list__item[data-drop-target="true"] {
+/* Folder-list items and the Inbox/Trash nav targets highlight while a
+ * recording or item is being dragged over them. */
+.sidebar-folder-list__item[data-drop-target="true"],
+.sidebar-nav__item[data-drop-target="true"] {
   background: var(--accent-soft);
   outline: 1px dashed var(--accent);
   outline-offset: -1px;

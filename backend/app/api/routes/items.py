@@ -807,6 +807,31 @@ async def _item_with_summary(db: Database, item: Item) -> ItemResponse:
     return _item_response(item, summary)
 
 
+class UpdateItemRequest(BaseModel):
+    """Mutable item fields — today just the folder assignment."""
+
+    folder_id: UUID | None = None
+
+
+@router.patch("/{item_id}", response_model=ItemResponse)
+async def update_item(
+    item_id: UUID,
+    request: UpdateItemRequest,
+    user: CurrentUser,
+    db: Database,
+) -> ItemResponse:
+    """Move an item into a folder (or out of one with ``folder_id: null``).
+
+    Mirrors ``PATCH /recordings/{id}`` so the inbox can file recordings and
+    materials with one gesture (drag to a sidebar folder / bulk move)."""
+    item = await _load_owned_item(db, item_id, user)
+    if "folder_id" in request.model_fields_set:
+        folder = await _require_folder(request.folder_id, user.id, db)
+        item.folder_id = folder.id if folder is not None else None
+        await db.flush()
+    return await _item_with_summary(db, item)
+
+
 @router.post("/{item_id}/forget", response_model=ItemResponse)
 async def forget_item(item_id: UUID, user: CurrentUser, db: Database) -> ItemResponse:
     """Archive an item so it stops surfacing in recall (search / feed / Ask),

@@ -67,9 +67,28 @@ const mockResolveAgentAction = vi.fn();
 const mockListReminders = vi.fn();
 const mockCreateReminder = vi.fn();
 const mockCancelReminder = vi.fn();
+const mockAssignItemToFolder = vi.fn();
+const mockDeleteItem = vi.fn();
+const mockCreateChat = vi.fn();
+const mockDeleteChat = vi.fn();
+const mockListChats = vi.fn();
+const mockGetChat = vi.fn();
+const mockPatchChat = vi.fn();
+const mockResolveChatAction = vi.fn();
+const mockStreamMessage = vi.fn();
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ replace: mockReplace }),
+}));
+
+vi.mock("@/lib/companion", () => ({
+  createChat: (...args: unknown[]) => mockCreateChat(...args),
+  deleteChat: (...args: unknown[]) => mockDeleteChat(...args),
+  listChats: (...args: unknown[]) => mockListChats(...args),
+  getChat: (...args: unknown[]) => mockGetChat(...args),
+  patchChat: (...args: unknown[]) => mockPatchChat(...args),
+  resolveAction: (...args: unknown[]) => mockResolveChatAction(...args),
+  streamMessage: (...args: unknown[]) => mockStreamMessage(...args),
 }));
 
 vi.mock("@/lib/api", () => ({
@@ -112,6 +131,8 @@ vi.mock("@/lib/api", () => ({
   renameFolder: (...args: unknown[]) => mockRenameFolder(...args),
   deleteFolder: (...args: unknown[]) => mockDeleteFolder(...args),
   assignRecordingToFolder: (...args: unknown[]) => mockAssignRecordingToFolder(...args),
+  assignItemToFolder: (...args: unknown[]) => mockAssignItemToFolder(...args),
+  deleteItem: (...args: unknown[]) => mockDeleteItem(...args),
   listDictationEntries: (...args: unknown[]) => mockListDictationEntries(...args),
   listDictionaryWords: (...args: unknown[]) => mockListDictionaryWords(...args),
   createDictionaryWord: (...args: unknown[]) => mockCreateDictionaryWord(...args),
@@ -402,6 +423,9 @@ function arrangeHappyPathMocks() {
   mockCreateItem.mockResolvedValue({});
   mockGetItem.mockResolvedValue({});
   mockUploadItem.mockResolvedValue({ kind: "item", item: {} });
+  mockAssignItemToFolder.mockResolvedValue({});
+  mockDeleteItem.mockResolvedValue(undefined);
+  mockDeleteChat.mockResolvedValue(undefined);
 }
 
 function createDeferred<T>() {
@@ -502,6 +526,15 @@ describe("DashboardClient", () => {
       mockListReminders,
       mockCreateReminder,
       mockCancelReminder,
+      mockAssignItemToFolder,
+      mockDeleteItem,
+      mockCreateChat,
+      mockDeleteChat,
+      mockListChats,
+      mockGetChat,
+      mockPatchChat,
+      mockResolveChatAction,
+      mockStreamMessage,
       mockReplace,
     ].forEach((fn) => fn.mockReset());
     mockListInbox.mockResolvedValue(baseInboxResponse);
@@ -1775,19 +1808,15 @@ describe("DashboardClient", () => {
 
   // --- Bulk operations: select mode, move-to-folder, trash, restore ---
 
-  it("does not render old recording bulk-move controls in the universal Inbox", async () => {
+  it("bulk-moves selected inbox recordings and items into a folder per kind", async () => {
     arrangeHappyPathMocks();
     mockListFolders.mockResolvedValue([
       { id: "folder-work", name: "Work", created_at: "2026-05-27T00:00:00Z" },
     ]);
-    mockListRecordings.mockResolvedValue([
-      { ...baseRecording, id: "r1", title: "A" },
-      { ...baseRecording, id: "r2", title: "B" },
-    ]);
     mockListInbox.mockResolvedValue({
       rows: [
         recordingInboxRow({ ...baseRecording, id: "r1", title: "A" }),
-        recordingInboxRow({ ...baseRecording, id: "r2", title: "B" }),
+        inboxRow({ id: "item:i1", source_id: "i1", title: "Doc", folder_id: null }),
       ],
       next_cursor: null,
       has_more: false,
@@ -1797,39 +1826,291 @@ describe("DashboardClient", () => {
     render(<DashboardClient />);
     await waitForDashboardReady();
     await user.click(screen.getByTestId("tab-inbox"));
+    await waitFor(() => {
+      expect(screen.getByTestId("select-recording-r1")).toBeInTheDocument();
+    });
 
-    await waitFor(() => expect(mockListInbox).toHaveBeenCalled());
-    expect(screen.getByTestId("workspace-title")).toHaveTextContent("Inbox");
-    expect(screen.queryByTestId("select-mode-toggle")).not.toBeInTheDocument();
-    expect(screen.queryByTestId("bulk-move-folder")).not.toBeInTheDocument();
+    // Entering select mode shows the leading checkboxes.
+    await user.click(screen.getByTestId("select-mode-toggle"));
+    await user.click(screen.getByTestId("select-checkbox-recording:r1"));
+    await user.click(screen.getByTestId("select-checkbox-item:i1"));
+    expect(screen.getByTestId("bulk-bar")).toHaveTextContent("2 selected");
+
+    await user.selectOptions(screen.getByTestId("bulk-move-folder"), "folder-work");
+
+    await waitFor(() => {
+      expect(mockBulkRecordingOperation).toHaveBeenCalledWith(
+        ["r1"],
+        "move",
+        "folder-work",
+      );
+      expect(mockAssignItemToFolder).toHaveBeenCalledWith("i1", "folder-work");
+    });
+    // Success clears the selection, which hides the bulk bar.
+    await waitFor(() => {
+      expect(screen.queryByTestId("bulk-bar")).not.toBeInTheDocument();
+    });
+
+    // "Done" exits select mode and removes the checkboxes.
+    await user.click(screen.getByTestId("select-mode-toggle"));
+    expect(
+      screen.queryByTestId("select-checkbox-recording:r1"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("surfaces a notice instead of filing when only Wai chats are selected", async () => {
+    arrangeHappyPathMocks();
+    mockListFolders.mockResolvedValue([
+      { id: "folder-work", name: "Work", created_at: "2026-05-27T00:00:00Z" },
+    ]);
+    mockListInbox.mockResolvedValue({
+      rows: [
+        inboxRow({
+          id: "chat:c1",
+          source_kind: "chat",
+          source_id: "c1",
+          detail: { kind: "chat", id: "c1" },
+          title: "Plan trip",
+          folder_id: null,
+        }),
+      ],
+      next_cursor: null,
+      has_more: false,
+    });
+    const user = userEvent.setup();
+
+    render(<DashboardClient />);
+    await waitForDashboardReady();
+    await waitFor(() => {
+      expect(screen.getByTestId("select-chat-c1")).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByTestId("select-mode-toggle"));
+    await user.click(screen.getByTestId("select-checkbox-chat:c1"));
+    await user.selectOptions(screen.getByTestId("bulk-move-folder"), "folder-work");
+
+    await waitFor(() => {
+      expect(screen.getByTestId("dashboard-message")).toHaveTextContent(
+        "Wai chats can't be filed into folders.",
+      );
+    });
+    expect(mockBulkRecordingOperation).not.toHaveBeenCalled();
+    expect(mockAssignItemToFolder).not.toHaveBeenCalled();
+  });
+
+  it("bulk-trashes selected inbox rows with the per-kind delete APIs", async () => {
+    arrangeHappyPathMocks();
+    mockListInbox.mockResolvedValue({
+      rows: [
+        recordingInboxRow({ ...baseRecording, id: "r1", title: "A" }),
+        inboxRow({ id: "item:i1", source_id: "i1", title: "Doc", folder_id: null }),
+        inboxRow({
+          id: "chat:c1",
+          source_kind: "chat",
+          source_id: "c1",
+          detail: { kind: "chat", id: "c1" },
+          title: "Plan trip",
+          folder_id: null,
+        }),
+      ],
+      next_cursor: null,
+      has_more: false,
+    });
+    const user = userEvent.setup();
+
+    render(<DashboardClient />);
+    await waitForDashboardReady();
+    await user.click(screen.getByTestId("tab-inbox"));
+    await waitFor(() => {
+      expect(screen.getByTestId("select-recording-r1")).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByTestId("select-mode-toggle"));
+    await user.click(screen.getByTestId("select-checkbox-recording:r1"));
+    await user.click(screen.getByTestId("select-checkbox-item:i1"));
+    await user.click(screen.getByTestId("select-checkbox-chat:c1"));
+    expect(screen.getByTestId("bulk-bar")).toHaveTextContent("3 selected");
+
+    await user.click(screen.getByTestId("bulk-trash"));
+
+    await waitFor(() => {
+      expect(mockBulkRecordingOperation).toHaveBeenCalledWith(["r1"], "delete");
+      expect(mockDeleteItem).toHaveBeenCalledWith("i1");
+      expect(mockDeleteChat).toHaveBeenCalledWith("c1");
+    });
+    await waitFor(() => {
+      expect(screen.queryByTestId("bulk-bar")).not.toBeInTheDocument();
+    });
+  });
+
+  it("trashes the open inbox row with the Delete key", async () => {
+    arrangeHappyPathMocks();
+    // Fresh object per fetch, like the real API: a detail that resolved while
+    // the delete ran must not resurrect the trashed row in the detail pane.
+    mockGetRecording.mockImplementation(async () => ({ ...baseRecordingDetail }));
+    const user = userEvent.setup();
+
+    render(<DashboardClient />);
+    await waitForDashboardReady();
+    await waitFor(() => {
+      expect(screen.getByTestId("select-recording-r1")).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByTestId("select-recording-r1"));
+    await waitFor(() => {
+      expect(screen.getByTestId("recording-detail")).toBeInTheDocument();
+    });
+
+    await user.keyboard("{Delete}");
+
+    await waitFor(() => {
+      expect(mockBulkRecordingOperation).toHaveBeenCalledWith(["r1"], "delete");
+    });
+    await waitFor(() => {
+      expect(screen.queryByTestId("recording-detail")).not.toBeInTheDocument();
+    });
+  });
+
+  it("ignores the Delete key while focus is in a form control", async () => {
+    arrangeHappyPathMocks();
+    const user = userEvent.setup();
+
+    render(<DashboardClient />);
+    await waitForDashboardReady();
+    await waitFor(() => {
+      expect(screen.getByTestId("select-recording-r1")).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByTestId("select-recording-r1"));
+    await waitFor(() => {
+      expect(screen.getByTestId("recording-detail")).toBeInTheDocument();
+    });
+
+    screen.getByLabelText("Status filter").focus();
+    await user.keyboard("{Backspace}");
+
     expect(mockBulkRecordingOperation).not.toHaveBeenCalled();
   });
 
-  it("does not render old recording bulk-trash controls in the universal Inbox", async () => {
+  it("sets the item drag payload on inbox item rows", async () => {
     arrangeHappyPathMocks();
-    mockListRecordings.mockResolvedValue([
-      { ...baseRecording, id: "r1", title: "A" },
-      { ...baseRecording, id: "r2", title: "B" },
-    ]);
     mockListInbox.mockResolvedValue({
-      rows: [
-        recordingInboxRow({ ...baseRecording, id: "r1", title: "A" }),
-        recordingInboxRow({ ...baseRecording, id: "r2", title: "B" }),
-      ],
+      rows: [inboxRow({ id: "item:i9", source_id: "i9", title: "Doc" })],
       next_cursor: null,
       has_more: false,
     });
-    const user = userEvent.setup();
 
     render(<DashboardClient />);
     await waitForDashboardReady();
-    await user.click(screen.getByTestId("tab-inbox"));
+    await waitFor(() => {
+      expect(screen.getByTestId("select-item-i9")).toBeInTheDocument();
+    });
 
-    await waitFor(() => expect(mockListInbox).toHaveBeenCalled());
-    expect(screen.getByTestId("workspace-title")).toHaveTextContent("Inbox");
-    expect(screen.queryByTestId("select-mode-toggle")).not.toBeInTheDocument();
-    expect(screen.queryByTestId("bulk-trash")).not.toBeInTheDocument();
-    expect(mockBulkRecordingOperation).not.toHaveBeenCalled();
+    const row = screen.getByTestId("select-item-i9");
+    expect(row).toHaveAttribute("draggable", "true");
+
+    const dataTransfer = {
+      setData: vi.fn(),
+      getData: vi.fn(() => ""),
+      dropEffect: "none",
+      effectAllowed: "none",
+    };
+    const dragEvent = new Event("dragstart", { bubbles: true });
+    Object.defineProperty(dragEvent, "dataTransfer", {
+      value: dataTransfer,
+      writable: false,
+    });
+    row.dispatchEvent(dragEvent);
+
+    expect(dataTransfer.setData).toHaveBeenCalledWith("application/x-wai-item", "i9");
+    expect(dataTransfer.effectAllowed).toBe("move");
+  });
+
+  it("drop event with an item payload on a folder calls assignItemToFolder", async () => {
+    arrangeHappyPathMocks();
+    mockListFolders.mockResolvedValue([
+      { id: "folder-x", name: "Box", created_at: "2026-05-27T00:00:00Z" },
+    ]);
+
+    render(<DashboardClient />);
+    await waitForDashboardReady();
+    await waitFor(() => {
+      expect(screen.getByTestId("sidebar-folder-folder-x")).toBeInTheDocument();
+    });
+
+    const target = screen.getByTestId("sidebar-folder-folder-x");
+    const dataTransfer = {
+      getData: vi.fn((type: string) =>
+        type === "application/x-wai-item" ? "i9" : "",
+      ),
+      setData: vi.fn(),
+      dropEffect: "move",
+      effectAllowed: "move",
+    };
+    const dropEvent = new Event("drop", { bubbles: true });
+    Object.defineProperty(dropEvent, "dataTransfer", {
+      value: dataTransfer,
+      writable: false,
+    });
+    target.dispatchEvent(dropEvent);
+
+    await waitFor(() => {
+      expect(mockAssignItemToFolder).toHaveBeenCalledWith("i9", "folder-x");
+    });
+  });
+
+  it("drop on the Trash tab soft-deletes the dragged recording", async () => {
+    arrangeHappyPathMocks();
+
+    render(<DashboardClient />);
+    await waitForDashboardReady();
+
+    const target = screen.getByTestId("tab-trash");
+    const dataTransfer = {
+      getData: vi.fn((type: string) =>
+        type === "application/x-wai-recording" ? "r1" : "",
+      ),
+      setData: vi.fn(),
+      dropEffect: "move",
+      effectAllowed: "move",
+    };
+    const dropEvent = new Event("drop", { bubbles: true });
+    Object.defineProperty(dropEvent, "dataTransfer", {
+      value: dataTransfer,
+      writable: false,
+    });
+    target.dispatchEvent(dropEvent);
+
+    await waitFor(() => {
+      expect(mockDeleteRecording).toHaveBeenCalledWith("r1");
+    });
+  });
+
+  it("drop on the Inbox tab unfiles the dragged item", async () => {
+    arrangeHappyPathMocks();
+
+    render(<DashboardClient />);
+    await waitForDashboardReady();
+
+    const target = screen.getByTestId("tab-inbox");
+    const dataTransfer = {
+      getData: vi.fn((type: string) =>
+        type === "application/x-wai-item" ? "i9" : "",
+      ),
+      setData: vi.fn(),
+      dropEffect: "move",
+      effectAllowed: "move",
+    };
+    const dropEvent = new Event("drop", { bubbles: true });
+    Object.defineProperty(dropEvent, "dataTransfer", {
+      value: dataTransfer,
+      writable: false,
+    });
+    target.dispatchEvent(dropEvent);
+
+    await waitFor(() => {
+      expect(mockAssignItemToFolder).toHaveBeenCalledWith("i9", null);
+    });
   });
 
   it("bulk-restores selected recordings from the trash view", async () => {

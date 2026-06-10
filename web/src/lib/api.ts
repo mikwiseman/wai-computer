@@ -469,6 +469,13 @@ export function assignRecordingToFolder(
   });
 }
 
+export function assignItemToFolder(itemId: string, folderId: string | null): Promise<Item> {
+  return apiFetch<Item>(`/api/items/${itemId}`, {
+    method: "PATCH",
+    body: JSON.stringify({ folder_id: folderId }),
+  });
+}
+
 export function deleteRecording(
   recordingId: string,
   options?: { permanent?: boolean },

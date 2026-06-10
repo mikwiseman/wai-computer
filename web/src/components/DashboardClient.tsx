@@ -10,6 +10,7 @@ import {
 } from "react";
 import { useRouter } from "next/navigation";
 import {
+  assignItemToFolder,
   assignRecordingToFolder,
   bulkRecordingOperation,
   changePassword,
@@ -20,6 +21,7 @@ import {
   deleteDictationEntry,
   deleteDictionaryWord,
   deleteFolder,
+  deleteItem,
   deleteRecording,
   fulltextSearch,
   getCurrentUser,
@@ -60,7 +62,7 @@ import { DictatePanel } from "@/components/DictatePanel";
 import { PasswordField } from "@/components/PasswordField";
 import { Skeleton } from "@/components/Skeleton";
 import { ApiError } from "@/lib/http";
-import { createChat } from "@/lib/companion";
+import { createChat, deleteChat } from "@/lib/companion";
 import type {
   BulkAction,
   DictationCleanupLevel,
@@ -907,6 +909,8 @@ export function DashboardClient() {
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const recorderPaneRef = useRef<HTMLDivElement | null>(null);
   const [, setItemsReloadKey] = useState(0);
+  // Bumped after sidebar drop mutations so mounted Inbox panels refetch rows.
+  const [inboxReloadToken, setInboxReloadToken] = useState(0);
 
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -1225,7 +1229,11 @@ export function DashboardClient() {
     }
   }
 
-  function handleRecordingDetailUpdate(detail: RecordingDetail) {
+  // Stable identity: the universal Inbox panel keeps this callback in the
+  // dependency list of its detail-fetch effect. A fresh function per render
+  // would retrigger that effect after every fetch (each update re-renders this
+  // component), looping detail requests forever.
+  const handleRecordingDetailUpdate = useCallback((detail: RecordingDetail) => {
     setSelectedRecording(detail);
     setRecordings((current) =>
       current.map((recording) =>
@@ -1242,7 +1250,7 @@ export function DashboardClient() {
           : recording,
       ),
     );
-  }
+  }, []);
 
   async function handleDeleteRecording(recordingId: string, options?: { permanent?: boolean }) {
     setMessage(null);
@@ -1507,6 +1515,44 @@ export function DashboardClient() {
     }
   }
 
+  // Sidebar drop targets (folders / Inbox / Trash) accept recording and item
+  // payloads. Every drop mutation ends with an inboxReloadToken bump so the
+  // mounted Inbox panel refetches its rows and reflects the move.
+  async function handleDropRecordingToFolder(
+    recordingId: string,
+    folderId: string | null,
+  ) {
+    await handleAssignRecordingToFolder(recordingId, folderId);
+    setInboxReloadToken((token) => token + 1);
+  }
+
+  async function handleDropItemToFolder(itemId: string, folderId: string | null) {
+    setMessage(null);
+    try {
+      await assignItemToFolder(itemId, folderId);
+      setItemsReloadKey((key) => key + 1);
+      setInboxReloadToken((token) => token + 1);
+    } catch (error: unknown) {
+      setMessage(formatError(error));
+    }
+  }
+
+  async function handleDropRecordingToTrash(recordingId: string) {
+    await handleDeleteRecording(recordingId);
+    setInboxReloadToken((token) => token + 1);
+  }
+
+  async function handleDropItemToTrash(itemId: string) {
+    setMessage(null);
+    try {
+      await deleteItem(itemId);
+      setItemsReloadKey((key) => key + 1);
+      setInboxReloadToken((token) => token + 1);
+    } catch (error: unknown) {
+      setMessage(formatError(error));
+    }
+  }
+
   // Dictation history handlers ---------------------------------------------
   async function handleDeleteDictationEntry(entryId: string) {
     setMessage(null);
@@ -1752,29 +1798,87 @@ export function DashboardClient() {
           {navSections.map((section, index) => (
             <div key={section.header} className="sidebar-section">
               <small className="sidebar-section__header">{section.header}</small>
-              {section.items.map((item) => (
-                <button
-                  key={item.key}
-                  data-testid={`tab-${item.key}`}
-                  type="button"
-                  className="sidebar-nav__item"
-                  aria-current={view === item.key ? "page" : undefined}
-                  onClick={() => {
-                    setActiveFolderId(null);
-                    setSelectedRecording(null);
-                    setSelectedMode("active");
-                    setView(canonicalDashboardView(item.key));
-                    if (item.key === "trash") {
-                      void loadTrashRecordingsState();
+              {section.items.map((item) => {
+                // Inbox accepts drops to unfile (folder -> null); Trash accepts
+                // drops to soft-delete. Both take recording and item payloads.
+                const isDropTarget = item.key === "inbox" || item.key === "trash";
+                return (
+                  <button
+                    key={item.key}
+                    data-testid={`tab-${item.key}`}
+                    type="button"
+                    className="sidebar-nav__item"
+                    aria-current={view === item.key ? "page" : undefined}
+                    onClick={() => {
+                      setActiveFolderId(null);
+                      setSelectedRecording(null);
+                      setSelectedMode("active");
+                      setView(canonicalDashboardView(item.key));
+                      if (item.key === "trash") {
+                        void loadTrashRecordingsState();
+                      }
+                    }}
+                    onDragOver={
+                      isDropTarget
+                        ? (event) => {
+                            event.preventDefault();
+                            event.dataTransfer.dropEffect = "move";
+                          }
+                        : undefined
                     }
-                  }}
-                >
-                  <span>
-                    <strong>{item.label}</strong>
-                  </span>
-                  {item.count !== null ? <em>{item.count}</em> : null}
-                </button>
-              ))}
+                    onDragEnter={
+                      isDropTarget
+                        ? (event) => {
+                            event.preventDefault();
+                            event.currentTarget.setAttribute(
+                              "data-drop-target",
+                              "true",
+                            );
+                          }
+                        : undefined
+                    }
+                    onDragLeave={
+                      isDropTarget
+                        ? (event) => {
+                            event.currentTarget.removeAttribute("data-drop-target");
+                          }
+                        : undefined
+                    }
+                    onDrop={
+                      isDropTarget
+                        ? (event) => {
+                            event.preventDefault();
+                            event.currentTarget.removeAttribute("data-drop-target");
+                            const recordingId = event.dataTransfer.getData(
+                              "application/x-wai-recording",
+                            );
+                            const itemId = event.dataTransfer.getData(
+                              "application/x-wai-item",
+                            );
+                            if (item.key === "inbox") {
+                              if (recordingId) {
+                                void handleDropRecordingToFolder(recordingId, null);
+                                return;
+                              }
+                              if (itemId) void handleDropItemToFolder(itemId, null);
+                              return;
+                            }
+                            if (recordingId) {
+                              void handleDropRecordingToTrash(recordingId);
+                              return;
+                            }
+                            if (itemId) void handleDropItemToTrash(itemId);
+                          }
+                        : undefined
+                    }
+                  >
+                    <span>
+                      <strong>{item.label}</strong>
+                    </span>
+                    {item.count !== null ? <em>{item.count}</em> : null}
+                  </button>
+                );
+              })}
 
               {/* Folders block lives right after the Workspace section. */}
               {index === 0 ? (
@@ -1862,11 +1966,17 @@ export function DashboardClient() {
                         onDrop={(event) => {
                           event.preventDefault();
                           event.currentTarget.removeAttribute("data-drop-target");
-                          const id = event.dataTransfer.getData(
+                          const recordingId = event.dataTransfer.getData(
                             "application/x-wai-recording",
                           );
-                          if (!id) return;
-                          void handleAssignRecordingToFolder(id, folder.id);
+                          if (recordingId) {
+                            void handleDropRecordingToFolder(recordingId, folder.id);
+                            return;
+                          }
+                          const itemId = event.dataTransfer.getData(
+                            "application/x-wai-item",
+                          );
+                          if (itemId) void handleDropItemToFolder(itemId, folder.id);
                         }}
                       >
                         <button
@@ -1968,6 +2078,7 @@ export function DashboardClient() {
             copy={copy}
             folderId={null}
             folderName={null}
+            reloadToken={inboxReloadToken}
             pendingSource={pendingInboxSource}
             onPendingSourceConsumed={handlePendingInboxSourceConsumed}
             initialRecording={selectedRecording}
@@ -1991,6 +2102,7 @@ export function DashboardClient() {
             copy={copy}
             folderId={null}
             folderName={null}
+            reloadToken={inboxReloadToken}
             initialRecording={selectedRecording}
             recordings={recordings}
             folders={folders}
@@ -2012,6 +2124,7 @@ export function DashboardClient() {
             copy={copy}
             folderId={currentFolder.id}
             folderName={currentFolder.name}
+            reloadToken={inboxReloadToken}
             recordings={recordings}
             folders={folders}
             recordingTitle={recordingTitle}
@@ -3036,6 +3149,7 @@ function UniversalInboxPanel({
   copy,
   folderId,
   folderName,
+  reloadToken,
   pendingSource,
   onPendingSourceConsumed,
   initialRecording,
@@ -3056,6 +3170,7 @@ function UniversalInboxPanel({
   copy: DashboardCopy;
   folderId?: string | null;
   folderName?: string | null;
+  reloadToken?: number;
   pendingSource?: PendingInboxSource | null;
   onPendingSourceConsumed?: () => void;
   initialRecording?: RecordingDetail | null;
@@ -3090,6 +3205,12 @@ function UniversalInboxPanel({
   const [loadingMore, setLoadingMore] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
+  // Multiselect: row.id-keyed selection plus an anchor index so shift-click
+  // extends the selection over the contiguous range.
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedRowIds, setSelectedRowIds] = useState<Set<string>>(new Set());
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const lastToggledIndexRef = useRef<number | null>(null);
   // Type-and-go: the inbox composer's draft + the first message handed to a
   // freshly created chat so the agent starts on the user's first line.
   const [chatDraft, setChatDraft] = useState("");
@@ -3202,16 +3323,38 @@ function UniversalInboxPanel({
     setSelectedRecording(null);
     setShowCreate(false);
     setLoadError(null);
+    setSelectedRowIds(new Set());
+    lastToggledIndexRef.current = null;
     void loadInbox("replace");
   // The first page reloads when filters change. Cursor changes are driven by
   // explicit "Load more" clicks and must not restart the list.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [folderId, sourceKind, statusFilter]);
 
+  // Sidebar drops mutate rows outside this panel; the parent bumps reloadToken
+  // so the list refetches. The ref skips the initial mount (the filters effect
+  // above already issues the first load).
+  const lastReloadTokenRef = useRef(reloadToken);
+  useEffect(() => {
+    if (reloadToken === undefined || lastReloadTokenRef.current === reloadToken) {
+      return;
+    }
+    lastReloadTokenRef.current = reloadToken;
+    void loadInbox("replace");
+  }, [loadInbox, reloadToken]);
+
   useEffect(() => {
     if (!initialRecording || initialRecording.deleted_at) return;
     setSelectedRecording(initialRecording);
-    setSelectedRow(recordingRowFromDetail(initialRecording));
+    // Keep the existing row object when it already points at this recording.
+    // A fresh row per detail fetch would retrigger the selectedRow effect,
+    // which refetches the detail and loops the update cycle forever.
+    setSelectedRow((current) =>
+      current?.source_kind === "recording" &&
+      current.source_id === initialRecording.id
+        ? current
+        : recordingRowFromDetail(initialRecording),
+    );
     setShowCreate(false);
   }, [initialRecording]);
 
@@ -3334,6 +3477,171 @@ function UniversalInboxPanel({
     }
   }
 
+  // Multiselect ------------------------------------------------------------
+
+  function exitSelectMode() {
+    setSelectMode(false);
+    setSelectedRowIds(new Set());
+    lastToggledIndexRef.current = null;
+  }
+
+  function clearSelection() {
+    setSelectedRowIds(new Set());
+    lastToggledIndexRef.current = null;
+  }
+
+  function toggleRowSelected(index: number, shiftKey: boolean) {
+    const row = rows[index];
+    if (!row) return;
+    setSelectedRowIds((current) => {
+      const next = new Set(current);
+      const anchor = lastToggledIndexRef.current;
+      if (shiftKey && anchor !== null && anchor !== index) {
+        const start = Math.min(anchor, index);
+        const end = Math.max(anchor, index);
+        for (let position = start; position <= end; position += 1) {
+          const candidate = rows[position];
+          if (candidate) next.add(candidate.id);
+        }
+      } else if (next.has(row.id)) {
+        next.delete(row.id);
+      } else {
+        next.add(row.id);
+      }
+      return next;
+    });
+    lastToggledIndexRef.current = index;
+  }
+
+  // Bulk operations work across kinds: recordings batch through the bulk
+  // endpoint, items and chats go through their per-id APIs. Kinds run
+  // sequentially; ids within a kind run in parallel.
+  async function bulkMoveSelectedToFolder(targetFolderId: string) {
+    if (bulkBusy) return;
+    const selected = rows.filter((row) => selectedRowIds.has(row.id));
+    if (selected.length === 0) return;
+    const recordingIds = selected
+      .filter((row) => row.source_kind === "recording")
+      .map((row) => row.source_id);
+    const itemIds = selected
+      .filter((row) => row.source_kind === "item")
+      .map((row) => row.source_id);
+    // Wai chats are not filed into folders. Skip them silently unless the
+    // selection holds nothing else.
+    if (recordingIds.length === 0 && itemIds.length === 0) {
+      onError(
+        locale === "ru"
+          ? "Чаты Wai нельзя положить в папку."
+          : "Wai chats can't be filed into folders.",
+      );
+      return;
+    }
+    setBulkBusy(true);
+    onError(null);
+    try {
+      if (recordingIds.length > 0) {
+        await bulkRecordingOperation(recordingIds, "move", targetFolderId);
+      }
+      if (itemIds.length > 0) {
+        await Promise.all(
+          itemIds.map((id) => assignItemToFolder(id, targetFolderId)),
+        );
+      }
+      clearSelection();
+      await loadInbox("replace");
+      await onRefreshRecordings();
+      onItemsChanged();
+    } catch (error: unknown) {
+      onError(formatError(error));
+    } finally {
+      setBulkBusy(false);
+    }
+  }
+
+  // Soft-deletes the given rows with the per-kind delete API, then refreshes.
+  async function trashRows(rowsToTrash: InboxRow[]) {
+    if (bulkBusy || rowsToTrash.length === 0) return;
+    const recordingIds = rowsToTrash
+      .filter((row) => row.source_kind === "recording")
+      .map((row) => row.source_id);
+    const itemIds = rowsToTrash
+      .filter((row) => row.source_kind === "item")
+      .map((row) => row.source_id);
+    const chatIds = rowsToTrash
+      .filter((row) => row.source_kind === "chat")
+      .map((row) => row.source_id);
+    setBulkBusy(true);
+    onError(null);
+    try {
+      if (recordingIds.length > 0) {
+        await bulkRecordingOperation(recordingIds, "delete");
+      }
+      if (itemIds.length > 0) {
+        await Promise.all(itemIds.map((id) => deleteItem(id)));
+      }
+      if (chatIds.length > 0) {
+        await Promise.all(chatIds.map((id) => deleteChat(id)));
+      }
+      // Mark the parent's open recording as trashed so the initialRecording
+      // effect doesn't resurrect the row from a detail fetch that resolved
+      // while the delete was in flight.
+      if (
+        initialRecording &&
+        !initialRecording.deleted_at &&
+        recordingIds.includes(initialRecording.id)
+      ) {
+        onRecordingUpdate({
+          ...initialRecording,
+          deleted_at: new Date().toISOString(),
+        });
+      }
+      if (selectedRow && rowsToTrash.some((row) => row.id === selectedRow.id)) {
+        setSelectedRow(null);
+      }
+      clearSelection();
+      await loadInbox("replace");
+      await onRefreshRecordings();
+      onItemsChanged();
+    } catch (error: unknown) {
+      onError(formatError(error));
+    } finally {
+      setBulkBusy(false);
+    }
+  }
+
+  async function bulkTrashSelected() {
+    await trashRows(rows.filter((row) => selectedRowIds.has(row.id)));
+  }
+
+  // Delete/Backspace trashes the selection (in select mode) or the open row.
+  // No dependency array: the handler closes over fresh state each render, and
+  // re-subscribing keydown per render mirrors useKeyboardShortcuts below.
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key !== "Delete" && event.key !== "Backspace") return;
+      if (bulkBusy) return;
+      const target = event.target as HTMLElement | null;
+      if (
+        target &&
+        (target.isContentEditable ||
+          target.closest("input, textarea, select, [contenteditable]") !== null)
+      ) {
+        return;
+      }
+      if (selectMode && selectedRowIds.size > 0) {
+        event.preventDefault();
+        void bulkTrashSelected();
+        return;
+      }
+      if (selectedRow && !showCreate) {
+        event.preventDefault();
+        void trashRows([selectedRow]);
+      }
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  });
+
   const sourceFilters: Array<{ key: InboxFilterKind; label: string }> = [
     { key: "all", label: locale === "ru" ? "Все" : "All" },
     { key: "recording", label: locale === "ru" ? "Записи" : "Recordings" },
@@ -3370,18 +3678,79 @@ function UniversalInboxPanel({
                   : `${rows.length} items`}
             </p>
           </div>
-          <button
-            type="button"
-            className="ghost-button compact-button"
-            onClick={() => {
-              setSelectedRow(null);
-              setSelectedRecording(null);
-              setShowCreate(true);
-            }}
-          >
-            {locale === "ru" ? "+ Добавить" : "+ Add"}
-          </button>
+          <div className="row-actions">
+            {rows.length > 0 ? (
+              <button
+                type="button"
+                className="ghost-button compact-button"
+                data-testid="select-mode-toggle"
+                onClick={() => (selectMode ? exitSelectMode() : setSelectMode(true))}
+              >
+                {selectMode
+                  ? locale === "ru"
+                    ? "Готово"
+                    : "Done"
+                  : locale === "ru"
+                    ? "Выбрать"
+                    : "Select"}
+              </button>
+            ) : null}
+            <button
+              type="button"
+              className="ghost-button compact-button"
+              onClick={() => {
+                setSelectedRow(null);
+                setSelectedRecording(null);
+                setShowCreate(true);
+              }}
+            >
+              {locale === "ru" ? "+ Добавить" : "+ Add"}
+            </button>
+          </div>
         </header>
+
+        {selectMode && selectedRowIds.size > 0 ? (
+          <div className="bulk-bar" data-testid="bulk-bar">
+            <span className="bulk-bar__count">
+              {locale === "ru"
+                ? `Выбрано: ${selectedRowIds.size}`
+                : `${selectedRowIds.size} selected`}
+            </span>
+            {folders.length > 0 ? (
+              <select
+                className="select-button"
+                data-testid="bulk-move-folder"
+                aria-label={locale === "ru" ? "Переместить в папку" : "Move to folder"}
+                defaultValue=""
+                disabled={bulkBusy}
+                onChange={(event) => {
+                  if (event.target.value) {
+                    void bulkMoveSelectedToFolder(event.target.value);
+                  }
+                  event.target.value = "";
+                }}
+              >
+                <option value="" disabled>
+                  {locale === "ru" ? "В папку…" : "Move to…"}
+                </option>
+                {folders.map((folder) => (
+                  <option key={folder.id} value={folder.id}>
+                    {folder.name}
+                  </option>
+                ))}
+              </select>
+            ) : null}
+            <button
+              type="button"
+              className="ghost-button compact-button danger-button"
+              data-testid="bulk-trash"
+              disabled={bulkBusy}
+              onClick={() => void bulkTrashSelected()}
+            >
+              {locale === "ru" ? "В корзину" : "Move to Trash"}
+            </button>
+          </div>
+        ) : null}
 
         <div className="inbox-filters" aria-label={locale === "ru" ? "Фильтры" : "Filters"}>
           <div
@@ -3440,11 +3809,25 @@ function UniversalInboxPanel({
           </div>
         ) : (
           <ul className="inbox-list">
-            {rows.map((row) => {
+            {rows.map((row, index) => {
               const statusLabel = inboxStatusLabel(row, locale);
               const sublabel = inboxSublabel(row, locale);
+              // Chats are not filed into folders, so only recordings and items
+              // can be dragged onto the sidebar.
+              const draggable = row.source_kind !== "chat";
               return (
                 <li key={row.id}>
+                  {selectMode ? (
+                    <input
+                      type="checkbox"
+                      className="recording-select-checkbox"
+                      aria-label={locale === "ru" ? "Выбрать объект" : "Select row"}
+                      checked={selectedRowIds.has(row.id)}
+                      data-testid={`select-checkbox-${row.id}`}
+                      onClick={(event) => toggleRowSelected(index, event.shiftKey)}
+                      onChange={() => undefined}
+                    />
+                  ) : null}
                   <button
                     type="button"
                     className="inbox-row"
@@ -3454,9 +3837,29 @@ function UniversalInboxPanel({
                         ? `select-recording-${row.source_id}`
                         : row.source_kind === "chat"
                           ? `select-chat-${row.source_id}`
+                        : `select-item-${row.source_id}`
+                    }
+                    draggable={draggable}
+                    onDragStart={
+                      draggable
+                        ? (event) => {
+                            event.dataTransfer.setData(
+                              row.source_kind === "recording"
+                                ? "application/x-wai-recording"
+                                : "application/x-wai-item",
+                              row.source_id,
+                            );
+                            event.dataTransfer.effectAllowed = "move";
+                          }
                         : undefined
                     }
-                    onClick={() => {
+                    onClick={(event) => {
+                      // In select mode the row body toggles the selection
+                      // instead of opening the detail pane.
+                      if (selectMode) {
+                        toggleRowSelected(index, event.shiftKey);
+                        return;
+                      }
                       setShowCreate(false);
                       setSelectedRow(row);
                     }}
