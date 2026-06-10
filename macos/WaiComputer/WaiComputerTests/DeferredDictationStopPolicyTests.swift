@@ -1,3 +1,4 @@
+import WaiComputerKit
 import XCTest
 
 final class DeferredDictationStopPolicyTests: XCTestCase {
@@ -103,6 +104,54 @@ final class DeferredDictationStopPolicyTests: XCTestCase {
 
         XCTAssertEqual(resolution.text, "raw transcript")
         XCTAssertNotNil(resolution.cleanupFallbackNotice)
+    }
+
+    func testTokenRemintTriggersOnHandshakeAuthCloseAndAuthError() {
+        // A stale prefetched token is rejected as a 1008/1011 close DURING the
+        // websocket handshake — the dominant real-world shape.
+        XCTAssertTrue(
+            DictationTokenRetryPolicy.shouldRemint(
+                after: WebSocketHandshakeCoordinator.HandshakeError.closedBeforeOpen(
+                    closeCode: .policyViolation,
+                    reason: "bad token"
+                )
+            )
+        )
+        XCTAssertTrue(
+            DictationTokenRetryPolicy.shouldRemint(
+                after: WebSocketHandshakeCoordinator.HandshakeError.closedBeforeOpen(
+                    closeCode: .internalServerError,
+                    reason: nil
+                )
+            )
+        )
+        XCTAssertTrue(
+            DictationTokenRetryPolicy.shouldRemint(
+                after: ProviderError.authError(server: "invalid_api_key")
+            )
+        )
+    }
+
+    func testTokenRemintSkipsNonAuthFailures() {
+        XCTAssertFalse(
+            DictationTokenRetryPolicy.shouldRemint(
+                after: WebSocketHandshakeCoordinator.HandshakeError.timedOut
+            )
+        )
+        XCTAssertFalse(
+            DictationTokenRetryPolicy.shouldRemint(
+                after: WebSocketHandshakeCoordinator.HandshakeError.closedBeforeOpen(
+                    closeCode: .normalClosure,
+                    reason: nil
+                )
+            )
+        )
+        XCTAssertFalse(
+            DictationTokenRetryPolicy.shouldRemint(after: URLError(.notConnectedToInternet))
+        )
+        XCTAssertFalse(
+            DictationTokenRetryPolicy.shouldRemint(after: ProviderError.quotaExceeded)
+        )
     }
 
     func testCleanupSpeculationReusesExactFinalTranscriptMatch() {

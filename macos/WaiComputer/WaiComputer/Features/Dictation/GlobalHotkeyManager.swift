@@ -3,6 +3,7 @@ import Carbon
 import IOKit.hid
 import ApplicationServices
 import os
+import WaiComputerKit
 
 private let log = Logger(subsystem: "is.waiwai.computer.app", category: "hotkey")
 
@@ -405,6 +406,28 @@ enum DictationFinalizationPolicy {
                 min(maximumTailDelayMilliseconds, targetMilliseconds)
             )
         )
+    }
+}
+
+enum DictationTokenRetryPolicy {
+    /// Whether a failed `provider.open()` warrants ONE fresh token mint.
+    ///
+    /// A stale prefetched Deepgram token is rejected during the websocket
+    /// handshake: the proxy closes with 1008 (policy violation) or 1011
+    /// before `didOpen`, which the handshake coordinator surfaces as
+    /// `closedBeforeOpen`. A post-open auth error frame maps to
+    /// `ProviderError.authError`. Anything else (timeouts, network loss)
+    /// is not a token problem — re-minting would not help.
+    static func shouldRemint(after error: Error) -> Bool {
+        if case ProviderError.authError = error {
+            return true
+        }
+        if case WebSocketHandshakeCoordinator.HandshakeError.closedBeforeOpen(
+            let closeCode, _
+        ) = error {
+            return closeCode == .policyViolation || closeCode == .internalServerError
+        }
+        return false
     }
 }
 

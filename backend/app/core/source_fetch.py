@@ -188,15 +188,18 @@ def _fetch_youtube_transcript(
             raise NoTranscriptFound(video_id, _YOUTUBE_PREFERRED_LANGUAGES, None)
         fetched = transcript.fetch()
     except (RequestBlocked, IpBlocked) as exc:
+        # The message must stand on its own: it is what the user sees when the
+        # audio fallback is disabled or unavailable (when the fallback runs,
+        # this error is consumed and never shown).
         raise SourceFetchError(
             "YouTube is blocking transcript requests from this server. "
-            "I'll try transcribing the audio instead.",
+            "Share the file and I'll transcribe it.",
             code="youtube_blocked",
         ) from exc
     except TranscriptsDisabled as exc:
         raise SourceFetchError(
-            "Subtitles are disabled for this video. I'll try transcribing "
-            "the audio instead.",
+            "Subtitles are disabled for this video. Share the file and I'll "
+            "transcribe it.",
             code="youtube_no_transcript",
         ) from exc
     except VideoUnavailable as exc:
@@ -206,8 +209,8 @@ def _fetch_youtube_transcript(
         ) from exc
     except NoTranscriptFound as exc:
         raise SourceFetchError(
-            "This video has no captions. I'll try transcribing the audio "
-            "instead.",
+            "This video has no captions. Share the file and I'll "
+            "transcribe it.",
             code="youtube_no_transcript",
         ) from exc
     except CouldNotRetrieveTranscript as exc:

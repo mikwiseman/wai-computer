@@ -193,6 +193,9 @@ ok "Reverse proxy configured"
 say "Building and starting the stack (first build takes a few minutes)"
 cd "$BACKEND_DIR"
 GIT_SHA="$(git -C "$ROOT_DIR" rev-parse --short HEAD 2>/dev/null || echo selfhost)"
+# The web image's source-map upload secret is wai.computer-only; an empty
+# value makes the build skip it cleanly instead of warning about an unset var.
+export SENTRY_AUTH_TOKEN="${SENTRY_AUTH_TOKEN:-}"
 WAICOMPUTER_ENV_FILE="$ENV_FILE" GIT_SHA="$GIT_SHA" docker compose \
   --env-file "$ENV_FILE" \
   -f docker-compose.yml \

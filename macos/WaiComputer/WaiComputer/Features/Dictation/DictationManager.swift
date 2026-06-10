@@ -738,10 +738,12 @@ final class DictationManager: ObservableObject {
                 do {
                     try await provider.open()
                     break
-                } catch ProviderError.authError(let server) where mintAttempt == 0 {
-                    // A prefetched token can outlive its validity. One fresh
-                    // mint distinguishes a stale token from real auth breakage
-                    // instead of failing the press outright.
+                } catch let openError where mintAttempt == 0
+                    && DictationTokenRetryPolicy.shouldRemint(after: openError) {
+                    // A prefetched token can outlive its validity; a bad token
+                    // surfaces as a 1008/1011 close during the websocket
+                    // handshake. One fresh mint distinguishes a stale token
+                    // from real auth breakage instead of failing the press.
                     mintAttempt += 1
                     sessionEventTask?.cancel()
                     sessionEventTask = nil
@@ -751,9 +753,9 @@ final class DictationManager: ObservableObject {
                     }
                     SentryHelper.addBreadcrumb(
                         category: "dictation.session",
-                        message: "auth error — re-minting realtime token",
+                        message: "handshake rejected — re-minting realtime token",
                         level: .warning,
-                        data: ["server": server ?? ""]
+                        data: ["error": String(describing: openError)]
                     )
                     guard state == .connecting else {
                         await startupAudioBuffer.close()
