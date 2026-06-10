@@ -1130,6 +1130,8 @@ export interface Folder {
   id: string;
   name: string;
   created_at: string;
+  // Recordings + materials filed in the folder (server-computed).
+  item_count?: number;
 }
 
 export interface DictationEntry {

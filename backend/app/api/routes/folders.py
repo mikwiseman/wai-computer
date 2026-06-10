@@ -5,12 +5,12 @@ from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Response, status
 from pydantic import BaseModel, field_validator
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import selectinload
 
 from app.api.deps import CurrentUser, Database
 from app.models.item import Item
-from app.models.recording import Folder
+from app.models.recording import Folder, Recording
 
 router = APIRouter(prefix="/folders", tags=["folders"])
 
@@ -21,6 +21,9 @@ class FolderResponse(BaseModel):
     id: str
     name: str
     created_at: datetime
+    # Recordings + materials currently filed in the folder (trash excluded) —
+    # drives the sidebar counts on every client.
+    item_count: int = 0
 
 
 class CreateFolderRequest(BaseModel):
@@ -41,19 +44,56 @@ class UpdateFolderRequest(CreateFolderRequest):
     """Request to rename a folder."""
 
 
-def _serialize_folder(folder: Folder) -> FolderResponse:
-    return FolderResponse(id=str(folder.id), name=folder.name, created_at=folder.created_at)
+def _serialize_folder(folder: Folder, item_count: int = 0) -> FolderResponse:
+    return FolderResponse(
+        id=str(folder.id),
+        name=folder.name,
+        created_at=folder.created_at,
+        item_count=item_count,
+    )
+
+
+async def _folder_content_counts(db: Database, user_id: UUID) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    recording_rows = await db.execute(
+        select(Recording.folder_id, func.count())
+        .where(
+            Recording.user_id == user_id,
+            Recording.deleted_at.is_(None),
+            Recording.folder_id.is_not(None),
+        )
+        .group_by(Recording.folder_id)
+    )
+    for folder_id, count in recording_rows.all():
+        counts[str(folder_id)] = counts.get(str(folder_id), 0) + int(count)
+    item_rows = await db.execute(
+        select(Item.folder_id, func.count())
+        .where(
+            Item.user_id == user_id,
+            Item.deleted_at.is_(None),
+            Item.state.is_distinct_from("archived"),
+            Item.folder_id.is_not(None),
+        )
+        .group_by(Item.folder_id)
+    )
+    for folder_id, count in item_rows.all():
+        counts[str(folder_id)] = counts.get(str(folder_id), 0) + int(count)
+    return counts
 
 
 @router.get("", response_model=list[FolderResponse])
 async def list_folders(user: CurrentUser, db: Database) -> list[FolderResponse]:
-    """List folders for the current user."""
+    """List folders for the current user, with recording+material counts."""
     result = await db.execute(
         select(Folder)
         .where(Folder.user_id == user.id)
         .order_by(Folder.name.asc(), Folder.created_at.asc())
     )
-    return [_serialize_folder(folder) for folder in result.scalars().all()]
+    counts = await _folder_content_counts(db, user.id)
+    return [
+        _serialize_folder(folder, counts.get(str(folder.id), 0))
+        for folder in result.scalars().all()
+    ]
 
 
 @router.post("", response_model=FolderResponse, status_code=status.HTTP_201_CREATED)

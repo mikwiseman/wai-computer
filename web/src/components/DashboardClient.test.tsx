@@ -2231,13 +2231,18 @@ describe("DashboardClient", () => {
 
     await user.click(screen.getByTestId("delete-folder-folder-1"));
     expect(await screen.findByTestId("folder-delete-modal")).toBeInTheDocument();
+    // After deletion the server folder list no longer contains the folder —
+    // the post-delete refresh must not resurrect it.
+    mockListFolders.mockResolvedValue([]);
     await user.click(screen.getByTestId("folder-delete-confirm"));
 
     await waitFor(() => {
       expect(mockDeleteFolder).toHaveBeenCalledWith("folder-1");
       expect(screen.getByTestId("dashboard-message")).toHaveTextContent("Folder deleted.");
     });
-    expect(screen.queryByTestId("sidebar-folder-folder-1")).not.toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.queryByTestId("sidebar-folder-folder-1")).not.toBeInTheDocument();
+    });
   });
 
   it("cancels a folder deletion without calling the API", async () => {

@@ -954,8 +954,14 @@ export function DashboardClient() {
   const accountHasPassword = user?.has_password !== false;
 
   async function loadRecordingsState() {
-    const active = await listRecordings({ limit: LIST_LIMIT });
+    // Folder counts are server-computed, so any mutation that lands here
+    // (move / trash / restore, single or bulk) refreshes them in one pass.
+    const [active, folderList] = await Promise.all([
+      listRecordings({ limit: LIST_LIMIT }),
+      listFolders(),
+    ]);
     setRecordings(active);
+    setFolders(folderList);
   }
 
   async function loadTrashRecordingsState() {
@@ -1532,6 +1538,7 @@ export function DashboardClient() {
       await assignItemToFolder(itemId, folderId);
       setItemsReloadKey((key) => key + 1);
       setInboxReloadToken((token) => token + 1);
+      await loadFoldersState();
     } catch (error: unknown) {
       setMessage(formatError(error));
     }
@@ -1548,6 +1555,7 @@ export function DashboardClient() {
       await deleteItem(itemId);
       setItemsReloadKey((key) => key + 1);
       setInboxReloadToken((token) => token + 1);
+      await loadFoldersState();
     } catch (error: unknown) {
       setMessage(formatError(error));
     }
@@ -1683,6 +1691,7 @@ export function DashboardClient() {
   }, []);
 
   const goToView = useCallback((next: DashboardView) => {
+    setMessage(null);
     setView(canonicalDashboardView(next));
     setSelectedRecording(null);
     setIsShortcutCheatsheetOpen(false);
@@ -1702,18 +1711,24 @@ export function DashboardClient() {
     "?": toggleCheatsheet,
   });
 
-  // Count active local recordings per folder; uploaded material counts arrive
-  // through the folder-scoped Inbox once it refreshes.
+  // Server-computed counts (recordings + materials per folder). Falls back to
+  // counting local recordings when an older backend omits item_count.
   const folderCounts = useMemo(() => {
     const counts: Record<string, number> = {};
-    for (const folder of folders) counts[folder.id] = 0;
-    for (const recording of recordings) {
-      if (
-        recording.folder_id
-        && Object.prototype.hasOwnProperty.call(counts, recording.folder_id)
-        && !recording.deleted_at
-      ) {
-        counts[recording.folder_id] += 1;
+    let hasServerCounts = false;
+    for (const folder of folders) {
+      counts[folder.id] = folder.item_count ?? 0;
+      if (typeof folder.item_count === "number") hasServerCounts = true;
+    }
+    if (!hasServerCounts) {
+      for (const recording of recordings) {
+        if (
+          recording.folder_id
+          && Object.prototype.hasOwnProperty.call(counts, recording.folder_id)
+          && !recording.deleted_at
+        ) {
+          counts[recording.folder_id] += 1;
+        }
       }
     }
     return counts;
@@ -1810,6 +1825,7 @@ export function DashboardClient() {
                     className="sidebar-nav__item"
                     aria-current={view === item.key ? "page" : undefined}
                     onClick={() => {
+                      setMessage(null);
                       setActiveFolderId(null);
                       setSelectedRecording(null);
                       setSelectedMode("active");
