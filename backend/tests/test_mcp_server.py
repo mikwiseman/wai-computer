@@ -178,16 +178,12 @@ async def test_create_mcp_app_tool_handlers_use_authenticated_user_and_db(monkey
         assert token == "access-token"
         return "user-123"
 
-    async def fake_search(db, user_id, query, *, limit, folder_ids):
-        calls.append(("search", db, user_id, query, limit, folder_ids))
-        return {"results": [{"id": "r1", "snippet": "match"}]}
-
-    async def fake_unified_search(db, user_id, query, *, limit):
-        calls.append(("unified", db, user_id, query, limit))
+    async def fake_unified_search(db, user_id, query, *, limit, folder_ids=None):
+        calls.append(("unified", db, user_id, query, limit, folder_ids))
         return {"results": [{"id": "u1", "metadata": {"source_kind": "chat"}}]}
 
-    async def fake_ask(db, user_id, question):
-        calls.append(("ask", db, user_id, question))
+    async def fake_ask(db, user_id, question, *, folder_ids=None):
+        calls.append(("ask", db, user_id, question, folder_ids))
         return {"answer": "synth", "citations": [], "gaps": [], "freshness": {}}
 
     async def fake_fetch(db, user_id, document_id):
@@ -214,7 +210,6 @@ async def test_create_mcp_app_tool_handlers_use_authenticated_user_and_db(monkey
     )
     monkeypatch.setattr(mcp_server, "resolve_mcp_access_token_user_id", fake_resolve)
     monkeypatch.setattr(mcp_server, "get_db_context", fake_db_context)
-    monkeypatch.setattr(mcp_server, "search_recordings_for_mcp", fake_search)
     monkeypatch.setattr(mcp_server, "search_brain_for_mcp", fake_unified_search)
     monkeypatch.setattr(mcp_server, "ask_brain_for_mcp", fake_ask)
     monkeypatch.setattr(mcp_server, "fetch_document_for_mcp", fake_fetch)
@@ -232,10 +227,10 @@ async def test_create_mcp_app_tool_handlers_use_authenticated_user_and_db(monkey
     tools = app.tools
 
     ask = json.loads(await tools["ask"]("what did we decide"))
+    scoped_ask = json.loads(
+        await tools["ask"]("project status", folder_ids=["f1"])
+    )
     search = json.loads(await tools["search"]("roadmap", limit=5, folder_ids=["f1"]))
-    # folder_ids=[] is "not None" → recordings path (folders apply to recordings only),
-    # NOT the unified branch.
-    json.loads(await tools["search"]("scoped", limit=6, folder_ids=[]))
     unified = json.loads(await tools["search"]("anything", limit=7))
     fetch = json.loads(await tools["fetch"]("r1"))
     folders = json.loads(await tools["list_folders"]())
@@ -250,17 +245,19 @@ async def test_create_mcp_app_tool_handlers_use_authenticated_user_and_db(monkey
     )
 
     assert ask["answer"] == "synth"
-    assert search["results"][0]["snippet"] == "match"  # folder-scoped → recordings path
-    assert unified["results"][0]["metadata"]["source_kind"] == "chat"  # folderless → unified
+    assert scoped_ask["answer"] == "synth"
+    # Folder-scoped and folderless searches share the unified path now.
+    assert search["results"][0]["metadata"]["source_kind"] == "chat"
+    assert unified["results"][0]["metadata"]["source_kind"] == "chat"
     assert fetch["title"] == "Document"
     assert folders["folders"][0]["name"] == "Inbox"
     assert recordings["results"][0]["id"] == "r2"
     assert actions["results"][0]["task"] == "Follow up"
     assert calls == [
-        ("ask", "db-session", "user-123", "what did we decide"),
-        ("search", "db-session", "user-123", "roadmap", 5, ["f1"]),
-        ("search", "db-session", "user-123", "scoped", 6, []),
-        ("unified", "db-session", "user-123", "anything", 7),
+        ("ask", "db-session", "user-123", "what did we decide", None),
+        ("ask", "db-session", "user-123", "project status", ["f1"]),
+        ("unified", "db-session", "user-123", "roadmap", 5, ["f1"]),
+        ("unified", "db-session", "user-123", "anything", 7, None),
         ("fetch", "db-session", "user-123", "r1"),
         ("folders", "db-session", "user-123"),
         ("recordings", "db-session", "user-123", ["f1"], 3, "c1"),

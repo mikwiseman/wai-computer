@@ -57,6 +57,8 @@ _UNIFIED_SQL = text(
                    plainto_tsquery('russian', lower(:q COLLATE "und-x-icu"))) DESC) AS rn
         FROM segments s JOIN recordings r ON s.recording_id = r.id
         WHERE r.user_id = :uid AND r.deleted_at IS NULL
+          AND (CAST(:folder_ids AS uuid[]) IS NULL
+               OR r.folder_id = ANY(CAST(:folder_ids AS uuid[])))
           AND to_tsvector('russian', lower(s.content COLLATE "und-x-icu"))
               @@ plainto_tsquery('russian', lower(:q COLLATE "und-x-icu"))
     ),
@@ -66,6 +68,8 @@ _UNIFIED_SQL = text(
                ROW_NUMBER() OVER (ORDER BY s.embedding <=> CAST(:emb AS vector)) AS rn
         FROM segments s JOIN recordings r ON s.recording_id = r.id
         WHERE r.user_id = :uid AND r.deleted_at IS NULL AND s.embedding IS NOT NULL
+          AND (CAST(:folder_ids AS uuid[]) IS NULL
+               OR r.folder_id = ANY(CAST(:folder_ids AS uuid[])))
         ORDER BY s.embedding <=> CAST(:emb AS vector)
         LIMIT :pool
     ),
@@ -77,6 +81,8 @@ _UNIFIED_SQL = text(
                    plainto_tsquery('russian', lower(:q COLLATE "und-x-icu"))) DESC) AS rn
         FROM item_chunks ic JOIN items i ON ic.item_id = i.id
         WHERE i.user_id = :uid AND i.deleted_at IS NULL AND i.state IS DISTINCT FROM 'archived'
+          AND (CAST(:folder_ids AS uuid[]) IS NULL
+               OR i.folder_id = ANY(CAST(:folder_ids AS uuid[])))
           AND to_tsvector('russian', lower(ic.content COLLATE "und-x-icu"))
               @@ plainto_tsquery('russian', lower(:q COLLATE "und-x-icu"))
     ),
@@ -86,6 +92,8 @@ _UNIFIED_SQL = text(
                ROW_NUMBER() OVER (ORDER BY ic.embedding <=> CAST(:emb AS vector)) AS rn
         FROM item_chunks ic JOIN items i ON ic.item_id = i.id
         WHERE i.user_id = :uid AND i.deleted_at IS NULL AND i.state IS DISTINCT FROM 'archived'
+          AND (CAST(:folder_ids AS uuid[]) IS NULL
+               OR i.folder_id = ANY(CAST(:folder_ids AS uuid[])))
           AND ic.embedding IS NOT NULL
         ORDER BY ic.embedding <=> CAST(:emb AS vector)
         LIMIT :pool
@@ -100,6 +108,7 @@ _UNIFIED_SQL = text(
                    plainto_tsquery('russian', lower(:q COLLATE "und-x-icu"))) DESC) AS rn
         FROM conversation_chunks cc JOIN conversations c ON cc.conversation_id = c.id
         WHERE c.user_id = :uid AND c.deleted_at IS NULL AND c.archived_at IS NULL
+          AND CAST(:folder_ids AS uuid[]) IS NULL
           AND to_tsvector('russian', lower(cc.content COLLATE "und-x-icu"))
               @@ plainto_tsquery('russian', lower(:q COLLATE "und-x-icu"))
     ),
@@ -111,6 +120,7 @@ _UNIFIED_SQL = text(
                ROW_NUMBER() OVER (ORDER BY cc.embedding <=> CAST(:emb AS vector)) AS rn
         FROM conversation_chunks cc JOIN conversations c ON cc.conversation_id = c.id
         WHERE c.user_id = :uid AND c.deleted_at IS NULL AND c.archived_at IS NULL
+          AND CAST(:folder_ids AS uuid[]) IS NULL
           AND cc.embedding IS NOT NULL
         ORDER BY cc.embedding <=> CAST(:emb AS vector)
         LIMIT :pool
@@ -220,6 +230,7 @@ async def unified_search(
     *,
     limit: int = 20,
     per_parent_limit: int | None = None,
+    folder_ids: list[str] | None = None,
 ) -> list[UnifiedHit]:
     """RRF search over recordings + items + chats, recency-boosted. Empty query -> [].
 
@@ -227,9 +238,21 @@ async def unified_search(
     (source_kind, parent_id) survive, keeping each source's strongest chunk(s) so a
     long recording can't crowd out short notes. ``None`` (default) keeps every
     chunk (legacy behaviour); search surfaces pass 1, Ask passes 2.
+
+    ``folder_ids`` scopes results to those folders: recordings AND items whose
+    ``folder_id`` matches survive; chats (which have no folder) are excluded.
+    ``None`` searches everything; an empty list matches nothing.
     """
     if not query.strip():
         return []
+    folder_uuids: list[uuid.UUID] | None = None
+    if folder_ids is not None:
+        folder_uuids = []
+        for raw in folder_ids:
+            try:
+                folder_uuids.append(uuid.UUID(str(raw)))
+            except ValueError:
+                continue  # an unknown id can't match anything anyway
     embedding = format_embedding(await generate_embedding(query))
     pool = max(limit * 3, 30)
     ranking_v2 = 1 if get_settings().brain_ranking_v2_enabled else 0
@@ -247,6 +270,7 @@ async def unified_search(
                 "halflife": RECENCY_HALF_LIFE_DAYS,
                 "per_parent": per_parent_limit,
                 "ranking_v2": ranking_v2,
+                "folder_ids": folder_uuids,
             },
         )
     ).fetchall()

@@ -31,7 +31,6 @@ from app.core.mcp_tools import (
     list_action_items_for_mcp,
     list_folders_for_mcp,
     list_recordings_for_mcp,
-    search_recordings_for_mcp,
 )
 from app.db.session import get_db_context
 
@@ -60,15 +59,18 @@ Tools:
   profile (durable facts), the folder + top-entity taxonomy for scoping, and the
   usage protocol — cheaply. Then, before asserting anything about the user,
   recall first (ask/search); never guess.
-- ask(question): the primary memory tool. Returns ONE cited answer synthesised
-  across everything the user has captured — recordings, notes, and chats —
-  plus an honest list of gaps and how stale the sources are. Ask it first
-  ("what did I decide about X", "what do I know about Y") before falling back
-  to raw search. Never invent an answer the brain doesn't support.
+- ask(question, folder_ids=None): the primary memory tool. Returns ONE cited
+  answer synthesised across everything the user has captured — recordings,
+  notes, and chats — plus an honest list of gaps and how stale the sources
+  are. Ask it first ("what did I decide about X", "what do I know about Y")
+  before falling back to raw search. Pass folder_ids to answer from specific
+  folders only — point an agent at one project folder and it answers from
+  that folder's recordings + materials alone. Never invent an answer the
+  brain doesn't support.
 - search(query, limit=10, folder_ids=None): unified search across recordings,
   notes, and chats. Each hit has an id (fetchable), a snippet, and
-  metadata.source_kind. Pass folder_ids to scope to specific recording folders
-  (folders apply to recordings only).
+  metadata.source_kind. Pass folder_ids to scope to specific folders
+  (recordings + saved materials in those folders; chats are unfiled).
 - fetch(id): the full document for one source by id — a recording (summary +
   key points + action items + diarised transcript), a note, or a chat. Use
   after ask/search to read the source material in detail.
@@ -155,7 +157,7 @@ def create_mcp_app(settings: Settings) -> Starlette:
         return json.dumps(result, ensure_ascii=False)
 
     @mcp.tool()
-    async def ask(question: str) -> str:
+    async def ask(question: str, folder_ids: list[str] | None = None) -> str:
         """Ask the user's second brain a question and get ONE cited answer.
 
         Synthesises across everything captured — recordings, notes, and Wai
@@ -166,10 +168,17 @@ def create_mcp_app(settings: Settings) -> Starlette:
         own data only — if the brain has nothing, `answer` is empty and `gaps`
         explains. Prefer this over raw `search` when the user wants an answer
         rather than a list of sources.
+
+        Pass `folder_ids` (UUID strings from `list_folders`) to answer from
+        specific folders only — recordings and saved materials in those folders
+        become the entire knowledge base for this question. Use it when the
+        user scopes a request to a project ("in my Falcone folder, …").
         """
         user_id = await _current_user_id()
         async with get_db_context() as db:
-            result = await ask_brain_for_mcp(db, user_id, question)
+            result = await ask_brain_for_mcp(
+                db, user_id, question, folder_ids=folder_ids
+            )
         return json.dumps(result, ensure_ascii=False)
 
     @mcp.tool()
@@ -188,19 +197,16 @@ def create_mcp_app(settings: Settings) -> Starlette:
         Use this when the user asks about content, decisions, or quotes and you
         want the raw sources — for a synthesised answer, use `ask` instead.
 
-        Pass `folder_ids` (UUID strings from list_folders) to restrict to
-        specific recording folders; folders apply to recordings only, so a
-        folder-scoped search returns recordings exclusively. An empty list
-        returns no results.
+        Pass `folder_ids` (UUID strings from `list_folders`) to scope the
+        search to those folders — recordings AND saved materials filed there;
+        chats (which have no folder) are excluded. An empty list returns no
+        results.
         """
         user_id = await _current_user_id()
         async with get_db_context() as db:
-            if folder_ids is not None:
-                result = await search_recordings_for_mcp(
-                    db, user_id, query, limit=limit, folder_ids=folder_ids
-                )
-            else:
-                result = await search_brain_for_mcp(db, user_id, query, limit=limit)
+            result = await search_brain_for_mcp(
+                db, user_id, query, limit=limit, folder_ids=folder_ids
+            )
         return json.dumps(result, ensure_ascii=False)
 
     @mcp.tool()

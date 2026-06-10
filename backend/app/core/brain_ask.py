@@ -175,6 +175,7 @@ async def _search_hits(
     limit: int,
     reranker: Reranker | None = None,
     settings: Any | None = None,
+    folder_ids: list[str] | None = None,
 ) -> list[UnifiedHit | Any]:
     # When reranking, over-retrieve a wider candidate pool (the reranker is what
     # makes a big pool affordable), then rerank + diversity trim it back down.
@@ -199,7 +200,12 @@ async def _search_hits(
 
     if source_scope is None:
         raw_hits = await unified_search(
-            db, user_id, question, limit=search_pool_limit, per_parent_limit=2
+            db,
+            user_id,
+            question,
+            limit=search_pool_limit,
+            per_parent_limit=2,
+            folder_ids=folder_ids,
         )
         return _diverse_hits(await _maybe_rerank(raw_hits), limit)
 
@@ -208,7 +214,12 @@ async def _search_hits(
         return []
 
     raw_hits = await unified_search(
-        db, user_id, question, limit=search_pool_limit, per_parent_limit=2
+        db,
+        user_id,
+        question,
+        limit=search_pool_limit,
+        per_parent_limit=2,
+        folder_ids=folder_ids,
     )
     scoped_hits = await _scoped_source_hits(db, user_id, allowed)
     filtered = [hit for hit in raw_hits if (hit.source_kind, hit.parent_id) in allowed]
@@ -229,6 +240,7 @@ async def ask_brain(
     limit: int = ASK_RETRIEVAL_LIMIT,
     now: datetime | None = None,
     source_scope: dict[str, Any] | None = None,
+    folder_ids: list[str] | None = None,
 ) -> BrainAnswer:
     """Answer ``question`` from the user's recordings, items, and chats, cited, with honest gaps."""
     question = (question or "").strip()
@@ -247,6 +259,7 @@ async def ask_brain(
         limit=limit,
         reranker=effective_reranker,
         settings=settings,
+        folder_ids=folder_ids,
     )
     if not hits:
         freshness = await _freshness_for([], now=now)

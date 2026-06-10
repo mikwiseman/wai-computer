@@ -123,14 +123,22 @@ async def wake_up_for_mcp(db: AsyncSession, user_id: str | UUID) -> dict:
     }
 
 
-async def ask_brain_for_mcp(db: AsyncSession, user_id: str | UUID, question: str) -> dict:
+async def ask_brain_for_mcp(
+    db: AsyncSession,
+    user_id: str | UUID,
+    question: str,
+    *,
+    folder_ids: list[str] | None = None,
+) -> dict:
     """Answer ``question`` from the user's whole brain, with citations + gaps.
 
     This is the headline memory tool: instead of making the agent search then
     read, it returns one synthesized, grounded answer across recordings, notes,
     and chats — with a citation list (each fetchable by id) and an honest
-    statement of what's missing or stale."""
-    answer = await ask_brain(db, _as_uuid(user_id), question)
+    statement of what's missing or stale. ``folder_ids`` narrows retrieval to
+    those folders (recordings + items), so an agent can be pointed at a single
+    project folder and answer from it alone."""
+    answer = await ask_brain(db, _as_uuid(user_id), question, folder_ids=folder_ids)
     return {
         "answer": answer.answer,
         "citations": [
@@ -157,12 +165,14 @@ async def search_brain_for_mcp(
     query: str,
     *,
     limit: int = 10,
+    folder_ids: list[str] | None = None,
 ) -> dict:
     """Unified RRF search across the user's recordings, notes, and chats.
 
     Each hit carries the parent source id (fetchable via :func:`fetch`), a
     snippet, a dashboard url, and ``metadata.source_kind`` so the agent can tell
-    a meeting from a saved note from a Wai chat."""
+    a meeting from a saved note from a Wai chat. ``folder_ids`` scopes the
+    search to those folders (recordings + items; chats have no folder)."""
     settings = get_settings()
     if not query or not query.strip():
         return {"results": []}
@@ -176,7 +186,14 @@ async def search_brain_for_mcp(
         if reranker
         else limit
     )
-    hits = await unified_search(db, _as_uuid(user_id), query, limit=pool, per_parent_limit=1)
+    hits = await unified_search(
+        db,
+        _as_uuid(user_id),
+        query,
+        limit=pool,
+        per_parent_limit=1,
+        folder_ids=folder_ids,
+    )
     if reranker:
         hits, _tokens = await rerank_hits(
             query, hits, reranker=reranker, top_k=limit,

@@ -186,3 +186,57 @@ async def test_ranking_v2_authority_reorders_when_enabled(db_session, monkeypatc
         )
     order = [h.parent_id for h in hits if h.source_kind == "item"]
     assert order.index(str(high.id)) < order.index(str(low.id))
+
+
+async def test_unified_search_folder_scope_filters_recordings_and_items(db_session) -> None:
+    from app.core.unified_search import unified_search
+    from app.models.recording import Folder
+
+    user = await _make_user(db_session)
+    folder = Folder(user_id=user.id, name="Project X")
+    db_session.add(folder)
+    await db_session.flush()
+
+    in_folder = await _make_recording_with_segment(
+        db_session, user, title="Scoped Meeting", content="the zebra project budget"
+    )
+    in_folder.folder_id = folder.id
+    await _make_recording_with_segment(
+        db_session, user, title="Unfiled Meeting", content="the zebra project budget too"
+    )
+    scoped_item, _ = await ingest_item(
+        db_session, user.id, source="paste", kind="article", title="Scoped Note",
+        body="zebra project budget notes", embedder=_embedder,
+    )
+    scoped_item.folder_id = folder.id
+    await ingest_item(
+        db_session, user.id, source="paste", kind="article", title="Unfiled Note",
+        body="zebra project budget elsewhere", embedder=_embedder,
+    )
+    await db_session.flush()
+
+    with patch(
+        "app.core.unified_search.generate_embedding", return_value=[0.02] * 1536
+    ):
+        scoped = await unified_search(
+            db_session, user.id, "zebra budget", limit=10,
+            folder_ids=[str(folder.id)],
+        )
+        everything = await unified_search(
+            db_session, user.id, "zebra budget", limit=10
+        )
+        nothing = await unified_search(
+            db_session, user.id, "zebra budget", limit=10, folder_ids=[]
+        )
+        garbage = await unified_search(
+            db_session, user.id, "zebra budget", limit=10,
+            folder_ids=["not-a-uuid"],
+        )
+
+    scoped_parents = {(h.source_kind, h.title) for h in scoped}
+    assert ("recording", "Scoped Meeting") in scoped_parents
+    assert ("item", "Scoped Note") in scoped_parents
+    assert all(h.title in {"Scoped Meeting", "Scoped Note"} for h in scoped)
+    assert len(everything) >= 4
+    assert nothing == []
+    assert garbage == []
