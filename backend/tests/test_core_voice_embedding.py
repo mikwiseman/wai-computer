@@ -158,3 +158,127 @@ def test_pick_clean_snippets_accumulates_runs_sorted_in_order():
     ]
     spans = pick_clean_snippets(results, "Speaker 0", target_total_s=30.0, min_total_s=6.0)
     assert spans == [(0, 8000), (9000, 12000)]  # transcript order, both runs picked
+
+
+def test_pick_clean_snippets_stops_once_target_total_reached():
+    from app.core.voice_embedding import pick_clean_snippets
+
+    results = [
+        _tr("Speaker 0", 0, 8000),  # exactly fills the 8s target
+        _tr("Speaker 1", 8000, 9000),
+        _tr("Speaker 0", 9000, 12000),  # would overshoot; must be dropped
+    ]
+    spans = pick_clean_snippets(results, "Speaker 0", target_total_s=8.0, min_total_s=6.0)
+    assert spans == [(0, 8000)]
+
+
+def test_pick_clean_snippets_truncates_run_exceeding_target():
+    from app.core.voice_embedding import pick_clean_snippets
+
+    # One 40s run against the default 30s target -> truncated, not dropped.
+    results = [_tr("Speaker 0", 0, 40_000)]
+    assert pick_clean_snippets(results, "Speaker 0") == [(0, 30_000)]
+
+
+class _FakeEcapaEncoder:
+    """Stands in for the SpeechBrain encoder: records inputs, returns a constant tensor."""
+
+    def __init__(self) -> None:
+        self.batches: list = []
+
+    def encode_batch(self, waveform):
+        import torch
+
+        self.batches.append(waveform)
+        return torch.ones(1, 1, EMBEDDING_DIM)
+
+
+def test_get_model_loads_speechbrain_encoder_once_and_caches(monkeypatch):
+    """First call builds the encoder via from_hparams; later calls reuse the cache."""
+    import sys
+    import types
+
+    from app.core import voice_embedding
+
+    calls: list[dict] = []
+    fake_encoder = object()
+
+    class FakeEncoderClassifier:
+        @classmethod
+        def from_hparams(cls, **kwargs):
+            calls.append(kwargs)
+            return fake_encoder
+
+    speaker_mod = types.ModuleType("speechbrain.inference.speaker")
+    speaker_mod.EncoderClassifier = FakeEncoderClassifier
+    inference_mod = types.ModuleType("speechbrain.inference")
+    inference_mod.speaker = speaker_mod
+    root_mod = types.ModuleType("speechbrain")
+    root_mod.inference = inference_mod
+    monkeypatch.setitem(sys.modules, "speechbrain", root_mod)
+    monkeypatch.setitem(sys.modules, "speechbrain.inference", inference_mod)
+    monkeypatch.setitem(sys.modules, "speechbrain.inference.speaker", speaker_mod)
+    monkeypatch.setattr(voice_embedding, "_model", None)
+
+    first = voice_embedding._get_model()
+    second = voice_embedding._get_model()
+
+    assert first is fake_encoder
+    assert second is fake_encoder
+    assert len(calls) == 1  # cached after the first load
+    assert calls[0]["source"] == voice_embedding.HF_MODEL_SOURCE
+    assert calls[0]["run_opts"] == {"device": "cpu"}
+    assert calls[0]["savedir"].endswith(".cache/speechbrain/spkrec-ecapa-voxceleb")
+
+
+def test_compute_voice_embedding_spans_normalizes_fake_model_output(monkeypatch):
+    """Spans are concatenated (degenerate ones skipped) and the output L2-normalized."""
+    import torch
+
+    from app.core.voice_embedding import compute_voice_embedding_spans
+
+    fake = _FakeEcapaEncoder()
+    monkeypatch.setattr("app.core.voice_embedding._get_model", lambda: fake)
+
+    with tempfile.TemporaryDirectory() as tmp:
+        wav_path = Path(tmp) / "tone.wav"
+        _write_sine_wav(wav_path, duration_s=2.0, freq_hz=220.0)
+        # (700, 700) is degenerate and must be skipped, not crash.
+        emb = compute_voice_embedding_spans(wav_path, [(0, 500), (700, 700), (1000, 1500)])
+
+    assert len(emb) == EMBEDDING_DIM
+    expected = 1.0 / math.sqrt(EMBEDDING_DIM)
+    assert emb == pytest.approx([expected] * EMBEDDING_DIM)
+    assert len(fake.batches) == 1  # file decoded and encoded exactly once
+    waveform = fake.batches[0]
+    assert tuple(waveform.shape) == (1, 16_000)  # 500ms + 500ms at 16 kHz, mono
+    assert waveform.dtype == torch.float32
+    assert float(waveform.abs().max()) <= 1.0  # samples scaled into [-1, 1]
+
+
+def test_compute_voice_embedding_single_slice_uses_span_pipeline(monkeypatch):
+    fake = _FakeEcapaEncoder()
+    monkeypatch.setattr("app.core.voice_embedding._get_model", lambda: fake)
+
+    with tempfile.TemporaryDirectory() as tmp:
+        wav_path = Path(tmp) / "tone.wav"
+        _write_sine_wav(wav_path, duration_s=2.0, freq_hz=220.0)
+        emb = compute_voice_embedding(wav_path, 250, 1250)
+
+    assert len(emb) == EMBEDDING_DIM
+    assert tuple(fake.batches[0].shape) == (1, 16_000)  # exactly the requested 1s slice
+
+
+def test_compute_voice_embedding_spans_rejects_all_degenerate_spans(monkeypatch):
+    from app.core.voice_embedding import compute_voice_embedding_spans
+
+    monkeypatch.setattr(
+        "app.core.voice_embedding._get_model",
+        lambda: pytest.fail("model must not be loaded when no audio was sliced"),
+    )
+
+    with tempfile.TemporaryDirectory() as tmp:
+        wav_path = Path(tmp) / "tone.wav"
+        _write_sine_wav(wav_path, duration_s=1.0, freq_hz=220.0)
+        with pytest.raises(ValueError, match="All spans were empty after slicing"):
+            compute_voice_embedding_spans(wav_path, [(400, 400), (900, 100)])

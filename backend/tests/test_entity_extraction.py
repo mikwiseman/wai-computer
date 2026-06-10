@@ -285,3 +285,161 @@ async def test_backfill_targets_unextracted_recordings_then_skips_them(db_sessio
     assert second.recordings_scanned == 0
     assert second.llm_requests == 0
     assert calls["n"] == 1
+
+
+async def test_record_relation_updates_provenance_and_context_on_repeat(db_session) -> None:
+    user = await _make_user(db_session)
+    anna = await upsert_entity(db_session, user.id, type="person", name="Anna")
+    atlas = await upsert_entity(db_session, user.id, type="project", name="Atlas")
+    recording = Recording(
+        user_id=user.id, type="meeting", status=RecordingStatus.READY.value
+    )
+    db_session.add(recording)
+    await db_session.flush()
+
+    first = await record_relation(
+        db_session, source_entity_id=anna.id, target_entity_id=atlas.id, relation_type="works_on"
+    )
+    assert first is not None and first.recording_id is None and first.context is None
+
+    # Re-recording the same edge refreshes provenance + context, no duplicate row.
+    second = await record_relation(
+        db_session,
+        source_entity_id=anna.id,
+        target_entity_id=atlas.id,
+        relation_type="works_on",
+        recording_id=recording.id,
+        context="Anna leads Atlas.",
+    )
+    assert second is not None and second.id == first.id
+    assert second.recording_id == recording.id
+    assert second.context == "Anna leads Atlas."
+    rels = (await db_session.execute(select(EntityRelation))).scalars().all()
+    assert len(rels) == 1
+
+
+async def test_seed_extraction_skips_blank_names_unknown_types_and_ghost_relations(
+    db_session,
+) -> None:
+    user = await _make_user(db_session)
+    source_id = uuid4()
+    entities = [
+        EntityResult(name="   ", type="person", context="", relations=[]),
+        EntityResult(
+            name="Mystery",
+            type="prophecy",  # unknown type -> stored as a generic topic
+            context="",
+            relations=[
+                {"related_to": "Ghost", "relation_type": "knows"},  # never extracted
+                {"related_to": "Mystery", "relation_type": "self"},  # self-loop
+            ],
+        ),
+    ]
+
+    result = await seed_entities_from_extraction(
+        db_session,
+        user.id,
+        source_kind="recording",
+        source_id=source_id,
+        entities=entities,
+    )
+
+    assert result.as_dict() == {
+        "mentions_recorded": 1,
+        "relations_recorded": 0,
+        "persons_seeded": 0,
+    }
+    stored = (
+        await db_session.execute(select(Entity).where(Entity.user_id == user.id))
+    ).scalars().all()
+    assert [(e.type, e.name) for e in stored] == [("topic", "Mystery")]
+    assert (await db_session.execute(select(EntityRelation))).scalars().first() is None
+
+
+async def test_seed_extraction_skips_names_that_normalise_to_nothing(
+    db_session, monkeypatch
+) -> None:
+    from app.core import entity_graph as eg
+
+    real = eg.normalise_name
+    monkeypatch.setattr(
+        eg, "normalise_name", lambda value: None if value == "Unkeyable" else real(value)
+    )
+    user = await _make_user(db_session)
+
+    result = await seed_entities_from_extraction(
+        db_session,
+        user.id,
+        source_kind="recording",
+        source_id=uuid4(),
+        entities=[EntityResult(name="Unkeyable", type="person", context="", relations=[])],
+    )
+
+    assert result.mentions_recorded == 0
+    assert result.persons_seeded == 0
+    assert (
+        await db_session.execute(select(Entity).where(Entity.user_id == user.id))
+    ).scalars().first() is None
+
+
+async def test_backfill_extraction_skips_unusable_recordings(db_session, monkeypatch) -> None:
+    user = await _make_user(db_session)
+    # A summary but no segments at all.
+    segmentless = Recording(
+        user_id=user.id, type="meeting", status=RecordingStatus.READY.value
+    )
+    db_session.add(segmentless)
+    await db_session.flush()
+    db_session.add(
+        Summary(recording_id=segmentless.id, summary="No segments.", sentiment="neutral")
+    )
+    # Segments present but the transcript builder yields nothing.
+    empty_transcript = await _recording_with_segments(db_session, user)
+    db_session.add(
+        Summary(
+            recording_id=empty_transcript.id, summary="Empty transcript.", sentiment="neutral"
+        )
+    )
+    await db_session.flush()
+    monkeypatch.setattr(
+        "app.core.summary_generation.build_summary_transcript", lambda _segments: ""
+    )
+
+    async def never_called(_transcript: str) -> list[EntityResult]:
+        raise AssertionError("extractor must not run for unusable recordings")
+
+    result = await backfill_entity_extraction_for_recordings(
+        db_session, user.id, limit=10, extractor=never_called
+    )
+
+    assert result.recordings_scanned == 2
+    assert result.recordings_extracted == 0
+    assert result.llm_requests == 0
+
+
+async def test_backfill_extraction_isolates_per_recording_failures(db_session) -> None:
+    user = await _make_user(db_session)
+    recording = await _recording_with_segments(db_session, user)
+    db_session.add(
+        Summary(recording_id=recording.id, summary="Anna leads Atlas.", sentiment="neutral")
+    )
+    await db_session.flush()
+
+    async def boom(_transcript: str) -> list[EntityResult]:
+        raise RuntimeError("cerebras down")
+
+    result = await backfill_entity_extraction_for_recordings(
+        db_session, user.id, limit=10, extractor=boom
+    )
+
+    assert result.recordings_scanned == 1
+    assert result.recordings_extracted == 0
+    assert result.llm_requests == 0
+    assert result.as_dict() == {
+        "recordings_scanned": 1,
+        "recordings_extracted": 0,
+        "mentions_recorded": 0,
+        "relations_recorded": 0,
+        "llm_requests": 0,
+    }
+    assert (await db_session.execute(select(EntityMention))).scalars().first() is None

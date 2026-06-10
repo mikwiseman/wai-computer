@@ -562,3 +562,226 @@ async def test_expire_due_actions_task_resumes_agent_runs_as_failed(
         )
     ).scalars().all()
     assert [step.kind for step in steps][-2:] == ["approval_result", "error"]
+
+
+class _FakeResult:
+    """Scripted substitute for a SQLAlchemy execute() result."""
+
+    def __init__(self, *, rows: list[tuple] | None = None, scalar: object = None) -> None:
+        self._rows = rows if rows is not None else []
+        self._scalar = scalar
+
+    def all(self) -> list[tuple]:
+        return self._rows
+
+    def scalar_one_or_none(self) -> object:
+        return self._scalar
+
+
+class _FakeDb:
+    """Minimal AsyncSession stand-in returning one scripted result per execute()."""
+
+    def __init__(self, results: list[_FakeResult]) -> None:
+        self._results = list(results)
+
+    async def execute(self, _stmt) -> _FakeResult:
+        return self._results.pop(0)
+
+
+async def test_mark_retryable_failure_after_retries_marks_only_active_runs(
+    db_session, monkeypatch
+):
+    user = User(email=f"retry-exhaust-{uuid4().hex}@example.com", password_hash="x")
+    db_session.add(user)
+    await db_session.flush()
+    agent = Agent(user_id=user.id, name="Retry", kind="manual", trigger_type="manual")
+    db_session.add(agent)
+    await db_session.flush()
+    active = AgentRun(
+        agent_id=agent.id,
+        user_id=user.id,
+        trigger_key=f"manual:{uuid4()}",
+        trigger_kind="manual",
+        status="running",
+    )
+    done = AgentRun(
+        agent_id=agent.id,
+        user_id=user.id,
+        trigger_key=f"manual:{uuid4()}",
+        trigger_kind="manual",
+        status="done",
+    )
+    db_session.add_all([active, done])
+    await db_session.flush()
+
+    @asynccontextmanager
+    async def fake_db_context():
+        yield db_session
+
+    monkeypatch.setattr(agent_tasks, "get_db_context", fake_db_context)
+
+    await agent_tasks._mark_retryable_failure_after_retries(str(active.id))
+    await agent_tasks._mark_retryable_failure_after_retries(str(done.id))
+    await agent_tasks._mark_retryable_failure_after_retries(str(uuid4()))
+
+    assert active.status == "failed"
+    assert active.error == "Agent run failed after retryable provider errors."
+    assert active.finished_at is not None
+    assert done.status == "done"
+    assert done.error is None
+
+
+async def test_dispatch_child_runs_after_commit_enqueues_each_child(monkeypatch):
+    dispatched: list[str] = []
+    monkeypatch.setattr(agent_tasks.run, "delay", lambda run_id: dispatched.append(run_id))
+
+    child_ids = [uuid4(), uuid4()]
+    await agent_tasks._dispatch_child_runs_after_commit(child_ids)
+
+    assert dispatched == [str(child_ids[0]), str(child_ids[1])]
+
+
+async def test_dispatch_child_runs_after_commit_marks_enqueue_failures(
+    db_session, monkeypatch
+):
+    user = User(email=f"child-fail-{uuid4().hex}@example.com", password_hash="x")
+    db_session.add(user)
+    await db_session.flush()
+    agent = Agent(user_id=user.id, name="Child", kind="manual", trigger_type="manual")
+    db_session.add(agent)
+    await db_session.flush()
+    child = AgentRun(
+        agent_id=agent.id,
+        user_id=user.id,
+        trigger_key=f"manual:{uuid4()}",
+        trigger_kind="manual",
+    )
+    db_session.add(child)
+    await db_session.flush()
+
+    @asynccontextmanager
+    async def fake_db_context():
+        yield db_session
+
+    def fail_delay(_run_id: str) -> None:
+        raise RuntimeError("broker down")
+
+    monkeypatch.setattr(agent_tasks, "get_db_context", fake_db_context)
+    monkeypatch.setattr(agent_tasks.run, "delay", fail_delay)
+
+    # The unknown id exercises the run-row-missing path; the real child run
+    # must be marked failed so it is not silently lost.
+    await agent_tasks._dispatch_child_runs_after_commit([child.id, uuid4()])
+
+    assert child.status == "failed"
+    assert child.error == "Could not enqueue delegated agent run: RuntimeError"
+
+
+async def test_run_agent_async_marks_failed_when_agent_missing(monkeypatch):
+    run = AgentRun(
+        id=uuid4(),
+        agent_id=uuid4(),
+        user_id=uuid4(),
+        trigger_key=f"manual:{uuid4()}",
+        trigger_kind="manual",
+        status="pending",
+    )
+    released: list[tuple[str, str]] = []
+
+    @asynccontextmanager
+    async def fake_db_context():
+        yield _FakeDb(
+            [
+                _FakeResult(scalar=run),  # AgentRun lookup
+                _FakeResult(scalar=None),  # Agent lookup → deleted/missing
+            ]
+        )
+
+    async def fake_release(user_id: str, lease: str) -> None:
+        released.append((user_id, lease))
+
+    monkeypatch.setattr(agent_tasks, "get_db_context", fake_db_context)
+    monkeypatch.setattr(agent_tasks.agent_guard, "agents_halted", AsyncMock(return_value=False))
+    monkeypatch.setattr(agent_tasks.agent_guard, "check_run_budget", AsyncMock())
+    monkeypatch.setattr(
+        agent_tasks.agent_guard, "acquire_run_slot", AsyncMock(return_value="lease-9")
+    )
+    monkeypatch.setattr(agent_tasks.agent_guard, "record_run", AsyncMock())
+    monkeypatch.setattr(agent_tasks.agent_guard, "release_run_slot", fake_release)
+
+    assert await agent_tasks._run_agent_async(str(run.id)) == "failed"
+    assert run.status == "failed"
+    assert run.error == "Agent not found"
+    assert released == [(str(run.user_id), "lease-9")]
+
+
+async def test_run_task_raises_non_retryable_errors(monkeypatch):
+    def fake_asyncio_run(coro):
+        coro.close()
+        raise ValueError("invalid agent config")
+
+    retried: list[Exception] = []
+    monkeypatch.setattr(agent_tasks.asyncio, "run", fake_asyncio_run)
+    monkeypatch.setattr(agent_tasks.run, "retry", lambda *, exc: retried.append(exc))
+
+    with pytest.raises(ValueError, match="invalid agent config"):
+        agent_tasks.run.run(str(uuid4()))
+
+    assert retried == []
+
+
+async def test_run_task_marks_run_failed_when_retries_exhausted(monkeypatch):
+    consumed: list[str] = []
+
+    def fake_asyncio_run(coro):
+        consumed.append(coro.__qualname__)
+        coro.close()
+        if len(consumed) == 1:
+            raise httpx.TimeoutException("provider timeout")
+        return None
+
+    def fail_retry(*, exc):
+        raise AssertionError("retry must not be requested once retries are exhausted")
+
+    monkeypatch.setattr(agent_tasks.asyncio, "run", fake_asyncio_run)
+    monkeypatch.setattr(agent_tasks.run, "retry", fail_retry)
+    monkeypatch.setattr(agent_tasks.run, "max_retries", 0)
+
+    with pytest.raises(httpx.TimeoutException, match="provider timeout"):
+        agent_tasks.run.run(str(uuid4()))
+
+    assert consumed == ["_run_agent_async", "_mark_retryable_failure_after_retries"]
+
+
+async def test_expire_due_actions_task_marks_run_failed_when_agent_missing(monkeypatch):
+    run = AgentRun(
+        id=uuid4(),
+        agent_id=uuid4(),
+        user_id=uuid4(),
+        trigger_key=f"manual:{uuid4()}",
+        trigger_kind="manual",
+        status="awaiting_approval",
+    )
+
+    @asynccontextmanager
+    async def fake_db_context():
+        yield _FakeDb(
+            [
+                _FakeResult(rows=[(run.id,)]),  # due pending-action run ids
+                _FakeResult(scalar=run),  # awaiting_approval run lookup
+                _FakeResult(scalar=None),  # Agent lookup → deleted/missing
+            ]
+        )
+
+    async def fake_expire(db, *, now):
+        return 4
+
+    run_job_mock = AsyncMock()
+    monkeypatch.setattr(agent_tasks, "get_db_context", fake_db_context)
+    monkeypatch.setattr(agent_tasks, "expire_due_actions", fake_expire)
+    monkeypatch.setattr(agent_tasks, "run_job", run_job_mock)
+
+    assert await agent_tasks._expire_due_actions_async() == 4
+    assert run.status == "failed"
+    assert run.error == "Agent not found"
+    run_job_mock.assert_not_awaited()

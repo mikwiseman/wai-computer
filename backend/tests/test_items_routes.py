@@ -6,16 +6,23 @@ capture + feed + detail behaviour without a broker or OpenAI.
 """
 
 import zipfile
+from datetime import datetime, timezone
 from io import BytesIO
+from types import SimpleNamespace
 from unittest.mock import patch
 from uuid import UUID, uuid4
 
 import pytest
 from sqlalchemy import select
 
-from app.api.routes.items import _derive_status, _item_error
-from app.models.item import Item
+from app.api.routes.items import (
+    _derive_status,
+    _item_error,
+    enqueue_summary_audio_generation,
+)
+from app.models.item import Item, ItemSummary
 from app.models.recording import Recording
+from app.models.summary_audio import SummaryAudioArtifact, SummaryAudioStatus
 from tests.conftest import LEGAL_ACCEPTANCE
 
 pytestmark = pytest.mark.asyncio
@@ -712,3 +719,252 @@ async def test_patch_item_rejects_foreign_folder_and_missing_item(client, auth_h
         f"/api/items/{uuid4()}", json={"folder_id": None}, headers=auth_headers
     )
     assert missing.status_code == 404
+
+
+# --- list filters, summary payload, delete 404 -------------------------------
+
+
+async def _create_item_with_summary(client, db_session, headers: dict[str, str]) -> str:
+    """Create an item via the API and attach a stored summary directly."""
+    with patch("app.tasks.item_summary_generation.generate_item_summary_task.delay"):
+        created = await client.post(
+            "/api/items",
+            json={"source": "paste", "kind": "note", "body": f"summary body {uuid4().hex}"},
+            headers=headers,
+        )
+    assert created.status_code == 201, created.text
+    item_id = created.json()["id"]
+    db_session.add(
+        ItemSummary(
+            item_id=UUID(item_id),
+            summary="Item summary.",
+            key_points=["Point"],
+            action_items=[{"task": "Follow up"}],
+            topics=["topic"],
+            people_mentioned=["Alice"],
+            highlights=[],
+            key_moments=[{"moment": "Important moment", "why_it_matters": "It matters"}],
+            sentiment="neutral",
+        )
+    )
+    await db_session.flush()
+    return item_id
+
+
+async def test_get_item_returns_summary_payload(client, auth_headers, db_session) -> None:
+    item_id = await _create_item_with_summary(client, db_session, auth_headers)
+
+    detail = await client.get(f"/api/items/{item_id}", headers=auth_headers)
+    assert detail.status_code == 200, detail.text
+    data = detail.json()
+    assert data["status"] == "ready"
+    assert data["summary"]["summary"] == "Item summary."
+    assert data["summary"]["key_moments"][0]["moment"] == "Important moment"
+    assert data["summary"]["people_mentioned"] == ["Alice"]
+
+    listing = await client.get("/api/items", headers=auth_headers)
+    entry = next(e for e in listing.json()["items"] if e["id"] == item_id)
+    assert entry["has_summary"] is True
+    assert entry["status"] == "ready"
+
+
+async def test_list_items_filters_by_source(client, auth_headers) -> None:
+    with patch("app.tasks.item_summary_generation.generate_item_summary_task.delay"):
+        await client.post(
+            "/api/items",
+            json={"source": "paste", "kind": "note", "body": "pasted body"},
+            headers=auth_headers,
+        )
+        await client.post(
+            "/api/items",
+            json={"source": "telegram", "kind": "note", "body": "forwarded body"},
+            headers=auth_headers,
+        )
+    pasted = await client.get("/api/items?source=paste", headers=auth_headers)
+    assert pasted.status_code == 200
+    data = pasted.json()
+    assert data["total"] == 1
+    assert data["items"][0]["source"] == "paste"
+
+
+async def test_list_items_filters_by_folder(client, auth_headers) -> None:
+    folder = await _create_folder(client, auth_headers, name="Filtered")
+    with patch("app.tasks.item_summary_generation.generate_item_summary_task.delay"):
+        foldered = await client.post(
+            "/api/items",
+            json={
+                "source": "paste",
+                "kind": "note",
+                "body": "in folder",
+                "folder_id": folder["id"],
+            },
+            headers=auth_headers,
+        )
+        await client.post(
+            "/api/items",
+            json={"source": "paste", "kind": "note", "body": "loose item"},
+            headers=auth_headers,
+        )
+    listing = await client.get(f"/api/items?folder_id={folder['id']}", headers=auth_headers)
+    assert listing.status_code == 200
+    data = listing.json()
+    assert data["total"] == 1
+    assert data["items"][0]["id"] == foldered.json()["id"]
+
+    unknown = await client.get(f"/api/items?folder_id={uuid4()}", headers=auth_headers)
+    assert unknown.status_code == 404
+
+
+async def test_delete_unknown_item_404(client, auth_headers) -> None:
+    resp = await client.delete(f"/api/items/{uuid4()}", headers=auth_headers)
+    assert resp.status_code == 404
+    assert resp.json()["detail"] == "Item not found"
+
+
+# --- summary audio: state, start, file --------------------------------------
+
+
+async def test_enqueue_summary_audio_generation_sends_celery_task() -> None:
+    artifact_id = uuid4()
+    with patch("app.tasks.celery_app.celery_app.send_task") as send_task:
+        send_task.return_value = SimpleNamespace(id="task-123")
+        assert enqueue_summary_audio_generation(artifact_id) == "task-123"
+    send_task.assert_called_once_with(
+        "app.tasks.summary_audio_generation.generate_summary_audio",
+        kwargs={"artifact_id": str(artifact_id)},
+    )
+
+
+async def test_get_item_summary_audio_requires_item_and_summary(client, auth_headers) -> None:
+    missing = await client.get(f"/api/items/{uuid4()}/summary/audio", headers=auth_headers)
+    assert missing.status_code == 404
+    assert missing.json()["detail"] == "Item not found"
+
+    with patch("app.tasks.item_summary_generation.generate_item_summary_task.delay"):
+        created = await client.post(
+            "/api/items",
+            json={"source": "paste", "kind": "note", "body": "no summary yet"},
+            headers=auth_headers,
+        )
+    unsummarized = await client.get(
+        f"/api/items/{created.json()['id']}/summary/audio", headers=auth_headers
+    )
+    assert unsummarized.status_code == 404
+    assert unsummarized.json()["detail"] == "Summary not generated"
+
+
+async def test_get_item_summary_audio_reports_not_started(
+    client, auth_headers, db_session
+) -> None:
+    item_id = await _create_item_with_summary(client, db_session, auth_headers)
+
+    state = await client.get(f"/api/items/{item_id}/summary/audio", headers=auth_headers)
+
+    assert state.status_code == 200, state.text
+    payload = state.json()
+    assert payload["source_kind"] == "item"
+    assert payload["source_id"] == item_id
+    assert payload["status"] == "not_started"
+    assert payload["audio_url"] is None
+
+
+async def test_start_item_summary_audio_translates_summary_audio_error(
+    client, auth_headers
+) -> None:
+    # No such item -> SummaryAudioError(source_not_found) surfaces as its status code.
+    resp = await client.post(f"/api/items/{uuid4()}/summary/audio", headers=auth_headers)
+    assert resp.status_code == 404
+    assert resp.json()["detail"] == "Source not found."
+
+
+async def test_start_item_summary_audio_enqueue_failure_is_503(
+    client, auth_headers, db_session, monkeypatch
+) -> None:
+    def _boom(_artifact_id):
+        raise RuntimeError("broker down")
+
+    monkeypatch.setattr("app.api.routes.items.enqueue_summary_audio_generation", _boom)
+    item_id = await _create_item_with_summary(client, db_session, auth_headers)
+
+    resp = await client.post(f"/api/items/{item_id}/summary/audio", headers=auth_headers)
+
+    assert resp.status_code == 503
+    artifact = (
+        await db_session.execute(
+            select(SummaryAudioArtifact).where(SummaryAudioArtifact.item_id == UUID(item_id))
+        )
+    ).scalar_one()
+    assert artifact.status == SummaryAudioStatus.FAILED.value
+    assert artifact.error_code == "summary_audio_enqueue_failed"
+
+
+async def test_get_item_summary_audio_file_requires_item_summary_and_artifact(
+    client, auth_headers, db_session
+) -> None:
+    missing = await client.get(f"/api/items/{uuid4()}/summary/audio/file", headers=auth_headers)
+    assert missing.status_code == 404
+    assert missing.json()["detail"] == "Item not found"
+
+    with patch("app.tasks.item_summary_generation.generate_item_summary_task.delay"):
+        created = await client.post(
+            "/api/items",
+            json={"source": "paste", "kind": "note", "body": "file but no summary"},
+            headers=auth_headers,
+        )
+    unsummarized = await client.get(
+        f"/api/items/{created.json()['id']}/summary/audio/file", headers=auth_headers
+    )
+    assert unsummarized.status_code == 404
+    assert unsummarized.json()["detail"] == "Summary not generated"
+
+    item_id = await _create_item_with_summary(client, db_session, auth_headers)
+    no_artifact = await client.get(
+        f"/api/items/{item_id}/summary/audio/file", headers=auth_headers
+    )
+    assert no_artifact.status_code == 404
+    assert no_artifact.json()["detail"] == "Summary audio has not been created."
+
+
+async def test_item_summary_audio_state_and_file_round_trip(
+    client, auth_headers, db_session, monkeypatch, tmp_path
+) -> None:
+    from app.config import get_settings
+
+    monkeypatch.setattr(get_settings(), "summary_audio_storage_dir", str(tmp_path))
+    monkeypatch.setattr(
+        "app.api.routes.items.enqueue_summary_audio_generation",
+        lambda artifact_id: "task-summary-audio",
+    )
+    item_id = await _create_item_with_summary(client, db_session, auth_headers)
+
+    queued = await client.post(f"/api/items/{item_id}/summary/audio", headers=auth_headers)
+    assert queued.status_code == 202, queued.text
+
+    artifact = (
+        await db_session.execute(
+            select(SummaryAudioArtifact).where(SummaryAudioArtifact.item_id == UUID(item_id))
+        )
+    ).scalar_one()
+    audio_path = tmp_path / str(artifact.user_id) / f"{artifact.id}.mp3"
+    audio_path.parent.mkdir(parents=True)
+    audio_path.write_bytes(b"ID3item-summary-audio")
+    artifact.status = SummaryAudioStatus.SUCCEEDED.value
+    artifact.stage = "complete"
+    artifact.progress_percent = 100
+    artifact.storage_path = f"{artifact.user_id}/{artifact.id}.mp3"
+    artifact.content_type = "audio/mpeg"
+    artifact.byte_size = audio_path.stat().st_size
+    artifact.completed_at = datetime.now(timezone.utc)
+    await db_session.flush()
+
+    state = await client.get(f"/api/items/{item_id}/summary/audio", headers=auth_headers)
+    assert state.status_code == 200
+    assert state.json()["audio_url"] == f"/api/items/{item_id}/summary/audio/file"
+
+    streamed = await client.get(
+        f"/api/items/{item_id}/summary/audio/file",
+        headers={**auth_headers, "Range": "bytes=0-2"},
+    )
+    assert streamed.status_code == 206
+    assert streamed.headers["content-type"] == "audio/mpeg"
+    assert streamed.content == b"ID3"
