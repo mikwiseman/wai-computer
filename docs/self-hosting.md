@@ -5,6 +5,47 @@ WaiComputer supports two deployment modes:
 - `wai_cloud`: Wai runs the service at `https://wai.computer`.
 - `self_host`: the user runs WaiComputer on their own server and owns the durable database, uploaded files, generated artifacts, backups, logs, and migration archives on that server.
 
+## Quickstart (one command)
+
+On a server with Docker installed (Ubuntu/Debian VPS or any machine with
+Docker Desktop):
+
+```bash
+git clone https://github.com/mikwiseman/wai-computer.git
+cd wai-computer
+./scripts/self-host-setup.sh
+```
+
+The script asks for:
+
+1. **Your domain** (point its A/AAAA records at the server first — HTTPS is
+   then automatic via Let's Encrypt) or `localhost` for a local install.
+2. **Three required API keys** — [Deepgram](https://console.deepgram.com)
+   (speech-to-text), [OpenAI](https://platform.openai.com) (companion +
+   embeddings), [Cerebras](https://cloud.cerebras.ai) (summaries + dictation
+   cleanup).
+3. **Two optional keys** — ElevenLabs (realtime voice conversations) and
+   Resend (magic-link emails). Skipping one keeps that feature off with a
+   clear in-app error; nothing degrades silently.
+
+It then generates strong secrets into `backend/.env.selfhost` (mode 600),
+writes a Caddyfile for your domain, builds the stack
+(`docker compose -f docker-compose.yml -f docker-compose.selfhost.yml`),
+and waits for `/health`. When it finishes, open `https://your-domain/register`
+to create the first account. Agents connect at `https://your-domain/mcp`
+(copy-paste setup lives in Settings → MCP).
+
+Non-interactive (CI / cloud-init):
+
+```bash
+WAI_DOMAIN=brain.example.com \
+DEEPGRAM_API_KEY=… OPENAI_API_KEY=… CEREBRAS_API_KEY=… \
+./scripts/self-host-setup.sh --yes
+```
+
+Updating later: `git pull && ./scripts/self-host-setup.sh` (the existing
+`.env.selfhost` is kept; the stack rebuilds in place).
+
 ## User Onboarding
 
 The web setup flow at `/setup` lets a non-technical user choose between Wai Cloud and their own VPS. The same controls are available later in Dashboard -> Settings -> Server & Data.

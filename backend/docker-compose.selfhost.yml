@@ -1,0 +1,9 @@
+# Self-host override (used by scripts/self-host-setup.sh):
+# serve the generated Caddyfile for the user's own domain instead of the
+# wai.computer production one.
+services:
+  caddy:
+    volumes:
+      - ./Caddyfile.selfhost:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
