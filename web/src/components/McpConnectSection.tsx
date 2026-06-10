@@ -54,9 +54,9 @@ const COPY: Record<Locale, Copy> = {
     copySnippet: "Copy snippet",
     linkClaudeai: "Open Connectors in Claude.ai",
     stepsOpenclaw:
-      "Add WaiComputer as a remote MCP server, then approve the OAuth login in your browser — no token to copy. Your OpenClaw agent can now ask and search your whole brain. To let it remember new facts too, create a write-enabled token under “API tokens” below and use the header form.",
+      "Add WaiComputer as a remote MCP server, then approve the OAuth login in your browser — no token to copy. Your OpenClaw agent can now ask and search your whole brain.",
     stepsHermes:
-      "Add WaiComputer under mcp_servers in ~/.hermes/config.yaml, then run /reload-mcp (or restart). Approve the OAuth login on first connect. For a true memory bank (read + write), create a write-enabled token under “API tokens” below and use the headers form instead.",
+      "Add WaiComputer under mcp_servers in ~/.hermes/config.yaml, then run /reload-mcp (or restart). Approve the OAuth login on first connect.",
     stepsClaudeai:
       "Open Customize → Connectors and click the “+” button. Paste the URL, then approve the request on wai.computer when prompted.",
     stepsCursor:
@@ -80,9 +80,9 @@ const COPY: Record<Locale, Copy> = {
     copySnippet: "Скопировать фрагмент",
     linkClaudeai: "Открыть «Коннекторы» в Claude.ai",
     stepsOpenclaw:
-      "Добавьте WaiComputer как удалённый MCP-сервер и подтвердите вход через OAuth в браузере — токен копировать не нужно. Агент OpenClaw сможет спрашивать и искать по всему вашему мозгу. Чтобы он мог ещё и запоминать факты, создайте токен с правом записи в разделе «API-токены» ниже и используйте форму с заголовком.",
+      "Добавьте WaiComputer как удалённый MCP-сервер и подтвердите вход через OAuth в браузере — токен копировать не нужно. Агент OpenClaw сможет спрашивать и искать по всему вашему мозгу.",
     stepsHermes:
-      "Добавьте WaiComputer в mcp_servers в ~/.hermes/config.yaml и выполните /reload-mcp (или перезапустите). Подтвердите вход через OAuth при первом подключении. Для полноценного «банка памяти» (чтение + запись) создайте токен с правом записи в разделе «API-токены» ниже и используйте форму с headers.",
+      "Добавьте WaiComputer в mcp_servers в ~/.hermes/config.yaml и выполните /reload-mcp (или перезапустите). Подтвердите вход через OAuth при первом подключении.",
     stepsClaudeai:
       "Откройте «Настроить → Коннекторы» и нажмите «+». Вставьте URL и подтвердите запрос на wai.computer.",
     stepsCursor:
@@ -106,18 +106,11 @@ function clientGuides(mcpEndpointUrl: string, copy: Copy): McpClientGuide[] {
     steps: copy.stepsOpenclaw,
     snippet: {
       language: "bash",
-      body: `# Recall your brain (OAuth — approve in your browser, no token to copy):
-openclaw mcp add waicomputer \\
+      body: `openclaw mcp add waicomputer \\
   --url ${mcpEndpointUrl} \\
   --transport streamable-http \\
   --auth oauth
-openclaw mcp login waicomputer
-
-# Memory bank (read + write) — use a write-enabled token instead:
-openclaw mcp add waicomputer \\
-  --url ${mcpEndpointUrl} \\
-  --transport streamable-http \\
-  --header "Authorization: Bearer wc_live_…"`,
+openclaw mcp login waicomputer`,
     },
     externalLink: { label: "OpenClaw MCP docs", url: "https://docs.openclaw.ai/cli/mcp" },
   },
@@ -127,18 +120,11 @@ openclaw mcp add waicomputer \\
     steps: copy.stepsHermes,
     snippet: {
       language: "yaml",
-      body: `# ~/.hermes/config.yaml — recall your brain (OAuth, approve in browser):
+      body: `# ~/.hermes/config.yaml
 mcp_servers:
   waicomputer:
     url: "${mcpEndpointUrl}"
     auth: oauth
-
-# Memory bank (read + write) — use a write-enabled token instead:
-mcp_servers:
-  waicomputer:
-    url: "${mcpEndpointUrl}"
-    headers:
-      Authorization: "Bearer wc_live_…"
 
 # then in Hermes:  /reload-mcp`,
     },
