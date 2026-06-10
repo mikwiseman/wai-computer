@@ -24,7 +24,7 @@ struct RecordingListView: View {
                 hasPermanentLocalFailure: permanentLocalFailureRecordingIDs.contains(recording.id)
             )
                 .tag(recording.id)
-                .draggable(RecordingDragItem(recordingId: recording.id))
+                .draggable(InboxDragItem(kind: .recording, id: recording.id))
                 .contextMenu {
                     let contextSelection = selection(for: recording.id)
                     let contextRecordings = recordings.filter { contextSelection.contains($0.id) }

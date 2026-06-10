@@ -1498,6 +1498,15 @@ public actor APIClient {
         return uploadURL
     }
 
+    /// Move a material into a folder, or out of one with `folderId: nil`.
+    public func moveItem(id: String, folderId: String?) async throws -> Item {
+        return try await request(
+            .PATCH,
+            path: "/api/items/\(id)",
+            body: FolderAssignmentBody(folderId: folderId)
+        )
+    }
+
     public func deleteItem(id: String) async throws {
         try await requestNoContent(.DELETE, path: "/api/items/\(id)")
     }
@@ -1647,6 +1656,15 @@ public actor APIClient {
             .PATCH,
             path: "/api/companion/chats/\(chatId)",
             body: Body(title: title, scope: scope, pinned: pinned, archived: archived)
+        )
+    }
+
+    /// Move a Wai chat into a folder, or out of one with `folderId: nil`.
+    public func moveCompanionChat(chatId: String, folderId: String?) async throws -> CompanionConversation {
+        return try await request(
+            .PATCH,
+            path: "/api/companion/chats/\(chatId)",
+            body: FolderAssignmentBody(folderId: folderId)
         )
     }
 
@@ -2222,6 +2240,26 @@ private struct CreateComparisonRequest: Encodable {
         case itemIds = "item_ids"
         case title
         case intent
+    }
+}
+
+/// PATCH body that always emits folder_id — null moves the object out of its
+/// folder, a uuid moves it in. An absent key would mean "keep", which is
+/// never what a move call wants.
+private struct FolderAssignmentBody: Encodable {
+    let folderId: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case folderId = "folder_id"
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        if let folderId {
+            try container.encode(folderId, forKey: .folderId)
+        } else {
+            try container.encodeNil(forKey: .folderId)
+        }
     }
 }
 

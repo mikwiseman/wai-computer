@@ -4,20 +4,20 @@ import UniformTypeIdentifiers
 import WaiComputerKit
 
 extension UTType {
-    /// In-app drag payload for moving a recording between folders.
-    /// Declared as an exported type in Info.plist so the identifier resolves
-    /// without a runtime warning.
-    static let waiRecordingMove = UTType(exportedAs: "is.waiwai.computer.recording-move")
+    /// In-app drag payload for moving inbox content (recordings, materials,
+    /// Wai chats) between folders. Declared as an exported type in Info.plist
+    /// so the identifier resolves without a runtime warning.
+    static let waiInboxMove = UTType(exportedAs: "is.waiwai.computer.inbox-move")
 }
 
-/// Transferable identifier for dragging a recording row onto a folder
-/// (or onto Inbox / Trash) in the sidebar. Recordings are the only items that
-/// live in folders, so only recording rows vend this payload.
-struct RecordingDragItem: Codable, Transferable, Equatable {
-    let recordingId: String
+/// Transferable identifier for dragging any inbox row onto a folder
+/// (or onto Inbox / Trash) in the sidebar.
+struct InboxDragItem: Codable, Transferable, Equatable {
+    let kind: InboxSourceKind
+    let id: String
 
     static var transferRepresentation: some TransferRepresentation {
-        CodableRepresentation(contentType: .waiRecordingMove)
+        CodableRepresentation(contentType: .waiInboxMove)
     }
 }
 
@@ -1690,13 +1690,12 @@ private struct MacInboxRowsTable: NSViewRepresentable {
         func tableView(_ tableView: NSTableView, pasteboardWriterForRow row: Int) -> NSPasteboardWriting? {
             guard rows.indices.contains(row) else { return nil }
             let source = rows[row]
-            // Only recordings live in folders, so only they are draggable to folders.
-            guard source.sourceKind == .recording else { return nil }
-            guard let data = try? JSONEncoder().encode(RecordingDragItem(recordingId: source.detail.id)) else {
+            let payload = InboxDragItem(kind: source.sourceKind, id: source.detail.id)
+            guard let data = try? JSONEncoder().encode(payload) else {
                 return nil
             }
             let item = NSPasteboardItem()
-            item.setData(data, forType: NSPasteboard.PasteboardType(UTType.waiRecordingMove.identifier))
+            item.setData(data, forType: NSPasteboard.PasteboardType(UTType.waiInboxMove.identifier))
             return item
         }
 

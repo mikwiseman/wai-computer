@@ -645,8 +645,8 @@ struct MacMainView: View {
                     identifier: "inbox",
                     isDropTargeted: dropTargetIdentifier == "inbox"
                 )
-                .dropDestination(for: RecordingDragItem.self) { items, _ in
-                    handleRecordingDrop(items) { moveRecordings([$0], to: nil) }
+                .dropDestination(for: InboxDragItem.self) { items, _ in
+                    handleInboxDrop(items, folderId: nil)
                 } isTargeted: { targeted in
                     updateDropTarget("inbox", targeted: targeted)
                 }
@@ -657,8 +657,8 @@ struct MacMainView: View {
                     identifier: "trash",
                     isDropTargeted: dropTargetIdentifier == "trash"
                 )
-                .dropDestination(for: RecordingDragItem.self) { items, _ in
-                    handleRecordingDrop(items) { trashRecordings([$0]) }
+                .dropDestination(for: InboxDragItem.self) { items, _ in
+                    handleTrashDrop(items)
                 } isTargeted: { targeted in
                     updateDropTarget("trash", targeted: targeted)
                 }
@@ -728,12 +728,53 @@ struct MacMainView: View {
         )
     }
 
-    /// Move a dragged recording onto a sidebar target, refreshing the list afterwards.
-    private func handleRecordingDrop(_ items: [RecordingDragItem], move: (String) -> Void) -> Bool {
+    /// Move a dragged inbox row (recording, material, or Wai chat) onto a
+    /// sidebar folder target, refreshing the affected lists afterwards.
+    private func handleInboxDrop(_ items: [InboxDragItem], folderId: String?) -> Bool {
         guard let item = items.first else { return false }
-        move(item.recordingId)
+        switch item.kind {
+        case .recording:
+            moveRecordings([item.id], to: folderId)
+        case .item:
+            moveInboxItem(item.id, to: folderId)
+        case .chat:
+            moveInboxChat(item.id, to: folderId)
+        }
         dropTargetIdentifier = nil
         return true
+    }
+
+    /// Trash keeps its existing semantics: recordings only. Materials and
+    /// chats are deleted from their detail panes instead.
+    private func handleTrashDrop(_ items: [InboxDragItem]) -> Bool {
+        guard let item = items.first, item.kind == .recording else { return false }
+        trashRecordings([item.id])
+        dropTargetIdentifier = nil
+        return true
+    }
+
+    private func moveInboxItem(_ itemId: String, to folderId: String?) {
+        Task {
+            do {
+                _ = try await appState.getAPIClient().moveItem(id: itemId, folderId: folderId)
+            } catch {
+                libraryViewModel.error = error.userFacingMessage(context: .library)
+            }
+            inboxReloadToken = UUID()
+            await libraryViewModel.loadLibrary(apiClient: appState.getAPIClient())
+        }
+    }
+
+    private func moveInboxChat(_ chatId: String, to folderId: String?) {
+        Task {
+            do {
+                _ = try await appState.getAPIClient().moveCompanionChat(chatId: chatId, folderId: folderId)
+            } catch {
+                libraryViewModel.error = error.userFacingMessage(context: .library)
+            }
+            inboxReloadToken = UUID()
+            await libraryViewModel.loadLibrary(apiClient: appState.getAPIClient())
+        }
     }
 
     private func folderSidebarRow(_ folder: Folder) -> some View {
@@ -753,8 +794,8 @@ struct MacMainView: View {
                 folderPendingDeletion = folder
             }
         }
-        .dropDestination(for: RecordingDragItem.self) { items, _ in
-            handleRecordingDrop(items) { moveRecordings([$0], to: folder.id) }
+        .dropDestination(for: InboxDragItem.self) { items, _ in
+            handleInboxDrop(items, folderId: folder.id)
         } isTargeted: { targeted in
             updateDropTarget(dropKey, targeted: targeted)
         }

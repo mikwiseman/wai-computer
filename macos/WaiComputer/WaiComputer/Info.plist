@@ -51,9 +51,9 @@
 	<array>
 		<dict>
 			<key>UTTypeIdentifier</key>
-			<string>is.waiwai.computer.recording-move</string>
+			<string>is.waiwai.computer.inbox-move</string>
 			<key>UTTypeDescription</key>
-			<string>WaiComputer recording reference</string>
+			<string>WaiComputer inbox item reference</string>
 			<key>UTTypeConformsTo</key>
 			<array>
 				<string>public.data</string>

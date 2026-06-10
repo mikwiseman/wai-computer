@@ -48,6 +48,7 @@ public struct CompanionConversation: Codable, Sendable, Identifiable, Equatable 
     public let id: String
     public let title: String?
     public let scope: CompanionScope?
+    public let folderId: String?
     public let pinnedAt: Date?
     public let lastMessageAt: Date?
     public let archivedAt: Date?
@@ -58,6 +59,7 @@ public struct CompanionConversation: Codable, Sendable, Identifiable, Equatable 
         case id
         case title
         case scope
+        case folderId = "folder_id"
         case pinnedAt = "pinned_at"
         case lastMessageAt = "last_message_at"
         case archivedAt = "archived_at"
@@ -228,6 +230,7 @@ public struct CompanionConversationDetail: Codable, Sendable, Equatable {
     public let id: String
     public let title: String?
     public let scope: CompanionScope?
+    public let folderId: String?
     public let pinnedAt: Date?
     public let lastMessageAt: Date?
     public let archivedAt: Date?
@@ -239,6 +242,7 @@ public struct CompanionConversationDetail: Codable, Sendable, Equatable {
         case id
         case title
         case scope
+        case folderId = "folder_id"
         case pinnedAt = "pinned_at"
         case lastMessageAt = "last_message_at"
         case archivedAt = "archived_at"
