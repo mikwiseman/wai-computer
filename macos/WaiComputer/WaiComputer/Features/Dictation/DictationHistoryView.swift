@@ -225,6 +225,7 @@ private struct HistoryEntryRow: View {
                     .foregroundStyle(Palette.textPrimary)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .onSubmit { commitEdit() }
+                    .onEscapeKeyCompat { cancelEdit() }
             } else {
                 Text(entry.displayText)
                     .font(Typography.body)
@@ -244,6 +245,13 @@ private struct HistoryEntryRow: View {
                     }
                     .buttonStyle(.plain)
                     .help(t("Save correction", "Сохранить исправление"))
+
+                    Button { cancelEdit() } label: {
+                        Image(systemName: "xmark.circle")
+                            .foregroundStyle(Palette.textSecondary)
+                    }
+                    .buttonStyle(.plain)
+                    .help(t("Cancel editing (Esc)", "Отменить редактирование (Esc)"))
                 } else {
                     Button {
                         draft = entry.displayText
@@ -288,6 +296,13 @@ private struct HistoryEntryRow: View {
         isEditing = false
         guard !trimmed.isEmpty, trimmed != entry.displayText else { return }
         onCorrect(trimmed)
+    }
+
+    /// Abandon the draft without committing — an accidental commit would
+    /// both rewrite the entry and teach the learned dictionary.
+    private func cancelEdit() {
+        isEditing = false
+        draft = ""
     }
 
     private func t(_ english: String, _ russian: String) -> String {

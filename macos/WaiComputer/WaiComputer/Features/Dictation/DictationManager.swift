@@ -414,7 +414,15 @@ final class DictationManager: ObservableObject {
         }
 
         hotkeyManager.onCancelled = { [weak self] in
-            guard let self, self.state != .idle else { return }
+            guard let self else { return }
+            guard self.state != .idle else {
+                // Keyboard parity for the Ask Anything HUD: the panel is
+                // shown without becoming key, so the panel-local Escape
+                // handler may never fire. Dismiss a lingering answer panel
+                // here (no-op when it isn't showing).
+                self.closeAskAnythingAnswer()
+                return
+            }
             Task { await self.cancelDictation() }
         }
     }
@@ -1206,6 +1214,13 @@ final class DictationManager: ObservableObject {
         showAskAnythingPanel()
         hideOverlay()
 
+        // However the stream ends — done, empty, error, or task cancellation —
+        // the panel must leave the "thinking" state. Never a stuck spinner.
+        defer {
+            isAskAnythingStreaming = false
+            refreshAskAnythingPanel()
+        }
+
         do {
             let chat = try await apiClient.createCompanionChat()
             let stream = try await apiClient.streamCompanionMessage(
@@ -1225,17 +1240,12 @@ final class DictationManager: ObservableObject {
                         userInfo: [NSLocalizedDescriptionKey: "\(code): \(message)"]
                     )
                 case .done:
-                    isAskAnythingStreaming = false
-                    refreshAskAnythingPanel()
                     return
                 default:
                     break
                 }
             }
-            isAskAnythingStreaming = false
-            refreshAskAnythingPanel()
         } catch {
-            isAskAnythingStreaming = false
             if askAnythingAnswer.isEmpty {
                 askAnythingAnswer = error.userFacingMessage(context: .dictation)
             }
@@ -1243,7 +1253,6 @@ final class DictationManager: ObservableObject {
             instrumentationSession?.failure(error, extras: ["stage": "ask_anything"])
             instrumentationSession = nil
             SentryHelper.captureError(error, extras: ["context": "dictation.ask_anything"])
-            refreshAskAnythingPanel()
         }
     }
 
@@ -1853,7 +1862,11 @@ final class DictationManager: ObservableObject {
 
     private func showAskAnythingPanel() {
         if askAnythingPanel == nil {
-            askAnythingPanel = AskAnythingPanel()
+            let panel = AskAnythingPanel()
+            panel.onEscape = { [weak self] in
+                self?.closeAskAnythingAnswer()
+            }
+            askAnythingPanel = panel
         }
         refreshAskAnythingPanel()
         askAnythingPanel?.showAnimated()

@@ -9,6 +9,9 @@ struct DictationDictionaryView: View {
     @State private var newReplacement = ""
     @State private var searchText = ""
     @State private var editingWord: DictionaryWord?
+    /// The word whose add/save was rejected as a case-insensitive duplicate —
+    /// drives the inline feedback under the add row instead of silence.
+    @State private var duplicateWord: String?
 
     /// SuperWhisper warns that very long vocabulary lists confuse the model
     /// and degrade language detection. ~50 entries on the wire is the
@@ -239,6 +242,25 @@ struct DictationDictionaryView: View {
                 Button(editingWord == nil ? t("Add", "Добавить") : t("Save", "Сохранить")) { commitWord() }
                     .disabled(newWord.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
+            if let duplicate = duplicateWord {
+                HStack(spacing: 6) {
+                    Text(t(
+                        "“\(duplicate)” is already in your dictionary.",
+                        "«\(duplicate)» уже есть в словаре."
+                    ))
+                        .font(Typography.caption)
+                        .foregroundStyle(.red)
+                    if let existing = existingEntry(matching: duplicate) {
+                        Button(t("Edit the existing entry", "Изменить существующую запись")) {
+                            beginEdit(existing)
+                        }
+                        .buttonStyle(.plain)
+                        .font(Typography.caption)
+                        .foregroundStyle(Palette.accent)
+                    }
+                    Spacer()
+                }
+            }
             HStack(spacing: 6) {
                 Text(t(
                     "Leave the right field empty to add a vocabulary booster only.",
@@ -328,22 +350,44 @@ struct DictationDictionaryView: View {
         guard !trimmed.isEmpty else { return }
         let replacementTrimmed = newReplacement.trimmingCharacters(in: .whitespacesAndNewlines)
         let replacement = replacementTrimmed.isEmpty ? nil : replacementTrimmed
-        dictionaryStore.add(word: trimmed, replacement: replacement)
+        guard dictionaryStore.add(word: trimmed, replacement: replacement) else {
+            // Case-insensitive duplicate: keep the draft and say so instead
+            // of silently swallowing the input.
+            duplicateWord = trimmed
+            return
+        }
+        duplicateWord = nil
         newWord = ""
         newReplacement = ""
     }
 
     private func commitWord() {
         if let editing = editingWord {
+            let trimmed = newWord.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { return }
             let replacementTrimmed = newReplacement.trimmingCharacters(in: .whitespacesAndNewlines)
             let ok = dictionaryStore.update(
                 editing,
-                newWord: newWord,
+                newWord: trimmed,
                 newReplacement: replacementTrimmed.isEmpty ? nil : replacementTrimmed
             )
-            if ok { cancelEdit() }
+            if ok {
+                cancelEdit()
+            } else {
+                // With the empty case guarded above, update() only fails on
+                // a collision with a different entry — surface it.
+                duplicateWord = trimmed
+            }
         } else {
             addWord()
+        }
+    }
+
+    /// The entry the rejected word collided with (excluding the one being
+    /// edited, which is allowed to keep its own name).
+    private func existingEntry(matching word: String) -> DictionaryWord? {
+        dictionaryStore.words.first {
+            $0.word.lowercased() == word.lowercased() && $0.id != editingWord?.id
         }
     }
 
@@ -351,12 +395,14 @@ struct DictationDictionaryView: View {
         editingWord = word
         newWord = word.word
         newReplacement = word.replacement ?? ""
+        duplicateWord = nil
     }
 
     private func cancelEdit() {
         editingWord = nil
         newWord = ""
         newReplacement = ""
+        duplicateWord = nil
     }
 
     private var biasBadgeLabel: String {

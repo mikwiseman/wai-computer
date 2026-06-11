@@ -6,6 +6,10 @@ final class AskAnythingPanel: NSPanel {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
 
+    /// Invoked when the user presses Escape while the panel is key —
+    /// keyboard parity with the close button.
+    var onEscape: (() -> Void)?
+
     init() {
         super.init(
             contentRect: NSRect(x: 0, y: 0, width: 820, height: 440),
@@ -24,6 +28,12 @@ final class AskAnythingPanel: NSPanel {
         setAccessibilityIdentifier("ask-anything-panel")
         animationBehavior = .utilityWindow
         positionAtCenter()
+    }
+
+    /// Escape reaches the panel through the responder chain as
+    /// `cancelOperation(_:)` — a borderless panel otherwise just beeps.
+    override func cancelOperation(_ sender: Any?) {
+        onEscape?()
     }
 
     func setContent(_ view: some View) {
@@ -183,7 +193,15 @@ struct AskAnythingAnswerView: View {
 
     private var answerText: String {
         if manager.askAnythingAnswer.isEmpty {
-            return t("Thinking...", "Думаю...")
+            if manager.isAskAnythingStreaming {
+                return t("Thinking...", "Думаю...")
+            }
+            // Terminal state with nothing produced (cancelled or empty
+            // stream) — say so honestly instead of pretending to think.
+            return t(
+                "No answer. Hold the hotkey to ask again.",
+                "Ответа нет. Зажми клавишу и спроси ещё раз."
+            )
         }
         return manager.askAnythingAnswer
     }

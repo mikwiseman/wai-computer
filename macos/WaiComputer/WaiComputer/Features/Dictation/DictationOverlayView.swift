@@ -23,7 +23,9 @@ struct DictationOverlayView: View {
                         .font(Typography.caption)
                         .foregroundStyle(.white.opacity(0.7))
                         .lineLimit(1)
-                        .truncationMode(.tail)
+                        // Head truncation: during live dictation the freshest
+                        // words are at the END — clip the oldest ones instead.
+                        .truncationMode(.head)
                 }
             }
 
@@ -40,10 +42,10 @@ struct DictationOverlayView: View {
             if manager.isHandsFree {
                 Text(DictationCopy.handsFreeBadge(language: languageManager.current))
                     .font(.system(size: 9, weight: .semibold))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(Palette.onAccent)
                     .padding(.horizontal, 6)
                     .padding(.vertical, 2)
-                    .background(Palette.accent.opacity(0.8))
+                    .background(Palette.accent)
                     .clipShape(Capsule())
             }
 
@@ -124,11 +126,10 @@ struct DictationOverlayView: View {
     }
 
     private var transcriptPreview: String {
-        let text = manager.interimTranscript
-        if text.count > 60 {
-            return "..." + String(text.suffix(57))
-        }
-        return text
+        // Cheap length cap so per-update layout stays bounded; the Text's
+        // .truncationMode(.head) keeps the newest words visible and renders
+        // the leading ellipsis itself when the string overflows the slot.
+        String(manager.interimTranscript.suffix(57))
     }
 
     private var formattedDuration: String {
