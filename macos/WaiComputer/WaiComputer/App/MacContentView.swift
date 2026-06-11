@@ -374,7 +374,9 @@ struct MacMainView: View {
         return t("Delete \(count) Recordings Permanently?", "Удалить записи навсегда? (\(count))")
     }
 
-    var body: some View {
+    /// Base layout split out of `body` so the modifier chain below stays
+    /// within the type-checker's budget.
+    private var mainSplitBase: some View {
         mainSplitView
         .background {
             GeometryReader { proxy in
@@ -393,6 +395,61 @@ struct MacMainView: View {
         .overlay(alignment: .top) {
             topBanners
         }
+    }
+
+    private var isRecordingErrorPresented: Binding<Bool> {
+        Binding(
+            get: { recordingViewModel.error != nil },
+            set: { if !$0 { recordingViewModel.clearError() } }
+        )
+    }
+
+    @ViewBuilder
+    private var recordingErrorAlertActions: some View {
+        switch recordingViewModel.errorKind {
+        case .micPermission:
+            Button(t("Open Microphone Settings", "Открыть настройки микрофона")) {
+                MacPrivacySettings.openMicrophone()
+                recordingViewModel.clearError()
+            }
+            Button(t("Cancel", "Отмена"), role: .cancel) {
+                recordingViewModel.clearError()
+            }
+        case .systemAudio:
+            Button(t("Open System Settings", "Открыть системные настройки")) {
+                MacPrivacySettings.openSystemAudio()
+                recordingViewModel.clearError()
+            }
+            Button(t("Cancel", "Отмена"), role: .cancel) { recordingViewModel.clearError() }
+        case .general:
+            Button(t("OK", "ОК")) {
+                recordingViewModel.clearError()
+            }
+        }
+    }
+
+    private var isPermanentDeletePresented: Binding<Bool> {
+        Binding(
+            get: { idsPendingPermanentDelete != nil },
+            set: { if !$0 { idsPendingPermanentDelete = nil } }
+        )
+    }
+
+    @ViewBuilder
+    private var permanentDeleteDialogActions: some View {
+        Button(t("Delete Permanently", "Удалить навсегда"), role: .destructive) {
+            if let ids = idsPendingPermanentDelete {
+                permanentlyDeleteRecordings(ids)
+            }
+            idsPendingPermanentDelete = nil
+        }
+        Button(t("Cancel", "Отмена"), role: .cancel) {
+            idsPendingPermanentDelete = nil
+        }
+    }
+
+    var body: some View {
+        mainSplitBase
         .alert(t("Import Error", "Ошибка импорта"), isPresented: $importViewModel.showError) {
             Button(t("OK", "ОК")) {}
         } message: {
@@ -400,50 +457,17 @@ struct MacMainView: View {
         }
         .alert(
             t("Recording Error", "Ошибка записи"),
-            isPresented: Binding(
-                get: { recordingViewModel.error != nil },
-                set: { if !$0 { recordingViewModel.clearError() } }
-            )
+            isPresented: isRecordingErrorPresented
         ) {
-            let message = recordingViewModel.error ?? ""
-            if message.contains("Microphone permission") {
-                Button(t("Open Microphone Settings", "Открыть настройки микрофона")) {
-                    MacPrivacySettings.openMicrophone()
-                    recordingViewModel.clearError()
-                }
-                Button(t("Cancel", "Отмена"), role: .cancel) {
-                    recordingViewModel.clearError()
-                }
-            } else if message.contains("Audio Capture") || message.contains("System audio") {
-                Button(t("Open System Settings", "Открыть системные настройки")) {
-                    MacPrivacySettings.openSystemAudio()
-                    recordingViewModel.clearError()
-                }
-                Button(t("Cancel", "Отмена"), role: .cancel) { recordingViewModel.clearError() }
-            } else {
-                Button(t("OK", "ОК")) {
-                    recordingViewModel.clearError()
-                }
-            }
+            recordingErrorAlertActions
         } message: {
             Text(recordingViewModel.error ?? t("The recording could not continue.", "Запись не может продолжаться."))
         }
         .confirmationDialog(
             permanentDeleteDialogTitle,
-            isPresented: Binding(
-                get: { idsPendingPermanentDelete != nil },
-                set: { if !$0 { idsPendingPermanentDelete = nil } }
-            )
+            isPresented: isPermanentDeletePresented
         ) {
-            Button(t("Delete Permanently", "Удалить навсегда"), role: .destructive) {
-                if let ids = idsPendingPermanentDelete {
-                    permanentlyDeleteRecordings(ids)
-                }
-                idsPendingPermanentDelete = nil
-            }
-            Button(t("Cancel", "Отмена"), role: .cancel) {
-                idsPendingPermanentDelete = nil
-            }
+            permanentDeleteDialogActions
         } message: {
             Text(t(
                 "Recordings, transcripts, and summaries are deleted forever. This can't be undone.",
@@ -757,6 +781,10 @@ struct MacMainView: View {
         .buttonStyle(.plain)
         .contentShape(Rectangle())
         .accessibilityIdentifier("sidebar-\(identifier)")
+        .accessibilityAddTraits(selectedSection == section ? .isSelected : [])
+        .accessibilityLabel(
+            isDropTargeted ? t("\(title), drop target", "\(title), цель перетаскивания") : title
+        )
         .listRowBackground(
             isDropTargeted
                 ? Palette.accent.opacity(0.32)
@@ -1083,6 +1111,9 @@ struct MacMainView: View {
                 },
                 onOpenItem: { itemId in
                     openInboxSource(InboxDetailRef(kind: .item, id: itemId))
+                },
+                onOpenChat: { chatId in
+                    openInboxChat(chatId)
                 }
             )
         case .history:
@@ -1541,18 +1572,18 @@ private struct InlineLibraryErrorBanner: View {
     var body: some View {
         HStack(spacing: Spacing.sm) {
             Image(systemName: "wifi.exclamationmark")
-                .foregroundStyle(Color.white)
+                .foregroundStyle(Color.black)
 
             Text(message)
                 .font(Typography.bodySmall)
-                .foregroundStyle(Color.white)
+                .foregroundStyle(Color.black)
                 .lineLimit(2)
 
             Spacer(minLength: Spacing.md)
 
             Button(action: onDismiss) {
                 Image(systemName: "xmark")
-                    .foregroundStyle(Color.white.opacity(0.9))
+                    .foregroundStyle(Color.black.opacity(0.85))
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Dismiss library message")
@@ -1589,6 +1620,11 @@ private struct FolderNameSheet: View {
                 .textFieldStyle(.plain)
                 .waiTextField()
                 .frame(maxWidth: .infinity)
+                .onSubmit {
+                    if !folderName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        onSubmit()
+                    }
+                }
 
             if canMoveSelection {
                 Toggle(moveSelectionText, isOn: $moveSelectionIntoFolder)
@@ -1601,11 +1637,13 @@ private struct FolderNameSheet: View {
 
                 Button(cancelTitle, action: onCancel)
                     .buttonStyle(WaiGhostButtonStyle())
+                    .keyboardShortcut(.cancelAction)
                     .frame(width: MacMainLayoutMetrics.folderNameSheetActionWidth)
 
                 Button(primaryTitle, action: onSubmit)
                     .buttonStyle(WaiPrimaryButtonStyle(isDisabled: folderName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty))
                     .disabled(folderName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .keyboardShortcut(.defaultAction)
                     .frame(width: MacMainLayoutMetrics.folderNameSheetActionWidth)
             }
         }
@@ -1890,6 +1928,7 @@ struct MacAuthView: View {
             }
             .buttonStyle(WaiPrimaryButtonStyle(isDisabled: !isFormValid || appState.isLoading))
             .disabled(!isFormValid || appState.isLoading)
+            .keyboardShortcut(.defaultAction)
             .accessibilityIdentifier("auth-submit-button")
 
             Spacer()
@@ -1915,6 +1954,7 @@ struct MacAuthView: View {
                 .waiTextField(isActive: focusedField == .email)
                 .focused($focusedField, equals: .email)
                 .frame(maxWidth: 380)
+                .onSubmit { if isFormValid { submit() } }
                 .accessibilityIdentifier("auth-email-field")
 
             if authMode != .magicLink {
@@ -1923,6 +1963,7 @@ struct MacAuthView: View {
                     .waiTextField(isActive: focusedField == .password)
                     .focused($focusedField, equals: .password)
                     .frame(maxWidth: 380)
+                    .onSubmit { if isFormValid { submit() } }
                     .accessibilityIdentifier("auth-password-field")
 
                 if authMode == .register {
@@ -1931,6 +1972,7 @@ struct MacAuthView: View {
                         .waiTextField(isActive: focusedField == .confirmPassword)
                         .focused($focusedField, equals: .confirmPassword)
                         .frame(maxWidth: 380)
+                        .onSubmit { if isFormValid { submit() } }
                         .accessibilityIdentifier("auth-confirm-password-field")
 
                     // Communicate the length requirement up front (111b) and the

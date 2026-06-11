@@ -43,9 +43,23 @@ struct MenuBarView: View {
             }
         }
         .frame(width: 260)
-        .task {
+        // Keyed to auth so signing in after first open populates the list,
+        // and signing out doesn't keep showing another account's recordings.
+        .task(id: appState.isAuthenticated) {
             if appState.isAuthenticated {
                 await loadRecentRecordings()
+            } else {
+                recentRecordings = []
+            }
+        }
+        .onChangeCompat(of: isRecordingActivityVisible) {
+            if !isRecordingActivityVisible, appState.isAuthenticated {
+                Task { await loadRecentRecordings() }
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .pendingRecordingSyncDidFinish)) { _ in
+            if appState.isAuthenticated {
+                Task { await loadRecentRecordings() }
             }
         }
     }
@@ -221,9 +235,14 @@ struct MenuBarView: View {
                                     .font(Typography.bodySmall)
                                     .lineLimit(1)
                                 Spacer()
-                                Text(recording.createdAt.formatted(date: .abbreviated, time: .omitted))
-                                    .font(Typography.caption)
-                                    .foregroundStyle(Palette.textTertiary)
+                                Text(MacDateFormatting.string(
+                                    from: recording.createdAt,
+                                    dateStyle: .medium,
+                                    timeStyle: .none,
+                                    language: languageManager.current
+                                ))
+                                .font(Typography.caption)
+                                .foregroundStyle(Palette.textTertiary)
                             }
                             .contentShape(Rectangle())
                             .padding(.vertical, Spacing.xs)
@@ -258,9 +277,14 @@ struct MenuBarView: View {
                                     .foregroundStyle(Palette.textPrimary)
                                     .lineLimit(2)
                                     .multilineTextAlignment(.leading)
-                                Text(last.timestamp.formatted(date: .abbreviated, time: .shortened))
-                                    .font(Typography.caption)
-                                    .foregroundStyle(Palette.textTertiary)
+                                Text(MacDateFormatting.string(
+                                    from: last.timestamp,
+                                    dateStyle: .medium,
+                                    timeStyle: .short,
+                                    language: languageManager.current
+                                ))
+                                .font(Typography.caption)
+                                .foregroundStyle(Palette.textTertiary)
                             }
                             Spacer()
                         }
