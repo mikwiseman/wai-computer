@@ -32,13 +32,18 @@ final class MacContentFeedViewModelTests: XCTestCase {
         XCTAssertFalse(source.contains("Compare ("))
     }
 
-    func testInboxViewUsesAppKitTableForFastScrollingRows() throws {
+    func testInboxViewUsesRecyclingListForFastScrollingRows() throws {
         let source = try macSource("WaiComputer/Features/Inbox/MacInboxView.swift")
 
-        XCTAssertTrue(source.contains("MacInboxRowsTable("))
-        XCTAssertTrue(source.contains("NSTableView"))
-        XCTAssertTrue(source.contains("usesAutomaticRowHeights = false"))
-        XCTAssertFalse(source.contains("List {"))
+        // Inbox rows live in a SwiftUI List (NSTableView-backed row reuse)
+        // with a memoized display-row mapping. A custom NSScrollView
+        // representable here re-entered NSHostingView layout on every wheel
+        // frame on macOS 26 — the "inbox scroll freezes" bug — so its return
+        // is treated as a regression, as is an unrecycled LazyVStack.
+        XCTAssertTrue(source.contains("MacInboxRowsList("))
+        XCTAssertTrue(source.contains("List {"))
+        XCTAssertTrue(source.contains("displayCache.displayRows(for: rows, language: language)"))
+        XCTAssertFalse(source.contains("NSViewRepresentable"))
         XCTAssertFalse(source.contains("LazyVStack(spacing: 0)"))
     }
 
@@ -156,21 +161,26 @@ final class MacContentFeedViewModelTests: XCTestCase {
         XCTAssertTrue(source.contains(".keyboardShortcut(\"n\", modifiers: [.command, .shift])"))
     }
 
-    func testInboxTableDisablesHorizontalScrollingAndGridLines() throws {
+    func testInboxRowsKeepFlatChromeFreeStyling() throws {
         let source = try macSource("WaiComputer/Features/Inbox/MacInboxView.swift")
 
-        XCTAssertTrue(source.contains("scrollView.hasHorizontalScroller = false"))
-        XCTAssertTrue(source.contains("tableView.gridStyleMask = []"))
-        XCTAssertTrue(source.contains("column.width = scrollView.contentView.bounds.width"))
-        XCTAssertTrue(source.contains("tableView.columnAutoresizingStyle = .uniformColumnAutoresizingStyle"))
+        // The List keeps the table's flat look: plain style, no system
+        // background, edge-to-edge rows without separators.
+        XCTAssertTrue(source.contains(".listStyle(.plain)"))
+        XCTAssertTrue(source.contains(".scrollContentBackground(.hidden)"))
+        XCTAssertTrue(source.contains(".listRowSeparator(.hidden)"))
+        XCTAssertTrue(source.contains(".listRowInsets(EdgeInsets())"))
     }
 
     func testInboxUsesAutomaticPaginationInsteadOfManualLoadMoreFooter() throws {
         let source = try macSource("WaiComputer/Features/Inbox/MacInboxView.swift")
 
+        // Pagination fires when a row near the end appears (the lookahead
+        // mirrors the old 256px-before-bottom threshold) — never via a
+        // user-facing "Load more" button.
         XCTAssertTrue(source.contains("onLoadMore:"))
-        XCTAssertTrue(source.contains("contentView.postsBoundsChangedNotifications = true"))
-        XCTAssertTrue(source.contains("maybeLoadMoreIfNeeded()"))
+        XCTAssertTrue(source.contains("loadMoreLookahead"))
+        XCTAssertTrue(source.contains("canLoadMore, !isLoadingMore"))
         XCTAssertFalse(source.contains("Load More"))
         XCTAssertFalse(source.contains("Показать ещё"))
     }
@@ -211,7 +221,8 @@ final class MacContentFeedViewModelTests: XCTestCase {
 
         XCTAssertTrue(source.contains("onTurnCompleted: { completion in"))
         XCTAssertTrue(source.contains("MacWaiTaskNotificationCenter.shared.notifyTaskFinished("))
-        XCTAssertTrue(source.contains("body: completion.preview ?? t(\"Your Wai task is ready.\", \"Задача Wai готова.\")"))
+        XCTAssertTrue(source.contains("body: completion.preview ?? OnboardingL10n.text("))
+        XCTAssertTrue(source.contains("\"Your Wai task is ready.\", \"Задача Wai готова.\", language: language"))
     }
 
     func testMacWaiTaskNotificationCenterRequestsPermissionInForegroundOnly() throws {

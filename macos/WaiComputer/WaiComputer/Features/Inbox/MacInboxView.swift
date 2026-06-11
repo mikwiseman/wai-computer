@@ -28,27 +28,6 @@ private enum InboxCreateMode {
     case ask
 }
 
-private extension MacAccentChoice {
-    var nsColor: NSColor {
-        switch self {
-        case .system:
-            return .controlAccentColor
-        case .amber:
-            return .systemOrange
-        case .blue:
-            return .systemBlue
-        case .green:
-            return .systemGreen
-        case .violet:
-            return .systemPurple
-        case .rose:
-            return .systemPink
-        case .graphite:
-            return .systemGray
-        }
-    }
-}
-
 struct MacInboxView: View {
     let apiClient: APIClient
     let recordings: [Recording]
@@ -412,11 +391,10 @@ struct MacInboxView: View {
                     onChat: openAskComposer
                 )
             } else {
-                MacInboxRowsTable(
+                MacInboxRowsList(
                     rows: model.rows,
                     language: languageManager.current,
                     selectedRowID: selectedRowID,
-                    accentChoice: MacThemePreferences.currentAccent,
                     canLoadMore: model.nextCursor != nil,
                     isLoadingMore: model.isLoadingMore,
                     onSelect: { row in
@@ -478,97 +456,55 @@ struct MacInboxView: View {
         .padding(Spacing.xl)
     }
 
-    @ViewBuilder
     private func selectedDetailView(_ selectedDetail: InboxDetailRef) -> some View {
-        switch selectedDetail.kind {
-        case .recording:
-            MacRecordingDetailView(
-                recordingId: selectedDetail.id,
-                initialDetail: nil,
-                mode: .active,
-                folders: folders,
-                pendingTitleEditId: .constant(nil),
-                onDelete: {
-                    self.selectedDetail = nil
-                    Task {
-                        await model.load()
-                        await onLibraryChanged()
-                    }
-                },
-                onRestore: {
-                    self.selectedDetail = nil
-                    Task {
-                        await model.load()
-                        await onLibraryChanged()
-                    }
-                },
-                onMoveToFolder: { _ in
-                    Task {
-                        await model.load()
-                        await onLibraryChanged()
-                    }
-                },
-                onDidRename: {
-                    Task {
-                        await model.load()
-                        await onLibraryChanged()
+        // Equatable gate: inbox pagination flips @Published state (rows append,
+        // isLoadingMore) on every page, which re-runs this body. The detail
+        // subtree's closure props defeat SwiftUI's automatic skip, so without
+        // the gate every page load re-diffed the open recording's whole
+        // transcript List (~40ms hitch per page while flick-scrolling the
+        // list). The host re-renders only when its Equatable inputs change.
+        MacInboxDetailHost(
+            detail: selectedDetail,
+            recordings: recordings,
+            folders: folders,
+            viewingFolderId: folderId,
+            pendingChatMessage: pendingChatMessage,
+            language: languageManager.current,
+            apiClient: apiClient,
+            onCloseDetail: {
+                self.selectedDetail = nil
+                Task {
+                    await model.load()
+                    await onLibraryChanged()
+                }
+            },
+            onContentChanged: {
+                Task {
+                    await model.load()
+                    await onLibraryChanged()
+                }
+            },
+            onPendingChatMessageConsumed: { pendingChatMessage = nil },
+            onOpenCitation: { recordingId, _ in
+                // Open the cited recording in this pane — the same selection
+                // the list rows drive. startMs is ignored until the detail
+                // view grows a seek API.
+                self.selectedDetail = InboxDetailRef(kind: .recording, id: recordingId)
+            },
+            onVoiceInput: {
+                // Tap to start / tap to stop over the existing dictation
+                // pipeline — the transcript pastes into the focused composer.
+                Task {
+                    if dictationManager.state == .listening {
+                        await dictationManager.stopAndInsert()
+                    } else {
+                        await dictationManager.startDictation()
                     }
                 }
-            )
-            .id(selectedRowID)
-        case .item:
-            MacInboxItemDetail(
-                apiClient: apiClient,
-                itemId: selectedDetail.id,
-                onDeleted: {
-                    self.selectedDetail = nil
-                    Task {
-                        await model.load()
-                        await onLibraryChanged()
-                    }
-                },
-                onUpdated: {}
-            )
-            .id(selectedRowID)
-        case .chat:
-            CompanionView(
-                apiClient: apiClient,
-                recordings: recordings,
-                initialChatId: selectedDetail.id,
-                initialMessage: pendingChatMessage,
-                onInitialMessageConsumed: { pendingChatMessage = nil },
-                showsConversationSwitcher: false,
-                viewingFolderId: folderId,
-                onTurnCompleted: { completion in
-                    MacWaiTaskNotificationCenter.shared.notifyTaskFinished(
-                        title: t("Wai finished", "Wai закончил"),
-                        body: completion.preview ?? t("Your Wai task is ready.", "Задача Wai готова."),
-                        chatId: completion.chatId
-                    )
-                },
-                onOpenCitation: { recordingId, _ in
-                    // Open the cited recording in this pane — the same selection
-                    // the list rows drive. startMs is ignored until the detail
-                    // view grows a seek API.
-                    self.selectedDetail = InboxDetailRef(kind: .recording, id: recordingId)
-                },
-                onVoiceInput: {
-                    // Tap to start / tap to stop over the existing dictation
-                    // pipeline — the transcript pastes into the focused composer.
-                    // (Restores the e09bb9a13 hook lost in the inbox unification.)
-                    Task {
-                        if dictationManager.state == .listening {
-                            await dictationManager.stopAndInsert()
-                        } else {
-                            await dictationManager.startDictation()
-                        }
-                    }
-                }
-            )
-            .environment(\.locale, MacDateFormatting.locale(for: languageManager.current))
-            .companionAccentColor(Palette.accent)
-            .id(selectedRowID)
-        }
+            }
+        )
+        .equatable()
+        .id(selectedRowID)
     }
 
     private var createPane: some View {
@@ -873,6 +809,81 @@ struct MacInboxView: View {
 
     private func t(_ english: String, _ russian: String) -> String {
         OnboardingL10n.text(english, russian, language: languageManager.current)
+    }
+}
+
+/// Hosts the selected detail (recording / material / Wai chat) behind an
+/// Equatable wrapper so list-side state churn (pagination, banners) cannot
+/// re-render it. Closures and the API client are deliberately excluded from
+/// equality — they capture stable @State storage and a stable client.
+private struct MacInboxDetailHost: View, Equatable {
+    let detail: InboxDetailRef
+    let recordings: [Recording]
+    let folders: [Folder]
+    let viewingFolderId: String?
+    let pendingChatMessage: String?
+    let language: LanguageManager.SupportedLanguage
+    let apiClient: APIClient
+    let onCloseDetail: () -> Void
+    let onContentChanged: () -> Void
+    let onPendingChatMessageConsumed: () -> Void
+    let onOpenCitation: (String, Int?) -> Void
+    let onVoiceInput: () -> Void
+
+    static func == (lhs: MacInboxDetailHost, rhs: MacInboxDetailHost) -> Bool {
+        lhs.detail == rhs.detail
+            && lhs.recordings == rhs.recordings
+            && lhs.folders == rhs.folders
+            && lhs.viewingFolderId == rhs.viewingFolderId
+            && lhs.pendingChatMessage == rhs.pendingChatMessage
+            && lhs.language == rhs.language
+    }
+
+    var body: some View {
+        switch detail.kind {
+        case .recording:
+            MacRecordingDetailView(
+                recordingId: detail.id,
+                initialDetail: nil,
+                mode: .active,
+                folders: folders,
+                pendingTitleEditId: .constant(nil),
+                onDelete: onCloseDetail,
+                onRestore: onCloseDetail,
+                onMoveToFolder: { _ in onContentChanged() },
+                onDidRename: onContentChanged
+            )
+        case .item:
+            MacInboxItemDetail(
+                apiClient: apiClient,
+                itemId: detail.id,
+                onDeleted: onCloseDetail,
+                onUpdated: {}
+            )
+        case .chat:
+            CompanionView(
+                apiClient: apiClient,
+                recordings: recordings,
+                initialChatId: detail.id,
+                initialMessage: pendingChatMessage,
+                onInitialMessageConsumed: onPendingChatMessageConsumed,
+                showsConversationSwitcher: false,
+                viewingFolderId: viewingFolderId,
+                onTurnCompleted: { completion in
+                    MacWaiTaskNotificationCenter.shared.notifyTaskFinished(
+                        title: OnboardingL10n.text("Wai finished", "Wai закончил", language: language),
+                        body: completion.preview ?? OnboardingL10n.text(
+                            "Your Wai task is ready.", "Задача Wai готова.", language: language
+                        ),
+                        chatId: completion.chatId
+                    )
+                },
+                onOpenCitation: onOpenCitation,
+                onVoiceInput: onVoiceInput
+            )
+            .environment(\.locale, MacDateFormatting.locale(for: language))
+            .companionAccentColor(Palette.accent)
+        }
     }
 }
 
@@ -1533,478 +1544,181 @@ private struct MacInboxDisplayRow: Identifiable, Equatable {
     }
 }
 
-private struct MacInboxRowsTable: NSViewRepresentable {
+/// Inbox rows in a SwiftUI `List` (NSTableView-backed, rows reused by AppKit).
+///
+/// This was previously a custom NSScrollView/NSTableView representable. On
+/// macOS 26 its scrolling dirtied the window's layout path on every wheel
+/// frame, which re-entered `NSHostingView.layout()` →
+/// `invalidateSizeConstraintsIfNecessary()` → `minSize()` → a full root
+/// ViewGraph re-measure: ~55–118ms of main-thread work per scroll event on a
+/// months-deep inbox — felt as scrolling that freezes and sticks. A
+/// SwiftUI-managed List scrolls without re-entering SwiftUI layout (measured
+/// ~10× cheaper in the same window), so the representable is gone.
+private struct MacInboxRowsList: View {
     let rows: [InboxRow]
     let language: LanguageManager.SupportedLanguage
     let selectedRowID: String?
-    let accentChoice: MacAccentChoice
     let canLoadMore: Bool
     let isLoadingMore: Bool
     let onSelect: (InboxRow) -> Void
     let onLoadMore: () -> Void
 
-    func makeCoordinator() -> Coordinator {
-        Coordinator(onSelect: onSelect, onLoadMore: onLoadMore)
+    /// Memoizes the O(N) localize + date-format row mapping across
+    /// re-renders, and maps only the appended tail on pagination — the same
+    /// motivation as the old coordinator cache, minus the full re-map per page.
+    @State private var displayCache = MacInboxDisplayRowCache()
+
+    /// Trigger pagination when one of the last few rows appears —
+    /// matches the old 256px-before-bottom threshold (4 × 64pt rows).
+    private static let loadMoreLookahead = 4
+
+    var body: some View {
+        let displayRows = displayCache.displayRows(for: rows, language: language)
+        List {
+            ForEach(Array(displayRows.enumerated()), id: \.element.id) { index, display in
+                draggableRow(display, index: index)
+                    .listRowInsets(EdgeInsets())
+                    .listRowSeparator(.hidden)
+                    .listRowBackground(
+                        display.id == selectedRowID
+                            ? Palette.accent.opacity(0.16)
+                            : Color.clear
+                    )
+                    .onAppear {
+                        if index >= displayRows.count - Self.loadMoreLookahead,
+                           canLoadMore, !isLoadingMore {
+                            onLoadMore()
+                        }
+                    }
+            }
+            if isLoadingMore {
+                HStack {
+                    Spacer()
+                    ProgressView()
+                        .controlSize(.small)
+                    Spacer()
+                }
+                .frame(height: 44)
+                .listRowInsets(EdgeInsets())
+                .listRowSeparator(.hidden)
+                .listRowBackground(Color.clear)
+            }
+        }
+        .listStyle(.plain)
+        .scrollContentBackground(.hidden)
+        .accessibilityIdentifier("mac-inbox-rows")
     }
 
-    func makeNSView(context: Context) -> NSScrollView {
-        let tableView = NSTableView()
-        tableView.identifier = NSUserInterfaceItemIdentifier("mac-inbox-rows")
-        tableView.setAccessibilityIdentifier("mac-inbox-rows")
-        tableView.headerView = nil
-        tableView.backgroundColor = .clear
-        tableView.usesAlternatingRowBackgroundColors = false
-        tableView.usesAutomaticRowHeights = false
-        tableView.rowHeight = MacInboxTableMetrics.rowHeight
-        tableView.intercellSpacing = .zero
-        tableView.gridStyleMask = []
-        tableView.columnAutoresizingStyle = .uniformColumnAutoresizingStyle
-        tableView.allowsMultipleSelection = false
-        tableView.allowsEmptySelection = true
-        tableView.selectionHighlightStyle = .none
-        tableView.focusRingType = .none
-        tableView.autoresizingMask = [.width]
-        tableView.dataSource = context.coordinator
-        tableView.delegate = context.coordinator
-        tableView.target = context.coordinator
-        tableView.action = #selector(Coordinator.rowClicked(_:))
-        // Let recording rows be dragged onto sidebar folders (move-to-folder).
-        tableView.setDraggingSourceOperationMask([.move, .copy], forLocal: true)
-
-        let column = NSTableColumn(identifier: MacInboxTableMetrics.columnIdentifier)
-        column.minWidth = 0
-        column.resizingMask = .autoresizingMask
-        tableView.addTableColumn(column)
-
-        let scrollView = NSScrollView()
-        scrollView.identifier = NSUserInterfaceItemIdentifier("mac-inbox-rows-scroll")
-        scrollView.setAccessibilityIdentifier("mac-inbox-rows-scroll")
-        scrollView.drawsBackground = false
-        scrollView.hasVerticalScroller = true
-        scrollView.hasHorizontalScroller = false
-        scrollView.autohidesScrollers = true
-        scrollView.borderType = .noBorder
-        scrollView.contentView.postsBoundsChangedNotifications = true
-        scrollView.documentView = tableView
-
-        context.coordinator.tableView = tableView
-        context.coordinator.scrollView = scrollView
-        context.coordinator.observeScrollView(scrollView)
-        return scrollView
-    }
-
-    func updateNSView(_ scrollView: NSScrollView, context: Context) {
-        guard let tableView = scrollView.documentView as? NSTableView else { return }
-        context.coordinator.onSelect = onSelect
-        context.coordinator.onLoadMore = onLoadMore
-        context.coordinator.update(
-            rows: rows,
-            language: language,
-            selectedRowID: selectedRowID,
-            accentChoice: accentChoice,
-            canLoadMore: canLoadMore,
-            isLoadingMore: isLoadingMore
+    private func draggableRow(_ display: MacInboxDisplayRow, index: Int) -> some View {
+        // Every inbox kind files into folders now — recordings, materials,
+        // and Wai chats all drag to the sidebar (folders / Inbox / Trash).
+        MacInboxListRow(
+            display: display,
+            onSelect: { onSelect(rows[index]) }
         )
-        if scrollView.contentView.bounds.width > 0, let column = tableView.tableColumns.first {
-            column.width = scrollView.contentView.bounds.width
-            tableView.frame.size.width = scrollView.contentView.bounds.width
-        }
-        if scrollView.contentView.bounds.origin.x != 0 {
-            var origin = scrollView.contentView.bounds.origin
-            origin.x = 0
-            scrollView.contentView.scroll(to: origin)
-            scrollView.reflectScrolledClipView(scrollView.contentView)
-        }
-        context.coordinator.maybeLoadMoreIfNeeded()
+        .draggable(InboxDragItem(kind: display.sourceKind, id: display.detail.id))
     }
+}
 
-    final class Coordinator: NSObject, NSTableViewDataSource, NSTableViewDelegate {
-        var onSelect: (InboxRow) -> Void
-        var onLoadMore: () -> Void
-        weak var tableView: NSTableView?
-        weak var scrollView: NSScrollView?
-        private var rows: [InboxRow] = []
-        private var displayRows: [MacInboxDisplayRow] = []
-        private var lastInputRows: [InboxRow] = []
-        private var lastLanguage: LanguageManager.SupportedLanguage?
-        private var selectedRowID: String?
-        private var accentChoice: MacAccentChoice = .system
-        private var canLoadMore = false
-        private var isLoadingMore = false
-        private var didRequestLoadMore = false
-        private var isApplyingSelection = false
-        private var boundsObserver: NSObjectProtocol?
+/// One inbox row — mirrors the old NSTableCellView layout (icon 22pt at
+/// leading 16, semibold title with trailing status, secondary metadata line,
+/// fixed 64pt height).
+private struct MacInboxListRow: View {
+    let display: MacInboxDisplayRow
+    let onSelect: () -> Void
 
-        init(onSelect: @escaping (InboxRow) -> Void, onLoadMore: @escaping () -> Void) {
-            self.onSelect = onSelect
-            self.onLoadMore = onLoadMore
-        }
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: display.iconSystemName)
+                .font(.system(size: 15, weight: .medium))
+                .foregroundStyle(iconColor)
+                .frame(width: 22, height: 22)
 
-        deinit {
-            if let boundsObserver {
-                NotificationCenter.default.removeObserver(boundsObserver)
-            }
-        }
-
-        func observeScrollView(_ scrollView: NSScrollView) {
-            if let boundsObserver {
-                NotificationCenter.default.removeObserver(boundsObserver)
-            }
-            boundsObserver = NotificationCenter.default.addObserver(
-                forName: NSView.boundsDidChangeNotification,
-                object: scrollView.contentView,
-                queue: .main
-            ) { [weak self] _ in
-                self?.maybeLoadMoreIfNeeded()
-            }
-        }
-
-        func update(
-            rows: [InboxRow],
-            language: LanguageManager.SupportedLanguage,
-            selectedRowID: String?,
-            accentChoice: MacAccentChoice,
-            canLoadMore: Bool,
-            isLoadingMore: Bool
-        ) {
-            // Memoize the (localize + date-format) row mapping. It is O(N) and
-            // previously ran on every SwiftUI invalidation — selection changes,
-            // the 2s status poll, any parent re-render — even when the underlying
-            // rows were byte-identical, which showed up as scroll jank.
-            let displayRows: [MacInboxDisplayRow]
-            if rows == lastInputRows, language == lastLanguage {
-                displayRows = self.displayRows
-            } else {
-                displayRows = rows.map { MacInboxDisplayRow(row: $0, language: language) }
-                lastInputRows = rows
-                lastLanguage = language
-            }
-
-            let accentChanged = self.accentChoice != accentChoice
-            let oldDisplayRows = self.displayRows
-            let rowsChanged = oldDisplayRows != displayRows
-
-            self.rows = rows
-            self.displayRows = displayRows
-            self.selectedRowID = selectedRowID
-            self.accentChoice = accentChoice
-            self.canLoadMore = canLoadMore
-            self.isLoadingMore = isLoadingMore
-            if !isLoadingMore {
-                didRequestLoadMore = false
-            }
-
-            if accentChanged {
-                // Theme change re-tints every cell — full reload is correct and rare.
-                tableView?.reloadData()
-            } else if rowsChanged, let tableView {
-                applyRowChanges(from: oldDisplayRows, to: displayRows, in: tableView)
-            }
-            applySelection()
-        }
-
-        /// Apply row changes incrementally so loading more pages keeps scroll
-        /// position and a single status change doesn't relayout the whole list.
-        private func applyRowChanges(
-            from old: [MacInboxDisplayRow],
-            to new: [MacInboxDisplayRow],
-            in tableView: NSTableView
-        ) {
-            // Pure append (pagination): insert only the new tail.
-            if new.count > old.count, Array(new.prefix(old.count)) == old {
-                tableView.insertRows(
-                    at: IndexSet(integersIn: old.count..<new.count),
-                    withAnimation: []
-                )
-                return
-            }
-            // Same length: reload only the rows that actually changed.
-            if new.count == old.count {
-                var changed = IndexSet()
-                for index in new.indices where new[index] != old[index] {
-                    changed.insert(index)
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text(display.title)
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(Palette.textPrimary)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                    Spacer(minLength: 0)
+                    if let status = display.statusLabel {
+                        // Label-on-tint pill: the tone color is only a 15%
+                        // background tint, never the text color — 11pt
+                        // orange/red text failed WCAG AA (~2.2:1).
+                        Text(status)
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(Palette.textPrimary)
+                            .lineLimit(1)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 2)
+                            .background(statusTint.opacity(0.15), in: Capsule())
+                            .layoutPriority(1)
+                    }
                 }
-                if changed.isEmpty { return }
-                if changed.count < new.count {
-                    tableView.reloadData(forRowIndexes: changed, columnIndexes: IndexSet(integer: 0))
-                    return
-                }
-            }
-            // Wholesale change (scope/source switch, deletions, reorder).
-            tableView.reloadData()
-        }
-
-        func numberOfRows(in tableView: NSTableView) -> Int {
-            displayRows.count
-        }
-
-        func tableView(_ tableView: NSTableView, pasteboardWriterForRow row: Int) -> NSPasteboardWriting? {
-            guard rows.indices.contains(row) else { return nil }
-            let source = rows[row]
-            let payload = InboxDragItem(kind: source.sourceKind, id: source.detail.id)
-            guard let data = try? JSONEncoder().encode(payload) else {
-                return nil
-            }
-            let item = NSPasteboardItem()
-            item.setData(data, forType: NSPasteboard.PasteboardType(UTType.waiInboxMove.identifier))
-            return item
-        }
-
-        func tableView(
-            _ tableView: NSTableView,
-            viewFor tableColumn: NSTableColumn?,
-            row: Int
-        ) -> NSView? {
-            guard displayRows.indices.contains(row) else { return nil }
-            let cell = tableView.makeView(
-                withIdentifier: MacInboxTableMetrics.cellIdentifier,
-                owner: self
-            ) as? MacInboxTableCellView ?? MacInboxTableCellView(
-                identifier: MacInboxTableMetrics.cellIdentifier
-            )
-            cell.configure(with: displayRows[row], accentColor: accentChoice.nsColor)
-            return cell
-        }
-
-        func tableView(_ tableView: NSTableView, heightOfRow row: Int) -> CGFloat {
-            MacInboxTableMetrics.rowHeight
-        }
-
-        func tableView(_ tableView: NSTableView, rowViewForRow row: Int) -> NSTableRowView? {
-            let rowView = tableView.makeView(
-                withIdentifier: MacInboxTableMetrics.rowIdentifier,
-                owner: self
-            ) as? MacInboxTableRowView ?? MacInboxTableRowView()
-            rowView.identifier = MacInboxTableMetrics.rowIdentifier
-            rowView.accentColor = accentChoice.nsColor
-            return rowView
-        }
-
-        func tableViewSelectionDidChange(_ notification: Notification) {
-            guard !isApplyingSelection, let tableView else { return }
-            let selectedRow = tableView.selectedRow
-            guard rows.indices.contains(selectedRow) else { return }
-            guard selectedRowID != rows[selectedRow].id else { return }
-            selectedRowID = rows[selectedRow].id
-            onSelect(rows[selectedRow])
-        }
-
-        @objc
-        func rowClicked(_ sender: NSTableView) {
-            let clickedRow = sender.clickedRow
-            guard rows.indices.contains(clickedRow) else { return }
-            guard selectedRowID != rows[clickedRow].id else { return }
-            selectedRowID = rows[clickedRow].id
-            onSelect(rows[clickedRow])
-        }
-
-        private func applySelection() {
-            guard let tableView else { return }
-            let nextIndex: Int? = selectedRowID.flatMap { id in
-                displayRows.firstIndex { $0.id == id }
-            }
-            if tableView.selectedRow == (nextIndex ?? -1) {
-                return
-            }
-            isApplyingSelection = true
-            defer { isApplyingSelection = false }
-            if let nextIndex {
-                tableView.selectRowIndexes(IndexSet(integer: nextIndex), byExtendingSelection: false)
-            } else {
-                tableView.deselectAll(nil)
+                Text(display.metadata)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(Palette.textSecondary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
             }
         }
-
-        func maybeLoadMoreIfNeeded() {
-            guard canLoadMore, !isLoadingMore, !didRequestLoadMore else { return }
-            guard let tableView, !displayRows.isEmpty else { return }
-            let visibleMaxY = tableView.visibleRect.maxY
-            let contentHeight = tableView.rect(ofRow: displayRows.count - 1).maxY
-            guard contentHeight > 0 else { return }
-            let distanceToBottom = contentHeight - visibleMaxY
-            guard distanceToBottom <= MacInboxTableMetrics.loadMoreThreshold else { return }
-            didRequestLoadMore = true
-            onLoadMore()
-        }
-    }
-}
-
-private enum MacInboxTableMetrics {
-    static let rowHeight: CGFloat = 64
-    static let loadMoreThreshold: CGFloat = 256
-    static let columnIdentifier = NSUserInterfaceItemIdentifier("MacInboxRowsColumn")
-    static let cellIdentifier = NSUserInterfaceItemIdentifier("MacInboxRowCell")
-    static let rowIdentifier = NSUserInterfaceItemIdentifier("MacInboxTableRow")
-}
-
-private final class MacInboxTableRowView: NSTableRowView {
-    var accentColor: NSColor = .controlAccentColor {
-        didSet { needsDisplay = true }
+        .padding(.horizontal, 16)
+        .frame(height: 64)
+        .contentShape(Rectangle())
+        .onTapGesture(perform: onSelect)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(display.accessibilityLabel)
+        .accessibilityAddTraits(.isButton)
     }
 
-    override var isSelected: Bool {
-        didSet { needsDisplay = true }
+    /// All kinds share the accent: modes differ by glyph + title, so the
+    /// rows stay legible under any user accent choice (hardcoded green/orange
+    /// collided with the amber default).
+    private var iconColor: Color {
+        Palette.accent
     }
 
-    override func drawBackground(in dirtyRect: NSRect) {
-        if isSelected {
-            accentColor.withAlphaComponent(0.16).setFill()
-            dirtyRect.fill()
-        } else {
-            NSColor.clear.setFill()
-            dirtyRect.fill()
-        }
-    }
-
-    override func drawSelection(in dirtyRect: NSRect) {
-        drawBackground(in: dirtyRect)
-    }
-}
-
-private final class MacInboxTableCellView: NSTableCellView {
-    private let iconView = NSImageView()
-    private let titleLabel = NSTextField(labelWithString: "")
-    private let metadataLabel = NSTextField(labelWithString: "")
-    private let statusLabel = NSTextField(labelWithString: "")
-    private let statusPill = NSView()
-    private var statusTone: MacInboxDisplayRow.StatusTone = .neutral
-    private var statusPillLeading: NSLayoutConstraint?
-    private var statusPillTrailing: NSLayoutConstraint?
-
-    init(identifier: NSUserInterfaceItemIdentifier) {
-        super.init(frame: .zero)
-        self.identifier = identifier
-        setup()
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
-    }
-
-    func configure(with row: MacInboxDisplayRow, accentColor: NSColor) {
-        iconView.image = NSImage(systemSymbolName: row.iconSystemName, accessibilityDescription: nil)?
-            .withSymbolConfiguration(Self.iconSymbolConfiguration)
-        // Single-accent design: rows differ by glyph (waveform/doc/sparkles).
-        // Per-kind raw colors collided with accent choices — the chat rows'
-        // .systemOrange was bit-identical to the default amber accent.
-        iconView.contentTintColor = accentColor
-        titleLabel.stringValue = row.title
-        metadataLabel.stringValue = row.metadata
-        statusLabel.stringValue = row.statusLabel ?? ""
-        let hasStatus = row.statusLabel != nil
-        statusPill.isHidden = !hasStatus
-        // Collapse the pill's text padding when empty so status-free rows
-        // keep the full title width.
-        statusPillLeading?.constant = hasStatus ? 8 : 0
-        statusPillTrailing?.constant = hasStatus ? -8 : 0
-        statusTone = row.statusTone
-        applyStatusPillTint()
-        setAccessibilityLabel(row.accessibilityLabel)
-    }
-
-    private func setup() {
-        wantsLayer = true
-        layer?.backgroundColor = NSColor.clear.cgColor
-
-        iconView.translatesAutoresizingMaskIntoConstraints = false
-        iconView.imageScaling = .scaleProportionallyDown
-
-        titleLabel.font = .systemFont(ofSize: 15, weight: .semibold)
-        titleLabel.textColor = .labelColor
-        titleLabel.lineBreakMode = .byTruncatingTail
-        titleLabel.maximumNumberOfLines = 1
-        titleLabel.translatesAutoresizingMaskIntoConstraints = false
-
-        metadataLabel.font = .systemFont(ofSize: 12, weight: .medium)
-        metadataLabel.textColor = .secondaryLabelColor
-        metadataLabel.lineBreakMode = .byTruncatingTail
-        metadataLabel.maximumNumberOfLines = 1
-        metadataLabel.translatesAutoresizingMaskIntoConstraints = false
-
-        // Status renders as a tinted pill: the tone color is a cue in the
-        // background (15% alpha) while the text stays .labelColor — 11pt
-        // orange/red text was ~2.2–3.6:1 against a light background, below
-        // the 4.5:1 WCAG AA floor.
-        statusLabel.font = .systemFont(ofSize: 12, weight: .medium)
-        statusLabel.textColor = .labelColor
-        statusLabel.alignment = .center
-        statusLabel.lineBreakMode = .byTruncatingTail
-        statusLabel.maximumNumberOfLines = 1
-        statusLabel.translatesAutoresizingMaskIntoConstraints = false
-        statusLabel.setContentHuggingPriority(.required, for: .horizontal)
-        statusLabel.setContentCompressionResistancePriority(.required, for: .horizontal)
-
-        statusPill.translatesAutoresizingMaskIntoConstraints = false
-        statusPill.wantsLayer = true
-        statusPill.layer?.cornerRadius = 10
-        statusPill.setContentHuggingPriority(.required, for: .horizontal)
-        statusPill.setContentCompressionResistancePriority(.required, for: .horizontal)
-        statusPill.addSubview(statusLabel)
-
-        addSubview(iconView)
-        addSubview(titleLabel)
-        addSubview(metadataLabel)
-        addSubview(statusPill)
-        imageView = iconView
-        textField = titleLabel
-
-        let pillLeading = statusLabel.leadingAnchor.constraint(equalTo: statusPill.leadingAnchor, constant: 8)
-        let pillTrailing = statusLabel.trailingAnchor.constraint(equalTo: statusPill.trailingAnchor, constant: -8)
-        statusPillLeading = pillLeading
-        statusPillTrailing = pillTrailing
-
-        NSLayoutConstraint.activate([
-            iconView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 16),
-            iconView.centerYAnchor.constraint(equalTo: centerYAnchor),
-            iconView.widthAnchor.constraint(equalToConstant: 22),
-            iconView.heightAnchor.constraint(equalToConstant: 22),
-
-            titleLabel.leadingAnchor.constraint(equalTo: iconView.trailingAnchor, constant: 8),
-            titleLabel.topAnchor.constraint(equalTo: topAnchor, constant: 11),
-            titleLabel.trailingAnchor.constraint(lessThanOrEqualTo: statusPill.leadingAnchor, constant: -8),
-
-            pillLeading,
-            pillTrailing,
-            statusLabel.topAnchor.constraint(equalTo: statusPill.topAnchor, constant: 3),
-            statusLabel.bottomAnchor.constraint(equalTo: statusPill.bottomAnchor, constant: -3),
-
-            statusPill.centerYAnchor.constraint(equalTo: titleLabel.centerYAnchor),
-            statusPill.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -16),
-            statusPill.widthAnchor.constraint(lessThanOrEqualToConstant: 112),
-
-            metadataLabel.leadingAnchor.constraint(equalTo: titleLabel.leadingAnchor),
-            metadataLabel.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 3),
-            metadataLabel.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -16)
-        ])
-    }
-
-    private static let iconSymbolConfiguration = NSImage.SymbolConfiguration(pointSize: 15, weight: .medium)
-
-    override func viewDidChangeEffectiveAppearance() {
-        super.viewDidChangeEffectiveAppearance()
-        // Layer colors don't re-resolve dynamic NSColors on light/dark
-        // switches by themselves — re-tint with the new appearance.
-        applyStatusPillTint()
-    }
-
-    private func applyStatusPillTint() {
-        effectiveAppearance.performAsCurrentDrawingAppearance {
-            statusPill.layer?.backgroundColor = statusTint(for: statusTone)
-                .withAlphaComponent(0.15).cgColor
-        }
-    }
-
-    /// Tone color used only as the pill's background tint, never as text color.
-    private func statusTint(for tone: MacInboxDisplayRow.StatusTone) -> NSColor {
-        switch tone {
+    private var statusTint: Color {
+        switch display.statusTone {
         case .neutral:
-            return .secondaryLabelColor
+            return Palette.textSecondary
         case .warning:
-            return .systemOrange
+            return .orange
         case .error:
-            return .systemRed
+            return .red
         }
+    }
+}
+
+/// Append-aware memo for the row display mapping. Held in `@State` so the
+/// cache survives re-renders; mutating it during body evaluation is fine —
+/// it is plain storage, not observed state.
+private final class MacInboxDisplayRowCache {
+    private var lastRows: [InboxRow] = []
+    private var lastLanguage: LanguageManager.SupportedLanguage?
+    private var cached: [MacInboxDisplayRow] = []
+
+    func displayRows(
+        for rows: [InboxRow],
+        language: LanguageManager.SupportedLanguage
+    ) -> [MacInboxDisplayRow] {
+        if rows == lastRows, language == lastLanguage {
+            return cached
+        }
+        if language == lastLanguage,
+           rows.count > lastRows.count,
+           Array(rows.prefix(lastRows.count)) == lastRows {
+            // Pagination append: map only the new tail.
+            cached.append(contentsOf: rows[lastRows.count...].map {
+                MacInboxDisplayRow(row: $0, language: language)
+            })
+        } else {
+            cached = rows.map { MacInboxDisplayRow(row: $0, language: language) }
+        }
+        lastRows = rows
+        lastLanguage = language
+        return cached
     }
 }
 

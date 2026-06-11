@@ -49,7 +49,7 @@ public enum RecordingStatus: String, Codable, Sendable, CaseIterable {
 }
 
 /// Folder for organizing recordings.
-public struct Folder: Codable, Identifiable, Sendable {
+public struct Folder: Codable, Identifiable, Sendable, Equatable {
     public let id: String
     public var name: String
     public let createdAt: Date
@@ -90,7 +90,7 @@ public struct RecordingShareLink: Codable, Sendable {
 }
 
 /// Recording model
-public struct Recording: Codable, Identifiable, Sendable {
+public struct Recording: Codable, Identifiable, Sendable, Equatable {
     public let id: String
     public var title: String?
     public let type: RecordingType
