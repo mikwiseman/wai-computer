@@ -7,6 +7,15 @@ struct LiveRecordingView: View {
     @EnvironmentObject var recordingVM: MacRecordingViewModel
     @EnvironmentObject private var languageManager: LanguageManager
     @State private var showingDiscardConfirm = false
+    /// Whether the live transcript should auto-follow new words. Scrolling up
+    /// past the threshold suspends following so the user can read back or
+    /// select earlier text; the "Jump to latest" pill resumes it.
+    @State private var isPinnedToBottom = true
+
+    /// How far (pt) above the bottom the user may drift while still counting
+    /// as "at the bottom". Generous enough that one streamed paragraph can't
+    /// spuriously suspend auto-follow before the follow-up scroll lands.
+    private static let bottomPinThreshold: CGFloat = 120
 
     var body: some View {
         VStack(spacing: 0) {
@@ -19,11 +28,11 @@ struct LiveRecordingView: View {
                         .controlSize(.small)
                     Text(t("Reconnecting…", "Переподключение…") + " (\(attempt)/\(maxAttempts))")
                         .font(Typography.label)
-                        .foregroundStyle(.white)
+                        .foregroundStyle(.black)
                     Spacer()
                     Text(t("Audio is being buffered", "Аудио сохраняется локально"))
                         .font(Typography.label)
-                        .foregroundStyle(.white.opacity(0.7))
+                        .foregroundStyle(.black.opacity(0.7))
                 }
                 .padding(.horizontal, Spacing.lg)
                 .padding(.vertical, Spacing.sm)
@@ -35,17 +44,17 @@ struct LiveRecordingView: View {
             if recordingVM.liveTranscriptionOffline && recordingVM.phase == .recording {
                 HStack(spacing: Spacing.sm) {
                     Image(systemName: "wifi.exclamationmark")
-                        .foregroundStyle(.white)
+                        .foregroundStyle(.black)
                     VStack(alignment: .leading, spacing: 2) {
                         Text(t("Live transcription unavailable", "Живая расшифровка недоступна"))
                             .font(Typography.label)
-                            .foregroundStyle(.white)
+                            .foregroundStyle(.black)
                         Text(t(
                             "Audio is recording locally. Transcript will be generated when you stop.",
                             "Аудио записывается локально. Расшифровка появится после остановки."
                         ))
                             .font(Typography.caption)
-                            .foregroundStyle(.white.opacity(0.85))
+                            .foregroundStyle(.black.opacity(0.7))
                     }
                     Spacer()
                 }
@@ -59,46 +68,88 @@ struct LiveRecordingView: View {
 
             // Live transcript — committed text renders sharp; the rolling
             // interim guess is faded so users don't fixate on words the model
-            // is still revising ahead of their speech.
-            ScrollViewReader { proxy in
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: Spacing.sm) {
-                        if recordingVM.currentTranscript.isEmpty {
-                            Text(recordingVM.emptyTranscriptText)
-                                .font(Typography.reading)
-                                .foregroundStyle(Palette.textSecondary)
-                                .italic()
+            // is still revising ahead of their speech. Auto-follow only while
+            // the user is at the bottom: scrolling up sticks (read-back,
+            // selection), and a "Jump to latest" pill resumes following.
+            GeometryReader { viewport in
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        LazyVStack(alignment: .leading, spacing: Spacing.sm) {
+                            if recordingVM.currentTranscript.isEmpty {
+                                Text(recordingVM.emptyTranscriptText)
+                                    .font(Typography.reading)
+                                    .foregroundStyle(Palette.textSecondary)
+                                    .italic()
+                                    .padding(.horizontal, Spacing.xxl)
+                                    .padding(.vertical, Spacing.xl)
+                            } else {
+                                VStack(alignment: .leading, spacing: Spacing.xs) {
+                                    if !recordingVM.committedTranscript.isEmpty {
+                                        Text(recordingVM.committedTranscript)
+                                            .font(Typography.reading)
+                                            .lineSpacing(6)
+                                            .textSelection(.enabled)
+                                    }
+                                    if !recordingVM.interimTranscript.isEmpty {
+                                        Text(recordingVM.interimTranscript)
+                                            .font(Typography.reading.italic())
+                                            .lineSpacing(6)
+                                            .foregroundStyle(Palette.textSecondary)
+                                            .textSelection(.enabled)
+                                            .accessibilityLabel(t(
+                                                "Interim transcript — may change as you speak",
+                                                "Промежуточная расшифровка — текст может уточняться"
+                                            ))
+                                    }
+                                }
                                 .padding(.horizontal, Spacing.xxl)
                                 .padding(.vertical, Spacing.xl)
-                        } else {
-                            VStack(alignment: .leading, spacing: Spacing.xs) {
-                                if !recordingVM.committedTranscript.isEmpty {
-                                    Text(recordingVM.committedTranscript)
-                                        .font(Typography.reading)
-                                        .lineSpacing(6)
-                                        .textSelection(.enabled)
-                                }
-                                if !recordingVM.interimTranscript.isEmpty {
-                                    Text(recordingVM.interimTranscript)
-                                        .font(Typography.reading.italic())
-                                        .lineSpacing(6)
-                                        .foregroundStyle(Palette.textSecondary)
-                                        .textSelection(.enabled)
-                                        .accessibilityLabel(t(
-                                            "Interim transcript — may change as you speak",
-                                            "Промежуточная расшифровка — текст может уточняться"
-                                        ))
-                                }
+                                .id("transcript-bottom")
                             }
-                            .padding(.horizontal, Spacing.xxl)
-                            .padding(.vertical, Spacing.xl)
-                            .id("transcript-bottom")
+                        }
+                        .background(
+                            GeometryReader { content in
+                                Color.clear.preference(
+                                    key: TranscriptBottomDistanceKey.self,
+                                    value: content.frame(in: .named("live-transcript-scroll")).maxY
+                                )
+                            }
+                        )
+                    }
+                    .coordinateSpace(name: "live-transcript-scroll")
+                    .onPreferenceChange(TranscriptBottomDistanceKey.self) { contentMaxY in
+                        let pinned = contentMaxY - viewport.size.height < Self.bottomPinThreshold
+                        if pinned != isPinnedToBottom {
+                            isPinnedToBottom = pinned
                         }
                     }
-                }
-                .onChangeCompat(of: recordingVM.currentTranscript) { _, _ in
-                    withAnimation {
+                    .onChangeCompat(of: recordingVM.currentTranscript) { _, _ in
+                        // Unanimated on purpose: events land several times a
+                        // second during speech, and a mid-animation layout
+                        // would briefly read as "not at bottom" and break the
+                        // pin. Instant follow is also what live tails expect.
+                        guard isPinnedToBottom else { return }
                         proxy.scrollTo("transcript-bottom", anchor: .bottom)
+                    }
+                    .overlay(alignment: .bottom) {
+                        if !isPinnedToBottom && !recordingVM.currentTranscript.isEmpty {
+                            Button {
+                                proxy.scrollTo("transcript-bottom", anchor: .bottom)
+                                isPinnedToBottom = true
+                            } label: {
+                                Label(t("Jump to latest", "К последним словам"), systemImage: "arrow.down")
+                                    .font(Typography.label)
+                                    .foregroundStyle(Palette.onAccent)
+                                    .padding(.horizontal, Spacing.md)
+                                    .padding(.vertical, Spacing.xs)
+                                    .background(Palette.accent)
+                                    .clipShape(Capsule())
+                                    .shadow(color: .black.opacity(0.2), radius: 4, y: 1)
+                            }
+                            .buttonStyle(.plain)
+                            .padding(.bottom, Spacing.md)
+                            .accessibilityIdentifier("transcript-jump-to-latest")
+                        }
                     }
                 }
             }
@@ -150,11 +201,11 @@ struct LiveRecordingView: View {
 
                 Button(action: stopRecording) {
                     Label {
-                        Text(recordingVM.canStopRecording
-                            ? t("Stop", "Остановить")
-                            : recordingVM.statusText
-                        )
-                        .lineLimit(1)
+                        // Fixed label: phase status lives in the header only.
+                        // Morphing the button into a second status line made
+                        // the same string render twice and the button resize.
+                        Text(t("Stop", "Остановить"))
+                            .lineLimit(1)
                     } icon: {
                         Image(systemName: "stop.fill")
                     }
@@ -163,7 +214,7 @@ struct LiveRecordingView: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)
-                .tint(recordingVM.canStopRecording ? .red : .gray)
+                .tint(.red)
                 .disabled(!recordingVM.canStopRecording)
                 .accessibilityIdentifier("stop-recording-button")
 
@@ -175,14 +226,18 @@ struct LiveRecordingView: View {
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("live-recording-view")
         .confirmationDialog(
-            t("Discard this recording?", "Удалить эту запись?"),
+            // RU stays in the "не сохранять" verb family end-to-end (trigger →
+            // title → confirm), matching the native macOS "Don't Save" pattern
+            // and the iOS confirm. "Удалить" is reserved for deleting saved
+            // recordings; the message below still spells out the consequence.
+            t("Discard this recording?", "Не сохранять запись?"),
             isPresented: $showingDiscardConfirm,
             titleVisibility: .visible
         ) {
             Button(role: .destructive) {
                 discardRecording()
             } label: {
-                Text(t("Discard", "Удалить запись"))
+                Text(t("Discard", "Не сохранять"))
             }
             .accessibilityIdentifier("discard-recording-confirm")
             Button(role: .cancel) { } label: {
@@ -198,7 +253,15 @@ struct LiveRecordingView: View {
 
     private var recordingHeader: some View {
         HStack(spacing: Spacing.md) {
-            if recordingVM.phase == .recording,
+            if recordingVM.phase == .recording, recordingVM.isPaused {
+                // Paused: a static pause glyph. The pulsing red dot is the
+                // universal "live capture" signal and must never show while
+                // the header says "Paused".
+                Image(systemName: "pause.fill")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(Palette.textSecondary)
+                    .frame(width: 12, height: 12)
+            } else if recordingVM.phase == .recording,
                case .reconnecting = recordingVM.connectionState {
                 Circle()
                     .fill(Color.orange)
@@ -347,6 +410,17 @@ struct LiveRecordingView: View {
         case .reflection:
             return t("Reflection", "Рефлексия")
         }
+    }
+}
+
+/// Bottom edge (maxY) of the live-transcript content measured in the scroll
+/// view's coordinate space. Compared against the viewport height to detect
+/// whether the user is pinned to the latest words.
+private struct TranscriptBottomDistanceKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
     }
 }
 

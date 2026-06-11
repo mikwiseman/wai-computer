@@ -70,11 +70,25 @@ enum RecordingConnectionState: Equatable {
     case reconnecting(attempt: Int, maxAttempts: Int)
 }
 
+/// Typed classification for the current recording `error`, so alert actions
+/// (e.g. "Open Microphone Settings") key off semantics instead of matching
+/// localized message substrings — which silently broke for non-English UI.
+enum RecordingErrorKind {
+    case micPermission
+    case systemAudio
+    case general
+}
+
 @MainActor
 class MacRecordingViewModel: ObservableObject {
     @Published var isRecording = false
     @Published var isLoading = false
-    @Published var error: String?
+    @Published var error: String? {
+        // Every new message defaults to .general; throw sites that know the
+        // semantic cause overwrite the kind immediately after assigning.
+        didSet { errorKind = .general }
+    }
+    @Published var errorKind: RecordingErrorKind = .general
     @Published var recordingType: RecordingType = .note
     @Published var recordingInputSource: MacRecordingInputSource = SystemAudioGate.isSupported ? .dual : .microphone
     @Published var duration: TimeInterval = 0
@@ -323,6 +337,7 @@ class MacRecordingViewModel: ObservableObject {
                             "Microphone permission denied. Open System Settings -> Privacy & Security -> Microphone and enable WaiComputer.",
                             "Доступ к микрофону запрещен. Открой Системные настройки -> Конфиденциальность и безопасность -> Микрофон и включи WaiComputer."
                         )
+                        errorKind = .micPermission
                         await resetAfterStartFailure()
                         return
                     }
@@ -446,7 +461,15 @@ class MacRecordingViewModel: ObservableObject {
                         let wrote = fileWriter.writeEncodedPCM(data)
                         if !wrote {
                             audioLog.error("Disk write failed — stopping recording to preserve data")
-                            await MainActor.run { self.error = diskFullMessage }
+                            await MainActor.run {
+                                self.error = diskFullMessage
+                                // Actually stop, so the UI can't keep claiming
+                                // "Recording" (timer ticking, red dot pulsing)
+                                // while zero audio is captured. Fire-and-forget:
+                                // stopRecording awaits this very audio task's
+                                // result, so awaiting it inline would deadlock.
+                                Task { await self.stopAfterAudioWriteFailure() }
+                            }
                             return
                         }
 
@@ -497,6 +520,7 @@ class MacRecordingViewModel: ObservableObject {
         } catch {
             SentryHelper.captureError(error, extras: ["action": "startRecording", "inputSource": inputSource.rawValue])
             self.error = recordingErrorMessage(for: error, inputSource: inputSource)
+            self.errorKind = recordingErrorKind(for: error, inputSource: inputSource)
             await resetAfterStartFailure()
         }
     }
@@ -646,6 +670,28 @@ class MacRecordingViewModel: ObservableObject {
         }
         cleanupTask = task
         await task.value
+    }
+
+    /// Honest-failure path for the audio loop: when disk writes start failing
+    /// the recording must actually stop — leaving the phase at `.recording`
+    /// would keep the timer ticking and the red dot pulsing while zero audio
+    /// is captured, and the disk-full alert ("Recording stopped…") would lie.
+    /// Routes through the same teardown as a user stop so whatever was
+    /// captured is finalized and persisted.
+    private func stopAfterAudioWriteFailure() async {
+        switch phase {
+        case .recording:
+            await stopRecording()
+        case .preparing:
+            // Capture streams (and can fail to write) before start flips to
+            // `.recording`. Supersede the in-flight start so it can't
+            // resurrect a dead loop, then tear down — the same escape
+            // discardRecording uses for a stalled start.
+            startGeneration &+= 1
+            await resetAfterStartFailure()
+        case .idle, .finalizing:
+            break
+        }
     }
 
     /// Abort an in-progress recording without saving anything.
@@ -1585,6 +1631,29 @@ class MacRecordingViewModel: ObservableObject {
         }
 
         return error.userFacingMessage(context: .recording)
+    }
+
+    /// Mirrors `recordingErrorMessage`'s classification so the alert can offer
+    /// the right settings deep-link in any UI language.
+    private func recordingErrorKind(
+        for error: Error,
+        inputSource: MacRecordingInputSource
+    ) -> RecordingErrorKind {
+        guard inputSource == .systemAudio || inputSource == .dual else { return .general }
+        if #available(macOS 14.2, *) {
+            if error is SystemAudioCaptureError || error is DualAudioCaptureError {
+                return .systemAudio
+            }
+        }
+        if case AudioCaptureError.invalidFormat = error {
+            return .systemAudio
+        }
+        let nsError = error as NSError
+        if nsError.domain == "MacRecordingViewModel", nsError.code == 1 {
+            // makeAudioCapture's pre-14.2 guard.
+            return .systemAudio
+        }
+        return .general
     }
 
     private func localTranscriptRecoveryMessage(segmentsCount: Int) -> String {

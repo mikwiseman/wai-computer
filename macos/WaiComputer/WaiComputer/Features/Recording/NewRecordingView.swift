@@ -31,11 +31,15 @@ struct NewRecordingView: View {
 
             // Recording options card
             VStack(spacing: 0) {
+                // ⇧⌘R mirrors the File → Record Now menu command, which runs
+                // the identical start-recording action. The hint previously
+                // claimed ⌘N, which is bound to New Inbox Item.
                 RecordingOptionRow(
                     title: t("Record", "Записать"),
                     icon: "waveform",
                     subtitle: t("Records your mic and computer audio", "Записывает микрофон и звук компьютера"),
-                    shortcut: "⌘N",
+                    shortcut: "⇧⌘R",
+                    keyEquivalent: KeyboardShortcut("r", modifiers: [.command, .shift]),
                     isPrimary: true,
                     action: onStartRecording
                 )
@@ -46,11 +50,14 @@ struct NewRecordingView: View {
 
             // Import card (separate)
             VStack(spacing: 0) {
+                // ⌘I is unbound elsewhere in the app; attach it for real so
+                // the printed hint is true on this screen.
                 RecordingOptionRow(
                     title: t("Import Audio File", "Импорт аудиофайла"),
                     icon: "square.and.arrow.down",
                     subtitle: t("Transcribe an existing audio file", "Расшифровать готовый аудиофайл"),
                     shortcut: "⌘I",
+                    keyEquivalent: KeyboardShortcut("i", modifiers: .command),
                     isPrimary: false,
                     action: onImportFile
                 )
@@ -78,7 +85,10 @@ private struct RecordingOptionRow: View {
     let title: String
     let icon: String
     let subtitle: String
+    /// Display hint — must describe `keyEquivalent`, the binding actually
+    /// attached to the button.
     let shortcut: String
+    let keyEquivalent: KeyboardShortcut
     let isPrimary: Bool
     let action: () -> Void
 
@@ -112,6 +122,7 @@ private struct RecordingOptionRow: View {
             .background(isHovered ? Palette.surfaceHover : .clear)
         }
         .buttonStyle(.plain)
+        .keyboardShortcut(keyEquivalent)
         .onHover { isHovered = $0 }
     }
 }
