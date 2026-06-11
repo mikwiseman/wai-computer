@@ -64,6 +64,7 @@ struct MacInboxView: View {
     let onPendingCommandConsumed: () -> Void
 
     @EnvironmentObject private var languageManager: LanguageManager
+    @EnvironmentObject private var dictationManager: DictationManager
     @StateObject private var model: MacInboxViewModel
     @State private var selectedDetail: InboxDetailRef?
     @State private var showingImporter = false
@@ -167,9 +168,13 @@ struct MacInboxView: View {
         .onChangeCompat(of: model.rows) { _, _ in
             consumePendingDetailIfNeeded()
         }
-        .onChangeCompat(of: selectedRowID) { _, _ in
-            // Picking or clearing a selection returns a folder to its calm placeholder.
-            folderComposerActive = false
+        .onChangeCompat(of: selectedRowID) { _, next in
+            // Picking a row returns a folder to its calm placeholder. Clears are
+            // programmatic (composer entry points null the selection right before
+            // activating the composer) and must not undo the pane they just opened.
+            if next != nil {
+                folderComposerActive = false
+            }
         }
         .onChangeCompat(of: model.sourceKind) { _, next in
             // The composer only offers actions that match the current scope —
@@ -225,7 +230,7 @@ struct MacInboxView: View {
                     Label(t("Record Now", "Записать сейчас"), systemImage: "waveform")
                 }
                 Button {
-                    chooseFile()
+                    openFileComposer()
                 } label: {
                     Label(t("Upload File", "Загрузить файл"), systemImage: "square.and.arrow.down")
                 }
@@ -237,8 +242,7 @@ struct MacInboxView: View {
                     Label(t("Paste Link or Text", "Вставить ссылку или текст"), systemImage: "link")
                 }
                 Button {
-                    selectedDetail = nil
-                    startAskThread()
+                    openAskComposer()
                 } label: {
                     Label(t("Wai", "Wai"), systemImage: "sparkles")
                 }
@@ -388,7 +392,10 @@ struct MacInboxView: View {
 
     private var rows: some View {
         Group {
-            if model.isLoading {
+            // Spinner only on the first load — refreshes (drag-to-folder,
+            // detail callbacks) keep the populated table mounted so the
+            // NSScrollView and its scroll position survive the fetch.
+            if model.isLoading && model.rows.isEmpty {
                 ProgressView()
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if model.rows.isEmpty {
@@ -396,16 +403,13 @@ struct MacInboxView: View {
                     sourceKind: model.sourceKind,
                     folderName: scopedFolder?.name,
                     onRecord: onStartRecording,
-                    onUpload: chooseFile,
+                    onUpload: openFileComposer,
                     onPaste: {
                         selectedDetail = nil
                         focusCreateMode(.paste)
                         folderComposerActive = true
                     },
-                    onChat: {
-                        selectedDetail = nil
-                        startAskThread()
-                    }
+                    onChat: openAskComposer
                 )
             } else {
                 MacInboxRowsTable(
@@ -541,6 +545,24 @@ struct MacInboxView: View {
                         body: completion.preview ?? t("Your Wai task is ready.", "Задача Wai готова."),
                         chatId: completion.chatId
                     )
+                },
+                onOpenCitation: { recordingId, _ in
+                    // Open the cited recording in this pane — the same selection
+                    // the list rows drive. startMs is ignored until the detail
+                    // view grows a seek API.
+                    self.selectedDetail = InboxDetailRef(kind: .recording, id: recordingId)
+                },
+                onVoiceInput: {
+                    // Tap to start / tap to stop over the existing dictation
+                    // pipeline — the transcript pastes into the focused composer.
+                    // (Restores the e09bb9a13 hook lost in the inbox unification.)
+                    Task {
+                        if dictationManager.state == .listening {
+                            await dictationManager.stopAndInsert()
+                        } else {
+                            await dictationManager.startDictation()
+                        }
+                    }
                 }
             )
             .environment(\.locale, MacDateFormatting.locale(for: languageManager.current))
@@ -610,9 +632,15 @@ struct MacInboxView: View {
                                     title: t("Upload File", "Загрузить файл"),
                                     subtitle: t("Audio, video, PDF, DOCX, TXT", "Аудио, видео, PDF, DOCX, TXT"),
                                     systemImage: "square.and.arrow.down",
-                                    accent: .green,
+                                    // Single-accent design: cards differ by glyph and
+                                    // title. Raw .green/.blue/.orange collided with the
+                                    // accent choices — Wai's orange rendered identical
+                                    // to the default amber accent.
+                                    accent: Palette.accent,
                                     isActive: focusedCreateMode == .file,
-                                    action: { chooseFile() }
+                                    // Mode switch must always succeed; picker/error
+                                    // gating lives in openFileComposer.
+                                    action: { openFileComposer() }
                                 )
                             }
                             if allowedCreateModes.contains(.paste) {
@@ -620,7 +648,7 @@ struct MacInboxView: View {
                                     title: t("Paste", "Вставить"),
                                     subtitle: t("Link, note, or long text", "Ссылка, заметка или длинный текст"),
                                     systemImage: "link",
-                                    accent: .blue,
+                                    accent: Palette.accent,
                                     isActive: focusedCreateMode == .paste,
                                     action: { focusCreateMode(.paste) }
                                 )
@@ -630,7 +658,7 @@ struct MacInboxView: View {
                                     title: t("Wai", "Wai"),
                                     subtitle: t("Search, remember, plan, or act", "Искать, помнить, планировать или действовать"),
                                     systemImage: "sparkles",
-                                    accent: .orange,
+                                    accent: Palette.accent,
                                     isActive: focusedCreateMode == .ask,
                                     action: { focusCreateMode(.ask) }
                                 )
@@ -702,6 +730,29 @@ struct MacInboxView: View {
         !model.isAdding && !model.uploadPhase.isWorking
     }
 
+    /// Switch the right pane to the file composer. Navigation always succeeds —
+    /// during an in-flight add this shows the upload's progress instead of an
+    /// error banner; the picker only opens when a new choice can actually start.
+    private func openFileComposer() {
+        selectedDetail = nil
+        focusCreateMode(.file)
+        folderComposerActive = true
+        if model.selectedUploadFile == nil, canStartInboxUpload {
+            showingImporter = true
+        }
+    }
+
+    /// Switch the right pane to the Wai composer. The thread itself is created
+    /// lazily on Start / Blank thread, so entry points no longer litter the
+    /// Inbox with persistent empty chats.
+    private func openAskComposer() {
+        selectedDetail = nil
+        focusCreateMode(.ask)
+        folderComposerActive = true
+    }
+
+    /// Explicit picker request from inside the file composer ("Choose
+    /// Another...", the drop-zone button).
     private func chooseFile() {
         guard canStartInboxUpload else {
             model.errorMessage = t(
@@ -797,13 +848,13 @@ struct MacInboxView: View {
             focusCreateMode(.record)
             onStartRecording()
         case .uploadFile:
-            chooseFile()
+            openFileComposer()
         case .pasteLinkOrText:
             selectedDetail = nil
             focusCreateMode(.paste)
+            folderComposerActive = true
         case .askWai:
-            selectedDetail = nil
-            startAskThread()
+            openAskComposer()
         }
     }
 
@@ -902,7 +953,7 @@ private struct MacInboxFileComposer: View {
             VStack(spacing: Spacing.xs) {
                 Image(systemName: "square.and.arrow.down")
                     .font(.system(size: 22, weight: .semibold))
-                    .foregroundStyle(.green)
+                    .foregroundStyle(Palette.accent)
                 Text(t("Drop a file here", "Перетащите файл сюда"))
                     .font(Typography.headingMedium)
                 Text(t("or click to choose one from your Mac", "или нажмите, чтобы выбрать с компьютера"))
@@ -926,9 +977,9 @@ private struct MacInboxFileComposer: View {
     private func selectedFileRow(_ file: PendingInboxUploadFile) -> some View {
         HStack(spacing: Spacing.sm) {
             Image(systemName: "doc.text")
-                .foregroundStyle(.green)
+                .foregroundStyle(Palette.accent)
                 .frame(width: 28, height: 28)
-                .background(Color.green.opacity(0.12))
+                .background(Palette.accent.opacity(0.12))
                 .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
             VStack(alignment: .leading, spacing: 2) {
                 Text(file.filename)
@@ -1815,6 +1866,10 @@ private final class MacInboxTableCellView: NSTableCellView {
     private let titleLabel = NSTextField(labelWithString: "")
     private let metadataLabel = NSTextField(labelWithString: "")
     private let statusLabel = NSTextField(labelWithString: "")
+    private let statusPill = NSView()
+    private var statusTone: MacInboxDisplayRow.StatusTone = .neutral
+    private var statusPillLeading: NSLayoutConstraint?
+    private var statusPillTrailing: NSLayoutConstraint?
 
     init(identifier: NSUserInterfaceItemIdentifier) {
         super.init(frame: .zero)
@@ -1830,12 +1885,21 @@ private final class MacInboxTableCellView: NSTableCellView {
     func configure(with row: MacInboxDisplayRow, accentColor: NSColor) {
         iconView.image = NSImage(systemSymbolName: row.iconSystemName, accessibilityDescription: nil)?
             .withSymbolConfiguration(Self.iconSymbolConfiguration)
-        iconView.contentTintColor = iconColor(for: row.sourceKind, accentColor: accentColor)
+        // Single-accent design: rows differ by glyph (waveform/doc/sparkles).
+        // Per-kind raw colors collided with accent choices — the chat rows'
+        // .systemOrange was bit-identical to the default amber accent.
+        iconView.contentTintColor = accentColor
         titleLabel.stringValue = row.title
         metadataLabel.stringValue = row.metadata
         statusLabel.stringValue = row.statusLabel ?? ""
-        statusLabel.isHidden = row.statusLabel == nil
-        statusLabel.textColor = statusColor(for: row.statusTone)
+        let hasStatus = row.statusLabel != nil
+        statusPill.isHidden = !hasStatus
+        // Collapse the pill's text padding when empty so status-free rows
+        // keep the full title width.
+        statusPillLeading?.constant = hasStatus ? 8 : 0
+        statusPillTrailing?.constant = hasStatus ? -8 : 0
+        statusTone = row.statusTone
+        applyStatusPillTint()
         setAccessibilityLabel(row.accessibilityLabel)
     }
 
@@ -1858,20 +1922,37 @@ private final class MacInboxTableCellView: NSTableCellView {
         metadataLabel.maximumNumberOfLines = 1
         metadataLabel.translatesAutoresizingMaskIntoConstraints = false
 
-        statusLabel.font = .systemFont(ofSize: 11, weight: .medium)
-        statusLabel.alignment = .right
+        // Status renders as a tinted pill: the tone color is a cue in the
+        // background (15% alpha) while the text stays .labelColor — 11pt
+        // orange/red text was ~2.2–3.6:1 against a light background, below
+        // the 4.5:1 WCAG AA floor.
+        statusLabel.font = .systemFont(ofSize: 12, weight: .medium)
+        statusLabel.textColor = .labelColor
+        statusLabel.alignment = .center
         statusLabel.lineBreakMode = .byTruncatingTail
         statusLabel.maximumNumberOfLines = 1
         statusLabel.translatesAutoresizingMaskIntoConstraints = false
         statusLabel.setContentHuggingPriority(.required, for: .horizontal)
         statusLabel.setContentCompressionResistancePriority(.required, for: .horizontal)
 
+        statusPill.translatesAutoresizingMaskIntoConstraints = false
+        statusPill.wantsLayer = true
+        statusPill.layer?.cornerRadius = 10
+        statusPill.setContentHuggingPriority(.required, for: .horizontal)
+        statusPill.setContentCompressionResistancePriority(.required, for: .horizontal)
+        statusPill.addSubview(statusLabel)
+
         addSubview(iconView)
         addSubview(titleLabel)
         addSubview(metadataLabel)
-        addSubview(statusLabel)
+        addSubview(statusPill)
         imageView = iconView
         textField = titleLabel
+
+        let pillLeading = statusLabel.leadingAnchor.constraint(equalTo: statusPill.leadingAnchor, constant: 8)
+        let pillTrailing = statusLabel.trailingAnchor.constraint(equalTo: statusPill.trailingAnchor, constant: -8)
+        statusPillLeading = pillLeading
+        statusPillTrailing = pillTrailing
 
         NSLayoutConstraint.activate([
             iconView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 16),
@@ -1881,11 +1962,16 @@ private final class MacInboxTableCellView: NSTableCellView {
 
             titleLabel.leadingAnchor.constraint(equalTo: iconView.trailingAnchor, constant: 8),
             titleLabel.topAnchor.constraint(equalTo: topAnchor, constant: 11),
-            titleLabel.trailingAnchor.constraint(lessThanOrEqualTo: statusLabel.leadingAnchor, constant: -8),
+            titleLabel.trailingAnchor.constraint(lessThanOrEqualTo: statusPill.leadingAnchor, constant: -8),
 
-            statusLabel.centerYAnchor.constraint(equalTo: titleLabel.centerYAnchor),
-            statusLabel.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -16),
-            statusLabel.widthAnchor.constraint(lessThanOrEqualToConstant: 96),
+            pillLeading,
+            pillTrailing,
+            statusLabel.topAnchor.constraint(equalTo: statusPill.topAnchor, constant: 3),
+            statusLabel.bottomAnchor.constraint(equalTo: statusPill.bottomAnchor, constant: -3),
+
+            statusPill.centerYAnchor.constraint(equalTo: titleLabel.centerYAnchor),
+            statusPill.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -16),
+            statusPill.widthAnchor.constraint(lessThanOrEqualToConstant: 112),
 
             metadataLabel.leadingAnchor.constraint(equalTo: titleLabel.leadingAnchor),
             metadataLabel.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 3),
@@ -1893,20 +1979,24 @@ private final class MacInboxTableCellView: NSTableCellView {
         ])
     }
 
-    private func iconColor(for sourceKind: InboxSourceKind, accentColor: NSColor) -> NSColor {
-        switch sourceKind {
-        case .recording:
-            return accentColor
-        case .item:
-            return .systemGreen
-        case .chat:
-            return .systemOrange
+    private static let iconSymbolConfiguration = NSImage.SymbolConfiguration(pointSize: 15, weight: .medium)
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        // Layer colors don't re-resolve dynamic NSColors on light/dark
+        // switches by themselves — re-tint with the new appearance.
+        applyStatusPillTint()
+    }
+
+    private func applyStatusPillTint() {
+        effectiveAppearance.performAsCurrentDrawingAppearance {
+            statusPill.layer?.backgroundColor = statusTint(for: statusTone)
+                .withAlphaComponent(0.15).cgColor
         }
     }
 
-    private static let iconSymbolConfiguration = NSImage.SymbolConfiguration(pointSize: 15, weight: .medium)
-
-    private func statusColor(for tone: MacInboxDisplayRow.StatusTone) -> NSColor {
+    /// Tone color used only as the pill's background tint, never as text color.
+    private func statusTint(for tone: MacInboxDisplayRow.StatusTone) -> NSColor {
         switch tone {
         case .neutral:
             return .secondaryLabelColor

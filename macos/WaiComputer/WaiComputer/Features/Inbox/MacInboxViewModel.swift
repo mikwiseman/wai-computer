@@ -82,25 +82,41 @@ final class MacInboxViewModel: ObservableObject {
         await load()
     }
 
+    /// Stale-response guard. Rapid segment/filter switches start overlapping
+    /// loads (the MainActor is released at the network await), and whichever
+    /// resolved last used to win — painting the wrong filter's rows and
+    /// installing its cursor. Only the newest request may land results.
+    private var loadGeneration = 0
+
     func load() async {
+        loadGeneration += 1
+        let generation = loadGeneration
         isLoading = true
-        defer { isLoading = false }
+        defer {
+            // A newer load owns the spinner now — don't flip it off under it.
+            if generation == loadGeneration {
+                isLoading = false
+            }
+        }
         do {
             let response = try await apiClient.listInbox(
                 sourceKind: sourceKind,
                 folderId: folderId,
                 limit: 50
             )
+            guard generation == loadGeneration else { return }
             errorMessage = nil
             rows = response.rows
             nextCursor = response.nextCursor
         } catch {
+            guard generation == loadGeneration else { return }
             errorMessage = error.localizedDescription
         }
     }
 
     func loadMore() async {
         guard let nextCursor, !isLoadingMore else { return }
+        let generation = loadGeneration
         isLoadingMore = true
         defer { isLoadingMore = false }
         do {
@@ -110,10 +126,12 @@ final class MacInboxViewModel: ObservableObject {
                 limit: 50,
                 cursor: nextCursor
             )
+            guard generation == loadGeneration else { return }
             errorMessage = nil
             rows.append(contentsOf: response.rows)
             self.nextCursor = response.nextCursor
         } catch {
+            guard generation == loadGeneration else { return }
             errorMessage = error.localizedDescription
         }
     }
@@ -152,9 +170,15 @@ final class MacInboxViewModel: ObservableObject {
             let detail = InboxDetailRef(kind: .item, id: created.id)
             draft = ""
             errorMessage = nil
+            // Scope-aware copy: in a folder the item lands in that folder,
+            // so the toast must not claim it went to Inbox.
             statusMessage = OnboardingL10n.text(
-                isURL ? "Link added to Inbox." : "Text added to Inbox.",
-                isURL ? "Ссылка добавлена в Инбокс." : "Текст добавлен в Инбокс.",
+                folderId == nil
+                    ? (isURL ? "Link added to Inbox." : "Text added to Inbox.")
+                    : (isURL ? "Link added to this folder." : "Text added to this folder."),
+                folderId == nil
+                    ? (isURL ? "Ссылка добавлена в Инбокс." : "Текст добавлен в Инбокс.")
+                    : (isURL ? "Ссылка добавлена в эту папку." : "Текст добавлен в эту папку."),
                 language: LanguageManager.shared.current
             )
             await load()
@@ -236,8 +260,12 @@ final class MacInboxViewModel: ObservableObject {
             case .item(let item):
                 let detail = InboxDetailRef(kind: .item, id: item.id)
                 let message = OnboardingL10n.text(
-                    "Added \(file.filename) to Inbox.",
-                    "\(file.filename) добавлен в Инбокс.",
+                    folderId == nil
+                        ? "Added \(file.filename) to Inbox."
+                        : "Added \(file.filename) to this folder.",
+                    folderId == nil
+                        ? "\(file.filename) добавлен в Инбокс."
+                        : "\(file.filename) добавлен в эту папку.",
                     language: LanguageManager.shared.current
                 )
                 errorMessage = nil
@@ -250,8 +278,12 @@ final class MacInboxViewModel: ObservableObject {
             case .recording(status: _, recordingId: let recordingId):
                 let detail = InboxDetailRef(kind: .recording, id: recordingId)
                 let message = OnboardingL10n.text(
-                    "Added \(file.filename) to Inbox. Transcription has started.",
-                    "\(file.filename) добавлен в Инбокс. Расшифровка началась.",
+                    folderId == nil
+                        ? "Added \(file.filename) to Inbox. Transcription has started."
+                        : "Added \(file.filename) to this folder. Transcription has started.",
+                    folderId == nil
+                        ? "\(file.filename) добавлен в Инбокс. Расшифровка началась."
+                        : "\(file.filename) добавлен в эту папку. Расшифровка началась.",
                     language: LanguageManager.shared.current
                 )
                 errorMessage = nil
