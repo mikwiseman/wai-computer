@@ -240,7 +240,15 @@ struct MacContentFeedView: View {
                     Text(entry.kind.uppercased())
                         .font(Typography.labelSmall)
                         .foregroundStyle(Palette.textTertiary)
-                    if !entry.hasSummary {
+                    if entry.status == "failed" {
+                        Text(t("failed", "ошибка"))
+                            .font(Typography.labelSmall)
+                            .foregroundStyle(Palette.recording)
+                    } else if entry.status == "needs_input" {
+                        Text(t("needs input", "нужны данные"))
+                            .font(Typography.labelSmall)
+                            .foregroundStyle(Palette.recording)
+                    } else if !entry.hasSummary {
                         Text(t("summarizing…", "обработка…"))
                             .font(Typography.labelSmall)
                             .foregroundStyle(Palette.textSecondary)
@@ -257,7 +265,7 @@ struct MacContentFeedView: View {
 
     @ViewBuilder
     private var detailColumn: some View {
-        if let item = model.selectedItem {
+        if let item = model.selectedItem, item.id == model.selectedId {
             MacItemDetailView(
                 item: item,
                 onDelete: {
@@ -274,6 +282,11 @@ struct MacContentFeedView: View {
                     Task { await model.playOrStopSummaryAudio(itemId: item.id) }
                 }
             )
+        } else if model.selectedId != nil {
+            // Selection changed but the item is still loading — never show the
+            // previous item's content under the new selection.
+            ProgressView()
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
             ContentUnavailableViewCompat(
                 t("Select an item", "Выберите материал"),

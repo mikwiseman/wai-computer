@@ -68,6 +68,15 @@ struct MacComparisonView: View {
         }
     }
 
+    // LLM-generated values can be sentence-long; without a width cap each cell
+    // takes its ideal single-line width inside the two-axis ScrollView and the
+    // table explodes horizontally. Cap the columns and let text wrap.
+    // Note: `idealWidth` (not `.fixedSize`) is what makes wrapped cells report
+    // their wrapped height correctly under the ScrollView's unspecified proposal.
+    private let titleColumnWidth: CGFloat = 200
+    private let valueColumnWidth: CGFloat = 260
+    private let rationaleMaxWidth: CGFloat = 720
+
     private func comparisonTable(
         columns: [ComparisonColumn],
         rows: [ComparisonRow],
@@ -79,22 +88,30 @@ struct MacComparisonView: View {
                     Text(rationale)
                         .font(Typography.bodySmall)
                         .foregroundStyle(Palette.textSecondary)
+                        .frame(idealWidth: rationaleMaxWidth, maxWidth: rationaleMaxWidth, alignment: .leading)
                 }
                 Grid(alignment: .topLeading, horizontalSpacing: Spacing.lg, verticalSpacing: Spacing.sm) {
                     GridRow {
-                        Text(t("Item", "Материал")).font(Typography.labelSmall.weight(.semibold))
+                        Text(t("Item", "Материал"))
+                            .font(Typography.labelSmall.weight(.semibold))
+                            .frame(idealWidth: titleColumnWidth, maxWidth: titleColumnWidth, alignment: .topLeading)
                         ForEach(columns) { column in
-                            Text(column.name).font(Typography.labelSmall.weight(.semibold))
+                            Text(column.name)
+                                .font(Typography.labelSmall.weight(.semibold))
+                                .frame(idealWidth: valueColumnWidth, maxWidth: valueColumnWidth, alignment: .topLeading)
                         }
                     }
                     Divider()
                     ForEach(rows) { row in
                         GridRow {
-                            Text(row.title).font(Typography.bodySmall.weight(.medium))
+                            Text(row.title)
+                                .font(Typography.bodySmall.weight(.medium))
+                                .frame(idealWidth: titleColumnWidth, maxWidth: titleColumnWidth, alignment: .topLeading)
                             ForEach(columns) { column in
                                 Text(cell(row, column.name))
                                     .font(Typography.bodySmall)
                                     .foregroundStyle(Palette.textSecondary)
+                                    .frame(idealWidth: valueColumnWidth, maxWidth: valueColumnWidth, alignment: .topLeading)
                             }
                         }
                     }

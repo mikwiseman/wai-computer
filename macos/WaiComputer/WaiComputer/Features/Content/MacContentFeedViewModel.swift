@@ -138,8 +138,18 @@ final class MacContentFeedViewModel: ObservableObject {
 
     func selectItem(_ id: String) async {
         do {
-            selectedItem = try await apiClient.getItem(id: id)
+            let item = try await apiClient.getItem(id: id)
+            // The user may have selected another item while this fetch was in
+            // flight — a late response must not overwrite the newer selection.
+            guard selectedId == id else { return }
+            selectedItem = item
         } catch {
+            // Drop the failed selection so the pane shows the placeholder with
+            // the error banner instead of spinning forever.
+            if selectedId == id {
+                selectedId = nil
+                selectedItem = nil
+            }
             errorMessage = error.localizedDescription
         }
     }

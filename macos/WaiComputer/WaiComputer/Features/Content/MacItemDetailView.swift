@@ -1,3 +1,4 @@
+import Foundation
 import SwiftUI
 import WaiComputerKit
 
@@ -12,6 +13,7 @@ struct MacItemDetailView: View {
     let onPlaySummaryAudio: () -> Void
 
     @EnvironmentObject private var languageManager: LanguageManager
+    @State private var showDeleteConfirm = false
 
     private var summary: ItemSummary? { item.summary }
     private var keyMoments: [KeyMoment] { item.summary?.keyMoments ?? [] }
@@ -60,11 +62,25 @@ struct MacItemDetailView: View {
                     .font(Typography.labelSmall)
                     .foregroundStyle(Palette.textTertiary)
                 Spacer()
-                Button(role: .destructive, action: onDelete) {
+                Button(role: .destructive) {
+                    showDeleteConfirm = true
+                } label: {
                     Image(systemName: "trash")
                 }
                 .buttonStyle(.borderless)
                 .help(t("Delete", "Удалить"))
+                .accessibilityLabel(t("Delete", "Удалить"))
+                .confirmationDialog(
+                    t("Delete this item?", "Удалить материал?"),
+                    isPresented: $showDeleteConfirm
+                ) {
+                    Button(t("Delete", "Удалить"), role: .destructive) {
+                        onDelete()
+                    }
+                    Button(t("Cancel", "Отмена"), role: .cancel) {}
+                } message: {
+                    Text(t("This action cannot be undone.", "Это действие нельзя отменить."))
+                }
             }
             Text(item.title ?? t("Untitled", "Без названия"))
                 .font(Typography.displaySmall)
@@ -77,14 +93,78 @@ struct MacItemDetailView: View {
     }
 
     private var itemSubtitle: String {
-        let pieces = [
-            item.source,
-            item.status,
-            item.occurredAt ?? item.createdAt,
-        ]
+        var pieces = [sourceLabel(item.source)]
+        if let status = statusLabel(item.status) {
+            pieces.append(status)
+        }
+        pieces.append(formattedDate(item.occurredAt ?? item.createdAt))
+        return pieces
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
-        return pieces.joined(separator: " / ")
+            .joined(separator: " / ")
+    }
+
+    private func sourceLabel(_ source: String) -> String {
+        if source.hasPrefix("mcp:") {
+            return t("Connected source", "Подключённый источник")
+        }
+        switch source {
+        case "url":
+            return t("Link", "Ссылка")
+        case "paste":
+            return t("Pasted text", "Вставленный текст")
+        case "upload":
+            return t("Upload", "Файл")
+        case "telegram":
+            return "Telegram"
+        default:
+            return source
+        }
+    }
+
+    /// nil for "ready" — a finished item needs no status badge.
+    private func statusLabel(_ status: String) -> String? {
+        switch status {
+        case "ready":
+            return nil
+        case "fetching":
+            return t("Fetching", "Загружается")
+        case "summarizing":
+            return t("Summarizing", "Обрабатывается")
+        case "failed":
+            return t("Failed", "Ошибка")
+        case "needs_input":
+            return t("Needs input", "Нужны данные")
+        default:
+            return status
+        }
+    }
+
+    private static let isoWithFractionalSeconds: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter
+    }()
+
+    private static let isoPlain: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter
+    }()
+
+    /// Backend dates are ISO-8601 strings, sometimes with fractional seconds.
+    /// Keeps the raw string if parsing fails — never invents a date.
+    private func formattedDate(_ iso: String) -> String {
+        guard let date = Self.isoWithFractionalSeconds.date(from: iso)
+            ?? Self.isoPlain.date(from: iso) else {
+            return iso
+        }
+        return MacDateFormatting.string(
+            from: date,
+            dateStyle: .medium,
+            timeStyle: .short,
+            language: languageManager.current
+        )
     }
 
     private var needsInputBanner: some View {
@@ -169,6 +249,8 @@ struct MacItemDetailView: View {
                         }
                     }
                 }
+            } else if item.status == "failed" {
+                failedSummaryBanner
             } else {
                 HStack(alignment: .center, spacing: Spacing.sm) {
                     if item.status == "fetching" || item.status == "summarizing" {
@@ -184,6 +266,29 @@ struct MacItemDetailView: View {
             }
         }
         .accessibilityIdentifier("item-summary-section")
+    }
+
+    private var failedSummaryBanner: some View {
+        VStack(alignment: .leading, spacing: Spacing.xs) {
+            HStack(alignment: .top, spacing: Spacing.sm) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(Palette.recording)
+                Text(t("Couldn't summarize this item.", "Не удалось обработать материал."))
+                    .font(Typography.bodySmall)
+                    .foregroundStyle(Palette.textPrimary)
+            }
+            if let message = item.error?.message, !message.isEmpty {
+                Text(message)
+                    .font(Typography.caption)
+                    .foregroundStyle(Palette.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .textSelection(.enabled)
+            }
+        }
+        .padding(Spacing.md)
+        .background(Palette.recording.opacity(0.10))
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .accessibilityIdentifier("item-summary-failed")
     }
 
     private var summaryPlaceholder: String {
@@ -225,7 +330,7 @@ struct MacItemDetailView: View {
 
     private var sourceMetadata: some View {
         VStack(alignment: .leading, spacing: Spacing.xs) {
-            metadataLine(title: t("Source", "Источник"), value: item.source)
+            metadataLine(title: t("Source", "Источник"), value: sourceLabel(item.source))
             if let sourceRef = item.sourceRef, !sourceRef.isEmpty {
                 metadataLine(title: t("Reference", "Ссылка-источник"), value: sourceRef)
             }
@@ -240,7 +345,7 @@ struct MacItemDetailView: View {
                         .lineLimit(1)
                 }
             }
-            metadataLine(title: t("Created", "Создано"), value: item.createdAt)
+            metadataLine(title: t("Created", "Создано"), value: formattedDate(item.createdAt))
         }
     }
 
