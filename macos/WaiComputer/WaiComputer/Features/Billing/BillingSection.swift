@@ -2,37 +2,17 @@ import AppKit
 import SwiftUI
 import WaiComputerKit
 
-private enum BillingSectionError: LocalizedError {
+// Deliberately NOT LocalizedError: descriptions are produced at display time
+// by `billingErrorText(_:)` so they resolve against the app's selected
+// language (LanguageManager), not the system locale that String(localized:)
+// uses (103/135/136). Every throw site in this file is rendered through
+// `displayableError(_:)`.
+private enum BillingSectionError: Error {
     case unsupportedRegion(String)
     case missingProPlan
     case missingPrice(BillingDisplayRegion, BillingDisplayPeriod)
     case invalidCheckoutURL(String)
     case checkoutOpenRejected
-
-    var errorDescription: String? {
-        switch self {
-        case .unsupportedRegion(let region):
-            return String(
-                format: String(localized: "billing.error.unsupportedRegion", bundle: .main),
-                region
-            )
-        case .missingProPlan:
-            return String(localized: "billing.error.missingProPlan", bundle: .main)
-        case .missingPrice(let region, let period):
-            return String(
-                format: String(localized: "billing.error.priceUnavailable", bundle: .main),
-                region.rawValue,
-                period.rawValue
-            )
-        case .invalidCheckoutURL(let url):
-            return String(
-                format: String(localized: "billing.error.checkoutInvalidURL", bundle: .main),
-                url
-            )
-        case .checkoutOpenRejected:
-            return String(localized: "billing.error.checkoutOpenRejected", bundle: .main)
-        }
-    }
 }
 
 /// Subscription + word-usage section embedded in `MacSettingsView`.
@@ -252,7 +232,7 @@ struct BillingSection: View {
                         .font(Typography.body)
                         .foregroundStyle(.secondary)
                 } else {
-                    Text(BillingSectionError.missingPrice(region, period).localizedDescription)
+                    Text(billingErrorText(.missingPrice(region, period)))
                         .font(Typography.caption)
                         .foregroundStyle(.red)
                 }
@@ -271,7 +251,7 @@ struct BillingSection: View {
                 .accessibilityIdentifier("settings-billing-upgrade")
             }
         } else {
-            Text(BillingSectionError.missingProPlan.localizedDescription)
+            Text(billingErrorText(.missingProPlan))
                 .font(Typography.caption)
                 .foregroundStyle(.red)
         }
@@ -287,7 +267,7 @@ struct BillingSection: View {
                     TextField("", text: $promoCode)
                         .textFieldStyle(.roundedBorder)
                         .frame(maxWidth: 220)
-                        .help(String(localized: "billing.promo.placeholder", bundle: .main))
+                        .help(t("Enter promo code", "Введи промокод"))
                         .accessibilityIdentifier("settings-billing-promo-code")
                     Button {
                         Task { await claimPromoCode() }
@@ -323,10 +303,11 @@ struct BillingSection: View {
         guard let amount = pro.localizedPrice(for: period, region: region, locale: locale) else {
             return nil
         }
-        let formatString = period == .year
-            ? String(localized: "billing.price.perYear", bundle: .main)
-            : String(localized: "billing.price.perMonth", bundle: .main)
-        return String(format: formatString, amount)
+        // t(), not String(localized:) — prices must follow the in-app language
+        // (103/135/136).
+        return period == .year
+            ? t("\(amount) / year", "\(amount) / год")
+            : t("\(amount) / month", "\(amount) / мес")
     }
 
     // MARK: - Pro user controls
@@ -334,13 +315,16 @@ struct BillingSection: View {
     @ViewBuilder
     private func proControls(subscription: BillingSubscription) -> some View {
         if subscription.cancelAtPeriodEnd, let end = subscription.currentPeriodEnd {
+            // t(), not String(localized:) — the date is already formatted for
+            // the in-app language, so the wrapper must match it (103/135/136).
             let formatted = formattedPeriodDate(end)
-            Text(String(format: String(localized: "billing.subscription.proThrough", bundle: .main), formatted))
+            Text(t("Pro through \(formatted)", "Pro до \(formatted)"))
                 .font(Typography.caption)
                 .foregroundStyle(.secondary)
         } else {
             if let end = subscription.currentPeriodEnd {
-                Text(String(format: String(localized: "billing.subscription.renewsOn", bundle: .main), formattedPeriodDate(end)))
+                let formatted = formattedPeriodDate(end)
+                Text(t("Renews on \(formatted)", "Продление \(formatted)"))
                     .font(Typography.caption)
                     .foregroundStyle(.secondary)
             }
@@ -427,7 +411,7 @@ struct BillingSection: View {
             }
         } catch {
             await MainActor.run {
-                self.loadError = error.localizedDescription
+                self.loadError = displayableError(error)
             }
         }
     }
@@ -464,7 +448,7 @@ struct BillingSection: View {
         } catch {
             await MainActor.run {
                 regionUpdateInFlight = false
-                actionError = error.localizedDescription
+                actionError = displayableError(error)
             }
         }
     }
@@ -497,7 +481,7 @@ struct BillingSection: View {
             await MainActor.run {
                 billingRegion = previous
                 regionUpdateInFlight = false
-                actionError = error.localizedDescription
+                actionError = displayableError(error)
             }
         }
     }
@@ -535,7 +519,7 @@ struct BillingSection: View {
             }
         } catch {
             await MainActor.run {
-                actionError = error.localizedDescription
+                actionError = displayableError(error)
             }
         }
         await MainActor.run {
@@ -556,7 +540,7 @@ struct BillingSection: View {
             await MainActor.run {
                 subscription = fresh
                 promoCode = ""
-                promoMessage = String(localized: "billing.promo.applied", bundle: .main)
+                promoMessage = t("Promo code applied.", "Промокод применён.")
                 if fresh.isPro {
                     checkoutRefreshPending = false
                 }
@@ -566,7 +550,7 @@ struct BillingSection: View {
             if isCheckoutPromoCodeError(error) {
                 guard let pro = currentProPlan(), let region = billingRegion else {
                     await MainActor.run {
-                        actionError = BillingSectionError.missingProPlan.localizedDescription
+                        actionError = billingErrorText(.missingProPlan)
                         promoInFlight = false
                     }
                     return
@@ -626,7 +610,7 @@ struct BillingSection: View {
             await loadAll()
         } catch {
             await MainActor.run {
-                actionError = error.localizedDescription
+                actionError = displayableError(error)
             }
         }
         await MainActor.run {
@@ -641,6 +625,46 @@ struct BillingSection: View {
             timeStyle: .none,
             language: languageManager.current
         )
+    }
+
+    /// Display-time descriptions for `BillingSectionError`, resolved through
+    /// t()/LanguageManager so they follow the in-app language — the same fix
+    /// `localizedBillingActionError` applies to promo errors (103/135/136).
+    private func billingErrorText(_ error: BillingSectionError) -> String {
+        switch error {
+        case .unsupportedRegion(let region):
+            return t(
+                "Unsupported billing region: \(region).",
+                "Неподдерживаемый регион оплаты: \(region)."
+            )
+        case .missingProPlan:
+            return t(
+                "Pro plan is missing from the billing catalogue.",
+                "В каталоге оплаты нет тарифа Pro."
+            )
+        case .missingPrice(let region, let period):
+            return t(
+                "No price configured for \(region.rawValue) / \(period.rawValue).",
+                "Цена не настроена для \(region.rawValue) / \(period.rawValue)."
+            )
+        case .invalidCheckoutURL(let url):
+            return t(
+                "Checkout returned an invalid URL: \(url).",
+                "Оплата вернула некорректную ссылку: \(url)."
+            )
+        case .checkoutOpenRejected:
+            return t(
+                "macOS rejected the checkout link.",
+                "macOS не открыла ссылку оплаты."
+            )
+        }
+    }
+
+    private func displayableError(_ error: Error) -> String {
+        if let billingError = error as? BillingSectionError {
+            return billingErrorText(billingError)
+        }
+        return error.localizedDescription
     }
 
     private func localizedBillingActionError(_ error: Error) -> String {

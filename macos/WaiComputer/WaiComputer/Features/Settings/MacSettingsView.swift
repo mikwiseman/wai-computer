@@ -121,8 +121,12 @@ private let mcpClientGuides: [McpClient: McpClientGuide] = [
 ]
 
 private enum MacSettingsCategory: String, CaseIterable, Identifiable {
-    case workspace
+    // Declaration order = tab order. Voice & AI leads: it holds the everyday
+    // settings (app language, recording languages, summaries, dictation), so
+    // opening Settings starts with the things users actually change — not
+    // server migration.
     case voice
+    case workspace
     case account
 
     var id: String { rawValue }
@@ -134,8 +138,9 @@ struct MacSettingsView: View {
     @EnvironmentObject var languageManager: LanguageManager
     @Environment(\.scenePhase) private var scenePhase
     @State private var showSignOutConfirmation = false
-    @State private var selectedSettingsCategory: MacSettingsCategory = .workspace
+    @State private var selectedSettingsCategory: MacSettingsCategory = .voice
     @State private var showDeleteAccountConfirmation = false
+    @State private var showResetPermissionsConfirmation = false
     @State private var isDeletingAccount = false
     @State private var deleteAccountError: String?
     @State private var hasMicrophonePermission = MacSettingsView.hasMicrophonePermission
@@ -226,19 +231,29 @@ struct MacSettingsView: View {
     }
 
     var body: some View {
-        Form {
-            settingsCategorySection
+        // Category navigation is a fixed tab-bar header above the form — real
+        // navigation chrome, not a labeled picker row inside the form. The tab
+        // names carry the meaning; no caption row needed.
+        VStack(spacing: 0) {
+            WaiTabBar(
+                tabs: MacSettingsCategory.allCases.map { (label: settingsCategoryTitle($0), value: $0) },
+                selection: $selectedSettingsCategory
+            )
+            .padding(.top, Spacing.sm)
+            .accessibilityIdentifier("settings-category-tabs")
 
-            switch selectedSettingsCategory {
-            case .workspace:
-                workspaceSettingsSections
-            case .voice:
-                voiceSettingsSections
-            case .account:
-                accountSettingsSections
+            Form {
+                switch selectedSettingsCategory {
+                case .voice:
+                    voiceSettingsSections
+                case .workspace:
+                    workspaceSettingsSections
+                case .account:
+                    accountSettingsSections
+                }
             }
+            .formStyle(.grouped)
         }
-        .formStyle(.grouped)
         .task {
             await loadSummarySettings()
             await loadTelegramStatus()
@@ -310,30 +325,14 @@ struct MacSettingsView: View {
         }
     }
 
-    private var settingsCategorySection: some View {
-        Section {
-            Picker(selection: $selectedSettingsCategory) {
-                ForEach(MacSettingsCategory.allCases) { category in
-                    Text(settingsCategoryTitle(category)).tag(category)
-                }
-            } label: {
-                Text(t("Settings area", "Раздел настроек"))
-            }
-            .pickerStyle(.segmented)
-            .accessibilityIdentifier("settings-category-picker")
-
-            Text(settingsCategoryDescription(selectedSettingsCategory))
-                .font(Typography.caption)
-                .foregroundStyle(Palette.textTertiary)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-    }
-
     @ViewBuilder
     private var workspaceSettingsSections: some View {
-        serverDataSection
+        // The connect features people actually use come first; the advanced
+        // self-host migration block sits last so nobody scrolls past server
+        // fields to reach Telegram or MCP.
         telegramSection
         mcpConnectSection
+        serverDataSection
     }
 
     @ViewBuilder
@@ -528,7 +527,20 @@ struct MacSettingsView: View {
         }
     }
 
+    /// The former single dictation mega-section, split into four scannable
+    /// groups so the grouped form's section boundaries carry the hierarchy:
+    /// core controls, cleanup & formatting, permissions, troubleshooting.
+    @ViewBuilder
     private var dictationSettingsSection: some View {
+        dictationCoreSection
+        dictationCleanupSection
+        dictationPermissionsSection
+        dictationTroubleshootingSection
+    }
+
+    /// On/off, hotkeys, and translation — how you talk. The contextual
+    /// how-to line lives in the footer, right under the hotkey pickers.
+    private var dictationCoreSection: some View {
         Section {
             Toggle(isOn: $dictationManager.isFeatureEnabled) {
                 Text("settings.dictation.enable", bundle: .main)
@@ -583,7 +595,20 @@ struct MacSettingsView: View {
             .font(Typography.body)
             .disabled(!dictationManager.isFeatureEnabled)
             .accessibilityIdentifier("settings-dictation-translation-target-picker")
+        } header: {
+            Text("settings.dictation.title", bundle: .main)
+                .waiSectionHeader()
+        } footer: {
+            Text(dictationUsageText)
+                .font(Typography.caption)
+                .foregroundStyle(Palette.textTertiary)
+        }
+    }
 
+    /// Cleanup level plus the formatting and learning toggles — what happens
+    /// to your words after you speak. The privacy line is the footer.
+    private var dictationCleanupSection: some View {
+        Section {
             Picker(selection: $dictationCleanupLevel) {
                 ForEach(dictationCleanupOptions, id: \.value) { option in
                     Text(option.label).tag(option.value)
@@ -638,9 +663,25 @@ struct MacSettingsView: View {
             )
                 .font(Typography.caption)
                 .foregroundStyle(Palette.textTertiary)
+        } header: {
+            Text(t("Cleanup & formatting", "Очистка и форматирование"))
+                .waiSectionHeader()
+                .accessibilityIdentifier("settings-dictation-cleanup-header")
+        } footer: {
+            Text(dictationPrivacyText)
+                .font(Typography.caption)
+                .foregroundStyle(Palette.textTertiary)
+        }
+    }
 
+    /// Microphone, Accessibility, and System Audio — shared by dictation and
+    /// meeting recordings, so they get their own header instead of hiding
+    /// inside Dictation. Titles resolve through t()/LanguageManager, not
+    /// String(localized:), so they follow the in-app language.
+    private var dictationPermissionsSection: some View {
+        Section {
             permissionRow(
-                title: String(localized: "settings.dictation.permission.microphone", bundle: .main),
+                title: t("Microphone", "Микрофон"),
                 status: hasMicrophonePermission ? .granted : .denied,
                 identifierBase: "settings-permission-microphone",
                 grantAction: requestMicrophonePermission,
@@ -649,7 +690,7 @@ struct MacSettingsView: View {
             )
 
             permissionRow(
-                title: String(localized: "settings.dictation.permission.accessibility", bundle: .main),
+                title: t("Accessibility", "Универсальный доступ"),
                 status: accessibilityStatus,
                 identifierBase: "settings-permission-accessibility",
                 grantAction: openAccessibilitySettings,
@@ -681,19 +722,24 @@ struct MacSettingsView: View {
                 }
                 .accessibilityIdentifier("settings-permission-system-audio-unsupported")
             }
+        } header: {
+            Text(t("Permissions", "Разрешения"))
+                .waiSectionHeader()
+                .accessibilityIdentifier("settings-dictation-permissions-header")
+        } footer: {
+            Text(t(
+                "Microphone and System Audio also power meeting recordings. Accessibility enables the global hotkey and automatic paste.",
+                "Микрофон и звук Mac также используются для записи встреч. Универсальный доступ нужен для глобальной клавиши и автовставки."
+            ))
+            .font(Typography.caption)
+            .foregroundStyle(Palette.textTertiary)
+        }
+    }
 
-            VStack(alignment: .leading, spacing: Spacing.xs) {
-                Text("settings.dictation.howToUse", bundle: .main)
-                    .font(Typography.label)
-                    .foregroundStyle(Palette.textSecondary)
-                Text(dictationUsageText)
-                    .font(Typography.caption)
-                    .foregroundStyle(Palette.textTertiary)
-                Text(dictationPrivacyText)
-                    .font(Typography.caption)
-                    .foregroundStyle(Palette.textTertiary)
-            }
-
+    /// Setup re-run, Finder reveal, and the destructive permission reset —
+    /// maintenance actions, separated from everyday controls.
+    private var dictationTroubleshootingSection: some View {
+        Section {
             HStack(spacing: Spacing.sm) {
                 Button {
                     appState.resetOnboardingForSetupRerun()
@@ -712,8 +758,7 @@ struct MacSettingsView: View {
                 .accessibilityIdentifier("settings-reveal-app-button")
 
                 Button {
-                    MacInputPermission.resetTCCEntries()
-                    MacPrivacySettings.restartForPermissionRefresh()
+                    showResetPermissionsConfirmation = true
                 } label: {
                     Text("settings.dictation.resetPermissions", bundle: .main)
                 }
@@ -721,8 +766,26 @@ struct MacSettingsView: View {
                 .accessibilityIdentifier("settings-reset-permissions-button")
             }
         } header: {
-            Text("settings.dictation.title", bundle: .main)
+            Text(t("Troubleshooting", "Устранение неполадок"))
                 .waiSectionHeader()
+                .accessibilityIdentifier("settings-dictation-troubleshooting-header")
+        }
+        .confirmationDialog(
+            t("Reset privacy permissions?", "Сбросить разрешения?"),
+            isPresented: $showResetPermissionsConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button(t("Reset and restart", "Сбросить и перезапустить"), role: .destructive) {
+                MacInputPermission.resetTCCEntries()
+                MacPrivacySettings.restartForPermissionRefresh()
+            }
+            .accessibilityIdentifier("settings-reset-permissions-confirm-button")
+            Button(t("Cancel", "Отмена"), role: .cancel) {}
+        } message: {
+            Text(t(
+                "WaiComputer will forget its Microphone, Accessibility, and System Audio permissions and restart. macOS will ask you to grant them again.",
+                "WaiComputer забудет разрешения на микрофон, Универсальный доступ и звук Mac и перезапустится. macOS попросит выдать их заново."
+            ))
         }
     }
 
@@ -791,26 +854,6 @@ struct MacSettingsView: View {
             return t("Voice & AI", "Голос и AI")
         case .account:
             return t("App & Account", "Приложение и аккаунт")
-        }
-    }
-
-    private func settingsCategoryDescription(_ category: MacSettingsCategory) -> String {
-        switch category {
-        case .workspace:
-            return t(
-                "Server, Telegram, MCP, and source connections that feed Inbox.",
-                "Сервер, Telegram, MCP и источники, которые наполняют Инбокс."
-            )
-        case .voice:
-            return t(
-                "Language, voice identity, summaries, dictation, and permissions.",
-                "Язык, голосовой профиль, саммари, диктовка и разрешения."
-            )
-        case .account:
-            return t(
-                "Theme, billing, updates, account status, sign out, and account deletion.",
-                "Тема, оплата, обновления, статус аккаунта, выход и удаление аккаунта."
-            )
         }
     }
 
