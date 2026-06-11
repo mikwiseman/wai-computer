@@ -796,6 +796,14 @@ struct MacMainView: View {
     /// sidebar folder target, refreshing the affected lists afterwards.
     private func handleInboxDrop(_ items: [InboxDragItem], folderId: String?) -> Bool {
         guard let item = items.first else { return false }
+        moveInboxDragItem(item, to: folderId)
+        dropTargetIdentifier = nil
+        return true
+    }
+
+    /// One move routine for both affordances — sidebar drops and the rows'
+    /// "Move to Folder" context menu.
+    private func moveInboxDragItem(_ item: InboxDragItem, to folderId: String?) {
         switch item.kind {
         case .recording:
             if isTrashSection {
@@ -810,8 +818,6 @@ struct MacMainView: View {
         case .chat:
             moveInboxChat(item.id, to: folderId)
         }
-        dropTargetIdentifier = nil
-        return true
     }
 
     private func restoreAndMoveRecording(_ id: String, to folderId: String?) {
@@ -1038,6 +1044,9 @@ struct MacMainView: View {
                 },
                 onPendingCommandConsumed: {
                     pendingInboxCommand = nil
+                },
+                onMoveRow: { item, folderId in
+                    moveInboxDragItem(item, to: folderId)
                 }
             )
             .environment(\.locale, MacDateFormatting.locale(for: languageManager.current))

@@ -41,6 +41,10 @@ struct MacInboxView: View {
     let onLibraryChanged: () async -> Void
     let onPendingDetailConsumed: () -> Void
     let onPendingCommandConsumed: () -> Void
+    /// Files a row (any kind) into a folder; nil unfiles into Inbox. Backs
+    /// the rows' "Move to Folder" context menu — the discoverable sibling of
+    /// sidebar drag-and-drop.
+    let onMoveRow: (InboxDragItem, String?) -> Void
 
     @EnvironmentObject private var languageManager: LanguageManager
     @EnvironmentObject private var dictationManager: DictationManager
@@ -68,7 +72,8 @@ struct MacInboxView: View {
         onStartRecording: @escaping () -> Void,
         onLibraryChanged: @escaping () async -> Void,
         onPendingDetailConsumed: @escaping () -> Void = {},
-        onPendingCommandConsumed: @escaping () -> Void = {}
+        onPendingCommandConsumed: @escaping () -> Void = {},
+        onMoveRow: @escaping (InboxDragItem, String?) -> Void = { _, _ in }
     ) {
         self.apiClient = apiClient
         self.recordings = recordings
@@ -82,6 +87,7 @@ struct MacInboxView: View {
         self.onLibraryChanged = onLibraryChanged
         self.onPendingDetailConsumed = onPendingDetailConsumed
         self.onPendingCommandConsumed = onPendingCommandConsumed
+        self.onMoveRow = onMoveRow
         _model = StateObject(wrappedValue: MacInboxViewModel(
             apiClient: apiClient,
             sourceKind: initialSourceKind,
@@ -160,6 +166,12 @@ struct MacInboxView: View {
             // snap focus to that scope's default when it falls outside.
             if !allowedCreateModes.contains(focusedCreateMode) {
                 focusedCreateMode = Self.defaultCreateMode(for: next)
+            }
+            // The right pane follows the scope: a detail from another kind
+            // (e.g. a Wai chat open while switching to Записи) gives way to
+            // this scope's composer. A detail that matches the scope stays.
+            if let open = selectedDetail, let scope = next, open.kind != scope {
+                selectedDetail = nil
             }
         }
         .dropDestination(for: URL.self) { urls, _ in
@@ -271,8 +283,8 @@ struct MacInboxView: View {
         switch model.sourceKind {
         case .recording?:
             return t(
-                "Record now or upload an audio or video file.",
-                "Запишите сейчас или загрузите аудио- или видеофайл."
+                "Record your microphone and computer audio.",
+                "Запишите микрофон и звук компьютера."
             )
         case .item?:
             return t(
@@ -297,7 +309,10 @@ struct MacInboxView: View {
     /// mirrors what the user is looking at.
     private var allowedCreateModes: [InboxCreateMode] {
         switch model.sourceKind {
-        case .recording?: return [.record, .file]
+        // Записи is record-only: one scope, one CTA. Uploading audio/video
+        // (which also lands as a recording) stays reachable via the header
+        // "+" menu and ⌘U — focusCreateMode widens the scope on demand.
+        case .recording?: return [.record]
         case .item?: return [.file, .paste]
         case .chat?: return [.ask]
         case nil: return [.record, .file, .paste, .ask]
@@ -393,6 +408,7 @@ struct MacInboxView: View {
             } else {
                 MacInboxRowsList(
                     rows: model.rows,
+                    folders: folders,
                     language: languageManager.current,
                     selectedRowID: selectedRowID,
                     canLoadMore: model.nextCursor != nil,
@@ -402,7 +418,8 @@ struct MacInboxView: View {
                     },
                     onLoadMore: {
                         Task { await model.loadMore() }
-                    }
+                    },
+                    onMove: onMoveRow
                 )
             }
         }
@@ -1556,12 +1573,14 @@ private struct MacInboxDisplayRow: Identifiable, Equatable {
 /// ~10× cheaper in the same window), so the representable is gone.
 private struct MacInboxRowsList: View {
     let rows: [InboxRow]
+    let folders: [Folder]
     let language: LanguageManager.SupportedLanguage
     let selectedRowID: String?
     let canLoadMore: Bool
     let isLoadingMore: Bool
     let onSelect: (InboxRow) -> Void
     let onLoadMore: () -> Void
+    let onMove: (InboxDragItem, String?) -> Void
 
     /// Memoizes the O(N) localize + date-format row mapping across
     /// re-renders, and maps only the appended tail on pagination — the same
@@ -1612,11 +1631,35 @@ private struct MacInboxRowsList: View {
     private func draggableRow(_ display: MacInboxDisplayRow, index: Int) -> some View {
         // Every inbox kind files into folders now — recordings, materials,
         // and Wai chats all drag to the sidebar (folders / Inbox / Trash).
+        // The context menu is the same move, discoverable and keyboardable.
         MacInboxListRow(
             display: display,
             onSelect: { onSelect(rows[index]) }
         )
         .draggable(InboxDragItem(kind: display.sourceKind, id: display.detail.id))
+        .contextMenu {
+            Menu(Self.text("Move to Folder", "Переместить в папку", language: language)) {
+                Button(Self.text("Inbox (no folder)", "Инбокс (без папки)", language: language)) {
+                    onMove(InboxDragItem(kind: display.sourceKind, id: display.detail.id), nil)
+                }
+                if !folders.isEmpty {
+                    Divider()
+                    ForEach(folders) { folder in
+                        Button(folder.name) {
+                            onMove(InboxDragItem(kind: display.sourceKind, id: display.detail.id), folder.id)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private static func text(
+        _ english: String,
+        _ russian: String,
+        language: LanguageManager.SupportedLanguage
+    ) -> String {
+        OnboardingL10n.text(english, russian, language: language)
     }
 }
 
