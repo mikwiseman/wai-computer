@@ -125,6 +125,8 @@ struct MacMainView: View {
     /// Sidebar row currently highlighted as a drag-and-drop target (e.g.
     /// "folder-<id>", "inbox", "trash"). Drives the drop highlight.
     @State private var dropTargetIdentifier: String?
+    /// Recordings queued behind the permanent-delete confirmation dialog.
+    @State private var idsPendingPermanentDelete: [String]?
     /// Bumped after a sidebar drag-and-drop move so the Inbox/folder list reloads.
     @State private var inboxReloadToken = UUID()
 
@@ -271,15 +273,19 @@ struct MacMainView: View {
 
     private var listHeaderActions: some View {
         HStack(spacing: Spacing.sm) {
-            Button {
-                startRecording(type: .meeting, inputSource: .dual, folderId: currentFolderId)
-            } label: {
-                MainToolbarIconLabel(title: t("New Recording", "Новая запись"), systemImage: "plus")
+            // The record action reads as "record", not a generic "+", and has
+            // no business in Trash next to Restore / Delete Permanently.
+            if !isTrashSection {
+                Button {
+                    startRecording(type: .meeting, inputSource: .dual, folderId: currentFolderId)
+                } label: {
+                    MainToolbarIconLabel(title: t("New Recording", "Новая запись"), systemImage: "waveform")
+                }
+                .buttonStyle(.plain)
+                .disabled(isRecordingHandoffActive || isLibraryOperationActive || !appState.isAuthenticated)
+                .help(t("New Recording", "Новая запись"))
+                .accessibilityIdentifier("new-recording-toolbar-button")
             }
-            .buttonStyle(.plain)
-            .disabled(isRecordingHandoffActive || isLibraryOperationActive || !appState.isAuthenticated)
-            .help(t("New Recording", "Новая запись"))
-            .accessibilityIdentifier("new-recording-toolbar-button")
 
             if !isTrashSection {
                 Button {
@@ -303,7 +309,7 @@ struct MacMainView: View {
                 .disabled(selectedRecordingIds.isEmpty || isLibraryOperationActive)
 
                 Button {
-                    permanentlyDeleteSelectedRecordings()
+                    requestPermanentDelete(Array(selectedRecordingIds))
                 } label: {
                     MainToolbarIconLabel(title: t("Delete Permanently", "Удалить навсегда"), systemImage: "trash.slash", color: Palette.recording)
                 }
@@ -360,6 +366,14 @@ struct MacMainView: View {
         return t("Delete “\(folder.name)”?", "Удалить «\(folder.name)»?")
     }
 
+    private var permanentDeleteDialogTitle: String {
+        let count = idsPendingPermanentDelete?.count ?? 0
+        if count <= 1 {
+            return t("Delete Recording Permanently?", "Удалить запись навсегда?")
+        }
+        return t("Delete \(count) Recordings Permanently?", "Удалить записи навсегда? (\(count))")
+    }
+
     var body: some View {
         mainSplitView
         .background {
@@ -413,6 +427,28 @@ struct MacMainView: View {
             }
         } message: {
             Text(recordingViewModel.error ?? t("The recording could not continue.", "Запись не может продолжаться."))
+        }
+        .confirmationDialog(
+            permanentDeleteDialogTitle,
+            isPresented: Binding(
+                get: { idsPendingPermanentDelete != nil },
+                set: { if !$0 { idsPendingPermanentDelete = nil } }
+            )
+        ) {
+            Button(t("Delete Permanently", "Удалить навсегда"), role: .destructive) {
+                if let ids = idsPendingPermanentDelete {
+                    permanentlyDeleteRecordings(ids)
+                }
+                idsPendingPermanentDelete = nil
+            }
+            Button(t("Cancel", "Отмена"), role: .cancel) {
+                idsPendingPermanentDelete = nil
+            }
+        } message: {
+            Text(t(
+                "Recordings, transcripts, and summaries are deleted forever. This can't be undone.",
+                "Записи, расшифровки и резюме будут удалены навсегда. Это нельзя отменить."
+            ))
         }
         .sheet(isPresented: $isShowingCreateFolderSheet) {
             FolderNameSheet(
@@ -734,7 +770,13 @@ struct MacMainView: View {
         guard let item = items.first else { return false }
         switch item.kind {
         case .recording:
-            moveRecordings([item.id], to: folderId)
+            if isTrashSection {
+                // Dragging out of Trash means "bring it back" — restore first,
+                // then file it where it was dropped (nil unfiles into Inbox).
+                restoreAndMoveRecording(item.id, to: folderId)
+            } else {
+                moveRecordings([item.id], to: folderId)
+            }
         case .item:
             moveInboxItem(item.id, to: folderId)
         case .chat:
@@ -742,6 +784,21 @@ struct MacMainView: View {
         }
         dropTargetIdentifier = nil
         return true
+    }
+
+    private func restoreAndMoveRecording(_ id: String, to folderId: String?) {
+        Task {
+            await libraryViewModel.restoreRecordings(ids: [id], apiClient: appState.getAPIClient())
+            await libraryViewModel.moveRecordings(ids: [id], to: folderId, apiClient: appState.getAPIClient())
+            selectedRecordingIds.subtract([id])
+            prefetchedRecordingDetail = nil
+            inboxReloadToken = UUID()
+        }
+    }
+
+    private func requestPermanentDelete(_ ids: [String]) {
+        guard !ids.isEmpty else { return }
+        idsPendingPermanentDelete = ids
     }
 
     /// Trash keeps its existing semantics: recordings only. Materials and
@@ -876,7 +933,7 @@ struct MacMainView: View {
                             restoreRecordings(ids)
                         },
                         onPermanentDelete: { ids in
-                            permanentlyDeleteRecordings(ids)
+                            requestPermanentDelete(ids)
                         },
                         onMoveToFolder: { ids, folderId in
                             moveRecordings(ids, to: folderId)
@@ -1385,7 +1442,7 @@ struct MacMainView: View {
     }
 
     private func permanentlyDeleteSelectedRecordings() {
-        permanentlyDeleteRecordings(Array(selectedRecordingIds))
+        requestPermanentDelete(Array(selectedRecordingIds))
     }
 }
 
