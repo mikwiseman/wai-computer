@@ -27,7 +27,9 @@ struct MacRecordingDetailView: View {
     @State private var pendingSharePayload: SharePickerPayload?
     @State private var isEditingTitle = false
     @State private var titleDraft = ""
+    @State private var isTitleHovered = false
     @FocusState private var titleFieldFocused: Bool
+    @FocusState private var renameButtonFocused: Bool
 
     init(
         recordingId: String,
@@ -305,18 +307,47 @@ struct MacRecordingDetailView: View {
                     }
                     .accessibilityIdentifier("recording-title-edit")
             } else {
-                Text(detail.title ?? t("Untitled", "Без названия"))
-                    .font(Typography.displayMedium)
-                    .lineLimit(2)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .accessibilityElement(children: .ignore)
-                    .accessibilityIdentifier("recording-title")
-                    .contentShape(Rectangle())
-                    .onTapGesture(count: 2) {
-                        guard mode == .active else { return }
-                        startTitleEdit(currentTitle: detail.title)
+                HStack(alignment: .firstTextBaseline, spacing: Spacing.sm) {
+                    Text(detail.title ?? t("Untitled", "Без названия"))
+                        .font(Typography.displayMedium)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityElement(children: .ignore)
+                        .accessibilityLabel(detail.title ?? t("Untitled", "Без названия"))
+                        .accessibilityIdentifier("recording-title")
+                        .contentShape(Rectangle())
+                        .onTapGesture(count: 2) {
+                            guard mode == .active else { return }
+                            startTitleEdit(currentTitle: detail.title)
+                        }
+                        .help(mode == .active ? t("Double-click to rename", "Двойной клик для переименования") : "")
+                        .accessibilityActions {
+                            if mode == .active {
+                                Button(t("Rename", "Переименовать")) {
+                                    startTitleEdit(currentTitle: detail.title)
+                                }
+                            }
+                        }
+
+                    if mode == .active {
+                        Button {
+                            startTitleEdit(currentTitle: detail.title)
+                        } label: {
+                            Image(systemName: "pencil")
+                                .font(Typography.headingSmall)
+                                .foregroundStyle(Palette.textSecondary)
+                        }
+                        .buttonStyle(.plain)
+                        .focused($renameButtonFocused)
+                        // Hover-revealed, but also shown while keyboard-focused so
+                        // rename is reachable without a mouse.
+                        .opacity(isTitleHovered || renameButtonFocused ? 1 : 0)
+                        .help(t("Rename", "Переименовать"))
+                        .accessibilityLabel(t("Rename", "Переименовать"))
+                        .accessibilityIdentifier("recording-title-rename-button")
                     }
-                    .help(mode == .active ? t("Double-click to rename", "Двойной клик для переименования") : "")
+                }
+                .onHover { isTitleHovered = $0 }
             }
 
             HStack(spacing: Spacing.sm) {
@@ -376,6 +407,7 @@ struct MacRecordingDetailView: View {
                 }
                 .buttonStyle(WaiGhostButtonStyle())
                 .help(t("Export Recording", "Экспортировать запись"))
+                .accessibilityLabel(t("Export Recording", "Экспортировать запись"))
 
                 Button {
                     Task {
@@ -393,6 +425,11 @@ struct MacRecordingDetailView: View {
                 }
                 .buttonStyle(WaiGhostButtonStyle())
                 .help(t("Create a web share link", "Создать ссылку для просмотра"))
+                .accessibilityLabel(
+                    copiedSection == "share-link"
+                        ? t("Copied", "Скопировано")
+                        : t("Create a web share link", "Создать ссылку для просмотра")
+                )
                 .disabled(isSharing)
 
                 if detail.summary != nil {
@@ -416,6 +453,7 @@ struct MacRecordingDetailView: View {
                 }
                 .buttonStyle(.plain)
                 .help(t("Restore Recording", "Восстановить запись"))
+                .accessibilityLabel(t("Restore Recording", "Восстановить запись"))
             }
 
             deleteRecordingButton
@@ -518,6 +556,7 @@ struct MacRecordingDetailView: View {
         }
         .buttonStyle(WaiGhostButtonStyle())
         .help(t("Move to Folder", "Переместить в папку"))
+        .accessibilityLabel(t("Move to Folder", "Переместить в папку"))
         .disabled(detail.folderId == nil && folders.isEmpty)
         .accessibilityIdentifier("recording-detail-move-to-folder-menu")
     }
@@ -531,6 +570,11 @@ struct MacRecordingDetailView: View {
         }
         .buttonStyle(.plain)
         .help(mode == .trash ? t("Delete Permanently", "Удалить навсегда") : t("Move to Trash", "Переместить в корзину"))
+        .accessibilityLabel(
+            mode == .trash
+                ? t("Delete Permanently", "Удалить навсегда")
+                : t("Move to Trash", "Переместить в корзину")
+        )
         .confirmationDialog(
             mode == .trash ? t("Delete this recording permanently?", "Удалить запись навсегда?") : t("Move this recording to trash?", "Переместить запись в корзину?"),
             isPresented: $showDeleteConfirmation
@@ -594,11 +638,18 @@ struct MacRecordingDetailView: View {
         .accessibilityIdentifier("recording-detail-content")
     }
 
-    private func fullSummaryText(_ summary: Summary) -> String {
+    private func visibleActionItems(_ detail: RecordingDetail) -> [ActionItem] {
+        detail.actionItems.filter { $0.status != .cancelled }
+    }
+
+    private func fullSummaryText(_ summary: Summary, actionItems: [ActionItem]) -> String {
         var parts: [String] = []
         if let text = summary.summary { parts.append(text) }
         if let points = summary.keyPoints, !points.isEmpty {
             parts.append("\n\(t("Key Points", "Ключевые пункты")):\n" + points.map { "— \($0)" }.joined(separator: "\n"))
+        }
+        if !actionItems.isEmpty {
+            parts.append("\n\(t("Action Items", "Задачи")):\n" + actionItems.map { "— \($0.task)" }.joined(separator: "\n"))
         }
         if let topics = summary.topics, !topics.isEmpty {
             parts.append("\n\(t("Topics", "Темы")): " + topics.joined(separator: ", "))
@@ -642,14 +693,16 @@ struct MacRecordingDetailView: View {
                         copyActionButton(
                             title: t("Copy Summary", "Скопировать сводку"),
                             copiedTitle: t("Copied", "Скопировано"),
-                            text: fullSummaryText(summary),
+                            text: fullSummaryText(summary, actionItems: visibleActionItems(detail)),
                             section: "summary-all"
                         )
                     }
                 }
             }
 
-            if isGeneratingSummary {
+            // Section-level progress only while regenerating an existing summary;
+            // the empty state below shows its own (single) progress row otherwise.
+            if isGeneratingSummary && detail.summary != nil {
                 summaryGenerationProgress(state: generationState)
             }
 
@@ -660,7 +713,7 @@ struct MacRecordingDetailView: View {
                     summaryAudioFailure(state: audioState)
                 }
 
-                summaryBody(summary)
+                summaryBody(summary, actionItems: visibleActionItems(detail))
             } else {
                 summaryEmptyState(
                     detail: detail,
@@ -674,7 +727,7 @@ struct MacRecordingDetailView: View {
     }
 
     @ViewBuilder
-    private func summaryBody(_ summary: Summary) -> some View {
+    private func summaryBody(_ summary: Summary, actionItems: [ActionItem]) -> some View {
         if let text = summary.summary {
             VStack(alignment: .leading, spacing: Spacing.sm) {
                 Text(text)
@@ -700,6 +753,26 @@ struct MacRecordingDetailView: View {
                     }
                 }
             }
+        }
+
+        if !actionItems.isEmpty {
+            VStack(alignment: .leading, spacing: Spacing.sm) {
+                Text(t("Action Items", "Задачи"))
+                    .waiSectionHeader()
+                ForEach(actionItems) { item in
+                    HStack(alignment: .firstTextBaseline, spacing: Spacing.sm) {
+                        Image(systemName: item.status == .completed ? "checkmark.circle.fill" : "checkmark.circle")
+                            .font(Typography.bodySmall)
+                            .foregroundStyle(Palette.accent)
+                        Text(item.task)
+                            .strikethrough(item.status == .completed)
+                            .font(Typography.reading)
+                            .lineSpacing(6)
+                            .textSelection(.enabled)
+                    }
+                }
+            }
+            .accessibilityIdentifier("summary-action-items")
         }
 
         if let topics = summary.topics, !topics.isEmpty {
@@ -738,32 +811,43 @@ struct MacRecordingDetailView: View {
         generationFailed: Bool,
         generationState: SummaryGenerationState?
     ) -> some View {
-        VStack(alignment: .leading, spacing: Spacing.md) {
-            Text(t("Summary is not ready yet.", "Сводка еще не готова."))
-                .font(Typography.body)
-                .foregroundStyle(Palette.textPrimary)
+        // A failed recording has no transcript to summarize — say what actually
+        // happened instead of "not ready yet" plus a Generate button that can't work.
+        let transcriptionFailed = detail.status == .failed && detail.segments.isEmpty
+        return VStack(alignment: .leading, spacing: Spacing.md) {
+            if transcriptionFailed {
+                Text(recordingFailureText)
+                    .font(Typography.body)
+                    .foregroundStyle(Palette.recording)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("summary-failed-state")
+            } else {
+                Text(t("Summary is not ready yet.", "Сводка еще не готова."))
+                    .font(Typography.body)
+                    .foregroundStyle(Palette.textPrimary)
 
-            Button(action: {
-                Task {
-                    await viewModel.startSummaryGeneration(
-                        recordingId: detail.id,
-                        apiClient: appState.getAPIClient()
-                    )
+                Button(action: {
+                    Task {
+                        await viewModel.startSummaryGeneration(
+                            recordingId: detail.id,
+                            apiClient: appState.getAPIClient()
+                        )
+                    }
+                }) {
+                    Text(summaryGenerationButtonTitle(isGenerating: isGeneratingSummary, failed: generationFailed))
                 }
-            }) {
-                Text(summaryGenerationButtonTitle(isGenerating: isGeneratingSummary, failed: generationFailed))
-            }
-            .buttonStyle(WaiPrimaryButtonStyle(isDisabled: isGeneratingSummary))
-            .disabled(isGeneratingSummary)
+                .buttonStyle(WaiPrimaryButtonStyle(isDisabled: isGeneratingSummary))
+                .disabled(isGeneratingSummary)
 
-            if isGeneratingSummary {
-                summaryGenerationProgress(state: generationState)
-            } else if generationFailed {
-                summaryGenerationFailure(state: generationState)
+                if isGeneratingSummary {
+                    summaryGenerationProgress(state: generationState)
+                } else if generationFailed {
+                    summaryGenerationFailure(state: generationState)
+                }
             }
         }
         .padding(Spacing.lg)
-        .background(Palette.surfaceSubtle)
+        .background(transcriptionFailed ? Palette.recording.opacity(0.10) : Palette.surfaceSubtle)
         .clipShape(RoundedRectangle(cornerRadius: 8))
     }
 
@@ -787,6 +871,11 @@ struct MacRecordingDetailView: View {
                     }
                     .buttonStyle(WaiGhostButtonStyle())
                     .help(t("Copy transcript", "Скопировать расшифровку"))
+                    .accessibilityLabel(
+                        copiedSection == "transcript-all"
+                            ? t("Copied", "Скопировано")
+                            : t("Copy transcript", "Скопировать расшифровку")
+                    )
                 }
             }
         }
@@ -807,11 +896,36 @@ struct MacRecordingDetailView: View {
             ))
             .font(Typography.bodySmall)
             .foregroundStyle(Palette.textSecondary)
+        case .failed:
+            HStack(alignment: .top, spacing: Spacing.sm) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(Typography.headingSmall)
+                    .foregroundStyle(Palette.recording)
+                Text(recordingFailureText)
+                    .font(Typography.bodySmall)
+                    .foregroundStyle(Palette.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(.horizontal, Spacing.md)
+            .padding(.vertical, Spacing.sm)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Palette.recording.opacity(0.10))
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .accessibilityIdentifier("transcript-failed-state")
         case .empty, .content:
             Text(t("No transcript yet.", "Расшифровки пока нет."))
                 .font(Typography.bodySmall)
                 .foregroundStyle(Palette.textSecondary)
         }
+    }
+
+    /// The recording's real failure, sanitized the same way the list row does
+    /// (technical server strings are replaced, honest copy is kept).
+    private var recordingFailureText: String {
+        UserFacingErrorFormatter.previewMessage(
+            viewModel.recordingDetail?.failureMessage,
+            context: .recording
+        ) ?? t("Transcription failed for this recording.", "Не удалось расшифровать эту запись.")
     }
 
     private var savedLocallyTranscriptDescription: String {
@@ -886,7 +1000,7 @@ struct MacRecordingDetailView: View {
         }
         .padding(.horizontal, Spacing.md)
         .padding(.vertical, Spacing.sm)
-        .background(Palette.recording.opacity(0.10))
+        .background(Palette.accentSubtle)
         .clipShape(RoundedRectangle(cornerRadius: 8))
         .accessibilityIdentifier("summary-generation-progress")
     }
@@ -933,7 +1047,7 @@ struct MacRecordingDetailView: View {
         }
         .padding(.horizontal, Spacing.md)
         .padding(.vertical, Spacing.sm)
-        .background(Palette.recording.opacity(0.10))
+        .background(Palette.accentSubtle)
         .clipShape(RoundedRectangle(cornerRadius: 8))
         .accessibilityIdentifier("summary-audio-progress")
     }

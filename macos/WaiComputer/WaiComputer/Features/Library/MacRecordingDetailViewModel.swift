@@ -7,6 +7,7 @@ enum MacTranscriptAvailability: Equatable {
     case savedLocally
     case processing
     case empty
+    case failed
 
     static func resolve(
         segments: [Segment],
@@ -26,7 +27,9 @@ enum MacTranscriptAvailability: Equatable {
         switch status {
         case .pendingUpload, .uploading, .processing:
             return .processing
-        case .ready, .failed:
+        case .failed:
+            return .failed
+        case .ready:
             return .empty
         }
     }

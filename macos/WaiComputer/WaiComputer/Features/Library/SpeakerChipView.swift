@@ -161,6 +161,16 @@ struct SpeakerChipView: View {
                 Task { await performDelete() }
             }
             Button(t("Cancel", "Отмена"), role: .cancel) { deleteTarget = nil }
+        } message: {
+            if let target = deleteTarget {
+                Text(String(
+                    format: t(
+                        "This removes “%@” from your people directory and unassigns them in all recordings.",
+                        "Это удалит «%@» из справочника людей и снимет назначение во всех записях."
+                    ),
+                    target.displayName
+                ))
+            }
         }
         .alert(
             t("Merge speakers?", "Объединить говорящих?"),
