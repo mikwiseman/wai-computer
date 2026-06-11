@@ -8,13 +8,16 @@ struct MacSearchView: View {
     @FocusState private var searchFieldFocused: Bool
     let onOpenRecording: (String) -> Void
     let onOpenItem: (String) -> Void
+    let onOpenChat: (String) -> Void
 
     init(
         onOpenRecording: @escaping (String) -> Void = { _ in },
-        onOpenItem: @escaping (String) -> Void = { _ in }
+        onOpenItem: @escaping (String) -> Void = { _ in },
+        onOpenChat: @escaping (String) -> Void = { _ in }
     ) {
         self.onOpenRecording = onOpenRecording
         self.onOpenItem = onOpenItem
+        self.onOpenChat = onOpenChat
     }
 
     var body: some View {
@@ -36,7 +39,12 @@ struct MacSearchView: View {
                 Image(systemName: "magnifyingglass")
                     .foregroundStyle(Palette.textTertiary)
 
-                TextField(t("Search recordings...", "Искать в записях..."), text: $viewModel.query)
+                TextField(
+                    viewModel.scope == .everything
+                        ? t("Search everything...", "Искать везде...")
+                        : t("Search recordings...", "Искать в записях..."),
+                    text: $viewModel.query
+                )
                     .textFieldStyle(.plain)
                     .font(Typography.headingMedium)
                     .focused($searchFieldFocused)
@@ -75,7 +83,7 @@ struct MacSearchView: View {
             .clipShape(RoundedRectangle(cornerRadius: 8))
             .accessibilityIdentifier("search-bar")
 
-            Picker("", selection: $viewModel.scope) {
+            Picker(t("Search scope", "Область поиска"), selection: $viewModel.scope) {
                 Text(t("Recordings", "Записи")).tag(SearchScope.recordings)
                 Text(t("Everything", "Всё")).tag(SearchScope.everything)
             }
@@ -86,6 +94,7 @@ struct MacSearchView: View {
                 if viewModel.hasSearched { performSearch() }
             }
             .accessibilityIdentifier("search-scope")
+            .accessibilityLabel(t("Search scope", "Область поиска"))
         }
         .frame(maxWidth: MacMainLayoutMetrics.searchContentMaxWidth, alignment: .leading)
         .padding(Spacing.lg)
@@ -116,8 +125,8 @@ struct MacSearchView: View {
                 t("No Results", "Ничего не найдено"),
                 systemImage: "magnifyingglass",
                 description: Text(t(
-                    "Nothing matches \"\(viewModel.query)\".",
-                    "По запросу \"\(viewModel.query)\" ничего не найдено."
+                    "Nothing matches \"\(viewModel.lastSubmittedQuery)\".",
+                    "По запросу \"\(viewModel.lastSubmittedQuery)\" ничего не найдено."
                 ))
             )
         } else if hasNoResults {
@@ -129,7 +138,7 @@ struct MacSearchView: View {
                 description: Text(
                     viewModel.scope == .everything
                         ? t("Search across recordings and everything you've added.",
-                            "Ищите по записям и всему, что вы добавили.")
+                            "Ищи по записям и всему, что добавлено.")
                         : t("Search across all your recording transcripts.",
                             "Ищи по всем расшифровкам записей.")
                 )
@@ -173,12 +182,16 @@ struct MacSearchView: View {
         viewModel.scope == .everything ? viewModel.unifiedResults.isEmpty : viewModel.results.isEmpty
     }
 
-    /// Route a unified hit: recordings open in the detail pane; items open the
-    /// material detail (previously this dropped the id and just landed in Inbox).
+    /// Route a unified hit: recordings open in the detail pane; chats open the
+    /// Wai conversation (previously they misrouted to the item detail and 404'd);
+    /// everything else opens the material detail.
     private func openUnifiedHit(_ hit: UnifiedHit) {
-        if hit.sourceKind == "recording" {
+        switch hit.sourceKind {
+        case "recording":
             onOpenRecording(hit.parentId)
-        } else {
+        case "chat":
+            onOpenChat(hit.parentId)
+        default:
             onOpenItem(hit.parentId)
         }
     }
@@ -282,16 +295,18 @@ struct UnifiedResultRow: View {
         Button(action: onOpen) {
             VStack(alignment: .leading, spacing: Spacing.xs) {
                 HStack(spacing: Spacing.xs) {
-                    Image(systemName: hit.sourceKind == "recording" ? "waveform" : "doc.text")
+                    Image(systemName: sourceIcon)
                         .font(Typography.caption)
                         .foregroundStyle(Palette.textSecondary)
                     Text(hit.title ?? t("Untitled", "Без названия"))
                         .font(Typography.headingMedium)
                         .lineLimit(1)
                     Spacer()
-                    Text(hit.kind.uppercased())
+                    Text(localizedKind)
                         .font(Typography.labelSmall)
                         .foregroundStyle(Palette.textTertiary)
+                        .textCase(.uppercase)
+                        .tracking(1.2)
                 }
 
                 Text(hit.snippet)
@@ -311,6 +326,29 @@ struct UnifiedResultRow: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .onHover { isHovered = $0 }
         .accessibilityIdentifier("unified-result-\(hit.chunkId)")
+    }
+
+    /// Per-source icon: chats match the inbox chat rows ("sparkles") instead of
+    /// masquerading as documents.
+    private var sourceIcon: String {
+        switch hit.sourceKind {
+        case "recording": return "waveform"
+        case "chat": return "sparkles"
+        default: return "doc.text"
+        }
+    }
+
+    /// The backend emits raw English kinds (meeting/note/chat/...); map the
+    /// known ones through t() so the RU UI doesn't badge English enums.
+    private var localizedKind: String {
+        switch hit.kind.lowercased() {
+        case "meeting": return t("Meeting", "Встреча")
+        case "note": return t("Note", "Заметка")
+        case "chat": return t("Chat", "Чат")
+        case "article": return t("Article", "Статья")
+        case "reflection": return t("Reflection", "Размышление")
+        default: return hit.kind
+        }
     }
 
     private func t(_ english: String, _ russian: String) -> String {
@@ -336,8 +374,12 @@ enum SearchScope: Hashable {
     case everything
 }
 
+@MainActor
 class MacSearchViewModel: ObservableObject {
     @Published var query = ""
+    /// The query that actually ran. Empty-state copy quotes this instead of the
+    /// live field text, which the user may have edited since submitting.
+    @Published private(set) var lastSubmittedQuery = ""
     @Published var results: [SearchResult] = []
     @Published var unifiedResults: [UnifiedHit] = []
     @Published var totalResults: Int = 0
@@ -346,7 +388,10 @@ class MacSearchViewModel: ObservableObject {
     @Published var hasSearched = false
     @Published var scope: SearchScope = .recordings
 
+    private var searchTask: Task<Void, Never>?
+
     func applySearchResponse(_ response: SearchResponse) {
+        lastSubmittedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
         error = nil
         hasSearched = true
         isLoading = false
@@ -358,39 +403,61 @@ class MacSearchViewModel: ObservableObject {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
 
+        // Latest submission wins: cancel any in-flight search so a slow older
+        // response can't land after — and overwrite — a newer one.
+        searchTask?.cancel()
+        let task = Task { await self.runSearch(query: trimmed, apiClient: apiClient) }
+        searchTask = task
+        await task.value
+    }
+
+    private func runSearch(query trimmed: String, apiClient: APIClient) async {
         isLoading = true
         error = nil
         hasSearched = true
+        lastSubmittedQuery = trimmed
 
         do {
             switch scope {
             case .recordings:
                 let response = try await apiClient.search(query: trimmed)
+                guard !Task.isCancelled else { return }
                 results = response.results
                 unifiedResults = []
                 totalResults = response.total
             case .everything:
                 let response = try await apiClient.unifiedSearch(query: trimmed)
+                guard !Task.isCancelled else { return }
                 unifiedResults = response.results
                 results = []
                 totalResults = response.total
             }
         } catch {
+            // A cancelled request must stay silent: the newer search owns the
+            // spinner and the error surface now, and the cancellation error
+            // itself must never paint "Search Failed".
+            guard !Task.isCancelled else { return }
             self.error = error.userFacingMessage(context: .generic)
         }
 
+        guard !Task.isCancelled else { return }
         isLoading = false
     }
 
     /// Reset every result/error/searched flag so clearing the field returns a
     /// clean slate. Previously only `query` + `results` were reset, leaving
-    /// `unifiedResults`, `totalResults`, and a stale error on screen.
+    /// `unifiedResults`, `totalResults`, and a stale error on screen. Also
+    /// cancels any in-flight search so its response can't repopulate the
+    /// cleared screen.
     func clear() {
+        searchTask?.cancel()
         query = ""
+        lastSubmittedQuery = ""
         results = []
         unifiedResults = []
         totalResults = 0
         error = nil
         hasSearched = false
+        isLoading = false
     }
 }
