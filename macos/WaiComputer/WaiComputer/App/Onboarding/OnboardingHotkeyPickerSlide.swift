@@ -55,7 +55,7 @@ struct OnboardingHotkeyPickerSlide: View {
             VStack(spacing: 10) {
                 Text(hotkey.onboardingShortLabel(language: languageManager.current))
                     .font(.system(size: 18, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(selected ? .white : Palette.textPrimary)
+                    .foregroundStyle(selected ? Palette.onAccent : Palette.textPrimary)
                     .padding(.horizontal, 14)
                     .padding(.vertical, 8)
                     .background(

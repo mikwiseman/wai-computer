@@ -15,34 +15,47 @@ struct OnboardingVoiceSetupSlide: View {
     @StateObject private var recorder = VoiceEnrollmentRecorder()
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Spacing.xl) {
-            Text(t("Optional: identify your voice", "Опционально: распознавать твой голос"))
-                .font(Typography.displayMedium)
-            Text(
-                t(
-                    "Record a short sample so WaiComputer can recognize you in future meetings without manual speaker tagging. Takes about 20 seconds.",
-                    "Запиши короткий образец: WaiComputer будет узнавать твой голос во встречах без ручной разметки спикеров. Это займет около 20 секунд."
+        VStack(spacing: 24) {
+            Spacer(minLength: 0)
+
+            VStack(spacing: 10) {
+                Text(t("Optional: identify your voice", "Опционально: распознавать твой голос"))
+                    .font(.system(size: 30, weight: .bold))
+                    .foregroundStyle(Palette.textPrimary)
+                Text(
+                    t(
+                        "Record a short sample so WaiComputer can recognize you in future meetings without manual speaker tagging. Takes about 20 seconds.",
+                        "Запиши короткий образец: WaiComputer будет узнавать твой голос во встречах без ручной разметки спикеров. Это займет около 20 секунд."
+                    )
                 )
-            )
-            .font(Typography.body)
-            .foregroundStyle(Palette.textSecondary)
-            Text(t(
-                "Record at least 5 seconds. This also checks the same microphone path used for dictation.",
-                "Запиши минимум 5 секунд. Так мы проверим тот же микрофонный путь, который потом используется для диктовки."
-            ))
-            .font(Typography.label)
-            .foregroundStyle(Palette.textTertiary)
+                .font(Typography.body)
+                .foregroundStyle(Palette.textSecondary)
+                Text(t(
+                    "Record at least 5 seconds. This also checks the same microphone path used for dictation.",
+                    "Запиши минимум 5 секунд. Так мы проверим тот же микрофонный путь, который потом используется для диктовки."
+                ))
+                .font(Typography.label)
+                .foregroundStyle(Palette.textTertiary)
+            }
+            .multilineTextAlignment(.center)
+            .frame(maxWidth: 540)
 
             promptCard
+                .frame(maxWidth: 640)
 
             controls
+                .frame(maxWidth: 640)
 
             footer
+                .frame(maxWidth: 640)
 
             Spacer(minLength: 0)
         }
-        .padding(.horizontal, Spacing.xxl)
-        .padding(.vertical, Spacing.xl)
+        .padding(.horizontal, Spacing.xl)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .opacity(isActive ? 1 : 0)
+        .offset(y: isActive ? 0 : 16)
+        .animation(.easeOut(duration: 0.45).delay(0.1), value: isActive)
         .onChangeCompat(of: isActive) { _, active in
             if !active && recorder.state == .recording {
                 recorder.cancel()
@@ -102,7 +115,10 @@ struct OnboardingVoiceSetupSlide: View {
                     .frame(width: 72, height: 72)
                 Image(systemName: recorder.state == .recording ? "stop.fill" : "mic.fill")
                     .font(.system(size: 28, weight: .semibold))
-                    .foregroundStyle(.white)
+                    // White passes the 3:1 non-text threshold on the red
+                    // recording fill; on the accent fill it must be the
+                    // WCAG-computed Palette.onAccent (white fails on amber).
+                    .foregroundStyle(recorder.state == .recording ? Color.white : Palette.onAccent)
             }
         }
         .buttonStyle(.plain)
@@ -111,24 +127,30 @@ struct OnboardingVoiceSetupSlide: View {
 
     @ViewBuilder
     private var footer: some View {
-        HStack {
-            Button(t("Skip for now", "Пропустить пока"), action: skipAndAdvance)
-                .buttonStyle(WaiGhostButtonStyle())
-            Spacer()
-            if recorder.state == .recorded {
-                Button(t("Re-record", "Записать заново"), action: handleRecordTap)
+        VStack(alignment: .leading, spacing: Spacing.sm) {
+            HStack {
+                Button(t("Skip for now", "Пропустить пока"), action: skipAndAdvance)
                     .buttonStyle(WaiGhostButtonStyle())
-                Button(t("Use this take", "Использовать запись"), action: submit)
-                    .buttonStyle(WaiPrimaryButtonStyle(isDisabled: recorder.state == .uploading || !recorder.hasMinimumDuration))
-                    .disabled(recorder.state == .uploading || !recorder.hasMinimumDuration)
+                Spacer()
+                if recorder.state == .recorded {
+                    Button(t("Re-record", "Записать заново"), action: handleRecordTap)
+                        .buttonStyle(WaiGhostButtonStyle())
+                    Button(t("Use this take", "Использовать запись"), action: submit)
+                        .buttonStyle(WaiPrimaryButtonStyle(isDisabled: recorder.state == .uploading || !recorder.hasMinimumDuration))
+                        .disabled(recorder.state == .uploading || !recorder.hasMinimumDuration)
+                        // The slide owns the primary CTA on this page (the
+                        // shared footer hides its Continue), so Return
+                        // submits the take instead of discarding it.
+                        .keyboardShortcut(.defaultAction)
+                }
             }
+            Text(t(
+                "We store a 192-number signature, not your audio. The recording is deleted after the signature is created.",
+                "Мы храним 192-числовую подпись, а не аудио. Запись удаляется после создания подписи."
+            ))
+                .font(.caption)
+                .foregroundStyle(Palette.textTertiary)
         }
-        Text(t(
-            "We store a 192-number signature, not your audio. The recording is deleted after the signature is created.",
-            "Мы храним 192-числовую подпись, а не аудио. Запись удаляется после создания подписи."
-        ))
-            .font(.caption)
-            .foregroundStyle(Palette.textTertiary)
     }
 
     // MARK: - Actions

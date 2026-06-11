@@ -13,7 +13,7 @@ struct OnboardingValuePropsSlide: View {
                 Text(t("One Inbox for everything", "Один Инбокс для всего"))
                     .font(.system(size: 30, weight: .bold))
                     .foregroundStyle(Palette.textPrimary)
-                Text(t("Capture, organize, and give Wai tasks without switching sections.", "Сохраняйте, раскладывайте и давайте Wai задачи без лишних разделов."))
+                Text(t("Capture, organize, and give Wai tasks without switching sections.", "Сохраняй, раскладывай и давай Wai задачи без лишних разделов."))
                     .font(.system(size: 14))
                     .foregroundStyle(Palette.textSecondary)
             }
@@ -31,7 +31,7 @@ struct OnboardingValuePropsSlide: View {
                 valueCard(
                     icon: "folder",
                     title: t("Folders", "Папки"),
-                    primary: t("Organize recordings and materials", "Разложите записи и материалы"),
+                    primary: t("Organize recordings and materials", "Разложи записи и материалы"),
                     detail: t(
                         "Folders work across the Inbox, so projects are not split by media type.",
                         "Папки работают поверх Инбокса, поэтому проекты не делятся по типу медиа."
@@ -40,10 +40,10 @@ struct OnboardingValuePropsSlide: View {
                 valueCard(
                     icon: "bubble.left.and.bubble.right",
                     title: "Wai",
-                    primary: t("Give Wai tasks over what you saved", "Давайте Wai задачи по тому, что сохранено"),
+                    primary: t("Give Wai tasks over what you saved", "Давай Wai задачи по тому, что сохранено"),
                     detail: t(
                         "Use Wai for summaries, decisions, repeated themes, or answers from your saved context.",
-                        "Используйте Wai для саммари, решений, повторяющихся тем или ответов из сохраненного контекста."
+                        "Используй Wai для саммари, решений, повторяющихся тем или ответов из сохраненного контекста."
                     )
                 )
             }

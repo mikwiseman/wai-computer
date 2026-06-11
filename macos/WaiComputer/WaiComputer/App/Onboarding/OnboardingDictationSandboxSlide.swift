@@ -62,11 +62,6 @@ struct OnboardingDictationSandboxSlide: View {
                 textBeforeCurrentUtterance = nil
             }
         }
-        .onChangeCompat(of: text) { _, newValue in
-            if !hasDictatedOnce, !newValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                hasDictatedOnce = true
-            }
-        }
         .onChangeCompat(of: dictationManager.state) { oldValue, newValue in
             if textBeforeCurrentUtterance == nil,
                (newValue == .connecting || newValue == .listening) {
@@ -83,6 +78,10 @@ struct OnboardingDictationSandboxSlide: View {
         // already update this sandbox field.
         .onChangeCompat(of: dictationManager.lastFinalTranscript) { oldValue, newValue in
             guard isActive, let inserted = newValue, inserted != oldValue, !inserted.isEmpty else { return }
+            // Real dictation evidence: the manager published a final
+            // transcript. The success headline and Continue are gated on
+            // this — typing into the field must not satisfy the gate.
+            hasDictatedOnce = true
             pendingFinalTranscript = PendingFinalTranscript(
                 text: inserted,
                 textBeforeUtterance: textBeforeCurrentUtterance

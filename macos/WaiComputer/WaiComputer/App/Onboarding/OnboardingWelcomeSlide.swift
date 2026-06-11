@@ -26,7 +26,7 @@ struct OnboardingWelcomeSlide: View {
                     .accessibilityIdentifier("onboarding-welcome-title")
                 Text(t(
                     "Record, upload, save links, and chat with Wai from one Inbox — set up in 90 seconds.",
-                    "Записывайте, загружайте файлы, сохраняйте ссылки и общайтесь с Wai из одного Инбокса — настройка займет около 90 секунд."
+                    "Записывай, загружай файлы, сохраняй ссылки и общайся с Wai из одного Инбокса — настройка займет около 90 секунд."
                 ))
                     .font(.system(size: 15))
                     .foregroundStyle(Palette.textSecondary)

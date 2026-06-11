@@ -173,6 +173,19 @@ struct OnboardingView: View {
         pages[currentPage] == .sandbox
     }
 
+    private var isVoiceSetupPage: Bool {
+        pages[currentPage] == .voiceSetup
+    }
+
+    /// Sandbox owns a dictation-gated Continue; voice setup owns
+    /// "Use this take" / "Re-record" / "Skip for now". On those slides the
+    /// footer must not render its own default-action button — a footer
+    /// Continue would bypass the sandbox gate or silently discard a
+    /// recorded voice take.
+    private var slideOwnsPrimaryCTA: Bool {
+        isSandboxPage || isVoiceSetupPage
+    }
+
     @ViewBuilder
     private var footerControls: some View {
         HStack(spacing: 12) {
@@ -188,18 +201,19 @@ struct OnboardingView: View {
 
             Spacer()
 
-            // Skip is an explicit opt-out of setup; normal recording should be
-            // ready before the user reaches the main UI.
-            Button(isPermissionPage || isSandboxPage ? t("Skip for Now", "Пропустить пока") : t("Skip", "Пропустить")) {
-                completeOnboarding()
+            // Plain "Skip" skips only the current step. The whole-phase exit
+            // exists only on permission/sandbox, where the label says so
+            // ("Skip setup"). Voice setup renders its own "Skip for now",
+            // so the footer skip is hidden there.
+            if !isVoiceSetupPage {
+                Button(skipButtonTitle, action: handleSkipTap)
+                    .buttonStyle(WaiGhostButtonStyle())
+                    .accessibilityIdentifier("onboarding-skip-button")
             }
-            .buttonStyle(WaiGhostButtonStyle())
-            .accessibilityIdentifier("onboarding-skip-button")
 
-            // Sandbox slide owns its own Continue CTA (gated on a successful
-            // dictation). Footer hides the primary button there to avoid two
-            // competing CTAs.
-            if !isSandboxPage {
+            // Sandbox and voice-setup slides own their primary CTAs; the
+            // footer hides its button there to avoid two competing CTAs.
+            if !slideOwnsPrimaryCTA {
                 Button(action: handlePrimaryTap) {
                     Text(primaryButtonTitle)
                         .frame(minWidth: 160)
@@ -208,6 +222,35 @@ struct OnboardingView: View {
                 .accessibilityIdentifier(primaryButtonAccessibilityId)
                 .keyboardShortcut(.defaultAction)
             }
+        }
+    }
+
+    private var skipButtonTitle: String {
+        isPermissionPage || isSandboxPage
+            ? t("Skip setup", "Пропустить настройку")
+            : t("Skip", "Пропустить")
+    }
+
+    private func handleSkipTap() {
+        if isPermissionPage || isSandboxPage {
+            // Explicit opt-out of the whole setup phase; the "Skip setup"
+            // label makes that scope unmistakable.
+            completeOnboarding()
+        } else {
+            skipCurrentStep()
+        }
+    }
+
+    /// Skips only the current slide. From the marketing slides this lands on
+    /// the permission page, so a misread "Skip" cannot silently drop
+    /// mic/Accessibility/language/hotkey setup.
+    private func skipCurrentStep() {
+        if let permissionIndex = pages.firstIndex(of: .permission), currentPage < permissionIndex {
+            withAnimation(.easeInOut(duration: 0.3)) {
+                currentPage = permissionIndex
+            }
+        } else {
+            advanceOrComplete()
         }
     }
 
@@ -924,12 +967,12 @@ private struct PermissionRow: View {
                 Button(action: primaryAction.run) {
                     Text(primaryAction.label)
                         .font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(Palette.onAccent)
                         .padding(.horizontal, 16)
                         .padding(.vertical, 8)
                         .background(
                             RoundedRectangle(cornerRadius: 999, style: .continuous)
-                                .fill(Color.black)
+                                .fill(Palette.accent)
                         )
                 }
                 .buttonStyle(.plain)
@@ -945,12 +988,12 @@ private struct PermissionRow: View {
                     Button(action: restartAction.run) {
                         Text(restartAction.label)
                             .font(.system(size: 13, weight: .medium))
-                            .foregroundStyle(.white)
+                            .foregroundStyle(Palette.onAccent)
                             .padding(.horizontal, 16)
                             .padding(.vertical, 8)
                             .background(
                                 RoundedRectangle(cornerRadius: 999, style: .continuous)
-                                    .fill(Color.black)
+                                    .fill(Palette.accent)
                             )
                     }
                     .buttonStyle(.plain)
