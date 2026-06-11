@@ -485,6 +485,9 @@ struct CompanionMarkdownText: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        // Container-level so every block — headings, bullets, ordered items,
+        // not just paragraphs/code — can be selected and copied (a11y).
+        .textSelection(.enabled)
     }
 }
 

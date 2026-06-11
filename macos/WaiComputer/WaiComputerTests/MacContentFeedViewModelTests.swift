@@ -214,11 +214,15 @@ final class MacContentFeedViewModelTests: XCTestCase {
         XCTAssertTrue(source.contains("body: completion.preview ?? t(\"Your Wai task is ready.\", \"Задача Wai готова.\")"))
     }
 
-    func testMacWaiTaskNotificationCenterRequestsPermissionAndSkipsForeground() throws {
+    func testMacWaiTaskNotificationCenterRequestsPermissionInForegroundOnly() throws {
         let source = try macSource("WaiComputer/Features/Inbox/MacWaiTaskNotificationCenter.swift")
 
         XCTAssertTrue(source.contains("import UserNotifications"))
-        XCTAssertTrue(source.contains("guard !application.isActive else { return }"))
+        // HIG: the system permission dialog may only appear in context — a Wai
+        // turn finishing while the app is frontmost. Background finishes are
+        // delivery-only and never trigger requestAuthorization.
+        XCTAssertTrue(source.contains("guard !application.isActive else {\n            requestAuthorizationIfNeeded()\n            return\n        }"))
+        XCTAssertTrue(source.contains("guard settings.authorizationStatus == .notDetermined else { return }"))
         XCTAssertTrue(source.contains("requestAuthorization(options: [.alert, .sound])"))
         XCTAssertTrue(source.contains("UNNotificationRequest("))
         XCTAssertFalse(source.contains("try?"))
@@ -295,7 +299,9 @@ final class MacContentFeedViewModelTests: XCTestCase {
         let source = try macSource("WaiComputer/Features/Library/MacRecordingDetailView.swift")
 
         XCTAssertFalse(source.contains("WaiTabBar("))
-        XCTAssertBefore("summarySection(detail)", "transcriptSection(detail)", in: source)
+        // The transcript is flattened into the outer LazyVStack for scroll perf
+        // (1.0.39); its header is the stable marker that follows the summary.
+        XCTAssertBefore("summarySection(detail)", "transcriptHeader(detail)", in: source)
     }
 
     func testRecordingDetailExposesSummaryAudioInHeaderActions() throws {

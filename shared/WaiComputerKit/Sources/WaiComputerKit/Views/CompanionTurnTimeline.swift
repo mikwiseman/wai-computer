@@ -268,13 +268,18 @@ public struct CompanionTurnReducer: Equatable, Sendable {
     public func notificationPreview(maxCharacters: Int) -> String? {
         guard maxCharacters > 0 else { return nil }
 
-        let text = items.compactMap { item -> String? in
+        let markdown = items.compactMap { item -> String? in
             if case .text(_, let markdown) = item { return markdown }
             return nil
         }
         .joined(separator: " ")
-        .split(whereSeparator: { $0.isWhitespace })
-        .joined(separator: " ")
+
+        // Notification bodies are plain text (UNNotificationContent.body):
+        // strip markdown so "**Итог:**" / "# Plan" never reach Notification
+        // Center as literal symbols, then collapse whitespace and truncate.
+        let text = Self.plainText(fromMarkdown: markdown)
+            .split(whereSeparator: { $0.isWhitespace })
+            .joined(separator: " ")
 
         guard !text.isEmpty else { return nil }
         guard text.count > maxCharacters else { return text }
@@ -287,6 +292,52 @@ public struct CompanionTurnReducer: Equatable, Sendable {
             prefix = String(prefix[..<lastSpace])
         }
         return "\(prefix)\(ellipsis)"
+    }
+
+    /// Markdown → plain text for one-line previews. Block syntax (heading
+    /// hashes, list markers, blockquotes, code fences) is stripped line by
+    /// line — inline parsing leaves it untouched — then inline syntax
+    /// (bold/italic/code/links) is resolved via `AttributedString` with
+    /// `.inlineOnlyPreservingWhitespace`, the kit's established parse mode.
+    /// A parse failure keeps the block-stripped text, matching the kit's
+    /// render-time markdown fallback.
+    static func plainText(fromMarkdown markdown: String) -> String {
+        let blockStripped = markdown
+            .components(separatedBy: "\n")
+            .compactMap { line -> String? in
+                var stripped = line.trimmingCharacters(in: .whitespaces)
+                // Drop code-fence lines themselves; fenced content stays.
+                if stripped.hasPrefix("```") { return nil }
+                // ATX heading hashes: "# Plan" -> "Plan".
+                if stripped.hasPrefix("#") {
+                    stripped = String(stripped.drop(while: { $0 == "#" }))
+                        .trimmingCharacters(in: .whitespaces)
+                }
+                // Blockquote marker.
+                if stripped.hasPrefix("> ") {
+                    stripped = String(stripped.dropFirst(2))
+                }
+                // Unordered list markers.
+                if stripped.hasPrefix("- ") || stripped.hasPrefix("* ") || stripped.hasPrefix("• ") {
+                    stripped = String(stripped.dropFirst(2))
+                } else if let dot = stripped.firstIndex(of: "."),
+                    dot != stripped.startIndex,
+                    stripped[stripped.startIndex..<dot].allSatisfy(\.isNumber),
+                    stripped[dot...].hasPrefix(". ") {
+                    // Ordered list markers: "1. Step" -> "Step".
+                    stripped = String(stripped[stripped.index(dot, offsetBy: 2)...])
+                }
+                return stripped
+            }
+            .joined(separator: "\n")
+
+        guard let attributed = try? AttributedString(
+            markdown: blockStripped,
+            options: AttributedString.MarkdownParsingOptions(
+                interpretedSyntax: .inlineOnlyPreservingWhitespace
+            )
+        ) else { return blockStripped }
+        return String(attributed.characters)
     }
 
     private mutating func nextId(_ prefix: String) -> String {

@@ -96,6 +96,9 @@ public struct CompanionView: View {
     private let viewingRecordingId: String?
     private let viewingFolderId: String?
     private let onTurnCompleted: ((CompanionTurnCompletion) -> Void)?
+    /// Optional citation-chip tap hook: (recordingId, startMs). The host routes
+    /// it to its recording detail surface; nil leaves chips as inert labels.
+    private let onOpenCitation: ((String, Int?) -> Void)?
     @Environment(\.locale) private var locale
     @Environment(\.companionAccentColor) private var companionAccentColor
 
@@ -116,6 +119,10 @@ public struct CompanionView: View {
     // auto-scroll when this is true, so scrolling up mid-answer is not fought (107).
     @State private var isNearBottom: Bool = true
     @State private var stage: TurnStage = .idle
+    /// True while a chat's history is being fetched. Gates the "What should
+    /// Wai do?" hero so opening an existing thread shows progress instead of
+    /// flashing the new-thread empty state (the inbox remounts per chat).
+    @State private var isLoadingChat = false
     @State private var input: String = ""
     @FocusState private var inputFocused: Bool
     @State private var errorMessage: String?
@@ -144,6 +151,7 @@ public struct CompanionView: View {
         viewingRecordingId: String? = nil,
         viewingFolderId: String? = nil,
         onTurnCompleted: ((CompanionTurnCompletion) -> Void)? = nil,
+        onOpenCitation: ((String, Int?) -> Void)? = nil,
         onVoiceInput: (() -> Void)? = nil
     ) {
         self.apiClient = apiClient
@@ -155,6 +163,7 @@ public struct CompanionView: View {
         self.viewingRecordingId = viewingRecordingId
         self.viewingFolderId = viewingFolderId
         self.onTurnCompleted = onTurnCompleted
+        self.onOpenCitation = onOpenCitation
         self.onVoiceInput = onVoiceInput
     }
 
@@ -377,7 +386,11 @@ public struct CompanionView: View {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 0) {
                         if messages.isEmpty && liveTurn.isEmpty {
-                            emptyState
+                            if isLoadingChat {
+                                loadingState
+                            } else {
+                                emptyState
+                            }
                         }
                         ForEach(messages) { message in
                             bubble(for: message)
@@ -434,6 +447,16 @@ public struct CompanionView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
+    /// Copy-free progress shown while a thread's history loads, in place of
+    /// the new-thread hero.
+    private var loadingState: some View {
+        ProgressView()
+            .controlSize(.small)
+            .padding(.vertical, 24)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .accessibilityIdentifier("wai-chat-loading")
+    }
+
     private var emptyState: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text(t("What should Wai do?", "Что Wai должен сделать?"))
@@ -465,7 +488,8 @@ public struct CompanionView: View {
                 isUser: true,
                 accentColor: companionAccentColor,
                 citations: [],
-                formattedCitation: formattedCitation
+                formattedCitation: formattedCitation,
+                onOpenCitation: onOpenCitation
             )
         } else {
             assistantTurnView(
@@ -569,12 +593,7 @@ public struct CompanionView: View {
                 if !citations.isEmpty {
                     FlowLayoutCompat {
                         ForEach(citations.sorted(by: { $0.index < $1.index })) { citation in
-                            Text(formattedCitation(citation))
-                                .font(.caption)
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 4)
-                                .background(companionAccentColor.opacity(0.12))
-                                .clipShape(Capsule())
+                            citationChip(citation)
                         }
                     }
                 }
@@ -584,6 +603,31 @@ public struct CompanionView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.vertical, 6)
+    }
+
+    /// A citation chip opens the cited recording when the host provides the
+    /// hook and the citation carries a recording id (restored citations may
+    /// not); otherwise it stays an inert label rather than a dead button.
+    @ViewBuilder
+    private func citationChip(_ citation: CitationDisplay) -> some View {
+        let label = Text(formattedCitation(citation))
+            .font(.caption)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(companionAccentColor.opacity(0.12))
+            .clipShape(Capsule())
+        if let onOpenCitation, !citation.recordingId.isEmpty {
+            Button {
+                onOpenCitation(citation.recordingId, citation.startMs)
+            } label: {
+                label.contentShape(Capsule())
+            }
+            .buttonStyle(.plain)
+            .help(t("Open the cited recording", "Открыть цитируемую запись"))
+            .accessibilityIdentifier("wai-citation-chip")
+        } else {
+            label
+        }
     }
 
     @MainActor
@@ -646,6 +690,7 @@ public struct CompanionView: View {
         let accentColor: Color
         let citations: [CitationDisplay]
         let formattedCitation: (CitationDisplay) -> String
+        var onOpenCitation: ((String, Int?) -> Void)?
         var renderMarkdown = false
 
         // Assistant answers often carry inline markdown (bold, code, links);
@@ -688,12 +733,7 @@ public struct CompanionView: View {
                     if !citations.isEmpty {
                         FlowLayoutCompat {
                             ForEach(citations.sorted(by: { $0.index < $1.index })) { citation in
-                                Text(formattedCitation(citation))
-                                    .font(.caption)
-                                    .padding(.horizontal, 8)
-                                    .padding(.vertical, 4)
-                                    .background(accentColor.opacity(0.12))
-                                    .clipShape(Capsule())
+                                chip(citation)
                             }
                         }
                     }
@@ -708,6 +748,29 @@ public struct CompanionView: View {
             .frame(maxWidth: .infinity, alignment: isUser ? .trailing : .leading)
             .padding(.vertical, 6)
         }
+
+        /// Mirrors `CompanionView.citationChip`: tappable only when the host
+        /// hook exists and the citation resolves to a recording.
+        @ViewBuilder
+        private func chip(_ citation: CitationDisplay) -> some View {
+            let label = Text(formattedCitation(citation))
+                .font(.caption)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(accentColor.opacity(0.12))
+                .clipShape(Capsule())
+            if let onOpenCitation, !citation.recordingId.isEmpty {
+                Button {
+                    onOpenCitation(citation.recordingId, citation.startMs)
+                } label: {
+                    label.contentShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("wai-citation-chip")
+            } else {
+                label
+            }
+        }
     }
 
     private var composer: some View {
@@ -721,6 +784,15 @@ public struct CompanionView: View {
                     axis: .vertical
                 )
                 .textFieldStyle(.plain)
+                #if os(macOS)
+                // Return sends — matching the inbox Ask composer that started
+                // this thread; Option+Return still inserts a newline with the
+                // vertical axis. iOS keeps the software keyboard's newline.
+                .onSubmit {
+                    guard !isStreaming else { return }
+                    Task { await send() }
+                }
+                #endif
                 .font(.system(size: 14))
                 .lineLimit(1...4)
                 .padding(CompanionComposerMetrics.textInsets.edgeInsets)
@@ -829,6 +901,10 @@ public struct CompanionView: View {
             return
         }
 
+        // Cover the chat-list fetch too, so a switcher first mount with existing
+        // threads shows progress instead of flashing the new-thread hero; the
+        // per-chat fetch below re-arms the flag inside loadChat.
+        await MainActor.run { isLoadingChat = true }
         do {
             let list = try await apiClient.listCompanionChats()
             await MainActor.run {
@@ -839,6 +915,10 @@ public struct CompanionView: View {
                 } else if let first = list.chats.first {
                     self.activeChatId = first.id
                 }
+                if list.chats.isEmpty {
+                    // Genuinely no threads: show the hero immediately.
+                    self.isLoadingChat = false
+                }
             }
             if let initialChatId,
                list.chats.contains(where: { $0.id == initialChatId }) {
@@ -848,7 +928,10 @@ public struct CompanionView: View {
             }
             await autoSendInitialIfNeeded()
         } catch {
-            await MainActor.run { errorMessage = error.localizedDescription }
+            await MainActor.run {
+                errorMessage = error.localizedDescription
+                isLoadingChat = false
+            }
         }
     }
 
@@ -870,6 +953,8 @@ public struct CompanionView: View {
         activeChatId = chatId
         messages = []
         completedTurns = [:]
+        isLoadingChat = true
+        defer { isLoadingChat = false }
         do {
             let detail = try await apiClient.getCompanionChat(chatId: chatId)
             messages = detail.messages

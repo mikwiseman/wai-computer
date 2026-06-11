@@ -25,29 +25,46 @@ final class MacWaiTaskNotificationCenter: NSObject, UNUserNotificationCenterDele
 
     @MainActor
     func notifyTaskFinished(title: String, body: String, chatId: String) {
-        guard !application.isActive else { return }
         configure()
+
+        // HIG: request permission in context, tied to a user-visible moment.
+        // A Wai turn finishing while the user is in the app is that moment —
+        // ask then (no banner needed; they can see the result). A background
+        // finish is delivery-only and must never pop the system dialog from
+        // another app with zero context.
+        guard !application.isActive else {
+            requestAuthorizationIfNeeded()
+            return
+        }
 
         center.getNotificationSettings { [center] settings in
             switch settings.authorizationStatus {
             case .authorized, .provisional:
                 Self.scheduleNotification(center: center, title: title, body: body, chatId: chatId)
             case .notDetermined:
-                center.requestAuthorization(options: [.alert, .sound]) { granted, error in
-                    if let error {
-                        NSLog("[WaiTaskNotification] Authorization failed: %@", "\(error)")
-                        return
-                    }
-                    guard granted else {
-                        NSLog("[WaiTaskNotification] Authorization denied")
-                        return
-                    }
-                    Self.scheduleNotification(center: center, title: title, body: body, chatId: chatId)
-                }
+                NSLog("[WaiTaskNotification] Skipping delivery: permission not yet requested in-app")
             case .denied:
                 NSLog("[WaiTaskNotification] Authorization denied")
             @unknown default:
                 NSLog("[WaiTaskNotification] Unsupported authorization status")
+            }
+        }
+    }
+
+    /// Ask for notification permission only while the app is frontmost, at
+    /// the moment a Wai task completes in view — never from the background.
+    @MainActor
+    private func requestAuthorizationIfNeeded() {
+        center.getNotificationSettings { [center] settings in
+            guard settings.authorizationStatus == .notDetermined else { return }
+            center.requestAuthorization(options: [.alert, .sound]) { granted, error in
+                if let error {
+                    NSLog("[WaiTaskNotification] Authorization failed: %@", "\(error)")
+                    return
+                }
+                if !granted {
+                    NSLog("[WaiTaskNotification] Authorization denied")
+                }
             }
         }
     }
