@@ -62,6 +62,7 @@ def test_production_telegram_media_uses_local_bot_api_service():
         == "/var/lib/telegram-bot-api"
     )
     assert "tg_api_data:/var/lib/telegram-bot-api:ro" in api_service["volumes"]
+    assert api_service["group_add"] == ["101"]
     assert api_service["depends_on"]["telegram-bot-api"]["condition"] == "service_started"
     assert "tg_api_data" in compose["volumes"]
 

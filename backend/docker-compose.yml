@@ -82,6 +82,9 @@ services:
         GIT_SHA: ${GIT_SHA:-}
         GIT_DIRTY: ${GIT_DIRTY:-false}
     container_name: waicomputer-api
+    group_add:
+      # telegram-bot-api stores local files under 0750/0640 paths owned by 101:101.
+      - "101"
     env_file:
       - ${WAICOMPUTER_ENV_FILE:-.env}
     environment:
