@@ -1,14 +1,18 @@
-# WaiComputer — Improvement Cherry-Pick · Run #4 (2026-06-14)
+# WaiComputer — Improvement Cherry-Pick · Run #5 (2026-06-14)
 
-> ## 🔴 RUN #4 DELTA (15:11) — minimal change; **billing item still untouched**
-> **Delta since run #3:** ONE commit (`b32df8708 fix: improve dictation speed and word preservation` — `dictation.py` + `realtime_transcription.py`); working tree clean. Verified inline (no agent sweep — a one-file change doesn't justify 6 agents):
-> - ✅ **P1-12 dictation O(n²) — COMMITTED & confirmed fixed.** `b32df8708` lands the Counter-based content-word preservation (exact → stem-equivalent → bounded-fuzzy, ≤64 keys / ≤4096 comparisons) + tighter cleanup prompts ("Do not substitute, add, or drop content words", "without paraphrasing"). Solid.
-> - 🔴 **P0-1 BILLING DOUBLE-CHARGE (Impact 10) — STILL OPEN, untouched.** `grep` confirms no `renewal_charge_attempt` / idempotency key / `with_for_update` in `billing_renewals.py` (the `with_for_update` hits are promo-code paths only, `billing/router.py:296,545` + `service.py:54`). **Every Tinkoff renewal sweep still risks a double-charge. This has now been the top item for ~35 min across two runs.**
-> - 🔴 **P0-2 partial-AAC cache — STILL OPEN.** `AudioCompressor.swift:49` + `PendingRecordingSyncCoordinator.swift:352` still write directly to destination (`try? removeItem` then write — no temp+atomic-rename, no validity check).
-> - 🔴 **P0-3 rate-limit + `--forwarded-allow-ips='*'` — STILL OPEN.** `rate_limit.py:115,122,129` still `request.client.host`; `Dockerfile:65` + `docker-compose.yml:120` still `'*'`.
-> - All other findings carried forward unchanged. **The Run #3 body below remains the current detailed state.**
+> ## ⏸️ RUN #5 (15:41) — no functional change; **3 P0s still open (billing now ~1 h)**
+> **Delta since run #4:** ZERO functional code change. Two commits, both non-code: `a8fb86d7f release(macos): 1.0.43 (214)` (version bump) + `eb844eeff docs: add audit and improvement reports` (adds audit `.md`/`.json` artifacts). Working tree clean. No agent sweep run — nothing to audit.
+> **Verified still open (grep):**
+> - 🔴 **P0-1 BILLING DOUBLE-CHARGE (Impact 10) — still open, ~1 h now across runs 3→5.** No `renewal_charge_attempt`/idempotency/`with_for_update` in `billing_renewals.py`. Every Tinkoff renewal sweep risks a real-money double-charge. **This is the single highest-value action in the repo right now.**
+> - 🔴 **P0-2 partial-AAC cache — still open** (`AudioCompressor.swift:49` still `removeItem`+direct-write; the earlier `moveItem` grep was a false-positive — `moveItem` is a substring of `removeItem`).
+> - 🔴 **P0-3 rate-limit + `forwarded-allow-ips='*'` — still open** (`rate_limit.py` 3× `request.client.host`; `'*'` unchanged).
+> - Run-#3 detailed body below is still the current state.
 >
-> **Cadence note:** churn has slowed (runs 2–3 had large deltas; run 4 = one file). At 30 min you'll increasingly get "no significant change" runs. Recommend lowering to 2–4 h, or making the loop **delta-gated** (skip the agent sweep when `git` shows <N files changed; just refresh this banner). Say the word.
+> **🛑 Cadence recommendation (escalated):** This is the **second consecutive no-op/near-no-op run** (run 4 = one file, run 5 = zero). The 30-min loop is now burning cycles re-confirming the same three open P0s that haven't been touched. I recommend one of:
+> 1. **Pause the loop** (`CronDelete b787f551`) until you're ready to act on the billing fix — the file already captures everything.
+> 2. **Delta-gate it** — I only run the agent sweep when `git` shows real churn; otherwise I just refresh this banner + re-verify P0s (like runs 4–5).
+> 3. **Lower to 2–4 h.**
+> I won't keep re-notifying. Tell me which (or "fix billing" and I'll start).
 
 ---
 
