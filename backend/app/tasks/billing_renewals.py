@@ -15,6 +15,7 @@ from app.billing.providers.base import ProviderEvent
 from app.billing.providers.tinkoff_provider import TinkoffProvider, _normalize_status
 from app.billing.service import apply_tinkoff_event
 from app.core.email import send_payment_failed_email, send_renewal_reminder_email
+from app.core.observability import capture_sentry_exception
 from app.db.session import get_db_context
 from app.models.billing import BillingEvent, Plan, Subscription, SubscriptionStatus
 from app.models.user import User
@@ -149,10 +150,22 @@ async def charge_tinkoff_subscription(
         )
         await apply_tinkoff_event(db, event)
         return "charged"
-    except Exception:
+    except Exception as exc:
         sub.status = SubscriptionStatus.PAST_DUE.value
         sub.tinkoff_next_charge_at = None
         logger.exception("billing renewal failed subscription_id=%s", sub.id)
+        capture_sentry_exception(
+            exc,
+            extras={
+                "action": "billing_renewal_failed",
+                "alert_code": "billing.tinkoff_renewal_failed",
+                "provider": "tinkoff",
+                "subscription_id": str(sub.id),
+                "plan_code": plan.code,
+                "billing_period": sub.billing_period,
+                "amount_kopecks": amount_kopecks,
+            },
+        )
         # Tell the user the renewal failed so they can fix their card before
         # access lapses. Best-effort — never re-raise into the renewal loop.
         await send_payment_failed_email(user.email, locale=user.default_language)

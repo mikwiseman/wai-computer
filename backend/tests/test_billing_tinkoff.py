@@ -539,6 +539,7 @@ async def test_due_tinkoff_renewal_task_skips_subscription_without_amount(
 @pytest.mark.asyncio
 async def test_due_tinkoff_renewal_task_marks_past_due_when_charge_fails(
     db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
 ):
     user = User(email="tinkoff.renewal-fail@example.test")
     db_session.add(user)
@@ -561,6 +562,13 @@ async def test_due_tinkoff_renewal_task_marks_past_due_when_charge_fails(
         async def charge_rebill(self, **kwargs):
             raise RuntimeError("bank unavailable")
 
+    captured: list[tuple[Exception, dict | None]] = []
+    monkeypatch.setattr(
+        billing_renewals_module,
+        "capture_sentry_exception",
+        lambda exc, *, extras=None: captured.append((exc, extras)),
+    )
+
     result = await charge_due_tinkoff_renewals(
         provider_factory=FailingProvider,
         db_session=db_session,
@@ -572,6 +580,18 @@ async def test_due_tinkoff_renewal_task_marks_past_due_when_charge_fails(
     ).scalar_one()
     assert refreshed.status == "past_due"
     assert refreshed.tinkoff_next_charge_at is None
+    assert len(captured) == 1
+    exc, extras = captured[0]
+    assert isinstance(exc, RuntimeError)
+    assert extras == {
+        "action": "billing_renewal_failed",
+        "alert_code": "billing.tinkoff_renewal_failed",
+        "provider": "tinkoff",
+        "subscription_id": str(sub.id),
+        "plan_code": "pro",
+        "billing_period": "month",
+        "amount_kopecks": 99900,
+    }
 
 
 @pytest.mark.asyncio
