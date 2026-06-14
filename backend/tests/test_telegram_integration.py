@@ -3850,6 +3850,11 @@ async def test_video_import_normalizes_audio_before_transcription(
         ]
 
     async def fake_summary(*args, **kwargs):
+        instructions = kwargs["instructions"]
+        assert instructions is not None
+        assert "Overall overview" in instructions
+        assert "Timestamps and section summaries" in instructions
+        assert kwargs["style"] == "structured"
         return SummaryResult(
             title="Видео",
             summary="Видео саммари",

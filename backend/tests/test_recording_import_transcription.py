@@ -109,6 +109,21 @@ def test_speaker_roster_instructions():
     assert "never guess" in text.lower()
 
 
+@pytest.mark.asyncio
+async def test_extract_speaker_names_accepts_import_usage_context():
+    from app.core.speaker_name_extraction import extract_speaker_names
+
+    assert (
+        await extract_speaker_names(
+            transcript_results=[],
+            raw_labels=[],
+            usage_user_id=uuid4(),
+            usage_recording_id=uuid4(),
+        )
+        == {}
+    )
+
+
 def test_labeled_summary_transcript_uses_resolved_names():
     from app.core.recording_import import _labeled_summary_transcript
 
@@ -131,6 +146,34 @@ def test_summary_style_forces_structured_for_telegram():
     # Telegram gets the structure-first style (scannable sections), not a paragraph.
     assert _summary_style(user, source_label="telegram") == "structured"
     assert _summary_style(user, source_label="web") == "medium"
+
+
+def test_video_summary_style_forces_structured_media_output():
+    from app.core.recording_import import _summary_style
+
+    user = SimpleNamespace(summary_style="brief")
+
+    assert _summary_style(user, source_label="upload", media_kind="video") == "structured"
+    assert _summary_style(user, source_label="telegram", media_kind="video") == "structured"
+    assert _summary_style(user, source_label="upload", media_kind="audio") == "brief"
+
+
+def test_video_summary_instructions_match_wai_rocks_media_quality_rules():
+    from app.core.recording_import import _summary_instructions
+
+    instructions = _summary_instructions(
+        SimpleNamespace(summary_instructions="Keep project names verbatim."),
+        source_label="upload",
+        media_kind="video",
+    )
+
+    assert instructions is not None
+    assert "Keep project names verbatim." in instructions
+    assert "Overall overview" in instructions
+    assert "Highlight crucial data" in instructions
+    assert "Identify key points" in instructions
+    assert "Timestamps and section summaries" in instructions
+    assert "source tone, style, and language" in instructions
 
 
 def test_telegram_summary_instructions_are_scannable_and_kind_aware():

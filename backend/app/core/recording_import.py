@@ -83,6 +83,25 @@ Telegram formatting for `summary`:
   target length, never invent detail to fill sections.
 """
 
+MEDIA_RECORDING_SUMMARY_INSTRUCTIONS = """\
+For video recordings, summarize like a detailed media analyst, not like a short
+meeting note. This applies to the `summary`, `key_points`, and `highlights`
+fields.
+
+Video/media summary quality rules:
+- Overall overview: start with the complete source's main topic, purpose, and
+  conclusion before listing details.
+- Highlight crucial data: preserve important quotes, names, dates, numbers,
+  metrics, examples, claims, and conclusions verbatim.
+- Identify key points: cover the significant ideas and changes in direction
+  across the whole transcript, not only the opening.
+- Timestamps and section summaries: when the transcript has time-coded segments,
+  describe the main sections in chronological order so highlights can map back
+  to the source moments.
+- Preserve the source tone, style, and language while keeping the result easy to
+  skim.
+"""
+
 
 class RecordingImportError(Exception):
     """Raised when an external media import cannot be processed."""
@@ -297,19 +316,36 @@ def _summary_language(user: User, recording: Recording) -> str:
     return "auto"
 
 
-def _summary_instructions(user: User, *, source_label: str) -> str | None:
+def _is_video_summary_kind(media_kind: str | None) -> bool:
+    return (media_kind or "").strip().lower() == "video"
+
+
+def _summary_instructions(
+    user: User,
+    *,
+    source_label: str,
+    media_kind: str | None = None,
+) -> str | None:
+    blocks: list[str] = []
     instructions = (user.summary_instructions or "").strip()
-    if source_label != "telegram":
-        return instructions or None
     if instructions:
-        return f"{instructions}\n\n{TELEGRAM_IMPORT_SUMMARY_INSTRUCTIONS}"
-    return TELEGRAM_IMPORT_SUMMARY_INSTRUCTIONS
-
-
-def _summary_style(user: User, *, source_label: str) -> str:
+        blocks.append(instructions)
     if source_label == "telegram":
+        blocks.append(TELEGRAM_IMPORT_SUMMARY_INSTRUCTIONS)
+    if _is_video_summary_kind(media_kind):
+        blocks.append(MEDIA_RECORDING_SUMMARY_INSTRUCTIONS)
+    return "\n\n".join(blocks) or None
+
+
+def _summary_style(
+    user: User,
+    *,
+    source_label: str,
+    media_kind: str | None = None,
+) -> str:
+    if source_label == "telegram" or _is_video_summary_kind(media_kind):
         # Structure-first (no sentence-count) so the model groups the summary into
-        # scannable sections instead of the prose paragraph 'detailed' produces.
+        # scannable sections instead of the prose paragraph short styles produce.
         return "structured"
     return user.summary_style
 
@@ -765,16 +801,17 @@ async def import_media_as_recording(
 
     try:
         ext = resolve_import_extension(filename, content_type)
+        normalized_content_type = (
+            (content_type or "").split(";")[0].strip().lower()
+            or EXTENSION_TO_CONTENT_TYPE.get(ext, "application/octet-stream")
+        )
+        media_kind = "video" if _is_video_media(ext, normalized_content_type) else "audio"
         explicit_title = bool((title or "").strip())
         if precomputed is not None:
             media_data = precomputed.media_data
             media_content_type = precomputed.media_content_type
             media_ext = precomputed.media_ext
         else:
-            normalized_content_type = (
-                (content_type or "").split(";")[0].strip().lower()
-                or EXTENSION_TO_CONTENT_TYPE.get(ext, "application/octet-stream")
-            )
             media_data, media_content_type, media_ext = await _normalize_media_for_transcription(
                 data,
                 ext=ext,
@@ -859,9 +896,17 @@ async def import_media_as_recording(
         summary_result = await summarize_transcript(
             _labeled_summary_transcript(speech_results, speaker_names),
             language=_summary_language(user, recording),
-            style=_summary_style(user, source_label=source_label),
+            style=_summary_style(
+                user,
+                source_label=source_label,
+                media_kind=media_kind,
+            ),
             instructions=combine_summary_instructions(
-                base_instructions=_summary_instructions(user, source_label=source_label),
+                base_instructions=_summary_instructions(
+                    user,
+                    source_label=source_label,
+                    media_kind=media_kind,
+                ),
                 personalization_instructions=await summary_personalization_instructions(
                     db,
                     user_id=user.id,

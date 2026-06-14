@@ -121,12 +121,15 @@ async def extract_speaker_names(
     *,
     transcript_results: list["TranscriptResult"],
     raw_labels: Iterable[str],
+    usage_user_id: uuid.UUID | str | None = None,
+    usage_recording_id: uuid.UUID | str | None = None,
 ) -> dict[str, _NameAssignment]:
     """Ask the LLM which raw_label corresponds to which name.
 
     Returns only ``high``-confidence assignments. The caller decides whether
     to apply them (create / alias Person records).
     """
+    _ = (usage_user_id, usage_recording_id)
     raw_labels_set = {label for label in raw_labels if label}
     if not raw_labels_set:
         return {}
