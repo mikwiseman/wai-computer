@@ -3258,6 +3258,22 @@ a.primary-button[aria-disabled="true"]:hover {
   font-size: 1.05rem;
 }
 
+.summary-generation-state {
+  max-width: 480px;
+}
+
+.summary-generation-progress {
+  display: grid;
+  grid-template-columns: minmax(140px, 320px) auto;
+  align-items: center;
+  gap: 0.65rem;
+  width: min(100%, 390px);
+}
+
+.summary-generation-progress progress {
+  width: 100%;
+}
+
 .empty-state--center {
   min-height: 100%;
   place-content: center;

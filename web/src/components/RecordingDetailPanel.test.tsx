@@ -1,12 +1,12 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { StrictMode, useState } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { RecordingDetailPanel } from "./RecordingDetailPanel";
-import type { RecordingDetail } from "@/lib/types";
+import type { RecordingDetail, SummaryGeneration } from "@/lib/types";
 
 vi.mock("@/lib/api", () => ({
-  generateSummary: vi.fn(),
   startSummaryGeneration: vi.fn(),
   startRecordingSummaryAudio: vi.fn(),
   downloadRecordingSummaryAudio: vi.fn(),
@@ -18,7 +18,6 @@ vi.mock("@/lib/api", () => ({
 }));
 
 const {
-  generateSummary,
   startSummaryGeneration,
   startRecordingSummaryAudio,
   downloadRecordingSummaryAudio,
@@ -28,7 +27,6 @@ const {
   updateRecording,
   rematchSpeakers,
 } = await import("@/lib/api");
-const mockGenerateSummary = vi.mocked(generateSummary);
 const mockStartSummaryGeneration = vi.mocked(startSummaryGeneration);
 const mockStartRecordingSummaryAudio = vi.mocked(startRecordingSummaryAudio);
 const mockDownloadRecordingSummaryAudio = vi.mocked(downloadRecordingSummaryAudio);
@@ -38,6 +36,24 @@ const mockCreateRecordingShareLink = vi.mocked(createRecordingShareLink);
 const mockUpdateRecording = vi.mocked(updateRecording);
 const mockRematchSpeakers = vi.mocked(rematchSpeakers);
 let clipboardWriteText: ReturnType<typeof vi.fn>;
+
+function makeSummaryGeneration(overrides?: Partial<SummaryGeneration>): SummaryGeneration {
+  return {
+    job_id: null,
+    recording_id: "rec-1",
+    status: "not_started",
+    stage: "idle",
+    progress_percent: 0,
+    message: "Summary has not been generated.",
+    requested_at: null,
+    started_at: null,
+    completed_at: null,
+    failed_at: null,
+    error_code: null,
+    error_message: null,
+    ...overrides,
+  };
+}
 
 function makeRecording(overrides?: Partial<RecordingDetail>): RecordingDetail {
   return {
@@ -57,6 +73,7 @@ function makeRecording(overrides?: Partial<RecordingDetail>): RecordingDetail {
     created_at: "2026-04-01T10:00:00Z",
     segments: [],
     summary: null,
+    summary_generation: makeSummaryGeneration(),
     summary_audio: {
       artifact_id: null,
       source_kind: "recording",
@@ -88,7 +105,6 @@ function makeRecording(overrides?: Partial<RecordingDetail>): RecordingDetail {
 
 describe("RecordingDetailPanel", () => {
   beforeEach(() => {
-    mockGenerateSummary.mockReset();
     mockStartSummaryGeneration.mockReset();
     mockStartRecordingSummaryAudio.mockReset();
     mockDownloadRecordingSummaryAudio.mockReset();
@@ -216,60 +232,147 @@ describe("RecordingDetailPanel", () => {
   });
 
   // Summary tab
-  it("shows generate summary button when no summary", async () => {
+  it("shows summary as unavailable when no transcript exists", async () => {
     const user = userEvent.setup();
     render(<RecordingDetailPanel recording={makeRecording()} />);
 
     await user.click(screen.getByText("Summary"));
-    expect(screen.getByText("No Summary")).toBeTruthy();
-    expect(screen.getByText("Generate Summary")).toBeTruthy();
+    expect(screen.getByText("Summary unavailable")).toBeTruthy();
+    expect(screen.queryByText("Generate Summary")).toBeNull();
   });
 
-  it("generates summary and switches to summary tab", async () => {
-    const updatedRecording = makeRecording({
-      summary: {
-        summary: "Meeting covered Q2 budget allocation.",
-        key_points: ["Budget set at $50k"],
-        decisions: null,
-        topics: ["budget"],
-        people_mentioned: ["Alice"],
-        sentiment: "positive",
-      },
+  it("starts summary generation automatically for a ready transcript without a job", async () => {
+    const initialRecording = makeRecording({
+      status: "ready",
+      segments: [
+        {
+          id: "s1",
+          speaker: "Speaker 1",
+          raw_label: "speaker_0",
+          person_id: null,
+          display_name: null,
+          auto_assigned: false,
+          match_confidence: null,
+          content: "Automatically summarize this transcript.",
+          start_ms: 0,
+          end_ms: 2400,
+          confidence: 0.94,
+        },
+      ],
     });
-    mockStartSummaryGeneration.mockResolvedValue({
-      job_id: "job-1",
-      recording_id: "rec-1",
-      status: "queued",
-      stage: "queued",
-      progress_percent: 5,
-      message: "Summary generation is queued.",
-      requested_at: null,
-      started_at: null,
-      completed_at: null,
-      failed_at: null,
-      error_code: null,
-      error_message: null,
+    const queuedRecording = makeRecording({
+      ...initialRecording,
+      summary_generation: makeSummaryGeneration({
+        job_id: "job-1",
+        status: "queued",
+        stage: "queued",
+        progress_percent: 5,
+        message: "Summary generation is queued.",
+      }),
     });
-    mockGetRecording.mockResolvedValue(updatedRecording);
+    mockStartSummaryGeneration.mockResolvedValue(queuedRecording.summary_generation!);
+    mockGetRecording.mockResolvedValue(queuedRecording);
 
-    const onUpdate = vi.fn();
-    const user = userEvent.setup();
-    render(
-      <RecordingDetailPanel
-        recording={makeRecording()}
-        onRecordingUpdate={onUpdate}
-      />,
-    );
+    function Harness() {
+      const [recording, setRecording] = useState<RecordingDetail>(initialRecording);
+      return <RecordingDetailPanel recording={recording} onRecordingUpdate={setRecording} />;
+    }
 
-    await user.click(screen.getByText("Summary"));
-    await user.click(screen.getByText("Generate Summary"));
+    render(<Harness />);
 
     await waitFor(() => {
       expect(mockStartSummaryGeneration).toHaveBeenCalledWith("rec-1", { instructions: null });
     });
     await waitFor(() => {
-      expect(onUpdate).toHaveBeenCalledWith(updatedRecording);
+      expect(screen.getByRole("status")).toHaveTextContent("Summary generation queued.");
     });
+  });
+
+  it("does not double-start automatic summary generation under StrictMode", async () => {
+    const initialRecording = makeRecording({
+      status: "ready",
+      segments: [
+        {
+          id: "s1",
+          speaker: "Speaker 1",
+          raw_label: "speaker_0",
+          person_id: null,
+          display_name: null,
+          auto_assigned: false,
+          match_confidence: null,
+          content: "Strict mode should not double queue this summary.",
+          start_ms: 0,
+          end_ms: 2400,
+          confidence: 0.94,
+        },
+      ],
+    });
+    const queuedRecording = makeRecording({
+      ...initialRecording,
+      summary_generation: makeSummaryGeneration({
+        job_id: "job-1",
+        status: "queued",
+        stage: "queued",
+        progress_percent: 5,
+        message: "Summary generation is queued.",
+      }),
+    });
+    mockStartSummaryGeneration.mockResolvedValue(queuedRecording.summary_generation!);
+    mockGetRecording.mockResolvedValue(queuedRecording);
+
+    function Harness() {
+      const [recording, setRecording] = useState<RecordingDetail>(initialRecording);
+      return <RecordingDetailPanel recording={recording} onRecordingUpdate={setRecording} />;
+    }
+
+    render(
+      <StrictMode>
+        <Harness />
+      </StrictMode>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole("status")).toHaveTextContent("Summary generation queued.");
+    });
+    expect(mockStartSummaryGeneration).toHaveBeenCalledTimes(1);
+  });
+
+  it("renders queued summary generation progress instead of a manual generate button", async () => {
+    const user = userEvent.setup();
+    render(
+      <RecordingDetailPanel
+        recording={makeRecording({
+          status: "ready",
+          segments: [
+            {
+              id: "s1",
+              speaker: "Speaker 1",
+              raw_label: "speaker_0",
+              person_id: null,
+              display_name: null,
+              auto_assigned: false,
+              match_confidence: null,
+              content: "Queued summary transcript.",
+              start_ms: 0,
+              end_ms: 1200,
+              confidence: 0.92,
+            },
+          ],
+          summary_generation: makeSummaryGeneration({
+            job_id: "job-1",
+            status: "running",
+            stage: "generating_summary",
+            progress_percent: 35,
+            message: "Generating summary.",
+          }),
+        })}
+      />,
+    );
+
+    await user.click(screen.getByText("Summary"));
+    expect(screen.getByText("Summary is being generated")).toBeTruthy();
+    expect(screen.getByRole("progressbar")).toHaveAttribute("value", "35");
+    expect(screen.queryByText("Generate Summary")).toBeNull();
   });
 
   it("starts summary audio generation from the summary tab", async () => {
@@ -314,14 +417,111 @@ describe("RecordingDetailPanel", () => {
     });
   });
 
-  it("shows error when summary generation fails", async () => {
+  it("shows failed summary generation state with explicit retry", async () => {
+    mockStartSummaryGeneration.mockResolvedValue(
+      makeSummaryGeneration({
+        job_id: "job-2",
+        status: "queued",
+        stage: "queued",
+        progress_percent: 5,
+        message: "Summary generation is queued.",
+      }),
+    );
+    mockGetRecording.mockResolvedValue(
+      makeRecording({
+        status: "ready",
+        summary_generation: makeSummaryGeneration({
+          job_id: "job-2",
+          status: "queued",
+          stage: "queued",
+          progress_percent: 5,
+          message: "Summary generation is queued.",
+        }),
+      }),
+    );
+
+    const user = userEvent.setup();
+    render(
+      <RecordingDetailPanel
+        recording={makeRecording({
+          status: "ready",
+          segments: [
+            {
+              id: "s1",
+              speaker: "Speaker 1",
+              raw_label: "speaker_0",
+              person_id: null,
+              display_name: null,
+              auto_assigned: false,
+              match_confidence: null,
+              content: "Retry this failed summary.",
+              start_ms: 0,
+              end_ms: 1500,
+              confidence: 0.91,
+            },
+          ],
+          summary_generation: makeSummaryGeneration({
+            job_id: "job-1",
+            status: "failed",
+            stage: "failed",
+            progress_percent: 100,
+            message: "Summary generation failed.",
+            error_code: "summarization_failed",
+            error_message: "Provider rejected the request.",
+          }),
+        })}
+      />,
+    );
+
+    await user.click(screen.getByText("Summary"));
+    expect(screen.getByText("Summary generation failed")).toBeTruthy();
+    expect(screen.getByText("Provider rejected the request.")).toBeTruthy();
+
+    await user.click(screen.getByText("Retry"));
+
+    await waitFor(() => {
+      expect(mockStartSummaryGeneration).toHaveBeenCalledWith("rec-1", { instructions: null });
+    });
+  });
+
+  it("shows error when manual summary retry fails", async () => {
     mockStartSummaryGeneration.mockRejectedValue(new Error("API down"));
 
     const user = userEvent.setup();
-    render(<RecordingDetailPanel recording={makeRecording()} />);
+    render(
+      <RecordingDetailPanel
+        recording={makeRecording({
+          status: "ready",
+          segments: [
+            {
+              id: "s1",
+              speaker: "Speaker 1",
+              raw_label: "speaker_0",
+              person_id: null,
+              display_name: null,
+              auto_assigned: false,
+              match_confidence: null,
+              content: "Manual retry fails.",
+              start_ms: 0,
+              end_ms: 1500,
+              confidence: 0.91,
+            },
+          ],
+          summary_generation: makeSummaryGeneration({
+            job_id: "job-1",
+            status: "failed",
+            stage: "failed",
+            progress_percent: 100,
+            message: "Summary generation failed.",
+            error_code: "summarization_failed",
+            error_message: "Provider rejected the request.",
+          }),
+        })}
+      />,
+    );
 
     await user.click(screen.getByText("Summary"));
-    await user.click(screen.getByText("Generate Summary"));
+    await user.click(screen.getByText("Retry"));
 
     await waitFor(() => {
       expect(screen.getByText("API down")).toBeTruthy();

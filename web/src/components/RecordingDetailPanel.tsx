@@ -13,11 +13,19 @@ import {
 } from "@/lib/api";
 import { formatSpeakerLabel, formatTimestamp } from "@/lib/format";
 import { mergeTurns, renderTranscript } from "@/lib/transcript";
-import type { Folder, RecordingDetail, Segment, Summary, SummaryAudio } from "@/lib/types";
+import type {
+  Folder,
+  RecordingDetail,
+  Segment,
+  Summary,
+  SummaryAudio,
+  SummaryGeneration,
+} from "@/lib/types";
 import { SpeakerChip } from "@/components/SpeakerChip";
 import { SummaryAudioControls } from "@/components/SummaryAudioControls";
 
 type DetailLocale = "en" | "ru";
+const automaticSummaryStartKeys = new Set<string>();
 
 interface DetailCopy {
   folderLabel: string;
@@ -65,8 +73,15 @@ interface DetailCopy {
   copyWithTimestamps: string;
   plainTextTimestamped: string;
   noSummaryTitle: string;
+  noSummaryBody: string;
+  summaryStartingTitle: string;
+  summaryPendingTitle: string;
+  summaryPendingBody: string;
+  summaryFailedTitle: string;
+  summaryStartFailedBody: string;
+  retrySummary: string;
+  summaryProgressLabel: string;
   generating: string;
-  generateSummary: string;
   summaryHeading: string;
   copySummary: string;
   overview: string;
@@ -123,9 +138,16 @@ const COPY: Record<DetailLocale, DetailCopy> = {
     copyTranscript: "Copy Transcript",
     copyWithTimestamps: "Copy with timestamps",
     plainTextTimestamped: "Plain Text + timestamps",
-    noSummaryTitle: "No Summary",
+    noSummaryTitle: "Summary unavailable",
+    noSummaryBody: "A transcript is required before WaiComputer can summarize this recording.",
+    summaryStartingTitle: "Summary generation is starting",
+    summaryPendingTitle: "Summary is being generated",
+    summaryPendingBody: "It will appear here automatically when ready.",
+    summaryFailedTitle: "Summary generation failed",
+    summaryStartFailedBody: "Summary generation could not start.",
+    retrySummary: "Retry",
+    summaryProgressLabel: "Summary generation progress",
     generating: "Generating…",
-    generateSummary: "Generate Summary",
     summaryHeading: "Summary",
     copySummary: "Copy Summary",
     overview: "Overview",
@@ -180,9 +202,16 @@ const COPY: Record<DetailLocale, DetailCopy> = {
     copyTranscript: "Скопировать расшифровку",
     copyWithTimestamps: "Скопировать с тайм-кодами",
     plainTextTimestamped: "Текст с тайм-кодами",
-    noSummaryTitle: "Нет резюме",
+    noSummaryTitle: "Резюме недоступно",
+    noSummaryBody: "Для резюме нужна расшифровка этой записи.",
+    summaryStartingTitle: "Генерация резюме запускается",
+    summaryPendingTitle: "Резюме генерируется",
+    summaryPendingBody: "Оно появится здесь автоматически, когда будет готово.",
+    summaryFailedTitle: "Генерация резюме не удалась",
+    summaryStartFailedBody: "Не удалось запустить генерацию резюме.",
+    retrySummary: "Повторить",
+    summaryProgressLabel: "Прогресс генерации резюме",
     generating: "Генерация…",
-    generateSummary: "Сгенерировать резюме",
     summaryHeading: "Резюме",
     copySummary: "Скопировать резюме",
     overview: "Обзор",
@@ -210,6 +239,20 @@ function formatError(error: unknown, fallback: string): string {
 
 function recordingTypeLabel(type: string): string {
   return type.charAt(0).toUpperCase() + type.slice(1);
+}
+
+function automaticSummaryStartKey(recording: RecordingDetail): string {
+  const transcriptSignature = recording.segments
+    .map((segment) =>
+      [
+        segment.id,
+        segment.start_ms ?? "",
+        segment.end_ms ?? "",
+        segment.content.length,
+      ].join(":"),
+    )
+    .join("|");
+  return `${recording.id}:${transcriptSignature}`;
 }
 
 function CopyButton({ text, label, copiedLabel }: { text: string; label: string; copiedLabel: string }) {
@@ -261,6 +304,11 @@ export function RecordingDetailPanel({
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<"trash" | "permanent" | null>(null);
+  const [autoSummaryStartFailedKey, setAutoSummaryStartFailedKey] = useState<string | null>(null);
+  const autoSummaryStartKey = useMemo(
+    () => automaticSummaryStartKey(recording),
+    [recording],
+  );
 
   const tabs = useMemo(
     () =>
@@ -276,7 +324,12 @@ export function RecordingDetailPanel({
     setRenameOpen(false);
   }, [recording.id, recording.title]);
 
-  const handleGenerateSummary = async (instructions: string | null) => {
+  const handleGenerateSummary = useCallback(async (
+    instructions: string | null,
+    options: { revealSummaryTab?: boolean; showNotice?: boolean; automatic?: boolean } = {},
+  ) => {
+    const revealSummaryTab = options.revealSummaryTab ?? true;
+    const showNotice = options.showNotice ?? true;
     setGenerating(true);
     setError(null);
     setNotice(null);
@@ -284,14 +337,43 @@ export function RecordingDetailPanel({
       await startSummaryGeneration(recording.id, { instructions });
       const updated = await getRecording(recording.id);
       onRecordingUpdate?.(updated);
-      setTab("summary");
-      setNotice(copy.summaryQueued);
+      if (options.automatic) setAutoSummaryStartFailedKey(null);
+      if (revealSummaryTab) setTab("summary");
+      if (showNotice) setNotice(copy.summaryQueued);
     } catch (e) {
+      if (options.automatic) setAutoSummaryStartFailedKey(autoSummaryStartKey);
       setError(formatError(e, copy.unexpectedError));
     } finally {
       setGenerating(false);
     }
-  };
+  }, [
+    autoSummaryStartKey,
+    copy.summaryQueued,
+    copy.unexpectedError,
+    onRecordingUpdate,
+    recording.id,
+  ]);
+
+  const shouldAutoStartSummary =
+    mode === "active" &&
+    recording.status === "ready" &&
+    recording.segments.length > 0 &&
+    recording.summary === null &&
+    (recording.summary_generation?.status ?? "not_started") === "not_started";
+
+  useEffect(() => {
+    if (!shouldAutoStartSummary || automaticSummaryStartKeys.has(autoSummaryStartKey)) return;
+    automaticSummaryStartKeys.add(autoSummaryStartKey);
+    void handleGenerateSummary(null, {
+      automatic: true,
+      revealSummaryTab: false,
+      showNotice: true,
+    });
+  }, [
+    autoSummaryStartKey,
+    handleGenerateSummary,
+    shouldAutoStartSummary,
+  ]);
 
   const handleCreateSummaryAudio = async () => {
     setError(null);
@@ -601,7 +683,10 @@ export function RecordingDetailPanel({
           <SummaryTab
             recording={recording}
             summary={recording.summary}
+            summaryGeneration={recording.summary_generation ?? null}
+            summaryAutoStartFailed={autoSummaryStartFailedKey === autoSummaryStartKey}
             summaryAudio={recording.summary_audio}
+            hasTranscript={recording.segments.length > 0}
             onGenerate={handleGenerateSummary}
             generating={generating}
             onCreateAudio={handleCreateSummaryAudio}
@@ -756,7 +841,10 @@ function isRecordingProcessing(status: string) {
 function SummaryTab({
   recording,
   summary,
+  summaryGeneration,
+  summaryAutoStartFailed,
   summaryAudio,
+  hasTranscript,
   onGenerate,
   generating,
   onCreateAudio,
@@ -765,7 +853,10 @@ function SummaryTab({
 }: {
   recording: RecordingDetail;
   summary: Summary | null;
+  summaryGeneration: SummaryGeneration | null;
+  summaryAutoStartFailed: boolean;
   summaryAudio: SummaryAudio | null | undefined;
+  hasTranscript: boolean;
   onGenerate: (instructions: string | null) => void;
   generating: boolean;
   onCreateAudio: () => Promise<void>;
@@ -773,16 +864,68 @@ function SummaryTab({
   copy: DetailCopy;
 }) {
   if (!summary) {
+    const status = summaryGeneration?.status ?? "not_started";
+    const isActive = generating || status === "queued" || status === "running";
+    const isFailed = status === "failed";
+    const progress = Math.max(
+      0,
+      Math.min(100, summaryGeneration?.progress_percent ?? (generating ? 5 : 0)),
+    );
+    const statusMessage =
+      summaryGeneration?.message ||
+      (generating ? copy.summaryStartingTitle : copy.summaryPendingBody);
+
+    if (isActive) {
+      return (
+        <div className="empty-state summary-generation-state" role="status">
+          <h3>{generating && status === "not_started" ? copy.summaryStartingTitle : copy.summaryPendingTitle}</h3>
+          <p>{statusMessage}</p>
+          <div className="summary-generation-progress">
+            <progress
+              aria-label={copy.summaryProgressLabel}
+              max={100}
+              value={progress}
+            />
+            <span className="muted-text">{progress}%</span>
+          </div>
+          <p className="muted-text">{copy.summaryPendingBody}</p>
+        </div>
+      );
+    }
+
+    if (isFailed) {
+      return (
+        <div className="empty-state summary-generation-state" role="alert">
+          <h3>{copy.summaryFailedTitle}</h3>
+          <p>{summaryGeneration?.error_message || summaryGeneration?.message || copy.summaryStartFailedBody}</p>
+          <button type="button" onClick={() => onGenerate(null)} disabled={generating}>
+            {generating ? copy.generating : copy.retrySummary}
+          </button>
+        </div>
+      );
+    }
+
+    if (hasTranscript) {
+      return (
+        <div
+          className="empty-state summary-generation-state"
+          role={summaryAutoStartFailed ? "alert" : "status"}
+        >
+          <h3>{summaryAutoStartFailed ? copy.summaryFailedTitle : copy.summaryStartingTitle}</h3>
+          <p>{summaryAutoStartFailed ? copy.summaryStartFailedBody : copy.summaryPendingBody}</p>
+          {summaryAutoStartFailed ? (
+            <button type="button" onClick={() => onGenerate(null)} disabled={generating}>
+              {generating ? copy.generating : copy.retrySummary}
+            </button>
+          ) : null}
+        </div>
+      );
+    }
+
     return (
       <div className="empty-state">
         <h3>{copy.noSummaryTitle}</h3>
-        <button
-          type="button"
-          onClick={() => onGenerate(null)}
-          disabled={generating}
-        >
-          {generating ? copy.generating : copy.generateSummary}
-        </button>
+        <p>{copy.noSummaryBody}</p>
       </div>
     );
   }
