@@ -148,8 +148,8 @@ describe("LiveRecorder", () => {
     // Live interim + committed text renders in the transcript line.
     act(() => transcriber.emitUpdate("hello world", "and more"));
     await waitFor(() => {
-      expect(screen.getByText(/hello world/)).toBeInTheDocument();
-      expect(screen.getByText("and more")).toBeInTheDocument();
+      expect(screen.getByText("hello world")).toHaveAttribute("aria-live", "polite");
+      expect(screen.getByText("and more")).toHaveAttribute("aria-hidden", "true");
     });
   });
 

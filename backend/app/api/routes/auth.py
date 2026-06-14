@@ -7,7 +7,7 @@ from uuid import UUID
 from fastapi import APIRouter, Body, Depends, HTTPException, Request, Response, status
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, EmailStr, field_validator
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -722,6 +722,7 @@ async def reset_password(
     user.password_hash = hash_password(request.password)
     user.magic_link_token = None
     user.magic_link_expires = None
+    await db.execute(delete(RefreshTokenModel).where(RefreshTokenModel.user_id == user.id))
     await db.flush()
 
     bind_user_context(str(user.id))

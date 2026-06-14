@@ -1,10 +1,18 @@
 import Link from "next/link";
+import type { Metadata } from "next";
 import styles from "../../legal.module.css";
 
-export const metadata = {
+export const metadata: Metadata = {
   title: "Условия сервиса и публичная оферта — WaiComputer",
   description:
     "Публичная оферта, условия оплаты, предоставления цифровой услуги, возврата и поддержки WaiComputer.",
+  alternates: {
+    canonical: "https://wai.computer/ru/terms",
+    languages: {
+      en: "https://wai.computer/terms",
+      ru: "https://wai.computer/ru/terms",
+    },
+  },
 };
 
 export default function RuTermsPage() {

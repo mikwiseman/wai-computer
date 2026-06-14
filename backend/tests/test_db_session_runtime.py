@@ -126,6 +126,40 @@ def test_celery_worker_init_resets_db_runtime(monkeypatch):
     assert called["value"] == 1
 
 
+def test_celery_publish_propagates_current_request_id():
+    from app.core import observability
+    from app.tasks import celery_app as celery_app_module
+
+    tokens = observability.begin_request_context(
+        request_id="req-publish",
+        request_method="POST",
+        request_path="/api/recordings",
+    )
+    try:
+        headers: dict[str, str] = {}
+        celery_app_module.propagate_request_id(headers=headers)
+        assert headers[celery_app_module.REQUEST_ID_HEADER] == "req-publish"
+    finally:
+        observability.end_request_context(tokens)
+
+
+def test_celery_task_prerun_and_postrun_manage_request_context():
+    from types import SimpleNamespace
+
+    from app.core import observability
+    from app.tasks import celery_app as celery_app_module
+
+    task = SimpleNamespace(
+        name="app.tasks.example",
+        request=SimpleNamespace(headers={celery_app_module.REQUEST_ID_HEADER: "req-task"}),
+    )
+
+    celery_app_module.begin_celery_task_request_context(task=task)
+    assert observability.current_request_id() == "req-task"
+    celery_app_module.end_celery_task_request_context(task=task)
+    assert observability.current_request_id() is None
+
+
 def test_celery_preload_voice_embedding_skips_when_voice_id_disabled(monkeypatch):
     monkeypatch.setattr(
         "app.config.get_settings",

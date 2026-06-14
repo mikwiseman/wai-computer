@@ -24,7 +24,7 @@ from fastapi import (
     status,
 )
 from pydantic import BaseModel, Field, field_validator
-from sqlalchemy import select, text, update
+from sqlalchemy import delete, select, text, update
 from sqlalchemy.orm import selectinload
 
 from app.api.deps import CurrentUser, Database
@@ -87,6 +87,7 @@ from app.core.voice_identification import (
     rematch_recording_speakers,
     store_voiceprint_from_recording_speaker,
 )
+from app.models.entity import Entity, EntityMention
 from app.models.highlight import Highlight
 from app.models.person import Person
 from app.models.recording import (
@@ -2022,12 +2023,44 @@ async def delete_recording(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Recording not found")
 
     if permanent or recording.deleted_at is not None:
+        await _delete_recording_entity_mentions(db, user.id, recording.id)
         await db.delete(recording)
         return Response(status_code=status.HTTP_204_NO_CONTENT)
 
     recording.deleted_at = datetime.now(timezone.utc)
     await db.flush()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+async def _delete_recording_entity_mentions(
+    db: Database,
+    user_id: UUID,
+    recording_id: UUID,
+) -> None:
+    entity_ids = (
+        await db.execute(
+            select(EntityMention.entity_id).where(
+                EntityMention.user_id == user_id,
+                EntityMention.source_kind == "recording",
+                EntityMention.source_id == recording_id,
+            )
+        )
+    ).scalars().all()
+    if not entity_ids:
+        return
+    now = datetime.now(timezone.utc)
+    await db.execute(
+        update(Entity)
+        .where(Entity.user_id == user_id, Entity.id.in_(entity_ids))
+        .values(dossier_dirty=True, dossier_dirty_at=now)
+    )
+    await db.execute(
+        delete(EntityMention).where(
+            EntityMention.user_id == user_id,
+            EntityMention.source_kind == "recording",
+            EntityMention.source_id == recording_id,
+        )
+    )
 
 
 @router.post("/{recording_id}/restore", response_model=RecordingResponse)

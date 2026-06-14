@@ -1,6 +1,7 @@
 import Foundation
 import os
 import Sentry
+import WaiComputerKitObjC
 
 /// Writes a WAV file incrementally during recording.
 /// Accepts pre-encoded int16 PCM data (the same `Data` returned by `AudioEncoder.encode()`).
@@ -22,6 +23,10 @@ public final class AudioFileWriter: @unchecked Sendable {
 
     private var fileHandle: FileHandle?
     private var lock = os_unfair_lock()
+
+    enum FileHandleOperationError: Error {
+        case failed(String)
+    }
 
     /// Creates a new WAV file at the given URL and writes the 44-byte header with placeholder sizes.
     public init(fileURL: URL, sampleRate: Int = 16000, channels: Int = 1) throws {
@@ -49,9 +54,18 @@ public final class AudioFileWriter: @unchecked Sendable {
 
         guard !hasWriteFailure, let handle = fileHandle else { return false }
 
-        let offsetBefore = handle.offsetInFile
-        handle.write(data)
-        let offsetAfter = handle.offsetInFile
+        guard let offsetBefore = safeOffset(handle) else {
+            hasWriteFailure = true
+            return false
+        }
+        guard safeWrite(data, to: handle) else {
+            hasWriteFailure = true
+            return false
+        }
+        guard let offsetAfter = safeOffset(handle) else {
+            hasWriteFailure = true
+            return false
+        }
         let bytesWritten = offsetAfter - offsetBefore
 
         if bytesWritten == UInt64(data.count) {
@@ -77,17 +91,17 @@ public final class AudioFileWriter: @unchecked Sendable {
         let riffSize = 36 + dataSize
 
         // Patch bytes 4-7: RIFF chunk size
-        handle.seek(toFileOffset: 4)
+        try safeSeek(handle, to: 4)
         var riffSizeLE = riffSize.littleEndian
-        handle.write(Data(bytes: &riffSizeLE, count: 4))
+        try safeWriteOrThrow(Data(bytes: &riffSizeLE, count: 4), to: handle)
 
         // Patch bytes 40-43: data subchunk size
-        handle.seek(toFileOffset: 40)
+        try safeSeek(handle, to: 40)
         var dataSizeLE = dataSize.littleEndian
-        handle.write(Data(bytes: &dataSizeLE, count: 4))
+        try safeWriteOrThrow(Data(bytes: &dataSizeLE, count: 4), to: handle)
 
-        handle.synchronizeFile()
-        handle.closeFile()
+        try safeSynchronize(handle)
+        try safeClose(handle)
         fileHandle = nil
 
         SentryHelper.addBreadcrumb(
@@ -98,6 +112,46 @@ public final class AudioFileWriter: @unchecked Sendable {
     }
 
     // MARK: - Private
+
+    private func safeOffset(_ handle: FileHandle) -> UInt64? {
+        var error: NSError?
+        var offset: UInt64 = 0
+        guard WAIFileHandleGetOffset(handle, &offset, &error) else { return nil }
+        return offset
+    }
+
+    private func safeWrite(_ data: Data, to handle: FileHandle) -> Bool {
+        var error: NSError?
+        return WAIFileHandleWriteData(handle, data, &error)
+    }
+
+    private func safeWriteOrThrow(_ data: Data, to handle: FileHandle) throws {
+        var error: NSError?
+        guard WAIFileHandleWriteData(handle, data, &error) else {
+            throw error ?? FileHandleOperationError.failed("write")
+        }
+    }
+
+    private func safeSeek(_ handle: FileHandle, to offset: UInt64) throws {
+        var error: NSError?
+        guard WAIFileHandleSeekToOffset(handle, offset, &error) else {
+            throw error ?? FileHandleOperationError.failed("seek")
+        }
+    }
+
+    private func safeSynchronize(_ handle: FileHandle) throws {
+        var error: NSError?
+        guard WAIFileHandleSynchronize(handle, &error) else {
+            throw error ?? FileHandleOperationError.failed("synchronize")
+        }
+    }
+
+    private func safeClose(_ handle: FileHandle) throws {
+        var error: NSError?
+        guard WAIFileHandleClose(handle, &error) else {
+            throw error ?? FileHandleOperationError.failed("close")
+        }
+    }
 
     private static func buildWAVHeader(sampleRate: Int, channels: Int, dataSize: UInt32) -> Data {
         let bitsPerSample: UInt16 = 16

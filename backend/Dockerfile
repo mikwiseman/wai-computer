@@ -61,4 +61,5 @@ CMD ["gunicorn", "app.main:app", \
     "--workers", "1", \
     "--bind", "0.0.0.0:8000", \
     "--timeout", "600", \
-    "--keep-alive", "65"]
+    "--keep-alive", "65", \
+    "--forwarded-allow-ips", "*"]

@@ -506,6 +506,11 @@ def begin_request_context(
     return tokens
 
 
+def current_request_id() -> str | None:
+    value = _request_id.get()
+    return None if value == "-" else value
+
+
 def end_request_context(tokens: dict[str, Token[str]]) -> None:
     """Restore previous context values after the request is complete."""
     _session_id.reset(tokens["session_id"])

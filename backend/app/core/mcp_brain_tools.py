@@ -22,7 +22,7 @@ from __future__ import annotations
 import logging
 from uuid import UUID
 
-from sqlalchemy import desc, func, select
+from sqlalchemy import and_, desc, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -43,7 +43,7 @@ from app.core.unified_search import unified_search
 from app.models.companion import ChatMessage, Conversation
 from app.models.entity import Entity, EntityMention
 from app.models.item import Item, ItemSummary
-from app.models.recording import Folder
+from app.models.recording import Folder, Recording
 
 logger = logging.getLogger(__name__)
 
@@ -106,7 +106,38 @@ async def wake_up_for_mcp(db: AsyncSession, user_id: str | UUID) -> dict:
         await db.execute(
             select(Entity.name, func.count(EntityMention.id).label("mentions"))
             .join(EntityMention, EntityMention.entity_id == Entity.id)
-            .where(Entity.user_id == user_uuid)
+            .where(
+                Entity.user_id == user_uuid,
+                or_(
+                    and_(
+                        EntityMention.source_kind == "recording",
+                        select(Recording.id)
+                        .where(
+                            Recording.id == EntityMention.source_id,
+                            Recording.deleted_at.is_(None),
+                        )
+                        .exists(),
+                    ),
+                    and_(
+                        EntityMention.source_kind == "item",
+                        select(Item.id)
+                        .where(
+                            Item.id == EntityMention.source_id,
+                            Item.deleted_at.is_(None),
+                        )
+                        .exists(),
+                    ),
+                    and_(
+                        EntityMention.source_kind == "chat",
+                        select(Conversation.id)
+                        .where(
+                            Conversation.id == EntityMention.source_id,
+                            Conversation.deleted_at.is_(None),
+                        )
+                        .exists(),
+                    ),
+                ),
+            )
             .group_by(Entity.id, Entity.name)
             .order_by(desc("mentions"))
             .limit(_WAKE_TOP_ENTITIES)

@@ -5,20 +5,67 @@ in the worker process (-B flag) for single-node deployment.
 """
 
 from datetime import timedelta
+from uuid import uuid4
 
 from celery import Celery
 from celery.schedules import crontab
-from celery.signals import worker_process_init
+from celery.signals import before_task_publish, task_postrun, task_prerun, worker_process_init
 
 from app.config import get_settings
-from app.core.observability import initialize_sentry
+from app.core.observability import (
+    begin_request_context,
+    current_request_id,
+    end_request_context,
+    initialize_sentry,
+)
 
 settings = get_settings()
+REQUEST_ID_HEADER = "x-request-id"
+_REQUEST_CONTEXT_ATTR = "_wai_request_context_tokens"
 initialize_sentry(
     dsn=settings.sentry_dsn,
     debug=settings.debug,
     include_celery=True,
 )
+
+
+@before_task_publish.connect
+def propagate_request_id(headers=None, **_kwargs) -> None:
+    if headers is None:
+        return
+    request_id = current_request_id()
+    if request_id:
+        headers.setdefault(REQUEST_ID_HEADER, request_id)
+
+
+@task_prerun.connect
+def begin_celery_task_request_context(task=None, **_kwargs) -> None:
+    if task is None:
+        return
+    request = getattr(task, "request", None)
+    headers = getattr(request, "headers", None) or {}
+    request_id = (
+        headers.get(REQUEST_ID_HEADER)
+        or headers.get("X-Request-ID")
+        or getattr(request, "id", None)
+        or uuid4().hex
+    )
+    tokens = begin_request_context(
+        request_id=str(request_id),
+        request_method="CELERY",
+        request_path=getattr(task, "name", None) or "-",
+    )
+    if request is not None:
+        setattr(request, _REQUEST_CONTEXT_ATTR, tokens)
+
+
+@task_postrun.connect
+def end_celery_task_request_context(task=None, **_kwargs) -> None:
+    request = getattr(task, "request", None) if task is not None else None
+    tokens = getattr(request, _REQUEST_CONTEXT_ATTR, None)
+    if tokens:
+        end_request_context(tokens)
+        delattr(request, _REQUEST_CONTEXT_ATTR)
 
 celery_app = Celery(
     "waicomputer",

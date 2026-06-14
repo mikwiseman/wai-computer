@@ -3,6 +3,8 @@
 Network/library seams are patched so these run offline.
 """
 
+import ipaddress
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
@@ -54,6 +56,116 @@ def test_classify_url(url: str, expected: str) -> None:
 )
 def test_youtube_video_id(url: str, vid: str | None) -> None:
     assert youtube_video_id(url) == vid
+
+
+class _FakeStream:
+    def __init__(self, response):
+        self.response = response
+
+    async def __aenter__(self):
+        return self.response
+
+    async def __aexit__(self, *args):
+        return False
+
+
+class _FakeResponse:
+    def __init__(
+        self,
+        *,
+        status_code: int = 200,
+        headers: dict[str, str] | None = None,
+        chunks: list[bytes] | None = None,
+    ):
+        self.status_code = status_code
+        self.headers = headers or {"content-type": "text/html"}
+        self._chunks = chunks or [b"<html>hi</html>"]
+
+    def raise_for_status(self):
+        pass
+
+    async def aiter_bytes(self):
+        for chunk in self._chunks:
+            yield chunk
+
+
+@pytest.mark.asyncio
+async def test_http_get_rejects_non_http_urls() -> None:
+    with pytest.raises(SourceFetchError) as ei:
+        await source_fetch._http_get("file:///etc/passwd")
+    assert ei.value.code == "source_fetch_url_blocked"
+
+
+@pytest.mark.asyncio
+async def test_http_get_rejects_private_resolved_addresses(monkeypatch) -> None:
+    async def private_addresses(_host: str):
+        return [ipaddress.ip_address("127.0.0.1")]
+
+    monkeypatch.setattr(source_fetch, "_resolve_host_addresses", private_addresses)
+
+    with pytest.raises(SourceFetchError) as ei:
+        await source_fetch._http_get("https://example.com/post")
+    assert ei.value.code == "source_fetch_url_blocked"
+
+
+@pytest.mark.asyncio
+async def test_http_get_revalidates_redirect_targets(monkeypatch) -> None:
+    async def addresses(host: str):
+        if host == "example.com":
+            return [ipaddress.ip_address("93.184.216.34")]
+        return [ipaddress.ip_address("169.254.169.254")]
+
+    class FakeClient:
+        def __init__(self, *args, **kwargs):
+            assert kwargs["follow_redirects"] is False
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return False
+
+        def stream(self, _method, _url):
+            return _FakeStream(
+                _FakeResponse(
+                    status_code=302,
+                    headers={"location": "http://169.254.169.254/latest"},
+                    chunks=[],
+                )
+            )
+
+    monkeypatch.setattr(source_fetch, "_resolve_host_addresses", addresses)
+    with patch.dict("sys.modules", {"httpx": SimpleNamespace(AsyncClient=FakeClient)}):
+        with pytest.raises(SourceFetchError) as ei:
+            await source_fetch._http_get("https://example.com/post")
+    assert ei.value.code == "source_fetch_url_blocked"
+
+
+@pytest.mark.asyncio
+async def test_http_get_enforces_response_size_cap(monkeypatch) -> None:
+    async def public_addresses(_host: str):
+        return [ipaddress.ip_address("93.184.216.34")]
+
+    class FakeClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return False
+
+        def stream(self, _method, _url):
+            return _FakeStream(
+                _FakeResponse(chunks=[b"x" * (source_fetch.MAX_FETCH_BYTES + 1)])
+            )
+
+    monkeypatch.setattr(source_fetch, "_resolve_host_addresses", public_addresses)
+    with patch.dict("sys.modules", {"httpx": SimpleNamespace(AsyncClient=FakeClient)}):
+        with pytest.raises(SourceFetchError) as ei:
+            await source_fetch._http_get("https://example.com/post")
+    assert ei.value.code == "source_fetch_too_large"
 
 
 # --- Dispatch + errors (async) ---------------------------------------------

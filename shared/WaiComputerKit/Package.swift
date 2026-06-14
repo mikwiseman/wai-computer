@@ -19,8 +19,14 @@ let package = Package(
     ],
     targets: [
         .target(
+            name: "WaiComputerKitObjC",
+            path: "Sources/WaiComputerKitObjC",
+            publicHeadersPath: "include"
+        ),
+        .target(
             name: "WaiComputerKit",
             dependencies: [
+                "WaiComputerKitObjC",
                 .product(name: "AsyncAlgorithms", package: "swift-async-algorithms"),
                 .product(name: "Sentry", package: "sentry-cocoa"),
             ],

@@ -5,6 +5,7 @@ source_fetch I/O + error paths, comparison_build summary/failure paths,
 content hard-split + doc-embed edge, route error paths.
 """
 
+import ipaddress
 from types import SimpleNamespace
 from unittest.mock import patch
 from uuid import uuid4
@@ -41,11 +42,25 @@ def test_hard_split_overlaps() -> None:
 async def test_http_get_returns_bytes_and_content_type() -> None:
     from app.core import source_fetch as sf
 
-    fake_resp = SimpleNamespace(
-        content=b"<html>hi</html>",
-        headers={"content-type": "text/html; charset=utf-8"},
-        raise_for_status=lambda: None,
-    )
+    class FakeResponse:
+        status_code = 200
+        headers = {"content-type": "text/html; charset=utf-8"}
+
+        def raise_for_status(self):
+            pass
+
+        async def aiter_bytes(self):
+            yield b"<html>hi</html>"
+
+    class FakeStream:
+        async def __aenter__(self):
+            return FakeResponse()
+
+        async def __aexit__(self, *a):
+            return False
+
+    async def public_addresses(_host: str):
+        return [ipaddress.ip_address("93.184.216.34")]
 
     class FakeClient:
         def __init__(self, *a, **k):
@@ -57,10 +72,15 @@ async def test_http_get_returns_bytes_and_content_type() -> None:
         async def __aexit__(self, *a):
             return False
 
-        async def get(self, url):
-            return fake_resp
+        def stream(self, method, url):
+            assert method == "GET"
+            assert url == "https://x/post"
+            return FakeStream()
 
-    with patch.dict("sys.modules", {"httpx": SimpleNamespace(AsyncClient=FakeClient)}):
+    with (
+        patch.dict("sys.modules", {"httpx": SimpleNamespace(AsyncClient=FakeClient)}),
+        patch.object(sf, "_resolve_host_addresses", new=public_addresses),
+    ):
         body, ctype = await sf._http_get("https://x/post")
     assert body == b"<html>hi</html>"
     assert "text/html" in ctype
@@ -270,5 +290,4 @@ async def test_comparison_build_missing_set_returns_none(db_session) -> None:
     from app.core import comparison_build as cb
 
     assert await cb.build_comparison_set(db_session, uuid4()) is None
-
 

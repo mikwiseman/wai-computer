@@ -21,6 +21,7 @@ from app.core.personalization import (
     extract_candidate_terms,
     load_user_entity_terms,
     load_user_keyterms,
+    load_user_realtime_hints,
     load_user_replacements,
     sanitize_keyterms,
     summary_personalization_instructions,
@@ -592,6 +593,61 @@ async def test_load_user_replacements_returns_only_real_distinct_pairs(
     pairs = await load_user_replacements(db_session, user_id=user_id)
 
     assert pairs == [("Bolnichny", "больничный")]
+
+
+@pytest.mark.asyncio
+async def test_load_user_realtime_hints_combines_keyterms_and_replacements(
+    db_session: AsyncSession,
+):
+    user_id = uuid4()
+    db_session.add(
+        User(
+            id=user_id,
+            email=f"realtime-hints-{user_id}@example.com",
+            password_hash="hash",
+            **{
+                "legal_terms_version": LEGAL_ACCEPTANCE["legal_terms_version"],
+                "legal_privacy_version": LEGAL_ACCEPTANCE["legal_privacy_version"],
+            },
+        )
+    )
+    db_session.add(
+        PersonalizationTerm(
+            user_id=user_id,
+            term="WaiCompyuter",
+            normalized_term="waicompyuter",
+            replacement="WaiComputer",
+            status="active",
+            source="manual",
+            frequency=3,
+        )
+    )
+    db_session.add_all(
+        [
+            DictationDictionaryWord(
+                user_id=user_id,
+                client_word_id=uuid4(),
+                word="Bolnichny",
+                replacement="больничный",
+                occurred_at=datetime.now(timezone.utc),
+            ),
+            DictationDictionaryWord(
+                user_id=user_id,
+                client_word_id=uuid4(),
+                word="kubernetes",
+                replacement=None,
+                occurred_at=datetime.now(timezone.utc),
+            ),
+        ]
+    )
+    await db_session.flush()
+
+    hints = await load_user_realtime_hints(db_session, user_id=user_id, purpose="dictation")
+
+    assert {"WaiCompyuter", "WaiComputer", "Bolnichny", "больничный"} <= set(
+        hints.keyterms
+    )
+    assert hints.replacements == [("Bolnichny", "больничный")]
 
 
 @pytest.mark.asyncio

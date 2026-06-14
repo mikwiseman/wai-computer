@@ -20,6 +20,15 @@ def test_docker_compose_disables_gunicorn_access_log():
     assert "--error-logfile -" in compose
 
 
+def test_api_runtime_trusts_forwarded_headers_from_internal_proxy():
+    compose = yaml.safe_load((BACKEND_ROOT / "docker-compose.yml").read_text())
+    dockerfile = (BACKEND_ROOT / "Dockerfile").read_text()
+    command = compose["services"]["api"]["command"][-1]
+
+    assert "--forwarded-allow-ips='*'" in command
+    assert '"--forwarded-allow-ips", "*"' in dockerfile
+
+
 def test_celery_worker_runs_voice_identification_in_isolated_single_task_worker():
     compose = yaml.safe_load((BACKEND_ROOT / "docker-compose.yml").read_text())
     api_service = compose["services"]["api"]

@@ -9,10 +9,13 @@ import shlex
 import subprocess
 import sys
 
-from passlib.context import CryptContext
+import bcrypt
 
 LEGAL_VERSION = "2026-05-22"
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+
+def bcrypt_password_hash(password: str) -> str:
+    return bcrypt.hashpw(password.encode("utf-8")[:72], bcrypt.gensalt()).decode("ascii")
 
 
 def sql_string(value: str) -> str:
@@ -136,7 +139,7 @@ def main() -> None:
     email = args.email.strip().lower()
     sql = build_sql(
         email=email,
-        password_hash=pwd_context.hash(password),
+        password_hash=bcrypt_password_hash(password),
         role=args.role,
         reset_existing_password=args.reset_existing_password,
     )

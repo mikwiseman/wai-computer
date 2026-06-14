@@ -39,7 +39,7 @@ describe("OnboardingClient", () => {
     expect(screen.getByText("Add anything")).toBeInTheDocument();
     expect(screen.getByText("Organize once")).toBeInTheDocument();
     expect(screen.getByText("Teach your voice")).toBeInTheDocument();
-    expect(localStorageValues.voice_onboarding_complete).toBe("true");
+    expect(localStorageValues.voice_onboarding_complete).toBeUndefined();
 
     fireEvent.click(screen.getByRole("button", { name: "Skip for now" }));
 
@@ -47,11 +47,11 @@ describe("OnboardingClient", () => {
     expect(mockReplace).toHaveBeenCalledWith("/dashboard");
   });
 
-  it("marks onboarding seen as soon as the user sees the screen", () => {
+  it("does not mark onboarding seen just because the screen mounted", () => {
     render(<OnboardingClient />);
 
     expect(screen.getByRole("heading", { level: 1, name: "Set up your universal Inbox" })).toBeInTheDocument();
-    expect(localStorageValues.voice_onboarding_complete).toBe("true");
+    expect(localStorageValues.voice_onboarding_complete).toBeUndefined();
     expect(mockReplace).not.toHaveBeenCalled();
   });
 

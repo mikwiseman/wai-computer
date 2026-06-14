@@ -200,6 +200,16 @@ def test_security_full_path_coverage():
     password_hash_value = hash_password(raw_password)
     assert verify_password(raw_password, password_hash_value)
     assert not verify_password("wrong-password", password_hash_value)
+    assert verify_password(
+        "legacy-password",
+        "$2b$12$abcdefghijklmnopqrstuuHF.ALhEy3UhWvdr5rQzz0/XKmghBBRq",
+    )
+
+    seventy_two = "a" * 72
+    long_password = seventy_two + "ignored-suffix"
+    long_hash = hash_password(long_password)
+    assert verify_password(long_password, long_hash)
+    assert verify_password(seventy_two, long_hash)
 
     user_id = uuid4()
     default_token = create_access_token(user_id)

@@ -61,7 +61,7 @@ READ_ONLY_TOOLS: frozenset[str] = frozenset(
 MUTATING_TOOLS: frozenset[str] = frozenset(
     {
         # writes durable long-term memory — a state change, gate-eligible
-        "remember",
+        "remember", "forget",
         # first-party Telegram send hands
         "send_message_telegram", "reply_to_message_telegram", "send_file_telegram",
     }

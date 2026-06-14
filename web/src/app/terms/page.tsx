@@ -1,9 +1,17 @@
 import Link from "next/link";
+import type { Metadata } from "next";
 import styles from "../legal.module.css";
 
-export const metadata = {
+export const metadata: Metadata = {
   title: "Terms of Service — WaiComputer",
   description: "Terms for using WaiComputer apps, website, API, and connected services.",
+  alternates: {
+    canonical: "https://wai.computer/terms",
+    languages: {
+      en: "https://wai.computer/terms",
+      ru: "https://wai.computer/ru/terms",
+    },
+  },
 };
 
 export default function TermsPage() {

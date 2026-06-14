@@ -95,6 +95,19 @@ def test_build_realtime_websocket_url_repeats_sanitized_keyterm_params() -> None
     )
 
 
+def test_build_realtime_websocket_url_includes_replace_pairs() -> None:
+    url = build_realtime_websocket_url(
+        language="multi",
+        channels=1,
+        purpose="dictation",
+        replacements=[("Bolnichny", "больничный"), ("Wai", "WaiComputer")],
+    )
+
+    assert url.count("replace=") == 2
+    assert "replace=wai%3AWaiComputer" in url
+    assert "replace=bolnichny%3A" in url
+
+
 def test_sanitize_deepgram_keyterms_caps_token_budget() -> None:
     terms = [f"term{i}" for i in range(150)]
 

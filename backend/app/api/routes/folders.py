@@ -5,7 +5,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Response, status
 from pydantic import BaseModel, field_validator
-from sqlalchemy import func, select
+from sqlalchemy import func, select, union_all
 from sqlalchemy.orm import selectinload
 
 from app.api.deps import CurrentUser, Database
@@ -56,8 +56,8 @@ def _serialize_folder(folder: Folder, item_count: int = 0) -> FolderResponse:
 
 async def _folder_content_counts(db: Database, user_id: UUID) -> dict[str, int]:
     counts: dict[str, int] = {}
-    recording_rows = await db.execute(
-        select(Recording.folder_id, func.count())
+    recording_counts = (
+        select(Recording.folder_id.label("folder_id"), func.count().label("item_count"))
         .where(
             Recording.user_id == user_id,
             Recording.deleted_at.is_(None),
@@ -65,10 +65,8 @@ async def _folder_content_counts(db: Database, user_id: UUID) -> dict[str, int]:
         )
         .group_by(Recording.folder_id)
     )
-    for folder_id, count in recording_rows.all():
-        counts[str(folder_id)] = counts.get(str(folder_id), 0) + int(count)
-    item_rows = await db.execute(
-        select(Item.folder_id, func.count())
+    item_counts = (
+        select(Item.folder_id.label("folder_id"), func.count().label("item_count"))
         .where(
             Item.user_id == user_id,
             Item.deleted_at.is_(None),
@@ -77,10 +75,8 @@ async def _folder_content_counts(db: Database, user_id: UUID) -> dict[str, int]:
         )
         .group_by(Item.folder_id)
     )
-    for folder_id, count in item_rows.all():
-        counts[str(folder_id)] = counts.get(str(folder_id), 0) + int(count)
-    chat_rows = await db.execute(
-        select(Conversation.folder_id, func.count())
+    chat_counts = (
+        select(Conversation.folder_id.label("folder_id"), func.count().label("item_count"))
         .where(
             Conversation.user_id == user_id,
             Conversation.deleted_at.is_(None),
@@ -89,8 +85,13 @@ async def _folder_content_counts(db: Database, user_id: UUID) -> dict[str, int]:
         )
         .group_by(Conversation.folder_id)
     )
-    for folder_id, count in chat_rows.all():
-        counts[str(folder_id)] = counts.get(str(folder_id), 0) + int(count)
+    content_counts = union_all(recording_counts, item_counts, chat_counts).subquery()
+    rows = await db.execute(
+        select(content_counts.c.folder_id, func.sum(content_counts.c.item_count))
+        .group_by(content_counts.c.folder_id)
+    )
+    for folder_id, count in rows.all():
+        counts[str(folder_id)] = int(count)
     return counts
 
 

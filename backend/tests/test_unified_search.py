@@ -12,6 +12,12 @@ from app.models.user import User
 pytestmark = pytest.mark.asyncio
 
 
+async def test_unified_search_sql_projects_bounded_content() -> None:
+    from app.core.unified_search import _UNIFIED_SQL
+
+    assert "LEFT(content, 320) AS content" in str(_UNIFIED_SQL)
+
+
 async def _embedder(texts):
     return [[0.01] * 1536 for _ in texts]
 

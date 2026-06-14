@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest";
 
+import { metadata as homeMetadata } from "./page";
+import { metadata as privacyMetadata } from "./privacy/page";
 import robots from "./robots";
+import { metadata as ruPrivacyMetadata } from "./ru/privacy/page";
+import { metadata as ruTermsMetadata } from "./ru/terms/page";
 import sitemap from "./sitemap";
+import { metadata as termsMetadata } from "./terms/page";
 
 describe("robots.ts", () => {
   it("exposes a single rule that allows / and disallows private surfaces", () => {
@@ -78,5 +83,45 @@ describe("sitemap.ts", () => {
     expect(landingEn?.priority).toBe(1.0);
     expect(landingRu?.priority).toBe(1.0);
     expect(pricing?.priority).toBe(0.6);
+  });
+});
+
+describe("public page metadata", () => {
+  it("exposes reciprocal canonical and hreflang alternates", () => {
+    expect(homeMetadata.alternates).toEqual({
+      canonical: "https://wai.computer",
+      languages: {
+        en: "https://wai.computer",
+        ru: "https://wai.computer/ru",
+      },
+    });
+    expect(termsMetadata.alternates).toEqual({
+      canonical: "https://wai.computer/terms",
+      languages: {
+        en: "https://wai.computer/terms",
+        ru: "https://wai.computer/ru/terms",
+      },
+    });
+    expect(ruTermsMetadata.alternates).toEqual({
+      canonical: "https://wai.computer/ru/terms",
+      languages: {
+        en: "https://wai.computer/terms",
+        ru: "https://wai.computer/ru/terms",
+      },
+    });
+    expect(privacyMetadata.alternates).toEqual({
+      canonical: "https://wai.computer/privacy",
+      languages: {
+        en: "https://wai.computer/privacy",
+        ru: "https://wai.computer/ru/privacy",
+      },
+    });
+    expect(ruPrivacyMetadata.alternates).toEqual({
+      canonical: "https://wai.computer/ru/privacy",
+      languages: {
+        en: "https://wai.computer/privacy",
+        ru: "https://wai.computer/ru/privacy",
+      },
+    });
   });
 });

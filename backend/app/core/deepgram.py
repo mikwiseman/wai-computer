@@ -275,6 +275,7 @@ DEEPGRAM_BATCH_MODEL = "nova-3"
 # NOT be combined with diarize=true (Deepgram rejects that pairing with HTTP 400).
 DEEPGRAM_BATCH_DIARIZE_MODEL = "latest"
 DEEPGRAM_BATCH_TIMEOUT_SECONDS = 300.0
+DEEPGRAM_BATCH_READ_TIMEOUT_SECONDS_PER_AUDIO_MINUTE = 10.0
 # Deepgram auto-detects container formats from the audio bytes, but we send a
 # canonical Content-Type so non-standard aliases (e.g. audio/x-m4a from web
 # uploads) never reach the API. Raw PCM (audio/raw) is intentionally not aliased.
@@ -370,6 +371,22 @@ def _results_from_deepgram_payload(payload: object) -> list[TranscriptResult]:
     return results
 
 
+def _batch_timeout(audio_duration_seconds: float | None) -> httpx.Timeout:
+    read_timeout = DEEPGRAM_BATCH_TIMEOUT_SECONDS
+    if audio_duration_seconds is not None and audio_duration_seconds > 0:
+        audio_minutes = audio_duration_seconds / 60.0
+        read_timeout = max(
+            DEEPGRAM_BATCH_TIMEOUT_SECONDS,
+            audio_minutes * DEEPGRAM_BATCH_READ_TIMEOUT_SECONDS_PER_AUDIO_MINUTE,
+        )
+    return httpx.Timeout(
+        connect=10.0,
+        read=read_timeout,
+        write=60.0,
+        pool=10.0,
+    )
+
+
 def _integer_index(value: object) -> int | None:
     if isinstance(value, bool):
         return None
@@ -410,6 +427,7 @@ async def transcribe_audio_file(
     keyterms: list[str] | None = None,
     replacements: list[tuple[str, str]] | None = None,
     max_channels: int | None = None,
+    audio_duration_seconds: float | None = None,
 ) -> list[TranscriptResult]:
     """Transcribe an uploaded audio file with Deepgram pre-recorded STT."""
     api_key = require_deepgram_api_key()
@@ -446,7 +464,7 @@ async def transcribe_audio_file(
         replacements=replacements,
     )
 
-    async with httpx.AsyncClient(timeout=DEEPGRAM_BATCH_TIMEOUT_SECONDS) as client:
+    async with httpx.AsyncClient(timeout=_batch_timeout(audio_duration_seconds)) as client:
         response = await client.post(
             url,
             headers={

@@ -316,6 +316,8 @@ describe("app pages", () => {
       "href",
       "/pricing",
     );
+    expect(screen.getByText("3,000 transcribed words per week")).toBeInTheDocument();
+    expect(screen.queryByText("10 recordings per week")).not.toBeInTheDocument();
 
     // FAQ — at least one well-known question.
     expect(

@@ -1,5 +1,6 @@
 import Link from "next/link";
 import Image from "next/image";
+import type { Metadata } from "next";
 import { LocaleSwitcher } from "@/components/LocaleSwitcher";
 import styles from "./page.module.css";
 
@@ -9,6 +10,19 @@ const TESTFLIGHT_URL = "https://testflight.apple.com/join/rtnJQzwk";
 const PRIVACY_URL = "/privacy";
 
 const CURRENT_YEAR = new Date().getFullYear();
+
+export const metadata: Metadata = {
+  title: "WaiComputer — AI memory for voice",
+  description:
+    "Record, transcribe, search, and ask Wai about everything you have captured.",
+  alternates: {
+    canonical: "https://wai.computer",
+    languages: {
+      en: "https://wai.computer",
+      ru: "https://wai.computer/ru",
+    },
+  },
+};
 
 function MacIcon() {
   return (
@@ -531,7 +545,7 @@ export default function Home() {
             <h3 className={styles.pricingTeaserPlan}>Free</h3>
             <p className={styles.pricingTeaserPrice}>$0</p>
             <ul className={styles.pricingTeaserBullets} role="list">
-              <li>10 recordings per week</li>
+              <li>3,000 transcribed words per week</li>
               <li>Realtime dictation</li>
               <li>Search your library</li>
             </ul>

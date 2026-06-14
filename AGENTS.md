@@ -141,4 +141,22 @@ docker logs waicomputer-api
 docker compose --env-file /etc/waicomputer/backend.env ps   # in /opt/waicomputer/backend
 ```
 
+For stale recording recovery incidents, confirm the scheduler and worker before
+touching app code:
+
+```bash
+cd /opt/waicomputer/backend
+docker compose --env-file /etc/waicomputer/backend.env logs celery-worker --tail=200
+docker compose --env-file /etc/waicomputer/backend.env exec celery-worker \
+  celery -A app.tasks.celery_app:celery_app inspect ping --timeout=5
+docker compose --env-file /etc/waicomputer/backend.env exec celery-worker \
+  celery -A app.tasks.celery_app:celery_app call \
+  app.tasks.recording_audio_processing.recover_stale_recording_processing
+```
+
+Record the stuck counts, oldest `processing`/`uploading` timestamps, and whether
+the worker beat loop is publishing `recording-processing-recovery-every-minute`.
+If the sweep is not running, fix beat or worker routing first; do not ask users
+to retry before checking local client recovery files.
+
 Prefer fixing recording/realtime issues in shared Swift + backend before touching the web dashboard.

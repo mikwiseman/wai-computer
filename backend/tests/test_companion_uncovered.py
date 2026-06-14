@@ -450,17 +450,25 @@ def test_tool_result_event_from_item_paths():
     )
     assert failed.ok is False
     assert failed.summary == "Failed"
+    invalid = companion_module._tool_result_event_from_item(
+        {"type": "mcp_call", "id": "c4", "output": "not json"}
+    )
+    assert invalid.ok is False
+    assert invalid.summary == "Tool returned invalid JSON"
 
 
 def test_summarize_tool_output_shapes():
     assert companion_module._summarize_tool_output("oops", ok=False) == "Failed"
-    assert companion_module._summarize_tool_output("not json", ok=True) == "Done"
+    assert (
+        companion_module._summarize_tool_output("not json", ok=True)
+        == "Tool returned invalid JSON"
+    )
     assert (
         companion_module._summarize_tool_output('{"segments": [1, 2]}', ok=True)
         == "2 results"
     )
     assert companion_module._summarize_tool_output([1], ok=True) == "1 result"
-    assert companion_module._summarize_tool_output({"other": 1}, ok=True) == "Done"
+    assert companion_module._summarize_tool_output({"other": 1}, ok=True) == "Completed"
 
 
 def test_extract_text_from_object_output_items():

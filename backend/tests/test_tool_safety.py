@@ -17,7 +17,9 @@ def test_known_read_tools_are_not_mutating():
 
 
 def test_known_write_tools_are_mutating():
-    for name in ["remember", "send_message_telegram", "reply_to_message_telegram"]:
+    for name in [
+        "remember", "forget", "send_message_telegram", "reply_to_message_telegram"
+    ]:
         assert is_mutating_tool_call(name) is True, name
 
 

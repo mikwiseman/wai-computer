@@ -538,6 +538,44 @@ async def test_reset_password_expired_token_is_cleared(
 
 
 @pytest.mark.asyncio
+async def test_reset_password_revokes_existing_refresh_tokens(
+    client: AsyncClient,
+    db_session: AsyncSession,
+):
+    email = f"reset-revoke-{uuid4().hex}@example.com"
+    register_response = await client.post(
+        "/api/auth/register",
+        json={"email": email, "password": "oldpassword123", **LEGAL_ACCEPTANCE},
+    )
+    assert register_response.status_code == 200
+    old_refresh = register_response.json()["refresh_token"]
+
+    user = (
+        await db_session.execute(select(User).where(User.email == email))
+    ).scalar_one()
+    user.magic_link_token = "reset_revoke_token"
+    user.magic_link_expires = datetime.now(timezone.utc) + timedelta(minutes=15)
+    await db_session.flush()
+
+    reset_response = await client.post(
+        "/api/auth/reset-password",
+        json={"token": "reset_revoke_token", "password": "newpassword123"},
+    )
+    assert reset_response.status_code == 200
+
+    refresh_response = await client.post(
+        "/api/auth/refresh", json={"refresh_token": old_refresh}
+    )
+    assert refresh_response.status_code == 401
+
+    login_response = await client.post(
+        "/api/auth/login", json={"email": email, "password": "newpassword123"}
+    )
+    assert login_response.status_code == 200
+    assert login_response.json()["refresh_token"]
+
+
+@pytest.mark.asyncio
 async def test_verify_magic_link_rejects_password_reset_token(client: AsyncClient):
     response = await client.post(
         "/api/auth/verify-magic",

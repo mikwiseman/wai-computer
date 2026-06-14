@@ -52,6 +52,7 @@ struct RecordingView: View {
                         .font(.system(size: 48, weight: .light, design: .monospaced))
                         .foregroundStyle(viewModel.phase == .idle ? .secondary : .primary)
                         .accessibilityLabel(durationAccessibilityLabel)
+                        .accessibilityAddTraits(.updatesFrequently)
                 }
 
                 // Offline transcription banner
@@ -127,6 +128,7 @@ struct RecordingView: View {
                                                 .font(.body)
                                                 .lineSpacing(4)
                                                 .textSelection(.enabled)
+                                                .accessibilityAddTraits(.updatesFrequently)
                                         }
                                         if !viewModel.interimTranscript.isEmpty {
                                             Text(viewModel.interimTranscript)
@@ -134,6 +136,7 @@ struct RecordingView: View {
                                                 .lineSpacing(4)
                                                 .foregroundStyle(Palette.textTertiary)
                                                 .textSelection(.enabled)
+                                                .accessibilityHidden(true)
                                         }
                                     }
                                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -152,11 +155,7 @@ struct RecordingView: View {
                             }
                         }
                     }
-                    .accessibilityElement(children: .ignore)
-                    .accessibilityLabel(viewModel.currentTranscript.isEmpty
-                        ? t("Live transcript: ", "Живая расшифровка: ") + viewModel.emptyTranscriptText
-                        : t("Live transcript: ", "Живая расшифровка: ") + viewModel.currentTranscript
-                    )
+                    .accessibilityElement(children: .contain)
                     .accessibilityIdentifier("live-transcript")
                 }
 

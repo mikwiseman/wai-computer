@@ -2959,6 +2959,7 @@ _TOOL_RESULT_LIST_KEYS = (
     "folders",
     "matched_entities",
 )
+_INVALID_TOOL_OUTPUT_SUMMARY = "Tool returned invalid JSON"
 
 
 def _stream_event_item(event: Any) -> dict[str, Any] | None:
@@ -3006,10 +3007,11 @@ def _tool_result_event_from_item(item: dict[str, Any] | None) -> ToolResultEvent
         ok = status not in ("failed", "incomplete", "error")
         return ToolResultEvent(call_id=call_id, summary="Searched the web", ok=ok)
     ok = not item.get("error")
+    summary = _summarize_tool_output(item.get("output"), ok=ok)
     return ToolResultEvent(
         call_id=call_id,
-        summary=_summarize_tool_output(item.get("output"), ok=ok),
-        ok=ok,
+        summary=summary,
+        ok=ok and summary != _INVALID_TOOL_OUTPUT_SUMMARY,
     )
 
 
@@ -3021,7 +3023,7 @@ def _summarize_tool_output(output: Any, *, ok: bool) -> str:
         try:
             data = json.loads(output)
         except json.JSONDecodeError:
-            return "Done"
+            return _INVALID_TOOL_OUTPUT_SUMMARY
     if isinstance(data, dict):
         for key in _TOOL_RESULT_LIST_KEYS:
             value = data.get(key)
@@ -3031,7 +3033,7 @@ def _summarize_tool_output(output: Any, *, ok: bool) -> str:
     if isinstance(data, list):
         n = len(data)
         return f"{n} result{'' if n == 1 else 's'}"
-    return "Done"
+    return "Completed"
 
 
 def _extract_text(response: Any) -> str:

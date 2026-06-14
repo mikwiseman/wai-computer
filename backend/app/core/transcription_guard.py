@@ -31,6 +31,8 @@ import redis.asyncio as aioredis
 from redis.exceptions import RedisError
 
 from app.config import get_settings
+from app.core.observability import capture_sentry_anomaly
+from app.core.ops_alerts import notify_ops
 
 logger = logging.getLogger(__name__)
 
@@ -358,13 +360,55 @@ async def record_provider_result(*, success: bool, status_code: int | None = Non
             await r.delete(_BREAKER_FAILS, _BREAKER_OPEN)
             return
         if status_code == 402:
+            was_open = bool(await r.exists(_BREAKER_OPEN))
             await r.set(_BREAKER_OPEN, "402", ex=cooldown)
+            if not was_open:
+                _alert_breaker_open(reason="402", status_code=status_code, threshold=threshold)
             return
+        was_open = bool(await r.exists(_BREAKER_OPEN))
         pipe = r.pipeline()
         pipe.incr(_BREAKER_FAILS)
         pipe.expire(_BREAKER_FAILS, cooldown)
         results = await pipe.execute()
         if int(results[0]) >= threshold:
             await r.set(_BREAKER_OPEN, "streak", ex=cooldown)
+            if not was_open:
+                _alert_breaker_open(
+                    reason="failure_streak",
+                    status_code=status_code,
+                    threshold=threshold,
+                )
     except RedisError as exc:
         _degraded("transcription.guard.breaker_write_degraded", exc)
+
+
+def _alert_breaker_open(
+    *,
+    reason: str,
+    status_code: int | None,
+    threshold: int,
+) -> None:
+    extras = {
+        "provider": "deepgram",
+        "status_code": status_code,
+        "threshold": threshold,
+        "reason": reason,
+    }
+    try:
+        capture_sentry_anomaly(
+            "transcription.deepgram_breaker_open",
+            "Deepgram circuit breaker opened",
+            category="recording",
+            extras=extras,
+            level="error",
+        )
+        notify_ops(
+            alert_code="transcription.deepgram_breaker_open",
+            message="Deepgram circuit breaker opened",
+            extras=extras,
+            level="error",
+        )
+    except Exception as exc:  # noqa: BLE001 - alerting must never affect guards
+        logger.warning(
+            "deepgram breaker-open alert failed error_type=%s", type(exc).__name__
+        )

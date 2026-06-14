@@ -1,5 +1,3 @@
-@import "@xyflow/react/dist/style.css";
-
 /*
  * All design tokens (spacing, type scale, radius, shadow, accents, theme
  * colors, light + dark variants) now live in `src/styles/tokens.css`, which

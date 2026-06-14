@@ -85,6 +85,7 @@
 		AE73FDAE37F83D477BEC08B4 /* MacRecordingDetailViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A80153273D9F1FD16D6149A5 /* MacRecordingDetailViewModel.swift */; };
 		B1CF145D35CC71C46999E898 /* GlobalHotkeyManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 346A9D9E86B068DC328963E4 /* GlobalHotkeyManager.swift */; };
 		B3392D023DF7B881CEDF5AD2 /* DictationCopyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9FD8E21E80DB474C46C3D99D /* DictationCopyTests.swift */; };
+		B3E50F2C580128A4CCE06990 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = EE277524FD1B806FBD432AFF /* PrivacyInfo.xcprivacy */; };
 		B5DDE9F109AC3D9232120D55 /* RealAppSmokeUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD67965D57A377373BA386DB /* RealAppSmokeUITests.swift */; };
 		B90DD23490D4CFB96DD66DD1 /* OnboardingL10n.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4674C2D695C1BC16C5D8011 /* OnboardingL10n.swift */; };
 		BBE8C20EE2EE668EC5EF1A70 /* MacMainLayoutMetricsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B06A15A814B67EB84DB992F7 /* MacMainLayoutMetricsTests.swift */; };
@@ -227,6 +228,7 @@
 		E94E6128F2B3E55CCE6BA664 /* PermissionBanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PermissionBanner.swift; sourceTree = "<group>"; };
 		EA4A03C86EF4E333421DA327 /* SettingsUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsUITests.swift; sourceTree = "<group>"; };
 		EBF23F17DA476E6DC9973406 /* SearchUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchUITests.swift; sourceTree = "<group>"; };
+		EE277524FD1B806FBD432AFF /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		EF9B3CB38A4FF68D2EDD32F5 /* MacImportViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacImportViewModel.swift; sourceTree = "<group>"; };
 		F560C57D16BE3A93BBAF6818 /* TextInserter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextInserter.swift; sourceTree = "<group>"; };
 		F638439EAA5AA1369EA59AA7 /* MacSearchView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacSearchView.swift; sourceTree = "<group>"; };
@@ -458,6 +460,7 @@
 			children = (
 				63673E10D195B18342C22A3A /* AppIcon.icon */,
 				864F5988EFF4C90C1885EAD1 /* Assets.xcassets */,
+				EE277524FD1B806FBD432AFF /* PrivacyInfo.xcprivacy */,
 				80368ACBB24566AA7B8D7B0B /* App */,
 				E1A98E16AC8A5557AE9585A0 /* Core */,
 				5D15DE54E4FDA3B1560A15A6 /* Features */,
@@ -630,6 +633,7 @@
 				87D9FAD3C8437015C5E3D1A5 /* Assets.xcassets in Resources */,
 				3228396982B912B8B4EDD9D3 /* InfoPlist.strings in Resources */,
 				7F57E2B7481CBD2DEE85FB8E /* Localizable.xcstrings in Resources */,
+				B3E50F2C580128A4CCE06990 /* PrivacyInfo.xcprivacy in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

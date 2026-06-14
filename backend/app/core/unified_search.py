@@ -212,7 +212,7 @@ _UNIFIED_SQL = text(
                ) AS parent_rank
         FROM scored
     )
-    SELECT chunk_id, parent_id, content, title, kind, created_at,
+    SELECT chunk_id, parent_id, LEFT(content, 320) AS content, title, kind, created_at,
            start_ms, end_ms, source_kind, score
     FROM ranked
     WHERE CAST(:per_parent AS integer) IS NULL

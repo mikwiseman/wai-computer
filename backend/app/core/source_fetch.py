@@ -24,9 +24,12 @@ fakes without hitting the network.
 
 from __future__ import annotations
 
+import asyncio
+import ipaddress
 import re
+import socket
 from dataclasses import dataclass, field
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, urljoin, urlparse
 
 # ---------------------------------------------------------------------------
 # Result + error types
@@ -62,6 +65,8 @@ _YOUTUBE_HOSTS = {"youtube.com", "www.youtube.com", "m.youtube.com", "youtu.be"}
 _INSTAGRAM_HOSTS = {"instagram.com", "www.instagram.com"}
 _TIKTOK_HOSTS = {"tiktok.com", "www.tiktok.com", "vm.tiktok.com"}
 _URL_RE = re.compile(r"https?://[^\s<>\"')]+", re.IGNORECASE)
+MAX_FETCH_BYTES = 25 * 1024 * 1024
+MAX_FETCH_REDIRECTS = 5
 
 
 def find_first_url(text: str | None) -> str | None:
@@ -112,18 +117,84 @@ def youtube_video_id(url: str) -> str | None:
 # ---------------------------------------------------------------------------
 
 
+def _public_ip_address(address: ipaddress._BaseAddress) -> bool:
+    if isinstance(address, ipaddress.IPv6Address) and address.ipv4_mapped is not None:
+        address = address.ipv4_mapped
+    return address.is_global
+
+
+def _resolve_host_addresses_sync(host: str) -> list[ipaddress._BaseAddress]:
+    infos = socket.getaddrinfo(host, None, type=socket.SOCK_STREAM)
+    addresses: list[ipaddress._BaseAddress] = []
+    seen: set[str] = set()
+    for info in infos:
+        raw = info[4][0]
+        if raw in seen:
+            continue
+        seen.add(raw)
+        addresses.append(ipaddress.ip_address(raw))
+    return addresses
+
+
+async def _resolve_host_addresses(host: str) -> list[ipaddress._BaseAddress]:
+    return await asyncio.to_thread(_resolve_host_addresses_sync, host)
+
+
+async def _assert_public_http_url(url: str) -> None:
+    parsed = urlparse(url)
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+        raise SourceFetchError(
+            "Only public http(s) URLs can be fetched.",
+            code="source_fetch_url_blocked",
+        )
+    addresses = await _resolve_host_addresses(parsed.hostname)
+    if not addresses or any(not _public_ip_address(address) for address in addresses):
+        raise SourceFetchError(
+            "This URL resolves to a private or local network address.",
+            code="source_fetch_url_blocked",
+        )
+
+
 async def _http_get(url: str) -> tuple[bytes, str]:
     """Fetch raw bytes + content-type for a URL (returns (body, content_type))."""
     import httpx
 
     async with httpx.AsyncClient(
-        follow_redirects=True,
+        follow_redirects=False,
         timeout=30.0,
         headers={"User-Agent": "WaiComputer/1.0 (+https://wai.computer)"},
     ) as client:
-        resp = await client.get(url)
-        resp.raise_for_status()
-        return resp.content, resp.headers.get("content-type", "")
+        current_url = url
+        for _ in range(MAX_FETCH_REDIRECTS + 1):
+            await _assert_public_http_url(current_url)
+            async with client.stream("GET", current_url) as resp:
+                if 300 <= resp.status_code < 400:
+                    location = resp.headers.get("location") or resp.headers.get("Location")
+                    if not location:
+                        raise SourceFetchError(
+                            "This URL redirected without a destination.",
+                            code="source_fetch_redirect_invalid",
+                        )
+                    current_url = urljoin(current_url, location)
+                    continue
+
+                resp.raise_for_status()
+                chunks: list[bytes] = []
+                total = 0
+                async for chunk in resp.aiter_bytes():
+                    total += len(chunk)
+                    if total > MAX_FETCH_BYTES:
+                        raise SourceFetchError(
+                            "This source is larger than the fetch limit.",
+                            code="source_fetch_too_large",
+                        )
+                    chunks.append(chunk)
+                return b"".join(chunks), resp.headers.get("content-type", "")
+
+        raise SourceFetchError(
+            "This URL redirected too many times.",
+            code="source_fetch_redirect_loop",
+        )
 
 
 _YOUTUBE_PREFERRED_LANGUAGES = ["ru", "en"]

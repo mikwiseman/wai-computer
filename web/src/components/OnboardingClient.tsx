@@ -156,8 +156,6 @@ export function OnboardingClient({ initialLocale }: OnboardingClientProps) {
   const copy = COPY[locale];
 
   useEffect(() => {
-    markOnboardingSeen();
-
     return () => {
       streamRef.current?.getTracks().forEach((track) => track.stop());
       streamRef.current = null;

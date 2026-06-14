@@ -555,7 +555,7 @@ async def apply_tinkoff_event(db: AsyncSession, event: ProviderEvent) -> None:
                     currency="RUB",
                     period=sub.billing_period,
                     next_charge_at=sub.tinkoff_next_charge_at,
-                    locale=charge_user.region,
+                    locale=charge_user.default_language,
                 )
 
     await db.flush()

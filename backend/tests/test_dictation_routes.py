@@ -118,7 +118,7 @@ async def test_cleanup_dictation_returns_cleaned_text(
     monkeypatch: pytest.MonkeyPatch,
 ):
     _patch_settings(monkeypatch)
-    _patch_client(monkeypatch, _make_mock_client(response_text="Cleaned text."))
+    _patch_client(monkeypatch, _make_mock_client(response_text="This is raw dictated text."))
     await _enable_post_filter(client, auth_headers)
 
     response = await client.post(
@@ -128,7 +128,7 @@ async def test_cleanup_dictation_returns_cleaned_text(
     )
 
     assert response.status_code == 200
-    assert response.json() == {"text": "Cleaned text."}
+    assert response.json() == {"text": "This is raw dictated text."}
 
 
 @pytest.mark.asyncio
@@ -273,7 +273,7 @@ async def test_cleanup_dictation_uses_fixed_post_filter_model(
 
     async def _create(**kwargs: object):
         captured.update(kwargs)
-        return _make_response("Cleaned text.")
+        return _make_response("Please clean up this dictated sentence.")
 
     mock_client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=_create)))
     _patch_settings(monkeypatch)
@@ -313,8 +313,8 @@ async def test_cleanup_dictation_stream_emits_tokens_and_done(
         )
         return _AsyncStream(
             [
-                _make_stream_chunk(delta="Cleaned"),
-                _make_stream_chunk(delta=" text."),
+                _make_stream_chunk(delta="Please clean"),
+                _make_stream_chunk(delta=" up this dictated sentence."),
                 _make_stream_chunk(finish_reason="stop", usage=usage),
             ]
         )
@@ -336,10 +336,10 @@ async def test_cleanup_dictation_stream_emits_tokens_and_done(
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("text/event-stream")
     body = response.text
-    assert 'event: token\ndata: {"text": "Cleaned"}' in body
-    assert 'event: token\ndata: {"text": " text."}' in body
+    assert 'event: token\ndata: {"text": "Please clean"}' in body
+    assert 'event: token\ndata: {"text": " up this dictated sentence."}' in body
     assert "event: done" in body
-    assert '"text": "Cleaned text."' in body
+    assert '"text": "Please clean up this dictated sentence."' in body
     assert '"model": "gpt-oss-120b"' in body
     assert '"latency_ms":' in body
     assert '"input_tokens": 111' in body
@@ -393,7 +393,7 @@ async def test_cleanup_dictation_stream_uses_chat_usage_dict(
                     "usage": None,
                     "choices": [
                         {
-                            "delta": {"content": "Cleaned from stream."},
+                            "delta": {"content": "Please clean up this dictated sentence."},
                             "finish_reason": None,
                         }
                     ],
@@ -428,7 +428,10 @@ async def test_cleanup_dictation_stream_uses_chat_usage_dict(
     )
 
     assert response.status_code == 200
-    assert 'event: token\ndata: {"text": "Cleaned from stream."}' in response.text
+    assert (
+        'event: token\ndata: {"text": "Please clean up this dictated sentence."}'
+        in response.text
+    )
     assert '"input_tokens": 123' in response.text
     assert '"output_tokens": 8' in response.text
     assert '"cached_tokens": 96' in response.text
@@ -576,6 +579,141 @@ async def test_cleanup_dictation_stream_maps_non_stop_finish_reason_to_sse_error
 
 
 @pytest.mark.asyncio
+async def test_cleanup_dictation_rejects_output_that_changes_protected_terms(
+    client: AsyncClient,
+    auth_headers: dict,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    _patch_settings(monkeypatch)
+    _patch_client(
+        monkeypatch,
+        _make_mock_client(response_text="Ship Way Computer for MFC 123 on the website."),
+    )
+    await _enable_post_filter(client, auth_headers)
+
+    response = await client.post(
+        "/api/dictation/cleanup",
+        headers=auth_headers,
+        json={
+            "text": "ship WaiComputer for MFC-123 at https://wai.computer/api",
+            "vocabulary": ["WaiComputer"],
+        },
+    )
+
+    assert response.status_code == 502
+    assert response.json()["detail"] == "AI service returned an incomplete cleanup response."
+
+
+@pytest.mark.asyncio
+async def test_cleanup_dictation_stream_rejects_output_that_changes_protected_terms(
+    client: AsyncClient,
+    auth_headers: dict,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    async def _create(**_: object):
+        return _AsyncStream(
+            [
+                _make_stream_chunk(delta="Ship Way Computer for MFC 123."),
+                _make_stream_chunk(finish_reason="stop"),
+            ]
+        )
+
+    mock_client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=_create)))
+    _patch_settings(monkeypatch)
+    _patch_client(monkeypatch, mock_client)
+    await _enable_post_filter(client, auth_headers)
+
+    response = await client.post(
+        "/api/dictation/cleanup/stream",
+        headers=auth_headers,
+        json={
+            "text": "ship WaiComputer for MFC-123 at https://wai.computer/api",
+            "vocabulary": ["WaiComputer"],
+        },
+    )
+
+    assert response.status_code == 200
+    assert 'event: error\ndata: {"code": "incomplete_response"' in response.text
+    assert "event: done" not in response.text
+
+
+@pytest.mark.asyncio
+async def test_cleanup_light_rejects_output_that_rewrites_content_words(
+    client: AsyncClient,
+    auth_headers: dict,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    _patch_settings(monkeypatch)
+    _patch_client(
+        monkeypatch,
+        _make_mock_client(response_text="Please ship this quickly today."),
+    )
+    await _set_cleanup_level(client, auth_headers, "light")
+
+    response = await client.post(
+        "/api/dictation/cleanup",
+        headers=auth_headers,
+        json={"text": "please ship this fast today"},
+    )
+
+    assert response.status_code == 502
+    assert response.json()["detail"] == "AI service returned an incomplete cleanup response."
+
+
+@pytest.mark.asyncio
+async def test_cleanup_light_allows_filler_removal_and_inflection_fix(
+    client: AsyncClient,
+    auth_headers: dict,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    _patch_settings(monkeypatch)
+    _patch_client(
+        monkeypatch,
+        _make_mock_client(response_text="It sometimes changes words."),
+    )
+    await _set_cleanup_level(client, auth_headers, "light")
+
+    response = await client.post(
+        "/api/dictation/cleanup",
+        headers=auth_headers,
+        json={"text": "um it sometimes change words"},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"text": "It sometimes changes words."}
+
+
+@pytest.mark.asyncio
+async def test_cleanup_light_stream_rejects_output_that_rewrites_content_words(
+    client: AsyncClient,
+    auth_headers: dict,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    async def _create(**_: object):
+        return _AsyncStream(
+            [
+                _make_stream_chunk(delta="Please ship this quickly today."),
+                _make_stream_chunk(finish_reason="stop"),
+            ]
+        )
+
+    mock_client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=_create)))
+    _patch_settings(monkeypatch)
+    _patch_client(monkeypatch, mock_client)
+    await _set_cleanup_level(client, auth_headers, "light")
+
+    response = await client.post(
+        "/api/dictation/cleanup/stream",
+        headers=auth_headers,
+        json={"text": "please ship this fast today"},
+    )
+
+    assert response.status_code == 200
+    assert 'event: error\ndata: {"code": "incomplete_response"' in response.text
+    assert "event: done" not in response.text
+
+
+@pytest.mark.asyncio
 async def test_cleanup_dictation_prompt_targets_russian_fillers_and_false_starts(
     client: AsyncClient,
     auth_headers: dict,
@@ -604,6 +742,7 @@ async def test_cleanup_dictation_prompt_targets_russian_fillers_and_false_starts
     assert "а-а-а" in instructions
     assert "мы х-- мы предлагаем" in instructions
     assert "Do not summarize" in instructions
+    assert "Do not replace, normalize, or guess content words" in instructions
     assert "<dictated_text>" in captured["messages"][1]["content"]
 
 
@@ -675,7 +814,7 @@ async def test_cleanup_dictation_includes_context_for_formatting(
 
     async def _create(**kwargs: object):
         captured.update(kwargs)
-        return _make_response("Cleaned text.")
+        return _make_response("Remind me about bug one two three.")
 
     mock_client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=_create)))
     _patch_settings(monkeypatch)
@@ -870,7 +1009,7 @@ async def test_cleanup_dictation_retries_same_cerebras_request_after_rate_limit(
                 response=_fake_httpx_response(),
                 body={"code": "queue_exceeded"},
             )
-        return _make_response("Cleaned after retry.")
+        return _make_response("Please clean up this long dictated sentence.")
 
     mock_client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=_create)))
     monkeypatch.setattr("app.api.routes.dictation.asyncio.sleep", _sleep)
@@ -885,7 +1024,7 @@ async def test_cleanup_dictation_retries_same_cerebras_request_after_rate_limit(
     )
 
     assert response.status_code == 200
-    assert response.json() == {"text": "Cleaned after retry."}
+    assert response.json() == {"text": "Please clean up this long dictated sentence."}
     assert attempts == 3
     assert sleeps == [1.0, 2.0]
 
@@ -1132,7 +1271,7 @@ async def test_cleanup_dictation_omits_preserve_block_when_vocabulary_empty(
 
     async def _create(**kwargs: object):
         captured.update(kwargs)
-        return _make_response("Cleaned text.")
+        return _make_response("Please clean this up please.")
 
     mock_client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=_create)))
     _patch_settings(monkeypatch)

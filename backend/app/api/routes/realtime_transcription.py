@@ -24,7 +24,7 @@ from app.core.observability import (
     capture_sentry_anomaly,
     capture_sentry_exception,
 )
-from app.core.personalization import load_user_keyterms
+from app.core.personalization import load_user_realtime_hints
 from app.core.realtime_transcription import (
     UnsupportedRealtimeLanguageError,
     build_deepgram_realtime_url_from_proxy_claims,
@@ -294,13 +294,19 @@ async def create_session(
             level="warning",
         )
     try:
+        realtime_hints = await load_user_realtime_hints(
+            db,
+            user_id=user.id,
+            purpose=request.purpose,
+        )
         session = await create_realtime_transcription_session(
             language=request.language,
             channels=request.channels,
             purpose=request.purpose,
             user=user,
             websocket_url=_stream_websocket_url(http_request),
-            keyterms=await load_user_keyterms(db, user_id=user.id, purpose=request.purpose),
+            keyterms=realtime_hints.keyterms,
+            replacements=realtime_hints.replacements,
         )
     except UnsupportedRealtimeLanguageError as exc:
         latency_ms = round((perf_counter() - started_at) * 1000)

@@ -75,3 +75,14 @@ def test_create_admin_user_script_requires_explicit_existing_password_reset():
     assert "INSERT INTO admin_roles (staff_member_id, role)" in sql
     assert "User email % already exists" in sql
     assert "ELSIF FALSE THEN" in sql
+
+
+def test_create_admin_user_script_hashes_passwords_without_passlib():
+    from app.core.security import verify_password
+
+    script = _load_script_module("create-admin-user.py")
+
+    password_hash = script.bcrypt_password_hash("admin-secret")
+
+    assert password_hash.startswith("$2b$")
+    assert verify_password("admin-secret", password_hash)

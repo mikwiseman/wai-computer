@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from httpx import ASGITransport, AsyncClient
 
+from app.core.personalization import RealtimePersonalizationHints
 from app.core.realtime_transcription import (
     RealtimeTranscriptionProxyClaims,
     RealtimeTranscriptionSession,
@@ -26,8 +27,8 @@ def mock_authenticated_user():
         return fake_user
 
     with patch(
-        "app.api.routes.realtime_transcription.load_user_keyterms",
-        new=AsyncMock(return_value=[]),
+        "app.api.routes.realtime_transcription.load_user_realtime_hints",
+        new=AsyncMock(return_value=RealtimePersonalizationHints(keyterms=[], replacements=[])),
     ):
         app.dependency_overrides[get_current_user] = _override
         yield fake_user
@@ -75,6 +76,7 @@ async def test_realtime_transcription_session_returns_provider_payload(mock_auth
         "wss://wai.computer/api/transcription/stream"
     )
     assert mint.await_args.kwargs["keyterms"] == []
+    assert mint.await_args.kwargs["replacements"] == []
     payload = response.json()
     assert payload["provider"] == "deepgram"
     assert payload["token"] == "dg_token"
@@ -117,6 +119,53 @@ async def test_realtime_transcription_session_mints_local_proxy_token(
     assert claims.language == "ru"
     assert claims.purpose == "dictation"
     assert claims.keyterms == []
+    assert claims.replacements == []
+
+
+@pytest.mark.asyncio
+async def test_realtime_transcription_session_loads_replacements_for_live_dictation(
+    mock_authenticated_user,
+):
+    session = RealtimeTranscriptionSession(
+        provider="deepgram",
+        token="dg_token",
+        expires_in_seconds=60,
+        sample_rate=16_000,
+        audio_format="linear16",
+        language="multi",
+        channels=1,
+        model="nova-3",
+        keep_alive_interval_seconds=4,
+        commit_strategy=None,
+        no_verbatim=False,
+        websocket_url="wss://api.deepgram.com/v1/listen?model=nova-3",
+        auth_scheme="bearer",
+    )
+    mint = AsyncMock(return_value=session)
+    replacements = [("WaiCompyuter", "WaiComputer"), ("Bolnichny", "больничный")]
+    hints = RealtimePersonalizationHints(keyterms=["WaiComputer"], replacements=replacements)
+
+    with patch(
+        "app.api.routes.realtime_transcription.create_realtime_transcription_session",
+        new=mint,
+    ), patch(
+        "app.api.routes.realtime_transcription.load_user_realtime_hints",
+        new=AsyncMock(return_value=hints),
+    ) as load_hints:
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            response = await client.post(
+                "/api/transcription/session",
+                headers={"Authorization": "Bearer fake-token"},
+                json={"language": "multi", "channels": 1, "purpose": "dictation"},
+            )
+
+    assert response.status_code == 200
+    load_hints.assert_awaited_once()
+    assert load_hints.await_args.kwargs["user_id"] == mock_authenticated_user.id
+    assert mint.await_args.kwargs["keyterms"] == ["WaiComputer"]
+    assert mint.await_args.kwargs["replacements"] == replacements
 
 
 @pytest.mark.asyncio

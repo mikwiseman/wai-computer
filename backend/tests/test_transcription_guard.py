@@ -134,6 +134,35 @@ async def test_breaker_opens_immediately_on_402(settings, monkeypatch, fake_redi
     assert await guard.provider_breaker_open() is False
 
 
+async def test_breaker_open_alert_fires_once_per_transition(
+    settings, monkeypatch, fake_redis
+):
+    monkeypatch.setattr(settings, "deepgram_breaker_failure_threshold", 5)
+    sentry_calls: list[tuple] = []
+    ops_calls: list[dict] = []
+    monkeypatch.setattr(
+        guard,
+        "capture_sentry_anomaly",
+        lambda *args, **kwargs: sentry_calls.append((args, kwargs)),
+    )
+    monkeypatch.setattr(
+        guard,
+        "notify_ops",
+        lambda **kwargs: ops_calls.append(kwargs),
+    )
+
+    await guard.record_provider_result(success=False, status_code=402)
+    await guard.record_provider_result(success=False, status_code=402)
+    assert len(sentry_calls) == 1
+    assert len(ops_calls) == 1
+    assert ops_calls[0]["alert_code"] == "transcription.deepgram_breaker_open"
+
+    await guard.record_provider_result(success=True)
+    await guard.record_provider_result(success=False, status_code=402)
+    assert len(sentry_calls) == 2
+    assert len(ops_calls) == 2
+
+
 async def test_breaker_opens_on_failure_streak(settings, monkeypatch, fake_redis):
     monkeypatch.setattr(settings, "deepgram_breaker_failure_threshold", 3)
     await guard.record_provider_result(success=False, status_code=500)

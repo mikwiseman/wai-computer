@@ -11,6 +11,7 @@ from sqlalchemy.exc import MissingGreenlet
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.summarizer import SummaryResult
+from app.models.entity import Entity, EntityMention
 from app.models.person import Person
 from app.models.recording import (
     ActionItem,
@@ -50,6 +51,45 @@ async def _register_headers(client: AsyncClient, email: str) -> dict:
     assert response.status_code == 200
     data = response.json()
     return {"Authorization": f"Bearer {data['access_token']}"}
+
+
+async def test_permanent_delete_removes_entity_mentions_and_dirties_entity(
+    client: AsyncClient,
+    db_session: AsyncSession,
+):
+    headers = await _register_headers(client, "recording-delete-mentions@example.com")
+    created = await _create_recording(client, headers, title="Delete mentions")
+    recording_id = UUID(created["id"])
+    recording = (
+        await db_session.execute(select(Recording).where(Recording.id == recording_id))
+    ).scalar_one()
+    entity = Entity(user_id=recording.user_id, type="topic", name="Project Atlas")
+    db_session.add(entity)
+    await db_session.flush()
+    db_session.add(
+        EntityMention(
+            user_id=recording.user_id,
+            entity_id=entity.id,
+            source_kind="recording",
+            source_id=recording.id,
+        )
+    )
+    await db_session.flush()
+
+    response = await client.delete(
+        f"/api/recordings/{recording.id}?permanent=true",
+        headers=headers,
+    )
+    assert response.status_code == 204
+
+    remaining = (
+        await db_session.execute(
+            select(EntityMention).where(EntityMention.source_id == recording.id)
+        )
+    ).scalars().all()
+    assert remaining == []
+    await db_session.refresh(entity)
+    assert entity.dossier_dirty is True
 
 
 async def _mark_audio_backed_ready(

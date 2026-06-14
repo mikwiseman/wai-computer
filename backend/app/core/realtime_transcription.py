@@ -69,6 +69,7 @@ class RealtimeTranscriptionProxyClaims:
     model: str
     purpose: Literal["recording", "dictation"]
     keyterms: list[str] = field(default_factory=list)
+    replacements: list[tuple[str, str]] = field(default_factory=list)
 
 
 def create_realtime_proxy_token(
@@ -79,6 +80,7 @@ def create_realtime_proxy_token(
     model: str,
     purpose: Literal["recording", "dictation"],
     keyterms: list[str] | None = None,
+    replacements: list[tuple[str, str]] | None = None,
     ttl_seconds: int = REALTIME_PROXY_TOKEN_TTL_SECONDS,
 ) -> tuple[str, int]:
     settings = get_settings()
@@ -93,6 +95,10 @@ def create_realtime_proxy_token(
         "model": model,
         "purpose": purpose,
         "keyterms": list(keyterms or []),
+        "replacements": [
+            {"find": find, "replace": replace}
+            for find, replace in list(replacements or [])
+        ],
     }
     token = jwt.encode(payload, settings.jwt_secret, algorithm=settings.jwt_algorithm)
     return token, ttl_seconds
@@ -116,6 +122,7 @@ def decode_realtime_proxy_token(token: str) -> RealtimeTranscriptionProxyClaims:
     purpose = payload.get("purpose")
     channels = payload.get("channels")
     keyterms_payload = payload.get("keyterms")
+    replacements_payload = payload.get("replacements")
 
     if not isinstance(subject, str) or not subject:
         raise ValueError("Invalid realtime transcription token subject")
@@ -135,6 +142,20 @@ def decode_realtime_proxy_token(token: str) -> RealtimeTranscriptionProxyClaims:
         keyterms = keyterms_payload
     else:
         raise ValueError("Invalid realtime transcription token keyterms")
+    if replacements_payload is None:
+        replacements: list[tuple[str, str]] = []
+    elif isinstance(replacements_payload, list):
+        replacements = []
+        for item in replacements_payload:
+            if not isinstance(item, dict):
+                raise ValueError("Invalid realtime transcription token replacements")
+            find = item.get("find")
+            replace = item.get("replace")
+            if not isinstance(find, str) or not isinstance(replace, str):
+                raise ValueError("Invalid realtime transcription token replacements")
+            replacements.append((find, replace))
+    else:
+        raise ValueError("Invalid realtime transcription token replacements")
 
     return RealtimeTranscriptionProxyClaims(
         subject=subject,
@@ -143,6 +164,7 @@ def decode_realtime_proxy_token(token: str) -> RealtimeTranscriptionProxyClaims:
         model=model,
         purpose=purpose,
         keyterms=keyterms,
+        replacements=replacements,
     )
 
 
@@ -155,6 +177,7 @@ async def _build_deepgram_realtime_session(
     subject: str,
     websocket_url: str,
     keyterms: list[str] | None = None,
+    replacements: list[tuple[str, str]] | None = None,
 ) -> RealtimeTranscriptionSession:
     try:
         resolved_language = validate_deepgram_language(language)
@@ -170,6 +193,7 @@ async def _build_deepgram_realtime_session(
         purpose=purpose,
         model=model,
         keyterms=keyterms,
+        replacements=replacements,
     )
     return RealtimeTranscriptionSession(
         provider="deepgram",
@@ -196,6 +220,7 @@ async def create_realtime_transcription_session(
     user: User | None = None,
     websocket_url: str = "ws://localhost:8000/api/transcription/stream",
     keyterms: list[str] | None = None,
+    replacements: list[tuple[str, str]] | None = None,
 ) -> RealtimeTranscriptionSession:
     """Create a realtime transcription session for the active speech runtime.
 
@@ -235,6 +260,7 @@ async def create_realtime_transcription_session(
         subject=str(getattr(user, "id", "system")),
         websocket_url=websocket_url,
         keyterms=keyterms,
+        replacements=replacements,
     )
 
 
@@ -247,4 +273,5 @@ def build_deepgram_realtime_url_from_proxy_claims(
         purpose=claims.purpose,
         model=claims.model,
         keyterms=claims.keyterms,
+        replacements=claims.replacements,
     )

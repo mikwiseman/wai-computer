@@ -42,6 +42,7 @@ async def test_transcription_dispatches_to_deepgram_file_stt():
         keyterms=None,
         replacements=None,
         max_channels=2,
+        audio_duration_seconds=None,
     )
 
 
@@ -77,6 +78,7 @@ async def test_transcription_accepts_usage_purpose_without_forwarding_to_provide
         keyterms=None,
         replacements=None,
         max_channels=2,
+        audio_duration_seconds=None,
     )
     assert any(
         breadcrumb.get("data", {}).get("usage_purpose") == "recording"
@@ -115,6 +117,7 @@ async def test_transcription_ignores_removed_user_file_stt_choice():
         keyterms=None,
         replacements=None,
         max_channels=2,
+        audio_duration_seconds=None,
     )
 
 

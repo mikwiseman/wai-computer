@@ -89,6 +89,7 @@ struct LiveRecordingView: View {
                                             .font(Typography.reading)
                                             .lineSpacing(6)
                                             .textSelection(.enabled)
+                                            .accessibilityAddTraits(.updatesFrequently)
                                     }
                                     if !recordingVM.interimTranscript.isEmpty {
                                         Text(recordingVM.interimTranscript)
@@ -96,6 +97,7 @@ struct LiveRecordingView: View {
                                             .lineSpacing(6)
                                             .foregroundStyle(Palette.textSecondary)
                                             .textSelection(.enabled)
+                                            .accessibilityHidden(true)
                                             .accessibilityLabel(t(
                                                 "Interim transcript — may change as you speak",
                                                 "Промежуточная расшифровка — текст может уточняться"
@@ -284,6 +286,7 @@ struct LiveRecordingView: View {
             Text(recordingVM.formattedDuration)
                 .font(Typography.monoLarge)
                 .foregroundStyle(Palette.textSecondary)
+                .accessibilityAddTraits(.updatesFrequently)
 
             Spacer()
 

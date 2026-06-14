@@ -166,11 +166,24 @@ async def test_create_multiple_folders_sorted_alphabetically(
 
 
 @pytest.mark.asyncio
-async def test_folder_counts_and_delete_cover_chats(
+async def test_folder_counts_include_recordings_items_and_chats(
     client: AsyncClient, auth_headers: dict
 ) -> None:
-    """Filed Wai chats count toward the folder badge and survive folder deletion unfiled."""
-    folder = await _create_folder(client, auth_headers, name="Chats")
+    """Folder badges aggregate recordings, materials, and Wai chats."""
+    folder = await _create_folder(client, auth_headers, name="Mixed")
+    recording = await _create_recording(client, auth_headers, folder_id=folder["id"])
+    item_response = await client.post(
+        "/api/items",
+        headers=auth_headers,
+        json={
+            "source": "url",
+            "kind": "article",
+            "title": "Foldered article",
+            "url": "https://example.com/foldered-article",
+            "folder_id": folder["id"],
+        },
+    )
+    assert item_response.status_code == 201, item_response.text
     chat = (
         await client.post("/api/companion/chats", json={}, headers=auth_headers)
     ).json()
@@ -184,7 +197,7 @@ async def test_folder_counts_and_delete_cover_chats(
     listed = await client.get("/api/folders", headers=auth_headers)
     assert listed.status_code == 200
     target = next(f for f in listed.json() if f["id"] == folder["id"])
-    assert target["item_count"] == 1
+    assert target["item_count"] == 3
 
     delete_response = await client.delete(
         f"/api/folders/{folder['id']}", headers=auth_headers
@@ -196,3 +209,8 @@ async def test_folder_counts_and_delete_cover_chats(
     )
     assert detail.status_code == 200
     assert detail.json()["folder_id"] is None
+    recording_detail = await client.get(
+        f"/api/recordings/{recording['id']}", headers=auth_headers
+    )
+    assert recording_detail.status_code == 200
+    assert recording_detail.json()["folder_id"] is None

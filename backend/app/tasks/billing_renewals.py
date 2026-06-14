@@ -155,7 +155,7 @@ async def charge_tinkoff_subscription(
         logger.exception("billing renewal failed subscription_id=%s", sub.id)
         # Tell the user the renewal failed so they can fix their card before
         # access lapses. Best-effort — never re-raise into the renewal loop.
-        await send_payment_failed_email(user.email, locale=user.region)
+        await send_payment_failed_email(user.email, locale=user.default_language)
         return "failed"
 
 
@@ -241,7 +241,7 @@ async def _send_due_renewal_reminders_in_session(db: AsyncSession) -> dict[str, 
             amount=Decimal(amount_rub),
             currency="RUB",
             next_charge_at=charge_at,
-            locale=user.region,
+            locale=user.default_language,
         )
         db.add(
             BillingEvent(

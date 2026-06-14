@@ -69,6 +69,12 @@ class TermCandidate:
     frequency: int
 
 
+@dataclass(frozen=True)
+class RealtimePersonalizationHints:
+    keyterms: list[str]
+    replacements: list[tuple[str, str]]
+
+
 def _is_cyrillic_char(char: str) -> bool:
     """True for characters in the Cyrillic Unicode blocks.
 
@@ -196,6 +202,59 @@ async def load_user_keyterms(
             raw_terms.append(word.replacement)
 
     return sanitize_keyterms(raw_terms, max_terms=100, max_chars=100, max_words=8, token_budget=500)
+
+
+async def load_user_realtime_hints(
+    db: AsyncSession,
+    *,
+    user_id: UUID,
+    purpose: str,
+) -> RealtimePersonalizationHints:
+    """Load live-STT keyterm and replacement hints without duplicate queries."""
+    del purpose
+    terms_result = await db.execute(
+        select(PersonalizationTerm)
+        .where(
+            PersonalizationTerm.user_id == user_id,
+            PersonalizationTerm.status == "active",
+        )
+        .order_by(PersonalizationTerm.frequency.desc(), PersonalizationTerm.updated_at.desc())
+    )
+    raw_terms: list[str] = []
+    for term in terms_result.scalars():
+        raw_terms.append(term.term)
+        if term.replacement:
+            raw_terms.append(term.replacement)
+
+    replacements: list[tuple[str, str]] = []
+    dictionary_result = await db.execute(
+        select(DictationDictionaryWord)
+        .where(DictationDictionaryWord.user_id == user_id)
+        .order_by(DictationDictionaryWord.updated_at.desc())
+    )
+    for word in dictionary_result.scalars():
+        source = (word.word or "").strip()
+        replacement = (word.replacement or "").strip()
+        raw_terms.append(word.word)
+        if replacement:
+            raw_terms.append(replacement)
+        if not source or not replacement:
+            continue
+        if source.casefold() == replacement.casefold():
+            continue
+        if len(replacements) < 200:
+            replacements.append((source, replacement))
+
+    return RealtimePersonalizationHints(
+        keyterms=sanitize_keyterms(
+            raw_terms,
+            max_terms=100,
+            max_chars=100,
+            max_words=8,
+            token_budget=500,
+        ),
+        replacements=replacements,
+    )
 
 
 async def load_user_replacements(

@@ -14,6 +14,7 @@
 		2CC3409C8A45B8D56F34330D /* TelegramSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CFD37BE95D0862C344C34B5F /* TelegramSettingsView.swift */; };
 		2DA3BC479796D3F31E971995 /* AppIcon.icon in Resources */ = {isa = PBXBuildFile; fileRef = 958F2DC590527AAC94036EFC /* AppIcon.icon */; };
 		2E80869D54686BB363242323 /* ItemDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C84CA0F937E4362EE30F8EF8 /* ItemDetailView.swift */; };
+		35B5A1589B089007A1AC4F77 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 205A30CEB2092309AFAD3B96 /* PrivacyInfo.xcprivacy */; };
 		3781A67DB4EF9E827F3AEDAE /* DictationHistoryStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = C729626D2D9EBB512E95D0EC /* DictationHistoryStore.swift */; };
 		38308F96BE0E9466A8680685 /* OnboardingPage.swift in Sources */ = {isa = PBXBuildFile; fileRef = A530B1CC229C71FC31649323 /* OnboardingPage.swift */; };
 		386D86DC6CF31550CB5001D1 /* McpConnectView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 97968DE3F1803173874F4E13 /* McpConnectView.swift */; };
@@ -59,6 +60,7 @@
 		121A5759092B96CD66C56311 /* LanguagePickerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LanguagePickerView.swift; sourceTree = "<group>"; };
 		1B7BB5BFDB9B1891E6E23F36 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		1D1E8066A665D192CD1E2565 /* WaiHomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WaiHomeView.swift; sourceTree = "<group>"; };
+		205A30CEB2092309AFAD3B96 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		33331DB5948E7060A6CCDAF0 /* DictationHistoryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DictationHistoryView.swift; sourceTree = "<group>"; };
 		47FC91502BD1FED9F6481949 /* AppLanguagePicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLanguagePicker.swift; sourceTree = "<group>"; };
 		480CE408E8D56469DAE302D4 /* CapturedFeedView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CapturedFeedView.swift; sourceTree = "<group>"; };
@@ -148,6 +150,7 @@
 			children = (
 				958F2DC590527AAC94036EFC /* AppIcon.icon */,
 				A85E11C35CBE283D2101267D /* Assets.xcassets */,
+				205A30CEB2092309AFAD3B96 /* PrivacyInfo.xcprivacy */,
 				DBA8DA89058F9EA0C2851F45 /* App */,
 				61218F6D38CD03677BA3F634 /* Core */,
 				6A9ECFD356CFCA5FEDCD8A18 /* Features */,
@@ -345,6 +348,7 @@
 			files = (
 				2DA3BC479796D3F31E971995 /* AppIcon.icon in Resources */,
 				63F1EC864866520DD47E1FED /* Assets.xcassets in Resources */,
+				35B5A1589B089007A1AC4F77 /* PrivacyInfo.xcprivacy in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

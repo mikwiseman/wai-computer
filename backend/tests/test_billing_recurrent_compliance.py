@@ -47,6 +47,7 @@ async def _ru_user(client: AsyncClient, db: AsyncSession, email: str) -> tuple[s
     bearer = await _register(client, email)
     user = (await db.execute(select(User).where(User.email == email))).scalar_one()
     user.region = "ru"
+    user.default_language = "en"
     await db.flush()
     return bearer, user
 
@@ -290,7 +291,7 @@ async def test_active_tinkoff_event_sends_charge_email_once(
     assert kwargs["amount"] == Decimal("999.00")
     assert kwargs["currency"] == "RUB"
     assert kwargs["period"] == "month"
-    assert kwargs["locale"] == "ru"
+    assert kwargs["locale"] == user.default_language
 
 
 # --------------------------------------------------------------------------
@@ -332,6 +333,7 @@ async def test_renewal_failure_sends_payment_failed_email(
     assert sub.tinkoff_next_charge_at is None
     spy.assert_awaited_once()
     assert spy.await_args.args[0] == user.email
+    assert spy.await_args.kwargs["locale"] == user.default_language
 
 
 # --------------------------------------------------------------------------
@@ -364,6 +366,7 @@ async def test_renewal_reminders_email_and_dedupe(
     first = await send_due_renewal_reminders(db_session=db_session)
     assert first == {"reminded": 1}
     spy.assert_awaited_once()
+    assert spy.await_args.kwargs["locale"] == user.default_language
     markers = (
         await db_session.execute(
             select(BillingEvent).where(
@@ -415,6 +418,7 @@ async def test_send_due_renewal_reminders_uses_db_context(
     result = await send_due_renewal_reminders()
     assert result == {"reminded": 1}
     spy.assert_awaited_once()
+    assert spy.await_args.kwargs["locale"] == user.default_language
 
 
 def test_renewal_reminder_celery_task_runs_async_core(

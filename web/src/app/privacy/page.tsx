@@ -1,9 +1,17 @@
 import Link from "next/link";
+import type { Metadata } from "next";
 import styles from "../legal.module.css";
 
-export const metadata = {
+export const metadata: Metadata = {
   title: "Privacy Policy — WaiComputer",
   description: "How WaiComputer handles account, recording, transcript, and diagnostics data.",
+  alternates: {
+    canonical: "https://wai.computer/privacy",
+    languages: {
+      en: "https://wai.computer/privacy",
+      ru: "https://wai.computer/ru/privacy",
+    },
+  },
 };
 
 export default function PrivacyPage() {

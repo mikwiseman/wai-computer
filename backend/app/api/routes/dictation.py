@@ -9,6 +9,7 @@ Two concerns share this module:
 import asyncio
 import json
 import logging
+import re
 import time
 from dataclasses import dataclass
 from datetime import datetime
@@ -64,6 +65,139 @@ MAX_CLEANUP_OUTPUT_TOKENS = 65_536
 CLEANUP_REASONING_TOKEN_RESERVE = 384
 CLEANUP_OUTPUT_TOKEN_QUANTUM = 256
 CEREBRAS_RATE_LIMIT_RETRY_DELAYS_SECONDS = (1.0, 2.0)
+MAX_CLEANUP_PROTECTED_TERMS = 100
+PROTECTED_TERM_EDGE_CHARS = " \t\r\n.,;:!?()[]{}<>\"'“”‘’"
+URL_TOKEN_RE = re.compile(r"\b(?:https?://|www\.)\S+", re.IGNORECASE)
+EMAIL_TOKEN_RE = re.compile(
+    r"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b",
+    re.IGNORECASE,
+)
+ISSUE_ID_TOKEN_RE = re.compile(r"\b[A-Z][A-Z0-9]+-\d+\b")
+NONSPACE_TOKEN_RE = re.compile(r"\S+")
+CONTENT_WORD_RE = re.compile(r"[^\W_]+(?:['’-][^\W_]+)*", re.UNICODE)
+CONTENT_FILLER_TOKENS = frozenset(
+    {
+        "um",
+        "uh",
+        "er",
+        "ah",
+        "like",
+        "basically",
+        "actually",
+        "well",
+        "so",
+        "э",
+        "ээ",
+        "эээ",
+        "а",
+        "аа",
+        "ааа",
+        "ну",
+        "вот",
+        "типа",
+        "значит",
+    }
+)
+CONTENT_FUNCTION_TOKENS = frozenset(
+    {
+        "i",
+        "me",
+        "my",
+        "we",
+        "us",
+        "our",
+        "you",
+        "your",
+        "he",
+        "him",
+        "his",
+        "she",
+        "her",
+        "it",
+        "its",
+        "they",
+        "them",
+        "their",
+        "this",
+        "that",
+        "these",
+        "those",
+        "a",
+        "an",
+        "the",
+        "to",
+        "of",
+        "in",
+        "on",
+        "at",
+        "by",
+        "for",
+        "with",
+        "from",
+        "as",
+        "and",
+        "or",
+        "but",
+        "if",
+        "then",
+        "than",
+        "is",
+        "are",
+        "was",
+        "were",
+        "be",
+        "been",
+        "being",
+        "am",
+        "have",
+        "has",
+        "had",
+        "do",
+        "does",
+        "did",
+        "will",
+        "would",
+        "should",
+        "could",
+        "can",
+        "may",
+        "might",
+        "must",
+        "please",
+        "что",
+        "мы",
+        "вы",
+        "они",
+        "она",
+        "оно",
+        "это",
+        "как",
+        "для",
+        "или",
+        "но",
+        "на",
+        "в",
+        "во",
+        "с",
+        "со",
+        "по",
+        "из",
+        "от",
+        "до",
+    }
+)
+CONTENT_ALWAYS_PRESERVE_TOKENS = frozenset(
+    {
+        "no",
+        "not",
+        "never",
+        "without",
+        "не",
+        "нет",
+        "никогда",
+        "без",
+    }
+)
 
 
 def _dictation_cleanup_reasoning_effort(cleanup_level: str) -> str:
@@ -84,6 +218,11 @@ Rules:
 - Remove false starts and self-corrections while keeping the final intended
   version, for example "мы х-- мы предлагаем" becomes "мы предлагаем".
 - Fix only obvious grammar, capitalization, punctuation, and paragraph breaks.
+- Do not replace, normalize, or guess content words, names, product names,
+  technical terms, issue IDs, numbers, URLs, commands, paths, code-like tokens,
+  or mixed-language terms. If a word looks wrong but is not a filler or explicit
+  self-correction, keep it as dictated unless the user's dictionary supplies the
+  spelling.
 - Preserve the original language, meaning, tone, style, terminology, names,
   claims, and sentence order.
 - Do not summarize, add information, change the meaning, or make the text more
@@ -103,6 +242,11 @@ Rules:
   awkward dictated phrasing.
 - Make sentences clearer and more concise when the same meaning can be
   expressed directly.
+- Do not replace, normalize, or guess content words, names, product names,
+  technical terms, issue IDs, numbers, URLs, commands, paths, code-like tokens,
+  or mixed-language terms. If a word looks wrong but is not a filler or explicit
+  self-correction, keep it as dictated unless the user's dictionary supplies the
+  spelling.
 - Preserve the original language, meaning, tone, terminology, names, claims,
   and important sentence order.
 - Do not summarize, add information, invent intent, or make the text formal
@@ -120,6 +264,11 @@ Rules:
   redundant phrasing while preserving the final intended message.
 - Rewrite for polished, concise prose with clear paragraphing and natural
   punctuation.
+- Do not replace, normalize, or guess content words, names, product names,
+  technical terms, issue IDs, numbers, URLs, commands, paths, code-like tokens,
+  or mixed-language terms. If a word looks wrong but is not a filler or explicit
+  self-correction, keep it as dictated unless the user's dictionary supplies the
+  spelling.
 - Preserve the original language, meaning, tone, terminology, names, claims,
   decisions, and any concrete details.
 - Do not summarize away details, add information, invent intent, or change
@@ -208,11 +357,22 @@ class CleanupCerebrasRequest:
     """Prepared Cerebras Chat Completions request for dictation cleanup."""
 
     text: str
+    cleanup_level: str
     model: str
     reasoning_effort: str
     instructions: str
     input: str
     max_completion_tokens: int
+    protected_terms: tuple["CleanupProtectedTerm", ...]
+
+
+@dataclass(frozen=True)
+class CleanupProtectedTerm:
+    """A text term the cleanup model must preserve."""
+
+    value: str
+    key: str
+    literal: bool
 
 
 class TranslationRequest(BaseModel):
@@ -290,6 +450,258 @@ def _build_vocabulary_block(vocabulary: list[str] | None) -> str:
         "rephrase. Do not invent occurrences that aren't in the audio.\n"
         f"<preserve_exact>\n{joined}\n</preserve_exact>"
     )
+
+
+def _compact_cleanup_term_key(value: str) -> str:
+    """Casefold and remove separators for matching split/unsplit vocabulary."""
+    return "".join(ch for ch in value.casefold() if ch.isalnum())
+
+
+def _clean_protected_term(value: str) -> str:
+    return value.strip(PROTECTED_TERM_EDGE_CHARS)
+
+
+def _vocabulary_term_rank(term: str) -> tuple[int, int, int]:
+    """Prefer canonical replacement-like spellings over split originals."""
+    has_whitespace = any(ch.isspace() for ch in term)
+    uppercase_count = sum(1 for ch in term if ch.isupper())
+    return (0 if has_whitespace else 1, uppercase_count, len(term))
+
+
+def _is_numeric_protected_token(token: str) -> bool:
+    compact = _compact_cleanup_term_key(token)
+    return bool(compact) and compact.isdigit()
+
+
+def _is_literal_protected_token(token: str) -> bool:
+    if URL_TOKEN_RE.fullmatch(token) or EMAIL_TOKEN_RE.fullmatch(token):
+        return True
+    if ISSUE_ID_TOKEN_RE.fullmatch(token):
+        return True
+    if "/" in token or "\\" in token or "_" in token:
+        return True
+    if "." in token and any(ch.isalpha() for ch in token):
+        return True
+    letters = [ch for ch in token if ch.isalpha()]
+    if len(letters) < 2:
+        return False
+    if sum(1 for ch in letters if ch.isupper()) >= 2:
+        return True
+    letter_string = "".join(letters)
+    initial_capitalized_common_word = (
+        len(letter_string) >= 2
+        and letter_string[0].isupper()
+        and letter_string[1:].islower()
+    )
+    return (
+        any(ch.isupper() for ch in letters)
+        and any(ch.islower() for ch in letters)
+        and not initial_capitalized_common_word
+    )
+
+
+def _cleanup_protected_terms(
+    text: str,
+    vocabulary: list[str] | None,
+) -> tuple[CleanupProtectedTerm, ...]:
+    """Find words/phrases cleanup must not rewrite.
+
+    The returned terms are metadata only; callers must not log their values.
+    """
+    compact_text = _compact_cleanup_term_key(text)
+    terms: list[CleanupProtectedTerm] = []
+    seen: set[tuple[str, str]] = set()
+
+    def append_term(value: str, *, literal: bool) -> None:
+        if len(terms) >= MAX_CLEANUP_PROTECTED_TERMS:
+            return
+        cleaned = _clean_protected_term(value)
+        if not cleaned:
+            return
+        key = cleaned.casefold() if literal else _compact_cleanup_term_key(cleaned)
+        if not key:
+            return
+        seen_key = ("literal" if literal else "compact", key)
+        if seen_key in seen:
+            return
+        seen.add(seen_key)
+        terms.append(CleanupProtectedTerm(value=cleaned, key=key, literal=literal))
+
+    if vocabulary:
+        best_vocabulary_by_key: dict[str, str] = {}
+        for raw in vocabulary:
+            term = _clean_protected_term(raw)
+            key = _compact_cleanup_term_key(term)
+            if not key or key not in compact_text:
+                continue
+            previous = best_vocabulary_by_key.get(key)
+            if previous is None or _vocabulary_term_rank(term) > _vocabulary_term_rank(previous):
+                best_vocabulary_by_key[key] = term
+        for term in best_vocabulary_by_key.values():
+            append_term(term, literal=True)
+
+    for pattern in (URL_TOKEN_RE, EMAIL_TOKEN_RE, ISSUE_ID_TOKEN_RE):
+        for match in pattern.finditer(text):
+            append_term(match.group(0), literal=True)
+
+    for match in NONSPACE_TOKEN_RE.finditer(text):
+        token = _clean_protected_term(match.group(0))
+        if not token:
+            continue
+        if _is_numeric_protected_token(token):
+            append_term(token, literal=False)
+        elif _is_literal_protected_token(token):
+            append_term(token, literal=True)
+
+    return tuple(terms)
+
+
+def _validate_cleanup_preserves_protected_terms(
+    cleaned: str,
+    protected_terms: tuple[CleanupProtectedTerm, ...],
+) -> None:
+    if not protected_terms:
+        return
+    cleaned_literal = cleaned.casefold()
+    cleaned_compact = _compact_cleanup_term_key(cleaned)
+    for term in protected_terms:
+        if term.literal:
+            if term.key not in cleaned_literal:
+                raise CerebrasResponseError("Dictation cleanup changed protected terms.")
+        elif term.key not in cleaned_compact:
+            raise CerebrasResponseError("Dictation cleanup changed protected terms.")
+
+
+def _cleanup_content_token_key(token: str) -> str:
+    return _compact_cleanup_term_key(token)
+
+
+def _cleanup_content_stem(key: str) -> str:
+    if len(key) > 5 and key.endswith("ies"):
+        return key[:-3] + "y"
+    if len(key) > 4 and key.endswith("s"):
+        return key[:-1]
+    if len(key) > 5 and key.endswith("ing"):
+        stem = key[:-3]
+        if len(stem) >= 2 and stem[-1] == stem[-2]:
+            stem = stem[:-1]
+        return stem
+    if len(key) > 4 and key.endswith("ed"):
+        return key[:-2]
+    return key
+
+
+def _cleanup_token_similarity(left: str, right: str) -> float:
+    if left == right:
+        return 1.0
+    if not left or not right:
+        return 0.0
+    previous = list(range(len(right) + 1))
+    current = [0] * (len(right) + 1)
+    for left_index, left_char in enumerate(left, start=1):
+        current[0] = left_index
+        for right_index, right_char in enumerate(right, start=1):
+            substitution_cost = 0 if left_char == right_char else 1
+            current[right_index] = min(
+                previous[right_index] + 1,
+                current[right_index - 1] + 1,
+                previous[right_index - 1] + substitution_cost,
+            )
+        previous, current = current, previous
+    distance = previous[-1]
+    return 1.0 - (distance / max(len(left), len(right)))
+
+
+def _cleanup_content_keys_equivalent(left: str, right: str) -> bool:
+    if left == right:
+        return True
+    left_stem = _cleanup_content_stem(left)
+    right_stem = _cleanup_content_stem(right)
+    if left_stem == right_stem:
+        return True
+    if len(left) >= 5 and len(right) >= 5:
+        return _cleanup_token_similarity(left, right) >= 0.82
+    return False
+
+
+def _protected_content_keys(
+    protected_terms: tuple[CleanupProtectedTerm, ...],
+) -> tuple[str, ...]:
+    return tuple(
+        key
+        for key in (_compact_cleanup_term_key(term.value) for term in protected_terms)
+        if key
+    )
+
+
+def _content_key_covered_by_protected_term(key: str, protected_keys: tuple[str, ...]) -> bool:
+    return any(key in protected_key or protected_key in key for protected_key in protected_keys)
+
+
+def _cleanup_content_keys(
+    text: str,
+    protected_terms: tuple[CleanupProtectedTerm, ...],
+) -> list[str]:
+    protected_keys = _protected_content_keys(protected_terms)
+    keys: list[str] = []
+    for match in CONTENT_WORD_RE.finditer(text):
+        key = _cleanup_content_token_key(match.group(0))
+        if not key or not any(ch.isalpha() for ch in key):
+            continue
+        if _content_key_covered_by_protected_term(key, protected_keys):
+            continue
+        if key in CONTENT_FILLER_TOKENS or key in CONTENT_FUNCTION_TOKENS:
+            continue
+        if len(key) < 4 and key not in CONTENT_ALWAYS_PRESERVE_TOKENS:
+            continue
+        keys.append(key)
+    return keys
+
+
+def _validate_light_cleanup_preserves_content_words(
+    *,
+    raw_text: str,
+    cleaned: str,
+    protected_terms: tuple[CleanupProtectedTerm, ...],
+) -> None:
+    raw_keys = _cleanup_content_keys(raw_text, protected_terms)
+    cleaned_keys = _cleanup_content_keys(cleaned, protected_terms)
+    if not raw_keys and not cleaned_keys:
+        return
+
+    matched_cleaned_indexes: set[int] = set()
+    missing_raw_key = False
+    for raw_key in raw_keys:
+        match_index = next(
+            (
+                index
+                for index, cleaned_key in enumerate(cleaned_keys)
+                if index not in matched_cleaned_indexes
+                and _cleanup_content_keys_equivalent(raw_key, cleaned_key)
+            ),
+            None,
+        )
+        if match_index is None:
+            missing_raw_key = True
+            break
+        matched_cleaned_indexes.add(match_index)
+
+    added_cleaned_key = any(
+        index not in matched_cleaned_indexes
+        for index, _ in enumerate(cleaned_keys)
+    )
+    if missing_raw_key or added_cleaned_key:
+        raise CerebrasResponseError("Dictation cleanup changed content words.")
+
+
+def _validate_cleanup_output(cleaned: str, prepared: CleanupCerebrasRequest) -> None:
+    _validate_cleanup_preserves_protected_terms(cleaned, prepared.protected_terms)
+    if prepared.cleanup_level == "light":
+        _validate_light_cleanup_preserves_content_words(
+            raw_text=prepared.text,
+            cleaned=cleaned,
+            protected_terms=prepared.protected_terms,
+        )
 
 
 def _build_context_block(context: DictationCleanupContext | None) -> str:
@@ -407,6 +819,7 @@ def _prepare_cleanup_cerebras_request(
 
     return CleanupCerebrasRequest(
         text=text,
+        cleanup_level=cleanup_level,
         model=model,
         reasoning_effort=_dictation_cleanup_reasoning_effort(cleanup_level),
         instructions=(
@@ -420,6 +833,7 @@ def _prepare_cleanup_cerebras_request(
             "</dictated_text>"
         ),
         max_completion_tokens=_cleanup_output_token_cap(text),
+        protected_terms=_cleanup_protected_terms(text, request.vocabulary),
     )
 
 
@@ -590,6 +1004,7 @@ async def _stream_cleanup_events(
         cleaned = assistant_text.strip()
         if not cleaned:
             raise CerebrasResponseError("Dictation cleanup returned empty text.")
+        _validate_cleanup_output(cleaned, prepared)
         response_for_usage = chat_completion_usage_response(
             model=response_model,
             usage=usage,
@@ -749,6 +1164,7 @@ async def cleanup_dictation(request: CleanupRequest, user: CurrentUser):
         )
 
         cleaned = chat_completion_text(response, operation="Dictation cleanup")
+        _validate_cleanup_output(cleaned, prepared)
 
         logger.info(
             "Dictation cleanup: %d chars → %d chars for user %s",

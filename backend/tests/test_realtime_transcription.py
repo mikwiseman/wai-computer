@@ -124,6 +124,31 @@ async def test_create_dictation_session_adds_english_dictation_params():
 
 
 @pytest.mark.asyncio
+async def test_create_dictation_session_carries_replacements_to_provider_url():
+    with patch(
+        "app.core.realtime_transcription.require_deepgram_api_key",
+        return_value="provider_key",
+    ):
+        session = await create_realtime_transcription_session(
+            language="multi",
+            channels=1,
+            purpose="dictation",
+            keyterms=["WaiComputer"],
+            replacements=[("WaiCompyuter", "WaiComputer"), ("Bolnichny", "больничный")],
+        )
+
+    claims = decode_realtime_proxy_token(session.token)
+    assert claims.replacements == [
+        ("WaiCompyuter", "WaiComputer"),
+        ("Bolnichny", "больничный"),
+    ]
+    provider_url = build_deepgram_realtime_url_from_proxy_claims(claims)
+    assert "keyterm=WaiComputer" in provider_url
+    assert "replace=waicompyuter%3AWaiComputer" in provider_url
+    assert "replace=bolnichny%3A" in provider_url
+
+
+@pytest.mark.asyncio
 async def test_create_dictation_session_skips_english_only_dictation_for_multi():
     with patch(
         "app.core.realtime_transcription.require_deepgram_api_key",
@@ -232,6 +257,9 @@ def _encode_proxy_payload(overrides: dict[str, object]) -> str:
         ({"channels": "two"}, "channels"),
         ({"keyterms": "not-a-list"}, "keyterms"),
         ({"keyterms": [1, 2]}, "keyterms"),
+        ({"replacements": "not-a-list"}, "replacements"),
+        ({"replacements": [{"find": "bad"}]}, "replacements"),
+        ({"replacements": [{"find": "bad", "replace": 123}]}, "replacements"),
     ],
 )
 def test_decode_realtime_proxy_token_rejects_invalid_claims(
@@ -253,6 +281,7 @@ def test_decode_realtime_proxy_token_accepts_missing_keyterms():
     claims = decode_realtime_proxy_token(_encode_proxy_payload({}))
 
     assert claims.keyterms == []
+    assert claims.replacements == []
 
 
 def test_decode_realtime_proxy_token_rejects_invalid_keyterms():

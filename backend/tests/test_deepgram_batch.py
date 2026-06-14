@@ -266,6 +266,44 @@ async def test_transcribe_audio_file_normalizes_m4a_content_type() -> None:
 
 
 @pytest.mark.asyncio
+async def test_transcribe_audio_file_scales_read_timeout_with_audio_duration() -> None:
+    response = httpx.Response(
+        200,
+        json={"results": {"utterances": []}},
+        request=httpx.Request("POST", "https://api.deepgram.com/v1/listen"),
+    )
+    captured: dict[str, httpx.Timeout] = {}
+
+    class FakeClient:
+        def __init__(self, *, timeout):
+            captured["timeout"] = timeout
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return False
+
+        async def post(self, *args, **kwargs):
+            return response
+
+    with (
+        patch("app.core.deepgram.get_settings") as mock_settings,
+        patch("app.core.deepgram.httpx.AsyncClient", FakeClient),
+    ):
+        mock_settings.return_value.deepgram_api_key = "deepgram-test-key"
+        await transcribe_audio_file(
+            b"long-audio",
+            content_type="audio/wav",
+            channels=1,
+            audio_duration_seconds=3600,
+        )
+
+    assert captured["timeout"].connect == 10.0
+    assert captured["timeout"].read > 300.0
+
+
+@pytest.mark.asyncio
 async def test_transcribe_audio_file_raises_when_results_not_object() -> None:
     response = httpx.Response(
         200,

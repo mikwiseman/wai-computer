@@ -219,10 +219,14 @@ export function LiveRecorder({
             </button>
           </div>
           {committed || interim ? (
-            <p className="live-recorder__transcript">
-              {committed}
-              {interim ? <span className="live-recorder__interim"> {interim}</span> : null}
-            </p>
+            <div className="live-recorder__transcript">
+              {committed ? <p aria-live="polite">{committed}</p> : null}
+              {interim ? (
+                <span className="live-recorder__interim" aria-hidden="true">
+                  {interim}
+                </span>
+              ) : null}
+            </div>
           ) : null}
         </div>
       )}
