@@ -11,6 +11,7 @@ import `is`.waiwai.computer.data.SettingsStore
 import `is`.waiwai.computer.data.WaiApi
 import `is`.waiwai.computer.sync.LocalRecordingManifest
 import `is`.waiwai.computer.sync.LocalRecordingStore
+import `is`.waiwai.computer.sync.PendingRecordingSyncPolicy
 import `is`.waiwai.computer.sync.PendingSyncWorkerScheduler
 import java.util.UUID
 import kotlinx.coroutines.Job
@@ -197,19 +198,7 @@ class RecordingViewModel(
             }
 
             val serverRecordingId = currentServerRecordingId ?: recordingId
-            runCatching {
-                val audioFile = localRecordingStore.audioFile(recordingId)
-                if (audioFile.exists()) {
-                    waiApi.uploadAudio(serverRecordingId, audioFile)
-                } else if (segments.isNotEmpty() && didFinalize) {
-                    waiApi.saveLiveTranscript(serverRecordingId, segments, duration.toInt())
-                } else {
-                    error("Recording audio file is missing")
-                }
-            }.onSuccess {
-                localRecordingStore.remove(recordingId)
-                _uiState.value = _uiState.value.copy(isServerComplete = true)
-            }.onFailure { error ->
+            suspend fun saveRetryableLocalFailure(message: String?) {
                 localRecordingStore.save(
                     LocalRecordingManifest(
                         recordingId = recordingId,
@@ -219,13 +208,34 @@ class RecordingViewModel(
                         durationSeconds = duration,
                         transcript = segments.joinToString(" ") { it.text }.ifBlank { null },
                         hasAudioFile = true,
-                        failureMessage = error.message,
+                        failureMessage = message,
                         localOnly = false,
                     ),
                     segments = segments,
                 )
                 syncScheduler.enqueue()
-                _uiState.value = _uiState.value.copy(error = error.message)
+                _uiState.value = _uiState.value.copy(error = message)
+            }
+
+            runCatching {
+                val audioFile = localRecordingStore.audioFile(recordingId)
+                if (audioFile.exists()) {
+                    waiApi.uploadAudio(serverRecordingId, audioFile)
+                } else if (segments.isNotEmpty() && didFinalize) {
+                    waiApi.saveLiveTranscript(serverRecordingId, segments, duration.toInt())
+                } else {
+                    error("Recording audio file is missing")
+                }
+            }.onSuccess { detail ->
+                val failureMessage = PendingRecordingSyncPolicy.failureMessage(detail)
+                if (failureMessage != null) {
+                    saveRetryableLocalFailure(failureMessage)
+                } else {
+                    localRecordingStore.remove(recordingId)
+                    _uiState.value = _uiState.value.copy(isServerComplete = true)
+                }
+            }.onFailure { error ->
+                saveRetryableLocalFailure(error.message)
             }
 
             reset()

@@ -270,6 +270,72 @@ class RecordingViewModelTest {
         unmockkAll()
     }
 
+    @Test
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun `server-side failed upload preserves local manifest and schedules retry`() = runTest {
+        val tempRoot = createTempDirectory("waicomputer-recording-server-fail").toFile()
+        val authStore = mockk<AuthStore>()
+        val settingsStore = mockk<SettingsStore>()
+        val waiApi = mockk<WaiApi>()
+        val scheduler = mockk<PendingSyncWorkerScheduler>()
+        val application = mockApplication(tempRoot)
+        val localStore = LocalRecordingStore(mockContext(tempRoot))
+        val authState = MutableStateFlow<AuthState>(
+            AuthState.Authenticated(
+                UserSummary("user-1", "mik@example.com", Instant.now().toString()),
+            ),
+        )
+
+        every { authStore.state } returns authState
+        coEvery { settingsStore.snapshot() } returns appSettings()
+        coEvery {
+            waiApi.createRecording(
+                title = any(),
+                type = any(),
+                language = any(),
+                folderId = any(),
+            )
+        } returns Recording(
+            id = "remote-server-failed",
+            type = RecordingType.note,
+            status = RecordingStatus.PendingUpload,
+            createdAt = Instant.now().toString(),
+        )
+        coEvery { waiApi.uploadAudio("remote-server-failed", any()) } returns RecordingDetail(
+            id = "remote-server-failed",
+            type = RecordingType.note,
+            status = RecordingStatus.Failed,
+            failureMessage = "Unsupported codec",
+            createdAt = Instant.now().toString(),
+        )
+        every { scheduler.enqueue() } just Runs
+        mockForegroundService()
+
+        val viewModel = RecordingViewModel(
+            application = application,
+            authStore = authStore,
+            settingsStore = settingsStore,
+            waiApi = waiApi,
+            localRecordingStore = localStore,
+            syncScheduler = scheduler,
+            audioRecorderFactory = { FakeAudioRecorder() },
+            webSocketFactory = { FakeWebSocket() },
+        )
+
+        viewModel.startRecording(permissionGranted = true)
+        advanceUntilIdle()
+        viewModel.stopRecording()
+        advanceUntilIdle()
+
+        val manifest = localStore.listPending().singleOrNull()
+        assertNotNull(manifest)
+        assertEquals("remote-server-failed", manifest!!.serverRecordingId)
+        assertEquals("Unsupported codec", manifest.failureMessage)
+        assertEquals("Unsupported codec", viewModel.uiState.value.error)
+        io.mockk.verify { scheduler.enqueue() }
+        unmockkAll()
+    }
+
     private fun mockForegroundService() {
         mockkObject(RecordingForegroundService.Companion)
         every { RecordingForegroundService.start(any()) } just Runs

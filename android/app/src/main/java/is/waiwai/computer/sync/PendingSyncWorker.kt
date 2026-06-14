@@ -78,6 +78,7 @@ class PendingSyncWorker(
                 waiApi.getRecording(recordingId)
             }
         }
+        PendingRecordingSyncPolicy.failureMessage(detail)?.let { error(it) }
         localRecordingStore.remove(manifest.recordingId)
         return detail
     }
