@@ -114,6 +114,17 @@ final class PendingRecordingSyncCoordinatorTests: XCTestCase {
         try writer.finalize()
     }
 
+    private func zeroWAVSizeFields(at url: URL) throws {
+        let handle = try FileHandle(forUpdating: url)
+        defer { try? handle.close() }
+
+        var zero: UInt32 = 0
+        try handle.seek(toOffset: 4)
+        try handle.write(contentsOf: Data(bytes: &zero, count: 4))
+        try handle.seek(toOffset: 40)
+        try handle.write(contentsOf: Data(bytes: &zero, count: 4))
+    }
+
     func testPendingRecordingSyncUploadsSegmentBackupAndRemovesLocalCopy() async throws {
         let recordingId = "pending-sync-\(UUID().uuidString)"
         defer { try? RecordingBackupStore.removeRecording(recordingId: recordingId) }
@@ -670,6 +681,52 @@ final class PendingRecordingSyncCoordinatorTests: XCTestCase {
         XCTAssertNotNil(try RecordingBackupStore.existingBackup(recordingId: recordingId))
         let manifest = try XCTUnwrap(RecordingBackupStore.manifest(recordingId: recordingId))
         XCTAssertFalse(manifest.isReadyForSync)
+    }
+
+    func testLaunchRecoveryUploadsAbandonedLocalRecordingBackup() async throws {
+        let recordingId = "pending-sync-abandoned-audio-\(UUID().uuidString)"
+        defer { try? RecordingBackupStore.removeRecording(recordingId: recordingId) }
+
+        try RecordingBackupStore.markHasAudioFile(recordingId: recordingId)
+        let audioURL = try RecordingBackupStore.audioFileURL(recordingId: recordingId)
+        try writeRealWAV(to: audioURL, seconds: 0.5)
+        try zeroWAVSizeFields(at: audioURL)
+
+        let client = makeClient()
+        await client.setAccessToken("test-token")
+
+        let synced = expectation(description: "abandoned local recording uploaded")
+        let observer = NotificationCenter.default.addObserver(
+            forName: .pendingRecordingSyncDidFinish,
+            object: nil,
+            queue: nil
+        ) { notification in
+            if notification.userInfo?["recordingId"] as? String == recordingId {
+                synced.fulfill()
+            }
+        }
+        defer { NotificationCenter.default.removeObserver(observer) }
+
+        MockURLProtocol.requestHandler = { request in
+            XCTAssertEqual(request.httpMethod, "POST")
+            XCTAssertEqual(request.url?.path, "/api/recordings/\(recordingId)/upload")
+
+            let response = HTTPURLResponse(
+                url: try XCTUnwrap(request.url),
+                statusCode: 200,
+                httpVersion: nil,
+                headerFields: nil
+            )!
+            return (response, self.responsePayload(recordingId: recordingId))
+        }
+
+        await PendingRecordingSyncCoordinator.shared.scheduleSync(
+            using: client,
+            recoverAbandonedLocalRecordings: true
+        )
+        await fulfillment(of: [synced], timeout: 3)
+
+        XCTAssertNil(try RecordingBackupStore.existingBackup(recordingId: recordingId))
     }
 
     func testScheduleSyncWakesBackoffImmediatelyAfterConnectivityReturns() async throws {

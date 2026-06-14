@@ -111,6 +111,43 @@ public final class AudioFileWriter: @unchecked Sendable {
         )
     }
 
+    /// Patches only the RIFF/data size fields of an existing WAV file.
+    ///
+    /// Used to recover a previous-process recording whose writer was terminated
+    /// after PCM bytes were flushed but before `finalize()` patched the header.
+    public static func repairWAVHeaderSizes(fileURL: URL) throws {
+        let values = try fileURL.resourceValues(forKeys: [.fileSizeKey])
+        guard let fileSize = values.fileSize, fileSize >= 44 else {
+            throw FileHandleOperationError.failed("invalid_wav_size")
+        }
+        try validateRecoverableWAVHeader(fileURL: fileURL)
+
+        let pcmByteCount = fileSize - 44
+        guard pcmByteCount <= Int(UInt32.max) else {
+            throw FileHandleOperationError.failed("wav_too_large")
+        }
+
+        let handle = try FileHandle(forUpdating: fileURL)
+        do {
+            let dataSize = UInt32(pcmByteCount)
+            let riffSize = UInt32(36 + pcmByteCount)
+
+            var riffSizeLE = riffSize.littleEndian
+            try safeSeek(handle, to: 4)
+            try safeWriteOrThrow(Data(bytes: &riffSizeLE, count: 4), to: handle)
+
+            var dataSizeLE = dataSize.littleEndian
+            try safeSeek(handle, to: 40)
+            try safeWriteOrThrow(Data(bytes: &dataSizeLE, count: 4), to: handle)
+
+            try safeSynchronize(handle)
+            try safeClose(handle)
+        } catch {
+            _ = try? safeClose(handle)
+            throw error
+        }
+    }
+
     // MARK: - Private
 
     private func safeOffset(_ handle: FileHandle) -> UInt64? {
@@ -150,6 +187,55 @@ public final class AudioFileWriter: @unchecked Sendable {
         var error: NSError?
         guard WAIFileHandleClose(handle, &error) else {
             throw error ?? FileHandleOperationError.failed("close")
+        }
+    }
+
+    private static func safeWriteOrThrow(_ data: Data, to handle: FileHandle) throws {
+        var error: NSError?
+        guard WAIFileHandleWriteData(handle, data, &error) else {
+            throw error ?? FileHandleOperationError.failed("write")
+        }
+    }
+
+    private static func safeSeek(_ handle: FileHandle, to offset: UInt64) throws {
+        var error: NSError?
+        guard WAIFileHandleSeekToOffset(handle, offset, &error) else {
+            throw error ?? FileHandleOperationError.failed("seek")
+        }
+    }
+
+    private static func safeSynchronize(_ handle: FileHandle) throws {
+        var error: NSError?
+        guard WAIFileHandleSynchronize(handle, &error) else {
+            throw error ?? FileHandleOperationError.failed("synchronize")
+        }
+    }
+
+    private static func safeClose(_ handle: FileHandle) throws {
+        var error: NSError?
+        guard WAIFileHandleClose(handle, &error) else {
+            throw error ?? FileHandleOperationError.failed("close")
+        }
+    }
+
+    private static func validateRecoverableWAVHeader(fileURL: URL) throws {
+        let handle = try FileHandle(forReadingFrom: fileURL)
+        let header: Data
+        do {
+            header = try handle.read(upToCount: 44) ?? Data()
+            try handle.close()
+        } catch {
+            _ = try? handle.close()
+            throw error
+        }
+
+        let bytes = Array(header)
+        guard bytes.count == 44,
+              Array(bytes[0..<4]) == [0x52, 0x49, 0x46, 0x46],
+              Array(bytes[8..<12]) == [0x57, 0x41, 0x56, 0x45],
+              Array(bytes[12..<16]) == [0x66, 0x6D, 0x74, 0x20],
+              Array(bytes[36..<40]) == [0x64, 0x61, 0x74, 0x61] else {
+            throw FileHandleOperationError.failed("invalid_wav_header")
         }
     }
 

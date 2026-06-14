@@ -586,7 +586,10 @@ class AppState: ObservableObject {
             currentUser = user
             isAuthenticated = true
             SentryHelper.setUser(id: user.id)
-            await PendingRecordingSyncCoordinator.shared.scheduleSync(using: apiClient)
+            await PendingRecordingSyncCoordinator.shared.scheduleSync(
+                using: apiClient,
+                recoverAbandonedLocalRecordings: true
+            )
         } catch {
             isAuthenticated = false
             currentUser = nil

@@ -479,6 +479,29 @@ public enum RecordingBackupStore {
         try writeManifest(manifest, to: backup.manifestURL)
     }
 
+    /// Converts a previous-process `.localRecording` backup into a syncable
+    /// local backup after repairing the WAV header sizes.
+    @discardableResult
+    public static func markAbandonedLocalRecordingReady(recordingId: String) throws -> RecordingBackup? {
+        guard let backup = try existingBackup(recordingId: recordingId) else { return nil }
+        guard var manifest = try readManifest(from: backup.manifestURL),
+              manifest.syncState == .localRecording,
+              manifest.hasAudioFile,
+              FileManager.default.fileExists(atPath: backup.audioFileURL.path) else {
+            return nil
+        }
+
+        try AudioFileWriter.repairWAVHeaderSizes(fileURL: backup.audioFileURL)
+        manifest.syncState = .localReady
+        manifest.serverJobId = nil
+        manifest.lastFailureCode = nil
+        manifest.lastErrorMessage = nil
+        manifest.updatedAt = Date()
+        try writeManifest(manifest, to: backup.manifestURL)
+        log.info("Recovered abandoned local recording backup for \(recordingId)")
+        return backup
+    }
+
     /// Removes the local audio payload from a backup and prevents future sync
     /// passes from uploading a stale or too-short file.
     public static func discardAudioFile(recordingId: String) throws {

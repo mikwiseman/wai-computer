@@ -1201,7 +1201,10 @@ class MacAppState: ObservableObject {
             refreshCombinedOnboardingState()
             SentryHelper.setUser(id: user.id)
             await syncDownloadRegionToServerIfNeeded()
-            await PendingRecordingSyncCoordinator.shared.scheduleSync(using: apiClient)
+            await PendingRecordingSyncCoordinator.shared.scheduleSync(
+                using: apiClient,
+                recoverAbandonedLocalRecordings: true
+            )
             dictationManager.configure(
                 apiClient: apiClient,
                 canStart: { [weak recordingViewModel] in

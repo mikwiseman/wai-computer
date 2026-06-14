@@ -16,8 +16,14 @@ public actor PendingRecordingSyncCoordinator {
     private var retrySleepTask: Task<Void, Never>?
     private var retryImmediatelyAfterCurrentPass = false
 
-    public func scheduleSync(using apiClient: APIClient) {
+    public func scheduleSync(
+        using apiClient: APIClient,
+        recoverAbandonedLocalRecordings: Bool = false
+    ) {
         healLegacyOversizedFailuresIfNeeded()
+        if recoverAbandonedLocalRecordings {
+            recoverAbandonedLocalRecordingsIfNeeded()
+        }
         guard syncTask == nil else {
             Task { [weak self] in
                 await self?.clearAuthBlockedBackupsIfNeeded(using: apiClient)
@@ -53,6 +59,78 @@ public actor PendingRecordingSyncCoordinator {
             category: "backup",
             message: "healed oversized backups for recompression",
             data: ["count": reset.count]
+        )
+    }
+
+    private func recoverAbandonedLocalRecordingsIfNeeded() {
+        let backups: [RecordingBackup]
+        do {
+            backups = try RecordingBackupStore.listBackups()
+        } catch {
+            log.error("Failed to list backups for abandoned local recording recovery")
+            SentryHelper.captureError(
+                error,
+                extras: ["action": "listAbandonedLocalRecordingBackups"]
+            )
+            return
+        }
+
+        var recovered = 0
+        for backup in backups {
+            let manifest: RecordingBackupManifest
+            do {
+                guard let loadedManifest = try RecordingBackupStore.manifest(recordingId: backup.recordingId) else {
+                    log.error("Missing backup manifest while recovering abandoned local recording \(backup.recordingId)")
+                    SentryHelper.captureMessage(
+                        "Missing backup manifest during abandoned local recording recovery",
+                        extras: [
+                            "action": "missingAbandonedLocalRecordingManifest",
+                            "recordingId": backup.recordingId,
+                        ]
+                    )
+                    continue
+                }
+                manifest = loadedManifest
+            } catch {
+                log.error("Failed to read backup manifest while recovering abandoned local recording \(backup.recordingId)")
+                SentryHelper.captureError(
+                    error,
+                    extras: [
+                        "action": "readAbandonedLocalRecordingManifest",
+                        "recordingId": backup.recordingId,
+                    ]
+                )
+                continue
+            }
+
+            guard manifest.syncState == .localRecording else {
+                continue
+            }
+
+            do {
+                if try RecordingBackupStore.markAbandonedLocalRecordingReady(
+                    recordingId: backup.recordingId
+                ) != nil {
+                    recovered += 1
+                }
+            } catch {
+                log.error("Failed to recover abandoned local recording \(backup.recordingId)")
+                SentryHelper.captureError(
+                    error,
+                    extras: [
+                        "action": "recoverAbandonedLocalRecording",
+                        "recordingId": backup.recordingId,
+                    ]
+                )
+            }
+        }
+
+        guard recovered > 0 else { return }
+        log.info("Recovered \(recovered, privacy: .public) abandoned local recording backup(s)")
+        SentryHelper.addBreadcrumb(
+            category: "backup",
+            message: "recovered abandoned local recording backups",
+            data: ["count": recovered]
         )
     }
 

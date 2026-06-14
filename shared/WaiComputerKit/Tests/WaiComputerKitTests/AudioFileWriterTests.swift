@@ -151,6 +151,29 @@ final class AudioFileWriterTests: XCTestCase {
         XCTAssertEqual(readUInt32LE(onDisk, offset: 40), 8)
     }
 
+    func testRepairWAVHeaderSizesPatchesPlaceholderSizes() throws {
+        let url = tempURL("repair.wav")
+        let writer = try AudioFileWriter(fileURL: url, sampleRate: 16000, channels: 1)
+        writer.writeEncodedPCM(Data(repeating: 0x24, count: 200))
+        try writer.finalize()
+
+        try zeroUInt32LE(in: url, offset: 4)
+        try zeroUInt32LE(in: url, offset: 40)
+
+        try AudioFileWriter.repairWAVHeaderSizes(fileURL: url)
+
+        let onDisk = try Data(contentsOf: url)
+        XCTAssertEqual(readUInt32LE(onDisk, offset: 4), 36 + 200)
+        XCTAssertEqual(readUInt32LE(onDisk, offset: 40), 200)
+    }
+
+    func testRepairWAVHeaderSizesRejectsInvalidHeader() throws {
+        let url = tempURL("invalid.wav")
+        try Data(repeating: 0x13, count: 64).write(to: url)
+
+        XCTAssertThrowsError(try AudioFileWriter.repairWAVHeaderSizes(fileURL: url))
+    }
+
     func testWriteAfterFinalizeIsNoOp() throws {
         let url = tempURL()
         let writer = try AudioFileWriter(fileURL: url, sampleRate: 16000, channels: 1)
@@ -255,5 +278,14 @@ final class AudioFileWriterTests: XCTestCase {
     private func readUInt32LE(_ data: Data, offset: Int) -> UInt32 {
         let bytes = data[offset..<(offset + 4)]
         return bytes.withUnsafeBytes { $0.load(as: UInt32.self).littleEndian }
+    }
+
+    private func zeroUInt32LE(in url: URL, offset: UInt64) throws {
+        let handle = try FileHandle(forUpdating: url)
+        defer { try? handle.close() }
+
+        var zero: UInt32 = 0
+        try handle.seek(toOffset: offset)
+        try handle.write(contentsOf: Data(bytes: &zero, count: 4))
     }
 }
