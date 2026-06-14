@@ -2,6 +2,16 @@ import WaiComputerKit
 import XCTest
 
 final class DeferredDictationStopPolicyTests: XCTestCase {
+    private var tempDirectory: URL?
+
+    override func tearDownWithError() throws {
+        if let tempDirectory {
+            try? FileManager.default.removeItem(at: tempDirectory)
+        }
+        tempDirectory = nil
+        try super.tearDownWithError()
+    }
+
     func testPushToTalkReleaseDuringConnectFinishesAfterReady() {
         XCTAssertEqual(
             DeferredDictationStopPolicy.action(deferredStop: true, isHandsFree: false),
@@ -106,6 +116,146 @@ final class DeferredDictationStopPolicyTests: XCTestCase {
         XCTAssertNotNil(resolution.cleanupFallbackNotice)
     }
 
+    func testCleanupTimeoutInsertsRawTranscriptWithTimeoutNotice() {
+        let resolution = DictationCleanupPolicy.resolve(
+            rawText: "raw transcript",
+            cleanupEnabled: true,
+            cleanedText: nil,
+            cleanupError: DictationCleanupTimeoutError(timeoutSeconds: 4)
+        )
+
+        XCTAssertEqual(resolution.text, "raw transcript")
+        XCTAssertEqual(
+            resolution.cleanupFallbackNotice,
+            DictationCleanupPolicy.timeoutNotice
+        )
+    }
+
+    func testCleanupDeadlineKeepsLightCleanupFast() {
+        XCTAssertEqual(
+            DictationCleanupDeadlinePolicy.timeoutSeconds(
+                cleanupLevel: "light",
+                rawTextCharacterCount: 240
+            ),
+            4
+        )
+    }
+
+    func testCleanupDeadlineGivesMoreTimeToExplicitHighCleanup() {
+        XCTAssertEqual(
+            DictationCleanupDeadlinePolicy.timeoutSeconds(
+                cleanupLevel: "high",
+                rawTextCharacterCount: 240
+            ),
+            10
+        )
+    }
+
+    func testCleanupDeadlineScalesWithLengthButCapsExtraWait() {
+        XCTAssertEqual(
+            DictationCleanupDeadlinePolicy.timeoutSeconds(
+                cleanupLevel: "medium",
+                rawTextCharacterCount: 30_000
+            ),
+            12
+        )
+    }
+
+    func testCleanupDeadlineTreatsUnknownLevelAsLight() {
+        XCTAssertEqual(
+            DictationCleanupDeadlinePolicy.timeoutSeconds(
+                cleanupLevel: "unexpected",
+                rawTextCharacterCount: -1
+            ),
+            4
+        )
+    }
+
+    @MainActor
+    func testDictionaryVocabularyIncludesReplacementSpellingsForCleanup() throws {
+        let store = try makeTemporaryDictionaryStore()
+
+        XCTAssertTrue(store.add(word: "Bolnichny", replacement: "больничный"))
+        XCTAssertTrue(store.add(word: "WaiComputer"))
+
+        XCTAssertEqual(
+            Set(store.vocabularyList),
+            Set(["Bolnichny", "больничный", "WaiComputer"])
+        )
+    }
+
+    @MainActor
+    func testDictionaryRealtimeHintsIncludeKeytermsAndReplacementPairs() throws {
+        let store = try makeTemporaryDictionaryStore()
+
+        XCTAssertTrue(store.add(word: "Bolnichny", replacement: "больничный"))
+        XCTAssertTrue(store.add(word: "WaiComputer"))
+
+        let hints = store.realtimeHints
+
+        XCTAssertEqual(
+            Set(hints.keyterms),
+            Set(["Bolnichny", "больничный", "WaiComputer"])
+        )
+        XCTAssertEqual(
+            hints.replacements,
+            [
+                RealtimeTranscriptionReplacement(find: "Bolnichny", replace: "больничный"),
+            ]
+        )
+    }
+
+    @MainActor
+    func testDictionaryStoreNotifiesRealtimeHintChangesOncePerLogicalEdit() throws {
+        let store = try makeTemporaryDictionaryStore()
+        var reasons: [String] = []
+        store.onRealtimeHintsChanged = { reason in
+            reasons.append(reason)
+        }
+
+        XCTAssertTrue(store.add(word: "WaiComputer"))
+        store.learnReplacement(word: "why computer", replacement: "WaiComputer")
+        guard let firstWord = store.words.first(where: { $0.word == "WaiComputer" }) else {
+            return XCTFail("Expected dictionary entry")
+        }
+        XCTAssertTrue(
+            store.update(
+                firstWord,
+                newWord: "WaiComputer",
+                newReplacement: "Wai Computer"
+            )
+        )
+        guard let learnedWord = store.words.first(where: { $0.word == "why computer" }) else {
+            return XCTFail("Expected learned replacement")
+        }
+        store.delete(learnedWord)
+
+        XCTAssertEqual(
+            reasons,
+            [
+                "dictionary_add",
+                "dictionary_learn_replacement",
+                "dictionary_update",
+                "dictionary_delete",
+            ]
+        )
+    }
+
+    @MainActor
+    func testDictionaryPhraseReplacementToleratesPunctuationBetweenWords() throws {
+        let store = try makeTemporaryDictionaryStore()
+        store.learnReplacement(word: "why computer", replacement: "WaiComputer")
+
+        XCTAssertEqual(
+            store.applyReplacements(to: "open why, computer now"),
+            "open WaiComputer now"
+        )
+        XCTAssertEqual(
+            store.applyReplacements(to: "open whycomputer now"),
+            "open whycomputer now"
+        )
+    }
+
     func testTokenRemintTriggersOnHandshakeAuthCloseAndAuthError() {
         // A stale prefetched token is rejected as a 1008/1011 close DURING the
         // websocket handshake — the dominant real-world shape.
@@ -191,6 +341,33 @@ final class DeferredDictationStopPolicyTests: XCTestCase {
                 finalRawText: "Clean this transcript."
             ),
             .restartWithFinal
+        )
+    }
+
+    func testCleanupSpeculationStartsForStableCommittedTranscript() {
+        XCTAssertTrue(
+            DictationCleanupSpeculationStartPolicy.shouldStart(
+                committedText: "Clean this transcript.",
+                currentInterim: ""
+            )
+        )
+    }
+
+    func testCleanupSpeculationDoesNotStartWithOnlyInterimTranscript() {
+        XCTAssertFalse(
+            DictationCleanupSpeculationStartPolicy.shouldStart(
+                committedText: "",
+                currentInterim: "Clean this transcript"
+            )
+        )
+    }
+
+    func testCleanupSpeculationDoesNotStartWithPendingInterimTail() {
+        XCTAssertFalse(
+            DictationCleanupSpeculationStartPolicy.shouldStart(
+                committedText: "Clean this transcript.",
+                currentInterim: "Clean this"
+            )
         )
     }
 
@@ -379,6 +556,18 @@ final class DeferredDictationStopPolicyTests: XCTestCase {
                 holdThreshold: 0.08
             ),
             .cancelled
+        )
+    }
+
+    @MainActor
+    private func makeTemporaryDictionaryStore() throws -> DictationDictionaryStore {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("DictationDictionaryStoreTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        tempDirectory = directory
+        return DictationDictionaryStore(
+            fileURL: directory.appendingPathComponent("dictation_dictionary.json"),
+            tombstonesURL: directory.appendingPathComponent("dictation_dictionary_tombstones.json")
         )
     }
 }

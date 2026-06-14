@@ -444,6 +444,8 @@ enum DictationCleanupPolicy {
 
     static let fallbackNotice =
         "AI cleanup was unavailable — inserted your raw transcript."
+    static let timeoutNotice =
+        "AI cleanup took too long - inserted your raw transcript."
 
     static func resolve(
         rawText: String,
@@ -459,7 +461,37 @@ enum DictationCleanupPolicy {
            !cleanedText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             return Resolution(text: cleanedText, cleanupFallbackNotice: nil)
         }
+        if cleanupError is DictationCleanupTimeoutError {
+            return Resolution(text: rawText, cleanupFallbackNotice: Self.timeoutNotice)
+        }
         return Resolution(text: rawText, cleanupFallbackNotice: Self.fallbackNotice)
+    }
+}
+
+struct DictationCleanupTimeoutError: LocalizedError, Equatable {
+    let timeoutSeconds: Int
+
+    var errorDescription: String? {
+        "Dictation cleanup timed out after \(timeoutSeconds) seconds."
+    }
+}
+
+enum DictationCleanupDeadlinePolicy {
+    static func timeoutSeconds(
+        cleanupLevel: String,
+        rawTextCharacterCount: Int
+    ) -> Int {
+        let baseSeconds: Int
+        switch cleanupLevel {
+        case "medium":
+            baseSeconds = 6
+        case "high":
+            baseSeconds = 10
+        default:
+            baseSeconds = 4
+        }
+        let extraSeconds = min(6, max(0, rawTextCharacterCount) / 1_500)
+        return baseSeconds + extraSeconds
     }
 }
 
@@ -487,6 +519,13 @@ enum DictationCleanupSpeculationPolicy {
         return String(folded)
             .split(whereSeparator: \.isWhitespace)
             .joined(separator: " ")
+    }
+}
+
+enum DictationCleanupSpeculationStartPolicy {
+    static func shouldStart(committedText: String, currentInterim: String) -> Bool {
+        !committedText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && currentInterim.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 }
 

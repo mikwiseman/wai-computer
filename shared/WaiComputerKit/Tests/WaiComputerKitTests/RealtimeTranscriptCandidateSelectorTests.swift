@@ -22,11 +22,47 @@ final class RealtimeTranscriptCandidateSelectorTests: XCTestCase {
         XCTAssertEqual(selected, "hello world")
     }
 
+    func testKeepsProviderCandidateWhenInterimOnlyAddsRepeatedTail() {
+        let selected = RealtimeTranscriptCandidateSelector.select([
+            "please ship this today",
+            "please ship this today please ship",
+        ])
+
+        XCTAssertEqual(selected, "please ship this today")
+    }
+
+    func testKeepsProviderCandidateWhenInterimOnlyAppendsUnfinalizedTail() {
+        let selected = RealtimeTranscriptCandidateSelector.select([
+            "send the report",
+            "send the report to",
+        ])
+
+        XCTAssertEqual(selected, "send the report")
+    }
+
     func testDoesNotPreferUnrelatedLongerCandidate() {
         let selected = RealtimeTranscriptCandidateSelector.select([
             "hello world",
             nil,
             "unrelated longer partial transcript",
+        ])
+
+        XCTAssertEqual(selected, "hello world")
+    }
+
+    func testPrefersFullerCandidateWhenPunctuationBreaksLiteralContainment() {
+        let selected = RealtimeTranscriptCandidateSelector.select([
+            "send OpenAI Codex logs",
+            "please send OpenAI, Codex logs",
+        ])
+
+        XCTAssertEqual(selected, "please send OpenAI, Codex logs")
+    }
+
+    func testDoesNotPreferLongerCandidateWithOnlyNonContiguousTokenOverlap() {
+        let selected = RealtimeTranscriptCandidateSelector.select([
+            "hello world",
+            "hello unrelated world transcript",
         ])
 
         XCTAssertEqual(selected, "hello world")

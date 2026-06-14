@@ -57,6 +57,9 @@ struct WaiComputerMacApp: App {
         dictation.historyStore = history
         dictation.dictionaryStore = dictionary
         dictation.languageStore = languages
+        dictionary.onRealtimeHintsChanged = { [weak dictation] reason in
+            dictation?.prefetchSessionConfigForCurrentLanguage(reason: reason)
+        }
         let learningEngine = DictionaryLearningEngine(lexicon: MacLexiconChecker())
         let editWatcher = DictationEditWatcher(engine: learningEngine)
         dictation.learningEngine = learningEngine

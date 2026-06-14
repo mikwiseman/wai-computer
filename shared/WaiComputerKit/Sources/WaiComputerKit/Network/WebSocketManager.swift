@@ -499,7 +499,7 @@ public actor WebSocketManager {
         else { return }
         let isFinal = payload["is_final"] as? Bool ?? false
         let fromFinalize = payload["from_finalize"] as? Bool ?? false
-        if fromFinalize || (endOfStreamRequested && endOfStreamSent && isFinal) {
+        if fromFinalize {
             lastTranscriptReceivedAt = reconnectClock.now
             providerFinalizationReceived = true
         }

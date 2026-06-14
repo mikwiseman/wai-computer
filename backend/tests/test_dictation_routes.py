@@ -8,6 +8,8 @@ import openai
 import pytest
 from httpx import AsyncClient
 
+from app.api.routes import dictation as dictation_routes
+
 
 def _make_response(text: str, *, model: str = "gpt-oss-120b", finish_reason: str = "stop"):
     """Build a mock Chat Completions result."""
@@ -361,7 +363,7 @@ async def test_cleanup_dictation_medium_keeps_low_reasoning_effort(
 
     async def _create(**kwargs: object):
         captured.update(kwargs)
-        return _make_response("Cleaned text.")
+        return _make_response("Please clean up this dictated sentence.")
 
     mock_client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=_create)))
     _patch_settings(monkeypatch)
@@ -661,6 +663,31 @@ async def test_cleanup_light_rejects_output_that_rewrites_content_words(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("cleanup_level", ["medium", "high"])
+async def test_cleanup_rejects_output_that_rewrites_content_words_for_stronger_levels(
+    client: AsyncClient,
+    auth_headers: dict,
+    monkeypatch: pytest.MonkeyPatch,
+    cleanup_level: str,
+):
+    _patch_settings(monkeypatch)
+    _patch_client(
+        monkeypatch,
+        _make_mock_client(response_text="Please ship this quickly today."),
+    )
+    await _set_cleanup_level(client, auth_headers, cleanup_level)
+
+    response = await client.post(
+        "/api/dictation/cleanup",
+        headers=auth_headers,
+        json={"text": "please ship this fast today"},
+    )
+
+    assert response.status_code == 502
+    assert response.json()["detail"] == "AI service returned an incomplete cleanup response."
+
+
+@pytest.mark.asyncio
 async def test_cleanup_light_allows_filler_removal_and_inflection_fix(
     client: AsyncClient,
     auth_headers: dict,
@@ -681,6 +708,32 @@ async def test_cleanup_light_allows_filler_removal_and_inflection_fix(
 
     assert response.status_code == 200
     assert response.json() == {"text": "It sometimes changes words."}
+
+
+def test_cleanup_validator_matches_large_reordered_text_without_fuzzy_scan(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    words = [f"project{i}alpha" for i in range(120)]
+    similarity_calls = 0
+
+    def _count_similarity(left: str, right: str) -> float:
+        nonlocal similarity_calls
+        similarity_calls += 1
+        return 0.0
+
+    monkeypatch.setattr(
+        dictation_routes,
+        "_cleanup_token_similarity",
+        _count_similarity,
+    )
+
+    dictation_routes._validate_cleanup_preserves_content_words(
+        raw_text=" ".join(words),
+        cleaned=" ".join(reversed(words)),
+        protected_terms=(),
+    )
+
+    assert similarity_calls == 0
 
 
 @pytest.mark.asyncio
@@ -756,7 +809,7 @@ async def test_cleanup_dictation_medium_level_targets_clarity_and_conciseness(
 
     async def _create(**kwargs: object):
         captured.update(kwargs)
-        return _make_response("Clear concise text.")
+        return _make_response("Please clean up this dictated sentence.")
 
     mock_client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=_create)))
     _patch_settings(monkeypatch)
@@ -772,6 +825,7 @@ async def test_cleanup_dictation_medium_level_targets_clarity_and_conciseness(
     assert response.status_code == 200
     instructions = captured["messages"][0]["content"]
     assert "clarity and conciseness" in instructions
+    assert "Do not substitute, add, or drop content words" in instructions
     assert "Do not summarize" in instructions
 
 
@@ -785,7 +839,7 @@ async def test_cleanup_dictation_high_level_targets_brevity_and_polish(
 
     async def _create(**kwargs: object):
         captured.update(kwargs)
-        return _make_response("Polished text.")
+        return _make_response("Please clean up this dictated sentence.")
 
     mock_client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=_create)))
     _patch_settings(monkeypatch)
@@ -801,6 +855,7 @@ async def test_cleanup_dictation_high_level_targets_brevity_and_polish(
     assert response.status_code == 200
     instructions = captured["messages"][0]["content"]
     assert "brevity and polish" in instructions
+    assert "Do not substitute, add, or drop content words" in instructions
     assert "Do not summarize away details" in instructions
 
 
@@ -879,7 +934,7 @@ async def test_cleanup_dictation_truncates_large_textbox_context(
 
     async def _create(**kwargs: object):
         captured.update(kwargs)
-        return _make_response("Cleaned text.")
+        return _make_response("Please clean up this dictated sentence.")
 
     mock_client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=_create)))
     _patch_settings(monkeypatch)
@@ -918,10 +973,11 @@ async def test_cleanup_dictation_caps_large_output_token_budget(
     monkeypatch: pytest.MonkeyPatch,
 ):
     captured: dict[str, object] = {}
+    dictated_text = "word " * 20_000
 
     async def _create(**kwargs: object):
         captured.update(kwargs)
-        return _make_response("Polished text.")
+        return _make_response(dictated_text)
 
     mock_client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=_create)))
     _patch_settings(monkeypatch)
@@ -931,7 +987,7 @@ async def test_cleanup_dictation_caps_large_output_token_budget(
     response = await client.post(
         "/api/dictation/cleanup",
         headers=auth_headers,
-        json={"text": "word " * 20_000},
+        json={"text": dictated_text},
     )
 
     assert response.status_code == 200
@@ -945,10 +1001,11 @@ async def test_cleanup_dictation_reserves_tokens_for_reasoning(
     monkeypatch: pytest.MonkeyPatch,
 ):
     captured: dict[str, object] = {}
+    dictated_text = "word " * 400
 
     async def _create(**kwargs: object):
         captured.update(kwargs)
-        return _make_response("Polished text.")
+        return _make_response(dictated_text)
 
     mock_client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=_create)))
     _patch_settings(monkeypatch)
@@ -958,7 +1015,7 @@ async def test_cleanup_dictation_reserves_tokens_for_reasoning(
     response = await client.post(
         "/api/dictation/cleanup",
         headers=auth_headers,
-        json={"text": "word " * 400},
+        json={"text": dictated_text},
     )
 
     assert response.status_code == 200

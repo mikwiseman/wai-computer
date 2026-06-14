@@ -361,7 +361,7 @@ public actor ProviderBackedRealtimeSession: ProviderSession {
         else { return }
         let isFinal = payload["is_final"] as? Bool ?? false
         let fromFinalize = payload["from_finalize"] as? Bool ?? false
-        if fromFinalize || (didSendEndTurn && isFinal) {
+        if fromFinalize {
             markTranscriptEvent(finalizationMarker: true)
         }
 
@@ -372,7 +372,7 @@ public actor ProviderBackedRealtimeSession: ProviderSession {
         let startMs = Self.secondsToMilliseconds(payload["start"] as? Double)
         let durationMs = Self.secondsToMilliseconds(payload["duration"] as? Double)
         let confidence = alternative["confidence"] as? Double ?? 0
-        if !fromFinalize && !(didSendEndTurn && isFinal) {
+        if !fromFinalize {
             markTranscriptEvent()
         }
 

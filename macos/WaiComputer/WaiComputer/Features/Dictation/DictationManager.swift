@@ -275,7 +275,9 @@ final class DictationManager: ObservableObject {
             try await apiClient.createRealtimeTranscriptionSession(
                 language: key.language,
                 channels: key.channels,
-                purpose: key.purpose
+                purpose: key.purpose,
+                keyterms: key.keyterms,
+                replacements: key.replacements
             )
         }
         self.canStartDictation = canStart
@@ -697,14 +699,15 @@ final class DictationManager: ObservableObject {
             refreshSettingsAndPrefetchIfNeeded(apiClient: apiClient, reason: "start")
 
             let language = currentDictationLanguage()
-            let keyTerms = dictionaryStore?.vocabularyList ?? []
+            let realtimeHints = currentRealtimeHints()
             var provider: ProviderBackedRealtimeSession
             var mintAttempt = 0
             while true {
                 let sessionConfig = try await takeDictationSessionConfig(
                     language: language,
                     session: session,
-                    apiClient: apiClient
+                    apiClient: apiClient,
+                    realtimeHints: realtimeHints
                 )
                 guard state == .connecting else {
                     await startupAudioBuffer.close()
@@ -723,16 +726,14 @@ final class DictationManager: ObservableObject {
                     )
                 }
 
-                provider = ProviderBackedRealtimeSession(
-                    config: sessionConfig,
-                    keyTerms: keyTerms
-                )
+                provider = ProviderBackedRealtimeSession(config: sessionConfig)
                 providerSession = provider
                 session.event(.providerConnecting, data: [
                     "provider": sessionConfig.provider,
                     "model": sessionConfig.model,
                     "language": sessionConfig.language,
-                    "key_terms_count": keyTerms.count,
+                    "key_terms_count": realtimeHints.keyterms.count,
+                    "replacements_count": realtimeHints.replacements.count,
                     "mint_attempt": mintAttempt,
                 ])
                 let stream = provider.events
@@ -837,12 +838,10 @@ final class DictationManager: ObservableObject {
         await finishProviderAudioPumpBeforeFinalizing()
         guard shouldContinueFinalization() else { return }
 
-        // Start cleanup speculatively on the preliminary transcript so the
-        // Cerebras post-filter (a reasoning model that "thinks" before emitting
-        // text) overlaps the provider drain/close instead of running serially
-        // after it. Reused if the final transcript matches, otherwise cancelled
-        // and restarted in cleanupAndInsert. Tracked via cleanupStreamTask, so
-        // cancelDictation()/cleanup() still cancel it on every exit path.
+        // Start cleanup speculatively only when the transcript is already
+        // committed. If an interim tail is still pending, wait for the final
+        // provider close so we do not send cleanup work that will immediately
+        // be cancelled and restarted.
         let speculativeCleanup = startSpeculativeCleanupIfPossible()
         let providerSegments = (try? await providerSession?.close(timeout: .seconds(4))) ?? []
 
@@ -936,10 +935,13 @@ final class DictationManager: ObservableObject {
               let apiClient else {
             return nil
         }
-        let preliminaryText = buildTranscript()
+        let committedText = committedTexts.joined(separator: " ")
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !preliminaryText.isEmpty else { return nil }
-        let rawText = dictionaryStore?.applyReplacements(to: preliminaryText) ?? preliminaryText
+        guard DictationCleanupSpeculationStartPolicy.shouldStart(
+            committedText: committedText,
+            currentInterim: currentInterim
+        ) else { return nil }
+        let rawText = dictionaryStore?.applyReplacements(to: committedText) ?? committedText
         guard !rawText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             return nil
         }
@@ -1094,7 +1096,10 @@ final class DictationManager: ObservableObject {
                             speculative: false
                         )
                     }
-                    cleanedText = try await cleanupWork.task.value
+                    cleanedText = try await waitForCleanup(
+                        cleanupWork,
+                        rawText: rawText
+                    )
                     guard shouldContinueFinalization() else { return }
                     cleanupStreamTask = nil
                     cleanupPreview = cleanedText ?? ""
@@ -1146,6 +1151,38 @@ final class DictationManager: ObservableObject {
         )
         if let notice = resolution.cleanupFallbackNotice {
             self.error = notice
+        }
+    }
+
+    private func waitForCleanup(
+        _ cleanupWork: DictationCleanupStreamWork,
+        rawText: String
+    ) async throws -> String {
+        let timeoutSeconds = DictationCleanupDeadlinePolicy.timeoutSeconds(
+            cleanupLevel: cleanupLevel,
+            rawTextCharacterCount: rawText.count
+        )
+        let cleanupTask = cleanupWork.task
+        return try await withThrowingTaskGroup(of: String.self) { group in
+            group.addTask {
+                try await cleanupTask.value
+            }
+            group.addTask {
+                try await Task.sleep(for: .seconds(timeoutSeconds))
+                cleanupTask.cancel()
+                throw DictationCleanupTimeoutError(timeoutSeconds: timeoutSeconds)
+            }
+            do {
+                guard let text = try await group.next() else {
+                    throw CancellationError()
+                }
+                group.cancelAll()
+                return text
+            } catch {
+                cleanupTask.cancel()
+                group.cancelAll()
+                throw error
+            }
         }
     }
 
@@ -1375,11 +1412,21 @@ final class DictationManager: ObservableObject {
         DictationLanguageSelectionPolicy.providerLanguage(store: languageStore)
     }
 
-    private func dictationSessionConfigKey(language: String? = nil) -> RealtimeTranscriptionSessionConfigVault.Key {
-        RealtimeTranscriptionSessionConfigVault.Key(
+    private func currentRealtimeHints() -> DictationRealtimeHints {
+        dictionaryStore?.realtimeHints ?? .empty
+    }
+
+    private func dictationSessionConfigKey(
+        language: String? = nil,
+        realtimeHints: DictationRealtimeHints? = nil
+    ) -> RealtimeTranscriptionSessionConfigVault.Key {
+        let hints = realtimeHints ?? currentRealtimeHints()
+        return RealtimeTranscriptionSessionConfigVault.Key(
             language: language ?? currentDictationLanguage(),
             channels: 1,
-            purpose: .dictation
+            purpose: .dictation,
+            keyterms: hints.keyterms,
+            replacements: hints.replacements
         )
     }
 
@@ -1431,7 +1478,7 @@ final class DictationManager: ObservableObject {
 
                     let currentKey = self.dictationSessionConfigKey()
                     guard currentKey == key else {
-                        self.prefetchDictationSessionConfig(reason: "language_changed")
+                        self.prefetchDictationSessionConfig(reason: "session_key_changed")
                         return false
                     }
 
@@ -1485,9 +1532,10 @@ final class DictationManager: ObservableObject {
     private func takeDictationSessionConfig(
         language: String,
         session: DictationInstrumentation.Session,
-        apiClient: APIClient
+        apiClient: APIClient,
+        realtimeHints: DictationRealtimeHints
     ) async throws -> RealtimeTranscriptionSessionConfig {
-        let key = dictationSessionConfigKey(language: language)
+        let key = dictationSessionConfigKey(language: language, realtimeHints: realtimeHints)
         let result: RealtimeTranscriptionSessionConfigVault.TakeResult
         if let sessionConfigVault {
             result = try await sessionConfigVault.take(
@@ -1499,7 +1547,9 @@ final class DictationManager: ObservableObject {
             let config = try await apiClient.createRealtimeTranscriptionSession(
                 language: key.language,
                 channels: key.channels,
-                purpose: key.purpose
+                purpose: key.purpose,
+                keyterms: key.keyterms,
+                replacements: key.replacements
             )
             result = RealtimeTranscriptionSessionConfigVault.TakeResult(
                 config: config,
@@ -1512,12 +1562,16 @@ final class DictationManager: ObservableObject {
             "provider": result.config.provider,
             "model": result.config.model,
             "tokenAgeMs": result.tokenAgeMilliseconds,
+            "keyTerms": key.keyterms.count,
+            "replacements": key.replacements.count,
         ])
         session.event(.tokenMinted, data: [
             "provider": result.config.provider,
             "model": result.config.model,
             "prefetchHit": result.prefetched,
             "tokenAgeMs": result.tokenAgeMilliseconds,
+            "keyTerms": key.keyterms.count,
+            "replacements": key.replacements.count,
         ])
         return result.config
     }

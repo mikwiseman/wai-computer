@@ -48,6 +48,13 @@ struct DictionaryWord: Identifiable, Codable, Hashable {
     var isLearned: Bool { origin == "learned" }
 }
 
+struct DictationRealtimeHints: Equatable {
+    static let empty = DictationRealtimeHints(keyterms: [], replacements: [])
+
+    let keyterms: [String]
+    let replacements: [RealtimeTranscriptionReplacement]
+}
+
 @MainActor
 final class DictationDictionaryStore: ObservableObject {
     @Published private(set) var words: [DictionaryWord] = []
@@ -56,13 +63,21 @@ final class DictationDictionaryStore: ObservableObject {
     private let tombstonesURL: URL
     private var tombstones: Set<UUID> = []
     private var apiClient: APIClient?
+    var onRealtimeHintsChanged: ((String) -> Void)?
 
-    init() {
+    convenience init() {
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
         let dir = appSupport.appendingPathComponent("WaiComputer", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        self.fileURL = dir.appendingPathComponent("dictation_dictionary.json")
-        self.tombstonesURL = dir.appendingPathComponent("dictation_dictionary_tombstones.json")
+        self.init(
+            fileURL: dir.appendingPathComponent("dictation_dictionary.json"),
+            tombstonesURL: dir.appendingPathComponent("dictation_dictionary_tombstones.json")
+        )
+    }
+
+    init(fileURL: URL, tombstonesURL: URL) {
+        self.fileURL = fileURL
+        self.tombstonesURL = tombstonesURL
         load()
         loadTombstones()
     }
@@ -75,6 +90,16 @@ final class DictationDictionaryStore: ObservableObject {
 
     @discardableResult
     func add(word: String, replacement: String? = nil, origin: String = "manual") -> Bool {
+        add(word: word, replacement: replacement, origin: origin, notificationReason: "dictionary_add")
+    }
+
+    @discardableResult
+    private func add(
+        word: String,
+        replacement: String? = nil,
+        origin: String = "manual",
+        notificationReason: String?
+    ) -> Bool {
         let trimmed = word.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return false }
         guard !words.contains(where: { $0.word.lowercased() == trimmed.lowercased() }) else { return false }
@@ -88,6 +113,7 @@ final class DictationDictionaryStore: ObservableObject {
         if apiClient != nil {
             Task { await self.pushWord(entry) }
         }
+        notifyRealtimeHintsChanged(reason: notificationReason)
         return true
     }
 
@@ -99,9 +125,14 @@ final class DictationDictionaryStore: ObservableObject {
         let replacementTrimmed = replacement.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, !replacementTrimmed.isEmpty else { return }
         if let existing = words.first(where: { $0.word.lowercased() == trimmed.lowercased() }) {
-            delete(existing)
+            delete(existing, notificationReason: nil)
         }
-        add(word: trimmed, replacement: replacementTrimmed, origin: "learned")
+        add(
+            word: trimmed,
+            replacement: replacementTrimmed,
+            origin: "learned",
+            notificationReason: "dictionary_learn_replacement"
+        )
     }
 
     /// Edit an existing entry. Implemented as delete-then-add so it reuses the
@@ -115,15 +146,23 @@ final class DictationDictionaryStore: ObservableObject {
         if words.contains(where: { $0.id != word.id && $0.word.lowercased() == trimmed.lowercased() }) {
             return false
         }
-        delete(word)
+        delete(word, notificationReason: nil)
         let replacement = newReplacement?.trimmingCharacters(in: .whitespacesAndNewlines)
-        add(word: trimmed, replacement: (replacement?.isEmpty == false) ? replacement : nil)
-        return true
+        return add(
+            word: trimmed,
+            replacement: (replacement?.isEmpty == false) ? replacement : nil,
+            notificationReason: "dictionary_update"
+        )
     }
 
     func delete(_ word: DictionaryWord) {
+        delete(word, notificationReason: "dictionary_delete")
+    }
+
+    private func delete(_ word: DictionaryWord, notificationReason: String?) {
         words.removeAll { $0.id == word.id }
         save()
+        notifyRealtimeHintsChanged(reason: notificationReason)
 
         guard apiClient != nil else { return }
         tombstones.insert(word.id)
@@ -136,6 +175,7 @@ final class DictationDictionaryStore: ObservableObject {
         tombstones.removeAll()
         save()
         saveTombstones()
+        notifyRealtimeHintsChanged(reason: "dictionary_clear")
     }
 
     /// Pull server state, merge, push local-only words, retry tombstoned deletes.
@@ -178,6 +218,7 @@ final class DictationDictionaryStore: ObservableObject {
             words.append(contentsOf: additions)
             words.sort { $0.word.localizedCaseInsensitiveCompare($1.word) == .orderedAscending }
             save()
+            notifyRealtimeHintsChanged(reason: "dictionary_hydrate")
         }
 
         let serverIDs = Set(serverByID.keys)
@@ -188,21 +229,52 @@ final class DictationDictionaryStore: ObservableObject {
 
     /// Vocabulary list for prompt conditioning — sent to transcription provider
     var vocabularyList: [String] {
-        words.map(\.word)
+        var terms: [String] = []
+        var seen: Set<String> = []
+        for word in words {
+            appendVocabularyTerm(word.word, to: &terms, seen: &seen)
+            if let replacement = word.replacement {
+                appendVocabularyTerm(replacement, to: &terms, seen: &seen)
+            }
+        }
+        return terms
+    }
+
+    var realtimeHints: DictationRealtimeHints {
+        let keyterms = Array(vocabularyList.prefix(100))
+        var replacements: [RealtimeTranscriptionReplacement] = []
+        var seenReplacementFinds: Set<String> = []
+        for word in words where word.isReplacement {
+            guard let replacement = word.replacement else { continue }
+            let find = word.word.trimmingCharacters(in: .whitespacesAndNewlines)
+            let replace = replacement.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !find.isEmpty, !replace.isEmpty else { continue }
+            let normalizedFind = find.lowercased()
+            guard !seenReplacementFinds.contains(normalizedFind) else { continue }
+            seenReplacementFinds.insert(normalizedFind)
+            replacements.append(RealtimeTranscriptionReplacement(find: find, replace: replace))
+            if replacements.count >= 200 {
+                break
+            }
+        }
+        return DictationRealtimeHints(keyterms: keyterms, replacements: replacements)
     }
 
     /// Apply replacement rules to transcribed text.
     ///
-    /// Matches whole words only. A literal substring replace would rewrite
-    /// inside words ("cat" → "dog" turning "category" into "dogegory"), so we
-    /// anchor on Unicode word boundaries — `.useUnicodeWordBoundaries` is
-    /// essential or `\b` is ASCII-only and never fires between Cyrillic letters.
+    /// Matches whole words only. Multi-token learned phrases tolerate
+    /// punctuation between words ("why, computer" → "WaiComputer") because STT
+    /// may insert commas before replacements run. A literal substring replace
+    /// would rewrite inside words ("cat" → "dog" turning "category" into
+    /// "dogegory"), so we anchor on Unicode word boundaries —
+    /// `.useUnicodeWordBoundaries` is essential or `\b` is ASCII-only and never
+    /// fires between Cyrillic letters.
     func applyReplacements(to text: String) -> String {
         var result = text
         for word in words where word.isReplacement {
             guard let replacement = word.replacement,
                   !word.word.isEmpty else { continue }
-            let pattern = "\\b" + NSRegularExpression.escapedPattern(for: word.word) + "\\b"
+            let pattern = replacementPattern(for: word.word)
             guard let regex = try? NSRegularExpression(
                 pattern: pattern,
                 options: [.caseInsensitive, .useUnicodeWordBoundaries]
@@ -215,6 +287,34 @@ final class DictationDictionaryStore: ObservableObject {
             )
         }
         return result
+    }
+
+    private func replacementPattern(for word: String) -> String {
+        let tokens = word
+            .split(whereSeparator: \.isWhitespace)
+            .map(String.init)
+        guard tokens.count > 1 else {
+            return "\\b" + NSRegularExpression.escapedPattern(for: word) + "\\b"
+        }
+        return "\\b"
+            + tokens
+                .map { NSRegularExpression.escapedPattern(for: $0) }
+                .joined(separator: "[^\\p{L}\\p{N}]+")
+            + "\\b"
+    }
+
+    private func appendVocabularyTerm(_ term: String, to terms: inout [String], seen: inout Set<String>) {
+        let trimmed = term.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        let normalized = trimmed.lowercased()
+        guard !seen.contains(normalized) else { return }
+        seen.insert(normalized)
+        terms.append(trimmed)
+    }
+
+    private func notifyRealtimeHintsChanged(reason: String?) {
+        guard let reason else { return }
+        onRealtimeHintsChanged?(reason)
     }
 
     // MARK: - Sync helpers

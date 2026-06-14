@@ -194,6 +194,45 @@ final class RealtimeTranscriptionSessionConfigVaultTests: XCTestCase {
         XCTAssertEqual(result.config.language, "ru")
     }
 
+    func testTakeDoesNotReusePrefetchForDifferentHintSignature() async throws {
+        let baseKey = RealtimeTranscriptionSessionConfigVault.Key(
+            language: "multi",
+            channels: 1,
+            purpose: .dictation
+        )
+        let hintedKey = RealtimeTranscriptionSessionConfigVault.Key(
+            language: "multi",
+            channels: 1,
+            purpose: .dictation,
+            keyterms: ["WaiComputer"],
+            replacements: [
+                RealtimeTranscriptionReplacement(find: "why computer", replace: "WaiComputer"),
+            ]
+        )
+        let mintCount = SessionConfigMintCounter()
+        let vault = RealtimeTranscriptionSessionConfigVault { key in
+            await mintCount.increment()
+            return Self.config(
+                token: key.hintSignature.isEmpty ? "base" : "hinted",
+                language: key.language
+            )
+        }
+
+        await vault.prefetch(for: baseKey)
+        try await Task.sleep(for: .milliseconds(100))
+
+        let result = try await vault.take(
+            for: hintedKey,
+            expectedProvider: "deepgram",
+            expectedModel: "nova-3"
+        )
+
+        XCTAssertFalse(result.prefetched)
+        XCTAssertEqual(result.config.token, "hinted")
+        let count = await mintCount.count()
+        XCTAssertEqual(count, 2)
+    }
+
     func testExpiredPrefetchIsNotUsed() async throws {
         let mintCount = SessionConfigMintCounter()
         let vault = RealtimeTranscriptionSessionConfigVault { _ in

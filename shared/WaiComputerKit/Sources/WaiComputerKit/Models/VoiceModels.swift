@@ -10,19 +10,35 @@ public enum RealtimeTranscriptionPurpose: String, Codable, Sendable, Hashable {
     case dictation
 }
 
+public struct RealtimeTranscriptionReplacement: Codable, Sendable, Hashable {
+    public let find: String
+    public let replace: String
+
+    public init(find: String, replace: String) {
+        self.find = find
+        self.replace = replace
+    }
+}
+
 public struct CreateRealtimeTranscriptionSessionRequest: Codable, Sendable {
     public let language: String
     public let channels: Int
     public let purpose: RealtimeTranscriptionPurpose
+    public let keyterms: [String]
+    public let replacements: [RealtimeTranscriptionReplacement]
 
     public init(
         language: String = "multi",
         channels: Int = 1,
-        purpose: RealtimeTranscriptionPurpose = .recording
+        purpose: RealtimeTranscriptionPurpose = .recording,
+        keyterms: [String] = [],
+        replacements: [RealtimeTranscriptionReplacement] = []
     ) {
         self.language = language
         self.channels = channels
         self.purpose = purpose
+        self.keyterms = keyterms
+        self.replacements = replacements
     }
 }
 

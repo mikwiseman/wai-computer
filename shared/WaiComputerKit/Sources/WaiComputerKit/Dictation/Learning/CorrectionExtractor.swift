@@ -3,7 +3,8 @@ import Foundation
 // Turns one (produced → edited) text pair into gated, learnable correction
 // pairs. Pure logic; no persistence, no UI. Pipeline:
 //   normalize → locate inserted region → align → divergence guard →
-//   per-substitution gates (length, noise, phonetic mishearing, OOV/proper-noun).
+//   per-substitution / phrase-merge gates (length, noise, phonetic mishearing,
+//   OOV/proper-noun).
 //
 // Only mis-hearings of out-of-vocabulary / proper-noun terms survive — the same
 // discipline Wispr Flow uses to keep auto-learning from polluting the dictionary.
@@ -95,20 +96,34 @@ public struct CorrectionExtractor: Sendable {
         var seen = Set<String>()
         var sawCandidate = false
 
-        func consider(from: String, to: String, casing: Bool) {
+        @discardableResult
+        func consider(from: String, to: String, casing: Bool) -> Bool {
             sawCandidate = true
             let ok = casing
                 ? isLearnableCasing(to: to, language: language)
                 : isLearnable(from: from, to: to, language: language)
-            guard ok else { return }
+            guard ok else { return false }
             let key = TokenAlignment.normalize(from) + "→" + TokenAlignment.normalize(to) + (casing ? "|case" : "")
             if seen.insert(key).inserted {
                 pairs.append(CorrectionPair(original: from, corrected: to, language: language))
             }
+            return true
+        }
+
+        // Phrase merges ("why computer" → "WaiComputer", "open claw" →
+        // "OpenClaw") must beat their partial single-token substitute. A
+        // partial rule like "computer" → "WaiComputer" would over-apply later.
+        var skipSubstitutionIndexes = Set<Int>()
+        for candidate in phraseMergeCandidates(from: ops) {
+            let phrase = candidate.fromTokens.joined(separator: " ")
+            if consider(from: phrase, to: candidate.to, casing: false) {
+                skipSubstitutionIndexes.insert(candidate.substitutionIndex)
+            }
         }
 
         // Spelling mis-hearings (the recognizer produced a different word).
-        for op in ops {
+        for (index, op) in ops.enumerated() {
+            if skipSubstitutionIndexes.contains(index) { continue }
             if case let .substitute(from, to) = op {
                 consider(from: from, to: to, casing: false)
             }
@@ -129,6 +144,43 @@ public struct CorrectionExtractor: Sendable {
             return CorrectionExtractionResult(pairs: [], skipped: sawCandidate ? .allGated : .noSubstitutions)
         }
         return CorrectionExtractionResult(pairs: pairs, skipped: nil)
+    }
+
+    // MARK: - Phrase merge candidates
+
+    private struct PhraseMergeCandidate {
+        let fromTokens: [String]
+        let to: String
+        let substitutionIndex: Int
+    }
+
+    private func phraseMergeCandidates(from ops: [TokenAlignment.Op]) -> [PhraseMergeCandidate] {
+        guard ops.count >= 2 else { return [] }
+
+        var candidates: [PhraseMergeCandidate] = []
+        for index in 0..<(ops.count - 1) {
+            switch (ops[index], ops[index + 1]) {
+            case let (.delete(left), .substitute(from: right, to: target)):
+                candidates.append(
+                    PhraseMergeCandidate(
+                        fromTokens: [left, right],
+                        to: target,
+                        substitutionIndex: index + 1
+                    )
+                )
+            case let (.substitute(from: left, to: target), .delete(right)):
+                candidates.append(
+                    PhraseMergeCandidate(
+                        fromTokens: [left, right],
+                        to: target,
+                        substitutionIndex: index
+                    )
+                )
+            default:
+                continue
+            }
+        }
+        return candidates
     }
 
     // MARK: - Gates

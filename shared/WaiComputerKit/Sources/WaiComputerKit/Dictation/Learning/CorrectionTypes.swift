@@ -7,13 +7,13 @@ import Foundation
 // dictionary. Everything here is pure Foundation so iOS can reuse it later;
 // platform pieces (NSSpellChecker, Accessibility) live in the app target.
 //
-// Privacy: these types carry single token pairs only — never sentences or
-// surrounding context. See DICTIONARY_LEARNING.md.
+// Privacy: these types carry token or short token-phrase pairs only — never
+// sentences or surrounding context. See DICTIONARY_LEARNING.md.
 
-/// One token-level substitution: the recognizer wrote `original`, the user
-/// changed it to `corrected`. Surface forms are preserved (the corrected form
-/// is what we would add to the dictionary). `language` is the best-effort hint
-/// captured at dictation time ("en", "ru", "multi", or nil).
+/// One token-level or short phrase-level substitution: the recognizer wrote
+/// `original`, the user changed it to `corrected`. Surface forms are preserved
+/// (the corrected form is what we would add to the dictionary). `language` is
+/// the best-effort hint captured at dictation time ("en", "ru", "multi", or nil).
 public struct CorrectionPair: Equatable, Hashable, Sendable, Codable {
     public let original: String
     public let corrected: String

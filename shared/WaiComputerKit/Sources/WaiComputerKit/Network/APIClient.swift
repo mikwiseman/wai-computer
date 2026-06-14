@@ -2010,12 +2010,16 @@ public actor APIClient {
     public func createRealtimeTranscriptionSession(
         language: String = "multi",
         channels: Int = 1,
-        purpose: RealtimeTranscriptionPurpose = .recording
+        purpose: RealtimeTranscriptionPurpose = .recording,
+        keyterms: [String] = [],
+        replacements: [RealtimeTranscriptionReplacement] = []
     ) async throws -> RealtimeTranscriptionSessionConfig {
         let body = CreateRealtimeTranscriptionSessionRequest(
             language: language,
             channels: channels,
-            purpose: purpose
+            purpose: purpose,
+            keyterms: keyterms,
+            replacements: replacements
         )
         return try await request(.POST, path: "/api/transcription/session", body: body)
     }

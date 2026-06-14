@@ -482,6 +482,53 @@ final class WebSocketManagerExtendedTests: XCTestCase {
         XCTAssertTrue(finalized)
     }
 
+    func testProviderBackedPostEndTurnFinalResultWithoutFinalizeMarkerDoesNotCompleteFinalization() async {
+        let session = ProviderBackedRealtimeSession(config: config(language: "en"))
+        await session.testingSetDidSendEndTurn(true)
+
+        await session.testingHandleDeepgramMessage("""
+        {
+            "type": "Results",
+            "is_final": true,
+            "channel": {
+                "alternatives": [
+                    {"transcript": "First final piece.", "confidence": 0.95}
+                ]
+            }
+        }
+        """)
+
+        let finalized = await session.testingHasFinalizationMarker()
+        let hasTranscriptActivity = await session.testingHasTranscriptActivity()
+        XCTAssertFalse(finalized)
+        XCTAssertTrue(hasTranscriptActivity)
+        let segments = await session.testingCollectedSegments()
+        XCTAssertEqual(segments.map(\.text), ["First final piece."])
+    }
+
+    func testProviderBackedFromFinalizeResultCompletesFinalization() async {
+        let session = ProviderBackedRealtimeSession(config: config(language: "en"))
+        await session.testingSetDidSendEndTurn(true)
+
+        await session.testingHandleDeepgramMessage("""
+        {
+            "type": "Results",
+            "is_final": true,
+            "from_finalize": true,
+            "channel": {
+                "alternatives": [
+                    {"transcript": "Finalized piece.", "confidence": 0.95}
+                ]
+            }
+        }
+        """)
+
+        let finalized = await session.testingHasFinalizationMarker()
+        XCTAssertTrue(finalized)
+        let segments = await session.testingCollectedSegments()
+        XCTAssertEqual(segments.map(\.text), ["Finalized piece."])
+    }
+
     func testWebSocketManagerConnectTimeMetadataDoesNotMarkFinalization() async {
         let apiClient = APIClient(baseURL: URL(string: "https://example.com")!)
         let manager = WebSocketManager(apiClient: apiClient)
@@ -501,6 +548,49 @@ final class WebSocketManagerExtendedTests: XCTestCase {
 
         await manager.testingHandleDeepgramMessage("""
         {"type":"Metadata","request_id":"abc","model_info":{"name":"nova-3"}}
+        """)
+
+        let finalized = await manager.testingProviderFinalizationReceived()
+        XCTAssertTrue(finalized)
+    }
+
+    func testWebSocketManagerPostEndTurnFinalResultWithoutFinalizeMarkerDoesNotCompleteFinalization() async {
+        let apiClient = APIClient(baseURL: URL(string: "https://example.com")!)
+        let manager = WebSocketManager(apiClient: apiClient)
+        await manager.testingSetEndOfStreamState(requested: true, sent: true)
+
+        await manager.testingHandleDeepgramMessage("""
+        {
+            "type": "Results",
+            "is_final": true,
+            "channel": {
+                "alternatives": [
+                    {"transcript": "First final piece.", "confidence": 0.95}
+                ]
+            }
+        }
+        """)
+
+        let finalized = await manager.testingProviderFinalizationReceived()
+        XCTAssertFalse(finalized)
+    }
+
+    func testWebSocketManagerFromFinalizeResultCompletesFinalization() async {
+        let apiClient = APIClient(baseURL: URL(string: "https://example.com")!)
+        let manager = WebSocketManager(apiClient: apiClient)
+        await manager.testingSetEndOfStreamState(requested: true, sent: true)
+
+        await manager.testingHandleDeepgramMessage("""
+        {
+            "type": "Results",
+            "is_final": true,
+            "from_finalize": true,
+            "channel": {
+                "alternatives": [
+                    {"transcript": "Finalized piece.", "confidence": 0.95}
+                ]
+            }
+        }
         """)
 
         let finalized = await manager.testingProviderFinalizationReceived()

@@ -14,6 +14,7 @@
 		1054D58359DC993D9CCA56B7 /* DictationStartupAudioBufferTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1EC2C1264073BF77C0F1688B /* DictationStartupAudioBufferTests.swift */; };
 		13520163768E2BD45231E1D7 /* ImportUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 66FA75D8ABA621613DBC2F59 /* ImportUITests.swift */; };
 		14670A5C04053EC1B99750B0 /* DictationHistoryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72DC15C789AC6D3DE96B7454 /* DictationHistoryView.swift */; };
+		15F04972C4C0FDC11AEE6253 /* DictationDictionaryStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20042A89F03C6CC80491D13F /* DictationDictionaryStore.swift */; };
 		16E95F20E298B1C77005D98E /* OnboardingL10n.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4674C2D695C1BC16C5D8011 /* OnboardingL10n.swift */; };
 		1A4F88F3C0A22ED62ADA1780 /* AppVersionInfoTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C1DC9D08ED094EA1B8216F1 /* AppVersionInfoTests.swift */; };
 		1AB91F2E353A45E92FBB3354 /* MacContentFeedViewModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 243A0A3BCE7F9A63AD87EB1B /* MacContentFeedViewModelTests.swift */; };
@@ -722,6 +723,7 @@
 				42746C284DD89EAAE6F30B25 /* DictationContextCollectorTests.swift in Sources */,
 				2BFF7BED40D7200EE39A1768 /* DictationCopy.swift in Sources */,
 				B3392D023DF7B881CEDF5AD2 /* DictationCopyTests.swift in Sources */,
+				15F04972C4C0FDC11AEE6253 /* DictationDictionaryStore.swift in Sources */,
 				5734CAF7AB2C05D1BE5A8CFD /* DictationLanguageStore.swift in Sources */,
 				24FB33E453CEA84E0719B158 /* DictationLanguageStoreTests.swift in Sources */,
 				F4240953527DD09C6F939EB7 /* DictationOverlayPanel.swift in Sources */,

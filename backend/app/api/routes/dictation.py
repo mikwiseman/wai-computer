@@ -11,6 +11,7 @@ import json
 import logging
 import re
 import time
+from collections import Counter, defaultdict
 from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
@@ -66,6 +67,8 @@ CLEANUP_REASONING_TOKEN_RESERVE = 384
 CLEANUP_OUTPUT_TOKEN_QUANTUM = 256
 CEREBRAS_RATE_LIMIT_RETRY_DELAYS_SECONDS = (1.0, 2.0)
 MAX_CLEANUP_PROTECTED_TERMS = 100
+MAX_CLEANUP_FUZZY_CONTENT_KEYS = 64
+MAX_CLEANUP_FUZZY_CONTENT_COMPARISONS = 4_096
 PROTECTED_TERM_EDGE_CHARS = " \t\r\n.,;:!?()[]{}<>\"'“”‘’"
 URL_TOKEN_RE = re.compile(r"\b(?:https?://|www\.)\S+", re.IGNORECASE)
 EMAIL_TOKEN_RE = re.compile(
@@ -201,7 +204,7 @@ CONTENT_ALWAYS_PRESERVE_TOKENS = frozenset(
 
 
 def _dictation_cleanup_reasoning_effort(cleanup_level: str) -> str:
-    """Keep cleanup fast while allowing more polish for explicit high rewrites."""
+    """Keep cleanup fast while allowing explicit high cleanup a little more room."""
     if cleanup_level == "high":
         return "medium"
     return "low"
@@ -239,9 +242,10 @@ Rules:
 - Remove repeated filler-only loops and false starts while keeping the final
   intended version.
 - Fix obvious grammar, capitalization, punctuation, paragraph breaks, and
-  awkward dictated phrasing.
-- Make sentences clearer and more concise when the same meaning can be
-  expressed directly.
+  awkward dictated phrasing without paraphrasing the dictated content.
+- Make sentences clearer and more concise only through filler removal,
+  punctuation, paragraphing, and obvious grammar fixes.
+- Do not substitute, add, or drop content words.
 - Do not replace, normalize, or guess content words, names, product names,
   technical terms, issue IDs, numbers, URLs, commands, paths, code-like tokens,
   or mixed-language terms. If a word looks wrong but is not a filler or explicit
@@ -254,16 +258,16 @@ Rules:
 - Output only the cleaned text.
 """,
     "high": """\
-Rewrite dictated text for brevity and polish.
+Polish dictated text for brevity and polish without paraphrasing.
 
 Rules:
 - Remove filler sounds and filler words in Russian and English, including э,
   эээ, э-э-э, а, ааа, а-а-а, ну, вот, типа, как бы, значит, um, uh, like,
   you know, I mean, basically, actually, so, and well.
-- Remove repeated filler-only loops, false starts, rambling repetitions, and
-  redundant phrasing while preserving the final intended message.
-- Rewrite for polished, concise prose with clear paragraphing and natural
-  punctuation.
+- Remove repeated filler-only loops, false starts, rambling filler, and
+  redundant filler phrasing while preserving the final intended message.
+- Polish punctuation, capitalization, grammar, spacing, and paragraphing.
+- Do not substitute, add, or drop content words.
 - Do not replace, normalize, or guess content words, names, product names,
   technical terms, issue IDs, numbers, URLs, commands, paths, code-like tokens,
   or mixed-language terms. If a word looks wrong but is not a filler or explicit
@@ -658,7 +662,114 @@ def _cleanup_content_keys(
     return keys
 
 
-def _validate_light_cleanup_preserves_content_words(
+def _consume_content_count(
+    counts: Counter[str],
+    key: str,
+    count: int,
+) -> None:
+    next_count = counts[key] - count
+    if next_count > 0:
+        counts[key] = next_count
+    else:
+        counts.pop(key, None)
+
+
+def _consume_matching_content_counts(
+    raw_counts: Counter[str],
+    cleaned_counts: Counter[str],
+) -> None:
+    for key in list(raw_counts):
+        count = min(raw_counts[key], cleaned_counts.get(key, 0))
+        if count <= 0:
+            continue
+        _consume_content_count(raw_counts, key, count)
+        _consume_content_count(cleaned_counts, key, count)
+
+
+def _consume_stem_equivalent_content_counts(
+    raw_counts: Counter[str],
+    cleaned_counts: Counter[str],
+) -> None:
+    cleaned_keys_by_stem: defaultdict[str, list[str]] = defaultdict(list)
+    for cleaned_key in cleaned_counts:
+        cleaned_keys_by_stem[_cleanup_content_stem(cleaned_key)].append(cleaned_key)
+
+    for raw_key in list(raw_counts):
+        raw_stem = _cleanup_content_stem(raw_key)
+        candidate_keys = cleaned_keys_by_stem.get(raw_stem, [])
+        if not candidate_keys:
+            continue
+
+        remaining_raw = raw_counts.get(raw_key, 0)
+        for cleaned_key in candidate_keys:
+            remaining_cleaned = cleaned_counts.get(cleaned_key, 0)
+            if remaining_raw <= 0:
+                break
+            if remaining_cleaned <= 0:
+                continue
+            count = min(remaining_raw, remaining_cleaned)
+            _consume_content_count(raw_counts, raw_key, count)
+            _consume_content_count(cleaned_counts, cleaned_key, count)
+            remaining_raw -= count
+
+
+def _expanded_content_keys_within_limit(
+    counts: Counter[str],
+    *,
+    limit: int,
+) -> list[str] | None:
+    expanded: list[str] = []
+    for key, count in counts.items():
+        if count <= 0:
+            continue
+        if len(expanded) + count > limit:
+            return None
+        expanded.extend([key] * count)
+    return expanded
+
+
+def _consume_fuzzy_content_counts(
+    raw_counts: Counter[str],
+    cleaned_counts: Counter[str],
+) -> bool:
+    remaining_total = sum(raw_counts.values()) + sum(cleaned_counts.values())
+    if remaining_total == 0:
+        return True
+    if remaining_total > MAX_CLEANUP_FUZZY_CONTENT_KEYS:
+        return False
+
+    raw_remaining = _expanded_content_keys_within_limit(
+        raw_counts,
+        limit=MAX_CLEANUP_FUZZY_CONTENT_KEYS,
+    )
+    cleaned_remaining = _expanded_content_keys_within_limit(
+        cleaned_counts,
+        limit=MAX_CLEANUP_FUZZY_CONTENT_KEYS,
+    )
+    if raw_remaining is None or cleaned_remaining is None:
+        return False
+
+    matched_cleaned_indexes: set[int] = set()
+    comparisons = 0
+    for raw_key in raw_remaining:
+        match_index = None
+        for index, cleaned_key in enumerate(cleaned_remaining):
+            if index in matched_cleaned_indexes:
+                continue
+            comparisons += 1
+            if comparisons > MAX_CLEANUP_FUZZY_CONTENT_COMPARISONS:
+                return False
+            if _cleanup_content_keys_equivalent(raw_key, cleaned_key):
+                match_index = index
+                break
+        if match_index is None:
+            return False
+        matched_cleaned_indexes.add(match_index)
+
+    return len(matched_cleaned_indexes) == len(cleaned_remaining)
+
+
+def _validate_cleanup_preserves_content_words(
     *,
     raw_text: str,
     cleaned: str,
@@ -669,39 +780,21 @@ def _validate_light_cleanup_preserves_content_words(
     if not raw_keys and not cleaned_keys:
         return
 
-    matched_cleaned_indexes: set[int] = set()
-    missing_raw_key = False
-    for raw_key in raw_keys:
-        match_index = next(
-            (
-                index
-                for index, cleaned_key in enumerate(cleaned_keys)
-                if index not in matched_cleaned_indexes
-                and _cleanup_content_keys_equivalent(raw_key, cleaned_key)
-            ),
-            None,
-        )
-        if match_index is None:
-            missing_raw_key = True
-            break
-        matched_cleaned_indexes.add(match_index)
-
-    added_cleaned_key = any(
-        index not in matched_cleaned_indexes
-        for index, _ in enumerate(cleaned_keys)
-    )
-    if missing_raw_key or added_cleaned_key:
+    raw_counts = Counter(raw_keys)
+    cleaned_counts = Counter(cleaned_keys)
+    _consume_matching_content_counts(raw_counts, cleaned_counts)
+    _consume_stem_equivalent_content_counts(raw_counts, cleaned_counts)
+    if not _consume_fuzzy_content_counts(raw_counts, cleaned_counts):
         raise CerebrasResponseError("Dictation cleanup changed content words.")
 
 
 def _validate_cleanup_output(cleaned: str, prepared: CleanupCerebrasRequest) -> None:
     _validate_cleanup_preserves_protected_terms(cleaned, prepared.protected_terms)
-    if prepared.cleanup_level == "light":
-        _validate_light_cleanup_preserves_content_words(
-            raw_text=prepared.text,
-            cleaned=cleaned,
-            protected_terms=prepared.protected_terms,
-        )
+    _validate_cleanup_preserves_content_words(
+        raw_text=prepared.text,
+        cleaned=cleaned,
+        protected_terms=prepared.protected_terms,
+    )
 
 
 def _build_context_block(context: DictationCleanupContext | None) -> str:

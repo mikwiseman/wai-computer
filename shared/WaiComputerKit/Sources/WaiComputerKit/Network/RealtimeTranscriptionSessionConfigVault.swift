@@ -11,11 +11,54 @@ public actor RealtimeTranscriptionSessionConfigVault {
         public let language: String
         public let channels: Int
         public let purpose: RealtimeTranscriptionPurpose
+        public let keyterms: [String]
+        public let replacements: [RealtimeTranscriptionReplacement]
+        public let hintSignature: String
 
-        public init(language: String, channels: Int, purpose: RealtimeTranscriptionPurpose) {
+        public init(
+            language: String,
+            channels: Int,
+            purpose: RealtimeTranscriptionPurpose,
+            keyterms: [String] = [],
+            replacements: [RealtimeTranscriptionReplacement] = []
+        ) {
             self.language = language
             self.channels = channels
             self.purpose = purpose
+            self.keyterms = keyterms
+            self.replacements = replacements
+            self.hintSignature = Self.makeHintSignature(
+                keyterms: keyterms,
+                replacements: replacements
+            )
+        }
+
+        private static func makeHintSignature(
+            keyterms: [String],
+            replacements: [RealtimeTranscriptionReplacement]
+        ) -> String {
+            let keytermParts = keyterms
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+                .map { "k:\($0)" }
+            let replacementParts = replacements.compactMap { replacement -> String? in
+                let find = replacement.find.trimmingCharacters(in: .whitespacesAndNewlines)
+                let replace = replacement.replace.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !find.isEmpty, !replace.isEmpty else { return nil }
+                return "r:\(find.lowercased())>\(replace)"
+            }
+            let parts = keytermParts + replacementParts
+            guard !parts.isEmpty else { return "" }
+            var hash: UInt64 = 14_695_981_039_346_656_037
+            for part in parts {
+                for byte in part.utf8 {
+                    hash ^= UInt64(byte)
+                    hash &*= 1_099_511_628_211
+                }
+                hash ^= 31
+                hash &*= 1_099_511_628_211
+            }
+            return "\(keytermParts.count):\(replacementParts.count):\(String(hash, radix: 16))"
         }
     }
 

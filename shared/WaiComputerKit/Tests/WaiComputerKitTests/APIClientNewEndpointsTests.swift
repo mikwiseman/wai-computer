@@ -1289,6 +1289,58 @@ final class APIClientNewEndpointsTests: XCTestCase {
         XCTAssertEqual(config.authScheme, "bearer")
     }
 
+    func testCreateRealtimeTranscriptionSessionSendsDictationHints() async throws {
+        let client = makeClient()
+
+        MockURLProtocol.requestHandler = { request in
+            XCTAssertEqual(request.httpMethod, "POST")
+            XCTAssertEqual(request.url?.path, "/api/transcription/session")
+
+            let body = try self.jsonBody(from: request)
+            XCTAssertEqual(body["purpose"] as? String, "dictation")
+            XCTAssertEqual(body["keyterms"] as? [String], ["WaiComputer", "Nova 3"])
+            let replacements = body["replacements"] as? [[String: String]]
+            XCTAssertEqual(replacements, [
+                ["find": "why computer", "replace": "WaiComputer"],
+            ])
+
+            let response = HTTPURLResponse(
+                url: request.url!,
+                statusCode: 200,
+                httpVersion: nil,
+                headerFields: nil
+            )!
+            let payload = """
+            {
+                "provider":"deepgram",
+                "token":"dg_token_test",
+                "expires_in_seconds":60,
+                "sample_rate":16000,
+                "audio_format":"linear16",
+                "language":"multi",
+                "channels":1,
+                "model":"nova-3",
+                "websocket_url":"wss://wai.computer/api/transcription/stream",
+                "auth_scheme":"bearer",
+                "keep_alive_interval_seconds":4
+            }
+            """.data(using: .utf8)!
+            return (response, payload)
+        }
+
+        let config = try await client.createRealtimeTranscriptionSession(
+            language: "multi",
+            channels: 1,
+            purpose: .dictation,
+            keyterms: ["WaiComputer", "Nova 3"],
+            replacements: [
+                RealtimeTranscriptionReplacement(find: "why computer", replace: "WaiComputer"),
+            ]
+        )
+        XCTAssertEqual(config.provider, "deepgram")
+        XCTAssertEqual(config.sampleRate, 16_000)
+    }
+
     func testCreateRealtimeVoiceSessionSendsMode() async throws {
         let client = makeClient()
 

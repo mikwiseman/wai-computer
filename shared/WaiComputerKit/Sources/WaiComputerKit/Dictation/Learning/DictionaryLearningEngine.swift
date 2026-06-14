@@ -6,9 +6,9 @@ import os
 // in a rolling window, and publishes one-tap suggestions once a pair crosses the
 // recurrence threshold.
 //
-// Privacy: the on-device ledger stores ONLY single token pairs + counts, never
-// sentences or surrounding context, is never synced, and is never logged with
-// content. See DICTIONARY_LEARNING.md.
+// Privacy: the on-device ledger stores ONLY token / short token-phrase pairs +
+// counts, never sentences or surrounding context, is never synced, and is never
+// logged with content. See DICTIONARY_LEARNING.md.
 
 @MainActor
 public final class DictionaryLearningEngine: ObservableObject {

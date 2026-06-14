@@ -46,6 +46,10 @@ final class DictionaryLearningEngineTests: XCTestCase {
         engine.observeEdit(produced: "let's use sigma here", edited: "let's use Figma here", language: "en")
     }
 
+    private func observeWaiComputerPhraseFix(_ engine: DictionaryLearningEngine) {
+        engine.observeEdit(produced: "open why computer now", edited: "open WaiComputer now", language: "en")
+    }
+
     func testNoSuggestionBelowThreshold() {
         let engine = makeEngine(clock: TestClock(Date()))
         observeFigmaFix(engine)
@@ -59,6 +63,16 @@ final class DictionaryLearningEngineTests: XCTestCase {
         XCTAssertEqual(engine.suggestions.count, 1)
         XCTAssertEqual(engine.suggestions.first?.corrected, "Figma")
         XCTAssertEqual(engine.suggestions.first?.original, "sigma")
+        XCTAssertEqual(engine.suggestions.first?.hitCount, 2)
+    }
+
+    func testPhraseSuggestionAppearsAfterRecurrence() {
+        let engine = makeEngine(clock: TestClock(Date()))
+        observeWaiComputerPhraseFix(engine)
+        observeWaiComputerPhraseFix(engine)
+        XCTAssertEqual(engine.suggestions.count, 1)
+        XCTAssertEqual(engine.suggestions.first?.original, "why computer")
+        XCTAssertEqual(engine.suggestions.first?.corrected, "WaiComputer")
         XCTAssertEqual(engine.suggestions.first?.hitCount, 2)
     }
 

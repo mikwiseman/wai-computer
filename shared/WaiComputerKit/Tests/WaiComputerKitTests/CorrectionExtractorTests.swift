@@ -64,6 +64,29 @@ final class CorrectionExtractorTests: XCTestCase {
         XCTAssertEqual(result.pairs.first?.corrected, "Figma")
     }
 
+    func testPhraseMergeCorrectionIsLearnedForProductName() {
+        let extractor = makeExtractor(known: ["open", "now"])
+        let result = extractor.extract(
+            produced: "open why computer now",
+            edited: "open WaiComputer now",
+            language: "en"
+        )
+        XCTAssertNil(result.skipped)
+        XCTAssertEqual(result.pairs.count, 1)
+        XCTAssertEqual(result.pairs.first?.original, "why computer")
+        XCTAssertEqual(result.pairs.first?.corrected, "WaiComputer")
+    }
+
+    func testPhraseMergeCorrectionRejectsKnownCommonWord() {
+        let extractor = makeExtractor(known: ["open", "greenhouse", "now"])
+        let result = extractor.extract(
+            produced: "open green house now",
+            edited: "open greenhouse now",
+            language: "en"
+        )
+        XCTAssertTrue(result.pairs.isEmpty)
+    }
+
     func testDowncasingProperNounIsNotLearned() {
         let extractor = makeExtractor(known: ["i", "opened", "today", "love", "apps"])
         XCTAssertTrue(

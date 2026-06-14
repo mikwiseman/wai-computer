@@ -86,10 +86,20 @@ PROXY_ERROR_SESSION_EXPIRED = {
 }
 
 
+class RealtimeReplacementHintRequest(BaseModel):
+    find: str
+    replace: str
+
+
 class CreateRealtimeTranscriptionSessionRequest(BaseModel):
     language: str = "multi"
     channels: int = Field(default=1, ge=1, le=1)
     purpose: Literal["recording", "dictation"] = "recording"
+    keyterms: list[str] = Field(default_factory=list, max_length=100)
+    replacements: list[RealtimeReplacementHintRequest] = Field(
+        default_factory=list,
+        max_length=200,
+    )
 
 
 class RealtimeTranscriptionSessionResponse(BaseModel):
@@ -120,6 +130,7 @@ async def _record_realtime_mint_event(
     latency_ms: int | None = None,
     guard_code: str | None = None,
     error_type: str | None = None,
+    keyterms: list[str] | None = None,
 ) -> None:
     await record_deepgram_usage_event(
         db,
@@ -137,7 +148,7 @@ async def _record_realtime_mint_event(
         error_type=error_type,
         billing_mode="streaming",
         language_mode="multilingual",
-        addons=_realtime_deepgram_addons(purpose=purpose, keyterms=[]),
+        addons=_realtime_deepgram_addons(purpose=purpose, keyterms=keyterms or []),
         commit=True,
     )
 
@@ -149,6 +160,23 @@ def _realtime_deepgram_addons(*, purpose: str, keyterms: list[str]) -> list[str]
     if keyterms:
         addons.append("keyterm_prompting")
     return addons
+
+
+def _client_dictation_hints(
+    request: CreateRealtimeTranscriptionSessionRequest,
+) -> tuple[list[str], list[tuple[str, str]]]:
+    if request.purpose != "dictation":
+        return [], []
+
+    keyterms = [term.strip() for term in request.keyterms if term.strip()]
+    replacements = [
+        (replacement.find.strip(), replacement.replace.strip())
+        for replacement in request.replacements
+        if replacement.find.strip()
+        and replacement.replace.strip()
+        and replacement.find.strip().casefold() != replacement.replace.strip().casefold()
+    ]
+    return keyterms, replacements
 
 
 @router.post("/session", response_model=RealtimeTranscriptionSessionResponse)
@@ -299,14 +327,17 @@ async def create_session(
             user_id=user.id,
             purpose=request.purpose,
         )
+        client_keyterms, client_replacements = _client_dictation_hints(request)
+        keyterms = [*realtime_hints.keyterms, *client_keyterms]
+        replacements = [*realtime_hints.replacements, *client_replacements]
         session = await create_realtime_transcription_session(
             language=request.language,
             channels=request.channels,
             purpose=request.purpose,
             user=user,
             websocket_url=_stream_websocket_url(http_request),
-            keyterms=realtime_hints.keyterms,
-            replacements=realtime_hints.replacements,
+            keyterms=keyterms,
+            replacements=replacements,
         )
     except UnsupportedRealtimeLanguageError as exc:
         latency_ms = round((perf_counter() - started_at) * 1000)
@@ -414,6 +445,7 @@ async def create_session(
         channels=session.channels,
         model=session.model,
         latency_ms=latency_ms,
+        keyterms=keyterms,
     )
     add_sentry_breadcrumb(
         category="transcription.session",

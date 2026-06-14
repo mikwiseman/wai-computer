@@ -169,6 +169,64 @@ async def test_realtime_transcription_session_loads_replacements_for_live_dictat
 
 
 @pytest.mark.asyncio
+async def test_realtime_transcription_session_merges_client_dictation_hints(
+    mock_authenticated_user,
+):
+    session = RealtimeTranscriptionSession(
+        provider="deepgram",
+        token="dg_token",
+        expires_in_seconds=60,
+        sample_rate=16_000,
+        audio_format="linear16",
+        language="multi",
+        channels=1,
+        model="nova-3",
+        keep_alive_interval_seconds=4,
+        commit_strategy=None,
+        no_verbatim=False,
+        websocket_url="wss://api.deepgram.com/v1/listen?model=nova-3",
+        auth_scheme="bearer",
+    )
+    mint = AsyncMock(return_value=session)
+    server_replacements = [("server wrong", "ServerRight")]
+    hints = RealtimePersonalizationHints(
+        keyterms=["ServerTerm"],
+        replacements=server_replacements,
+    )
+
+    with patch(
+        "app.api.routes.realtime_transcription.create_realtime_transcription_session",
+        new=mint,
+    ), patch(
+        "app.api.routes.realtime_transcription.load_user_realtime_hints",
+        new=AsyncMock(return_value=hints),
+    ):
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            response = await client.post(
+                "/api/transcription/session",
+                headers={"Authorization": "Bearer fake-token"},
+                json={
+                    "language": "multi",
+                    "channels": 1,
+                    "purpose": "dictation",
+                    "keyterms": ["WaiComputer", "Nova 3"],
+                    "replacements": [
+                        {"find": "why computer", "replace": "WaiComputer"},
+                    ],
+                },
+            )
+
+    assert response.status_code == 200
+    assert mint.await_args.kwargs["keyterms"] == ["ServerTerm", "WaiComputer", "Nova 3"]
+    assert mint.await_args.kwargs["replacements"] == [
+        ("server wrong", "ServerRight"),
+        ("why computer", "WaiComputer"),
+    ]
+
+
+@pytest.mark.asyncio
 async def test_realtime_transcription_session_reports_slow_session_mint(
     mock_authenticated_user,
 ):
