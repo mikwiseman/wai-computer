@@ -23,6 +23,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.entity_graph import seed_entities_from_summary
 from app.core.summarizer import (
+    DEFAULT_SUMMARY_LANGUAGE,
+    DEFAULT_SUMMARY_STYLE,
     KeyMoment,
     SummaryResult,
     extract_key_moments,
@@ -30,11 +32,47 @@ from app.core.summarizer import (
     summarize_content,
 )
 from app.models.item import Item, ItemSummary
+from app.models.user import User
 
 logger = logging.getLogger(__name__)
 
 Summarizer = Callable[..., Awaitable[SummaryResult]]
 MomentExtractor = Callable[..., Awaitable[list[KeyMoment]]]
+
+
+def _is_auto_language(value: str | None) -> bool:
+    return (value or "").strip().lower() in {"", "auto", "multi"}
+
+
+async def _resolve_item_summary_preferences(
+    db: AsyncSession,
+    item: Item,
+    *,
+    language: str,
+    style: str,
+    instructions: str | None,
+) -> tuple[str, str, str | None]:
+    user = await db.get(User, item.user_id)
+    if user is None:
+        raise ValueError("item user not found")
+
+    resolved_language = language
+    if _is_auto_language(resolved_language):
+        preferred = (user.summary_language or "").strip().lower()
+        if _is_auto_language(preferred):
+            preferred = (user.default_language or "").strip().lower()
+        resolved_language = preferred if not _is_auto_language(preferred) else "auto"
+
+    resolved_style = style
+    if not (resolved_style or "").strip() or resolved_style == DEFAULT_SUMMARY_STYLE:
+        resolved_style = user.summary_style or DEFAULT_SUMMARY_STYLE
+
+    resolved_instructions = instructions
+    if resolved_instructions is None:
+        user_instructions = (user.summary_instructions or "").strip()
+        resolved_instructions = user_instructions or None
+
+    return resolved_language, resolved_style, resolved_instructions
 
 
 async def generate_item_summary(
@@ -59,6 +97,13 @@ async def generate_item_summary(
 
     summarize_fn = summarizer or summarize_content
     moments_fn = moment_extractor or extract_key_moments
+    language, style, instructions = await _resolve_item_summary_preferences(
+        db,
+        item,
+        language=language or DEFAULT_SUMMARY_LANGUAGE,
+        style=style or DEFAULT_SUMMARY_STYLE,
+        instructions=instructions,
+    )
 
     summary_result = await summarize_fn(
         text,

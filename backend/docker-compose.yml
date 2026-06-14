@@ -53,6 +53,28 @@ services:
         max-file: "3"
     restart: unless-stopped
 
+  telegram-bot-api:
+    image: aiogram/telegram-bot-api:latest
+    container_name: waicomputer-telegram-bot-api
+    environment:
+      TELEGRAM_API_ID: ${TELEGRAM_API_ID:-}
+      TELEGRAM_API_HASH: ${TELEGRAM_API_HASH:-}
+      TELEGRAM_LOCAL: "true"
+    volumes:
+      - tg_api_data:/var/lib/telegram-bot-api
+    networks:
+      - internal
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    restart: unless-stopped
+
   api:
     build:
       context: .
@@ -68,11 +90,16 @@ services:
       SUMMARY_AUDIO_STORAGE_DIR: /var/lib/waicomputer/summary-audio
       REDIS_URL: redis://redis:6379/0
       VOICE_IDENTIFICATION_ENABLED: "false"
+      TELEGRAM_BOT_API_BASE_URL: http://telegram-bot-api:8081
+      TELEGRAM_FILE_BASE_URL: http://telegram-bot-api:8081/file
+      TELEGRAM_LOCAL_FILE_ROOT: /var/lib/telegram-bot-api
+      TELEGRAM_DOWNLOAD_MAX_BYTES: ${TELEGRAM_DOWNLOAD_MAX_BYTES:-209715200}
       GIT_SHA: ${GIT_SHA:-}
       GIT_DIRTY: ${GIT_DIRTY:-false}
     volumes:
       - recording_uploads:/var/lib/waicomputer/uploads
       - summary_audio:/var/lib/waicomputer/summary-audio
+      - tg_api_data:/var/lib/telegram-bot-api:ro
     networks:
       - internal
       - web
@@ -81,6 +108,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      telegram-bot-api:
+        condition: service_started
     deploy:
       resources:
         limits:
@@ -247,6 +276,7 @@ volumes:
   recording_uploads:
   summary_audio:
   speechbrain_cache:
+  tg_api_data:
 
 networks:
   internal:

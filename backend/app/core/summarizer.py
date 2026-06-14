@@ -544,6 +544,21 @@ Rules:
 """
 
 
+MEDIA_CONTENT_SUMMARY_INSTRUCTIONS = """\
+Media-specific quality rules for video/audio transcripts:
+- Overall overview: start with the complete source's main topic and purpose, not
+  a narrow opening detail.
+- Highlight crucial data: preserve important quotes, names, dates, numbers,
+  metrics, examples, claims, and conclusions.
+- Identify key points: cover the significant ideas and changes in direction
+  across the whole transcript, not only the beginning.
+- Use timestamps and section summaries when time-coded segments are available:
+  make key moments concrete enough to map back to the source segment.
+- Preserve the source tone, style, and language while keeping the result easy to
+  skim.
+"""
+
+
 KEY_MOMENTS_INSTRUCTIONS = """\
 Extract the key moments / main points of this content as a scannable table.
 
@@ -572,6 +587,8 @@ def build_content_summary_prompt(
     parts = [CONTENT_SUMMARY_INSTRUCTIONS]
     if content_kind and content_kind != "content":
         parts.append(f"\nThe content is a {content_kind}.")
+    if _is_time_based_content_kind(content_kind):
+        parts.append("\n" + MEDIA_CONTENT_SUMMARY_INSTRUCTIONS)
 
     style_text = STYLE_INSTRUCTIONS.get(style, STYLE_INSTRUCTIONS[DEFAULT_SUMMARY_STYLE])
     parts.append(f"\nSTYLE: {style_text}")
@@ -591,6 +608,11 @@ def build_content_summary_prompt(
 
     parts.append("\nContent:\n")
     return "\n".join(parts)
+
+
+def _is_time_based_content_kind(content_kind: str | None) -> bool:
+    kind = (content_kind or "").strip().lower()
+    return any(marker in kind for marker in ("video", "audio", "podcast", "transcript"))
 
 
 async def summarize_content(
@@ -762,7 +784,18 @@ def resolve_key_moment_timestamps(
         if best_segment is not None:
             moment.start_ms = best_segment.get("start_ms")
             moment.end_ms = best_segment.get("end_ms")
+            if moment.timestamp is None and isinstance(moment.start_ms, int):
+                moment.timestamp = _format_timestamp_ms(moment.start_ms)
     return moments
+
+
+def _format_timestamp_ms(value: int) -> str:
+    total_seconds = max(value // 1000, 0)
+    hours, remainder = divmod(total_seconds, 3600)
+    minutes, seconds = divmod(remainder, 60)
+    if hours:
+        return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+    return f"{minutes:02d}:{seconds:02d}"
 
 
 TITLE_SAMPLE_MAX_CHARS = 6000

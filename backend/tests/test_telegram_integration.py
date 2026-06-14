@@ -2853,6 +2853,35 @@ async def test_handle_media_message_download_size_user_and_import_errors(
 
 
 @pytest.mark.asyncio
+async def test_handle_media_message_reports_hosted_telegram_file_limit(
+    db_session: AsyncSession,
+):
+    user = await _user(db_session, "media-getfile-limit@example.com")
+    account = TelegramAccount(user_id=user.id, telegram_user_id=50, telegram_chat_id=50)
+    db_session.add(account)
+    await db_session.commit()
+    capture = _TelegramCapture()
+
+    async def get_file_too_big(file_id: str) -> TelegramFile:
+        assert file_id == "file-id"
+        raise TelegramClientError("Telegram getFile failed: Bad Request: file is too big")
+
+    capture.get_file = get_file_too_big
+
+    await telegram_routes._handle_media_message(
+        db_session,
+        capture,
+        message={"message_id": 21, "chat": {"id": 50}},
+        account=account,
+        media={"kind": "audio", "file_id": "file-id", "file_name": "lecture.mp3"},
+    )
+
+    assert "слишком большой" in capture.messages[-1]["text"]
+    assert capture.deleted_messages == [{"chat_id": 50, "message_id": 1}]
+    assert account.active_context["ref_type"] == "recording_import_error"
+
+
+@pytest.mark.asyncio
 async def test_handle_media_message_passes_telegram_duration_to_import(
     db_session: AsyncSession,
     monkeypatch,

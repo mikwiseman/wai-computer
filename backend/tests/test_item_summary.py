@@ -105,6 +105,40 @@ async def test_generate_item_summary_persists_row_and_table(db_session) -> None:
     assert all(m.source_kind == "item" for m in mentions)
 
 
+async def test_generate_item_summary_applies_user_language_style_and_instructions(
+    db_session,
+) -> None:
+    user = await _make_user(db_session)
+    user.summary_language = "ru"
+    user.summary_style = "structured"
+    user.summary_instructions = "Use short bullets."
+    item, _ = await ingest_item(
+        db_session,
+        user.id,
+        source="url",
+        kind="video",
+        title="Video",
+        body="Transcript body about launch metrics.",
+        embedder=_fake_embedder,
+    )
+    seen: dict[str, object] = {}
+
+    async def fake_summarizer(text, **kwargs):
+        seen.update(kwargs)
+        return _fake_summary()
+
+    async def fake_moments(text, **kwargs):
+        return []
+
+    await generate_item_summary(
+        db_session, item, summarizer=fake_summarizer, moment_extractor=fake_moments
+    )
+
+    assert seen["language"] == "ru"
+    assert seen["style"] == "structured"
+    assert seen["instructions"] == "Use short bullets."
+
+
 async def test_generate_item_summary_upserts(db_session) -> None:
     user = await _make_user(db_session)
     item, _ = await ingest_item(

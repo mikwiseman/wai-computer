@@ -663,6 +663,18 @@ def _telegram_file_too_large_message() -> str:
     return f"Файл слишком большой для Telegram-импорта. Лимит бота — {limit_mb} MB."
 
 
+def _telegram_download_error_message(exc: TelegramClientError) -> str:
+    text = str(exc).casefold()
+    if (
+        "file is too big" in text
+        or "file too big" in text
+        or "too large" in text
+        or "exceeds configured limit" in text
+    ):
+        return _telegram_file_too_large_message()
+    return "Не смог скачать файл из Telegram. Попробуй отправить файл ещё раз."
+
+
 def _telegram_media_duration_seconds(media: dict[str, Any]) -> float | None:
     duration = media.get("duration")
     if isinstance(duration, int | float) and duration > 0:
@@ -3337,7 +3349,18 @@ async def _download_telegram_media(
         )
         await _delete_status_message(client, chat_id=chat_id, message_id=status_message_id)
 
-    tg_file = await client.get_file(file_id)
+    try:
+        tg_file = await client.get_file(file_id)
+    except TelegramClientError as exc:
+        message_text = _telegram_download_error_message(exc)
+        await _set_telegram_import_error_context(db, account, message=message_text)
+        await client.send_message(
+            chat_id,
+            message_text,
+            reply_to_message_id=message.get("message_id"),
+        )
+        await _delete_status_message(client, chat_id=chat_id, message_id=status_message_id)
+        return None
     if tg_file.file_size is not None and tg_file.file_size > settings.telegram_download_max_bytes:
         await _too_large(reply=False)
         return None
@@ -3347,6 +3370,16 @@ async def _download_telegram_media(
         )
     except TelegramFileTooLargeError:
         await _too_large(reply=True)
+        return None
+    except TelegramClientError as exc:
+        message_text = _telegram_download_error_message(exc)
+        await _set_telegram_import_error_context(db, account, message=message_text)
+        await client.send_message(
+            chat_id,
+            message_text,
+            reply_to_message_id=message.get("message_id"),
+        )
+        await _delete_status_message(client, chat_id=chat_id, message_id=status_message_id)
         return None
     if len(data) > settings.telegram_download_max_bytes:
         await _too_large(reply=False)

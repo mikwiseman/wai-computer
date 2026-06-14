@@ -439,6 +439,32 @@ class TestContentSummariesAndMoments:
         assert matched[0]["start_ms"] == 4_000
         assert matched[0]["end_ms"] == 5_000
 
+    def test_key_moment_timestamp_label_is_derived_from_segments(self):
+        moments = [
+            KeyMoment(
+                timestamp=None,
+                moment="Launch metrics",
+                why_it_matters="Shows traction",
+                quote=None,
+                importance="high",
+            )
+        ]
+
+        resolved = resolve_key_moment_timestamps(
+            moments,
+            [
+                {
+                    "content": "The team reviewed launch metrics and retention.",
+                    "start_ms": 75_000,
+                    "end_ms": 92_000,
+                }
+            ],
+        )
+
+        assert resolved[0].start_ms == 75_000
+        assert resolved[0].end_ms == 92_000
+        assert resolved[0].timestamp == "01:15"
+
 
 class TestExtractEntities:
     async def test_returns_entity_results_correctly(self):

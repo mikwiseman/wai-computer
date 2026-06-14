@@ -33,6 +33,20 @@ def test_content_prompt_auto_language_default() -> None:
     assert "dominant language" in prompt
 
 
+def test_video_content_prompt_matches_wai_rocks_media_quality_rules() -> None:
+    prompt = build_content_summary_prompt(
+        content_kind="video",
+        language="auto",
+        style="structured",
+    )
+
+    assert "Overall overview" in prompt
+    assert "Highlight crucial data" in prompt
+    assert "Identify key points" in prompt
+    assert "timestamps and section summaries" in prompt
+    assert "source tone, style, and language" in prompt
+
+
 def _summary_payload() -> _SummarySchema:
     return _SummarySchema(
         title="Solar in 2026",
