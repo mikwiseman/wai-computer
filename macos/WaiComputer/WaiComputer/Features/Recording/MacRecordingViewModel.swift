@@ -926,6 +926,26 @@ class MacRecordingViewModel: ObservableObject {
         pcmBytesWritten: Int64
     ) -> URL? {
         guard let fileWriter else { return nil }
+        guard FileManager.default.fileExists(atPath: fileWriter.fileURL.path) else { return nil }
+        if fileWriter.hasWriteFailure {
+            if let recordingId {
+                try? RecordingBackupStore.discardAudioFile(recordingId: recordingId)
+            }
+            SentryHelper.addBreadcrumb(
+                category: "recording",
+                message: "local audio write failure blocked upload",
+                level: .error,
+                data: [
+                    "recordingId": recordingId ?? "unknown",
+                    "audioDurationSeconds": audioDuration ?? 0,
+                    "audioBytes": pcmBytesWritten,
+                ]
+            )
+            audioLog.error(
+                "Skipping finalized audio upload after write failure durationSeconds=\(audioDuration ?? 0, privacy: .public) bytes=\(pcmBytesWritten, privacy: .public)"
+            )
+            return nil
+        }
         if RecordingAudioUploadPolicy.canUploadFinalizedAudio(
             durationSeconds: audioDuration,
             pcmBytesWritten: pcmBytesWritten

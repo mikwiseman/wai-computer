@@ -1,4 +1,5 @@
 import XCTest
+import Sentry
 @testable import WaiComputerKit
 
 final class SentryHelperTests: XCTestCase {
@@ -44,6 +45,24 @@ final class SentryHelperTests: XCTestCase {
         XCTAssertTrue(sanitized.contains("[redacted-email:"))
     }
 
+    func testSanitizeStringRedactsEmbeddedCredentialPatternsInMessages() {
+        let sanitized = SentryHelper.sanitizeString(
+            "POST https://api.telegram.org/bot123456:ABC-SECRET/sendMessage "
+            + "Authorization Bearer abcdefghijklmnopqrstuvwxyz123456 "
+            + "token=secret "
+            + "jwt eyJhbGciOiJIUzI1NiJ9.abcdefghijklmnopqr.abcdefghijklmnopqr",
+            key: "message"
+        )
+
+        XCTAssertFalse(sanitized.contains("123456:ABC-SECRET"))
+        XCTAssertFalse(sanitized.contains("Bearer abcdefghijklmnopqrstuvwxyz123456"))
+        XCTAssertFalse(sanitized.contains("token=secret"))
+        XCTAssertFalse(sanitized.contains("eyJhbGciOiJIUzI1NiJ9"))
+        XCTAssertTrue(sanitized.contains("bot[redacted-token]"))
+        XCTAssertTrue(sanitized.contains("Bearer [redacted-token]"))
+        XCTAssertTrue(sanitized.contains("token=[redacted-secret]"))
+    }
+
     func testSanitizeStringRedactsErrorLikeFields() {
         let sanitizedReason = SentryHelper.sanitizeString(
             "Failed to save transcript for alice@example.com: hello world",
@@ -56,6 +75,60 @@ final class SentryHelperTests: XCTestCase {
 
         XCTAssertTrue(sanitizedReason.hasPrefix("[redacted-text:"))
         XCTAssertTrue(sanitizedError.hasPrefix("[redacted-text:"))
+    }
+
+    func testSanitizeEventForSentryRedactsRequestUserAndBreadcrumbs() {
+        let event = Event(level: .warning)
+        event.message = SentryMessage(formatted: "login failed for alice@example.com")
+        event.extra = [
+            "query": "Alice comp details",
+            "Authorization": "Bearer abcdefghijklmnopqrstuvwxyz123456",
+        ]
+
+        let user = Sentry.User(userId: "user-1")
+        user.email = "alice@example.com"
+        user.username = "alice"
+        user.ipAddress = "203.0.113.10"
+        user.data = ["email": "alice@example.com"]
+        event.user = user
+
+        let request = SentryRequest()
+        request.url = "https://wai.computer/api/search?q=alice@example.com&token=secret"
+        request.queryString = "q=alice@example.com&token=secret"
+        request.cookies = "session=secret"
+        request.headers = [
+            "Authorization": "Bearer abcdefghijklmnopqrstuvwxyz123456",
+            "Cookie": "session=secret",
+            "Accept": "application/json",
+        ]
+        event.request = request
+
+        let breadcrumb = Breadcrumb(level: .info, category: "search")
+        breadcrumb.message = "query alice@example.com"
+        breadcrumb.data = ["query": "Alice comp details"]
+        event.breadcrumbs = [breadcrumb]
+
+        let sanitized = SentryHelper.sanitizeEventForSentry(event)
+
+        XCTAssertTrue(sanitized.message?.formatted.contains("[redacted-email:") == true)
+        XCTAssertTrue((sanitized.extra?["query"] as? String)?.hasPrefix("[redacted-text:") == true)
+        XCTAssertEqual(sanitized.extra?["Authorization"] as? String, "[redacted-secret]")
+        XCTAssertEqual(sanitized.user?.userId, "user-1")
+        XCTAssertNil(sanitized.user?.email)
+        XCTAssertNil(sanitized.user?.username)
+        XCTAssertNil(sanitized.user?.ipAddress)
+        XCTAssertTrue((sanitized.user?.data?["email"] as? String)?.hasPrefix("[redacted-email:") == true)
+        XCTAssertEqual(sanitized.request?.url, "https://wai.computer/api/search")
+        XCTAssertNil(sanitized.request?.queryString)
+        XCTAssertNil(sanitized.request?.cookies)
+        XCTAssertEqual(sanitized.request?.headers?["Authorization"], "[redacted-secret]")
+        XCTAssertEqual(sanitized.request?.headers?["Cookie"], "[redacted-secret]")
+        XCTAssertEqual(sanitized.request?.headers?["Accept"], "application/json")
+        XCTAssertTrue(sanitized.breadcrumbs?.first?.message?.contains("[redacted-email:") == true)
+        XCTAssertTrue(
+            (sanitized.breadcrumbs?.first?.data?["query"] as? String)?
+                .hasPrefix("[redacted-text:") == true
+        )
     }
 
     func testNormalizedRequestPathCollapsesDynamicIdentifiers() {

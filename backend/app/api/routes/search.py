@@ -15,6 +15,7 @@ from app.core.observability import (
     safe_query_metadata,
     safe_text_digest,
 )
+from app.core.vector_search import configure_vector_search
 
 logger = logging.getLogger(__name__)
 
@@ -146,6 +147,7 @@ async def hybrid_search(
     # Generate embedding for semantic search
     query_embedding_list = await generate_embedding(q)
     query_embedding = format_embedding(query_embedding_list)
+    await configure_vector_search(db)
 
     # Prefer direct lexical matches. Semantic-only rows are useful for broad conceptual
     # searches, but they should not dilute obvious exact-term searches.
@@ -438,6 +440,7 @@ async def semantic_search(
     )
     query_embedding_list = await generate_embedding(q)
     query_embedding = format_embedding(query_embedding_list)
+    await configure_vector_search(db)
 
     # Semantic search query
     query = text("""

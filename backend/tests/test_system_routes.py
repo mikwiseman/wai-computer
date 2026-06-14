@@ -20,8 +20,15 @@ def test_settings_resolves_public_base_url_for_self_host() -> None:
 
 
 @pytest.mark.asyncio
-async def test_system_info_route(client) -> None:
+async def test_system_info_route_requires_auth(client) -> None:
     response = await client.get("/api/system/info")
+
+    assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_system_info_route(client, auth_headers) -> None:
+    response = await client.get("/api/system/info", headers=auth_headers)
 
     assert response.status_code == 200
     payload = response.json()

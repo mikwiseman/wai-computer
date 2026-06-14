@@ -13,6 +13,7 @@ export class ApiError extends Error {
 const DEFAULT_BASE_URL = "";
 const LOCALHOST_ACCESS_COOKIE_NAME = "wai_access_token";
 const LOCALHOST_REFRESH_COOKIE_NAME = "wai_refresh_token";
+let refreshInFlight: Promise<boolean> | null = null;
 
 export function getApiBaseUrl(): string {
   return process.env.NEXT_PUBLIC_API_BASE_URL ?? DEFAULT_BASE_URL;
@@ -145,7 +146,7 @@ async function doFetch(url: string, init?: RequestInit): Promise<Response> {
   }
 }
 
-export async function tryRefreshAuthSession(): Promise<boolean> {
+async function refreshAuthSessionOnce(): Promise<boolean> {
   const refreshResponse = await doFetch(`${getApiBaseUrl()}/api/auth/refresh`, {
     method: "POST",
     credentials: "include",
@@ -159,6 +160,19 @@ export async function tryRefreshAuthSession(): Promise<boolean> {
   const refreshPayload = await parseResponsePayload(refreshResponse);
   syncLocalhostAuthCookiesFromPayload(refreshPayload);
   return true;
+}
+
+export async function tryRefreshAuthSession(): Promise<boolean> {
+  if (refreshInFlight) {
+    return refreshInFlight;
+  }
+
+  refreshInFlight = refreshAuthSessionOnce();
+  try {
+    return await refreshInFlight;
+  } finally {
+    refreshInFlight = null;
+  }
 }
 
 export async function apiFetch<T>(

@@ -23,6 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
 from app.core.embeddings import format_embedding, generate_embedding
+from app.core.vector_search import configure_vector_search
 
 logger = logging.getLogger(__name__)
 
@@ -256,6 +257,7 @@ async def unified_search(
     embedding = format_embedding(await generate_embedding(query))
     pool = max(limit * 3, 30)
     ranking_v2 = 1 if get_settings().brain_ranking_v2_enabled else 0
+    await configure_vector_search(db)
     rows = (
         await db.execute(
             _UNIFIED_SQL,

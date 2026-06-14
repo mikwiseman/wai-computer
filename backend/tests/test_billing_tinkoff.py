@@ -29,7 +29,11 @@ from app.models.billing import (
 )
 from app.models.user import User
 from app.tasks import billing_renewals as billing_renewals_module
-from app.tasks.billing_renewals import charge_due_tinkoff_renewals, charge_due_tinkoff_renewals_task
+from app.tasks.billing_renewals import (
+    _renewal_order_id,
+    charge_due_tinkoff_renewals,
+    charge_due_tinkoff_renewals_task,
+)
 
 
 def test_token_is_deterministic_and_sorted():
@@ -420,10 +424,12 @@ async def test_charge_rebill_uses_mit_recurring_init(monkeypatch):
         description="PRO month",
         customer_email="payer@example.test",
         user_id="user-uuid",
+        order_id="renewal-order-id",
     )
 
     assert calls[0][0] == "Init"
     init_payload = calls[0][1]
+    assert init_payload["OrderId"] == "renewal-order-id"
     assert init_payload["PayType"] == "O"
     assert init_payload["OperationInitiatorType"] == "R"
     assert "Recurrent" not in init_payload
@@ -454,6 +460,7 @@ async def test_due_tinkoff_renewal_task_charges_active_subscription(db_session):
     )
     db_session.add(sub)
     await db_session.flush()
+    expected_order_id = _renewal_order_id(sub)
     user.current_subscription_id = sub.id
     await db_session.commit()
 
@@ -478,6 +485,7 @@ async def test_due_tinkoff_renewal_task_charges_active_subscription(db_session):
 
     assert result == {"charged": 1, "skipped": 0, "failed": 0}
     assert fake.calls[0]["rebill_id"] == "rebill-renewal"
+    assert fake.calls[0]["order_id"] == expected_order_id
     assert fake.calls[0]["description"] == "WaiComputer PRO month"
 
     refreshed = (

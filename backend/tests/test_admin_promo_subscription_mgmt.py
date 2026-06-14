@@ -302,7 +302,9 @@ async def test_admin_run_renewal_charges_tinkoff_and_skips_canceled(
 
     charge_calls: list[str] = []
 
-    async def fake_charge(self, *, rebill_id, amount_kopecks, description, customer_email, user_id):
+    async def fake_charge(
+        self, *, rebill_id, amount_kopecks, description, customer_email, user_id, order_id
+    ):
         charge_calls.append(rebill_id)
         return {"Status": "CONFIRMED", "OrderId": "ord_renew", "PaymentId": "pay_1",
                 "Amount": amount_kopecks}

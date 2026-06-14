@@ -7,6 +7,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Callable
+from uuid import NAMESPACE_URL, uuid5
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -76,6 +77,7 @@ async def _charge_due_tinkoff_renewals_in_session(
                 Subscription.tinkoff_next_charge_at <= now,
             )
             .order_by(Subscription.tinkoff_next_charge_at.asc())
+            .with_for_update(skip_locked=True)
             .limit(limit)
         )
     ).all()
@@ -119,6 +121,7 @@ async def charge_tinkoff_subscription(
 
     amount_kopecks = int(Decimal(amount_rub) * Decimal(100))
     description = f"WaiComputer {plan.code.upper()} {sub.billing_period}"
+    order_id = _renewal_order_id(sub)
     try:
         response = await provider.charge_rebill(
             rebill_id=sub.tinkoff_rebill_id or "",
@@ -126,6 +129,7 @@ async def charge_tinkoff_subscription(
             description=description,
             customer_email=user.email,
             user_id=str(user.id),
+            order_id=order_id,
         )
         raw_status = response.get("Status")
         if not raw_status:
@@ -170,6 +174,17 @@ async def charge_tinkoff_subscription(
         # access lapses. Best-effort — never re-raise into the renewal loop.
         await send_payment_failed_email(user.email, locale=user.default_language)
         return "failed"
+
+
+def _renewal_order_id(sub: Subscription) -> str:
+    anchor = (
+        sub.tinkoff_next_charge_at
+        or sub.current_period_end
+        or datetime.now(timezone.utc)
+    )
+    if anchor.tzinfo is None:
+        anchor = anchor.replace(tzinfo=timezone.utc)
+    return uuid5(NAMESPACE_URL, f"wai-tinkoff-renewal:{sub.id}:{anchor.isoformat()}").hex
 
 
 @celery_app.task(

@@ -219,8 +219,13 @@ def test_recording_audio_processing_task_has_reliability_options():
     assert task.soft_time_limit == 21000
     assert task.time_limit == 21300
     assert task.max_retries == 1
+    assert celery_app_module.celery_app.conf.visibility_timeout > task.time_limit
     assert (
         celery_app_module.celery_app.conf.broker_transport_options["visibility_timeout"]
+        > task.time_limit
+    )
+    assert (
+        celery_app_module.celery_app.conf.result_backend_transport_options["visibility_timeout"]
         > task.time_limit
     )
 

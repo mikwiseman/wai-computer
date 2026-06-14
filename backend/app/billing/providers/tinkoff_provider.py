@@ -239,12 +239,13 @@ class TinkoffProvider(PaymentProvider):
         description: str,
         customer_email: str,
         user_id: str,
+        order_id: str | None = None,
     ) -> dict[str, Any]:
         """Server-initiated charge using a previously stored RebillId."""
         terminal_key, password = self._require_creds()
         from uuid import uuid4
 
-        order_id = uuid4().hex
+        order_id = order_id or uuid4().hex
         # Step 1: Init for the new charge cycle (still recurrent=Y so we keep the chain).
         init_base = {
             "TerminalKey": terminal_key,
@@ -281,6 +282,7 @@ class TinkoffProvider(PaymentProvider):
         charge_response = await self._call("Charge", {**charge_base, "Token": charge_token})
         if not charge_response.get("Success"):
             raise RuntimeError(f"Tinkoff Charge failed: {charge_response}")
+        charge_response.setdefault("OrderId", order_id)
         return charge_response
 
     async def cancel_subscription(

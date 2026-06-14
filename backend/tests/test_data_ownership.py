@@ -83,8 +83,15 @@ def test_brain_space_tables_are_classified_for_self_host_export() -> None:
 
 
 @pytest.mark.asyncio
-async def test_system_data_map_route(client) -> None:
+async def test_system_data_map_route_requires_auth(client) -> None:
     response = await client.get("/api/system/data-map")
+
+    assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_system_data_map_route(client, auth_headers) -> None:
+    response = await client.get("/api/system/data-map", headers=auth_headers)
 
     assert response.status_code == 200
     payload = response.json()

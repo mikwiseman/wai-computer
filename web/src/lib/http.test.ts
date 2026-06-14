@@ -210,6 +210,48 @@ describe("apiFetch", () => {
     expect(fetchSpy).toHaveBeenCalledTimes(3);
   });
 
+  it("coalesces concurrent 401 token refreshes into one refresh request", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+
+    fetchSpy
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ detail: "Unauthorized" }), {
+          status: 401,
+          headers: { "Content-Type": "application/json" },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ detail: "Unauthorized" }), {
+          status: 401,
+          headers: { "Content-Type": "application/json" },
+        }),
+      )
+      .mockResolvedValueOnce(new Response("", { status: 200 }))
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ data: "first" }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ data: "second" }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      );
+
+    const [first, second] = await Promise.all([
+      apiFetch<{ data: string }>("/protected-first"),
+      apiFetch<{ data: string }>("/protected-second"),
+    ]);
+
+    expect(first).toEqual({ data: "first" });
+    expect(second).toEqual({ data: "second" });
+    expect(
+      fetchSpy.mock.calls.filter(([url]) => String(url).endsWith("/api/auth/refresh")),
+    ).toHaveLength(1);
+  });
+
   it("throws original 401 error when token refresh fails", async () => {
     const fetchSpy = vi.spyOn(globalThis, "fetch");
 

@@ -15,6 +15,8 @@ from urllib.parse import urlsplit, urlunsplit
 import sentry_sdk
 from sentry_sdk.integrations.logging import LoggingIntegration
 
+from app.core.untrusted import redact_secrets
+
 _request_id: ContextVar[str] = ContextVar("request_id", default="-")
 _request_method: ContextVar[str] = ContextVar("request_method", default="-")
 _request_path: ContextVar[str] = ContextVar("request_path", default="-")
@@ -199,7 +201,7 @@ def redact_text(value: str) -> str:
     redacted = JWT_PATTERN.sub("[redacted-token]", redacted)
     redacted = TELEGRAM_BOT_URL_PATTERN.sub(r"\1[redacted-token]", redacted)
     redacted = SECRET_QUERY_PATTERN.sub(r"\1[redacted-secret]", redacted)
-    return redacted
+    return redact_secrets(redacted)
 
 
 def _sanitize_log_args(value: Any, *, key: str | None = None) -> Any:

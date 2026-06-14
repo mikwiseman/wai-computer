@@ -1,3 +1,4 @@
+import AVFoundation
 import Foundation
 import XCTest
 @testable import WaiComputerKit
@@ -533,6 +534,64 @@ final class PendingRecordingSyncCoordinatorTests: XCTestCase {
                 )
                 XCTAssertFalse(text.contains("recording.wav"), "must not upload the raw WAV")
             }
+
+            let response = HTTPURLResponse(
+                url: try XCTUnwrap(request.url),
+                statusCode: 200,
+                httpVersion: nil,
+                headerFields: nil
+            )!
+            return (response, self.responsePayload(recordingId: recordingId))
+        }
+
+        await PendingRecordingSyncCoordinator.shared.scheduleSync(using: client)
+        await fulfillment(of: [synced], timeout: 3)
+
+        XCTAssertNil(try RecordingBackupStore.existingBackup(recordingId: recordingId))
+    }
+
+    func testAudioUploadRegeneratesInvalidCachedM4A() async throws {
+        let recordingId = "pending-sync-invalid-compressed-\(UUID().uuidString)"
+        defer { try? RecordingBackupStore.removeRecording(recordingId: recordingId) }
+
+        try RecordingBackupStore.markHasAudioFile(recordingId: recordingId)
+        let audioURL = try RecordingBackupStore.audioFileURL(recordingId: recordingId)
+        try writeRealWAV(to: audioURL, seconds: 0.5)
+        _ = try RecordingBackupStore.saveRecording(
+            recordingId: recordingId,
+            title: "Invalid compressed cache",
+            recordingType: .meeting,
+            durationSeconds: 1,
+            transcript: nil,
+            segments: []
+        )
+        let backup = try XCTUnwrap(RecordingBackupStore.existingBackup(recordingId: recordingId))
+        try Data(repeating: 0xFF, count: 1024).write(to: backup.compressedAudioFileURL)
+
+        let client = makeClient()
+        await client.setAccessToken("test-token")
+
+        let synced = expectation(description: "invalid compressed audio cache was replaced")
+        let observer = NotificationCenter.default.addObserver(
+            forName: .pendingRecordingSyncDidFinish,
+            object: nil,
+            queue: nil
+        ) { notification in
+            if notification.userInfo?["recordingId"] as? String == recordingId {
+                synced.fulfill()
+            }
+        }
+        defer { NotificationCenter.default.removeObserver(observer) }
+
+        MockURLProtocol.requestHandler = { request in
+            XCTAssertEqual(request.httpMethod, "POST")
+            XCTAssertEqual(request.url?.path, "/api/recordings/\(recordingId)/upload")
+
+            let decoded = try AVAudioFile(forReading: backup.compressedAudioFileURL)
+            XCTAssertEqual(
+                decoded.fileFormat.streamDescription.pointee.mFormatID,
+                kAudioFormatMPEG4AAC
+            )
 
             let response = HTTPURLResponse(
                 url: try XCTUnwrap(request.url),

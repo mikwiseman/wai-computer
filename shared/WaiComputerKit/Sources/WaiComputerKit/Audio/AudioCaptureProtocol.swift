@@ -206,6 +206,10 @@ public final class MicrophoneCapture: AudioCaptureProtocol, @unchecked Sendable 
     }
 
     deinit {
+        engine.inputNode.removeTap(onBus: 0)
+        engine.stop()
+        finishBufferStream()
+        setAudioProcessor(nil)
         continuationLock.deinitialize(count: 1)
         continuationLock.deallocate()
     }

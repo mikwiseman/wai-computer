@@ -44,26 +44,31 @@ public enum AudioCompressor {
             AVEncoderBitRateKey: bitRate,
         ]
 
-        // Start from a clean slate so a partial file from a previous attempt
-        // can't corrupt the output.
+        let temporaryDestination = temporaryOutputURL(for: destination)
+        try? FileManager.default.removeItem(at: temporaryDestination)
+        defer { try? FileManager.default.removeItem(at: temporaryDestination) }
+
+        do {
+            let output = try AVAudioFile(forWriting: temporaryDestination, settings: settings)
+
+            // input.processingFormat == output.processingFormat (standard float32,
+            // same sample rate + channels), so one buffer round-trips read → write.
+            guard let buffer = AVAudioPCMBuffer(
+                pcmFormat: input.processingFormat,
+                frameCapacity: 16_384
+            ) else {
+                throw CompressionError.bufferAllocationFailed
+            }
+
+            while input.framePosition < input.length {
+                try input.read(into: buffer)
+                if buffer.frameLength == 0 { break }
+                try output.write(from: buffer)
+            }
+        }
+
         try? FileManager.default.removeItem(at: destination)
-
-        let output = try AVAudioFile(forWriting: destination, settings: settings)
-
-        // input.processingFormat == output.processingFormat (standard float32,
-        // same sample rate + channels), so one buffer round-trips read → write.
-        guard let buffer = AVAudioPCMBuffer(
-            pcmFormat: input.processingFormat,
-            frameCapacity: 16_384
-        ) else {
-            throw CompressionError.bufferAllocationFailed
-        }
-
-        while input.framePosition < input.length {
-            try input.read(into: buffer)
-            if buffer.frameLength == 0 { break }
-            try output.write(from: buffer)
-        }
+        try FileManager.default.moveItem(at: temporaryDestination, to: destination)
 
         let byteCount = (try? destination.resourceValues(forKeys: [.fileSizeKey]).fileSize)
             .map(Int64.init) ?? 0
@@ -74,5 +79,29 @@ public enum AudioCompressor {
         )
 
         return CompressedAudio(url: destination, byteCount: byteCount, durationSeconds: durationSeconds)
+    }
+
+    public static func validateCompressedAudio(source: URL, candidate: URL) -> Bool {
+        let candidateSize = (try? candidate.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
+        guard candidateSize > 0 else { return false }
+
+        do {
+            let sourceFile = try AVAudioFile(forReading: source)
+            let candidateFile = try AVAudioFile(forReading: candidate)
+            guard sourceFile.length > 0, candidateFile.length > 0 else { return false }
+
+            let sourceDuration = Double(sourceFile.length) / sourceFile.fileFormat.sampleRate
+            let candidateDuration = Double(candidateFile.length) / candidateFile.fileFormat.sampleRate
+            let tolerance = max(0.5, sourceDuration * 0.05)
+            return abs(sourceDuration - candidateDuration) <= tolerance
+        } catch {
+            return false
+        }
+    }
+
+    private static func temporaryOutputURL(for destination: URL) -> URL {
+        destination
+            .deletingLastPathComponent()
+            .appendingPathComponent(".\(destination.lastPathComponent).tmp")
     }
 }

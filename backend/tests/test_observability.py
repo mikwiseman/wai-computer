@@ -75,6 +75,27 @@ def test_redact_text_removes_telegram_bot_tokens_and_secret_queries():
     assert "token=[redacted-secret]" in redacted
 
 
+def test_redact_text_uses_shared_secret_patterns():
+    redacted = observability.redact_text(
+        "openai sk-abcdefghijklmnopqrstuvwxyz "
+        "github ghp_abcdefghijklmnopqrstuvwxyz123456 "
+        "bearer Bearer abcdefghijklmnopqrstuvwxyz123456 "
+        "aws AKIAABCDEFGHIJKLMNOP "
+        "key -----BEGIN PRIVATE KEY-----"
+    )
+
+    assert "sk-abcdefghijklmnopqrstuvwxyz" not in redacted
+    assert "ghp_abcdefghijklmnopqrstuvwxyz123456" not in redacted
+    assert "Bearer abcdefghijklmnopqrstuvwxyz123456" not in redacted
+    assert "AKIAABCDEFGHIJKLMNOP" not in redacted
+    assert "-----BEGIN PRIVATE KEY-----" not in redacted
+    assert "[REDACTED:openai_key]" in redacted
+    assert "[REDACTED:github_token]" in redacted
+    assert "[REDACTED:bearer_token]" in redacted
+    assert "[REDACTED:aws_access_key]" in redacted
+    assert "[REDACTED:private_key]" in redacted
+
+
 def test_redacting_log_filter_sanitizes_message_and_arguments():
     record = logging.LogRecord(
         "test",

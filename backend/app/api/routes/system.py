@@ -142,7 +142,8 @@ class MigrationContractResponse(BaseModel):
 
 
 @router.get("/info", response_model=SystemInfoResponse)
-async def system_info() -> SystemInfoResponse:
+async def system_info(user: SessionUser) -> SystemInfoResponse:
+    del user
     settings = get_settings()
     public_base_url = settings.public_base_url_resolved
     return SystemInfoResponse(
@@ -160,7 +161,8 @@ async def system_info() -> SystemInfoResponse:
 
 
 @router.get("/data-map")
-async def data_map() -> dict[str, object]:
+async def data_map(user: SessionUser) -> dict[str, object]:
+    del user
     return ownership_map_response()
 
 

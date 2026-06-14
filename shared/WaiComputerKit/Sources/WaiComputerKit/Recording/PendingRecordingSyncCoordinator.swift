@@ -346,7 +346,19 @@ public actor PendingRecordingSyncCoordinator {
         let compressed = backup.compressedAudioFileURL
         let existingSize = (try? compressed.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
         if existingSize > 0 {
-            return compressed
+            if AudioCompressor.validateCompressedAudio(
+                source: backup.audioFileURL,
+                candidate: compressed
+            ) {
+                return compressed
+            }
+            try? FileManager.default.removeItem(at: compressed)
+            SentryHelper.addBreadcrumb(
+                category: "audio",
+                message: "discarded invalid compressed recording cache",
+                level: .warning,
+                data: ["recordingId": backup.recordingId, "bytes": existingSize]
+            )
         }
 
         try? FileManager.default.removeItem(at: compressed)

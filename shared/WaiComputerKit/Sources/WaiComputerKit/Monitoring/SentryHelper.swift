@@ -17,6 +17,12 @@ public enum SentryHelper {
             options.profilesSampleRate = 0.1
             options.enableAutoSessionTracking = true
             options.enableCaptureFailedRequests = false
+            options.beforeSend = { event in
+                sanitizeEventForSentry(event)
+            }
+            options.beforeBreadcrumb = { breadcrumb in
+                sanitizeBreadcrumbForSentry(breadcrumb)
+            }
             // App Hang detection produces high-volume events that the team
             // already reviews via custom telemetry — opt out of the SDK path
             // to keep the Sentry events quota for actionable failures.
@@ -267,6 +273,65 @@ public enum SentryHelper {
         return sanitized
     }
 
+    static func sanitizeEventForSentry(_ event: Event) -> Event {
+        if let message = event.message {
+            let sanitizedFormatted = sanitizeString(message.formatted, key: "message")
+            let sanitizedMessage = SentryMessage(formatted: sanitizedFormatted)
+            if let rawMessage = message.message {
+                sanitizedMessage.message = sanitizeString(rawMessage, key: "message")
+            }
+            if let params = message.params {
+                sanitizedMessage.params = params.map { sanitizeString($0, key: "message") }
+            }
+            event.message = sanitizedMessage
+        }
+
+        if let tags = event.tags {
+            event.tags = tags.mapValues { sanitizeString($0, key: nil) }
+        }
+        if let extra = event.extra {
+            event.extra = sanitizeDictionary(extra)
+        }
+        if let context = event.context {
+            event.context = sanitizeDictionary(context) as? [String: [String: Any]]
+        }
+        if let user = event.user {
+            user.email = nil
+            user.username = nil
+            user.ipAddress = nil
+            user.name = nil
+            if let data = user.data {
+                user.data = sanitizeDictionary(data)
+            }
+        }
+        if let request = event.request {
+            request.url = request.url.map(stripQueryAndFragment)
+            request.queryString = nil
+            request.cookies = nil
+            if let headers = request.headers {
+                request.headers = Dictionary(
+                    uniqueKeysWithValues: headers.map { key, value in
+                        (key, sanitizeString(value, key: key))
+                    }
+                )
+            }
+        }
+        if let breadcrumbs = event.breadcrumbs {
+            event.breadcrumbs = breadcrumbs.compactMap(sanitizeBreadcrumbForSentry)
+        }
+        return event
+    }
+
+    static func sanitizeBreadcrumbForSentry(_ breadcrumb: Breadcrumb) -> Breadcrumb? {
+        if let message = breadcrumb.message {
+            breadcrumb.message = sanitizeString(message, key: "message")
+        }
+        if let data = breadcrumb.data {
+            breadcrumb.data = sanitizeDictionary(data)
+        }
+        return breadcrumb
+    }
+
     static func sanitizeValue(_ value: Any, key: String? = nil) -> Any {
         if let dictionary = value as? [String: Any] {
             return sanitizeDictionary(dictionary)
@@ -333,25 +398,64 @@ public enum SentryHelper {
     }
 
     private static func redactEmbeddedSecrets(in value: String) -> String {
-        guard let emailRegex = try? NSRegularExpression(
-            pattern: "[A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,}",
-            options: [.caseInsensitive]
-        ) else {
-            return value
-        }
-
-        let range = NSRange(value.startIndex..<value.endIndex, in: value)
         var result = value
 
-        for match in emailRegex.matches(in: value, options: [], range: range).reversed() {
-            guard let matchRange = Range(match.range, in: result) else { continue }
-            let email = String(result[matchRange]).lowercased()
-            result.replaceSubrange(
-                matchRange,
-                with: "[redacted-email:\(fingerprint(email))]"
-            )
+        let replacements: [(String, NSRegularExpression.Options, (String) -> String)] = [
+            (
+                "[A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,}",
+                [.caseInsensitive],
+                { "[redacted-email:\(fingerprint($0.lowercased()))]" }
+            ),
+            (
+                "\\beyJ[A-Za-z0-9_-]{10,}\\.[A-Za-z0-9_-]{10,}\\.[A-Za-z0-9_-]{10,}\\b",
+                [],
+                { _ in "[redacted-token]" }
+            ),
+            (
+                "(https://api\\.telegram\\.org/(?:file/)?bot)[^/\\s\\\"']+",
+                [],
+                { match in
+                    if let prefixRange = match.range(of: "bot") {
+                        return String(match[..<prefixRange.upperBound]) + "[redacted-token]"
+                    }
+                    return "[redacted-token]"
+                }
+            ),
+            (
+                "\\b[Bb]earer\\s+[A-Za-z0-9._-]{20,}\\b",
+                [],
+                { _ in "Bearer [redacted-token]" }
+            ),
+            (
+                "(?i)([?&]?)(token|api_key|key|secret|authorization|password)=([^&#\\s\\\"']+)",
+                [],
+                { match in
+                    guard let equals = match.firstIndex(of: "=") else {
+                        return "[redacted-secret]"
+                    }
+                    return String(match[...equals]) + "[redacted-secret]"
+                }
+            ),
+        ]
+
+        for (pattern, options, replacement) in replacements {
+            guard let regex = try? NSRegularExpression(pattern: pattern, options: options) else {
+                continue
+            }
+            let range = NSRange(result.startIndex..<result.endIndex, in: result)
+            for match in regex.matches(in: result, options: [], range: range).reversed() {
+                guard let matchRange = Range(match.range, in: result) else { continue }
+                result.replaceSubrange(matchRange, with: replacement(String(result[matchRange])))
+            }
         }
 
         return result
+    }
+
+    private static func stripQueryAndFragment(_ value: String) -> String {
+        guard var components = URLComponents(string: value) else { return redactEmbeddedSecrets(in: value) }
+        components.query = nil
+        components.fragment = nil
+        return components.string ?? redactEmbeddedSecrets(in: value)
     }
 }

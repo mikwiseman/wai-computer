@@ -2,6 +2,7 @@ import Foundation
 import AVFoundation
 import Combine
 import SwiftUI
+import UIKit
 import os
 import Sentry
 import WaiComputerKit
@@ -598,6 +599,25 @@ class RecordingViewModel: ObservableObject {
     ) -> URL? {
         guard let fileWriter else { return nil }
         guard FileManager.default.fileExists(atPath: fileWriter.fileURL.path) else { return nil }
+        if fileWriter.hasWriteFailure {
+            if let recordingId {
+                try? RecordingBackupStore.discardAudioFile(recordingId: recordingId)
+            }
+            SentryHelper.addBreadcrumb(
+                category: "recording",
+                message: "local audio write failure blocked upload",
+                level: .error,
+                data: [
+                    "recordingId": recordingId ?? "unknown",
+                    "audioDurationSeconds": audioDuration ?? 0,
+                    "audioBytes": pcmBytesWritten,
+                ]
+            )
+            recordingLog.error(
+                "Skipping finalized audio upload after write failure durationSeconds=\(audioDuration ?? 0, privacy: .public) bytes=\(pcmBytesWritten, privacy: .public)"
+            )
+            return nil
+        }
 
         if RecordingAudioUploadPolicy.canUploadFinalizedAudio(
             durationSeconds: audioDuration,
@@ -764,6 +784,7 @@ class RecordingViewModel: ObservableObject {
         if newPhase != .recording {
             isPaused = false
         }
+        UIApplication.shared.isIdleTimerDisabled = newPhase == .recording
         // Animate transitions to/from idle so the controls cross-fade smoothly.
         if newPhase == .idle || phase == .idle {
             withAnimation(.easeInOut(duration: 0.25)) {

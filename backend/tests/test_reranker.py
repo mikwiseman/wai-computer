@@ -36,11 +36,11 @@ def _settings(**kw):
 
 
 def test_blend_weights_position_aware() -> None:
-    assert _blend_weights(1) == (0.75, 0.25)
-    assert _blend_weights(3) == (0.75, 0.25)
-    assert _blend_weights(4) == (0.60, 0.40)
-    assert _blend_weights(10) == (0.60, 0.40)
-    assert _blend_weights(11) == (0.40, 0.60)
+    assert _blend_weights(1) == (0.35, 0.65)
+    assert _blend_weights(3) == (0.35, 0.65)
+    assert _blend_weights(4) == (0.25, 0.75)
+    assert _blend_weights(10) == (0.25, 0.75)
+    assert _blend_weights(11) == (0.15, 0.85)
 
 
 def test_normalize() -> None:
@@ -51,14 +51,22 @@ def test_normalize() -> None:
 
 async def test_rerank_promotes_more_relevant_hit() -> None:
     # When RRF can't distinguish two hits (equal fused score), the cross-encoder
-    # decides. (By design the qmd blend trusts an UNAMBIGUOUS top RRF pick, so the
-    # reranker reshuffles ties + lower ranks rather than clobbering a clear #1.)
+    # decides.
     hits = [_hit("weak", 0.05, "a"), _hit("strong", 0.05, "b")]
     fake = FakeReranker({"weak": 0.10, "strong": 0.95})
     out, tokens = await rerank_hits("q", hits, reranker=fake, top_k=10, confidence_threshold=0.0)
     assert out[0].chunk_id == "strong"
     assert tokens > 0
     assert fake.calls == 1
+
+
+async def test_rerank_can_override_high_rrf_low_relevance_top_hit() -> None:
+    hits = [_hit("weak", 10.0, "a"), _hit("strong", 0.5, "b")]
+    fake = FakeReranker({"weak": 0.10, "strong": 0.95})
+
+    out, _ = await rerank_hits("q", hits, reranker=fake, top_k=10, confidence_threshold=0.0)
+
+    assert out[0].chunk_id == "strong"
 
 
 async def test_threshold_drops_low_confidence_keeps_at_least_one() -> None:

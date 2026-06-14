@@ -80,13 +80,14 @@ def get_reranker(settings: Settings) -> Reranker | None:
 def _blend_weights(rrf_rank: int) -> tuple[float, float]:
     """qmd position-aware blend (rrf_weight, rerank_weight), ``rrf_rank`` 1-based.
 
-    Trust RRF's exact-match top picks; trust the reranker more further down.
+    Trust the cross-encoder as the precision stage while retaining RRF as a
+    tie-breaker and source-diversity signal.
     """
     if rrf_rank <= 3:
-        return 0.75, 0.25
+        return 0.35, 0.65
     if rrf_rank <= 10:
-        return 0.60, 0.40
-    return 0.40, 0.60
+        return 0.25, 0.75
+    return 0.15, 0.85
 
 
 def _normalize(values: list[float]) -> list[float]:
