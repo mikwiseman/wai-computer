@@ -37,4 +37,19 @@ targets:
           PRODUCT_BUNDLE_IDENTIFIER: is.waiwai.computer.dev
     dependencies:
       - package: WaiComputerKit
-    scheme: {}
+    scheme:
+      testTargets:
+        - WaiComputerTests
+
+  WaiComputerTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: WaiComputerTests
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: is.waiwai.computer.tests
+        SWIFT_VERSION: "5.9"
+        IPHONEOS_DEPLOYMENT_TARGET: "17.0"
+    dependencies:
+      - target: WaiComputer

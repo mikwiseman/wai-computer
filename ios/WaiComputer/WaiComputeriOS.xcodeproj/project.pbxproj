@@ -32,6 +32,7 @@
 		920371F4874ED2D071EA7AAF /* SearchView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4FEDD9815CBEFD0332FE393 /* SearchView.swift */; };
 		9640CDAD6341750038EACFCE /* AppLanguagePicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 47FC91502BD1FED9F6481949 /* AppLanguagePicker.swift */; };
 		967A5E368C485EF073E65B6F /* DictationHistoryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 33331DB5948E7060A6CCDAF0 /* DictationHistoryView.swift */; };
+		9E8371FB933830629294859F /* OnboardingPermissionGateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B76E3717B00E660D4645497B /* OnboardingPermissionGateTests.swift */; };
 		9FA96E914A0393CB63E62547 /* DictationDictionaryStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = E12DEC867C20F1C0219C0B62 /* DictationDictionaryStore.swift */; };
 		A465CD7F83CF7D0237E63BBA /* SpeakerChipButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = F371D8CDE93BE0F63E284A00 /* SpeakerChipButton.swift */; };
 		A693D68CC22495BFA746A93F /* DesignSystem.swift in Sources */ = {isa = PBXBuildFile; fileRef = 804113B280E47C43FBED2F85 /* DesignSystem.swift */; };
@@ -52,7 +53,18 @@
 		F396CA77F5C39E09C19199F7 /* AddAnythingSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 73F7CC9366BA12B19FA4DDE5 /* AddAnythingSheet.swift */; };
 /* End PBXBuildFile section */
 
+/* Begin PBXContainerItemProxy section */
+		88EE43F4D64DA9537DC245B2 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 6AFF4F06BD8F5BD57A5255AC /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 30E2AFDA9828B99101834041;
+			remoteInfo = WaiComputer;
+		};
+/* End PBXContainerItemProxy section */
+
 /* Begin PBXFileReference section */
+		01B03E8631FFA118BDBE644C /* WaiComputerTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = WaiComputerTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		04AF9DEF6E6FC79C1049CE9F /* WaiComputer.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = WaiComputer.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		0AFCA421DFEDB18DF1E3D245 /* DictationLanguageStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DictationLanguageStore.swift; sourceTree = "<group>"; };
 		0AFCC42054E51921AC81B22F /* IdentityAndVoiceSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IdentityAndVoiceSettingsView.swift; sourceTree = "<group>"; };
@@ -84,6 +96,7 @@
 		A771DCE464D8D7EE680CF3B3 /* RecordingDetailViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingDetailViewModel.swift; sourceTree = "<group>"; };
 		A85E11C35CBE283D2101267D /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		AEB1BE80746F32FBBE0D2BC4 /* RecordingViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingViewModel.swift; sourceTree = "<group>"; };
+		B76E3717B00E660D4645497B /* OnboardingPermissionGateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingPermissionGateTests.swift; sourceTree = "<group>"; };
 		C2CE7B7688E7FF5BFAB1E8A4 /* LibraryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryView.swift; sourceTree = "<group>"; };
 		C729626D2D9EBB512E95D0EC /* DictationHistoryStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DictationHistoryStore.swift; sourceTree = "<group>"; };
 		C7366D5C484D46DF7E63FC1A /* ImportViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImportViewModel.swift; sourceTree = "<group>"; };
@@ -213,6 +226,7 @@
 			isa = PBXGroup;
 			children = (
 				04AF9DEF6E6FC79C1049CE9F /* WaiComputer.app */,
+				01B03E8631FFA118BDBE644C /* WaiComputerTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -239,6 +253,14 @@
 				54B5179F6C703CB13EE0D10B /* MaterialsView.swift */,
 			);
 			path = Materials;
+			sourceTree = "<group>";
+		};
+		BCF75C448BB0632F684D0AC4 /* WaiComputerTests */ = {
+			isa = PBXGroup;
+			children = (
+				B76E3717B00E660D4645497B /* OnboardingPermissionGateTests.swift */,
+			);
+			path = WaiComputerTests;
 			sourceTree = "<group>";
 		};
 		C49AB20F9C75D86A5BC0BA1F /* Library */ = {
@@ -277,6 +299,7 @@
 			children = (
 				ED4E41FF0EF5D9AC4B20E747 /* Packages */,
 				4BC2FDA1192C1827C0219FB4 /* WaiComputer */,
+				BCF75C448BB0632F684D0AC4 /* WaiComputerTests */,
 				711C1B822C5DEDB1FE22252D /* Products */,
 			);
 			sourceTree = "<group>";
@@ -303,6 +326,24 @@
 			productName = WaiComputer;
 			productReference = 04AF9DEF6E6FC79C1049CE9F /* WaiComputer.app */;
 			productType = "com.apple.product-type.application";
+		};
+		C92D7A9FABECD8097F25C75F /* WaiComputerTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 3E5D3F6082CE37D85FDE08E8 /* Build configuration list for PBXNativeTarget "WaiComputerTests" */;
+			buildPhases = (
+				5CEBEE9FF8B59ECFB65C2BC9 /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				3538F8B2E9753B846C4C171F /* PBXTargetDependency */,
+			);
+			name = WaiComputerTests;
+			packageProductDependencies = (
+			);
+			productName = WaiComputerTests;
+			productReference = 01B03E8631FFA118BDBE644C /* WaiComputerTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
 		};
 /* End PBXNativeTarget section */
 
@@ -337,6 +378,7 @@
 			projectRoot = "";
 			targets = (
 				30E2AFDA9828B99101834041 /* WaiComputer */,
+				C92D7A9FABECD8097F25C75F /* WaiComputerTests */,
 			);
 		};
 /* End PBXProject section */
@@ -401,9 +443,43 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		5CEBEE9FF8B59ECFB65C2BC9 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				9E8371FB933830629294859F /* OnboardingPermissionGateTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
+/* Begin PBXTargetDependency section */
+		3538F8B2E9753B846C4C171F /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 30E2AFDA9828B99101834041 /* WaiComputer */;
+			targetProxy = 88EE43F4D64DA9537DC245B2 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
 /* Begin XCBuildConfiguration section */
+		1EF9F9ED6DDED828B489FD25 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = is.waiwai.computer.tests;
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 5.9;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/WaiComputer.app/WaiComputer";
+			};
+			name = Debug;
+		};
 		7D07F458707BB571F3526D71 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -447,6 +523,24 @@
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Debug;
+		};
+		94D64B8F496CF3C85D86D6BC /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = is.waiwai.computer.tests;
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 5.9;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/WaiComputer.app/WaiComputer";
+			};
+			name = Release;
 		};
 		C535CB77201F506C7904EA64 /* Release */ = {
 			isa = XCBuildConfiguration;
@@ -570,6 +664,15 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		3E5D3F6082CE37D85FDE08E8 /* Build configuration list for PBXNativeTarget "WaiComputerTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				1EF9F9ED6DDED828B489FD25 /* Debug */,
+				94D64B8F496CF3C85D86D6BC /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
 		CB5EE4BB494EA6A2E8E6BC3A /* Build configuration list for PBXProject "WaiComputeriOS" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (

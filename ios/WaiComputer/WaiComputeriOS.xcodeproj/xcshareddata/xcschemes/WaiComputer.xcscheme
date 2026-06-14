@@ -39,6 +39,17 @@
          </BuildableReference>
       </MacroExpansion>
       <Testables>
+         <TestableReference
+            skipped = "NO"
+            parallelizable = "NO">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "C92D7A9FABECD8097F25C75F"
+               BuildableName = "WaiComputerTests.xctest"
+               BlueprintName = "WaiComputerTests"
+               ReferencedContainer = "container:WaiComputeriOS.xcodeproj">
+            </BuildableReference>
+         </TestableReference>
       </Testables>
       <CommandLineArguments>
       </CommandLineArguments>

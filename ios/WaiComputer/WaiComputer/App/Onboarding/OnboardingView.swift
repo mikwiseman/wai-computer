@@ -32,6 +32,12 @@ struct OnboardingView: View {
     private var isPermissionPage: Bool { currentPageEnum == .permission }
     private var isVoiceSetupPage: Bool { currentPageEnum == .voiceSetup }
     private var hasMicrophonePermission: Bool { microphoneStatus == .granted }
+    private var canSkipCurrentPage: Bool {
+        OnboardingPermissionGate.canSkip(
+            from: currentPageEnum,
+            hasMicrophonePermission: hasMicrophonePermission
+        )
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -54,12 +60,16 @@ struct OnboardingView: View {
         .onAppear {
             haptic.prepare()
             currentPage = Self.clampedPageIndex(currentPage, pageCount: pages.count)
-            persistCurrentPage()
             refreshMicrophoneStatus()
+            _ = applyPermissionGate()
+            persistCurrentPage()
             startPermissionPollingIfNeeded()
         }
         .onDisappear(perform: stopPermissionPolling)
         .onChange(of: currentPage) { _, _ in
+            if applyPermissionGate() {
+                return
+            }
             haptic.impactOccurred()
             persistCurrentPage()
             // Reset permission state when leaving the permission page so the
@@ -77,6 +87,7 @@ struct OnboardingView: View {
             // mic switch) must re-read the live status and resume the poll.
             if newPhase == .active {
                 refreshMicrophoneStatus()
+                _ = applyPermissionGate()
                 startPermissionPollingIfNeeded()
             }
         }
@@ -92,7 +103,7 @@ struct OnboardingView: View {
                         OnboardingVoiceSetupSlide(
                             isActive: index == currentPage,
                             hasMicrophonePermission: hasMicrophonePermission,
-                            onAdvance: advanceToNextPage
+                            onAdvance: completeOnboarding
                         )
                     } else {
                         OnboardingSlide(page: pages[index], isActive: index == currentPage)
@@ -181,10 +192,13 @@ struct OnboardingView: View {
             EmptyView()
         } else {
             HStack {
-                if !isLastPage {
+                if !isLastPage, canSkipCurrentPage {
                     Button(t("Skip", "Пропустить")) {
                         withAnimation(.easeInOut(duration: 0.3)) {
-                            currentPage = pages.count - 1
+                            currentPage = OnboardingPermissionGate.skipDestination(
+                                from: currentPageEnum,
+                                hasMicrophonePermission: hasMicrophonePermission
+                            ).rawValue
                         }
                     }
                     .buttonStyle(WaiGhostButtonStyle())
@@ -290,6 +304,17 @@ struct OnboardingView: View {
         }
     }
 
+    @discardableResult
+    private func applyPermissionGate() -> Bool {
+        let gatedPage = OnboardingPermissionGate.gatedPage(
+            current: currentPageEnum,
+            hasMicrophonePermission: hasMicrophonePermission
+        )
+        guard gatedPage.rawValue != currentPage else { return false }
+        currentPage = gatedPage.rawValue
+        return true
+    }
+
     /// Poll the live mic authorization once per second while the user is on the
     /// permission page and has not yet granted. Catches the case where the user
     /// flips the switch in Settings and returns, and auto-advances on grant.
@@ -336,6 +361,35 @@ struct OnboardingView: View {
 
     private func t(_ english: String, _ russian: String) -> String {
         OnboardingL10n.text(english, russian, language: languageManager.current)
+    }
+}
+
+enum OnboardingPermissionGate {
+    static func gatedPage(
+        current: OnboardingPage,
+        hasMicrophonePermission: Bool
+    ) -> OnboardingPage {
+        if !hasMicrophonePermission, current.rawValue > OnboardingPage.permission.rawValue {
+            return .permission
+        }
+        return current
+    }
+
+    static func skipDestination(
+        from current: OnboardingPage,
+        hasMicrophonePermission: Bool
+    ) -> OnboardingPage {
+        if !hasMicrophonePermission, current.rawValue < OnboardingPage.permission.rawValue {
+            return .permission
+        }
+        return .voiceSetup
+    }
+
+    static func canSkip(
+        from current: OnboardingPage,
+        hasMicrophonePermission: Bool
+    ) -> Bool {
+        current != .permission || hasMicrophonePermission
     }
 }
 
