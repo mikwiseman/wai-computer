@@ -487,7 +487,10 @@ class MacRecordingViewModel: ObservableObject {
                                 audioLog.warning("Realtime audio send failed; continuing with local backup only")
                                 // Transcription dropped — fallback to local-only for the rest of this recording
                                 isLiveTranscriptionActive = false
-                                await MainActor.run { self.liveTranscriptionOffline = true }
+                                await continueRecordingWithoutLiveTranscription(
+                                    reason: "realtime_audio_send_failed",
+                                    error: error
+                                )
                             }
                         }
                     }
@@ -1499,6 +1502,18 @@ class MacRecordingViewModel: ObservableObject {
                 "errorType": error.map { String(describing: type(of: $0)) } ?? "none",
             ]
         )
+        if let error {
+            SentryHelper.captureError(
+                error,
+                extras: [
+                    "context": "recording.live_transcription.disabled",
+                    "recordingId": currentRecordingId ?? "unknown",
+                    "reason": reason,
+                    "durationSeconds": duration,
+                    "errorType": String(describing: type(of: error)),
+                ]
+            )
+        }
         await webSocketManager?.stopRealtimeStreamingForLocalRecording(reason: reason)
     }
 

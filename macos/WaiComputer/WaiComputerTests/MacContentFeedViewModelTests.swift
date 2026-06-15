@@ -174,6 +174,19 @@ final class MacContentFeedViewModelTests: XCTestCase {
         XCTAssertFalse(source.contains("committedLines.contains { speaker, _ in"))
     }
 
+    func testRealtimeSendFailuresUseExplicitOfflineTransitionOnNativeRecordings() throws {
+        let macSource = try macSource("WaiComputer/Features/Recording/MacRecordingViewModel.swift")
+        let iosSource = try repoSource("ios/WaiComputer/WaiComputer/Features/Recording/RecordingViewModel.swift")
+
+        for source in [macSource, iosSource] {
+            XCTAssertTrue(source.contains("reason: \"realtime_audio_send_failed\""))
+            XCTAssertTrue(source.contains("\"context\": \"recording.live_transcription.disabled\""))
+            XCTAssertTrue(source.contains("await continueRecordingWithoutLiveTranscription("))
+            XCTAssertFalse(source.contains("await MainActor.run { self.liveTranscriptionOffline = true }"))
+            XCTAssertFalse(source.contains("await MainActor.run { [weak self] in self?.liveTranscriptionOffline = true }"))
+        }
+    }
+
     func testLiveRecordingViewAvoidsFullTranscriptObservationForScrollFollow() throws {
         let source = try macSource("WaiComputer/Features/Recording/LiveRecordingView.swift")
         let modelSource = try macSource("WaiComputer/Features/Recording/MacRecordingViewModel.swift")
