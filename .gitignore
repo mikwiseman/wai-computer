@@ -116,9 +116,6 @@ fastlane/mac_screenshots_en-US/
 *.key
 credentials.json
 
-# Android
-android/.gradle/
-android/keystore.properties
 *.jks
 *.keystore
 
