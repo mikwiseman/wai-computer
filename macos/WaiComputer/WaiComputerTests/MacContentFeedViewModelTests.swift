@@ -42,9 +42,14 @@ final class MacContentFeedViewModelTests: XCTestCase {
         // is treated as a regression, as is an unrecycled LazyVStack.
         XCTAssertTrue(source.contains("MacInboxRowsList("))
         XCTAssertTrue(source.contains("List {"))
-        XCTAssertTrue(source.contains("displayCache.displayRows(for: rows, language: language)"))
+        XCTAssertTrue(source.contains("rowsRevision: model.rowsRevision"))
+        XCTAssertTrue(source.contains("displayCache.displayRows("))
+        XCTAssertTrue(source.contains("revision: rowsRevision,"))
         XCTAssertTrue(source.contains("ForEach(displayRows)"))
         XCTAssertFalse(source.contains("ForEach(Array(displayRows.enumerated())"))
+        XCTAssertFalse(source.contains("rows == lastRows"))
+        XCTAssertFalse(source.contains("Array(rows.prefix"))
+        XCTAssertFalse(source.contains("lastRows = rows"))
         XCTAssertFalse(source.contains("NSViewRepresentable"))
         XCTAssertFalse(source.contains("LazyVStack(spacing: 0)"))
     }
@@ -388,8 +393,10 @@ final class MacContentFeedViewModelTests: XCTestCase {
     func testInboxViewModelClearsStaleErrorAfterSuccessfulReload() throws {
         let source = try macSource("WaiComputer/Features/Inbox/MacInboxViewModel.swift")
 
-        XCTAssertTrue(source.contains("errorMessage = nil\n            rows = response.rows"))
-        XCTAssertTrue(source.contains("errorMessage = nil\n            rows.append(contentsOf: response.rows)"))
+        XCTAssertBefore("errorMessage = nil", "rows = response.rows", in: source)
+        XCTAssertBefore("errorMessage = nil", "rows.append(contentsOf: response.rows)", in: source)
+        XCTAssertBefore("rowsRevision = rowsRevision.replacingRows()", "rows = response.rows", in: source)
+        XCTAssertBefore("rowsRevision = rowsRevision.appendingRows(from: rows.count)", "rows.append(contentsOf: response.rows)", in: source)
     }
 
     func testCompanionViewCanHideChatSwitcherAndDoesNotShowChatCounts() throws {

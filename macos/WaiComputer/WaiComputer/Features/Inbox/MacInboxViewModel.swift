@@ -9,6 +9,24 @@ struct PendingInboxUploadFile: Equatable {
     let typeDescription: String?
 }
 
+struct MacInboxRowsRevision: Equatable {
+    let value: Int
+    let appendedFromIndex: Int?
+
+    init(value: Int = 0, appendedFromIndex: Int? = nil) {
+        self.value = value
+        self.appendedFromIndex = appendedFromIndex
+    }
+
+    func replacingRows() -> MacInboxRowsRevision {
+        MacInboxRowsRevision(value: value + 1, appendedFromIndex: nil)
+    }
+
+    func appendingRows(from index: Int) -> MacInboxRowsRevision {
+        MacInboxRowsRevision(value: value + 1, appendedFromIndex: index)
+    }
+}
+
 enum InboxUploadPhase: Equatable {
     case idle
     case selected
@@ -63,6 +81,7 @@ final class MacInboxViewModel: ObservableObject {
     @Published var statusMessage: String?
     @Published var selectedUploadFile: PendingInboxUploadFile?
     @Published var uploadPhase: InboxUploadPhase = .idle
+    private(set) var rowsRevision = MacInboxRowsRevision()
 
     let apiClient: APIClient
     private var folderId: String?
@@ -106,6 +125,7 @@ final class MacInboxViewModel: ObservableObject {
             )
             guard generation == loadGeneration else { return }
             errorMessage = nil
+            rowsRevision = rowsRevision.replacingRows()
             rows = response.rows
             nextCursor = response.nextCursor
         } catch {
@@ -128,6 +148,7 @@ final class MacInboxViewModel: ObservableObject {
             )
             guard generation == loadGeneration else { return }
             errorMessage = nil
+            rowsRevision = rowsRevision.appendingRows(from: rows.count)
             rows.append(contentsOf: response.rows)
             self.nextCursor = response.nextCursor
         } catch {

@@ -408,6 +408,7 @@ struct MacInboxView: View {
             } else {
                 MacInboxRowsList(
                     rows: model.rows,
+                    rowsRevision: model.rowsRevision,
                     folders: folders,
                     language: languageManager.current,
                     selectedRowID: selectedRowID,
@@ -1589,6 +1590,7 @@ private struct MacInboxDisplayRow: Identifiable, Equatable {
 /// ~10× cheaper in the same window), so the representable is gone.
 private struct MacInboxRowsList: View {
     let rows: [InboxRow]
+    let rowsRevision: MacInboxRowsRevision
     let folders: [Folder]
     let language: LanguageManager.SupportedLanguage
     let selectedRowID: String?
@@ -1608,7 +1610,11 @@ private struct MacInboxRowsList: View {
     private static let loadMoreLookahead = 4
 
     var body: some View {
-        let displayRows = displayCache.displayRows(for: rows, language: language)
+        let displayRows = displayCache.displayRows(
+            for: rows,
+            revision: rowsRevision,
+            language: language
+        )
         List {
             ForEach(displayRows) { display in
                 draggableRow(display, index: display.index)
@@ -1754,30 +1760,32 @@ private struct MacInboxListRow: View {
 /// cache survives re-renders; mutating it during body evaluation is fine —
 /// it is plain storage, not observed state.
 private final class MacInboxDisplayRowCache {
-    private var lastRows: [InboxRow] = []
+    private var lastRevision: MacInboxRowsRevision?
     private var lastLanguage: LanguageManager.SupportedLanguage?
     private var cached: [MacInboxDisplayRow] = []
 
     func displayRows(
         for rows: [InboxRow],
+        revision: MacInboxRowsRevision,
         language: LanguageManager.SupportedLanguage
     ) -> [MacInboxDisplayRow] {
-        if rows == lastRows, language == lastLanguage {
+        if revision == lastRevision, language == lastLanguage {
             return cached
         }
         if language == lastLanguage,
-           rows.count > lastRows.count,
-           Array(rows.prefix(lastRows.count)) == lastRows {
+           let appendStartIndex = revision.appendedFromIndex,
+           appendStartIndex == cached.count,
+           rows.count >= appendStartIndex {
             // Pagination append: map only the new tail.
-            cached.append(contentsOf: rows[lastRows.count...].enumerated().map { offset, row in
-                MacInboxDisplayRow(row: row, index: lastRows.count + offset, language: language)
+            cached.append(contentsOf: rows[appendStartIndex...].enumerated().map { offset, row in
+                MacInboxDisplayRow(row: row, index: appendStartIndex + offset, language: language)
             })
         } else {
             cached = rows.enumerated().map { index, row in
                 MacInboxDisplayRow(row: row, index: index, language: language)
             }
         }
-        lastRows = rows
+        lastRevision = revision
         lastLanguage = language
         return cached
     }
