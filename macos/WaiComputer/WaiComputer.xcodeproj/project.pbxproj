@@ -836,7 +836,7 @@
 				CODE_SIGN_ENTITLEMENTS = WaiComputer/WaiComputer.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 215;
+				CURRENT_PROJECT_VERSION = 216;
 				DEVELOPMENT_TEAM = "<apple-team-id>";
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -846,7 +846,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 13.0;
-				MARKETING_VERSION = 1.0.44;
+				MARKETING_VERSION = 1.0.45;
 				OTHER_LDFLAGS = "-weak_framework CoreAudio -weak_framework AudioToolbox";
 				PRODUCT_BUNDLE_IDENTIFIER = is.waiwai.computer;
 				PRODUCT_NAME = WaiComputer;
@@ -1000,7 +1000,7 @@
 				CODE_SIGN_ENTITLEMENTS = WaiComputer/WaiComputer.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 215;
+				CURRENT_PROJECT_VERSION = 216;
 				DEVELOPMENT_TEAM = "<apple-team-id>";
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -1010,7 +1010,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 13.0;
-				MARKETING_VERSION = 1.0.44;
+				MARKETING_VERSION = 1.0.45;
 				OTHER_LDFLAGS = "-weak_framework CoreAudio -weak_framework AudioToolbox";
 				PRODUCT_BUNDLE_IDENTIFIER = is.waiwai.computer.dev;
 				PRODUCT_NAME = WaiComputer;
