@@ -1727,14 +1727,11 @@ private struct BulkSelectionDetailView: View {
 private struct CompletedRecordingTransitionView: View {
     let transition: CompletedRecordingContext
     @EnvironmentObject private var languageManager: LanguageManager
-
-    private static let transcriptChunkLimit = 1_800
-
-    private var transcriptChunks: [CompletedRecordingTranscriptChunk] {
-        completedRecordingTranscriptChunks(from: transition.transcript)
-    }
+    @State private var transcriptChunkCache = CompletedRecordingTranscriptChunkCache()
 
     var body: some View {
+        let transcriptChunks = transcriptChunkCache.chunks(for: transition)
+
         VStack(spacing: 0) {
             ViewThatFits(in: .horizontal) {
                 transitionHeaderRow
@@ -1784,51 +1781,6 @@ private struct CompletedRecordingTransitionView: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("completed-recording-transition")
-    }
-
-    private func completedRecordingTranscriptChunks(from transcript: String) -> [CompletedRecordingTranscriptChunk] {
-        let normalized = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !normalized.isEmpty else { return [] }
-
-        var chunks: [CompletedRecordingTranscriptChunk] = []
-        var chunkId = 0
-        var start = normalized.startIndex
-
-        while start < normalized.endIndex {
-            let hardEnd = normalized.index(
-                start,
-                offsetBy: Self.transcriptChunkLimit,
-                limitedBy: normalized.endIndex
-            ) ?? normalized.endIndex
-            var end = hardEnd
-
-            if hardEnd < normalized.endIndex {
-                let slice = normalized[start..<hardEnd]
-                if let newline = slice.lastIndex(of: "\n"),
-                   normalized.distance(from: start, to: newline) > Self.transcriptChunkLimit / 2 {
-                    end = normalized.index(after: newline)
-                } else if let space = slice.lastIndex(of: " "),
-                          normalized.distance(from: start, to: space) > Self.transcriptChunkLimit / 2 {
-                    end = normalized.index(after: space)
-                }
-            }
-
-            let text = String(normalized[start..<end])
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-            if !text.isEmpty {
-                chunks.append(CompletedRecordingTranscriptChunk(id: chunkId, text: text))
-                chunkId += 1
-            }
-
-            start = end
-        }
-
-        return chunks
-    }
-
-    private struct CompletedRecordingTranscriptChunk: Identifiable, Equatable {
-        let id: Int
-        let text: String
     }
 
     private func formatDuration(_ duration: TimeInterval) -> String {
@@ -1888,6 +1840,76 @@ private struct CompletedRecordingTransitionView: View {
     private func t(_ english: String, _ russian: String) -> String {
         OnboardingL10n.text(english, russian, language: languageManager.current)
     }
+}
+
+private final class CompletedRecordingTranscriptChunkCache {
+    private static let transcriptChunkLimit = 1_800
+
+    private var cachedKey: CompletedRecordingTranscriptChunkCacheKey?
+    private var cachedChunks: [CompletedRecordingTranscriptChunk] = []
+
+    func chunks(for transition: CompletedRecordingContext) -> [CompletedRecordingTranscriptChunk] {
+        let key = CompletedRecordingTranscriptChunkCacheKey(
+            recordingId: transition.recordingId,
+            transcriptUTF8Count: transition.transcript.utf8.count
+        )
+        if cachedKey == key {
+            return cachedChunks
+        }
+        cachedKey = key
+        cachedChunks = Self.buildChunks(from: transition.transcript)
+        return cachedChunks
+    }
+
+    private static func buildChunks(from transcript: String) -> [CompletedRecordingTranscriptChunk] {
+        let normalized = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalized.isEmpty else { return [] }
+
+        var chunks: [CompletedRecordingTranscriptChunk] = []
+        var chunkId = 0
+        var start = normalized.startIndex
+
+        while start < normalized.endIndex {
+            let hardEnd = normalized.index(
+                start,
+                offsetBy: transcriptChunkLimit,
+                limitedBy: normalized.endIndex
+            ) ?? normalized.endIndex
+            var end = hardEnd
+
+            if hardEnd < normalized.endIndex {
+                let slice = normalized[start..<hardEnd]
+                if let newline = slice.lastIndex(of: "\n"),
+                   normalized.distance(from: start, to: newline) > transcriptChunkLimit / 2 {
+                    end = normalized.index(after: newline)
+                } else if let space = slice.lastIndex(of: " "),
+                          normalized.distance(from: start, to: space) > transcriptChunkLimit / 2 {
+                    end = normalized.index(after: space)
+                }
+            }
+
+            let text = String(normalized[start..<end])
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            if !text.isEmpty {
+                chunks.append(CompletedRecordingTranscriptChunk(id: chunkId, text: text))
+                chunkId += 1
+            }
+
+            start = end
+        }
+
+        return chunks
+    }
+}
+
+private struct CompletedRecordingTranscriptChunkCacheKey: Equatable {
+    let recordingId: String
+    let transcriptUTF8Count: Int
+}
+
+private struct CompletedRecordingTranscriptChunk: Identifiable, Equatable {
+    let id: Int
+    let text: String
 }
 
 // MARK: - Auth View

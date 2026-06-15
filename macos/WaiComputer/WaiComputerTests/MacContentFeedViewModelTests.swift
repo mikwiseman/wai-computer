@@ -259,7 +259,7 @@ final class MacContentFeedViewModelTests: XCTestCase {
         // transition. It must not lay out the whole transcript as one Text
         // while the app is also finalizing and navigating.
         XCTAssertTrue(source.contains("CompletedRecordingTranscriptChunk"))
-        XCTAssertTrue(source.contains("completedRecordingTranscriptChunks(from: transition.transcript)"))
+        XCTAssertTrue(source.contains("CompletedRecordingTranscriptChunkCache"))
         XCTAssertTrue(source.contains(".accessibilityIdentifier(\"completed-recording-transcript-list\")"))
         XCTAssertTrue(source.contains("ForEach(transcriptChunks)"))
         XCTAssertTrue(source.contains("ProgressView()\n                .controlSize(.small)"))
@@ -267,6 +267,20 @@ final class MacContentFeedViewModelTests: XCTestCase {
         XCTAssertFalse(source.contains("Text(transition.transcript)"))
         XCTAssertFalse(source.contains("Text(t(\"Recording saved\""))
         XCTAssertFalse(source.contains("ScrollView {\n                    Text(transition.transcript)"))
+    }
+
+    func testCompletedRecordingTransitionCachesTranscriptChunksAcrossInvalidations() throws {
+        let source = try macSource("WaiComputer/App/MacContentView.swift")
+
+        // The transition can display a very long transcript while parent state
+        // is still changing. Chunking is O(n) string slicing, so keep it behind
+        // persistent @State instead of recomputing from every body evaluation.
+        XCTAssertTrue(source.contains("@State private var transcriptChunkCache = CompletedRecordingTranscriptChunkCache()"))
+        XCTAssertTrue(source.contains("let transcriptChunks = transcriptChunkCache.chunks(for: transition)"))
+        XCTAssertTrue(source.contains("private final class CompletedRecordingTranscriptChunkCache"))
+        XCTAssertTrue(source.contains("private struct CompletedRecordingTranscriptChunkCacheKey: Equatable"))
+        XCTAssertFalse(source.contains("private var transcriptChunks: [CompletedRecordingTranscriptChunk]"))
+        XCTAssertFalse(source.contains("completedRecordingTranscriptChunks(from: transition.transcript)"))
     }
 
     func testInboxSourceFilterPutsAllLastAndShellDefaultsInboxToRecordings() throws {
