@@ -12,6 +12,21 @@ final class PendingRecordingSyncCoordinatorSourceTests: XCTestCase {
         XCTAssertTrue(source.contains("\"listPendingRecordingBackupsForSync\""))
     }
 
+    func testBackupStateMutationFailuresAreCaptured() throws {
+        let source = try repoSource(
+            "shared/WaiComputerKit/Sources/WaiComputerKit/Recording/PendingRecordingSyncCoordinator.swift"
+        )
+
+        XCTAssertFalse(source.contains("try? RecordingBackupStore.recordSaveFailure("))
+        XCTAssertFalse(source.contains("try? RecordingBackupStore.markAuthenticationRequired("))
+        XCTAssertFalse(source.contains("try? RecordingBackupStore.markPermanentFailure("))
+        XCTAssertFalse(source.contains("try? RecordingBackupStore.clearAuthenticationRequired("))
+        XCTAssertTrue(source.contains("private func recordPendingBackupFailure("))
+        XCTAssertTrue(source.contains("private func markPendingBackupAuthenticationRequired("))
+        XCTAssertTrue(source.contains("private func markPendingBackupPermanentFailure("))
+        XCTAssertTrue(source.contains("private func clearPendingBackupAuthenticationRequired("))
+    }
+
     private func repoSource(_ relativePath: String) throws -> String {
         try String(contentsOf: try repoRoot().appendingPathComponent(relativePath), encoding: .utf8)
     }

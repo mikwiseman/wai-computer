@@ -266,9 +266,10 @@ public actor PendingRecordingSyncCoordinator {
                 )
             } else {
                 log.warning("No manifest for recording \(backup.recordingId), skipping")
-                _ = try? RecordingBackupStore.recordSaveFailure(
+                recordPendingBackupFailure(
                     recordingId: backup.recordingId,
-                    message: "Saved locally and waiting to sync."
+                    message: "Saved locally and waiting to sync.",
+                    action: "recordMissingManifestBackupFailure"
                 )
                 return false
             }
@@ -326,38 +327,43 @@ public actor PendingRecordingSyncCoordinator {
             log.error("Sync failed for \(backup.recordingId) with API error")
             switch apiError {
             case .unauthorized:
-                _ = try? RecordingBackupStore.recordSaveFailure(
+                recordPendingBackupFailure(
                     recordingId: backup.recordingId,
-                    message: "Please sign in again to sync this recording."
+                    message: "Please sign in again to sync this recording.",
+                    action: "recordAuthenticationRequiredBackupFailure"
                 )
-                try? RecordingBackupStore.markAuthenticationRequired(recordingId: backup.recordingId)
+                markPendingBackupAuthenticationRequired(recordingId: backup.recordingId)
                 log.error("Marked \(backup.recordingId) as authentication-required")
             case .httpError(let statusCode, _) where statusCode == 413:
-                _ = try? RecordingBackupStore.recordSaveFailure(
+                recordPendingBackupFailure(
                     recordingId: backup.recordingId,
-                    message: "This recording is too large to upload."
+                    message: "This recording is too large to upload.",
+                    action: "recordOversizedBackupFailure"
                 )
-                try? RecordingBackupStore.markPermanentFailure(recordingId: backup.recordingId)
+                markPendingBackupPermanentFailure(recordingId: backup.recordingId, action: "markOversizedBackupPermanent")
                 log.error("Marked \(backup.recordingId) as permanent failure (too large)")
             case .httpError(let statusCode, _) where statusCode == 404:
-                _ = try? RecordingBackupStore.recordSaveFailure(
+                recordPendingBackupFailure(
                     recordingId: backup.recordingId,
-                    message: "This recording was deleted from the server."
+                    message: "This recording was deleted from the server.",
+                    action: "recordDeletedBackupFailure"
                 )
-                try? RecordingBackupStore.markPermanentFailure(recordingId: backup.recordingId)
+                markPendingBackupPermanentFailure(recordingId: backup.recordingId, action: "markDeletedBackupPermanent")
                 log.error("Marked \(backup.recordingId) as permanent failure (deleted on server)")
             default:
-                _ = try? RecordingBackupStore.recordSaveFailure(
+                recordPendingBackupFailure(
                     recordingId: backup.recordingId,
-                    message: apiError.userFacingMessage(context: .recording)
+                    message: apiError.userFacingMessage(context: .recording),
+                    action: "recordPendingBackupAPIError"
                 )
             }
             return false
         } catch {
             log.error("Sync failed for \(backup.recordingId)")
-            _ = try? RecordingBackupStore.recordSaveFailure(
+            recordPendingBackupFailure(
                 recordingId: backup.recordingId,
-                message: error.userFacingMessage(context: .recording)
+                message: error.userFacingMessage(context: .recording),
+                action: "recordPendingBackupSyncError"
             )
             return false
         }
@@ -459,7 +465,7 @@ public actor PendingRecordingSyncCoordinator {
                 continue
             }
 
-            try? RecordingBackupStore.clearAuthenticationRequired(recordingId: backup.recordingId)
+            clearPendingBackupAuthenticationRequired(recordingId: backup.recordingId)
             log.info("Re-enabled sync for \(backup.recordingId) after session refresh")
         }
     }
@@ -479,5 +485,57 @@ public actor PendingRecordingSyncCoordinator {
 
     private func retryDelaySeconds(forAttempt attempt: Int) -> Int {
         min(300, 5 * Int(pow(2.0, Double(min(attempt - 1, 6)))))
+    }
+
+    private func recordPendingBackupFailure(recordingId: String, message: String, action: String) {
+        do {
+            _ = try RecordingBackupStore.recordSaveFailure(recordingId: recordingId, message: message)
+        } catch {
+            log.error("Failed to record pending backup failure for \(recordingId)")
+            SentryHelper.captureError(
+                error,
+                extras: ["action": action, "recordingId": recordingId]
+            )
+        }
+    }
+
+    private func markPendingBackupAuthenticationRequired(recordingId: String) {
+        do {
+            try RecordingBackupStore.markAuthenticationRequired(recordingId: recordingId)
+        } catch {
+            log.error("Failed to mark pending backup authentication-required for \(recordingId)")
+            SentryHelper.captureError(
+                error,
+                extras: ["action": "markPendingBackupAuthenticationRequired", "recordingId": recordingId]
+            )
+        }
+    }
+
+    private func markPendingBackupPermanentFailure(
+        recordingId: String,
+        failureCode: String? = nil,
+        action: String = "markPendingBackupPermanentFailure"
+    ) {
+        do {
+            try RecordingBackupStore.markPermanentFailure(recordingId: recordingId, failureCode: failureCode)
+        } catch {
+            log.error("Failed to mark pending backup permanent for \(recordingId)")
+            SentryHelper.captureError(
+                error,
+                extras: ["action": action, "recordingId": recordingId, "failureCode": failureCode ?? ""]
+            )
+        }
+    }
+
+    private func clearPendingBackupAuthenticationRequired(recordingId: String) {
+        do {
+            try RecordingBackupStore.clearAuthenticationRequired(recordingId: recordingId)
+        } catch {
+            log.error("Failed to clear pending backup authentication-required for \(recordingId)")
+            SentryHelper.captureError(
+                error,
+                extras: ["action": "clearPendingBackupAuthenticationRequired", "recordingId": recordingId]
+            )
+        }
     }
 }
