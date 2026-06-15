@@ -289,7 +289,7 @@ refresh_target_window_id() {
   die "Unable to find WaiComputer main window for PID:$TARGET_PID"
 }
 
-focus_target_window() {
+refresh_target_window_for_interaction() {
   local name="$1"
 
   refresh_target_window_id "$name"
@@ -443,7 +443,7 @@ click_identifier() {
   local identifier="$2"
   local json_path element_id
 
-  focus_target_window "$identifier"
+  refresh_target_window_for_interaction "$identifier"
   json_path="$(capture_ui "before-click-$identifier")"
   element_id="$(element_id_by_identifier "$json_path" "$identifier")"
   click_element "$json_path" "$element_id" "$identifier"
@@ -456,7 +456,7 @@ click_identifier_label_role() {
   local name="$4"
   local json_path element_id
 
-  focus_target_window "$name"
+  refresh_target_window_for_interaction "$name"
   json_path="$(capture_ui "before-click-$name")"
   element_id="$(element_id_by_identifier_label_role "$json_path" "$identifier" "$label" "$role")"
   click_element "$json_path" "$element_id" "$name"
@@ -491,7 +491,7 @@ set_identifier_label_role_value() {
   local name="$5"
   local json_path element_id
 
-  focus_target_window "$name"
+  refresh_target_window_for_interaction "$name"
   json_path="$(capture_ui "before-set-value-$name")"
   element_id="$(element_id_by_identifier_label_role "$json_path" "$identifier" "$label" "$role")"
   set_element_value "$json_path" "$element_id" "$value" "$name"
