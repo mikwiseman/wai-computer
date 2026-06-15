@@ -18,7 +18,7 @@ struct LiveRecordingView: View {
     private static let bottomPinThreshold: CGFloat = 120
 
     private var transcriptHasContent: Bool {
-        !recordingVM.committedTranscript.isEmpty || !recordingVM.interimTranscript.isEmpty
+        !recordingVM.committedTranscriptChunks.isEmpty || !recordingVM.interimTranscript.isEmpty
     }
 
     private var transcriptScrollToken: LiveTranscriptScrollToken {
@@ -84,52 +84,58 @@ struct LiveRecordingView: View {
             // selection), and a "Jump to latest" pill resumes following.
             GeometryReader { viewport in
                 ScrollViewReader { proxy in
-                    ScrollView {
-                        LazyVStack(alignment: .leading, spacing: Spacing.sm) {
-                            if !transcriptHasContent {
-                                Text(recordingVM.emptyTranscriptText)
-                                    .font(Typography.reading)
-                                    .foregroundStyle(Palette.textSecondary)
-                                    .italic()
-                                    .padding(.horizontal, Spacing.xxl)
-                                    .padding(.vertical, Spacing.xl)
-                            } else {
-                                VStack(alignment: .leading, spacing: Spacing.xs) {
-                                    if !recordingVM.committedTranscript.isEmpty {
-                                        Text(recordingVM.committedTranscript)
-                                            .font(Typography.reading)
-                                            .lineSpacing(6)
-                                            .textSelection(.enabled)
-                                            .accessibilityAddTraits(.updatesFrequently)
-                                    }
-                                    if !recordingVM.interimTranscript.isEmpty {
-                                        Text(recordingVM.interimTranscript)
-                                            .font(Typography.reading.italic())
-                                            .lineSpacing(6)
-                                            .foregroundStyle(Palette.textSecondary)
-                                            .textSelection(.enabled)
-                                            .accessibilityHidden(true)
-                                            .accessibilityLabel(t(
-                                                "Interim transcript — may change as you speak",
-                                                "Промежуточная расшифровка — текст может уточняться"
-                                            ))
-                                    }
-                                }
-                                .padding(.horizontal, Spacing.xxl)
+                    List {
+                        if !transcriptHasContent {
+                            Text(recordingVM.emptyTranscriptText)
+                                .font(Typography.reading)
+                                .foregroundStyle(Palette.textSecondary)
+                                .italic()
                                 .padding(.vertical, Spacing.xl)
+                                .liveTranscriptListRow()
+                        } else {
+                            ForEach(recordingVM.committedTranscriptChunks) { chunk in
+                                Text(chunk.text)
+                                    .font(Typography.reading)
+                                    .lineSpacing(6)
+                                    .textSelection(.enabled)
+                                    .accessibilityAddTraits(.updatesFrequently)
+                                    .padding(.vertical, Spacing.xs)
+                                    .liveTranscriptListRow()
+                            }
+
+                            if !recordingVM.interimTranscript.isEmpty {
+                                Text(recordingVM.interimTranscript)
+                                    .font(Typography.reading.italic())
+                                    .lineSpacing(6)
+                                    .foregroundStyle(Palette.textSecondary)
+                                    .textSelection(.enabled)
+                                    .accessibilityHidden(true)
+                                    .accessibilityLabel(t(
+                                        "Interim transcript — may change as you speak",
+                                        "Промежуточная расшифровка — текст может уточняться"
+                                    ))
+                                    .padding(.vertical, Spacing.xs)
+                                    .liveTranscriptListRow()
+                            }
+
+                            Color.clear
+                                .frame(height: 1)
                                 .id("transcript-bottom")
-                            }
-                        }
-                        .background(
-                            GeometryReader { content in
-                                Color.clear.preference(
-                                    key: TranscriptBottomDistanceKey.self,
-                                    value: content.frame(in: .named("live-transcript-scroll")).maxY
+                                .background(
+                                    GeometryReader { content in
+                                        Color.clear.preference(
+                                            key: TranscriptBottomDistanceKey.self,
+                                            value: content.frame(in: .named("live-transcript-scroll")).maxY
+                                        )
+                                    }
                                 )
-                            }
-                        )
+                                .liveTranscriptListRow()
+                        }
                     }
+                    .listStyle(.plain)
+                    .scrollContentBackground(.hidden)
                     .coordinateSpace(name: "live-transcript-scroll")
+                    .accessibilityIdentifier("live-transcript-list")
                     .onPreferenceChange(TranscriptBottomDistanceKey.self) { contentMaxY in
                         let pinned = contentMaxY - viewport.size.height < Self.bottomPinThreshold
                         if pinned != isPinnedToBottom {
@@ -441,6 +447,22 @@ private struct TranscriptBottomDistanceKey: PreferenceKey {
 private struct LiveTranscriptScrollToken: Equatable {
     let committedLength: Int
     let interimLength: Int
+}
+
+private extension View {
+    func liveTranscriptListRow() -> some View {
+        self
+            .frame(maxWidth: 920, alignment: .leading)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .listRowInsets(EdgeInsets(
+                top: 0,
+                leading: Spacing.xxl,
+                bottom: 0,
+                trailing: Spacing.xxl
+            ))
+            .listRowSeparator(.hidden)
+            .listRowBackground(Color.clear)
+    }
 }
 
 struct PulseModifier: ViewModifier {

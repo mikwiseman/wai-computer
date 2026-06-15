@@ -100,6 +100,7 @@ class MacRecordingViewModel: ObservableObject {
     /// the high-contrast portion of the live view so users can ignore the
     /// faded interim text that streams ahead of their speech.
     private(set) var committedTranscript = ""
+    private(set) var committedTranscriptChunks: [LiveTranscriptDisplayChunk] = []
     /// Latest interim partial — the model's running guess that may be revised.
     private(set) var interimTranscript = ""
     @Published var currentRecordingId: String?
@@ -1513,9 +1514,54 @@ class MacRecordingViewModel: ObservableObject {
             : committed + " " + interim
     }
 
+    private static let liveTranscriptChunkLimit = 1_800
+
+    private static func liveTranscriptDisplayChunks(from transcript: String) -> [LiveTranscriptDisplayChunk] {
+        let normalized = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalized.isEmpty else { return [] }
+
+        var chunks: [LiveTranscriptDisplayChunk] = []
+        var chunkId = 0
+        var start = normalized.startIndex
+
+        while start < normalized.endIndex {
+            let hardEnd = normalized.index(
+                start,
+                offsetBy: liveTranscriptChunkLimit,
+                limitedBy: normalized.endIndex
+            ) ?? normalized.endIndex
+            var end = hardEnd
+
+            if hardEnd < normalized.endIndex {
+                let slice = normalized[start..<hardEnd]
+                if let newline = slice.lastIndex(of: "\n"),
+                   normalized.distance(from: start, to: newline) > liveTranscriptChunkLimit / 2 {
+                    end = normalized.index(after: newline)
+                } else if let space = slice.lastIndex(of: " "),
+                          normalized.distance(from: start, to: space) > liveTranscriptChunkLimit / 2 {
+                    end = normalized.index(after: space)
+                }
+            }
+
+            let text = String(normalized[start..<end])
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            if !text.isEmpty {
+                chunks.append(LiveTranscriptDisplayChunk(id: chunkId, text: text))
+                chunkId += 1
+            }
+
+            start = end
+        }
+
+        return chunks
+    }
+
     private func setLiveTranscript(committed: String, interim: String) {
         guard committedTranscript != committed || interimTranscript != interim else { return }
         objectWillChange.send()
+        if committedTranscript != committed {
+            committedTranscriptChunks = Self.liveTranscriptDisplayChunks(from: committed)
+        }
         committedTranscript = committed
         interimTranscript = interim
     }
@@ -1741,6 +1787,11 @@ class MacRecordingViewModel: ObservableObject {
         transcriptTask?.cancel()
         cleanupTask?.cancel()
     }
+}
+
+struct LiveTranscriptDisplayChunk: Identifiable, Equatable {
+    let id: Int
+    let text: String
 }
 
 private extension AVAuthorizationStatus {

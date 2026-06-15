@@ -152,6 +152,22 @@ final class MacContentFeedViewModelTests: XCTestCase {
         XCTAssertFalse(source.contains("recordingVM.currentTranscript"))
     }
 
+    func testLiveRecordingViewUsesRecyclingRowsForLongTranscriptDisplay() throws {
+        let viewSource = try macSource("WaiComputer/Features/Recording/LiveRecordingView.swift")
+        let modelSource = try macSource("WaiComputer/Features/Recording/MacRecordingViewModel.swift")
+
+        // Long live recordings must not keep laying out one ever-growing Text.
+        // The view reads pre-split committed chunks from the model and renders
+        // them as platform-recycled rows.
+        XCTAssertTrue(modelSource.contains("private(set) var committedTranscriptChunks: [LiveTranscriptDisplayChunk] = []"))
+        XCTAssertTrue(modelSource.contains("committedTranscriptChunks = Self.liveTranscriptDisplayChunks(from: committed)"))
+        XCTAssertTrue(viewSource.contains("List {"))
+        XCTAssertTrue(viewSource.contains("ForEach(recordingVM.committedTranscriptChunks)"))
+        XCTAssertTrue(viewSource.contains(".liveTranscriptListRow()"))
+        XCTAssertFalse(viewSource.contains("Text(recordingVM.committedTranscript)"))
+        XCTAssertFalse(viewSource.contains("LazyVStack"))
+    }
+
     func testInboxSourceFilterPutsAllLastAndShellDefaultsInboxToRecordings() throws {
         let inboxSource = try macSource("WaiComputer/Features/Inbox/MacInboxView.swift")
         let shellSource = try macSource("WaiComputer/App/MacContentView.swift")
