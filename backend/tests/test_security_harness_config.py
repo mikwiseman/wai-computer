@@ -76,6 +76,16 @@ def test_server_build_only_starts_defined_compose_services():
     assert missing == []
 
 
+def test_server_build_aligns_telegram_webhook_after_public_health():
+    script = (REPO_ROOT / "scripts/server-build.sh").read_text()
+
+    assert "scripts/configure-telegram-webhook.py" in script
+    assert "docker_compose exec -T api python - <" in script
+    assert script.index("Caddy HTTP health check") < script.index(
+        "scripts/configure-telegram-webhook.py"
+    )
+
+
 def test_production_compose_uses_sha_tagged_deploy_images():
     compose = yaml.safe_load((BACKEND_ROOT / "docker-compose.yml").read_text())
 

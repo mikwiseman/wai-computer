@@ -234,4 +234,7 @@ if [[ "$host_caddy_sum" != "$container_caddy_sum" ]]; then
     "docker logs --tail 200 waicomputer-caddy"
 fi
 
+echo "Configuring Telegram webhook through the active Bot API endpoint..."
+docker_compose exec -T api python - < "$PROD_ROOT/scripts/configure-telegram-webhook.py"
+
 echo "Server build and deploy successful."
