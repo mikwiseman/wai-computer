@@ -269,7 +269,10 @@ public enum RecordingBackupStore {
         return backup
     }
 
-    public static func markPermanentFailure(recordingId: String) throws {
+    public static func markPermanentFailure(
+        recordingId: String,
+        failureCode: String? = nil
+    ) throws {
         guard let backup = try existingBackup(recordingId: recordingId) else { return }
         var manifest = try readManifest(from: backup.manifestURL) ?? RecordingBackupManifest(
             recordingId: recordingId,
@@ -284,7 +287,7 @@ public enum RecordingBackupStore {
         )
         manifest.syncState = .permanentFailure
         manifest.serverJobId = nil
-        manifest.lastFailureCode = "permanent_failure"
+        manifest.lastFailureCode = failureCode ?? "permanent_failure"
         manifest.updatedAt = Date()
         try writeManifest(manifest, to: backup.manifestURL)
         log.error("Marked permanent failure for \(recordingId)")

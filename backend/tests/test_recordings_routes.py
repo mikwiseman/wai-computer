@@ -1438,6 +1438,7 @@ async def test_failed_audio_upload_can_be_retried(
     _, enqueue_kwargs = enqueue_processing.await_args
     assert enqueue_kwargs["recording_id"] == recording_id
     assert enqueue_kwargs["client_duration_seconds"] == 103
+    assert enqueue_kwargs["previous_failure_code"] == failure_code
 
     refreshed = (
         await db_session.execute(select(Recording).where(Recording.id == recording_id))

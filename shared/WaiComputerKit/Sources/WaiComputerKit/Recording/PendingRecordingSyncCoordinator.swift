@@ -11,6 +11,9 @@ public actor PendingRecordingSyncCoordinator {
     public static let shared = PendingRecordingSyncCoordinator()
 
     private let log = Logger(subsystem: "is.waiwai.computer", category: "sync")
+    private static let permanentServerFailureCodes: Set<String> = [
+        "audio_decode_failed",
+    ]
 
     private var syncTask: Task<Void, Never>?
     private var retrySleepTask: Task<Void, Never>?
@@ -256,15 +259,27 @@ public actor PendingRecordingSyncCoordinator {
 
             if let detail, detail.status == .failed {
                 log.warning("Server returned failed status for recording \(backup.recordingId)")
-                try RecordingBackupStore.markRetryableFailure(
-                    recordingId: backup.recordingId,
-                    message: UserFacingErrorFormatter.displayMessage(
-                        detail.failureMessage,
-                        fallback: "We couldn't finish saving your recording right now. We'll keep trying in the background.",
-                        context: .recording
-                    ),
-                    failureCode: detail.failureCode
+                let message = UserFacingErrorFormatter.displayMessage(
+                    detail.failureMessage,
+                    fallback: "We couldn't finish saving your recording right now. We'll keep trying in the background.",
+                    context: .recording
                 )
+                if Self.permanentServerFailureCodes.contains(detail.failureCode ?? "") {
+                    _ = try RecordingBackupStore.recordSaveFailure(
+                        recordingId: backup.recordingId,
+                        message: message
+                    )
+                    try RecordingBackupStore.markPermanentFailure(
+                        recordingId: backup.recordingId,
+                        failureCode: detail.failureCode
+                    )
+                } else {
+                    try RecordingBackupStore.markRetryableFailure(
+                        recordingId: backup.recordingId,
+                        message: message,
+                        failureCode: detail.failureCode
+                    )
+                }
                 return false
             }
 

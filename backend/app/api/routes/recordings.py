@@ -1139,6 +1139,7 @@ async def enqueue_recording_audio_processing(
     client_duration_seconds: int | None = None,
     client_file_size_bytes: int | None = None,
     staged_size_bytes: int | None = None,
+    previous_failure_code: str | None = None,
 ) -> None:
     from app.tasks.celery_app import celery_app
 
@@ -1153,6 +1154,7 @@ async def enqueue_recording_audio_processing(
             "client_duration_seconds": client_duration_seconds,
             "client_file_size_bytes": client_file_size_bytes,
             "staged_size_bytes": staged_size_bytes,
+            "previous_failure_code": previous_failure_code,
         },
     )
 
@@ -3182,6 +3184,7 @@ async def upload_audio_file(
         )
         return _serialize_recording_detail(recording)
 
+    previous_failure_code = recording.failure_code
     filename = file.filename or ""
     try:
         ext = _extension_from_upload(filename, file.content_type or "")
@@ -3321,6 +3324,7 @@ async def upload_audio_file(
             client_duration_seconds=client_duration_seconds,
             client_file_size_bytes=client_file_size_bytes,
             staged_size_bytes=staged_size_bytes,
+            previous_failure_code=previous_failure_code,
         )
     except Exception as exc:
         logger.exception("Failed to enqueue recording processing for %s", recording_id)

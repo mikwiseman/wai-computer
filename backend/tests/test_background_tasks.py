@@ -278,6 +278,7 @@ async def test_recording_processing_async_wrappers_use_db_context(
         client_duration_seconds=30,
         client_file_size_bytes=100,
         staged_size_bytes=90,
+        previous_failure_code=None,
     )
     await recording_task_module._mark_processing_timeout(
         recording_id="00000000-0000-0000-0000-000000000009"
@@ -296,6 +297,7 @@ async def test_recording_processing_async_wrappers_use_db_context(
         client_duration_seconds=30,
         client_file_size_bytes=100,
         staged_size_bytes=90,
+        previous_failure_code=None,
     )
     assert mark_failed.await_count == 2
 

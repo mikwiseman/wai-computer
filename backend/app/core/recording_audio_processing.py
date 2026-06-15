@@ -515,6 +515,7 @@ async def process_staged_recording_upload(
     client_duration_seconds: int | None = None,
     client_file_size_bytes: int | None = None,
     staged_size_bytes: int | None = None,
+    previous_failure_code: str | None = None,
 ) -> None:
     """Transcribe a staged upload and promote it as the recording's canonical transcript."""
     processing_started_at = perf_counter()
@@ -572,20 +573,27 @@ async def process_staged_recording_upload(
             type(exc.__cause__ or exc).__name__,
             fingerprint_text(str(exc.__cause__ or exc)),
         )
-        capture_sentry_anomaly(
-            "recording.audio.decode_failed",
-            "Recording upload audio could not be decoded before transcription",
-            category="recording",
-            extras={
-                "recording_id": str(recording_id),
-                "content_type": content_type,
-                "staged_size_bytes": staged_size_bytes,
-                "client_duration_seconds": client_duration_seconds,
-                "error_type": type(exc.__cause__ or exc).__name__,
-                "error_fingerprint": fingerprint_text(str(exc.__cause__ or exc)),
-            },
-            level="warning",
-        )
+        if previous_failure_code == AUDIO_DECODE_FAILURE_CODE:
+            logger.info(
+                "suppressed repeated audio decode alert recording_id=%s content_type=%s",
+                recording_id,
+                content_type,
+            )
+        else:
+            capture_sentry_anomaly(
+                "recording.audio.decode_failed",
+                "Recording upload audio could not be decoded before transcription",
+                category="recording",
+                extras={
+                    "recording_id": str(recording_id),
+                    "content_type": content_type,
+                    "staged_size_bytes": staged_size_bytes,
+                    "client_duration_seconds": client_duration_seconds,
+                    "error_type": type(exc.__cause__ or exc).__name__,
+                    "error_fingerprint": fingerprint_text(str(exc.__cause__ or exc)),
+                },
+                level="warning",
+            )
         _recording_lifecycle_breadcrumb(
             "Recording processing rejected undecodable audio",
             recording_id=recording_id,

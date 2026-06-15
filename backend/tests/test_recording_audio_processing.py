@@ -4,7 +4,7 @@ import asyncio
 import logging
 import wave
 from datetime import datetime, timezone
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 
 import httpx
 import pytest
@@ -1168,6 +1168,7 @@ async def test_process_staged_recording_upload_marks_decode_failed_before_provid
     staged_path = tmp_path / "broken.m4a"
     staged_path.write_bytes(b"not-media")
     transcribe = AsyncMock(return_value=[])
+    capture = Mock()
 
     def _decode_failed(*_args, **_kwargs):
         raise RuntimeError("decode failed")
@@ -1176,6 +1177,10 @@ async def test_process_staged_recording_upload_marks_decode_failed_before_provid
     monkeypatch.setattr(
         "app.core.recording_audio_processing.transcribe_audio_file",
         transcribe,
+    )
+    monkeypatch.setattr(
+        "app.core.recording_audio_processing.capture_sentry_anomaly",
+        capture,
     )
 
     await process_staged_recording_upload(
@@ -1194,6 +1199,71 @@ async def test_process_staged_recording_upload_marks_decode_failed_before_provid
     assert recording.failure_message == "Could not read the uploaded audio file."
     assert not staged_path.exists()
     transcribe.assert_not_awaited()
+    capture.assert_called_once()
+    assert capture.call_args.args[:2] == (
+        "recording.audio.decode_failed",
+        "Recording upload audio could not be decoded before transcription",
+    )
+
+
+@pytest.mark.asyncio
+async def test_process_staged_recording_upload_suppresses_repeated_decode_failed_alert(
+    db_session: AsyncSession,
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from pydub import AudioSegment
+
+    user = User(email="queued-duplicate-decode-failed@example.com", password_hash="x")
+    db_session.add(user)
+    await db_session.flush()
+    recording = Recording(
+        user_id=user.id,
+        title="Broken upload retry",
+        type="meeting",
+        status=RecordingStatus.PROCESSING.value,
+        uploaded_at=datetime.now(timezone.utc),
+        language="en",
+    )
+    db_session.add(recording)
+    await db_session.commit()
+
+    staged_path = tmp_path / "broken-retry.m4a"
+    staged_path.write_bytes(b"not-media-again")
+    transcribe = AsyncMock(return_value=[])
+    capture = Mock()
+
+    def _decode_failed(*_args, **_kwargs):
+        raise RuntimeError("decode failed again")
+
+    monkeypatch.setattr(AudioSegment, "from_file", _decode_failed)
+    monkeypatch.setattr(
+        "app.core.recording_audio_processing.transcribe_audio_file",
+        transcribe,
+    )
+    monkeypatch.setattr(
+        "app.core.recording_audio_processing.capture_sentry_anomaly",
+        capture,
+    )
+
+    await process_staged_recording_upload(
+        db_session,
+        recording_id=recording.id,
+        user_id=user.id,
+        staged_path=staged_path,
+        content_type="audio/mp4",
+        user_default_language="en",
+        staged_size_bytes=staged_path.stat().st_size,
+        previous_failure_code="audio_decode_failed",
+    )
+
+    await db_session.refresh(recording)
+    assert recording.status == RecordingStatus.FAILED.value
+    assert recording.failure_code == "audio_decode_failed"
+    assert recording.failure_message == "Could not read the uploaded audio file."
+    assert not staged_path.exists()
+    transcribe.assert_not_awaited()
+    capture.assert_not_called()
 
 
 @pytest.mark.asyncio

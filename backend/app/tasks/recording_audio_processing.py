@@ -38,6 +38,7 @@ async def _process_staged_recording_upload(
     client_duration_seconds: int | None = None,
     client_file_size_bytes: int | None = None,
     staged_size_bytes: int | None = None,
+    previous_failure_code: str | None = None,
 ) -> None:
     async with get_db_context() as db:
         await process_staged_recording_upload_core(
@@ -50,6 +51,7 @@ async def _process_staged_recording_upload(
             client_duration_seconds=client_duration_seconds,
             client_file_size_bytes=client_file_size_bytes,
             staged_size_bytes=staged_size_bytes,
+            previous_failure_code=previous_failure_code,
         )
 
 
@@ -110,6 +112,7 @@ def process_staged_recording_upload(
     client_duration_seconds: int | None = None,
     client_file_size_bytes: int | None = None,
     staged_size_bytes: int | None = None,
+    previous_failure_code: str | None = None,
 ) -> None:
     try:
         logger.info(
@@ -128,6 +131,7 @@ def process_staged_recording_upload(
                 client_duration_seconds=client_duration_seconds,
                 client_file_size_bytes=client_file_size_bytes,
                 staged_size_bytes=staged_size_bytes,
+                previous_failure_code=previous_failure_code,
             )
         )
         logger.info(
@@ -147,6 +151,7 @@ def process_staged_recording_upload(
                 "task_id": getattr(self.request, "id", None),
                 "retries": retry_count,
                 "content_type": content_type,
+                "previous_failure_code": previous_failure_code,
             },
             level="error",
         )
