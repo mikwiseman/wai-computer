@@ -1444,6 +1444,7 @@ private struct MacInboxEmptyState: View {
 
 private struct MacInboxDisplayRow: Identifiable, Equatable {
     let id: String
+    let index: Int
     let detail: InboxDetailRef
     let sourceKind: InboxSourceKind
     let title: String
@@ -1459,8 +1460,9 @@ private struct MacInboxDisplayRow: Identifiable, Equatable {
         case error
     }
 
-    init(row: InboxRow, language: LanguageManager.SupportedLanguage) {
+    init(row: InboxRow, index: Int, language: LanguageManager.SupportedLanguage) {
         id = row.id
+        self.index = index
         detail = row.detail
         sourceKind = row.sourceKind
         title = Self.title(for: row, language: language)
@@ -1608,8 +1610,8 @@ private struct MacInboxRowsList: View {
     var body: some View {
         let displayRows = displayCache.displayRows(for: rows, language: language)
         List {
-            ForEach(Array(displayRows.enumerated()), id: \.element.id) { index, display in
-                draggableRow(display, index: index)
+            ForEach(displayRows) { display in
+                draggableRow(display, index: display.index)
                     .listRowInsets(EdgeInsets())
                     .listRowSeparator(.hidden)
                     .listRowBackground(
@@ -1618,7 +1620,7 @@ private struct MacInboxRowsList: View {
                             : Color.clear
                     )
                     .onAppear {
-                        if index >= displayRows.count - Self.loadMoreLookahead,
+                        if display.index >= displayRows.count - Self.loadMoreLookahead,
                            canLoadMore, !isLoadingMore {
                             onLoadMore()
                         }
@@ -1767,11 +1769,13 @@ private final class MacInboxDisplayRowCache {
            rows.count > lastRows.count,
            Array(rows.prefix(lastRows.count)) == lastRows {
             // Pagination append: map only the new tail.
-            cached.append(contentsOf: rows[lastRows.count...].map {
-                MacInboxDisplayRow(row: $0, language: language)
+            cached.append(contentsOf: rows[lastRows.count...].enumerated().map { offset, row in
+                MacInboxDisplayRow(row: row, index: lastRows.count + offset, language: language)
             })
         } else {
-            cached = rows.map { MacInboxDisplayRow(row: $0, language: language) }
+            cached = rows.enumerated().map { index, row in
+                MacInboxDisplayRow(row: row, index: index, language: language)
+            }
         }
         lastRows = rows
         lastLanguage = language

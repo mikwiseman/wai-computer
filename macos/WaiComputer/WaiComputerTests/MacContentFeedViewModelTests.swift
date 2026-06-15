@@ -43,6 +43,8 @@ final class MacContentFeedViewModelTests: XCTestCase {
         XCTAssertTrue(source.contains("MacInboxRowsList("))
         XCTAssertTrue(source.contains("List {"))
         XCTAssertTrue(source.contains("displayCache.displayRows(for: rows, language: language)"))
+        XCTAssertTrue(source.contains("ForEach(displayRows)"))
+        XCTAssertFalse(source.contains("ForEach(Array(displayRows.enumerated())"))
         XCTAssertFalse(source.contains("NSViewRepresentable"))
         XCTAssertFalse(source.contains("LazyVStack(spacing: 0)"))
     }
