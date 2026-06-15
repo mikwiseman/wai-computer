@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Build and restart WaiComputer production services on the VPS.
+# Restart WaiComputer production services on the VPS using prebuilt images.
 #
 # This script is intended to run on the production server after source has been
-# synced to /opt/waicomputer. It keeps all Docker image builds on the server and
-# uses /etc/waicomputer/backend.env as the only production runtime env file.
+# synced to /opt/waicomputer. Production deploys should load images before this
+# script runs; server-side builds require ALLOW_SERVER_SIDE_BUILD=1.
 set -euo pipefail
 
 DEPLOY_LOCK_FILE="${DEPLOY_LOCK_FILE:-/var/lock/waicomputer-deploy.lock}"
@@ -18,13 +18,18 @@ LEGACY_ENV_FILE=""
 GIT_SHA="${GIT_SHA:-}"
 GIT_DIRTY="${GIT_DIRTY:-false}"
 DEPLOY_BUILD_TIMEOUT_SECONDS="${DEPLOY_BUILD_TIMEOUT_SECONDS:-1800}"
+DEPLOY_HEALTH_WAIT_TIMEOUT_SECONDS="${DEPLOY_HEALTH_WAIT_TIMEOUT_SECONDS:-240}"
 MIN_FREE_DISK_MB="${MIN_FREE_DISK_MB:-4096}"
+ALLOW_SERVER_SIDE_BUILD="${ALLOW_SERVER_SIDE_BUILD:-0}"
 
 if [[ -z "$GIT_SHA" ]]; then
   echo "ERROR: GIT_SHA is required for production builds" >&2
   exit 1
 fi
-export GIT_SHA GIT_DIRTY
+WAICOMPUTER_BACKEND_IMAGE="${WAICOMPUTER_BACKEND_IMAGE:-waicomputer-backend:${GIT_SHA}}"
+WAICOMPUTER_WEB_IMAGE="${WAICOMPUTER_WEB_IMAGE:-waicomputer-web:${GIT_SHA}}"
+DEPLOY_SERVICES=(telegram-bot-api api web celery-worker caddy)
+export GIT_SHA GIT_DIRTY WAICOMPUTER_BACKEND_IMAGE WAICOMPUTER_WEB_IMAGE
 
 wait_for_service() {
   local name="$1"
@@ -67,6 +72,15 @@ docker_compose() {
 
 docker_compose_timeout() {
   timeout "$DEPLOY_BUILD_TIMEOUT_SECONDS" docker compose --env-file "$PROD_ENV_FILE" "$@"
+}
+
+require_image() {
+  local image="$1"
+  if ! docker image inspect "$image" >/dev/null 2>&1; then
+    echo "ERROR: required deploy image is not loaded: $image" >&2
+    echo "Build and load images before running this script, or set ALLOW_SERVER_SIDE_BUILD=1 explicitly." >&2
+    exit 1
+  fi
 }
 
 require_disk_headroom() {
@@ -136,22 +150,38 @@ trap restart_celery_on_exit EXIT
 docker_compose config >/dev/null
 require_disk_headroom
 
-# Build ONE service at a time with Celery stopped. The 3.8 GB VPS OOMs when
-# building all images concurrently (BuildKit parallelism); stopping the worker
-# first frees ~1 GB of headroom for the heavy web (Next.js) build. Celery's
-# queue must already be drained before a deploy.
-docker_compose stop celery-worker
-CELERY_STOPPED_FOR_BUILD=true
-docker_compose_timeout build api
-docker_compose_timeout build celery-worker
-docker_compose_timeout build web
+if [[ "$ALLOW_SERVER_SIDE_BUILD" == "1" ]]; then
+  echo "WARNING: Server-side image builds are enabled for this deploy." >&2
+  # Build ONE service at a time with Celery stopped. The 3.8 GB VPS OOMs when
+  # building all images concurrently (BuildKit parallelism); stopping the worker
+  # first frees ~1 GB of headroom for the heavy web (Next.js) build. Celery's
+  # queue must already be drained before a deploy.
+  docker_compose stop celery-worker
+  CELERY_STOPPED_FOR_BUILD=true
+  docker_compose_timeout build api
+  docker_compose_timeout build web
+elif [[ "$ALLOW_SERVER_SIDE_BUILD" == "0" ]]; then
+  echo "Server-side image builds are disabled; using preloaded deploy images."
+  require_image "$WAICOMPUTER_BACKEND_IMAGE"
+  require_image "$WAICOMPUTER_WEB_IMAGE"
+else
+  echo "ERROR: ALLOW_SERVER_SIDE_BUILD must be 0 or 1" >&2
+  exit 1
+fi
 
 # Apply DB migrations with the freshly built image before swapping containers
 # in. Migrations are additive, so the still-running old API tolerates the new
 # schema during the brief window until `up -d` recreates the containers.
-docker_compose_timeout run --rm api alembic upgrade head
+docker_compose_timeout run --rm --no-deps --pull never api alembic upgrade head
 
-docker_compose up -d --remove-orphans telegram-bot-api api web celery-worker caddy
+docker_compose up \
+  -d \
+  --remove-orphans \
+  --no-build \
+  --pull never \
+  --wait \
+  --wait-timeout "$DEPLOY_HEALTH_WAIT_TIMEOUT_SECONDS" \
+  "${DEPLOY_SERVICES[@]}"
 CELERY_STOPPED_FOR_BUILD=false
 
 wait_for_service \

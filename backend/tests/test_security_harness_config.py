@@ -70,10 +70,47 @@ def test_production_telegram_media_uses_local_bot_api_service():
 def test_server_build_only_starts_defined_compose_services():
     compose = yaml.safe_load((BACKEND_ROOT / "docker-compose.yml").read_text())
     script = (REPO_ROOT / "scripts/server-build.sh").read_text()
-    match = re.search(r"docker_compose up -d --remove-orphans (?P<services>[^\n]+)", script)
+    match = re.search(r"DEPLOY_SERVICES=\((?P<services>[^)]+)\)", script)
     assert match is not None
 
     requested = match.group("services").split()
     assert "telegram-bot-api" in requested
     missing = sorted(set(requested) - set(compose["services"]))
     assert missing == []
+
+
+def test_production_compose_uses_sha_tagged_deploy_images():
+    compose = yaml.safe_load((BACKEND_ROOT / "docker-compose.yml").read_text())
+
+    assert compose["services"]["api"]["image"] == (
+        "${WAICOMPUTER_BACKEND_IMAGE:-waicomputer-backend:local}"
+    )
+    assert compose["services"]["celery-worker"]["image"] == compose["services"]["api"]["image"]
+    assert compose["services"]["web"]["image"] == (
+        "${WAICOMPUTER_WEB_IMAGE:-waicomputer-web:local}"
+    )
+
+
+def test_deploy_builds_and_loads_images_before_remote_swap():
+    script = (REPO_ROOT / "scripts/deploy-api.sh").read_text()
+
+    assert 'DEPLOY_IMAGE_SOURCE="${DEPLOY_IMAGE_SOURCE:-local}"' in script
+    assert 'DEPLOY_IMAGE_PLATFORM="${DEPLOY_IMAGE_PLATFORM:-linux/amd64}"' in script
+    assert "docker buildx build" in script
+    assert "docker save" in script
+    assert "docker load" in script
+    assert "ALLOW_SERVER_SIDE_BUILD='0'" in script
+
+
+def test_server_side_image_builds_require_explicit_opt_in():
+    script = (REPO_ROOT / "scripts/server-build.sh").read_text()
+
+    assert 'ALLOW_SERVER_SIDE_BUILD="${ALLOW_SERVER_SIDE_BUILD:-0}"' in script
+    assert "require_image \"$WAICOMPUTER_BACKEND_IMAGE\"" in script
+    assert "require_image \"$WAICOMPUTER_WEB_IMAGE\"" in script
+    assert "Server-side image builds are disabled" in script
+    assert re.search(
+        r'if \[\[ "\$ALLOW_SERVER_SIDE_BUILD" == "1" \]\]; then.*docker_compose_timeout build api.*fi',
+        script,
+        re.DOTALL,
+    )

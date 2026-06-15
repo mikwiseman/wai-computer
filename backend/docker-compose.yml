@@ -76,6 +76,7 @@ services:
     restart: unless-stopped
 
   api:
+    image: ${WAICOMPUTER_BACKEND_IMAGE:-waicomputer-backend:local}
     build:
       context: .
       args:
@@ -132,6 +133,7 @@ services:
     restart: unless-stopped
 
   web:
+    image: ${WAICOMPUTER_WEB_IMAGE:-waicomputer-web:local}
     build:
       context: ..
       dockerfile: web/Dockerfile
@@ -227,6 +229,7 @@ services:
     restart: unless-stopped
 
   celery-worker:
+    image: ${WAICOMPUTER_BACKEND_IMAGE:-waicomputer-backend:local}
     build:
       context: .
       args:
