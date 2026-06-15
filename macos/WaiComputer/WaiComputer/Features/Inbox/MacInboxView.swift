@@ -631,6 +631,7 @@ struct MacInboxView: View {
                                 "Начните новую запись с микрофоном и звуком компьютера."
                             ),
                             primaryTitle: t("Start Recording", "Начать запись"),
+                            primaryAccessibilityIdentifier: "start-recording-button",
                             accent: Palette.accent,
                             isWorking: false,
                             action: onStartRecording
@@ -1145,6 +1146,7 @@ private struct MacInboxInlineActionComposer: View {
     let title: String
     let message: String
     let primaryTitle: String
+    let primaryAccessibilityIdentifier: String?
     let accent: Color
     let isWorking: Bool
     let action: () -> Void
@@ -1175,6 +1177,7 @@ private struct MacInboxInlineActionComposer: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .disabled(isWorking)
+                .optionalAccessibilityIdentifier(primaryAccessibilityIdentifier)
             }
             Spacer()
         }
@@ -1185,6 +1188,17 @@ private struct MacInboxInlineActionComposer: View {
                 .stroke(Palette.border, lineWidth: 1)
         )
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+}
+
+private extension View {
+    @ViewBuilder
+    func optionalAccessibilityIdentifier(_ identifier: String?) -> some View {
+        if let identifier {
+            accessibilityIdentifier(identifier)
+        } else {
+            self
+        }
     }
 }
 

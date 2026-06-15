@@ -104,6 +104,13 @@ final class MacContentFeedViewModelTests: XCTestCase {
         XCTAssertTrue(source.contains("if allowedCreateModes.contains(.ask)"))
     }
 
+    func testInboxRecordComposerExposesStartRecordingIdentifier() throws {
+        let source = try macSource("WaiComputer/Features/Inbox/MacInboxView.swift")
+
+        XCTAssertTrue(source.contains("primaryAccessibilityIdentifier: \"start-recording-button\""))
+        XCTAssertTrue(source.contains("accessibilityIdentifier(identifier)"))
+    }
+
     func testInboxSourceFilterPutsAllLastAndShellDefaultsInboxToRecordings() throws {
         let inboxSource = try macSource("WaiComputer/Features/Inbox/MacInboxView.swift")
         let shellSource = try macSource("WaiComputer/App/MacContentView.swift")
