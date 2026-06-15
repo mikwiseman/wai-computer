@@ -160,6 +160,34 @@ target_pids() {
       '
 }
 
+refresh_target_app_ref() {
+  local pid
+
+  pid="$(target_pids "$TARGET_BUNDLE_ID" | tail -n 1)"
+  [[ -n "$pid" ]] || return 1
+  TARGET_APP_REF="PID:$pid"
+}
+
+set_target_window_bounds() {
+  local name="$1"
+  local bounds_json="$RUN_DIR/window-$name.json"
+
+  refresh_target_window_id "$name-bounds"
+  if ! peekaboo window set-bounds --window-id "$TARGET_WINDOW_ID" --x 80 --y 80 --width 1220 --height 708 --json \
+    > "$bounds_json"; then
+    refresh_target_window_id "$name-bounds-retry"
+    if ! peekaboo window set-bounds --window-id "$TARGET_WINDOW_ID" --x 80 --y 80 --width 1220 --height 708 --json \
+      > "$bounds_json"; then
+      cat "$bounds_json" >&2
+      die "Unable to set WaiComputer main window bounds for $name"
+    fi
+  fi
+  jq -e '.success == true' "$bounds_json" >/dev/null || {
+    cat "$bounds_json" >&2
+    die "Unable to set WaiComputer main window bounds for $name"
+  }
+}
+
 quit_target_apps() {
   local bundle_id="$1"
   local pids
@@ -213,11 +241,10 @@ launch_fixture_app() {
   log "Launching $TARGET_BUNDLE_ID in $scenario fixture mode..."
   open -n "${open_env_args[@]}" "$APP_PATH" --args -ApplePersistenceIgnoreState YES -waiUserLanguage "$language"
   wait_for_app_running "$TARGET_BUNDLE_ID"
-  TARGET_APP_REF="$TARGET_BUNDLE_ID"
+  refresh_target_app_ref || die "Unable to resolve running $TARGET_BUNDLE_ID process"
   refresh_target_window_id "$scenario"
   peekaboo window focus --window-id "$TARGET_WINDOW_ID" --bring-to-current-space --json > "$RUN_DIR/focus-$scenario.json" || true
-  peekaboo window set-bounds --window-id "$TARGET_WINDOW_ID" --x 80 --y 80 --width 1220 --height 708 --json \
-    > "$RUN_DIR/window-$scenario.json"
+  set_target_window_bounds "$scenario"
   sleep 0.8
 }
 
@@ -227,9 +254,21 @@ refresh_target_window_id() {
   local deadline=$((SECONDS + 20))
 
   while (( SECONDS < deadline )); do
+    if [[ -z "$TARGET_APP_REF" ]]; then
+      refresh_target_app_ref || {
+        sleep 0.5
+        continue
+      }
+    fi
     if ! peekaboo list windows --app "$TARGET_APP_REF" --include-details bounds,ids --json > "$windows_json"; then
-      sleep 0.5
-      continue
+      refresh_target_app_ref || {
+        sleep 0.5
+        continue
+      }
+      if ! peekaboo list windows --app "$TARGET_APP_REF" --include-details bounds,ids --json > "$windows_json"; then
+        sleep 0.5
+        continue
+      fi
     fi
     TARGET_WINDOW_ID="$(jq -r '
       first(

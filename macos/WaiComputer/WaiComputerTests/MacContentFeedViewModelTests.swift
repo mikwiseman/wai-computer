@@ -386,8 +386,13 @@ final class MacContentFeedViewModelTests: XCTestCase {
         XCTAssertTrue(source.contains("focus_target_window \"$identifier\""))
         XCTAssertTrue(source.contains("focus_target_window \"$name\""))
         XCTAssertTrue(source.contains("--no-auto-focus"))
-        XCTAssertTrue(source.contains("TARGET_APP_REF=\"$TARGET_BUNDLE_ID\""))
+        XCTAssertTrue(source.contains("refresh_target_app_ref()"))
+        XCTAssertTrue(source.contains("TARGET_APP_REF=\"PID:$pid\""))
         XCTAssertTrue(source.contains("if ! peekaboo list windows --app \"$TARGET_APP_REF\""))
+        XCTAssertTrue(source.contains("set_target_window_bounds()"))
+        XCTAssertTrue(source.contains("refresh_target_window_id \"$name-bounds\""))
+        XCTAssertTrue(source.contains("refresh_target_window_id \"$name-bounds-retry\""))
+        XCTAssertTrue(source.contains("if ! peekaboo window set-bounds"))
         XCTAssertFalse(source.contains("peekaboo window focus --window-id \"$TARGET_WINDOW_ID\" --bring-to-current-space --json > \"$RUN_DIR/focus-before-$identifier.json\" || true"))
     }
 
