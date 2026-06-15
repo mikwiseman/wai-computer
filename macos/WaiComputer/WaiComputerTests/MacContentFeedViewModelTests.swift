@@ -226,6 +226,19 @@ final class MacContentFeedViewModelTests: XCTestCase {
         XCTAssertFalse(panelSource.contains("Text(answerText)"))
     }
 
+    func testDictationProviderCloseFailureIsCapturedDuringFinalization() throws {
+        let source = try macSource("WaiComputer/Features/Dictation/DictationManager.swift")
+
+        // Provider close failures must be visible in telemetry. The live
+        // transcript can still recover the user's text, but the close error
+        // itself cannot be silently flattened into an empty segment list.
+        XCTAssertTrue(source.contains("closeProviderSessionForFinalTranscript()"))
+        XCTAssertTrue(source.contains("dictation.provider.close_failed"))
+        XCTAssertTrue(source.contains("\"providerCloseFailed\": providerCloseResult.failed"))
+        XCTAssertTrue(source.contains("SentryHelper.captureError("))
+        XCTAssertFalse(source.contains("(try? await providerSession?.close(timeout: .seconds(4))) ?? []"))
+    }
+
     func testCompletedRecordingTransitionChunksLongTranscriptPreview() throws {
         let source = try macSource("WaiComputer/App/MacContentView.swift")
 
@@ -721,6 +734,8 @@ final class MacContentFeedViewModelTests: XCTestCase {
         XCTAssertFalse(source.contains("ScrollView {"))
         XCTAssertFalse(source.contains("LazyVStack"))
         XCTAssertFalse(source.contains("ForEach(TranscriptRendering.mergeTurns"))
+        XCTAssertFalse(source.contains("segments.map(MacTranscriptSegmentSignature.init)"))
+        XCTAssertFalse(source.contains("MacTranscriptSegmentSignature"))
     }
 
     func testSpeakerPickerUsesRecyclingRowsAndCachedFiltering() throws {

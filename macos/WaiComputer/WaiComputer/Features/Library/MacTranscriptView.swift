@@ -159,40 +159,40 @@ struct MacTranscriptView: View {
 }
 
 private final class MacTranscriptDisplayCache {
-    private var lastSignature: [MacTranscriptSegmentSignature] = []
+    private var lastKey: MacTranscriptSegmentsCacheKey?
     private var lastLanguageCode: String?
     private var cachedTurns: [TranscriptTurn] = []
 
     func turns(for segments: [Segment], languageCode: String) -> [TranscriptTurn] {
-        let signature = segments.map(MacTranscriptSegmentSignature.init)
-        if signature == lastSignature, languageCode == lastLanguageCode {
+        let key = MacTranscriptSegmentsCacheKey(segments: segments)
+        if key == lastKey, languageCode == lastLanguageCode {
             return cachedTurns
         }
 
         cachedTurns = TranscriptRendering.mergeTurns(segments, languageCode: languageCode)
-        lastSignature = signature
+        lastKey = key
         lastLanguageCode = languageCode
         return cachedTurns
     }
 }
 
-private struct MacTranscriptSegmentSignature: Equatable {
-    let id: String
-    let personId: String?
-    let rawLabel: String?
-    let speaker: String?
-    let displayName: String?
-    let startMs: Int?
-    let content: String
+private struct MacTranscriptSegmentsCacheKey: Equatable {
+    let storageAddress: UInt?
+    let count: Int
+    let firstId: String?
+    let firstContentCount: Int?
+    let lastId: String?
+    let lastContentCount: Int?
 
-    init(segment: Segment) {
-        id = segment.id
-        personId = segment.personId
-        rawLabel = segment.rawLabel
-        speaker = segment.speaker
-        displayName = segment.displayName
-        startMs = segment.startMs
-        content = segment.content
+    init(segments: [Segment]) {
+        storageAddress = segments.withUnsafeBufferPointer { buffer in
+            buffer.baseAddress.map { UInt(bitPattern: $0) }
+        }
+        count = segments.count
+        firstId = segments.first?.id
+        firstContentCount = segments.first?.content.count
+        lastId = segments.last?.id
+        lastContentCount = segments.last?.content.count
     }
 }
 
