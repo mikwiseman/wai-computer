@@ -24,6 +24,7 @@ import io.mockk.every
 import io.mockk.just
 import io.mockk.mockk
 import io.mockk.mockkObject
+import io.mockk.slot
 import io.mockk.unmockkAll
 import java.io.File
 import java.time.Instant
@@ -211,6 +212,99 @@ class RecordingViewModelTest {
 
     @Test
     @OptIn(ExperimentalCoroutinesApi::class)
+    fun `authenticated recording saves fuller live transcript when provider final drops startup words and audio is missing`() = runTest {
+        val tempRoot = createTempDirectory("waicomputer-recording-live-finalizer").toFile()
+        val authStore = mockk<AuthStore>()
+        val settingsStore = mockk<SettingsStore>()
+        val waiApi = mockk<WaiApi>()
+        val scheduler = mockk<PendingSyncWorkerScheduler>(relaxed = true)
+        val application = mockApplication(tempRoot)
+        val localStore = LocalRecordingStore(mockContext(tempRoot))
+        val authState = MutableStateFlow<AuthState>(
+            AuthState.Authenticated(
+                UserSummary("user-1", "mik@example.com", Instant.now().toString()),
+            ),
+        )
+        val providerSegments = listOf(
+            LiveTranscriptSegment(
+                text = "check fast startup",
+                speaker = "speaker_0",
+                isFinal = true,
+                startMs = 800,
+                endMs = 2_400,
+                confidence = 0.92,
+            ),
+        )
+        val liveTranscript = LiveTranscriptSegment(
+            text = "today we check fast startup",
+            speaker = "speaker_0",
+            isFinal = true,
+            startMs = 0,
+            endMs = 3_000,
+            confidence = 0.9,
+        )
+
+        every { authStore.state } returns authState
+        coEvery { settingsStore.snapshot() } returns appSettings()
+        coEvery {
+            waiApi.createRecording(
+                title = any(),
+                type = any(),
+                language = any(),
+                folderId = any(),
+            )
+        } returns Recording(
+            id = "remote-live-finalizer",
+            type = RecordingType.note,
+            status = RecordingStatus.PendingUpload,
+            createdAt = Instant.now().toString(),
+        )
+        coEvery {
+            waiApi.saveLiveTranscript("remote-live-finalizer", any(), any())
+        } returns readyDetail("remote-live-finalizer")
+        mockForegroundService()
+
+        val viewModel = RecordingViewModel(
+            application = application,
+            authStore = authStore,
+            settingsStore = settingsStore,
+            waiApi = waiApi,
+            localRecordingStore = localStore,
+            syncScheduler = scheduler,
+            audioRecorderFactory = { FakeAudioRecorder(frame = ShortArray(16_000 * 3) { 1 }) },
+            webSocketFactory = {
+                FakeWebSocket(
+                    segments = providerSegments,
+                    didFinalize = true,
+                    eventsOnConnect = listOf(WsEvent.Transcript(liveTranscript)),
+                )
+            },
+        )
+
+        viewModel.startRecording(permissionGranted = true)
+        advanceUntilIdle()
+        localStore.audioFile("remote-live-finalizer").delete()
+
+        viewModel.stopRecording()
+        advanceUntilIdle()
+
+        val segmentsSlot = slot<List<LiveTranscriptSegment>>()
+        coVerify {
+            waiApi.saveLiveTranscript(
+                "remote-live-finalizer",
+                capture(segmentsSlot),
+                3,
+            )
+        }
+        assertEquals(listOf("today we check fast startup"), segmentsSlot.captured.map { it.text })
+        assertEquals("speaker_0", segmentsSlot.captured.single().speaker)
+        assertEquals(0, segmentsSlot.captured.single().startMs)
+        assertEquals(3_000, segmentsSlot.captured.single().endMs)
+        unmockkAll()
+    }
+
+    @Test
+    @OptIn(ExperimentalCoroutinesApi::class)
     fun `failed upload stores manifest and schedules retry`() = runTest {
         val tempRoot = createTempDirectory("waicomputer-recording-fail").toFile()
         val authStore = mockk<AuthStore>()
@@ -375,10 +469,12 @@ class RecordingViewModelTest {
     )
 }
 
-private class FakeAudioRecorder : AudioRecorder {
+private class FakeAudioRecorder(
+    private val frame: ShortArray = shortArrayOf(1, 2, 3, 4),
+) : AudioRecorder {
     override val isRecording: Boolean = true
 
-    override fun start() = flowOf(shortArrayOf(1, 2, 3, 4))
+    override fun start() = flowOf(frame)
 
     override suspend fun stop() = Unit
 }
@@ -387,8 +483,9 @@ private class FakeWebSocket(
     private val connectError: Throwable? = null,
     private val segments: List<LiveTranscriptSegment> = emptyList(),
     private val didFinalize: Boolean = false,
+    private val eventsOnConnect: List<WsEvent> = emptyList(),
 ) : RealtimeWebSocketManager {
-    private val mutableEvents = MutableSharedFlow<WsEvent>(extraBufferCapacity = 8)
+    private val mutableEvents = MutableSharedFlow<WsEvent>(replay = 8, extraBufferCapacity = 8)
 
     override val events: SharedFlow<WsEvent> = mutableEvents
     override val collectedSegments: List<LiveTranscriptSegment> = segments
@@ -396,6 +493,7 @@ private class FakeWebSocket(
     override suspend fun connect() {
         connectError?.let { throw it }
         mutableEvents.emit(WsEvent.Connected)
+        eventsOnConnect.forEach { mutableEvents.emit(it) }
     }
 
     override suspend fun sendAudio(data: ByteArray) = Unit

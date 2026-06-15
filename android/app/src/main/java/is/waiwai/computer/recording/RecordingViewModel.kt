@@ -175,8 +175,13 @@ class RecordingViewModel(
             val didFinalize = webSocket?.finishStreaming() ?: false
             wsJob?.cancel()
             val recordingId = currentRecordingId ?: return@launch reset()
-            val segments = webSocket?.collectedSegments.orEmpty()
             val duration = _uiState.value.durationSeconds
+            val segments = RealtimeTranscriptSegmentFinalizer.finalizedSegments(
+                providerSegments = webSocket?.collectedSegments.orEmpty(),
+                liveTranscript = _uiState.value.transcript,
+                durationSeconds = duration,
+                didFinalize = didFinalize,
+            )
 
             val isGuest = authStore.state.value is AuthState.Guest
             if (isGuest) {
