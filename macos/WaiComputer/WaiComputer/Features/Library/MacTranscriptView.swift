@@ -10,32 +10,41 @@ struct MacTranscriptView: View {
     var onAssigned: ((RecordingDetail) -> Void)?
     @EnvironmentObject private var languageManager: LanguageManager
     @State private var copied = false
+    @State private var displayCache = MacTranscriptDisplayCache()
 
     var body: some View {
+        let turns = displayCache.turns(
+            for: segments,
+            languageCode: speakerLanguageCode
+        )
+
         Group {
             if segments.isEmpty {
                 emptyState
             } else {
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: Spacing.xl) {
-                        HStack {
-                            Text(t("Transcript", "Расшифровка"))
-                                .waiSectionHeader()
-                            Spacer()
-                            copyTranscriptButton
-                        }
-
-                        ForEach(TranscriptRendering.mergeTurns(segments, languageCode: speakerLanguageCode)) { turn in
-                            SegmentRowView(
-                                segment: turn.displaySegment,
-                                recordingId: recordingId,
-                                onAssigned: onAssigned
-                            )
-                        }
+                List {
+                    HStack {
+                        Text(t("Transcript", "Расшифровка"))
+                            .waiSectionHeader()
+                        Spacer()
+                        copyTranscriptButton
                     }
-                    .padding(.horizontal, Spacing.xxl)
-                    .padding(.vertical, Spacing.xl)
+                    .padding(.top, Spacing.xl)
+                    .padding(.bottom, Spacing.lg)
+                    .transcriptListRow()
+
+                    ForEach(turns) { turn in
+                        SegmentRowView(
+                            segment: turn.displaySegment,
+                            recordingId: recordingId,
+                            onAssigned: onAssigned
+                        )
+                        .padding(.vertical, Spacing.xl / 2)
+                        .transcriptListRow()
+                    }
                 }
+                .listStyle(.plain)
+                .scrollContentBackground(.hidden)
                 .accessibilityIdentifier("transcript-content")
             }
         }
@@ -146,6 +155,60 @@ struct MacTranscriptView: View {
 
     private func t(_ english: String, _ russian: String) -> String {
         OnboardingL10n.text(english, russian, language: languageManager.current)
+    }
+}
+
+private final class MacTranscriptDisplayCache {
+    private var lastSignature: [MacTranscriptSegmentSignature] = []
+    private var lastLanguageCode: String?
+    private var cachedTurns: [TranscriptTurn] = []
+
+    func turns(for segments: [Segment], languageCode: String) -> [TranscriptTurn] {
+        let signature = segments.map(MacTranscriptSegmentSignature.init)
+        if signature == lastSignature, languageCode == lastLanguageCode {
+            return cachedTurns
+        }
+
+        cachedTurns = TranscriptRendering.mergeTurns(segments, languageCode: languageCode)
+        lastSignature = signature
+        lastLanguageCode = languageCode
+        return cachedTurns
+    }
+}
+
+private struct MacTranscriptSegmentSignature: Equatable {
+    let id: String
+    let personId: String?
+    let rawLabel: String?
+    let speaker: String?
+    let displayName: String?
+    let startMs: Int?
+    let content: String
+
+    init(segment: Segment) {
+        id = segment.id
+        personId = segment.personId
+        rawLabel = segment.rawLabel
+        speaker = segment.speaker
+        displayName = segment.displayName
+        startMs = segment.startMs
+        content = segment.content
+    }
+}
+
+private extension View {
+    func transcriptListRow() -> some View {
+        self
+            .frame(maxWidth: 920, alignment: .leading)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .listRowInsets(EdgeInsets(
+                top: 0,
+                leading: Spacing.xxl,
+                bottom: 0,
+                trailing: Spacing.xxl
+            ))
+            .listRowSeparator(.hidden)
+            .listRowBackground(Color.clear)
     }
 }
 

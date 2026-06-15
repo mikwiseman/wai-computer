@@ -504,6 +504,37 @@ final class MacContentFeedViewModelTests: XCTestCase {
         XCTAssertTrue(source.contains("item.body"))
     }
 
+    func testItemDetailUsesRecyclingListAndChunksOriginalBodyForFastScrolling() throws {
+        let source = try macSource("WaiComputer/Features/Content/MacItemDetailView.swift")
+
+        // Large pasted notes/articles used to render as one huge selectable Text
+        // inside a ScrollView, forcing SwiftUI to lay out the whole source body
+        // while scrolling. Keep item details on List and split original text
+        // into reusable rows.
+        XCTAssertTrue(source.contains("List {"))
+        XCTAssertTrue(source.contains("OriginalMaterialChunk"))
+        XCTAssertTrue(source.contains("originalMaterialChunks"))
+        XCTAssertTrue(source.contains("ForEach(content.originalBodyChunks)"))
+        XCTAssertTrue(source.contains(".itemDetailListRow()"))
+        XCTAssertFalse(source.contains("ScrollView {"))
+        XCTAssertFalse(source.contains("Text(body)"))
+    }
+
+    func testStandaloneTranscriptViewUsesRecyclingListAndCachedTurns() throws {
+        let source = try macSource("WaiComputer/Features/Library/MacTranscriptView.swift")
+
+        // Keep the standalone transcript renderer aligned with the recording
+        // detail path: merged transcript turns are cached, and rows live in a
+        // List instead of a ScrollView/LazyVStack.
+        XCTAssertTrue(source.contains("@State private var displayCache = MacTranscriptDisplayCache()"))
+        XCTAssertTrue(source.contains("let turns = displayCache.turns("))
+        XCTAssertTrue(source.contains("List {"))
+        XCTAssertTrue(source.contains("ForEach(turns)"))
+        XCTAssertFalse(source.contains("ScrollView {"))
+        XCTAssertFalse(source.contains("LazyVStack"))
+        XCTAssertFalse(source.contains("ForEach(TranscriptRendering.mergeTurns"))
+    }
+
     private func macSource(_ relativePath: String) throws -> String {
         let file = try repoRoot().appendingPathComponent("macos/WaiComputer").appendingPathComponent(relativePath)
         return try String(contentsOf: file, encoding: .utf8)

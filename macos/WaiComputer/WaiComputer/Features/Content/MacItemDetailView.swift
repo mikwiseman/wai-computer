@@ -11,24 +11,39 @@ struct MacItemDetailView: View {
     let isPlayingSummaryAudio: Bool
     let onGenerateSummaryAudio: () -> Void
     let onPlaySummaryAudio: () -> Void
+    private let content: MacItemDetailContent
 
     @EnvironmentObject private var languageManager: LanguageManager
     @State private var showDeleteConfirm = false
 
-    private var summary: ItemSummary? { item.summary }
-    private var keyMoments: [KeyMoment] { item.summary?.keyMoments ?? [] }
-    private var keyPoints: [String] { item.summary?.keyPoints ?? [] }
-    private var summaryAudio: SummaryAudioState? { item.summaryAudio }
-    private var topics: [String] { item.summary?.topics ?? [] }
+    init(
+        item: Item,
+        onDelete: @escaping () -> Void,
+        isGeneratingSummaryAudio: Bool,
+        isDownloadingSummaryAudio: Bool,
+        isPlayingSummaryAudio: Bool,
+        onGenerateSummaryAudio: @escaping () -> Void,
+        onPlaySummaryAudio: @escaping () -> Void
+    ) {
+        self.item = item
+        self.onDelete = onDelete
+        self.isGeneratingSummaryAudio = isGeneratingSummaryAudio
+        self.isDownloadingSummaryAudio = isDownloadingSummaryAudio
+        self.isPlayingSummaryAudio = isPlayingSummaryAudio
+        self.onGenerateSummaryAudio = onGenerateSummaryAudio
+        self.onPlaySummaryAudio = onPlaySummaryAudio
+        self.content = MacItemDetailContent(item: item)
+    }
+
+    private var summary: ItemSummary? { content.summary }
+    private var keyMoments: [KeyMoment] { content.keyMoments }
+    private var keyPoints: [String] { content.keyPoints }
+    private var summaryAudio: SummaryAudioState? { content.summaryAudio }
+    private var topics: [String] { content.topics }
 
     private var hasUsefulSummary: Bool {
         let text = summary?.summary?.trimmingCharacters(in: .whitespacesAndNewlines)
         return !(text?.isEmpty ?? true) || !keyPoints.isEmpty || !keyMoments.isEmpty || !topics.isEmpty
-    }
-
-    private var originalBody: String? {
-        let body = item.body?.trimmingCharacters(in: .whitespacesAndNewlines)
-        return body?.isEmpty == false ? body : nil
     }
 
     private func t(_ english: String, _ russian: String) -> String {
@@ -36,22 +51,29 @@ struct MacItemDetailView: View {
     }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: Spacing.lg) {
-                header
+        // List gives item details the same AppKit-backed row reuse as
+        // recordings/search. Large pasted notes are split into rows below so
+        // scrolling does not require one huge Text layout pass.
+        List {
+            header
+                .padding(.top, Spacing.xl)
+                .padding(.bottom, Spacing.lg)
+                .itemDetailListRow()
 
-                if item.state == "needs_input", item.summary?.summary == nil {
-                    needsInputBanner
-                }
-
-                summarySection
-
-                originalMaterialSection
+            if item.state == "needs_input", item.summary?.summary == nil {
+                needsInputBanner
+                    .padding(.bottom, Spacing.lg)
+                    .itemDetailListRow()
             }
-            .padding(Spacing.xl)
-            .frame(maxWidth: 860, alignment: .leading)
-            .frame(maxWidth: .infinity, alignment: .leading)
+
+            summarySection
+                .padding(.bottom, Spacing.lg)
+                .itemDetailListRow()
+
+            originalMaterialSection
         }
+        .listStyle(.plain)
+        .scrollContentBackground(.hidden)
         .accessibilityIdentifier("item-detail-root")
     }
 
@@ -302,6 +324,7 @@ struct MacItemDetailView: View {
         }
     }
 
+    @ViewBuilder
     private var originalMaterialSection: some View {
         VStack(alignment: .leading, spacing: Spacing.md) {
             Label(t("Original Material", "Исходный материал"), systemImage: "doc.text")
@@ -309,23 +332,30 @@ struct MacItemDetailView: View {
                 .foregroundStyle(Palette.textPrimary)
 
             sourceMetadata
+        }
+        .padding(.bottom, content.originalBodyChunks.isEmpty ? Spacing.sm : Spacing.md)
+        .itemDetailListRow()
+        .accessibilityIdentifier("item-original-material-section")
 
-            if let body = originalBody {
-                Text(body)
+        if content.originalBodyChunks.isEmpty {
+            Text(t(
+                "Original text is not available in this item yet.",
+                "Исходный текст этого материала пока недоступен."
+            ))
+            .font(Typography.bodySmall)
+            .foregroundStyle(Palette.textSecondary)
+            .padding(.bottom, Spacing.xl)
+            .itemDetailListRow()
+        } else {
+            ForEach(content.originalBodyChunks) { chunk in
+                Text(chunk.text)
                     .font(Typography.reading)
                     .lineSpacing(6)
                     .textSelection(.enabled)
-                    .padding(.top, Spacing.xs)
-            } else {
-                Text(t(
-                    "Original text is not available in this item yet.",
-                    "Исходный текст этого материала пока недоступен."
-                ))
-                .font(Typography.bodySmall)
-                .foregroundStyle(Palette.textSecondary)
+                    .padding(.vertical, Spacing.xs)
+                    .itemDetailListRow()
             }
         }
-        .accessibilityIdentifier("item-original-material-section")
     }
 
     private var sourceMetadata: some View {
@@ -451,5 +481,83 @@ struct MacItemDetailView: View {
             }
         }
         .padding(.vertical, Spacing.xxs)
+    }
+}
+
+private struct MacItemDetailContent {
+    let summary: ItemSummary?
+    let keyMoments: [KeyMoment]
+    let keyPoints: [String]
+    let summaryAudio: SummaryAudioState?
+    let topics: [String]
+    let originalBodyChunks: [OriginalMaterialChunk]
+
+    init(item: Item) {
+        summary = item.summary
+        keyMoments = item.summary?.keyMoments ?? []
+        keyPoints = item.summary?.keyPoints ?? []
+        summaryAudio = item.summaryAudio
+        topics = item.summary?.topics ?? []
+        originalBodyChunks = Self.originalMaterialChunks(from: item.body)
+    }
+
+    private static let originalBodyChunkLimit = 1_800
+
+    private static func originalMaterialChunks(from body: String?) -> [OriginalMaterialChunk] {
+        guard let normalized = body?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !normalized.isEmpty else {
+            return []
+        }
+
+        var chunks: [OriginalMaterialChunk] = []
+        var chunkId = 0
+        var start = normalized.startIndex
+
+        while start < normalized.endIndex {
+            let hardEnd = normalized.index(
+                start,
+                offsetBy: originalBodyChunkLimit,
+                limitedBy: normalized.endIndex
+            ) ?? normalized.endIndex
+            var end = hardEnd
+
+            if hardEnd < normalized.endIndex,
+               let newline = normalized[start..<hardEnd].lastIndex(of: "\n"),
+               normalized.distance(from: start, to: newline) > originalBodyChunkLimit / 2 {
+                end = normalized.index(after: newline)
+            }
+
+            let text = String(normalized[start..<end])
+                .trimmingCharacters(in: .newlines)
+            if !text.isEmpty {
+                chunks.append(OriginalMaterialChunk(id: chunkId, text: text))
+                chunkId += 1
+            }
+
+            start = end
+        }
+
+        return chunks
+    }
+}
+
+private struct OriginalMaterialChunk: Identifiable, Equatable {
+    let id: Int
+    let text: String
+}
+
+private extension View {
+    func itemDetailListRow() -> some View {
+        self
+            .frame(maxWidth: 860, alignment: .leading)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .listRowInsets(EdgeInsets(
+                top: 0,
+                leading: Spacing.xl,
+                bottom: 0,
+                trailing: Spacing.xl
+            ))
+            .listRowSeparator(.hidden)
+            .listRowBackground(Color.clear)
     }
 }
