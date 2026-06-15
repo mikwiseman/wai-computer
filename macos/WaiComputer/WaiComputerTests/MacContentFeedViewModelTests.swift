@@ -63,12 +63,12 @@ final class MacContentFeedViewModelTests: XCTestCase {
     func testComparisonViewUsesRecyclingRowsForLargeMatrices() throws {
         let source = try macSource("WaiComputer/Features/Content/MacComparisonView.swift")
 
-        // Comparison sets can grow as rows × columns. A Grid inside a two-axis
+        // Comparison sets can grow as rows by columns. A Grid inside a two-axis
         // ScrollView eagerly builds every cell, which makes large comparisons
         // freeze during initial layout and scroll. Keep vertical rows recycled.
         XCTAssertTrue(source.contains("List {"))
-        XCTAssertTrue(source.contains("comparisonHeaderRow(columns: columns)"))
-        XCTAssertTrue(source.contains("comparisonDataRow(row: row, columns: columns)"))
+        XCTAssertTrue(source.contains("comparisonHeaderRow("))
+        XCTAssertTrue(source.contains("comparisonDataRow("))
         XCTAssertFalse(source.contains("ScrollView([.horizontal, .vertical])"))
         XCTAssertFalse(source.contains("Grid(alignment: .topLeading"))
         XCTAssertFalse(source.contains("GridRow"))

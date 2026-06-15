@@ -115,11 +115,14 @@ struct MacComparisonView: View {
                     .listStyle(.plain)
                     .scrollContentBackground(.hidden)
                     .frame(width: comparisonTableWidth(columns: columns))
+                    .frame(maxHeight: .infinity)
                 }
-                .frame(width: comparisonTableWidth(columns: columns), alignment: .leading)
+                .frame(width: comparisonTableWidth(columns: columns), alignment: .topLeading)
+                .frame(maxHeight: .infinity, alignment: .topLeading)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
     private func comparisonHeaderRow(columns: [ComparisonColumn]) -> some View {
