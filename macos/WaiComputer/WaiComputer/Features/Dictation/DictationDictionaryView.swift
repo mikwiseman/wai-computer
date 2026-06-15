@@ -9,6 +9,7 @@ struct DictationDictionaryView: View {
     @State private var newReplacement = ""
     @State private var searchText = ""
     @State private var editingWord: DictionaryWord?
+    @State private var displayCache = DictationDictionaryDisplayCache()
     /// The word whose add/save was rejected as a case-insensitive duplicate —
     /// drives the inline feedback under the add row instead of silence.
     @State private var duplicateWord: String?
@@ -19,15 +20,12 @@ struct DictationDictionaryView: View {
     /// recognition quality drops.
     private let warnAboveCount = 30
 
-    private var filteredWords: [DictionaryWord] {
-        if searchText.isEmpty { return dictionaryStore.words }
-        return dictionaryStore.words.filter {
-            $0.word.localizedCaseInsensitiveContains(searchText)
-                || ($0.replacement?.localizedCaseInsensitiveContains(searchText) ?? false)
-        }
-    }
-
     var body: some View {
+        let visibleWords = displayCache.words(
+            for: dictionaryStore.words,
+            searchText: searchText
+        )
+
         VStack(spacing: 0) {
             // Header
             VStack(alignment: .leading, spacing: Spacing.md) {
@@ -79,7 +77,7 @@ struct DictationDictionaryView: View {
                     ))
                 )
                 Spacer()
-            } else if filteredWords.isEmpty {
+            } else if visibleWords.isEmpty {
                 Spacer()
                 ContentUnavailableViewCompat(
                     t("No Results", "Ничего не найдено"),
@@ -89,7 +87,7 @@ struct DictationDictionaryView: View {
                 Spacer()
             } else {
                 List {
-                    ForEach(filteredWords) { word in
+                    ForEach(visibleWords) { word in
                         wordRow(word)
                     }
                 }
@@ -415,5 +413,33 @@ struct DictationDictionaryView: View {
 
     private func t(_ english: String, _ russian: String) -> String {
         OnboardingL10n.text(english, russian, language: languageManager.current)
+    }
+}
+
+/// Keeps dictionary search filtering out of ordinary SwiftUI body work. The
+/// dictionary is soft-capped, not hard-capped, so large power-user lists still
+/// need predictable search and scroll updates.
+private final class DictationDictionaryDisplayCache {
+    private var lastWords: [DictionaryWord] = []
+    private var lastSearchText = ""
+    private var cachedWords: [DictionaryWord] = []
+
+    func words(for words: [DictionaryWord], searchText: String) -> [DictionaryWord] {
+        if words == lastWords, searchText == lastSearchText {
+            return cachedWords
+        }
+
+        if searchText.isEmpty {
+            cachedWords = words
+        } else {
+            cachedWords = words.filter {
+                $0.word.localizedCaseInsensitiveContains(searchText)
+                    || ($0.replacement?.localizedCaseInsensitiveContains(searchText) ?? false)
+            }
+        }
+
+        lastWords = words
+        lastSearchText = searchText
+        return cachedWords
     }
 }

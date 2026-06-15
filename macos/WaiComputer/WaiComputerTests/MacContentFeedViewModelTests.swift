@@ -419,6 +419,17 @@ final class MacContentFeedViewModelTests: XCTestCase {
         XCTAssertFalse(source.contains("LazyVStack(spacing: 0)"))
     }
 
+    func testDictationDictionaryUsesRecyclingListAndMemoizedFiltering() throws {
+        let source = try macSource("WaiComputer/Features/Dictation/DictationDictionaryView.swift")
+
+        XCTAssertTrue(source.contains("@State private var displayCache = DictationDictionaryDisplayCache()"))
+        XCTAssertTrue(source.contains("displayCache.words("))
+        XCTAssertTrue(source.contains("List {"))
+        XCTAssertTrue(source.contains("ForEach(visibleWords)"))
+        XCTAssertFalse(source.contains("private var filteredWords"))
+        XCTAssertFalse(source.contains("ForEach(filteredWords)"))
+    }
+
     func testPeekabooSmokeLaunchesFixturesWithExplicitOpenEnvironment() throws {
         let source = try repoSource("scripts/macos-peekaboo-smoke.sh")
 
