@@ -1848,23 +1848,30 @@ private struct CompletedRecordingTransitionView: View {
     }
 
     private var transitionTitle: some View {
-        Text(t("Recording saved", "Запись сохранена"))
-            .font(Typography.headingSmall)
-            .foregroundStyle(Palette.textPrimary)
+        HStack(spacing: Spacing.md) {
+            ProgressView()
+                .controlSize(.small)
+                .frame(width: 12, height: 12)
+
+            Text(t("Saving transcript...", "Сохраняем расшифровку..."))
+                .font(Typography.displaySmall)
+                .foregroundStyle(Palette.textSecondary)
+                .lineLimit(2)
+        }
     }
 
     private var durationText: some View {
-        Label(formatDuration(transition.duration), systemImage: "clock")
-            .font(Typography.label)
+        Text(formatDuration(transition.duration))
+            .font(Typography.monoLarge)
             .foregroundStyle(Palette.textSecondary)
-            .labelStyle(.titleAndIcon)
+            .lineLimit(1)
     }
 
     private var recordingTypeText: some View {
-        Label(recordingTypeLabel(transition.recordingType), systemImage: recordingTypeIcon(transition.recordingType))
+        Text(recordingTypeLabel(transition.recordingType))
             .font(Typography.label)
-            .foregroundStyle(Palette.textSecondary)
-            .labelStyle(.titleAndIcon)
+            .foregroundStyle(Palette.typeColor(transition.recordingType))
+            .lineLimit(1)
     }
 
     private func recordingTypeLabel(_ type: RecordingType) -> String {
@@ -1875,17 +1882,6 @@ private struct CompletedRecordingTransitionView: View {
             return t("Note", "Заметка")
         case .reflection:
             return t("Reflection", "Рефлексия")
-        }
-    }
-
-    private func recordingTypeIcon(_ type: RecordingType) -> String {
-        switch type {
-        case .meeting:
-            return "person.2"
-        case .note:
-            return "note.text"
-        case .reflection:
-            return "sparkles"
         }
     }
 

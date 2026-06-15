@@ -236,7 +236,10 @@ final class MacContentFeedViewModelTests: XCTestCase {
         XCTAssertTrue(source.contains("completedRecordingTranscriptChunks(from: transition.transcript)"))
         XCTAssertTrue(source.contains(".accessibilityIdentifier(\"completed-recording-transcript-list\")"))
         XCTAssertTrue(source.contains("ForEach(transcriptChunks)"))
+        XCTAssertTrue(source.contains("ProgressView()\n                .controlSize(.small)"))
+        XCTAssertTrue(source.contains("Text(t(\"Saving transcript...\""))
         XCTAssertFalse(source.contains("Text(transition.transcript)"))
+        XCTAssertFalse(source.contains("Text(t(\"Recording saved\""))
         XCTAssertFalse(source.contains("ScrollView {\n                    Text(transition.transcript)"))
     }
 
