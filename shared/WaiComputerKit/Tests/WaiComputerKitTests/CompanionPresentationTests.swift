@@ -47,6 +47,28 @@ final class CompanionPresentationTests: XCTestCase {
         XCTAssertEqual(CompanionChatPresentation.formatTokenCount(272000), "272.0k")
     }
 
+    func testCompanionMarkdownRenderingCachesParsedBlocksForRepeatedRows() {
+        let markdown = """
+        # Answer
+
+        - First **point**
+        - Second `point`
+
+        Final paragraph with [link](https://wai.computer).
+        """
+
+        CompanionMarkdownRenderer.resetCacheForTesting()
+
+        _ = CompanionMarkdownRenderer.blocks(for: markdown)
+        let firstBlockParses = CompanionMarkdownRenderer.blockParseCountForTesting
+        let firstInlineParses = CompanionMarkdownRenderer.inlineParseCountForTesting
+
+        _ = CompanionMarkdownRenderer.blocks(for: markdown)
+
+        XCTAssertEqual(CompanionMarkdownRenderer.blockParseCountForTesting, firstBlockParses)
+        XCTAssertEqual(CompanionMarkdownRenderer.inlineParseCountForTesting, firstInlineParses)
+    }
+
     // MARK: - Turn timeline reducer
 
     private func reduce(_ events: [CompanionStreamEvent]) -> CompanionTurnReducer {

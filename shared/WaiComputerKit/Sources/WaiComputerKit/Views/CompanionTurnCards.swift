@@ -480,7 +480,7 @@ struct CompanionMarkdownText: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            ForEach(Array(CompanionMarkdownBlock.parse(text).enumerated()), id: \.offset) { _, block in
+            ForEach(Array(CompanionMarkdownRenderer.blocks(for: text).enumerated()), id: \.offset) { _, block in
                 block.view(accent: accent)
             }
         }
@@ -491,22 +491,22 @@ struct CompanionMarkdownText: View {
     }
 }
 
-private enum CompanionMarkdownBlock {
-    case heading(level: Int, text: String)
-    case paragraph(String)
-    case bullets([String])
-    case ordered([String])
+enum CompanionRenderedMarkdownBlock {
+    case heading(level: Int, text: AttributedString)
+    case paragraph(AttributedString)
+    case bullets([AttributedString])
+    case ordered([AttributedString])
     case code(String)
 
     @ViewBuilder
     func view(accent: Color) -> some View {
         switch self {
         case .heading(let level, let text):
-            Text(companionInlineMarkdown(text))
+            Text(text)
                 .font(.system(size: level <= 1 ? 19 : (level == 2 ? 16 : 15), weight: .semibold))
                 .frame(maxWidth: .infinity, alignment: .leading)
         case .paragraph(let text):
-            Text(companionInlineMarkdown(text))
+            Text(text)
                 .font(.system(size: 15))
                 .lineSpacing(4)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -516,7 +516,7 @@ private enum CompanionMarkdownBlock {
                 ForEach(Array(items.enumerated()), id: \.offset) { _, item in
                     HStack(alignment: .firstTextBaseline, spacing: 8) {
                         Text("•").foregroundStyle(accent)
-                        Text(companionInlineMarkdown(item)).font(.system(size: 15)).lineSpacing(4)
+                        Text(item).font(.system(size: 15)).lineSpacing(4)
                         Spacer(minLength: 0)
                     }
                 }
@@ -526,7 +526,7 @@ private enum CompanionMarkdownBlock {
                 ForEach(Array(items.enumerated()), id: \.offset) { idx, item in
                     HStack(alignment: .firstTextBaseline, spacing: 8) {
                         Text("\(idx + 1).").foregroundStyle(accent).monospacedDigit()
-                        Text(companionInlineMarkdown(item)).font(.system(size: 15)).lineSpacing(4)
+                        Text(item).font(.system(size: 15)).lineSpacing(4)
                         Spacer(minLength: 0)
                     }
                 }
@@ -541,9 +541,105 @@ private enum CompanionMarkdownBlock {
                 .clipShape(RoundedRectangle(cornerRadius: 8))
         }
     }
+}
 
-    static func parse(_ text: String) -> [CompanionMarkdownBlock] {
-        var blocks: [CompanionMarkdownBlock] = []
+private final class CompanionMarkdownRendererStorage: @unchecked Sendable {
+    private let lock = NSLock()
+    var blockCache: [String: [CompanionRenderedMarkdownBlock]] = [:]
+    var inlineCache: [String: AttributedString] = [:]
+    var blockParseCount = 0
+    var inlineParseCount = 0
+
+    func withLock<T>(_ body: (CompanionMarkdownRendererStorage) -> T) -> T {
+        lock.lock()
+        defer { lock.unlock() }
+        return body(self)
+    }
+}
+
+enum CompanionMarkdownRenderer {
+    private static let storage = CompanionMarkdownRendererStorage()
+
+    static func blocks(for text: String) -> [CompanionRenderedMarkdownBlock] {
+        if let cached = storage.withLock({ $0.blockCache[text] }) {
+            return cached
+        }
+
+        let rendered = CompanionMarkdownSourceBlock.parse(text).map { $0.rendered() }
+        return storage.withLock { storage in
+            if let cached = storage.blockCache[text] {
+                return cached
+            }
+            storage.blockCache[text] = rendered
+            storage.blockParseCount += 1
+            return rendered
+        }
+    }
+
+    static func inline(_ string: String) -> AttributedString {
+        if let cached = storage.withLock({ $0.inlineCache[string] }) {
+            return cached
+        }
+
+        let attributed = (try? AttributedString(
+            markdown: string,
+            options: AttributedString.MarkdownParsingOptions(
+                interpretedSyntax: .inlineOnlyPreservingWhitespace
+            )
+        )) ?? AttributedString(string)
+
+        return storage.withLock { storage in
+            if let cached = storage.inlineCache[string] {
+                return cached
+            }
+            storage.inlineCache[string] = attributed
+            storage.inlineParseCount += 1
+            return attributed
+        }
+    }
+
+    static var blockParseCountForTesting: Int {
+        storage.withLock { $0.blockParseCount }
+    }
+
+    static var inlineParseCountForTesting: Int {
+        storage.withLock { $0.inlineParseCount }
+    }
+
+    static func resetCacheForTesting() {
+        storage.withLock { storage in
+            storage.blockCache.removeAll()
+            storage.inlineCache.removeAll()
+            storage.blockParseCount = 0
+            storage.inlineParseCount = 0
+        }
+    }
+}
+
+private enum CompanionMarkdownSourceBlock {
+    case heading(level: Int, text: String)
+    case paragraph(String)
+    case bullets([String])
+    case ordered([String])
+    case code(String)
+
+    func rendered() -> CompanionRenderedMarkdownBlock {
+        switch self {
+        case .heading(let level, let text):
+            return .heading(level: level, text: CompanionMarkdownRenderer.inline(text))
+        case .paragraph(let text):
+            return .paragraph(CompanionMarkdownRenderer.inline(text))
+        case .bullets(let items):
+            return .bullets(items.map { CompanionMarkdownRenderer.inline($0) })
+        case .ordered(let items):
+            return .ordered(items.map { CompanionMarkdownRenderer.inline($0) })
+        case .code(let code):
+            return .code(code)
+        }
+    }
+
+    static func parse(_ text: String) -> [CompanionMarkdownSourceBlock] {
+        var blocks: [CompanionMarkdownSourceBlock] = []
         let lines = text.components(separatedBy: "\n")
         var index = 0
         var paragraph: [String] = []
@@ -628,15 +724,6 @@ private enum CompanionMarkdownBlock {
         guard let dot = s.firstIndex(of: ".") else { return s }
         return String(s[s.index(after: dot)...]).trimmingCharacters(in: .whitespaces)
     }
-}
-
-private func companionInlineMarkdown(_ string: String) -> AttributedString {
-    (try? AttributedString(
-        markdown: string,
-        options: AttributedString.MarkdownParsingOptions(
-            interpretedSyntax: .inlineOnlyPreservingWhitespace
-        )
-    )) ?? AttributedString(string)
 }
 
 // MARK: - Artifact

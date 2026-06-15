@@ -785,16 +785,9 @@ public struct CompanionView: View {
 
         // Assistant answers often carry inline markdown (bold, code, links);
         // render it (whitespace-preserving) instead of showing raw "**…**".
-        // Falls back to plain text on any parse failure — no silent corruption.
         private var displayText: AttributedString {
-            if renderMarkdown, !isMuted, !text.isEmpty,
-               let attributed = try? AttributedString(
-                   markdown: text,
-                   options: AttributedString.MarkdownParsingOptions(
-                       interpretedSyntax: .inlineOnlyPreservingWhitespace
-                   )
-               ) {
-                return attributed
+            if renderMarkdown, !isMuted, !text.isEmpty {
+                return CompanionMarkdownRenderer.inline(text)
             }
             return AttributedString(text)
         }
