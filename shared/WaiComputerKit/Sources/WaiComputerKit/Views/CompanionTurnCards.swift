@@ -497,15 +497,103 @@ struct CompanionMarkdownText: View {
 }
 
 struct CompanionLiveMarkdownText: View {
+    @State private var chunkCache = CompanionLiveMarkdownChunkCache()
+
     let text: String
 
     var body: some View {
-        Text(text)
-            .font(.system(size: 15))
-            .lineSpacing(4)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .textSelection(.enabled)
+        let chunks = chunkCache.chunks(for: text)
+
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(chunks) { chunk in
+                Text(chunk.text)
+                    .font(.system(size: 15))
+                    .lineSpacing(4)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .textSelection(.enabled)
     }
+}
+
+private final class CompanionLiveMarkdownChunkCache {
+    private static let chunkCharacterLimit = 1_600
+
+    private var cachedText = ""
+    private var cachedChunks: [CompanionLiveMarkdownChunk] = []
+    private var nextChunkID = 0
+
+    func chunks(for text: String) -> [CompanionLiveMarkdownChunk] {
+        guard !text.isEmpty else {
+            cachedText = ""
+            cachedChunks = []
+            nextChunkID = 0
+            return []
+        }
+        guard text != cachedText else { return cachedChunks }
+
+        if text.hasPrefix(cachedText) {
+            append(String(text.dropFirst(cachedText.count)))
+            cachedText = text
+            return cachedChunks
+        }
+
+        cachedText = text
+        cachedChunks = Self.makeChunks(from: text, startingAt: 0)
+        nextChunkID = (cachedChunks.last?.id ?? -1) + 1
+        return cachedChunks
+    }
+
+    private func append(_ suffix: String) {
+        guard !suffix.isEmpty else { return }
+
+        var remaining = suffix[...]
+        while !remaining.isEmpty {
+            let needsNewChunk = cachedChunks.isEmpty
+                || cachedChunks[cachedChunks.count - 1].text.count >= Self.chunkCharacterLimit
+            if needsNewChunk {
+                cachedChunks.append(CompanionLiveMarkdownChunk(id: nextChunkID, text: ""))
+                nextChunkID += 1
+            }
+
+            let index = cachedChunks.count - 1
+            let capacity = Self.chunkCharacterLimit - cachedChunks[index].text.count
+            let end = remaining.index(
+                remaining.startIndex,
+                offsetBy: capacity,
+                limitedBy: remaining.endIndex
+            ) ?? remaining.endIndex
+            cachedChunks[index].text.append(contentsOf: remaining[..<end])
+            remaining = remaining[end...]
+        }
+    }
+
+    private static func makeChunks(
+        from text: String,
+        startingAt firstID: Int
+    ) -> [CompanionLiveMarkdownChunk] {
+        var chunks: [CompanionLiveMarkdownChunk] = []
+        var nextID = firstID
+        var remaining = text[...]
+        while !remaining.isEmpty {
+            let end = remaining.index(
+                remaining.startIndex,
+                offsetBy: chunkCharacterLimit,
+                limitedBy: remaining.endIndex
+            ) ?? remaining.endIndex
+            let chunk = CompanionLiveMarkdownChunk(id: nextID, text: String(remaining[..<end]))
+            chunks.append(chunk)
+            nextID += 1
+            remaining = remaining[end...]
+        }
+        return chunks
+    }
+}
+
+private struct CompanionLiveMarkdownChunk: Identifiable, Equatable {
+    let id: Int
+    var text: String
 }
 
 enum CompanionRenderedMarkdownBlock {

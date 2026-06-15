@@ -460,6 +460,20 @@ final class MacContentFeedViewModelTests: XCTestCase {
         XCTAssertFalse(source.contains("CompanionMarkdownText(text: markdown, accent: accent, usesCache: !isLive)"))
     }
 
+    func testCompanionLiveAnswersUseChunkedRowsInsteadOfOneGrowingText() throws {
+        let source = try sharedSource("Sources/WaiComputerKit/Views/CompanionTurnCards.swift")
+
+        // Even without markdown parsing, one ever-growing Text forces SwiftUI
+        // to lay out the whole streamed answer on every token. Keep live
+        // answers split into stable chunks behind a persistent cache.
+        XCTAssertTrue(source.contains("@State private var chunkCache = CompanionLiveMarkdownChunkCache()"))
+        XCTAssertTrue(source.contains("let chunks = chunkCache.chunks(for: text)"))
+        XCTAssertTrue(source.contains("ForEach(chunks)"))
+        XCTAssertTrue(source.contains("private final class CompanionLiveMarkdownChunkCache"))
+        XCTAssertTrue(source.contains("private struct CompanionLiveMarkdownChunk: Identifiable, Equatable"))
+        XCTAssertFalse(source.contains("struct CompanionLiveMarkdownText: View {\n    let text: String\n\n    var body: some View {\n        Text(text)"))
+    }
+
     func testCompanionCitationRowsReceivePreSortedInputs() throws {
         let source = try sharedSource("Sources/WaiComputerKit/Views/CompanionView.swift")
         let reducerSource = try sharedSource("Sources/WaiComputerKit/Views/CompanionTurnTimeline.swift")
