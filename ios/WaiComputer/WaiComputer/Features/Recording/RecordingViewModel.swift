@@ -407,30 +407,39 @@ class RecordingViewModel: ObservableObject {
                             fallback: "Transcript was saved, but processing failed.",
                             context: .recording
                         )
-                        let backup = try? self.saveTranscriptBackup(recordingId: recordingId, segments: segments)
-                        _ = try? RecordingBackupStore.recordSaveFailure(recordingId: recordingId, message: failureMessage)
-                        if backup != nil {
-                            self.reportLocalRecoveryFallback(recordingId: recordingId, segmentsCount: segments.count, technicalReason: failureMessage)
-                            await PendingRecordingSyncCoordinator.shared.scheduleSync(using: client)
-                            self.error = nil
-                        } else {
-                            self.error = failureMessage
-                        }
+                        let savedLocalBackup = await self.saveLocalBackupForRetry(
+                            recordingId: recordingId,
+                            segments: segments,
+                            client: client,
+                            technicalReason: failureMessage
+                        )
+                        self.error = savedLocalBackup ? nil : failureMessage
                     } else if detail.status == .processing || detail.status == .uploading {
-                        _ = try? self.saveTranscriptBackup(recordingId: recordingId, segments: segments)
+                        var retainedProcessingBackup = false
                         do {
+                            _ = try self.saveTranscriptBackup(recordingId: recordingId, segments: segments)
                             try RecordingBackupStore.markServerProcessing(recordingId: recordingId)
+                            retainedProcessingBackup = true
                         } catch {
                             SentryHelper.captureError(
                                 error,
-                                extras: ["action": "markServerProcessing", "recordingId": recordingId]
+                                extras: ["action": "retainAudioBackupWhileProcessing", "recordingId": recordingId]
                             )
-                            throw error
+                            self.error = error.userFacingMessage(context: .recording)
                         }
-                        await PendingRecordingSyncCoordinator.shared.scheduleSync(using: client)
-                        self.error = nil
+                        if retainedProcessingBackup {
+                            await PendingRecordingSyncCoordinator.shared.scheduleSync(using: client)
+                            self.error = nil
+                        }
                     } else {
-                        try? RecordingBackupStore.removeRecording(recordingId: recordingId)
+                        do {
+                            try RecordingBackupStore.removeRecording(recordingId: recordingId)
+                        } catch {
+                            SentryHelper.captureError(
+                                error,
+                                extras: ["action": "removeSyncedRecordingBackup", "recordingId": recordingId]
+                            )
+                        }
                         self.error = nil
                         transcriptSaved = true
                         SentryHelper.addBreadcrumb(
@@ -442,11 +451,13 @@ class RecordingViewModel: ObservableObject {
                 } catch {
                     SentryHelper.captureError(error, extras: ["action": "saveTranscript", "recordingId": recordingId])
                     let failureMessage = error.userFacingMessage(context: .recording)
-                    let backup = try? self.saveTranscriptBackup(recordingId: recordingId, segments: segments)
-                    _ = try? RecordingBackupStore.recordSaveFailure(recordingId: recordingId, message: failureMessage)
-                    if backup != nil {
-                        self.reportLocalRecoveryFallback(recordingId: recordingId, segmentsCount: segments.count, technicalReason: failureMessage)
-                        await PendingRecordingSyncCoordinator.shared.scheduleSync(using: client)
+                    let savedLocalBackup = await self.saveLocalBackupForRetry(
+                        recordingId: recordingId,
+                        segments: segments,
+                        client: client,
+                        technicalReason: failureMessage
+                    )
+                    if savedLocalBackup {
                         self.error = nil
                     } else {
                         self.error = UserFacingErrorFormatter.message(
@@ -746,6 +757,47 @@ class RecordingViewModel: ObservableObject {
             transcript: transcript.isEmpty ? nil : transcript,
             segments: segments
         )
+    }
+
+    @discardableResult
+    private func saveLocalBackupForRetry(
+        recordingId: String,
+        segments: [LiveTranscriptSegment],
+        client: APIClient?,
+        technicalReason: String
+    ) async -> Bool {
+        do {
+            _ = try saveTranscriptBackup(recordingId: recordingId, segments: segments)
+        } catch {
+            SentryHelper.captureError(
+                error,
+                extras: ["action": "saveLocalBackupForRetry", "recordingId": recordingId]
+            )
+            recordingLog.error("Failed to save local recovery backup recordingId=\(recordingId, privacy: .public)")
+            return false
+        }
+
+        do {
+            _ = try RecordingBackupStore.recordSaveFailure(recordingId: recordingId, message: technicalReason)
+        } catch {
+            SentryHelper.captureError(
+                error,
+                extras: ["action": "recordLocalRecoveryReason", "recordingId": recordingId]
+            )
+            recordingLog.error("Failed to record local recovery reason recordingId=\(recordingId, privacy: .public)")
+        }
+
+        reportLocalRecoveryFallback(
+            recordingId: recordingId,
+            segmentsCount: segments.count,
+            technicalReason: technicalReason
+        )
+
+        if let client {
+            await PendingRecordingSyncCoordinator.shared.scheduleSync(using: client)
+        }
+
+        return true
     }
 
     private func transcriptText(from segments: [LiveTranscriptSegment]) -> String {

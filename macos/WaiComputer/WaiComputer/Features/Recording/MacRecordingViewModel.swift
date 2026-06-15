@@ -1294,18 +1294,33 @@ class MacRecordingViewModel: ObservableObject {
         durationSeconds: TimeInterval? = nil,
         technicalReason: String
     ) async -> Bool {
-        guard (try? saveTranscriptBackup(
-            recordingId: recordingId,
-            segments: segments,
-            durationSeconds: durationSeconds
-        )) != nil else {
+        do {
+            _ = try saveTranscriptBackup(
+                recordingId: recordingId,
+                segments: segments,
+                durationSeconds: durationSeconds
+            )
+        } catch {
+            SentryHelper.captureError(
+                error,
+                extras: ["action": "saveLocalBackupForRetry", "recordingId": recordingId]
+            )
+            audioLog.error("Failed to save local recovery backup recordingId=\(recordingId, privacy: .public)")
             return false
         }
 
-        _ = try? RecordingBackupStore.recordSaveFailure(
-            recordingId: recordingId,
-            message: technicalReason
-        )
+        do {
+            _ = try RecordingBackupStore.recordSaveFailure(
+                recordingId: recordingId,
+                message: technicalReason
+            )
+        } catch {
+            SentryHelper.captureError(
+                error,
+                extras: ["action": "recordLocalRecoveryReason", "recordingId": recordingId]
+            )
+            audioLog.error("Failed to record local recovery reason recordingId=\(recordingId, privacy: .public)")
+        }
 
         reportLocalRecoveryFallback(
             recordingId: recordingId,
