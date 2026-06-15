@@ -449,6 +449,17 @@ final class MacContentFeedViewModelTests: XCTestCase {
         XCTAssertFalse(source.contains("ScrollView {\n                    LazyVStack(alignment: .leading, spacing: 0) {\n                        if messages.isEmpty"))
     }
 
+    func testCompanionLiveAnswersAvoidMarkdownBlockParsingDuringStreaming() throws {
+        let source = try sharedSource("Sources/WaiComputerKit/Views/CompanionTurnCards.swift")
+
+        // Streaming assistant text can update for every token. Keep live
+        // updates on a cheap text renderer, and only run the block-aware
+        // markdown renderer once the turn is no longer live.
+        XCTAssertTrue(source.contains("CompanionLiveMarkdownText(text: markdown)"))
+        XCTAssertTrue(source.contains("CompanionMarkdownText(text: markdown, accent: accent, usesCache: true)"))
+        XCTAssertFalse(source.contains("CompanionMarkdownText(text: markdown, accent: accent, usesCache: !isLive)"))
+    }
+
     func testCompanionCitationRowsReceivePreSortedInputs() throws {
         let source = try sharedSource("Sources/WaiComputerKit/Views/CompanionView.swift")
         let reducerSource = try sharedSource("Sources/WaiComputerKit/Views/CompanionTurnTimeline.swift")

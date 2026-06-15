@@ -71,7 +71,11 @@ struct CompanionTimelineView: View {
                 case .webCitations(_, let citations):
                     CompanionWebCitationsCard(citations: citations, accent: accent)
                 case .text(_, let markdown):
-                    CompanionMarkdownText(text: markdown, accent: accent, usesCache: !isLive)
+                    if isLive {
+                        CompanionLiveMarkdownText(text: markdown)
+                    } else {
+                        CompanionMarkdownText(text: markdown, accent: accent, usesCache: true)
+                    }
                 case .action(_, let proposal, let resolution):
                     CompanionActionCard(
                         proposal: proposal,
@@ -489,6 +493,18 @@ struct CompanionMarkdownText: View {
         // Container-level so every block — headings, bullets, ordered items,
         // not just paragraphs/code — can be selected and copied (a11y).
         .textSelection(.enabled)
+    }
+}
+
+struct CompanionLiveMarkdownText: View {
+    let text: String
+
+    var body: some View {
+        Text(text)
+            .font(.system(size: 15))
+            .lineSpacing(4)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .textSelection(.enabled)
     }
 }
 
