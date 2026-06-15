@@ -7,8 +7,6 @@ import pytest
 from app.core.transcription_options import (
     DEFAULT_DICTATION_LIVE_STT_MODEL,
     DEFAULT_DICTATION_LIVE_STT_PROVIDER,
-    DEFAULT_DICTATION_POST_FILTER_MODEL,
-    DEFAULT_DICTATION_POST_FILTER_PROVIDER,
     DEFAULT_FILE_STT_MODEL,
     DEFAULT_FILE_STT_PROVIDER,
     DEFAULT_RECORDING_LIVE_STT_MODEL,
@@ -63,8 +61,6 @@ def test_defaults_are_registered_options() -> None:
          DEFAULT_RECORDING_LIVE_STT_PROVIDER, DEFAULT_RECORDING_LIVE_STT_MODEL),
         ("file_stt",
          DEFAULT_FILE_STT_PROVIDER, DEFAULT_FILE_STT_MODEL),
-        ("dictation_post_filter",
-         DEFAULT_DICTATION_POST_FILTER_PROVIDER, DEFAULT_DICTATION_POST_FILTER_MODEL),
     ]
     for group, provider, model in pairs:
         assert is_valid_option(group, provider, model), \
@@ -124,7 +120,7 @@ def test_is_valid_option_matches_registered() -> None:
     assert is_valid_option("dictation_live_stt", "deepgram", "nova-3")
     assert is_valid_option("recording_live_stt", "deepgram", "nova-3")
     assert is_valid_option("file_stt", "deepgram", "nova-3")
-    assert is_valid_option("dictation_post_filter", "cerebras", "gpt-oss-120b")
+    assert not is_valid_option("dictation_post_filter", "cerebras", "gpt-oss-120b")
 
 
 def test_is_valid_option_normalizes_input() -> None:
@@ -232,6 +228,7 @@ def test_options_response_file_stt_only_fixed_model() -> None:
             "description": "Full-session batch transcription with v2 speaker diarization.",
         }
     ]
+    assert out["dictation_post_filter"] == []
 
 
 def test_provider_is_configured_checks_required_key_names() -> None:
@@ -271,7 +268,7 @@ def test_options_response_filters_unconfigured_providers() -> None:
     assert {entry["provider"] for entry in out["dictation_live_stt"]} == {"deepgram"}
     assert {entry["provider"] for entry in out["recording_live_stt"]} == {"deepgram"}
     assert {entry["provider"] for entry in out["file_stt"]} == {"deepgram"}
-    assert {entry["provider"] for entry in out["dictation_post_filter"]} == {"cerebras"}
+    assert out["dictation_post_filter"] == []
 
 
 def test_validate_configured_option_rejects_missing_provider_key() -> None:

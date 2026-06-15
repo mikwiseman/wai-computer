@@ -15,7 +15,7 @@ const CURRENT_YEAR = new Date().getFullYear();
 export const metadata: Metadata = {
   title: "WaiComputer — ИИ-память для голоса",
   description:
-    "Записывайте, расшифровывайте, ищите, спрашивайте Wai обо всём, что вы когда-либо говорили.",
+    "Сохраняйте выбранные встречи и голосовые заметки, расшифровывайте их, ищите и спрашивайте Wai.",
   alternates: {
     canonical: "https://wai.computer/ru",
     languages: {
@@ -310,12 +310,12 @@ export default function RuHome() {
           </picture>
         </div>
         <h1 className={styles.headline}>
-          ИИ-память для всего, что вы говорите.
+          Приватная ИИ-память для того, что вы сами записали.
         </h1>
         <p className={styles.subhead}>
-          Записывайте на Mac, iPhone или в браузере. Получайте расшифровку в
-          реальном времени, ищите по всей памяти и спрашивайте Wai о чём
-          угодно.
+          Запускайте запись на Mac, iPhone или в браузере только когда это
+          нужно. Ищите по сохранённым расшифровкам и спрашивайте Wai о том, что
+          вы записали.
         </p>
 
         <div className={`${styles.downloads} ${styles.downloadsWide}`}>
@@ -349,7 +349,7 @@ export default function RuHome() {
 
       <section className={styles.section} aria-labelledby="platforms-title">
         <header className={styles.sectionHeader}>
-          <p className={styles.eyebrow}>Там, где вы говорите</p>
+          <p className={styles.eyebrow}>Там, где вы решили записать</p>
           <h2 id="platforms-title" className={styles.sectionTitle}>
             Шесть платформ. Одна память.
           </h2>
@@ -453,29 +453,28 @@ export default function RuHome() {
         <ul className={styles.featureGrid} role="list">
           <li className={styles.featureCard}>
             <MicIcon />
-            <h3 className={styles.featureTitle}>Записывайте любой момент</h3>
+            <h3 className={styles.featureTitle}>Записывайте после нажатия старт</h3>
             <p className={styles.featureBody}>
-              Записывайте на Mac, iPhone или в браузере; импортируйте голосовые
-              заметки из своей библиотеки. Расшифровка появляется по ходу
-              разговора.
+              Mac, iPhone, браузер и импорт голосовых заметок из вашей
+              библиотеки. Расшифровка идёт только во время активной записи.
             </p>
           </li>
           <li className={styles.featureCard}>
             <SearchIcon />
             <h3 className={styles.featureTitle}>
-              Ищите по всему, что вы сказали
+              Ищите по сохранённым расшифровкам
             </h3>
             <p className={styles.featureBody}>
-              Полнотекстовый и смысловой поиск по каждой расшифровке, которую
-              вы когда-либо сохраняли.
+              Полнотекстовый и смысловой поиск по записям и импортам, которые
+              вы сохранили.
             </p>
           </li>
           <li className={styles.featureCard}>
             <BrainIcon />
             <h3 className={styles.featureTitle}>Спрашивайте Wai о чём угодно</h3>
             <p className={styles.featureBody}>
-              ИИ-память, которая помнит ваши слова и отвечает на ваши вопросы
-              вашим же голосом.
+              ИИ-память, которая помнит сохранённые записи и отвечает на ваши
+              вопросы по ним.
             </p>
           </li>
         </ul>
@@ -594,11 +593,10 @@ export default function RuHome() {
           <div className={styles.faqItem}>
             <dt className={styles.faqQuestion}>Что WaiComputer записывает?</dt>
             <dd className={styles.faqAnswer}>
-              Любое аудио, которое вы выбрали записать — встречи, звонки,
-              голосовые заметки, мысли на прогулке. Mac пишет системный звук
-              плюс микрофон, iPhone — звук вокруг вас, а Web записывает через
-              микрофон браузера. Также можно импортировать файлы из своей
-              библиотеки.
+              Только аудио, запись которого вы явно начали: встречи, звонки,
+              голосовые заметки, мысли на прогулке. WaiComputer не слушает в
+              фоне. Mac может записывать системный звук плюс микрофон во время
+              активной записи; iPhone и Web используют микрофон.
             </dd>
           </div>
           <div className={styles.faqItem}>

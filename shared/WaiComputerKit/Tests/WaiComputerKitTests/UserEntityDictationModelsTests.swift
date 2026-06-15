@@ -149,12 +149,12 @@ final class UserEntityDictationModelsTests: XCTestCase {
           "dictation_live_stt_model":"nova-3",
           "recording_live_stt_provider":"deepgram",
           "recording_live_stt_model":"nova-3",
-          "file_stt_provider":"elevenlabs",
-          "file_stt_model":"scribe_v2",
-          "dictation_post_filter_enabled":true,
-          "dictation_cleanup_level":"light",
-          "dictation_post_filter_provider":"cerebras",
-          "dictation_post_filter_model":"gpt-oss-120b"
+          "file_stt_provider":"deepgram",
+          "file_stt_model":"nova-3",
+          "dictation_post_filter_enabled":false,
+          "dictation_cleanup_level":"none",
+          "dictation_post_filter_provider":"disabled",
+          "dictation_post_filter_model":"none"
         }
         """.data(using: .utf8)!
         let s = try decoder.decode(UserSettings.self, from: json)
@@ -164,8 +164,8 @@ final class UserEntityDictationModelsTests: XCTestCase {
         XCTAssertEqual(s.summaryInstructions, "focus on actions")
         XCTAssertEqual(s.dictationLiveSTTProvider, "deepgram")
         XCTAssertEqual(s.dictationLiveSTTModel, "nova-3")
-        XCTAssertTrue(s.dictationPostFilterEnabled)
-        XCTAssertEqual(s.dictationCleanupLevel, "light")
+        XCTAssertFalse(s.dictationPostFilterEnabled)
+        XCTAssertEqual(s.dictationCleanupLevel, "none")
     }
 
     func testUserSettingsAllowsNullSummaryInstructions() throws {
@@ -175,7 +175,7 @@ final class UserEntityDictationModelsTests: XCTestCase {
           "summary_instructions":null,
           "dictation_live_stt_provider":"deepgram", "dictation_live_stt_model":"nova-3",
           "recording_live_stt_provider":"deepgram", "recording_live_stt_model":"nova-3",
-          "file_stt_provider":"elevenlabs", "file_stt_model":"scribe_v2",
+          "file_stt_provider":"deepgram", "file_stt_model":"nova-3",
           "dictation_post_filter_enabled":false,
           "dictation_cleanup_level":"none",
           "dictation_post_filter_provider":"o", "dictation_post_filter_model":"m"

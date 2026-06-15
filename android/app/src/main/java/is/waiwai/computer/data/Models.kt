@@ -323,11 +323,11 @@ data class UserSettings(
     @SerialName("dictation_live_stt_model") val dictationLiveSttModel: String = "nova-3",
     @SerialName("recording_live_stt_provider") val recordingLiveSttProvider: String = "deepgram",
     @SerialName("recording_live_stt_model") val recordingLiveSttModel: String = "nova-3",
-    @SerialName("file_stt_provider") val fileSttProvider: String = "elevenlabs",
-    @SerialName("file_stt_model") val fileSttModel: String = "scribe_v2",
+    @SerialName("file_stt_provider") val fileSttProvider: String = "deepgram",
+    @SerialName("file_stt_model") val fileSttModel: String = "nova-3",
     @SerialName("dictation_post_filter_enabled") val dictationPostFilterEnabled: Boolean = false,
-    @SerialName("dictation_post_filter_provider") val dictationPostFilterProvider: String = "cerebras",
-    @SerialName("dictation_post_filter_model") val dictationPostFilterModel: String = "gpt-oss-120b",
+    @SerialName("dictation_post_filter_provider") val dictationPostFilterProvider: String = "disabled",
+    @SerialName("dictation_post_filter_model") val dictationPostFilterModel: String = "none",
 )
 
 @Serializable

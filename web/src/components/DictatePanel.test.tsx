@@ -3,7 +3,6 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-libra
 
 import { DictatePanel, applyDictionary } from "./DictatePanel";
 import {
-  cleanupDictation,
   createDictationEntry,
   listDictionaryWords,
 } from "@/lib/api";
@@ -11,7 +10,6 @@ import { RealtimeTranscriber, type RealtimeState } from "@/lib/realtime";
 import type { DictationDictionaryWord, TranscriptSegmentInput } from "@/lib/types";
 
 vi.mock("@/lib/api", () => ({
-  cleanupDictation: vi.fn(),
   createDictationEntry: vi.fn(),
   listDictionaryWords: vi.fn(),
 }));
@@ -58,7 +56,6 @@ vi.mock("@/lib/realtime", () => {
   return { RealtimeTranscriber: FakeTranscriber };
 });
 
-const mockedCleanup = vi.mocked(cleanupDictation);
 const mockedCreateEntry = vi.mocked(createDictationEntry);
 const mockedListWords = vi.mocked(listDictionaryWords);
 
@@ -105,7 +102,6 @@ beforeEach(() => {
     value: { writeText },
   });
   mockedListWords.mockResolvedValue([]);
-  mockedCleanup.mockResolvedValue({ text: "" });
   mockedCreateEntry.mockResolvedValue(undefined as never);
 });
 
@@ -159,14 +155,14 @@ describe("DictatePanel rendering", () => {
     render(<DictatePanel />);
     expect(screen.getByTestId("dictate-panel")).toBeTruthy();
     expect(screen.getByText("Start dictating")).toBeTruthy();
-    expect(screen.getByText(/cleans it up/)).toBeTruthy();
+    expect(screen.getByText(/paste the transcript anywhere/)).toBeTruthy();
     expect(screen.getByText(/get the Mac app/)).toBeTruthy();
   });
 
   it("renders Russian copy when locale is ru", () => {
     render(<DictatePanel locale="ru" />);
     expect(screen.getByText("Начать диктовку")).toBeTruthy();
-    expect(screen.getByText(/причешет текст/)).toBeTruthy();
+    expect(screen.getByText(/вставьте расшифровку/)).toBeTruthy();
   });
 });
 
@@ -296,16 +292,14 @@ describe("DictatePanel stop + cleanup", () => {
     fireEvent.click(screen.getByRole("button", { name: "Stop" }));
 
     expect(await screen.findByRole("status")).toHaveTextContent("Didn't catch anything");
-    // Back to the start button — no cleanup attempted.
+    // Back to the start button — no post-processing attempted.
     expect(screen.getByText("Start dictating")).toBeTruthy();
-    expect(mockedCleanup).not.toHaveBeenCalled();
   });
 
-  it("cleans the transcript, copies it, and logs a history entry", async () => {
+  it("applies dictionary replacements, copies the transcript, and logs history", async () => {
     mockedListWords.mockResolvedValue([
       { client_word_id: "1", word: "wai computer", replacement: "WaiComputer", occurred_at: "x" },
     ]);
-    mockedCleanup.mockResolvedValue({ text: "Polished WaiComputer text." });
     await getToRecording();
     lastTranscriber().stopResult = [segment("i love wai computer"), segment("a lot")];
 
@@ -313,70 +307,47 @@ describe("DictatePanel stop + cleanup", () => {
 
     // Result phase renders the cleaned text + paste hint.
     expect(await screen.findByTestId("dictate-result")).toBeTruthy();
-    expect(screen.getByText("Polished WaiComputer text.")).toBeTruthy();
+    expect(screen.getByText("i love WaiComputer a lot")).toBeTruthy();
     expect(screen.getByText(/paste it wherever you like/)).toBeTruthy();
 
-    // Dictionary REPLACE was applied to the raw transcript before cleanup,
-    // and the preserve-vocabulary was forwarded.
-    await waitFor(() => expect(mockedCleanup).toHaveBeenCalledTimes(1));
-    expect(mockedCleanup).toHaveBeenCalledWith(
-      "i love WaiComputer a lot",
-      ["WaiComputer"],
-    );
-
-    // Cleaned text was copied to the clipboard.
-    await waitFor(() => expect(writeText).toHaveBeenCalledWith("Polished WaiComputer text."));
+    // Dictionary REPLACE was applied locally, then copied to the clipboard.
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith("i love WaiComputer a lot"));
 
     // History entry logged with raw + cleaned text and a word count.
     await waitFor(() => expect(mockedCreateEntry).toHaveBeenCalledTimes(1));
     const entry = mockedCreateEntry.mock.calls[0][0];
     expect(entry.raw_text).toBe("i love wai computer a lot");
-    expect(entry.cleaned_text).toBe("Polished WaiComputer text.");
-    // word_count is whitespace-delimited: "Polished WaiComputer text." -> 3.
-    expect(entry.word_count).toBe(3);
+    expect(entry.cleaned_text).toBe("i love WaiComputer a lot");
+    // word_count is whitespace-delimited.
+    expect(entry.word_count).toBe(5);
     expect(typeof entry.client_entry_id).toBe("string");
     expect(typeof entry.occurred_at).toBe("string");
   });
 
-  it("falls back to the raw transcript and warns when AI cleanup fails", async () => {
-    mockedCleanup.mockRejectedValue(new Error("cleanup down"));
+  it("copies raw transcript without a notice when no dictionary entries exist", async () => {
     await getToRecording();
     lastTranscriber().stopResult = [segment("keep this text")];
 
     fireEvent.click(screen.getByRole("button", { name: "Stop" }));
 
-    // Recovery notice + the (dictionary-applied) raw transcript as the result.
-    expect(await screen.findByRole("status")).toHaveTextContent("copied the raw transcript");
-    expect(screen.getByTestId("dictate-result")).toHaveTextContent("keep this text");
+    expect(await screen.findByTestId("dictate-result")).toHaveTextContent("keep this text");
+    expect(screen.queryByRole("status")).toBeNull();
     await waitFor(() => expect(writeText).toHaveBeenCalledWith("keep this text"));
   });
 
-  it("still cleans up when the dictionary lookup fails (best-effort)", async () => {
+  it("surfaces dictionary lookup failure and still copies the transcript", async () => {
     mockedListWords.mockRejectedValue(new Error("no dictionary"));
-    mockedCleanup.mockResolvedValue({ text: "cleaned anyway" });
     await getToRecording();
     lastTranscriber().stopResult = [segment("raw words")];
 
     fireEvent.click(screen.getByRole("button", { name: "Stop" }));
 
-    expect(await screen.findByText("cleaned anyway")).toBeTruthy();
-    // Cleanup ran with an empty preserve-vocabulary (dictionary unavailable).
-    expect(mockedCleanup).toHaveBeenCalledWith("raw words", []);
-  });
-
-  it("keeps the dictionary-applied raw text when cleanup returns empty", async () => {
-    mockedCleanup.mockResolvedValue({ text: "" });
-    await getToRecording();
-    lastTranscriber().stopResult = [segment("non empty raw")];
-
-    fireEvent.click(screen.getByRole("button", { name: "Stop" }));
-
-    // `|| replaced` keeps the raw text when the cleanup result is blank.
-    expect(await screen.findByTestId("dictate-result")).toHaveTextContent("non empty raw");
+    expect(await screen.findByRole("status")).toHaveTextContent("Dictionary could not load");
+    expect(screen.getByTestId("dictate-result")).toHaveTextContent("raw words");
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith("raw words"));
   });
 
   it("does not block the paste flow when history logging fails", async () => {
-    mockedCleanup.mockResolvedValue({ text: "final text" });
     mockedCreateEntry.mockRejectedValue(new Error("history down"));
     await getToRecording();
     lastTranscriber().stopResult = [segment("something")];
@@ -384,14 +355,13 @@ describe("DictatePanel stop + cleanup", () => {
     fireEvent.click(screen.getByRole("button", { name: "Stop" }));
 
     // Result still renders + copies despite the history failure.
-    expect(await screen.findByText("final text")).toBeTruthy();
-    await waitFor(() => expect(writeText).toHaveBeenCalledWith("final text"));
+    expect(await screen.findByText("something")).toBeTruthy();
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith("something"));
   });
 });
 
 describe("DictatePanel result actions", () => {
   async function getToResult() {
-    mockedCleanup.mockResolvedValue({ text: "ready text" });
     render(<DictatePanel />);
     await startDictation();
     act(() => {

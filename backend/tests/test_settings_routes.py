@@ -115,10 +115,10 @@ async def test_get_settings_returns_user_settings(client: AsyncClient):
     assert data["recording_live_stt_model"] == "nova-3"
     assert data["file_stt_provider"] == "deepgram"
     assert data["file_stt_model"] == "nova-3"
-    assert data["dictation_post_filter_enabled"] is True
-    assert data["dictation_cleanup_level"] == "light"
-    assert data["dictation_post_filter_provider"] == "cerebras"
-    assert data["dictation_post_filter_model"] == "gpt-oss-120b"
+    assert data["dictation_post_filter_enabled"] is False
+    assert data["dictation_cleanup_level"] == "none"
+    assert data["dictation_post_filter_provider"] == "disabled"
+    assert data["dictation_post_filter_model"] == "none"
 
 
 @pytest.mark.asyncio
@@ -370,8 +370,7 @@ async def test_get_transcription_options_returns_curated_choices(
             "description": "Full-session batch transcription with v2 speaker diarization.",
         }
     ]
-    assert data["dictation_post_filter"][0]["provider"] == "cerebras"
-    assert data["dictation_post_filter"][0]["model"] == "gpt-oss-120b"
+    assert data["dictation_post_filter"] == []
     assert all(
         option["model"] != "removed-file-model"
         for group in data.values()
@@ -432,7 +431,7 @@ async def test_update_transcription_settings_rejects_model_changes(client: Async
 async def test_update_transcription_settings_rejects_post_filter_model_change(
     client: AsyncClient,
 ):
-    """The cleanup model is also fixed; only the enabled toggle remains user-controlled."""
+    """Dictation AI cleanup is removed from user-selectable settings."""
     headers = await _register(client, "settings.unconfiguredstt@example.com", "password-123")
 
     response = await client.patch(

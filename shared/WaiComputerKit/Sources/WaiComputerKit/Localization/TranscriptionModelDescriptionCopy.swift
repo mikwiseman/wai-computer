@@ -63,10 +63,7 @@ public enum TranscriptionModelDescriptionCopy {
         CopyKey(context: .recordingLiveSTT, provider: "deepgram", model: "nova-3"):
             "По умолчанию для живой записи. Deepgram Nova-3 для быстрого потокового распознавания речи.",
 
-        CopyKey(context: .fileSTT, provider: "elevenlabs", model: "scribe_v2"):
-            "По умолчанию для полной расшифровки записи. ElevenLabs Scribe v2 с разделением по говорящим.",
-
-        CopyKey(context: .dictationPostFilter, provider: "cerebras", model: "gpt-oss-120b"):
-            "По умолчанию для очистки продиктованного текста. Cerebras GPT-OSS 120B.",
+        CopyKey(context: .fileSTT, provider: "deepgram", model: "nova-3"):
+            "По умолчанию для полной расшифровки записи. Deepgram Nova-3 с разделением по говорящим.",
     ]
 }

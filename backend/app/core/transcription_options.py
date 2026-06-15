@@ -7,7 +7,9 @@ Fixed model slots:
 - **Recording realtime** favours stable long-running streaming, live captions,
   and diarization.
 - **Batch** populates ``file_stt`` for uploaded audio.
-- **Dictation cleanup** post-processes dictated text after live STT.
+- **Dictation post-filter** is intentionally not advertised. Live dictation
+  uses Deepgram-native punctuation, numerals, keyterms, and find/replace hints
+  during recognition instead of a second LLM cleanup pass.
 """
 
 from __future__ import annotations
@@ -29,8 +31,8 @@ DEFAULT_RECORDING_LIVE_STT_PROVIDER = "deepgram"
 DEFAULT_RECORDING_LIVE_STT_MODEL = "nova-3"
 DEFAULT_FILE_STT_PROVIDER = "deepgram"
 DEFAULT_FILE_STT_MODEL = "nova-3"
-DEFAULT_DICTATION_POST_FILTER_PROVIDER = "cerebras"
-DEFAULT_DICTATION_POST_FILTER_MODEL = "gpt-oss-120b"
+DEFAULT_DICTATION_POST_FILTER_PROVIDER = "disabled"
+DEFAULT_DICTATION_POST_FILTER_MODEL = "none"
 
 
 @dataclass(frozen=True)
@@ -79,14 +81,7 @@ TRANSCRIPTION_OPTIONS: dict[TranscriptionOptionGroup, tuple[ModelOption, ...]] =
             description="Full-session batch transcription with v2 speaker diarization.",
         ),
     ),
-    "dictation_post_filter": (
-        ModelOption(
-            provider="cerebras",
-            model="gpt-oss-120b",
-            label="Cerebras GPT-OSS 120B",
-            description="Default fast cleanup model for dictated text.",
-        ),
-    ),
+    "dictation_post_filter": (),
 }
 
 _PROVIDER_KEY_BY_NAME = {

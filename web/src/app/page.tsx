@@ -14,7 +14,7 @@ const CURRENT_YEAR = new Date().getFullYear();
 export const metadata: Metadata = {
   title: "WaiComputer — AI memory for voice",
   description:
-    "Record, transcribe, search, and ask Wai about everything you have captured.",
+    "Save the meetings and voice notes you choose, then transcribe, search, and ask Wai about them.",
   alternates: {
     canonical: "https://wai.computer",
     languages: {
@@ -309,11 +309,12 @@ export default function Home() {
           </picture>
         </div>
         <h1 className={styles.headline}>
-          An AI second brain for everything you say.
+          Private AI memory for what you choose to record.
         </h1>
         <p className={styles.subhead}>
-          Record on Mac, iPhone, or right here in your browser. Transcribed in
-          real time. Search across everything. Ask Wai anything.
+          Start recording on Mac, iPhone, or right here in your browser when you
+          need it. Search saved transcripts and ask Wai about the moments you
+          captured.
         </p>
 
         <div className={`${styles.downloads} ${styles.downloadsWide}`}>
@@ -347,7 +348,7 @@ export default function Home() {
 
       <section className={styles.section} aria-labelledby="platforms-title">
         <header className={styles.sectionHeader}>
-          <p className={styles.eyebrow}>Available everywhere you talk</p>
+          <p className={styles.eyebrow}>Available where you choose to record</p>
           <h2 id="platforms-title" className={styles.sectionTitle}>
             Six platforms. One memory.
           </h2>
@@ -451,26 +452,26 @@ export default function Home() {
         <ul className={styles.featureGrid} role="list">
           <li className={styles.featureCard}>
             <MicIcon />
-            <h3 className={styles.featureTitle}>Record any moment</h3>
+            <h3 className={styles.featureTitle}>Record when you press start</h3>
             <p className={styles.featureBody}>
-              Mac, iPhone, voice memos imported from your library. Live
-              transcription as you speak.
+              Mac, iPhone, browser, and voice memos imported from your library.
+              Live transcription runs only for active recordings.
             </p>
           </li>
           <li className={styles.featureCard}>
             <SearchIcon />
-            <h3 className={styles.featureTitle}>Search across everything</h3>
+            <h3 className={styles.featureTitle}>Search saved transcripts</h3>
             <p className={styles.featureBody}>
-              Hybrid full-text and semantic search across every transcript you
-              have ever recorded.
+              Hybrid full-text and semantic search across the recordings and
+              imports you saved.
             </p>
           </li>
           <li className={styles.featureCard}>
             <BrainIcon />
             <h3 className={styles.featureTitle}>Ask Wai anything</h3>
             <p className={styles.featureBody}>
-              An AI second brain that remembers what you said and answers from
-              your own voice.
+              An AI second brain that remembers what you saved and answers from
+              your own recordings.
             </p>
           </li>
         </ul>
@@ -586,10 +587,10 @@ export default function Home() {
           <div className={styles.faqItem}>
             <dt className={styles.faqQuestion}>What does WaiComputer record?</dt>
             <dd className={styles.faqAnswer}>
-              Any audio you choose to record — meetings, calls, voice memos,
-              thoughts on a walk. Mac records system audio plus your mic;
-              iPhone records the room. You can also import audio files from
-              your library.
+              Only audio you explicitly start recording — meetings, calls,
+              voice memos, thoughts on a walk. WaiComputer does not listen in
+              the background. Mac can record system audio plus your mic while a
+              recording is active; iPhone and Web use the microphone.
             </dd>
           </div>
           <div className={styles.faqItem}>

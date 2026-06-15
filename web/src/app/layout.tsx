@@ -9,13 +9,13 @@ export const metadata: Metadata = {
   metadataBase: new URL("https://wai.computer"),
   title: "WaiComputer — AI second brain for voice",
   description:
-    "Record, transcribe, search, and ask anything across everything you've ever said.",
+    "Save the meetings and voice notes you choose, then transcribe, search, and ask Wai about them.",
   openGraph: {
     type: "website",
     siteName: "WaiComputer",
     title: "WaiComputer — AI second brain for voice",
     description:
-      "Record, transcribe, search, and ask anything across everything you've ever said.",
+      "Save the meetings and voice notes you choose, then transcribe, search, and ask Wai about them.",
     url: "https://wai.computer",
     images: [
       {
@@ -30,7 +30,7 @@ export const metadata: Metadata = {
     card: "summary_large_image",
     title: "WaiComputer — AI second brain for voice",
     description:
-      "Record, transcribe, search, and ask anything across everything you've ever said.",
+      "Save the meetings and voice notes you choose, then transcribe, search, and ask Wai about them.",
     images: ["/og-default.png"],
   },
 };

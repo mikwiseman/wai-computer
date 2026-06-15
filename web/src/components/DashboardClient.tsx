@@ -65,7 +65,6 @@ import { ApiError } from "@/lib/http";
 import { createChat, deleteChat } from "@/lib/companion";
 import type {
   BulkAction,
-  DictationCleanupLevel,
   DictationDictionaryWord,
   DictationEntry,
   Folder,
@@ -298,8 +297,7 @@ interface DashboardCopy {
     developerGroupBody: string;
     dictationHeading: string;
     loadingSettings: string;
-    cleanupLevel: string;
-    cleanupLevels: Record<DictationCleanupLevel, { label: string; description: string }>;
+    dictationBody: string;
     settingsUpdated: string;
     accountHeading: string;
     magicLinkNote: string;
@@ -484,7 +482,7 @@ const COPY: Record<Locale, DashboardCopy> = {
         "Choose where WaiComputer runs, connect sources, and keep every recording, material, and chat flowing into Inbox.",
       voiceGroupTitle: "Voice, summaries & appearance",
       voiceGroupBody:
-        "Tune language, voice identity, dictation cleanup, summaries, and the visual theme.",
+        "Tune language, voice identity, summaries, and the visual theme.",
       accountGroupTitle: "Account",
       accountGroupBody: "Password and account controls live here so everyday setup stays focused.",
       developerGroupTitle: "Developer access",
@@ -492,25 +490,8 @@ const COPY: Record<Locale, DashboardCopy> = {
         "Connect AI tools through MCP or create read-only tokens for automation.",
       dictationHeading: "Dictation",
       loadingSettings: "Loading account settings...",
-      cleanupLevel: "Cleanup level",
-      cleanupLevels: {
-        none: {
-          label: "None",
-          description: "Insert dictated text after dictionary replacements.",
-        },
-        light: {
-          label: "Light",
-          description: "Remove filler words and fix grammar.",
-        },
-        medium: {
-          label: "Medium",
-          description: "Edit for clarity and conciseness.",
-        },
-        high: {
-          label: "High",
-          description: "Rewrite for brevity and polish.",
-        },
-      },
+      dictationBody:
+        "Dictation uses Deepgram Nova-3 punctuation, numerals, and your dictionary terms during recognition.",
       settingsUpdated: "Settings updated.",
       accountHeading: "Account",
       magicLinkNote:
@@ -699,7 +680,7 @@ const COPY: Record<Locale, DashboardCopy> = {
         "Выберите, где работает WaiComputer, подключите источники и отправляйте записи, материалы и чаты в Инбокс.",
       voiceGroupTitle: "Голос, саммари и внешний вид",
       voiceGroupBody:
-        "Настройте язык, голосовой профиль, очистку диктовки, саммари и тему.",
+        "Настройте язык, голосовой профиль, саммари и тему.",
       accountGroupTitle: "Аккаунт",
       accountGroupBody:
         "Пароль и управление аккаунтом собраны отдельно, чтобы основная настройка не распухала.",
@@ -708,25 +689,8 @@ const COPY: Record<Locale, DashboardCopy> = {
         "Подключите AI-инструменты через MCP или создайте read-only токены для автоматизации.",
       dictationHeading: "Диктовка",
       loadingSettings: "Загружаем настройки аккаунта...",
-      cleanupLevel: "Уровень очистки",
-      cleanupLevels: {
-        none: {
-          label: "Нет",
-          description: "Вставляет текст после замен из словаря.",
-        },
-        light: {
-          label: "Лёгкая",
-          description: "Убирает слова-паразиты и правит грамматику.",
-        },
-        medium: {
-          label: "Средняя",
-          description: "Делает текст яснее и короче.",
-        },
-        high: {
-          label: "Сильная",
-          description: "Переписывает текст кратко и гладко.",
-        },
-      },
+      dictationBody:
+        "Диктовка использует Deepgram Nova-3: пунктуацию, числа и ваши словарные термины прямо при распознавании.",
       settingsUpdated: "Настройки сохранены.",
       accountHeading: "Аккаунт",
       magicLinkNote:
@@ -2946,38 +2910,7 @@ export function DashboardClient() {
               <p className="settings-note">{copy.settings.loadingSettings}</p>
             ) : null}
             {accountSettings ? (
-              <div className="settings-field cleanup-level-field">
-                <span>{copy.settings.cleanupLevel}</span>
-                <div
-                  className="cleanup-level-options"
-                  role="radiogroup"
-                  aria-label={copy.settings.cleanupLevel}
-                >
-                  {(["none", "light", "medium", "high"] as const).map((level) => (
-                    <label
-                      key={level}
-                      className={`cleanup-level-option${
-                        accountSettings.dictation_cleanup_level === level ? " selected" : ""
-                      }`}
-                    >
-                      <input
-                        type="radio"
-                        name="dictation-cleanup-level"
-                        value={level}
-                        checked={accountSettings.dictation_cleanup_level === level}
-                        disabled={settingsSaving}
-                        onChange={() =>
-                          void handleUpdateAccountSettings({
-                            dictation_cleanup_level: level,
-                          })
-                        }
-                      />
-                      <strong>{copy.settings.cleanupLevels[level].label}</strong>
-                      <small>{copy.settings.cleanupLevels[level].description}</small>
-                    </label>
-                  ))}
-                </div>
-              </div>
+              <p className="settings-note">{copy.settings.dictationBody}</p>
             ) : settingsLoadedOnce && !settingsLoading ? (
               <button
                 type="button"

@@ -90,7 +90,7 @@ final class DictationManager: ObservableObject {
 
     static let hotkeyDefaultsKey = "dictationHotkey"
     static let handsFreeHotkeyDefaultsKey = "dictationHandsFreeHotkey"
-    static let aiCleanupDefaultsKey = "dictationAICleanup"
+    static let legacyAICleanupDefaultsKey = "dictationAICleanup"
     static let cleanupLevelDefaultsKey = "dictationCleanupLevel"
     static let contextAwareFormattingDefaultsKey = "dictationContextAwareFormatting"
     static let enabledDefaultsKey = "dictationEnabled"
@@ -234,16 +234,11 @@ final class DictationManager: ObservableObject {
         let defaults = UserDefaults.standard
         self.hotkeyChoice = defaults.string(forKey: Self.hotkeyDefaultsKey) ?? DictationHotkey.defaultPushToTalk.rawValue
         self.handsFreeHotkeyChoice = defaults.string(forKey: Self.handsFreeHotkeyDefaultsKey) ?? ""
-        // Default cleanup ON so fresh installs get app-aware dictation without
-        // hunting through Settings. A stored "none" still means the user opted
-        // out and must be respected.
-        if let storedCleanupLevel = defaults.string(forKey: Self.cleanupLevelDefaultsKey) {
-            self.cleanupLevel = storedCleanupLevel
-        } else if defaults.object(forKey: Self.aiCleanupDefaultsKey) == nil {
-            self.cleanupLevel = "light"
-        } else {
-            self.cleanupLevel = defaults.bool(forKey: Self.aiCleanupDefaultsKey) ? "light" : "none"
-        }
+        // Cerebras cleanup is no longer part of dictation. Deepgram handles
+        // punctuation, numerals, and dictionary hints during recognition.
+        self.cleanupLevel = "none"
+        defaults.set("none", forKey: Self.cleanupLevelDefaultsKey)
+        defaults.removeObject(forKey: Self.legacyAICleanupDefaultsKey)
         if defaults.object(forKey: Self.contextAwareFormattingDefaultsKey) == nil {
             self.contextAwareFormattingEnabled = true
         } else {
@@ -312,7 +307,9 @@ final class DictationManager: ObservableObject {
         let previousModel = cachedSettings?.dictationLiveSTTModel
         cachedSettings = settings
         cachedSettingsLoadedAt = Date()
-        cleanupLevel = settings.dictationCleanupLevel
+        // Ignore legacy server/user-default cleanup settings so stale accounts
+        // cannot silently re-enable the unstable post-filter.
+        cleanupLevel = "none"
         if DictationSessionConfigInvalidationPolicy.shouldClearVault(
             previousProvider: previousProvider,
             previousModel: previousModel,

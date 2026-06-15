@@ -5,7 +5,6 @@ import android.net.Uri
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -18,10 +17,8 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -32,7 +29,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
@@ -45,8 +41,6 @@ import `is`.waiwai.computer.R
 import `is`.waiwai.computer.auth.AuthState
 import `is`.waiwai.computer.auth.AuthViewModel
 import `is`.waiwai.computer.data.AppContainer
-import `is`.waiwai.computer.data.UpdateSettingsRequest
-import `is`.waiwai.computer.data.UserSettings
 import `is`.waiwai.computer.ui.TestTags
 import kotlinx.coroutines.launch
 
@@ -83,8 +77,6 @@ fun SettingsScreen(
     var showMcpSheet by rememberSaveable { mutableStateOf(false) }
     var showFoldersSheet by rememberSaveable { mutableStateOf(false) }
     var showSpeakersSheet by rememberSaveable { mutableStateOf(false) }
-    var accountSettings by remember { mutableStateOf<UserSettings?>(null) }
-    var settingsError by remember { mutableStateOf<String?>(null) }
     var showClearCacheConfirm by rememberSaveable { mutableStateOf(false) }
     var showDeleteAccountConfirm by rememberSaveable { mutableStateOf(false) }
     var draftBaseUrl by rememberSaveable(settings.baseUrl) { mutableStateOf(settings.baseUrl) }
@@ -98,31 +90,6 @@ fun SettingsScreen(
 
     val languageOptions = remember {
         listOf("multi", "en", "ru", "es", "fr", "de", "ja", "ko")
-    }
-
-    fun saveAccountSettings(request: UpdateSettingsRequest) {
-        scope.launch {
-            try {
-                accountSettings = container.waiApi.updateSettings(request)
-                settingsError = null
-            } catch (error: Throwable) {
-                settingsError = error.localizedMessage ?: "Couldn't save account settings."
-            }
-        }
-    }
-
-    LaunchedEffect(authState) {
-        if (authState is AuthState.Authenticated) {
-            try {
-                accountSettings = container.waiApi.getSettings()
-                settingsError = null
-            } catch (error: Throwable) {
-                settingsError = error.localizedMessage ?: "Couldn't load account settings."
-            }
-        } else {
-            accountSettings = null
-            settingsError = null
-        }
     }
 
     Column(
@@ -185,57 +152,11 @@ fun SettingsScreen(
             TextButton(onClick = { showLanguageSheet = true }) {
                 Text(languageLabel(settings.transcriptionLanguage))
             }
-
-            when {
-                authState !is AuthState.Authenticated -> {
-                    Text(
-                        text = stringResource(R.string.settings_sign_in_sync),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                accountSettings != null -> {
-                    val currentSettings = accountSettings!!
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(
-                            text = stringResource(R.string.settings_dictation_post_filter),
-                            modifier = Modifier.weight(1f),
-                        )
-                        Switch(
-                            checked = currentSettings.dictationPostFilterEnabled,
-                            onCheckedChange = { enabled ->
-                                saveAccountSettings(
-                                    UpdateSettingsRequest(dictationPostFilterEnabled = enabled),
-                                )
-                            },
-                        )
-                    }
-                    if (settingsError != null) {
-                        Text(
-                            text = settingsError.orEmpty(),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.error,
-                        )
-                    }
-                }
-                settingsError != null -> {
-                    Text(
-                        text = settingsError.orEmpty(),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.error,
-                    )
-                }
-                else -> {
-                    Text(
-                        text = stringResource(R.string.settings_loading_account_settings),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
+            Text(
+                text = stringResource(R.string.settings_dictation_recognition_note),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
 
         if (authState is AuthState.Authenticated) {

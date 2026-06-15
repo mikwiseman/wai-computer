@@ -990,13 +990,6 @@
         "ru" : { "stringUnit" : { "state" : "translated", "value" : "Полная сессия" } }
       }
     },
-    "settings.transcription.postFilterModel" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Post-filter model" } },
-        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Модель очистки текста" } }
-      }
-    },
     "settings.appBehavior.title" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -1086,13 +1079,6 @@
       "localizations" : {
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Double-tap of push-to-talk" } },
         "ru" : { "stringUnit" : { "state" : "translated", "value" : "Двойное нажатие основной клавиши" } }
-      }
-    },
-    "settings.dictation.postFilter" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Post-filter dictated text" } },
-        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Очищать текст перед вставкой" } }
       }
     },
     "settings.dictation.permission.microphone" : {

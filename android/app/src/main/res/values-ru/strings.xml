@@ -170,12 +170,7 @@
     <string name="guest_banner_sign_in_to_sync">Войди, чтобы синхронизировать и расшифровать</string>
     <string name="settings_language">Язык</string>
     <string name="settings_language_sheet_title">Выбери язык расшифровки</string>
-    <string name="settings_dictation_live_model">Модель живой диктовки</string>
-    <string name="settings_recording_live_model">Модель живой расшифровки</string>
-    <string name="settings_file_model">Модель полной сессии</string>
-    <string name="settings_dictation_post_filter">Очищать текст перед вставкой</string>
-    <string name="settings_dictation_post_filter_model">Модель пост-фильтрации</string>
-    <string name="settings_loading_account_settings">Загружаю настройки аккаунта…</string>
+    <string name="settings_dictation_recognition_note">Диктовка использует пунктуацию, числа и термины из Словаря в Deepgram Nova-3 во время распознавания.</string>
     <string name="settings_storage_clear">Очистить локальный кэш</string>
     <string name="settings_storage_clear_confirm">Удалить все локальные записи и кэшированные файлы расшифровки?</string>
     <string name="settings_storage_count">Локальных записей: %1$d</string>

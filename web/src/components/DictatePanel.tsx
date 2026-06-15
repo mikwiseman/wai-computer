@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
-  cleanupDictation,
   createDictationEntry,
   listDictionaryWords,
 } from "@/lib/api";
@@ -19,50 +18,50 @@ interface Copy {
   connecting: string;
   listening: string;
   stop: string;
-  cleaning: string;
+  preparing: string;
   copied: string;
   copyAgain: string;
   again: string;
   pasteHint: string;
   macUpsell: string;
   micDenied: string;
-  cleanupFailed: string;
+  dictionaryFailed: string;
   empty: string;
 }
 
 const COPY: Record<Locale, Copy> = {
   en: {
     heading: "Dictate",
-    intro: "Speak, and WaiComputer cleans it up — then paste it anywhere.",
+    intro: "Speak, then paste the transcript anywhere.",
     start: "Start dictating",
     connecting: "Connecting…",
     listening: "Listening…",
     stop: "Stop",
-    cleaning: "Cleaning up…",
+    preparing: "Preparing text…",
     copied: "Copied to clipboard",
     copyAgain: "Copy again",
     again: "New dictation",
     pasteHint: "Press ⌘/Ctrl+V to paste it wherever you like.",
     macUpsell: "For system-wide push-to-talk that types into any app, get the Mac app.",
     micDenied: "Microphone access is required to dictate.",
-    cleanupFailed: "AI cleanup was unavailable — copied the raw transcript instead.",
+    dictionaryFailed: "Dictionary could not load — copied transcript without custom replacements.",
     empty: "Didn't catch anything — try again.",
   },
   ru: {
     heading: "Диктовка",
-    intro: "Говорите — WaiComputer причешет текст, потом вставьте куда угодно.",
+    intro: "Говорите, затем вставьте расшифровку куда угодно.",
     start: "Начать диктовку",
     connecting: "Подключение…",
     listening: "Слушаю…",
     stop: "Стоп",
-    cleaning: "Обработка…",
+    preparing: "Готовим текст…",
     copied: "Скопировано в буфер",
     copyAgain: "Скопировать снова",
     again: "Новая диктовка",
     pasteHint: "Нажмите ⌘/Ctrl+V, чтобы вставить.",
     macUpsell: "Для системной диктовки в любое приложение — установите приложение для Mac.",
     micDenied: "Для диктовки нужен доступ к микрофону.",
-    cleanupFailed: "ИИ-обработка недоступна — скопирован исходный текст.",
+    dictionaryFailed: "Не удалось загрузить словарь — скопирована расшифровка без ваших замен.",
     empty: "Ничего не распознал — попробуйте ещё раз.",
   },
 };
@@ -72,8 +71,8 @@ function escapeRegExp(value: string): string {
 }
 
 /** Apply the custom dictionary: REPLACE entries (word → replacement) substitute
- *  whole words case-insensitively; BIAS entries (no replacement) are returned
- *  as vocabulary to preserve through AI cleanup. */
+ *  whole words case-insensitively; BIAS entries are carried by native clients
+ *  as Deepgram keyterm hints before recognition. */
 export function applyDictionary(
   text: string,
   words: DictationDictionaryWord[],
@@ -103,7 +102,7 @@ interface DictatePanelProps {
 export function DictatePanel({ locale = "en" }: DictatePanelProps) {
   const copy = COPY[locale];
   const [state, setState] = useState<RealtimeState>("idle");
-  const [phase, setPhase] = useState<"record" | "cleaning" | "ready">("record");
+  const [phase, setPhase] = useState<"record" | "preparing" | "ready">("record");
   const [seconds, setSeconds] = useState(0);
   const [committed, setCommitted] = useState("");
   const [interim, setInterim] = useState("");
@@ -182,43 +181,34 @@ export function DictatePanel({ locale = "en" }: DictatePanelProps) {
       return;
     }
 
-    setPhase("cleaning");
+    setPhase("preparing");
     let words: DictationDictionaryWord[] = [];
     try {
       words = await listDictionaryWords();
     } catch {
-      // Dictionary is best-effort; cleanup still runs without it.
+      setNotice(copy.dictionaryFailed);
     }
-    const { text: replaced, vocabulary } = applyDictionary(raw, words);
+    const { text: replaced } = applyDictionary(raw, words);
 
-    let cleaned = replaced;
-    try {
-      cleaned = (await cleanupDictation(replaced, vocabulary)).text || replaced;
-    } catch {
-      // Explicit recovery path: keep the (dictionary-applied) raw transcript so
-      // the user always has something to paste, and tell them cleanup was off.
-      setNotice(copy.cleanupFailed);
-    }
-
-    setResult(cleaned);
+    setResult(replaced);
     setPhase("ready");
     setState("idle");
-    await copyText(cleaned);
+    await copyText(replaced);
 
     // Log to the unified dictation history/quota (best-effort).
     try {
       await createDictationEntry({
         client_entry_id: crypto.randomUUID(),
         raw_text: raw,
-        cleaned_text: cleaned,
+        cleaned_text: replaced,
         duration_seconds: elapsed,
-        word_count: countWords(cleaned),
+        word_count: countWords(replaced),
         occurred_at: new Date().toISOString(),
       });
     } catch {
       // history logging failure shouldn't block the paste flow
     }
-  }, [clearTimer, copy.cleanupFailed, copy.empty, copyText, seconds]);
+  }, [clearTimer, copy.dictionaryFailed, copy.empty, copyText, seconds]);
 
   const reset = useCallback(() => {
     setPhase("record");
@@ -269,7 +259,7 @@ export function DictatePanel({ locale = "en" }: DictatePanelProps) {
             </button>
           </div>
         </div>
-      ) : isRecording || phase === "cleaning" ? (
+      ) : isRecording || phase === "preparing" ? (
         <div className="live-recorder__active">
           <div className="live-recorder__status">
             {state === "recording" ? (
@@ -279,8 +269,8 @@ export function DictatePanel({ locale = "en" }: DictatePanelProps) {
               .toString()
               .padStart(2, "0")}`}</span>
             <span className="live-recorder__label">
-              {phase === "cleaning"
-                ? copy.cleaning
+              {phase === "preparing"
+                ? copy.preparing
                 : state === "connecting"
                   ? copy.connecting
                   : copy.listening}

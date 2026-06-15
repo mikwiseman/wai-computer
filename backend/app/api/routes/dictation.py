@@ -43,11 +43,6 @@ from app.core.cerebras_chat import (
     chat_completion_usage_response,
     get_cerebras_client,
 )
-from app.core.transcription_options import (
-    DEFAULT_DICTATION_POST_FILTER_MODEL,
-    DEFAULT_DICTATION_POST_FILTER_PROVIDER,
-    validate_option,
-)
 from app.models.dictation import DictationDictionaryWord, DictationEntry
 
 router = APIRouter(prefix="/dictation", tags=["dictation"])
@@ -892,16 +887,7 @@ def _prepare_cleanup_cerebras_request(
             detail="AI cleanup is not configured (missing CEREBRAS_API_KEY).",
         )
 
-    provider, model = validate_option(
-        "dictation_post_filter",
-        DEFAULT_DICTATION_POST_FILTER_PROVIDER,
-        DEFAULT_DICTATION_POST_FILTER_MODEL,
-    )
-    if provider != "cerebras":
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=f"Unsupported dictation post-filter provider: {provider}",
-        )
+    model = settings.cerebras_llm_model.strip() or "gpt-oss-120b"
 
     cleanup_instructions = DICTATION_CLEANUP_INSTRUCTIONS_BY_LEVEL.get(cleanup_level)
     if cleanup_instructions is None:
@@ -1395,16 +1381,7 @@ async def translate_dictation(request: TranslationRequest, user: CurrentUser):
             detail="AI translation is not configured (missing CEREBRAS_API_KEY).",
         )
 
-    provider, model = validate_option(
-        "dictation_post_filter",
-        DEFAULT_DICTATION_POST_FILTER_PROVIDER,
-        DEFAULT_DICTATION_POST_FILTER_MODEL,
-    )
-    if provider != "cerebras":
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=f"Unsupported dictation post-filter provider: {provider}",
-        )
+    model = settings.cerebras_llm_model.strip() or "gpt-oss-120b"
 
     response = None
     started = time.monotonic()

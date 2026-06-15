@@ -41,11 +41,11 @@ final class TranscriptionModelDescriptionCopyTests: XCTestCase {
         XCTAssertEqual(description, serverDescription)
     }
 
-    func testRussianFileSTTDescriptionUsesElevenLabsCopy() {
+    func testRussianFileSTTDescriptionUsesDeepgramCopy() {
         let option = TranscriptionModelOption(
-            provider: "elevenlabs",
-            model: "scribe_v2",
-            label: "ElevenLabs Scribe v2",
+            provider: "deepgram",
+            model: "nova-3",
+            label: "Deepgram Nova-3",
             description: "Fixed full-session transcription model with speaker diarization."
         )
 
@@ -57,7 +57,7 @@ final class TranscriptionModelDescriptionCopyTests: XCTestCase {
 
         XCTAssertEqual(
             description,
-            "По умолчанию для полной расшифровки записи. ElevenLabs Scribe v2 с разделением по говорящим."
+            "По умолчанию для полной расшифровки записи. Deepgram Nova-3 с разделением по говорящим."
         )
     }
 

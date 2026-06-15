@@ -109,8 +109,8 @@ async def lifespan(app: FastAPI):
         )
     if not app_settings.cerebras_api_key:
         logger.warning(
-            "CEREBRAS_API_KEY is not configured — summarization and dictation "
-            "cleanup will not work"
+            "CEREBRAS_API_KEY is not configured — summarization, translation, "
+            "and legacy dictation cleanup endpoints will not work"
         )
     if not app_settings.deepgram_api_key:
         logger.warning("DEEPGRAM_API_KEY is not configured — live transcription will not work")

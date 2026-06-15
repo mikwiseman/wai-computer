@@ -2646,31 +2646,22 @@ describe("DashboardClient", () => {
     });
   });
 
-  // --- Settings: dictation cleanup level update ---
+  // --- Settings: dictation recognition note ---
 
-  it("updates the dictation cleanup level and persists the setting", async () => {
+  it("shows Deepgram dictation note without exposing cleanup controls", async () => {
     arrangeHappyPathMocks();
-    mockUpdateSettings.mockResolvedValueOnce({
-      ...baseSettings,
-      dictation_cleanup_level: "light",
-    });
     const user = userEvent.setup();
 
     render(<DashboardClient />);
     await waitForDashboardReady();
     await openSettingsView(user);
 
-    const light = (await screen.findAllByRole("radio", { name: /Light/ })).find(
-      (element) => element.getAttribute("name") === "dictation-cleanup-level",
-    );
-    expect(light).toBeDefined();
-    expect(light).not.toBeChecked();
-
-    await user.click(light!);
-    await waitFor(() => {
-      expect(mockUpdateSettings).toHaveBeenCalledWith({ dictation_cleanup_level: "light" });
-      expect(screen.getByTestId("dashboard-message")).toHaveTextContent("Settings updated.");
-    });
+    expect(
+      await screen.findByText(/Dictation uses Deepgram Nova-3 punctuation/i),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("radiogroup", { name: /Cleanup level/i })).not.toBeInTheDocument();
+    expect(document.querySelector('input[name="dictation-cleanup-level"]')).toBeNull();
+    expect(mockUpdateSettings).not.toHaveBeenCalled();
   });
 
   // --- Assign-to-folder error path reconciles via a refetch ---

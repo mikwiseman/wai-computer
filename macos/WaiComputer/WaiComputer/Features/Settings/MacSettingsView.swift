@@ -165,7 +165,6 @@ struct MacSettingsView: View {
     @State private var mcpCopiedField: String?
     @State private var settingsLoaded = false
     @State private var settingsError: String?
-    @State private var dictationCleanupLevel = "light"
     @State private var telegramStatus: TelegramLinkStatus?
     @State private var telegramPairing: TelegramPairing?
     @State private var telegramLinkCode = ""
@@ -218,15 +217,6 @@ struct MacSettingsView: View {
             (t("Brief", "Кратко"), "brief"),
             (t("Medium", "Средне"), "medium"),
             (t("Detailed", "Подробно"), "detailed"),
-        ]
-    }
-
-    private var dictationCleanupOptions: [(label: String, value: String)] {
-        [
-            (t("None", "Нет"), "none"),
-            (t("Light", "Лёгкая"), "light"),
-            (t("Medium", "Средняя"), "medium"),
-            (t("High", "Сильная"), "high"),
         ]
     }
 
@@ -529,11 +519,11 @@ struct MacSettingsView: View {
 
     /// The former single dictation mega-section, split into four scannable
     /// groups so the grouped form's section boundaries carry the hierarchy:
-    /// core controls, cleanup & formatting, permissions, troubleshooting.
+    /// core controls, formatting, permissions, troubleshooting.
     @ViewBuilder
     private var dictationSettingsSection: some View {
         dictationCoreSection
-        dictationCleanupSection
+        dictationFormattingSection
         dictationPermissionsSection
         dictationTroubleshootingSection
     }
@@ -605,47 +595,17 @@ struct MacSettingsView: View {
         }
     }
 
-    /// Cleanup level plus the formatting and learning toggles — what happens
-    /// to your words after you speak. The privacy line is the footer.
-    private var dictationCleanupSection: some View {
+    /// Dictionary/formatting controls — what happens to your words after you
+    /// speak. The privacy line is the footer.
+    private var dictationFormattingSection: some View {
         Section {
-            Picker(selection: $dictationCleanupLevel) {
-                ForEach(dictationCleanupOptions, id: \.value) { option in
-                    Text(option.label).tag(option.value)
-                }
-            } label: {
-                Text(t("Cleanup level", "Уровень очистки"))
-            }
-                .pickerStyle(.segmented)
-                .font(Typography.body)
-                .disabled(!dictationManager.isFeatureEnabled)
-                .accessibilityIdentifier("settings-dictation-cleanup-level-picker")
-                .onChangeCompat(of: dictationCleanupLevel) { _, level in
-                    guard settingsLoaded else { return }
-                    Task { await saveDictationCleanupLevel(level) }
-                }
-
-            Text(dictationCleanupDescription(dictationCleanupLevel))
-                .font(Typography.caption)
-                .foregroundStyle(Palette.textTertiary)
-
-            Toggle(isOn: $dictationManager.contextAwareFormattingEnabled) {
-                Text(t("Context-aware formatting", "Контекстное форматирование"))
-            }
-                .font(Typography.body)
-                .disabled(
-                    !dictationManager.isFeatureEnabled
-                        || dictationCleanupLevel == "none"
-                )
-                .accessibilityIdentifier("settings-dictation-context-aware-toggle")
-
             Text(
                 t(
-                    "Uses the active app and nearby textbox text to format dictation for email, chat, code, and notes.",
-                    "Учитывает активное приложение и текст рядом с курсором, чтобы форматировать диктовку для почты, чатов, кода и заметок."
+                    "Dictation uses Deepgram Nova-3 punctuation, numerals, and Dictionary terms during recognition. Text is inserted without a second AI cleanup pass.",
+                    "Диктовка использует пунктуацию, числа и термины из Словаря в Deepgram Nova-3 во время распознавания. Текст вставляется без второго AI-прохода очистки."
                 )
             )
-                .font(Typography.caption)
+                .font(Typography.body)
                 .foregroundStyle(Palette.textTertiary)
 
             Toggle(isOn: $learnFromEditsEnabled) {
@@ -664,9 +624,9 @@ struct MacSettingsView: View {
                 .font(Typography.caption)
                 .foregroundStyle(Palette.textTertiary)
         } header: {
-            Text(t("Cleanup & formatting", "Очистка и форматирование"))
+            Text(t("Dictionary & formatting", "Словарь и форматирование"))
                 .waiSectionHeader()
-                .accessibilityIdentifier("settings-dictation-cleanup-header")
+                .accessibilityIdentifier("settings-dictation-formatting-header")
         } footer: {
             Text(dictationPrivacyText)
                 .font(Typography.caption)
@@ -1633,21 +1593,9 @@ struct MacSettingsView: View {
     }
 
     private var dictationPrivacyText: String {
-        if dictationCleanupLevel != "none" {
-            if dictationManager.contextAwareFormattingEnabled {
-                return t(
-                    "Dictated text is cleaned up with app and textbox context before insertion.",
-                    "Перед вставкой текст очищается с учётом приложения и текста рядом с курсором."
-                )
-            }
-            return t(
-                "Dictated text is cleaned up before insertion.",
-                "Перед вставкой текст проходит очистку."
-            )
-        }
         return t(
-            "Cleanup is off; dictated text is inserted after dictionary replacements.",
-            "Очистка выключена; текст вставляется после замен из словаря."
+            "WaiComputer only sends microphone audio while you are actively dictating.",
+            "WaiComputer отправляет звук с микрофона только во время активной диктовки."
         )
     }
 
@@ -1766,7 +1714,6 @@ struct MacSettingsView: View {
         summaryLanguage = settings.summaryLanguage
         summaryStyle = settings.summaryStyle
         summaryInstructions = settings.summaryInstructions ?? ""
-        dictationCleanupLevel = settings.dictationCleanupLevel
         dictationManager.ingestSettings(settings)
     }
 
@@ -2140,11 +2087,6 @@ struct MacSettingsView: View {
         telegramLinkPollTask = nil
     }
 
-    private func saveDictationCleanupLevel(_ level: String) async {
-        let request = UpdateSettingsRequest(dictationCleanupLevel: level)
-        await saveTranscriptionSettings(request)
-    }
-
     private func saveTranscriptionSettings(_ request: UpdateSettingsRequest) async {
         do {
             let settings = try await appState.getAPIClient().updateSettings(request)
@@ -2173,19 +2115,6 @@ struct MacSettingsView: View {
 
     private func t(_ english: String, _ russian: String) -> String {
         OnboardingL10n.text(english, russian, language: languageManager.current)
-    }
-
-    private func dictationCleanupDescription(_ level: String) -> String {
-        switch level {
-        case "light":
-            return t("Removes filler words and fixes grammar.", "Убирает слова-паразиты и правит грамматику.")
-        case "medium":
-            return t("Edits for clarity and conciseness.", "Делает текст яснее и короче.")
-        case "high":
-            return t("Rewrites for brevity and polish.", "Переписывает текст кратко и гладко.")
-        default:
-            return t("Inserts the dictated text after dictionary replacements.", "Вставляет текст после замен из словаря.")
-        }
     }
 
     private func dictationHotkeyLabel(_ hotkey: DictationHotkey) -> String {

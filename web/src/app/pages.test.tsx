@@ -258,7 +258,7 @@ describe("app pages", () => {
     expect(
       screen.getByRole("heading", {
         level: 1,
-        name: /AI second brain for everything you say/i,
+        name: /Private AI memory for what you choose to record/i,
       }),
     ).toBeInTheDocument();
 
@@ -295,12 +295,12 @@ describe("app pages", () => {
 
     // Feature trio.
     expect(
-      screen.getByRole("heading", { level: 3, name: /Record any moment/i }),
+      screen.getByRole("heading", { level: 3, name: /Record when you press start/i }),
     ).toBeInTheDocument();
     expect(
       screen.getByRole("heading", {
         level: 3,
-        name: /Search across everything/i,
+        name: /Search saved transcripts/i,
       }),
     ).toBeInTheDocument();
     expect(
@@ -331,7 +331,7 @@ describe("app pages", () => {
     expect(
       screen.getByRole("heading", {
         level: 1,
-        name: /ИИ-память для всего, что вы говорите/i,
+        name: /Приватная ИИ-память для того, что вы сами записали/i,
       }),
     ).toBeInTheDocument();
 
@@ -382,12 +382,12 @@ describe("app pages", () => {
 
     // Feature trio (RU).
     expect(
-      screen.getByRole("heading", { level: 3, name: /Записывайте любой момент/i }),
+      screen.getByRole("heading", { level: 3, name: /Записывайте после нажатия старт/i }),
     ).toBeInTheDocument();
     expect(
       screen.getByRole("heading", {
         level: 3,
-        name: /Ищите по всему, что вы сказали/i,
+        name: /Ищите по сохранённым расшифровкам/i,
       }),
     ).toBeInTheDocument();
     expect(
@@ -531,7 +531,7 @@ describe("layout", () => {
   it("exports metadata and renders html/body structure", async () => {
     expect(metadata.title).toBe("WaiComputer — AI second brain for voice");
     expect(metadata.description).toBe(
-      "Record, transcribe, search, and ask anything across everything you've ever said.",
+      "Save the meetings and voice notes you choose, then transcribe, search, and ask Wai about them.",
     );
     expect(viewport.themeColor).toEqual([
       { media: "(prefers-color-scheme: light)", color: "#f7f7f5" },

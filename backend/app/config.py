@@ -56,7 +56,7 @@ class Settings(BaseSettings):
     ocr_enabled: bool = True
     ocr_max_pages: int = 10
 
-    # Cerebras — dictation cleanup/translation and summary generation.
+    # Cerebras — translation, summary generation, and legacy cleanup endpoints.
     cerebras_api_key: str = ""
     cerebras_api_base_url: str = "https://api.cerebras.ai/v1"
     cerebras_llm_model: str = "gpt-oss-120b"

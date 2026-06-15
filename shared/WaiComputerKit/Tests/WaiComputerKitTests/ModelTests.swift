@@ -63,12 +63,12 @@ final class ModelTests: XCTestCase {
             "dictation_live_stt_model": "nova-3",
             "recording_live_stt_provider": "deepgram",
             "recording_live_stt_model": "nova-3",
-            "file_stt_provider": "elevenlabs",
-            "file_stt_model": "scribe_v2",
+            "file_stt_provider": "deepgram",
+            "file_stt_model": "nova-3",
             "dictation_post_filter_enabled": false,
             "dictation_cleanup_level": "none",
-            "dictation_post_filter_provider": "cerebras",
-            "dictation_post_filter_model": "gpt-oss-120b"
+            "dictation_post_filter_provider": "disabled",
+            "dictation_post_filter_model": "none"
         }
         """.data(using: .utf8)!
 
@@ -82,12 +82,12 @@ final class ModelTests: XCTestCase {
         XCTAssertEqual(settings.dictationLiveSTTModel, "nova-3")
         XCTAssertEqual(settings.recordingLiveSTTProvider, "deepgram")
         XCTAssertEqual(settings.recordingLiveSTTModel, "nova-3")
-        XCTAssertEqual(settings.fileSTTProvider, "elevenlabs")
-        XCTAssertEqual(settings.fileSTTModel, "scribe_v2")
+        XCTAssertEqual(settings.fileSTTProvider, "deepgram")
+        XCTAssertEqual(settings.fileSTTModel, "nova-3")
         XCTAssertFalse(settings.dictationPostFilterEnabled)
         XCTAssertEqual(settings.dictationCleanupLevel, "none")
-        XCTAssertEqual(settings.dictationPostFilterProvider, "cerebras")
-        XCTAssertEqual(settings.dictationPostFilterModel, "gpt-oss-120b")
+        XCTAssertEqual(settings.dictationPostFilterProvider, "disabled")
+        XCTAssertEqual(settings.dictationPostFilterModel, "none")
     }
 
     // MARK: - Recording Tests

@@ -129,11 +129,11 @@ class WaiApiTest {
         assertEquals("nova-3", settings.dictationLiveSttModel)
         assertEquals("deepgram", settings.recordingLiveSttProvider)
         assertEquals("nova-3", settings.recordingLiveSttModel)
-        assertEquals("elevenlabs", settings.fileSttProvider)
-        assertEquals("scribe_v2", settings.fileSttModel)
+        assertEquals("deepgram", settings.fileSttProvider)
+        assertEquals("nova-3", settings.fileSttModel)
         assertFalse(settings.dictationPostFilterEnabled)
-        assertEquals("cerebras", settings.dictationPostFilterProvider)
-        assertEquals("gpt-oss-120b", settings.dictationPostFilterModel)
+        assertEquals("disabled", settings.dictationPostFilterProvider)
+        assertEquals("none", settings.dictationPostFilterModel)
     }
 
     @Test
