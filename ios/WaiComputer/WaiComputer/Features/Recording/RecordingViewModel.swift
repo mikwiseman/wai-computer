@@ -345,16 +345,21 @@ class RecordingViewModel: ObservableObject {
             // Capture finalized audio metrics before nilling the writer so we can
             // gate the upload on the shared min-duration policy.
             let fileWriter = self.audioFileWriter
-            try? fileWriter?.finalize()
+            let audioFinalizedForPersistence = self.finalizeRecordingAudioForPersistence(
+                fileWriter,
+                recordingId: self.currentRecordingId
+            )
             self.audioFileWriter = nil
             let finalizedAudioDuration = fileWriter?.durationSeconds
             let finalizedAudioBytes = fileWriter?.totalBytesWritten ?? 0
-            let uploadableAudioFileURL = self.uploadableFinalizedAudioFileURL(
-                recordingId: self.currentRecordingId,
-                fileWriter: fileWriter,
-                audioDuration: finalizedAudioDuration,
-                pcmBytesWritten: finalizedAudioBytes
-            )
+            let uploadableAudioFileURL = audioFinalizedForPersistence
+                ? self.uploadableFinalizedAudioFileURL(
+                    recordingId: self.currentRecordingId,
+                    fileWriter: fileWriter,
+                    audioDuration: finalizedAudioDuration,
+                    pcmBytesWritten: finalizedAudioBytes
+                )
+                : nil
 
             let didFinalize = await self.finishStreaming(self.webSocketManager)
 
@@ -647,6 +652,79 @@ class RecordingViewModel: ObservableObject {
             "Skipping finalized audio upload durationSeconds=\(audioDuration ?? 0, privacy: .public) bytes=\(pcmBytesWritten, privacy: .public)"
         )
         return nil
+    }
+
+    private func finalizeRecordingAudioForPersistence(
+        _ fileWriter: AudioFileWriter?,
+        recordingId: String?
+    ) -> Bool {
+        guard let fileWriter else { return false }
+        do {
+            try fileWriter.finalize()
+            return true
+        } catch {
+            SentryHelper.captureError(
+                error,
+                extras: [
+                    "action": "finalizeRecordingAudio",
+                    "context": "recording.audio.finalize_failed",
+                    "recordingId": recordingId ?? "unknown",
+                ]
+            )
+            SentryHelper.addBreadcrumb(
+                category: "recording",
+                message: "recording.audio.finalize_failed",
+                level: .error,
+                data: [
+                    "recordingId": recordingId ?? "unknown",
+                    "audioBytes": fileWriter.totalBytesWritten,
+                ]
+            )
+            recordingLog.error("Local audio finalization failed recordingId=\(recordingId ?? "unknown", privacy: .public)")
+
+            do {
+                try AudioFileWriter.repairWAVHeaderSizes(fileURL: fileWriter.fileURL)
+                SentryHelper.addBreadcrumb(
+                    category: "recording",
+                    message: "recording.audio.finalize_repaired",
+                    level: .warning,
+                    data: [
+                        "recordingId": recordingId ?? "unknown",
+                        "audioBytes": fileWriter.totalBytesWritten,
+                    ]
+                )
+                return true
+            } catch {
+                SentryHelper.captureError(
+                    error,
+                    extras: [
+                        "action": "repairFinalizedRecordingAudio",
+                        "context": "recording.audio.repair_after_finalize_failed",
+                        "recordingId": recordingId ?? "unknown",
+                    ]
+                )
+                SentryHelper.addBreadcrumb(
+                    category: "recording",
+                    message: "recording.audio.repair_after_finalize_failed",
+                    level: .error,
+                    data: [
+                        "recordingId": recordingId ?? "unknown",
+                        "audioBytes": fileWriter.totalBytesWritten,
+                    ]
+                )
+                if let recordingId {
+                    do {
+                        try RecordingBackupStore.discardAudioFile(recordingId: recordingId)
+                    } catch {
+                        SentryHelper.captureError(
+                            error,
+                            extras: ["action": "discardUnfinalizedRecordingAudio", "recordingId": recordingId]
+                        )
+                    }
+                }
+                return false
+            }
+        }
     }
 
     private func saveTranscriptBackup(

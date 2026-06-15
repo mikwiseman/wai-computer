@@ -607,8 +607,11 @@ class MacRecordingViewModel: ObservableObject {
             await capture?.stopRecording()
             _ = await sendingTask?.result
 
-            // Finalize the local WAV file so it has correct header sizes
-            try? fileWriter?.finalize()
+            // Finalize the local WAV file so it has correct header sizes.
+            let audioFinalizedForPersistence = self.finalizeRecordingAudioForPersistence(
+                fileWriter,
+                recordingId: recordingId
+            )
             let finalizedAudioDuration = fileWriter?.durationSeconds
             let finalizedAudioBytes = fileWriter?.totalBytesWritten ?? 0
             let persistedDurationSeconds = self.persistedDurationSeconds(
@@ -629,12 +632,14 @@ class MacRecordingViewModel: ObservableObject {
                     "audioBytes": finalizedAudioBytes,
                 ]
             )
-            let uploadableAudioFileURL = self.uploadableFinalizedAudioFileURL(
-                recordingId: recordingId,
-                fileWriter: fileWriter,
-                audioDuration: finalizedAudioDuration,
-                pcmBytesWritten: finalizedAudioBytes
-            )
+            let uploadableAudioFileURL = audioFinalizedForPersistence
+                ? self.uploadableFinalizedAudioFileURL(
+                    recordingId: recordingId,
+                    fileWriter: fileWriter,
+                    audioDuration: finalizedAudioDuration,
+                    pcmBytesWritten: finalizedAudioBytes
+                )
+                : nil
 
             let didFinalize = await self.finishStreaming(ws)
             let segments = await ws?.collectedSegments ?? []
@@ -976,6 +981,79 @@ class MacRecordingViewModel: ObservableObject {
             "Skipping finalized audio upload durationSeconds=\(audioDuration ?? 0, privacy: .public) bytes=\(pcmBytesWritten, privacy: .public)"
         )
         return nil
+    }
+
+    private func finalizeRecordingAudioForPersistence(
+        _ fileWriter: AudioFileWriter?,
+        recordingId: String?
+    ) -> Bool {
+        guard let fileWriter else { return false }
+        do {
+            try fileWriter.finalize()
+            return true
+        } catch {
+            SentryHelper.captureError(
+                error,
+                extras: [
+                    "action": "finalizeRecordingAudio",
+                    "context": "recording.audio.finalize_failed",
+                    "recordingId": recordingId ?? "unknown",
+                ]
+            )
+            SentryHelper.addBreadcrumb(
+                category: "recording",
+                message: "recording.audio.finalize_failed",
+                level: .error,
+                data: [
+                    "recordingId": recordingId ?? "unknown",
+                    "audioBytes": fileWriter.totalBytesWritten,
+                ]
+            )
+            audioLog.error("Local audio finalization failed recordingId=\(recordingId ?? "unknown", privacy: .public)")
+
+            do {
+                try AudioFileWriter.repairWAVHeaderSizes(fileURL: fileWriter.fileURL)
+                SentryHelper.addBreadcrumb(
+                    category: "recording",
+                    message: "recording.audio.finalize_repaired",
+                    level: .warning,
+                    data: [
+                        "recordingId": recordingId ?? "unknown",
+                        "audioBytes": fileWriter.totalBytesWritten,
+                    ]
+                )
+                return true
+            } catch {
+                SentryHelper.captureError(
+                    error,
+                    extras: [
+                        "action": "repairFinalizedRecordingAudio",
+                        "context": "recording.audio.repair_after_finalize_failed",
+                        "recordingId": recordingId ?? "unknown",
+                    ]
+                )
+                SentryHelper.addBreadcrumb(
+                    category: "recording",
+                    message: "recording.audio.repair_after_finalize_failed",
+                    level: .error,
+                    data: [
+                        "recordingId": recordingId ?? "unknown",
+                        "audioBytes": fileWriter.totalBytesWritten,
+                    ]
+                )
+                if let recordingId {
+                    do {
+                        try RecordingBackupStore.discardAudioFile(recordingId: recordingId)
+                    } catch {
+                        SentryHelper.captureError(
+                            error,
+                            extras: ["action": "discardUnfinalizedRecordingAudio", "recordingId": recordingId]
+                        )
+                    }
+                }
+                return false
+            }
+        }
     }
 
     private func saveTranscriptBackup(
