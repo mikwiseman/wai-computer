@@ -71,7 +71,7 @@ struct CompanionTimelineView: View {
                 case .webCitations(_, let citations):
                     CompanionWebCitationsCard(citations: citations, accent: accent)
                 case .text(_, let markdown):
-                    CompanionMarkdownText(text: markdown, accent: accent)
+                    CompanionMarkdownText(text: markdown, accent: accent, usesCache: !isLive)
                 case .action(_, let proposal, let resolution):
                     CompanionActionCard(
                         proposal: proposal,
@@ -477,10 +477,11 @@ struct CompanionActionCard: View {
 struct CompanionMarkdownText: View {
     let text: String
     var accent: Color = .accentColor
+    var usesCache = true
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            ForEach(Array(CompanionMarkdownRenderer.blocks(for: text).enumerated()), id: \.offset) { _, block in
+            ForEach(Array(CompanionMarkdownRenderer.blocks(for: text, usingCache: usesCache).enumerated()), id: \.offset) { _, block in
                 block.view(accent: accent)
             }
         }
@@ -560,24 +561,26 @@ private final class CompanionMarkdownRendererStorage: @unchecked Sendable {
 enum CompanionMarkdownRenderer {
     private static let storage = CompanionMarkdownRendererStorage()
 
-    static func blocks(for text: String) -> [CompanionRenderedMarkdownBlock] {
-        if let cached = storage.withLock({ $0.blockCache[text] }) {
+    static func blocks(for text: String, usingCache: Bool = true) -> [CompanionRenderedMarkdownBlock] {
+        if usingCache, let cached = storage.withLock({ $0.blockCache[text] }) {
             return cached
         }
 
-        let rendered = CompanionMarkdownSourceBlock.parse(text).map { $0.rendered() }
+        let rendered = CompanionMarkdownSourceBlock.parse(text).map { $0.rendered(usingCache: usingCache) }
+        storage.withLock { $0.blockParseCount += 1 }
+        guard usingCache else { return rendered }
+
         return storage.withLock { storage in
             if let cached = storage.blockCache[text] {
                 return cached
             }
             storage.blockCache[text] = rendered
-            storage.blockParseCount += 1
             return rendered
         }
     }
 
-    static func inline(_ string: String) -> AttributedString {
-        if let cached = storage.withLock({ $0.inlineCache[string] }) {
+    static func inline(_ string: String, usingCache: Bool = true) -> AttributedString {
+        if usingCache, let cached = storage.withLock({ $0.inlineCache[string] }) {
             return cached
         }
 
@@ -587,13 +590,14 @@ enum CompanionMarkdownRenderer {
                 interpretedSyntax: .inlineOnlyPreservingWhitespace
             )
         )) ?? AttributedString(string)
+        storage.withLock { $0.inlineParseCount += 1 }
+        guard usingCache else { return attributed }
 
         return storage.withLock { storage in
             if let cached = storage.inlineCache[string] {
                 return cached
             }
             storage.inlineCache[string] = attributed
-            storage.inlineParseCount += 1
             return attributed
         }
     }
@@ -604,6 +608,14 @@ enum CompanionMarkdownRenderer {
 
     static var inlineParseCountForTesting: Int {
         storage.withLock { $0.inlineParseCount }
+    }
+
+    static var cachedBlockCountForTesting: Int {
+        storage.withLock { $0.blockCache.count }
+    }
+
+    static var cachedInlineCountForTesting: Int {
+        storage.withLock { $0.inlineCache.count }
     }
 
     static func resetCacheForTesting() {
@@ -623,16 +635,16 @@ private enum CompanionMarkdownSourceBlock {
     case ordered([String])
     case code(String)
 
-    func rendered() -> CompanionRenderedMarkdownBlock {
+    func rendered(usingCache: Bool) -> CompanionRenderedMarkdownBlock {
         switch self {
         case .heading(let level, let text):
-            return .heading(level: level, text: CompanionMarkdownRenderer.inline(text))
+            return .heading(level: level, text: CompanionMarkdownRenderer.inline(text, usingCache: usingCache))
         case .paragraph(let text):
-            return .paragraph(CompanionMarkdownRenderer.inline(text))
+            return .paragraph(CompanionMarkdownRenderer.inline(text, usingCache: usingCache))
         case .bullets(let items):
-            return .bullets(items.map { CompanionMarkdownRenderer.inline($0) })
+            return .bullets(items.map { CompanionMarkdownRenderer.inline($0, usingCache: usingCache) })
         case .ordered(let items):
-            return .ordered(items.map { CompanionMarkdownRenderer.inline($0) })
+            return .ordered(items.map { CompanionMarkdownRenderer.inline($0, usingCache: usingCache) })
         case .code(let code):
             return .code(code)
         }

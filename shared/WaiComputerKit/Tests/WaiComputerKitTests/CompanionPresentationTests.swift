@@ -69,6 +69,19 @@ final class CompanionPresentationTests: XCTestCase {
         XCTAssertEqual(CompanionMarkdownRenderer.inlineParseCountForTesting, firstInlineParses)
     }
 
+    func testCompanionMarkdownRenderingBypassesCacheForLiveStreamingText() {
+        let partialMarkdown = "Live **partial** response"
+
+        CompanionMarkdownRenderer.resetCacheForTesting()
+
+        _ = CompanionMarkdownRenderer.blocks(for: partialMarkdown, usingCache: false)
+        _ = CompanionMarkdownRenderer.blocks(for: partialMarkdown + ".", usingCache: false)
+
+        XCTAssertEqual(CompanionMarkdownRenderer.blockParseCountForTesting, 2)
+        XCTAssertEqual(CompanionMarkdownRenderer.cachedBlockCountForTesting, 0)
+        XCTAssertEqual(CompanionMarkdownRenderer.cachedInlineCountForTesting, 0)
+    }
+
     // MARK: - Turn timeline reducer
 
     private func reduce(_ events: [CompanionStreamEvent]) -> CompanionTurnReducer {
