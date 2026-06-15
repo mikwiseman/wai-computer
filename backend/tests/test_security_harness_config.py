@@ -57,10 +57,7 @@ def test_production_telegram_media_uses_local_bot_api_service():
     assert api_service["environment"]["TELEGRAM_FILE_BASE_URL"] == (
         "http://telegram-bot-api:8081/file"
     )
-    assert (
-        api_service["environment"]["TELEGRAM_LOCAL_FILE_ROOT"]
-        == "/var/lib/telegram-bot-api"
-    )
+    assert api_service["environment"]["TELEGRAM_LOCAL_FILE_ROOT"] == "/var/lib/telegram-bot-api"
     assert "tg_api_data:/var/lib/telegram-bot-api:ro" in api_service["volumes"]
     assert api_service["group_add"] == ["101"]
     assert api_service["depends_on"]["telegram-bot-api"]["condition"] == "service_started"
@@ -106,11 +103,15 @@ def test_server_side_image_builds_require_explicit_opt_in():
     script = (REPO_ROOT / "scripts/server-build.sh").read_text()
 
     assert 'ALLOW_SERVER_SIDE_BUILD="${ALLOW_SERVER_SIDE_BUILD:-0}"' in script
-    assert "require_image \"$WAICOMPUTER_BACKEND_IMAGE\"" in script
-    assert "require_image \"$WAICOMPUTER_WEB_IMAGE\"" in script
+    assert 'require_image "$WAICOMPUTER_BACKEND_IMAGE"' in script
+    assert 'require_image "$WAICOMPUTER_WEB_IMAGE"' in script
     assert "Server-side image builds are disabled" in script
+    server_build_pattern = (
+        r'if \[\[ "\$ALLOW_SERVER_SIDE_BUILD" == "1" \]\]; then'
+        r".*docker_compose_timeout build api.*fi"
+    )
     assert re.search(
-        r'if \[\[ "\$ALLOW_SERVER_SIDE_BUILD" == "1" \]\]; then.*docker_compose_timeout build api.*fi',
+        server_build_pattern,
         script,
         re.DOTALL,
     )
