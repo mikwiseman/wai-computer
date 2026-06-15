@@ -8,8 +8,36 @@ final class ProviderBackedRealtimeSessionCloseTests: XCTestCase {
         XCTAssertFalse(source.contains("try? await endTurn()"))
     }
 
+    func testDictationSessionCommitDoesNotSwallowProviderFinalizationFailures() throws {
+        let source = try sharedSource("Sources/WaiComputerKit/Network/DictationSession.swift")
+        let commit = try functionBody(
+            named: "public func commit(timeout: Duration = .seconds(3))",
+            in: source,
+            endingBefore: "/// Cancel without producing a transcript."
+        )
+
+        XCTAssertTrue(commit.contains("async throws -> Outcome"))
+        XCTAssertTrue(commit.contains("try await provider.endTurn()"))
+        XCTAssertTrue(commit.contains("try await provider.close(timeout: timeout)"))
+        XCTAssertTrue(commit.contains("provider.finalize: \\(error.localizedDescription)"))
+        XCTAssertFalse(commit.contains("try? await provider.endTurn()"))
+        XCTAssertFalse(commit.contains("(try? await provider.close(timeout: timeout)) ?? []"))
+    }
+
     private func sharedSource(_ relativePath: String) throws -> String {
         try String(contentsOf: try sharedURL(relativePath), encoding: .utf8)
+    }
+
+    private func functionBody(
+        named declaration: String,
+        in source: String,
+        endingBefore terminator: String
+    ) throws -> String {
+        guard let start = source.range(of: declaration)?.lowerBound,
+              let end = source[start...].range(of: terminator)?.lowerBound else {
+            throw XCTSkip("Unable to locate \(declaration)")
+        }
+        return String(source[start..<end])
     }
 
     private func sharedURL(_ relativePath: String) throws -> URL {

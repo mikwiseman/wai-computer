@@ -85,13 +85,13 @@ public actor DictationSession {
         phase = .listening
         if deferredCommit {
             deferredCommit = false
-            await commit()
+            _ = try await commit()
         }
     }
 
     /// Signal end-of-turn. Drains transcript with a bounded wait, then
     /// returns the assembled outcome.
-    public func commit(timeout: Duration = .seconds(3)) async -> Outcome {
+    public func commit(timeout: Duration = .seconds(3)) async throws -> Outcome {
         if phase == .arming || phase == .ready {
             // Hotkey released before we even finished connecting. Defer the
             // commit so the listening loop applies it as soon as it transitions.
@@ -104,22 +104,26 @@ public actor DictationSession {
         }
 
         phase = .finalizing
-        try? await provider.endTurn()
+        do {
+            try await provider.endTurn()
 
-        // The provider's close drains pending frames; meanwhile the event
-        // loop kept appending committed segments to `accumulatedSegments`.
-        // Take whichever is bigger — defensive against close racing the
-        // last `committed` event.
-        let drained = (try? await provider.close(timeout: timeout)) ?? []
-        let segments = drained.count >= accumulatedSegments.count ? drained : accumulatedSegments
-        let transcript = segments.map(\.text).filter { !$0.isEmpty }.joined(separator: " ")
+            // The provider's close drains pending frames; meanwhile the event
+            // loop kept appending committed segments to `accumulatedSegments`.
+            // Take whichever is bigger — defensive against close racing the
+            // last `committed` event.
+            let drained = try await provider.close(timeout: timeout)
+            let segments = drained.count >= accumulatedSegments.count ? drained : accumulatedSegments
+            let transcript = segments.map(\.text).filter { !$0.isEmpty }.joined(separator: " ")
 
-        eventTask?.cancel()
-        audioTask?.cancel()
-        await releaseLeaseIfNeeded()
+            await stopBackgroundWorkAndReleaseLease()
 
-        phase = .done
-        return Outcome(segments: segments, transcript: transcript, language: detectedLanguage)
+            phase = .done
+            return Outcome(segments: segments, transcript: transcript, language: detectedLanguage)
+        } catch {
+            phase = .failed("provider.finalize: \(error.localizedDescription)")
+            await stopBackgroundWorkAndReleaseLease()
+            throw error
+        }
     }
 
     /// Cancel without producing a transcript. Idempotent.
@@ -128,6 +132,10 @@ public actor DictationSession {
         if phase == .done || phase == .cancelled { return }
         phase = .cancelled
         await provider.cancel()
+        await stopBackgroundWorkAndReleaseLease()
+    }
+
+    private func stopBackgroundWorkAndReleaseLease() async {
         eventTask?.cancel()
         audioTask?.cancel()
         await releaseLeaseIfNeeded()
