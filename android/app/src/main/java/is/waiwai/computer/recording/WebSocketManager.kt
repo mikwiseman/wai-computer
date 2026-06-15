@@ -94,9 +94,13 @@ class DeepgramRealtimeWebSocketManager(
         sendFinalizeIfNeeded()
         val startedAt = System.currentTimeMillis()
         val deadline = startedAt + timeoutMillis
+        var closeStreamSent = false
         while (System.currentTimeMillis() < deadline) {
             if (endOfStreamRequested && !endOfStreamSent && connected) {
                 sendFinalizeIfNeeded()
+            }
+            if (endOfStreamSent && !closeStreamSent && connected) {
+                closeStreamSent = sendDeepgramCloseStreamIfConnected()
             }
             if (!shouldKeepWaitingForCloseDrain(
                     nowMs = System.currentTimeMillis(),
@@ -110,7 +114,9 @@ class DeepgramRealtimeWebSocketManager(
             }
             delay(100)
         }
-        webSocket?.send("""{"type":"CloseStream"}""")
+        if (!closeStreamSent) {
+            sendDeepgramCloseStreamIfConnected()
+        }
         disconnect()
         return endOfStreamSent && providerFinalizationReceived
     }
@@ -284,6 +290,11 @@ class DeepgramRealtimeWebSocketManager(
             providerFinalizationReceived = true
         }
         endOfStreamSent = true
+    }
+
+    private fun sendDeepgramCloseStreamIfConnected(): Boolean {
+        val socket = webSocket ?: return false
+        return socket.send("""{"type":"CloseStream"}""")
     }
 
     private fun sendDeepgramAudio(socket: WebSocket, data: ByteArray) {
