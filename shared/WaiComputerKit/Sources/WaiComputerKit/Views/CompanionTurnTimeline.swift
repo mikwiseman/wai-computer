@@ -506,6 +506,10 @@ public struct CompanionTurnReducer: Equatable, Sendable {
                 && $0.segmentId == citation.segmentId
                 && $0.spanStart == citation.spanStart
         }
-        if !isDuplicate { citations.append(citation) }
+        guard !isDuplicate else { return }
+        let insertionIndex = citations.firstIndex { existing in
+            existing.index > citation.index
+        } ?? citations.endIndex
+        citations.insert(citation, at: insertionIndex)
     }
 }

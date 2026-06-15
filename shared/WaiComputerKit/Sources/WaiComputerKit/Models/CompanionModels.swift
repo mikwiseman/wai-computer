@@ -119,6 +119,49 @@ public struct CompanionMessage: Codable, Sendable, Identifiable, Equatable {
         case createdAt = "created_at"
     }
 
+    public init(
+        id: String,
+        role: CompanionMessageRole,
+        content: CompanionContent,
+        toolCalls: [CompanionJSONValue]?,
+        citations: [CompanionCitation],
+        model: String?,
+        inputTokens: Int?,
+        outputTokens: Int?,
+        cachedTokens: Int?,
+        latencyMs: Int?,
+        createdAt: Date
+    ) {
+        self.id = id
+        self.role = role
+        self.content = content
+        self.toolCalls = toolCalls
+        self.citations = Self.sortedCitations(citations)
+        self.model = model
+        self.inputTokens = inputTokens
+        self.outputTokens = outputTokens
+        self.cachedTokens = cachedTokens
+        self.latencyMs = latencyMs
+        self.createdAt = createdAt
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(
+            id: try container.decode(String.self, forKey: .id),
+            role: try container.decode(CompanionMessageRole.self, forKey: .role),
+            content: try container.decode(CompanionContent.self, forKey: .content),
+            toolCalls: try container.decodeIfPresent([CompanionJSONValue].self, forKey: .toolCalls),
+            citations: try container.decodeIfPresent([CompanionCitation].self, forKey: .citations) ?? [],
+            model: try container.decodeIfPresent(String.self, forKey: .model),
+            inputTokens: try container.decodeIfPresent(Int.self, forKey: .inputTokens),
+            outputTokens: try container.decodeIfPresent(Int.self, forKey: .outputTokens),
+            cachedTokens: try container.decodeIfPresent(Int.self, forKey: .cachedTokens),
+            latencyMs: try container.decodeIfPresent(Int.self, forKey: .latencyMs),
+            createdAt: try container.decode(Date.self, forKey: .createdAt)
+        )
+    }
+
     /// Concatenated plain-text view of the message content for rendering.
     public var plainText: String {
         switch content {
@@ -147,6 +190,15 @@ public struct CompanionMessage: Codable, Sendable, Identifiable, Equatable {
             latencyMs: latencyMs,
             createdAt: createdAt
         )
+    }
+
+    private static func sortedCitations(_ citations: [CompanionCitation]) -> [CompanionCitation] {
+        citations.sorted { lhs, rhs in
+            if lhs.citationIndex != rhs.citationIndex {
+                return lhs.citationIndex < rhs.citationIndex
+            }
+            return lhs.id < rhs.id
+        }
     }
 }
 
