@@ -23,8 +23,8 @@ struct LiveRecordingView: View {
 
     private var transcriptScrollToken: LiveTranscriptScrollToken {
         LiveTranscriptScrollToken(
-            committedLength: recordingVM.committedTranscript.count,
-            interimLength: recordingVM.interimTranscript.count
+            committedRevision: recordingVM.committedTranscriptRevision,
+            interimRevision: recordingVM.interimTranscriptRevision
         )
     }
 
@@ -445,8 +445,8 @@ private struct TranscriptBottomDistanceKey: PreferenceKey {
 }
 
 private struct LiveTranscriptScrollToken: Equatable {
-    let committedLength: Int
-    let interimLength: Int
+    let committedRevision: Int
+    let interimRevision: Int
 }
 
 private extension View {

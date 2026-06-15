@@ -101,8 +101,10 @@ class MacRecordingViewModel: ObservableObject {
     /// faded interim text that streams ahead of their speech.
     private(set) var committedTranscript = ""
     private(set) var committedTranscriptChunks: [LiveTranscriptDisplayChunk] = []
+    private(set) var committedTranscriptRevision = 0
     /// Latest interim partial — the model's running guess that may be revised.
     private(set) var interimTranscript = ""
+    private(set) var interimTranscriptRevision = 0
     @Published var currentRecordingId: String?
     @Published var isServerComplete = false
     @Published private(set) var phase: MacRecordingPhase = .idle
@@ -1558,6 +1560,10 @@ class MacRecordingViewModel: ObservableObject {
         objectWillChange.send()
         if committedTranscript != committed {
             committedTranscriptChunks = Self.liveTranscriptDisplayChunks(from: committed)
+            committedTranscriptRevision += 1
+        }
+        if interimTranscript != interim {
+            interimTranscriptRevision += 1
         }
         committedTranscript = committed
         interimTranscript = interim

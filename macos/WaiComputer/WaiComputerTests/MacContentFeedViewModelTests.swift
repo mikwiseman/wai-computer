@@ -176,14 +176,21 @@ final class MacContentFeedViewModelTests: XCTestCase {
 
     func testLiveRecordingViewAvoidsFullTranscriptObservationForScrollFollow() throws {
         let source = try macSource("WaiComputer/Features/Recording/LiveRecordingView.swift")
+        let modelSource = try macSource("WaiComputer/Features/Recording/MacRecordingViewModel.swift")
 
         // The live tail can grow very large. Auto-follow should be driven by a
         // cheap layout token, not by reading the full combined transcript string
         // from the view on every interim tick.
+        XCTAssertTrue(modelSource.contains("private(set) var committedTranscriptRevision = 0"))
+        XCTAssertTrue(modelSource.contains("private(set) var interimTranscriptRevision = 0"))
         XCTAssertTrue(source.contains("LiveTranscriptScrollToken("))
+        XCTAssertTrue(source.contains("committedRevision: recordingVM.committedTranscriptRevision"))
+        XCTAssertTrue(source.contains("interimRevision: recordingVM.interimTranscriptRevision"))
         XCTAssertTrue(source.contains("private var transcriptHasContent: Bool"))
         XCTAssertTrue(source.contains(".onChangeCompat(of: transcriptScrollToken)"))
         XCTAssertFalse(source.contains("recordingVM.currentTranscript"))
+        XCTAssertFalse(source.contains("recordingVM.committedTranscript.count"))
+        XCTAssertFalse(source.contains("recordingVM.interimTranscript.count"))
     }
 
     func testLiveRecordingViewUsesRecyclingRowsForLongTranscriptDisplay() throws {
