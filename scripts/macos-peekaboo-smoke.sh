@@ -397,18 +397,6 @@ element_id_by_identifier() {
   ' "$json_path"
 }
 
-element_id_by_label() {
-  local json_path="$1"
-  local label="$2"
-  jq -r --arg label "$label" '
-    first(
-      .data.ui_elements[]?
-      | select((.label // "") == $label or (.description // "") == $label)
-      | .id
-    ) // ""
-  ' "$json_path"
-}
-
 element_id_by_identifier_label_role() {
   local json_path="$1"
   local identifier="$2"
@@ -428,20 +416,6 @@ element_id_by_identifier_label_role() {
 
 snapshot_id() {
   jq -r '.data.snapshot_id' "$1"
-}
-
-element_center_coords() {
-  local json_path="$1"
-  local element_id="$2"
-  jq -r --arg element_id "$element_id" '
-    (.data.observation.target.bounds[0][0] // 0) as $originX
-    | (.data.observation.target.bounds[0][1] // 0) as $originY
-    | first(
-      .data.ui_elements[]?
-      | select(.id == $element_id)
-      | "\(((.bounds.x - $originX) + (.bounds.width / 2)) | floor),\(((.bounds.y - $originY) + (.bounds.height / 2)) | floor)"
-    ) // ""
-  ' "$json_path"
 }
 
 click_element() {
@@ -475,17 +449,6 @@ click_identifier() {
   click_element "$json_path" "$element_id" "$identifier"
 }
 
-click_label() {
-  local label="$1"
-  local name="$2"
-  local json_path element_id
-
-  focus_target_window "$name"
-  json_path="$(capture_ui "before-click-$name")"
-  element_id="$(element_id_by_label "$json_path" "$label")"
-  click_element "$json_path" "$element_id" "$name"
-}
-
 click_identifier_label_role() {
   local identifier="$1"
   local label="$2"
@@ -497,27 +460,6 @@ click_identifier_label_role() {
   json_path="$(capture_ui "before-click-$name")"
   element_id="$(element_id_by_identifier_label_role "$json_path" "$identifier" "$label" "$role")"
   click_element "$json_path" "$element_id" "$name"
-}
-
-click_query() {
-  local query="$1"
-  local name="$2"
-  local json_path fresh_snapshot
-
-  focus_target_window "$name"
-  json_path="$(capture_ui "before-click-$name")"
-  fresh_snapshot="$(snapshot_id "$json_path")"
-  [[ -n "$fresh_snapshot" && "$fresh_snapshot" != "null" ]] || die "Missing Peekaboo snapshot id before click: $name"
-
-  if ! peekaboo perform-action --snapshot "$fresh_snapshot" --on "$query" --action AXPress --json \
-    > "$RUN_DIR/click-$name.json"; then
-    cat "$RUN_DIR/click-$name.json" >&2
-    die "Accessibility action failed: $name"
-  fi
-  jq -e '.success == true' "$RUN_DIR/click-$name.json" >/dev/null || {
-    cat "$RUN_DIR/click-$name.json" >&2
-    die "Accessibility action failed: $name"
-  }
 }
 
 set_element_value() {
