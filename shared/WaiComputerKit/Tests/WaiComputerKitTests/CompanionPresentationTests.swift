@@ -82,6 +82,28 @@ final class CompanionPresentationTests: XCTestCase {
         XCTAssertEqual(CompanionMarkdownRenderer.cachedInlineCountForTesting, 0)
     }
 
+    func testCompanionMessageStoresCitationsSortedForRendering() {
+        let message = CompanionMessage(
+            id: "m1",
+            role: .assistant,
+            content: .text("Answer"),
+            toolCalls: nil,
+            citations: [
+                companionCitation(id: "c3", index: 3),
+                companionCitation(id: "c1", index: 1),
+                companionCitation(id: "c2", index: 2),
+            ],
+            model: nil,
+            inputTokens: nil,
+            outputTokens: nil,
+            cachedTokens: nil,
+            latencyMs: nil,
+            createdAt: Date(timeIntervalSince1970: 1)
+        )
+
+        XCTAssertEqual(message.citations.map(\.citationIndex), [1, 2, 3])
+    }
+
     // MARK: - Turn timeline reducer
 
     private func reduce(_ events: [CompanionStreamEvent]) -> CompanionTurnReducer {
@@ -158,6 +180,16 @@ final class CompanionPresentationTests: XCTestCase {
         }
         XCTAssertEqual(steps.count, 2)
         XCTAssertEqual(steps[0].status, "done")
+    }
+
+    func testReducerKeepsStreamingCitationsSortedForRendering() {
+        let reducer = reduce([
+            .citation(companionStreamCitation(index: 3)),
+            .citation(companionStreamCitation(index: 1)),
+            .citation(companionStreamCitation(index: 2)),
+        ])
+
+        XCTAssertEqual(reducer.citations.map(\.index), [1, 2, 3])
     }
 
     func testReducerResolvesActionProposal() {
@@ -472,6 +504,29 @@ final class CompanionPresentationTests: XCTestCase {
         XCTAssertEqual(
             reducer.notificationPreview(maxCharacters: 48),
             "Here are the direct links for GPU rental..."
+        )
+    }
+
+    private func companionCitation(id: String, index: Int) -> CompanionCitation {
+        CompanionCitation(
+            id: id,
+            segmentId: "segment-\(index)",
+            recordingId: "recording-\(index)",
+            spanStart: index * 10,
+            spanEnd: index * 10 + 5,
+            citationIndex: index
+        )
+    }
+
+    private func companionStreamCitation(index: Int) -> CompanionStreamCitation {
+        CompanionStreamCitation(
+            index: index,
+            segmentId: "segment-\(index)",
+            recordingId: "recording-\(index)",
+            startMs: nil,
+            endMs: nil,
+            spanStart: index * 10,
+            spanEnd: index * 10 + 5
         )
     }
 }

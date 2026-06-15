@@ -682,7 +682,7 @@ public struct CompanionView: View {
                 )
                 if !citations.isEmpty {
                     FlowLayoutCompat {
-                        ForEach(citations.sorted(by: { $0.index < $1.index })) { citation in
+                        ForEach(citations) { citation in
                             citationChip(citation)
                         }
                     }
@@ -815,7 +815,7 @@ public struct CompanionView: View {
 
                     if !citations.isEmpty {
                         FlowLayoutCompat {
-                            ForEach(citations.sorted(by: { $0.index < $1.index })) { citation in
+                            ForEach(citations) { citation in
                                 chip(citation)
                             }
                         }

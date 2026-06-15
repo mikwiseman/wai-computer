@@ -449,6 +449,16 @@ final class MacContentFeedViewModelTests: XCTestCase {
         XCTAssertFalse(source.contains("ScrollView {\n                    LazyVStack(alignment: .leading, spacing: 0) {\n                        if messages.isEmpty"))
     }
 
+    func testCompanionCitationRowsReceivePreSortedInputs() throws {
+        let source = try sharedSource("Sources/WaiComputerKit/Views/CompanionView.swift")
+        let reducerSource = try sharedSource("Sources/WaiComputerKit/Views/CompanionTurnTimeline.swift")
+        let modelSource = try sharedSource("Sources/WaiComputerKit/Models/CompanionModels.swift")
+
+        XCTAssertFalse(source.contains("citations.sorted"))
+        XCTAssertTrue(reducerSource.contains("citations.insert(citation, at: insertionIndex)"))
+        XCTAssertTrue(modelSource.contains("private static func sortedCitations("))
+    }
+
     func testInboxFocusedCompanionNotifiesWhenTurnCompletes() throws {
         let source = try macSource("WaiComputer/Features/Inbox/MacInboxView.swift")
 
