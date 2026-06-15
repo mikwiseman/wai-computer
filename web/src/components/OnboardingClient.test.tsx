@@ -47,6 +47,18 @@ describe("OnboardingClient", () => {
     expect(mockReplace).toHaveBeenCalledWith("/dashboard");
   });
 
+  it("offers own-server setup during onboarding and routes to Server & Data", () => {
+    render(<OnboardingClient />);
+
+    expect(screen.getByText("Use your own server")).toBeInTheDocument();
+    expect(screen.getByText(/VPS IP, root password or SSH key, and provider API keys/i)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Set up my server" }));
+
+    expect(localStorageValues.voice_onboarding_complete).toBe("true");
+    expect(mockReplace).toHaveBeenCalledWith("/dashboard#server-data");
+  });
+
   it("does not mark onboarding seen just because the screen mounted", () => {
     render(<OnboardingClient />);
 

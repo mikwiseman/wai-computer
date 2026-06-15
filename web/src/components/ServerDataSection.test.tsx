@@ -113,6 +113,12 @@ describe("ServerDataSection", () => {
     expect(section.textContent).toContain("Files and artifacts");
     expect(section.textContent).toContain("Needs reconnect");
     expect(section.textContent).toContain("2Needs reconnect");
+    expect(section.textContent).toContain("Setup checklist");
+    expect(section.textContent).toContain("Ubuntu VPS");
+    expect(section.textContent).toContain("Deepgram");
+    expect(section.textContent).toContain("OpenAI");
+    expect(section.textContent).toContain("Cerebras");
+    expect(section.textContent).toContain("Temporary root password or SSH public key");
   });
 
   it("submits a self-host provisioning preflight with a public SSH key", async () => {
@@ -177,12 +183,15 @@ describe("ServerDataSection", () => {
   it("shows account actions instead of the provisioning form in public setup mode", async () => {
     render(<ServerDataSection provisioning="account_required" />);
 
-    await screen.findByText("https://demo.self.wai.computer");
+    expect(screen.getByText("Setup checklist")).toBeInTheDocument();
+    expect(screen.getByText(/Create the provider keys before setup/i)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Check setup" })).toBeNull();
     expect(screen.getByRole("link", { name: "Create account" })).toHaveAttribute(
       "href",
       "/register",
     );
     expect(screen.getByRole("link", { name: "Sign in" })).toHaveAttribute("href", "/login");
+    expect(mockGetSystemInfo).not.toHaveBeenCalled();
+    expect(mockGetDataOwnershipMap).not.toHaveBeenCalled();
   });
 });

@@ -55,6 +55,27 @@ const COPY = {
     password: "Temporary password",
     start: "Check setup",
     starting: "Checking...",
+    checklistTitle: "Setup checklist",
+    checklistIntro:
+      "Create the provider keys before setup. Wai keeps those keys server-side on your server, never in browser or mobile clients.",
+    checklistItems: [
+      {
+        title: "Ubuntu VPS",
+        body: "A fresh Ubuntu server with a public IP. A domain is optional and can be added later.",
+      },
+      {
+        title: "Temporary root password or SSH public key",
+        body: "Use the provider's first-login password once, or paste a public key that already works on the VPS.",
+      },
+      {
+        title: "Provider API keys",
+        body: "Deepgram for speech-to-text, OpenAI for embeddings and companion tasks, Cerebras for summaries and cleanup.",
+      },
+    ],
+    providerLinks: "Key pages",
+    deepgram: "Deepgram",
+    openai: "OpenAI",
+    cerebras: "Cerebras",
     exportTitle: "Export and import",
     exportBody:
       "The migration map includes recordings, transcripts, summaries, memories, uploads, settings, usage history, and API metadata. Server-bound sessions and OAuth tokens are regenerated on the new server.",
@@ -91,6 +112,27 @@ const COPY = {
     password: "Временный пароль",
     start: "Проверить настройку",
     starting: "Проверяем...",
+    checklistTitle: "Чеклист настройки",
+    checklistIntro:
+      "Создайте ключи провайдеров до настройки. Wai хранит эти ключи только на вашем сервере, а не в браузере или мобильных приложениях.",
+    checklistItems: [
+      {
+        title: "Ubuntu VPS",
+        body: "Новый Ubuntu-сервер с публичным IP. Домен необязателен, его можно добавить позже.",
+      },
+      {
+        title: "Временный пароль root или публичный SSH-ключ",
+        body: "Используйте первый пароль от провайдера один раз или вставьте публичный ключ, который уже работает на VPS.",
+      },
+      {
+        title: "API-ключи провайдеров",
+        body: "Deepgram для распознавания речи, OpenAI для эмбеддингов и задач Companion, Cerebras для саммари и очистки диктовки.",
+      },
+    ],
+    providerLinks: "Страницы ключей",
+    deepgram: "Deepgram",
+    openai: "OpenAI",
+    cerebras: "Cerebras",
     exportTitle: "Экспорт и импорт",
     exportBody:
       "Карта миграции включает записи, транскрипты, саммари, память, загрузки, настройки, историю использования и API-метаданные. Сессии и OAuth-токены пересоздаются на новом сервере.",
@@ -121,9 +163,10 @@ export function ServerDataSection({
   provisioning = "active",
 }: ServerDataSectionProps) {
   const copy = COPY[locale];
+  const shouldLoadServerData = provisioning === "active";
   const [info, setInfo] = useState<SystemInfo | null>(null);
   const [dataMap, setDataMap] = useState<DataOwnershipMap | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(shouldLoadServerData);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<SelfHostProvisionResponse | null>(null);
@@ -137,6 +180,13 @@ export function ServerDataSection({
   });
 
   useEffect(() => {
+    if (!shouldLoadServerData) {
+      setInfo(null);
+      setDataMap(null);
+      setError(null);
+      setLoading(false);
+      return;
+    }
     let cancelled = false;
     async function load() {
       setLoading(true);
@@ -162,7 +212,7 @@ export function ServerDataSection({
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [shouldLoadServerData]);
 
   const ownedCount = useMemo(() => countByClassification(dataMap, "owned_exportable"), [dataMap]);
   const reconnectCount = useMemo(() => countReconnectRequired(dataMap), [dataMap]);
@@ -247,6 +297,45 @@ export function ServerDataSection({
           </div>
         </div>
       ) : null}
+
+      <div className="server-data-checklist">
+        <h4>{copy.checklistTitle}</h4>
+        <p className="settings-note">{copy.checklistIntro}</p>
+        <ul>
+          {copy.checklistItems.map((item) => (
+            <li key={item.title}>
+              <strong>{item.title}</strong>
+              <span>{item.body}</span>
+            </li>
+          ))}
+        </ul>
+        <p className="settings-note server-data-provider-links">
+          {copy.providerLinks}:{" "}
+          <a
+            href="https://developers.deepgram.com/guides/fundamentals/make-your-first-api-request"
+            target="_blank"
+            rel="noreferrer"
+          >
+            {copy.deepgram}
+          </a>
+          {", "}
+          <a
+            href="https://help.openai.com/en/articles/4936850-where-do-i-find-my-openai-api-key"
+            target="_blank"
+            rel="noreferrer"
+          >
+            {copy.openai}
+          </a>
+          {", "}
+          <a
+            href="https://inference-docs.cerebras.ai/console/api-keys"
+            target="_blank"
+            rel="noreferrer"
+          >
+            {copy.cerebras}
+          </a>
+        </p>
+      </div>
 
       {provisioning === "account_required" ? (
         <div className="server-data-account-required">

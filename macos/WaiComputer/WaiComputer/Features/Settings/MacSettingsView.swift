@@ -952,6 +952,14 @@ struct MacSettingsView: View {
                 .font(Typography.caption)
                 .foregroundStyle(Palette.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
+                Text(t(
+                    "Before setup, create Deepgram, OpenAI, and Cerebras API keys. They stay server-side in your self-host environment, not in browser or mobile clients.",
+                    "Перед настройкой создайте API-ключи Deepgram, OpenAI и Cerebras. Они хранятся только на вашем self-host сервере, а не в браузере или мобильных клиентах."
+                ))
+                .font(Typography.caption)
+                .foregroundStyle(Palette.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityIdentifier("settings-server-data-provider-keys-hint")
             }
 
             VStack(alignment: .leading, spacing: Spacing.xxs) {

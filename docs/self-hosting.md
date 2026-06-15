@@ -48,16 +48,30 @@ Updating later: `git pull && ./scripts/self-host-setup.sh` (the existing
 
 ## User Onboarding
 
-The web setup flow at `/setup` lets a non-technical user choose between Wai Cloud and their own VPS. The same controls are available later in Dashboard -> Settings -> Server & Data.
+The web onboarding flow offers an early "Set up my server" path that opens
+Dashboard -> Settings -> Server & Data. The public setup flow at `/setup` lets
+a non-technical user choose between Wai Cloud and their own VPS before account
+creation. The same controls remain available later in Dashboard -> Settings ->
+Server & Data.
+
+Before starting the server check, the in-app checklist asks the user to have:
+
+- a fresh Ubuntu VPS with a public IP
+- the temporary root password from the VPS provider, or an SSH public key that
+  already works on the server
+- required provider keys for Deepgram, OpenAI, and Cerebras
 
 The self-host form asks for:
 
-- server hostname
 - VPS public IP
 - SSH username
 - SSH public key, or a temporary bootstrap password
+- optional server hostname
 
-SSH key auth is preferred. Password bootstrap is accepted only as a temporary setup path and must end with removing root/password access.
+Provider API keys must stay server-side in `backend/.env.selfhost`; they must
+not be put into browser or mobile clients. SSH key auth is preferred. Password
+bootstrap is accepted only as a temporary setup path and must end with removing
+root/password access.
 
 ## Provisioning Checklist
 

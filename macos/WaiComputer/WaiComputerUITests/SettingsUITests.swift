@@ -90,6 +90,12 @@ final class SettingsUITests: XCTestCase {
         revealElementIfNeeded(serverDataHeader, in: app)
         XCTAssertTrue(waitForElement(serverDataHeader, in: app, timeout: 3))
 
+        let providerKeysHint = app.staticTexts
+            .matching(identifier: "settings-server-data-provider-keys-hint")
+            .firstMatch
+        revealElementIfNeeded(providerKeysHint, in: app)
+        XCTAssertTrue(waitForElement(providerKeysHint, in: app, timeout: 3))
+
         let vpsIPField = app.textFields
             .matching(identifier: "settings-server-data-vps-ip-field")
             .firstMatch

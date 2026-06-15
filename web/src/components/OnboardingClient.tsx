@@ -32,6 +32,9 @@ const COPY: Record<
     statusUploading: string;
     micError: string;
     uploadError: string;
+    serverTitle: string;
+    serverBody: string;
+    serverAction: string;
   }
 > = {
   en: {
@@ -63,6 +66,10 @@ const COPY: Record<
     uploading: "Uploading voice signature…",
     privacy:
       "We store a 192-number signature, not your audio. The recording is deleted after the signature is created.",
+    serverTitle: "Use your own server",
+    serverBody:
+      "Have a VPS IP, root password or SSH key, and provider API keys ready? Open Server & Data now; you can also do this later from Settings.",
+    serverAction: "Set up my server",
     statusIdle: "Press the mic to start",
     statusRecording: (elapsed) => `Recording… ${Math.floor(elapsed)}s / ${MAX_DURATION_S}s`,
     statusRecorded: (elapsed) => `Recorded ${Math.floor(elapsed)}s. Use it or re-record.`,
@@ -99,6 +106,10 @@ const COPY: Record<
     uploading: "Загружаем голосовой профиль…",
     privacy:
       "Мы храним профиль из 192 чисел, а не вашу аудиозапись. Сама запись удаляется сразу после создания профиля.",
+    serverTitle: "Использовать свой сервер",
+    serverBody:
+      "Уже есть IP VPS, пароль root или SSH-ключ и API-ключи провайдеров? Откройте «Сервер и данные» сейчас; это можно сделать позже в настройках.",
+    serverAction: "Настроить сервер",
     statusIdle: "Нажмите микрофон, чтобы начать",
     statusRecording: (elapsed) => `Запись… ${Math.floor(elapsed)}с / ${MAX_DURATION_S}с`,
     statusRecorded: (elapsed) => `Записано ${Math.floor(elapsed)}с. Используйте или перезапишите.`,
@@ -252,6 +263,11 @@ export function OnboardingClient({ initialLocale }: OnboardingClientProps) {
     router.replace("/dashboard");
   }
 
+  function openServerSetup() {
+    markOnboardingSeen();
+    router.replace("/dashboard#server-data");
+  }
+
   function reset() {
     setAudioBlob(null);
     setElapsed(0);
@@ -276,6 +292,16 @@ export function OnboardingClient({ initialLocale }: OnboardingClientProps) {
           </section>
         ))}
       </div>
+
+      <section className="onboarding-server-setup">
+        <div>
+          <strong>{copy.serverTitle}</strong>
+          <span>{copy.serverBody}</span>
+        </div>
+        <button type="button" className="ghost-button compact-button" onClick={openServerSetup}>
+          {copy.serverAction}
+        </button>
+      </section>
 
       <article className="onboarding-prompt-card">
         <p>{copy.prompt}</p>

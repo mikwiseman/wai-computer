@@ -1950,6 +1950,7 @@ a.primary-button[aria-disabled="true"]:hover {
 .server-data-metrics > div,
 .server-data-account-required,
 .server-data-result,
+.server-data-checklist,
 .server-data-export {
   display: grid;
   gap: 0.3rem;
@@ -1993,9 +1994,43 @@ a.primary-button[aria-disabled="true"]:hover {
 
 .server-data-provision h4,
 .server-data-account-required h4,
+.server-data-checklist h4,
 .server-data-export h4 {
   margin: 0;
   font-size: var(--font-body-size);
+}
+
+.server-data-checklist {
+  gap: 0.55rem;
+}
+
+.server-data-checklist ul {
+  display: grid;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.server-data-checklist li {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.server-data-checklist li strong {
+  color: var(--ink);
+  font-size: var(--font-body-small-size);
+}
+
+.server-data-checklist li span {
+  color: var(--ink-soft);
+  font-size: var(--font-label-size);
+  line-height: 1.4;
+}
+
+.server-data-provider-links a {
+  color: var(--accent-strong);
+  font-weight: 700;
 }
 
 .server-data-actions {
