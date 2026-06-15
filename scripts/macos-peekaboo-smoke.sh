@@ -10,7 +10,7 @@ RUN_DIR="$ARTIFACT_ROOT/$RUN_ID"
 APP_PATH="${WAICOMPUTER_MAC_APP_PATH:-$DERIVED_DATA_PATH/Build/Products/Debug/WaiComputer.app}"
 BUILD_APP="${WAICOMPUTER_PEEKABOO_BUILD:-}"
 KEEP_APP_OPEN="${WAICOMPUTER_PEEKABOO_KEEP_APP_OPEN:-0}"
-WINDOW_X="${WAICOMPUTER_PEEKABOO_WINDOW_X:--1800}"
+WINDOW_X="${WAICOMPUTER_PEEKABOO_WINDOW_X:--32000}"
 WINDOW_Y="${WAICOMPUTER_PEEKABOO_WINDOW_Y:-80}"
 WINDOW_WIDTH="${WAICOMPUTER_PEEKABOO_WINDOW_WIDTH:-1220}"
 WINDOW_HEIGHT="${WAICOMPUTER_PEEKABOO_WINDOW_HEIGHT:-708}"
@@ -177,10 +177,10 @@ set_target_window_bounds() {
   local bounds_json="$RUN_DIR/window-$name.json"
 
   refresh_target_window_id "$name-bounds"
-  if ! peekaboo window set-bounds --window-id "$TARGET_WINDOW_ID" --x "$WINDOW_X" --y "$WINDOW_Y" --width "$WINDOW_WIDTH" --height "$WINDOW_HEIGHT" --json \
+  if ! peekaboo window set-bounds --window-id "$TARGET_WINDOW_ID" --x="$WINDOW_X" --y="$WINDOW_Y" --width="$WINDOW_WIDTH" --height="$WINDOW_HEIGHT" --json \
     > "$bounds_json"; then
     refresh_target_window_id "$name-bounds-retry"
-    if ! peekaboo window set-bounds --window-id "$TARGET_WINDOW_ID" --x "$WINDOW_X" --y "$WINDOW_Y" --width "$WINDOW_WIDTH" --height "$WINDOW_HEIGHT" --json \
+    if ! peekaboo window set-bounds --window-id "$TARGET_WINDOW_ID" --x="$WINDOW_X" --y="$WINDOW_Y" --width="$WINDOW_WIDTH" --height="$WINDOW_HEIGHT" --json \
       > "$bounds_json"; then
       cat "$bounds_json" >&2
       die "Unable to set WaiComputer main window bounds for $name"
