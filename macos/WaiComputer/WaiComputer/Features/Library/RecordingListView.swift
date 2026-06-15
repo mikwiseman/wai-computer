@@ -27,8 +27,10 @@ struct RecordingListView: View {
                 .draggable(InboxDragItem(kind: .recording, id: recording.id))
                 .contextMenu {
                     let contextSelection = selection(for: recording.id)
-                    let contextRecordings = recordings.filter { contextSelection.contains($0.id) }
-                    let canRemoveFromFolder = contextRecordings.contains { $0.folderId != nil }
+                    let canRemoveFromFolder = canRemoveFromFolder(
+                        recording: recording,
+                        contextSelection: contextSelection
+                    )
 
                     if isTrash {
                         Button(t("Restore", "Восстановить")) {
@@ -94,6 +96,15 @@ struct RecordingListView: View {
             return Array(selectedRecordingIds)
         }
         return [recordingId]
+    }
+
+    private func canRemoveFromFolder(recording: Recording, contextSelection: [String]) -> Bool {
+        if contextSelection.count == 1 {
+            return recording.folderId != nil
+        }
+
+        let selectedIds = Set(contextSelection)
+        return recordings.contains { selectedIds.contains($0.id) && $0.folderId != nil }
     }
 }
 

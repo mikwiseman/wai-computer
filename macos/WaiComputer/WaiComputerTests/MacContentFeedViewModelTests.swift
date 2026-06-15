@@ -596,6 +596,19 @@ final class MacContentFeedViewModelTests: XCTestCase {
         XCTAssertFalse(source.contains("LazyVStack(alignment: .leading, spacing: 2)"))
     }
 
+    func testRecordingListContextMenuAvoidsFullListFilterForSingleRowActions() throws {
+        let source = try macSource("WaiComputer/Features/Library/RecordingListView.swift")
+
+        // Opening a row context menu should not eagerly filter every displayed
+        // recording just to decide whether "Remove from Folder" is available.
+        // Single-row menus are the common path and can answer from the row model.
+        XCTAssertTrue(source.contains("private func canRemoveFromFolder("))
+        XCTAssertTrue(source.contains("contextSelection.count == 1"))
+        XCTAssertTrue(source.contains("return recording.folderId != nil"))
+        XCTAssertFalse(source.contains("let contextRecordings = recordings.filter"))
+        XCTAssertFalse(source.contains("contextRecordings.contains"))
+    }
+
     private func macSource(_ relativePath: String) throws -> String {
         let file = try repoRoot().appendingPathComponent("macos/WaiComputer").appendingPathComponent(relativePath)
         return try String(contentsOf: file, encoding: .utf8)
