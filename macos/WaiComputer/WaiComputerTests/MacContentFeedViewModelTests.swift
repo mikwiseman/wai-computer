@@ -768,6 +768,20 @@ final class MacContentFeedViewModelTests: XCTestCase {
         XCTAssertFalse(source.contains("LazyVStack(alignment: .leading, spacing: 2)"))
     }
 
+    func testSettingsTelegramQRCodeIsCachedAcrossInvalidations() throws {
+        let source = try macSource("WaiComputer/Features/Settings/MacSettingsView.swift")
+
+        // QR generation allocates Core Image/AppKit objects. Keep it out of
+        // ordinary Settings body invalidations while the same pairing link is
+        // visible; unrelated toggles and permission polling should reuse the
+        // already-rendered NSImage.
+        XCTAssertTrue(source.contains("@State private var telegramQRCodeCache = MacTelegramQRCodeCache()"))
+        XCTAssertTrue(source.contains("telegramQRCodeCache.image(for: pairing.webLink)"))
+        XCTAssertTrue(source.contains("private final class MacTelegramQRCodeCache"))
+        XCTAssertFalse(source.contains("if let qr = qrImage(from: pairing.webLink)"))
+        XCTAssertFalse(source.contains("private func qrImage(from string: String)"))
+    }
+
     func testRecordingListContextMenuAvoidsFullListFilterForSingleRowActions() throws {
         let source = try macSource("WaiComputer/Features/Library/RecordingListView.swift")
 

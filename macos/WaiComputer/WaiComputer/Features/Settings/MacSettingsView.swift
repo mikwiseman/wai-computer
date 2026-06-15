@@ -120,6 +120,36 @@ private let mcpClientGuides: [McpClient: McpClientGuide] = [
     ),
 ]
 
+private final class MacTelegramQRCodeCache {
+    private var cachedLink: String?
+    private var cachedImage: NSImage?
+
+    func image(for link: String) -> NSImage? {
+        if link == cachedLink {
+            return cachedImage
+        }
+        cachedLink = link
+        cachedImage = Self.generateImage(from: link)
+        return cachedImage
+    }
+
+    /// Render a QR for the pairing web link so a desktop user can scan it with
+    /// their phone to open the bot there (137). Returns nil if generation fails;
+    /// the explicit "Open Telegram" button is always available regardless.
+    private static func generateImage(from string: String) -> NSImage? {
+        guard !string.isEmpty,
+              let filter = CIFilter(name: "CIQRCodeGenerator") else { return nil }
+        filter.setValue(Data(string.utf8), forKey: "inputMessage")
+        filter.setValue("M", forKey: "inputCorrectionLevel")
+        guard let output = filter.outputImage else { return nil }
+        let scaled = output.transformed(by: CGAffineTransform(scaleX: 8, y: 8))
+        let rep = NSCIImageRep(ciImage: scaled)
+        let image = NSImage(size: rep.size)
+        image.addRepresentation(rep)
+        return image
+    }
+}
+
 private enum MacSettingsCategory: String, CaseIterable, Identifiable {
     // Declaration order = tab order. Voice & AI leads: it holds the everyday
     // settings (app language, recording languages, summaries, dictation), so
@@ -170,6 +200,7 @@ struct MacSettingsView: View {
     @State private var telegramLinkCode = ""
     @State private var telegramLoading = false
     @State private var telegramError: String?
+    @State private var telegramQRCodeCache = MacTelegramQRCodeCache()
     @State private var telegramLinkPollTask: Task<Void, Never>?
     @State private var telegramShowCodeEntry = false
     @State private var serverDataInfo: SystemInfo?
@@ -1127,7 +1158,7 @@ struct MacSettingsView: View {
 
                 if let pairing = telegramPairing {
                     VStack(alignment: .leading, spacing: Spacing.sm) {
-                        if let qr = qrImage(from: pairing.webLink) {
+                        if let qr = telegramQRCodeCache.image(for: pairing.webLink) {
                             Image(nsImage: qr)
                                 .interpolation(.none)
                                 .resizable()
@@ -2052,22 +2083,6 @@ struct MacSettingsView: View {
             "Не удалось открыть Telegram."
         )
         return false
-    }
-
-    /// Render a QR for the pairing web link so a desktop user can scan it with
-    /// their phone to open the bot there (137). Returns nil if generation fails;
-    /// the explicit "Open Telegram" button is always available regardless.
-    private func qrImage(from string: String) -> NSImage? {
-        guard !string.isEmpty,
-              let filter = CIFilter(name: "CIQRCodeGenerator") else { return nil }
-        filter.setValue(Data(string.utf8), forKey: "inputMessage")
-        filter.setValue("M", forKey: "inputCorrectionLevel")
-        guard let output = filter.outputImage else { return nil }
-        let scaled = output.transformed(by: CGAffineTransform(scaleX: 8, y: 8))
-        let rep = NSCIImageRep(ciImage: scaled)
-        let image = NSImage(size: rep.size)
-        image.addRepresentation(rep)
-        return image
     }
 
     private func startTelegramLinkPolling(until expiresAt: Date) {
