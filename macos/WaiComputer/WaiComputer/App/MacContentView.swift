@@ -1728,6 +1728,12 @@ private struct CompletedRecordingTransitionView: View {
     let transition: CompletedRecordingContext
     @EnvironmentObject private var languageManager: LanguageManager
 
+    private static let transcriptChunkLimit = 1_800
+
+    private var transcriptChunks: [CompletedRecordingTranscriptChunk] {
+        completedRecordingTranscriptChunks(from: transition.transcript)
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             ViewThatFits(in: .horizontal) {
@@ -1745,15 +1751,27 @@ private struct CompletedRecordingTransitionView: View {
             WaiDivider()
 
             if !transition.transcript.isEmpty {
-                ScrollView {
-                    Text(transition.transcript)
-                        .font(Typography.reading)
-                        .lineSpacing(6)
-                        .foregroundStyle(Palette.textPrimary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(Spacing.lg)
-                        .textSelection(.enabled)
+                List {
+                    ForEach(transcriptChunks) { chunk in
+                        Text(chunk.text)
+                            .font(Typography.reading)
+                            .lineSpacing(6)
+                            .foregroundStyle(Palette.textPrimary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .textSelection(.enabled)
+                            .listRowInsets(EdgeInsets(
+                                top: chunk.id == 0 ? Spacing.lg : Spacing.xs,
+                                leading: Spacing.lg,
+                                bottom: Spacing.xs,
+                                trailing: Spacing.lg
+                            ))
+                            .listRowSeparator(.hidden)
+                            .listRowBackground(Color.clear)
+                    }
                 }
+                .listStyle(.plain)
+                .scrollContentBackground(.hidden)
+                .accessibilityIdentifier("completed-recording-transcript-list")
             } else {
                 VStack {
                     Spacer()
@@ -1766,6 +1784,51 @@ private struct CompletedRecordingTransitionView: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("completed-recording-transition")
+    }
+
+    private func completedRecordingTranscriptChunks(from transcript: String) -> [CompletedRecordingTranscriptChunk] {
+        let normalized = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalized.isEmpty else { return [] }
+
+        var chunks: [CompletedRecordingTranscriptChunk] = []
+        var chunkId = 0
+        var start = normalized.startIndex
+
+        while start < normalized.endIndex {
+            let hardEnd = normalized.index(
+                start,
+                offsetBy: Self.transcriptChunkLimit,
+                limitedBy: normalized.endIndex
+            ) ?? normalized.endIndex
+            var end = hardEnd
+
+            if hardEnd < normalized.endIndex {
+                let slice = normalized[start..<hardEnd]
+                if let newline = slice.lastIndex(of: "\n"),
+                   normalized.distance(from: start, to: newline) > Self.transcriptChunkLimit / 2 {
+                    end = normalized.index(after: newline)
+                } else if let space = slice.lastIndex(of: " "),
+                          normalized.distance(from: start, to: space) > Self.transcriptChunkLimit / 2 {
+                    end = normalized.index(after: space)
+                }
+            }
+
+            let text = String(normalized[start..<end])
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            if !text.isEmpty {
+                chunks.append(CompletedRecordingTranscriptChunk(id: chunkId, text: text))
+                chunkId += 1
+            }
+
+            start = end
+        }
+
+        return chunks
+    }
+
+    private struct CompletedRecordingTranscriptChunk: Identifiable, Equatable {
+        let id: Int
+        let text: String
     }
 
     private func formatDuration(_ duration: TimeInterval) -> String {
@@ -1785,30 +1848,23 @@ private struct CompletedRecordingTransitionView: View {
     }
 
     private var transitionTitle: some View {
-        HStack(spacing: Spacing.md) {
-            ProgressView()
-                .controlSize(.small)
-                .frame(width: 12, height: 12)
-
-            Text(t("Saving transcript...", "Сохраняем расшифровку..."))
-                .font(Typography.displaySmall)
-                .foregroundStyle(Palette.textSecondary)
-                .lineLimit(2)
-        }
+        Text(t("Recording saved", "Запись сохранена"))
+            .font(Typography.headingSmall)
+            .foregroundStyle(Palette.textPrimary)
     }
 
     private var durationText: some View {
-        Text(formatDuration(transition.duration))
-            .font(Typography.monoLarge)
+        Label(formatDuration(transition.duration), systemImage: "clock")
+            .font(Typography.label)
             .foregroundStyle(Palette.textSecondary)
-            .lineLimit(1)
+            .labelStyle(.titleAndIcon)
     }
 
     private var recordingTypeText: some View {
-        Text(recordingTypeLabel(transition.recordingType))
+        Label(recordingTypeLabel(transition.recordingType), systemImage: recordingTypeIcon(transition.recordingType))
             .font(Typography.label)
-            .foregroundStyle(Palette.typeColor(transition.recordingType))
-            .lineLimit(1)
+            .foregroundStyle(Palette.textSecondary)
+            .labelStyle(.titleAndIcon)
     }
 
     private func recordingTypeLabel(_ type: RecordingType) -> String {
@@ -1819,6 +1875,17 @@ private struct CompletedRecordingTransitionView: View {
             return t("Note", "Заметка")
         case .reflection:
             return t("Reflection", "Рефлексия")
+        }
+    }
+
+    private func recordingTypeIcon(_ type: RecordingType) -> String {
+        switch type {
+        case .meeting:
+            return "person.2"
+        case .note:
+            return "note.text"
+        case .reflection:
+            return "sparkles"
         }
     }
 

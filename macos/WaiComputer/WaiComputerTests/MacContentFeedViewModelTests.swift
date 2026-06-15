@@ -226,6 +226,20 @@ final class MacContentFeedViewModelTests: XCTestCase {
         XCTAssertFalse(panelSource.contains("Text(answerText)"))
     }
 
+    func testCompletedRecordingTransitionChunksLongTranscriptPreview() throws {
+        let source = try macSource("WaiComputer/App/MacContentView.swift")
+
+        // Stopping a long recording briefly shows the completed-recording
+        // transition. It must not lay out the whole transcript as one Text
+        // while the app is also finalizing and navigating.
+        XCTAssertTrue(source.contains("CompletedRecordingTranscriptChunk"))
+        XCTAssertTrue(source.contains("completedRecordingTranscriptChunks(from: transition.transcript)"))
+        XCTAssertTrue(source.contains(".accessibilityIdentifier(\"completed-recording-transcript-list\")"))
+        XCTAssertTrue(source.contains("ForEach(transcriptChunks)"))
+        XCTAssertFalse(source.contains("Text(transition.transcript)"))
+        XCTAssertFalse(source.contains("ScrollView {\n                    Text(transition.transcript)"))
+    }
+
     func testInboxSourceFilterPutsAllLastAndShellDefaultsInboxToRecordings() throws {
         let inboxSource = try macSource("WaiComputer/Features/Inbox/MacInboxView.swift")
         let shellSource = try macSource("WaiComputer/App/MacContentView.swift")
