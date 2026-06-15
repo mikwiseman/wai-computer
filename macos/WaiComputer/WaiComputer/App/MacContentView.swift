@@ -122,6 +122,7 @@ struct MacMainView: View {
     @State private var pendingRecordingSelectionAfterSectionChange: PendingRecordingSelection?
     @State private var pendingInboxDetail: InboxDetailRef?
     @State private var pendingInboxCommand: MacInboxCommand?
+    @State private var recordingDisplayCache = MacRecordingDisplayCache()
     /// Sidebar row currently highlighted as a drag-and-drop target (e.g.
     /// "folder-<id>", "inbox", "trash"). Drives the drop highlight.
     @State private var dropTargetIdentifier: String?
@@ -157,10 +158,6 @@ struct MacMainView: View {
         }
     }
 
-    private var currentRecordingType: RecordingType? {
-        nil
-    }
-
     private var currentFolderId: String? {
         switch selectedSection {
         case .folder(let folderId):
@@ -175,14 +172,6 @@ struct MacMainView: View {
             return true
         }
         return false
-    }
-
-    private var displayedRecordings: [Recording] {
-        libraryViewModel.filteredRecordings(
-            type: currentRecordingType,
-            folderId: currentFolderId,
-            trashed: isTrashSection
-        )
     }
 
     private var selectedRecordingId: String? {
@@ -905,9 +894,12 @@ struct MacMainView: View {
     @ViewBuilder
     private var listColumn: some View {
         if hasListColumn {
-            // Filter+sort once per render instead of three times (count, empty
-            // check, and the list itself each re-derived it).
-            let displayed = displayedRecordings
+            let displayed = recordingDisplayCache.recordings(
+                active: libraryViewModel.recordings,
+                trashed: libraryViewModel.trashedRecordings,
+                folderId: currentFolderId,
+                showingTrash: isTrashSection
+            )
             VStack(spacing: 0) {
                 HStack(spacing: Spacing.sm) {
                     Text(currentListTitle)
@@ -2167,6 +2159,43 @@ private struct RecordingRecoveryNoticeBanner: View {
         .clipShape(RoundedRectangle(cornerRadius: 10))
         .shadow(color: .black.opacity(0.18), radius: 10, y: 4)
         .accessibilityIdentifier("recording-recovery-banner")
+    }
+}
+
+/// Keeps the legacy recordings column from re-filtering its whole source array
+/// on unrelated shell invalidations while the List is trying to preserve scroll.
+private final class MacRecordingDisplayCache {
+    private var lastActive: [Recording] = []
+    private var lastTrashed: [Recording] = []
+    private var lastFolderId: String?
+    private var lastShowingTrash = false
+    private var cached: [Recording] = []
+
+    func recordings(
+        active: [Recording],
+        trashed: [Recording],
+        folderId: String?,
+        showingTrash: Bool
+    ) -> [Recording] {
+        if active == lastActive,
+           trashed == lastTrashed,
+           folderId == lastFolderId,
+           showingTrash == lastShowingTrash {
+            return cached
+        }
+
+        let source = showingTrash ? trashed : active
+        if let folderId {
+            cached = source.filter { $0.folderId == folderId }
+        } else {
+            cached = source
+        }
+
+        lastActive = active
+        lastTrashed = trashed
+        lastFolderId = folderId
+        lastShowingTrash = showingTrash
+        return cached
     }
 }
 

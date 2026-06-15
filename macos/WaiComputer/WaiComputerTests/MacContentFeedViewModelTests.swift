@@ -622,6 +622,20 @@ final class MacContentFeedViewModelTests: XCTestCase {
         XCTAssertFalse(source.contains("contextRecordings.contains"))
     }
 
+    func testLibraryRecordingListUsesMemoizedDisplayInput() throws {
+        let source = try macSource("WaiComputer/App/MacContentView.swift")
+
+        // The legacy recordings column is still a large scroll surface. Keep
+        // folder/trash filtering out of ordinary view invalidations so shell
+        // state changes do not hand a freshly-filtered array to the List.
+        XCTAssertTrue(source.contains("@State private var recordingDisplayCache = MacRecordingDisplayCache()"))
+        XCTAssertTrue(source.contains("recordingDisplayCache.recordings("))
+        XCTAssertTrue(source.contains("private final class MacRecordingDisplayCache"))
+        XCTAssertFalse(source.contains("private var displayedRecordings: [Recording]"))
+        XCTAssertFalse(source.contains("let displayed = displayedRecordings"))
+        XCTAssertFalse(source.contains("libraryViewModel.filteredRecordings("))
+    }
+
     private func macSource(_ relativePath: String) throws -> String {
         let file = try repoRoot().appendingPathComponent("macos/WaiComputer").appendingPathComponent(relativePath)
         return try String(contentsOf: file, encoding: .utf8)
