@@ -310,6 +310,35 @@ final class MacRecordingDetailViewModelTests: XCTestCase {
         XCTAssertEqual(afterReassign.first?.text, "Hello there. How are you? I am well.")
     }
 
+    func testTranscriptTurnsInvalidateWhenSegmentContentChangesWithoutIdentityChange() {
+        let initialSegments = [
+            Segment(id: "s1", speaker: "Speaker 1", rawLabel: "speaker_1", content: "Old text.", startMs: 0, endMs: 1_000),
+        ]
+        let viewModel = MacRecordingDetailViewModel(initialDetail: RecordingDetail(
+            id: "rec-content-change",
+            title: "Memo",
+            type: .meeting,
+            status: .ready,
+            createdAt: Date(timeIntervalSince1970: 1_709_292_000),
+            segments: initialSegments
+        ))
+
+        XCTAssertEqual(viewModel.transcriptTurns(languageCode: "en").first?.text, "Old text.")
+
+        viewModel.recordingDetail = RecordingDetail(
+            id: "rec-content-change",
+            title: "Memo",
+            type: .meeting,
+            status: .ready,
+            createdAt: Date(timeIntervalSince1970: 1_709_292_000),
+            segments: [
+                Segment(id: "s1", speaker: "Speaker 1", rawLabel: "speaker_1", content: "Updated text.", startMs: 0, endMs: 1_000),
+            ]
+        )
+
+        XCTAssertEqual(viewModel.transcriptTurns(languageCode: "en").first?.text, "Updated text.")
+    }
+
     private func makeDetail(id: String, title: String) -> RecordingDetail {
         RecordingDetail(
             id: id,

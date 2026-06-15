@@ -574,6 +574,21 @@ final class MacContentFeedViewModelTests: XCTestCase {
         XCTAssertFalse(source.contains("enum Tab"))
     }
 
+    func testRecordingDetailTranscriptTurnsUseRevisionCacheKey() throws {
+        let source = try macSource("WaiComputer/Features/Library/MacRecordingDetailViewModel.swift")
+
+        // The detail view calls transcriptTurns during body evaluation. Long
+        // recordings must not rebuild an O(n) segment hash on every scroll or
+        // header-state invalidation; recordingDetail changes should bump a
+        // cheap revision key instead.
+        XCTAssertTrue(source.contains("@Published var recordingDetail: RecordingDetail? {\n        didSet { recordingDetailRevision += 1 }"))
+        XCTAssertTrue(source.contains("private var recordingDetailRevision = 0"))
+        XCTAssertTrue(source.contains("private struct MacTranscriptTurnsCacheKey: Equatable"))
+        XCTAssertTrue(source.contains("MacTranscriptTurnsCacheKey(languageCode: languageCode, revision: recordingDetailRevision)"))
+        XCTAssertFalse(source.contains("for segment in segments {"))
+        XCTAssertFalse(source.contains("hasher.combine(segment."))
+    }
+
     func testItemDetailShowsSummaryBeforeOriginalMaterial() throws {
         let source = try macSource("WaiComputer/Features/Content/MacItemDetailView.swift")
 

@@ -54,7 +54,9 @@ enum MacSummaryAudioPlayback {
 
 @MainActor
 class MacRecordingDetailViewModel: ObservableObject {
-    @Published var recordingDetail: RecordingDetail?
+    @Published var recordingDetail: RecordingDetail? {
+        didSet { recordingDetailRevision += 1 }
+    }
     @Published var isLoading = false
     @Published var error: String?
     @Published var localRecoveryManifest: RecordingBackupManifest?
@@ -71,10 +73,16 @@ class MacRecordingDetailViewModel: ObservableObject {
     // Memoized transcript turns. `mergeTurns` sorts + groups (O(n log n)); it used
     // to re-run on every SwiftUI body pass (selection, the auto-refresh poll,
     // summary-audio state) which was a major scroll-jank source on long
-    // transcripts. Recompute only when the transcript content, speaker
-    // assignments, or display language actually change.
+    // transcripts. Recording detail mutations bump `recordingDetailRevision`,
+    // keeping the per-body cache key constant-time even for long transcripts.
+    private var recordingDetailRevision = 0
     private var cachedTurns: [TranscriptTurn] = []
-    private var cachedTurnsKey: Int?
+    private var cachedTurnsKey: MacTranscriptTurnsCacheKey?
+
+    private struct MacTranscriptTurnsCacheKey: Equatable {
+        let languageCode: String
+        let revision: Int
+    }
 
     init(
         initialDetail: RecordingDetail? = nil,
@@ -95,20 +103,10 @@ class MacRecordingDetailViewModel: ObservableObject {
 
     /// Merged, render-ready transcript turns — memoized (see `cachedTurns`). The
     /// view calls this once per body pass; the work only happens when the cache
-    /// key (content + speaker assignments + language) changes.
+    /// key (recording detail revision + language) changes.
     func transcriptTurns(languageCode: String) -> [TranscriptTurn] {
         let segments = recordingDetail?.segments ?? []
-        var hasher = Hasher()
-        hasher.combine(languageCode)
-        for segment in segments {
-            hasher.combine(segment.id)
-            hasher.combine(segment.personId)
-            hasher.combine(segment.rawLabel)
-            hasher.combine(segment.speaker)
-            hasher.combine(segment.displayName)
-            hasher.combine(segment.startMs)
-        }
-        let key = hasher.finalize()
+        let key = MacTranscriptTurnsCacheKey(languageCode: languageCode, revision: recordingDetailRevision)
         if key == cachedTurnsKey {
             return cachedTurns
         }
