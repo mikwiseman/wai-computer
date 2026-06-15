@@ -47,6 +47,19 @@ final class MacContentFeedViewModelTests: XCTestCase {
         XCTAssertFalse(source.contains("LazyVStack(spacing: 0)"))
     }
 
+    func testSearchResultsUseRecyclingListForFastScrollingRows() throws {
+        let source = try macSource("WaiComputer/Features/Search/MacSearchView.swift")
+
+        // Search can return long result sets. Keep results on an AppKit-backed
+        // List instead of a ScrollView/LazyVStack so rows are measured and
+        // recycled by the platform while scrolling.
+        XCTAssertTrue(source.contains("List {"))
+        XCTAssertTrue(source.contains(".searchResultListRow()"))
+        XCTAssertTrue(source.contains(".accessibilityIdentifier(\"search-results-list\")"))
+        XCTAssertFalse(source.contains("ScrollView {"))
+        XCTAssertFalse(source.contains("LazyVStack"))
+    }
+
     func testInboxViewDoesNotRenderStatusFilter() throws {
         let source = try macSource("WaiComputer/Features/Inbox/MacInboxView.swift")
 

@@ -145,36 +145,40 @@ struct MacSearchView: View {
             )
             .accessibilityIdentifier("search-empty-state")
         } else {
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: Spacing.sm) {
-                    Text(resultsCountText(
-                        shown: viewModel.scope == .everything
-                            ? viewModel.unifiedResults.count
-                            : viewModel.results.count,
-                        total: viewModel.totalResults
-                    ))
-                        .font(Typography.label)
-                        .foregroundStyle(Palette.textTertiary)
-                        .padding(.horizontal, Spacing.lg)
+            List {
+                Text(resultsCountText(
+                    shown: viewModel.scope == .everything
+                        ? viewModel.unifiedResults.count
+                        : viewModel.results.count,
+                    total: viewModel.totalResults
+                ))
+                .font(Typography.label)
+                .foregroundStyle(Palette.textTertiary)
+                .padding(.horizontal, Spacing.lg)
+                .padding(.top, Spacing.lg)
+                .searchResultListRow()
 
-                    if viewModel.scope == .everything {
-                        ForEach(viewModel.unifiedResults) { hit in
-                            UnifiedResultRow(hit: hit) {
-                                openUnifiedHit(hit)
-                            }
+                if viewModel.scope == .everything {
+                    ForEach(viewModel.unifiedResults) { hit in
+                        UnifiedResultRow(hit: hit) {
+                            openUnifiedHit(hit)
                         }
-                    } else {
-                        ForEach(viewModel.results) { result in
-                            SearchResultRow(result: result) {
-                                onOpenRecording(result.recordingId)
-                            }
+                        .searchResultListRow()
+                    }
+                } else {
+                    ForEach(viewModel.results) { result in
+                        SearchResultRow(result: result) {
+                            onOpenRecording(result.recordingId)
                         }
+                        .searchResultListRow()
                     }
                 }
-                .padding(.vertical, Spacing.lg)
-                .frame(maxWidth: MacMainLayoutMetrics.searchContentMaxWidth, alignment: .leading)
-                .frame(maxWidth: .infinity, alignment: .topLeading)
             }
+            .listStyle(.plain)
+            .scrollContentBackground(.hidden)
+            .frame(maxWidth: MacMainLayoutMetrics.searchContentMaxWidth, alignment: .leading)
+            .frame(maxWidth: .infinity, alignment: .topLeading)
+            .accessibilityIdentifier("search-results-list")
         }
     }
 
@@ -220,6 +224,15 @@ struct MacSearchView: View {
 
     private func t(_ english: String, _ russian: String) -> String {
         OnboardingL10n.text(english, russian, language: languageManager.current)
+    }
+}
+
+private extension View {
+    func searchResultListRow() -> some View {
+        self
+            .listRowInsets(EdgeInsets())
+            .listRowSeparator(.hidden)
+            .listRowBackground(Color.clear)
     }
 }
 
