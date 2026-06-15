@@ -37,13 +37,12 @@ struct MacItemDetailView: View {
 
     private var summary: ItemSummary? { content.summary }
     private var keyMoments: [KeyMoment] { content.keyMoments }
-    private var keyPoints: [String] { content.keyPoints }
     private var summaryAudio: SummaryAudioState? { content.summaryAudio }
     private var topics: [String] { content.topics }
 
     private var hasUsefulSummary: Bool {
         let text = summary?.summary?.trimmingCharacters(in: .whitespacesAndNewlines)
-        return !(text?.isEmpty ?? true) || !keyPoints.isEmpty || !keyMoments.isEmpty || !topics.isEmpty
+        return !(text?.isEmpty ?? true) || !content.keyPointRows.isEmpty || !keyMoments.isEmpty || !topics.isEmpty
     }
 
     private func t(_ english: String, _ russian: String) -> String {
@@ -222,16 +221,16 @@ struct MacItemDetailView: View {
                         .textSelection(.enabled)
                 }
 
-                if !keyPoints.isEmpty {
+                if !content.keyPointRows.isEmpty {
                     VStack(alignment: .leading, spacing: Spacing.xs) {
                         Text(t("Key points", "Главное"))
                             .waiSectionHeader()
-                        ForEach(Array(keyPoints.enumerated()), id: \.offset) { _, point in
+                        ForEach(content.keyPointRows) { row in
                             HStack(alignment: .firstTextBaseline, spacing: Spacing.sm) {
                                 Circle()
                                     .fill(Palette.accent)
                                     .frame(width: 5, height: 5)
-                                Text(point)
+                                Text(row.text)
                                     .font(Typography.bodySmall)
                                     .lineSpacing(4)
                                     .textSelection(.enabled)
@@ -487,7 +486,7 @@ struct MacItemDetailView: View {
 private struct MacItemDetailContent {
     let summary: ItemSummary?
     let keyMoments: [KeyMoment]
-    let keyPoints: [String]
+    let keyPointRows: [ItemKeyPointRow]
     let summaryAudio: SummaryAudioState?
     let topics: [String]
     let originalBodyChunks: [OriginalMaterialChunk]
@@ -495,7 +494,9 @@ private struct MacItemDetailContent {
     init(item: Item) {
         summary = item.summary
         keyMoments = item.summary?.keyMoments ?? []
-        keyPoints = item.summary?.keyPoints ?? []
+        keyPointRows = (item.summary?.keyPoints ?? []).enumerated().map { index, text in
+            ItemKeyPointRow(id: index, text: text)
+        }
         summaryAudio = item.summaryAudio
         topics = item.summary?.topics ?? []
         originalBodyChunks = Self.originalMaterialChunks(from: item.body)
@@ -539,6 +540,11 @@ private struct MacItemDetailContent {
 
         return chunks
     }
+}
+
+private struct ItemKeyPointRow: Identifiable, Equatable {
+    let id: Int
+    let text: String
 }
 
 private struct OriginalMaterialChunk: Identifiable, Equatable {

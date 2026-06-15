@@ -571,10 +571,14 @@ final class MacContentFeedViewModelTests: XCTestCase {
         XCTAssertTrue(source.contains("List {"))
         XCTAssertTrue(source.contains("OriginalMaterialChunk"))
         XCTAssertTrue(source.contains("originalMaterialChunks"))
+        XCTAssertTrue(source.contains("ItemKeyPointRow"))
+        XCTAssertTrue(source.contains("content.keyPointRows"))
         XCTAssertTrue(source.contains("ForEach(content.originalBodyChunks)"))
+        XCTAssertTrue(source.contains("ForEach(content.keyPointRows)"))
         XCTAssertTrue(source.contains(".itemDetailListRow()"))
         XCTAssertFalse(source.contains("ScrollView {"))
         XCTAssertFalse(source.contains("Text(body)"))
+        XCTAssertFalse(source.contains("ForEach(Array(keyPoints.enumerated())"))
     }
 
     func testStandaloneTranscriptViewUsesRecyclingListAndCachedTurns() throws {
