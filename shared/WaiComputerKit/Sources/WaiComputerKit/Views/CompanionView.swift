@@ -39,6 +39,10 @@ enum CompanionComposerMetrics {
     static let maxHeight: CGFloat = 112
 }
 
+private enum CompanionLayoutMetrics {
+    static let contentMaxWidth: CGFloat = 880
+}
+
 enum CompanionChatPresentation {
     static func chatLabel(
         title: String?,
@@ -86,6 +90,17 @@ private enum CompanionRelativeDateFormatterCache {
             formatter = created
         }
         return formatter.localizedString(for: date, relativeTo: referenceDate)
+    }
+}
+
+private extension View {
+    func companionMessageListRow() -> some View {
+        self
+            .frame(maxWidth: CompanionLayoutMetrics.contentMaxWidth, alignment: .leading)
+            .frame(maxWidth: .infinity, alignment: .center)
+            .listRowInsets(EdgeInsets(top: 0, leading: 24, bottom: 0, trailing: 24))
+            .listRowSeparator(.hidden)
+            .listRowBackground(Color.clear)
     }
 }
 
@@ -156,7 +171,7 @@ public struct CompanionView: View {
     @State private var isRenamingChat = false
     @State private var deletingChat: CompanionConversation?
     @State private var didAutoSendInitial = false
-    private let contentMaxWidth: CGFloat = 880
+    private let contentMaxWidth: CGFloat = CompanionLayoutMetrics.contentMaxWidth
 
     private enum TurnStage {
         case idle
@@ -403,45 +418,53 @@ public struct CompanionView: View {
         }
     }
 
+    @ViewBuilder
     private var messageList: some View {
+        #if os(macOS)
+        macMessageList
+        #else
+        scrollMessageList
+        #endif
+    }
+
+    #if os(macOS)
+    private var macMessageList: some View {
+        GeometryReader { viewport in
+            ScrollViewReader { proxy in
+                List {
+                    messageRows
+                }
+                .listStyle(.plain)
+                .scrollContentBackground(.hidden)
+                .coordinateSpace(name: "chatScroll")
+                .onPreferenceChange(ChatBottomOffsetKey.self) { bottomMinY in
+                    // The anchor sits within the viewport (plus a small slack) only
+                    // when the latest content is visible — i.e. the user is at the
+                    // bottom and auto-scroll should follow the stream.
+                    isNearBottom = bottomMinY <= viewport.size.height + 80
+                }
+                .onChangeCompat(of: messages.count) {
+                    guard isNearBottom else { return }
+                    withAnimation {
+                        proxy.scrollTo("bottomAnchor", anchor: .bottom)
+                    }
+                }
+                .onChangeCompat(of: streamTick) {
+                    guard isNearBottom else { return }
+                    proxy.scrollTo("bottomAnchor", anchor: .bottom)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+    #endif
+
+    private var scrollMessageList: some View {
         GeometryReader { viewport in
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 0) {
-                        if messages.isEmpty && liveTurn.isEmpty {
-                            if isLoadingChat {
-                                loadingState
-                            } else {
-                                emptyState
-                            }
-                        }
-                        ForEach(messages) { message in
-                            bubble(for: message)
-                                .id(message.id)
-                        }
-                        if isStreaming || !liveTurn.isEmpty {
-                            streamingBubble
-                                .id("streaming")
-                        }
-                        if let errorMessage {
-                            Text(errorMessage)
-                                .foregroundStyle(.red)
-                                .font(.callout)
-                                .padding(.vertical, 12)
-                        }
-                        // Invisible bottom anchor: its position in the scroll
-                        // viewport tells us whether the user is at the bottom.
-                        Color.clear
-                            .frame(height: 1)
-                            .id("bottomAnchor")
-                            .background(
-                                GeometryReader { geo in
-                                    Color.clear.preference(
-                                        key: ChatBottomOffsetKey.self,
-                                        value: geo.frame(in: .named("chatScroll")).minY
-                                    )
-                                }
-                            )
+                        messageRows
                     }
                     .frame(maxWidth: contentMaxWidth, alignment: .leading)
                     .padding(.horizontal, 24)
@@ -468,6 +491,50 @@ public struct CompanionView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    @ViewBuilder
+    private var messageRows: some View {
+        if messages.isEmpty && liveTurn.isEmpty {
+            if isLoadingChat {
+                loadingState
+                    .companionMessageListRow()
+            } else {
+                emptyState
+                    .companionMessageListRow()
+            }
+        }
+        ForEach(messages) { message in
+            bubble(for: message)
+                .id(message.id)
+                .companionMessageListRow()
+        }
+        if isStreaming || !liveTurn.isEmpty {
+            streamingBubble
+                .id("streaming")
+                .companionMessageListRow()
+        }
+        if let errorMessage {
+            Text(errorMessage)
+                .foregroundStyle(.red)
+                .font(.callout)
+                .padding(.vertical, 12)
+                .companionMessageListRow()
+        }
+        // Invisible bottom anchor: its position in the scroll viewport tells us
+        // whether the user is at the bottom.
+        Color.clear
+            .frame(height: 1)
+            .id("bottomAnchor")
+            .background(
+                GeometryReader { geo in
+                    Color.clear.preference(
+                        key: ChatBottomOffsetKey.self,
+                        value: geo.frame(in: .named("chatScroll")).minY
+                    )
+                }
+            )
+            .companionMessageListRow()
     }
 
     /// Copy-free progress shown while a thread's history loads, in place of

@@ -289,6 +289,20 @@ final class MacContentFeedViewModelTests: XCTestCase {
         XCTAssertFalse(source.contains("let formatter = RelativeDateTimeFormatter()"))
     }
 
+    func testCompanionMessageStreamUsesRecyclingRowsOnMac() throws {
+        let source = try sharedSource("Sources/WaiComputerKit/Views/CompanionView.swift")
+
+        // Long Wai threads can contain many rich assistant turns. The macOS
+        // message stream should use List row reuse instead of keeping the full
+        // conversation in a LazyVStack while scrolling.
+        XCTAssertTrue(source.contains("private var macMessageList: some View"))
+        XCTAssertTrue(source.contains("private var messageRows: some View"))
+        XCTAssertTrue(source.contains("List {"))
+        XCTAssertTrue(source.contains("messageRows"))
+        XCTAssertTrue(source.contains(".companionMessageListRow()"))
+        XCTAssertFalse(source.contains("ScrollView {\n                    LazyVStack(alignment: .leading, spacing: 0) {\n                        if messages.isEmpty"))
+    }
+
     func testInboxFocusedCompanionNotifiesWhenTurnCompletes() throws {
         let source = try macSource("WaiComputer/Features/Inbox/MacInboxView.swift")
 
