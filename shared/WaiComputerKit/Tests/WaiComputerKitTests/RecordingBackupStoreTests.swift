@@ -47,7 +47,7 @@ final class RecordingBackupStoreTests: XCTestCase {
             durationSeconds: 5, transcript: "ok", segments: []
         )
 
-        let reset = RecordingBackupStore.resetOversizedPermanentFailures()
+        let reset = try RecordingBackupStore.resetOversizedPermanentFailures()
 
         XCTAssertEqual(reset, [tooLarge], "only the too-large failure should heal")
         XCTAssertEqual(try RecordingBackupStore.manifest(recordingId: tooLarge)?.syncState, .localReady)
@@ -59,7 +59,15 @@ final class RecordingBackupStoreTests: XCTestCase {
         XCTAssertEqual(try RecordingBackupStore.manifest(recordingId: normal)?.syncState, .localReady)
 
         // Idempotent: nothing left to heal on a second pass.
-        XCTAssertTrue(RecordingBackupStore.resetOversizedPermanentFailures().isEmpty)
+        XCTAssertTrue(try RecordingBackupStore.resetOversizedPermanentFailures().isEmpty)
+    }
+
+    func testResetOversizedPermanentFailuresSurfacesListFailures() throws {
+        let fileBackedRoot = backupRoot.appendingPathComponent("not-a-directory")
+        try Data([0]).write(to: fileBackedRoot)
+        RecordingBackupStore.overrideBaseDirectory = fileBackedRoot
+
+        XCTAssertThrowsError(try RecordingBackupStore.resetOversizedPermanentFailures())
     }
 
     func testSaveRecordingCreatesDurableFiles() throws {

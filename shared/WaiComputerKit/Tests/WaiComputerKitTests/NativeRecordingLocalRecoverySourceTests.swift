@@ -25,6 +25,16 @@ final class NativeRecordingLocalRecoverySourceTests: XCTestCase {
         XCTAssertTrue(iosStopPersistence.contains("saveLocalBackupForRetry("))
     }
 
+    func testTranscriptOnlyAudioDiscardFailuresAreCaptured() throws {
+        let macSource = try repoSource("macos/WaiComputer/WaiComputer/Features/Recording/MacRecordingViewModel.swift")
+        let iosSource = try repoSource("ios/WaiComputer/WaiComputer/Features/Recording/RecordingViewModel.swift")
+
+        XCTAssertFalse(macSource.contains("try? RecordingBackupStore.discardAudioFile("))
+        XCTAssertFalse(iosSource.contains("try? RecordingBackupStore.discardAudioFile("))
+        XCTAssertTrue(macSource.contains("discardLocalAudioFileForTranscriptOnlySync("))
+        XCTAssertTrue(iosSource.contains("discardLocalAudioFileForTranscriptOnlySync("))
+    }
+
     private func functionBody(
         named declaration: String,
         in source: String,
