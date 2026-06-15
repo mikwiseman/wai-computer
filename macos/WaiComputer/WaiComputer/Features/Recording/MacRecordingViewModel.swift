@@ -939,7 +939,10 @@ class MacRecordingViewModel: ObservableObject {
         guard FileManager.default.fileExists(atPath: fileWriter.fileURL.path) else { return nil }
         if fileWriter.hasWriteFailure {
             if let recordingId {
-                try? RecordingBackupStore.discardAudioFile(recordingId: recordingId)
+                discardLocalAudioFileForTranscriptOnlySync(
+                    recordingId: recordingId,
+                    reason: "write_failure"
+                )
             }
             SentryHelper.addBreadcrumb(
                 category: "recording",
@@ -964,7 +967,10 @@ class MacRecordingViewModel: ObservableObject {
         }
 
         if let recordingId {
-            try? RecordingBackupStore.discardAudioFile(recordingId: recordingId)
+            discardLocalAudioFileForTranscriptOnlySync(
+                recordingId: recordingId,
+                reason: "below_upload_minimum"
+            )
         }
         SentryHelper.addBreadcrumb(
             category: "recording",
@@ -981,6 +987,22 @@ class MacRecordingViewModel: ObservableObject {
             "Skipping finalized audio upload durationSeconds=\(audioDuration ?? 0, privacy: .public) bytes=\(pcmBytesWritten, privacy: .public)"
         )
         return nil
+    }
+
+    private func discardLocalAudioFileForTranscriptOnlySync(recordingId: String, reason: String) {
+        do {
+            try RecordingBackupStore.discardAudioFile(recordingId: recordingId)
+        } catch {
+            SentryHelper.captureError(
+                error,
+                extras: [
+                    "action": "discardLocalAudioFileForTranscriptOnlySync",
+                    "recordingId": recordingId,
+                    "reason": reason,
+                ]
+            )
+            audioLog.error("Failed to discard local audio file for transcript-only sync")
+        }
     }
 
     private func finalizeRecordingAudioForPersistence(

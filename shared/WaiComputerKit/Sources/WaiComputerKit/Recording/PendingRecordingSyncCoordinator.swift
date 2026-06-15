@@ -53,9 +53,19 @@ public actor PendingRecordingSyncCoordinator {
     private func healLegacyOversizedFailuresIfNeeded() {
         let key = "wai.healedOversizedBackups.v1"
         guard !UserDefaults.standard.bool(forKey: key) else { return }
-        UserDefaults.standard.set(true, forKey: key)
 
-        let reset = RecordingBackupStore.resetOversizedPermanentFailures()
+        let reset: [String]
+        do {
+            reset = try RecordingBackupStore.resetOversizedPermanentFailures()
+            UserDefaults.standard.set(true, forKey: key)
+        } catch {
+            log.error("Failed to scan oversized backups for recompression heal")
+            SentryHelper.captureError(
+                error,
+                extras: ["action": "resetOversizedPermanentFailures"]
+            )
+            return
+        }
         guard !reset.isEmpty else { return }
         log.info("Healed \(reset.count, privacy: .public) oversized backup(s) for recompression")
         SentryHelper.addBreadcrumb(

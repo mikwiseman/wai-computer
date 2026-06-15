@@ -381,19 +381,18 @@ public enum RecordingBackupStore {
     /// deleted-on-server 404s) are intentionally left untouched. Returns the IDs
     /// that were reset.
     @discardableResult
-    public static func resetOversizedPermanentFailures() -> [String] {
-        let backups = (try? listBackups()) ?? []
+    public static func resetOversizedPermanentFailures() throws -> [String] {
+        let backups = try listBackups()
         var reset: [String] = []
         for backup in backups {
-            guard let manifest = try? readManifest(from: backup.manifestURL),
+            guard let manifest = try readManifest(from: backup.manifestURL),
                   manifest.syncState == .permanentFailure,
                   manifest.hasAudioFile,
                   manifest.lastErrorMessage?.localizedCaseInsensitiveContains("too large to upload") == true else {
                 continue
             }
-            if (try? clearPermanentFailureForRecompression(recordingId: backup.recordingId)) != nil {
-                reset.append(backup.recordingId)
-            }
+            try clearPermanentFailureForRecompression(recordingId: backup.recordingId)
+            reset.append(backup.recordingId)
         }
         return reset
     }
@@ -509,7 +508,9 @@ public enum RecordingBackupStore {
     /// passes from uploading a stale or too-short file.
     public static func discardAudioFile(recordingId: String) throws {
         let backup = try makeBackup(recordingId: recordingId)
-        try? FileManager.default.removeItem(at: backup.audioFileURL)
+        if FileManager.default.fileExists(atPath: backup.audioFileURL.path) {
+            try FileManager.default.removeItem(at: backup.audioFileURL)
+        }
 
         guard var manifest = try readManifest(from: backup.manifestURL) else { return }
         manifest.hasAudioFile = false
