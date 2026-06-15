@@ -374,6 +374,23 @@ final class MacContentFeedViewModelTests: XCTestCase {
         XCTAssertFalse(source.contains("\"import-audio-button\" || die \"Import button missing\""))
     }
 
+    func testPeekabooSmokeRefreshesWindowBeforeCaptureAndClick() throws {
+        let source = try repoSource("scripts/macos-peekaboo-smoke.sh")
+
+        // SwiftUI can recreate the main NSWindow during recording transitions.
+        // The smoke gate must refresh the target window instead of reusing a
+        // stale id through the whole scenario.
+        XCTAssertTrue(source.contains("focus_target_window()"))
+        XCTAssertTrue(source.contains("refresh_target_window_id \"$name\""))
+        XCTAssertTrue(source.contains("refresh_target_window_id \"$name-retry\""))
+        XCTAssertTrue(source.contains("focus_target_window \"$identifier\""))
+        XCTAssertTrue(source.contains("focus_target_window \"$name\""))
+        XCTAssertTrue(source.contains("--no-auto-focus"))
+        XCTAssertTrue(source.contains("TARGET_APP_REF=\"$TARGET_BUNDLE_ID\""))
+        XCTAssertTrue(source.contains("if ! peekaboo list windows --app \"$TARGET_APP_REF\""))
+        XCTAssertFalse(source.contains("peekaboo window focus --window-id \"$TARGET_WINDOW_ID\" --bring-to-current-space --json > \"$RUN_DIR/focus-before-$identifier.json\" || true"))
+    }
+
     func testRecordingDetailShowsSummaryBeforeTranscriptWithoutTabs() throws {
         let source = try macSource("WaiComputer/Features/Library/MacRecordingDetailView.swift")
 

@@ -213,7 +213,7 @@ launch_fixture_app() {
   log "Launching $TARGET_BUNDLE_ID in $scenario fixture mode..."
   open -n "${open_env_args[@]}" "$APP_PATH" --args -ApplePersistenceIgnoreState YES -waiUserLanguage "$language"
   wait_for_app_running "$TARGET_BUNDLE_ID"
-  TARGET_APP_REF="PID:$(target_pids "$TARGET_BUNDLE_ID" | tail -n 1)"
+  TARGET_APP_REF="$TARGET_BUNDLE_ID"
   refresh_target_window_id "$scenario"
   peekaboo window focus --window-id "$TARGET_WINDOW_ID" --bring-to-current-space --json > "$RUN_DIR/focus-$scenario.json" || true
   peekaboo window set-bounds --window-id "$TARGET_WINDOW_ID" --x 80 --y 80 --width 1220 --height 708 --json \
@@ -227,7 +227,10 @@ refresh_target_window_id() {
   local deadline=$((SECONDS + 20))
 
   while (( SECONDS < deadline )); do
-    peekaboo list windows --app "$TARGET_APP_REF" --include-details bounds,ids --json > "$windows_json"
+    if ! peekaboo list windows --app "$TARGET_APP_REF" --include-details bounds,ids --json > "$windows_json"; then
+      sleep 0.5
+      continue
+    fi
     TARGET_WINDOW_ID="$(jq -r '
       first(
         .data.windows[]?
@@ -242,6 +245,15 @@ refresh_target_window_id() {
 
   cat "$windows_json" >&2
   die "Unable to find WaiComputer main window for $TARGET_APP_REF"
+}
+
+focus_target_window() {
+  local name="$1"
+
+  peekaboo app switch --to "$TARGET_APP_REF" --json > "$RUN_DIR/switch-before-$name.json" || true
+  refresh_target_window_id "$name"
+  peekaboo window focus --window-id "$TARGET_WINDOW_ID" --bring-to-current-space --json \
+    > "$RUN_DIR/focus-before-$name.json" || true
 }
 
 wait_for_app_running() {
@@ -262,13 +274,29 @@ capture_ui() {
   local name="$1"
   local json_path="$RUN_DIR/$name.json"
   local image_path="$RUN_DIR/$name.png"
+  local attempt
 
-  peekaboo see --window-id "$TARGET_WINDOW_ID" --json --annotate --path "$image_path" > "$json_path"
-  jq -e '.success == true' "$json_path" >/dev/null || {
-    cat "$json_path" >&2
-    die "Peekaboo capture failed: $name"
-  }
-  printf '%s\n' "$json_path"
+  refresh_target_window_id "$name"
+  for attempt in 1 2; do
+    peekaboo see --window-id "$TARGET_WINDOW_ID" --json --annotate --path "$image_path" > "$json_path" || true
+    if jq -e '.success == true' "$json_path" >/dev/null 2>&1; then
+      printf '%s\n' "$json_path"
+      return 0
+    fi
+
+    if (( attempt == 1 )) && jq -e '
+      ((.error.code // "") == "WINDOW_NOT_FOUND")
+      or ((.error.message // "") | contains("Window not found"))
+    ' "$json_path" >/dev/null 2>&1; then
+      refresh_target_window_id "$name-retry"
+      sleep 0.4
+      continue
+    fi
+    break
+  done
+
+  cat "$json_path" >&2
+  die "Peekaboo capture failed: $name"
 }
 
 ui_contains() {
@@ -386,7 +414,7 @@ click_element() {
   [[ -n "$element_id" && "$element_id" != "null" ]] || die "Missing element id for $name"
   fresh_snapshot="$(snapshot_id "$json_path")"
   [[ -n "$fresh_snapshot" && "$fresh_snapshot" != "null" ]] || die "Missing Peekaboo snapshot id for $name"
-  if ! peekaboo click --snapshot "$fresh_snapshot" --on "$element_id" --window-id "$TARGET_WINDOW_ID" --bring-to-current-space --wait-for 5000 --json \
+  if ! peekaboo click --snapshot "$fresh_snapshot" --on "$element_id" --window-id "$TARGET_WINDOW_ID" --no-auto-focus --wait-for 5000 --json \
     > "$RUN_DIR/click-$name.json"; then
     cat "$RUN_DIR/click-$name.json" >&2
     die "Click command failed: $name"
@@ -402,7 +430,7 @@ click_identifier() {
   local identifier="$2"
   local json_path element_id
 
-  peekaboo window focus --window-id "$TARGET_WINDOW_ID" --bring-to-current-space --json > "$RUN_DIR/focus-before-$identifier.json" || true
+  focus_target_window "$identifier"
   json_path="$(capture_ui "before-click-$identifier")"
   element_id="$(element_id_by_identifier "$json_path" "$identifier")"
   click_element "$json_path" "$element_id" "$identifier"
@@ -413,7 +441,7 @@ click_label() {
   local name="$2"
   local json_path element_id
 
-  peekaboo window focus --window-id "$TARGET_WINDOW_ID" --bring-to-current-space --json > "$RUN_DIR/focus-before-$name.json" || true
+  focus_target_window "$name"
   json_path="$(capture_ui "before-click-$name")"
   element_id="$(element_id_by_label "$json_path" "$label")"
   click_element "$json_path" "$element_id" "$name"
@@ -424,13 +452,12 @@ click_query() {
   local name="$2"
   local json_path fresh_snapshot
 
-  peekaboo app switch --to "$TARGET_APP_REF" --json > "$RUN_DIR/switch-before-$name.json" || true
-  peekaboo window focus --window-id "$TARGET_WINDOW_ID" --bring-to-current-space --json > "$RUN_DIR/focus-before-$name.json" || true
+  focus_target_window "$name"
   json_path="$(capture_ui "before-click-$name")"
   fresh_snapshot="$(snapshot_id "$json_path")"
   [[ -n "$fresh_snapshot" && "$fresh_snapshot" != "null" ]] || die "Missing Peekaboo snapshot id before click: $name"
 
-  if ! peekaboo click "$query" --snapshot "$fresh_snapshot" --window-id "$TARGET_WINDOW_ID" --bring-to-current-space --wait-for 5000 --json \
+  if ! peekaboo click "$query" --snapshot "$fresh_snapshot" --window-id "$TARGET_WINDOW_ID" --no-auto-focus --wait-for 5000 --json \
     > "$RUN_DIR/click-$name.json"; then
     cat "$RUN_DIR/click-$name.json" >&2
     die "Click command failed: $name"
