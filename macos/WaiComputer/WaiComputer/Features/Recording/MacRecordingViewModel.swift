@@ -113,6 +113,7 @@ class MacRecordingViewModel: ObservableObject {
 
     /// Committed (final) transcript lines, with speaker labels when available.
     private var committedLines: [(speaker: String?, text: String)] = []
+    private var committedTranscriptHasSpeakerLabels = false
     /// Current interim text (replaced on each new interim result)
     private var interimText = ""
     /// Speaker of the current interim result
@@ -272,6 +273,7 @@ class MacRecordingViewModel: ObservableObject {
         error = nil
         setLiveTranscript(committed: "", interim: "")
         committedLines = []
+        committedTranscriptHasSpeakerLabels = false
         interimText = ""
         interimSpeaker = nil
         isServerComplete = false
@@ -779,6 +781,7 @@ class MacRecordingViewModel: ObservableObject {
                 self.currentRecordingId = nil
                 self.setLiveTranscript(committed: "", interim: "")
                 self.committedLines = []
+                self.committedTranscriptHasSpeakerLabels = false
                 self.interimText = ""
                 self.interimSpeaker = nil
                 self.audioEncoder = nil
@@ -797,6 +800,7 @@ class MacRecordingViewModel: ObservableObject {
     func resetState() {
         setLiveTranscript(committed: "", interim: "")
         committedLines = []
+        committedTranscriptHasSpeakerLabels = false
         interimText = ""
         interimSpeaker = nil
         currentRecordingId = nil
@@ -1414,18 +1418,26 @@ class MacRecordingViewModel: ObservableObject {
         case .connected:
             break
         case .transcript(let segment):
+            let committed: String
             if segment.isFinal {
-                committedLines.append((speaker: segment.speaker, text: segment.text))
+                committed = appendCommittedTranscriptLine(segment)
                 interimText = ""
                 interimSpeaker = nil
             } else {
                 interimText = segment.text
                 interimSpeaker = segment.speaker
+                if !committedTranscriptHasSpeakerLabels, Self.hasSpeakerLabel(segment.speaker) {
+                    committedTranscriptHasSpeakerLabels = true
+                    committed = buildCommittedTranscriptText()
+                } else {
+                    committed = committedTranscript
+                }
             }
-            // Build each piece once and reuse — buildTranscriptText() used to
-            // re-run the committed + interim joins, so the full O(N) join ran
-            // twice per transcript event (several times a second during speech).
-            let committed = buildCommittedTranscriptText()
+
+            // Interim events arrive several times per second. Keep committed
+            // transcript construction incremental so those ticks only update
+            // the rolling interim tail instead of joining every previous final
+            // line again.
             let interim = buildInterimTranscriptText()
             setLiveTranscript(committed: committed, interim: interim)
         case .disconnected(let err):
@@ -1553,10 +1565,40 @@ class MacRecordingViewModel: ObservableObject {
 
     /// True when realtime metadata carries any non-empty speaker labels.
     private var shouldShowSpeakers: Bool {
-        committedLines.contains { speaker, _ in
-            guard let speaker else { return false }
-            return !speaker.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        } || !(interimSpeaker?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
+        committedTranscriptHasSpeakerLabels || Self.hasSpeakerLabel(interimSpeaker)
+    }
+
+    private func appendCommittedTranscriptLine(_ segment: LiveTranscriptSegment) -> String {
+        let previousUsesSpeakerLabels = committedTranscriptHasSpeakerLabels
+        let previousSpeaker = committedLines.last?.speaker
+        committedLines.append((speaker: segment.speaker, text: segment.text))
+
+        if Self.hasSpeakerLabel(segment.speaker) {
+            committedTranscriptHasSpeakerLabels = true
+        }
+
+        if !previousUsesSpeakerLabels, committedTranscriptHasSpeakerLabels {
+            return buildCommittedTranscriptText()
+        }
+
+        guard committedTranscriptHasSpeakerLabels else {
+            if committedTranscript.isEmpty {
+                return segment.text
+            }
+            return committedTranscript + " " + segment.text
+        }
+
+        if committedTranscript.isEmpty {
+            return "\(displaySpeaker(segment.speaker ?? "Speaker")): \(segment.text)"
+        }
+        if previousSpeaker == segment.speaker {
+            return committedTranscript + " " + segment.text
+        }
+        return committedTranscript + "\n\n\(displaySpeaker(segment.speaker ?? "Speaker")): \(segment.text)"
+    }
+
+    private static func hasSpeakerLabel(_ speaker: String?) -> Bool {
+        !(speaker?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
     }
 
     /// Committed lines only — never includes the rolling interim guess.
@@ -1580,7 +1622,7 @@ class MacRecordingViewModel: ObservableObject {
             }
         }
         if !currentText.isEmpty, let s = currentSpeaker {
-            parts.append("\(s): \(currentText)")
+            parts.append("\(displaySpeaker(s)): \(currentText)")
         }
         return parts.joined(separator: "\n\n")
     }

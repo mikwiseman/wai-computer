@@ -161,6 +161,19 @@ final class MacContentFeedViewModelTests: XCTestCase {
         XCTAssertFalse(source.contains("currentTranscript = combinedTranscript(committed: committed, interim: interim)"))
     }
 
+    func testLiveRecordingInterimEventsDoNotRebuildCommittedTranscript() throws {
+        let source = try macSource("WaiComputer/Features/Recording/MacRecordingViewModel.swift")
+
+        // Interim transcript events are frequent during long recordings. They
+        // must update only the rolling interim text, not join every committed
+        // line again on each tick.
+        XCTAssertTrue(source.contains("private var committedTranscriptHasSpeakerLabels = false"))
+        XCTAssertTrue(source.contains("private func appendCommittedTranscriptLine("))
+        XCTAssertTrue(source.contains("appendCommittedTranscriptLine(segment)"))
+        XCTAssertFalse(source.contains("let committed = buildCommittedTranscriptText()"))
+        XCTAssertFalse(source.contains("committedLines.contains { speaker, _ in"))
+    }
+
     func testLiveRecordingViewAvoidsFullTranscriptObservationForScrollFollow() throws {
         let source = try macSource("WaiComputer/Features/Recording/LiveRecordingView.swift")
 
