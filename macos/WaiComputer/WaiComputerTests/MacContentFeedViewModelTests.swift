@@ -639,6 +639,21 @@ final class MacContentFeedViewModelTests: XCTestCase {
         XCTAssertFalse(source.contains("ForEach(Array(keyPoints.enumerated())"))
     }
 
+    func testItemDetailMemoizesProjectedContentOutsideViewInit() throws {
+        let source = try macSource("WaiComputer/Features/Content/MacItemDetailView.swift")
+
+        // Summary-audio progress/playback toggles recreate MacItemDetailView
+        // while the selected Item is unchanged. Long source bodies must not be
+        // rechunked from init during those invalidations; keep the expensive
+        // projection in a persistent cache keyed by item content.
+        XCTAssertTrue(source.contains("@State private var contentCache = MacItemDetailContentCache()"))
+        XCTAssertTrue(source.contains("let content = contentCache.content(for: item)"))
+        XCTAssertTrue(source.contains("private final class MacItemDetailContentCache"))
+        XCTAssertTrue(source.contains("private struct MacItemDetailContentKey: Equatable"))
+        XCTAssertFalse(source.contains("private let content: MacItemDetailContent"))
+        XCTAssertFalse(source.contains("self.content = MacItemDetailContent(item: item)"))
+    }
+
     func testStandaloneTranscriptViewUsesRecyclingListAndCachedTurns() throws {
         let source = try macSource("WaiComputer/Features/Library/MacTranscriptView.swift")
 

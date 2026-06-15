@@ -11,10 +11,10 @@ struct MacItemDetailView: View {
     let isPlayingSummaryAudio: Bool
     let onGenerateSummaryAudio: () -> Void
     let onPlaySummaryAudio: () -> Void
-    private let content: MacItemDetailContent
 
     @EnvironmentObject private var languageManager: LanguageManager
     @State private var showDeleteConfirm = false
+    @State private var contentCache = MacItemDetailContentCache()
 
     init(
         item: Item,
@@ -32,17 +32,16 @@ struct MacItemDetailView: View {
         self.isPlayingSummaryAudio = isPlayingSummaryAudio
         self.onGenerateSummaryAudio = onGenerateSummaryAudio
         self.onPlaySummaryAudio = onPlaySummaryAudio
-        self.content = MacItemDetailContent(item: item)
     }
 
-    private var summary: ItemSummary? { content.summary }
-    private var keyMoments: [KeyMoment] { content.keyMoments }
-    private var summaryAudio: SummaryAudioState? { content.summaryAudio }
-    private var topics: [String] { content.topics }
+    private var summaryAudio: SummaryAudioState? { item.summaryAudio }
 
-    private var hasUsefulSummary: Bool {
-        let text = summary?.summary?.trimmingCharacters(in: .whitespacesAndNewlines)
-        return !(text?.isEmpty ?? true) || !content.keyPointRows.isEmpty || !keyMoments.isEmpty || !topics.isEmpty
+    private func hasUsefulSummary(_ content: MacItemDetailContent) -> Bool {
+        let text = content.summary?.summary?.trimmingCharacters(in: .whitespacesAndNewlines)
+        return !(text?.isEmpty ?? true)
+            || !content.keyPointRows.isEmpty
+            || !content.keyMoments.isEmpty
+            || !content.topics.isEmpty
     }
 
     private func t(_ english: String, _ russian: String) -> String {
@@ -50,6 +49,8 @@ struct MacItemDetailView: View {
     }
 
     var body: some View {
+        let content = contentCache.content(for: item)
+
         // List gives item details the same AppKit-backed row reuse as
         // recordings/search. Large pasted notes are split into rows below so
         // scrolling does not require one huge Text layout pass.
@@ -65,11 +66,11 @@ struct MacItemDetailView: View {
                     .itemDetailListRow()
             }
 
-            summarySection
+            summarySection(content)
                 .padding(.bottom, Spacing.lg)
                 .itemDetailListRow()
 
-            originalMaterialSection
+            originalMaterialSection(content)
         }
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
@@ -204,16 +205,16 @@ struct MacItemDetailView: View {
         .clipShape(RoundedRectangle(cornerRadius: 8))
     }
 
-    private var summarySection: some View {
+    private func summarySection(_ content: MacItemDetailContent) -> some View {
         VStack(alignment: .leading, spacing: Spacing.md) {
             Label(t("Summary", "Сводка"), systemImage: "doc.text.magnifyingglass")
                 .font(Typography.headingSmall)
                 .foregroundStyle(Palette.textPrimary)
 
-            if hasUsefulSummary {
+            if hasUsefulSummary(content) {
                 summaryAudioControls
 
-                if let text = summary?.summary?.trimmingCharacters(in: .whitespacesAndNewlines),
+                if let text = content.summary?.summary?.trimmingCharacters(in: .whitespacesAndNewlines),
                    !text.isEmpty {
                     Text(text)
                         .font(Typography.reading)
@@ -239,17 +240,17 @@ struct MacItemDetailView: View {
                     }
                 }
 
-                if !keyMoments.isEmpty {
+                if !content.keyMoments.isEmpty {
                     VStack(alignment: .leading, spacing: Spacing.sm) {
                         Text(t("Key moments", "Ключевые моменты"))
                             .waiSectionHeader()
-                        ForEach(keyMoments) { moment in
+                        ForEach(content.keyMoments) { moment in
                             keyMomentRow(moment)
                         }
                     }
                 }
 
-                if !topics.isEmpty {
+                if !content.topics.isEmpty {
                     VStack(alignment: .leading, spacing: Spacing.sm) {
                         Text(t("Topics", "Темы"))
                             .waiSectionHeader()
@@ -258,7 +259,7 @@ struct MacItemDetailView: View {
                             alignment: .leading,
                             spacing: 6
                         ) {
-                            ForEach(topics, id: \.self) { topic in
+                            ForEach(content.topics, id: \.self) { topic in
                                 Text(topic)
                                     .font(Typography.labelSmall)
                                     .foregroundStyle(Palette.textSecondary)
@@ -324,7 +325,7 @@ struct MacItemDetailView: View {
     }
 
     @ViewBuilder
-    private var originalMaterialSection: some View {
+    private func originalMaterialSection(_ content: MacItemDetailContent) -> some View {
         VStack(alignment: .leading, spacing: Spacing.md) {
             Label(t("Original Material", "Исходный материал"), systemImage: "doc.text")
                 .font(Typography.headingSmall)
@@ -483,11 +484,91 @@ struct MacItemDetailView: View {
     }
 }
 
+private final class MacItemDetailContentCache {
+    private var lastKey: MacItemDetailContentKey?
+    private var cachedContent: MacItemDetailContent?
+
+    func content(for item: Item) -> MacItemDetailContent {
+        let key = MacItemDetailContentKey(item: item)
+        if key == lastKey, let cachedContent {
+            return cachedContent
+        }
+
+        let content = MacItemDetailContent(item: item)
+        lastKey = key
+        cachedContent = content
+        return content
+    }
+}
+
+private struct MacItemDetailContentKey: Equatable {
+    let id: String
+    let source: String
+    let sourceRef: String?
+    let url: String?
+    let kind: String
+    let title: String?
+    let body: String?
+    let occurredAt: String?
+    let state: String
+    let status: String
+    let errorCode: String?
+    let errorMessage: String?
+    let folderId: String?
+    let createdAt: String
+    let summaryText: String?
+    let keyPoints: [String]
+    let topics: [String]
+    let keyMoments: [MacItemKeyMomentSignature]
+    let sentiment: String?
+
+    init(item: Item) {
+        id = item.id
+        source = item.source
+        sourceRef = item.sourceRef
+        url = item.url
+        kind = item.kind
+        title = item.title
+        body = item.body
+        occurredAt = item.occurredAt
+        state = item.state
+        status = item.status
+        errorCode = item.error?.code
+        errorMessage = item.error?.message
+        folderId = item.folderId
+        createdAt = item.createdAt
+        summaryText = item.summary?.summary
+        keyPoints = item.summary?.keyPoints ?? []
+        topics = item.summary?.topics ?? []
+        keyMoments = (item.summary?.keyMoments ?? []).map(MacItemKeyMomentSignature.init)
+        sentiment = item.summary?.sentiment
+    }
+}
+
+private struct MacItemKeyMomentSignature: Equatable {
+    let timestamp: String?
+    let moment: String
+    let whyItMatters: String
+    let quote: String?
+    let importance: String
+    let startMs: Int?
+    let endMs: Int?
+
+    init(_ keyMoment: KeyMoment) {
+        timestamp = keyMoment.timestamp
+        moment = keyMoment.moment
+        whyItMatters = keyMoment.whyItMatters
+        quote = keyMoment.quote
+        importance = keyMoment.importance
+        startMs = keyMoment.startMs
+        endMs = keyMoment.endMs
+    }
+}
+
 private struct MacItemDetailContent {
     let summary: ItemSummary?
     let keyMoments: [KeyMoment]
     let keyPointRows: [ItemKeyPointRow]
-    let summaryAudio: SummaryAudioState?
     let topics: [String]
     let originalBodyChunks: [OriginalMaterialChunk]
 
@@ -497,7 +578,6 @@ private struct MacItemDetailContent {
         keyPointRows = (item.summary?.keyPoints ?? []).enumerated().map { index, text in
             ItemKeyPointRow(id: index, text: text)
         }
-        summaryAudio = item.summaryAudio
         topics = item.summary?.topics ?? []
         originalBodyChunks = Self.originalMaterialChunks(from: item.body)
     }
