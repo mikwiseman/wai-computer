@@ -17,6 +17,17 @@ struct LiveRecordingView: View {
     /// spuriously suspend auto-follow before the follow-up scroll lands.
     private static let bottomPinThreshold: CGFloat = 120
 
+    private var transcriptHasContent: Bool {
+        !recordingVM.committedTranscript.isEmpty || !recordingVM.interimTranscript.isEmpty
+    }
+
+    private var transcriptScrollToken: LiveTranscriptScrollToken {
+        LiveTranscriptScrollToken(
+            committedLength: recordingVM.committedTranscript.count,
+            interimLength: recordingVM.interimTranscript.count
+        )
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             recordingHeader
@@ -75,7 +86,7 @@ struct LiveRecordingView: View {
                 ScrollViewReader { proxy in
                     ScrollView {
                         LazyVStack(alignment: .leading, spacing: Spacing.sm) {
-                            if recordingVM.currentTranscript.isEmpty {
+                            if !transcriptHasContent {
                                 Text(recordingVM.emptyTranscriptText)
                                     .font(Typography.reading)
                                     .foregroundStyle(Palette.textSecondary)
@@ -125,7 +136,7 @@ struct LiveRecordingView: View {
                             isPinnedToBottom = pinned
                         }
                     }
-                    .onChangeCompat(of: recordingVM.currentTranscript) { _, _ in
+                    .onChangeCompat(of: transcriptScrollToken) { _, _ in
                         // Unanimated on purpose: events land several times a
                         // second during speech, and a mid-animation layout
                         // would briefly read as "not at bottom" and break the
@@ -134,7 +145,7 @@ struct LiveRecordingView: View {
                         proxy.scrollTo("transcript-bottom", anchor: .bottom)
                     }
                     .overlay(alignment: .bottom) {
-                        if !isPinnedToBottom && !recordingVM.currentTranscript.isEmpty {
+                        if !isPinnedToBottom && transcriptHasContent {
                             Button {
                                 proxy.scrollTo("transcript-bottom", anchor: .bottom)
                                 isPinnedToBottom = true
@@ -425,6 +436,11 @@ private struct TranscriptBottomDistanceKey: PreferenceKey {
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
         value = nextValue()
     }
+}
+
+private struct LiveTranscriptScrollToken: Equatable {
+    let committedLength: Int
+    let interimLength: Int
 }
 
 struct PulseModifier: ViewModifier {

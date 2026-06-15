@@ -93,13 +93,15 @@ class MacRecordingViewModel: ObservableObject {
     @Published var recordingInputSource: MacRecordingInputSource = SystemAudioGate.isSupported ? .dual : .microphone
     @Published var duration: TimeInterval = 0
     @Published var hasSystemAudio = false
-    @Published var currentTranscript = ""
+    var currentTranscript: String {
+        combinedTranscript(committed: committedTranscript, interim: interimTranscript)
+    }
     /// Final, committed transcript without the interim/predicted tail. Drives
     /// the high-contrast portion of the live view so users can ignore the
     /// faded interim text that streams ahead of their speech.
-    @Published var committedTranscript = ""
+    private(set) var committedTranscript = ""
     /// Latest interim partial — the model's running guess that may be revised.
-    @Published var interimTranscript = ""
+    private(set) var interimTranscript = ""
     @Published var currentRecordingId: String?
     @Published var isServerComplete = false
     @Published private(set) var phase: MacRecordingPhase = .idle
@@ -267,9 +269,7 @@ class MacRecordingViewModel: ObservableObject {
 
         isLoading = true
         error = nil
-        currentTranscript = ""
-        committedTranscript = ""
-        interimTranscript = ""
+        setLiveTranscript(committed: "", interim: "")
         committedLines = []
         interimText = ""
         interimSpeaker = nil
@@ -293,8 +293,7 @@ class MacRecordingViewModel: ObservableObject {
         #if DEBUG
         if testingMode.isRecordingFlow {
             currentRecordingId = MacUITestFixtures.completedRecording.id
-            currentTranscript = "UI test live transcript."
-            committedTranscript = currentTranscript
+            setLiveTranscript(committed: "UI test live transcript.", interim: "")
             duration = TimeInterval(MacUITestFixtures.completedRecording.durationSeconds ?? 0)
             setPhase(.recording)
             isLoading = false
@@ -777,9 +776,7 @@ class MacRecordingViewModel: ObservableObject {
                 self.isServerComplete = false
                 self.recording = nil
                 self.currentRecordingId = nil
-                self.currentTranscript = ""
-                self.committedTranscript = ""
-                self.interimTranscript = ""
+                self.setLiveTranscript(committed: "", interim: "")
                 self.committedLines = []
                 self.interimText = ""
                 self.interimSpeaker = nil
@@ -797,9 +794,7 @@ class MacRecordingViewModel: ObservableObject {
 
     /// Reset transcript and recording state.
     func resetState() {
-        currentTranscript = ""
-        committedTranscript = ""
-        interimTranscript = ""
+        setLiveTranscript(committed: "", interim: "")
         committedLines = []
         interimText = ""
         interimSpeaker = nil
@@ -1446,9 +1441,7 @@ class MacRecordingViewModel: ObservableObject {
             // twice per transcript event (several times a second during speech).
             let committed = buildCommittedTranscriptText()
             let interim = buildInterimTranscriptText()
-            committedTranscript = committed
-            interimTranscript = interim
-            currentTranscript = combinedTranscript(committed: committed, interim: interim)
+            setLiveTranscript(committed: committed, interim: interim)
         case .disconnected(let err):
             if let err, phase == .recording {
                 await continueRecordingWithoutLiveTranscription(
@@ -1518,6 +1511,13 @@ class MacRecordingViewModel: ObservableObject {
         return shouldShowSpeakers
             ? committed + "\n\n" + interim
             : committed + " " + interim
+    }
+
+    private func setLiveTranscript(committed: String, interim: String) {
+        guard committedTranscript != committed || interimTranscript != interim else { return }
+        objectWillChange.send()
+        committedTranscript = committed
+        interimTranscript = interim
     }
 
     /// True when realtime metadata carries any non-empty speaker labels.

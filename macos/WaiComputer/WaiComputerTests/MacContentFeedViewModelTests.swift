@@ -111,6 +111,34 @@ final class MacContentFeedViewModelTests: XCTestCase {
         XCTAssertTrue(source.contains("accessibilityIdentifier(identifier)"))
     }
 
+    func testLiveRecordingTranscriptPublishesOnlyOneDisplayInvalidationPerEvent() throws {
+        let source = try macSource("WaiComputer/Features/Recording/MacRecordingViewModel.swift")
+
+        // Live transcription events arrive several times per second. The model
+        // must not publish a third, full-string currentTranscript copy on every
+        // event, and it must batch committed/interim display updates behind one
+        // explicit objectWillChange send.
+        XCTAssertFalse(source.contains("@Published var currentTranscript"))
+        XCTAssertTrue(source.contains("var currentTranscript: String {"))
+        XCTAssertTrue(source.contains("private(set) var committedTranscript = \"\""))
+        XCTAssertTrue(source.contains("private(set) var interimTranscript = \"\""))
+        XCTAssertTrue(source.contains("objectWillChange.send()"))
+        XCTAssertTrue(source.contains("setLiveTranscript(committed: committed, interim: interim)"))
+        XCTAssertFalse(source.contains("currentTranscript = combinedTranscript(committed: committed, interim: interim)"))
+    }
+
+    func testLiveRecordingViewAvoidsFullTranscriptObservationForScrollFollow() throws {
+        let source = try macSource("WaiComputer/Features/Recording/LiveRecordingView.swift")
+
+        // The live tail can grow very large. Auto-follow should be driven by a
+        // cheap layout token, not by reading the full combined transcript string
+        // from the view on every interim tick.
+        XCTAssertTrue(source.contains("LiveTranscriptScrollToken("))
+        XCTAssertTrue(source.contains("private var transcriptHasContent: Bool"))
+        XCTAssertTrue(source.contains(".onChangeCompat(of: transcriptScrollToken)"))
+        XCTAssertFalse(source.contains("recordingVM.currentTranscript"))
+    }
+
     func testInboxSourceFilterPutsAllLastAndShellDefaultsInboxToRecordings() throws {
         let inboxSource = try macSource("WaiComputer/Features/Inbox/MacInboxView.swift")
         let shellSource = try macSource("WaiComputer/App/MacContentView.swift")
