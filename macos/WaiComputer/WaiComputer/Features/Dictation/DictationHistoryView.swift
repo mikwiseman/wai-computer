@@ -12,6 +12,7 @@ struct DictationHistoryView: View {
     var body: some View {
         let groups = displayCache.groups(
             for: historyStore.entries,
+            revision: historyStore.entriesRevision,
             searchText: searchText,
             language: languageManager.current
         )
@@ -182,19 +183,19 @@ private struct DictationHistoryDayGroup: Identifiable {
 /// grouping, day sorting, and localized section labels are an O(N log N)
 /// projection, so keep that work out of ordinary SwiftUI row/body updates.
 private final class DictationHistoryDisplayCache {
-    private var lastEntrySignature: [DictationHistoryEntrySignature] = []
+    private var lastEntriesRevision: Int?
     private var lastSearchText = ""
     private var lastLanguage: LanguageManager.SupportedLanguage?
     private var cachedGroups: [DictationHistoryDayGroup] = []
 
     func groups(
         for entries: [DictationHistoryEntry],
+        revision: Int,
         searchText: String,
         language: LanguageManager.SupportedLanguage
     ) -> [DictationHistoryDayGroup] {
         let normalizedSearch = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-        let signature = entries.map(DictationHistoryEntrySignature.init)
-        if signature == lastEntrySignature,
+        if revision == lastEntriesRevision,
            normalizedSearch == lastSearchText,
            language == lastLanguage {
             return cachedGroups
@@ -220,7 +221,7 @@ private final class DictationHistoryDisplayCache {
                 entries: grouped[date]?.sorted { $0.timestamp > $1.timestamp } ?? []
             )
         }
-        lastEntrySignature = signature
+        lastEntriesRevision = revision
         lastSearchText = normalizedSearch
         lastLanguage = language
         return cachedGroups
@@ -243,24 +244,6 @@ private final class DictationHistoryDisplayCache {
             timeStyle: .none,
             language: language
         )
-    }
-}
-
-private struct DictationHistoryEntrySignature: Equatable {
-    let id: UUID
-    let timestamp: Date
-    let rawText: String
-    let cleanedText: String?
-    let durationSeconds: Double
-    let wordCount: Int
-
-    init(entry: DictationHistoryEntry) {
-        id = entry.id
-        timestamp = entry.timestamp
-        rawText = entry.rawText
-        cleanedText = entry.cleanedText
-        durationSeconds = entry.durationSeconds
-        wordCount = entry.wordCount
     }
 }
 

@@ -30,7 +30,10 @@ struct DictationHistoryEntry: Identifiable, Codable {
 
 @MainActor
 final class DictationHistoryStore: ObservableObject {
-    @Published private(set) var entries: [DictationHistoryEntry] = []
+    @Published private(set) var entries: [DictationHistoryEntry] = [] {
+        didSet { entriesRevision += 1 }
+    }
+    private(set) var entriesRevision = 0
 
     private let fileURL: URL
     private let tombstonesURL: URL

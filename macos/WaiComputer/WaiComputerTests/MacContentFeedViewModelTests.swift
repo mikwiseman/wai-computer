@@ -418,12 +418,19 @@ final class MacContentFeedViewModelTests: XCTestCase {
 
     func testDictationHistoryUsesRecyclingListAndMemoizedGrouping() throws {
         let source = try macSource("WaiComputer/Features/Dictation/DictationHistoryView.swift")
+        let storeSource = try macSource("WaiComputer/Features/Dictation/DictationHistoryStore.swift")
 
         XCTAssertTrue(source.contains("@State private var displayCache = DictationHistoryDisplayCache()"))
         XCTAssertTrue(source.contains("displayCache.groups("))
+        XCTAssertTrue(source.contains("revision: historyStore.entriesRevision"))
+        XCTAssertTrue(source.contains("private var lastEntriesRevision: Int?"))
+        XCTAssertTrue(storeSource.contains("private(set) var entriesRevision = 0"))
+        XCTAssertTrue(storeSource.contains("didSet { entriesRevision += 1 }"))
         XCTAssertTrue(source.contains("List {"))
         XCTAssertFalse(source.contains("ScrollView {"))
         XCTAssertFalse(source.contains("LazyVStack(spacing: 0)"))
+        XCTAssertFalse(source.contains("entries.map(DictationHistoryEntrySignature.init)"))
+        XCTAssertFalse(source.contains("private struct DictationHistoryEntrySignature"))
     }
 
     func testDictationDictionaryUsesRecyclingListAndMemoizedFiltering() throws {
