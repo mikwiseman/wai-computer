@@ -224,6 +224,7 @@ final class DictationManager: ObservableObject {
     // Transcript accumulation (live updates for overlay).
     private var committedTexts: [String] = []
     private var currentInterim = ""
+    private var liveTranscriptCandidate = ""
     private var isConfigured = false
     private var deferredStop = false
     private let audioSendCounter = DictationAudioSendCounter()
@@ -591,6 +592,7 @@ final class DictationManager: ObservableObject {
         error = nil
         committedTexts = []
         currentInterim = ""
+        liveTranscriptCandidate = ""
         interimTranscript = ""
         cleanupPreview = ""
         visibleCleanupStreamID = nil
@@ -855,10 +857,13 @@ final class DictationManager: ObservableObject {
             .joined(separator: " ")
             .trimmingCharacters(in: .whitespacesAndNewlines)
         let liveTranscript = buildTranscript()
-        let trimmedText = RealtimeTranscriptCandidateSelector.select([
-            providerTranscript.isEmpty ? nil : providerTranscript,
-            liveTranscript,
-        ])
+        let hasActiveInterim = !currentInterim.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        let trimmedText = DictationFinalTranscriptSelector.select(
+            providerTranscript: providerTranscript,
+            liveTranscript: liveTranscript,
+            liveTranscriptCandidate: liveTranscriptCandidate,
+            hasActiveInterim: hasActiveInterim
+        )
         let audioSnapshot = audioSendCounter.snapshot()
         instrumentationSession?.event(.transcriptFinalized, data: [
             "durationMs": Int(dictationDuration * 1000),
@@ -868,6 +873,8 @@ final class DictationManager: ObservableObject {
             "providerChars": providerTranscript.count,
             "liveChars": liveTranscript.count,
             "selectedChars": trimmedText.count,
+            "liveCandidateChars": liveTranscriptCandidate.count,
+            "hasActiveInterim": hasActiveInterim,
         ])
 
         guard !trimmedText.isEmpty else {
@@ -1615,6 +1622,7 @@ final class DictationManager: ObservableObject {
         visibleCleanupStreamID = nil
         cleanupStreamSnapshots = [:]
         cleanupPreview = ""
+        liveTranscriptCandidate = ""
         await activeProviderSession?.cancel()
         if let lease = activeAudioLease {
             await AudioEngineHost.shared.release(lease)
@@ -1676,6 +1684,7 @@ final class DictationManager: ObservableObject {
                 instrumentationSession?.event(.firstTokenReceived, data: ["isFinal": false])
             }
             currentInterim = text
+            captureLiveTranscriptCandidate()
             interimTranscript = buildTranscript()
         case .committed(let segment):
             if !firstTokenReported {
@@ -1685,6 +1694,7 @@ final class DictationManager: ObservableObject {
             instrumentationSession?.event(.committedTranscript, data: ["chars": segment.text.count])
             committedTexts.append(segment.text)
             currentInterim = ""
+            captureLiveTranscriptCandidate()
             interimTranscript = buildTranscript()
         case .voiceProfile:
             break
@@ -1803,6 +1813,13 @@ final class DictationManager: ObservableObject {
         } else {
             return committed + " " + currentInterim
         }
+    }
+
+    private func captureLiveTranscriptCandidate() {
+        liveTranscriptCandidate = DictationFinalTranscriptSelector.captureLiveCandidate(
+            liveTranscript: buildTranscript(),
+            previousCandidate: liveTranscriptCandidate
+        )
     }
 
     private func canBeginExternalDictation() -> Bool {
