@@ -12,7 +12,7 @@ public enum RealtimeTranscriptSegmentFinalizer {
         let selected = RealtimeTranscriptCandidateSelector.select([
             providerTranscript.isEmpty ? nil : providerTranscript,
             liveTranscript,
-        ])
+        ], acceptsAppendedTail: didFinalize)
         guard !selected.isEmpty else { return providerSegments }
 
         if selected == providerTranscript || normalized(selected) == normalized(providerTranscript) {

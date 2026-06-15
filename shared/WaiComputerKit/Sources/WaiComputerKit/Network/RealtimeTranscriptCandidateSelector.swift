@@ -5,7 +5,10 @@ import Foundation
 /// the last live/interim text is still fuller than the provider's drained
 /// segment list, so prefer completeness over source order.
 public enum RealtimeTranscriptCandidateSelector {
-    public static func select(_ candidates: [String?]) -> String {
+    public static func select(
+        _ candidates: [String?],
+        acceptsAppendedTail: Bool = false
+    ) -> String {
         let cleaned = candidates.compactMap { candidate -> String? in
             let value = candidate?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
             return value.isEmpty ? nil : value
@@ -28,7 +31,8 @@ public enum RealtimeTranscriptCandidateSelector {
             }
             let bestTokens = tokenList(best)
             let candidateTokens = tokenList(candidate)
-            if appendsTailAfterCompleteCandidate(
+            if !acceptsAppendedTail,
+               appendsTailAfterCompleteCandidate(
                 completeTokens: bestTokens,
                 candidateTokens: candidateTokens
             ) {

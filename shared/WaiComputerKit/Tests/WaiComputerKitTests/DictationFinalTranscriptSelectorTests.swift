@@ -50,6 +50,17 @@ final class DictationFinalTranscriptSelectorTests: XCTestCase {
         XCTAssertEqual(selected, "today we check fast startup")
     }
 
+    func testKeepsCommittedLiveTailWhenProviderCloseReturnedShorterFinal() {
+        let selected = DictationFinalTranscriptSelector.select(
+            providerTranscript: "send the report",
+            liveTranscript: "send the report today",
+            liveTranscriptCandidate: "send the report today",
+            hasActiveInterim: false
+        )
+
+        XCTAssertEqual(selected, "send the report today")
+    }
+
     func testDropsStaleInterimTailAfterProviderFinalCorrectsIt() {
         let selected = DictationFinalTranscriptSelector.select(
             providerTranscript: "send the report",

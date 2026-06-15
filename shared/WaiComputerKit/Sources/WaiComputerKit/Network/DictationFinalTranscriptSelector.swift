@@ -29,9 +29,16 @@ public enum DictationFinalTranscriptSelector {
             ])
         }
 
-        return RealtimeTranscriptCandidateSelector.select([
+        // Provider close can be shorter than the already-committed live text.
+        // Accept that live tail first, then run cached candidates through the
+        // stricter path so stale interim tails still lose.
+        let providerOrLive = RealtimeTranscriptCandidateSelector.select([
             blankToNil(providerTranscript),
             blankToNil(liveTranscript),
+        ], acceptsAppendedTail: true)
+
+        return RealtimeTranscriptCandidateSelector.select([
+            blankToNil(providerOrLive),
             blankToNil(liveTranscriptCandidate),
         ])
     }
