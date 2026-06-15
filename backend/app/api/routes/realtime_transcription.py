@@ -2,6 +2,7 @@
 
 import asyncio
 import inspect
+import json
 import logging
 from time import perf_counter
 from typing import Literal
@@ -84,6 +85,9 @@ PROXY_ERROR_SESSION_EXPIRED = {
     "err_code": "SESSION_EXPIRED",
     "message": "Live transcription session reached its maximum duration.",
 }
+CLIENT_DISCONNECTED = "client_disconnected"
+PROVIDER_FINALIZING = "provider_finalizing"
+ClientToProviderExit = Literal["client_disconnected", "provider_finalizing"]
 
 
 class RealtimeReplacementHintRequest(BaseModel):
@@ -693,10 +697,31 @@ async def stream_realtime_transcription(websocket: WebSocket) -> None:
                 timeout=max_stream_seconds if max_stream_seconds > 0 else None,
                 return_when=asyncio.FIRST_COMPLETED,
             )
-            for task in pending:
-                task.cancel()
-            await asyncio.gather(*pending, return_exceptions=True)
-            if not done:
+            provider_finalization_timed_out = False
+            if done:
+                _raise_unexpected_bridge_exceptions(done)
+                if (
+                    upstream in done
+                    and not upstream.cancelled()
+                    and upstream.exception() is None
+                    and upstream.result() == PROVIDER_FINALIZING
+                    and downstream in pending
+                ):
+                    downstream_done, downstream_pending = await asyncio.wait(
+                        {downstream},
+                        timeout=_remaining_stream_timeout(
+                            stream_started=stream_started,
+                            max_stream_seconds=max_stream_seconds,
+                        ),
+                    )
+                    done |= downstream_done
+                    pending = (pending - {downstream}) | downstream_pending
+                    provider_finalization_timed_out = downstream in pending
+
+            if not done or provider_finalization_timed_out:
+                for task in pending:
+                    task.cancel()
+                await asyncio.gather(*pending, return_exceptions=True)
                 stream_guard_code = "duration_cap"
                 # Wall-clock cap reached: bound a stuck/over-long paid stream so a
                 # single minted token cannot bill Deepgram indefinitely.
@@ -724,14 +749,10 @@ async def stream_realtime_transcription(websocket: WebSocket) -> None:
                     },
                 )
                 return
-            for task in done:
-                if task.cancelled():
-                    continue
-                exception = task.exception()
-                if exception is not None and not isinstance(
-                    exception, (WebSocketDisconnect, ConnectionClosed)
-                ):
-                    raise exception
+            for task in pending:
+                task.cancel()
+            await asyncio.gather(*pending, return_exceptions=True)
+            _raise_unexpected_bridge_exceptions(done)
     except WebSocketDisconnect:
         add_sentry_breadcrumb(
             category="transcription.stream",
@@ -849,13 +870,16 @@ async def stream_realtime_transcription(websocket: WebSocket) -> None:
         )
 
 
-async def _client_to_provider(websocket: WebSocket, provider) -> None:
+async def _client_to_provider(websocket: WebSocket, provider) -> ClientToProviderExit:
+    close_stream_sent = False
     while True:
         message = await websocket.receive()
         message_type = message.get("type")
         if message_type == "websocket.disconnect":
+            if close_stream_sent:
+                return PROVIDER_FINALIZING
             await provider.close()
-            return
+            return CLIENT_DISCONNECTED
         if message_type != "websocket.receive":
             continue
         data = message.get("bytes")
@@ -864,6 +888,8 @@ async def _client_to_provider(websocket: WebSocket, provider) -> None:
             await provider.send(data)
         elif text is not None:
             await provider.send(text)
+            if _is_close_stream_message(text):
+                close_stream_sent = True
 
 
 async def _provider_to_client(websocket: WebSocket, provider) -> None:
@@ -872,6 +898,31 @@ async def _provider_to_client(websocket: WebSocket, provider) -> None:
             await websocket.send_bytes(message)
         else:
             await websocket.send_text(message)
+
+
+def _raise_unexpected_bridge_exceptions(tasks: set[asyncio.Task]) -> None:
+    for task in tasks:
+        if task.cancelled():
+            continue
+        exception = task.exception()
+        if exception is not None and not isinstance(
+            exception, (WebSocketDisconnect, ConnectionClosed)
+        ):
+            raise exception
+
+
+def _remaining_stream_timeout(*, stream_started: float, max_stream_seconds: float) -> float | None:
+    if max_stream_seconds <= 0:
+        return None
+    return max(max_stream_seconds - (perf_counter() - stream_started), 0)
+
+
+def _is_close_stream_message(text: str) -> bool:
+    try:
+        payload = json.loads(text)
+    except json.JSONDecodeError:
+        return False
+    return isinstance(payload, dict) and payload.get("type") == "CloseStream"
 
 
 def _bearer_token(websocket: WebSocket) -> str | None:

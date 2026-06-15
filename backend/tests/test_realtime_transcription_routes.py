@@ -455,6 +455,39 @@ class FakeProvider:
             raise StopAsyncIteration from exc
 
 
+FINAL_CLOSE_STREAM_RESULT = (
+    '{"type":"Results","channel":{"alternatives":[{"transcript":"final words"}]},'
+    '"is_final":true}'
+)
+
+
+class CloseStreamDelayedFinalProvider:
+    def __init__(self) -> None:
+        self.sent: list[bytes | str] = []
+        self.closed = False
+        self._close_stream_received = asyncio.Event()
+        self._final_sent = False
+
+    async def send(self, payload: bytes | str) -> None:
+        self.sent.append(payload)
+        if isinstance(payload, str) and '"type":"CloseStream"' in payload.replace(" ", ""):
+            self._close_stream_received.set()
+
+    async def close(self) -> None:
+        self.closed = True
+
+    def __aiter__(self):
+        return self
+
+    async def __anext__(self) -> bytes | str:
+        if self._final_sent:
+            raise StopAsyncIteration
+        await self._close_stream_received.wait()
+        await asyncio.sleep(0.01)
+        self._final_sent = True
+        return FINAL_CLOSE_STREAM_RESULT
+
+
 class FakeProviderConnection:
     def __init__(self, provider: FakeProvider) -> None:
         self.provider = provider
@@ -579,6 +612,36 @@ async def test_realtime_stream_connects_to_deepgram_with_server_api_key():
     assert connect_calls[0]["additional_headers"] == {
         "Authorization": "Token server-provider-key"
     }
+
+
+@pytest.mark.asyncio
+async def test_realtime_stream_drains_provider_results_after_close_stream_disconnect():
+    from app.api.routes import realtime_transcription as route
+
+    websocket = FakeWebSocket({"authorization": "Bearer proxy-token"})
+    provider = CloseStreamDelayedFinalProvider()
+    websocket.queue_receive({"type": "websocket.receive", "text": '{"type":"CloseStream"}'})
+    websocket.queue_receive({"type": "websocket.disconnect"})
+
+    with patch(
+        "app.api.routes.realtime_transcription.decode_realtime_proxy_token",
+        return_value=_claims(),
+    ), patch(
+        "app.api.routes.realtime_transcription.require_deepgram_api_key",
+        return_value="server-provider-key",
+    ), patch(
+        "app.api.routes.realtime_transcription.websockets.connect",
+        return_value=FakeProviderConnection(provider),
+    ), patch(
+        "app.api.routes.realtime_transcription._websockets_header_kwarg",
+        return_value="additional_headers",
+    ):
+        await route.stream_realtime_transcription(websocket)
+
+    assert provider.sent == ['{"type":"CloseStream"}']
+    assert provider.closed is False
+    assert websocket.sent_text == [FINAL_CLOSE_STREAM_RESULT]
+    assert websocket.closed_codes == [1000]
 
 
 @pytest.mark.asyncio
