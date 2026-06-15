@@ -28,6 +28,7 @@ struct MacRecordingDetailView: View {
     @State private var isEditingTitle = false
     @State private var titleDraft = ""
     @State private var isTitleHovered = false
+    @State private var summaryDisplayCache = MacRecordingSummaryDisplayCache()
     @FocusState private var titleFieldFocused: Bool
     @FocusState private var renameButtonFocused: Bool
 
@@ -652,28 +653,6 @@ struct MacRecordingDetailView: View {
         .accessibilityIdentifier("recording-detail-content")
     }
 
-    private func visibleActionItems(_ detail: RecordingDetail) -> [ActionItem] {
-        detail.actionItems.filter { $0.status != .cancelled }
-    }
-
-    private func fullSummaryText(_ summary: Summary, actionItems: [ActionItem]) -> String {
-        var parts: [String] = []
-        if let text = summary.summary { parts.append(text) }
-        if let points = summary.keyPoints, !points.isEmpty {
-            parts.append("\n\(t("Key Points", "Ключевые пункты")):\n" + points.map { "— \($0)" }.joined(separator: "\n"))
-        }
-        if !actionItems.isEmpty {
-            parts.append("\n\(t("Action Items", "Задачи")):\n" + actionItems.map { "— \($0.task)" }.joined(separator: "\n"))
-        }
-        if let topics = summary.topics, !topics.isEmpty {
-            parts.append("\n\(t("Topics", "Темы")): " + topics.joined(separator: ", "))
-        }
-        if let people = summary.peopleMentioned, !people.isEmpty {
-            parts.append("\n\(t("People", "Люди")): " + people.joined(separator: ", "))
-        }
-        return parts.joined(separator: "\n")
-    }
-
     private func transcriptText(_ segments: [Segment]) -> String {
         TranscriptRendering.transcriptText(segments, style: .plain, languageCode: speakerLanguageCode)
     }
@@ -689,6 +668,11 @@ struct MacRecordingDetailView: View {
 
     @ViewBuilder
     private func summarySection(_ detail: RecordingDetail) -> some View {
+        let display = summaryDisplayCache.display(
+            summary: detail.summary,
+            actionItems: detail.actionItems,
+            language: languageManager.current
+        )
         let generationState = detail.summaryGeneration
         let isGeneratingSummary = viewModel.isGeneratingSummary(for: detail.id) ||
             generationState?.isActive == true
@@ -703,12 +687,12 @@ struct MacRecordingDetailView: View {
                 Label(t("Summary", "Сводка"), systemImage: "doc.text.magnifyingglass")
                     .waiSectionHeader()
                 Spacer()
-                if let summary = detail.summary {
+                if detail.summary != nil {
                     ViewThatFits(in: .horizontal) {
                         copyActionButton(
                             title: t("Copy Summary", "Скопировать сводку"),
                             copiedTitle: t("Copied", "Скопировано"),
-                            text: fullSummaryText(summary, actionItems: visibleActionItems(detail)),
+                            text: display.copyText,
                             section: "summary-all"
                         )
                     }
@@ -721,14 +705,14 @@ struct MacRecordingDetailView: View {
                 summaryGenerationProgress(state: generationState)
             }
 
-            if let summary = detail.summary {
+            if detail.summary != nil {
                 if isGeneratingAudio {
                     summaryAudioProgress(state: audioState)
                 } else if audioState?.isFailed == true {
                     summaryAudioFailure(state: audioState)
                 }
 
-                summaryBody(summary, actionItems: visibleActionItems(detail))
+                summaryBody(display)
             } else {
                 summaryEmptyState(
                     detail: detail,
@@ -743,8 +727,8 @@ struct MacRecordingDetailView: View {
     }
 
     @ViewBuilder
-    private func summaryBody(_ summary: Summary, actionItems: [ActionItem]) -> some View {
-        if let text = summary.summary {
+    private func summaryBody(_ display: MacRecordingSummaryDisplay) -> some View {
+        if let text = display.summaryText {
             VStack(alignment: .leading, spacing: Spacing.sm) {
                 Text(text)
                     .font(Typography.reading)
@@ -753,16 +737,16 @@ struct MacRecordingDetailView: View {
             }
         }
 
-        if let points = summary.keyPoints, !points.isEmpty {
+        if !display.keyPoints.isEmpty {
             VStack(alignment: .leading, spacing: Spacing.sm) {
                 Text(t("Key Points", "Ключевые пункты"))
                     .waiSectionHeader()
-                ForEach(points, id: \.self) { point in
+                ForEach(display.keyPoints) { point in
                     HStack(alignment: .firstTextBaseline, spacing: Spacing.sm) {
                         Circle()
                             .fill(Palette.accent)
                             .frame(width: 5, height: 5)
-                        Text(point)
+                        Text(point.text)
                             .font(Typography.reading)
                             .lineSpacing(6)
                             .textSelection(.enabled)
@@ -771,17 +755,17 @@ struct MacRecordingDetailView: View {
             }
         }
 
-        if !actionItems.isEmpty {
+        if !display.actionItems.isEmpty {
             VStack(alignment: .leading, spacing: Spacing.sm) {
                 Text(t("Action Items", "Задачи"))
                     .waiSectionHeader()
-                ForEach(actionItems) { item in
+                ForEach(display.actionItems) { item in
                     HStack(alignment: .firstTextBaseline, spacing: Spacing.sm) {
-                        Image(systemName: item.status == .completed ? "checkmark.circle.fill" : "checkmark.circle")
+                        Image(systemName: item.isCompleted ? "checkmark.circle.fill" : "checkmark.circle")
                             .font(Typography.bodySmall)
                             .foregroundStyle(Palette.accent)
                         Text(item.task)
-                            .strikethrough(item.status == .completed)
+                            .strikethrough(item.isCompleted)
                             .font(Typography.reading)
                             .lineSpacing(6)
                             .textSelection(.enabled)
@@ -791,16 +775,16 @@ struct MacRecordingDetailView: View {
             .accessibilityIdentifier("summary-action-items")
         }
 
-        if let topics = summary.topics, !topics.isEmpty {
-            summaryTagSection(title: t("Topics", "Темы"), values: topics)
+        if !display.topics.isEmpty {
+            summaryTagSection(title: t("Topics", "Темы"), rows: display.topics)
         }
 
-        if let people = summary.peopleMentioned, !people.isEmpty {
-            summaryTagSection(title: t("People", "Люди"), values: people)
+        if !display.people.isEmpty {
+            summaryTagSection(title: t("People", "Люди"), rows: display.people)
         }
     }
 
-    private func summaryTagSection(title: String, values: [String]) -> some View {
+    private func summaryTagSection(title: String, rows: [MacRecordingSummaryTextRow]) -> some View {
         VStack(alignment: .leading, spacing: Spacing.sm) {
             Text(title).waiSectionHeader()
             LazyVGrid(
@@ -808,8 +792,8 @@ struct MacRecordingDetailView: View {
                 alignment: .leading,
                 spacing: 6
             ) {
-                ForEach(values, id: \.self) { value in
-                    Text(value)
+                ForEach(rows) { row in
+                    Text(row.text)
                         .font(Typography.labelSmall)
                         .foregroundStyle(Palette.textSecondary)
                         .padding(.horizontal, Spacing.sm)
@@ -1152,6 +1136,161 @@ struct MacRecordingDetailView: View {
 private struct SharePickerPayload: Identifiable, Equatable {
     let id = UUID()
     let url: URL
+}
+
+private final class MacRecordingSummaryDisplayCache {
+    private var lastSignature: MacRecordingSummaryDisplaySignature?
+    private var cached = MacRecordingSummaryDisplay(
+        summary: nil,
+        actionItems: [],
+        language: .followSystem
+    )
+
+    func display(
+        summary: Summary?,
+        actionItems: [ActionItem],
+        language: LanguageManager.SupportedLanguage
+    ) -> MacRecordingSummaryDisplay {
+        let signature = MacRecordingSummaryDisplaySignature(
+            summary: summary,
+            actionItems: actionItems,
+            language: language
+        )
+        if signature == lastSignature {
+            return cached
+        }
+
+        cached = MacRecordingSummaryDisplay(
+            summary: summary,
+            actionItems: actionItems,
+            language: language
+        )
+        lastSignature = signature
+        return cached
+    }
+}
+
+private struct MacRecordingSummaryDisplay {
+    let summaryText: String?
+    let keyPoints: [MacRecordingSummaryTextRow]
+    let actionItems: [MacRecordingSummaryActionItemRow]
+    let topics: [MacRecordingSummaryTextRow]
+    let people: [MacRecordingSummaryTextRow]
+    let copyText: String
+
+    init(
+        summary: Summary?,
+        actionItems: [ActionItem],
+        language: LanguageManager.SupportedLanguage
+    ) {
+        let visibleActionItems = actionItems.filter { $0.status != .cancelled }
+
+        summaryText = summary?.summary
+        keyPoints = Self.rows(summary?.keyPoints ?? [])
+        self.actionItems = visibleActionItems.map {
+            MacRecordingSummaryActionItemRow(
+                id: $0.id,
+                task: $0.task,
+                isCompleted: $0.status == .completed
+            )
+        }
+        topics = Self.rows(summary?.topics ?? [])
+        people = Self.rows(summary?.peopleMentioned ?? [])
+        copyText = Self.copyText(
+            summary: summary,
+            actionItems: visibleActionItems,
+            language: language
+        )
+    }
+
+    private static func rows(_ values: [String]) -> [MacRecordingSummaryTextRow] {
+        values.enumerated().map { index, text in
+            MacRecordingSummaryTextRow(id: index, text: text)
+        }
+    }
+
+    private static func copyText(
+        summary: Summary?,
+        actionItems: [ActionItem],
+        language: LanguageManager.SupportedLanguage
+    ) -> String {
+        guard let summary else { return "" }
+
+        var parts: [String] = []
+        if let text = summary.summary { parts.append(text) }
+        if let points = summary.keyPoints, !points.isEmpty {
+            parts.append(
+                "\n\(text("Key Points", "Ключевые пункты", language: language)):\n" +
+                    points.map { "— \($0)" }.joined(separator: "\n")
+            )
+        }
+        if !actionItems.isEmpty {
+            parts.append(
+                "\n\(text("Action Items", "Задачи", language: language)):\n" +
+                    actionItems.map { "— \($0.task)" }.joined(separator: "\n")
+            )
+        }
+        if let topics = summary.topics, !topics.isEmpty {
+            parts.append("\n\(text("Topics", "Темы", language: language)): " + topics.joined(separator: ", "))
+        }
+        if let people = summary.peopleMentioned, !people.isEmpty {
+            parts.append("\n\(text("People", "Люди", language: language)): " + people.joined(separator: ", "))
+        }
+        return parts.joined(separator: "\n")
+    }
+
+    private static func text(
+        _ english: String,
+        _ russian: String,
+        language: LanguageManager.SupportedLanguage
+    ) -> String {
+        OnboardingL10n.text(english, russian, language: language)
+    }
+}
+
+private struct MacRecordingSummaryTextRow: Identifiable, Equatable {
+    let id: Int
+    let text: String
+}
+
+private struct MacRecordingSummaryActionItemRow: Identifiable, Equatable {
+    let id: String
+    let task: String
+    let isCompleted: Bool
+}
+
+private struct MacRecordingSummaryDisplaySignature: Equatable {
+    let summaryText: String?
+    let keyPoints: [String]
+    let topics: [String]
+    let people: [String]
+    let actionItems: [MacRecordingSummaryActionItemSignature]
+    let language: LanguageManager.SupportedLanguage
+
+    init(
+        summary: Summary?,
+        actionItems: [ActionItem],
+        language: LanguageManager.SupportedLanguage
+    ) {
+        summaryText = summary?.summary
+        keyPoints = summary?.keyPoints ?? []
+        topics = summary?.topics ?? []
+        people = summary?.peopleMentioned ?? []
+        self.actionItems = actionItems.map(MacRecordingSummaryActionItemSignature.init)
+        self.language = language
+    }
+}
+
+private struct MacRecordingSummaryActionItemSignature: Equatable {
+    let id: String
+    let task: String
+    let status: String
+
+    init(actionItem: ActionItem) {
+        id = actionItem.id
+        task = actionItem.task
+        status = actionItem.status.rawValue
+    }
 }
 
 private struct RecordingDetailInlineErrorBanner: View {

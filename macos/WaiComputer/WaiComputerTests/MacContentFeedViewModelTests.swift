@@ -537,6 +537,27 @@ final class MacContentFeedViewModelTests: XCTestCase {
         XCTAssertBefore("summarySection(detail)", "transcriptHeader(detail)", in: source)
     }
 
+    func testRecordingDetailMemoizesSummaryDisplayRowsForFastInvalidations() throws {
+        let source = try macSource("WaiComputer/Features/Library/MacRecordingDetailView.swift")
+
+        // Summary/detail rows can sit above long transcripts. Keep filtering,
+        // copy-text joining, and row identity construction out of ordinary
+        // body invalidations so scroll and header state changes do not rebuild
+        // the whole summary display tree.
+        XCTAssertTrue(source.contains("@State private var summaryDisplayCache = MacRecordingSummaryDisplayCache()"))
+        XCTAssertTrue(source.contains("summaryDisplayCache.display("))
+        XCTAssertTrue(source.contains("MacRecordingSummaryDisplay"))
+        XCTAssertTrue(source.contains("ForEach(display.keyPoints)"))
+        XCTAssertTrue(source.contains("ForEach(display.actionItems)"))
+        XCTAssertTrue(source.contains("summaryTagSection(title: t(\"Topics\", \"Темы\"), rows: display.topics)"))
+        XCTAssertTrue(source.contains("summaryTagSection(title: t(\"People\", \"Люди\"), rows: display.people)"))
+        XCTAssertTrue(source.contains("ForEach(rows)"))
+        XCTAssertFalse(source.contains("private func visibleActionItems"))
+        XCTAssertFalse(source.contains("private func fullSummaryText"))
+        XCTAssertFalse(source.contains("ForEach(points, id: \\.self)"))
+        XCTAssertFalse(source.contains("ForEach(values, id: \\.self)"))
+    }
+
     func testRecordingDetailExposesSummaryAudioInHeaderActions() throws {
         let source = try macSource("WaiComputer/Features/Library/MacRecordingDetailView.swift")
 
