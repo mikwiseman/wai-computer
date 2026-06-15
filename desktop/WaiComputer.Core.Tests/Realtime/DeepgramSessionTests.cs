@@ -91,6 +91,35 @@ public class DeepgramSessionTests
     }
 
     [Fact]
+    public async Task CloseDrainsDelayedFinalResultsBeforeClosingTransport()
+    {
+        var transport = new FakeWebSocketTransport();
+        await using var session = new DeepgramSession(Cfg(), transport);
+        await session.OpenAsync(CancellationToken.None);
+        await session.SendPcmAsync(new byte[] { 1, 2, 3, 4 }, CancellationToken.None);
+
+        var delayedFinal = Task.Run(async () =>
+        {
+            await Task.Delay(800);
+            transport.PushText("""
+            {"type":"Results","is_final":true,"speech_final":true,"from_finalize":true,"start":0.0,"duration":1.1,"channel":{"alternatives":[{"transcript":"tail word retained","confidence":0.98}]}}
+            """);
+            transport.PushText("""
+            {"type":"Metadata","request_id":"test","duration":1.1,"channels":1}
+            """);
+            transport.PushClose();
+        });
+
+        await session.CloseAsync(TimeSpan.FromSeconds(2));
+        await delayedFinal;
+
+        session.CollectedSegments.Should().ContainSingle(s =>
+            s.Text == "tail word retained"
+            && s.IsFinal
+            && s.EndMs == 1100);
+    }
+
+    [Fact]
     public async Task DeepgramFinalResultsCaptureDominantSpeaker()
     {
         var transport = new FakeWebSocketTransport();

@@ -22,12 +22,19 @@ final class RealtimeCloseDrainPolicyTests: XCTestCase {
         ))
     }
 
-    func testStopsImmediatelyAfterFinalizationMarker() {
+    func testFinalizationMarkerWaitsForMinimumDrainWindow() {
         let clock = ContinuousClock()
         let startedAt = clock.now
 
+        XCTAssertTrue(RealtimeCloseDrainPolicy.shouldKeepWaiting(
+            now: startedAt + .milliseconds(649),
+            deadline: startedAt + .seconds(3),
+            startedAt: startedAt,
+            lastTranscriptEventAt: nil,
+            finalizationMarkerReceived: true
+        ))
         XCTAssertFalse(RealtimeCloseDrainPolicy.shouldKeepWaiting(
-            now: startedAt,
+            now: startedAt + .milliseconds(650),
             deadline: startedAt + .seconds(3),
             startedAt: startedAt,
             lastTranscriptEventAt: nil,

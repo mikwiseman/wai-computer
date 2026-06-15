@@ -177,8 +177,8 @@ public sealed class RecordingSession : IRecordingSession
                 if (_session is not null && !_diskFatal)
                 {
                     try { await _session.EndTurnAsync().ConfigureAwait(false); } catch { /* finalize best-effort */ }
-                    // Give the provider a brief window to emit trailing finals before close
-                    // (approximates RealtimeCloseDrainPolicy; precise drain wiring is in DeepgramSession TODO).
+                    // Give the provider a brief window to emit trailing finals before
+                    // DeepgramSession applies its close-stream drain.
                     try { await _clock.Delay(TimeSpan.FromMilliseconds(650), CancellationToken.None).ConfigureAwait(false); } catch { }
                 }
 

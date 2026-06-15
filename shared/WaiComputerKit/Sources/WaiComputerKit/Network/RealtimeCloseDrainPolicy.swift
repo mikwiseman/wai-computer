@@ -14,11 +14,11 @@ enum RealtimeCloseDrainPolicy {
     ) -> Bool {
         guard now < deadline else { return false }
 
-        if finalizationMarkerReceived {
+        let minimumWaitUntil = startedAt + minimumWait
+        if finalizationMarkerReceived, now >= minimumWaitUntil {
             return false
         }
 
-        let minimumWaitUntil = startedAt + minimumWait
         if let lastTranscriptEventAt {
             return !(now >= minimumWaitUntil && now - lastTranscriptEventAt >= quietWindow)
         }

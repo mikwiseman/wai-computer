@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
@@ -18,11 +19,19 @@ public sealed class DeepgramSession : IRealtimeTranscriptionSession
     private readonly Channel<TranscriptionEvent> _events = Channel.CreateUnbounded<TranscriptionEvent>(
         new UnboundedChannelOptions { SingleReader = true });
     private readonly HashSet<string> _finalSegmentKeys = new(StringComparer.Ordinal);
+    private readonly object _drainLock = new();
+    private readonly Stopwatch _drainClock = new();
 
     private Task? _readLoop;
     private Task? _keepAliveLoop;
     private CancellationTokenSource? _cts;
     private bool _hasSentAudioSinceLastFinalize;
+    private bool _endTurnSent;
+    private bool _closeStreamSent;
+    private TimeSpan? _lastTranscriptEventAt;
+    private bool _finalizationMarkerReceived;
+    private static readonly TimeSpan DrainPollInterval = TimeSpan.FromMilliseconds(50);
+    private static readonly TimeSpan TransportCloseTimeout = TimeSpan.FromSeconds(1);
 
     public RealtimeProvider Provider => RealtimeProvider.Deepgram;
     public IAsyncEnumerable<TranscriptionEvent> Events => _events.Reader.ReadAllAsync();
@@ -37,6 +46,7 @@ public sealed class DeepgramSession : IRealtimeTranscriptionSession
     public async Task OpenAsync(CancellationToken ct)
     {
         ValidateConfig();
+        ResetDrainState();
         var url = _config.WebSocketUrl!;
         await _ws.ConnectAsync(new Uri(url), options =>
         {
@@ -63,24 +73,31 @@ public sealed class DeepgramSession : IRealtimeTranscriptionSession
 
     public async Task CloseAsync(TimeSpan timeout)
     {
-        using var closeCts = new CancellationTokenSource(timeout);
+        var boundedTimeout = timeout > TimeSpan.Zero ? timeout : TimeSpan.FromSeconds(1);
+        using var closeCts = new CancellationTokenSource(boundedTimeout);
         if (_ws.State == WebSocketState.Open)
         {
             if (_hasSentAudioSinceLastFinalize)
             {
                 await SendFinalizeAsync(closeCts.Token).ConfigureAwait(false);
             }
+            MarkCloseStreamSent();
             await _ws.SendTextAsync("{\"type\":\"CloseStream\"}", closeCts.Token).ConfigureAwait(false);
+            await DrainIncomingAfterCloseStreamAsync(boundedTimeout).ConfigureAwait(false);
         }
         _cts?.Cancel();
-        await _ws.CloseAsync(WebSocketCloseStatus.NormalClosure, "client done", closeCts.Token).ConfigureAwait(false);
+        if (_ws.State == WebSocketState.Open)
+        {
+            using var transportCloseCts = new CancellationTokenSource(TransportCloseTimeout);
+            await _ws.CloseAsync(WebSocketCloseStatus.NormalClosure, "client done", transportCloseCts.Token).ConfigureAwait(false);
+        }
         if (_readLoop is { } loop)
         {
-            try { await loop.WaitAsync(closeCts.Token).ConfigureAwait(false); } catch { /* ignore */ }
+            try { await loop.WaitAsync(TransportCloseTimeout).ConfigureAwait(false); } catch { /* ignore */ }
         }
         if (_keepAliveLoop is { } keepAliveLoop)
         {
-            try { await keepAliveLoop.WaitAsync(closeCts.Token).ConfigureAwait(false); } catch { /* ignore */ }
+            try { await keepAliveLoop.WaitAsync(TransportCloseTimeout).ConfigureAwait(false); } catch { /* ignore */ }
         }
         _events.Writer.TryComplete();
     }
@@ -136,6 +153,12 @@ public sealed class DeepgramSession : IRealtimeTranscriptionSession
             case "Results":
                 HandleResults(root);
                 break;
+            case "Metadata":
+                if (HasProviderFlushBeenRequested())
+                {
+                    MarkTranscriptEvent(finalizationMarker: true);
+                }
+                break;
             case "error":
             case "Error":
                 var (code, message) = DeepgramErrorClassifier.Classify(root);
@@ -146,6 +169,12 @@ public sealed class DeepgramSession : IRealtimeTranscriptionSession
 
     private void HandleResults(JsonElement root)
     {
+        var fromFinalize = ReadBool(root, "from_finalize");
+        if (fromFinalize)
+        {
+            MarkTranscriptEvent(finalizationMarker: true);
+        }
+
         if (!root.TryGetProperty("channel", out var channel)
             || !channel.TryGetProperty("alternatives", out var alternatives)
             || alternatives.ValueKind != JsonValueKind.Array
@@ -163,6 +192,7 @@ public sealed class DeepgramSession : IRealtimeTranscriptionSession
             return;
         }
 
+        MarkTranscriptEvent();
         var startMs = SecondsToMs(ReadDouble(root, "start"));
         var durationMs = SecondsToMs(ReadDouble(root, "duration"));
         var endMs = startMs + durationMs;
@@ -241,8 +271,95 @@ public sealed class DeepgramSession : IRealtimeTranscriptionSession
         {
             return;
         }
+        MarkEndTurnSent();
         await _ws.SendTextAsync("{\"type\":\"Finalize\"}", ct).ConfigureAwait(false);
         _hasSentAudioSinceLastFinalize = false;
+    }
+
+    private async Task DrainIncomingAfterCloseStreamAsync(TimeSpan timeout)
+    {
+        var startedAt = _drainClock.Elapsed;
+        var deadline = startedAt + timeout;
+
+        while (_readLoop is { IsCompleted: false })
+        {
+            var now = _drainClock.Elapsed;
+            var snapshot = DrainSnapshot();
+            if (!RealtimeCloseDrainPolicy.ShouldKeepWaiting(
+                    now,
+                    deadline,
+                    startedAt,
+                    snapshot.LastTranscriptEventAt,
+                    snapshot.FinalizationMarkerReceived))
+            {
+                return;
+            }
+
+            var remaining = deadline - now;
+            if (remaining <= TimeSpan.Zero)
+            {
+                return;
+            }
+
+            var delay = remaining < DrainPollInterval ? remaining : DrainPollInterval;
+            await Task.Delay(delay).ConfigureAwait(false);
+        }
+    }
+
+    private void ResetDrainState()
+    {
+        lock (_drainLock)
+        {
+            _endTurnSent = false;
+            _closeStreamSent = false;
+            _lastTranscriptEventAt = null;
+            _finalizationMarkerReceived = false;
+            _drainClock.Restart();
+        }
+    }
+
+    private void MarkTranscriptEvent(bool finalizationMarker = false)
+    {
+        lock (_drainLock)
+        {
+            _lastTranscriptEventAt = _drainClock.Elapsed;
+            if (finalizationMarker)
+            {
+                _finalizationMarkerReceived = true;
+            }
+        }
+    }
+
+    private void MarkEndTurnSent()
+    {
+        lock (_drainLock)
+        {
+            _endTurnSent = true;
+        }
+    }
+
+    private void MarkCloseStreamSent()
+    {
+        lock (_drainLock)
+        {
+            _closeStreamSent = true;
+        }
+    }
+
+    private bool HasProviderFlushBeenRequested()
+    {
+        lock (_drainLock)
+        {
+            return _endTurnSent || _closeStreamSent;
+        }
+    }
+
+    private (TimeSpan? LastTranscriptEventAt, bool FinalizationMarkerReceived) DrainSnapshot()
+    {
+        lock (_drainLock)
+        {
+            return (_lastTranscriptEventAt, _finalizationMarkerReceived);
+        }
     }
 
     private async Task KeepAliveLoop(CancellationToken ct)
