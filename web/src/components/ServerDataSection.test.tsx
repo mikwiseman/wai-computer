@@ -6,6 +6,7 @@ import { ServerDataSection } from "./ServerDataSection";
 const mockGetSystemInfo = vi.fn();
 const mockGetDataOwnershipMap = vi.fn();
 const mockStartSelfHostProvision = vi.fn();
+const clipboardWriteText = vi.fn();
 
 vi.mock("@/lib/api", () => ({
   getSystemInfo: (...args: unknown[]) => mockGetSystemInfo(...args),
@@ -76,6 +77,11 @@ const dataOwnershipMap = {
 
 describe("ServerDataSection", () => {
   beforeEach(() => {
+    Object.defineProperty(navigator, "clipboard", {
+      value: { writeText: clipboardWriteText },
+      configurable: true,
+    });
+    clipboardWriteText.mockResolvedValue(undefined);
     mockGetSystemInfo.mockResolvedValue(systemInfo);
     mockGetDataOwnershipMap.mockResolvedValue(dataOwnershipMap);
     mockStartSelfHostProvision.mockResolvedValue({
@@ -97,6 +103,7 @@ describe("ServerDataSection", () => {
   afterEach(() => {
     cleanup();
     vi.restoreAllMocks();
+    clipboardWriteText.mockReset();
     mockGetSystemInfo.mockReset();
     mockGetDataOwnershipMap.mockReset();
     mockStartSelfHostProvision.mockReset();
@@ -119,6 +126,25 @@ describe("ServerDataSection", () => {
     expect(section.textContent).toContain("OpenAI");
     expect(section.textContent).toContain("Cerebras");
     expect(section.textContent).toContain("Temporary root password or SSH public key");
+  });
+
+  it("shows and copies a one-command VPS setup without provider keys", async () => {
+    render(<ServerDataSection />);
+
+    await screen.findByText("Paste this on your VPS");
+    const command = screen.getByTestId("self-host-bootstrap-command").textContent ?? "";
+    expect(command).toContain("curl -fsSLo /tmp/waicomputer-self-host-bootstrap.sh");
+    expect(command).toContain("self-host-bootstrap.sh");
+    expect(command).not.toContain("DEEPGRAM_API_KEY");
+    expect(command).not.toContain("OPENAI_API_KEY");
+    expect(command).not.toContain("CEREBRAS_API_KEY");
+
+    fireEvent.click(screen.getByRole("button", { name: "Copy command" }));
+
+    await waitFor(() => {
+      expect(clipboardWriteText).toHaveBeenCalledWith(command);
+    });
+    expect(screen.getByRole("button", { name: "Copied" })).toBeInTheDocument();
   });
 
   it("submits a self-host provisioning preflight with a public SSH key", async () => {
@@ -185,6 +211,10 @@ describe("ServerDataSection", () => {
 
     expect(screen.getByText("Setup checklist")).toBeInTheDocument();
     expect(screen.getByText(/Create the provider keys before setup/i)).toBeInTheDocument();
+    expect(screen.getByText("Paste this on your VPS")).toBeInTheDocument();
+    expect(screen.getByTestId("self-host-bootstrap-command").textContent).toContain(
+      "self-host-bootstrap.sh",
+    );
     expect(screen.queryByRole("button", { name: "Check setup" })).toBeNull();
     expect(screen.getByRole("link", { name: "Create account" })).toHaveAttribute(
       "href",

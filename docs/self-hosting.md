@@ -7,8 +7,20 @@ WaiComputer supports two deployment modes:
 
 ## Quickstart (one command)
 
-On a server with Docker installed (Ubuntu/Debian VPS or any machine with
-Docker Desktop):
+On a fresh Ubuntu VPS, SSH or open the provider console as `root`, then paste:
+
+```bash
+curl -fsSLo /tmp/waicomputer-self-host-bootstrap.sh https://raw.githubusercontent.com/mikwiseman/wai-computer/main/scripts/self-host-bootstrap.sh && bash /tmp/waicomputer-self-host-bootstrap.sh
+```
+
+The bootstrap script installs `curl`, `git`, `openssl`, `ufw`, Docker Engine,
+and the Docker Compose plugin from Docker's official apt repository. It opens
+only OpenSSH, `80/tcp`, and `443/tcp` in UFW when you confirm, clones
+WaiComputer into `$HOME/wai-computer` (override with `WAICOMPUTER_DIR`), and
+then runs the server-local setup script below.
+
+If Docker is already installed, or you are running a local install with Docker
+Desktop, use the repository script directly:
 
 ```bash
 git clone https://github.com/mikwiseman/wai-computer.git
@@ -60,6 +72,10 @@ Before starting the server check, the in-app checklist asks the user to have:
 - the temporary root password from the VPS provider, or an SSH public key that
   already works on the server
 - required provider keys for Deepgram, OpenAI, and Cerebras
+
+The in-app setup command never includes provider keys. The user enters those
+keys only in the VPS terminal when `scripts/self-host-setup.sh` prompts for
+them, so Wai Cloud never receives the user's Deepgram, OpenAI, or Cerebras keys.
 
 The self-host form asks for:
 

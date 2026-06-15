@@ -76,6 +76,12 @@ const COPY = {
     deepgram: "Deepgram",
     openai: "OpenAI",
     cerebras: "Cerebras",
+    setupCommandTitle: "Paste this on your VPS",
+    setupCommandBody:
+      "Open the VPS console or SSH as root, paste this command, then enter your provider API keys there. Wai Cloud never sees those keys.",
+    copyCommand: "Copy command",
+    copied: "Copied",
+    copyFailed: "Could not copy the setup command.",
     exportTitle: "Export and import",
     exportBody:
       "The migration map includes recordings, transcripts, summaries, memories, uploads, settings, usage history, and API metadata. Server-bound sessions and OAuth tokens are regenerated on the new server.",
@@ -133,11 +139,20 @@ const COPY = {
     deepgram: "Deepgram",
     openai: "OpenAI",
     cerebras: "Cerebras",
+    setupCommandTitle: "Вставьте это на VPS",
+    setupCommandBody:
+      "Откройте консоль VPS или SSH от root, вставьте эту команду, затем введите API-ключи провайдеров там. Wai Cloud не увидит эти ключи.",
+    copyCommand: "Скопировать команду",
+    copied: "Скопировано",
+    copyFailed: "Не удалось скопировать команду настройки.",
     exportTitle: "Экспорт и импорт",
     exportBody:
       "Карта миграции включает записи, транскрипты, саммари, память, загрузки, настройки, историю использования и API-метаданные. Сессии и OAuth-токены пересоздаются на новом сервере.",
   },
 } as const;
+
+const SELF_HOST_BOOTSTRAP_COMMAND =
+  "curl -fsSLo /tmp/waicomputer-self-host-bootstrap.sh https://raw.githubusercontent.com/mikwiseman/wai-computer/main/scripts/self-host-bootstrap.sh && bash /tmp/waicomputer-self-host-bootstrap.sh";
 
 function countByClassification(map: DataOwnershipMap | null, classification: string): number {
   if (!map) return 0;
@@ -171,6 +186,7 @@ export function ServerDataSection({
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<SelfHostProvisionResponse | null>(null);
   const [authMethod, setAuthMethod] = useState<AuthMethod>("password");
+  const [setupCommandCopied, setSetupCommandCopied] = useState(false);
   const [form, setForm] = useState({
     hostname: "",
     vps_ip: "",
@@ -240,6 +256,19 @@ export function ServerDataSection({
         setForm((current) => ({ ...current, ssh_password: "" }));
       }
       setSubmitting(false);
+    }
+  }
+
+  async function copySetupCommand() {
+    if (!navigator.clipboard?.writeText) {
+      setError(copy.copyFailed);
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(SELF_HOST_BOOTSTRAP_COMMAND);
+      setSetupCommandCopied(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : copy.copyFailed);
     }
   }
 
@@ -335,6 +364,21 @@ export function ServerDataSection({
             {copy.cerebras}
           </a>
         </p>
+      </div>
+
+      <div className="server-data-command">
+        <div className="server-data-command-head">
+          <div>
+            <h4>{copy.setupCommandTitle}</h4>
+            <p className="settings-note">{copy.setupCommandBody}</p>
+          </div>
+          <button type="button" className="ghost-button" onClick={() => void copySetupCommand()}>
+            {setupCommandCopied ? copy.copied : copy.copyCommand}
+          </button>
+        </div>
+        <pre>
+          <code data-testid="self-host-bootstrap-command">{SELF_HOST_BOOTSTRAP_COMMAND}</code>
+        </pre>
       </div>
 
       {provisioning === "account_required" ? (

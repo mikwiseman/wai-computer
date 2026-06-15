@@ -1951,6 +1951,7 @@ a.primary-button[aria-disabled="true"]:hover {
 .server-data-account-required,
 .server-data-result,
 .server-data-checklist,
+.server-data-command,
 .server-data-export {
   display: grid;
   gap: 0.3rem;
@@ -1995,6 +1996,7 @@ a.primary-button[aria-disabled="true"]:hover {
 .server-data-provision h4,
 .server-data-account-required h4,
 .server-data-checklist h4,
+.server-data-command h4,
 .server-data-export h4 {
   margin: 0;
   font-size: var(--font-body-size);
@@ -2031,6 +2033,43 @@ a.primary-button[aria-disabled="true"]:hover {
 .server-data-provider-links a {
   color: var(--accent-strong);
   font-weight: 700;
+}
+
+.server-data-command {
+  gap: 0.65rem;
+}
+
+.server-data-command-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.server-data-command-head > div {
+  display: grid;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
+.server-data-command pre {
+  margin: 0;
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: auto;
+  padding: 0.65rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.server-data-command code {
+  color: var(--ink);
+  font-family: var(--font-family-mono);
+  font-size: var(--font-label-size);
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .server-data-actions {
@@ -2104,6 +2143,10 @@ a.primary-button[aria-disabled="true"]:hover {
   .server-data-metrics,
   .server-data-provision {
     grid-template-columns: 1fr;
+  }
+
+  .server-data-command-head {
+    display: grid;
   }
 }
 
