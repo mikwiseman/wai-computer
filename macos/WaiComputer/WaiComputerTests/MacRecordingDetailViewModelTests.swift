@@ -113,8 +113,8 @@ final class MacRecordingDetailViewModelTests: XCTestCase {
         XCTAssertFalse(viewModel.isLoading)
     }
 
-    func testGenerateSummaryAppliesReturnedSummaryWhenFollowUpDetailIsStale() async {
-        let recordingId = "summary-stale-follow-up"
+    func testGenerateSummaryUsesDurableBackgroundSummaryEndpoint() async {
+        let recordingId = "summary-background"
         let viewModel = MacRecordingDetailViewModel(
             initialDetail: RecordingDetail(
                 id: recordingId,
@@ -135,35 +135,23 @@ final class MacRecordingDetailViewModelTests: XCTestCase {
             )
         )
 
-        let staleDetailJSON = makeRecordingDetailJSON(
-            id: recordingId,
-            status: "ready",
-            segments: [
-                [
-                    "id": "segment-1",
-                    "content": "Generate a durable summary.",
-                    "start_ms": 0,
-                    "end_ms": 1_000,
-                    "confidence": 0.98
-                ]
-            ],
-            summary: nil
-        )
-
         let apiClient = makeAPIClient { request in
             let path = request.url?.path ?? ""
-            if request.httpMethod == "POST", path == "/api/recordings/\(recordingId)/generate-summary" {
-                return (200, #"{"summary":"Generated summary.","key_points":["One"],"decisions":[],"topics":["summary"],"people_mentioned":[],"sentiment":"neutral"}"#)
-            }
-            if request.httpMethod == "GET", path == "/api/recordings/\(recordingId)" {
-                return (200, staleDetailJSON)
+            if request.httpMethod == "POST", path == "/api/recordings/\(recordingId)/summary-generation" {
+                return (
+                    202,
+                    #"{"job_id":"job-1","recording_id":"summary-background","status":"succeeded","stage":"saving_summary","progress_percent":100,"message":"Summary generation finished."}"#
+                )
             }
             return (404, #"{"detail":"Unexpected request"}"#)
         }
 
         await viewModel.generateSummary(recordingId: recordingId, apiClient: apiClient)
 
-        XCTAssertEqual(viewModel.recordingDetail?.summary?.summary, "Generated summary.")
+        XCTAssertNil(viewModel.error)
+        XCTAssertNil(viewModel.recordingDetail?.summary)
+        XCTAssertEqual(viewModel.recordingDetail?.summaryGeneration?.jobId, "job-1")
+        XCTAssertEqual(viewModel.recordingDetail?.summaryGeneration?.status, "succeeded")
         XCTAssertFalse(viewModel.isGeneratingSummary(for: recordingId))
     }
 

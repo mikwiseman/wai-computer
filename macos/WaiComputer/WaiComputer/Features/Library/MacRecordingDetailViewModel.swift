@@ -260,25 +260,7 @@ class MacRecordingDetailViewModel: ObservableObject {
     }
 
     func generateSummary(recordingId id: String, apiClient: APIClient) async {
-        generatingSummaryRecordingId = id
-        defer {
-            if generatingSummaryRecordingId == id {
-                generatingSummaryRecordingId = nil
-            }
-        }
-
-        do {
-            let summary = try await apiClient.generateSummary(recordingId: id)
-            if recordingDetail?.id == id {
-                recordingDetail = recordingDetail?.withSummary(summary)
-            }
-            let detail = try await apiClient.getRecording(id: id)
-            if recordingDetail?.id == id {
-                applyFetchedDetail(detail.summary == nil ? detail.withSummary(summary) : detail)
-            }
-        } catch {
-            self.error = error.userFacingMessage(context: .library)
-        }
+        await startSummaryGeneration(recordingId: id, apiClient: apiClient)
     }
 
     func deleteRecording(apiClient: APIClient, permanent: Bool = false) async -> Bool {
