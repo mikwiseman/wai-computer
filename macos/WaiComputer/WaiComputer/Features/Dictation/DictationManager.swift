@@ -849,7 +849,8 @@ final class DictationManager: ObservableObject {
         // provider close so we do not send cleanup work that will immediately
         // be cancelled and restarted.
         let speculativeCleanup = startSpeculativeCleanupIfPossible()
-        let providerSegments = (try? await providerSession?.close(timeout: .seconds(4))) ?? []
+        let providerCloseResult = await closeProviderSessionForFinalTranscript()
+        let providerSegments = providerCloseResult.segments
 
         // If cancelDictation ran during finalization, bail out cleanly.
         guard shouldContinueFinalization() else { return }
@@ -882,6 +883,7 @@ final class DictationManager: ObservableObject {
             "selectedChars": trimmedText.count,
             "liveCandidateChars": liveTranscriptCandidate.count,
             "hasActiveInterim": hasActiveInterim,
+            "providerCloseFailed": providerCloseResult.failed,
         ])
 
         guard !trimmedText.isEmpty else {
@@ -923,6 +925,42 @@ final class DictationManager: ObservableObject {
         }
 
         await cleanup()
+    }
+
+    private func closeProviderSessionForFinalTranscript() async -> ProviderCloseResult {
+        guard let providerSession else {
+            return ProviderCloseResult(segments: [], failed: false)
+        }
+
+        do {
+            return ProviderCloseResult(
+                segments: try await providerSession.close(timeout: .seconds(4)),
+                failed: false
+            )
+        } catch {
+            let liveTranscript = buildTranscript().trimmingCharacters(in: .whitespacesAndNewlines)
+            log.warning("Provider close failed during dictation finalization")
+            SentryHelper.addBreadcrumb(
+                category: "dictation.provider",
+                message: "provider.close_failed",
+                level: .error,
+                data: [
+                    "stage": "finalize",
+                    "hasLiveTranscript": !liveTranscript.isEmpty,
+                    "liveCandidateChars": liveTranscriptCandidate.count,
+                ]
+            )
+            SentryHelper.captureError(
+                error,
+                extras: [
+                    "context": "dictation.provider.close_failed",
+                    "stage": "finalize",
+                    "hasLiveTranscript": !liveTranscript.isEmpty,
+                    "liveCandidateChars": liveTranscriptCandidate.count,
+                ]
+            )
+            return ProviderCloseResult(segments: [], failed: true)
+        }
     }
 
     private func shouldContinueFinalization() -> Bool {
@@ -1999,4 +2037,9 @@ final class DictationManager: ObservableObject {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(trimmed, forType: .string)
     }
+}
+
+private struct ProviderCloseResult {
+    let segments: [LiveTranscriptSegment]
+    let failed: Bool
 }
