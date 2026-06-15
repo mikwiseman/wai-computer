@@ -1396,7 +1396,7 @@ async def test_upload_size_mismatch_can_be_retried(
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("failure_code", ["processing_failed", "audio_decode_failed"])
+@pytest.mark.parametrize("failure_code", ["processing_failed"])
 async def test_failed_audio_upload_can_be_retried(
     client: AsyncClient,
     auth_headers: dict,
@@ -1446,6 +1446,53 @@ async def test_failed_audio_upload_can_be_retried(
     assert refreshed.status == RecordingStatus.PROCESSING.value
     assert refreshed.failure_code is None
     assert refreshed.failure_message is None
+
+
+@pytest.mark.asyncio
+async def test_audio_decode_failed_upload_is_not_retried(
+    client: AsyncClient,
+    auth_headers: dict,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Undecodable audio is terminal for a local backup and should not re-enqueue."""
+    recording = await _create_recording(client, auth_headers, title=None)
+    recording_id = UUID(recording["id"])
+    stored = (
+        await db_session.execute(select(Recording).where(Recording.id == recording_id))
+    ).scalar_one()
+    stored.status = RecordingStatus.FAILED.value
+    stored.uploaded_at = datetime.now(timezone.utc)
+    stored.failure_code = "audio_decode_failed"
+    stored.failure_message = "Could not read the uploaded audio file."
+    await db_session.commit()
+
+    enqueue_processing = AsyncMock()
+    monkeypatch.setattr(
+        "app.api.routes.recordings.enqueue_recording_audio_processing",
+        enqueue_processing,
+    )
+
+    retry = await client.post(
+        f"/api/recordings/{recording['id']}/upload",
+        headers=auth_headers,
+        data={"client_duration_seconds": "103", "client_file_size_bytes": "13"},
+        files={"file": ("meeting.mp3", b"fake-mp3-data", "audio/mpeg")},
+    )
+
+    assert retry.status_code == 200
+    payload = retry.json()
+    assert payload["status"] == "failed"
+    assert payload["failure_code"] == "audio_decode_failed"
+    assert payload["failure_message"] == "Could not read the uploaded audio file."
+    enqueue_processing.assert_not_awaited()
+
+    refreshed = (
+        await db_session.execute(select(Recording).where(Recording.id == recording_id))
+    ).scalar_one()
+    assert refreshed.status == RecordingStatus.FAILED.value
+    assert refreshed.failure_code == "audio_decode_failed"
+    assert refreshed.failure_message == "Could not read the uploaded audio file."
 
 
 @pytest.mark.asyncio

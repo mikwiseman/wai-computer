@@ -836,7 +836,6 @@ async def _load_active_recording(
 
 
 AUDIO_UPLOAD_RETRYABLE_FAILURE_CODES = {
-    "audio_decode_failed",
     "processing_enqueue_failed",
     "processing_failed",
     "processing_retry_exhausted",
