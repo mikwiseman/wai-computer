@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import math
 import time
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
@@ -377,6 +378,18 @@ def _labeled_summary_transcript(
     return "\n".join(lines)
 
 
+def _duration_seconds_from_media_or_transcript(
+    *,
+    media_duration_seconds: float | None,
+    transcript_end_ms: int,
+) -> int | None:
+    if media_duration_seconds is not None and media_duration_seconds > 0:
+        return max(math.ceil(media_duration_seconds), 1)
+    if transcript_end_ms > 0:
+        return transcript_end_ms // 1000
+    return None
+
+
 async def _transcribe(
     *,
     db: AsyncSession,
@@ -510,11 +523,16 @@ async def _persist_segments(
     staged_path: Path,
     staged_size_bytes: int | None,
     transcript_results: list[TranscriptResult],
+    duration_seconds: float | None,
 ) -> tuple[str, dict[str, str]]:
     max_end_ms = max((tr.end_ms for tr in transcript_results), default=0)
+    recording_duration_seconds = _duration_seconds_from_media_or_transcript(
+        media_duration_seconds=duration_seconds,
+        transcript_end_ms=max_end_ms,
+    )
     voice_identification_enabled = voice_identification_enabled_for_audio(
         recording_id=recording.id,
-        duration_seconds=(max_end_ms / 1000) if max_end_ms > 0 else None,
+        duration_seconds=recording_duration_seconds,
         staged_size_bytes=staged_size_bytes,
     )
     speaker_assignments: dict[str, tuple[UUID, float] | None] = {}
@@ -589,8 +607,7 @@ async def _persist_segments(
             )
         )
 
-    if max_end_ms > 0:
-        recording.duration_seconds = max_end_ms // 1000
+    recording.duration_seconds = recording_duration_seconds
     speaker_names = {
         label: getattr(assignment, "name", "").strip()
         for label, assignment in extracted_names.items()
@@ -892,6 +909,7 @@ async def import_media_as_recording(
             staged_path=staged_path,
             staged_size_bytes=len(media_data),
             transcript_results=speech_results,
+            duration_seconds=duration_seconds,
         )
         summary_result = await summarize_transcript(
             _labeled_summary_transcript(speech_results, speaker_names),

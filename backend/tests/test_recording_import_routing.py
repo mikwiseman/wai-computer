@@ -153,3 +153,64 @@ async def test_import_with_precomputed_skips_second_transcription(
     )
     assert len(segments) == 1
     assert segments[0].content == "полный текст записи"
+
+
+@pytest.mark.asyncio
+async def test_import_prefers_known_media_duration_over_provider_timestamp_drift(
+    db_session: AsyncSession, monkeypatch, tmp_path
+):
+    user = await _user(db_session, "routing-duration@example.com")
+    await db_session.commit()
+    monkeypatch.setattr("app.core.recording_import.settings.upload_staging_dir", str(tmp_path))
+
+    async def fake_transcribe(*_args, **_kwargs):
+        return [
+            TranscriptResult(
+                text="длинная встреча",
+                speaker="speaker_0",
+                is_final=True,
+                start_ms=0,
+                end_ms=(46 * 60 + 51) * 1000,
+                confidence=0.95,
+            )
+        ]
+
+    async def fake_embedding(_text: str, **_: object):
+        return None
+
+    async def fake_identify(**_kwargs):
+        return {}
+
+    async def fake_summary(_transcript: str, **_kwargs):
+        return SummaryResult(
+            title="Встреча",
+            summary="Саммари.",
+            key_points=[],
+            decisions=[],
+            action_items=[],
+            topics=[],
+            people_mentioned=[],
+            follow_up_questions=[],
+            sentiment="neutral",
+            highlights=[],
+        )
+
+    monkeypatch.setattr("app.core.recording_import.transcribe_audio_file", fake_transcribe)
+    monkeypatch.setattr("app.core.recording_import.generate_embedding", fake_embedding)
+    monkeypatch.setattr("app.core.recording_import.identify_speakers_for_recording", fake_identify)
+    monkeypatch.setattr("app.core.recording_import.summarize_transcript", fake_summary)
+
+    result = await import_media_as_recording(
+        db=db_session,
+        user=user,
+        data=b"fake wav",
+        filename="meeting.wav",
+        content_type="audio/wav",
+        title=None,
+        source_label="upload",
+        language="ru",
+        duration_seconds=35 * 60,
+    )
+
+    assert result.recording.status == RecordingStatus.READY.value
+    assert result.recording.duration_seconds == 35 * 60
