@@ -24,7 +24,7 @@ ORIGINAL_ENV_DIR="$RUN_DIR/original-launch-env"
 mkdir -p "$ORIGINAL_ENV_DIR"
 
 TARGET_BUNDLE_ID=""
-TARGET_APP_REF=""
+TARGET_PID=""
 TARGET_WINDOW_ID=""
 
 log() {
@@ -165,7 +165,7 @@ refresh_target_app_ref() {
 
   pid="$(target_pids "$TARGET_BUNDLE_ID" | tail -n 1)"
   [[ -n "$pid" ]] || return 1
-  TARGET_APP_REF="PID:$pid"
+  TARGET_PID="$pid"
 }
 
 set_target_window_bounds() {
@@ -254,18 +254,18 @@ refresh_target_window_id() {
   local deadline=$((SECONDS + 20))
 
   while (( SECONDS < deadline )); do
-    if [[ -z "$TARGET_APP_REF" ]]; then
+    if [[ -z "$TARGET_PID" ]]; then
       refresh_target_app_ref || {
         sleep 0.5
         continue
       }
     fi
-    if ! peekaboo list windows --app "$TARGET_APP_REF" --include-details bounds,ids --json > "$windows_json"; then
+    if ! peekaboo list windows --pid "$TARGET_PID" --include-details bounds,ids --json > "$windows_json"; then
       refresh_target_app_ref || {
         sleep 0.5
         continue
       }
-      if ! peekaboo list windows --app "$TARGET_APP_REF" --include-details bounds,ids --json > "$windows_json"; then
+      if ! peekaboo list windows --pid "$TARGET_PID" --include-details bounds,ids --json > "$windows_json"; then
         sleep 0.5
         continue
       fi
@@ -283,13 +283,13 @@ refresh_target_window_id() {
   done
 
   cat "$windows_json" >&2
-  die "Unable to find WaiComputer main window for $TARGET_APP_REF"
+  die "Unable to find WaiComputer main window for PID:$TARGET_PID"
 }
 
 focus_target_window() {
   local name="$1"
 
-  peekaboo app switch --to "$TARGET_APP_REF" --json > "$RUN_DIR/switch-before-$name.json" || true
+  peekaboo app switch --to "$TARGET_BUNDLE_ID" --json > "$RUN_DIR/switch-before-$name.json" || true
   refresh_target_window_id "$name"
   peekaboo window focus --window-id "$TARGET_WINDOW_ID" --bring-to-current-space --json \
     > "$RUN_DIR/focus-before-$name.json" || true
@@ -448,12 +448,12 @@ click_element() {
   local json_path="$1"
   local element_id="$2"
   local name="$3"
-  local fresh_snapshot
+  local coords
 
   [[ -n "$element_id" && "$element_id" != "null" ]] || die "Missing element id for $name"
-  fresh_snapshot="$(snapshot_id "$json_path")"
-  [[ -n "$fresh_snapshot" && "$fresh_snapshot" != "null" ]] || die "Missing Peekaboo snapshot id for $name"
-  if ! peekaboo click --snapshot "$fresh_snapshot" --on "$element_id" --window-id "$TARGET_WINDOW_ID" --no-auto-focus --wait-for 5000 --json \
+  coords="$(element_center_coords "$json_path" "$element_id")"
+  [[ -n "$coords" && "$coords" != "null" ]] || die "Missing element coordinates for $name"
+  if ! peekaboo click --coords "$coords" --window-id "$TARGET_WINDOW_ID" --no-auto-focus --wait-for 5000 --json \
     > "$RUN_DIR/click-$name.json"; then
     cat "$RUN_DIR/click-$name.json" >&2
     die "Click command failed: $name"
@@ -486,6 +486,19 @@ click_label() {
   click_element "$json_path" "$element_id" "$name"
 }
 
+click_identifier_label_role() {
+  local identifier="$1"
+  local label="$2"
+  local role="$3"
+  local name="$4"
+  local json_path element_id
+
+  focus_target_window "$name"
+  json_path="$(capture_ui "before-click-$name")"
+  element_id="$(element_id_by_identifier_label_role "$json_path" "$identifier" "$label" "$role")"
+  click_element "$json_path" "$element_id" "$name"
+}
+
 click_query() {
   local query="$1"
   local name="$2"
@@ -511,7 +524,7 @@ press_key() {
   local key="$1"
   local name="$2"
 
-  if ! peekaboo press "$key" --app "$TARGET_APP_REF" --json > "$RUN_DIR/press-$name.json"; then
+  if ! peekaboo press "$key" --pid "$TARGET_PID" --json > "$RUN_DIR/press-$name.json"; then
     cat "$RUN_DIR/press-$name.json" >&2
     die "Key press failed: $name"
   fi
@@ -527,7 +540,7 @@ run_main_search_smoke() {
   click_identifier "$json_path" sidebar-search
   json_path="$(wait_for_ui_text search-ready "Search recordings")"
   click_label "Search recordings..." search-field
-  if ! peekaboo type "search" --app "$TARGET_APP_REF" --profile linear --delay 0 --json \
+  if ! peekaboo type "search" --pid "$TARGET_PID" --profile linear --delay 0 --json \
     > "$RUN_DIR/type-search-query.json"; then
     cat "$RUN_DIR/type-search-query.json" >&2
     die "Typing search query failed"
@@ -535,7 +548,7 @@ run_main_search_smoke() {
 
   json_path="$(capture_ui search-query-entered)"
   ui_contains "$json_path" "Search" || die "Search submit button missing"
-  press_key return search-submit
+  click_identifier_label_role search-bar Search button search-submit
   json_path="$(wait_for_ui_text search-results "Weekly Team Standup")"
   ui_contains "$json_path" "%" && die "Search result should not expose a percent relevance score"
 
