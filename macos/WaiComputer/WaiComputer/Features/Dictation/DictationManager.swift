@@ -73,11 +73,15 @@ final class DictationManager: ObservableObject {
     /// field, which is fragile when the dictation overlay grabs window focus.
     @Published private(set) var lastFinalTranscript: String?
     @Published private(set) var askAnythingQuestion = ""
-    @Published private(set) var askAnythingAnswer = ""
+    @Published private(set) var askAnythingAnswerChunks: [AskAnythingAnswerChunk] = []
     @Published private(set) var isAskAnythingStreaming = false
     @Published private(set) var cleanupPreview = ""
     @Published var isEnabled = false
     @Published var error: String?
+
+    var askAnythingAnswer: String {
+        askAnythingAnswerChunks.map(\.text).joined()
+    }
 
     // MARK: - Settings (persisted via UserDefaults)
     //
@@ -187,6 +191,9 @@ final class DictationManager: ObservableObject {
 
     private var overlayPanel: DictationOverlayPanel?
     private var askAnythingPanel: AskAnythingPanel?
+    private var nextAskAnythingAnswerChunkID = 0
+
+    private static let askAnythingAnswerChunkCharacterLimit = 1_600
 
     // MARK: - Target App (for restoring focus before paste in direct builds)
 
@@ -536,7 +543,7 @@ final class DictationManager: ObservableObject {
         activeMode = mode
         if mode == .askAnything {
             askAnythingQuestion = ""
-            askAnythingAnswer = ""
+            resetAskAnythingAnswerChunks()
             isAskAnythingStreaming = false
         }
 
@@ -1236,6 +1243,41 @@ final class DictationManager: ObservableObject {
         }
     }
 
+    private func resetAskAnythingAnswerChunks() {
+        nextAskAnythingAnswerChunkID = 0
+        askAnythingAnswerChunks = []
+    }
+
+    private func setAskAnythingAnswer(_ text: String) {
+        resetAskAnythingAnswerChunks()
+        appendAskAnythingAnswerToken(text)
+    }
+
+    private func appendAskAnythingAnswerToken(_ text: String) {
+        guard !text.isEmpty else { return }
+
+        var chunks = askAnythingAnswerChunks
+        var remaining = text[...]
+        while !remaining.isEmpty {
+            if chunks.isEmpty || chunks[chunks.count - 1].text.count >= Self.askAnythingAnswerChunkCharacterLimit {
+                chunks.append(AskAnythingAnswerChunk(id: nextAskAnythingAnswerChunkID, text: ""))
+                nextAskAnythingAnswerChunkID += 1
+            }
+
+            let index = chunks.count - 1
+            let capacity = Self.askAnythingAnswerChunkCharacterLimit - chunks[index].text.count
+            let end = remaining.index(
+                remaining.startIndex,
+                offsetBy: capacity,
+                limitedBy: remaining.endIndex
+            ) ?? remaining.endIndex
+            chunks[index].text.append(contentsOf: remaining[..<end])
+            remaining = remaining[end...]
+        }
+
+        askAnythingAnswerChunks = chunks
+    }
+
     private func answerAskAnything(question: String) async {
         guard let apiClient else {
             let unavailable = NSError(
@@ -1250,7 +1292,7 @@ final class DictationManager: ObservableObject {
         }
 
         askAnythingQuestion = question
-        askAnythingAnswer = ""
+        resetAskAnythingAnswerChunks()
         isAskAnythingStreaming = true
         showAskAnythingPanel()
         hideOverlay()
@@ -1259,7 +1301,6 @@ final class DictationManager: ObservableObject {
         // the panel must leave the "thinking" state. Never a stuck spinner.
         defer {
             isAskAnythingStreaming = false
-            refreshAskAnythingPanel()
         }
 
         do {
@@ -1272,8 +1313,7 @@ final class DictationManager: ObservableObject {
                 if Task.isCancelled { return }
                 switch event {
                 case .token(let text):
-                    askAnythingAnswer += text
-                    refreshAskAnythingPanel()
+                    appendAskAnythingAnswerToken(text)
                 case .error(let code, let message):
                     throw NSError(
                         domain: "is.waiwai.computer.dictation.ask",
@@ -1287,8 +1327,8 @@ final class DictationManager: ObservableObject {
                 }
             }
         } catch {
-            if askAnythingAnswer.isEmpty {
-                askAnythingAnswer = error.userFacingMessage(context: .dictation)
+            if askAnythingAnswerChunks.isEmpty {
+                setAskAnythingAnswer(error.userFacingMessage(context: .dictation))
             }
             self.error = error.userFacingMessage(context: .dictation)
             instrumentationSession?.failure(error, extras: ["stage": "ask_anything"])
@@ -1934,15 +1974,10 @@ final class DictationManager: ObservableObject {
             panel.onEscape = { [weak self] in
                 self?.closeAskAnythingAnswer()
             }
+            panel.setContent(AskAnythingAnswerView(manager: self))
             askAnythingPanel = panel
         }
-        refreshAskAnythingPanel()
         askAnythingPanel?.showAnimated()
-    }
-
-    private func refreshAskAnythingPanel() {
-        let view = AskAnythingAnswerView(manager: self)
-        askAnythingPanel?.setContent(view)
     }
 
     func closeAskAnythingAnswer() {

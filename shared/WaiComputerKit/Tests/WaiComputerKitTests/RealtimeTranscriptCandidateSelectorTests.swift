@@ -59,6 +59,15 @@ final class RealtimeTranscriptCandidateSelectorTests: XCTestCase {
         XCTAssertEqual(selected, "please send OpenAI, Codex logs")
     }
 
+    func testDoesNotPreferLongerCandidateThatOnlyContainsFinalAsWordPrefix() {
+        let selected = RealtimeTranscriptCandidateSelector.select([
+            "open app",
+            "open apple settings",
+        ])
+
+        XCTAssertEqual(selected, "open app")
+    }
+
     func testDoesNotPreferLongerCandidateWithOnlyNonContiguousTokenOverlap() {
         let selected = RealtimeTranscriptCandidateSelector.select([
             "hello world",

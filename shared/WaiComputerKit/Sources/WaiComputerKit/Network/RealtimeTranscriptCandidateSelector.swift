@@ -34,23 +34,21 @@ public enum RealtimeTranscriptCandidateSelector {
             ) {
                 continue
             }
-            if candidateNormalized.contains(bestNormalized) {
+            if containsTokenSequence(candidateTokens, bestTokens) {
                 best = candidate
                 continue
             }
-            if bestNormalized.contains(candidateNormalized) {
+            if containsTokenSequence(bestTokens, candidateTokens) {
                 continue
             }
-            let bestTokenPhrase = bestTokens.joined(separator: " ")
-            let candidateTokenPhrase = candidateTokens.joined(separator: " ")
-            if !bestTokenPhrase.isEmpty,
-               candidateTokenPhrase.contains(bestTokenPhrase) {
-                best = candidate
-                continue
-            }
-            if !candidateTokenPhrase.isEmpty,
-               bestTokenPhrase.contains(candidateTokenPhrase) {
-                continue
+            if bestTokens.isEmpty || candidateTokens.isEmpty {
+                if candidateNormalized.contains(bestNormalized) {
+                    best = candidate
+                    continue
+                }
+                if bestNormalized.contains(candidateNormalized) {
+                    continue
+                }
             }
         }
 
@@ -89,6 +87,22 @@ public enum RealtimeTranscriptCandidateSelector {
             return false
         }
         return Array(completeTokens.prefix(suffix.count)) == suffix
+    }
+
+    private static func containsTokenSequence(_ tokens: [String], _ phrase: [String]) -> Bool {
+        guard !phrase.isEmpty,
+              tokens.count >= phrase.count else {
+            return false
+        }
+        if tokens == phrase {
+            return true
+        }
+        for start in 0...(tokens.count - phrase.count) {
+            if Array(tokens[start..<start + phrase.count]) == phrase {
+                return true
+            }
+        }
+        return false
     }
 
     private static func appendsTailAfterCompleteCandidate(

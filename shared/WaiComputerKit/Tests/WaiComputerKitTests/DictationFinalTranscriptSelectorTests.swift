@@ -60,4 +60,15 @@ final class DictationFinalTranscriptSelectorTests: XCTestCase {
 
         XCTAssertEqual(selected, "send the report")
     }
+
+    func testDropsStaleInterimWhenItOnlyContainsFinalAsWordPrefix() {
+        let selected = DictationFinalTranscriptSelector.select(
+            providerTranscript: "open app",
+            liveTranscript: "open app",
+            liveTranscriptCandidate: "open apple settings",
+            hasActiveInterim: false
+        )
+
+        XCTAssertEqual(selected, "open app")
+    }
 }

@@ -209,6 +209,23 @@ final class MacContentFeedViewModelTests: XCTestCase {
         XCTAssertFalse(viewSource.contains("LazyVStack"))
     }
 
+    func testAskAnythingAnswerStreamsWithoutRebuildingThePanelOrOneHugeTextView() throws {
+        let managerSource = try macSource("WaiComputer/Features/Dictation/DictationManager.swift")
+        let panelSource = try macSource("WaiComputer/Features/Dictation/AskAnythingPanel.swift")
+
+        // Ask Anything streams tokens into a floating panel. Replacing the
+        // NSHostingView or laying out one ever-growing Text on every token
+        // makes long answers freeze the UI while the user is still speaking.
+        XCTAssertTrue(managerSource.contains("appendAskAnythingAnswerToken(text)"))
+        XCTAssertTrue(managerSource.contains("panel.setContent(AskAnythingAnswerView(manager: self))"))
+        XCTAssertTrue(panelSource.contains("ForEach(manager.askAnythingAnswerChunks)"))
+        XCTAssertTrue(panelSource.contains(".accessibilityIdentifier(\"ask-anything-answer-list\")"))
+        XCTAssertFalse(managerSource.contains("askAnythingAnswer += text"))
+        XCTAssertFalse(managerSource.contains("refreshAskAnythingPanel()"))
+        XCTAssertFalse(panelSource.contains("ScrollView {"))
+        XCTAssertFalse(panelSource.contains("Text(answerText)"))
+    }
+
     func testInboxSourceFilterPutsAllLastAndShellDefaultsInboxToRecordings() throws {
         let inboxSource = try macSource("WaiComputer/Features/Inbox/MacInboxView.swift")
         let shellSource = try macSource("WaiComputer/App/MacContentView.swift")

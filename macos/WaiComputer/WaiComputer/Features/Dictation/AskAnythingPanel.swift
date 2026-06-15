@@ -2,6 +2,11 @@ import Cocoa
 import SwiftUI
 import WaiComputerKit
 
+struct AskAnythingAnswerChunk: Identifiable, Equatable {
+    let id: Int
+    var text: String
+}
+
 final class AskAnythingPanel: NSPanel {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
@@ -158,7 +163,7 @@ struct AskAnythingAnswerView: View {
                         .frame(width: 28, height: 28)
                 }
                 .buttonStyle(.plain)
-                .disabled(manager.askAnythingAnswer.isEmpty)
+                .disabled(manager.askAnythingAnswerChunks.isEmpty)
                 .accessibilityIdentifier("ask-anything-copy-answer-button")
             }
             .padding(.horizontal, Spacing.lg)
@@ -166,13 +171,14 @@ struct AskAnythingAnswerView: View {
 
             Divider()
 
-            ScrollView {
-                if manager.askAnythingAnswer.isEmpty && manager.isAskAnythingStreaming {
+            if manager.askAnythingAnswerChunks.isEmpty {
+                if manager.isAskAnythingStreaming {
                     ProgressView()
                         .controlSize(.small)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                         .padding(.top, Spacing.xl)
                 } else {
-                    Text(answerText)
+                    Text(emptyAnswerText)
                         .font(.system(size: 22, weight: .regular, design: .default))
                         .lineSpacing(6)
                         .foregroundStyle(Palette.textPrimary)
@@ -180,8 +186,31 @@ struct AskAnythingAnswerView: View {
                         .textSelection(.enabled)
                         .padding(Spacing.lg)
                 }
+            } else {
+                List {
+                    ForEach(manager.askAnythingAnswerChunks) { chunk in
+                        Text(chunk.text)
+                            .font(.system(size: 22, weight: .regular, design: .default))
+                            .lineSpacing(6)
+                            .foregroundStyle(Palette.textPrimary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .textSelection(.enabled)
+                            .listRowInsets(EdgeInsets(
+                                top: chunk.id == 0 ? Spacing.lg : Spacing.xs,
+                                leading: Spacing.lg,
+                                bottom: Spacing.xs,
+                                trailing: Spacing.lg
+                            ))
+                            .listRowSeparator(.hidden)
+                            .listRowBackground(Color.clear)
+                    }
+                }
+                .listStyle(.plain)
+                .scrollContentBackground(.hidden)
+                .accessibilityIdentifier("ask-anything-answer-list")
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(
             RoundedRectangle(cornerRadius: 12)
                 .fill(Color(nsColor: .textBackgroundColor).opacity(0.86))
@@ -191,19 +220,13 @@ struct AskAnythingAnswerView: View {
         .padding(.bottom, Spacing.xl)
     }
 
-    private var answerText: String {
-        if manager.askAnythingAnswer.isEmpty {
-            if manager.isAskAnythingStreaming {
-                return t("Thinking...", "Думаю...")
-            }
-            // Terminal state with nothing produced (cancelled or empty
-            // stream) — say so honestly instead of pretending to think.
-            return t(
-                "No answer. Hold the hotkey to ask again.",
-                "Ответа нет. Зажми клавишу и спроси ещё раз."
-            )
-        }
-        return manager.askAnythingAnswer
+    private var emptyAnswerText: String {
+        // Terminal state with nothing produced (cancelled or empty stream) —
+        // say so honestly instead of pretending to think.
+        t(
+            "No answer. Hold the hotkey to ask again.",
+            "Ответа нет. Зажми клавишу и спроси ещё раз."
+        )
     }
 
     private func t(_ english: String, _ russian: String) -> String {
