@@ -216,6 +216,15 @@ final class MacContentFeedViewModelTests: XCTestCase {
         XCTAssertTrue(source.contains("onTurnCompleted?(CompanionTurnCompletion("))
     }
 
+    func testCompanionViewReusesRelativeDateFormattersForScrollingChatRows() throws {
+        let source = try sharedSource("Sources/WaiComputerKit/Views/CompanionView.swift")
+
+        XCTAssertTrue(source.contains("CompanionRelativeDateFormatterCache.string("))
+        XCTAssertTrue(source.contains("private enum CompanionRelativeDateFormatterCache"))
+        XCTAssertTrue(source.contains("private static var formatters: [String: RelativeDateTimeFormatter]"))
+        XCTAssertFalse(source.contains("let formatter = RelativeDateTimeFormatter()"))
+    }
+
     func testInboxFocusedCompanionNotifiesWhenTurnCompletes() throws {
         let source = try macSource("WaiComputer/Features/Inbox/MacInboxView.swift")
 
@@ -306,6 +315,30 @@ final class MacContentFeedViewModelTests: XCTestCase {
         XCTAssertTrue(source.contains("formatterCacheLock"))
     }
 
+    func testDictationHistoryUsesRecyclingListAndMemoizedGrouping() throws {
+        let source = try macSource("WaiComputer/Features/Dictation/DictationHistoryView.swift")
+
+        XCTAssertTrue(source.contains("@State private var displayCache = DictationHistoryDisplayCache()"))
+        XCTAssertTrue(source.contains("displayCache.groups("))
+        XCTAssertTrue(source.contains("List {"))
+        XCTAssertFalse(source.contains("ScrollView {"))
+        XCTAssertFalse(source.contains("LazyVStack(spacing: 0)"))
+    }
+
+    func testPeekabooSmokeLaunchesFixturesWithExplicitOpenEnvironment() throws {
+        let source = try repoSource("scripts/macos-peekaboo-smoke.sh")
+
+        XCTAssertTrue(source.contains("--env WAI_ENABLE_UI_TEST_MODE=1"))
+        XCTAssertTrue(source.contains("--env UITEST_SCENARIO=\"$scenario\""))
+        XCTAssertTrue(source.contains("--env WAI_DISABLE_STORED_SESSION_RESTORE=1"))
+        XCTAssertTrue(source.contains("--env WAI_SKIP_ONBOARDING=1"))
+        XCTAssertTrue(source.contains("--env WAI_MOCK_DICTATION_PERMISSIONS=\"$permission_mock\""))
+        XCTAssertBefore("--env WAI_ENABLE_UI_TEST_MODE=1", "--args -ApplePersistenceIgnoreState YES", in: source)
+        XCTAssertTrue(source.contains("wait_for_ui_text main-ready \"Inbox\""))
+        XCTAssertFalse(source.contains("wait_for_ui_text main-ready \"All Recordings\""))
+        XCTAssertFalse(source.contains("\"import-audio-button\" || die \"Import button missing\""))
+    }
+
     func testRecordingDetailShowsSummaryBeforeTranscriptWithoutTabs() throws {
         let source = try macSource("WaiComputer/Features/Library/MacRecordingDetailView.swift")
 
@@ -342,6 +375,17 @@ final class MacContentFeedViewModelTests: XCTestCase {
     private func macSource(_ relativePath: String) throws -> String {
         let testFile = URL(fileURLWithPath: #filePath)
         let file = testFile
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent(relativePath)
+        return try String(contentsOf: file, encoding: .utf8)
+    }
+
+    private func repoSource(_ relativePath: String) throws -> String {
+        let testFile = URL(fileURLWithPath: #filePath)
+        let file = testFile
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
             .deletingLastPathComponent()
             .deletingLastPathComponent()
             .appendingPathComponent(relativePath)

@@ -66,6 +66,29 @@ enum CompanionChatPresentation {
     }
 }
 
+private enum CompanionRelativeDateFormatterCache {
+    private static let lock = NSLock()
+    private static var formatters: [String: RelativeDateTimeFormatter] = [:]
+
+    static func string(for date: Date, locale: Locale, relativeTo referenceDate: Date) -> String {
+        lock.lock()
+        defer { lock.unlock() }
+
+        let key = locale.identifier
+        let formatter: RelativeDateTimeFormatter
+        if let cached = formatters[key] {
+            formatter = cached
+        } else {
+            let created = RelativeDateTimeFormatter()
+            created.locale = locale
+            created.unitsStyle = .short
+            formatters[key] = created
+            formatter = created
+        }
+        return formatter.localizedString(for: date, relativeTo: referenceDate)
+    }
+}
+
 /// Cross-platform Wai agent session view used by both the macOS sidebar `.wai` section
 /// and the iOS `WaiHomeView`. Takes an `APIClient` (kept in environment by the
 /// host app's auth flow) and a list of recordings used to resolve citation
@@ -1235,10 +1258,7 @@ public struct CompanionView: View {
         if date.timeIntervalSinceNow > -1 {
             return t("just now", "только что")
         }
-        let formatter = RelativeDateTimeFormatter()
-        formatter.locale = locale
-        formatter.unitsStyle = .short
-        return formatter.localizedString(for: date, relativeTo: Date())
+        return CompanionRelativeDateFormatterCache.string(for: date, locale: locale, relativeTo: Date())
     }
 
     private func formattedCitation(_ c: CitationDisplay) -> String {

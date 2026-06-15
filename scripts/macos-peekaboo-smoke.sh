@@ -180,6 +180,11 @@ launch_fixture_app() {
   local language="$2"
   local permission_mock="${3:-}"
   local force_onboarding="${4:-0}"
+  local open_env_args=(
+    --env WAI_ENABLE_UI_TEST_MODE=1
+    --env UITEST_SCENARIO="$scenario"
+    --env WAI_DISABLE_STORED_SESSION_RESTORE=1
+  )
 
   quit_target_apps "$TARGET_BUNDLE_ID"
   clean_peekaboo_snapshots "before-$scenario"
@@ -191,19 +196,22 @@ launch_fixture_app() {
   if [[ "$force_onboarding" == "1" ]]; then
     set_launch_env WAI_FORCE_ONBOARDING 1
     unset_launch_env WAI_SKIP_ONBOARDING
+    open_env_args+=(--env WAI_FORCE_ONBOARDING=1)
   else
     set_launch_env WAI_SKIP_ONBOARDING 1
     unset_launch_env WAI_FORCE_ONBOARDING
+    open_env_args+=(--env WAI_SKIP_ONBOARDING=1)
   fi
 
   if [[ -n "$permission_mock" ]]; then
     set_launch_env WAI_MOCK_DICTATION_PERMISSIONS "$permission_mock"
+    open_env_args+=(--env WAI_MOCK_DICTATION_PERMISSIONS="$permission_mock")
   else
     unset_launch_env WAI_MOCK_DICTATION_PERMISSIONS
   fi
 
   log "Launching $TARGET_BUNDLE_ID in $scenario fixture mode..."
-  open -n "$APP_PATH" --args -ApplePersistenceIgnoreState YES -waiUserLanguage "$language"
+  open -n "${open_env_args[@]}" "$APP_PATH" --args -ApplePersistenceIgnoreState YES -waiUserLanguage "$language"
   wait_for_app_running "$TARGET_BUNDLE_ID"
   TARGET_APP_REF="PID:$(target_pids "$TARGET_BUNDLE_ID" | tail -n 1)"
   refresh_target_window_id "$scenario"
@@ -447,9 +455,8 @@ run_main_search_smoke() {
   local json_path
 
   launch_fixture_app main_view en
-  json_path="$(wait_for_ui_text main-ready "All Recordings")"
+  json_path="$(wait_for_ui_text main-ready "Inbox")"
   ui_contains "$json_path" "sidebar-settings" || die "Settings sidebar item missing"
-  ui_contains "$json_path" "import-audio-button" || die "Import button missing"
 
   click_identifier "$json_path" sidebar-search
   json_path="$(wait_for_ui_text search-ready "Search recordings")"

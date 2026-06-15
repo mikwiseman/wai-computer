@@ -7,15 +7,15 @@ struct DictationHistoryView: View {
     @EnvironmentObject private var learningEngine: DictionaryLearningEngine
     @State private var searchText = ""
     @State private var showClearAllConfirmation = false
-
-    private var filteredEntries: [DictationHistoryEntry] {
-        if searchText.isEmpty { return historyStore.entries }
-        return historyStore.entries.filter {
-            $0.displayText.localizedCaseInsensitiveContains(searchText)
-        }
-    }
+    @State private var displayCache = DictationHistoryDisplayCache()
 
     var body: some View {
+        let groups = displayCache.groups(
+            for: historyStore.entries,
+            searchText: searchText,
+            language: languageManager.current
+        )
+
         VStack(spacing: 0) {
             // Header with stats
             HStack(alignment: .top) {
@@ -53,7 +53,7 @@ struct DictationHistoryView: View {
             Divider()
 
             // Entries list
-            if filteredEntries.isEmpty {
+            if groups.isEmpty {
                 Spacer()
                 ContentUnavailableViewCompat(
                     searchText.isEmpty ? t("No Dictations Yet", "Пока нет диктовок") : t("No Results", "Ничего не найдено"),
@@ -64,29 +64,35 @@ struct DictationHistoryView: View {
                 )
                 Spacer()
             } else {
-                ScrollView {
-                    LazyVStack(spacing: 0) {
-                        ForEach(groupedByDay, id: \.date) { group in
-                            Section {
-                                ForEach(group.entries) { entry in
-                                    HistoryEntryRow(
-                                        entry: entry,
-                                        onDelete: { historyStore.delete(entry) },
-                                        onCorrect: { newText in applyCorrection(to: entry, newText: newText) }
-                                    )
-                                }
-                            } header: {
-                                Text(group.label)
-                                    .font(Typography.label)
-                                    .foregroundStyle(Palette.textTertiary)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                    .padding(.horizontal, Spacing.xl)
-                                    .padding(.top, Spacing.lg)
-                                    .padding(.bottom, Spacing.xs)
+                List {
+                    ForEach(groups) { group in
+                        Section {
+                            ForEach(group.entries) { entry in
+                                HistoryEntryRow(
+                                    entry: entry,
+                                    onDelete: { historyStore.delete(entry) },
+                                    onCorrect: { newText in applyCorrection(to: entry, newText: newText) }
+                                )
+                                .listRowInsets(EdgeInsets())
+                                .listRowSeparator(.hidden)
+                                .listRowBackground(Color.clear)
                             }
+                        } header: {
+                            Text(group.label)
+                                .font(Typography.label)
+                                .foregroundStyle(Palette.textTertiary)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(.horizontal, Spacing.xl)
+                                .padding(.top, Spacing.lg)
+                                .padding(.bottom, Spacing.xs)
+                                .listRowInsets(EdgeInsets())
+                                .listRowSeparator(.hidden)
+                                .listRowBackground(Color.clear)
                         }
                     }
                 }
+                .listStyle(.plain)
+                .scrollContentBackground(.hidden)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -114,37 +120,6 @@ struct DictationHistoryView: View {
                 "This deletes every dictation on all your devices. This can't be undone.",
                 "Это удалит все диктовки на всех твоих устройствах. Это нельзя отменить."
             ))
-        }
-    }
-
-    // MARK: - Grouping
-
-    private struct DayGroup {
-        let date: Date
-        let label: String
-        let entries: [DictationHistoryEntry]
-    }
-
-    private var groupedByDay: [DayGroup] {
-        let calendar = Calendar.current
-        let grouped = Dictionary(grouping: filteredEntries) { entry in
-            calendar.startOfDay(for: entry.timestamp)
-        }
-        return grouped.keys.sorted(by: >).map { date in
-            let label: String
-            if calendar.isDateInToday(date) {
-                label = t("Today", "Сегодня")
-            } else if calendar.isDateInYesterday(date) {
-                label = t("Yesterday", "Вчера")
-            } else {
-                label = MacDateFormatting.string(
-                    from: date,
-                    dateStyle: .long,
-                    timeStyle: .none,
-                    language: languageManager.current
-                )
-            }
-            return DayGroup(date: date, label: label, entries: grouped[date]!.sorted { $0.timestamp > $1.timestamp })
         }
     }
 
@@ -190,6 +165,102 @@ struct DictationHistoryView: View {
 
     private func t(_ english: String, _ russian: String) -> String {
         OnboardingL10n.text(english, russian, language: languageManager.current)
+    }
+}
+
+// MARK: - Display Projection
+
+private struct DictationHistoryDayGroup: Identifiable {
+    let date: Date
+    let label: String
+    let entries: [DictationHistoryEntry]
+
+    var id: Date { date }
+}
+
+/// The history list can grow to thousands of local dictations. Search,
+/// grouping, day sorting, and localized section labels are an O(N log N)
+/// projection, so keep that work out of ordinary SwiftUI row/body updates.
+private final class DictationHistoryDisplayCache {
+    private var lastEntrySignature: [DictationHistoryEntrySignature] = []
+    private var lastSearchText = ""
+    private var lastLanguage: LanguageManager.SupportedLanguage?
+    private var cachedGroups: [DictationHistoryDayGroup] = []
+
+    func groups(
+        for entries: [DictationHistoryEntry],
+        searchText: String,
+        language: LanguageManager.SupportedLanguage
+    ) -> [DictationHistoryDayGroup] {
+        let normalizedSearch = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let signature = entries.map(DictationHistoryEntrySignature.init)
+        if signature == lastEntrySignature,
+           normalizedSearch == lastSearchText,
+           language == lastLanguage {
+            return cachedGroups
+        }
+
+        let filtered: [DictationHistoryEntry]
+        if normalizedSearch.isEmpty {
+            filtered = entries
+        } else {
+            filtered = entries.filter {
+                $0.displayText.localizedCaseInsensitiveContains(normalizedSearch)
+            }
+        }
+
+        let calendar = Calendar.current
+        let grouped = Dictionary(grouping: filtered) { entry in
+            calendar.startOfDay(for: entry.timestamp)
+        }
+        cachedGroups = grouped.keys.sorted(by: >).map { date in
+            DictationHistoryDayGroup(
+                date: date,
+                label: Self.label(for: date, calendar: calendar, language: language),
+                entries: grouped[date]?.sorted { $0.timestamp > $1.timestamp } ?? []
+            )
+        }
+        lastEntrySignature = signature
+        lastSearchText = normalizedSearch
+        lastLanguage = language
+        return cachedGroups
+    }
+
+    private static func label(
+        for date: Date,
+        calendar: Calendar,
+        language: LanguageManager.SupportedLanguage
+    ) -> String {
+        if calendar.isDateInToday(date) {
+            return OnboardingL10n.text("Today", "Сегодня", language: language)
+        }
+        if calendar.isDateInYesterday(date) {
+            return OnboardingL10n.text("Yesterday", "Вчера", language: language)
+        }
+        return MacDateFormatting.string(
+            from: date,
+            dateStyle: .long,
+            timeStyle: .none,
+            language: language
+        )
+    }
+}
+
+private struct DictationHistoryEntrySignature: Equatable {
+    let id: UUID
+    let timestamp: Date
+    let rawText: String
+    let cleanedText: String?
+    let durationSeconds: Double
+    let wordCount: Int
+
+    init(entry: DictationHistoryEntry) {
+        id = entry.id
+        timestamp = entry.timestamp
+        rawText = entry.rawText
+        cleanedText = entry.cleanedText
+        durationSeconds = entry.durationSeconds
+        wordCount = entry.wordCount
     }
 }
 
