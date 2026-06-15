@@ -1412,19 +1412,31 @@ final class DictationManager: ObservableObject {
                 )
             }
         } catch {
+            let insertionError = error
             instrumentationSession?.event(.insertionCompleted, data: [
                 "chars": textToInsert.count,
                 "automaticPaste": false,
             ])
-            let recoveryURL = try? saveRecoveryText(textToInsert)
+
+            let recoveryURL: URL?
+            do {
+                recoveryURL = try saveRecoveryText(textToInsert)
+            } catch {
+                recoveryURL = nil
+                SentryHelper.captureError(
+                    error,
+                    extras: ["action": "dictationRecoveryTextWrite"]
+                )
+            }
+
             SentryHelper.captureError(
-                error,
+                insertionError,
                 extras: [
                     "action": "dictationInsert",
                     "hasRecoveryCopy": recoveryURL != nil,
                 ]
             )
-            if recoveryURL != nil, let insertionError = error as? TextInsertionError {
+            if recoveryURL != nil, let insertionError = insertionError as? TextInsertionError {
                 self.error = DictationCopy.recoveryCopyKept(
                     insertionError: insertionError.localizedDescription,
                     language: LanguageManager.shared.current
@@ -1434,7 +1446,7 @@ final class DictationManager: ObservableObject {
                     language: LanguageManager.shared.current
                 )
             } else {
-                self.error = error.userFacingMessage(context: .dictation)
+                self.error = insertionError.userFacingMessage(context: .dictation)
             }
         }
 

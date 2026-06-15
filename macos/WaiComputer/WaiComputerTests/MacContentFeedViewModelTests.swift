@@ -252,6 +252,14 @@ final class MacContentFeedViewModelTests: XCTestCase {
         XCTAssertFalse(source.contains("(try? await providerSession?.close(timeout: .seconds(4))) ?? []"))
     }
 
+    func testDictationInsertionRecoveryWriteFailureIsCaptured() throws {
+        let source = try macSource("WaiComputer/Features/Dictation/DictationManager.swift")
+
+        XCTAssertFalse(source.contains("try? saveRecoveryText(textToInsert)"))
+        XCTAssertTrue(source.contains("\"dictationRecoveryTextWrite\""))
+        XCTAssertTrue(source.contains("\"dictationInsert\""))
+    }
+
     func testCompletedRecordingTransitionChunksLongTranscriptPreview() throws {
         let source = try macSource("WaiComputer/App/MacContentView.swift")
 
