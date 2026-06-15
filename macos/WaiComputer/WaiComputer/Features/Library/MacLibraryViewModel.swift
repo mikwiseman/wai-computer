@@ -20,8 +20,12 @@ struct LibraryBulkOperation: Equatable {
 
 @MainActor
 class MacLibraryViewModel: ObservableObject {
-    @Published var recordings: [Recording] = []
-    @Published var trashedRecordings: [Recording] = []
+    @Published var recordings: [Recording] = [] {
+        didSet { recordingsRevision &+= 1 }
+    }
+    @Published var trashedRecordings: [Recording] = [] {
+        didSet { trashedRecordingsRevision &+= 1 }
+    }
     @Published var folders: [Folder] = []
     @Published private(set) var localRecoveryRecordingIDs: Set<String> = []
     /// Recordings whose local backup hit a permanent sync failure (e.g. deleted
@@ -32,6 +36,8 @@ class MacLibraryViewModel: ObservableObject {
     @Published var isRefreshing = false
     @Published var error: String?
 
+    private(set) var recordingsRevision = 0
+    private(set) var trashedRecordingsRevision = 0
     private var loadGeneration = 0
     private var processingRefreshTask: Task<Void, Never>?
 

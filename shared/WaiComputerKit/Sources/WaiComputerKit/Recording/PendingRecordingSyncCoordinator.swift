@@ -148,7 +148,21 @@ public actor PendingRecordingSyncCoordinator {
         var attempt = 0
 
         while !Task.isCancelled {
-            let pendingCount = (try? RecordingBackupStore.listBackups().count) ?? 0
+            guard let pendingBackups = listPendingRecordingBackups(action: "listPendingRecordingBackups") else {
+                attempt += 1
+                let delay = retryDelaySeconds(forAttempt: attempt)
+                log.error("Failed to list pending backups. Retrying in \(delay)s (attempt \(attempt))")
+                SentryHelper.addBreadcrumb(
+                    category: "sync",
+                    message: "pending backup list retry backoff",
+                    level: .error,
+                    data: ["attempt": attempt, "delaySeconds": delay]
+                )
+                await waitForRetryDelay(seconds: delay)
+                continue
+            }
+
+            let pendingCount = pendingBackups.count
             guard pendingCount > 0 else {
                 log.info("No pending backups, exiting sync loop")
                 return
@@ -177,7 +191,7 @@ public actor PendingRecordingSyncCoordinator {
             attempt += 1
 
             // Exponential backoff: 5s, 10s, 20s, 40s, 80s, capped at 300s (5 min).
-            let delay = min(300, 5 * Int(pow(2.0, Double(min(attempt - 1, 6)))))
+            let delay = retryDelaySeconds(forAttempt: attempt)
             log.info("Sync pass done, \(remainingCount) remaining. Retrying in \(delay)s (attempt \(attempt))")
             SentryHelper.addBreadcrumb(
                 category: "sync",
@@ -190,7 +204,9 @@ public actor PendingRecordingSyncCoordinator {
 
     @discardableResult
     private func syncAllBackups(using apiClient: APIClient) async -> Int {
-        let backups = (try? RecordingBackupStore.listBackups()) ?? []
+        guard let backups = listPendingRecordingBackups(action: "listPendingRecordingBackupsForSync") else {
+            return 1
+        }
         guard !backups.isEmpty else { return 0 }
 
         var remaining = 0
@@ -434,7 +450,9 @@ public actor PendingRecordingSyncCoordinator {
     private func clearAuthBlockedBackupsIfNeeded(using apiClient: APIClient) async {
         guard await apiClient.getAccessToken() != nil else { return }
 
-        let backups = (try? RecordingBackupStore.listBackups()) ?? []
+        guard let backups = listPendingRecordingBackups(action: "listAuthenticationBlockedRecordingBackups") else {
+            return
+        }
         for backup in backups {
             guard let manifest = try? RecordingBackupStore.manifest(recordingId: backup.recordingId),
                   manifest.requiresAuthentication else {
@@ -444,5 +462,22 @@ public actor PendingRecordingSyncCoordinator {
             try? RecordingBackupStore.clearAuthenticationRequired(recordingId: backup.recordingId)
             log.info("Re-enabled sync for \(backup.recordingId) after session refresh")
         }
+    }
+
+    private func listPendingRecordingBackups(action: String) -> [RecordingBackup]? {
+        do {
+            return try RecordingBackupStore.listBackups()
+        } catch {
+            log.error("Failed to list pending recording backups for \(action, privacy: .public)")
+            SentryHelper.captureError(
+                error,
+                extras: ["action": action]
+            )
+            return nil
+        }
+    }
+
+    private func retryDelaySeconds(forAttempt attempt: Int) -> Int {
+        min(300, 5 * Int(pow(2.0, Double(min(attempt - 1, 6)))))
     }
 }

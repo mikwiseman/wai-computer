@@ -897,6 +897,8 @@ struct MacMainView: View {
             let displayed = recordingDisplayCache.recordings(
                 active: libraryViewModel.recordings,
                 trashed: libraryViewModel.trashedRecordings,
+                activeRevision: libraryViewModel.recordingsRevision,
+                trashedRevision: libraryViewModel.trashedRecordingsRevision,
                 folderId: currentFolderId,
                 showingTrash: isTrashSection
             )
@@ -2250,22 +2252,23 @@ private struct RecordingRecoveryNoticeBanner: View {
 /// Keeps the legacy recordings column from re-filtering its whole source array
 /// on unrelated shell invalidations while the List is trying to preserve scroll.
 private final class MacRecordingDisplayCache {
-    private var lastActive: [Recording] = []
-    private var lastTrashed: [Recording] = []
-    private var lastFolderId: String?
-    private var lastShowingTrash = false
+    private var lastKey: MacRecordingDisplayCacheKey?
     private var cached: [Recording] = []
 
     func recordings(
         active: [Recording],
         trashed: [Recording],
+        activeRevision: Int,
+        trashedRevision: Int,
         folderId: String?,
         showingTrash: Bool
     ) -> [Recording] {
-        if active == lastActive,
-           trashed == lastTrashed,
-           folderId == lastFolderId,
-           showingTrash == lastShowingTrash {
+        let key = MacRecordingDisplayCacheKey(
+            sourceRevision: showingTrash ? trashedRevision : activeRevision,
+            folderId: folderId,
+            showingTrash: showingTrash
+        )
+        if key == lastKey {
             return cached
         }
 
@@ -2276,12 +2279,15 @@ private final class MacRecordingDisplayCache {
             cached = source
         }
 
-        lastActive = active
-        lastTrashed = trashed
-        lastFolderId = folderId
-        lastShowingTrash = showingTrash
+        lastKey = key
         return cached
     }
+}
+
+private struct MacRecordingDisplayCacheKey: Equatable {
+    let sourceRevision: Int
+    let folderId: String?
+    let showingTrash: Bool
 }
 
 #Preview {

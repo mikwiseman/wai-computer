@@ -824,16 +824,30 @@ final class MacContentFeedViewModelTests: XCTestCase {
 
     func testLibraryRecordingListUsesMemoizedDisplayInput() throws {
         let source = try macSource("WaiComputer/App/MacContentView.swift")
+        let modelSource = try macSource("WaiComputer/Features/Library/MacLibraryViewModel.swift")
 
         // The legacy recordings column is still a large scroll surface. Keep
         // folder/trash filtering out of ordinary view invalidations so shell
-        // state changes do not hand a freshly-filtered array to the List.
+        // state changes do not hand a freshly-filtered array to the List. Cache
+        // hits must also stay O(1): comparing the full active/trashed arrays on
+        // every shell invalidation still scales with library size and can steal
+        // scroll frames on the main actor.
+        XCTAssertTrue(modelSource.contains("private(set) var recordingsRevision = 0"))
+        XCTAssertTrue(modelSource.contains("private(set) var trashedRecordingsRevision = 0"))
         XCTAssertTrue(source.contains("@State private var recordingDisplayCache = MacRecordingDisplayCache()"))
         XCTAssertTrue(source.contains("recordingDisplayCache.recordings("))
+        XCTAssertTrue(source.contains("activeRevision: libraryViewModel.recordingsRevision"))
+        XCTAssertTrue(source.contains("trashedRevision: libraryViewModel.trashedRecordingsRevision"))
         XCTAssertTrue(source.contains("private final class MacRecordingDisplayCache"))
+        XCTAssertTrue(source.contains("private struct MacRecordingDisplayCacheKey: Equatable"))
+        XCTAssertTrue(source.contains("private var lastKey: MacRecordingDisplayCacheKey?"))
         XCTAssertFalse(source.contains("private var displayedRecordings: [Recording]"))
         XCTAssertFalse(source.contains("let displayed = displayedRecordings"))
         XCTAssertFalse(source.contains("libraryViewModel.filteredRecordings("))
+        XCTAssertFalse(source.contains("private var lastActive: [Recording]"))
+        XCTAssertFalse(source.contains("private var lastTrashed: [Recording]"))
+        XCTAssertFalse(source.contains("active == lastActive"))
+        XCTAssertFalse(source.contains("trashed == lastTrashed"))
     }
 
     private func macSource(_ relativePath: String) throws -> String {
