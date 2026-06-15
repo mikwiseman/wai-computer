@@ -63,6 +63,9 @@ final class RecordingBackupStoreTests: XCTestCase {
     }
 
     func testResetOversizedPermanentFailuresSurfacesListFailures() throws {
+        let originalBaseDirectory = RecordingBackupStore.overrideBaseDirectory
+        defer { RecordingBackupStore.overrideBaseDirectory = originalBaseDirectory }
+
         let fileBackedRoot = backupRoot.appendingPathComponent("not-a-directory")
         try Data([0]).write(to: fileBackedRoot)
         RecordingBackupStore.overrideBaseDirectory = fileBackedRoot
