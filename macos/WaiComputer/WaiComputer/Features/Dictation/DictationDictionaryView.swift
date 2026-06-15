@@ -23,6 +23,7 @@ struct DictationDictionaryView: View {
     var body: some View {
         let visibleWords = displayCache.words(
             for: dictionaryStore.words,
+            revision: dictionaryStore.wordsRevision,
             searchText: searchText
         )
 
@@ -420,12 +421,12 @@ struct DictationDictionaryView: View {
 /// dictionary is soft-capped, not hard-capped, so large power-user lists still
 /// need predictable search and scroll updates.
 private final class DictationDictionaryDisplayCache {
-    private var lastWords: [DictionaryWord] = []
+    private var lastWordsRevision: Int?
     private var lastSearchText = ""
     private var cachedWords: [DictionaryWord] = []
 
-    func words(for words: [DictionaryWord], searchText: String) -> [DictionaryWord] {
-        if words == lastWords, searchText == lastSearchText {
+    func words(for words: [DictionaryWord], revision: Int, searchText: String) -> [DictionaryWord] {
+        if revision == lastWordsRevision, searchText == lastSearchText {
             return cachedWords
         }
 
@@ -438,7 +439,7 @@ private final class DictationDictionaryDisplayCache {
             }
         }
 
-        lastWords = words
+        lastWordsRevision = revision
         lastSearchText = searchText
         return cachedWords
     }

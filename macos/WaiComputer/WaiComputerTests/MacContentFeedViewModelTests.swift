@@ -435,11 +435,19 @@ final class MacContentFeedViewModelTests: XCTestCase {
 
     func testDictationDictionaryUsesRecyclingListAndMemoizedFiltering() throws {
         let source = try macSource("WaiComputer/Features/Dictation/DictationDictionaryView.swift")
+        let storeSource = try macSource("WaiComputer/Features/Dictation/DictationDictionaryStore.swift")
 
         XCTAssertTrue(source.contains("@State private var displayCache = DictationDictionaryDisplayCache()"))
         XCTAssertTrue(source.contains("displayCache.words("))
+        XCTAssertTrue(source.contains("revision: dictionaryStore.wordsRevision"))
+        XCTAssertTrue(source.contains("private var lastWordsRevision: Int?"))
+        XCTAssertTrue(storeSource.contains("private(set) var wordsRevision = 0"))
+        XCTAssertTrue(storeSource.contains("didSet { wordsRevision += 1 }"))
         XCTAssertTrue(source.contains("List {"))
         XCTAssertTrue(source.contains("ForEach(visibleWords)"))
+        XCTAssertFalse(source.contains("private var lastWords: [DictionaryWord]"))
+        XCTAssertFalse(source.contains("words == lastWords"))
+        XCTAssertFalse(source.contains("lastWords = words"))
         XCTAssertFalse(source.contains("private var filteredWords"))
         XCTAssertFalse(source.contains("ForEach(filteredWords)"))
     }

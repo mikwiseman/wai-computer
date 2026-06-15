@@ -57,7 +57,10 @@ struct DictationRealtimeHints: Equatable {
 
 @MainActor
 final class DictationDictionaryStore: ObservableObject {
-    @Published private(set) var words: [DictionaryWord] = []
+    @Published private(set) var words: [DictionaryWord] = [] {
+        didSet { wordsRevision += 1 }
+    }
+    private(set) var wordsRevision = 0
 
     private let fileURL: URL
     private let tombstonesURL: URL
