@@ -77,6 +77,8 @@ public actor WebSocketManager {
     private let channels: Int
     private let purpose: RealtimeTranscriptionPurpose
 
+    private var webSocketSession: URLSession?
+    private var handshakeCoordinator: WebSocketHandshakeCoordinator?
     private var webSocket: URLSessionWebSocketTask?
     private var eventContinuation: AsyncStream<WebSocketEvent>.Continuation?
     private var receiveTask: Task<Void, Never>?
@@ -108,6 +110,7 @@ public actor WebSocketManager {
     private var endOfStreamRequested = false
     private var endOfStreamSent = false
     private var providerFinalizationReceived = false
+    private static let handshakeTimeout: Duration = .seconds(10)
 
     /// All final transcript segments collected during this session.
     /// Preserved across reconnections so no transcript data is lost.
@@ -189,10 +192,7 @@ public actor WebSocketManager {
             "Connecting to realtime transcription provider=\(sessionConfig.provider, privacy: .public)"
         )
 
-        let session = URLSession(configuration: .default)
-        let socket = session.webSocketTask(with: request)
-        webSocket = socket
-        socket.resume()
+        try await openRealtimeSocket(with: request, forConnection: thisConnection)
 
         receiveTask = Task { [weak self] in
             await self?.receiveMessages(forConnection: thisConnection)
@@ -373,6 +373,94 @@ public actor WebSocketManager {
         request.timeoutInterval = 300
         request.setValue("Bearer \(sessionConfig.token)", forHTTPHeaderField: "Authorization")
         return request
+    }
+
+    @discardableResult
+    private func openRealtimeSocket(
+        with request: URLRequest,
+        forConnection expectedId: UInt64
+    ) async throws -> URLSessionWebSocketTask {
+        let coordinator = WebSocketHandshakeCoordinator()
+        let sessionConfig = URLSessionConfiguration.ephemeral
+        sessionConfig.waitsForConnectivity = false
+        sessionConfig.timeoutIntervalForRequest = 30
+        sessionConfig.timeoutIntervalForResource = 3600
+        let session = URLSession(configuration: sessionConfig, delegate: coordinator, delegateQueue: nil)
+        let socket = session.webSocketTask(with: request)
+
+        webSocketSession = session
+        handshakeCoordinator = coordinator
+        webSocket = socket
+        socket.resume()
+
+        do {
+            try await Self.awaitHandshake(
+                coordinator: coordinator,
+                task: socket,
+                timeout: Self.handshakeTimeout
+            )
+        } catch {
+            cleanupFailedOpen(
+                socket: socket,
+                session: session,
+                coordinator: coordinator,
+                expectedConnection: expectedId
+            )
+            throw error
+        }
+
+        guard connectionId == expectedId, webSocket === socket else {
+            cleanupFailedOpen(
+                socket: socket,
+                session: session,
+                coordinator: coordinator,
+                expectedConnection: expectedId
+            )
+            throw WebSocketConnectionError.superseded
+        }
+
+        return socket
+    }
+
+    private static func awaitHandshake(
+        coordinator: WebSocketHandshakeCoordinator,
+        task: URLSessionWebSocketTask,
+        timeout: Duration
+    ) async throws {
+        try await withThrowingTaskGroup(of: Void.self) { group in
+            group.addTask {
+                try await coordinator.waitForOpen(task: task)
+            }
+            group.addTask {
+                try await Task.sleep(for: timeout)
+                throw WebSocketHandshakeCoordinator.HandshakeError.timedOut
+            }
+            do {
+                try await group.next()
+                group.cancelAll()
+                coordinator.cancelPending(for: task)
+            } catch {
+                group.cancelAll()
+                coordinator.cancelPending(for: task)
+                throw error
+            }
+        }
+    }
+
+    private func cleanupFailedOpen(
+        socket: URLSessionWebSocketTask,
+        session: URLSession,
+        coordinator: WebSocketHandshakeCoordinator,
+        expectedConnection: UInt64
+    ) {
+        coordinator.cancelPending(for: socket)
+        socket.cancel(with: .goingAway, reason: nil)
+        session.invalidateAndCancel()
+
+        guard connectionId == expectedConnection, webSocket === socket else { return }
+        webSocket = nil
+        webSocketSession = nil
+        handshakeCoordinator = nil
     }
 
     private func sendAudioChunk(_ data: Data) async throws {
@@ -580,8 +668,14 @@ public actor WebSocketManager {
         // Clean up current socket without finishing the event continuation
         keepAliveTask?.cancel()
         keepAliveTask = nil
+        if let webSocket {
+            handshakeCoordinator?.cancelPending(for: webSocket)
+        }
         webSocket?.cancel(with: .goingAway, reason: nil)
         webSocket = nil
+        webSocketSession?.invalidateAndCancel()
+        webSocketSession = nil
+        handshakeCoordinator = nil
         receiveTask?.cancel()
         receiveTask = nil
 
@@ -656,16 +750,12 @@ public actor WebSocketManager {
                 transcriptionSession = sessionConfig
                 let request = try requestForRealtimeSession(sessionConfig)
 
-                let session = URLSession(configuration: .default)
-                let socket = session.webSocketTask(with: request)
-                webSocket = socket
-
                 connectionId &+= 1
                 let thisConnection = connectionId
                 sendCount = 0
                 // NOTE: collectedSegments are preserved across reconnections
 
-                socket.resume()
+                try await openRealtimeSocket(with: request, forConnection: thisConnection)
 
                 receiveTask = Task { [weak self] in
                     await self?.receiveMessages(forConnection: thisConnection)
@@ -704,8 +794,14 @@ public actor WebSocketManager {
                 // Clean up failed connection attempt
                 keepAliveTask?.cancel()
                 keepAliveTask = nil
+                if let webSocket {
+                    handshakeCoordinator?.cancelPending(for: webSocket)
+                }
                 webSocket?.cancel(with: .goingAway, reason: nil)
                 webSocket = nil
+                webSocketSession?.invalidateAndCancel()
+                webSocketSession = nil
+                handshakeCoordinator = nil
                 receiveTask?.cancel()
                 receiveTask = nil
             }
@@ -927,8 +1023,14 @@ public actor WebSocketManager {
     ) {
         guard connectionId == expectedId else { return }
 
+        if let webSocket {
+            handshakeCoordinator?.cancelPending(for: webSocket)
+        }
         webSocket?.cancel(with: .goingAway, reason: nil)
         webSocket = nil
+        webSocketSession?.invalidateAndCancel()
+        webSocketSession = nil
+        handshakeCoordinator = nil
 
         keepAliveTask?.cancel()
         keepAliveTask = nil

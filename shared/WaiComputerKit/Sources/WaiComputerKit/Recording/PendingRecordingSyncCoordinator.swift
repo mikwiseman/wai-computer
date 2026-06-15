@@ -11,9 +11,6 @@ public actor PendingRecordingSyncCoordinator {
     public static let shared = PendingRecordingSyncCoordinator()
 
     private let log = Logger(subsystem: "is.waiwai.computer", category: "sync")
-    private static let permanentServerFailureCodes: Set<String> = [
-        "audio_decode_failed",
-    ]
 
     private var syncTask: Task<Void, Never>?
     private var retrySleepTask: Task<Void, Never>?
@@ -286,24 +283,30 @@ public actor PendingRecordingSyncCoordinator {
 
             if let detail, detail.status == .failed {
                 log.warning("Server returned failed status for recording \(backup.recordingId)")
+                let isAudioBackedFailure = hasAudioFile || manifest?.syncState == .serverProcessing
+                let shouldRetryFailure = !isAudioBackedFailure
+                    || RecordingAudioFailurePolicy.isRetryableServerFailureCode(detail.failureCode)
+                let fallbackMessage = shouldRetryFailure
+                    ? "We couldn't finish saving your recording right now. We'll keep trying in the background."
+                    : "We couldn't process this audio file. Automatic retries have stopped for this local copy."
                 let message = UserFacingErrorFormatter.displayMessage(
                     detail.failureMessage,
-                    fallback: "We couldn't finish saving your recording right now. We'll keep trying in the background.",
+                    fallback: fallbackMessage,
                     context: .recording
                 )
-                if Self.permanentServerFailureCodes.contains(detail.failureCode ?? "") {
+                if shouldRetryFailure {
+                    try RecordingBackupStore.markRetryableFailure(
+                        recordingId: backup.recordingId,
+                        message: message,
+                        failureCode: detail.failureCode
+                    )
+                } else {
                     _ = try RecordingBackupStore.recordSaveFailure(
                         recordingId: backup.recordingId,
                         message: message
                     )
                     try RecordingBackupStore.markPermanentFailure(
                         recordingId: backup.recordingId,
-                        failureCode: detail.failureCode
-                    )
-                } else {
-                    try RecordingBackupStore.markRetryableFailure(
-                        recordingId: backup.recordingId,
-                        message: message,
                         failureCode: detail.failureCode
                     )
                 }

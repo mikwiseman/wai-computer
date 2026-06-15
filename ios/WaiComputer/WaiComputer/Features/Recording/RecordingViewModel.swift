@@ -407,13 +407,24 @@ class RecordingViewModel: ObservableObject {
                             fallback: "Transcript was saved, but processing failed.",
                             context: .recording
                         )
-                        let savedLocalBackup = await self.saveLocalBackupForRetry(
-                            recordingId: recordingId,
-                            segments: segments,
-                            client: client,
-                            technicalReason: failureMessage
-                        )
-                        self.error = savedLocalBackup ? nil : failureMessage
+                        if shouldUploadAudio,
+                           !RecordingAudioFailurePolicy.isRetryableServerFailureCode(detail.failureCode) {
+                            _ = await self.saveLocalBackupForPermanentAudioFailure(
+                                recordingId: recordingId,
+                                segments: segments,
+                                technicalReason: failureMessage,
+                                failureCode: detail.failureCode
+                            )
+                            self.error = failureMessage
+                        } else {
+                            let savedLocalBackup = await self.saveLocalBackupForRetry(
+                                recordingId: recordingId,
+                                segments: segments,
+                                client: client,
+                                technicalReason: failureMessage
+                            )
+                            self.error = savedLocalBackup ? nil : failureMessage
+                        }
                     } else if detail.status == .processing || detail.status == .uploading {
                         var retainedProcessingBackup = false
                         do {
@@ -819,6 +830,53 @@ class RecordingViewModel: ObservableObject {
             await PendingRecordingSyncCoordinator.shared.scheduleSync(using: client)
         }
 
+        return true
+    }
+
+    @discardableResult
+    private func saveLocalBackupForPermanentAudioFailure(
+        recordingId: String,
+        segments: [LiveTranscriptSegment],
+        technicalReason: String,
+        failureCode: String?
+    ) async -> Bool {
+        do {
+            _ = try saveTranscriptBackup(recordingId: recordingId, segments: segments)
+        } catch {
+            SentryHelper.captureError(
+                error,
+                extras: ["action": "saveLocalBackupForPermanentAudioFailure", "recordingId": recordingId]
+            )
+            recordingLog.error("Failed to save permanent local recovery backup recordingId=\(recordingId, privacy: .public)")
+            return false
+        }
+
+        do {
+            _ = try RecordingBackupStore.recordSaveFailure(recordingId: recordingId, message: technicalReason)
+            try RecordingBackupStore.markPermanentFailure(
+                recordingId: recordingId,
+                failureCode: failureCode
+            )
+        } catch {
+            SentryHelper.captureError(
+                error,
+                extras: ["action": "recordPermanentAudioFailure", "recordingId": recordingId]
+            )
+            recordingLog.error("Failed to mark permanent local recovery backup recordingId=\(recordingId, privacy: .public)")
+            return false
+        }
+
+        SentryHelper.addBreadcrumb(
+            category: "recording",
+            message: "recording saved after terminal audio failure",
+            level: .warning,
+            data: [
+                "recordingId": recordingId,
+                "segments": segments.count,
+                "reason": technicalReason,
+                "failureCode": failureCode ?? "permanent_failure",
+            ]
+        )
         return true
     }
 

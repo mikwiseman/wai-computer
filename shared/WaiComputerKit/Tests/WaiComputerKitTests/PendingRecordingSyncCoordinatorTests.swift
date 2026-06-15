@@ -13,6 +13,10 @@ private final class RequestCounter: @unchecked Sendable {
             return value
         }
     }
+
+    var count: Int {
+        lock.withLock { value }
+    }
 }
 
 final class PendingRecordingSyncCoordinatorTests: XCTestCase {
@@ -651,7 +655,7 @@ final class PendingRecordingSyncCoordinatorTests: XCTestCase {
         XCTAssertEqual(manifest.syncState, .serverProcessing)
     }
 
-    func testServerProcessingFailureAllowsNextPassToReuploadAudio() async throws {
+    func testServerProcessingRetryableFailureAllowsNextPassToReuploadAudio() async throws {
         let recordingId = "pending-sync-server-processing-failed-\(UUID().uuidString)"
         defer { try? RecordingBackupStore.removeRecording(recordingId: recordingId) }
 
@@ -697,7 +701,15 @@ final class PendingRecordingSyncCoordinatorTests: XCTestCase {
                 XCTAssertEqual(request.httpMethod, "GET")
                 XCTAssertEqual(request.url?.path, "/api/recordings/\(recordingId)")
                 sawFailurePoll.fulfill()
-                return (response, self.responsePayload(recordingId: recordingId, status: "failed"))
+                return (
+                    response,
+                    self.responsePayload(
+                        recordingId: recordingId,
+                        status: "failed",
+                        failureCode: "processing_failed",
+                        failureMessage: "Processing failed temporarily."
+                    )
+                )
             }
 
             XCTAssertEqual(request.httpMethod, "POST")
@@ -714,6 +726,61 @@ final class PendingRecordingSyncCoordinatorTests: XCTestCase {
         await fulfillment(of: [synced], timeout: 2)
 
         XCTAssertNil(try RecordingBackupStore.existingBackup(recordingId: recordingId))
+    }
+
+    func testServerProcessingTerminalFailureStopsReuploadingAudio() async throws {
+        let recordingId = "pending-sync-server-processing-terminal-\(UUID().uuidString)"
+        defer { try? RecordingBackupStore.removeRecording(recordingId: recordingId) }
+
+        try RecordingBackupStore.markHasAudioFile(recordingId: recordingId)
+        let audioURL = try RecordingBackupStore.audioFileURL(recordingId: recordingId)
+        try writeRealWAV(to: audioURL)
+        _ = try RecordingBackupStore.saveRecording(
+            recordingId: recordingId,
+            title: "Audio terminal failure",
+            recordingType: .note,
+            durationSeconds: 7,
+            transcript: nil,
+            segments: []
+        )
+        try RecordingBackupStore.markServerProcessing(recordingId: recordingId)
+
+        let client = makeClient()
+        await client.setAccessToken("test-token")
+
+        let counter = RequestCounter()
+        MockURLProtocol.requestHandler = { request in
+            let requestNumber = counter.increment()
+            XCTAssertEqual(requestNumber, 1, "Terminal failures must not trigger another request")
+            XCTAssertEqual(request.httpMethod, "GET")
+            XCTAssertEqual(request.url?.path, "/api/recordings/\(recordingId)")
+            let response = HTTPURLResponse(
+                url: try XCTUnwrap(request.url),
+                statusCode: 200,
+                httpVersion: nil,
+                headerFields: nil
+            )!
+            return (
+                response,
+                self.responsePayload(
+                    recordingId: recordingId,
+                    status: "failed",
+                    failureMessage: "Could not read the uploaded audio file."
+                )
+            )
+        }
+
+        await PendingRecordingSyncCoordinator.shared.scheduleSync(using: client)
+        try await waitForManifestState(.permanentFailure, recordingId: recordingId)
+
+        let manifest = try XCTUnwrap(RecordingBackupStore.manifest(recordingId: recordingId))
+        XCTAssertEqual(manifest.lastFailureCode, "permanent_failure")
+        XCTAssertEqual(manifest.lastErrorMessage, "Could not read the uploaded audio file.")
+
+        await PendingRecordingSyncCoordinator.shared.scheduleSync(using: client)
+        try await Task.sleep(for: .milliseconds(300))
+
+        XCTAssertEqual(counter.count, 1)
     }
 
     func testPendingRecordingSyncSkipsInProgressAudioBackup() async throws {
@@ -1202,6 +1269,60 @@ final class PendingRecordingSyncCoordinatorTests: XCTestCase {
         let manifest = try XCTUnwrap(RecordingBackupStore.manifest(recordingId: recordingId))
         XCTAssertFalse(manifest.isPermanentFailure, "Server failure is retryable, not permanent")
         XCTAssertNotNil(manifest.lastErrorMessage)
+    }
+
+    func testAudioUploadGenericFailedStatusMarksPermanentFailure() async throws {
+        let recordingId = "pending-sync-audio-generic-failed-\(UUID().uuidString)"
+        defer { try? RecordingBackupStore.removeRecording(recordingId: recordingId) }
+
+        try RecordingBackupStore.markHasAudioFile(recordingId: recordingId)
+        let audioURL = try RecordingBackupStore.audioFileURL(recordingId: recordingId)
+        try writeRealWAV(to: audioURL)
+        _ = try RecordingBackupStore.saveRecording(
+            recordingId: recordingId,
+            title: "Generic failed upload",
+            recordingType: .note,
+            durationSeconds: 4,
+            transcript: nil,
+            segments: []
+        )
+
+        let client = makeClient()
+        await client.setAccessToken("test-token")
+
+        let counter = RequestCounter()
+        MockURLProtocol.requestHandler = { request in
+            let requestNumber = counter.increment()
+            XCTAssertEqual(requestNumber, 1, "Terminal failed upload must not be retried")
+            XCTAssertEqual(request.httpMethod, "POST")
+            XCTAssertEqual(request.url?.path, "/api/recordings/\(recordingId)/upload")
+            let response = HTTPURLResponse(
+                url: try XCTUnwrap(request.url),
+                statusCode: 200,
+                httpVersion: nil,
+                headerFields: nil
+            )!
+            return (
+                response,
+                self.responsePayload(
+                    recordingId: recordingId,
+                    status: "failed",
+                    failureMessage: "Could not read the uploaded audio file."
+                )
+            )
+        }
+
+        await PendingRecordingSyncCoordinator.shared.scheduleSync(using: client)
+        try await waitForManifestState(.permanentFailure, recordingId: recordingId)
+
+        let manifest = try XCTUnwrap(RecordingBackupStore.manifest(recordingId: recordingId))
+        XCTAssertEqual(manifest.lastFailureCode, "permanent_failure")
+        XCTAssertEqual(manifest.lastErrorMessage, "Could not read the uploaded audio file.")
+
+        await PendingRecordingSyncCoordinator.shared.scheduleSync(using: client)
+        try await Task.sleep(for: .milliseconds(300))
+
+        XCTAssertEqual(counter.count, 1)
     }
 
     func testSyncMarksAudioDecodeFailedStatusAsPermanentFailure() async throws {

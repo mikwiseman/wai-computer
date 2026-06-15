@@ -146,6 +146,7 @@ class MacRecordingViewModel: ObservableObject {
     private enum RecordingPersistenceResult {
         case remoteSaved(notice: String?, breadcrumbMessage: String)
         case localBackup
+        case localPermanentBackup(String)
         case failed(String)
     }
 
@@ -1151,6 +1152,15 @@ class MacRecordingViewModel: ObservableObject {
                         fallback: "Recorded audio was uploaded, but processing failed.",
                         context: .recording
                     )
+                    if !RecordingAudioFailurePolicy.isRetryableServerFailureCode(detail.failureCode) {
+                        return await saveLocalBackupForPermanentAudioFailure(
+                            recordingId: recordingId,
+                            segments: segments,
+                            durationSeconds: TimeInterval(durationSeconds),
+                            technicalReason: technicalReason,
+                            failureCode: detail.failureCode
+                        ) ? .localPermanentBackup(technicalReason) : .failed(technicalReason)
+                    }
                     return await saveLocalBackupForRetry(
                         recordingId: recordingId,
                         segments: segments,
@@ -1357,6 +1367,60 @@ class MacRecordingViewModel: ObservableObject {
         return true
     }
 
+    private func saveLocalBackupForPermanentAudioFailure(
+        recordingId: String,
+        segments: [LiveTranscriptSegment],
+        durationSeconds: TimeInterval,
+        technicalReason: String,
+        failureCode: String?
+    ) async -> Bool {
+        do {
+            _ = try saveTranscriptBackup(
+                recordingId: recordingId,
+                segments: segments,
+                durationSeconds: durationSeconds
+            )
+        } catch {
+            SentryHelper.captureError(
+                error,
+                extras: ["action": "saveLocalBackupForPermanentAudioFailure", "recordingId": recordingId]
+            )
+            audioLog.error("Failed to save permanent local recovery backup recordingId=\(recordingId, privacy: .public)")
+            return false
+        }
+
+        do {
+            _ = try RecordingBackupStore.recordSaveFailure(
+                recordingId: recordingId,
+                message: technicalReason
+            )
+            try RecordingBackupStore.markPermanentFailure(
+                recordingId: recordingId,
+                failureCode: failureCode
+            )
+        } catch {
+            SentryHelper.captureError(
+                error,
+                extras: ["action": "recordPermanentAudioFailure", "recordingId": recordingId]
+            )
+            audioLog.error("Failed to mark permanent local recovery backup recordingId=\(recordingId, privacy: .public)")
+            return false
+        }
+
+        SentryHelper.addBreadcrumb(
+            category: "recording",
+            message: "recording saved after terminal audio failure",
+            level: .warning,
+            data: [
+                "recordingId": recordingId,
+                "segments": segments.count,
+                "reason": technicalReason,
+                "failureCode": failureCode ?? "permanent_failure",
+            ]
+        )
+        return true
+    }
+
     private func applyRecordingPersistenceResult(
         _ result: RecordingPersistenceResult,
         recordingId: String,
@@ -1377,6 +1441,9 @@ class MacRecordingViewModel: ObservableObject {
             return true
         case .localBackup:
             error = nil
+            return false
+        case .localPermanentBackup(let message):
+            error = message
             return false
         case .failed(let message):
             error = message

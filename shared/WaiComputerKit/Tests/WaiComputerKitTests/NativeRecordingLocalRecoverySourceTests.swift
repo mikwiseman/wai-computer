@@ -35,6 +35,17 @@ final class NativeRecordingLocalRecoverySourceTests: XCTestCase {
         XCTAssertTrue(iosSource.contains("discardLocalAudioFileForTranscriptOnlySync("))
     }
 
+    func testImmediateAudioUploadTerminalFailuresBecomePermanentLocalBackups() throws {
+        let macSource = try repoSource("macos/WaiComputer/WaiComputer/Features/Recording/MacRecordingViewModel.swift")
+        let iosSource = try repoSource("ios/WaiComputer/WaiComputer/Features/Recording/RecordingViewModel.swift")
+
+        for source in [macSource, iosSource] {
+            XCTAssertTrue(source.contains("RecordingAudioFailurePolicy.isRetryableServerFailureCode(detail.failureCode)"))
+            XCTAssertTrue(source.contains("saveLocalBackupForPermanentAudioFailure("))
+            XCTAssertTrue(source.contains("RecordingBackupStore.markPermanentFailure("))
+        }
+    }
+
     private func functionBody(
         named declaration: String,
         in source: String,
