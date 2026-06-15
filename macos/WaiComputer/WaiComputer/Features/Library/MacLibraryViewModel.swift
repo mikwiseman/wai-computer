@@ -26,7 +26,9 @@ class MacLibraryViewModel: ObservableObject {
     @Published var trashedRecordings: [Recording] = [] {
         didSet { trashedRecordingsRevision &+= 1 }
     }
-    @Published var folders: [Folder] = []
+    @Published var folders: [Folder] = [] {
+        didSet { foldersRevision &+= 1 }
+    }
     @Published private(set) var localRecoveryRecordingIDs: Set<String> = []
     /// Recordings whose local backup hit a permanent sync failure (e.g. deleted
     /// on the server). Surfaced as "needs attention" rather than "saved locally".
@@ -38,6 +40,7 @@ class MacLibraryViewModel: ObservableObject {
 
     private(set) var recordingsRevision = 0
     private(set) var trashedRecordingsRevision = 0
+    private(set) var foldersRevision = 0
     private var loadGeneration = 0
     private var processingRefreshTask: Task<Void, Never>?
 

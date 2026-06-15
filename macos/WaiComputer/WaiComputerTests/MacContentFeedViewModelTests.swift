@@ -384,6 +384,29 @@ final class MacContentFeedViewModelTests: XCTestCase {
         XCTAssertTrue(source.contains("viewingFolderId: folderId"))
     }
 
+    func testInboxDetailEquatableGateUsesRevisionInputsInsteadOfFullArrays() throws {
+        let source = try macSource("WaiComputer/Features/Inbox/MacInboxView.swift")
+        let shellSource = try macSource("WaiComputer/App/MacContentView.swift")
+        let librarySource = try macSource("WaiComputer/Features/Library/MacLibraryViewModel.swift")
+
+        // The detail host intentionally uses .equatable() to avoid re-diffing a
+        // selected recording/material/chat when inbox rows paginate or banners
+        // change. The equality check itself must stay O(1): comparing the full
+        // recording/folder arrays on every list-side invalidation turns the
+        // guard into a main-actor hitch on large libraries.
+        XCTAssertTrue(librarySource.contains("private(set) var foldersRevision = 0"))
+        XCTAssertTrue(shellSource.contains("recordingsRevision: libraryViewModel.recordingsRevision"))
+        XCTAssertTrue(shellSource.contains("foldersRevision: libraryViewModel.foldersRevision"))
+        XCTAssertTrue(source.contains("let recordingsRevision: Int"))
+        XCTAssertTrue(source.contains("let foldersRevision: Int"))
+        XCTAssertTrue(source.contains("recordingsRevision: recordingsRevision"))
+        XCTAssertTrue(source.contains("foldersRevision: foldersRevision"))
+        XCTAssertTrue(source.contains("&& lhs.recordingsRevision == rhs.recordingsRevision"))
+        XCTAssertTrue(source.contains("&& lhs.foldersRevision == rhs.foldersRevision"))
+        XCTAssertFalse(source.contains("&& lhs.recordings == rhs.recordings"))
+        XCTAssertFalse(source.contains("&& lhs.folders == rhs.folders"))
+    }
+
     func testCompanionViewForwardsViewingContextToStreamRequest() throws {
         let source = try sharedSource("Sources/WaiComputerKit/Views/CompanionView.swift")
 

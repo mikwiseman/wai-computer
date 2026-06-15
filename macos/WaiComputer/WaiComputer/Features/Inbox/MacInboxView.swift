@@ -32,6 +32,8 @@ struct MacInboxView: View {
     let apiClient: APIClient
     let recordings: [Recording]
     let folders: [Folder]
+    let recordingsRevision: Int
+    let foldersRevision: Int
     let initialSourceKind: InboxSourceKind?
     let folderId: String?
     let reloadToken: UUID
@@ -64,6 +66,8 @@ struct MacInboxView: View {
         apiClient: APIClient,
         recordings: [Recording],
         folders: [Folder],
+        recordingsRevision: Int,
+        foldersRevision: Int,
         initialSourceKind: InboxSourceKind? = nil,
         folderId: String? = nil,
         reloadToken: UUID = UUID(),
@@ -78,6 +82,8 @@ struct MacInboxView: View {
         self.apiClient = apiClient
         self.recordings = recordings
         self.folders = folders
+        self.recordingsRevision = recordingsRevision
+        self.foldersRevision = foldersRevision
         self.initialSourceKind = initialSourceKind
         self.folderId = folderId
         self.reloadToken = reloadToken
@@ -485,6 +491,8 @@ struct MacInboxView: View {
             detail: selectedDetail,
             recordings: recordings,
             folders: folders,
+            recordingsRevision: recordingsRevision,
+            foldersRevision: foldersRevision,
             viewingFolderId: folderId,
             pendingChatMessage: pendingChatMessage,
             language: languageManager.current,
@@ -839,6 +847,8 @@ private struct MacInboxDetailHost: View, Equatable {
     let detail: InboxDetailRef
     let recordings: [Recording]
     let folders: [Folder]
+    let recordingsRevision: Int
+    let foldersRevision: Int
     let viewingFolderId: String?
     let pendingChatMessage: String?
     let language: LanguageManager.SupportedLanguage
@@ -851,8 +861,8 @@ private struct MacInboxDetailHost: View, Equatable {
 
     static func == (lhs: MacInboxDetailHost, rhs: MacInboxDetailHost) -> Bool {
         lhs.detail == rhs.detail
-            && lhs.recordings == rhs.recordings
-            && lhs.folders == rhs.folders
+            && lhs.recordingsRevision == rhs.recordingsRevision
+            && lhs.foldersRevision == rhs.foldersRevision
             && lhs.viewingFolderId == rhs.viewingFolderId
             && lhs.pendingChatMessage == rhs.pendingChatMessage
             && lhs.language == rhs.language

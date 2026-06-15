@@ -1022,6 +1022,8 @@ struct MacMainView: View {
                 apiClient: appState.getAPIClient(),
                 recordings: libraryViewModel.recordings,
                 folders: libraryViewModel.folders,
+                recordingsRevision: libraryViewModel.recordingsRevision,
+                foldersRevision: libraryViewModel.foldersRevision,
                 initialSourceKind: inboxInitialSourceKind,
                 folderId: currentFolderId,
                 reloadToken: inboxReloadToken,
