@@ -44,6 +44,8 @@ ACTIVE_SUMMARY_GENERATION_STATUSES = {
     SummaryGenerationStatus.QUEUED.value,
     SummaryGenerationStatus.RUNNING.value,
 }
+WAITING_FOR_TRANSCRIPT_STAGE = "waiting_for_transcript"
+WAITING_FOR_TRANSCRIPT_HASH = hashlib.sha256(b"").hexdigest()
 
 
 class SummaryGenerationEnqueueError(RuntimeError):
@@ -72,6 +74,14 @@ def build_summary_transcript(segments: list[Segment]) -> str:
 
 def summary_transcript_hash(transcript: str) -> str:
     return hashlib.sha256(transcript.encode("utf-8")).hexdigest()
+
+
+def can_wait_for_transcript(recording: Recording) -> bool:
+    return recording.status in {
+        RecordingStatus.PENDING_UPLOAD.value,
+        RecordingStatus.UPLOADING.value,
+        RecordingStatus.PROCESSING.value,
+    }
 
 
 def resolve_summary_language_preference(
@@ -147,6 +157,7 @@ async def fail_active_summary_generation_jobs(
     user_id: UUID | None = None,
     error_code: str,
     error_message: str,
+    preserve_waiting_for_transcript: bool = False,
 ) -> list[SummaryGenerationJob]:
     """Fail queued/running summary jobs that are no longer valid."""
     conditions = [
@@ -155,6 +166,8 @@ async def fail_active_summary_generation_jobs(
     ]
     if user_id is not None:
         conditions.append(SummaryGenerationJob.user_id == user_id)
+    if preserve_waiting_for_transcript:
+        conditions.append(SummaryGenerationJob.stage != WAITING_FOR_TRANSCRIPT_STAGE)
 
     jobs = (
         await db.execute(
@@ -311,21 +324,88 @@ async def start_recording_summary_generation_job(
         include_outputs=True,
         lock=True,
     )
-    if recording is None or not recording.segments:
+    if recording is None:
         return None
 
     if skip_if_summary_exists and recording.summary is not None:
         return latest_summary_generation_job(recording)
-
-    transcript = build_summary_transcript(recording.segments)
-    transcript_hash = summary_transcript_hash(transcript)
 
     active_job = await load_active_summary_generation_job(
         db,
         recording_id=recording.id,
         user_id=user_id,
     )
+
+    if not recording.segments:
+        if not can_wait_for_transcript(recording):
+            return None
+        if active_job is not None:
+            if active_job.stage != WAITING_FOR_TRANSCRIPT_STAGE:
+                active_job.stage = WAITING_FOR_TRANSCRIPT_STAGE
+                active_job.progress_percent = 5
+            if instructions_override is not None:
+                active_job.instructions_override = instructions_override
+            await db.commit()
+            return active_job
+
+        job = SummaryGenerationJob(
+            recording_id=recording.id,
+            user_id=user_id,
+            status=SummaryGenerationStatus.QUEUED.value,
+            stage=WAITING_FOR_TRANSCRIPT_STAGE,
+            progress_percent=5,
+            transcript_hash=WAITING_FOR_TRANSCRIPT_HASH,
+            instructions_override=instructions_override,
+        )
+        db.add(job)
+        try:
+            await db.flush()
+        except IntegrityError:
+            await db.rollback()
+            active_job = await load_active_summary_generation_job(
+                db,
+                recording_id=recording_id,
+                user_id=user_id,
+            )
+            if active_job is not None:
+                return active_job
+            raise
+
+        await db.commit()
+        return job
+
+    transcript = build_summary_transcript(recording.segments)
+    transcript_hash = summary_transcript_hash(transcript)
+
     if active_job is not None:
+        if active_job.stage == WAITING_FOR_TRANSCRIPT_STAGE:
+            active_job.transcript_hash = transcript_hash
+            active_job.stage = "queued"
+            active_job.progress_percent = 5
+            active_job.error_code = None
+            active_job.error_message = None
+            active_job.failed_at = None
+            if instructions_override is not None:
+                active_job.instructions_override = instructions_override
+            await db.commit()
+
+            try:
+                active_job.task_id = enqueue(active_job.id)
+            except Exception as exc:  # noqa: BLE001 - broker failure is persisted below.
+                mark_summary_generation_failed(
+                    active_job,
+                    error_code="summary_enqueue_failed",
+                    error_message="Failed to start summary generation.",
+                )
+                await db.commit()
+                if raise_on_enqueue_error:
+                    raise SummaryGenerationEnqueueError(
+                        "Failed to start summary generation"
+                    ) from exc
+                return active_job
+
+            await db.commit()
+            return active_job
         if active_job.transcript_hash == transcript_hash:
             return active_job
         mark_summary_generation_failed(
@@ -405,6 +485,38 @@ async def recover_missing_summary_generation_jobs(
         .limit(1)
         .exists()
     )
+    recovered = 0
+
+    waiting_rows = (
+        await db.execute(
+            select(SummaryGenerationJob.recording_id, SummaryGenerationJob.user_id)
+            .join(Recording, Recording.id == SummaryGenerationJob.recording_id)
+            .where(
+                SummaryGenerationJob.status == SummaryGenerationStatus.QUEUED.value,
+                SummaryGenerationJob.stage == WAITING_FOR_TRANSCRIPT_STAGE,
+                has_segments,
+                ~has_summary,
+            )
+            .order_by(SummaryGenerationJob.created_at.asc(), SummaryGenerationJob.id.asc())
+            .limit(limit)
+        )
+    ).all()
+    for recording_id, user_id in waiting_rows:
+        job = await start_recording_summary_generation_job(
+            db,
+            recording_id=recording_id,
+            user_id=user_id,
+            enqueue=enqueue,
+            skip_if_summary_exists=True,
+            raise_on_enqueue_error=False,
+        )
+        if job is not None and job.status in ACTIVE_SUMMARY_GENERATION_STATUSES:
+            recovered += 1
+
+    remaining_limit = limit - recovered
+    if remaining_limit <= 0:
+        return recovered
+
     rows = (
         await db.execute(
             select(Recording.id, Recording.user_id)
@@ -415,11 +527,10 @@ async def recover_missing_summary_generation_jobs(
                 ~has_summary_job,
             )
             .order_by(Recording.created_at.desc(), Recording.id.asc())
-            .limit(limit)
+            .limit(remaining_limit)
         )
     ).all()
 
-    recovered = 0
     for recording_id, user_id in rows:
         job = await start_recording_summary_generation_job(
             db,
@@ -445,13 +556,6 @@ async def prepare_summary_generation_payload(
     if job is None or job.status not in ACTIVE_SUMMARY_GENERATION_STATUSES:
         return None
 
-    job.status = SummaryGenerationStatus.RUNNING.value
-    job.stage = "preparing_transcript"
-    job.progress_percent = 10
-    job.task_id = task_id or job.task_id
-    job.started_at = job.started_at or datetime.now(timezone.utc)
-    job.attempt_count += 1
-
     recording = await _load_recording_for_generation(
         db,
         recording_id=job.recording_id,
@@ -468,6 +572,11 @@ async def prepare_summary_generation_payload(
         return None
 
     if not recording.segments:
+        if job.stage == WAITING_FOR_TRANSCRIPT_STAGE:
+            job.status = SummaryGenerationStatus.QUEUED.value
+            job.progress_percent = 5
+            job.task_id = task_id or job.task_id
+            return None
         mark_summary_generation_failed(
             job,
             error_code="no_transcript_segments",
@@ -477,6 +586,10 @@ async def prepare_summary_generation_payload(
 
     transcript = build_summary_transcript(recording.segments)
     transcript_hash = summary_transcript_hash(transcript)
+    if job.stage == WAITING_FOR_TRANSCRIPT_STAGE:
+        job.transcript_hash = transcript_hash
+        job.stage = "queued"
+        job.progress_percent = 5
     if transcript_hash != job.transcript_hash:
         mark_summary_generation_failed(
             job,
@@ -484,6 +597,13 @@ async def prepare_summary_generation_payload(
             error_message="Transcript changed before summary generation started.",
         )
         return None
+
+    job.status = SummaryGenerationStatus.RUNNING.value
+    job.stage = "preparing_transcript"
+    job.progress_percent = 10
+    job.task_id = task_id or job.task_id
+    job.started_at = job.started_at or datetime.now(timezone.utc)
+    job.attempt_count += 1
 
     job.stage = "generating_summary"
     job.progress_percent = 35

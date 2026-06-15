@@ -529,6 +529,8 @@ def _summary_generation_message(status_value: str, stage: str) -> str:
     if status_value == "not_started":
         return "Summary has not been generated."
     if status_value == SummaryGenerationStatus.QUEUED.value:
+        if stage == "waiting_for_transcript":
+            return "Summary generation will start when the transcript is ready."
         return "Summary generation is queued."
     if status_value == SummaryGenerationStatus.RUNNING.value:
         if stage == "preparing_transcript":
@@ -2880,12 +2882,6 @@ async def start_summary_generation(
     recording = recording_result.scalar_one_or_none()
     if recording is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Recording not found")
-
-    if not recording.segments:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="No transcript segments to summarize",
-        )
 
     try:
         job = await start_recording_summary_generation_job(

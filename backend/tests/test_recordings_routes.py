@@ -553,6 +553,111 @@ async def test_start_summary_generation_is_idempotent_and_visible_in_detail(
 
 
 @pytest.mark.asyncio
+async def test_start_summary_generation_waits_for_processing_transcript(
+    client: AsyncClient,
+    auth_headers: dict,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    recording = await _create_recording(client, auth_headers, title="Processing Summary")
+    recording_id = UUID(recording["id"])
+    recording_row = await db_session.get(Recording, recording_id)
+    assert recording_row is not None
+    recording_row.status = RecordingStatus.PROCESSING.value
+    await db_session.flush()
+
+    enqueued_job_ids: list[str] = []
+    monkeypatch.setattr(
+        "app.api.routes.recordings.enqueue_summary_generation",
+        lambda job_id: enqueued_job_ids.append(str(job_id)) or "unexpected",
+    )
+
+    response = await client.post(
+        f"/api/recordings/{recording_id}/summary-generation",
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 202, response.text
+    payload = response.json()
+    assert payload["status"] == SummaryGenerationStatus.QUEUED.value
+    assert payload["stage"] == "waiting_for_transcript"
+    assert payload["progress_percent"] == 5
+    assert payload["job_id"] is not None
+    assert enqueued_job_ids == []
+
+    job = await db_session.get(SummaryGenerationJob, UUID(payload["job_id"]))
+    assert job is not None
+    assert job.task_id is None
+
+
+@pytest.mark.asyncio
+async def test_save_transcript_enqueues_waiting_summary_generation_job(
+    client: AsyncClient,
+    auth_headers: dict,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    recording = await _create_recording(client, auth_headers, title="Deferred Summary")
+    recording_id = UUID(recording["id"])
+    recording_row = await db_session.get(Recording, recording_id)
+    assert recording_row is not None
+    assert recording_row.status == RecordingStatus.PENDING_UPLOAD.value
+
+    enqueued_job_ids: list[str] = []
+
+    def fake_enqueue(job_id: UUID) -> str:
+        enqueued_job_ids.append(str(job_id))
+        return "celery-waiting-summary"
+
+    monkeypatch.setattr("app.api.routes.recordings.enqueue_summary_generation", fake_enqueue)
+
+    waiting = await client.post(
+        f"/api/recordings/{recording_id}/summary-generation",
+        headers=auth_headers,
+    )
+    assert waiting.status_code == 202, waiting.text
+    waiting_job_id = waiting.json()["job_id"]
+    assert waiting.json()["stage"] == "waiting_for_transcript"
+    assert enqueued_job_ids == []
+
+    monkeypatch.setattr(
+        "app.api.routes.recordings.generate_embedding",
+        AsyncMock(return_value=[0.1] * 1536),
+    )
+
+    saved = await client.post(
+        f"/api/recordings/{recording_id}/transcript",
+        headers=auth_headers,
+        json={
+            "duration_seconds": 5,
+            "segments": [
+                {
+                    "text": "This transcript should unlock the waiting summary job.",
+                    "speaker": "Speaker 1",
+                    "start_ms": 0,
+                    "end_ms": 4600,
+                    "confidence": 0.96,
+                }
+            ],
+        },
+    )
+
+    assert saved.status_code == 200, saved.text
+    generation = saved.json()["summary_generation"]
+    assert generation["job_id"] == waiting_job_id
+    assert generation["status"] == SummaryGenerationStatus.QUEUED.value
+    assert generation["stage"] == "queued"
+    assert enqueued_job_ids == [waiting_job_id]
+
+    job = await db_session.get(SummaryGenerationJob, UUID(waiting_job_id))
+    assert job is not None
+    assert job.status == SummaryGenerationStatus.QUEUED.value
+    assert job.stage == "queued"
+    assert job.task_id == "celery-waiting-summary"
+    assert job.error_code is None
+
+
+@pytest.mark.asyncio
 async def test_start_summary_generation_persists_per_recording_instruction_override(
     client: AsyncClient,
     auth_headers: dict,

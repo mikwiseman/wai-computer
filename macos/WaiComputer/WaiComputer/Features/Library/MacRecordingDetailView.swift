@@ -696,6 +696,7 @@ struct MacRecordingDetailView: View {
         let audioState = detail.summaryAudio
         let isGeneratingAudio = viewModel.isGeneratingSummaryAudio(for: detail.id) ||
             audioState?.isActive == true
+        let transcriptPending = summaryTranscriptIsPending(detail)
 
         VStack(alignment: .leading, spacing: Spacing.lg) {
             HStack(alignment: .center, spacing: Spacing.md) {
@@ -731,6 +732,7 @@ struct MacRecordingDetailView: View {
             } else {
                 summaryEmptyState(
                     detail: detail,
+                    transcriptPending: transcriptPending,
                     isGeneratingSummary: isGeneratingSummary,
                     generationFailed: generationFailed,
                     generationState: generationState
@@ -821,6 +823,7 @@ struct MacRecordingDetailView: View {
 
     private func summaryEmptyState(
         detail: RecordingDetail,
+        transcriptPending: Bool,
         isGeneratingSummary: Bool,
         generationFailed: Bool,
         generationState: SummaryGenerationState?
@@ -828,6 +831,8 @@ struct MacRecordingDetailView: View {
         // A failed recording has no transcript to summarize — say what actually
         // happened instead of "not ready yet" plus a Generate button that can't work.
         let transcriptionFailed = detail.status == .failed && detail.segments.isEmpty
+        let waitingForTranscript = generationState?.stage == "waiting_for_transcript" ||
+            (isGeneratingSummary && transcriptPending)
         return VStack(alignment: .leading, spacing: Spacing.md) {
             if transcriptionFailed {
                 Text(recordingFailureText)
@@ -835,6 +840,33 @@ struct MacRecordingDetailView: View {
                     .foregroundStyle(Palette.recording)
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityIdentifier("summary-failed-state")
+            } else if waitingForTranscript || transcriptPending {
+                HStack(alignment: .center, spacing: Spacing.sm) {
+                    ProgressView()
+                        .controlSize(.small)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(t("Waiting for transcript", "Ждем расшифровку"))
+                            .font(Typography.body)
+                            .foregroundStyle(Palette.textPrimary)
+                        Text(t(
+                            "The summary will start automatically when the transcript is available.",
+                            "Сводка запустится автоматически, когда расшифровка будет доступна."
+                        ))
+                        .font(Typography.caption)
+                        .foregroundStyle(Palette.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                .accessibilityIdentifier("summary-waiting-for-transcript")
+            } else if detail.status == .ready && detail.segments.isEmpty {
+                Text(t(
+                    "No transcript is available for this recording.",
+                    "Для этой записи нет расшифровки."
+                ))
+                .font(Typography.body)
+                .foregroundStyle(Palette.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityIdentifier("summary-no-transcript-state")
             } else {
                 Text(t("Summary is not ready yet.", "Сводка еще не готова."))
                     .font(Typography.body)
@@ -848,7 +880,11 @@ struct MacRecordingDetailView: View {
                         )
                     }
                 }) {
-                    Text(summaryGenerationButtonTitle(isGenerating: isGeneratingSummary, failed: generationFailed))
+                    Text(summaryGenerationButtonTitle(
+                        isGenerating: isGeneratingSummary,
+                        failed: generationFailed,
+                        state: generationState
+                    ))
                 }
                 .buttonStyle(WaiPrimaryButtonStyle(isDisabled: isGeneratingSummary))
                 .disabled(isGeneratingSummary)
@@ -964,8 +1000,28 @@ struct MacRecordingDetailView: View {
         )
     }
 
-    private func summaryGenerationButtonTitle(isGenerating: Bool, failed: Bool) -> String {
+    private func summaryTranscriptIsPending(_ detail: RecordingDetail) -> Bool {
+        if viewModel.transcriptAvailability == .savedLocally {
+            return true
+        }
+        guard detail.segments.isEmpty else { return false }
+        switch detail.status {
+        case .pendingUpload, .uploading, .processing:
+            return true
+        case .ready, .failed:
+            return false
+        }
+    }
+
+    private func summaryGenerationButtonTitle(
+        isGenerating: Bool,
+        failed: Bool,
+        state: SummaryGenerationState?
+    ) -> String {
         if isGenerating {
+            if state?.stage == "waiting_for_transcript" {
+                return t("Waiting for Transcript", "Ждем расшифровку")
+            }
             return t("Generating Summary", "Генерируем сводку")
         }
         if failed {
@@ -981,6 +1037,9 @@ struct MacRecordingDetailView: View {
 
         switch state.status {
         case "queued":
+            if state.stage == "waiting_for_transcript" {
+                return t("Waiting for transcript...", "Ждем расшифровку...")
+            }
             return t("Summary generation is queued.", "Генерация сводки в очереди.")
         case "running":
             switch state.stage {

@@ -161,6 +161,7 @@ async def reset_recording_processing_state(recording_id: UUID, db: AsyncSession)
         recording_id=recording_id,
         error_code="transcript_replaced",
         error_message="Transcript was replaced before summary generation completed.",
+        preserve_waiting_for_transcript=True,
     )
     await db.execute(
         delete(ActionItem).where(

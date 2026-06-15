@@ -14,6 +14,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.summarizer import SummaryResult
 from app.core.summary_generation import (
+    WAITING_FOR_TRANSCRIPT_HASH,
+    WAITING_FOR_TRANSCRIPT_STAGE,
     apply_summary_result,
     build_summary_transcript,
     fail_summary_generation_job,
@@ -221,6 +223,42 @@ async def test_recover_missing_summary_generation_jobs_enqueues_only_never_start
 
 
 @pytest.mark.asyncio
+async def test_recover_missing_summary_generation_jobs_enqueues_waiting_job_with_segments(
+    db_session: AsyncSession,
+) -> None:
+    user = await _user(db_session)
+    recording = await _recording(db_session, user)
+    waiting_job = SummaryGenerationJob(
+        recording_id=recording.id,
+        user_id=user.id,
+        status=SummaryGenerationStatus.QUEUED.value,
+        stage=WAITING_FOR_TRANSCRIPT_STAGE,
+        progress_percent=5,
+        transcript_hash=WAITING_FOR_TRANSCRIPT_HASH,
+    )
+    db_session.add(waiting_job)
+    await db_session.flush()
+
+    enqueued: list[UUID] = []
+
+    recovered = await recover_missing_summary_generation_jobs(
+        db_session,
+        enqueue=lambda job_id: enqueued.append(job_id) or f"celery-{job_id}",
+        limit=10,
+    )
+
+    await db_session.refresh(waiting_job)
+    assert recovered == 1
+    assert enqueued == [waiting_job.id]
+    assert waiting_job.status == SummaryGenerationStatus.QUEUED.value
+    assert waiting_job.stage == "queued"
+    assert waiting_job.transcript_hash == summary_transcript_hash(
+        build_summary_transcript(await _segments(db_session, recording))
+    )
+    assert waiting_job.task_id == f"celery-{waiting_job.id}"
+
+
+@pytest.mark.asyncio
 async def test_apply_and_persist_summary_result_replaces_generated_outputs(
     db_session: AsyncSession,
 ) -> None:
@@ -390,17 +428,32 @@ async def test_prepare_summary_generation_payload_success_and_failure_states(
         user_id=user.id,
         transcript_hash=summary_transcript_hash(""),
     )
+    waiting_recording = await _recording(db_session, user, with_segments=False)
+    waiting_recording.status = RecordingStatus.PROCESSING.value
+    waiting_job = SummaryGenerationJob(
+        recording_id=waiting_recording.id,
+        user_id=user.id,
+        status=SummaryGenerationStatus.QUEUED.value,
+        stage=WAITING_FOR_TRANSCRIPT_STAGE,
+        progress_percent=5,
+        transcript_hash=WAITING_FOR_TRANSCRIPT_HASH,
+    )
     stale_recording = await _recording(db_session, user)
     stale_job = SummaryGenerationJob(
         recording_id=stale_recording.id,
         user_id=user.id,
         transcript_hash="stale",
     )
-    db_session.add_all([no_segments_job, stale_job])
+    db_session.add_all([no_segments_job, waiting_job, stale_job])
     await db_session.flush()
 
     assert await prepare_summary_generation_payload(db_session, job_id=no_segments_job.id) is None
     assert no_segments_job.error_code == "no_transcript_segments"
+
+    assert await prepare_summary_generation_payload(db_session, job_id=waiting_job.id) is None
+    assert waiting_job.status == SummaryGenerationStatus.QUEUED.value
+    assert waiting_job.stage == WAITING_FOR_TRANSCRIPT_STAGE
+    assert waiting_job.error_code is None
 
     assert await prepare_summary_generation_payload(db_session, job_id=stale_job.id) is None
     assert stale_job.error_code == "stale_transcript"

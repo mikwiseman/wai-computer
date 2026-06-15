@@ -83,6 +83,9 @@ def test_summary_generation_message_variants():
     assert msg(SummaryGenerationStatus.QUEUED.value, "queued") == (
         "Summary generation is queued."
     )
+    assert msg(SummaryGenerationStatus.QUEUED.value, "waiting_for_transcript") == (
+        "Summary generation will start when the transcript is ready."
+    )
     running = SummaryGenerationStatus.RUNNING.value
     assert msg(running, "preparing_transcript") == (
         "Preparing transcript for summary generation."

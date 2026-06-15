@@ -68,11 +68,9 @@ struct MacComparisonView: View {
         }
     }
 
-    // LLM-generated values can be sentence-long; without a width cap each cell
-    // takes its ideal single-line width inside the two-axis ScrollView and the
-    // table explodes horizontally. Cap the columns and let text wrap.
-    // Note: `idealWidth` (not `.fixedSize`) is what makes wrapped cells report
-    // their wrapped height correctly under the ScrollView's unspecified proposal.
+    // LLM-generated values can be sentence-long. Cap each column and let text
+    // wrap so the table remains readable without asking SwiftUI for unbounded
+    // ideal widths.
     private let titleColumnWidth: CGFloat = 200
     private let valueColumnWidth: CGFloat = 260
     private let rationaleMaxWidth: CGFloat = 720
@@ -82,43 +80,86 @@ struct MacComparisonView: View {
         rows: [ComparisonRow],
         rationale: String?
     ) -> some View {
-        ScrollView([.horizontal, .vertical]) {
-            VStack(alignment: .leading, spacing: Spacing.md) {
-                if let rationale, !rationale.isEmpty {
-                    Text(rationale)
-                        .font(Typography.bodySmall)
-                        .foregroundStyle(Palette.textSecondary)
-                        .frame(idealWidth: rationaleMaxWidth, maxWidth: rationaleMaxWidth, alignment: .leading)
-                }
-                Grid(alignment: .topLeading, horizontalSpacing: Spacing.lg, verticalSpacing: Spacing.sm) {
-                    GridRow {
-                        Text(t("Item", "Материал"))
-                            .font(Typography.labelSmall.weight(.semibold))
-                            .frame(idealWidth: titleColumnWidth, maxWidth: titleColumnWidth, alignment: .topLeading)
-                        ForEach(columns) { column in
-                            Text(column.name)
-                                .font(Typography.labelSmall.weight(.semibold))
-                                .frame(idealWidth: valueColumnWidth, maxWidth: valueColumnWidth, alignment: .topLeading)
-                        }
-                    }
-                    Divider()
-                    ForEach(rows) { row in
-                        GridRow {
-                            Text(row.title)
-                                .font(Typography.bodySmall.weight(.medium))
-                                .frame(idealWidth: titleColumnWidth, maxWidth: titleColumnWidth, alignment: .topLeading)
-                            ForEach(columns) { column in
-                                Text(cell(row, column.name))
-                                    .font(Typography.bodySmall)
-                                    .foregroundStyle(Palette.textSecondary)
-                                    .frame(idealWidth: valueColumnWidth, maxWidth: valueColumnWidth, alignment: .topLeading)
-                            }
-                        }
-                    }
-                }
+        VStack(alignment: .leading, spacing: Spacing.md) {
+            if let rationale, !rationale.isEmpty {
+                Text(rationale)
+                    .font(Typography.bodySmall)
+                    .foregroundStyle(Palette.textSecondary)
+                    .frame(maxWidth: rationaleMaxWidth, alignment: .leading)
+                    .padding(.horizontal, Spacing.xl)
+                    .padding(.top, Spacing.xl)
             }
-            .padding(Spacing.xl)
+
+            ScrollView(.horizontal) {
+                VStack(alignment: .leading, spacing: 0) {
+                    comparisonHeaderRow(columns: columns)
+                        .padding(.horizontal, Spacing.xl)
+                        .padding(.top, Spacing.md)
+                        .padding(.bottom, Spacing.sm)
+                    Divider()
+                        .padding(.horizontal, Spacing.xl)
+
+                    List {
+                        ForEach(rows) { row in
+                            comparisonDataRow(row: row, columns: columns)
+                                .listRowInsets(EdgeInsets(
+                                    top: 0,
+                                    leading: Spacing.xl,
+                                    bottom: 0,
+                                    trailing: Spacing.xl
+                                ))
+                                .listRowSeparator(.hidden)
+                                .listRowBackground(Color.clear)
+                        }
+                    }
+                    .listStyle(.plain)
+                    .scrollContentBackground(.hidden)
+                    .frame(width: comparisonTableWidth(columns: columns))
+                }
+                .frame(width: comparisonTableWidth(columns: columns), alignment: .leading)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
+    }
+
+    private func comparisonHeaderRow(columns: [ComparisonColumn]) -> some View {
+        HStack(alignment: .top, spacing: Spacing.lg) {
+            Text(t("Item", "Материал"))
+                .font(Typography.labelSmall.weight(.semibold))
+                .frame(width: titleColumnWidth, alignment: .topLeading)
+
+            ForEach(columns) { column in
+                Text(column.name)
+                    .font(Typography.labelSmall.weight(.semibold))
+                    .frame(width: valueColumnWidth, alignment: .topLeading)
+            }
+        }
+    }
+
+    private func comparisonDataRow(
+        row: ComparisonRow,
+        columns: [ComparisonColumn]
+    ) -> some View {
+        HStack(alignment: .top, spacing: Spacing.lg) {
+            Text(row.title)
+                .font(Typography.bodySmall.weight(.medium))
+                .frame(width: titleColumnWidth, alignment: .topLeading)
+
+            ForEach(columns) { column in
+                Text(cell(row, column.name))
+                    .font(Typography.bodySmall)
+                    .foregroundStyle(Palette.textSecondary)
+                    .frame(width: valueColumnWidth, alignment: .topLeading)
+            }
+        }
+        .padding(.vertical, Spacing.sm)
+        .textSelection(.enabled)
+    }
+
+    private func comparisonTableWidth(columns: [ComparisonColumn]) -> CGFloat {
+        let cellWidths = titleColumnWidth + CGFloat(columns.count) * valueColumnWidth
+        let gaps = CGFloat(columns.count) * Spacing.lg
+        return cellWidths + gaps + (Spacing.xl * 2)
     }
 
     private func cell(_ row: ComparisonRow, _ column: String) -> String {
