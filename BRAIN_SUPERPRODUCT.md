@@ -75,7 +75,7 @@ After subtracting what exists, the high-ROI, non-duplicative gaps are tight:
 
 ## The plan — 8 phases (power-per-effort)
 
-**Conventions:** Backend-first; **Mac leads** each client-facing phase, then web (teal accent) and iOS — all on shared endpoints (Android/Windows/Linux adopt the same endpoints in a later parity pass). TDD throughout. Migrations serialize into **one chain** off the confirmed head. Every retrieval change is gated on **P0·eval**. No fallbacks; cost bounded by keeping the zero-LLM path the floor for bulk synced items.
+**Conventions:** Backend-first; **Mac leads** each client-facing phase, then web (teal accent) and iOS — all on shared endpoints. TDD throughout. Migrations serialize into **one chain** off the confirmed head. Every retrieval change is gated on **P0·eval**. No fallbacks; cost bounded by keeping the zero-LLM path the floor for bulk synced items.
 
 ### P0·eval — measurement first *(added in critique; do this before P0a)*
 A small golden set of ~40–60 real **Russian + English** questions, each tagged with the source(s) that should be retrieved, plus a tiny harness computing precision@k / recall@k / MRR. **Every** retrieval change (P0a max-pool, graph arm, contextual; P1 rerank; P4 ranking) reports against it. Without this, "better retrieval" is a vibe. Effort **S**. Success: one command prints before/after metrics for any flagged change.
@@ -204,7 +204,7 @@ The automated critics + final revision hit the API rate limit, so I ran the four
 - **Re-scoped contextual retrieval to "contextual-lite" + the voice path** — items already have `title ›`; Cerebras has no prompt-cache discount, so full-doc-per-chunk is too costly; the real gap is segments.
 - **Flagged the reranker model-id/pricing/Russian as verify-before-commit** + surfaced the managed-vs-self-host **privacy** tradeoff as an explicit decision.
 - **Flagged the moving tree** — concurrent commits to `main` (incl. "Brain is a wiki" today) mean anchors drift; build on a worktree off latest `main`, confirm `alembic heads`.
-- **Noted platform scope** — backend endpoints are platform-agnostic; Android/Windows/Linux adopt them in a later parity pass.
+- **Noted platform scope** — backend endpoints are platform-agnostic and currently serve web, macOS, and iOS.
 - **Confirmed the floor-ratio gate was correctly dropped** (a cosine heuristic that mis-fires on Wai's RRF scale) and **m71** (Brain *consuming* external MCPs) is intentionally deferred to the existing Brain×any-MCP sync initiative.
 
 ---

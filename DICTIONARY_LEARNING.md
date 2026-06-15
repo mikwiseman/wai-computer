@@ -8,7 +8,7 @@ user repeatedly fixes the same mis-heard word after dictation, WaiComputer detec
 is the Wispr Flow / Typeless / Willow pattern, built the privacy-correct way.
 
 Decisions (Mik, 2026-06-09):
-- **Capture surface:** macOS Accessibility paste-target monitor **+** in-app baseline (edits to dictation-history rows). No web/iOS/Android this cut.
+- **Capture surface:** macOS Accessibility paste-target monitor **+** in-app baseline (edits to dictation-history rows). No web/iOS this cut.
 - **Add UX:** *suggest with one-tap confirm* after a recurrence threshold — never silent, never a mid-flow modal.
 - **Scope:** macOS app + backend only.
 
