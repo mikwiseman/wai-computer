@@ -780,6 +780,19 @@ class RecordingViewModel: ObservableObject {
         do {
             return try await manager.finishStreaming(timeout: .seconds(5))
         } catch {
+            SentryHelper.addBreadcrumb(
+                category: "recording.provider",
+                message: "recording.provider.close_failed",
+                level: .error,
+                data: ["stage": "recording_finalize"]
+            )
+            SentryHelper.captureError(
+                error,
+                extras: [
+                    "context": "recording.provider.close_failed",
+                    "stage": "recording_finalize",
+                ]
+            )
             recordingLog.warning("Failed to finalize realtime transcription stream")
             return false
         }

@@ -22,6 +22,31 @@ final class NativeRecordingFinalizationSourceTests: XCTestCase {
         }
     }
 
+    func testNativeRecordingRealtimeCloseFailuresAreCapturedDuringFinalization() throws {
+        let macSource = try repoSource("macos/WaiComputer/WaiComputer/Features/Recording/MacRecordingViewModel.swift")
+        let iosSource = try repoSource("ios/WaiComputer/WaiComputer/Features/Recording/RecordingViewModel.swift")
+
+        let macFinishStreaming = try functionBody(
+            named: "private func finishStreaming(_ manager: WebSocketManager?) async -> Bool",
+            in: macSource,
+            endingBefore: "private func makeAudioCapture("
+        )
+        let iosFinishStreaming = try functionBody(
+            named: "private func finishStreaming(_ manager: WebSocketManager?) async -> Bool",
+            in: iosSource,
+            endingBefore: "private func startTimer()"
+        )
+
+        for source in [macFinishStreaming, iosFinishStreaming] {
+            XCTAssertTrue(source.contains("recording.provider.close_failed"))
+            XCTAssertTrue(source.contains("SentryHelper.captureError("))
+            XCTAssertTrue(source.contains("SentryHelper.addBreadcrumb("))
+            XCTAssertTrue(source.contains("\"stage\": \"recording_finalize\""))
+            XCTAssertFalse(source.contains("catch {\n            audioLog.error(\"Failed to finalize realtime transcription stream\")\n            return false"))
+            XCTAssertFalse(source.contains("catch {\n            recordingLog.warning(\"Failed to finalize realtime transcription stream\")\n            return false"))
+        }
+    }
+
     private func functionBody(
         named declaration: String,
         in source: String,
