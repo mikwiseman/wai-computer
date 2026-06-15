@@ -3,6 +3,7 @@ import XCTest
 final class SettingsUITests: XCTestCase {
     override func setUpWithError() throws {
         continueAfterFailure = false
+        try requireForegroundXCUITestOptIn()
     }
 
     private func launchToSettings(permissionMock: String? = nil) -> XCUIApplication {

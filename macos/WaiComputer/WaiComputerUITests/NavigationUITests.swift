@@ -3,6 +3,7 @@ import XCTest
 final class NavigationUITests: XCTestCase {
     override func setUpWithError() throws {
         continueAfterFailure = false
+        try requireForegroundXCUITestOptIn()
     }
 
     private func launchAuthenticatedApp() -> XCUIApplication {

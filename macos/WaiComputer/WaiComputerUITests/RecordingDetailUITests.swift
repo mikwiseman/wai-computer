@@ -3,6 +3,7 @@ import XCTest
 final class RecordingDetailUITests: XCTestCase {
     override func setUpWithError() throws {
         continueAfterFailure = false
+        try requireForegroundXCUITestOptIn()
     }
 
     /// Launch the app in the recording_flow scenario, start and stop a recording,

@@ -67,6 +67,7 @@
 		87D9FAD3C8437015C5E3D1A5 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 864F5988EFF4C90C1885EAD1 /* Assets.xcassets */; };
 		8BD591B241EDBD3580AA29DB /* MacContentFeedView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F1ABFAB94BE684BE4551196 /* MacContentFeedView.swift */; };
 		8C849F5A4A5B0B522D8F9C9F /* MacSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6299E722D1B0554D90131758 /* MacSettingsView.swift */; };
+		8E233E2693DFA10F1BAEA796 /* WaiComputerUITestForegroundPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7BD4B6FF35ED30B24C57D2F6 /* WaiComputerUITestForegroundPolicy.swift */; };
 		8E5851C0E291A3FDAD053B9E /* GlobalHotkeyManagerGestureTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5AC25F4C6A4490FD91250DF0 /* GlobalHotkeyManagerGestureTests.swift */; };
 		8EFA5306BA7BFE70BB94925B /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = 2D8C691A99FD7DEA5AE7FA15 /* Sparkle */; };
 		908000D73E621D62B2638F0E /* AppIcon.icon in Resources */ = {isa = PBXBuildFile; fileRef = 63673E10D195B18342C22A3A /* AppIcon.icon */; };
@@ -180,6 +181,7 @@
 		72DC15C789AC6D3DE96B7454 /* DictationHistoryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DictationHistoryView.swift; sourceTree = "<group>"; };
 		73AF84F811C313C6D8732695 /* MacContentFeedViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacContentFeedViewModel.swift; sourceTree = "<group>"; };
 		78B67D18F6BA472B6CFC74F3 /* MacLibraryViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacLibraryViewModel.swift; sourceTree = "<group>"; };
+		7BD4B6FF35ED30B24C57D2F6 /* WaiComputerUITestForegroundPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WaiComputerUITestForegroundPolicy.swift; sourceTree = "<group>"; };
 		7C205DE1023E880B18BE09CB /* MacTranscriptView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacTranscriptView.swift; sourceTree = "<group>"; };
 		803E7E8D86E717C36B809FE4 /* DictationOverlayPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DictationOverlayPanel.swift; sourceTree = "<group>"; };
 		864F5988EFF4C90C1885EAD1 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
@@ -345,6 +347,7 @@
 				EBF23F17DA476E6DC9973406 /* SearchUITests.swift */,
 				EA4A03C86EF4E333421DA327 /* SettingsUITests.swift */,
 				9771DF357F99B4824512ECA8 /* WaiComputerUITestAppLauncher.swift */,
+				7BD4B6FF35ED30B24C57D2F6 /* WaiComputerUITestForegroundPolicy.swift */,
 			);
 			path = WaiComputerUITests;
 			sourceTree = "<group>";
@@ -766,6 +769,7 @@
 				23BEF6B926C9E23459068D56 /* SearchUITests.swift in Sources */,
 				F09C575E02BA3143640C9CC9 /* SettingsUITests.swift in Sources */,
 				993E2B7420345FC3F5DA5CF0 /* WaiComputerUITestAppLauncher.swift in Sources */,
+				8E233E2693DFA10F1BAEA796 /* WaiComputerUITestForegroundPolicy.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

@@ -216,6 +216,10 @@ launch_fixture_app() {
     --env WAI_ENABLE_UI_TEST_MODE=1
     --env UITEST_SCENARIO="$scenario"
     --env WAI_DISABLE_STORED_SESSION_RESTORE=1
+    --env WAICOMPUTER_TEST_WINDOW_X="$WINDOW_X"
+    --env WAICOMPUTER_TEST_WINDOW_Y="$WINDOW_Y"
+    --env WAICOMPUTER_TEST_WINDOW_WIDTH="$WINDOW_WIDTH"
+    --env WAICOMPUTER_TEST_WINDOW_HEIGHT="$WINDOW_HEIGHT"
   )
 
   quit_target_apps "$TARGET_BUNDLE_ID"
@@ -224,6 +228,10 @@ launch_fixture_app() {
   set_launch_env WAI_ENABLE_UI_TEST_MODE 1
   set_launch_env UITEST_SCENARIO "$scenario"
   set_launch_env WAI_DISABLE_STORED_SESSION_RESTORE 1
+  set_launch_env WAICOMPUTER_TEST_WINDOW_X "$WINDOW_X"
+  set_launch_env WAICOMPUTER_TEST_WINDOW_Y "$WINDOW_Y"
+  set_launch_env WAICOMPUTER_TEST_WINDOW_WIDTH "$WINDOW_WIDTH"
+  set_launch_env WAICOMPUTER_TEST_WINDOW_HEIGHT "$WINDOW_HEIGHT"
 
   if [[ "$force_onboarding" == "1" ]]; then
     set_launch_env WAI_FORCE_ONBOARDING 1

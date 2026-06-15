@@ -3,6 +3,7 @@ import XCTest
 final class OnboardingPermissionUITests: XCTestCase {
     override func setUpWithError() throws {
         continueAfterFailure = false
+        try requireForegroundXCUITestOptIn()
     }
 
     @MainActor

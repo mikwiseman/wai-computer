@@ -340,6 +340,11 @@ final class MacPresentationCoordinator {
     func mainWindowDidAppear() {
         setRegularActivationPolicy()
         attachCloseInterceptorToMainWindow()
+        #if DEBUG
+        if placeMainWindowForUITestingIfNeeded() {
+            return
+        }
+        #endif
         centerMainWindowIfNeeded()
     }
 
@@ -366,6 +371,42 @@ final class MacPresentationCoordinator {
         }
         didPlaceMainWindowThisLaunch = true
     }
+
+    #if DEBUG
+    private func placeMainWindowForUITestingIfNeeded() -> Bool {
+        guard !didPlaceMainWindowThisLaunch else { return true }
+
+        let env = ProcessInfo.processInfo.environment
+        guard env["WAI_ENABLE_UI_TEST_MODE"] == "1" else { return false }
+
+        let keys = [
+            "WAICOMPUTER_TEST_WINDOW_X",
+            "WAICOMPUTER_TEST_WINDOW_Y",
+            "WAICOMPUTER_TEST_WINDOW_WIDTH",
+            "WAICOMPUTER_TEST_WINDOW_HEIGHT",
+        ]
+        let rawValues = keys.map { env[$0] }
+        guard rawValues.contains(where: { $0 != nil }) else { return false }
+        guard rawValues.allSatisfy({ $0 != nil }) else {
+            preconditionFailure("Incomplete UI test window bounds environment")
+        }
+        guard
+            let x = Double(rawValues[0]!),
+            let y = Double(rawValues[1]!),
+            let width = Double(rawValues[2]!),
+            let height = Double(rawValues[3]!),
+            width > 0,
+            height > 0,
+            let window = visibleMainWindows.first
+        else {
+            preconditionFailure("Invalid UI test window bounds environment")
+        }
+
+        window.setFrame(NSRect(x: x, y: y, width: width, height: height), display: false)
+        didPlaceMainWindowThisLaunch = true
+        return true
+    }
+    #endif
 
     func mainWindowDidClose() {
         guard !MacPresentationSettings.showDockIconWhenMainWindowClosed() else {

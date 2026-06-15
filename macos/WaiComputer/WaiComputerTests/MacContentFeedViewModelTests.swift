@@ -420,6 +420,57 @@ final class MacContentFeedViewModelTests: XCTestCase {
         XCTAssertFalse(source.contains("--bring-to-current-space"))
     }
 
+    func testMacXCUITestsRequireExplicitForegroundOptIn() throws {
+        let policy = try repoSource("macos/WaiComputer/WaiComputerUITests/WaiComputerUITestForegroundPolicy.swift")
+        XCTAssertTrue(policy.contains("WAI_ALLOW_FOREGROUND_XCUITESTS"))
+        XCTAssertTrue(policy.contains("scripts/macos-peekaboo-smoke.sh"))
+        XCTAssertTrue(policy.contains("XCTSkip"))
+
+        let uiTestsURL = try repoURL("macos/WaiComputer/WaiComputerUITests")
+        let sources = try FileManager.default.contentsOfDirectory(
+            at: uiTestsURL,
+            includingPropertiesForKeys: nil
+        )
+        .filter { $0.pathExtension == "swift" }
+        .filter {
+            ![
+                "WaiComputerUITestAppLauncher.swift",
+                "WaiComputerUITestForegroundPolicy.swift",
+            ].contains($0.lastPathComponent)
+        }
+
+        XCTAssertFalse(sources.isEmpty)
+        for sourceURL in sources {
+            let source = try String(contentsOf: sourceURL, encoding: .utf8)
+            guard source.contains(": XCTestCase") else { continue }
+            XCTAssertTrue(
+                source.contains("try requireForegroundXCUITestOptIn()"),
+                "\(sourceURL.lastPathComponent) can foreground WaiComputer without explicit opt-in"
+            )
+        }
+    }
+
+    func testPeekabooSmokePassesOffscreenWindowBoundsAtLaunch() throws {
+        let script = try repoSource("scripts/macos-peekaboo-smoke.sh")
+        let appSource = try macSource("WaiComputer/App/WaiComputerMacApp.swift")
+
+        XCTAssertTrue(script.contains("--env WAICOMPUTER_TEST_WINDOW_X=\"$WINDOW_X\""))
+        XCTAssertTrue(script.contains("--env WAICOMPUTER_TEST_WINDOW_Y=\"$WINDOW_Y\""))
+        XCTAssertTrue(script.contains("--env WAICOMPUTER_TEST_WINDOW_WIDTH=\"$WINDOW_WIDTH\""))
+        XCTAssertTrue(script.contains("--env WAICOMPUTER_TEST_WINDOW_HEIGHT=\"$WINDOW_HEIGHT\""))
+        XCTAssertTrue(script.contains("set_launch_env WAICOMPUTER_TEST_WINDOW_X \"$WINDOW_X\""))
+        XCTAssertTrue(script.contains("set_launch_env WAICOMPUTER_TEST_WINDOW_Y \"$WINDOW_Y\""))
+        XCTAssertTrue(script.contains("set_launch_env WAICOMPUTER_TEST_WINDOW_WIDTH \"$WINDOW_WIDTH\""))
+        XCTAssertTrue(script.contains("set_launch_env WAICOMPUTER_TEST_WINDOW_HEIGHT \"$WINDOW_HEIGHT\""))
+
+        XCTAssertTrue(appSource.contains("placeMainWindowForUITestingIfNeeded()"))
+        XCTAssertTrue(appSource.contains("WAICOMPUTER_TEST_WINDOW_X"))
+        XCTAssertTrue(appSource.contains("WAICOMPUTER_TEST_WINDOW_Y"))
+        XCTAssertTrue(appSource.contains("WAICOMPUTER_TEST_WINDOW_WIDTH"))
+        XCTAssertTrue(appSource.contains("WAICOMPUTER_TEST_WINDOW_HEIGHT"))
+        XCTAssertBefore("placeMainWindowForUITestingIfNeeded()", "centerMainWindowIfNeeded()", in: appSource)
+    }
+
     func testRecordingDetailShowsSummaryBeforeTranscriptWithoutTabs() throws {
         let source = try macSource("WaiComputer/Features/Library/MacRecordingDetailView.swift")
 
@@ -454,35 +505,44 @@ final class MacContentFeedViewModelTests: XCTestCase {
     }
 
     private func macSource(_ relativePath: String) throws -> String {
-        let testFile = URL(fileURLWithPath: #filePath)
-        let file = testFile
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .appendingPathComponent(relativePath)
+        let file = try repoRoot().appendingPathComponent("macos/WaiComputer").appendingPathComponent(relativePath)
         return try String(contentsOf: file, encoding: .utf8)
     }
 
     private func repoSource(_ relativePath: String) throws -> String {
-        let testFile = URL(fileURLWithPath: #filePath)
-        let file = testFile
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
+        try String(contentsOf: try repoURL(relativePath), encoding: .utf8)
+    }
+
+    private func repoURL(_ relativePath: String) throws -> URL {
+        try repoRoot()
+            .appendingPathComponent(relativePath)
+    }
+
+    private func sharedSource(_ relativePath: String) throws -> String {
+        let file = try repoRoot()
+            .appendingPathComponent("shared/WaiComputerKit")
             .appendingPathComponent(relativePath)
         return try String(contentsOf: file, encoding: .utf8)
     }
 
-    private func sharedSource(_ relativePath: String) throws -> String {
-        let testFile = URL(fileURLWithPath: #filePath)
-        let file = testFile
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .appendingPathComponent("shared/WaiComputerKit")
-            .appendingPathComponent(relativePath)
-        return try String(contentsOf: file, encoding: .utf8)
+    private func repoRoot() throws -> URL {
+        let candidates = [
+            URL(fileURLWithPath: #filePath),
+            URL(fileURLWithPath: FileManager.default.currentDirectoryPath),
+        ]
+
+        for candidate in candidates {
+            var directory = candidate.hasDirectoryPath ? candidate : candidate.deletingLastPathComponent()
+            while directory.path != directory.deletingLastPathComponent().path {
+                let marker = directory.appendingPathComponent("scripts/macos-peekaboo-smoke.sh")
+                if FileManager.default.fileExists(atPath: marker.path) {
+                    return directory
+                }
+                directory.deleteLastPathComponent()
+            }
+        }
+
+        throw XCTSkip("Unable to locate wai-computer repo root from test runtime")
     }
 
     private func XCTAssertBefore(

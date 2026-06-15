@@ -5,6 +5,7 @@ final class RealAppSmokeUITests: XCTestCase {
 
     override func setUpWithError() throws {
         continueAfterFailure = false
+        try requireForegroundXCUITestOptIn()
     }
 
     private func installedReleaseApp() throws -> XCUIApplication {

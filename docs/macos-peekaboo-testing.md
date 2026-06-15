@@ -2,6 +2,8 @@
 
 Peekaboo is the macOS UI smoke gate for flows that need a real rendered window. It replaces the XCUITest UI automation gate for macOS smoke coverage; it does not replace `WaiComputerTests` or Swift package unit tests.
 
+The smoke gate must run in the background: it launches WaiComputer without activation, moves the test window offscreen, targets that window by id/snapshot, and avoids global click/type/focus commands.
+
 Official docs:
 
 - https://peekaboo.sh/
@@ -71,6 +73,8 @@ Each run stores the Peekaboo version, permission JSON, xcodebuild log, window li
 
 The default `WaiComputer` scheme should run `WaiComputerTests` only. `WaiComputerUITests` can stay in the project for historical reference or focused local diagnosis, but it is not part of the default macOS gate because it has been unreliable in this app.
 
+`WaiComputerUITests` are foreground-only by design: XCUITest launches and activates the app. They are skipped unless `WAI_ALLOW_FOREGROUND_XCUITESTS=1` is set explicitly. Do not use that target for routine agent verification on Mik's machine; use `scripts/macos-peekaboo-smoke.sh` instead.
+
 If `macos/WaiComputer/project.yml` changes, regenerate the Xcode project:
 
 ```bash
@@ -84,5 +88,5 @@ Do not add fallback clicks. The smoke should fail with the exact Peekaboo error 
 Common deterministic fixes:
 
 - `SNAPSHOT_NOT_FOUND`: the script must run `peekaboo see` immediately before click actions and pass the explicit snapshot id.
-- Focus mismatch with another frontmost app: close or move the interfering app, then rerun. Do not silently click another app.
+- Focus mismatch with another frontmost app: keep the smoke on background Peekaboo actions (`--window-id`, snapshot ids, `perform-action`, `set-value`) and fix the target-window lookup. Do not switch apps, focus windows, or silently click another app.
 - Missing fixture text: fix the DEBUG fixture state or app rendering path, then rerun the smoke.
