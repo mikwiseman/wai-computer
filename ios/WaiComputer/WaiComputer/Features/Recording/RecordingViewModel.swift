@@ -685,28 +685,13 @@ class RecordingViewModel: ObservableObject {
         from segments: [LiveTranscriptSegment],
         didFinalize: Bool
     ) -> [LiveTranscriptSegment] {
-        let trimmedInterim = interimText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedInterim.isEmpty else { return segments }
-        guard !didFinalize || segments.isEmpty else { return segments }
-
-        if let last = segments.last,
-           last.text.trimmingCharacters(in: .whitespacesAndNewlines) == trimmedInterim,
-           last.speaker == interimSpeaker {
-            return segments
-        }
-
-        let fallbackStart = max(segments.last?.endMs ?? 0, Int(max(duration, 0) * 1000) - 1_000)
-        let fallbackEnd = max(fallbackStart, Int(max(duration, 0) * 1000))
-        return segments + [
-            LiveTranscriptSegment(
-                text: trimmedInterim,
-                speaker: interimSpeaker,
-                isFinal: true,
-                startMs: fallbackStart,
-                endMs: fallbackEnd,
-                confidence: 0
-            )
-        ]
+        RealtimeTranscriptSegmentFinalizer.finalizedSegments(
+            providerSegments: segments,
+            liveTranscript: currentTranscript,
+            liveSpeaker: interimSpeaker,
+            durationSeconds: duration,
+            didFinalize: didFinalize
+        )
     }
 
     private func finishStreaming(_ manager: WebSocketManager?) async -> Bool {
