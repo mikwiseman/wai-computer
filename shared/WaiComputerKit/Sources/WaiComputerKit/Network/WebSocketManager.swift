@@ -288,8 +288,10 @@ public actor WebSocketManager {
             try? await Task.sleep(for: .milliseconds(100))
         }
 
+        if await sendDeepgramCloseStreamIfNeeded() {
+            await drainDeepgramCloseStreamWindow(timeout: timeout)
+        }
         let didFinalize = endOfStreamSent && providerFinalizationReceived
-        await sendDeepgramCloseStreamIfNeeded()
         disconnect()
         return didFinalize
     }
@@ -778,9 +780,32 @@ public actor WebSocketManager {
         try await webSocket.send(.string(Self.encodeJSONPayload(["type": "Finalize"])))
     }
 
-    private func sendDeepgramCloseStreamIfNeeded() async {
-        guard let webSocket else { return }
-        try? await webSocket.send(.string(Self.encodeJSONPayload(["type": "CloseStream"])))
+    @discardableResult
+    private func sendDeepgramCloseStreamIfNeeded() async -> Bool {
+        guard let webSocket else { return false }
+        do {
+            try await webSocket.send(.string(Self.encodeJSONPayload(["type": "CloseStream"])))
+            return true
+        } catch {
+            wsLog.warning("Failed to send Deepgram CloseStream")
+            return false
+        }
+    }
+
+    private func drainDeepgramCloseStreamWindow(timeout: Duration) async {
+        lastTranscriptReceivedAt = nil
+        let startedAt = reconnectClock.now
+        let deadline = startedAt + timeout
+
+        while RealtimeCloseDrainPolicy.shouldKeepWaiting(
+            now: reconnectClock.now,
+            deadline: deadline,
+            startedAt: startedAt,
+            lastTranscriptEventAt: lastTranscriptReceivedAt,
+            finalizationMarkerReceived: providerFinalizationReceived
+        ) {
+            try? await Task.sleep(for: .milliseconds(100))
+        }
     }
 
     private func startKeepAlive(forConnection expectedId: UInt64, intervalSeconds: Int?) {
@@ -888,6 +913,10 @@ public actor WebSocketManager {
 
     func testingProviderFinalizationReceived() -> Bool {
         providerFinalizationReceived
+    }
+
+    func testingDrainCloseStreamWindow(timeout: Duration) async {
+        await drainDeepgramCloseStreamWindow(timeout: timeout)
     }
 
     private func closeConnection(

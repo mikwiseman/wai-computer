@@ -596,4 +596,65 @@ final class WebSocketManagerExtendedTests: XCTestCase {
         let finalized = await manager.testingProviderFinalizationReceived()
         XCTAssertTrue(finalized)
     }
+
+    func testWebSocketManagerCloseStreamDrainKeepsDelayedFinalResult() async {
+        let apiClient = APIClient(baseURL: URL(string: "https://example.com")!)
+        let manager = WebSocketManager(apiClient: apiClient)
+        await manager.testingSetEndOfStreamState(requested: true, sent: true)
+
+        let drain = Task {
+            await manager.testingDrainCloseStreamWindow(timeout: .seconds(1))
+        }
+        try? await Task.sleep(for: .milliseconds(100))
+        await manager.testingHandleDeepgramMessage("""
+        {
+            "type": "Results",
+            "is_final": true,
+            "channel": {
+                "alternatives": [
+                    {"transcript": "Tail after close stream.", "confidence": 0.95}
+                ]
+            }
+        }
+        """)
+        await manager.testingHandleDeepgramMessage("""
+        {"type":"Metadata","request_id":"abc","duration":1.1,"channels":1}
+        """)
+        await drain.value
+
+        let finalized = await manager.testingProviderFinalizationReceived()
+        let segments = await manager.collectedSegments
+        XCTAssertTrue(finalized)
+        XCTAssertEqual(segments.map(\.text), ["Tail after close stream."])
+    }
+
+    func testProviderBackedCloseStreamDrainKeepsDelayedFinalResult() async {
+        let session = ProviderBackedRealtimeSession(config: config(language: "en"))
+        await session.testingSetDidSendEndTurn(true)
+
+        let drain = Task {
+            await session.testingDrainCloseStreamWindow(timeout: .seconds(1))
+        }
+        try? await Task.sleep(for: .milliseconds(100))
+        await session.testingHandleDeepgramMessage("""
+        {
+            "type": "Results",
+            "is_final": true,
+            "channel": {
+                "alternatives": [
+                    {"transcript": "Dictation tail after close stream.", "confidence": 0.95}
+                ]
+            }
+        }
+        """)
+        await session.testingHandleDeepgramMessage("""
+        {"type":"Metadata","request_id":"abc","duration":1.1,"channels":1}
+        """)
+        await drain.value
+
+        let finalized = await session.testingHasFinalizationMarker()
+        let segments = await session.testingCollectedSegments()
+        XCTAssertTrue(finalized)
+        XCTAssertEqual(segments.map(\.text), ["Dictation tail after close stream."])
+    }
 }
