@@ -71,24 +71,6 @@ platform :ios do
   end
 end
 
-platform :android do
-  desc "Upload Android AAB to Google Play internal track"
-  lane :upload_internal do
-    upload_to_play_store(
-      package_name: "is.waiwai.computer",
-      track: "internal",
-      aab: "android/app/build/outputs/bundle/release/app-release.aab",
-      json_key: File.expand_path("~/.google-play/service-account.json"),
-      release_status: "draft",
-      skip_upload_metadata: true,
-      skip_upload_changelogs: true,
-      skip_upload_images: true,
-      skip_upload_screenshots: true,
-      validate_only: false
-    )
-  end
-end
-
 platform :mac do
   # macOS ships only via the Direct DMG channel (Developer ID + Sparkle).
   # Mac App Store / TestFlight was retired; iOS still uses TestFlight via the

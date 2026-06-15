@@ -31,22 +31,6 @@ Upload iOS metadata and screenshots to App Store Connect
 
 Submit latest uploaded iOS build for App Review
 
-----
-
-
-## Android
-
-### android upload_internal
-
-```sh
-[bundle exec] fastlane android upload_internal
-```
-
-Upload Android AAB to Google Play internal track
-
-----
-
-
 ## Mac
 
 ### mac publish_dmg

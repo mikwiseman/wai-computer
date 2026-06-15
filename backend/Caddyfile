@@ -9,28 +9,6 @@ wai.computer {
         header Cache-Control "public, max-age=300"
     }
 
-    handle_path /releases/windows/* {
-        root * /srv/releases/windows
-        file_server
-        header Cache-Control "public, max-age=300"
-    }
-
-    handle_path /releases/linux/* {
-        root * /srv/releases/linux
-        file_server
-        header Cache-Control "public, max-age=300"
-        @appimage path *.AppImage
-        header @appimage Content-Type "application/vnd.appimage"
-    }
-
-    handle_path /releases/android/* {
-        root * /srv/releases/android
-        file_server
-        header Cache-Control "public, max-age=300"
-        @apk path *.apk
-        header @apk Content-Type "application/vnd.android.package-archive"
-    }
-
     handle /api/* {
         reverse_proxy api:8000
     }

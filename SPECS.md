@@ -107,10 +107,10 @@ Wai should borrow the strongest execution patterns from coding-agent products, b
 ┌──────────────────────────────────────────────────────────────────────┐
 │                              INTERFACES                              │
 │                                                                      │
-│  macOS App     iOS App     Android App     Web App     Telegram      │
-│  SwiftUI       SwiftUI     Compose         Next.js     Bot/Webhook   │
-│      │            │            │              │            │          │
-│      └────────────┴────────────┴──────────────┴────────────┘          │
+│  macOS App          iOS App          Web App          Telegram        │
+│  SwiftUI            SwiftUI          Next.js          Bot/Webhook     │
+│      │                 │                │                  │          │
+│      └─────────────────┴────────────────┴──────────────────┘          │
 │                               │                                      │
 ├───────────────────────────────┼──────────────────────────────────────┤
 │                        REALTIME VOICE LAYER                          │
@@ -489,16 +489,7 @@ Tools
 
 Uses same WaiComputerKit → same API methods, same models. WebView for deployed apps.
 
-### 4.5 Android App
-
-**Stack:** Kotlin, Jetpack Compose, ElevenLabs Kotlin SDK
-**Status:** New platform line to be created in this repo
-
-P0: Auth, Wai chat, realtime voice session, recording list.
-P1: Recording, agents, apps.
-P2: Push, offline sync.
-
-### 4.6 Telegram Bot (Planned — Phase 4)
+### 4.5 Telegram Bot (Planned — Phase 4)
 
 **Status:** Code exists in wai-telegram repo, pending migration
 
@@ -696,4 +687,4 @@ Wai:
 | **3. Session Runtime** | Sessions, runs, artifacts, approvals, deploy trace | In Progress |
 | **4. Realtime Voice** | ElevenLabs voice sessions, signed URLs, voice approvals, provider abstraction | In Progress |
 | **5. Apple Clients** | macOS realtime integration, iOS project finalization, shared voice SDK layer | In Progress |
-| **6. Android + Channels** | Android app, Telegram migration, app shelf/share flows, MCP/connectors | Planned |
+| **6. Channels** | Telegram migration, app shelf/share flows, MCP/connectors | Planned |

@@ -34,8 +34,7 @@ GENERIC_FAILURE_MESSAGE = (
 _LEAK_PATTERNS: tuple[re.Pattern[str], ...] = (
     # Absolute POSIX paths under common system / app dirs.
     re.compile(r"(?:^|[\s'\"`(\[])(?:/var|/tmp|/opt|/etc|/root|/home|/Users|/private)/"),
-    # Windows paths (defensive — backend is Linux, but exceptions may bubble from
-    # imported libraries on dev laptops).
+    # Drive-letter paths from developer laptops.
     re.compile(r"[A-Za-z]:\\\\"),
     re.compile(r"[A-Za-z]:/"),
     # Python traceback signatures.

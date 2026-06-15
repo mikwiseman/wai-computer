@@ -2,7 +2,7 @@
 
 Backend errors already self-forward in-process via ``observability.notify_ops``.
 The native/web clients report to their own per-platform Sentry projects
-(``waicomputer-macos``/``-ios``/``-android``/``-windows``/``-linux``/``-web``),
+(``waicomputer-macos``/``-ios``/``-web``),
 so this endpoint bridges those: a Sentry internal integration POSTs issue and
 issue-alert webhooks here, we verify the HMAC signature, and forward a compact,
 PII-safe line to the same Telegram group within seconds.
@@ -36,9 +36,6 @@ router = APIRouter(prefix="/sentry", tags=["sentry"])
 _PROJECT_APP_LABELS: dict[str, str] = {
     "waicomputer-macos": "macOS",
     "waicomputer-ios": "iOS",
-    "waicomputer-android": "Android",
-    "waicomputer-windows": "Windows",
-    "waicomputer-linux": "Linux",
     "waicomputer-web": "Web",
 }
 

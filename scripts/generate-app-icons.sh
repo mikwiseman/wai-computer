@@ -7,10 +7,10 @@
 # legacy .icns fallback for older OS versions -- so there is NO colour inversion
 # and NO hand-maintained .appiconset.
 #
-# The raster targets (web favicon/marketing icon, Android flat launcher
-# mipmaps, onboarding BrandIcon) are resized from the raster master
+# The raster targets (web favicon/marketing icon and onboarding BrandIcon)
+# are resized from the raster master
 # assets/app-icon-1024.png. The Apple glyph, the macOS menu-bar template, and
-# the Android *adaptive* vector drawables are emitted by generate-icon.py.
+# other vector marks are emitted by generate-icon.py.
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -50,17 +50,5 @@ from PIL import Image
 source = Image.open(sys.argv[1]).convert("RGBA")
 source.save(sys.argv[2], format="ICO", sizes=[(16, 16), (32, 32), (48, 48), (64, 64), (128, 128), (256, 256)])
 PY
-
-# 4. Android flat launcher mipmaps (adaptive vector drawables stay as-is).
-generate_png 48  "$ROOT_DIR/android/app/src/main/res/mipmap-mdpi/ic_launcher.png"
-generate_png 48  "$ROOT_DIR/android/app/src/main/res/mipmap-mdpi/ic_launcher_round.png"
-generate_png 72  "$ROOT_DIR/android/app/src/main/res/mipmap-hdpi/ic_launcher.png"
-generate_png 72  "$ROOT_DIR/android/app/src/main/res/mipmap-hdpi/ic_launcher_round.png"
-generate_png 96  "$ROOT_DIR/android/app/src/main/res/mipmap-xhdpi/ic_launcher.png"
-generate_png 96  "$ROOT_DIR/android/app/src/main/res/mipmap-xhdpi/ic_launcher_round.png"
-generate_png 144 "$ROOT_DIR/android/app/src/main/res/mipmap-xxhdpi/ic_launcher.png"
-generate_png 144 "$ROOT_DIR/android/app/src/main/res/mipmap-xxhdpi/ic_launcher_round.png"
-generate_png 192 "$ROOT_DIR/android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png"
-generate_png 192 "$ROOT_DIR/android/app/src/main/res/mipmap-xxxhdpi/ic_launcher_round.png"
 
 echo "App icons generated."

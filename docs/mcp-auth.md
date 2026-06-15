@@ -6,7 +6,7 @@ Streamable HTTP, not a direct redirect from JSON-RPC requests.
 ## Quick Connect
 
 End-users get the same instructions in-app at **Settings → MCP** on every
-WaiComputer client (Web, macOS, iOS, Android). The canonical URL is always
+WaiComputer client (Web, macOS, iOS). The canonical URL is always
 `https://wai.computer/mcp` regardless of which client you copy from.
 
 - **Claude.ai**: <https://claude.ai/customize/connectors> → click the "+" button → paste URL → approve on `wai.computer`.

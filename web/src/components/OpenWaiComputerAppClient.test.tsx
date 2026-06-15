@@ -14,11 +14,9 @@ describe("OpenWaiComputerAppClient", () => {
   it("builds platform-specific app URLs", () => {
     expect(buildWaiComputerAppUrl("abc 123", "macos")).toBe("waicomputer://auth/verify?token=abc+123");
     expect(buildWaiComputerAppUrl("abc 123", "ios")).toBe("waicomputer://auth/verify?token=abc+123");
-    expect(buildWaiComputerAppUrl("abc 123", "android")).toBe("waicomputer://magic?token=abc+123");
   });
 
   it("rejects unknown app clients", () => {
-    expect(normalizeWaiComputerAppClient("android")).toBe("android");
     expect(normalizeWaiComputerAppClient("ios")).toBe("ios");
     expect(normalizeWaiComputerAppClient("macos")).toBe("macos");
     expect(normalizeWaiComputerAppClient("unknown")).toBeNull();

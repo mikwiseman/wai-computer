@@ -1,3 +1,0 @@
-Refreshed the WaiComputer app icon across launcher, themed icon, and system surfaces.
-
-Improved icon consistency with the macOS, iOS, and web experience.

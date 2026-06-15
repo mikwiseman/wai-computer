@@ -3,14 +3,11 @@
 
 The mark is a triangle (mountain) with an audio waveform knocked out of it,
 authored as a single compound path with ``fill-rule="evenodd"`` so it can be
-recoloured per appearance (Apple) or tinted per theme (Android). Geometry is
-traced from the reference artwork in 1254x1254 space and re-projected into each
-target's canvas / safe zone:
+recoloured per Apple appearance. Geometry is traced from the reference artwork
+in 1254x1254 space and re-projected into each target's canvas / safe zone:
 
   * assets/icon/foreground.svg                    - Apple AppIcon.icon glyph (1024)
   * assets/icon/mark-tight.svg                    - tight square mark (macOS menu bar)
-  * android/.../drawable/ic_launcher_foreground.xml - adaptive foreground (off-white)
-  * android/.../drawable/ic_launcher_monochrome.xml - themed monochrome (tinted)
 
 Per Apple's Icon Composer guidance nothing is baked in (no background, shadow,
 or canvas mask). Rasters (app icons, favicon, BrandIcon, launcher mipmaps) are
@@ -80,22 +77,6 @@ def svg(d: str, size: int) -> str:
     )
 
 
-def android_vector(d: str, color: str) -> str:
-    return (
-        '<?xml version="1.0" encoding="utf-8"?>\n'
-        '<vector xmlns:android="http://schemas.android.com/apk/res/android"\n'
-        '    android:width="108dp"\n'
-        '    android:height="108dp"\n'
-        '    android:viewportWidth="108"\n'
-        '    android:viewportHeight="108">\n'
-        '    <path\n'
-        f'        android:fillColor="{color}"\n'
-        '        android:fillType="evenOdd"\n'
-        f'        android:pathData="{d}" />\n'
-        '</vector>\n'
-    )
-
-
 def main() -> None:
     cx_ref = (TRIANGLE[2][0] + TRIANGLE[1][0]) / 2.0   # triangle horizontal centre
     cy_ref = (TRIANGLE[0][1] + TRIANGLE[1][1]) / 2.0   # triangle vertical centre
@@ -109,16 +90,6 @@ def main() -> None:
     ox = V / 2 - cx_ref * st
     oy = V / 2 - cy_ref * st
     write(ROOT / "assets/icon/mark-tight.svg", svg(compound_path(st, ox, oy), V))
-
-    # 3) Android adaptive foreground + themed monochrome (108 viewport, safe zone).
-    sa = 64.0 / 1000.0                       # triangle base 1000 -> 64 of 108
-    ox_a = 54.0 - TRIANGLE[0][0] * sa        # centre apex at x = 54
-    tri_h = (TRIANGLE[1][1] - TRIANGLE[0][1]) * sa
-    oy_a = (50.5 - tri_h / 2.0) - TRIANGLE[0][1] * sa
-    da = compound_path(sa, ox_a, oy_a)
-    drawable = ROOT / "android/app/src/main/res/drawable"
-    write(drawable / "ic_launcher_foreground.xml", android_vector(da, "#FFF6F5F0"))
-    write(drawable / "ic_launcher_monochrome.xml", android_vector(da, "#FFFFFFFF"))
 
 
 if __name__ == "__main__":

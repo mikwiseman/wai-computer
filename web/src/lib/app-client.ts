@@ -1,13 +1,12 @@
-export type WaiComputerAppClient = "android" | "ios" | "macos";
+export type WaiComputerAppClient = "ios" | "macos";
 
 const APP_URL_BASE: Record<WaiComputerAppClient, string> = {
-  android: "waicomputer://magic",
   ios: "waicomputer://auth/verify",
   macos: "waicomputer://auth/verify",
 };
 
 export function normalizeWaiComputerAppClient(value: string | null | undefined): WaiComputerAppClient | null {
-  if (value === "android" || value === "ios" || value === "macos") {
+  if (value === "ios" || value === "macos") {
     return value;
   }
   return null;

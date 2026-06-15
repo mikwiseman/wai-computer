@@ -16,7 +16,6 @@ from app.core.observability import add_sentry_breadcrumb, capture_sentry_excepti
 # Maps client identifiers to app URL schemes.
 # Using an enum-like mapping avoids open redirect vulnerabilities.
 APP_CLIENT_URLS = {
-    "android": "waicomputer://magic",
     "macos": "waicomputer://auth/verify",
     "ios": "waicomputer://auth/verify",
 }

@@ -100,81 +100,6 @@ function IPhoneIcon() {
   );
 }
 
-function AndroidIcon() {
-  return (
-    <svg
-      className={styles.platformIcon}
-      viewBox="0 0 24 24"
-      fill="none"
-      aria-hidden="true"
-    >
-      <path
-        d="M4 19v-7a8 8 0 0 1 16 0v7H4Z"
-        stroke="currentColor"
-        strokeWidth="1.7"
-        strokeLinejoin="round"
-        fill="none"
-      />
-      <circle cx="9" cy="14" r="0.9" fill="currentColor" />
-      <circle cx="15" cy="14" r="0.9" fill="currentColor" />
-      <line
-        x1="6.5"
-        y1="4.5"
-        x2="8"
-        y2="7"
-        stroke="currentColor"
-        strokeWidth="1.4"
-        strokeLinecap="round"
-      />
-      <line
-        x1="17.5"
-        y1="4.5"
-        x2="16"
-        y2="7"
-        stroke="currentColor"
-        strokeWidth="1.4"
-        strokeLinecap="round"
-      />
-    </svg>
-  );
-}
-
-function WindowsIcon() {
-  return (
-    <svg
-      className={styles.platformIcon}
-      viewBox="0 0 24 24"
-      fill="none"
-      aria-hidden="true"
-    >
-      <rect x="3" y="4" width="8.5" height="8.5" fill="currentColor" />
-      <rect x="12.5" y="4" width="8.5" height="8.5" fill="currentColor" />
-      <rect x="3" y="13.5" width="8.5" height="8.5" fill="currentColor" />
-      <rect x="12.5" y="13.5" width="8.5" height="8.5" fill="currentColor" />
-    </svg>
-  );
-}
-
-function LinuxIcon() {
-  return (
-    <svg
-      className={styles.platformIcon}
-      viewBox="0 0 24 24"
-      fill="none"
-      aria-hidden="true"
-    >
-      <path
-        d="M12 2.2c-2.3 0-3.7 2.2-3.7 4.7 0 1.4.3 2.6.9 3.8-.5.7-1.8 2.4-2.6 4.3-.7 1.7-1.4 4.4-.7 5.8.4.8 1.2 1 2 1.1.7.1 1.4-.2 1.7-.6 1.2.6 2.7.8 4.4.4 1-.2 1.7-.6 2.3-.8.3.3 1 .5 1.7.4.8-.1 1.6-.4 2-1.1.7-1.3 0-4.1-.7-5.8-.8-1.9-2.1-3.6-2.6-4.3.6-1.2.9-2.4.9-3.8 0-2.5-1.3-4.7-3.6-4.7Z"
-        stroke="currentColor"
-        strokeWidth="1.5"
-        fill="none"
-      />
-      <circle cx="10.3" cy="7.2" r="0.7" fill="currentColor" />
-      <circle cx="13.7" cy="7.2" r="0.7" fill="currentColor" />
-    </svg>
-  );
-}
-
 function MicIcon() {
   return (
     <svg
@@ -351,7 +276,7 @@ export default function RuHome() {
         <header className={styles.sectionHeader}>
           <p className={styles.eyebrow}>Там, где вы решили записать</p>
           <h2 id="platforms-title" className={styles.sectionTitle}>
-            Шесть платформ. Одна память.
+            Три входа в одну память.
           </h2>
         </header>
         <ul className={styles.platformGrid} role="list">
@@ -403,42 +328,6 @@ export default function RuHome() {
                 Сборка через TestFlight, новая каждую неделю.
               </span>
             </a>
-          </li>
-          <li>
-            <div className={styles.platformCardDisabled} aria-disabled="true">
-              <AndroidIcon />
-              <span className={styles.platformTitle}>Android</span>
-              <span className={`${styles.statusPill} ${styles.statusSoon}`}>
-                Скоро
-              </span>
-              <span className={styles.platformSubtitle}>
-                На проверке в Play Store.
-              </span>
-            </div>
-          </li>
-          <li>
-            <div className={styles.platformCardDisabled} aria-disabled="true">
-              <WindowsIcon />
-              <span className={styles.platformTitle}>Windows</span>
-              <span className={`${styles.statusPill} ${styles.statusSoon}`}>
-                Скоро
-              </span>
-              <span className={styles.platformSubtitle}>
-                Сборка на WinUI 3 для Windows 10+.
-              </span>
-            </div>
-          </li>
-          <li>
-            <div className={styles.platformCardDisabled} aria-disabled="true">
-              <LinuxIcon />
-              <span className={styles.platformTitle}>Linux</span>
-              <span className={`${styles.statusPill} ${styles.statusSoon}`}>
-                Скоро
-              </span>
-              <span className={styles.platformSubtitle}>
-                AppImage для x86_64.
-              </span>
-            </div>
           </li>
         </ul>
       </section>

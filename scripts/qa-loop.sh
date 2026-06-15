@@ -73,7 +73,7 @@ phase_for_elapsed_seconds() {
 }
 
 native_project_present() {
-  find "$ROOT_DIR/ios" "$ROOT_DIR/macos" -name "*.xcodeproj" -print -quit | grep -q . || [[ -x "$ROOT_DIR/android/gradlew" ]]
+  find "$ROOT_DIR/ios" "$ROOT_DIR/macos" -name "*.xcodeproj" -print -quit | grep -q .
 }
 
 run_step() {
@@ -133,7 +133,7 @@ run_native_tests() {
     return $?
   fi
 
-  if ! command -v xcodebuild >/dev/null 2>&1 && [[ ! -x "$ROOT_DIR/android/gradlew" ]]; then
+  if ! command -v xcodebuild >/dev/null 2>&1; then
     return 99
   fi
 
@@ -157,10 +157,6 @@ run_native_tests() {
           CODE_SIGNING_ALLOWED=NO \
           build
       fi
-    fi
-    if [[ -x '$ROOT_DIR/android/gradlew' ]]; then
-      cd '$ROOT_DIR/android'
-      ./gradlew --no-daemon testDebugUnitTest assembleDebug
     fi
   "
 }

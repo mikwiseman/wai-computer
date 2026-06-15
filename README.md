@@ -72,7 +72,7 @@ cd backend
 
 # Create virtual environment
 python -m venv .venv
-source .venv/bin/activate  # or .venv\Scripts\activate on Windows
+source .venv/bin/activate
 
 # Install dependencies
 pip install -e .
@@ -122,27 +122,6 @@ The apps use the shared `WaiComputerKit` Swift package for common code.
 For a signed direct-download macOS installer, use `scripts/build-macos-dmg.sh`. The DMG builder generates a Finder-ready install window with drag-to-`Applications` guidance, signs the Sparkle appcast, and can also compose a custom background via `MACOS_DMG_BACKGROUND=/absolute/path/background.png`. For a strict production release, add `MACOS_RELEASE_STRICT=1` so the build fails unless Gatekeeper, notarization, and Sparkle signing pass. Distribution details, appcast publishing, and Fastlane upload-all usage are documented in `docs/macos-distribution.md`.
 
 Before running a release smoke on a developer machine, clear old desktop app state with `scripts/reset-macos-app-state.sh` so Debug/UI-test caches do not contaminate the Release app.
-
-### Android Development
-
-```bash
-cd android
-
-# Run the Android unit suite
-./gradlew testDebugUnitTest
-
-# Build local debug and release artifacts
-./gradlew assembleDebug assembleRelease
-
-# Run lint
-./gradlew lint
-```
-
-Android app highlights in the parity release:
-- onboarding with email auth, magic-link sign-in, and guest mode
-- one-tap local-first recording with foreground service protection
-- guest recording migration after sign-in via background sync
-- library/detail/settings flows aligned with iOS terminology and status handling
 
 ### Web Development
 

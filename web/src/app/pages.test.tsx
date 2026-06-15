@@ -279,15 +279,6 @@ describe("app pages", () => {
     expect(iosLink).toHaveTextContent("TestFlight");
     expect(iosLink).not.toHaveAttribute("target");
 
-    // Coming-soon platforms are surfaced as labeled cards (not download links).
-    expect(screen.queryByTestId("download-windows")).not.toBeInTheDocument();
-    expect(screen.queryByTestId("download-linux")).not.toBeInTheDocument();
-    expect(screen.queryByTestId("download-android")).not.toBeInTheDocument();
-    expect(screen.getByText("Android")).toBeInTheDocument();
-    expect(screen.getByText("Windows")).toBeInTheDocument();
-    expect(screen.getByText("Linux")).toBeInTheDocument();
-    expect(screen.getAllByText(/Coming soon/i).length).toBeGreaterThanOrEqual(3);
-
     expect(screen.getByRole("link", { name: "Benchmark" })).toHaveAttribute(
       "href",
       "/benchmarks/dictation",
@@ -356,13 +347,6 @@ describe("app pages", () => {
     expect(iosLink).toHaveTextContent("iPhone");
     expect(iosLink).toHaveTextContent("TestFlight");
 
-    expect(screen.queryByTestId("download-windows-ru")).not.toBeInTheDocument();
-    expect(screen.queryByTestId("download-linux-ru")).not.toBeInTheDocument();
-    expect(screen.queryByTestId("download-android-ru")).not.toBeInTheDocument();
-    expect(screen.getByText("Android")).toBeInTheDocument();
-    expect(screen.getByText("Windows")).toBeInTheDocument();
-    expect(screen.getByText("Linux")).toBeInTheDocument();
-    expect(screen.getAllByText(/Скоро/i).length).toBeGreaterThanOrEqual(3);
     expect(screen.getByTestId("platform-web-ru")).toHaveAttribute(
       "href",
       "/dashboard",

@@ -102,7 +102,7 @@ async def test_webhook_401_on_bad_signature(webhook_client):
 
 @pytest.mark.asyncio
 async def test_webhook_forwards_client_issue_to_telegram(webhook_client):
-    body = json.dumps(_issue_payload(slug="waicomputer-android", count="12")).encode()
+    body = json.dumps(_issue_payload(slug="waicomputer-ios", count="12")).encode()
     with patch(
         "app.api.routes.sentry_webhook.get_settings",
         return_value=SimpleNamespace(sentry_webhook_secret=SECRET),
@@ -113,10 +113,10 @@ async def test_webhook_forwards_client_issue_to_telegram(webhook_client):
     assert resp.status_code == 200
     mock_notify.assert_called_once()
     kwargs = mock_notify.call_args.kwargs
-    assert kwargs["message"].startswith("[Android] NSInvalidArgumentException:")
+    assert kwargs["message"].startswith("[iOS] NSInvalidArgumentException:")
     assert "seen 12×" in kwargs["message"]
     assert "https://waiwai-diy.sentry.io/issues/123/" in kwargs["message"]
-    assert kwargs["alert_code"] == "sentry.waicomputer-android.NSInvalidArgumentException"
+    assert kwargs["alert_code"] == "sentry.waicomputer-ios.NSInvalidArgumentException"
 
 
 @pytest.mark.asyncio

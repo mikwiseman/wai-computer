@@ -112,7 +112,7 @@ public struct DesktopActionRouter: Sendable {
         guard let colon = target.firstIndex(of: ":") else { return nil }
         let scheme = target[target.startIndex..<colon]
         guard !scheme.isEmpty else { return nil }
-        // A scheme is alphanumerics plus +/-/. (RFC 3986); a Windows-style path
+        // A scheme is alphanumerics plus +/-/. (RFC 3986); a drive-letter path
         // or a stray colon in an app name should not read as a scheme.
         let valid = scheme.allSatisfy { $0.isLetter || $0.isNumber || $0 == "+" || $0 == "-" || $0 == "." }
         guard valid, scheme.first?.isLetter == true else { return nil }
