@@ -28,6 +28,10 @@ public enum RealtimeTranscriptSegmentFinalizer {
             }
         }
 
+        guard hasSingleProviderSpeaker(providerSegments) else {
+            return providerSegments
+        }
+
         return [
             syntheticSegment(
                 text: selected,
@@ -80,5 +84,9 @@ public enum RealtimeTranscriptSegmentFinalizer {
             .lowercased()
             .components(separatedBy: CharacterSet.alphanumerics.inverted)
             .filter { !$0.isEmpty }
+    }
+
+    private static func hasSingleProviderSpeaker(_ segments: [LiveTranscriptSegment]) -> Bool {
+        Set(segments.compactMap(\.speaker).filter { !$0.isEmpty }).count <= 1
     }
 }

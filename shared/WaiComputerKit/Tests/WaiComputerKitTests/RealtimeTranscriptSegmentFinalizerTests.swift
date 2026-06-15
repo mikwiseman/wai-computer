@@ -66,4 +66,36 @@ final class RealtimeTranscriptSegmentFinalizerTests: XCTestCase {
         XCTAssertEqual(segments.first?.startMs, 3_000)
         XCTAssertEqual(segments.first?.endMs, 4_000)
     }
+
+    func testPreservesProviderSegmentsWhenFullerLiveTranscriptWouldCollapseMultipleSpeakers() {
+        let providerSegments = [
+            LiveTranscriptSegment(
+                text: "can you review this",
+                speaker: "speaker_0",
+                isFinal: true,
+                startMs: 900,
+                endMs: 2_100,
+                confidence: 0.9
+            ),
+            LiveTranscriptSegment(
+                text: "yes today",
+                speaker: "speaker_1",
+                isFinal: true,
+                startMs: 2_200,
+                endMs: 3_100,
+                confidence: 0.91
+            )
+        ]
+
+        let segments = RealtimeTranscriptSegmentFinalizer.finalizedSegments(
+            providerSegments: providerSegments,
+            liveTranscript: "alex can you review this yes today",
+            liveSpeaker: nil,
+            durationSeconds: 4,
+            didFinalize: true
+        )
+
+        XCTAssertEqual(segments.map(\.text), ["can you review this", "yes today"])
+        XCTAssertEqual(segments.map(\.speaker), ["speaker_0", "speaker_1"])
+    }
 }
