@@ -579,6 +579,23 @@ final class MacContentFeedViewModelTests: XCTestCase {
         XCTAssertFalse(source.contains("ForEach(TranscriptRendering.mergeTurns"))
     }
 
+    func testSpeakerPickerUsesRecyclingRowsAndCachedFiltering() throws {
+        let source = try macSource("WaiComputer/Features/Library/SpeakerChipView.swift")
+
+        // Speaker assignment opens from transcript rows. The people directory can
+        // grow over time, so the popover must not filter during every render or
+        // scroll an unrecycled LazyVStack.
+        XCTAssertTrue(source.contains("@State private var visiblePeople: [Person] = []"))
+        XCTAssertTrue(source.contains("ForEach(visiblePeople)"))
+        XCTAssertTrue(source.contains(".speakerPickerListRow()"))
+        XCTAssertTrue(source.contains("private func refreshVisiblePeople()"))
+        XCTAssertTrue(source.contains(".onChangeCompat(of: filter)"))
+        XCTAssertFalse(source.contains("ForEach(filteredPeople)"))
+        XCTAssertFalse(source.contains("private var filteredPeople: [Person]"))
+        XCTAssertFalse(source.contains("ScrollView {\n                LazyVStack"))
+        XCTAssertFalse(source.contains("LazyVStack(alignment: .leading, spacing: 2)"))
+    }
+
     private func macSource(_ relativePath: String) throws -> String {
         let file = try repoRoot().appendingPathComponent("macos/WaiComputer").appendingPathComponent(relativePath)
         return try String(contentsOf: file, encoding: .utf8)

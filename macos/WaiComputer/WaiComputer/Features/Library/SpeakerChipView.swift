@@ -15,6 +15,7 @@ struct SpeakerChipView: View {
     @EnvironmentObject private var languageManager: LanguageManager
     @State private var isPopoverPresented = false
     @State private var people: [Person] = []
+    @State private var visiblePeople: [Person] = []
     @State private var filter: String = ""
     @State private var loadError: String?
     @State private var isWorking = false
@@ -56,6 +57,9 @@ struct SpeakerChipView: View {
                 await loadPeople()
             }
         }
+        .onChangeCompat(of: filter) { _, _ in
+            refreshVisiblePeople()
+        }
     }
 
     @ViewBuilder
@@ -82,58 +86,63 @@ struct SpeakerChipView: View {
                 .background(Palette.recording.opacity(0.10))
                 .clipShape(RoundedRectangle(cornerRadius: 8))
             }
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 2) {
-                    ForEach(filteredPeople) { person in
-                        Button {
-                            Task { await assign(personId: person.id) }
-                        } label: {
-                            Text(person.displayName)
-                                .lineLimit(1)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(.horizontal, Spacing.xs)
-                                .frame(height: 32)
-                        }
-                        .buttonStyle(.plain)
-                        .contentShape(Rectangle())
-                        .disabled(isWorking)
-                        .contextMenu {
-                            Button(t("Rename…", "Переименовать…")) {
-                                renameDraft = person.displayName
-                                renameTarget = person
-                            }
-                            Button(t("Delete", "Удалить"), role: .destructive) {
-                                deleteTarget = person
-                            }
-                        }
-                    }
-                    if shouldShowCreateRow {
-                        Button {
-                            Task { await assign(newName: trimmedFilter) }
-                        } label: {
-                            HStack(spacing: Spacing.xs) {
-                                Image(systemName: "plus")
-                                    .font(.system(size: 12, weight: .semibold))
-                                Text(t("Create", "Создать") + " “\(trimmedFilter)”")
-                                    .lineLimit(1)
-                                    .truncationMode(.middle)
-                            }
+            List {
+                ForEach(visiblePeople) { person in
+                    Button {
+                        Task { await assign(personId: person.id) }
+                    } label: {
+                        Text(person.displayName)
+                            .lineLimit(1)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .padding(.horizontal, Spacing.xs)
                             .frame(height: 32)
-                            .foregroundStyle(Palette.accent)
-                        }
-                        .buttonStyle(.plain)
-                        .disabled(isWorking)
                     }
-                    if filteredPeople.isEmpty && trimmedFilter.isEmpty {
-                        Text(t("No people yet. Type a name above.", "Людей пока нет. Введи имя выше."))
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .padding(.horizontal, Spacing.xs)
+                    .buttonStyle(.plain)
+                    .contentShape(Rectangle())
+                    .disabled(isWorking)
+                    .speakerPickerListRow()
+                    .contextMenu {
+                        Button(t("Rename…", "Переименовать…")) {
+                            renameDraft = person.displayName
+                            renameTarget = person
+                        }
+                        Button(t("Delete", "Удалить"), role: .destructive) {
+                            deleteTarget = person
+                        }
                     }
                 }
+                if shouldShowCreateRow {
+                    Button {
+                        Task { await assign(newName: trimmedFilter) }
+                    } label: {
+                        HStack(spacing: Spacing.xs) {
+                            Image(systemName: "plus")
+                                .font(.system(size: 12, weight: .semibold))
+                            Text(t("Create", "Создать") + " “\(trimmedFilter)”")
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, Spacing.xs)
+                        .frame(height: 32)
+                        .foregroundStyle(Palette.accent)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(isWorking)
+                    .speakerPickerListRow()
+                }
+                if visiblePeople.isEmpty && trimmedFilter.isEmpty {
+                    Text(t("No people yet. Type a name above.", "Людей пока нет. Введи имя выше."))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, Spacing.xs)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .frame(height: 32)
+                        .speakerPickerListRow()
+                }
             }
+            .listStyle(.plain)
+            .scrollContentBackground(.hidden)
             .frame(maxHeight: SpeakerAssignmentPopoverLayout.listMaxHeight)
         }
         .alert(
@@ -240,16 +249,24 @@ struct SpeakerChipView: View {
         filter.trimmingCharacters(in: .whitespaces)
     }
 
-    private var filteredPeople: [Person] {
-        guard !trimmedFilter.isEmpty else { return people }
-        return people.filter {
-            $0.displayName.localizedCaseInsensitiveContains(trimmedFilter)
-        }
-    }
-
     private var shouldShowCreateRow: Bool {
         guard !trimmedFilter.isEmpty else { return false }
         return !people.contains { $0.displayName.caseInsensitiveCompare(trimmedFilter) == .orderedSame }
+    }
+
+    private func refreshVisiblePeople() {
+        refreshVisiblePeople(people: people, filter: filter)
+    }
+
+    private func refreshVisiblePeople(people: [Person], filter: String) {
+        let trimmedFilter = filter.trimmingCharacters(in: .whitespaces)
+        guard !trimmedFilter.isEmpty else {
+            visiblePeople = people
+            return
+        }
+        visiblePeople = people.filter {
+            $0.displayName.localizedCaseInsensitiveContains(trimmedFilter)
+        }
     }
 
     // MARK: - Actions
@@ -260,6 +277,7 @@ struct SpeakerChipView: View {
             let rows = try await client.listPeople()
             await MainActor.run {
                 self.people = rows
+                self.refreshVisiblePeople(people: rows, filter: self.filter)
                 self.loadError = nil
             }
         } catch {
@@ -310,6 +328,7 @@ struct SpeakerChipView: View {
                 isPopoverPresented = false
                 filter = ""
                 people = []
+                visiblePeople = []
                 onAssigned(detail)
             }
         } catch {
@@ -374,5 +393,13 @@ struct SpeakerChipView: View {
 
     private func t(_ english: String, _ russian: String) -> String {
         OnboardingL10n.text(english, russian, language: languageManager.current)
+    }
+}
+
+private extension View {
+    func speakerPickerListRow() -> some View {
+        listRowInsets(EdgeInsets())
+            .listRowSeparator(.hidden)
+            .listRowBackground(Color.clear)
     }
 }
