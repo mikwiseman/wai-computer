@@ -381,7 +381,7 @@ final class MacContentFeedViewModelTests: XCTestCase {
         // The smoke gate must refresh the target window instead of reusing a
         // stale id through the whole scenario.
         XCTAssertTrue(source.contains("open -g -n"))
-        XCTAssertTrue(source.contains("WINDOW_X=\"${WAICOMPUTER_PEEKABOO_WINDOW_X:--32000}\""))
+        XCTAssertTrue(source.contains("WINDOW_X=\"${WAICOMPUTER_PEEKABOO_WINDOW_X:-32000}\""))
         XCTAssertTrue(source.contains("refresh_target_window_id \"$name\""))
         XCTAssertTrue(source.contains("refresh_target_window_id \"$name-retry\""))
         XCTAssertTrue(source.contains("refresh_target_window_for_interaction \"$identifier\""))
@@ -397,6 +397,7 @@ final class MacContentFeedViewModelTests: XCTestCase {
         XCTAssertTrue(source.contains("set_target_window_bounds()"))
         XCTAssertTrue(source.contains("refresh_target_window_id \"$name-bounds\""))
         XCTAssertTrue(source.contains("refresh_target_window_id \"$name-bounds-retry\""))
+        XCTAssertTrue(source.contains("--x \"$WINDOW_X\""))
         XCTAssertTrue(source.contains("if ! peekaboo window set-bounds"))
         XCTAssertFalse(source.contains("peekaboo app switch"))
         XCTAssertFalse(source.contains("peekaboo window focus"))
