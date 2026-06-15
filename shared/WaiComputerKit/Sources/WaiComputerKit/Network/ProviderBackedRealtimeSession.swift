@@ -186,7 +186,10 @@ public actor ProviderBackedRealtimeSession: ProviderSession {
             invalidateOwnedURLSession()
             return collectedSegments
         }
-        try? await endTurn()
+        defer {
+            finishClosedWebSocket(webSocket)
+        }
+        try await endTurn()
 
         let clock = ContinuousClock()
         let startedAt = clock.now
@@ -204,13 +207,16 @@ public actor ProviderBackedRealtimeSession: ProviderSession {
         if await sendCloseStream(webSocket) {
             await drainCloseStreamWindow(timeout: timeout)
         }
+        return collectedSegments
+    }
+
+    private func finishClosedWebSocket(_ webSocket: URLSessionWebSocketTask) {
         keepAliveTask?.cancel()
         webSocket.cancel(with: .normalClosure, reason: nil)
         receiveTask?.cancel()
         eventContinuation.yield(.closed(reason: .clientRequested))
         eventContinuation.finish()
         invalidateOwnedURLSession()
-        return collectedSegments
     }
 
     public func cancel() async {
