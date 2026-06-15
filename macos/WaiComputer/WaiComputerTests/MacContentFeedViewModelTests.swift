@@ -380,26 +380,30 @@ final class MacContentFeedViewModelTests: XCTestCase {
         // SwiftUI can recreate the main NSWindow during recording transitions.
         // The smoke gate must refresh the target window instead of reusing a
         // stale id through the whole scenario.
-        XCTAssertTrue(source.contains("focus_target_window()"))
+        XCTAssertTrue(source.contains("open -g -n"))
+        XCTAssertTrue(source.contains("WINDOW_X=\"${WAICOMPUTER_PEEKABOO_WINDOW_X:--1800}\""))
         XCTAssertTrue(source.contains("refresh_target_window_id \"$name\""))
         XCTAssertTrue(source.contains("refresh_target_window_id \"$name-retry\""))
         XCTAssertTrue(source.contains("focus_target_window \"$identifier\""))
         XCTAssertTrue(source.contains("focus_target_window \"$name\""))
-        XCTAssertTrue(source.contains("--no-auto-focus"))
         XCTAssertTrue(source.contains("refresh_target_app_ref()"))
         XCTAssertTrue(source.contains("TARGET_PID=\"$pid\""))
         XCTAssertTrue(source.contains("if ! peekaboo list windows --pid \"$TARGET_PID\""))
-        XCTAssertTrue(source.contains("peekaboo type \"search\" --pid \"$TARGET_PID\""))
-        XCTAssertTrue(source.contains("peekaboo press \"$key\" --pid \"$TARGET_PID\""))
+        XCTAssertTrue(source.contains("peekaboo perform-action --snapshot \"$fresh_snapshot\" --on \"$element_id\" --action AXPress"))
+        XCTAssertTrue(source.contains("peekaboo set-value \"$value\" --snapshot \"$fresh_snapshot\" --on \"$element_id\""))
+        XCTAssertTrue(source.contains("set_identifier_label_role_value search-bar \"Search recordings...\" \"text field\" search search-field"))
         XCTAssertTrue(source.contains("click_identifier_label_role search-bar Search button search-submit"))
         XCTAssertTrue(source.contains("element_id_by_identifier_label_role \"$json_path\" \"$identifier\" \"$label\" \"$role\""))
-        XCTAssertTrue(source.contains("coords=\"$(element_center_coords \"$json_path\" \"$element_id\")\""))
-        XCTAssertTrue(source.contains("peekaboo click --coords \"$coords\" --window-id \"$TARGET_WINDOW_ID\" --no-auto-focus"))
         XCTAssertTrue(source.contains("set_target_window_bounds()"))
         XCTAssertTrue(source.contains("refresh_target_window_id \"$name-bounds\""))
         XCTAssertTrue(source.contains("refresh_target_window_id \"$name-bounds-retry\""))
         XCTAssertTrue(source.contains("if ! peekaboo window set-bounds"))
-        XCTAssertFalse(source.contains("peekaboo window focus --window-id \"$TARGET_WINDOW_ID\" --bring-to-current-space --json > \"$RUN_DIR/focus-before-$identifier.json\" || true"))
+        XCTAssertFalse(source.contains("peekaboo app switch"))
+        XCTAssertFalse(source.contains("peekaboo window focus"))
+        XCTAssertFalse(source.contains("peekaboo click"))
+        XCTAssertFalse(source.contains("peekaboo type"))
+        XCTAssertFalse(source.contains("peekaboo press"))
+        XCTAssertFalse(source.contains("--bring-to-current-space"))
     }
 
     func testRecordingDetailShowsSummaryBeforeTranscriptWithoutTabs() throws {

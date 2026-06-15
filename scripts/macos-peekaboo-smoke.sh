@@ -10,6 +10,10 @@ RUN_DIR="$ARTIFACT_ROOT/$RUN_ID"
 APP_PATH="${WAICOMPUTER_MAC_APP_PATH:-$DERIVED_DATA_PATH/Build/Products/Debug/WaiComputer.app}"
 BUILD_APP="${WAICOMPUTER_PEEKABOO_BUILD:-}"
 KEEP_APP_OPEN="${WAICOMPUTER_PEEKABOO_KEEP_APP_OPEN:-0}"
+WINDOW_X="${WAICOMPUTER_PEEKABOO_WINDOW_X:--1800}"
+WINDOW_Y="${WAICOMPUTER_PEEKABOO_WINDOW_Y:-80}"
+WINDOW_WIDTH="${WAICOMPUTER_PEEKABOO_WINDOW_WIDTH:-1220}"
+WINDOW_HEIGHT="${WAICOMPUTER_PEEKABOO_WINDOW_HEIGHT:-708}"
 
 if [[ -z "$BUILD_APP" ]]; then
   if [[ -n "${WAICOMPUTER_MAC_APP_PATH:-}" ]]; then
@@ -173,10 +177,10 @@ set_target_window_bounds() {
   local bounds_json="$RUN_DIR/window-$name.json"
 
   refresh_target_window_id "$name-bounds"
-  if ! peekaboo window set-bounds --window-id "$TARGET_WINDOW_ID" --x 80 --y 80 --width 1220 --height 708 --json \
+  if ! peekaboo window set-bounds --window-id "$TARGET_WINDOW_ID" --x "$WINDOW_X" --y "$WINDOW_Y" --width "$WINDOW_WIDTH" --height "$WINDOW_HEIGHT" --json \
     > "$bounds_json"; then
     refresh_target_window_id "$name-bounds-retry"
-    if ! peekaboo window set-bounds --window-id "$TARGET_WINDOW_ID" --x 80 --y 80 --width 1220 --height 708 --json \
+    if ! peekaboo window set-bounds --window-id "$TARGET_WINDOW_ID" --x "$WINDOW_X" --y "$WINDOW_Y" --width "$WINDOW_WIDTH" --height "$WINDOW_HEIGHT" --json \
       > "$bounds_json"; then
       cat "$bounds_json" >&2
       die "Unable to set WaiComputer main window bounds for $name"
@@ -238,12 +242,11 @@ launch_fixture_app() {
     unset_launch_env WAI_MOCK_DICTATION_PERMISSIONS
   fi
 
-  log "Launching $TARGET_BUNDLE_ID in $scenario fixture mode..."
-  open -n "${open_env_args[@]}" "$APP_PATH" --args -ApplePersistenceIgnoreState YES -waiUserLanguage "$language"
+  log "Launching $TARGET_BUNDLE_ID in $scenario fixture mode without activating the app..."
+  open -g -n "${open_env_args[@]}" "$APP_PATH" --args -ApplePersistenceIgnoreState YES -waiUserLanguage "$language"
   wait_for_app_running "$TARGET_BUNDLE_ID"
   refresh_target_app_ref || die "Unable to resolve running $TARGET_BUNDLE_ID process"
   refresh_target_window_id "$scenario"
-  peekaboo window focus --window-id "$TARGET_WINDOW_ID" --bring-to-current-space --json > "$RUN_DIR/focus-$scenario.json" || true
   set_target_window_bounds "$scenario"
   sleep 0.8
 }
@@ -289,10 +292,7 @@ refresh_target_window_id() {
 focus_target_window() {
   local name="$1"
 
-  peekaboo app switch --to "$TARGET_BUNDLE_ID" --json > "$RUN_DIR/switch-before-$name.json" || true
   refresh_target_window_id "$name"
-  peekaboo window focus --window-id "$TARGET_WINDOW_ID" --bring-to-current-space --json \
-    > "$RUN_DIR/focus-before-$name.json" || true
 }
 
 wait_for_app_running() {
@@ -448,19 +448,19 @@ click_element() {
   local json_path="$1"
   local element_id="$2"
   local name="$3"
-  local coords
+  local fresh_snapshot
 
   [[ -n "$element_id" && "$element_id" != "null" ]] || die "Missing element id for $name"
-  coords="$(element_center_coords "$json_path" "$element_id")"
-  [[ -n "$coords" && "$coords" != "null" ]] || die "Missing element coordinates for $name"
-  if ! peekaboo click --coords "$coords" --window-id "$TARGET_WINDOW_ID" --no-auto-focus --wait-for 5000 --json \
+  fresh_snapshot="$(snapshot_id "$json_path")"
+  [[ -n "$fresh_snapshot" && "$fresh_snapshot" != "null" ]] || die "Missing Peekaboo snapshot id for $name"
+  if ! peekaboo perform-action --snapshot "$fresh_snapshot" --on "$element_id" --action AXPress --json \
     > "$RUN_DIR/click-$name.json"; then
     cat "$RUN_DIR/click-$name.json" >&2
-    die "Click command failed: $name"
+    die "Accessibility action failed: $name"
   fi
   jq -e '.success == true' "$RUN_DIR/click-$name.json" >/dev/null || {
     cat "$RUN_DIR/click-$name.json" >&2
-    die "Click failed: $name"
+    die "Accessibility action failed: $name"
   }
 }
 
@@ -509,25 +509,50 @@ click_query() {
   fresh_snapshot="$(snapshot_id "$json_path")"
   [[ -n "$fresh_snapshot" && "$fresh_snapshot" != "null" ]] || die "Missing Peekaboo snapshot id before click: $name"
 
-  if ! peekaboo click "$query" --snapshot "$fresh_snapshot" --window-id "$TARGET_WINDOW_ID" --no-auto-focus --wait-for 5000 --json \
+  if ! peekaboo perform-action --snapshot "$fresh_snapshot" --on "$query" --action AXPress --json \
     > "$RUN_DIR/click-$name.json"; then
     cat "$RUN_DIR/click-$name.json" >&2
-    die "Click command failed: $name"
+    die "Accessibility action failed: $name"
   fi
   jq -e '.success == true' "$RUN_DIR/click-$name.json" >/dev/null || {
     cat "$RUN_DIR/click-$name.json" >&2
-    die "Click failed: $name"
+    die "Accessibility action failed: $name"
   }
 }
 
-press_key() {
-  local key="$1"
-  local name="$2"
+set_element_value() {
+  local json_path="$1"
+  local element_id="$2"
+  local value="$3"
+  local name="$4"
+  local fresh_snapshot
 
-  if ! peekaboo press "$key" --pid "$TARGET_PID" --json > "$RUN_DIR/press-$name.json"; then
-    cat "$RUN_DIR/press-$name.json" >&2
-    die "Key press failed: $name"
+  [[ -n "$element_id" && "$element_id" != "null" ]] || die "Missing element id for $name"
+  fresh_snapshot="$(snapshot_id "$json_path")"
+  [[ -n "$fresh_snapshot" && "$fresh_snapshot" != "null" ]] || die "Missing Peekaboo snapshot id for $name"
+  if ! peekaboo set-value "$value" --snapshot "$fresh_snapshot" --on "$element_id" --json \
+    > "$RUN_DIR/set-value-$name.json"; then
+    cat "$RUN_DIR/set-value-$name.json" >&2
+    die "Accessibility value set failed: $name"
   fi
+  jq -e '.success == true' "$RUN_DIR/set-value-$name.json" >/dev/null || {
+    cat "$RUN_DIR/set-value-$name.json" >&2
+    die "Accessibility value set failed: $name"
+  }
+}
+
+set_identifier_label_role_value() {
+  local identifier="$1"
+  local label="$2"
+  local role="$3"
+  local value="$4"
+  local name="$5"
+  local json_path element_id
+
+  focus_target_window "$name"
+  json_path="$(capture_ui "before-set-value-$name")"
+  element_id="$(element_id_by_identifier_label_role "$json_path" "$identifier" "$label" "$role")"
+  set_element_value "$json_path" "$element_id" "$value" "$name"
 }
 
 run_main_search_smoke() {
@@ -539,12 +564,7 @@ run_main_search_smoke() {
 
   click_identifier "$json_path" sidebar-search
   json_path="$(wait_for_ui_text search-ready "Search recordings")"
-  click_label "Search recordings..." search-field
-  if ! peekaboo type "search" --pid "$TARGET_PID" --profile linear --delay 0 --json \
-    > "$RUN_DIR/type-search-query.json"; then
-    cat "$RUN_DIR/type-search-query.json" >&2
-    die "Typing search query failed"
-  fi
+  set_identifier_label_role_value search-bar "Search recordings..." "text field" search search-field
 
   json_path="$(capture_ui search-query-entered)"
   ui_contains "$json_path" "Search" || die "Search submit button missing"
