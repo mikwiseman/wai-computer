@@ -141,6 +141,53 @@ def test_recording_processing_task_alerts_on_timeout(
     assert "alice-private.wav" not in repr(sentry_anomalies)
 
 
+def test_recording_processing_task_timeout_includes_previous_failure_code(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        recording_task_module,
+        "_process_staged_recording_upload",
+        AsyncMock(side_effect=SoftTimeLimitExceeded()),
+    )
+    monkeypatch.setattr(
+        recording_task_module,
+        "_mark_processing_timeout",
+        AsyncMock(),
+    )
+    sentry_anomalies: list[dict[str, object]] = []
+    monkeypatch.setattr(
+        recording_task_module,
+        "capture_sentry_anomaly",
+        lambda alert_code, message, *, category, extras, level="warning": sentry_anomalies.append(
+            {
+                "alert_code": alert_code,
+                "message": message,
+                "category": category,
+                "extras": extras,
+                "level": level,
+            }
+        ),
+    )
+
+    with pytest.raises(SoftTimeLimitExceeded):
+        recording_task_module.process_staged_recording_upload.run(
+            recording_id="00000000-0000-0000-0000-000000000015",
+            user_id="00000000-0000-0000-0000-000000000016",
+            staged_path="/tmp/retried-recording.wav",
+            content_type="audio/wav",
+            user_default_language="en",
+            previous_failure_code="audio_decode_failed",
+        )
+
+    assert sentry_anomalies[0]["extras"] == {
+        "recording_id": "00000000-0000-0000-0000-000000000015",
+        "task_id": None,
+        "retries": 0,
+        "content_type": "audio/wav",
+        "previous_failure_code": "audio_decode_failed",
+    }
+
+
 def test_recording_processing_task_marks_failed_after_retry_exhaustion(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

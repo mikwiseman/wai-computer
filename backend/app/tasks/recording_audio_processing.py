@@ -28,6 +28,25 @@ logger = logging.getLogger(__name__)
 settings = get_settings()
 
 
+def _processing_timeout_anomaly_extras(
+    *,
+    recording_id: str,
+    task_id: str | None,
+    retries: int,
+    content_type: str,
+    previous_failure_code: str | None,
+) -> dict[str, object]:
+    extras: dict[str, object] = {
+        "recording_id": recording_id,
+        "task_id": task_id,
+        "retries": retries,
+        "content_type": content_type,
+    }
+    if previous_failure_code:
+        extras["previous_failure_code"] = previous_failure_code
+    return extras
+
+
 async def _process_staged_recording_upload(
     *,
     recording_id: str,
@@ -146,13 +165,13 @@ def process_staged_recording_upload(
             "recording.processing.timeout",
             "Recording processing task timed out",
             category="recording",
-            extras={
-                "recording_id": recording_id,
-                "task_id": getattr(self.request, "id", None),
-                "retries": retry_count,
-                "content_type": content_type,
-                "previous_failure_code": previous_failure_code,
-            },
+            extras=_processing_timeout_anomaly_extras(
+                recording_id=recording_id,
+                task_id=getattr(self.request, "id", None),
+                retries=retry_count,
+                content_type=content_type,
+                previous_failure_code=previous_failure_code,
+            ),
             level="error",
         )
         raise
