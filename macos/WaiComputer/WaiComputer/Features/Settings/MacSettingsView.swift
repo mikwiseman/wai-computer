@@ -191,6 +191,7 @@ struct MacSettingsView: View {
     @State private var summaryLanguage = "auto"
     @State private var summaryStyle = "medium"
     @State private var summaryInstructions = ""
+    @State private var summaryInstructionsSaveTask: Task<Void, Never>?
     @State private var mcpClient: McpClient = .openClaw
     @State private var mcpCopiedField: String?
     @State private var settingsLoaded = false
@@ -285,6 +286,7 @@ struct MacSettingsView: View {
             stopPermissionPolling()
             stopTelegramLinkPolling()
             stopBillingReturnRefresh()
+            flushSummaryInstructionsSave()
         }
         .onChangeCompat(of: scenePhase) { _, newPhase in
             if newPhase == .active {
@@ -528,7 +530,7 @@ struct MacSettingsView: View {
                     .cornerRadius(6)
                     .onChangeCompat(of: summaryInstructions) { _, _ in
                         guard settingsLoaded else { return }
-                        Task { await saveSummarySettings(instructions: summaryInstructions) }
+                        scheduleSummaryInstructionsSave(summaryInstructions)
                     }
                 Text("settings.summary.customExample", bundle: .main)
                     .font(Typography.caption)
@@ -2126,6 +2128,25 @@ struct MacSettingsView: View {
             summaryInstructions: instructions
         )
         _ = try? await appState.getAPIClient().updateSettings(request)
+    }
+
+    private func scheduleSummaryInstructionsSave(_ instructions: String) {
+        summaryInstructionsSaveTask?.cancel()
+        summaryInstructionsSaveTask = Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(600))
+            guard !Task.isCancelled else { return }
+            await saveSummarySettings(instructions: instructions)
+            guard !Task.isCancelled else { return }
+            summaryInstructionsSaveTask = nil
+        }
+    }
+
+    private func flushSummaryInstructionsSave() {
+        guard settingsLoaded, summaryInstructionsSaveTask != nil else { return }
+        summaryInstructionsSaveTask?.cancel()
+        summaryInstructionsSaveTask = nil
+        let instructions = summaryInstructions
+        Task { await saveSummarySettings(instructions: instructions) }
     }
 
     private func t(_ english: String, _ russian: String) -> String {

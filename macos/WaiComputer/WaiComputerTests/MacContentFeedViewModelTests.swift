@@ -796,6 +796,19 @@ final class MacContentFeedViewModelTests: XCTestCase {
         XCTAssertFalse(source.contains("private func qrImage(from string: String)"))
     }
 
+    func testSettingsSummaryInstructionsSaveIsDebouncedWhileTyping() throws {
+        let source = try macSource("WaiComputer/Features/Settings/MacSettingsView.swift")
+
+        // TextEditor changes can arrive for every keystroke. Do not spawn a
+        // network save task for each character while the user is typing in
+        // Settings; debounce the write and flush once when the view closes.
+        XCTAssertTrue(source.contains("@State private var summaryInstructionsSaveTask: Task<Void, Never>?"))
+        XCTAssertTrue(source.contains("scheduleSummaryInstructionsSave(summaryInstructions)"))
+        XCTAssertTrue(source.contains("try? await Task.sleep(for: .milliseconds(600))"))
+        XCTAssertTrue(source.contains("flushSummaryInstructionsSave()"))
+        XCTAssertFalse(source.contains("Task { await saveSummarySettings(instructions: summaryInstructions) }"))
+    }
+
     func testRecordingListContextMenuAvoidsFullListFilterForSingleRowActions() throws {
         let source = try macSource("WaiComputer/Features/Library/RecordingListView.swift")
 
