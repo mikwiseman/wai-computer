@@ -190,6 +190,43 @@ describe("CompanionPanel", () => {
     expect(screen.getByText(/\[1\] Standup/)).toBeInTheDocument();
   });
 
+  it("does not render unsafe markdown links as anchors", async () => {
+    const chat = makeChat("c1", "Unsafe markdown");
+    mockListChats.mockResolvedValue({ chats: [chat] });
+    mockGetChat.mockResolvedValue({
+      ...chat,
+      messages: [
+        {
+          id: "a1",
+          role: "assistant",
+          content: [
+            {
+              type: "text",
+              text: "Use [safe](https://example.com) but ignore [bad](javascript:alert(1)).",
+            },
+          ],
+          tool_calls: null,
+          citations: [],
+          model: "gpt-5.5",
+          input_tokens: 100,
+          output_tokens: 50,
+          cached_tokens: null,
+          latency_ms: 1200,
+          created_at: "2026-05-18T10:00:02Z",
+        },
+      ],
+    });
+
+    render(<CompanionPanel recordings={recordings} />);
+
+    expect(await screen.findByRole("link", { name: "safe" })).toHaveAttribute(
+      "href",
+      "https://example.com",
+    );
+    expect(screen.getByText("bad")).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "bad" })).not.toBeInTheDocument();
+  });
+
   it("shows a persisted in-flight turn after reopening a thread", async () => {
     const chat = makeChat("c1", "Working chat");
     mockListChats.mockResolvedValue({ chats: [chat] });

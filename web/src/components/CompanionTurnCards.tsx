@@ -237,16 +237,23 @@ function WebCitationsCard({
         {ru ? "Источники" : "Sources"}
       </div>
       <ul className="wai-web-citation-list">
-        {citations.map((citation, i) => (
-          <li key={`${citation.url}-${i}`}>
-            <a href={citation.url} target="_blank" rel="noopener noreferrer">
-              <span>{citation.title}</span>
-              <span className="wai-web-citation-arrow" aria-hidden>
-                ↗
-              </span>
-            </a>
-          </li>
-        ))}
+        {citations.map((citation, i) => {
+          const href = safeExternalHref(citation.url);
+          return (
+            <li key={`${citation.url}-${i}`}>
+              {href ? (
+                <a href={href} target="_blank" rel="noopener noreferrer">
+                  <span>{citation.title}</span>
+                  <span className="wai-web-citation-arrow" aria-hidden>
+                    ↗
+                  </span>
+                </a>
+              ) : (
+                <span>{citation.title}</span>
+              )}
+            </li>
+          );
+        })}
       </ul>
     </div>
   );
@@ -411,16 +418,34 @@ function renderInline(text: string): ReactNode[] {
     if (match[2] !== undefined) nodes.push(<strong key={key++}>{match[2]}</strong>);
     else if (match[3] !== undefined) nodes.push(<code key={key++}>{match[3]}</code>);
     else if (match[4] !== undefined) nodes.push(<em key={key++}>{match[4]}</em>);
-    else if (match[5] !== undefined)
+    else if (match[5] !== undefined) {
+      const href = safeExternalHref(match[6]);
       nodes.push(
-        <a key={key++} href={match[6]} target="_blank" rel="noreferrer">
-          {match[5]}
-        </a>,
+        href ? (
+          <a key={key++} href={href} target="_blank" rel="noopener noreferrer">
+            {match[5]}
+          </a>
+        ) : (
+          <span key={key++}>{match[5]}</span>
+        ),
       );
+    }
     lastIndex = regex.lastIndex;
   }
   if (lastIndex < text.length) nodes.push(text.slice(lastIndex));
   return nodes;
+}
+
+function safeExternalHref(rawHref: string): string | null {
+  try {
+    const parsed = new URL(rawHref, "https://wai.computer");
+    if (parsed.protocol === "http:" || parsed.protocol === "https:" || parsed.protocol === "mailto:") {
+      return rawHref;
+    }
+  } catch {
+    return null;
+  }
+  return null;
 }
 
 function parseMarkdown(text: string): MdBlock[] {
