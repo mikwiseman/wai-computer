@@ -30,9 +30,13 @@ final class PendingRecordingSyncCoordinatorTests: XCTestCase {
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         try? FileManager.default.createDirectory(at: backupRoot, withIntermediateDirectories: true)
         RecordingBackupStore.overrideBaseDirectory = backupRoot
+        UserDefaults.standard.removeObject(forKey: "wai.healedOversizedBackups.v1")
+        UserDefaults.standard.removeObject(forKey: "wai.healedAudioDecodeBackups.v1")
     }
 
     override func tearDown() {
+        UserDefaults.standard.removeObject(forKey: "wai.healedOversizedBackups.v1")
+        UserDefaults.standard.removeObject(forKey: "wai.healedAudioDecodeBackups.v1")
         RecordingBackupStore.overrideBaseDirectory = nil
         if let backupRoot {
             try? FileManager.default.removeItem(at: backupRoot)
@@ -1370,6 +1374,64 @@ final class PendingRecordingSyncCoordinatorTests: XCTestCase {
         let manifest = try XCTUnwrap(RecordingBackupStore.manifest(recordingId: recordingId))
         XCTAssertEqual(manifest.lastFailureCode, "audio_decode_failed")
         XCTAssertEqual(manifest.lastErrorMessage, "Could not read the uploaded audio file.")
+    }
+
+    func testSyncHealsLegacyAudioDecodePermanentFailureAndUploadsAgain() async throws {
+        let recordingId = "pending-sync-heal-audio-decode-\(UUID().uuidString)"
+        defer { try? RecordingBackupStore.removeRecording(recordingId: recordingId) }
+
+        try RecordingBackupStore.markHasAudioFile(recordingId: recordingId)
+        let audioURL = try RecordingBackupStore.audioFileURL(recordingId: recordingId)
+        try writeRealWAV(to: audioURL)
+        _ = try RecordingBackupStore.saveRecording(
+            recordingId: recordingId,
+            title: "Legacy decode failure",
+            recordingType: .meeting,
+            durationSeconds: 4,
+            transcript: nil,
+            segments: []
+        )
+        _ = try RecordingBackupStore.recordSaveFailure(
+            recordingId: recordingId,
+            message: "Could not read the uploaded audio file."
+        )
+        try RecordingBackupStore.markPermanentFailure(
+            recordingId: recordingId,
+            failureCode: "audio_decode_failed"
+        )
+
+        let client = makeClient()
+        await client.setAccessToken("test-token")
+
+        let synced = expectation(description: "legacy audio decode backup reuploaded")
+        let observer = NotificationCenter.default.addObserver(
+            forName: .pendingRecordingSyncDidFinish,
+            object: nil,
+            queue: nil
+        ) { notification in
+            if notification.userInfo?["recordingId"] as? String == recordingId {
+                synced.fulfill()
+            }
+        }
+        defer { NotificationCenter.default.removeObserver(observer) }
+
+        MockURLProtocol.requestHandler = { request in
+            XCTAssertEqual(request.httpMethod, "POST")
+            XCTAssertEqual(request.url?.path, "/api/recordings/\(recordingId)/upload")
+            let response = HTTPURLResponse(
+                url: try XCTUnwrap(request.url),
+                statusCode: 200,
+                httpVersion: nil,
+                headerFields: nil
+            )!
+            return (response, self.responsePayload(recordingId: recordingId, status: "ready"))
+        }
+
+        await PendingRecordingSyncCoordinator.shared.scheduleSync(using: client)
+        await fulfillment(of: [synced], timeout: 3)
+
+        XCTAssertNil(try RecordingBackupStore.existingBackup(recordingId: recordingId))
+        XCTAssertTrue(UserDefaults.standard.bool(forKey: "wai.healedAudioDecodeBackups.v1"))
     }
 
     func testSyncHandlesMultipleBackupsInOnePass() async throws {

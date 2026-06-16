@@ -375,6 +375,22 @@ public enum RecordingBackupStore {
         log.info("Reset oversized permanent failure for recompression: \(recordingId)")
     }
 
+    /// Resets a permanently-failed audio backup so the sync loop uploads the
+    /// same local recording again. Used when server-side handling changes made a
+    /// previous terminal failure recoverable.
+    public static func clearPermanentFailureForAudioRetry(recordingId: String) throws {
+        guard let backup = try existingBackup(recordingId: recordingId) else { return }
+        guard var manifest = try readManifest(from: backup.manifestURL) else { return }
+        guard manifest.syncState == .permanentFailure else { return }
+
+        manifest.syncState = .localReady
+        manifest.lastFailureCode = nil
+        manifest.lastErrorMessage = nil
+        manifest.updatedAt = Date()
+        try writeManifest(manifest, to: backup.manifestURL)
+        log.info("Reset audio permanent failure for retry: \(recordingId)")
+    }
+
     /// One-time heal: finds backups that permanently failed as "too large"
     /// (HTTP 413, before client-side compression existed) and resets them so the
     /// compression-enabled sync retries them. Other permanent failures (e.g.
@@ -392,6 +408,27 @@ public enum RecordingBackupStore {
                 continue
             }
             try clearPermanentFailureForRecompression(recordingId: backup.recordingId)
+            reset.append(backup.recordingId)
+        }
+        return reset
+    }
+
+    /// One-time heal: finds local audio backups that permanently failed with
+    /// `audio_decode_failed` before backend duration probing became non-fatal.
+    /// A fresh upload lets the server run provider transcription against the
+    /// cached audio artifact instead of preserving the stale terminal result.
+    @discardableResult
+    public static func resetAudioDecodePermanentFailures() throws -> [String] {
+        let backups = try listBackups()
+        var reset: [String] = []
+        for backup in backups {
+            guard let manifest = try readManifest(from: backup.manifestURL),
+                  manifest.syncState == .permanentFailure,
+                  manifest.hasAudioFile,
+                  manifest.lastFailureCode == "audio_decode_failed" else {
+                continue
+            }
+            try clearPermanentFailureForAudioRetry(recordingId: backup.recordingId)
             reset.append(backup.recordingId)
         }
         return reset

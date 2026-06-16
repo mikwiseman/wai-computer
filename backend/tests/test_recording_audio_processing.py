@@ -4,7 +4,9 @@ import asyncio
 import logging
 import wave
 from datetime import datetime, timezone
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
+from uuid import uuid4
 
 import httpx
 import pytest
@@ -26,12 +28,10 @@ from app.models.recording import (
 from app.models.user import User
 
 
-class _FakeAudioSegment:
-    def __init__(self, duration_ms: int) -> None:
-        self.duration_ms = duration_ms
-
-    def __len__(self) -> int:
-        return self.duration_ms
+class _CompletedProbe:
+    def __init__(self, *, returncode: int = 0, stdout: str = "") -> None:
+        self.returncode = returncode
+        self.stdout = stdout
 
 
 @pytest.fixture(autouse=True)
@@ -40,6 +40,109 @@ def _stub_summary_enqueue(monkeypatch: pytest.MonkeyPatch) -> None:
         recording_audio_processing,
         "_enqueue_recording_summary_generation",
         lambda job_id: "celery-recording-summary",
+    )
+
+
+def test_ffprobe_duration_seconds_parses_duration(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[list[str], dict[str, object]]] = []
+
+    def run(args, **kwargs):
+        calls.append((args, kwargs))
+        return _CompletedProbe(stdout="12.345\n")
+
+    monkeypatch.setattr(recording_audio_processing.subprocess, "run", run)
+
+    assert recording_audio_processing._ffprobe_duration_seconds(tmp_path / "clip.m4a") == 12.345
+    args, kwargs = calls[0]
+    assert args[0] == "ffprobe"
+    assert kwargs["timeout"] == recording_audio_processing.AUDIO_DURATION_PROBE_TIMEOUT_SECONDS
+
+
+@pytest.mark.parametrize(
+    "probe_result",
+    [
+        _CompletedProbe(returncode=1, stdout=""),
+        _CompletedProbe(returncode=0, stdout=""),
+        _CompletedProbe(returncode=0, stdout="not-a-number\n"),
+        _CompletedProbe(returncode=0, stdout="-1\n"),
+    ],
+)
+def test_ffprobe_duration_seconds_rejects_bad_results(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+    probe_result: _CompletedProbe,
+) -> None:
+    monkeypatch.setattr(
+        recording_audio_processing.subprocess,
+        "run",
+        lambda *_args, **_kwargs: probe_result,
+    )
+
+    with pytest.raises(recording_audio_processing.AudioDurationProbeError):
+        recording_audio_processing._ffprobe_duration_seconds(tmp_path / "clip.m4a")
+
+
+def test_ffprobe_duration_seconds_maps_subprocess_errors(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def run(*_args, **_kwargs):
+        raise OSError("ffprobe missing")
+
+    monkeypatch.setattr(recording_audio_processing.subprocess, "run", run)
+
+    with pytest.raises(recording_audio_processing.AudioDurationProbeError):
+        recording_audio_processing._ffprobe_duration_seconds(tmp_path / "clip.m4a")
+
+
+def test_audio_processing_helper_edge_branches() -> None:
+    existing = SimpleNamespace(title="Existing", language="en", failure_message="old")
+    recording_audio_processing.apply_no_speech_result(existing)
+    assert existing.title == "Existing"
+    assert existing.failure_message is None
+
+    untitled = SimpleNamespace(title=None, language="ru", failure_message=None)
+    recording_audio_processing.apply_no_speech_result(untitled)
+    assert untitled.title == "Без речи"
+    assert untitled.failure_message == "Мы не обнаружили разборчивой речи в этой записи."
+
+    assert (
+        recording_audio_processing.recording_processing_slow_threshold_ms(None)
+        == recording_audio_processing.PROCESSING_SLOW_MIN_THRESHOLD_MS
+    )
+
+
+def test_provider_reported_audio_too_short_false_branches() -> None:
+    assert not recording_audio_processing._provider_reported_audio_too_short(RuntimeError("x"))
+
+    request = httpx.Request("POST", "https://api.deepgram.com/v1/listen")
+    responses = [
+        httpx.Response(
+            500,
+            json={"detail": {"status": "audio_too_short"}},
+            request=request,
+        ),
+        httpx.Response(400, content=b"not-json", request=request),
+        httpx.Response(400, json=[], request=request),
+        httpx.Response(400, json={"detail": "audio_too_short"}, request=request),
+    ]
+    for response in responses:
+        error = httpx.HTTPStatusError("provider error", request=request, response=response)
+        assert not recording_audio_processing._provider_reported_audio_too_short(error)
+
+
+@pytest.mark.asyncio
+async def test_mark_recording_processing_failed_missing_recording_noops(
+    db_session: AsyncSession,
+) -> None:
+    await recording_audio_processing.mark_recording_processing_failed(
+        db_session,
+        recording_id=uuid4(),
+        failure_code="missing",
+        failure_message="Missing recording",
     )
 
 
@@ -1086,8 +1189,6 @@ async def test_process_staged_recording_upload_rejects_too_short_m4a_before_prov
     tmp_path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from pydub import AudioSegment
-
     user = User(
         email="queued-too-short-m4a@example.com",
         password_hash="x",
@@ -1118,7 +1219,10 @@ async def test_process_staged_recording_upload_rejects_too_short_m4a_before_prov
             confidence=0.9,
         )
     ])
-    monkeypatch.setattr(AudioSegment, "from_file", lambda *_args, **_kwargs: _FakeAudioSegment(50))
+    monkeypatch.setattr(
+        "app.core.recording_audio_processing._ffprobe_duration_seconds",
+        lambda *_args, **_kwargs: 0.05,
+    )
     monkeypatch.setattr(
         "app.core.recording_audio_processing.transcribe_audio_file",
         transcribe,
@@ -1144,19 +1248,17 @@ async def test_process_staged_recording_upload_rejects_too_short_m4a_before_prov
 
 
 @pytest.mark.asyncio
-async def test_process_staged_recording_upload_marks_decode_failed_before_provider(
+async def test_process_staged_recording_upload_continues_after_duration_probe_failure(
     db_session: AsyncSession,
     tmp_path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from pydub import AudioSegment
-
-    user = User(email="queued-decode-failed@example.com", password_hash="x")
+    user = User(email="queued-probe-failed@example.com", password_hash="x")
     db_session.add(user)
     await db_session.flush()
     recording = Recording(
         user_id=user.id,
-        title="Broken upload",
+        title="Probe failed upload",
         type="meeting",
         status=RecordingStatus.PROCESSING.value,
         uploaded_at=datetime.now(timezone.utc),
@@ -1165,15 +1267,28 @@ async def test_process_staged_recording_upload_marks_decode_failed_before_provid
     db_session.add(recording)
     await db_session.commit()
 
-    staged_path = tmp_path / "broken.m4a"
-    staged_path.write_bytes(b"not-media")
-    transcribe = AsyncMock(return_value=[])
+    staged_path = tmp_path / "probe-failed.m4a"
+    staged_path.write_bytes(b"valid-provider-media")
+    transcript_results = [
+        TranscriptResult(
+            text="Provider can still transcribe this audio.",
+            speaker="speaker_0",
+            is_final=True,
+            start_ms=0,
+            end_ms=2_000,
+            confidence=0.9,
+        )
+    ]
+    transcribe = AsyncMock(return_value=transcript_results)
     capture = Mock()
 
     def _decode_failed(*_args, **_kwargs):
-        raise RuntimeError("decode failed")
+        raise recording_audio_processing.AudioDurationProbeError("probe failed")
 
-    monkeypatch.setattr(AudioSegment, "from_file", _decode_failed)
+    monkeypatch.setattr(
+        "app.core.recording_audio_processing._ffprobe_duration_seconds",
+        _decode_failed,
+    )
     monkeypatch.setattr(
         "app.core.recording_audio_processing.transcribe_audio_file",
         transcribe,
@@ -1181,6 +1296,14 @@ async def test_process_staged_recording_upload_marks_decode_failed_before_provid
     monkeypatch.setattr(
         "app.core.recording_audio_processing.capture_sentry_anomaly",
         capture,
+    )
+    monkeypatch.setattr(
+        "app.core.recording_audio_processing.generate_embedding",
+        AsyncMock(return_value=[0.1] * 1536),
+    )
+    monkeypatch.setattr(
+        "app.core.recording_audio_processing.identify_speakers_for_recording",
+        AsyncMock(return_value={}),
     )
 
     await process_staged_recording_upload(
@@ -1190,36 +1313,37 @@ async def test_process_staged_recording_upload_marks_decode_failed_before_provid
         staged_path=staged_path,
         content_type="audio/mp4",
         user_default_language="en",
+        client_duration_seconds=42,
         staged_size_bytes=staged_path.stat().st_size,
     )
 
     await db_session.refresh(recording)
-    assert recording.status == RecordingStatus.FAILED.value
-    assert recording.failure_code == "audio_decode_failed"
-    assert recording.failure_message == "Could not read the uploaded audio file."
+    assert recording.status == RecordingStatus.READY.value
+    assert recording.failure_code is None
+    assert recording.failure_message is None
+    assert recording.duration_seconds == 42
     assert not staged_path.exists()
-    transcribe.assert_not_awaited()
+    transcribe.assert_awaited_once()
+    assert transcribe.await_args.kwargs["audio_duration_seconds"] == 42
     capture.assert_called_once()
     assert capture.call_args.args[:2] == (
-        "recording.audio.decode_failed",
-        "Recording upload audio could not be decoded before transcription",
+        "recording.audio.duration_probe_failed",
+        "Recording upload duration could not be probed before transcription",
     )
 
 
 @pytest.mark.asyncio
-async def test_process_staged_recording_upload_suppresses_repeated_decode_failed_alert(
+async def test_process_staged_recording_upload_retries_after_previous_decode_failure(
     db_session: AsyncSession,
     tmp_path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from pydub import AudioSegment
-
-    user = User(email="queued-duplicate-decode-failed@example.com", password_hash="x")
+    user = User(email="queued-previous-decode-failed@example.com", password_hash="x")
     db_session.add(user)
     await db_session.flush()
     recording = Recording(
         user_id=user.id,
-        title="Broken upload retry",
+        title="Previous decode failure retry",
         type="meeting",
         status=RecordingStatus.PROCESSING.value,
         uploaded_at=datetime.now(timezone.utc),
@@ -1228,15 +1352,28 @@ async def test_process_staged_recording_upload_suppresses_repeated_decode_failed
     db_session.add(recording)
     await db_session.commit()
 
-    staged_path = tmp_path / "broken-retry.m4a"
-    staged_path.write_bytes(b"not-media-again")
-    transcribe = AsyncMock(return_value=[])
+    staged_path = tmp_path / "probe-failed-retry.m4a"
+    staged_path.write_bytes(b"valid-provider-media-again")
+    transcript_results = [
+        TranscriptResult(
+            text="The retry reached transcription.",
+            speaker="speaker_0",
+            is_final=True,
+            start_ms=0,
+            end_ms=3_000,
+            confidence=0.9,
+        )
+    ]
+    transcribe = AsyncMock(return_value=transcript_results)
     capture = Mock()
 
     def _decode_failed(*_args, **_kwargs):
-        raise RuntimeError("decode failed again")
+        raise recording_audio_processing.AudioDurationProbeError("probe failed again")
 
-    monkeypatch.setattr(AudioSegment, "from_file", _decode_failed)
+    monkeypatch.setattr(
+        "app.core.recording_audio_processing._ffprobe_duration_seconds",
+        _decode_failed,
+    )
     monkeypatch.setattr(
         "app.core.recording_audio_processing.transcribe_audio_file",
         transcribe,
@@ -1244,6 +1381,14 @@ async def test_process_staged_recording_upload_suppresses_repeated_decode_failed
     monkeypatch.setattr(
         "app.core.recording_audio_processing.capture_sentry_anomaly",
         capture,
+    )
+    monkeypatch.setattr(
+        "app.core.recording_audio_processing.generate_embedding",
+        AsyncMock(return_value=[0.1] * 1536),
+    )
+    monkeypatch.setattr(
+        "app.core.recording_audio_processing.identify_speakers_for_recording",
+        AsyncMock(return_value={}),
     )
 
     await process_staged_recording_upload(
@@ -1253,17 +1398,24 @@ async def test_process_staged_recording_upload_suppresses_repeated_decode_failed
         staged_path=staged_path,
         content_type="audio/mp4",
         user_default_language="en",
+        client_duration_seconds=44,
         staged_size_bytes=staged_path.stat().st_size,
         previous_failure_code="audio_decode_failed",
     )
 
     await db_session.refresh(recording)
-    assert recording.status == RecordingStatus.FAILED.value
-    assert recording.failure_code == "audio_decode_failed"
-    assert recording.failure_message == "Could not read the uploaded audio file."
+    assert recording.status == RecordingStatus.READY.value
+    assert recording.failure_code is None
+    assert recording.failure_message is None
+    assert recording.duration_seconds == 44
     assert not staged_path.exists()
-    transcribe.assert_not_awaited()
-    capture.assert_not_called()
+    transcribe.assert_awaited_once()
+    assert transcribe.await_args.kwargs["audio_duration_seconds"] == 44
+    capture.assert_called_once()
+    assert capture.call_args.args[:2] == (
+        "recording.audio.duration_probe_failed",
+        "Recording upload duration could not be probed before transcription",
+    )
 
 
 @pytest.mark.asyncio
@@ -1343,8 +1495,6 @@ async def test_process_staged_recording_upload_maps_provider_audio_too_short_to_
     tmp_path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from pydub import AudioSegment
-
     user = User(
         email="queued-provider-too-short@example.com",
         password_hash="x",
@@ -1378,7 +1528,10 @@ async def test_process_staged_recording_upload_maps_provider_audio_too_short_to_
         "app.core.recording_audio_processing.transcribe_audio_file",
         AsyncMock(side_effect=error),
     )
-    monkeypatch.setattr(AudioSegment, "from_file", lambda *_args, **_kwargs: _FakeAudioSegment(500))
+    monkeypatch.setattr(
+        "app.core.recording_audio_processing._ffprobe_duration_seconds",
+        lambda *_args, **_kwargs: 0.5,
+    )
 
     await process_staged_recording_upload(
         db_session,

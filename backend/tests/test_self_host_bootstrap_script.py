@@ -1,6 +1,5 @@
-from pathlib import Path
 import subprocess
-
+from pathlib import Path
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
 BOOTSTRAP_SCRIPT = ROOT_DIR / "scripts" / "self-host-bootstrap.sh"
@@ -21,7 +20,10 @@ def test_bootstrap_installs_docker_from_official_apt_repository() -> None:
     assert "https://download.docker.com/linux/ubuntu" in text
     assert "/etc/apt/keyrings/docker.asc" in text
     assert "/etc/apt/sources.list.d/docker.sources" in text
-    assert "docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin" in text
+    assert (
+        "docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin"
+        in text
+    )
     assert "https://get.docker.com" not in text
 
 

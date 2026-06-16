@@ -73,6 +73,64 @@ final class RecordingBackupStoreTests: XCTestCase {
         XCTAssertThrowsError(try RecordingBackupStore.resetOversizedPermanentFailures())
     }
 
+    func testResetAudioDecodePermanentFailuresOnlyHealsAudioDecodeFailures() throws {
+        func makePermanentFailure(id: String, failureCode: String?, hasAudioFile: Bool) throws {
+            _ = try RecordingBackupStore.saveRecording(
+                recordingId: id, title: nil, recordingType: .meeting,
+                durationSeconds: 100, transcript: nil, segments: []
+            )
+            if hasAudioFile {
+                try RecordingBackupStore.markHasAudioFile(recordingId: id)
+            }
+            _ = try RecordingBackupStore.recordSaveFailure(
+                recordingId: id,
+                message: "Could not read the uploaded audio file."
+            )
+            try RecordingBackupStore.markPermanentFailure(recordingId: id, failureCode: failureCode)
+        }
+
+        let audioDecode = "audio-decode-\(UUID().uuidString)"
+        let processingFailed = "processing-failed-\(UUID().uuidString)"
+        let transcriptOnly = "transcript-only-\(UUID().uuidString)"
+        defer {
+            [audioDecode, processingFailed, transcriptOnly].forEach {
+                try? RecordingBackupStore.removeRecording(recordingId: $0)
+            }
+        }
+
+        try makePermanentFailure(
+            id: audioDecode,
+            failureCode: "audio_decode_failed",
+            hasAudioFile: true
+        )
+        try makePermanentFailure(
+            id: processingFailed,
+            failureCode: "processing_failed",
+            hasAudioFile: true
+        )
+        try makePermanentFailure(
+            id: transcriptOnly,
+            failureCode: "audio_decode_failed",
+            hasAudioFile: false
+        )
+
+        let reset = try RecordingBackupStore.resetAudioDecodePermanentFailures()
+
+        XCTAssertEqual(reset, [audioDecode])
+        XCTAssertEqual(try RecordingBackupStore.manifest(recordingId: audioDecode)?.syncState, .localReady)
+        XCTAssertNil(try RecordingBackupStore.manifest(recordingId: audioDecode)?.lastFailureCode)
+        XCTAssertNil(try RecordingBackupStore.manifest(recordingId: audioDecode)?.lastErrorMessage)
+        XCTAssertEqual(
+            try RecordingBackupStore.manifest(recordingId: processingFailed)?.syncState,
+            .permanentFailure
+        )
+        XCTAssertEqual(
+            try RecordingBackupStore.manifest(recordingId: transcriptOnly)?.syncState,
+            .permanentFailure
+        )
+        XCTAssertTrue(try RecordingBackupStore.resetAudioDecodePermanentFailures().isEmpty)
+    }
+
     func testSaveRecordingCreatesDurableFiles() throws {
         let recordingId = "backup-test-\(UUID().uuidString)"
         defer { try? RecordingBackupStore.removeRecording(recordingId: recordingId) }

@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import math
 import re
+import subprocess
 import time
 import wave
 from pathlib import Path
@@ -79,16 +80,15 @@ NO_SPEECH_PLACEHOLDERS = {
     "typing",
 }
 EMPTY_TRANSCRIPT_FAILURE_CODE = "transcript_empty"
-AUDIO_DECODE_FAILURE_CODE = "audio_decode_failed"
-AUDIO_DECODE_FAILURE_MESSAGE = "Could not read the uploaded audio file."
 MIN_FILE_STT_AUDIO_SECONDS = 0.1
 AUDIO_DURATION_PROBE_MAX_BYTES = 30 * 1024 * 1024
+AUDIO_DURATION_PROBE_TIMEOUT_SECONDS = 10
 PROCESSING_SLOW_MIN_THRESHOLD_MS = 300_000
 PROCESSING_AUDIO_DURATION_MULTIPLIER = 4.0
 
 
-class AudioDecodeError(Exception):
-    """Raised when a staged non-WAV upload cannot be decoded locally."""
+class AudioDurationProbeError(Exception):
+    """Raised when a staged non-WAV upload duration cannot be probed locally."""
 
 
 def copy_locale_from_recording_language(
@@ -214,41 +214,46 @@ def _wav_duration_seconds(path: Path) -> float | None:
         return None
 
 
-def _normalized_content_type(content_type: str) -> str:
-    return content_type.split(";", 1)[0].strip().lower()
-
-
-def _pydub_format_for_audio(path: Path, content_type: str) -> str | None:
-    suffix = path.suffix.lower().lstrip(".")
-    if suffix == "oga":
-        return "ogg"
-    if suffix:
-        return suffix
-    return {
-        "audio/aac": "aac",
-        "audio/flac": "flac",
-        "audio/m4a": "m4a",
-        "audio/mp3": "mp3",
-        "audio/mp4": "m4a",
-        "audio/mpeg": "mp3",
-        "audio/oga": "ogg",
-        "audio/ogg": "ogg",
-        "audio/opus": "opus",
-        "audio/webm": "webm",
-    }.get(_normalized_content_type(content_type))
-
-
-def _non_wav_duration_seconds(path: Path, content_type: str) -> float:
-    from pydub import AudioSegment
-
+def _ffprobe_duration_seconds(path: Path) -> float:
     try:
-        segment = AudioSegment.from_file(
-            str(path),
-            format=_pydub_format_for_audio(path, content_type),
+        completed = subprocess.run(
+            [
+                "ffprobe",
+                "-v",
+                "error",
+                "-show_entries",
+                "format=duration",
+                "-of",
+                "default=noprint_wrappers=1:nokey=1",
+                str(path),
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=AUDIO_DURATION_PROBE_TIMEOUT_SECONDS,
         )
-    except Exception as exc:
-        raise AudioDecodeError(AUDIO_DECODE_FAILURE_MESSAGE) from exc
-    return len(segment) / 1000.0
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise AudioDurationProbeError("ffprobe could not inspect audio duration.") from exc
+
+    if completed.returncode != 0:
+        raise AudioDurationProbeError(
+            f"ffprobe could not inspect audio duration rc={completed.returncode}."
+        )
+
+    duration_text = completed.stdout.strip().splitlines()[0:1]
+    if not duration_text:
+        raise AudioDurationProbeError("ffprobe did not return audio duration.")
+    try:
+        duration = float(duration_text[0])
+    except ValueError as exc:
+        raise AudioDurationProbeError("ffprobe returned invalid audio duration.") from exc
+    if duration < 0:
+        raise AudioDurationProbeError("ffprobe returned negative audio duration.")
+    return duration
+
+
+def _non_wav_duration_seconds(path: Path, _content_type: str) -> float:
+    return _ffprobe_duration_seconds(path)
 
 
 def _audio_duration_seconds(
@@ -553,49 +558,35 @@ async def process_staged_recording_upload(
             content_type,
             staged_size_bytes=staged_size_bytes,
         )
-    except AudioDecodeError as exc:
-        recording.duration_seconds = _duration_seconds_from_sources(
-            audio_duration_seconds=None,
-            client_duration_seconds=client_duration_seconds,
-            transcript_end_ms=None,
-        )
-        recording.status = RecordingStatus.FAILED.value
-        recording.failure_code = AUDIO_DECODE_FAILURE_CODE
-        recording.failure_message = sanitize_failure_message(AUDIO_DECODE_FAILURE_MESSAGE)
-        await db.commit()
-        delete_staged_file(staged_path)
+    except AudioDurationProbeError as exc:
+        audio_duration_seconds = None
+        probe_error = exc.__cause__ or exc
         logger.warning(
-            "audio processing rejected undecodable upload recording_id=%s "
+            "audio duration probe failed; continuing with provider transcription recording_id=%s "
             "content_type=%s staged_size_bytes=%s error_type=%s error_fingerprint=%s",
             recording_id,
             content_type,
             staged_size_bytes,
-            type(exc.__cause__ or exc).__name__,
-            fingerprint_text(str(exc.__cause__ or exc)),
+            type(probe_error).__name__,
+            fingerprint_text(str(probe_error)),
         )
-        if previous_failure_code == AUDIO_DECODE_FAILURE_CODE:
-            logger.info(
-                "suppressed repeated audio decode alert recording_id=%s content_type=%s",
-                recording_id,
-                content_type,
-            )
-        else:
-            capture_sentry_anomaly(
-                "recording.audio.decode_failed",
-                "Recording upload audio could not be decoded before transcription",
-                category="recording",
-                extras={
-                    "recording_id": str(recording_id),
-                    "content_type": content_type,
-                    "staged_size_bytes": staged_size_bytes,
-                    "client_duration_seconds": client_duration_seconds,
-                    "error_type": type(exc.__cause__ or exc).__name__,
-                    "error_fingerprint": fingerprint_text(str(exc.__cause__ or exc)),
-                },
-                level="warning",
-            )
+        capture_sentry_anomaly(
+            "recording.audio.duration_probe_failed",
+            "Recording upload duration could not be probed before transcription",
+            category="recording",
+            extras={
+                "recording_id": str(recording_id),
+                "content_type": content_type,
+                "staged_size_bytes": staged_size_bytes,
+                "client_duration_seconds": client_duration_seconds,
+                "previous_failure_code": previous_failure_code,
+                "error_type": type(probe_error).__name__,
+                "error_fingerprint": fingerprint_text(str(probe_error)),
+            },
+            level="warning",
+        )
         _recording_lifecycle_breadcrumb(
-            "Recording processing rejected undecodable audio",
+            "Recording duration probe failed; provider transcription continued",
             recording_id=recording_id,
             level="warning",
             data={
@@ -604,7 +595,6 @@ async def process_staged_recording_upload(
                 "client_duration_seconds": client_duration_seconds,
             },
         )
-        return
     logger.info(
         "audio processing started recording_id=%s content_type=%s staged_size_bytes=%s "
         "client_file_size_bytes=%s audio_duration_seconds=%s client_duration_seconds=%s",

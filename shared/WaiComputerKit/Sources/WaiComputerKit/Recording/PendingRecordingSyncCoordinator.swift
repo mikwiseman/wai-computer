@@ -21,6 +21,7 @@ public actor PendingRecordingSyncCoordinator {
         recoverAbandonedLocalRecordings: Bool = false
     ) {
         healLegacyOversizedFailuresIfNeeded()
+        healLegacyAudioDecodeFailuresIfNeeded()
         if recoverAbandonedLocalRecordings {
             recoverAbandonedLocalRecordingsIfNeeded()
         }
@@ -68,6 +69,35 @@ public actor PendingRecordingSyncCoordinator {
         SentryHelper.addBreadcrumb(
             category: "backup",
             message: "healed oversized backups for recompression",
+            data: ["count": reset.count]
+        )
+    }
+
+    /// One-time migration: recordings that permanently failed with
+    /// `audio_decode_failed` before backend duration probing became non-fatal
+    /// are reset so the server can try provider transcription against the same
+    /// local audio backup.
+    private func healLegacyAudioDecodeFailuresIfNeeded() {
+        let key = "wai.healedAudioDecodeBackups.v1"
+        guard !UserDefaults.standard.bool(forKey: key) else { return }
+
+        let reset: [String]
+        do {
+            reset = try RecordingBackupStore.resetAudioDecodePermanentFailures()
+            UserDefaults.standard.set(true, forKey: key)
+        } catch {
+            log.error("Failed to scan audio decode backups for retry heal")
+            SentryHelper.captureError(
+                error,
+                extras: ["action": "resetAudioDecodePermanentFailures"]
+            )
+            return
+        }
+        guard !reset.isEmpty else { return }
+        log.info("Healed \(reset.count, privacy: .public) audio decode backup(s) for retry")
+        SentryHelper.addBreadcrumb(
+            category: "backup",
+            message: "healed audio decode backups for retry",
             data: ["count": reset.count]
         )
     }
