@@ -1329,7 +1329,7 @@ final class PendingRecordingSyncCoordinatorTests: XCTestCase {
         XCTAssertEqual(counter.count, 1)
     }
 
-    func testSyncMarksAudioDecodeFailedStatusAsPermanentFailure() async throws {
+    func testSyncKeepsAudioDecodeFailedStatusRetryable() async throws {
         let recordingId = "pending-sync-audio-decode-failed-\(UUID().uuidString)"
         defer { try? RecordingBackupStore.removeRecording(recordingId: recordingId) }
 
@@ -1348,6 +1348,7 @@ final class PendingRecordingSyncCoordinatorTests: XCTestCase {
         let client = makeClient()
         await client.setAccessToken("test-token")
 
+        let sawFailedUpload = expectation(description: "audio decode failure upload response handled")
         MockURLProtocol.requestHandler = { request in
             XCTAssertEqual(request.httpMethod, "POST")
             XCTAssertEqual(request.url?.path, "/api/recordings/\(recordingId)/upload")
@@ -1357,6 +1358,7 @@ final class PendingRecordingSyncCoordinatorTests: XCTestCase {
                 httpVersion: nil,
                 headerFields: nil
             )!
+            sawFailedUpload.fulfill()
             return (
                 response,
                 self.responsePayload(
@@ -1369,8 +1371,9 @@ final class PendingRecordingSyncCoordinatorTests: XCTestCase {
         }
 
         await PendingRecordingSyncCoordinator.shared.scheduleSync(using: client)
+        await fulfillment(of: [sawFailedUpload], timeout: 2)
 
-        try await waitForManifestState(.permanentFailure, recordingId: recordingId)
+        try await waitForManifestState(.retryableFailure, recordingId: recordingId)
         let manifest = try XCTUnwrap(RecordingBackupStore.manifest(recordingId: recordingId))
         XCTAssertEqual(manifest.lastFailureCode, "audio_decode_failed")
         XCTAssertEqual(manifest.lastErrorMessage, "Could not read the uploaded audio file.")

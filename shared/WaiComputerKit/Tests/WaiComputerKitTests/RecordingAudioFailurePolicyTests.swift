@@ -13,11 +13,12 @@ final class RecordingAudioFailurePolicyTests: XCTestCase {
             "staging_failed",
             "transcription_halted",
             "upload_size_mismatch",
+            "audio_decode_failed",
         ] {
             XCTAssertTrue(RecordingAudioFailurePolicy.isRetryableServerFailureCode(code))
         }
 
-        for code in [nil, "", " ", "audio_decode_failed", "transcript_empty", "file_too_large"] {
+        for code in [nil, "", " ", "transcript_empty", "file_too_large"] {
             XCTAssertFalse(RecordingAudioFailurePolicy.isRetryableServerFailureCode(code))
         }
     }

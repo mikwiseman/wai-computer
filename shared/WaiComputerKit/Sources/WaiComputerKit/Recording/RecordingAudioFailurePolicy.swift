@@ -11,6 +11,7 @@ public enum RecordingAudioFailurePolicy {
         "staging_failed",
         "transcription_halted",
         "upload_size_mismatch",
+        "audio_decode_failed",
     ]
 
     public static func isRetryableServerFailureCode(_ code: String?) -> Bool {
