@@ -130,7 +130,7 @@ final class SchemeModelTests: XCTestCase {
 
         XCTAssertEqual(scheme.id, "scheme-1")
         XCTAssertEqual(scheme.schemeType, "decision")
-        XCTAssertEqual(scheme.layout.version, 2)
+        XCTAssertEqual(scheme.layout.version, 3)
         XCTAssertEqual(scheme.layout.nodePositions["lens:root"]?.x, 12)
         XCTAssertEqual(scheme.currentRevision?.projection.nodes.first?.position.y, -8)
         XCTAssertEqual(scheme.currentRevision?.projection.edges.first?.label, "Decision")
@@ -139,7 +139,7 @@ final class SchemeModelTests: XCTestCase {
     func testSchemeDecodesCanvasLayoutPrimitives() throws {
         let json = """
         {
-          "version": 2,
+          "version": 3,
           "viewport": {"x": 10, "y": -20, "zoom": 1.4},
           "node_positions": {"lens:root": {"x": 12, "y": -8}},
           "strokes": [
@@ -173,6 +173,30 @@ final class SchemeModelTests: XCTestCase {
               "fill": "transparent"
             }
           ],
+          "frames": [
+            {
+              "id": "frame-1",
+              "x": -120,
+              "y": -80,
+              "width": 520,
+              "height": 360,
+              "title": "Launch plan",
+              "color": "#0f766e",
+              "fill": "transparent"
+            }
+          ],
+          "texts": [
+            {
+              "id": "text-1",
+              "x": 260,
+              "y": 180,
+              "width": 260,
+              "height": 120,
+              "text": "Decision context",
+              "color": "#111827",
+              "font_size": 22
+            }
+          ],
           "connectors": [
             {
               "id": "connector-1",
@@ -193,6 +217,8 @@ final class SchemeModelTests: XCTestCase {
         XCTAssertEqual(layout.strokes.first?.points.last?.x, 20)
         XCTAssertEqual(layout.cards.first?.text, "Open issue")
         XCTAssertEqual(layout.shapes.first?.kind, "ellipse")
+        XCTAssertEqual(layout.frames.first?.title, "Launch plan")
+        XCTAssertEqual(layout.texts.first?.fontSize, 22)
         XCTAssertEqual(layout.connectors.first?.targetId, "card-1")
     }
 
@@ -288,7 +314,7 @@ final class SchemeModelTests: XCTestCase {
         ])
         XCTAssertEqual(seen[1].body?["prompt"] as? String, "Map launch decisions")
         let layout = seen[3].body?["layout"] as? [String: Any]
-        XCTAssertEqual(layout?["version"] as? Int, 2)
+        XCTAssertEqual(layout?["version"] as? Int, 3)
         let viewport = layout?["viewport"] as? [String: Any]
         XCTAssertEqual(viewport?["zoom"] as? Double, 1.2)
         let positions = layout?["node_positions"] as? [String: Any]

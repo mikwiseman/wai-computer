@@ -95,6 +95,79 @@ public struct SchemeCanvasShape: Codable, Identifiable, Sendable, Equatable {
     }
 }
 
+public struct SchemeCanvasFrame: Codable, Identifiable, Sendable, Equatable {
+    public var id: String
+    public var x: Double
+    public var y: Double
+    public var width: Double
+    public var height: Double
+    public var title: String
+    public var color: String
+    public var fill: String
+
+    public init(
+        id: String,
+        x: Double,
+        y: Double,
+        width: Double,
+        height: Double,
+        title: String,
+        color: String = "#0f766e",
+        fill: String = "transparent"
+    ) {
+        self.id = id
+        self.x = x
+        self.y = y
+        self.width = width
+        self.height = height
+        self.title = title
+        self.color = color
+        self.fill = fill
+    }
+}
+
+public struct SchemeTextBlock: Codable, Identifiable, Sendable, Equatable {
+    public var id: String
+    public var x: Double
+    public var y: Double
+    public var width: Double
+    public var height: Double
+    public var text: String
+    public var color: String
+    public var fontSize: Double
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case x
+        case y
+        case width
+        case height
+        case text
+        case color
+        case fontSize = "font_size"
+    }
+
+    public init(
+        id: String,
+        x: Double,
+        y: Double,
+        width: Double,
+        height: Double,
+        text: String,
+        color: String = "#111827",
+        fontSize: Double = 20
+    ) {
+        self.id = id
+        self.x = x
+        self.y = y
+        self.width = width
+        self.height = height
+        self.text = text
+        self.color = color
+        self.fontSize = fontSize
+    }
+}
+
 public struct SchemeConnector: Codable, Identifiable, Sendable, Equatable {
     public var id: String
     public var sourceId: String?
@@ -136,6 +209,8 @@ public struct SchemeCanvasLayout: Codable, Sendable, Equatable {
     public var strokes: [SchemeStroke]
     public var cards: [SchemeCanvasCard]
     public var shapes: [SchemeCanvasShape]
+    public var frames: [SchemeCanvasFrame]
+    public var texts: [SchemeTextBlock]
     public var connectors: [SchemeConnector]
 
     private enum CodingKeys: String, CodingKey {
@@ -145,16 +220,20 @@ public struct SchemeCanvasLayout: Codable, Sendable, Equatable {
         case strokes
         case cards
         case shapes
+        case frames
+        case texts
         case connectors
     }
 
     public init(
-        version: Int = 2,
+        version: Int = 3,
         viewport: SchemeViewport = SchemeViewport(),
         nodePositions: [String: SchemePosition] = [:],
         strokes: [SchemeStroke] = [],
         cards: [SchemeCanvasCard] = [],
         shapes: [SchemeCanvasShape] = [],
+        frames: [SchemeCanvasFrame] = [],
+        texts: [SchemeTextBlock] = [],
         connectors: [SchemeConnector] = []
     ) {
         self.version = version
@@ -163,29 +242,36 @@ public struct SchemeCanvasLayout: Codable, Sendable, Equatable {
         self.strokes = strokes
         self.cards = cards
         self.shapes = shapes
+        self.frames = frames
+        self.texts = texts
         self.connectors = connectors
     }
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         if container.contains(.version) || container.contains(.nodePositions) {
-            version = try container.decodeIfPresent(Int.self, forKey: .version) ?? 2
+            let decodedVersion = try container.decodeIfPresent(Int.self, forKey: .version) ?? 3
+            version = max(decodedVersion, 3)
             viewport = try container.decodeIfPresent(SchemeViewport.self, forKey: .viewport) ?? SchemeViewport()
             nodePositions = try container.decodeIfPresent([String: SchemePosition].self, forKey: .nodePositions) ?? [:]
             strokes = try container.decodeIfPresent([SchemeStroke].self, forKey: .strokes) ?? []
             cards = try container.decodeIfPresent([SchemeCanvasCard].self, forKey: .cards) ?? []
             shapes = try container.decodeIfPresent([SchemeCanvasShape].self, forKey: .shapes) ?? []
+            frames = try container.decodeIfPresent([SchemeCanvasFrame].self, forKey: .frames) ?? []
+            texts = try container.decodeIfPresent([SchemeTextBlock].self, forKey: .texts) ?? []
             connectors = try container.decodeIfPresent([SchemeConnector].self, forKey: .connectors) ?? []
             return
         }
 
         let legacyPositions = try [String: SchemePosition](from: decoder)
-        version = 2
+        version = 3
         viewport = SchemeViewport()
         nodePositions = legacyPositions
         strokes = []
         cards = []
         shapes = []
+        frames = []
+        texts = []
         connectors = []
     }
 }

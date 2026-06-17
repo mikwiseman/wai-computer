@@ -33,7 +33,7 @@ async def test_create_list_get_and_update_scheme_layout(client, auth_headers, mo
 
     node_id = payload["current_revision"]["projection"]["nodes"][0]["id"]
     layout = {
-        "version": 2,
+        "version": 3,
         "viewport": {"x": 20, "y": -10, "zoom": 1.2},
         "node_positions": {node_id: {"x": 128.5, "y": -64.25}},
         "strokes": [
@@ -65,6 +65,30 @@ async def test_create_list_get_and_update_scheme_layout(client, auth_headers, mo
                 "height": 120,
                 "color": "#2563eb",
                 "fill": "transparent",
+            }
+        ],
+        "frames": [
+            {
+                "id": "frame-1",
+                "x": -180,
+                "y": -120,
+                "width": 520,
+                "height": 360,
+                "title": "Launch plan",
+                "color": "#0f766e",
+                "fill": "transparent",
+            }
+        ],
+        "texts": [
+            {
+                "id": "text-1",
+                "x": 280,
+                "y": 160,
+                "width": 260,
+                "height": 120,
+                "text": "Decision context",
+                "color": "#111827",
+                "font_size": 22,
             }
         ],
         "connectors": [
@@ -126,7 +150,7 @@ async def test_scheme_routes_migrate_legacy_node_position_layout(
     )
 
     assert migrated.status_code == 200, migrated.text
-    assert migrated.json()["layout"]["version"] == 2
+    assert migrated.json()["layout"]["version"] == 3
     assert migrated.json()["layout"]["node_positions"] == {node_id: {"x": 40.0, "y": 80.0}}
 
 

@@ -25,7 +25,7 @@ from app.models.brain_map import BrainMap, BrainMapRevision
 
 router = APIRouter(prefix="/schemes", tags=["schemes"])
 
-SCHEME_LAYOUT_VERSION = 2
+SCHEME_LAYOUT_VERSION = 3
 SCHEME_SHAPE_KINDS = {"rectangle", "ellipse"}
 
 
@@ -68,6 +68,28 @@ class SchemeCanvasShape(BaseModel):
     fill: str = Field(default="transparent", min_length=1, max_length=40)
 
 
+class SchemeCanvasFrame(BaseModel):
+    id: str = Field(min_length=1)
+    x: float
+    y: float
+    width: float = Field(gt=80, le=4000)
+    height: float = Field(gt=80, le=4000)
+    title: str = Field(min_length=1, max_length=300)
+    color: str = Field(default="#0f766e", min_length=1, max_length=40)
+    fill: str = Field(default="transparent", min_length=1, max_length=40)
+
+
+class SchemeTextBlock(BaseModel):
+    id: str = Field(min_length=1)
+    x: float
+    y: float
+    width: float = Field(gt=20, le=1600)
+    height: float = Field(gt=20, le=1600)
+    text: str = Field(min_length=1, max_length=4000)
+    color: str = Field(default="#111827", min_length=1, max_length=40)
+    font_size: float = Field(default=20, ge=8, le=96)
+
+
 class SchemeConnector(BaseModel):
     id: str = Field(min_length=1)
     source_id: str | None = Field(default=None, min_length=1)
@@ -86,6 +108,8 @@ class SchemeCanvasLayout(BaseModel):
     strokes: list[SchemeStroke] = Field(default_factory=list)
     cards: list[SchemeCanvasCard] = Field(default_factory=list)
     shapes: list[SchemeCanvasShape] = Field(default_factory=list)
+    frames: list[SchemeCanvasFrame] = Field(default_factory=list)
+    texts: list[SchemeTextBlock] = Field(default_factory=list)
     connectors: list[SchemeConnector] = Field(default_factory=list)
 
     @classmethod
@@ -179,6 +203,7 @@ def _normalise_canvas_layout(layout: dict[str, Any] | None) -> SchemeCanvasLayou
     payload = {"node_positions": layout} if _is_legacy_position_map(layout) else layout
     try:
         normalised = SchemeCanvasLayout.model_validate(payload)
+        normalised.version = SCHEME_LAYOUT_VERSION
         return SchemeCanvasLayout.validate_shape_kinds(normalised)
     except (ValidationError, ValueError) as exc:
         raise BrainMapValidationError(f"Invalid scheme layout: {exc}") from exc

@@ -19,12 +19,14 @@ vi.mock("@/lib/api", () => ({
 
 function layout(overrides: Partial<SchemeCanvasLayout> = {}): SchemeCanvasLayout {
   return {
-    version: 2,
+    version: 3,
     viewport: { x: 0, y: 0, zoom: 1 },
     node_positions: {},
     strokes: [],
     cards: [],
     shapes: [],
+    frames: [],
+    texts: [],
     connectors: [],
     ...overrides,
   };
@@ -152,7 +154,7 @@ describe("SchemesPanel", () => {
         "scheme-1",
         {
           layout: expect.objectContaining({
-            version: 2,
+            version: 3,
             node_positions: expect.objectContaining({
               "signal:decision:1": expect.objectContaining({ x: 380, y: -160 }),
             }),
@@ -213,6 +215,60 @@ describe("SchemesPanel", () => {
                   expect.objectContaining({ x: 20, y: 30 }),
                   expect.objectContaining({ x: 48, y: 66 }),
                 ]),
+              }),
+            ],
+          }),
+        },
+      ),
+    );
+  });
+
+  it("adds a frame for organizing the board", async () => {
+    const { container } = render(<SchemesPanel />);
+
+    await screen.findByTestId("schemes-panel");
+    fireEvent.click(screen.getByRole("button", { name: "Frame" }));
+    const viewport = container.querySelector(".scheme-board__viewport");
+    expect(viewport).not.toBeNull();
+
+    fireEvent.pointerDown(viewport as Element, { pointerId: 1, clientX: 240, clientY: 260, button: 0 });
+
+    await waitFor(() =>
+      expect(mockUpdateScheme).toHaveBeenCalledWith(
+        "scheme-1",
+        {
+          layout: expect.objectContaining({
+            frames: [
+              expect.objectContaining({
+                id: "frame:test-id-1",
+                title: "Frame",
+              }),
+            ],
+          }),
+        },
+      ),
+    );
+  });
+
+  it("adds editable canvas text", async () => {
+    const { container } = render(<SchemesPanel />);
+
+    await screen.findByTestId("schemes-panel");
+    fireEvent.click(screen.getByRole("button", { name: "Text" }));
+    const viewport = container.querySelector(".scheme-board__viewport");
+    expect(viewport).not.toBeNull();
+
+    fireEvent.pointerDown(viewport as Element, { pointerId: 1, clientX: 280, clientY: 300, button: 0 });
+
+    await waitFor(() =>
+      expect(mockUpdateScheme).toHaveBeenCalledWith(
+        "scheme-1",
+        {
+          layout: expect.objectContaining({
+            texts: [
+              expect.objectContaining({
+                id: "text:test-id-1",
+                text: "Text",
               }),
             ],
           }),

@@ -981,6 +981,28 @@ export interface SchemeCanvasShape {
   fill: string;
 }
 
+export interface SchemeCanvasFrame {
+  id: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  title: string;
+  color: string;
+  fill: string;
+}
+
+export interface SchemeTextBlock {
+  id: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  text: string;
+  color: string;
+  font_size: number;
+}
+
 export interface SchemeConnector {
   id: string;
   source_id: string | null;
@@ -991,12 +1013,14 @@ export interface SchemeConnector {
 }
 
 export interface SchemeCanvasLayout {
-  version: 2;
+  version: number;
   viewport: SchemeViewport;
   node_positions: Record<string, SchemePosition>;
   strokes: SchemeStroke[];
   cards: SchemeCanvasCard[];
   shapes: SchemeCanvasShape[];
+  frames: SchemeCanvasFrame[];
+  texts: SchemeTextBlock[];
   connectors: SchemeConnector[];
 }
 

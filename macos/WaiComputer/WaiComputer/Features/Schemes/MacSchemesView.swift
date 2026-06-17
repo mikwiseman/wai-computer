@@ -265,8 +265,10 @@ private enum MacSchemeTool: String, CaseIterable, Identifiable {
     case pan
     case draw
     case sticky
+    case text
     case rectangle
     case ellipse
+    case frame
     case connector
 
     var id: String { rawValue }
@@ -281,10 +283,14 @@ private enum MacSchemeTool: String, CaseIterable, Identifiable {
             return OnboardingL10n.text("Draw", "Рисовать", language: language)
         case .sticky:
             return OnboardingL10n.text("Sticky", "Стикер", language: language)
+        case .text:
+            return OnboardingL10n.text("Text", "Текст", language: language)
         case .rectangle:
             return OnboardingL10n.text("Box", "Блок", language: language)
         case .ellipse:
             return OnboardingL10n.text("Oval", "Овал", language: language)
+        case .frame:
+            return OnboardingL10n.text("Frame", "Фрейм", language: language)
         case .connector:
             return OnboardingL10n.text("Connect", "Связь", language: language)
         }
@@ -296,8 +302,10 @@ private enum MacSchemeTool: String, CaseIterable, Identifiable {
         case .pan: return "hand.draw"
         case .draw: return "pencil.tip"
         case .sticky: return "note.text"
+        case .text: return "textformat"
         case .rectangle: return "rectangle"
         case .ellipse: return "oval"
+        case .frame: return "rectangle.dashed"
         case .connector: return "point.topleft.down.curvedto.point.bottomright.up"
         }
     }
@@ -323,6 +331,8 @@ private struct MacSchemeBoard: View {
     @State private var nodeDrag: ItemDragState?
     @State private var cardDrag: ItemDragState?
     @State private var shapeDrag: ItemDragState?
+    @State private var frameDrag: ItemDragState?
+    @State private var textDrag: ItemDragState?
     @State private var draftStrokeId: String?
     @State private var selectedItemId: String?
     @State private var pendingConnector: BoardHandle?
@@ -333,6 +343,10 @@ private struct MacSchemeBoard: View {
     private let stickyHeight: Double = 150
     private let shapeWidth: Double = 220
     private let shapeHeight: Double = 130
+    private let frameWidth: Double = 560
+    private let frameHeight: Double = 360
+    private let textWidth: Double = 260
+    private let textHeight: Double = 120
 
     var body: some View {
         VStack(spacing: 0) {
@@ -342,6 +356,24 @@ private struct MacSchemeBoard: View {
                 ZStack(alignment: .topLeading) {
                     Canvas { context, size in
                         drawBoard(context: context, size: size)
+                    }
+
+                    ForEach(layout.frames) { frame in
+                        MacSchemeFrameView(frame: frame)
+                            .frame(width: CGFloat(frame.width), height: CGFloat(frame.height))
+                            .overlay(selectionOverlay(id: frame.id))
+                            .position(screenPoint(for: frameCenter(frame), in: proxy.size))
+                            .highPriorityGesture(frameGesture(for: frame))
+                            .accessibilityIdentifier("scheme-frame-\(frame.id)")
+                    }
+
+                    ForEach(layout.texts) { text in
+                        MacSchemeTextBlockView(text: text)
+                            .frame(width: CGFloat(text.width), height: CGFloat(text.height))
+                            .overlay(selectionOverlay(id: text.id))
+                            .position(screenPoint(for: textCenter(text), in: proxy.size))
+                            .highPriorityGesture(textGesture(for: text))
+                            .accessibilityIdentifier("scheme-text-\(text.id)")
                     }
 
                     ForEach(positionedNodes) { node in
@@ -463,6 +495,40 @@ private struct MacSchemeBoard: View {
                 .help(t("Save Sticky", "Сохранить стикер"))
             }
 
+            if selectedFrameId != nil {
+                TextField(t("Frame title", "Название фрейма"), text: selectedFrameTitle)
+                    .textFieldStyle(.roundedBorder)
+                    .frame(width: 220)
+                    .onSubmit {
+                        onCommit(layout)
+                    }
+
+                Button {
+                    onCommit(layout)
+                } label: {
+                    Image(systemName: "checkmark")
+                }
+                .buttonStyle(WaiGhostButtonStyle())
+                .help(t("Save Frame", "Сохранить фрейм"))
+            }
+
+            if selectedTextId != nil {
+                TextField(t("Canvas text", "Текст на доске"), text: selectedTextValue)
+                    .textFieldStyle(.roundedBorder)
+                    .frame(width: 220)
+                    .onSubmit {
+                        onCommit(layout)
+                    }
+
+                Button {
+                    onCommit(layout)
+                } label: {
+                    Image(systemName: "checkmark")
+                }
+                .buttonStyle(WaiGhostButtonStyle())
+                .help(t("Save Text", "Сохранить текст"))
+            }
+
             Spacer()
         }
         .padding(.horizontal, Spacing.lg)
@@ -495,10 +561,26 @@ private struct MacSchemeBoard: View {
         return selectedItemId
     }
 
+    private var selectedFrameId: String? {
+        guard let selectedItemId,
+              layout.frames.contains(where: { $0.id == selectedItemId })
+        else { return nil }
+        return selectedItemId
+    }
+
+    private var selectedTextId: String? {
+        guard let selectedItemId,
+              layout.texts.contains(where: { $0.id == selectedItemId })
+        else { return nil }
+        return selectedItemId
+    }
+
     private var canDeleteSelected: Bool {
         guard let selectedItemId else { return false }
         return layout.cards.contains { $0.id == selectedItemId }
             || layout.shapes.contains { $0.id == selectedItemId }
+            || layout.frames.contains { $0.id == selectedItemId }
+            || layout.texts.contains { $0.id == selectedItemId }
             || layout.strokes.contains { $0.id == selectedItemId }
             || layout.connectors.contains { $0.id == selectedItemId }
     }
@@ -516,6 +598,40 @@ private struct MacSchemeBoard: View {
                       let index = layout.cards.firstIndex(where: { $0.id == selectedCardId })
                 else { return }
                 layout.cards[index].text = next
+            }
+        )
+    }
+
+    private var selectedFrameTitle: Binding<String> {
+        Binding(
+            get: {
+                guard let selectedFrameId,
+                      let frame = layout.frames.first(where: { $0.id == selectedFrameId })
+                else { return "" }
+                return frame.title
+            },
+            set: { next in
+                guard let selectedFrameId,
+                      let index = layout.frames.firstIndex(where: { $0.id == selectedFrameId })
+                else { return }
+                layout.frames[index].title = next
+            }
+        )
+    }
+
+    private var selectedTextValue: Binding<String> {
+        Binding(
+            get: {
+                guard let selectedTextId,
+                      let text = layout.texts.first(where: { $0.id == selectedTextId })
+                else { return "" }
+                return text.text
+            },
+            set: { next in
+                guard let selectedTextId,
+                      let index = layout.texts.firstIndex(where: { $0.id == selectedTextId })
+                else { return }
+                layout.texts[index].text = next
             }
         )
     }
@@ -553,7 +669,7 @@ private struct MacSchemeBoard: View {
                         y: origin.y + Double(value.translation.height),
                         zoom: origin.zoom
                     )
-                case .sticky, .rectangle, .ellipse, .connector:
+                case .sticky, .text, .rectangle, .ellipse, .frame, .connector:
                     break
                 }
             }
@@ -562,10 +678,14 @@ private struct MacSchemeBoard: View {
                 switch tool {
                 case .sticky:
                     addCard(at: world)
+                case .text:
+                    addText(at: world)
                 case .rectangle:
                     addShape(kind: "rectangle", at: world)
                 case .ellipse:
                     addShape(kind: "ellipse", at: world)
+                case .frame:
+                    addFrame(at: world)
                 case .draw:
                     draftStrokeId = nil
                     onCommit(layout)
@@ -671,6 +791,68 @@ private struct MacSchemeBoard: View {
             }
     }
 
+    private func frameGesture(for frame: SchemeCanvasFrame) -> some Gesture {
+        DragGesture(minimumDistance: tool == .connector ? 0 : 1)
+            .onChanged { value in
+                guard tool == .select else { return }
+                if frameDrag?.id != frame.id {
+                    frameDrag = ItemDragState(id: frame.id, origin: SchemePosition(x: frame.x, y: frame.y))
+                    selectedItemId = frame.id
+                }
+                let origin = frameDrag?.origin ?? SchemePosition(x: frame.x, y: frame.y)
+                updateFrame(frame.id) {
+                    $0.x = origin.x + Double(value.translation.width / CGFloat(layout.viewport.zoom))
+                    $0.y = origin.y + Double(value.translation.height / CGFloat(layout.viewport.zoom))
+                }
+            }
+            .onEnded { value in
+                if tool == .connector {
+                    handleConnectorTap(id: frame.id)
+                    return
+                }
+                guard tool == .select else { return }
+                let origin = frameDrag?.origin ?? SchemePosition(x: frame.x, y: frame.y)
+                updateFrame(frame.id) {
+                    $0.x = origin.x + Double(value.translation.width / CGFloat(layout.viewport.zoom))
+                    $0.y = origin.y + Double(value.translation.height / CGFloat(layout.viewport.zoom))
+                }
+                selectedItemId = frame.id
+                frameDrag = nil
+                onCommit(layout)
+            }
+    }
+
+    private func textGesture(for text: SchemeTextBlock) -> some Gesture {
+        DragGesture(minimumDistance: tool == .connector ? 0 : 1)
+            .onChanged { value in
+                guard tool == .select else { return }
+                if textDrag?.id != text.id {
+                    textDrag = ItemDragState(id: text.id, origin: SchemePosition(x: text.x, y: text.y))
+                    selectedItemId = text.id
+                }
+                let origin = textDrag?.origin ?? SchemePosition(x: text.x, y: text.y)
+                updateText(text.id) {
+                    $0.x = origin.x + Double(value.translation.width / CGFloat(layout.viewport.zoom))
+                    $0.y = origin.y + Double(value.translation.height / CGFloat(layout.viewport.zoom))
+                }
+            }
+            .onEnded { value in
+                if tool == .connector {
+                    handleConnectorTap(id: text.id)
+                    return
+                }
+                guard tool == .select else { return }
+                let origin = textDrag?.origin ?? SchemePosition(x: text.x, y: text.y)
+                updateText(text.id) {
+                    $0.x = origin.x + Double(value.translation.width / CGFloat(layout.viewport.zoom))
+                    $0.y = origin.y + Double(value.translation.height / CGFloat(layout.viewport.zoom))
+                }
+                selectedItemId = text.id
+                textDrag = nil
+                onCommit(layout)
+            }
+    }
+
     private func drawBoard(context: GraphicsContext, size: CGSize) {
         drawProjectionEdges(context: context, size: size)
         drawConnectors(context: context, size: size)
@@ -764,6 +946,35 @@ private struct MacSchemeBoard: View {
         onCommit(layout)
     }
 
+    private func addFrame(at point: SchemePosition) {
+        let frame = SchemeCanvasFrame(
+            id: "frame:\(UUID().uuidString)",
+            x: point.x - frameWidth / 2,
+            y: point.y - frameHeight / 2,
+            width: frameWidth,
+            height: frameHeight,
+            title: t("Frame", "Фрейм")
+        )
+        layout.frames.append(frame)
+        selectedItemId = frame.id
+        onCommit(layout)
+    }
+
+    private func addText(at point: SchemePosition) {
+        let text = SchemeTextBlock(
+            id: "text:\(UUID().uuidString)",
+            x: point.x - textWidth / 2,
+            y: point.y - textHeight / 2,
+            width: textWidth,
+            height: textHeight,
+            text: t("Text", "Текст"),
+            fontSize: 22
+        )
+        layout.texts.append(text)
+        selectedItemId = text.id
+        onCommit(layout)
+    }
+
     private func appendPoint(_ point: SchemePosition, toStroke strokeId: String) {
         guard let index = layout.strokes.firstIndex(where: { $0.id == strokeId }) else { return }
         layout.strokes[index].points.append(point)
@@ -792,6 +1003,8 @@ private struct MacSchemeBoard: View {
         guard let selectedItemId, canDeleteSelected else { return }
         layout.cards.removeAll { $0.id == selectedItemId }
         layout.shapes.removeAll { $0.id == selectedItemId }
+        layout.frames.removeAll { $0.id == selectedItemId }
+        layout.texts.removeAll { $0.id == selectedItemId }
         layout.strokes.removeAll { $0.id == selectedItemId }
         layout.connectors.removeAll {
             $0.id == selectedItemId || $0.sourceId == selectedItemId || $0.targetId == selectedItemId
@@ -810,6 +1023,16 @@ private struct MacSchemeBoard: View {
         mutate(&layout.shapes[index])
     }
 
+    private func updateFrame(_ id: String, mutate: (inout SchemeCanvasFrame) -> Void) {
+        guard let index = layout.frames.firstIndex(where: { $0.id == id }) else { return }
+        mutate(&layout.frames[index])
+    }
+
+    private func updateText(_ id: String, mutate: (inout SchemeTextBlock) -> Void) {
+        guard let index = layout.texts.firstIndex(where: { $0.id == id }) else { return }
+        mutate(&layout.texts[index])
+    }
+
     private func nodeCenter(_ node: SchemeNode) -> SchemePosition {
         SchemePosition(
             x: node.position.x + Double(nodeWidth / 2),
@@ -823,6 +1046,14 @@ private struct MacSchemeBoard: View {
 
     private func shapeCenter(_ shape: SchemeCanvasShape) -> SchemePosition {
         SchemePosition(x: shape.x + shape.width / 2, y: shape.y + shape.height / 2)
+    }
+
+    private func frameCenter(_ frame: SchemeCanvasFrame) -> SchemePosition {
+        SchemePosition(x: frame.x + frame.width / 2, y: frame.y + frame.height / 2)
+    }
+
+    private func textCenter(_ text: SchemeTextBlock) -> SchemePosition {
+        SchemePosition(x: text.x + text.width / 2, y: text.y + text.height / 2)
     }
 
     private func connectorPoints(_ connector: SchemeConnector) -> [SchemePosition] {
@@ -843,6 +1074,12 @@ private struct MacSchemeBoard: View {
         }
         if let shape = layout.shapes.first(where: { $0.id == id }) {
             return shapeCenter(shape)
+        }
+        if let frame = layout.frames.first(where: { $0.id == id }) {
+            return frameCenter(frame)
+        }
+        if let text = layout.texts.first(where: { $0.id == id }) {
+            return textCenter(text)
         }
         return nil
     }
@@ -897,6 +1134,47 @@ private struct MacSchemeStickyCard: View {
             )
             .clipShape(RoundedRectangle(cornerRadius: 8))
             .shadow(color: Color.black.opacity(0.08), radius: 8, y: 3)
+    }
+}
+
+private struct MacSchemeFrameView: View {
+    let frame: SchemeCanvasFrame
+
+    var body: some View {
+        ZStack(alignment: .topLeading) {
+            RoundedRectangle(cornerRadius: 8)
+                .fill(frame.fill == "transparent" ? Color.clear : schemeColor(frame.fill, defaultColor: Color.clear))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8)
+                        .stroke(
+                            schemeColor(frame.color, defaultColor: Palette.accent),
+                            style: StrokeStyle(lineWidth: 2, dash: [8, 6])
+                        )
+                )
+
+            Text(frame.title)
+                .font(Typography.label)
+                .foregroundStyle(Palette.textPrimary)
+                .lineLimit(1)
+                .padding(.horizontal, Spacing.sm)
+                .padding(.vertical, Spacing.xs)
+                .background(Color(nsColor: .textBackgroundColor).opacity(0.92))
+                .clipShape(RoundedRectangle(cornerRadius: 6))
+                .padding(Spacing.sm)
+        }
+    }
+}
+
+private struct MacSchemeTextBlockView: View {
+    let text: SchemeTextBlock
+
+    var body: some View {
+        Text(text.text)
+            .font(.system(size: text.fontSize, weight: .regular, design: .default))
+            .foregroundStyle(schemeColor(text.color, defaultColor: Palette.textPrimary))
+            .lineLimit(6)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .padding(Spacing.xs)
     }
 }
 

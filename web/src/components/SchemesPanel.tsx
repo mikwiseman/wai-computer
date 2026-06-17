@@ -12,6 +12,7 @@ import {
 import type {
   Scheme,
   SchemeCanvasCard,
+  SchemeCanvasFrame,
   SchemeCanvasLayout,
   SchemeCanvasShape,
   SchemeConnector,
@@ -19,12 +20,22 @@ import type {
   SchemePosition,
   SchemeShapeKind,
   SchemeStroke,
+  SchemeTextBlock,
   SchemeViewport,
 } from "@/lib/types";
 
 type Locale = "en" | "ru";
-type Tool = "select" | "pan" | "draw" | "sticky" | "rectangle" | "ellipse" | "connector";
-type BoardItemKind = "node" | "card" | "shape";
+type Tool =
+  | "select"
+  | "pan"
+  | "draw"
+  | "sticky"
+  | "text"
+  | "rectangle"
+  | "ellipse"
+  | "frame"
+  | "connector";
+type BoardItemKind = "node" | "card" | "shape" | "frame" | "text";
 
 interface SchemesPanelProps {
   locale?: Locale;
@@ -51,6 +62,18 @@ type DragState =
       origin: SchemePosition;
     }
   | {
+      type: "frame";
+      frameId: string;
+      start: SchemePosition;
+      origin: SchemePosition;
+    }
+  | {
+      type: "text";
+      textId: string;
+      start: SchemePosition;
+      origin: SchemePosition;
+    }
+  | {
       type: "pan";
       startClientX: number;
       startClientY: number;
@@ -66,7 +89,7 @@ interface BoardItemHandle {
   kind: BoardItemKind;
 }
 
-const SCHEME_LAYOUT_VERSION = 2 as const;
+const SCHEME_LAYOUT_VERSION = 3 as const;
 const DEFAULT_VIEWPORT: SchemeViewport = { x: 0, y: 0, zoom: 1 };
 const MIN_ZOOM = 0.25;
 const MAX_ZOOM = 2.8;
@@ -76,13 +99,19 @@ const STICKY_WIDTH = 220;
 const STICKY_HEIGHT = 150;
 const SHAPE_WIDTH = 220;
 const SHAPE_HEIGHT = 130;
+const FRAME_WIDTH = 560;
+const FRAME_HEIGHT = 360;
+const TEXT_WIDTH = 260;
+const TEXT_HEIGHT = 120;
 const TOOLS: Array<{ id: Tool; label: string; ru: string }> = [
   { id: "select", label: "Select", ru: "Выбор" },
   { id: "pan", label: "Hand", ru: "Рука" },
   { id: "draw", label: "Draw", ru: "Рисовать" },
   { id: "sticky", label: "Sticky", ru: "Стикер" },
+  { id: "text", label: "Text", ru: "Текст" },
   { id: "rectangle", label: "Box", ru: "Блок" },
   { id: "ellipse", label: "Oval", ru: "Овал" },
+  { id: "frame", label: "Frame", ru: "Фрейм" },
   { id: "connector", label: "Connect", ru: "Связь" },
 ];
 
@@ -141,6 +170,8 @@ function blankLayout(): SchemeCanvasLayout {
     strokes: [],
     cards: [],
     shapes: [],
+    frames: [],
+    texts: [],
     connectors: [],
   };
 }
@@ -164,11 +195,14 @@ function layoutForScheme(scheme: Scheme | null): SchemeCanvasLayout {
   return {
     ...blankLayout(),
     ...raw,
+    version: SCHEME_LAYOUT_VERSION,
     viewport: { ...DEFAULT_VIEWPORT, ...(raw.viewport ?? {}) },
     node_positions: raw.node_positions ?? {},
     strokes: raw.strokes ?? [],
     cards: raw.cards ?? [],
     shapes: raw.shapes ?? [],
+    frames: raw.frames ?? [],
+    texts: raw.texts ?? [],
     connectors: raw.connectors ?? [],
   };
 }
@@ -210,6 +244,14 @@ function itemCenter(
   const shape = layout.shapes.find((candidate) => candidate.id === itemId);
   if (shape) {
     return { x: shape.x + shape.width / 2, y: shape.y + shape.height / 2 };
+  }
+  const frame = layout.frames.find((candidate) => candidate.id === itemId);
+  if (frame) {
+    return { x: frame.x + frame.width / 2, y: frame.y + frame.height / 2 };
+  }
+  const text = layout.texts.find((candidate) => candidate.id === itemId);
+  if (text) {
+    return { x: text.x + text.width / 2, y: text.y + text.height / 2 };
   }
   return null;
 }
@@ -318,10 +360,20 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
     return (
       layout.cards.some((card) => card.id === selectedItem) ||
       layout.shapes.some((shape) => shape.id === selectedItem) ||
+      layout.frames.some((frame) => frame.id === selectedItem) ||
+      layout.texts.some((text) => text.id === selectedItem) ||
       layout.strokes.some((stroke) => stroke.id === selectedItem) ||
       layout.connectors.some((connector) => connector.id === selectedItem)
     );
-  }, [layout.cards, layout.connectors, layout.shapes, layout.strokes, selectedItem]);
+  }, [
+    layout.cards,
+    layout.connectors,
+    layout.frames,
+    layout.shapes,
+    layout.strokes,
+    layout.texts,
+    selectedItem,
+  ]);
 
   const commitLayout = useCallback(
     async (nextLayout: SchemeCanvasLayout) => {
@@ -456,6 +508,48 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
     [commitLayout],
   );
 
+  const addFrame = useCallback(
+    (point: SchemePosition) => {
+      const frame: SchemeCanvasFrame = {
+        id: createId("frame"),
+        x: point.x - FRAME_WIDTH / 2,
+        y: point.y - FRAME_HEIGHT / 2,
+        width: FRAME_WIDTH,
+        height: FRAME_HEIGHT,
+        title: locale === "ru" ? "Фрейм" : "Frame",
+        color: "#0f766e",
+        fill: "transparent",
+      };
+      const nextLayout = { ...layoutRef.current, frames: [...layoutRef.current.frames, frame] };
+      setSelectedItem(frame.id);
+      setLayout(nextLayout);
+      layoutRef.current = nextLayout;
+      void commitLayout(nextLayout);
+    },
+    [commitLayout, locale],
+  );
+
+  const addText = useCallback(
+    (point: SchemePosition) => {
+      const text: SchemeTextBlock = {
+        id: createId("text"),
+        x: point.x - TEXT_WIDTH / 2,
+        y: point.y - TEXT_HEIGHT / 2,
+        width: TEXT_WIDTH,
+        height: TEXT_HEIGHT,
+        text: locale === "ru" ? "Текст" : "Text",
+        color: "#111827",
+        font_size: 22,
+      };
+      const nextLayout = { ...layoutRef.current, texts: [...layoutRef.current.texts, text] };
+      setSelectedItem(text.id);
+      setLayout(nextLayout);
+      layoutRef.current = nextLayout;
+      void commitLayout(nextLayout);
+    },
+    [commitLayout, locale],
+  );
+
   const addConnector = useCallback(
     (source: BoardItemHandle, target: BoardItemHandle) => {
       if (source.id === target.id) return;
@@ -500,8 +594,12 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
         dragRef.current = { type: "node", nodeId: item.id, start, origin: position };
       } else if (item.kind === "card") {
         dragRef.current = { type: "card", cardId: item.id, start, origin: position };
-      } else {
+      } else if (item.kind === "shape") {
         dragRef.current = { type: "shape", shapeId: item.id, start, origin: position };
+      } else if (item.kind === "frame") {
+        dragRef.current = { type: "frame", frameId: item.id, start, origin: position };
+      } else {
+        dragRef.current = { type: "text", textId: item.id, start, origin: position };
       }
     },
     [addConnector, pendingConnector, pointFromEvent, tool],
@@ -534,8 +632,16 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
         addCard(point);
         return;
       }
+      if (tool === "text") {
+        addText(point);
+        return;
+      }
       if (tool === "rectangle" || tool === "ellipse") {
         addShape(point, tool);
+        return;
+      }
+      if (tool === "frame") {
+        addFrame(point);
         return;
       }
       if (tool === "pan" || tool === "select") {
@@ -547,7 +653,7 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
         };
       }
     },
-    [addCard, addShape, pointFromEvent, selected, tool],
+    [addCard, addFrame, addShape, addText, pointFromEvent, selected, tool],
   );
 
   const handlePointerMove = useCallback(
@@ -603,6 +709,24 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
               : shape,
           ),
         }));
+      } else if (drag.type === "frame") {
+        setLocalLayout((current) => ({
+          ...current,
+          frames: current.frames.map((frame) =>
+            frame.id === drag.frameId
+              ? { ...frame, x: drag.origin.x + dx, y: drag.origin.y + dy }
+              : frame,
+          ),
+        }));
+      } else if (drag.type === "text") {
+        setLocalLayout((current) => ({
+          ...current,
+          texts: current.texts.map((text) =>
+            text.id === drag.textId
+              ? { ...text, x: drag.origin.x + dx, y: drag.origin.y + dy }
+              : text,
+          ),
+        }));
       }
     },
     [pointFromEvent, setLocalLayout, updateViewport],
@@ -612,7 +736,15 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
     if (!dragRef.current) return;
     const drag = dragRef.current;
     dragRef.current = null;
-    if (drag.type === "pan" || drag.type === "stroke" || drag.type === "node" || drag.type === "card" || drag.type === "shape") {
+    if (
+      drag.type === "pan" ||
+      drag.type === "stroke" ||
+      drag.type === "node" ||
+      drag.type === "card" ||
+      drag.type === "shape" ||
+      drag.type === "frame" ||
+      drag.type === "text"
+    ) {
       void commitLayout(layoutRef.current);
     }
   }, [commitLayout]);
@@ -653,12 +785,28 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
     }));
   }, [setLocalLayout]);
 
+  const handleFrameTitleChange = useCallback((frameId: string, title: string) => {
+    setLocalLayout((current) => ({
+      ...current,
+      frames: current.frames.map((frame) => (frame.id === frameId ? { ...frame, title } : frame)),
+    }));
+  }, [setLocalLayout]);
+
+  const handleTextBlockChange = useCallback((textId: string, text: string) => {
+    setLocalLayout((current) => ({
+      ...current,
+      texts: current.texts.map((block) => (block.id === textId ? { ...block, text } : block)),
+    }));
+  }, [setLocalLayout]);
+
   const deleteSelected = useCallback(() => {
     if (!selectedItem || !canDeleteSelected) return;
     const nextLayout = {
       ...layoutRef.current,
       cards: layoutRef.current.cards.filter((card) => card.id !== selectedItem),
       shapes: layoutRef.current.shapes.filter((shape) => shape.id !== selectedItem),
+      frames: layoutRef.current.frames.filter((frame) => frame.id !== selectedItem),
+      texts: layoutRef.current.texts.filter((text) => text.id !== selectedItem),
       strokes: layoutRef.current.strokes.filter((stroke) => stroke.id !== selectedItem),
       connectors: layoutRef.current.connectors.filter(
         (connector) =>
@@ -858,6 +1006,60 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
                     />
                   ))}
                 </svg>
+
+                {layout.frames.map((frame) => (
+                  <div
+                    key={frame.id}
+                    data-scheme-board-item="true"
+                    className={`scheme-frame ${selectedItem === frame.id ? "scheme-frame--selected" : ""}`}
+                    style={{
+                      left: frame.x,
+                      top: frame.y,
+                      width: frame.width,
+                      height: frame.height,
+                      borderColor: frame.color,
+                      backgroundColor: frame.fill === "transparent" ? undefined : frame.fill,
+                    }}
+                    onPointerDown={(event) =>
+                      handleItemPointerDown(event, { id: frame.id, kind: "frame" }, { x: frame.x, y: frame.y })
+                    }
+                  >
+                    <input
+                      value={frame.title}
+                      aria-label="Frame title"
+                      onPointerDown={(event) => event.stopPropagation()}
+                      onChange={(event) => handleFrameTitleChange(frame.id, event.target.value)}
+                      onBlur={() => void commitLayout(layoutRef.current)}
+                    />
+                  </div>
+                ))}
+
+                {layout.texts.map((text) => (
+                  <div
+                    key={text.id}
+                    data-scheme-board-item="true"
+                    className={`scheme-text ${selectedItem === text.id ? "scheme-text--selected" : ""}`}
+                    style={{
+                      left: text.x,
+                      top: text.y,
+                      width: text.width,
+                      height: text.height,
+                      color: text.color,
+                      fontSize: text.font_size,
+                    }}
+                    onPointerDown={(event) =>
+                      handleItemPointerDown(event, { id: text.id, kind: "text" }, { x: text.x, y: text.y })
+                    }
+                  >
+                    <textarea
+                      value={text.text}
+                      aria-label="Canvas text"
+                      onPointerDown={(event) => event.stopPropagation()}
+                      onChange={(event) => handleTextBlockChange(text.id, event.target.value)}
+                      onBlur={() => void commitLayout(layoutRef.current)}
+                    />
+                  </div>
+                ))}
 
                 {positionedNodes.map((node) => (
                   <button
