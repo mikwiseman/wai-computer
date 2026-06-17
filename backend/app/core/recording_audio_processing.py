@@ -80,6 +80,10 @@ NO_SPEECH_PLACEHOLDERS = {
     "typing",
 }
 EMPTY_TRANSCRIPT_FAILURE_CODE = "transcript_empty"
+PROVIDER_REJECTED_AUDIO_FAILURE_CODE = "provider_rejected_audio"
+PROVIDER_AUTH_FAILURE_CODE = "provider_auth_failed"
+PROVIDER_AUDIO_TOO_LARGE_FAILURE_CODE = "provider_audio_too_large"
+PROVIDER_REQUEST_FAILURE_CODE = "provider_request_failed"
 MIN_FILE_STT_AUDIO_SECONDS = 0.1
 AUDIO_DURATION_PROBE_MAX_BYTES = 30 * 1024 * 1024
 AUDIO_DURATION_PROBE_TIMEOUT_SECONDS = 10
@@ -434,6 +438,84 @@ def _provider_reported_audio_too_short(exc: Exception) -> bool:
     return any(
         detail.get(key) == "audio_too_short"
         for key in ("code", "type", "status")
+    )
+
+
+def _terminal_provider_failure_details(
+    exc: Exception,
+) -> tuple[str, str] | None:
+    if not isinstance(exc, httpx.HTTPStatusError):
+        return None
+    status_code = exc.response.status_code
+    if is_retryable_exception(exc):
+        return None
+    if status_code == 413:
+        return (
+            PROVIDER_AUDIO_TOO_LARGE_FAILURE_CODE,
+            "The transcription provider rejected this audio because it is too large.",
+        )
+    if status_code in {401, 403}:
+        return (
+            PROVIDER_AUTH_FAILURE_CODE,
+            "Transcription is temporarily unavailable. Please try again later.",
+        )
+    if status_code in {400, 415, 422}:
+        return (
+            PROVIDER_REJECTED_AUDIO_FAILURE_CODE,
+            "The transcription provider rejected this audio file.",
+        )
+    if 400 <= status_code < 500:
+        return (
+            PROVIDER_REQUEST_FAILURE_CODE,
+            "The transcription provider rejected this transcription request.",
+        )
+    return None
+
+
+async def _mark_terminal_provider_failure(
+    db: AsyncSession,
+    *,
+    recording_id: UUID,
+    exc: httpx.HTTPStatusError,
+    failure_code: str,
+    failure_message: str,
+    content_type: str,
+    staged_size_bytes: int | None,
+    audio_duration_seconds: float | None,
+    client_duration_seconds: int | None,
+) -> None:
+    provider_code = provider_error_code(exc)
+    provider_fingerprint = fingerprint_text(exc.response.text)
+    logger.warning(
+        "recording provider rejected audio recording_id=%s status_code=%s "
+        "provider_error_code=%s provider_error_fingerprint=%s content_type=%s",
+        recording_id,
+        exc.response.status_code,
+        provider_code,
+        provider_fingerprint,
+        content_type,
+    )
+    capture_sentry_anomaly(
+        "recording.processing.provider_rejected",
+        "Recording provider rejected uploaded audio",
+        category="recording",
+        extras={
+            "recording_id": str(recording_id),
+            "provider_status_code": exc.response.status_code,
+            "provider_error_code": provider_code,
+            "provider_error_fingerprint": provider_fingerprint,
+            "content_type": content_type,
+            "staged_size_bytes": staged_size_bytes,
+            "audio_duration_seconds": audio_duration_seconds,
+            "client_duration_seconds": client_duration_seconds,
+        },
+        level="warning",
+    )
+    await mark_recording_processing_failed(
+        db,
+        recording_id=recording_id,
+        failure_code=failure_code,
+        failure_message=failure_message,
     )
 
 
@@ -1174,6 +1256,22 @@ async def process_staged_recording_upload(
                     "staged_size_bytes": staged_size_bytes,
                 },
             )
+            return
+        terminal_provider_failure = _terminal_provider_failure_details(exc)
+        if terminal_provider_failure is not None:
+            failure_code, failure_message = terminal_provider_failure
+            await _mark_terminal_provider_failure(
+                db,
+                recording_id=recording_id,
+                exc=exc,
+                failure_code=failure_code,
+                failure_message=failure_message,
+                content_type=content_type,
+                staged_size_bytes=staged_size_bytes,
+                audio_duration_seconds=audio_duration_seconds,
+                client_duration_seconds=client_duration_seconds,
+            )
+            delete_staged_file(staged_path)
             return
         if is_retryable_exception(exc):
             logger.warning(

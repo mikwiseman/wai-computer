@@ -134,6 +134,33 @@ def test_provider_reported_audio_too_short_false_branches() -> None:
         assert not recording_audio_processing._provider_reported_audio_too_short(error)
 
 
+def test_terminal_provider_failure_details_classifies_only_non_retryable_http_4xx() -> None:
+    def error_for(status_code: int) -> httpx.HTTPStatusError:
+        request = httpx.Request("POST", "https://api.deepgram.com/v1/listen")
+        response = httpx.Response(status_code, json={"err_code": "provider_error"}, request=request)
+        return httpx.HTTPStatusError("provider error", request=request, response=response)
+
+    assert recording_audio_processing._terminal_provider_failure_details(RuntimeError("x")) is None
+    assert recording_audio_processing._terminal_provider_failure_details(error_for(429)) is None
+    assert recording_audio_processing._terminal_provider_failure_details(error_for(500)) is None
+    assert recording_audio_processing._terminal_provider_failure_details(error_for(413)) == (
+        "provider_audio_too_large",
+        "The transcription provider rejected this audio because it is too large.",
+    )
+    assert recording_audio_processing._terminal_provider_failure_details(error_for(401)) == (
+        "provider_auth_failed",
+        "Transcription is temporarily unavailable. Please try again later.",
+    )
+    assert recording_audio_processing._terminal_provider_failure_details(error_for(422)) == (
+        "provider_rejected_audio",
+        "The transcription provider rejected this audio file.",
+    )
+    assert recording_audio_processing._terminal_provider_failure_details(error_for(404)) == (
+        "provider_request_failed",
+        "The transcription provider rejected this transcription request.",
+    )
+
+
 @pytest.mark.asyncio
 async def test_mark_recording_processing_failed_missing_recording_noops(
     db_session: AsyncSession,
@@ -555,6 +582,102 @@ async def test_process_staged_recording_upload_marks_failed_on_non_retryable_err
     assert recording.status == RecordingStatus.FAILED.value
     assert recording.failure_code == "processing_failed"
     assert not staged_path.exists()
+
+
+@pytest.mark.asyncio
+async def test_process_staged_recording_upload_marks_deepgram_400_terminal(
+    db_session: AsyncSession,
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user = User(email="terminal-provider-400@example.com", password_hash="x")
+    db_session.add(user)
+    await db_session.flush()
+    recording = Recording(
+        user_id=user.id,
+        title="Provider rejected audio",
+        type="meeting",
+        status=RecordingStatus.PROCESSING.value,
+        uploaded_at=datetime.now(timezone.utc),
+        language="multi",
+    )
+    db_session.add(recording)
+    await db_session.commit()
+
+    staged_path = tmp_path / "provider-rejected.m4a"
+    staged_path.write_bytes(b"bad-media")
+    request = httpx.Request("POST", "https://api.deepgram.com/v1/listen")
+    response = httpx.Response(
+        400,
+        json={
+            "err_code": "Bad Request",
+            "err_msg": "Bad Request: failed to process audio: corrupt or unsupported data",
+            "request_id": "dg-request-123",
+        },
+        request=request,
+    )
+    error = httpx.HTTPStatusError(
+        "Client error '400 Bad Request'",
+        request=request,
+        response=response,
+    )
+    sentry_anomalies: list[dict[str, object]] = []
+    monkeypatch.setattr(
+        "app.core.recording_audio_processing._ffprobe_duration_seconds",
+        lambda *_args, **_kwargs: 12.0,
+    )
+    monkeypatch.setattr(
+        "app.core.recording_audio_processing.transcribe_audio_file",
+        AsyncMock(side_effect=error),
+    )
+    monkeypatch.setattr(
+        "app.core.recording_audio_processing.capture_sentry_anomaly",
+        lambda alert_code, message, *, category, extras, level="warning": sentry_anomalies.append(
+            {
+                "alert_code": alert_code,
+                "message": message,
+                "category": category,
+                "extras": extras,
+                "level": level,
+            }
+        ),
+    )
+
+    await process_staged_recording_upload(
+        db_session,
+        recording_id=recording.id,
+        user_id=user.id,
+        staged_path=staged_path,
+        content_type="audio/mp4",
+        user_default_language="en",
+        client_duration_seconds=12,
+        staged_size_bytes=staged_path.stat().st_size,
+    )
+
+    await db_session.refresh(recording)
+    assert recording.status == RecordingStatus.FAILED.value
+    assert recording.failure_code == "provider_rejected_audio"
+    assert recording.failure_message == "The transcription provider rejected this audio file."
+    assert not staged_path.exists()
+    assert len(sentry_anomalies) == 1
+    anomaly = sentry_anomalies[0]
+    assert anomaly["alert_code"] == "recording.processing.provider_rejected"
+    assert anomaly["message"] == "Recording provider rejected uploaded audio"
+    assert anomaly["category"] == "recording"
+    assert anomaly["level"] == "warning"
+    extras = anomaly["extras"]
+    assert isinstance(extras["provider_error_fingerprint"], str)
+    assert len(extras["provider_error_fingerprint"]) == 12
+    assert extras == {
+        "recording_id": str(recording.id),
+        "provider_status_code": 400,
+        "provider_error_code": "Bad Request",
+        "provider_error_fingerprint": extras["provider_error_fingerprint"],
+        "content_type": "audio/mp4",
+        "staged_size_bytes": 9,
+        "audio_duration_seconds": 12.0,
+        "client_duration_seconds": 12,
+    }
 
 
 @pytest.mark.asyncio

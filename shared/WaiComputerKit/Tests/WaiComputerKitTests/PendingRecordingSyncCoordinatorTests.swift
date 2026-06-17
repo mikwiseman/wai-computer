@@ -660,6 +660,20 @@ final class PendingRecordingSyncCoordinatorTests: XCTestCase {
     }
 
     func testServerProcessingRetryableFailureAllowsNextPassToReuploadAudio() async throws {
+        try await assertServerProcessingRetryableFailureAllowsNextPassToReuploadAudio(
+            failureCode: "processing_failed"
+        )
+    }
+
+    func testServerProcessingInterruptedFailureAllowsNextPassToReuploadAudio() async throws {
+        try await assertServerProcessingRetryableFailureAllowsNextPassToReuploadAudio(
+            failureCode: "processing_interrupted"
+        )
+    }
+
+    private func assertServerProcessingRetryableFailureAllowsNextPassToReuploadAudio(
+        failureCode: String
+    ) async throws {
         let recordingId = "pending-sync-server-processing-failed-\(UUID().uuidString)"
         defer { try? RecordingBackupStore.removeRecording(recordingId: recordingId) }
 
@@ -710,7 +724,7 @@ final class PendingRecordingSyncCoordinatorTests: XCTestCase {
                     self.responsePayload(
                         recordingId: recordingId,
                         status: "failed",
-                        failureCode: "processing_failed",
+                        failureCode: failureCode,
                         failureMessage: "Processing failed temporarily."
                     )
                 )
@@ -769,6 +783,7 @@ final class PendingRecordingSyncCoordinatorTests: XCTestCase {
                 self.responsePayload(
                     recordingId: recordingId,
                     status: "failed",
+                    failureCode: "provider_rejected_audio",
                     failureMessage: "Could not read the uploaded audio file."
                 )
             )
@@ -778,7 +793,7 @@ final class PendingRecordingSyncCoordinatorTests: XCTestCase {
         try await waitForManifestState(.permanentFailure, recordingId: recordingId)
 
         let manifest = try XCTUnwrap(RecordingBackupStore.manifest(recordingId: recordingId))
-        XCTAssertEqual(manifest.lastFailureCode, "permanent_failure")
+        XCTAssertEqual(manifest.lastFailureCode, "provider_rejected_audio")
         XCTAssertEqual(manifest.lastErrorMessage, "Could not read the uploaded audio file.")
 
         await PendingRecordingSyncCoordinator.shared.scheduleSync(using: client)

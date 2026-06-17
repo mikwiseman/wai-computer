@@ -66,7 +66,7 @@ def provider_error_code(error: httpx.HTTPStatusError) -> str | None:
                 value = container.get(key)
                 if isinstance(value, str) and value.strip():
                     return value.strip()
-    for key in ("code", "type", "status"):
+    for key in ("err_code", "category", "code", "type", "status"):
         value = payload.get(key)
         if isinstance(value, str) and value.strip():
             return value.strip()

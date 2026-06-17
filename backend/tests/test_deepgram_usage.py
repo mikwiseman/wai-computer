@@ -148,6 +148,18 @@ def test_provider_error_code_reads_nested_error_container() -> None:
     assert provider_error_code(error) == "rate_limit"
 
 
+def test_provider_error_code_reads_deepgram_error_shape() -> None:
+    error = _provider_error(
+        400,
+        json={
+            "err_code": "Bad Request",
+            "err_msg": "Bad Request: failed to process audio: corrupt or unsupported data",
+            "request_id": "dg-request-123",
+        },
+    )
+    assert provider_error_code(error) == "Bad Request"
+
+
 def test_provider_error_code_falls_back_to_top_level_keys() -> None:
     error = _provider_error(402, json={"error": {"code": "   "}, "type": " payment_required "})
     assert provider_error_code(error) == "payment_required"

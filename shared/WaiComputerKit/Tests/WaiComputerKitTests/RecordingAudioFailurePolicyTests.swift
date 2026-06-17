@@ -6,6 +6,7 @@ final class RecordingAudioFailurePolicyTests: XCTestCase {
         for code in [
             "processing_enqueue_failed",
             "processing_failed",
+            "processing_interrupted",
             "processing_retry_exhausted",
             "processing_timeout",
             "provider_unavailable",
@@ -18,7 +19,17 @@ final class RecordingAudioFailurePolicyTests: XCTestCase {
             XCTAssertTrue(RecordingAudioFailurePolicy.isRetryableServerFailureCode(code))
         }
 
-        for code in [nil, "", " ", "transcript_empty", "file_too_large"] {
+        for code in [
+            nil,
+            "",
+            " ",
+            "transcript_empty",
+            "file_too_large",
+            "provider_rejected_audio",
+            "provider_audio_too_large",
+            "provider_auth_failed",
+            "provider_request_failed",
+        ] {
             XCTAssertFalse(RecordingAudioFailurePolicy.isRetryableServerFailureCode(code))
         }
     }

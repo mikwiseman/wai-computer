@@ -22,6 +22,24 @@ def test_provider_error_code_reads_openai_error_shape():
     assert _provider_error_code(error) == "invalid_audio"
 
 
+def test_provider_error_code_reads_deepgram_error_shape():
+    from app.core.transcription import _provider_error_code
+
+    request = httpx.Request("POST", "https://api.deepgram.com/v1/listen")
+    response = httpx.Response(
+        400,
+        json={
+            "err_code": "Bad Request",
+            "err_msg": "Bad Request: failed to process audio: corrupt or unsupported data",
+            "request_id": "dg-request-123",
+        },
+        request=request,
+    )
+    error = httpx.HTTPStatusError("bad request", request=request, response=response)
+
+    assert _provider_error_code(error) == "Bad Request"
+
+
 @pytest.mark.asyncio
 async def test_transcription_dispatches_to_deepgram_file_stt():
     with patch(

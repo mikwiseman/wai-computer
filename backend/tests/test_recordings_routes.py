@@ -1396,7 +1396,7 @@ async def test_upload_size_mismatch_can_be_retried(
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("failure_code", ["processing_failed"])
+@pytest.mark.parametrize("failure_code", ["processing_failed", "processing_interrupted"])
 async def test_failed_audio_upload_can_be_retried(
     client: AsyncClient,
     auth_headers: dict,
@@ -1446,6 +1446,51 @@ async def test_failed_audio_upload_can_be_retried(
     assert refreshed.status == RecordingStatus.PROCESSING.value
     assert refreshed.failure_code is None
     assert refreshed.failure_message is None
+
+
+@pytest.mark.asyncio
+async def test_provider_rejected_audio_upload_cannot_be_retried(
+    client: AsyncClient,
+    auth_headers: dict,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    recording = await _create_recording(client, auth_headers, title=None)
+    recording_id = UUID(recording["id"])
+    stored = (
+        await db_session.execute(select(Recording).where(Recording.id == recording_id))
+    ).scalar_one()
+    stored.status = RecordingStatus.FAILED.value
+    stored.uploaded_at = datetime.now(timezone.utc)
+    stored.failure_code = "provider_rejected_audio"
+    stored.failure_message = "The transcription provider rejected this audio file."
+    await db_session.commit()
+
+    enqueue_processing = AsyncMock()
+    monkeypatch.setattr(
+        "app.api.routes.recordings.enqueue_recording_audio_processing",
+        enqueue_processing,
+    )
+
+    retry = await client.post(
+        f"/api/recordings/{recording['id']}/upload",
+        headers=auth_headers,
+        data={"client_duration_seconds": "103", "client_file_size_bytes": "13"},
+        files={"file": ("meeting.mp3", b"fake-mp3-data", "audio/mpeg")},
+    )
+
+    assert retry.status_code == 200
+    payload = retry.json()
+    assert payload["status"] == "failed"
+    assert payload["failure_code"] == "provider_rejected_audio"
+    assert payload["failure_message"] == "The transcription provider rejected this audio file."
+    enqueue_processing.assert_not_awaited()
+
+    refreshed = (
+        await db_session.execute(select(Recording).where(Recording.id == recording_id))
+    ).scalar_one()
+    assert refreshed.status == RecordingStatus.FAILED.value
+    assert refreshed.failure_code == "provider_rejected_audio"
 
 
 @pytest.mark.asyncio

@@ -4,6 +4,7 @@ public enum RecordingAudioFailurePolicy {
     public static let retryableServerFailureCodes: Set<String> = [
         "processing_enqueue_failed",
         "processing_failed",
+        "processing_interrupted",
         "processing_retry_exhausted",
         "processing_timeout",
         "provider_unavailable",
