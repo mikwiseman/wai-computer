@@ -108,6 +108,8 @@ async def test_normalize_audio_upload_for_transcription_converts_m4a_to_flac(
         calls.append((args, kwargs))
         input_path = args[args.index("-i") + 1]
         assert input_path.endswith(".m4a")
+        with open(input_path, "rb") as source_file:
+            assert source_file.read() == b"m4a-audio"
         return recording_audio_processing.subprocess.CompletedProcess(
             args=args,
             returncode=0,
@@ -135,6 +137,64 @@ async def test_normalize_audio_upload_for_transcription_converts_m4a_to_flac(
     assert kwargs["capture_output"] is True
     assert kwargs["check"] is False
     assert kwargs["timeout"] == recording_audio_processing.AUDIO_NORMALIZATION_TIMEOUT_SECONDS
+
+
+@pytest.mark.asyncio
+async def test_normalize_audio_upload_for_transcription_skips_wav(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def run(*_args, **_kwargs):
+        raise AssertionError("ffmpeg should not run for WAV uploads")
+
+    monkeypatch.setattr(recording_audio_processing.subprocess, "run", run)
+
+    audio_data, content_type = (
+        await recording_audio_processing._normalize_audio_upload_for_transcription(
+            b"wav-audio",
+            content_type="audio/wav",
+        )
+    )
+
+    assert audio_data == b"wav-audio"
+    assert content_type == "audio/wav"
+
+
+@pytest.mark.asyncio
+async def test_normalize_audio_upload_for_transcription_raises_on_ffmpeg_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        recording_audio_processing.subprocess,
+        "run",
+        lambda args, **_kwargs: recording_audio_processing.subprocess.CompletedProcess(
+            args=args,
+            returncode=1,
+            stdout=b"",
+            stderr=b"unsupported container",
+        ),
+    )
+
+    with pytest.raises(recording_audio_processing.AudioNormalizationError):
+        await recording_audio_processing._normalize_audio_upload_for_transcription(
+            b"bad-m4a",
+            content_type="audio/mp4",
+        )
+
+
+@pytest.mark.asyncio
+async def test_normalize_audio_upload_for_transcription_maps_subprocess_errors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def run(*_args, **_kwargs):
+        raise OSError("ffmpeg missing")
+
+    monkeypatch.setattr(recording_audio_processing.subprocess, "run", run)
+
+    with pytest.raises(recording_audio_processing.AudioNormalizationError):
+        await recording_audio_processing._normalize_audio_upload_for_transcription(
+            b"m4a-audio",
+            content_type="audio/m4a",
+        )
 
 
 def test_audio_processing_helper_edge_branches() -> None:
