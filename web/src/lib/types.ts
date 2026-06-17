@@ -956,6 +956,7 @@ export interface SchemeStroke {
   points: SchemePosition[];
   color: string;
   width: number;
+  locked: boolean;
 }
 
 export interface SchemeCanvasCard {
@@ -966,6 +967,7 @@ export interface SchemeCanvasCard {
   height: number;
   text: string;
   color: string;
+  locked: boolean;
 }
 
 export type SchemeShapeKind = "rectangle" | "ellipse";
@@ -979,6 +981,7 @@ export interface SchemeCanvasShape {
   height: number;
   color: string;
   fill: string;
+  locked: boolean;
 }
 
 export interface SchemeCanvasFrame {
@@ -990,6 +993,7 @@ export interface SchemeCanvasFrame {
   title: string;
   color: string;
   fill: string;
+  locked: boolean;
 }
 
 export interface SchemeTextBlock {
@@ -1001,6 +1005,7 @@ export interface SchemeTextBlock {
   text: string;
   color: string;
   font_size: number;
+  locked: boolean;
 }
 
 export interface SchemeConnector {
@@ -1010,6 +1015,7 @@ export interface SchemeConnector {
   points: SchemePosition[];
   label: string | null;
   color: string;
+  locked: boolean;
 }
 
 export interface SchemeCanvasLayout {

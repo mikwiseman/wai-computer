@@ -5400,6 +5400,66 @@ a.primary-button[aria-disabled="true"]:hover {
   outline-offset: 3px;
 }
 
+.scheme-board__item--locked {
+  cursor: default;
+  opacity: 0.72;
+}
+
+.scheme-board__item--locked::before {
+  position: absolute;
+  z-index: 1;
+  top: 0.74rem;
+  right: 0.72rem;
+  width: 0.55rem;
+  height: 0.68rem;
+  background:
+    linear-gradient(var(--ink-soft), var(--ink-soft)) center 0.36rem / 0.52rem 0.32rem no-repeat,
+    radial-gradient(
+      circle at center 0.34rem,
+      transparent 0.2rem,
+      var(--ink-soft) 0.21rem 0.28rem,
+      transparent 0.29rem
+    ) center top / 0.55rem 0.55rem no-repeat;
+  content: "";
+  pointer-events: none;
+}
+
+.scheme-board__item--locked::after {
+  position: absolute;
+  top: 0.45rem;
+  right: 0.45rem;
+  display: grid;
+  width: 1.25rem;
+  height: 1.25rem;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--ink) 18%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--panel) 92%, transparent);
+  color: var(--ink-soft);
+  content: "";
+  font-size: 0.68rem;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.scheme-board__edges .scheme-board__item--locked {
+  opacity: 0.52;
+}
+
+.scheme-board__edges .scheme-board__item--locked::before,
+.scheme-board__edges .scheme-board__item--locked::after {
+  content: none;
+}
+
+.scheme-sticky.scheme-board__item--locked,
+.scheme-sticky.scheme-board__item--locked:active,
+.scheme-frame.scheme-board__item--locked,
+.scheme-frame.scheme-board__item--locked:active,
+.scheme-text.scheme-board__item--locked,
+.scheme-text.scheme-board__item--locked:active {
+  cursor: default;
+}
+
 .scheme-node--lens {
   border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
   background: var(--accent-soft);
@@ -5503,6 +5563,14 @@ a.primary-button[aria-disabled="true"]:hover {
   font-size: var(--font-label-small-size);
   font-weight: 800;
   outline: none;
+}
+
+.scheme-frame input:disabled,
+.scheme-sticky textarea:disabled,
+.scheme-text textarea:disabled {
+  cursor: default;
+  opacity: 1;
+  -webkit-text-fill-color: currentColor;
 }
 
 .scheme-text {

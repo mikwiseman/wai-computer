@@ -89,7 +89,7 @@ interface BoardItemHandle {
   kind: BoardItemKind;
 }
 
-const SCHEME_LAYOUT_VERSION = 3 as const;
+const SCHEME_LAYOUT_VERSION = 4 as const;
 const DEFAULT_VIEWPORT: SchemeViewport = { x: 0, y: 0, zoom: 1 };
 const MIN_ZOOM = 0.25;
 const MAX_ZOOM = 2.8;
@@ -127,6 +127,8 @@ const COPY = {
     undo: "Undo",
     redo: "Redo",
     duplicate: "Duplicate",
+    lock: "Lock",
+    unlock: "Unlock",
     emptyTitle: "No schemes yet",
     emptyBody: "Create one from a prompt. Wai will build a cited board from your recordings, materials, and chats.",
     noSelection: "Select a scheme or create a new one.",
@@ -150,6 +152,8 @@ const COPY = {
     undo: "Отменить",
     redo: "Повторить",
     duplicate: "Дублировать",
+    lock: "Заблокировать",
+    unlock: "Разблокировать",
     emptyTitle: "Схем пока нет",
     emptyBody: "Создайте схему по запросу. Wai соберет доску с источниками из записей, материалов и чатов.",
     noSelection: "Выберите схему или создайте новую.",
@@ -204,12 +208,12 @@ function layoutForScheme(scheme: Scheme | null): SchemeCanvasLayout {
     version: SCHEME_LAYOUT_VERSION,
     viewport: { ...DEFAULT_VIEWPORT, ...(raw.viewport ?? {}) },
     node_positions: raw.node_positions ?? {},
-    strokes: raw.strokes ?? [],
-    cards: raw.cards ?? [],
-    shapes: raw.shapes ?? [],
-    frames: raw.frames ?? [],
-    texts: raw.texts ?? [],
-    connectors: raw.connectors ?? [],
+    strokes: (raw.strokes ?? []).map((stroke) => ({ ...stroke, locked: stroke.locked ?? false })),
+    cards: (raw.cards ?? []).map((card) => ({ ...card, locked: card.locked ?? false })),
+    shapes: (raw.shapes ?? []).map((shape) => ({ ...shape, locked: shape.locked ?? false })),
+    frames: (raw.frames ?? []).map((frame) => ({ ...frame, locked: frame.locked ?? false })),
+    texts: (raw.texts ?? []).map((text) => ({ ...text, locked: text.locked ?? false })),
+    connectors: (raw.connectors ?? []).map((connector) => ({ ...connector, locked: connector.locked ?? false })),
   };
 }
 
@@ -260,6 +264,30 @@ function itemCenter(
     return { x: text.x + text.width / 2, y: text.y + text.height / 2 };
   }
   return null;
+}
+
+function isLayoutItemLocked(itemId: string | null, layout: SchemeCanvasLayout): boolean {
+  if (!itemId) return false;
+  return (
+    layout.cards.some((candidate) => candidate.id === itemId && candidate.locked) ||
+    layout.shapes.some((candidate) => candidate.id === itemId && candidate.locked) ||
+    layout.frames.some((candidate) => candidate.id === itemId && candidate.locked) ||
+    layout.texts.some((candidate) => candidate.id === itemId && candidate.locked) ||
+    layout.strokes.some((candidate) => candidate.id === itemId && candidate.locked) ||
+    layout.connectors.some((candidate) => candidate.id === itemId && candidate.locked)
+  );
+}
+
+function canLockLayoutItem(itemId: string | null, layout: SchemeCanvasLayout): boolean {
+  if (!itemId) return false;
+  return (
+    layout.cards.some((candidate) => candidate.id === itemId) ||
+    layout.shapes.some((candidate) => candidate.id === itemId) ||
+    layout.frames.some((candidate) => candidate.id === itemId) ||
+    layout.texts.some((candidate) => candidate.id === itemId) ||
+    layout.strokes.some((candidate) => candidate.id === itemId) ||
+    layout.connectors.some((candidate) => candidate.id === itemId)
+  );
 }
 
 function shapePath(shape: SchemeCanvasShape): string {
@@ -397,6 +425,7 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
   );
   const canDeleteSelected = useMemo(() => {
     if (!selectedItem) return false;
+    if (isLayoutItemLocked(selectedItem, layout)) return false;
     return (
       layout.cards.some((card) => card.id === selectedItem) ||
       layout.shapes.some((shape) => shape.id === selectedItem) ||
@@ -405,17 +434,10 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
       layout.strokes.some((stroke) => stroke.id === selectedItem) ||
       layout.connectors.some((connector) => connector.id === selectedItem)
     );
-  }, [
-    layout.cards,
-    layout.connectors,
-    layout.frames,
-    layout.shapes,
-    layout.strokes,
-    layout.texts,
-    selectedItem,
-  ]);
+  }, [layout, selectedItem]);
   const canDuplicateSelected = useMemo(() => {
     if (!selectedItem) return false;
+    if (isLayoutItemLocked(selectedItem, layout)) return false;
     return (
       layout.cards.some((card) => card.id === selectedItem) ||
       layout.shapes.some((shape) => shape.id === selectedItem) ||
@@ -423,7 +445,15 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
       layout.texts.some((text) => text.id === selectedItem) ||
       layout.strokes.some((stroke) => stroke.id === selectedItem)
     );
-  }, [layout.cards, layout.frames, layout.shapes, layout.strokes, layout.texts, selectedItem]);
+  }, [layout, selectedItem]);
+  const canLockSelected = useMemo(
+    () => canLockLayoutItem(selectedItem, layout),
+    [layout, selectedItem],
+  );
+  const selectedItemLocked = useMemo(
+    () => isLayoutItemLocked(selectedItem, layout),
+    [layout, selectedItem],
+  );
 
   const commitLayout = useCallback(
     async (nextLayout: SchemeCanvasLayout) => {
@@ -577,6 +607,7 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
         height: STICKY_HEIGHT,
         text: locale === "ru" ? "Заметка" : "Note",
         color: "#f7d774",
+        locked: false,
       };
       const nextLayout = { ...layoutRef.current, cards: [...layoutRef.current.cards, card] };
       setSelectedItem(card.id);
@@ -599,6 +630,7 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
         height: SHAPE_HEIGHT,
         color: kind === "ellipse" ? "#7c3aed" : "#2563eb",
         fill: "transparent",
+        locked: false,
       };
       const nextLayout = { ...layoutRef.current, shapes: [...layoutRef.current.shapes, shape] };
       setSelectedItem(shape.id);
@@ -621,6 +653,7 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
         title: locale === "ru" ? "Фрейм" : "Frame",
         color: "#0f766e",
         fill: "transparent",
+        locked: false,
       };
       const nextLayout = { ...layoutRef.current, frames: [...layoutRef.current.frames, frame] };
       setSelectedItem(frame.id);
@@ -643,6 +676,7 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
         text: locale === "ru" ? "Текст" : "Text",
         color: "#111827",
         font_size: 22,
+        locked: false,
       };
       const nextLayout = { ...layoutRef.current, texts: [...layoutRef.current.texts, text] };
       setSelectedItem(text.id);
@@ -664,6 +698,7 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
         points: [],
         label: null,
         color: "#475569",
+        locked: false,
       };
       const nextLayout = {
         ...layoutRef.current,
@@ -683,6 +718,9 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
       if (event.button !== 0) return;
       event.stopPropagation();
       setSelectedItem(item.id);
+      if (isLayoutItemLocked(item.id, layoutRef.current)) {
+        return;
+      }
       if (tool === "connector") {
         if (pendingConnector) {
           addConnector(pendingConnector, item);
@@ -727,6 +765,7 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
           points: [point, point],
           color: "#111827",
           width: 3,
+          locked: false,
         };
         const nextLayout = { ...layoutRef.current, strokes: [...layoutRef.current.strokes, stroke] };
         setLayout(nextLayout);
@@ -887,12 +926,13 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
   const handleCardTextChange = useCallback((cardId: string, text: string) => {
     setLocalLayout((current) => ({
       ...current,
-      cards: current.cards.map((card) => (card.id === cardId ? { ...card, text } : card)),
+      cards: current.cards.map((card) => (card.id === cardId && !card.locked ? { ...card, text } : card)),
     }));
   }, [setLocalLayout]);
 
   const beginInlineEdit = useCallback(
     (itemId: string) => {
+      if (isLayoutItemLocked(itemId, layoutRef.current)) return;
       if (editingItemRef.current === itemId) return;
       pushUndoSnapshot();
       editingItemRef.current = itemId;
@@ -908,14 +948,14 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
   const handleFrameTitleChange = useCallback((frameId: string, title: string) => {
     setLocalLayout((current) => ({
       ...current,
-      frames: current.frames.map((frame) => (frame.id === frameId ? { ...frame, title } : frame)),
+      frames: current.frames.map((frame) => (frame.id === frameId && !frame.locked ? { ...frame, title } : frame)),
     }));
   }, [setLocalLayout]);
 
   const handleTextBlockChange = useCallback((textId: string, text: string) => {
     setLocalLayout((current) => ({
       ...current,
-      texts: current.texts.map((block) => (block.id === textId ? { ...block, text } : block)),
+      texts: current.texts.map((block) => (block.id === textId && !block.locked ? { ...block, text } : block)),
     }));
   }, [setLocalLayout]);
 
@@ -941,6 +981,36 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
     layoutRef.current = nextLayout;
     void commitLayout(nextLayout);
   }, [canDeleteSelected, commitLayout, pushUndoSnapshot, selectedItem]);
+
+  const toggleSelectedLock = useCallback(() => {
+    if (!selectedItem || !canLockSelected) return;
+    pushUndoSnapshot();
+    const nextLocked = !isLayoutItemLocked(selectedItem, layoutRef.current);
+    const nextLayout = {
+      ...layoutRef.current,
+      cards: layoutRef.current.cards.map((card) =>
+        card.id === selectedItem ? { ...card, locked: nextLocked } : card,
+      ),
+      shapes: layoutRef.current.shapes.map((shape) =>
+        shape.id === selectedItem ? { ...shape, locked: nextLocked } : shape,
+      ),
+      frames: layoutRef.current.frames.map((frame) =>
+        frame.id === selectedItem ? { ...frame, locked: nextLocked } : frame,
+      ),
+      texts: layoutRef.current.texts.map((text) =>
+        text.id === selectedItem ? { ...text, locked: nextLocked } : text,
+      ),
+      strokes: layoutRef.current.strokes.map((stroke) =>
+        stroke.id === selectedItem ? { ...stroke, locked: nextLocked } : stroke,
+      ),
+      connectors: layoutRef.current.connectors.map((connector) =>
+        connector.id === selectedItem ? { ...connector, locked: nextLocked } : connector,
+      ),
+    };
+    setLayout(nextLayout);
+    layoutRef.current = nextLayout;
+    void commitLayout(nextLayout);
+  }, [canLockSelected, commitLayout, pushUndoSnapshot, selectedItem]);
 
   const duplicateSelected = useCallback(() => {
     if (!selectedItem || !canDuplicateSelected) return;
@@ -1091,6 +1161,9 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
               <button type="button" disabled={!canDeleteSelected} onClick={deleteSelected}>
                 {copy.delete}
               </button>
+              <button type="button" disabled={!canLockSelected} onClick={toggleSelectedLock}>
+                {selectedItemLocked ? copy.unlock : copy.lock}
+              </button>
               <button type="button" disabled={!canDuplicateSelected} onClick={duplicateSelected}>
                 {copy.duplicate}
               </button>
@@ -1153,7 +1226,10 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
                     return (
                       <polyline
                         key={connector.id}
-                        className={selectedItem === connector.id ? "scheme-board__connector--selected" : undefined}
+                        className={[
+                          selectedItem === connector.id ? "scheme-board__connector--selected" : "",
+                          connector.locked ? "scheme-board__item--locked" : "",
+                        ].filter(Boolean).join(" ")}
                         points={points.map((point) => `${point.x},${point.y}`).join(" ")}
                         stroke={connector.color}
                         onPointerDown={(event) => {
@@ -1166,7 +1242,10 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
                   {layout.strokes.map((stroke) => (
                     <polyline
                       key={stroke.id}
-                      className={selectedItem === stroke.id ? "scheme-board__stroke--selected" : undefined}
+                      className={[
+                        selectedItem === stroke.id ? "scheme-board__stroke--selected" : "",
+                        stroke.locked ? "scheme-board__item--locked" : "",
+                      ].filter(Boolean).join(" ")}
                       points={stroke.points.map((point) => `${point.x},${point.y}`).join(" ")}
                       stroke={stroke.color}
                       strokeWidth={stroke.width}
@@ -1180,7 +1259,10 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
                     <path
                       key={shape.id}
                       data-scheme-board-item="true"
-                      className={selectedItem === shape.id ? "scheme-board__shape--selected" : undefined}
+                      className={[
+                        selectedItem === shape.id ? "scheme-board__shape--selected" : "",
+                        shape.locked ? "scheme-board__item--locked" : "",
+                      ].filter(Boolean).join(" ")}
                       d={shapePath(shape)}
                       stroke={shape.color}
                       fill={shape.fill}
@@ -1195,7 +1277,11 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
                   <div
                     key={frame.id}
                     data-scheme-board-item="true"
-                    className={`scheme-frame ${selectedItem === frame.id ? "scheme-frame--selected" : ""}`}
+                    className={[
+                      "scheme-frame",
+                      selectedItem === frame.id ? "scheme-frame--selected" : "",
+                      frame.locked ? "scheme-board__item--locked" : "",
+                    ].filter(Boolean).join(" ")}
                     style={{
                       left: frame.x,
                       top: frame.y,
@@ -1211,7 +1297,11 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
                     <input
                       value={frame.title}
                       aria-label="Frame title"
-                      onPointerDown={(event) => event.stopPropagation()}
+                      disabled={frame.locked}
+                      onPointerDown={(event) => {
+                        event.stopPropagation();
+                        setSelectedItem(frame.id);
+                      }}
                       onFocus={() => beginInlineEdit(frame.id)}
                       onChange={(event) => handleFrameTitleChange(frame.id, event.target.value)}
                       onBlur={finishInlineEdit}
@@ -1223,7 +1313,11 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
                   <div
                     key={text.id}
                     data-scheme-board-item="true"
-                    className={`scheme-text ${selectedItem === text.id ? "scheme-text--selected" : ""}`}
+                    className={[
+                      "scheme-text",
+                      selectedItem === text.id ? "scheme-text--selected" : "",
+                      text.locked ? "scheme-board__item--locked" : "",
+                    ].filter(Boolean).join(" ")}
                     style={{
                       left: text.x,
                       top: text.y,
@@ -1239,7 +1333,11 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
                     <textarea
                       value={text.text}
                       aria-label="Canvas text"
-                      onPointerDown={(event) => event.stopPropagation()}
+                      disabled={text.locked}
+                      onPointerDown={(event) => {
+                        event.stopPropagation();
+                        setSelectedItem(text.id);
+                      }}
                       onFocus={() => beginInlineEdit(text.id)}
                       onChange={(event) => handleTextBlockChange(text.id, event.target.value)}
                       onBlur={finishInlineEdit}
@@ -1269,7 +1367,11 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
                   <div
                     key={card.id}
                     data-scheme-board-item="true"
-                    className={`scheme-sticky ${selectedItem === card.id ? "scheme-sticky--selected" : ""}`}
+                    className={[
+                      "scheme-sticky",
+                      selectedItem === card.id ? "scheme-sticky--selected" : "",
+                      card.locked ? "scheme-board__item--locked" : "",
+                    ].filter(Boolean).join(" ")}
                     style={{
                       left: card.x,
                       top: card.y,
@@ -1284,7 +1386,11 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
                     <textarea
                       value={card.text}
                       aria-label="Sticky note"
-                      onPointerDown={(event) => event.stopPropagation()}
+                      disabled={card.locked}
+                      onPointerDown={(event) => {
+                        event.stopPropagation();
+                        setSelectedItem(card.id);
+                      }}
                       onFocus={() => beginInlineEdit(card.id)}
                       onChange={(event) => handleCardTextChange(card.id, event.target.value)}
                       onBlur={finishInlineEdit}

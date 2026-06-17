@@ -467,6 +467,15 @@ private struct MacSchemeBoard: View {
             .disabled(!canDuplicateSelected)
             .help(t("Duplicate", "Дублировать"))
 
+            Button {
+                toggleSelectedLock()
+            } label: {
+                Image(systemName: isSelectedLocked ? "lock.open" : "lock")
+            }
+            .buttonStyle(WaiGhostButtonStyle())
+            .disabled(!canLockSelected)
+            .help(isSelectedLocked ? t("Unlock", "Разблокировать") : t("Lock", "Заблокировать"))
+
             Divider()
                 .frame(height: 22)
 
@@ -516,6 +525,7 @@ private struct MacSchemeBoard: View {
                 TextField(t("Sticky text", "Текст стикера"), text: selectedCardText)
                     .textFieldStyle(.roundedBorder)
                     .frame(width: 220)
+                    .disabled(isSelectedLocked)
                     .onSubmit {
                         editingItemId = nil
                         onCommit(layout)
@@ -535,6 +545,7 @@ private struct MacSchemeBoard: View {
                 TextField(t("Frame title", "Название фрейма"), text: selectedFrameTitle)
                     .textFieldStyle(.roundedBorder)
                     .frame(width: 220)
+                    .disabled(isSelectedLocked)
                     .onSubmit {
                         editingItemId = nil
                         onCommit(layout)
@@ -554,6 +565,7 @@ private struct MacSchemeBoard: View {
                 TextField(t("Canvas text", "Текст на доске"), text: selectedTextValue)
                     .textFieldStyle(.roundedBorder)
                     .frame(width: 220)
+                    .disabled(isSelectedLocked)
                     .onSubmit {
                         editingItemId = nil
                         onCommit(layout)
@@ -617,6 +629,7 @@ private struct MacSchemeBoard: View {
 
     private var canDeleteSelected: Bool {
         guard let selectedItemId else { return false }
+        if isItemLocked(selectedItemId) { return false }
         return layout.cards.contains { $0.id == selectedItemId }
             || layout.shapes.contains { $0.id == selectedItemId }
             || layout.frames.contains { $0.id == selectedItemId }
@@ -627,11 +640,27 @@ private struct MacSchemeBoard: View {
 
     private var canDuplicateSelected: Bool {
         guard let selectedItemId else { return false }
+        if isItemLocked(selectedItemId) { return false }
         return layout.cards.contains { $0.id == selectedItemId }
             || layout.shapes.contains { $0.id == selectedItemId }
             || layout.frames.contains { $0.id == selectedItemId }
             || layout.texts.contains { $0.id == selectedItemId }
             || layout.strokes.contains { $0.id == selectedItemId }
+    }
+
+    private var canLockSelected: Bool {
+        guard let selectedItemId else { return false }
+        return layout.cards.contains { $0.id == selectedItemId }
+            || layout.shapes.contains { $0.id == selectedItemId }
+            || layout.frames.contains { $0.id == selectedItemId }
+            || layout.texts.contains { $0.id == selectedItemId }
+            || layout.strokes.contains { $0.id == selectedItemId }
+            || layout.connectors.contains { $0.id == selectedItemId }
+    }
+
+    private var isSelectedLocked: Bool {
+        guard let selectedItemId else { return false }
+        return isItemLocked(selectedItemId)
     }
 
     private var selectedCardText: Binding<String> {
@@ -646,6 +675,7 @@ private struct MacSchemeBoard: View {
                 guard let selectedCardId,
                       let index = layout.cards.firstIndex(where: { $0.id == selectedCardId })
                 else { return }
+                guard !layout.cards[index].locked else { return }
                 beginInlineEdit(selectedCardId)
                 layout.cards[index].text = next
             }
@@ -664,6 +694,7 @@ private struct MacSchemeBoard: View {
                 guard let selectedFrameId,
                       let index = layout.frames.firstIndex(where: { $0.id == selectedFrameId })
                 else { return }
+                guard !layout.frames[index].locked else { return }
                 beginInlineEdit(selectedFrameId)
                 layout.frames[index].title = next
             }
@@ -682,6 +713,7 @@ private struct MacSchemeBoard: View {
                 guard let selectedTextId,
                       let index = layout.texts.firstIndex(where: { $0.id == selectedTextId })
                 else { return }
+                guard !layout.texts[index].locked else { return }
                 beginInlineEdit(selectedTextId)
                 layout.texts[index].text = next
             }
@@ -726,9 +758,19 @@ private struct MacSchemeBoard: View {
     }
 
     private func beginInlineEdit(_ itemId: String) {
+        guard !isItemLocked(itemId) else { return }
         guard editingItemId != itemId else { return }
         pushUndoSnapshot()
         editingItemId = itemId
+    }
+
+    private func isItemLocked(_ id: String) -> Bool {
+        layout.cards.contains { $0.id == id && $0.locked }
+            || layout.shapes.contains { $0.id == id && $0.locked }
+            || layout.frames.contains { $0.id == id && $0.locked }
+            || layout.texts.contains { $0.id == id && $0.locked }
+            || layout.strokes.contains { $0.id == id && $0.locked }
+            || layout.connectors.contains { $0.id == id && $0.locked }
     }
 
     private func selectionOverlay(id: String) -> some View {
@@ -830,6 +872,10 @@ private struct MacSchemeBoard: View {
         DragGesture(minimumDistance: tool == .connector ? 0 : 1)
             .onChanged { value in
                 guard tool == .select else { return }
+                guard !card.locked else {
+                    selectedItemId = card.id
+                    return
+                }
                 if cardDrag?.id != card.id {
                     pushUndoSnapshot()
                     cardDrag = ItemDragState(id: card.id, origin: SchemePosition(x: card.x, y: card.y))
@@ -842,6 +888,11 @@ private struct MacSchemeBoard: View {
                 }
             }
             .onEnded { value in
+                guard !card.locked else {
+                    selectedItemId = card.id
+                    cardDrag = nil
+                    return
+                }
                 if tool == .connector {
                     handleConnectorTap(id: card.id)
                     return
@@ -862,6 +913,10 @@ private struct MacSchemeBoard: View {
         DragGesture(minimumDistance: tool == .connector ? 0 : 1)
             .onChanged { value in
                 guard tool == .select else { return }
+                guard !shape.locked else {
+                    selectedItemId = shape.id
+                    return
+                }
                 if shapeDrag?.id != shape.id {
                     pushUndoSnapshot()
                     shapeDrag = ItemDragState(id: shape.id, origin: SchemePosition(x: shape.x, y: shape.y))
@@ -874,6 +929,11 @@ private struct MacSchemeBoard: View {
                 }
             }
             .onEnded { value in
+                guard !shape.locked else {
+                    selectedItemId = shape.id
+                    shapeDrag = nil
+                    return
+                }
                 if tool == .connector {
                     handleConnectorTap(id: shape.id)
                     return
@@ -894,6 +954,10 @@ private struct MacSchemeBoard: View {
         DragGesture(minimumDistance: tool == .connector ? 0 : 1)
             .onChanged { value in
                 guard tool == .select else { return }
+                guard !frame.locked else {
+                    selectedItemId = frame.id
+                    return
+                }
                 if frameDrag?.id != frame.id {
                     pushUndoSnapshot()
                     frameDrag = ItemDragState(id: frame.id, origin: SchemePosition(x: frame.x, y: frame.y))
@@ -906,6 +970,11 @@ private struct MacSchemeBoard: View {
                 }
             }
             .onEnded { value in
+                guard !frame.locked else {
+                    selectedItemId = frame.id
+                    frameDrag = nil
+                    return
+                }
                 if tool == .connector {
                     handleConnectorTap(id: frame.id)
                     return
@@ -926,6 +995,10 @@ private struct MacSchemeBoard: View {
         DragGesture(minimumDistance: tool == .connector ? 0 : 1)
             .onChanged { value in
                 guard tool == .select else { return }
+                guard !text.locked else {
+                    selectedItemId = text.id
+                    return
+                }
                 if textDrag?.id != text.id {
                     pushUndoSnapshot()
                     textDrag = ItemDragState(id: text.id, origin: SchemePosition(x: text.x, y: text.y))
@@ -938,6 +1011,11 @@ private struct MacSchemeBoard: View {
                 }
             }
             .onEnded { value in
+                guard !text.locked else {
+                    selectedItemId = text.id
+                    textDrag = nil
+                    return
+                }
                 if tool == .connector {
                     handleConnectorTap(id: text.id)
                     return
@@ -982,7 +1060,11 @@ private struct MacSchemeBoard: View {
             for point in points.dropFirst() {
                 path.addLine(to: screenPoint(for: point, in: size))
             }
-            context.stroke(path, with: .color(schemeColor(connector.color, defaultColor: Palette.textSecondary)), lineWidth: 2)
+            context.stroke(
+                path,
+                with: .color(schemeColor(connector.color, defaultColor: Palette.textSecondary).opacity(connector.locked ? 0.45 : 1)),
+                lineWidth: 2
+            )
         }
     }
 
@@ -995,7 +1077,7 @@ private struct MacSchemeBoard: View {
             }
             context.stroke(
                 path,
-                with: .color(schemeColor(stroke.color, defaultColor: Palette.textPrimary)),
+                with: .color(schemeColor(stroke.color, defaultColor: Palette.textPrimary).opacity(stroke.locked ? 0.45 : 1)),
                 style: StrokeStyle(lineWidth: CGFloat(stroke.width) * CGFloat(layout.viewport.zoom), lineCap: .round, lineJoin: .round)
             )
         }
@@ -1011,7 +1093,7 @@ private struct MacSchemeBoard: View {
                 height: CGFloat(shape.height) * CGFloat(layout.viewport.zoom)
             )
             let path = shape.kind == "ellipse" ? Path(ellipseIn: rect) : Path(roundedRect: rect, cornerRadius: 8)
-            context.stroke(path, with: .color(schemeColor(shape.color, defaultColor: Palette.accent)), lineWidth: 2)
+            context.stroke(path, with: .color(schemeColor(shape.color, defaultColor: Palette.accent).opacity(shape.locked ? 0.45 : 1)), lineWidth: 2)
             if selectedItemId == shape.id {
                 context.stroke(path, with: .color(Palette.accent.opacity(0.45)), lineWidth: 5)
             }
@@ -1087,6 +1169,10 @@ private struct MacSchemeBoard: View {
 
     private func handleConnectorTap(id: String) {
         selectedItemId = id
+        guard !isItemLocked(id) else {
+            pendingConnector = nil
+            return
+        }
         let handle = BoardHandle(id: id)
         if let pendingConnector {
             guard pendingConnector.id != handle.id else { return }
@@ -1117,6 +1203,21 @@ private struct MacSchemeBoard: View {
             $0.id == selectedItemId || $0.sourceId == selectedItemId || $0.targetId == selectedItemId
         }
         self.selectedItemId = nil
+        onCommit(layout)
+    }
+
+    private func toggleSelectedLock() {
+        guard let selectedItemId, canLockSelected else { return }
+        pushUndoSnapshot()
+        let locked = !isItemLocked(selectedItemId)
+
+        updateCard(selectedItemId) { $0.locked = locked }
+        updateShape(selectedItemId) { $0.locked = locked }
+        updateFrame(selectedItemId) { $0.locked = locked }
+        updateText(selectedItemId) { $0.locked = locked }
+        updateStroke(selectedItemId) { $0.locked = locked }
+        updateConnector(selectedItemId) { $0.locked = locked }
+
         onCommit(layout)
     }
 
@@ -1194,6 +1295,16 @@ private struct MacSchemeBoard: View {
     private func updateText(_ id: String, mutate: (inout SchemeTextBlock) -> Void) {
         guard let index = layout.texts.firstIndex(where: { $0.id == id }) else { return }
         mutate(&layout.texts[index])
+    }
+
+    private func updateStroke(_ id: String, mutate: (inout SchemeStroke) -> Void) {
+        guard let index = layout.strokes.firstIndex(where: { $0.id == id }) else { return }
+        mutate(&layout.strokes[index])
+    }
+
+    private func updateConnector(_ id: String, mutate: (inout SchemeConnector) -> Void) {
+        guard let index = layout.connectors.firstIndex(where: { $0.id == id }) else { return }
+        mutate(&layout.connectors[index])
     }
 
     private func nodeCenter(_ node: SchemeNode) -> SchemePosition {
@@ -1284,19 +1395,29 @@ private struct MacSchemeStickyCard: View {
     let card: SchemeCanvasCard
 
     var body: some View {
-        Text(card.text)
-            .font(Typography.bodySmall)
-            .foregroundStyle(Color(nsColor: .labelColor))
-            .lineLimit(6)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .padding(Spacing.md)
-            .background(schemeColor(card.color, defaultColor: Color(red: 0.97, green: 0.84, blue: 0.45)))
-            .overlay(
-                RoundedRectangle(cornerRadius: 8)
-                    .strokeBorder(Color.black.opacity(0.12), lineWidth: 1)
-            )
-            .clipShape(RoundedRectangle(cornerRadius: 8))
-            .shadow(color: Color.black.opacity(0.08), radius: 8, y: 3)
+        ZStack(alignment: .topTrailing) {
+            Text(card.text)
+                .font(Typography.bodySmall)
+                .foregroundStyle(Color(nsColor: .labelColor))
+                .lineLimit(6)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .padding(Spacing.md)
+
+            if card.locked {
+                Image(systemName: "lock.fill")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(Palette.textSecondary)
+                    .padding(Spacing.xs)
+            }
+        }
+        .background(schemeColor(card.color, defaultColor: Color(red: 0.97, green: 0.84, blue: 0.45)))
+        .opacity(card.locked ? 0.72 : 1)
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .strokeBorder(Color.black.opacity(0.12), lineWidth: 1)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .shadow(color: Color.black.opacity(0.08), radius: 8, y: 3)
     }
 }
 
@@ -1324,7 +1445,16 @@ private struct MacSchemeFrameView: View {
                 .background(Color(nsColor: .textBackgroundColor).opacity(0.92))
                 .clipShape(RoundedRectangle(cornerRadius: 6))
                 .padding(Spacing.sm)
+
+            if frame.locked {
+                Image(systemName: "lock.fill")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(Palette.textSecondary)
+                    .padding(Spacing.sm)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+            }
         }
+        .opacity(frame.locked ? 0.72 : 1)
     }
 }
 
@@ -1338,6 +1468,14 @@ private struct MacSchemeTextBlockView: View {
             .lineLimit(6)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .padding(Spacing.xs)
+            .opacity(text.locked ? 0.72 : 1)
+            .overlay(alignment: .topTrailing) {
+                if text.locked {
+                    Image(systemName: "lock.fill")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(Palette.textSecondary)
+                }
+            }
     }
 }
 

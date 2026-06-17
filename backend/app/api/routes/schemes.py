@@ -25,7 +25,7 @@ from app.models.brain_map import BrainMap, BrainMapRevision
 
 router = APIRouter(prefix="/schemes", tags=["schemes"])
 
-SCHEME_LAYOUT_VERSION = 3
+SCHEME_LAYOUT_VERSION = 4
 SCHEME_SHAPE_KINDS = {"rectangle", "ellipse"}
 
 
@@ -45,6 +45,7 @@ class SchemeStroke(BaseModel):
     points: list[SchemePosition] = Field(min_length=2)
     color: str = Field(default="#111827", min_length=1, max_length=40)
     width: float = Field(default=3, gt=0, le=40)
+    locked: bool = False
 
 
 class SchemeCanvasCard(BaseModel):
@@ -55,6 +56,7 @@ class SchemeCanvasCard(BaseModel):
     height: float = Field(gt=20, le=1200)
     text: str = Field(min_length=1, max_length=2000)
     color: str = Field(default="#f7d774", min_length=1, max_length=40)
+    locked: bool = False
 
 
 class SchemeCanvasShape(BaseModel):
@@ -66,6 +68,7 @@ class SchemeCanvasShape(BaseModel):
     height: float = Field(gt=10, le=2000)
     color: str = Field(default="#2563eb", min_length=1, max_length=40)
     fill: str = Field(default="transparent", min_length=1, max_length=40)
+    locked: bool = False
 
 
 class SchemeCanvasFrame(BaseModel):
@@ -77,6 +80,7 @@ class SchemeCanvasFrame(BaseModel):
     title: str = Field(min_length=1, max_length=300)
     color: str = Field(default="#0f766e", min_length=1, max_length=40)
     fill: str = Field(default="transparent", min_length=1, max_length=40)
+    locked: bool = False
 
 
 class SchemeTextBlock(BaseModel):
@@ -88,6 +92,7 @@ class SchemeTextBlock(BaseModel):
     text: str = Field(min_length=1, max_length=4000)
     color: str = Field(default="#111827", min_length=1, max_length=40)
     font_size: float = Field(default=20, ge=8, le=96)
+    locked: bool = False
 
 
 class SchemeConnector(BaseModel):
@@ -97,6 +102,7 @@ class SchemeConnector(BaseModel):
     points: list[SchemePosition] = Field(default_factory=list)
     label: str | None = Field(default=None, max_length=300)
     color: str = Field(default="#475569", min_length=1, max_length=40)
+    locked: bool = False
 
 
 class SchemeCanvasLayout(BaseModel):

@@ -3,7 +3,7 @@ import { expect, test, type Page, type Route } from "@playwright/test";
 const baseTimestamp = "2026-06-17T10:00:00Z";
 
 type SchemeLayout = {
-  version: 3;
+  version: 4;
   viewport: { x: number; y: number; zoom: number };
   node_positions: Record<string, { x: number; y: number }>;
   strokes: Array<Record<string, unknown>>;
@@ -16,7 +16,7 @@ type SchemeLayout = {
 
 function blankLayout(): SchemeLayout {
   return {
-    version: 3,
+    version: 4,
     viewport: { x: 0, y: 0, zoom: 1 },
     node_positions: {},
     strokes: [],
@@ -191,7 +191,7 @@ async function installSchemesApiMock(page: Page) {
   return layoutUpdates;
 }
 
-test("Schemes board duplicates a placed sticky and supports undo and redo", async ({ page }) => {
+test("Schemes board duplicates, locks, and unlocks a placed sticky", async ({ page }) => {
   const layoutUpdates = await installSchemesApiMock(page);
 
   await page.goto("/login");
@@ -228,5 +228,19 @@ test("Schemes board duplicates a placed sticky and supports undo and redo", asyn
   await page.getByRole("button", { name: "Redo" }).click();
   await expect(page.locator(".scheme-sticky")).toHaveCount(2);
 
-  expect(layoutUpdates.map((layout) => layout.cards.length)).toEqual([1, 2, 1, 2]);
+  await page.locator(".scheme-sticky textarea").last().click();
+  await expect(page.getByRole("button", { name: "Lock" })).toBeEnabled();
+  await page.getByRole("button", { name: "Lock" }).click();
+  await expect(page.getByRole("button", { name: "Unlock" })).toBeEnabled();
+  await expect(page.getByRole("button", { name: "Duplicate" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Delete" })).toBeDisabled();
+  await expect(page.locator(".scheme-sticky.scheme-board__item--locked")).toHaveCount(1);
+
+  await page.getByRole("button", { name: "Unlock" }).click();
+  await expect(page.getByRole("button", { name: "Duplicate" })).toBeEnabled();
+  await expect(page.locator(".scheme-sticky.scheme-board__item--locked")).toHaveCount(0);
+
+  expect(layoutUpdates.slice(0, 4).map((layout) => layout.cards.length)).toEqual([1, 2, 1, 2]);
+  expect(layoutUpdates.some((layout) => layout.cards.some((card) => card.locked === true))).toBe(true);
+  expect(layoutUpdates.at(-1)?.cards.some((card) => card.locked === true)).toBe(false);
 });

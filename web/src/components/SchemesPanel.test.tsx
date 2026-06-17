@@ -19,7 +19,7 @@ vi.mock("@/lib/api", () => ({
 
 function layout(overrides: Partial<SchemeCanvasLayout> = {}): SchemeCanvasLayout {
   return {
-    version: 3,
+    version: 4,
     viewport: { x: 0, y: 0, zoom: 1 },
     node_positions: {},
     strokes: [],
@@ -154,7 +154,7 @@ describe("SchemesPanel", () => {
         "scheme-1",
         {
           layout: expect.objectContaining({
-            version: 3,
+            version: 4,
             node_positions: expect.objectContaining({
               "signal:decision:1": expect.objectContaining({ x: 380, y: -160 }),
             }),
@@ -366,6 +366,7 @@ describe("SchemesPanel", () => {
             height: 150,
             text: "Existing note",
             color: "#f7d774",
+            locked: false,
           },
         ],
       }),
@@ -393,6 +394,59 @@ describe("SchemesPanel", () => {
                 text: "Existing note",
               }),
             ],
+          }),
+        },
+      ),
+    );
+  });
+
+  it("locks and unlocks a selected board object", async () => {
+    const initial = scheme({
+      layout: layout({
+        cards: [
+          {
+            id: "card-existing",
+            x: 40,
+            y: 60,
+            width: 220,
+            height: 150,
+            text: "Existing note",
+            color: "#f7d774",
+            locked: false,
+          },
+        ],
+      }),
+    });
+    mockListSchemes.mockResolvedValue({ schemes: [initial] });
+    mockGetScheme.mockResolvedValue(initial);
+
+    render(<SchemesPanel />);
+
+    const note = await screen.findByLabelText("Sticky note");
+    fireEvent.pointerDown(note.parentElement as Element, { pointerId: 1, clientX: 0, clientY: 0, button: 0 });
+    fireEvent.click(screen.getByRole("button", { name: "Lock" }));
+
+    await waitFor(() =>
+      expect(mockUpdateScheme).toHaveBeenCalledWith(
+        "scheme-1",
+        {
+          layout: expect.objectContaining({
+            cards: [expect.objectContaining({ id: "card-existing", locked: true })],
+          }),
+        },
+      ),
+    );
+    expect(screen.getByRole("button", { name: "Duplicate" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Delete" })).toBeDisabled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Unlock" }));
+
+    await waitFor(() =>
+      expect(mockUpdateScheme).toHaveBeenCalledWith(
+        "scheme-1",
+        {
+          layout: expect.objectContaining({
+            cards: [expect.objectContaining({ id: "card-existing", locked: false })],
           }),
         },
       ),
