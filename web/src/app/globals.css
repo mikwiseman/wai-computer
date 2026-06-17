@@ -5289,14 +5289,16 @@ a.primary-button[aria-disabled="true"]:hover {
   touch-action: none;
 }
 
-.scheme-board__viewport--pan,
-.scheme-board__viewport--select {
+.scheme-board__viewport--pan {
   cursor: grab;
 }
 
-.scheme-board__viewport--pan:active,
-.scheme-board__viewport--select:active {
+.scheme-board__viewport--pan:active {
   cursor: grabbing;
+}
+
+.scheme-board__viewport--select {
+  cursor: crosshair;
 }
 
 .scheme-board__viewport--draw {
@@ -5330,6 +5332,15 @@ a.primary-button[aria-disabled="true"]:hover {
   height: 0;
   isolation: isolate;
   transform-origin: 0 0;
+}
+
+.scheme-board__marquee {
+  position: absolute;
+  border: 1px solid var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 18%, transparent);
+  pointer-events: none;
+  z-index: 1000001;
 }
 
 .scheme-board__edges {

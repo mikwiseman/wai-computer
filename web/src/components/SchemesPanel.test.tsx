@@ -470,6 +470,81 @@ describe("SchemesPanel", () => {
     );
   });
 
+  it("marquee-selects and moves multiple board objects together", async () => {
+    const initial = scheme({
+      layout: layout({
+        cards: [
+          {
+            id: "card-a",
+            x: 40,
+            y: 60,
+            width: 220,
+            height: 150,
+            text: "First note",
+            color: "#f7d774",
+            locked: false,
+            z_index: 10,
+          },
+          {
+            id: "card-b",
+            x: 260,
+            y: 120,
+            width: 220,
+            height: 150,
+            text: "Second note",
+            color: "#f7d774",
+            locked: false,
+            z_index: 20,
+          },
+        ],
+        connectors: [
+          {
+            id: "connector-a",
+            source_id: "card-a",
+            target_id: "card-b",
+            points: [],
+            label: null,
+            color: "#475569",
+            locked: false,
+            z_index: 30,
+          },
+        ],
+      }),
+    });
+    mockListSchemes.mockResolvedValue({ schemes: [initial] });
+    mockGetScheme.mockResolvedValue(initial);
+
+    const { container } = render(<SchemesPanel />);
+
+    await screen.findByText("First note");
+    const viewport = container.querySelector(".scheme-board__viewport");
+    expect(viewport).not.toBeNull();
+
+    fireEvent.pointerDown(viewport as Element, { pointerId: 1, clientX: 0, clientY: 0, button: 0 });
+    fireEvent.pointerMove(viewport as Element, { pointerId: 1, clientX: 520, clientY: 320 });
+    fireEvent.pointerUp(viewport as Element, { pointerId: 1, clientX: 520, clientY: 320 });
+    expect(container.querySelector(".scheme-board__connector--selected")).not.toBeNull();
+
+    const notes = screen.getAllByLabelText("Sticky note");
+    fireEvent.pointerDown(notes[0].parentElement as Element, { pointerId: 2, clientX: 40, clientY: 60, button: 0 });
+    fireEvent.pointerMove(viewport as Element, { pointerId: 2, clientX: 90, clientY: 90 });
+    fireEvent.pointerUp(viewport as Element, { pointerId: 2, clientX: 90, clientY: 90 });
+
+    await waitFor(() =>
+      expect(mockUpdateScheme).toHaveBeenCalledWith(
+        "scheme-1",
+        {
+          layout: expect.objectContaining({
+            cards: [
+              expect.objectContaining({ id: "card-a", x: 90, y: 90 }),
+              expect.objectContaining({ id: "card-b", x: 310, y: 150 }),
+            ],
+          }),
+        },
+      ),
+    );
+  });
+
   it("locks and unlocks a selected board object", async () => {
     const initial = scheme({
       layout: layout({

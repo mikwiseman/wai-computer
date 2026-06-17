@@ -1,4 +1,4 @@
-import { expect, test, type Page, type Route } from "@playwright/test";
+import { expect, test, type Locator, type Page, type Route } from "@playwright/test";
 
 const baseTimestamp = "2026-06-17T10:00:00Z";
 
@@ -191,6 +191,40 @@ async function installSchemesApiMock(page: Page) {
   return layoutUpdates;
 }
 
+async function dragMarqueeAround(
+  page: Page,
+  viewport: Locator,
+  items: Locator,
+) {
+  const viewportBox = await viewport.boundingBox();
+  if (!viewportBox) {
+    throw new Error("Schemes board viewport is not measurable");
+  }
+  const boxes = await items.evaluateAll((elements) =>
+    elements.map((element) => {
+      const rect = element.getBoundingClientRect();
+      return { x: rect.left, y: rect.top, width: rect.width, height: rect.height };
+    }),
+  );
+  if (boxes.length === 0) {
+    throw new Error("No canvas items are measurable");
+  }
+
+  const left = Math.min(...boxes.map((box) => box.x));
+  const top = Math.min(...boxes.map((box) => box.y));
+  const right = Math.max(...boxes.map((box) => box.x + box.width));
+  const bottom = Math.max(...boxes.map((box) => box.y + box.height));
+  const startX = Math.max(viewportBox.x + 6, left - 24);
+  const startY = Math.max(viewportBox.y + 6, top - 24);
+  const endX = Math.min(viewportBox.x + viewportBox.width - 6, right + 24);
+  const endY = Math.min(viewportBox.y + viewportBox.height - 6, bottom + 24);
+
+  await page.mouse.move(startX, startY);
+  await page.mouse.down();
+  await page.mouse.move(endX, endY, { steps: 8 });
+  await page.mouse.up();
+}
+
 test("Schemes board duplicates, locks, and unlocks a placed sticky", async ({ page }) => {
   const layoutUpdates = await installSchemesApiMock(page);
 
@@ -213,7 +247,7 @@ test("Schemes board duplicates, locks, and unlocks a placed sticky", async ({ pa
   }
 
   await page.getByRole("button", { name: "Sticky" }).click();
-  await board.click({ position: { x: boardBox.width - 80, y: boardBox.height - 80 } });
+  await board.click({ position: { x: 140, y: boardBox.height - 100 } });
   await expect(page.locator(".scheme-sticky")).toHaveCount(1);
   await expect(page.getByRole("button", { name: "Duplicate" })).toBeEnabled();
 
@@ -228,17 +262,21 @@ test("Schemes board duplicates, locks, and unlocks a placed sticky", async ({ pa
   await page.getByRole("button", { name: "Redo" }).click();
   await expect(page.locator(".scheme-sticky")).toHaveCount(2);
 
-  await page.locator(".scheme-sticky textarea").last().click();
+  await page.getByRole("button", { name: "Select" }).click();
+  const stickies = page.locator(".scheme-sticky");
+  await dragMarqueeAround(page, board, stickies);
+  await expect(page.locator(".scheme-sticky--selected")).toHaveCount(2);
+  await expect(page.getByRole("button", { name: "Lock" })).toBeEnabled();
+  await page.getByRole("button", { name: "Lock" }).click();
+  await expect(page.locator(".scheme-sticky.scheme-board__item--locked")).toHaveCount(2);
+  await expect(page.getByRole("button", { name: "Duplicate" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Delete" })).toBeDisabled();
+  await page.getByRole("button", { name: "Unlock" }).click();
+  await expect(page.locator(".scheme-sticky.scheme-board__item--locked")).toHaveCount(0);
+
   await expect(page.getByRole("button", { name: "Front" })).toBeEnabled();
   await page.getByRole("button", { name: "Front" }).click();
   await expect(page.getByRole("button", { name: "Lock" })).toBeEnabled();
-  await page.getByRole("button", { name: "Lock" }).click();
-  await expect(page.getByRole("button", { name: "Unlock" })).toBeEnabled();
-  await expect(page.getByRole("button", { name: "Duplicate" })).toBeDisabled();
-  await expect(page.getByRole("button", { name: "Delete" })).toBeDisabled();
-  await expect(page.locator(".scheme-sticky.scheme-board__item--locked")).toHaveCount(1);
-
-  await page.getByRole("button", { name: "Unlock" }).click();
   await expect(page.getByRole("button", { name: "Duplicate" })).toBeEnabled();
   await expect(page.locator(".scheme-sticky.scheme-board__item--locked")).toHaveCount(0);
 

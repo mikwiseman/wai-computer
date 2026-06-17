@@ -36,10 +36,24 @@ type Tool =
   | "frame"
   | "connector";
 type BoardItemKind = "node" | "card" | "shape" | "frame" | "text";
-
 interface SchemesPanelProps {
   locale?: Locale;
   onError?: (message: string) => void;
+}
+
+interface BoardItemBounds {
+  id: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+interface SelectionRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
 }
 
 type DragState =
@@ -82,6 +96,18 @@ type DragState =
   | {
       type: "stroke";
       strokeId: string;
+    }
+  | {
+      type: "multi";
+      start: SchemePosition;
+      origin: SchemeCanvasLayout;
+      itemIds: string[];
+    }
+  | {
+      type: "marquee";
+      start: SchemePosition;
+      current: SchemePosition;
+      previousItemIds: string[];
     };
 
 interface BoardItemHandle {
@@ -323,6 +349,157 @@ function canLockLayoutItem(itemId: string | null, layout: SchemeCanvasLayout): b
   );
 }
 
+function canDuplicateLayoutItem(itemId: string | null, layout: SchemeCanvasLayout): boolean {
+  if (!itemId || isLayoutItemLocked(itemId, layout)) return false;
+  return (
+    layout.cards.some((candidate) => candidate.id === itemId) ||
+    layout.shapes.some((candidate) => candidate.id === itemId) ||
+    layout.frames.some((candidate) => candidate.id === itemId) ||
+    layout.texts.some((candidate) => candidate.id === itemId) ||
+    layout.strokes.some((candidate) => candidate.id === itemId)
+  );
+}
+
+function normaliseRect(start: SchemePosition, end: SchemePosition): SelectionRect {
+  const x = Math.min(start.x, end.x);
+  const y = Math.min(start.y, end.y);
+  return {
+    x,
+    y,
+    width: Math.max(start.x, end.x) - x,
+    height: Math.max(start.y, end.y) - y,
+  };
+}
+
+function boundsFromPoints(id: string, points: SchemePosition[]): BoardItemBounds | null {
+  if (points.length === 0) return null;
+  const xs = points.map((point) => point.x);
+  const ys = points.map((point) => point.y);
+  const x = Math.min(...xs);
+  const y = Math.min(...ys);
+  return {
+    id,
+    x,
+    y,
+    width: Math.max(...xs) - x,
+    height: Math.max(...ys) - y,
+  };
+}
+
+function layoutItemBounds(layout: SchemeCanvasLayout, nodes: SchemeNode[]): BoardItemBounds[] {
+  return [
+    ...nodes.map((node) => ({
+      id: node.id,
+      x: node.position.x,
+      y: node.position.y,
+      width: NODE_WIDTH,
+      height: NODE_HEIGHT,
+    })),
+    ...layout.cards.map((card) => ({
+      id: card.id,
+      x: card.x,
+      y: card.y,
+      width: card.width,
+      height: card.height,
+    })),
+    ...layout.shapes.map((shape) => ({
+      id: shape.id,
+      x: shape.x,
+      y: shape.y,
+      width: shape.width,
+      height: shape.height,
+    })),
+    ...layout.frames.map((frame) => ({
+      id: frame.id,
+      x: frame.x,
+      y: frame.y,
+      width: frame.width,
+      height: frame.height,
+    })),
+    ...layout.texts.map((text) => ({
+      id: text.id,
+      x: text.x,
+      y: text.y,
+      width: text.width,
+      height: text.height,
+    })),
+    ...layout.strokes.flatMap((stroke) => {
+      const bounds = boundsFromPoints(stroke.id, stroke.points);
+      return bounds ? [bounds] : [];
+    }),
+    ...layout.connectors.flatMap((connector) => {
+      const source = itemCenter(connector.source_id, nodes, layout);
+      const target = itemCenter(connector.target_id, nodes, layout);
+      const points = source && target ? [source, target] : connector.points;
+      const bounds = boundsFromPoints(connector.id, points);
+      return bounds ? [bounds] : [];
+    }),
+  ];
+}
+
+function rectsIntersect(first: SelectionRect, second: BoardItemBounds): boolean {
+  return (
+    first.x <= second.x + second.width &&
+    first.x + first.width >= second.x &&
+    first.y <= second.y + second.height &&
+    first.y + first.height >= second.y
+  );
+}
+
+function selectedIdsFromMarquee(
+  rect: SelectionRect,
+  layout: SchemeCanvasLayout,
+  nodes: SchemeNode[],
+): string[] {
+  return layoutItemBounds(layout, nodes)
+    .filter((bounds) => rectsIntersect(rect, bounds))
+    .map((bounds) => bounds.id);
+}
+
+function mergeSelectionIds(first: string[], second: string[]): string[] {
+  return Array.from(new Set([...first, ...second]));
+}
+
+function translateSelectedLayout(
+  layout: SchemeCanvasLayout,
+  itemIds: string[],
+  dx: number,
+  dy: number,
+): SchemeCanvasLayout {
+  const selected = new Set(itemIds);
+  return {
+    ...layout,
+    node_positions: Object.fromEntries(
+      Object.entries(layout.node_positions).map(([id, position]) => [
+        id,
+        selected.has(id) ? { x: position.x + dx, y: position.y + dy } : position,
+      ]),
+    ),
+    cards: layout.cards.map((card) =>
+      selected.has(card.id) ? { ...card, x: card.x + dx, y: card.y + dy } : card,
+    ),
+    shapes: layout.shapes.map((shape) =>
+      selected.has(shape.id) ? { ...shape, x: shape.x + dx, y: shape.y + dy } : shape,
+    ),
+    frames: layout.frames.map((frame) =>
+      selected.has(frame.id) ? { ...frame, x: frame.x + dx, y: frame.y + dy } : frame,
+    ),
+    texts: layout.texts.map((text) =>
+      selected.has(text.id) ? { ...text, x: text.x + dx, y: text.y + dy } : text,
+    ),
+    strokes: layout.strokes.map((stroke) =>
+      selected.has(stroke.id)
+        ? { ...stroke, points: stroke.points.map((point) => ({ x: point.x + dx, y: point.y + dy })) }
+        : stroke,
+    ),
+    connectors: layout.connectors.map((connector) =>
+      selected.has(connector.id)
+        ? { ...connector, points: connector.points.map((point) => ({ x: point.x + dx, y: point.y + dy })) }
+        : connector,
+    ),
+  };
+}
+
 function layoutLayerItems(layout: SchemeCanvasLayout): LayerItem[] {
   return [
     ...layout.connectors.map((connector) => ({ id: connector.id, zIndex: connector.z_index })),
@@ -357,27 +534,45 @@ function setLayoutItemZIndex(layout: SchemeCanvasLayout, itemId: string, zIndex:
   };
 }
 
-function arrangeLayoutItem(layout: SchemeCanvasLayout, itemId: string, action: LayerAction): SchemeCanvasLayout {
+function arrangeLayoutItems(layout: SchemeCanvasLayout, itemIds: string[], action: LayerAction): SchemeCanvasLayout {
   const normalised = normaliseLayoutLayers(layout);
   const items = layoutLayerItems(normalised).sort((a, b) => a.zIndex - b.zIndex);
-  const currentIndex = items.findIndex((item) => item.id === itemId);
-  if (currentIndex === -1) return layout;
+  const selected = new Set(itemIds);
+  if (!items.some((item) => selected.has(item.id))) return layout;
 
   if (action === "front") {
-    return setLayoutItemZIndex(normalised, itemId, items[items.length - 1].zIndex + 1);
+    let zIndex = items[items.length - 1].zIndex + 1;
+    return items.reduce(
+      (current, item) => (selected.has(item.id) ? setLayoutItemZIndex(current, item.id, zIndex++) : current),
+      normalised,
+    );
   }
   if (action === "back") {
-    return setLayoutItemZIndex(normalised, itemId, items[0].zIndex - 1);
+    let zIndex = items[0].zIndex - itemIds.length;
+    return items.reduce(
+      (current, item) => (selected.has(item.id) ? setLayoutItemZIndex(current, item.id, zIndex++) : current),
+      normalised,
+    );
   }
 
-  const neighborIndex = action === "forward" ? currentIndex + 1 : currentIndex - 1;
-  if (neighborIndex < 0 || neighborIndex >= items.length) return normalised;
-  const current = items[currentIndex];
-  const neighbor = items[neighborIndex];
-  return setLayoutItemZIndex(
-    setLayoutItemZIndex(normalised, current.id, neighbor.zIndex),
-    neighbor.id,
-    current.zIndex,
+  const ordered = [...items];
+  if (action === "forward") {
+    for (let index = ordered.length - 2; index >= 0; index -= 1) {
+      if (selected.has(ordered[index].id) && !selected.has(ordered[index + 1].id)) {
+        [ordered[index], ordered[index + 1]] = [ordered[index + 1], ordered[index]];
+      }
+    }
+  } else {
+    for (let index = 1; index < ordered.length; index += 1) {
+      if (selected.has(ordered[index].id) && !selected.has(ordered[index - 1].id)) {
+        [ordered[index - 1], ordered[index]] = [ordered[index], ordered[index - 1]];
+      }
+    }
+  }
+
+  return ordered.reduce(
+    (current, item, index) => setLayoutItemZIndex(current, item.id, index + 1),
+    normalised,
   );
 }
 
@@ -432,8 +627,9 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
   const [refreshing, setRefreshing] = useState(false);
   const [layout, setLayout] = useState<SchemeCanvasLayout>(blankLayout);
   const [tool, setTool] = useState<Tool>("select");
-  const [selectedItem, setSelectedItem] = useState<string | null>(null);
+  const [selectedItems, setSelectedItems] = useState<string[]>([]);
   const [pendingConnector, setPendingConnector] = useState<BoardItemHandle | null>(null);
+  const [marquee, setMarquee] = useState<SelectionRect | null>(null);
   const [historyCounts, setHistoryCounts] = useState({ undo: 0, redo: 0 });
   const dragRef = useRef<DragState | null>(null);
   const viewportRef = useRef<HTMLDivElement | null>(null);
@@ -445,8 +641,13 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
   const editingItemRef = useRef<string | null>(null);
 
   const selectedId = selected?.id ?? null;
+  const selectedItemSet = useMemo(() => new Set(selectedItems), [selectedItems]);
   selectedRef.current = selected;
   layoutRef.current = layout;
+
+  const setSelectedItem = useCallback((itemId: string | null) => {
+    setSelectedItems(itemId ? [itemId] : []);
+  }, []);
 
   const reportError = useCallback(
     (err: unknown, defaultMessage: string) => {
@@ -495,12 +696,13 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
   useEffect(() => {
     setLayout(layoutForScheme(selectedRef.current));
     setSelectedItem(null);
+    setMarquee(null);
     setPendingConnector(null);
     undoStackRef.current = [];
     redoStackRef.current = [];
     editingItemRef.current = null;
     setHistoryCounts({ undo: 0, redo: 0 });
-  }, [selectedId]);
+  }, [selectedId, setSelectedItem]);
 
   const projection = selected?.current_revision?.projection ?? null;
   const positionedNodes = useMemo(() => {
@@ -514,40 +716,29 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
     () => new Map(positionedNodes.map((node) => [node.id, node])),
     [positionedNodes],
   );
-  const canDeleteSelected = useMemo(() => {
-    if (!selectedItem) return false;
-    if (isLayoutItemLocked(selectedItem, layout)) return false;
-    return (
-      layout.cards.some((card) => card.id === selectedItem) ||
-      layout.shapes.some((shape) => shape.id === selectedItem) ||
-      layout.frames.some((frame) => frame.id === selectedItem) ||
-      layout.texts.some((text) => text.id === selectedItem) ||
-      layout.strokes.some((stroke) => stroke.id === selectedItem) ||
-      layout.connectors.some((connector) => connector.id === selectedItem)
-    );
-  }, [layout, selectedItem]);
-  const canDuplicateSelected = useMemo(() => {
-    if (!selectedItem) return false;
-    if (isLayoutItemLocked(selectedItem, layout)) return false;
-    return (
-      layout.cards.some((card) => card.id === selectedItem) ||
-      layout.shapes.some((shape) => shape.id === selectedItem) ||
-      layout.frames.some((frame) => frame.id === selectedItem) ||
-      layout.texts.some((text) => text.id === selectedItem) ||
-      layout.strokes.some((stroke) => stroke.id === selectedItem)
-    );
-  }, [layout, selectedItem]);
+  const canDeleteSelected = useMemo(
+    () =>
+      selectedItems.length > 0 &&
+      selectedItems.every((itemId) => canLockLayoutItem(itemId, layout) && !isLayoutItemLocked(itemId, layout)),
+    [layout, selectedItems],
+  );
+  const canDuplicateSelected = useMemo(
+    () =>
+      selectedItems.length > 0 &&
+      selectedItems.every((itemId) => canDuplicateLayoutItem(itemId, layout)),
+    [layout, selectedItems],
+  );
   const canLockSelected = useMemo(
-    () => canLockLayoutItem(selectedItem, layout),
-    [layout, selectedItem],
+    () => selectedItems.length > 0 && selectedItems.every((itemId) => canLockLayoutItem(itemId, layout)),
+    [layout, selectedItems],
   );
   const selectedItemLocked = useMemo(
-    () => isLayoutItemLocked(selectedItem, layout),
-    [layout, selectedItem],
+    () => canLockSelected && selectedItems.every((itemId) => isLayoutItemLocked(itemId, layout)),
+    [canLockSelected, layout, selectedItems],
   );
   const canArrangeSelected = useMemo(
-    () => canLockLayoutItem(selectedItem, layout) && !isLayoutItemLocked(selectedItem, layout),
-    [layout, selectedItem],
+    () => canLockSelected && selectedItems.every((itemId) => !isLayoutItemLocked(itemId, layout)),
+    [canLockSelected, layout, selectedItems],
   );
 
   const commitLayout = useCallback(
@@ -601,7 +792,7 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
       layoutRef.current = nextLayout;
       void commitLayout(nextLayout);
     },
-    [commitLayout],
+    [commitLayout, setSelectedItem],
   );
 
   const undoLayout = useCallback(() => {
@@ -711,7 +902,7 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
       layoutRef.current = nextLayout;
       void commitLayout(nextLayout);
     },
-    [commitLayout, locale, pushUndoSnapshot],
+    [commitLayout, locale, pushUndoSnapshot, setSelectedItem],
   );
 
   const addShape = useCallback(
@@ -735,7 +926,7 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
       layoutRef.current = nextLayout;
       void commitLayout(nextLayout);
     },
-    [commitLayout, pushUndoSnapshot],
+    [commitLayout, pushUndoSnapshot, setSelectedItem],
   );
 
   const addFrame = useCallback(
@@ -759,7 +950,7 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
       layoutRef.current = nextLayout;
       void commitLayout(nextLayout);
     },
-    [commitLayout, locale, pushUndoSnapshot],
+    [commitLayout, locale, pushUndoSnapshot, setSelectedItem],
   );
 
   const addText = useCallback(
@@ -783,7 +974,7 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
       layoutRef.current = nextLayout;
       void commitLayout(nextLayout);
     },
-    [commitLayout, locale, pushUndoSnapshot],
+    [commitLayout, locale, pushUndoSnapshot, setSelectedItem],
   );
 
   const addConnector = useCallback(
@@ -810,14 +1001,45 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
       layoutRef.current = nextLayout;
       void commitLayout(nextLayout);
     },
-    [commitLayout, pushUndoSnapshot],
+    [commitLayout, pushUndoSnapshot, setSelectedItem],
+  );
+
+  const selectBoardItem = useCallback(
+    (event: PointerEvent<Element>, itemId: string) => {
+      event.stopPropagation();
+      if (event.shiftKey || event.metaKey || event.ctrlKey) {
+        setSelectedItems((current) =>
+          current.includes(itemId)
+            ? current.filter((candidate) => candidate !== itemId)
+            : [...current, itemId],
+        );
+      } else {
+        setSelectedItem(itemId);
+      }
+      setPendingConnector(null);
+    },
+    [setSelectedItem],
   );
 
   const handleItemPointerDown = useCallback(
     (event: PointerEvent<Element>, item: BoardItemHandle, position: SchemePosition) => {
       if (event.button !== 0) return;
       event.stopPropagation();
-      setSelectedItem(item.id);
+      const additiveSelection = event.shiftKey || event.metaKey || event.ctrlKey;
+      if (additiveSelection) {
+        setSelectedItems((current) =>
+          current.includes(item.id)
+            ? current.filter((candidate) => candidate !== item.id)
+            : [...current, item.id],
+        );
+        setPendingConnector(null);
+        return;
+      }
+
+      const currentSelection = selectedItemSet.has(item.id) ? selectedItems : [item.id];
+      if (!selectedItemSet.has(item.id)) {
+        setSelectedItem(item.id);
+      }
       if (isLayoutItemLocked(item.id, layoutRef.current)) {
         return;
       }
@@ -832,6 +1054,19 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
       if (tool !== "select") return;
       event.currentTarget.setPointerCapture?.(event.pointerId);
       const start = pointFromEvent(event);
+      if (currentSelection.length > 1) {
+        if (currentSelection.some((itemId) => isLayoutItemLocked(itemId, layoutRef.current))) return;
+        pushUndoSnapshot();
+        const origin = cloneLayout(layoutRef.current);
+        const nodePositions = Object.fromEntries(
+          positionedNodes
+            .filter((node) => currentSelection.includes(node.id))
+            .map((node) => [node.id, node.position]),
+        );
+        origin.node_positions = { ...origin.node_positions, ...nodePositions };
+        dragRef.current = { type: "multi", start, origin, itemIds: currentSelection };
+        return;
+      }
       pushUndoSnapshot();
       if (item.kind === "node") {
         dragRef.current = { type: "node", nodeId: item.id, start, origin: position };
@@ -845,7 +1080,17 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
         dragRef.current = { type: "text", textId: item.id, start, origin: position };
       }
     },
-    [addConnector, pendingConnector, pointFromEvent, pushUndoSnapshot, tool],
+    [
+      addConnector,
+      pendingConnector,
+      pointFromEvent,
+      positionedNodes,
+      pushUndoSnapshot,
+      selectedItems,
+      selectedItemSet,
+      setSelectedItem,
+      tool,
+    ],
   );
 
   const handleViewportPointerDown = useCallback(
@@ -855,10 +1100,10 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
       if (target.closest("[data-scheme-board-item='true']")) return;
       event.currentTarget.setPointerCapture?.(event.pointerId);
       const point = pointFromEvent(event);
-      setSelectedItem(null);
       setPendingConnector(null);
 
       if (tool === "draw") {
+        setSelectedItem(null);
         pushUndoSnapshot();
         const stroke: SchemeStroke = {
           id: createId("stroke"),
@@ -875,22 +1120,41 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
         return;
       }
       if (tool === "sticky") {
+        setSelectedItem(null);
         addCard(point);
         return;
       }
       if (tool === "text") {
+        setSelectedItem(null);
         addText(point);
         return;
       }
       if (tool === "rectangle" || tool === "ellipse") {
+        setSelectedItem(null);
         addShape(point, tool);
         return;
       }
       if (tool === "frame") {
+        setSelectedItem(null);
         addFrame(point);
         return;
       }
-      if (tool === "pan" || tool === "select") {
+      if (tool === "select") {
+        const additiveSelection = event.shiftKey || event.metaKey || event.ctrlKey;
+        if (!additiveSelection) {
+          setSelectedItem(null);
+        }
+        dragRef.current = {
+          type: "marquee",
+          start: point,
+          current: point,
+          previousItemIds: additiveSelection ? selectedItems : [],
+        };
+        setMarquee(normaliseRect(point, point));
+        return;
+      }
+      if (tool === "pan") {
+        setSelectedItem(null);
         dragRef.current = {
           type: "pan",
           startClientX: event.clientX,
@@ -899,7 +1163,7 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
         };
       }
     },
-    [addCard, addFrame, addShape, addText, pointFromEvent, pushUndoSnapshot, selected, tool],
+    [addCard, addFrame, addShape, addText, pointFromEvent, pushUndoSnapshot, selected, selectedItems, setSelectedItem, tool],
   );
 
   const handlePointerMove = useCallback(
@@ -927,11 +1191,22 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
         }));
         return;
       }
+      if (drag.type === "marquee") {
+        const current = pointFromEvent(event);
+        const rect = normaliseRect(drag.start, current);
+        dragRef.current = { ...drag, current };
+        setMarquee(rect);
+        const nextSelection = selectedIdsFromMarquee(rect, layoutRef.current, positionedNodes);
+        setSelectedItems(mergeSelectionIds(drag.previousItemIds, nextSelection));
+        return;
+      }
 
       const point = pointFromEvent(event);
       const dx = point.x - drag.start.x;
       const dy = point.y - drag.start.y;
-      if (drag.type === "node") {
+      if (drag.type === "multi") {
+        setLocalLayout(() => translateSelectedLayout(drag.origin, drag.itemIds, dx, dy));
+      } else if (drag.type === "node") {
         setLocalLayout((current) => ({
           ...current,
           node_positions: {
@@ -975,16 +1250,25 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
         }));
       }
     },
-    [pointFromEvent, setLocalLayout, updateViewport],
+    [pointFromEvent, positionedNodes, setLocalLayout, updateViewport],
   );
 
   const handlePointerUp = useCallback(() => {
     if (!dragRef.current) return;
     const drag = dragRef.current;
     dragRef.current = null;
+    if (drag.type === "marquee") {
+      setMarquee(null);
+      const rect = normaliseRect(drag.start, drag.current);
+      if (rect.width < 3 && rect.height < 3) {
+        setSelectedItems(drag.previousItemIds);
+      }
+      return;
+    }
     if (
       drag.type === "pan" ||
       drag.type === "stroke" ||
+      drag.type === "multi" ||
       drag.type === "node" ||
       drag.type === "card" ||
       drag.type === "shape" ||
@@ -1061,121 +1345,130 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
   }, [setLocalLayout]);
 
   const deleteSelected = useCallback(() => {
-    if (!selectedItem || !canDeleteSelected) return;
+    if (selectedItems.length === 0 || !canDeleteSelected) return;
     pushUndoSnapshot();
+    const selected = new Set(selectedItems);
     const nextLayout = {
       ...layoutRef.current,
-      cards: layoutRef.current.cards.filter((card) => card.id !== selectedItem),
-      shapes: layoutRef.current.shapes.filter((shape) => shape.id !== selectedItem),
-      frames: layoutRef.current.frames.filter((frame) => frame.id !== selectedItem),
-      texts: layoutRef.current.texts.filter((text) => text.id !== selectedItem),
-      strokes: layoutRef.current.strokes.filter((stroke) => stroke.id !== selectedItem),
+      cards: layoutRef.current.cards.filter((card) => !selected.has(card.id)),
+      shapes: layoutRef.current.shapes.filter((shape) => !selected.has(shape.id)),
+      frames: layoutRef.current.frames.filter((frame) => !selected.has(frame.id)),
+      texts: layoutRef.current.texts.filter((text) => !selected.has(text.id)),
+      strokes: layoutRef.current.strokes.filter((stroke) => !selected.has(stroke.id)),
       connectors: layoutRef.current.connectors.filter(
         (connector) =>
-          connector.id !== selectedItem &&
-          connector.source_id !== selectedItem &&
-          connector.target_id !== selectedItem,
+          !selected.has(connector.id) &&
+          (connector.source_id === null || !selected.has(connector.source_id)) &&
+          (connector.target_id === null || !selected.has(connector.target_id)),
       ),
     };
     setSelectedItem(null);
     setLayout(nextLayout);
     layoutRef.current = nextLayout;
     void commitLayout(nextLayout);
-  }, [canDeleteSelected, commitLayout, pushUndoSnapshot, selectedItem]);
+  }, [canDeleteSelected, commitLayout, pushUndoSnapshot, selectedItems, setSelectedItem]);
 
   const toggleSelectedLock = useCallback(() => {
-    if (!selectedItem || !canLockSelected) return;
+    if (selectedItems.length === 0 || !canLockSelected) return;
     pushUndoSnapshot();
-    const nextLocked = !isLayoutItemLocked(selectedItem, layoutRef.current);
+    const selected = new Set(selectedItems);
+    const nextLocked = !selectedItemLocked;
     const nextLayout = {
       ...layoutRef.current,
       cards: layoutRef.current.cards.map((card) =>
-        card.id === selectedItem ? { ...card, locked: nextLocked } : card,
+        selected.has(card.id) ? { ...card, locked: nextLocked } : card,
       ),
       shapes: layoutRef.current.shapes.map((shape) =>
-        shape.id === selectedItem ? { ...shape, locked: nextLocked } : shape,
+        selected.has(shape.id) ? { ...shape, locked: nextLocked } : shape,
       ),
       frames: layoutRef.current.frames.map((frame) =>
-        frame.id === selectedItem ? { ...frame, locked: nextLocked } : frame,
+        selected.has(frame.id) ? { ...frame, locked: nextLocked } : frame,
       ),
       texts: layoutRef.current.texts.map((text) =>
-        text.id === selectedItem ? { ...text, locked: nextLocked } : text,
+        selected.has(text.id) ? { ...text, locked: nextLocked } : text,
       ),
       strokes: layoutRef.current.strokes.map((stroke) =>
-        stroke.id === selectedItem ? { ...stroke, locked: nextLocked } : stroke,
+        selected.has(stroke.id) ? { ...stroke, locked: nextLocked } : stroke,
       ),
       connectors: layoutRef.current.connectors.map((connector) =>
-        connector.id === selectedItem ? { ...connector, locked: nextLocked } : connector,
+        selected.has(connector.id) ? { ...connector, locked: nextLocked } : connector,
       ),
     };
     setLayout(nextLayout);
     layoutRef.current = nextLayout;
     void commitLayout(nextLayout);
-  }, [canLockSelected, commitLayout, pushUndoSnapshot, selectedItem]);
+  }, [canLockSelected, commitLayout, pushUndoSnapshot, selectedItemLocked, selectedItems]);
 
   const arrangeSelected = useCallback((action: LayerAction) => {
-    if (!selectedItem || !canArrangeSelected) return;
+    if (selectedItems.length === 0 || !canArrangeSelected) return;
     pushUndoSnapshot();
-    const nextLayout = arrangeLayoutItem(layoutRef.current, selectedItem, action);
+    const nextLayout = arrangeLayoutItems(layoutRef.current, selectedItems, action);
     setLayout(nextLayout);
     layoutRef.current = nextLayout;
     void commitLayout(nextLayout);
-  }, [canArrangeSelected, commitLayout, pushUndoSnapshot, selectedItem]);
+  }, [canArrangeSelected, commitLayout, pushUndoSnapshot, selectedItems]);
 
   const duplicateSelected = useCallback(() => {
-    if (!selectedItem || !canDuplicateSelected) return;
+    if (selectedItems.length === 0 || !canDuplicateSelected) return;
     pushUndoSnapshot();
     const offset = 32;
-    let nextSelectedItem: string | null = null;
+    const nextSelectedItems: string[] = [];
     const current = layoutRef.current;
     const nextLayout = cloneLayout(current);
+    let nextZIndex = nextLayerIndex(current);
 
-    const card = current.cards.find((candidate) => candidate.id === selectedItem);
-    if (card) {
-      const duplicate = { ...card, id: createId("card"), x: card.x + offset, y: card.y + offset, z_index: nextLayerIndex(current) };
-      nextLayout.cards.push(duplicate);
-      nextSelectedItem = duplicate.id;
+    for (const itemId of selectedItems) {
+      const card = current.cards.find((candidate) => candidate.id === itemId);
+      if (card) {
+        const duplicate = { ...card, id: createId("card"), x: card.x + offset, y: card.y + offset, z_index: nextZIndex++ };
+        nextLayout.cards.push(duplicate);
+        nextSelectedItems.push(duplicate.id);
+        continue;
+      }
+
+      const shape = current.shapes.find((candidate) => candidate.id === itemId);
+      if (shape) {
+        const duplicate = { ...shape, id: createId("shape"), x: shape.x + offset, y: shape.y + offset, z_index: nextZIndex++ };
+        nextLayout.shapes.push(duplicate);
+        nextSelectedItems.push(duplicate.id);
+        continue;
+      }
+
+      const frame = current.frames.find((candidate) => candidate.id === itemId);
+      if (frame) {
+        const duplicate = { ...frame, id: createId("frame"), x: frame.x + offset, y: frame.y + offset, z_index: nextZIndex++ };
+        nextLayout.frames.push(duplicate);
+        nextSelectedItems.push(duplicate.id);
+        continue;
+      }
+
+      const text = current.texts.find((candidate) => candidate.id === itemId);
+      if (text) {
+        const duplicate = { ...text, id: createId("text"), x: text.x + offset, y: text.y + offset, z_index: nextZIndex++ };
+        nextLayout.texts.push(duplicate);
+        nextSelectedItems.push(duplicate.id);
+        continue;
+      }
+
+      const stroke = current.strokes.find((candidate) => candidate.id === itemId);
+      if (stroke) {
+        const duplicate = {
+          ...stroke,
+          id: createId("stroke"),
+          points: stroke.points.map((point) => ({ x: point.x + offset, y: point.y + offset })),
+          z_index: nextZIndex++,
+        };
+        nextLayout.strokes.push(duplicate);
+        nextSelectedItems.push(duplicate.id);
+      }
     }
 
-    const shape = current.shapes.find((candidate) => candidate.id === selectedItem);
-    if (shape) {
-      const duplicate = { ...shape, id: createId("shape"), x: shape.x + offset, y: shape.y + offset, z_index: nextLayerIndex(current) };
-      nextLayout.shapes.push(duplicate);
-      nextSelectedItem = duplicate.id;
-    }
-
-    const frame = current.frames.find((candidate) => candidate.id === selectedItem);
-    if (frame) {
-      const duplicate = { ...frame, id: createId("frame"), x: frame.x + offset, y: frame.y + offset, z_index: nextLayerIndex(current) };
-      nextLayout.frames.push(duplicate);
-      nextSelectedItem = duplicate.id;
-    }
-
-    const text = current.texts.find((candidate) => candidate.id === selectedItem);
-    if (text) {
-      const duplicate = { ...text, id: createId("text"), x: text.x + offset, y: text.y + offset, z_index: nextLayerIndex(current) };
-      nextLayout.texts.push(duplicate);
-      nextSelectedItem = duplicate.id;
-    }
-
-    const stroke = current.strokes.find((candidate) => candidate.id === selectedItem);
-    if (stroke) {
-      const duplicate = {
-        ...stroke,
-        id: createId("stroke"),
-        points: stroke.points.map((point) => ({ x: point.x + offset, y: point.y + offset })),
-        z_index: nextLayerIndex(current),
-      };
-      nextLayout.strokes.push(duplicate);
-      nextSelectedItem = duplicate.id;
-    }
-
-    if (!nextSelectedItem) return;
-    setSelectedItem(nextSelectedItem);
+    if (nextSelectedItems.length === 0) return;
+    setSelectedItems(nextSelectedItems);
     setLayout(nextLayout);
     layoutRef.current = nextLayout;
     void commitLayout(nextLayout);
-  }, [canDuplicateSelected, commitLayout, pushUndoSnapshot, selectedItem]);
+  }, [canDuplicateSelected, commitLayout, pushUndoSnapshot, selectedItems]);
 
   const setZoom = useCallback(
     (nextZoom: number) => {
@@ -1358,15 +1651,12 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
                     >
                       <polyline
                         className={[
-                          selectedItem === connector.id ? "scheme-board__connector--selected" : "",
+                          selectedItemSet.has(connector.id) ? "scheme-board__connector--selected" : "",
                           connector.locked ? "scheme-board__item--locked" : "",
                         ].filter(Boolean).join(" ")}
                         points={points.map((point) => `${point.x},${point.y}`).join(" ")}
                         stroke={connector.color}
-                        onPointerDown={(event) => {
-                          event.stopPropagation();
-                          setSelectedItem(connector.id);
-                        }}
+                        onPointerDown={(event) => selectBoardItem(event, connector.id)}
                       />
                     </svg>
                   );
@@ -1382,16 +1672,13 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
                   >
                     <polyline
                       className={[
-                        selectedItem === stroke.id ? "scheme-board__stroke--selected" : "",
+                        selectedItemSet.has(stroke.id) ? "scheme-board__stroke--selected" : "",
                         stroke.locked ? "scheme-board__item--locked" : "",
                       ].filter(Boolean).join(" ")}
                       points={stroke.points.map((point) => `${point.x},${point.y}`).join(" ")}
                       stroke={stroke.color}
                       strokeWidth={stroke.width}
-                      onPointerDown={(event) => {
-                        event.stopPropagation();
-                        setSelectedItem(stroke.id);
-                      }}
+                      onPointerDown={(event) => selectBoardItem(event, stroke.id)}
                     />
                   </svg>
                 ))}
@@ -1406,7 +1693,7 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
                   >
                     <path
                       className={[
-                        selectedItem === shape.id ? "scheme-board__shape--selected" : "",
+                        selectedItemSet.has(shape.id) ? "scheme-board__shape--selected" : "",
                         shape.locked ? "scheme-board__item--locked" : "",
                       ].filter(Boolean).join(" ")}
                       d={shapePath(shape)}
@@ -1425,7 +1712,7 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
                     data-scheme-board-item="true"
                     className={[
                       "scheme-frame",
-                      selectedItem === frame.id ? "scheme-frame--selected" : "",
+                      selectedItemSet.has(frame.id) ? "scheme-frame--selected" : "",
                       frame.locked ? "scheme-board__item--locked" : "",
                     ].filter(Boolean).join(" ")}
                     style={{
@@ -1445,10 +1732,7 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
                       value={frame.title}
                       aria-label="Frame title"
                       disabled={frame.locked}
-                      onPointerDown={(event) => {
-                        event.stopPropagation();
-                        setSelectedItem(frame.id);
-                      }}
+                      onPointerDown={(event) => selectBoardItem(event, frame.id)}
                       onFocus={() => beginInlineEdit(frame.id)}
                       onChange={(event) => handleFrameTitleChange(frame.id, event.target.value)}
                       onBlur={finishInlineEdit}
@@ -1462,7 +1746,7 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
                     data-scheme-board-item="true"
                     className={[
                       "scheme-text",
-                      selectedItem === text.id ? "scheme-text--selected" : "",
+                      selectedItemSet.has(text.id) ? "scheme-text--selected" : "",
                       text.locked ? "scheme-board__item--locked" : "",
                     ].filter(Boolean).join(" ")}
                     style={{
@@ -1482,10 +1766,7 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
                       value={text.text}
                       aria-label="Canvas text"
                       disabled={text.locked}
-                      onPointerDown={(event) => {
-                        event.stopPropagation();
-                        setSelectedItem(text.id);
-                      }}
+                      onPointerDown={(event) => selectBoardItem(event, text.id)}
                       onFocus={() => beginInlineEdit(text.id)}
                       onChange={(event) => handleTextBlockChange(text.id, event.target.value)}
                       onBlur={finishInlineEdit}
@@ -1498,7 +1779,7 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
                     key={node.id}
                     type="button"
                     data-scheme-board-item="true"
-                    className={`scheme-node scheme-node--${node.kind} ${selectedItem === node.id ? "scheme-node--selected" : ""}`}
+                    className={`scheme-node scheme-node--${node.kind} ${selectedItemSet.has(node.id) ? "scheme-node--selected" : ""}`}
                     style={{ left: node.position.x, top: node.position.y, zIndex: 20 }}
                     aria-label={`${node.title} ${node.body ?? ""}`.trim()}
                     onPointerDown={(event) =>
@@ -1517,7 +1798,7 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
                     data-scheme-board-item="true"
                     className={[
                       "scheme-sticky",
-                      selectedItem === card.id ? "scheme-sticky--selected" : "",
+                      selectedItemSet.has(card.id) ? "scheme-sticky--selected" : "",
                       card.locked ? "scheme-board__item--locked" : "",
                     ].filter(Boolean).join(" ")}
                     style={{
@@ -1536,16 +1817,24 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
                       value={card.text}
                       aria-label="Sticky note"
                       disabled={card.locked}
-                      onPointerDown={(event) => {
-                        event.stopPropagation();
-                        setSelectedItem(card.id);
-                      }}
+                      onPointerDown={(event) => selectBoardItem(event, card.id)}
                       onFocus={() => beginInlineEdit(card.id)}
                       onChange={(event) => handleCardTextChange(card.id, event.target.value)}
                       onBlur={finishInlineEdit}
                     />
                   </div>
                 ))}
+                {marquee ? (
+                  <div
+                    className="scheme-board__marquee"
+                    style={{
+                      left: marquee.x,
+                      top: marquee.y,
+                      width: marquee.width,
+                      height: marquee.height,
+                    }}
+                  />
+                ) : null}
               </div>
             </div>
           ) : (

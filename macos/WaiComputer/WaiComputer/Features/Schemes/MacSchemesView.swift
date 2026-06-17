@@ -318,6 +318,12 @@ private struct MacSchemeBoard: View {
         let origin: SchemePosition
     }
 
+    private struct MultiItemDragState {
+        let id: String
+        let origin: SchemeCanvasLayout
+        let itemIds: [String]
+    }
+
     private struct BoardHandle: Equatable {
         let id: String
     }
@@ -343,7 +349,11 @@ private struct MacSchemeBoard: View {
     @State private var textDrag: ItemDragState?
     @State private var draftStrokeId: String?
     @State private var selectedItemId: String?
+    @State private var selectedItemIds: [String] = []
     @State private var pendingConnector: BoardHandle?
+    @State private var multiDrag: MultiItemDragState?
+    @State private var marqueeStart: SchemePosition?
+    @State private var marqueeCurrent: SchemePosition?
     @State private var undoStack: [SchemeCanvasLayout] = []
     @State private var redoStack: [SchemeCanvasLayout] = []
     @State private var editingItemId: String?
@@ -421,6 +431,16 @@ private struct MacSchemeBoard: View {
                             .zIndex(layerZIndex(shape.zIndex))
                             .highPriorityGesture(shapeGesture(for: shape))
                             .accessibilityIdentifier("scheme-shape-\(shape.id)")
+                    }
+
+                    if let marqueeRect = marqueeRect(in: proxy.size) {
+                        Rectangle()
+                            .fill(Palette.accent.opacity(0.14))
+                            .overlay(Rectangle().stroke(Palette.accent, lineWidth: 1))
+                            .frame(width: marqueeRect.width, height: marqueeRect.height)
+                            .position(x: marqueeRect.midX, y: marqueeRect.midY)
+                            .zIndex(1_000_001)
+                            .allowsHitTesting(false)
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -676,44 +696,24 @@ private struct MacSchemeBoard: View {
     }
 
     private var canDeleteSelected: Bool {
-        guard let selectedItemId else { return false }
-        if isItemLocked(selectedItemId) { return false }
-        return layout.cards.contains { $0.id == selectedItemId }
-            || layout.shapes.contains { $0.id == selectedItemId }
-            || layout.frames.contains { $0.id == selectedItemId }
-            || layout.texts.contains { $0.id == selectedItemId }
-            || layout.strokes.contains { $0.id == selectedItemId }
-            || layout.connectors.contains { $0.id == selectedItemId }
+        !selectedItemIds.isEmpty
+            && selectedItemIds.allSatisfy { canLockItem($0) && !isItemLocked($0) }
     }
 
     private var canDuplicateSelected: Bool {
-        guard let selectedItemId else { return false }
-        if isItemLocked(selectedItemId) { return false }
-        return layout.cards.contains { $0.id == selectedItemId }
-            || layout.shapes.contains { $0.id == selectedItemId }
-            || layout.frames.contains { $0.id == selectedItemId }
-            || layout.texts.contains { $0.id == selectedItemId }
-            || layout.strokes.contains { $0.id == selectedItemId }
+        !selectedItemIds.isEmpty && selectedItemIds.allSatisfy(canDuplicateItem)
     }
 
     private var canLockSelected: Bool {
-        guard let selectedItemId else { return false }
-        return layout.cards.contains { $0.id == selectedItemId }
-            || layout.shapes.contains { $0.id == selectedItemId }
-            || layout.frames.contains { $0.id == selectedItemId }
-            || layout.texts.contains { $0.id == selectedItemId }
-            || layout.strokes.contains { $0.id == selectedItemId }
-            || layout.connectors.contains { $0.id == selectedItemId }
+        !selectedItemIds.isEmpty && selectedItemIds.allSatisfy(canLockItem)
     }
 
     private var isSelectedLocked: Bool {
-        guard let selectedItemId else { return false }
-        return isItemLocked(selectedItemId)
+        canLockSelected && selectedItemIds.allSatisfy(isItemLocked)
     }
 
     private var canArrangeSelected: Bool {
-        guard let selectedItemId, canLockSelected else { return false }
-        return !isItemLocked(selectedItemId)
+        canLockSelected && selectedItemIds.allSatisfy { !isItemLocked($0) }
     }
 
     private var selectedCardText: Binding<String> {
@@ -796,7 +796,7 @@ private struct MacSchemeBoard: View {
     }
 
     private func restoreLayout(_ nextLayout: SchemeCanvasLayout) {
-        selectedItemId = nil
+        clearSelection()
         pendingConnector = nil
         editingItemId = nil
         draftStrokeId = nil
@@ -806,8 +806,27 @@ private struct MacSchemeBoard: View {
         shapeDrag = nil
         frameDrag = nil
         textDrag = nil
+        multiDrag = nil
+        marqueeStart = nil
+        marqueeCurrent = nil
         layout = nextLayout
         onCommit(layout)
+    }
+
+    private func selectSingle(_ id: String?) {
+        selectedItemId = id
+        selectedItemIds = id.map { [$0] } ?? []
+    }
+
+    private func setSelection(_ ids: [String]) {
+        var seen: Set<String> = []
+        selectedItemIds = ids.filter { seen.insert($0).inserted }
+        selectedItemId = selectedItemIds.last
+    }
+
+    private func clearSelection() {
+        selectedItemId = nil
+        selectedItemIds = []
     }
 
     private func beginInlineEdit(_ itemId: String) {
@@ -824,6 +843,24 @@ private struct MacSchemeBoard: View {
             || layout.texts.contains { $0.id == id && $0.locked }
             || layout.strokes.contains { $0.id == id && $0.locked }
             || layout.connectors.contains { $0.id == id && $0.locked }
+    }
+
+    private func canLockItem(_ id: String) -> Bool {
+        layout.cards.contains { $0.id == id }
+            || layout.shapes.contains { $0.id == id }
+            || layout.frames.contains { $0.id == id }
+            || layout.texts.contains { $0.id == id }
+            || layout.strokes.contains { $0.id == id }
+            || layout.connectors.contains { $0.id == id }
+    }
+
+    private func canDuplicateItem(_ id: String) -> Bool {
+        guard !isItemLocked(id) else { return false }
+        return layout.cards.contains { $0.id == id }
+            || layout.shapes.contains { $0.id == id }
+            || layout.frames.contains { $0.id == id }
+            || layout.texts.contains { $0.id == id }
+            || layout.strokes.contains { $0.id == id }
     }
 
     private func layerZIndex(_ zIndex: Int) -> Double {
@@ -872,9 +909,155 @@ private struct MacSchemeBoard: View {
         }
     }
 
+    private func itemBounds() -> [(id: String, rect: CGRect)] {
+        var bounds: [(id: String, rect: CGRect)] = positionedNodes.map { node in
+            (
+                id: node.id,
+                rect: CGRect(
+                    x: node.position.x,
+                    y: node.position.y,
+                    width: Double(nodeWidth),
+                    height: Double(nodeHeight)
+                )
+            )
+        }
+        bounds += layout.cards.map { card in
+            (id: card.id, rect: CGRect(x: card.x, y: card.y, width: card.width, height: card.height))
+        }
+        bounds += layout.shapes.map { shape in
+            (id: shape.id, rect: CGRect(x: shape.x, y: shape.y, width: shape.width, height: shape.height))
+        }
+        bounds += layout.frames.map { frame in
+            (id: frame.id, rect: CGRect(x: frame.x, y: frame.y, width: frame.width, height: frame.height))
+        }
+        bounds += layout.texts.map { text in
+            (id: text.id, rect: CGRect(x: text.x, y: text.y, width: text.width, height: text.height))
+        }
+        bounds += layout.strokes.compactMap { stroke in
+            pointsBounds(id: stroke.id, points: stroke.points)
+        }
+        bounds += layout.connectors.compactMap { connector in
+            pointsBounds(id: connector.id, points: connectorPoints(connector))
+        }
+        return bounds
+    }
+
+    private func pointsBounds(id: String, points: [SchemePosition]) -> (id: String, rect: CGRect)? {
+        guard let first = points.first else { return nil }
+        var minX = first.x
+        var maxX = first.x
+        var minY = first.y
+        var maxY = first.y
+        for point in points.dropFirst() {
+            minX = min(minX, point.x)
+            maxX = max(maxX, point.x)
+            minY = min(minY, point.y)
+            maxY = max(maxY, point.y)
+        }
+        return (id: id, rect: CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY))
+    }
+
+    private func normalisedSelectionRect(from start: SchemePosition, to end: SchemePosition) -> CGRect {
+        let minX = min(start.x, end.x)
+        let minY = min(start.y, end.y)
+        return CGRect(x: minX, y: minY, width: abs(start.x - end.x), height: abs(start.y - end.y))
+    }
+
+    private func selectionIds(in rect: CGRect) -> [String] {
+        itemBounds()
+            .filter { $0.rect.intersects(rect) }
+            .map(\.id)
+    }
+
+    private func marqueeRect(in size: CGSize) -> CGRect? {
+        guard let marqueeStart, let marqueeCurrent else { return nil }
+        let worldRect = normalisedSelectionRect(from: marqueeStart, to: marqueeCurrent)
+        let origin = screenPoint(for: SchemePosition(x: worldRect.minX, y: worldRect.minY), in: size)
+        return CGRect(
+            x: origin.x,
+            y: origin.y,
+            width: worldRect.width * layout.viewport.zoom,
+            height: worldRect.height * layout.viewport.zoom
+        )
+    }
+
+    private func layoutWithCurrentNodePositions() -> SchemeCanvasLayout {
+        var origin = layout
+        for node in positionedNodes where selectedItemIds.contains(node.id) {
+            origin.nodePositions[node.id] = node.position
+        }
+        return origin
+    }
+
+    private func translatedLayout(
+        from origin: SchemeCanvasLayout,
+        itemIds: [String],
+        translation: CGSize
+    ) -> SchemeCanvasLayout {
+        let selected = Set(itemIds)
+        let dx = Double(translation.width / CGFloat(origin.viewport.zoom))
+        let dy = Double(translation.height / CGFloat(origin.viewport.zoom))
+        var next = origin
+
+        for itemId in selected {
+            if let position = next.nodePositions[itemId] {
+                next.nodePositions[itemId] = SchemePosition(x: position.x + dx, y: position.y + dy)
+            }
+        }
+        for index in next.cards.indices where selected.contains(next.cards[index].id) {
+            next.cards[index].x += dx
+            next.cards[index].y += dy
+        }
+        for index in next.shapes.indices where selected.contains(next.shapes[index].id) {
+            next.shapes[index].x += dx
+            next.shapes[index].y += dy
+        }
+        for index in next.frames.indices where selected.contains(next.frames[index].id) {
+            next.frames[index].x += dx
+            next.frames[index].y += dy
+        }
+        for index in next.texts.indices where selected.contains(next.texts[index].id) {
+            next.texts[index].x += dx
+            next.texts[index].y += dy
+        }
+        for index in next.strokes.indices where selected.contains(next.strokes[index].id) {
+            next.strokes[index].points = next.strokes[index].points.map {
+                SchemePosition(x: $0.x + dx, y: $0.y + dy)
+            }
+        }
+        for index in next.connectors.indices where selected.contains(next.connectors[index].id) {
+            next.connectors[index].points = next.connectors[index].points.map {
+                SchemePosition(x: $0.x + dx, y: $0.y + dy)
+            }
+        }
+
+        return next
+    }
+
+    private func beginMultiDragIfNeeded(id: String, translation: CGSize) -> Bool {
+        guard tool == .select, selectedItemIds.contains(id), selectedItemIds.count > 1 else { return false }
+        guard selectedItemIds.allSatisfy({ !isItemLocked($0) }) else { return true }
+        if multiDrag?.id != id {
+            pushUndoSnapshot()
+            multiDrag = MultiItemDragState(id: id, origin: layoutWithCurrentNodePositions(), itemIds: selectedItemIds)
+        }
+        if let multiDrag {
+            layout = translatedLayout(from: multiDrag.origin, itemIds: multiDrag.itemIds, translation: translation)
+        }
+        return true
+    }
+
+    private func endMultiDragIfNeeded(id: String, translation: CGSize) -> Bool {
+        guard let multiDrag, multiDrag.id == id else { return false }
+        layout = translatedLayout(from: multiDrag.origin, itemIds: multiDrag.itemIds, translation: translation)
+        self.multiDrag = nil
+        onCommit(layout)
+        return true
+    }
+
     private func selectionOverlay(id: String) -> some View {
         RoundedRectangle(cornerRadius: 8)
-            .stroke(selectedItemId == id ? Palette.accent : Color.clear, lineWidth: 2)
+            .stroke(selectedItemIds.contains(id) ? Palette.accent : Color.clear, lineWidth: 2)
             .padding(-3)
     }
 
@@ -895,9 +1078,9 @@ private struct MacSchemeBoard: View {
                         )
                         layout.strokes.append(stroke)
                         draftStrokeId = stroke.id
-                        selectedItemId = stroke.id
+                        selectSingle(stroke.id)
                     }
-                case .pan, .select:
+                case .pan:
                     if panStart == nil {
                         panStart = layout.viewport
                     }
@@ -907,6 +1090,14 @@ private struct MacSchemeBoard: View {
                         y: origin.y + Double(value.translation.height),
                         zoom: origin.zoom
                     )
+                case .select:
+                    if marqueeStart == nil {
+                        marqueeStart = world
+                    }
+                    marqueeCurrent = world
+                    if let marqueeStart {
+                        setSelection(selectionIds(in: normalisedSelectionRect(from: marqueeStart, to: world)))
+                    }
                 case .sticky, .text, .rectangle, .ellipse, .frame, .connector:
                     break
                 }
@@ -927,9 +1118,18 @@ private struct MacSchemeBoard: View {
                 case .draw:
                     draftStrokeId = nil
                     onCommit(layout)
-                case .pan, .select:
+                case .pan:
                     panStart = nil
                     onCommit(layout)
+                case .select:
+                    if let marqueeStart, let marqueeCurrent {
+                        let rect = normalisedSelectionRect(from: marqueeStart, to: marqueeCurrent)
+                        if rect.width < 3 && rect.height < 3 {
+                            clearSelection()
+                        }
+                    }
+                    marqueeStart = nil
+                    marqueeCurrent = nil
                 case .connector:
                     pendingConnector = nil
                 }
@@ -940,10 +1140,11 @@ private struct MacSchemeBoard: View {
         DragGesture(minimumDistance: tool == .connector ? 0 : 1)
             .onChanged { value in
                 guard tool == .select else { return }
+                if beginMultiDragIfNeeded(id: node.id, translation: value.translation) { return }
                 if nodeDrag?.id != node.id {
                     pushUndoSnapshot()
                     nodeDrag = ItemDragState(id: node.id, origin: node.position)
-                    selectedItemId = node.id
+                    selectSingle(node.id)
                 }
                 let origin = nodeDrag?.origin ?? node.position
                 layout.nodePositions[node.id] = SchemePosition(
@@ -957,12 +1158,13 @@ private struct MacSchemeBoard: View {
                     return
                 }
                 guard tool == .select else { return }
+                if endMultiDragIfNeeded(id: node.id, translation: value.translation) { return }
                 let origin = nodeDrag?.origin ?? node.position
                 layout.nodePositions[node.id] = SchemePosition(
                     x: origin.x + Double(value.translation.width / CGFloat(layout.viewport.zoom)),
                     y: origin.y + Double(value.translation.height / CGFloat(layout.viewport.zoom))
                 )
-                selectedItemId = node.id
+                selectSingle(node.id)
                 nodeDrag = nil
                 onCommit(layout)
             }
@@ -973,13 +1175,14 @@ private struct MacSchemeBoard: View {
             .onChanged { value in
                 guard tool == .select else { return }
                 guard !card.locked else {
-                    selectedItemId = card.id
+                    selectSingle(card.id)
                     return
                 }
+                if beginMultiDragIfNeeded(id: card.id, translation: value.translation) { return }
                 if cardDrag?.id != card.id {
                     pushUndoSnapshot()
                     cardDrag = ItemDragState(id: card.id, origin: SchemePosition(x: card.x, y: card.y))
-                    selectedItemId = card.id
+                    selectSingle(card.id)
                 }
                 let origin = cardDrag?.origin ?? SchemePosition(x: card.x, y: card.y)
                 updateCard(card.id) {
@@ -989,7 +1192,7 @@ private struct MacSchemeBoard: View {
             }
             .onEnded { value in
                 guard !card.locked else {
-                    selectedItemId = card.id
+                    selectSingle(card.id)
                     cardDrag = nil
                     return
                 }
@@ -998,12 +1201,13 @@ private struct MacSchemeBoard: View {
                     return
                 }
                 guard tool == .select else { return }
+                if endMultiDragIfNeeded(id: card.id, translation: value.translation) { return }
                 let origin = cardDrag?.origin ?? SchemePosition(x: card.x, y: card.y)
                 updateCard(card.id) {
                     $0.x = origin.x + Double(value.translation.width / CGFloat(layout.viewport.zoom))
                     $0.y = origin.y + Double(value.translation.height / CGFloat(layout.viewport.zoom))
                 }
-                selectedItemId = card.id
+                selectSingle(card.id)
                 cardDrag = nil
                 onCommit(layout)
             }
@@ -1014,13 +1218,14 @@ private struct MacSchemeBoard: View {
             .onChanged { value in
                 guard tool == .select else { return }
                 guard !shape.locked else {
-                    selectedItemId = shape.id
+                    selectSingle(shape.id)
                     return
                 }
+                if beginMultiDragIfNeeded(id: shape.id, translation: value.translation) { return }
                 if shapeDrag?.id != shape.id {
                     pushUndoSnapshot()
                     shapeDrag = ItemDragState(id: shape.id, origin: SchemePosition(x: shape.x, y: shape.y))
-                    selectedItemId = shape.id
+                    selectSingle(shape.id)
                 }
                 let origin = shapeDrag?.origin ?? SchemePosition(x: shape.x, y: shape.y)
                 updateShape(shape.id) {
@@ -1030,7 +1235,7 @@ private struct MacSchemeBoard: View {
             }
             .onEnded { value in
                 guard !shape.locked else {
-                    selectedItemId = shape.id
+                    selectSingle(shape.id)
                     shapeDrag = nil
                     return
                 }
@@ -1039,12 +1244,13 @@ private struct MacSchemeBoard: View {
                     return
                 }
                 guard tool == .select else { return }
+                if endMultiDragIfNeeded(id: shape.id, translation: value.translation) { return }
                 let origin = shapeDrag?.origin ?? SchemePosition(x: shape.x, y: shape.y)
                 updateShape(shape.id) {
                     $0.x = origin.x + Double(value.translation.width / CGFloat(layout.viewport.zoom))
                     $0.y = origin.y + Double(value.translation.height / CGFloat(layout.viewport.zoom))
                 }
-                selectedItemId = shape.id
+                selectSingle(shape.id)
                 shapeDrag = nil
                 onCommit(layout)
             }
@@ -1055,13 +1261,14 @@ private struct MacSchemeBoard: View {
             .onChanged { value in
                 guard tool == .select else { return }
                 guard !frame.locked else {
-                    selectedItemId = frame.id
+                    selectSingle(frame.id)
                     return
                 }
+                if beginMultiDragIfNeeded(id: frame.id, translation: value.translation) { return }
                 if frameDrag?.id != frame.id {
                     pushUndoSnapshot()
                     frameDrag = ItemDragState(id: frame.id, origin: SchemePosition(x: frame.x, y: frame.y))
-                    selectedItemId = frame.id
+                    selectSingle(frame.id)
                 }
                 let origin = frameDrag?.origin ?? SchemePosition(x: frame.x, y: frame.y)
                 updateFrame(frame.id) {
@@ -1071,7 +1278,7 @@ private struct MacSchemeBoard: View {
             }
             .onEnded { value in
                 guard !frame.locked else {
-                    selectedItemId = frame.id
+                    selectSingle(frame.id)
                     frameDrag = nil
                     return
                 }
@@ -1080,12 +1287,13 @@ private struct MacSchemeBoard: View {
                     return
                 }
                 guard tool == .select else { return }
+                if endMultiDragIfNeeded(id: frame.id, translation: value.translation) { return }
                 let origin = frameDrag?.origin ?? SchemePosition(x: frame.x, y: frame.y)
                 updateFrame(frame.id) {
                     $0.x = origin.x + Double(value.translation.width / CGFloat(layout.viewport.zoom))
                     $0.y = origin.y + Double(value.translation.height / CGFloat(layout.viewport.zoom))
                 }
-                selectedItemId = frame.id
+                selectSingle(frame.id)
                 frameDrag = nil
                 onCommit(layout)
             }
@@ -1096,13 +1304,14 @@ private struct MacSchemeBoard: View {
             .onChanged { value in
                 guard tool == .select else { return }
                 guard !text.locked else {
-                    selectedItemId = text.id
+                    selectSingle(text.id)
                     return
                 }
+                if beginMultiDragIfNeeded(id: text.id, translation: value.translation) { return }
                 if textDrag?.id != text.id {
                     pushUndoSnapshot()
                     textDrag = ItemDragState(id: text.id, origin: SchemePosition(x: text.x, y: text.y))
-                    selectedItemId = text.id
+                    selectSingle(text.id)
                 }
                 let origin = textDrag?.origin ?? SchemePosition(x: text.x, y: text.y)
                 updateText(text.id) {
@@ -1112,7 +1321,7 @@ private struct MacSchemeBoard: View {
             }
             .onEnded { value in
                 guard !text.locked else {
-                    selectedItemId = text.id
+                    selectSingle(text.id)
                     textDrag = nil
                     return
                 }
@@ -1121,12 +1330,13 @@ private struct MacSchemeBoard: View {
                     return
                 }
                 guard tool == .select else { return }
+                if endMultiDragIfNeeded(id: text.id, translation: value.translation) { return }
                 let origin = textDrag?.origin ?? SchemePosition(x: text.x, y: text.y)
                 updateText(text.id) {
                     $0.x = origin.x + Double(value.translation.width / CGFloat(layout.viewport.zoom))
                     $0.y = origin.y + Double(value.translation.height / CGFloat(layout.viewport.zoom))
                 }
-                selectedItemId = text.id
+                selectSingle(text.id)
                 textDrag = nil
                 onCommit(layout)
             }
@@ -1194,7 +1404,7 @@ private struct MacSchemeBoard: View {
             zIndex: nextLayerIndex()
         )
         layout.cards.append(card)
-        selectedItemId = card.id
+        selectSingle(card.id)
         onCommit(layout)
     }
 
@@ -1211,7 +1421,7 @@ private struct MacSchemeBoard: View {
             zIndex: nextLayerIndex()
         )
         layout.shapes.append(shape)
-        selectedItemId = shape.id
+        selectSingle(shape.id)
         onCommit(layout)
     }
 
@@ -1227,7 +1437,7 @@ private struct MacSchemeBoard: View {
             zIndex: nextLayerIndex()
         )
         layout.frames.append(frame)
-        selectedItemId = frame.id
+        selectSingle(frame.id)
         onCommit(layout)
     }
 
@@ -1244,7 +1454,7 @@ private struct MacSchemeBoard: View {
             zIndex: nextLayerIndex()
         )
         layout.texts.append(text)
-        selectedItemId = text.id
+        selectSingle(text.id)
         onCommit(layout)
     }
 
@@ -1254,7 +1464,7 @@ private struct MacSchemeBoard: View {
     }
 
     private func handleConnectorTap(id: String) {
-        selectedItemId = id
+        selectSingle(id)
         guard !isItemLocked(id) else {
             pendingConnector = nil
             return
@@ -1271,7 +1481,7 @@ private struct MacSchemeBoard: View {
             )
             layout.connectors.append(connector)
             self.pendingConnector = nil
-            selectedItemId = connector.id
+            selectSingle(connector.id)
             onCommit(layout)
         } else {
             pendingConnector = handle
@@ -1279,132 +1489,152 @@ private struct MacSchemeBoard: View {
     }
 
     private func deleteSelected() {
-        guard let selectedItemId, canDeleteSelected else { return }
+        guard canDeleteSelected else { return }
         pushUndoSnapshot()
-        layout.cards.removeAll { $0.id == selectedItemId }
-        layout.shapes.removeAll { $0.id == selectedItemId }
-        layout.frames.removeAll { $0.id == selectedItemId }
-        layout.texts.removeAll { $0.id == selectedItemId }
-        layout.strokes.removeAll { $0.id == selectedItemId }
+        let selected = Set(selectedItemIds)
+        layout.cards.removeAll { selected.contains($0.id) }
+        layout.shapes.removeAll { selected.contains($0.id) }
+        layout.frames.removeAll { selected.contains($0.id) }
+        layout.texts.removeAll { selected.contains($0.id) }
+        layout.strokes.removeAll { selected.contains($0.id) }
         layout.connectors.removeAll {
-            $0.id == selectedItemId || $0.sourceId == selectedItemId || $0.targetId == selectedItemId
+            selected.contains($0.id)
+                || $0.sourceId.map { selected.contains($0) } == true
+                || $0.targetId.map { selected.contains($0) } == true
         }
-        self.selectedItemId = nil
+        clearSelection()
         onCommit(layout)
     }
 
     private func toggleSelectedLock() {
-        guard let selectedItemId, canLockSelected else { return }
+        guard canLockSelected else { return }
         pushUndoSnapshot()
-        let locked = !isItemLocked(selectedItemId)
+        let selected = Set(selectedItemIds)
+        let locked = !isSelectedLocked
 
-        updateCard(selectedItemId) { $0.locked = locked }
-        updateShape(selectedItemId) { $0.locked = locked }
-        updateFrame(selectedItemId) { $0.locked = locked }
-        updateText(selectedItemId) { $0.locked = locked }
-        updateStroke(selectedItemId) { $0.locked = locked }
-        updateConnector(selectedItemId) { $0.locked = locked }
+        for id in selected {
+            updateCard(id) { $0.locked = locked }
+            updateShape(id) { $0.locked = locked }
+            updateFrame(id) { $0.locked = locked }
+            updateText(id) { $0.locked = locked }
+            updateStroke(id) { $0.locked = locked }
+            updateConnector(id) { $0.locked = locked }
+        }
 
         onCommit(layout)
     }
 
     private func arrangeSelected(_ action: LayerAction) {
-        guard let selectedItemId, canArrangeSelected else { return }
+        guard canArrangeSelected else { return }
         pushUndoSnapshot()
         normaliseLayerIndexes()
 
+        let selected = Set(selectedItemIds)
         let items = layoutLayerItems().sorted { $0.zIndex < $1.zIndex }
-        guard let index = items.firstIndex(where: { $0.id == selectedItemId }) else { return }
+        guard items.contains(where: { selected.contains($0.id) }) else { return }
 
         switch action {
         case .front:
-            setItemZIndex(selectedItemId, zIndex: (items.last?.zIndex ?? 0) + 1)
+            var nextIndex = (items.last?.zIndex ?? 0) + 1
+            for item in items where selected.contains(item.id) {
+                setItemZIndex(item.id, zIndex: nextIndex)
+                nextIndex += 1
+            }
         case .back:
-            setItemZIndex(selectedItemId, zIndex: (items.first?.zIndex ?? 0) - 1)
+            var nextIndex = (items.first?.zIndex ?? 0) - selectedItemIds.count
+            for item in items where selected.contains(item.id) {
+                setItemZIndex(item.id, zIndex: nextIndex)
+                nextIndex += 1
+            }
         case .forward:
-            let nextIndex = index + 1
-            guard nextIndex < items.count else {
-                onCommit(layout)
-                return
+            var ordered = items
+            if ordered.count > 1 {
+                for index in stride(from: ordered.count - 2, through: 0, by: -1) {
+                    if selected.contains(ordered[index].id), !selected.contains(ordered[index + 1].id) {
+                        ordered.swapAt(index, index + 1)
+                    }
+                }
+                for (index, item) in ordered.enumerated() {
+                    setItemZIndex(item.id, zIndex: index + 1)
+                }
             }
-            let current = items[index]
-            let next = items[nextIndex]
-            setItemZIndex(current.id, zIndex: next.zIndex)
-            setItemZIndex(next.id, zIndex: current.zIndex)
         case .backward:
-            let previousIndex = index - 1
-            guard previousIndex >= 0 else {
-                onCommit(layout)
-                return
+            var ordered = items
+            if ordered.count > 1 {
+                for index in 1..<ordered.count {
+                    if selected.contains(ordered[index].id), !selected.contains(ordered[index - 1].id) {
+                        ordered.swapAt(index - 1, index)
+                    }
+                }
+                for (index, item) in ordered.enumerated() {
+                    setItemZIndex(item.id, zIndex: index + 1)
+                }
             }
-            let current = items[index]
-            let previous = items[previousIndex]
-            setItemZIndex(current.id, zIndex: previous.zIndex)
-            setItemZIndex(previous.id, zIndex: current.zIndex)
         }
 
         onCommit(layout)
     }
 
     private func duplicateSelected() {
-        guard let selectedItemId, canDuplicateSelected else { return }
+        guard canDuplicateSelected else { return }
         pushUndoSnapshot()
         let offset = 32.0
+        var nextSelection: [String] = []
 
-        if var card = layout.cards.first(where: { $0.id == selectedItemId }) {
-            card.id = "card:\(UUID().uuidString)"
-            card.x += offset
-            card.y += offset
-            card.zIndex = nextLayerIndex()
-            layout.cards.append(card)
-            self.selectedItemId = card.id
-            onCommit(layout)
-            return
-        }
-
-        if var shape = layout.shapes.first(where: { $0.id == selectedItemId }) {
-            shape.id = "shape:\(UUID().uuidString)"
-            shape.x += offset
-            shape.y += offset
-            shape.zIndex = nextLayerIndex()
-            layout.shapes.append(shape)
-            self.selectedItemId = shape.id
-            onCommit(layout)
-            return
-        }
-
-        if var frame = layout.frames.first(where: { $0.id == selectedItemId }) {
-            frame.id = "frame:\(UUID().uuidString)"
-            frame.x += offset
-            frame.y += offset
-            frame.zIndex = nextLayerIndex()
-            layout.frames.append(frame)
-            self.selectedItemId = frame.id
-            onCommit(layout)
-            return
-        }
-
-        if var text = layout.texts.first(where: { $0.id == selectedItemId }) {
-            text.id = "text:\(UUID().uuidString)"
-            text.x += offset
-            text.y += offset
-            text.zIndex = nextLayerIndex()
-            layout.texts.append(text)
-            self.selectedItemId = text.id
-            onCommit(layout)
-            return
-        }
-
-        if var stroke = layout.strokes.first(where: { $0.id == selectedItemId }) {
-            stroke.id = "stroke:\(UUID().uuidString)"
-            stroke.points = stroke.points.map { point in
-                SchemePosition(x: point.x + offset, y: point.y + offset)
+        for selectedItemId in selectedItemIds {
+            if var card = layout.cards.first(where: { $0.id == selectedItemId }) {
+                card.id = "card:\(UUID().uuidString)"
+                card.x += offset
+                card.y += offset
+                card.zIndex = nextLayerIndex()
+                layout.cards.append(card)
+                nextSelection.append(card.id)
+                continue
             }
-            stroke.zIndex = nextLayerIndex()
-            layout.strokes.append(stroke)
-            self.selectedItemId = stroke.id
-            onCommit(layout)
+
+            if var shape = layout.shapes.first(where: { $0.id == selectedItemId }) {
+                shape.id = "shape:\(UUID().uuidString)"
+                shape.x += offset
+                shape.y += offset
+                shape.zIndex = nextLayerIndex()
+                layout.shapes.append(shape)
+                nextSelection.append(shape.id)
+                continue
+            }
+
+            if var frame = layout.frames.first(where: { $0.id == selectedItemId }) {
+                frame.id = "frame:\(UUID().uuidString)"
+                frame.x += offset
+                frame.y += offset
+                frame.zIndex = nextLayerIndex()
+                layout.frames.append(frame)
+                nextSelection.append(frame.id)
+                continue
+            }
+
+            if var text = layout.texts.first(where: { $0.id == selectedItemId }) {
+                text.id = "text:\(UUID().uuidString)"
+                text.x += offset
+                text.y += offset
+                text.zIndex = nextLayerIndex()
+                layout.texts.append(text)
+                nextSelection.append(text.id)
+                continue
+            }
+
+            if var stroke = layout.strokes.first(where: { $0.id == selectedItemId }) {
+                stroke.id = "stroke:\(UUID().uuidString)"
+                stroke.points = stroke.points.map { point in
+                    SchemePosition(x: point.x + offset, y: point.y + offset)
+                }
+                stroke.zIndex = nextLayerIndex()
+                layout.strokes.append(stroke)
+                nextSelection.append(stroke.id)
+            }
         }
+
+        setSelection(nextSelection)
+        onCommit(layout)
     }
 
     private func updateCard(_ id: String, mutate: (inout SchemeCanvasCard) -> Void) {
