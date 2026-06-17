@@ -310,6 +310,90 @@ public struct SchemeTextBlock: Codable, Identifiable, Sendable, Equatable {
     }
 }
 
+public struct SchemeCanvasSourceBlock: Codable, Identifiable, Sendable, Equatable {
+    public var id: String
+    public var sourceKind: String
+    public var sourceId: String
+    public var citationId: String
+    public var x: Double
+    public var y: Double
+    public var width: Double
+    public var height: Double
+    public var title: String
+    public var subtitle: String?
+    public var excerpt: String?
+    public var color: String
+    public var locked: Bool
+    public var zIndex: Int
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case sourceKind = "source_kind"
+        case sourceId = "source_id"
+        case citationId = "citation_id"
+        case x
+        case y
+        case width
+        case height
+        case title
+        case subtitle
+        case excerpt
+        case color
+        case locked
+        case zIndex = "z_index"
+    }
+
+    public init(
+        id: String,
+        sourceKind: String,
+        sourceId: String,
+        citationId: String,
+        x: Double,
+        y: Double,
+        width: Double,
+        height: Double,
+        title: String,
+        subtitle: String? = nil,
+        excerpt: String? = nil,
+        color: String = "#eef2ff",
+        locked: Bool = false,
+        zIndex: Int = 0
+    ) {
+        self.id = id
+        self.sourceKind = sourceKind
+        self.sourceId = sourceId
+        self.citationId = citationId
+        self.x = x
+        self.y = y
+        self.width = width
+        self.height = height
+        self.title = title
+        self.subtitle = subtitle
+        self.excerpt = excerpt
+        self.color = color
+        self.locked = locked
+        self.zIndex = zIndex
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        sourceKind = try container.decode(String.self, forKey: .sourceKind)
+        sourceId = try container.decode(String.self, forKey: .sourceId)
+        citationId = try container.decode(String.self, forKey: .citationId)
+        x = try container.decode(Double.self, forKey: .x)
+        y = try container.decode(Double.self, forKey: .y)
+        width = try container.decode(Double.self, forKey: .width)
+        height = try container.decode(Double.self, forKey: .height)
+        title = try container.decode(String.self, forKey: .title)
+        subtitle = try container.decodeIfPresent(String.self, forKey: .subtitle)
+        excerpt = try container.decodeIfPresent(String.self, forKey: .excerpt)
+        color = try container.decodeIfPresent(String.self, forKey: .color) ?? "#eef2ff"
+        locked = try container.decodeIfPresent(Bool.self, forKey: .locked) ?? false
+        zIndex = try container.decodeIfPresent(Int.self, forKey: .zIndex) ?? 0
+    }
+}
+
 public struct SchemeConnector: Codable, Identifiable, Sendable, Equatable {
     public var id: String
     public var sourceId: String?
@@ -373,6 +457,7 @@ public struct SchemeCanvasLayout: Codable, Sendable, Equatable {
     public var shapes: [SchemeCanvasShape]
     public var frames: [SchemeCanvasFrame]
     public var texts: [SchemeTextBlock]
+    public var sources: [SchemeCanvasSourceBlock]
     public var connectors: [SchemeConnector]
 
     private enum CodingKeys: String, CodingKey {
@@ -384,11 +469,12 @@ public struct SchemeCanvasLayout: Codable, Sendable, Equatable {
         case shapes
         case frames
         case texts
+        case sources
         case connectors
     }
 
     public init(
-        version: Int = 5,
+        version: Int = 6,
         viewport: SchemeViewport = SchemeViewport(),
         nodePositions: [String: SchemePosition] = [:],
         strokes: [SchemeStroke] = [],
@@ -396,6 +482,7 @@ public struct SchemeCanvasLayout: Codable, Sendable, Equatable {
         shapes: [SchemeCanvasShape] = [],
         frames: [SchemeCanvasFrame] = [],
         texts: [SchemeTextBlock] = [],
+        sources: [SchemeCanvasSourceBlock] = [],
         connectors: [SchemeConnector] = []
     ) {
         self.version = version
@@ -406,14 +493,15 @@ public struct SchemeCanvasLayout: Codable, Sendable, Equatable {
         self.shapes = shapes
         self.frames = frames
         self.texts = texts
+        self.sources = sources
         self.connectors = connectors
     }
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         if container.contains(.version) || container.contains(.nodePositions) {
-            let decodedVersion = try container.decodeIfPresent(Int.self, forKey: .version) ?? 5
-            version = max(decodedVersion, 5)
+            let decodedVersion = try container.decodeIfPresent(Int.self, forKey: .version) ?? 6
+            version = max(decodedVersion, 6)
             viewport = try container.decodeIfPresent(SchemeViewport.self, forKey: .viewport) ?? SchemeViewport()
             nodePositions = try container.decodeIfPresent([String: SchemePosition].self, forKey: .nodePositions) ?? [:]
             strokes = try container.decodeIfPresent([SchemeStroke].self, forKey: .strokes) ?? []
@@ -421,12 +509,13 @@ public struct SchemeCanvasLayout: Codable, Sendable, Equatable {
             shapes = try container.decodeIfPresent([SchemeCanvasShape].self, forKey: .shapes) ?? []
             frames = try container.decodeIfPresent([SchemeCanvasFrame].self, forKey: .frames) ?? []
             texts = try container.decodeIfPresent([SchemeTextBlock].self, forKey: .texts) ?? []
+            sources = try container.decodeIfPresent([SchemeCanvasSourceBlock].self, forKey: .sources) ?? []
             connectors = try container.decodeIfPresent([SchemeConnector].self, forKey: .connectors) ?? []
             return
         }
 
         let legacyPositions = try [String: SchemePosition](from: decoder)
-        version = 5
+        version = 6
         viewport = SchemeViewport()
         nodePositions = legacyPositions
         strokes = []
@@ -434,6 +523,7 @@ public struct SchemeCanvasLayout: Codable, Sendable, Equatable {
         shapes = []
         frames = []
         texts = []
+        sources = []
         connectors = []
     }
 }
@@ -444,6 +534,8 @@ public struct SchemeNode: Codable, Identifiable, Sendable, Equatable {
     public let title: String
     public let body: String?
     public let lane: String?
+    public let sourceKind: String?
+    public let sourceId: String?
     public let citationIds: [String]
     public let position: SchemePosition
 
@@ -453,6 +545,8 @@ public struct SchemeNode: Codable, Identifiable, Sendable, Equatable {
         case title
         case body
         case lane
+        case sourceKind = "source_kind"
+        case sourceId = "source_id"
         case citationIds = "citation_ids"
         case position
     }
@@ -463,6 +557,8 @@ public struct SchemeNode: Codable, Identifiable, Sendable, Equatable {
         title: String,
         body: String?,
         lane: String?,
+        sourceKind: String? = nil,
+        sourceId: String? = nil,
         citationIds: [String],
         position: SchemePosition
     ) {
@@ -471,6 +567,8 @@ public struct SchemeNode: Codable, Identifiable, Sendable, Equatable {
         self.title = title
         self.body = body
         self.lane = lane
+        self.sourceKind = sourceKind
+        self.sourceId = sourceId
         self.citationIds = citationIds
         self.position = position
     }

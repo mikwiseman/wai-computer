@@ -19,7 +19,7 @@ vi.mock("@/lib/api", () => ({
 
 function layout(overrides: Partial<SchemeCanvasLayout> = {}): SchemeCanvasLayout {
   return {
-    version: 5,
+    version: 6,
     viewport: { x: 0, y: 0, zoom: 1 },
     node_positions: {},
     strokes: [],
@@ -27,6 +27,7 @@ function layout(overrides: Partial<SchemeCanvasLayout> = {}): SchemeCanvasLayout
     shapes: [],
     frames: [],
     texts: [],
+    sources: [],
     connectors: [],
     ...overrides,
   };
@@ -82,6 +83,17 @@ function scheme(overrides: Partial<Scheme> = {}): Scheme {
             citation_ids: ["item:1"],
             position: { x: 320, y: -180 },
           },
+          {
+            id: "source:item:1",
+            kind: "source",
+            title: "Launch memo",
+            body: "The launch memo says the board approved the launch.",
+            lane: "sources",
+            source_kind: "item",
+            source_id: "1",
+            citation_ids: ["item:1"],
+            position: { x: -360, y: 120 },
+          },
         ],
         edges: [
           {
@@ -95,7 +107,16 @@ function scheme(overrides: Partial<Scheme> = {}): Scheme {
         ],
         stats: { total_source_count: 1 },
         briefing: null,
-        citations: [],
+        citations: [
+          {
+            id: "item:1",
+            source_kind: "item",
+            source_id: "1",
+            title: "Launch memo",
+            kind: "material",
+            created_at: "2026-06-17T09:00:00Z",
+          },
+        ],
         freshness: {},
       },
     },
@@ -154,10 +175,39 @@ describe("SchemesPanel", () => {
         "scheme-1",
         {
           layout: expect.objectContaining({
-            version: 5,
+            version: 6,
             node_positions: expect.objectContaining({
               "signal:decision:1": expect.objectContaining({ x: 380, y: -160 }),
             }),
+          }),
+        },
+      ),
+    );
+  });
+
+  it("pins cited sources as durable board blocks", async () => {
+    render(<SchemesPanel />);
+
+    await screen.findByTestId("schemes-panel");
+    fireEvent.click(screen.getByRole("button", { name: "Pin sources" }));
+
+    await waitFor(() =>
+      expect(mockUpdateScheme).toHaveBeenCalledWith(
+        "scheme-1",
+        {
+          layout: expect.objectContaining({
+            version: 6,
+            sources: [
+              expect.objectContaining({
+                id: "source-block:item:1",
+                source_kind: "item",
+                source_id: "1",
+                citation_id: "item:1",
+                title: "Launch memo",
+                subtitle: "material / 2026-06-17",
+                excerpt: "The launch memo says the board approved the launch.",
+              }),
+            ],
           }),
         },
       ),

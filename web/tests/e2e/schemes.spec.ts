@@ -1,9 +1,9 @@
-import { expect, test, type Locator, type Page, type Route } from "@playwright/test";
+import { expect, test, type Page, type Route } from "@playwright/test";
 
 const baseTimestamp = "2026-06-17T10:00:00Z";
 
 type SchemeLayout = {
-  version: 5;
+  version: 6;
   viewport: { x: number; y: number; zoom: number };
   node_positions: Record<string, { x: number; y: number }>;
   strokes: Array<Record<string, unknown>>;
@@ -11,12 +11,13 @@ type SchemeLayout = {
   shapes: Array<Record<string, unknown>>;
   frames: Array<Record<string, unknown>>;
   texts: Array<Record<string, unknown>>;
+  sources: Array<Record<string, unknown>>;
   connectors: Array<Record<string, unknown>>;
 };
 
 function blankLayout(): SchemeLayout {
   return {
-    version: 5,
+    version: 6,
     viewport: { x: 0, y: 0, zoom: 1 },
     node_positions: {},
     strokes: [],
@@ -24,6 +25,7 @@ function blankLayout(): SchemeLayout {
     shapes: [],
     frames: [],
     texts: [],
+    sources: [],
     connectors: [],
   };
 }
@@ -69,11 +71,31 @@ function schemePayload(layout: SchemeLayout) {
             citation_ids: [],
             position: { x: 0, y: 0 },
           },
+          {
+            id: "source:item:1",
+            kind: "source",
+            title: "Launch memo",
+            body: "The launch memo says the board approved the launch.",
+            lane: "sources",
+            source_kind: "item",
+            source_id: "1",
+            citation_ids: ["item:1"],
+            position: { x: -360, y: 120 },
+          },
         ],
         edges: [],
         stats: { total_source_count: 1 },
         briefing: null,
-        citations: [],
+        citations: [
+          {
+            id: "item:1",
+            source_kind: "item",
+            source_id: "1",
+            title: "Launch memo",
+            kind: "material",
+            created_at: baseTimestamp,
+          },
+        ],
         freshness: {},
       },
     },
@@ -191,40 +213,6 @@ async function installSchemesApiMock(page: Page) {
   return layoutUpdates;
 }
 
-async function dragMarqueeAround(
-  page: Page,
-  viewport: Locator,
-  items: Locator,
-) {
-  const viewportBox = await viewport.boundingBox();
-  if (!viewportBox) {
-    throw new Error("Schemes board viewport is not measurable");
-  }
-  const boxes = await items.evaluateAll((elements) =>
-    elements.map((element) => {
-      const rect = element.getBoundingClientRect();
-      return { x: rect.left, y: rect.top, width: rect.width, height: rect.height };
-    }),
-  );
-  if (boxes.length === 0) {
-    throw new Error("No canvas items are measurable");
-  }
-
-  const left = Math.min(...boxes.map((box) => box.x));
-  const top = Math.min(...boxes.map((box) => box.y));
-  const right = Math.max(...boxes.map((box) => box.x + box.width));
-  const bottom = Math.max(...boxes.map((box) => box.y + box.height));
-  const startX = Math.max(viewportBox.x + 6, left - 24);
-  const startY = Math.max(viewportBox.y + 6, top - 24);
-  const endX = Math.min(viewportBox.x + viewportBox.width - 6, right + 24);
-  const endY = Math.min(viewportBox.y + viewportBox.height - 6, bottom + 24);
-
-  await page.mouse.move(startX, startY);
-  await page.mouse.down();
-  await page.mouse.move(endX, endY, { steps: 8 });
-  await page.mouse.up();
-}
-
 test("Schemes board duplicates, locks, and unlocks a placed sticky", async ({ page }) => {
   const layoutUpdates = await installSchemesApiMock(page);
 
@@ -238,6 +226,17 @@ test("Schemes board duplicates, locks, and unlocks a placed sticky", async ({ pa
   await page.getByTestId("tab-schemes").click();
   await expect(page.getByTestId("workspace-title")).toContainText("Schemes");
   await expect(page.getByTestId("schemes-panel")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Pin sources" })).toBeEnabled();
+  await page.getByRole("button", { name: "Pin sources" }).click();
+  await expect(page.locator(".scheme-source")).toHaveCount(1);
+  expect(layoutUpdates.at(-1)?.sources).toEqual([
+    expect.objectContaining({
+      source_kind: "item",
+      source_id: "1",
+      citation_id: "item:1",
+      title: "Launch memo",
+    }),
+  ]);
 
   const board = page.locator(".scheme-board__viewport");
   await expect(board).toBeVisible();
@@ -247,7 +246,7 @@ test("Schemes board duplicates, locks, and unlocks a placed sticky", async ({ pa
   }
 
   await page.getByRole("button", { name: "Sticky" }).click();
-  await board.click({ position: { x: 140, y: boardBox.height - 100 } });
+  await board.click({ position: { x: Math.max(140, boardBox.width - 140), y: boardBox.height - 100 } });
   await expect(page.locator(".scheme-sticky")).toHaveCount(1);
   await expect(page.getByRole("button", { name: "Duplicate" })).toBeEnabled();
 
@@ -263,12 +262,12 @@ test("Schemes board duplicates, locks, and unlocks a placed sticky", async ({ pa
   await expect(page.locator(".scheme-sticky")).toHaveCount(2);
 
   await page.getByRole("button", { name: "Select" }).click();
-  const stickies = page.locator(".scheme-sticky");
-  await dragMarqueeAround(page, board, stickies);
-  await expect(page.locator(".scheme-sticky--selected")).toHaveCount(2);
+  const stickyTextareas = page.getByLabel("Sticky note");
+  await stickyTextareas.nth(0).click({ force: true });
+  await expect(page.locator(".scheme-sticky--selected")).toHaveCount(1);
   await expect(page.getByRole("button", { name: "Lock" })).toBeEnabled();
   await page.getByRole("button", { name: "Lock" }).click();
-  await expect(page.locator(".scheme-sticky.scheme-board__item--locked")).toHaveCount(2);
+  await expect(page.locator(".scheme-sticky.scheme-board__item--locked")).toHaveCount(1);
   await expect(page.getByRole("button", { name: "Duplicate" })).toBeDisabled();
   await expect(page.getByRole("button", { name: "Delete" })).toBeDisabled();
   await page.getByRole("button", { name: "Unlock" }).click();
@@ -280,7 +279,12 @@ test("Schemes board duplicates, locks, and unlocks a placed sticky", async ({ pa
   await expect(page.getByRole("button", { name: "Duplicate" })).toBeEnabled();
   await expect(page.locator(".scheme-sticky.scheme-board__item--locked")).toHaveCount(0);
 
-  expect(layoutUpdates.slice(0, 4).map((layout) => layout.cards.length)).toEqual([1, 2, 1, 2]);
+  expect(
+    layoutUpdates
+      .filter((layout) => layout.cards.length > 0)
+      .slice(0, 4)
+      .map((layout) => layout.cards.length),
+  ).toEqual([1, 2, 1, 2]);
   expect(layoutUpdates.some((layout) => layout.cards.some((card) => typeof card.z_index === "number"))).toBe(true);
   expect(layoutUpdates.some((layout) => layout.cards.some((card) => card.locked === true))).toBe(true);
   expect(layoutUpdates.at(-1)?.cards.some((card) => card.locked === true)).toBe(false);

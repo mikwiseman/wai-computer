@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { PointerEvent, WheelEvent } from "react";
+import type { MouseEvent, PointerEvent, WheelEvent } from "react";
 import {
   createScheme,
   getScheme,
@@ -15,9 +15,11 @@ import type {
   SchemeCanvasFrame,
   SchemeCanvasLayout,
   SchemeCanvasShape,
+  SchemeCanvasSourceBlock,
   SchemeConnector,
   SchemeNode,
   SchemePosition,
+  SchemeProjection,
   SchemeShapeKind,
   SchemeStroke,
   SchemeTextBlock,
@@ -35,7 +37,7 @@ type Tool =
   | "ellipse"
   | "frame"
   | "connector";
-type BoardItemKind = "node" | "card" | "shape" | "frame" | "text";
+type BoardItemKind = "node" | "card" | "shape" | "frame" | "text" | "source";
 interface SchemesPanelProps {
   locale?: Locale;
   onError?: (message: string) => void;
@@ -88,6 +90,12 @@ type DragState =
       origin: SchemePosition;
     }
   | {
+      type: "source";
+      sourceId: string;
+      start: SchemePosition;
+      origin: SchemePosition;
+    }
+  | {
       type: "pan";
       startClientX: number;
       startClientY: number;
@@ -115,7 +123,16 @@ interface BoardItemHandle {
   kind: BoardItemKind;
 }
 
-const SCHEME_LAYOUT_VERSION = 5 as const;
+interface ProjectionSourceSummary {
+  id: string;
+  source_kind: "item" | "recording" | "chat";
+  source_id: string;
+  title: string;
+  kind?: string | null;
+  created_at?: string | null;
+}
+
+const SCHEME_LAYOUT_VERSION = 6 as const;
 const DEFAULT_VIEWPORT: SchemeViewport = { x: 0, y: 0, zoom: 1 };
 const MIN_ZOOM = 0.25;
 const MAX_ZOOM = 2.8;
@@ -129,6 +146,9 @@ const FRAME_WIDTH = 560;
 const FRAME_HEIGHT = 360;
 const TEXT_WIDTH = 260;
 const TEXT_HEIGHT = 120;
+const SOURCE_WIDTH = 320;
+const SOURCE_HEIGHT = 170;
+const MAX_PINNED_SOURCE_BLOCKS = 12;
 const TOOLS: Array<{ id: Tool; label: string; ru: string }> = [
   { id: "select", label: "Select", ru: "Выбор" },
   { id: "pan", label: "Hand", ru: "Рука" },
@@ -159,6 +179,7 @@ const COPY = {
     bringForward: "Forward",
     sendBackward: "Backward",
     sendBack: "Back",
+    pinSources: "Pin sources",
     emptyTitle: "No schemes yet",
     emptyBody: "Create one from a prompt. Wai will build a cited board from your recordings, materials, and chats.",
     noSelection: "Select a scheme or create a new one.",
@@ -188,6 +209,7 @@ const COPY = {
     bringForward: "Вперед",
     sendBackward: "Назад",
     sendBack: "Вниз",
+    pinSources: "Закрепить источники",
     emptyTitle: "Схем пока нет",
     emptyBody: "Создайте схему по запросу. Wai соберет доску с источниками из записей, материалов и чатов.",
     noSelection: "Выберите схему или создайте новую.",
@@ -216,6 +238,7 @@ function blankLayout(): SchemeCanvasLayout {
     shapes: [],
     frames: [],
     texts: [],
+    sources: [],
     connectors: [],
   };
 }
@@ -241,6 +264,7 @@ function normaliseLayoutLayers(layout: SchemeCanvasLayout): SchemeCanvasLayout {
     shapes: withIndex(layout.shapes),
     frames: withIndex(layout.frames),
     texts: withIndex(layout.texts),
+    sources: withIndex(layout.sources),
     cards: withIndex(layout.cards),
   };
 }
@@ -272,6 +296,13 @@ function layoutForScheme(scheme: Scheme | null): SchemeCanvasLayout {
     shapes: (raw.shapes ?? []).map((shape) => ({ ...shape, locked: shape.locked ?? false, z_index: shape.z_index ?? Number.NaN })),
     frames: (raw.frames ?? []).map((frame) => ({ ...frame, locked: frame.locked ?? false, z_index: frame.z_index ?? Number.NaN })),
     texts: (raw.texts ?? []).map((text) => ({ ...text, locked: text.locked ?? false, z_index: text.z_index ?? Number.NaN })),
+    sources: (raw.sources ?? []).map((source) => ({
+      ...source,
+      subtitle: source.subtitle ?? null,
+      excerpt: source.excerpt ?? null,
+      locked: source.locked ?? false,
+      z_index: source.z_index ?? Number.NaN,
+    })),
     connectors: (raw.connectors ?? []).map((connector) => ({ ...connector, locked: connector.locked ?? false, z_index: connector.z_index ?? Number.NaN })),
   });
 }
@@ -293,6 +324,88 @@ function applyRevision(scheme: Scheme, revision: NonNullable<Scheme["current_rev
     ...scheme,
     current_revision_id: revision.id,
     current_revision: revision,
+  };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function readString(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value : null;
+}
+
+function isSourceKind(value: unknown): value is ProjectionSourceSummary["source_kind"] {
+  return value === "item" || value === "recording" || value === "chat";
+}
+
+function projectionSourceSummaries(projection: SchemeProjection | null): ProjectionSourceSummary[] {
+  if (!projection) return [];
+  return projection.citations.slice(0, MAX_PINNED_SOURCE_BLOCKS).flatMap((candidate) => {
+    if (!isRecord(candidate) || !isSourceKind(candidate.source_kind)) return [];
+    const id = readString(candidate.id);
+    const sourceId = readString(candidate.source_id);
+    const title = readString(candidate.title);
+    if (!id || !sourceId || !title) return [];
+    return [
+      {
+        id,
+        source_kind: candidate.source_kind,
+        source_id: sourceId,
+        title,
+        kind: readString(candidate.kind),
+        created_at: readString(candidate.created_at),
+      },
+    ];
+  });
+}
+
+function sourceBlockId(source: ProjectionSourceSummary): string {
+  return `source-block:${source.source_kind}:${source.source_id}`;
+}
+
+function sourceKindColor(sourceKind: ProjectionSourceSummary["source_kind"]): string {
+  if (sourceKind === "recording") return "#ecfeff";
+  if (sourceKind === "chat") return "#f5f3ff";
+  return "#eef2ff";
+}
+
+function sourceSubtitle(source: ProjectionSourceSummary): string | null {
+  const parts = [source.kind, source.created_at?.slice(0, 10)].filter(Boolean);
+  return parts.length > 0 ? parts.join(" / ") : source.source_kind;
+}
+
+function sourceExcerpt(source: ProjectionSourceSummary, projection: SchemeProjection): string | null {
+  const node = projection.nodes.find(
+    (candidate) =>
+      candidate.kind === "source" &&
+      candidate.source_kind === source.source_kind &&
+      candidate.source_id === source.source_id,
+  );
+  return readString(node?.body);
+}
+
+function sourceBlockFromSummary(
+  source: ProjectionSourceSummary,
+  projection: SchemeProjection,
+  index: number,
+  zIndex: number,
+): SchemeCanvasSourceBlock {
+  return {
+    id: sourceBlockId(source),
+    source_kind: source.source_kind,
+    source_id: source.source_id,
+    citation_id: source.id,
+    x: -760,
+    y: -240 + index * (SOURCE_HEIGHT + 28),
+    width: SOURCE_WIDTH,
+    height: SOURCE_HEIGHT,
+    title: source.title,
+    subtitle: sourceSubtitle(source),
+    excerpt: sourceExcerpt(source, projection),
+    color: sourceKindColor(source.source_kind),
+    locked: false,
+    z_index: zIndex,
   };
 }
 
@@ -322,6 +435,10 @@ function itemCenter(
   if (text) {
     return { x: text.x + text.width / 2, y: text.y + text.height / 2 };
   }
+  const source = layout.sources.find((candidate) => candidate.id === itemId);
+  if (source) {
+    return { x: source.x + source.width / 2, y: source.y + source.height / 2 };
+  }
   return null;
 }
 
@@ -332,6 +449,7 @@ function isLayoutItemLocked(itemId: string | null, layout: SchemeCanvasLayout): 
     layout.shapes.some((candidate) => candidate.id === itemId && candidate.locked) ||
     layout.frames.some((candidate) => candidate.id === itemId && candidate.locked) ||
     layout.texts.some((candidate) => candidate.id === itemId && candidate.locked) ||
+    layout.sources.some((candidate) => candidate.id === itemId && candidate.locked) ||
     layout.strokes.some((candidate) => candidate.id === itemId && candidate.locked) ||
     layout.connectors.some((candidate) => candidate.id === itemId && candidate.locked)
   );
@@ -344,6 +462,7 @@ function canLockLayoutItem(itemId: string | null, layout: SchemeCanvasLayout): b
     layout.shapes.some((candidate) => candidate.id === itemId) ||
     layout.frames.some((candidate) => candidate.id === itemId) ||
     layout.texts.some((candidate) => candidate.id === itemId) ||
+    layout.sources.some((candidate) => candidate.id === itemId) ||
     layout.strokes.some((candidate) => candidate.id === itemId) ||
     layout.connectors.some((candidate) => candidate.id === itemId)
   );
@@ -356,6 +475,7 @@ function canDuplicateLayoutItem(itemId: string | null, layout: SchemeCanvasLayou
     layout.shapes.some((candidate) => candidate.id === itemId) ||
     layout.frames.some((candidate) => candidate.id === itemId) ||
     layout.texts.some((candidate) => candidate.id === itemId) ||
+    layout.sources.some((candidate) => candidate.id === itemId) ||
     layout.strokes.some((candidate) => candidate.id === itemId)
   );
 }
@@ -423,6 +543,13 @@ function layoutItemBounds(layout: SchemeCanvasLayout, nodes: SchemeNode[]): Boar
       width: text.width,
       height: text.height,
     })),
+    ...layout.sources.map((source) => ({
+      id: source.id,
+      x: source.x,
+      y: source.y,
+      width: source.width,
+      height: source.height,
+    })),
     ...layout.strokes.flatMap((stroke) => {
       const bounds = boundsFromPoints(stroke.id, stroke.points);
       return bounds ? [bounds] : [];
@@ -487,6 +614,9 @@ function translateSelectedLayout(
     texts: layout.texts.map((text) =>
       selected.has(text.id) ? { ...text, x: text.x + dx, y: text.y + dy } : text,
     ),
+    sources: layout.sources.map((source) =>
+      selected.has(source.id) ? { ...source, x: source.x + dx, y: source.y + dy } : source,
+    ),
     strokes: layout.strokes.map((stroke) =>
       selected.has(stroke.id)
         ? { ...stroke, points: stroke.points.map((point) => ({ x: point.x + dx, y: point.y + dy })) }
@@ -507,6 +637,7 @@ function layoutLayerItems(layout: SchemeCanvasLayout): LayerItem[] {
     ...layout.shapes.map((shape) => ({ id: shape.id, zIndex: shape.z_index })),
     ...layout.frames.map((frame) => ({ id: frame.id, zIndex: frame.z_index })),
     ...layout.texts.map((text) => ({ id: text.id, zIndex: text.z_index })),
+    ...layout.sources.map((source) => ({ id: source.id, zIndex: source.z_index })),
     ...layout.cards.map((card) => ({ id: card.id, zIndex: card.z_index })),
   ];
 }
@@ -527,6 +658,7 @@ function setLayoutItemZIndex(layout: SchemeCanvasLayout, itemId: string, zIndex:
     shapes: layout.shapes.map((shape) => (shape.id === itemId ? { ...shape, z_index: zIndex } : shape)),
     frames: layout.frames.map((frame) => (frame.id === itemId ? { ...frame, z_index: zIndex } : frame)),
     texts: layout.texts.map((text) => (text.id === itemId ? { ...text, z_index: zIndex } : text)),
+    sources: layout.sources.map((source) => (source.id === itemId ? { ...source, z_index: zIndex } : source)),
     strokes: layout.strokes.map((stroke) => (stroke.id === itemId ? { ...stroke, z_index: zIndex } : stroke)),
     connectors: layout.connectors.map((connector) =>
       connector.id === itemId ? { ...connector, z_index: zIndex } : connector,
@@ -606,6 +738,7 @@ function cloneLayout(layout: SchemeCanvasLayout): SchemeCanvasLayout {
     shapes: layout.shapes.map((shape) => ({ ...shape })),
     frames: layout.frames.map((frame) => ({ ...frame })),
     texts: layout.texts.map((text) => ({ ...text })),
+    sources: layout.sources.map((source) => ({ ...source })),
     connectors: layout.connectors.map((connector) => ({
       ...connector,
       points: connector.points.map((point) => ({ ...point })),
@@ -740,6 +873,11 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
     () => canLockSelected && selectedItems.every((itemId) => !isLayoutItemLocked(itemId, layout)),
     [canLockSelected, layout, selectedItems],
   );
+  const projectionSources = useMemo(() => projectionSourceSummaries(projection), [projection]);
+  const unpinnedProjectionSources = useMemo(() => {
+    const pinned = new Set(layout.sources.map((source) => source.citation_id));
+    return projectionSources.filter((source) => !pinned.has(source.id));
+  }, [layout.sources, projectionSources]);
 
   const commitLayout = useCallback(
     async (nextLayout: SchemeCanvasLayout) => {
@@ -855,6 +993,24 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
       setRefreshing(false);
     }
   }, [refreshing, replaceScheme, reportError, selected]);
+
+  const pinProjectionSources = useCallback(() => {
+    if (!projection || unpinnedProjectionSources.length === 0) return;
+    pushUndoSnapshot();
+    let nextZIndex = nextLayerIndex(layoutRef.current);
+    const sourceOffset = layoutRef.current.sources.length;
+    const sourceBlocks = unpinnedProjectionSources.map((source, index) =>
+      sourceBlockFromSummary(source, projection, sourceOffset + index, nextZIndex++),
+    );
+    const nextLayout = {
+      ...layoutRef.current,
+      sources: [...layoutRef.current.sources, ...sourceBlocks],
+    };
+    setSelectedItems(sourceBlocks.map((source) => source.id));
+    setLayout(nextLayout);
+    layoutRef.current = nextLayout;
+    void commitLayout(nextLayout);
+  }, [commitLayout, projection, pushUndoSnapshot, unpinnedProjectionSources]);
 
   const pointFromEvent = useCallback(
     (event: PointerEvent<Element>): SchemePosition => {
@@ -1005,7 +1161,7 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
   );
 
   const selectBoardItem = useCallback(
-    (event: PointerEvent<Element>, itemId: string) => {
+    (event: MouseEvent<Element> | PointerEvent<Element>, itemId: string) => {
       event.stopPropagation();
       if (event.shiftKey || event.metaKey || event.ctrlKey) {
         setSelectedItems((current) =>
@@ -1076,6 +1232,8 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
         dragRef.current = { type: "shape", shapeId: item.id, start, origin: position };
       } else if (item.kind === "frame") {
         dragRef.current = { type: "frame", frameId: item.id, start, origin: position };
+      } else if (item.kind === "source") {
+        dragRef.current = { type: "source", sourceId: item.id, start, origin: position };
       } else {
         dragRef.current = { type: "text", textId: item.id, start, origin: position };
       }
@@ -1248,6 +1406,15 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
               : text,
           ),
         }));
+      } else if (drag.type === "source") {
+        setLocalLayout((current) => ({
+          ...current,
+          sources: current.sources.map((source) =>
+            source.id === drag.sourceId
+              ? { ...source, x: drag.origin.x + dx, y: drag.origin.y + dy }
+              : source,
+          ),
+        }));
       }
     },
     [pointFromEvent, positionedNodes, setLocalLayout, updateViewport],
@@ -1273,6 +1440,7 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
       drag.type === "card" ||
       drag.type === "shape" ||
       drag.type === "frame" ||
+      drag.type === "source" ||
       drag.type === "text"
     ) {
       void commitLayout(layoutRef.current);
@@ -1354,6 +1522,7 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
       shapes: layoutRef.current.shapes.filter((shape) => !selected.has(shape.id)),
       frames: layoutRef.current.frames.filter((frame) => !selected.has(frame.id)),
       texts: layoutRef.current.texts.filter((text) => !selected.has(text.id)),
+      sources: layoutRef.current.sources.filter((source) => !selected.has(source.id)),
       strokes: layoutRef.current.strokes.filter((stroke) => !selected.has(stroke.id)),
       connectors: layoutRef.current.connectors.filter(
         (connector) =>
@@ -1386,6 +1555,9 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
       ),
       texts: layoutRef.current.texts.map((text) =>
         selected.has(text.id) ? { ...text, locked: nextLocked } : text,
+      ),
+      sources: layoutRef.current.sources.map((source) =>
+        selected.has(source.id) ? { ...source, locked: nextLocked } : source,
       ),
       strokes: layoutRef.current.strokes.map((stroke) =>
         selected.has(stroke.id) ? { ...stroke, locked: nextLocked } : stroke,
@@ -1446,6 +1618,14 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
       if (text) {
         const duplicate = { ...text, id: createId("text"), x: text.x + offset, y: text.y + offset, z_index: nextZIndex++ };
         nextLayout.texts.push(duplicate);
+        nextSelectedItems.push(duplicate.id);
+        continue;
+      }
+
+      const source = current.sources.find((candidate) => candidate.id === itemId);
+      if (source) {
+        const duplicate = { ...source, id: createId("source"), x: source.x + offset, y: source.y + offset, z_index: nextZIndex++ };
+        nextLayout.sources.push(duplicate);
         nextSelectedItems.push(duplicate.id);
         continue;
       }
@@ -1582,6 +1762,9 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
               </button>
               <button type="button" disabled={!canDuplicateSelected} onClick={duplicateSelected}>
                 {copy.duplicate}
+              </button>
+              <button type="button" disabled={!selected || unpinnedProjectionSources.length === 0} onClick={pinProjectionSources}>
+                {copy.pinSources}
               </button>
               <button type="button" disabled={!selected || refreshing} onClick={() => void handleRefresh()}>
                 {refreshing ? copy.refreshing : copy.refresh}
@@ -1733,6 +1916,7 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
                       aria-label="Frame title"
                       disabled={frame.locked}
                       onPointerDown={(event) => selectBoardItem(event, frame.id)}
+                      onMouseDown={(event) => selectBoardItem(event, frame.id)}
                       onFocus={() => beginInlineEdit(frame.id)}
                       onChange={(event) => handleFrameTitleChange(frame.id, event.target.value)}
                       onBlur={finishInlineEdit}
@@ -1767,11 +1951,43 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
                       aria-label="Canvas text"
                       disabled={text.locked}
                       onPointerDown={(event) => selectBoardItem(event, text.id)}
+                      onMouseDown={(event) => selectBoardItem(event, text.id)}
                       onFocus={() => beginInlineEdit(text.id)}
                       onChange={(event) => handleTextBlockChange(text.id, event.target.value)}
                       onBlur={finishInlineEdit}
                     />
                   </div>
+                ))}
+
+                {layout.sources.map((source) => (
+                  <button
+                    key={source.id}
+                    type="button"
+                    data-scheme-board-item="true"
+                    className={[
+                      "scheme-source",
+                      `scheme-source--${source.source_kind}`,
+                      selectedItemSet.has(source.id) ? "scheme-source--selected" : "",
+                      source.locked ? "scheme-board__item--locked" : "",
+                    ].filter(Boolean).join(" ")}
+                    style={{
+                      left: source.x,
+                      top: source.y,
+                      width: source.width,
+                      height: source.height,
+                      backgroundColor: source.color,
+                      zIndex: layerZIndex(source.z_index),
+                    }}
+                    aria-label={`${source.source_kind} source ${source.title}`}
+                    onPointerDown={(event) =>
+                      handleItemPointerDown(event, { id: source.id, kind: "source" }, { x: source.x, y: source.y })
+                    }
+                  >
+                    <span>{source.source_kind}</span>
+                    <strong>{source.title}</strong>
+                    {source.subtitle ? <small>{source.subtitle}</small> : null}
+                    {source.excerpt ? <p>{source.excerpt}</p> : null}
+                  </button>
                 ))}
 
                 {positionedNodes.map((node) => (
@@ -1818,6 +2034,7 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
                       aria-label="Sticky note"
                       disabled={card.locked}
                       onPointerDown={(event) => selectBoardItem(event, card.id)}
+                      onMouseDown={(event) => selectBoardItem(event, card.id)}
                       onFocus={() => beginInlineEdit(card.id)}
                       onChange={(event) => handleCardTextChange(card.id, event.target.value)}
                       onBlur={finishInlineEdit}

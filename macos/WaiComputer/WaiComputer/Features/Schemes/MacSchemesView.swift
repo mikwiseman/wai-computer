@@ -328,6 +328,15 @@ private struct MacSchemeBoard: View {
         let id: String
     }
 
+    private struct ProjectionSourceSummary: Equatable {
+        let id: String
+        let sourceKind: String
+        let sourceId: String
+        let title: String
+        let kind: String?
+        let createdAt: String?
+    }
+
     private enum LayerAction {
         case front
         case forward
@@ -347,6 +356,7 @@ private struct MacSchemeBoard: View {
     @State private var shapeDrag: ItemDragState?
     @State private var frameDrag: ItemDragState?
     @State private var textDrag: ItemDragState?
+    @State private var sourceDrag: ItemDragState?
     @State private var draftStrokeId: String?
     @State private var selectedItemId: String?
     @State private var selectedItemIds: [String] = []
@@ -368,6 +378,9 @@ private struct MacSchemeBoard: View {
     private let frameHeight: Double = 360
     private let textWidth: Double = 260
     private let textHeight: Double = 120
+    private let sourceWidth: Double = 320
+    private let sourceHeight: Double = 170
+    private let maxPinnedSourceBlocks = 12
 
     var body: some View {
         VStack(spacing: 0) {
@@ -398,6 +411,16 @@ private struct MacSchemeBoard: View {
                             .zIndex(layerZIndex(text.zIndex))
                             .highPriorityGesture(textGesture(for: text))
                             .accessibilityIdentifier("scheme-text-\(text.id)")
+                    }
+
+                    ForEach(layout.sources) { source in
+                        MacSchemeSourceBlockView(source: source)
+                            .frame(width: CGFloat(source.width), height: CGFloat(source.height))
+                            .overlay(selectionOverlay(id: source.id))
+                            .position(screenPoint(for: sourceCenter(source), in: proxy.size))
+                            .zIndex(layerZIndex(source.zIndex))
+                            .highPriorityGesture(sourceGesture(for: source))
+                            .accessibilityIdentifier("scheme-source-\(source.id)")
                     }
 
                     ForEach(positionedNodes) { node in
@@ -471,6 +494,15 @@ private struct MacSchemeBoard: View {
 
             Divider()
                 .frame(height: 22)
+
+            Button {
+                pinProjectionSources()
+            } label: {
+                Image(systemName: "pin")
+            }
+            .buttonStyle(WaiGhostButtonStyle())
+            .disabled(unpinnedProjectionSources.isEmpty)
+            .help(t("Pin Sources", "Закрепить источники"))
 
             Button {
                 undoLayout()
@@ -674,6 +706,35 @@ private struct MacSchemeBoard: View {
         Dictionary(uniqueKeysWithValues: positionedNodes.map { ($0.id, $0) })
     }
 
+    private var projectionSourceSummaries: [ProjectionSourceSummary] {
+        guard let projection else { return [] }
+        return projection.citations.prefix(maxPinnedSourceBlocks).compactMap { citation in
+            guard let id = citation["id"]?.stringValue,
+                  let sourceKind = citation["source_kind"]?.stringValue,
+                  ["item", "recording", "chat"].contains(sourceKind),
+                  let sourceId = citation["source_id"]?.stringValue,
+                  let title = citation["title"]?.stringValue,
+                  !id.isEmpty,
+                  !sourceId.isEmpty,
+                  !title.isEmpty
+            else { return nil }
+
+            return ProjectionSourceSummary(
+                id: id,
+                sourceKind: sourceKind,
+                sourceId: sourceId,
+                title: title,
+                kind: citation["kind"]?.stringValue,
+                createdAt: citation["created_at"]?.stringValue
+            )
+        }
+    }
+
+    private var unpinnedProjectionSources: [ProjectionSourceSummary] {
+        let pinned = Set(layout.sources.map(\.citationId))
+        return projectionSourceSummaries.filter { !pinned.contains($0.id) }
+    }
+
     private var selectedCardId: String? {
         guard let selectedItemId,
               layout.cards.contains(where: { $0.id == selectedItemId })
@@ -806,6 +867,7 @@ private struct MacSchemeBoard: View {
         shapeDrag = nil
         frameDrag = nil
         textDrag = nil
+        sourceDrag = nil
         multiDrag = nil
         marqueeStart = nil
         marqueeCurrent = nil
@@ -841,6 +903,7 @@ private struct MacSchemeBoard: View {
             || layout.shapes.contains { $0.id == id && $0.locked }
             || layout.frames.contains { $0.id == id && $0.locked }
             || layout.texts.contains { $0.id == id && $0.locked }
+            || layout.sources.contains { $0.id == id && $0.locked }
             || layout.strokes.contains { $0.id == id && $0.locked }
             || layout.connectors.contains { $0.id == id && $0.locked }
     }
@@ -850,6 +913,7 @@ private struct MacSchemeBoard: View {
             || layout.shapes.contains { $0.id == id }
             || layout.frames.contains { $0.id == id }
             || layout.texts.contains { $0.id == id }
+            || layout.sources.contains { $0.id == id }
             || layout.strokes.contains { $0.id == id }
             || layout.connectors.contains { $0.id == id }
     }
@@ -860,6 +924,7 @@ private struct MacSchemeBoard: View {
             || layout.shapes.contains { $0.id == id }
             || layout.frames.contains { $0.id == id }
             || layout.texts.contains { $0.id == id }
+            || layout.sources.contains { $0.id == id }
             || layout.strokes.contains { $0.id == id }
     }
 
@@ -873,6 +938,7 @@ private struct MacSchemeBoard: View {
             + layout.shapes.map { ($0.id, $0.zIndex) }
             + layout.frames.map { ($0.id, $0.zIndex) }
             + layout.texts.map { ($0.id, $0.zIndex) }
+            + layout.sources.map { ($0.id, $0.zIndex) }
             + layout.cards.map { ($0.id, $0.zIndex) }
     }
 
@@ -901,6 +967,10 @@ private struct MacSchemeBoard: View {
         }
         for text in layout.texts.indices where layout.texts[text].zIndex == 0 {
             layout.texts[text].zIndex = nextIndex
+            nextIndex += 1
+        }
+        for source in layout.sources.indices where layout.sources[source].zIndex == 0 {
+            layout.sources[source].zIndex = nextIndex
             nextIndex += 1
         }
         for card in layout.cards.indices where layout.cards[card].zIndex == 0 {
@@ -932,6 +1002,9 @@ private struct MacSchemeBoard: View {
         }
         bounds += layout.texts.map { text in
             (id: text.id, rect: CGRect(x: text.x, y: text.y, width: text.width, height: text.height))
+        }
+        bounds += layout.sources.map { source in
+            (id: source.id, rect: CGRect(x: source.x, y: source.y, width: source.width, height: source.height))
         }
         bounds += layout.strokes.compactMap { stroke in
             pointsBounds(id: stroke.id, points: stroke.points)
@@ -1019,6 +1092,10 @@ private struct MacSchemeBoard: View {
         for index in next.texts.indices where selected.contains(next.texts[index].id) {
             next.texts[index].x += dx
             next.texts[index].y += dy
+        }
+        for index in next.sources.indices where selected.contains(next.sources[index].id) {
+            next.sources[index].x += dx
+            next.sources[index].y += dy
         }
         for index in next.strokes.indices where selected.contains(next.strokes[index].id) {
             next.strokes[index].points = next.strokes[index].points.map {
@@ -1342,6 +1419,49 @@ private struct MacSchemeBoard: View {
             }
     }
 
+    private func sourceGesture(for source: SchemeCanvasSourceBlock) -> some Gesture {
+        DragGesture(minimumDistance: tool == .connector ? 0 : 1)
+            .onChanged { value in
+                guard tool == .select else { return }
+                guard !source.locked else {
+                    selectSingle(source.id)
+                    return
+                }
+                if beginMultiDragIfNeeded(id: source.id, translation: value.translation) { return }
+                if sourceDrag?.id != source.id {
+                    pushUndoSnapshot()
+                    sourceDrag = ItemDragState(id: source.id, origin: SchemePosition(x: source.x, y: source.y))
+                    selectSingle(source.id)
+                }
+                let origin = sourceDrag?.origin ?? SchemePosition(x: source.x, y: source.y)
+                updateSource(source.id) {
+                    $0.x = origin.x + Double(value.translation.width / CGFloat(layout.viewport.zoom))
+                    $0.y = origin.y + Double(value.translation.height / CGFloat(layout.viewport.zoom))
+                }
+            }
+            .onEnded { value in
+                guard !source.locked else {
+                    selectSingle(source.id)
+                    sourceDrag = nil
+                    return
+                }
+                if tool == .connector {
+                    handleConnectorTap(id: source.id)
+                    return
+                }
+                guard tool == .select else { return }
+                if endMultiDragIfNeeded(id: source.id, translation: value.translation) { return }
+                let origin = sourceDrag?.origin ?? SchemePosition(x: source.x, y: source.y)
+                updateSource(source.id) {
+                    $0.x = origin.x + Double(value.translation.width / CGFloat(layout.viewport.zoom))
+                    $0.y = origin.y + Double(value.translation.height / CGFloat(layout.viewport.zoom))
+                }
+                selectSingle(source.id)
+                sourceDrag = nil
+                onCommit(layout)
+            }
+    }
+
     private func drawBoard(context: GraphicsContext, size: CGSize) {
         drawProjectionEdges(context: context, size: size)
         drawConnectors(context: context, size: size)
@@ -1458,6 +1578,72 @@ private struct MacSchemeBoard: View {
         onCommit(layout)
     }
 
+    private func pinProjectionSources() {
+        let sources = unpinnedProjectionSources
+        guard !sources.isEmpty else { return }
+
+        pushUndoSnapshot()
+        var nextZIndex = nextLayerIndex()
+        let sourceOffset = layout.sources.count
+        let blocks = sources.enumerated().map { index, source in
+            let block = sourceBlock(from: source, index: sourceOffset + index, zIndex: nextZIndex)
+            nextZIndex += 1
+            return block
+        }
+
+        layout.sources.append(contentsOf: blocks)
+        setSelection(blocks.map(\.id))
+        onCommit(layout)
+    }
+
+    private func sourceBlock(from source: ProjectionSourceSummary, index: Int, zIndex: Int) -> SchemeCanvasSourceBlock {
+        SchemeCanvasSourceBlock(
+            id: "source-block:\(source.sourceKind):\(source.sourceId)",
+            sourceKind: source.sourceKind,
+            sourceId: source.sourceId,
+            citationId: source.id,
+            x: -760,
+            y: -240 + Double(index) * (sourceHeight + 28),
+            width: sourceWidth,
+            height: sourceHeight,
+            title: source.title,
+            subtitle: sourceSubtitle(source),
+            excerpt: sourceExcerpt(source),
+            color: sourceKindColor(source.sourceKind),
+            zIndex: zIndex
+        )
+    }
+
+    private func sourceSubtitle(_ source: ProjectionSourceSummary) -> String? {
+        let parts = [
+            source.kind,
+            source.createdAt.map { String($0.prefix(10)) },
+        ].compactMap { value -> String? in
+            guard let value, !value.isEmpty else { return nil }
+            return value
+        }
+        return parts.isEmpty ? source.sourceKind : parts.joined(separator: " / ")
+    }
+
+    private func sourceExcerpt(_ source: ProjectionSourceSummary) -> String? {
+        projection?.nodes.first {
+            $0.kind == "source"
+                && $0.sourceKind == source.sourceKind
+                && $0.sourceId == source.sourceId
+        }?.body
+    }
+
+    private func sourceKindColor(_ sourceKind: String) -> String {
+        switch sourceKind {
+        case "recording":
+            return "#ecfeff"
+        case "chat":
+            return "#f5f3ff"
+        default:
+            return "#eef2ff"
+        }
+    }
+
     private func appendPoint(_ point: SchemePosition, toStroke strokeId: String) {
         guard let index = layout.strokes.firstIndex(where: { $0.id == strokeId }) else { return }
         layout.strokes[index].points.append(point)
@@ -1496,6 +1682,7 @@ private struct MacSchemeBoard: View {
         layout.shapes.removeAll { selected.contains($0.id) }
         layout.frames.removeAll { selected.contains($0.id) }
         layout.texts.removeAll { selected.contains($0.id) }
+        layout.sources.removeAll { selected.contains($0.id) }
         layout.strokes.removeAll { selected.contains($0.id) }
         layout.connectors.removeAll {
             selected.contains($0.id)
@@ -1517,6 +1704,7 @@ private struct MacSchemeBoard: View {
             updateShape(id) { $0.locked = locked }
             updateFrame(id) { $0.locked = locked }
             updateText(id) { $0.locked = locked }
+            updateSource(id) { $0.locked = locked }
             updateStroke(id) { $0.locked = locked }
             updateConnector(id) { $0.locked = locked }
         }
@@ -1622,6 +1810,16 @@ private struct MacSchemeBoard: View {
                 continue
             }
 
+            if var source = layout.sources.first(where: { $0.id == selectedItemId }) {
+                source.id = "source:\(UUID().uuidString)"
+                source.x += offset
+                source.y += offset
+                source.zIndex = nextLayerIndex()
+                layout.sources.append(source)
+                nextSelection.append(source.id)
+                continue
+            }
+
             if var stroke = layout.strokes.first(where: { $0.id == selectedItemId }) {
                 stroke.id = "stroke:\(UUID().uuidString)"
                 stroke.points = stroke.points.map { point in
@@ -1657,6 +1855,11 @@ private struct MacSchemeBoard: View {
         mutate(&layout.texts[index])
     }
 
+    private func updateSource(_ id: String, mutate: (inout SchemeCanvasSourceBlock) -> Void) {
+        guard let index = layout.sources.firstIndex(where: { $0.id == id }) else { return }
+        mutate(&layout.sources[index])
+    }
+
     private func updateStroke(_ id: String, mutate: (inout SchemeStroke) -> Void) {
         guard let index = layout.strokes.firstIndex(where: { $0.id == id }) else { return }
         mutate(&layout.strokes[index])
@@ -1672,6 +1875,7 @@ private struct MacSchemeBoard: View {
         updateShape(id) { $0.zIndex = zIndex }
         updateFrame(id) { $0.zIndex = zIndex }
         updateText(id) { $0.zIndex = zIndex }
+        updateSource(id) { $0.zIndex = zIndex }
         updateStroke(id) { $0.zIndex = zIndex }
         updateConnector(id) { $0.zIndex = zIndex }
     }
@@ -1699,6 +1903,10 @@ private struct MacSchemeBoard: View {
         SchemePosition(x: text.x + text.width / 2, y: text.y + text.height / 2)
     }
 
+    private func sourceCenter(_ source: SchemeCanvasSourceBlock) -> SchemePosition {
+        SchemePosition(x: source.x + source.width / 2, y: source.y + source.height / 2)
+    }
+
     private func connectorPoints(_ connector: SchemeConnector) -> [SchemePosition] {
         if let source = itemCenter(connector.sourceId),
            let target = itemCenter(connector.targetId) {
@@ -1723,6 +1931,9 @@ private struct MacSchemeBoard: View {
         }
         if let text = layout.texts.first(where: { $0.id == id }) {
             return textCenter(text)
+        }
+        if let source = layout.sources.first(where: { $0.id == id }) {
+            return sourceCenter(source)
         }
         return nil
     }
@@ -1754,6 +1965,8 @@ private enum SchemeNodeProxy {
             title: source.title,
             body: source.body,
             lane: source.lane,
+            sourceKind: source.sourceKind,
+            sourceId: source.sourceId,
             citationIds: source.citationIds,
             position: position
         )
@@ -1880,6 +2093,73 @@ private struct MacSchemeTextBlockView: View {
                         .foregroundStyle(Palette.textSecondary)
                 }
             }
+    }
+}
+
+private struct MacSchemeSourceBlockView: View {
+    let source: SchemeCanvasSourceBlock
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Spacing.xs) {
+            Text(source.sourceKind)
+                .font(Typography.caption)
+                .foregroundStyle(sourceAccent)
+                .lineLimit(1)
+                .padding(.horizontal, Spacing.xs)
+                .padding(.vertical, 2)
+                .background(sourceAccent.opacity(0.12))
+                .clipShape(RoundedRectangle(cornerRadius: 4))
+
+            Text(source.title)
+                .font(Typography.headingSmall)
+                .foregroundStyle(Palette.textPrimary)
+                .lineLimit(2)
+
+            if let subtitle = source.subtitle, !subtitle.isEmpty {
+                Text(subtitle)
+                    .font(Typography.caption)
+                    .foregroundStyle(Palette.textSecondary)
+                    .lineLimit(1)
+            }
+
+            if let excerpt = source.excerpt, !excerpt.isEmpty {
+                Text(excerpt)
+                    .font(Typography.caption)
+                    .foregroundStyle(Palette.textSecondary)
+                    .lineLimit(4)
+            }
+
+            Spacer(minLength: 0)
+        }
+        .padding(Spacing.md)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(schemeColor(source.color, defaultColor: Color(red: 0.93, green: 0.95, blue: 1)))
+        .opacity(source.locked ? 0.72 : 1)
+        .overlay(alignment: .topTrailing) {
+            if source.locked {
+                Image(systemName: "lock.fill")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(Palette.textSecondary)
+                    .padding(Spacing.xs)
+            }
+        }
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .strokeBorder(sourceAccent.opacity(0.35), lineWidth: 1)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .shadow(color: Color.black.opacity(0.08), radius: 8, y: 3)
+    }
+
+    private var sourceAccent: Color {
+        switch source.sourceKind {
+        case "recording":
+            return Color(nsColor: .systemTeal)
+        case "chat":
+            return Color(nsColor: .systemPurple)
+        default:
+            return Palette.accent
+        }
     }
 }
 

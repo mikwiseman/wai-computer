@@ -33,7 +33,7 @@ async def test_create_list_get_and_update_scheme_layout(client, auth_headers, mo
 
     node_id = payload["current_revision"]["projection"]["nodes"][0]["id"]
     layout = {
-        "version": 5,
+        "version": 6,
         "viewport": {"x": 20, "y": -10, "zoom": 1.2},
         "node_positions": {node_id: {"x": 128.5, "y": -64.25}},
         "strokes": [
@@ -101,6 +101,24 @@ async def test_create_list_get_and_update_scheme_layout(client, auth_headers, mo
                 "z_index": 50,
             }
         ],
+        "sources": [
+            {
+                "id": "source-block-item-1",
+                "source_kind": "item",
+                "source_id": "11111111-1111-1111-1111-111111111111",
+                "citation_id": "item:11111111-1111-1111-1111-111111111111",
+                "x": -520,
+                "y": 120,
+                "width": 320,
+                "height": 170,
+                "title": "Launch memo",
+                "subtitle": "material",
+                "excerpt": "Evidence captured from materials.",
+                "color": "#eef2ff",
+                "locked": True,
+                "z_index": 55,
+            }
+        ],
         "connectors": [
             {
                 "id": "connector-1",
@@ -123,6 +141,7 @@ async def test_create_list_get_and_update_scheme_layout(client, auth_headers, mo
     assert updated.status_code == 200, updated.text
     updated_payload = updated.json()
     assert updated_payload["layout"] == layout
+    assert updated_payload["layout"]["sources"][0]["citation_id"].startswith("item:")
     updated_node = next(
         node
         for node in updated_payload["current_revision"]["projection"]["nodes"]
@@ -162,9 +181,10 @@ async def test_scheme_routes_migrate_legacy_node_position_layout(
     )
 
     assert migrated.status_code == 200, migrated.text
-    assert migrated.json()["layout"]["version"] == 5
+    assert migrated.json()["layout"]["version"] == 6
     assert migrated.json()["layout"]["node_positions"] == {node_id: {"x": 40.0, "y": 80.0}}
     assert migrated.json()["layout"]["cards"] == []
+    assert migrated.json()["layout"]["sources"] == []
 
 
 async def test_scheme_routes_validate_layout_shape(client, auth_headers, monkeypatch) -> None:
@@ -209,6 +229,31 @@ async def test_scheme_routes_validate_layout_shape(client, auth_headers, monkeyp
     )
 
     assert unsupported_shape.status_code == 422
+
+    unsupported_source = await client.patch(
+        f"/api/schemes/{created.json()['id']}",
+        headers=auth_headers,
+        json={
+            "layout": {
+                "version": 6,
+                "sources": [
+                    {
+                        "id": "source-bad",
+                        "source_kind": "calendar",
+                        "source_id": "calendar-1",
+                        "citation_id": "calendar:calendar-1",
+                        "x": 0,
+                        "y": 0,
+                        "width": 320,
+                        "height": 160,
+                        "title": "Calendar event",
+                    }
+                ],
+            }
+        },
+    )
+
+    assert unsupported_source.status_code == 422
 
 
 async def test_scheme_routes_are_user_scoped(client, auth_headers, monkeypatch) -> None:

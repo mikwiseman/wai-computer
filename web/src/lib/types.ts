@@ -1013,6 +1013,25 @@ export interface SchemeTextBlock {
   z_index: number;
 }
 
+export type SchemeCanvasSourceKind = "item" | "recording" | "chat";
+
+export interface SchemeCanvasSourceBlock {
+  id: string;
+  source_kind: SchemeCanvasSourceKind;
+  source_id: string;
+  citation_id: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  title: string;
+  subtitle: string | null;
+  excerpt: string | null;
+  color: string;
+  locked: boolean;
+  z_index: number;
+}
+
 export interface SchemeConnector {
   id: string;
   source_id: string | null;
@@ -1033,6 +1052,7 @@ export interface SchemeCanvasLayout {
   shapes: SchemeCanvasShape[];
   frames: SchemeCanvasFrame[];
   texts: SchemeTextBlock[];
+  sources: SchemeCanvasSourceBlock[];
   connectors: SchemeConnector[];
 }
 

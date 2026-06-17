@@ -25,8 +25,9 @@ from app.models.brain_map import BrainMap, BrainMapRevision
 
 router = APIRouter(prefix="/schemes", tags=["schemes"])
 
-SCHEME_LAYOUT_VERSION = 5
+SCHEME_LAYOUT_VERSION = 6
 SCHEME_SHAPE_KINDS = {"rectangle", "ellipse"}
+SCHEME_SOURCE_KINDS = {"item", "recording", "chat"}
 SCHEME_Z_INDEX_MIN = -1_000_000
 SCHEME_Z_INDEX_MAX = 1_000_000
 
@@ -102,6 +103,23 @@ class SchemeTextBlock(BaseModel):
     z_index: int = Field(default=0, ge=SCHEME_Z_INDEX_MIN, le=SCHEME_Z_INDEX_MAX)
 
 
+class SchemeCanvasSourceBlock(BaseModel):
+    id: str = Field(min_length=1)
+    source_kind: str = Field(min_length=1, max_length=40)
+    source_id: str = Field(min_length=1, max_length=120)
+    citation_id: str = Field(min_length=1, max_length=180)
+    x: float
+    y: float
+    width: float = Field(gt=80, le=1600)
+    height: float = Field(gt=60, le=1600)
+    title: str = Field(min_length=1, max_length=500)
+    subtitle: str | None = Field(default=None, max_length=500)
+    excerpt: str | None = Field(default=None, max_length=4000)
+    color: str = Field(default="#eef2ff", min_length=1, max_length=40)
+    locked: bool = False
+    z_index: int = Field(default=0, ge=SCHEME_Z_INDEX_MIN, le=SCHEME_Z_INDEX_MAX)
+
+
 class SchemeConnector(BaseModel):
     id: str = Field(min_length=1)
     source_id: str | None = Field(default=None, min_length=1)
@@ -124,6 +142,7 @@ class SchemeCanvasLayout(BaseModel):
     shapes: list[SchemeCanvasShape] = Field(default_factory=list)
     frames: list[SchemeCanvasFrame] = Field(default_factory=list)
     texts: list[SchemeTextBlock] = Field(default_factory=list)
+    sources: list[SchemeCanvasSourceBlock] = Field(default_factory=list)
     connectors: list[SchemeConnector] = Field(default_factory=list)
 
     @classmethod
@@ -131,6 +150,9 @@ class SchemeCanvasLayout(BaseModel):
         for shape in layout.shapes:
             if shape.kind not in SCHEME_SHAPE_KINDS:
                 raise ValueError(f"Unsupported scheme shape kind: {shape.kind}")
+        for source in layout.sources:
+            if source.source_kind not in SCHEME_SOURCE_KINDS:
+                raise ValueError(f"Unsupported scheme source kind: {source.source_kind}")
         return layout
 
 
