@@ -1,3 +1,4 @@
+import AudioToolbox
 import AVFoundation
 import Foundation
 import os
@@ -38,6 +39,7 @@ public enum AudioCompressor {
         let channelCount = input.fileFormat.channelCount
 
         let settings: [String: Any] = [
+            AVAudioFileTypeKey: kAudioFileM4AType,
             AVFormatIDKey: kAudioFormatMPEG4AAC,
             AVSampleRateKey: sampleRate,
             AVNumberOfChannelsKey: Int(channelCount),
@@ -100,8 +102,7 @@ public enum AudioCompressor {
     }
 
     private static func temporaryOutputURL(for destination: URL) -> URL {
-        destination
-            .deletingLastPathComponent()
-            .appendingPathComponent(".\(destination.lastPathComponent).tmp")
+        destination.deletingLastPathComponent()
+            .appendingPathComponent(".\(destination.deletingPathExtension().lastPathComponent).tmp.m4a")
     }
 }

@@ -1,4 +1,5 @@
 import AVFoundation
+import AudioToolbox
 import XCTest
 @testable import WaiComputerKit
 
@@ -23,6 +24,25 @@ final class AudioCompressorTests: XCTestCase {
     private func fileSize(_ url: URL) throws -> Int64 {
         let values = try url.resourceValues(forKeys: [.fileSizeKey])
         return Int64(values.fileSize ?? 0)
+    }
+
+    private func audioFileType(_ url: URL) throws -> AudioFileTypeID {
+        var audioFile: AudioFileID?
+        var status = AudioFileOpenURL(url as CFURL, .readPermission, 0, &audioFile)
+        XCTAssertEqual(status, noErr)
+        let openedAudioFile = try XCTUnwrap(audioFile)
+        defer { AudioFileClose(openedAudioFile) }
+
+        var fileType: AudioFileTypeID = 0
+        var size = UInt32(MemoryLayout<AudioFileTypeID>.size)
+        status = AudioFileGetProperty(
+            openedAudioFile,
+            kAudioFilePropertyFileFormat,
+            &size,
+            &fileType
+        )
+        XCTAssertEqual(status, noErr)
+        return fileType
     }
 
     /// Writes a sine-wave PCM WAV via the production AudioFileWriter.
@@ -66,6 +86,7 @@ final class AudioCompressorTests: XCTestCase {
         XCTAssertLessThan(destSize, sourceSize, "AAC must be smaller than raw PCM WAV")
         XCTAssertEqual(result.url, destination)
         XCTAssertEqual(result.byteCount, destSize)
+        XCTAssertEqual(try audioFileType(destination), kAudioFileM4AType)
 
         // Decodable as AAC, mono, correct sample rate
         let decoded = try AVAudioFile(forReading: destination)
