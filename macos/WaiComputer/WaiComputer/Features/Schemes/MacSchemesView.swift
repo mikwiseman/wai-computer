@@ -336,6 +336,13 @@ private struct MacSchemeBoard: View {
         let itemIds: [String]
     }
 
+    private struct ResizeDragState {
+        let id: String
+        let kind: ResizableItemKind
+        let handle: ResizeHandle
+        let origin: SchemeCanvasLayout
+    }
+
     private struct BoardHandle: Equatable {
         let id: String
     }
@@ -356,6 +363,25 @@ private struct MacSchemeBoard: View {
         case back
     }
 
+    private enum ResizeHandle: String, CaseIterable, Identifiable {
+        case nw
+        case ne
+        case sw
+        case se
+
+        var id: String { rawValue }
+        var isWest: Bool { self == .nw || self == .sw }
+        var isNorth: Bool { self == .nw || self == .ne }
+    }
+
+    private enum ResizableItemKind {
+        case card
+        case shape
+        case frame
+        case text
+        case source
+    }
+
     let projection: SchemeProjection?
     @Binding var layout: SchemeCanvasLayout
     let language: LanguageManager.SupportedLanguage
@@ -369,6 +395,7 @@ private struct MacSchemeBoard: View {
     @State private var frameDrag: ItemDragState?
     @State private var textDrag: ItemDragState?
     @State private var sourceDrag: ItemDragState?
+    @State private var resizeDrag: ResizeDragState?
     @State private var draftStrokeId: String?
     @State private var eraserDidPushUndo = false
     @State private var selectedItemId: String?
@@ -417,6 +444,7 @@ private struct MacSchemeBoard: View {
                         MacSchemeFrameView(frame: frame)
                             .frame(width: CGFloat(frame.width), height: CGFloat(frame.height))
                             .overlay(selectionOverlay(id: frame.id))
+                            .overlay(resizeHandleOverlay(id: frame.id, kind: .frame))
                             .position(screenPoint(for: frameCenter(frame), in: proxy.size))
                             .zIndex(layerZIndex(frame.zIndex))
                             .highPriorityGesture(frameGesture(for: frame))
@@ -427,6 +455,7 @@ private struct MacSchemeBoard: View {
                         MacSchemeTextBlockView(text: text)
                             .frame(width: CGFloat(text.width), height: CGFloat(text.height))
                             .overlay(selectionOverlay(id: text.id))
+                            .overlay(resizeHandleOverlay(id: text.id, kind: .text))
                             .position(screenPoint(for: textCenter(text), in: proxy.size))
                             .zIndex(layerZIndex(text.zIndex))
                             .highPriorityGesture(textGesture(for: text))
@@ -437,6 +466,7 @@ private struct MacSchemeBoard: View {
                         MacSchemeSourceBlockView(source: source)
                             .frame(width: CGFloat(source.width), height: CGFloat(source.height))
                             .overlay(selectionOverlay(id: source.id))
+                            .overlay(resizeHandleOverlay(id: source.id, kind: .source))
                             .position(screenPoint(for: sourceCenter(source), in: proxy.size))
                             .zIndex(layerZIndex(source.zIndex))
                             .highPriorityGesture(sourceGesture(for: source))
@@ -457,6 +487,7 @@ private struct MacSchemeBoard: View {
                         MacSchemeStickyCard(card: card)
                             .frame(width: CGFloat(card.width), height: CGFloat(card.height))
                             .overlay(selectionOverlay(id: card.id))
+                            .overlay(resizeHandleOverlay(id: card.id, kind: .card))
                             .position(screenPoint(for: cardCenter(card), in: proxy.size))
                             .zIndex(layerZIndex(card.zIndex))
                             .highPriorityGesture(cardGesture(for: card))
@@ -470,6 +501,7 @@ private struct MacSchemeBoard: View {
                                 height: CGFloat(shape.height) * CGFloat(layout.viewport.zoom)
                             )
                             .overlay(selectionOverlay(id: shape.id))
+                            .overlay(resizeHandleOverlay(id: shape.id, kind: .shape))
                             .position(screenPoint(for: shapeCenter(shape), in: proxy.size))
                             .zIndex(layerZIndex(shape.zIndex))
                             .highPriorityGesture(shapeGesture(for: shape))
@@ -888,6 +920,7 @@ private struct MacSchemeBoard: View {
         frameDrag = nil
         textDrag = nil
         sourceDrag = nil
+        resizeDrag = nil
         multiDrag = nil
         marqueeStart = nil
         marqueeCurrent = nil
@@ -1208,6 +1241,200 @@ private struct MacSchemeBoard: View {
         RoundedRectangle(cornerRadius: 8)
             .stroke(selectedItemIds.contains(id) ? Palette.accent : Color.clear, lineWidth: 2)
             .padding(-3)
+    }
+
+    private func resizeHandleOverlay(id: String, kind: ResizableItemKind) -> some View {
+        GeometryReader { proxy in
+            ZStack {
+                if selectedItemIds.count == 1, selectedItemIds.contains(id), !isItemLocked(id) {
+                    ForEach(ResizeHandle.allCases) { handle in
+                        RoundedRectangle(cornerRadius: 3)
+                            .fill(Color(nsColor: .textBackgroundColor))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 3)
+                                    .stroke(Palette.accent, lineWidth: 1)
+                            )
+                            .frame(width: 10, height: 10)
+                            .position(resizeHandlePosition(handle, in: proxy.size))
+                            .highPriorityGesture(resizeGesture(id: id, kind: kind, handle: handle))
+                    }
+                }
+            }
+            .frame(width: proxy.size.width, height: proxy.size.height)
+        }
+        .allowsHitTesting(selectedItemIds.count == 1 && selectedItemIds.contains(id) && !isItemLocked(id))
+    }
+
+    private func resizeHandlePosition(_ handle: ResizeHandle, in size: CGSize) -> CGPoint {
+        CGPoint(
+            x: handle.isWest ? 0 : size.width,
+            y: handle.isNorth ? 0 : size.height
+        )
+    }
+
+    private func resizeGesture(id: String, kind: ResizableItemKind, handle: ResizeHandle) -> some Gesture {
+        DragGesture(minimumDistance: 1)
+            .onChanged { value in
+                guard tool == .select, !isItemLocked(id) else { return }
+                if resizeDrag?.id != id || resizeDrag?.kind != kind || resizeDrag?.handle != handle {
+                    pushUndoSnapshot()
+                    resizeDrag = ResizeDragState(id: id, kind: kind, handle: handle, origin: layout)
+                    selectSingle(id)
+                }
+                guard let resizeDrag else { return }
+                layout = resizedLayout(
+                    from: resizeDrag.origin,
+                    id: id,
+                    kind: kind,
+                    handle: handle,
+                    translation: value.translation
+                )
+            }
+            .onEnded { value in
+                guard tool == .select,
+                      let resizeDrag,
+                      resizeDrag.id == id,
+                      resizeDrag.kind == kind,
+                      resizeDrag.handle == handle
+                else { return }
+                layout = resizedLayout(
+                    from: resizeDrag.origin,
+                    id: id,
+                    kind: kind,
+                    handle: handle,
+                    translation: value.translation
+                )
+                self.resizeDrag = nil
+                selectSingle(id)
+                onCommit(layout)
+            }
+    }
+
+    private func resizedLayout(from origin: SchemeCanvasLayout, id: String, kind: ResizableItemKind, handle: ResizeHandle, translation: CGSize) -> SchemeCanvasLayout {
+        var next = origin
+        let dx = Double(translation.width / CGFloat(origin.viewport.zoom))
+        let dy = Double(translation.height / CGFloat(origin.viewport.zoom))
+
+        switch kind {
+        case .card:
+            guard let index = next.cards.firstIndex(where: { $0.id == id }) else { return next }
+            let resized = resizedRect(
+                x: next.cards[index].x,
+                y: next.cards[index].y,
+                width: next.cards[index].width,
+                height: next.cards[index].height,
+                kind: kind,
+                handle: handle,
+                dx: dx,
+                dy: dy
+            )
+            next.cards[index].x = resized.x
+            next.cards[index].y = resized.y
+            next.cards[index].width = resized.width
+            next.cards[index].height = resized.height
+        case .shape:
+            guard let index = next.shapes.firstIndex(where: { $0.id == id }) else { return next }
+            let resized = resizedRect(
+                x: next.shapes[index].x,
+                y: next.shapes[index].y,
+                width: next.shapes[index].width,
+                height: next.shapes[index].height,
+                kind: kind,
+                handle: handle,
+                dx: dx,
+                dy: dy
+            )
+            next.shapes[index].x = resized.x
+            next.shapes[index].y = resized.y
+            next.shapes[index].width = resized.width
+            next.shapes[index].height = resized.height
+        case .frame:
+            guard let index = next.frames.firstIndex(where: { $0.id == id }) else { return next }
+            let resized = resizedRect(
+                x: next.frames[index].x,
+                y: next.frames[index].y,
+                width: next.frames[index].width,
+                height: next.frames[index].height,
+                kind: kind,
+                handle: handle,
+                dx: dx,
+                dy: dy
+            )
+            next.frames[index].x = resized.x
+            next.frames[index].y = resized.y
+            next.frames[index].width = resized.width
+            next.frames[index].height = resized.height
+        case .text:
+            guard let index = next.texts.firstIndex(where: { $0.id == id }) else { return next }
+            let resized = resizedRect(
+                x: next.texts[index].x,
+                y: next.texts[index].y,
+                width: next.texts[index].width,
+                height: next.texts[index].height,
+                kind: kind,
+                handle: handle,
+                dx: dx,
+                dy: dy
+            )
+            next.texts[index].x = resized.x
+            next.texts[index].y = resized.y
+            next.texts[index].width = resized.width
+            next.texts[index].height = resized.height
+        case .source:
+            guard let index = next.sources.firstIndex(where: { $0.id == id }) else { return next }
+            let resized = resizedRect(
+                x: next.sources[index].x,
+                y: next.sources[index].y,
+                width: next.sources[index].width,
+                height: next.sources[index].height,
+                kind: kind,
+                handle: handle,
+                dx: dx,
+                dy: dy
+            )
+            next.sources[index].x = resized.x
+            next.sources[index].y = resized.y
+            next.sources[index].width = resized.width
+            next.sources[index].height = resized.height
+        }
+
+        return next
+    }
+
+    private func resizedRect(
+        x: Double,
+        y: Double,
+        width: Double,
+        height: Double,
+        kind: ResizableItemKind,
+        handle: ResizeHandle,
+        dx: Double,
+        dy: Double
+    ) -> (x: Double, y: Double, width: Double, height: Double) {
+        let limits = resizeLimits(for: kind)
+        let nextWidth = min(limits.maxWidth, max(limits.minWidth, handle.isWest ? width - dx : width + dx))
+        let nextHeight = min(limits.maxHeight, max(limits.minHeight, handle.isNorth ? height - dy : height + dy))
+        return (
+            x: handle.isWest ? x + width - nextWidth : x,
+            y: handle.isNorth ? y + height - nextHeight : y,
+            width: nextWidth,
+            height: nextHeight
+        )
+    }
+
+    private func resizeLimits(for kind: ResizableItemKind) -> (minWidth: Double, minHeight: Double, maxWidth: Double, maxHeight: Double) {
+        switch kind {
+        case .card:
+            return (24, 24, 1200, 1200)
+        case .shape:
+            return (16, 16, 2000, 2000)
+        case .frame:
+            return (88, 88, 4000, 4000)
+        case .text:
+            return (24, 24, 1600, 1600)
+        case .source:
+            return (88, 68, 1600, 1600)
+        }
     }
 
     private func boardGesture(size: CGSize) -> some Gesture {

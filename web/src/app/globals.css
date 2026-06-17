@@ -5501,6 +5501,53 @@ a.primary-button[aria-disabled="true"]:hover {
   outline-offset: 3px;
 }
 
+.scheme-board__resize-frame {
+  position: absolute;
+  border: 1px solid var(--accent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 18%, transparent);
+  pointer-events: none;
+}
+
+.scheme-board__resize-handle {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  border: 1px solid var(--accent);
+  border-radius: 3px;
+  padding: 0;
+  background: var(--panel);
+  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.22);
+  pointer-events: auto;
+}
+
+.scheme-board__resize-handle--nw {
+  top: 0;
+  left: 0;
+  cursor: nwse-resize;
+  transform: translate(-50%, -50%);
+}
+
+.scheme-board__resize-handle--ne {
+  top: 0;
+  right: 0;
+  cursor: nesw-resize;
+  transform: translate(50%, -50%);
+}
+
+.scheme-board__resize-handle--sw {
+  bottom: 0;
+  left: 0;
+  cursor: nesw-resize;
+  transform: translate(-50%, 50%);
+}
+
+.scheme-board__resize-handle--se {
+  right: 0;
+  bottom: 0;
+  cursor: nwse-resize;
+  transform: translate(50%, 50%);
+}
+
 .scheme-board__item--locked {
   cursor: default;
   opacity: 0.72;

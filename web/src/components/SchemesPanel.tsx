@@ -43,6 +43,8 @@ type Tool =
   | "frame"
   | "connector";
 type BoardItemKind = "node" | "card" | "shape" | "frame" | "text" | "source";
+type ResizableItemKind = Exclude<BoardItemKind, "node">;
+type ResizeHandle = "nw" | "ne" | "sw" | "se";
 interface SchemesPanelProps {
   locale?: Locale;
   onError?: (message: string) => void;
@@ -54,6 +56,13 @@ interface BoardItemBounds {
   y: number;
   width: number;
   height: number;
+}
+
+interface ResizeLimits {
+  minWidth: number;
+  minHeight: number;
+  maxWidth: number;
+  maxHeight: number;
 }
 
 interface SelectionRect {
@@ -120,6 +129,14 @@ type DragState =
       itemIds: string[];
     }
   | {
+      type: "resize";
+      itemId: string;
+      itemKind: ResizableItemKind;
+      handle: ResizeHandle;
+      start: SchemePosition;
+      origin: BoardItemBounds;
+    }
+  | {
       type: "marquee";
       start: SchemePosition;
       current: SchemePosition;
@@ -161,6 +178,14 @@ const TEXT_WIDTH = 260;
 const TEXT_HEIGHT = 120;
 const SOURCE_WIDTH = 320;
 const SOURCE_HEIGHT = 170;
+const RESIZE_LIMITS: Record<ResizableItemKind, ResizeLimits> = {
+  card: { minWidth: 24, minHeight: 24, maxWidth: 1200, maxHeight: 1200 },
+  shape: { minWidth: 16, minHeight: 16, maxWidth: 2000, maxHeight: 2000 },
+  frame: { minWidth: 88, minHeight: 88, maxWidth: 4000, maxHeight: 4000 },
+  text: { minWidth: 24, minHeight: 24, maxWidth: 1600, maxHeight: 1600 },
+  source: { minWidth: 88, minHeight: 68, maxWidth: 1600, maxHeight: 1600 },
+};
+const RESIZE_HANDLES: ResizeHandle[] = ["nw", "ne", "sw", "se"];
 const MAX_PINNED_SOURCE_BLOCKS = 12;
 const DEFAULT_PEN_COLOR = "#111827";
 const DEFAULT_HIGHLIGHTER_COLOR = "#facc15";
@@ -616,6 +641,117 @@ function layoutItemBounds(layout: SchemeCanvasLayout, nodes: SchemeNode[]): Boar
   ];
 }
 
+function resizableItem(
+  layout: SchemeCanvasLayout,
+  itemId: string,
+): { kind: ResizableItemKind; bounds: BoardItemBounds; zIndex: number } | null {
+  const card = layout.cards.find((candidate) => candidate.id === itemId);
+  if (card) {
+    return {
+      kind: "card",
+      bounds: { id: card.id, x: card.x, y: card.y, width: card.width, height: card.height },
+      zIndex: card.z_index,
+    };
+  }
+  const shape = layout.shapes.find((candidate) => candidate.id === itemId);
+  if (shape) {
+    return {
+      kind: "shape",
+      bounds: { id: shape.id, x: shape.x, y: shape.y, width: shape.width, height: shape.height },
+      zIndex: shape.z_index,
+    };
+  }
+  const frame = layout.frames.find((candidate) => candidate.id === itemId);
+  if (frame) {
+    return {
+      kind: "frame",
+      bounds: { id: frame.id, x: frame.x, y: frame.y, width: frame.width, height: frame.height },
+      zIndex: frame.z_index,
+    };
+  }
+  const text = layout.texts.find((candidate) => candidate.id === itemId);
+  if (text) {
+    return {
+      kind: "text",
+      bounds: { id: text.id, x: text.x, y: text.y, width: text.width, height: text.height },
+      zIndex: text.z_index,
+    };
+  }
+  const source = layout.sources.find((candidate) => candidate.id === itemId);
+  if (source) {
+    return {
+      kind: "source",
+      bounds: { id: source.id, x: source.x, y: source.y, width: source.width, height: source.height },
+      zIndex: source.z_index,
+    };
+  }
+  return null;
+}
+
+function resizedBounds(
+  origin: BoardItemBounds,
+  kind: ResizableItemKind,
+  handle: ResizeHandle,
+  dx: number,
+  dy: number,
+): BoardItemBounds {
+  const limits = RESIZE_LIMITS[kind];
+  const nextWidth = clamp(
+    handle.endsWith("w") ? origin.width - dx : origin.width + dx,
+    limits.minWidth,
+    limits.maxWidth,
+  );
+  const nextHeight = clamp(
+    handle.startsWith("n") ? origin.height - dy : origin.height + dy,
+    limits.minHeight,
+    limits.maxHeight,
+  );
+
+  return {
+    id: origin.id,
+    x: handle.endsWith("w") ? origin.x + origin.width - nextWidth : origin.x,
+    y: handle.startsWith("n") ? origin.y + origin.height - nextHeight : origin.y,
+    width: nextWidth,
+    height: nextHeight,
+  };
+}
+
+function resizeLayoutItem(
+  layout: SchemeCanvasLayout,
+  itemId: string,
+  kind: ResizableItemKind,
+  bounds: BoardItemBounds,
+): SchemeCanvasLayout {
+  if (kind === "card") {
+    return {
+      ...layout,
+      cards: layout.cards.map((card) => (card.id === itemId ? { ...card, ...bounds } : card)),
+    };
+  }
+  if (kind === "shape") {
+    return {
+      ...layout,
+      shapes: layout.shapes.map((shape) => (shape.id === itemId ? { ...shape, ...bounds } : shape)),
+    };
+  }
+  if (kind === "frame") {
+    return {
+      ...layout,
+      frames: layout.frames.map((frame) => (frame.id === itemId ? { ...frame, ...bounds } : frame)),
+    };
+  }
+  if (kind === "text") {
+    return {
+      ...layout,
+      texts: layout.texts.map((text) => (text.id === itemId ? { ...text, ...bounds } : text)),
+    };
+  }
+  return {
+    ...layout,
+    sources: layout.sources.map((source) => (source.id === itemId ? { ...source, ...bounds } : source)),
+  };
+}
+
 function rectsIntersect(first: SelectionRect, second: BoardItemBounds): boolean {
   return (
     first.x <= second.x + second.width &&
@@ -1034,6 +1170,10 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
     () => canLockSelected && selectedItems.every((itemId) => !isLayoutItemLocked(itemId, layout)),
     [canLockSelected, layout, selectedItems],
   );
+  const selectedResizable = useMemo(() => {
+    if (selectedItems.length !== 1 || isLayoutItemLocked(selectedItems[0], layout)) return null;
+    return resizableItem(layout, selectedItems[0]);
+  }, [layout, selectedItems]);
   const projectionSources = useMemo(() => projectionSourceSummaries(projection), [projection]);
   const unpinnedProjectionSources = useMemo(() => {
     const pinned = new Set(layout.sources.map((source) => source.citation_id));
@@ -1425,6 +1565,28 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
     ],
   );
 
+  const handleResizePointerDown = useCallback(
+    (event: PointerEvent<Element>, itemId: string, itemKind: ResizableItemKind, handle: ResizeHandle) => {
+      if (event.button !== 0 || isLayoutItemLocked(itemId, layoutRef.current)) return;
+      event.stopPropagation();
+      const item = resizableItem(layoutRef.current, itemId);
+      if (!item) return;
+      event.currentTarget.setPointerCapture?.(event.pointerId);
+      setSelectedItem(itemId);
+      setPendingConnector(null);
+      pushUndoSnapshot();
+      dragRef.current = {
+        type: "resize",
+        itemId,
+        itemKind,
+        handle,
+        start: pointFromEvent(event),
+        origin: item.bounds,
+      };
+    },
+    [pointFromEvent, pushUndoSnapshot, setSelectedItem],
+  );
+
   const handleViewportPointerDown = useCallback(
     (event: PointerEvent<HTMLDivElement>) => {
       if (event.button !== 0 || !selected) return;
@@ -1590,6 +1752,14 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
         setSelectedItems(mergeSelectionIds(drag.previousItemIds, nextSelection));
         return;
       }
+      if (drag.type === "resize") {
+        const point = pointFromEvent(event);
+        const dx = point.x - drag.start.x;
+        const dy = point.y - drag.start.y;
+        const bounds = resizedBounds(drag.origin, drag.itemKind, drag.handle, dx, dy);
+        setLocalLayout((current) => resizeLayoutItem(current, drag.itemId, drag.itemKind, bounds));
+        return;
+      }
 
       const point = pointFromEvent(event);
       const dx = point.x - drag.start.x;
@@ -1682,7 +1852,8 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
       drag.type === "shape" ||
       drag.type === "frame" ||
       drag.type === "source" ||
-      drag.type === "text"
+      drag.type === "text" ||
+      drag.type === "resize"
     ) {
       void commitLayout(layoutRef.current);
     }
@@ -2366,6 +2537,36 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
                     />
                   </div>
                 ))}
+                {selectedResizable ? (
+                  <div
+                    className="scheme-board__resize-frame"
+                    style={{
+                      left: selectedResizable.bounds.x,
+                      top: selectedResizable.bounds.y,
+                      width: selectedResizable.bounds.width,
+                      height: selectedResizable.bounds.height,
+                      zIndex: 1_000_002 + layerZIndex(selectedResizable.zIndex),
+                    }}
+                    aria-hidden="true"
+                  >
+                    {RESIZE_HANDLES.map((handle) => (
+                      <span
+                        key={handle}
+                        className={`scheme-board__resize-handle scheme-board__resize-handle--${handle}`}
+                        data-scheme-resize-item={selectedResizable.bounds.id}
+                        data-scheme-resize-handle={handle}
+                        onPointerDown={(event) =>
+                          handleResizePointerDown(
+                            event,
+                            selectedResizable.bounds.id,
+                            selectedResizable.kind,
+                            handle,
+                          )
+                        }
+                      />
+                    ))}
+                  </div>
+                ) : null}
                 {marquee ? (
                   <div
                     className="scheme-board__marquee"

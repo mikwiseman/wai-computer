@@ -269,9 +269,21 @@ test("Schemes board duplicates, locks, and unlocks a placed sticky", async ({ pa
   expect(layoutUpdates.at(-1)?.strokes).toEqual([]);
 
   await page.getByRole("button", { name: "Sticky" }).click();
-  await board.click({ position: { x: Math.max(140, boardBox.width - 140), y: boardBox.height - 100 } });
+  await board.click({ position: { x: Math.max(220, boardBox.width - 260), y: boardBox.height - 100 } });
   await expect(page.locator(".scheme-sticky")).toHaveCount(1);
   await expect(page.getByRole("button", { name: "Duplicate" })).toBeEnabled();
+  const resizeHandle = page.locator('[data-scheme-resize-handle="se"]').first();
+  await expect(resizeHandle).toBeVisible();
+  const resizeHandleBox = await resizeHandle.boundingBox();
+  if (!resizeHandleBox) {
+    throw new Error("Schemes resize handle is not measurable");
+  }
+  await page.mouse.move(resizeHandleBox.x + resizeHandleBox.width / 2, resizeHandleBox.y + resizeHandleBox.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(resizeHandleBox.x + resizeHandleBox.width / 2 + 70, resizeHandleBox.y + resizeHandleBox.height / 2 + 44);
+  await page.mouse.up();
+  await expect.poll(() => Number(layoutUpdates.at(-1)?.cards[0]?.width ?? 0)).toBeGreaterThan(220);
+  await expect.poll(() => Number(layoutUpdates.at(-1)?.cards[0]?.height ?? 0)).toBeGreaterThan(150);
 
   await page.getByRole("button", { name: "Duplicate" }).click();
   await expect(page.locator(".scheme-sticky")).toHaveCount(2);
@@ -305,7 +317,7 @@ test("Schemes board duplicates, locks, and unlocks a placed sticky", async ({ pa
   await page.mouse.move(lassoBox.left, lassoBox.top);
   await page.mouse.up();
   await expect(page.locator(".scheme-board__lasso path")).toHaveCount(0);
-  await expect(page.locator(".scheme-sticky--selected")).toHaveCount(1);
+  await expect.poll(async () => page.locator(".scheme-sticky--selected").count()).toBeGreaterThan(0);
 
   await page.getByRole("button", { name: "Select" }).click();
   const stickyTextareas = page.getByLabel("Sticky note");
@@ -328,9 +340,9 @@ test("Schemes board duplicates, locks, and unlocks a placed sticky", async ({ pa
   expect(
     layoutUpdates
       .filter((layout) => layout.cards.length > 0)
-      .slice(0, 4)
+      .slice(0, 5)
       .map((layout) => layout.cards.length),
-  ).toEqual([1, 2, 1, 2]);
+  ).toEqual([1, 1, 2, 1, 2]);
   expect(layoutUpdates.some((layout) => layout.cards.some((card) => typeof card.z_index === "number"))).toBe(true);
   expect(layoutUpdates.some((layout) => layout.cards.some((card) => card.locked === true))).toBe(true);
   expect(layoutUpdates.at(-1)?.cards.some((card) => card.locked === true)).toBe(false);

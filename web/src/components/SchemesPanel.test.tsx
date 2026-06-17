@@ -505,6 +505,65 @@ describe("SchemesPanel", () => {
     );
   });
 
+  it("resizes selected board objects from corner handles", async () => {
+    const initial = scheme({
+      layout: layout({
+        cards: [
+          {
+            id: "card-existing",
+            x: 40,
+            y: 60,
+            width: 220,
+            height: 150,
+            text: "Existing note",
+            color: "#f7d774",
+            locked: false,
+            z_index: 10,
+          },
+        ],
+      }),
+    });
+    mockListSchemes.mockResolvedValue({ schemes: [initial] });
+    mockGetScheme.mockResolvedValue(initial);
+
+    const { container } = render(<SchemesPanel />);
+
+    const note = await screen.findByLabelText("Sticky note");
+    const viewport = container.querySelector(".scheme-board__viewport");
+    expect(viewport).not.toBeNull();
+
+    fireEvent.pointerDown(note.parentElement as Element, { pointerId: 1, clientX: 260, clientY: 210, button: 0 });
+    fireEvent.pointerUp(viewport as Element, { pointerId: 1, clientX: 260, clientY: 210 });
+
+    const southeastHandle = container.querySelector(
+      '[data-scheme-resize-item="card-existing"][data-scheme-resize-handle="se"]',
+    );
+    expect(southeastHandle).not.toBeNull();
+
+    fireEvent.pointerDown(southeastHandle as Element, { pointerId: 2, clientX: 260, clientY: 210, button: 0 });
+    fireEvent.pointerMove(viewport as Element, { pointerId: 2, clientX: 340, clientY: 250 });
+    fireEvent.pointerUp(viewport as Element, { pointerId: 2, clientX: 340, clientY: 250 });
+
+    await waitFor(() =>
+      expect(mockUpdateScheme).toHaveBeenCalledWith(
+        "scheme-1",
+        {
+          layout: expect.objectContaining({
+            cards: [
+              expect.objectContaining({
+                id: "card-existing",
+                x: 40,
+                y: 60,
+                width: 300,
+                height: 190,
+              }),
+            ],
+          }),
+        },
+      ),
+    );
+  });
+
   it("arranges a selected board object to the front and back", async () => {
     const initial = scheme({
       layout: layout({
