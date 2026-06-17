@@ -712,6 +712,7 @@ class MacAppState: ObservableObject {
 
     private let apiClient: APIClient
     private var hasAttemptedStoredSessionRestore = false
+    private var pendingRecordingSyncObserver: NSObjectProtocol?
 
     init(
         recordingViewModel: MacRecordingViewModel,
@@ -755,6 +756,19 @@ class MacAppState: ObservableObject {
             hasCompletedPostAuthOnboarding = false
         }
         refreshCombinedOnboardingState()
+
+        pendingRecordingSyncObserver = NotificationCenter.default.addObserver(
+            forName: .pendingRecordingSyncDidFinish,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            guard let syncedRecordingId = notification.userInfo?["recordingId"] as? String else {
+                return
+            }
+            Task { @MainActor in
+                self?.handlePendingRecordingSyncDidFinish(recordingId: syncedRecordingId)
+            }
+        }
 
         #if DEBUG
         if testingMode.isRecordingFlow || testingMode.isMainView {
@@ -838,6 +852,13 @@ class MacAppState: ObservableObject {
         } else {
             isCheckingAuth = false
         }
+    }
+
+    deinit {
+        if let pendingRecordingSyncObserver {
+            NotificationCenter.default.removeObserver(pendingRecordingSyncObserver)
+        }
+        permissionPollTimer?.invalidate()
     }
 
     private static var hasExplicitOnboardingCurrentPageArgument: Bool {
@@ -1502,6 +1523,10 @@ class MacAppState: ObservableObject {
 
         recordingViewModel.resetState()
         completedRecordingContext = nil
+    }
+
+    private func handlePendingRecordingSyncDidFinish(recordingId syncedRecordingId: String) {
+        finishCompletedRecordingTransition(recordingId: syncedRecordingId)
     }
 
     func getAPIClient() -> APIClient {

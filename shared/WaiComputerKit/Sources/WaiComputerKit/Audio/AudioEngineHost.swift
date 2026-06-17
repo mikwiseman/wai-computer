@@ -4,21 +4,15 @@ import os
 
 private let hostLog = Logger(subsystem: "is.waiwai.computer.kit", category: "audioEngineHost")
 
-/// Process-singleton AVAudioEngine manager that follows the Wispr Flow / Sebsto-Wispr
-/// pre-warm pattern. The engine is started **once** after permission grant and
-/// stays running for the lifetime of the dictation feature. Per-press dictation
-/// sessions acquire a `Lease` that installs the input tap, snapshots the
-/// pre-roll buffer, and exposes a stream of resampled 16 kHz mono Float32
-/// PCM buffers.
+/// Process-singleton AVAudioEngine manager for dictation sessions. The engine
+/// starts when dictation begins and is torn down when the session stops, so
+/// macOS does not show an idle microphone privacy indicator. A session acquires
+/// a `Lease` that snapshots the pre-roll buffer and exposes a stream of
+/// resampled 16 kHz mono Float32 PCM buffers.
 ///
 /// Why this matters:
-/// - Repeatedly `engine.start()` / `engine.stop()` on macOS 14+ causes the
-///   audio HAL to enter a degraded state after 3–5 cycles, manifesting as
-///   `kAudioUnitErr_FailedInitialization` (-10875) or silent buffers.
-/// - Bluetooth HFP (AirPods) takes 200–500 ms to switch from A2DP playback
-///   profile to mono call-quality profile when the mic activates. With the
-///   engine already running, this transition has already happened before
-///   the user presses the hotkey — no first-word loss.
+/// - A process-wide engine prevents overlapping taps and gives us one place to
+///   recover from route changes.
 /// - The pre-roll buffer keeps the most recent 500 ms of audio so even a
 ///   user who starts speaking at the same instant they press the hotkey
 ///   gets a complete transcript.

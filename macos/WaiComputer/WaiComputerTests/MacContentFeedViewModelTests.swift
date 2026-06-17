@@ -260,6 +260,23 @@ final class MacContentFeedViewModelTests: XCTestCase {
         XCTAssertTrue(source.contains("\"dictationInsert\""))
     }
 
+    func testDictationDoesNotPrewarmMicrophoneWhileIdle() throws {
+        let source = try macSource("WaiComputer/Features/Dictation/DictationManager.swift")
+
+        XCTAssertTrue(source.contains("try await AudioEngineHost.shared.prewarm()"))
+        XCTAssertTrue(source.contains("await AudioEngineHost.shared.teardown()"))
+        XCTAssertFalse(source.contains("AudioEngineHost prewarmed for dictation"))
+        XCTAssertFalse(source.contains("Eagerly pre-warm the shared engine"))
+    }
+
+    func testAppStateClearsCompletedRecordingWhenBackgroundSyncFinishes() throws {
+        let source = try macSource("WaiComputer/App/WaiComputerMacApp.swift")
+
+        XCTAssertTrue(source.contains("pendingRecordingSyncObserver"))
+        XCTAssertTrue(source.contains("handlePendingRecordingSyncDidFinish"))
+        XCTAssertTrue(source.contains("finishCompletedRecordingTransition(recordingId: syncedRecordingId)"))
+    }
+
     func testCompletedRecordingTransitionChunksLongTranscriptPreview() throws {
         let source = try macSource("WaiComputer/App/MacContentView.swift")
 

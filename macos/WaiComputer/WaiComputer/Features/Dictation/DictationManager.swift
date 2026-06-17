@@ -1491,6 +1491,7 @@ final class DictationManager: ObservableObject {
         }
         await providerAudioTask?.value
         providerAudioTask = nil
+        await AudioEngineHost.shared.teardown()
     }
 
     private func waitForFinalCaptureTail(lease: AudioEngineHost.Lease) async {
@@ -1718,6 +1719,7 @@ final class DictationManager: ObservableObject {
             await AudioEngineHost.shared.release(lease)
             activeAudioLease = nil
         }
+        await AudioEngineHost.shared.teardown()
 
         deferredStop = false
         dictationCancellationRequested = false
@@ -1951,28 +1953,11 @@ final class DictationManager: ObservableObject {
         isEnabled = shouldEnable
         if shouldEnable {
             hotkeyManager.start()
-            // Eagerly pre-warm the shared engine so the first hotkey press
-            // doesn't pay the ~300-800 ms engine.start() + Bluetooth HFP
-            // profile-switch cost mid-dictation. prewarm() is idempotent
-            // and async; the lazy fallback in startDictation handles cold
-            // launches where this hasn't completed yet. Failures are
-            // surfaced via the host's own error path and the lazy
-            // prewarm in startDictation will throw with a user-visible
-            // message.
-            Task {
-                do {
-                    try await AudioEngineHost.shared.prewarm()
-                    log.info("AudioEngineHost prewarmed for dictation")
-                } catch {
-                    log.warning("AudioEngineHost prewarm failed: \(error.localizedDescription, privacy: .public)")
-                }
-            }
         } else {
             hotkeyManager.stop()
-            // Release the shared engine when dictation is disabled so we
-            // don't hold the mic indefinitely (also: gives MacRecordingViewModel
-            // exclusive access to the input device when the user only uses
-            // full recordings, not dictation).
+            // Release the shared engine when dictation is disabled. Normal
+            // dictation sessions also tear it down after stop/cancel so macOS
+            // does not show an idle microphone privacy indicator.
             Task {
                 await AudioEngineHost.shared.teardown()
             }
