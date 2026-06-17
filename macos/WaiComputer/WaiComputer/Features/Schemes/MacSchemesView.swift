@@ -322,6 +322,13 @@ private struct MacSchemeBoard: View {
         let id: String
     }
 
+    private enum LayerAction {
+        case front
+        case forward
+        case backward
+        case back
+    }
+
     let projection: SchemeProjection?
     @Binding var layout: SchemeCanvasLayout
     let language: LanguageManager.SupportedLanguage
@@ -361,12 +368,14 @@ private struct MacSchemeBoard: View {
                     Canvas { context, size in
                         drawBoard(context: context, size: size)
                     }
+                    .zIndex(0)
 
                     ForEach(layout.frames) { frame in
                         MacSchemeFrameView(frame: frame)
                             .frame(width: CGFloat(frame.width), height: CGFloat(frame.height))
                             .overlay(selectionOverlay(id: frame.id))
                             .position(screenPoint(for: frameCenter(frame), in: proxy.size))
+                            .zIndex(layerZIndex(frame.zIndex))
                             .highPriorityGesture(frameGesture(for: frame))
                             .accessibilityIdentifier("scheme-frame-\(frame.id)")
                     }
@@ -376,6 +385,7 @@ private struct MacSchemeBoard: View {
                             .frame(width: CGFloat(text.width), height: CGFloat(text.height))
                             .overlay(selectionOverlay(id: text.id))
                             .position(screenPoint(for: textCenter(text), in: proxy.size))
+                            .zIndex(layerZIndex(text.zIndex))
                             .highPriorityGesture(textGesture(for: text))
                             .accessibilityIdentifier("scheme-text-\(text.id)")
                     }
@@ -385,6 +395,7 @@ private struct MacSchemeBoard: View {
                             .frame(width: nodeWidth, height: nodeHeight)
                             .overlay(selectionOverlay(id: node.id))
                             .position(screenPoint(for: nodeCenter(node), in: proxy.size))
+                            .zIndex(20)
                             .highPriorityGesture(nodeGesture(for: node))
                             .accessibilityIdentifier("scheme-node-\(node.id)")
                     }
@@ -394,19 +405,20 @@ private struct MacSchemeBoard: View {
                             .frame(width: CGFloat(card.width), height: CGFloat(card.height))
                             .overlay(selectionOverlay(id: card.id))
                             .position(screenPoint(for: cardCenter(card), in: proxy.size))
+                            .zIndex(layerZIndex(card.zIndex))
                             .highPriorityGesture(cardGesture(for: card))
                             .accessibilityIdentifier("scheme-card-\(card.id)")
                     }
 
                     ForEach(layout.shapes) { shape in
-                        Rectangle()
-                            .fill(Color.clear)
+                        MacSchemeShapeView(shape: shape)
                             .frame(
                                 width: CGFloat(shape.width) * CGFloat(layout.viewport.zoom),
                                 height: CGFloat(shape.height) * CGFloat(layout.viewport.zoom)
                             )
                             .overlay(selectionOverlay(id: shape.id))
                             .position(screenPoint(for: shapeCenter(shape), in: proxy.size))
+                            .zIndex(layerZIndex(shape.zIndex))
                             .highPriorityGesture(shapeGesture(for: shape))
                             .accessibilityIdentifier("scheme-shape-\(shape.id)")
                     }
@@ -475,6 +487,42 @@ private struct MacSchemeBoard: View {
             .buttonStyle(WaiGhostButtonStyle())
             .disabled(!canLockSelected)
             .help(isSelectedLocked ? t("Unlock", "Разблокировать") : t("Lock", "Заблокировать"))
+
+            Button {
+                arrangeSelected(.front)
+            } label: {
+                Image(systemName: "square.3.layers.3d.top.filled")
+            }
+            .buttonStyle(WaiGhostButtonStyle())
+            .disabled(!canArrangeSelected)
+            .help(t("Bring to Front", "На передний план"))
+
+            Button {
+                arrangeSelected(.forward)
+            } label: {
+                Image(systemName: "square.2.layers.3d.top.filled")
+            }
+            .buttonStyle(WaiGhostButtonStyle())
+            .disabled(!canArrangeSelected)
+            .help(t("Bring Forward", "Поднять на слой"))
+
+            Button {
+                arrangeSelected(.backward)
+            } label: {
+                Image(systemName: "square.2.layers.3d.bottom.filled")
+            }
+            .buttonStyle(WaiGhostButtonStyle())
+            .disabled(!canArrangeSelected)
+            .help(t("Send Backward", "Опустить на слой"))
+
+            Button {
+                arrangeSelected(.back)
+            } label: {
+                Image(systemName: "square.3.layers.3d.bottom.filled")
+            }
+            .buttonStyle(WaiGhostButtonStyle())
+            .disabled(!canArrangeSelected)
+            .help(t("Send to Back", "На задний план"))
 
             Divider()
                 .frame(height: 22)
@@ -663,6 +711,11 @@ private struct MacSchemeBoard: View {
         return isItemLocked(selectedItemId)
     }
 
+    private var canArrangeSelected: Bool {
+        guard let selectedItemId, canLockSelected else { return false }
+        return !isItemLocked(selectedItemId)
+    }
+
     private var selectedCardText: Binding<String> {
         Binding(
             get: {
@@ -773,6 +826,52 @@ private struct MacSchemeBoard: View {
             || layout.connectors.contains { $0.id == id && $0.locked }
     }
 
+    private func layerZIndex(_ zIndex: Int) -> Double {
+        Double(10 + zIndex)
+    }
+
+    private func layoutLayerItems() -> [(id: String, zIndex: Int)] {
+        layout.connectors.map { ($0.id, $0.zIndex) }
+            + layout.strokes.map { ($0.id, $0.zIndex) }
+            + layout.shapes.map { ($0.id, $0.zIndex) }
+            + layout.frames.map { ($0.id, $0.zIndex) }
+            + layout.texts.map { ($0.id, $0.zIndex) }
+            + layout.cards.map { ($0.id, $0.zIndex) }
+    }
+
+    private func nextLayerIndex() -> Int {
+        (layoutLayerItems().map(\.zIndex).max() ?? 0) + 1
+    }
+
+    private func normaliseLayerIndexes() {
+        let highestExistingIndex = layoutLayerItems().map(\.zIndex).filter { $0 != 0 }.max() ?? 0
+        var nextIndex = max(highestExistingIndex + 1, 1)
+        for connector in layout.connectors.indices where layout.connectors[connector].zIndex == 0 {
+            layout.connectors[connector].zIndex = nextIndex
+            nextIndex += 1
+        }
+        for stroke in layout.strokes.indices where layout.strokes[stroke].zIndex == 0 {
+            layout.strokes[stroke].zIndex = nextIndex
+            nextIndex += 1
+        }
+        for shape in layout.shapes.indices where layout.shapes[shape].zIndex == 0 {
+            layout.shapes[shape].zIndex = nextIndex
+            nextIndex += 1
+        }
+        for frame in layout.frames.indices where layout.frames[frame].zIndex == 0 {
+            layout.frames[frame].zIndex = nextIndex
+            nextIndex += 1
+        }
+        for text in layout.texts.indices where layout.texts[text].zIndex == 0 {
+            layout.texts[text].zIndex = nextIndex
+            nextIndex += 1
+        }
+        for card in layout.cards.indices where layout.cards[card].zIndex == 0 {
+            layout.cards[card].zIndex = nextIndex
+            nextIndex += 1
+        }
+    }
+
     private func selectionOverlay(id: String) -> some View {
         RoundedRectangle(cornerRadius: 8)
             .stroke(selectedItemId == id ? Palette.accent : Color.clear, lineWidth: 2)
@@ -791,7 +890,8 @@ private struct MacSchemeBoard: View {
                         pushUndoSnapshot()
                         let stroke = SchemeStroke(
                             id: "stroke:\(UUID().uuidString)",
-                            points: [world, world]
+                            points: [world, world],
+                            zIndex: nextLayerIndex()
                         )
                         layout.strokes.append(stroke)
                         draftStrokeId = stroke.id
@@ -1036,7 +1136,6 @@ private struct MacSchemeBoard: View {
         drawProjectionEdges(context: context, size: size)
         drawConnectors(context: context, size: size)
         drawStrokes(context: context, size: size)
-        drawShapes(context: context, size: size)
     }
 
     private func drawProjectionEdges(context: GraphicsContext, size: CGSize) {
@@ -1052,7 +1151,7 @@ private struct MacSchemeBoard: View {
     }
 
     private func drawConnectors(context: GraphicsContext, size: CGSize) {
-        for connector in layout.connectors {
+        for connector in layout.connectors.sorted(by: { $0.zIndex < $1.zIndex }) {
             let points = connectorPoints(connector)
             guard points.count >= 2 else { continue }
             var path = Path()
@@ -1069,7 +1168,7 @@ private struct MacSchemeBoard: View {
     }
 
     private func drawStrokes(context: GraphicsContext, size: CGSize) {
-        for stroke in layout.strokes where stroke.points.count >= 2 {
+        for stroke in layout.strokes.sorted(by: { $0.zIndex < $1.zIndex }) where stroke.points.count >= 2 {
             var path = Path()
             path.move(to: screenPoint(for: stroke.points[0], in: size))
             for point in stroke.points.dropFirst() {
@@ -1083,23 +1182,6 @@ private struct MacSchemeBoard: View {
         }
     }
 
-    private func drawShapes(context: GraphicsContext, size: CGSize) {
-        for shape in layout.shapes {
-            let origin = screenPoint(for: SchemePosition(x: shape.x, y: shape.y), in: size)
-            let rect = CGRect(
-                x: origin.x,
-                y: origin.y,
-                width: CGFloat(shape.width) * CGFloat(layout.viewport.zoom),
-                height: CGFloat(shape.height) * CGFloat(layout.viewport.zoom)
-            )
-            let path = shape.kind == "ellipse" ? Path(ellipseIn: rect) : Path(roundedRect: rect, cornerRadius: 8)
-            context.stroke(path, with: .color(schemeColor(shape.color, defaultColor: Palette.accent).opacity(shape.locked ? 0.45 : 1)), lineWidth: 2)
-            if selectedItemId == shape.id {
-                context.stroke(path, with: .color(Palette.accent.opacity(0.45)), lineWidth: 5)
-            }
-        }
-    }
-
     private func addCard(at point: SchemePosition) {
         pushUndoSnapshot()
         let card = SchemeCanvasCard(
@@ -1108,7 +1190,8 @@ private struct MacSchemeBoard: View {
             y: point.y - stickyHeight / 2,
             width: stickyWidth,
             height: stickyHeight,
-            text: t("Note", "Заметка")
+            text: t("Note", "Заметка"),
+            zIndex: nextLayerIndex()
         )
         layout.cards.append(card)
         selectedItemId = card.id
@@ -1124,7 +1207,8 @@ private struct MacSchemeBoard: View {
             y: point.y - shapeHeight / 2,
             width: shapeWidth,
             height: shapeHeight,
-            color: kind == "ellipse" ? "#7c3aed" : "#2563eb"
+            color: kind == "ellipse" ? "#7c3aed" : "#2563eb",
+            zIndex: nextLayerIndex()
         )
         layout.shapes.append(shape)
         selectedItemId = shape.id
@@ -1139,7 +1223,8 @@ private struct MacSchemeBoard: View {
             y: point.y - frameHeight / 2,
             width: frameWidth,
             height: frameHeight,
-            title: t("Frame", "Фрейм")
+            title: t("Frame", "Фрейм"),
+            zIndex: nextLayerIndex()
         )
         layout.frames.append(frame)
         selectedItemId = frame.id
@@ -1155,7 +1240,8 @@ private struct MacSchemeBoard: View {
             width: textWidth,
             height: textHeight,
             text: t("Text", "Текст"),
-            fontSize: 22
+            fontSize: 22,
+            zIndex: nextLayerIndex()
         )
         layout.texts.append(text)
         selectedItemId = text.id
@@ -1180,7 +1266,8 @@ private struct MacSchemeBoard: View {
             let connector = SchemeConnector(
                 id: "connector:\(UUID().uuidString)",
                 sourceId: pendingConnector.id,
-                targetId: handle.id
+                targetId: handle.id,
+                zIndex: nextLayerIndex()
             )
             layout.connectors.append(connector)
             self.pendingConnector = nil
@@ -1221,6 +1308,44 @@ private struct MacSchemeBoard: View {
         onCommit(layout)
     }
 
+    private func arrangeSelected(_ action: LayerAction) {
+        guard let selectedItemId, canArrangeSelected else { return }
+        pushUndoSnapshot()
+        normaliseLayerIndexes()
+
+        let items = layoutLayerItems().sorted { $0.zIndex < $1.zIndex }
+        guard let index = items.firstIndex(where: { $0.id == selectedItemId }) else { return }
+
+        switch action {
+        case .front:
+            setItemZIndex(selectedItemId, zIndex: (items.last?.zIndex ?? 0) + 1)
+        case .back:
+            setItemZIndex(selectedItemId, zIndex: (items.first?.zIndex ?? 0) - 1)
+        case .forward:
+            let nextIndex = index + 1
+            guard nextIndex < items.count else {
+                onCommit(layout)
+                return
+            }
+            let current = items[index]
+            let next = items[nextIndex]
+            setItemZIndex(current.id, zIndex: next.zIndex)
+            setItemZIndex(next.id, zIndex: current.zIndex)
+        case .backward:
+            let previousIndex = index - 1
+            guard previousIndex >= 0 else {
+                onCommit(layout)
+                return
+            }
+            let current = items[index]
+            let previous = items[previousIndex]
+            setItemZIndex(current.id, zIndex: previous.zIndex)
+            setItemZIndex(previous.id, zIndex: current.zIndex)
+        }
+
+        onCommit(layout)
+    }
+
     private func duplicateSelected() {
         guard let selectedItemId, canDuplicateSelected else { return }
         pushUndoSnapshot()
@@ -1230,6 +1355,7 @@ private struct MacSchemeBoard: View {
             card.id = "card:\(UUID().uuidString)"
             card.x += offset
             card.y += offset
+            card.zIndex = nextLayerIndex()
             layout.cards.append(card)
             self.selectedItemId = card.id
             onCommit(layout)
@@ -1240,6 +1366,7 @@ private struct MacSchemeBoard: View {
             shape.id = "shape:\(UUID().uuidString)"
             shape.x += offset
             shape.y += offset
+            shape.zIndex = nextLayerIndex()
             layout.shapes.append(shape)
             self.selectedItemId = shape.id
             onCommit(layout)
@@ -1250,6 +1377,7 @@ private struct MacSchemeBoard: View {
             frame.id = "frame:\(UUID().uuidString)"
             frame.x += offset
             frame.y += offset
+            frame.zIndex = nextLayerIndex()
             layout.frames.append(frame)
             self.selectedItemId = frame.id
             onCommit(layout)
@@ -1260,6 +1388,7 @@ private struct MacSchemeBoard: View {
             text.id = "text:\(UUID().uuidString)"
             text.x += offset
             text.y += offset
+            text.zIndex = nextLayerIndex()
             layout.texts.append(text)
             self.selectedItemId = text.id
             onCommit(layout)
@@ -1271,6 +1400,7 @@ private struct MacSchemeBoard: View {
             stroke.points = stroke.points.map { point in
                 SchemePosition(x: point.x + offset, y: point.y + offset)
             }
+            stroke.zIndex = nextLayerIndex()
             layout.strokes.append(stroke)
             self.selectedItemId = stroke.id
             onCommit(layout)
@@ -1305,6 +1435,15 @@ private struct MacSchemeBoard: View {
     private func updateConnector(_ id: String, mutate: (inout SchemeConnector) -> Void) {
         guard let index = layout.connectors.firstIndex(where: { $0.id == id }) else { return }
         mutate(&layout.connectors[index])
+    }
+
+    private func setItemZIndex(_ id: String, zIndex: Int) {
+        updateCard(id) { $0.zIndex = zIndex }
+        updateShape(id) { $0.zIndex = zIndex }
+        updateFrame(id) { $0.zIndex = zIndex }
+        updateText(id) { $0.zIndex = zIndex }
+        updateStroke(id) { $0.zIndex = zIndex }
+        updateConnector(id) { $0.zIndex = zIndex }
     }
 
     private func nodeCenter(_ node: SchemeNode) -> SchemePosition {
@@ -1455,6 +1594,41 @@ private struct MacSchemeFrameView: View {
             }
         }
         .opacity(frame.locked ? 0.72 : 1)
+    }
+}
+
+private struct MacSchemeShapeView: View {
+    let shape: SchemeCanvasShape
+
+    var body: some View {
+        ZStack(alignment: .topTrailing) {
+            shapeBody
+
+            if shape.locked {
+                Image(systemName: "lock.fill")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(Palette.textSecondary)
+                    .padding(Spacing.xs)
+            }
+        }
+        .opacity(shape.locked ? 0.72 : 1)
+        .contentShape(Rectangle())
+    }
+
+    @ViewBuilder
+    private var shapeBody: some View {
+        let strokeColor = schemeColor(shape.color, defaultColor: Palette.accent)
+        let fillColor = shape.fill == "transparent" ? Color.clear : schemeColor(shape.fill, defaultColor: Color.clear)
+
+        if shape.kind == "ellipse" {
+            Ellipse()
+                .fill(fillColor)
+                .overlay(Ellipse().stroke(strokeColor, lineWidth: 2))
+        } else {
+            RoundedRectangle(cornerRadius: 8)
+                .fill(fillColor)
+                .overlay(RoundedRectangle(cornerRadius: 8).stroke(strokeColor, lineWidth: 2))
+        }
     }
 }
 

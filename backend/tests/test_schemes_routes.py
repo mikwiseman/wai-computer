@@ -33,7 +33,7 @@ async def test_create_list_get_and_update_scheme_layout(client, auth_headers, mo
 
     node_id = payload["current_revision"]["projection"]["nodes"][0]["id"]
     layout = {
-        "version": 4,
+        "version": 5,
         "viewport": {"x": 20, "y": -10, "zoom": 1.2},
         "node_positions": {node_id: {"x": 128.5, "y": -64.25}},
         "strokes": [
@@ -43,6 +43,7 @@ async def test_create_list_get_and_update_scheme_layout(client, auth_headers, mo
                 "color": "#111827",
                 "width": 4,
                 "locked": True,
+                "z_index": 11,
             }
         ],
         "cards": [
@@ -55,6 +56,7 @@ async def test_create_list_get_and_update_scheme_layout(client, auth_headers, mo
                 "text": "Open issue",
                 "color": "#f7d774",
                 "locked": True,
+                "z_index": 60,
             }
         ],
         "shapes": [
@@ -68,6 +70,7 @@ async def test_create_list_get_and_update_scheme_layout(client, auth_headers, mo
                 "color": "#2563eb",
                 "fill": "transparent",
                 "locked": True,
+                "z_index": 30,
             }
         ],
         "frames": [
@@ -81,6 +84,7 @@ async def test_create_list_get_and_update_scheme_layout(client, auth_headers, mo
                 "color": "#0f766e",
                 "fill": "transparent",
                 "locked": True,
+                "z_index": 20,
             }
         ],
         "texts": [
@@ -94,6 +98,7 @@ async def test_create_list_get_and_update_scheme_layout(client, auth_headers, mo
                 "color": "#111827",
                 "font_size": 22,
                 "locked": True,
+                "z_index": 50,
             }
         ],
         "connectors": [
@@ -105,6 +110,7 @@ async def test_create_list_get_and_update_scheme_layout(client, auth_headers, mo
                 "label": "blocks",
                 "color": "#475569",
                 "locked": True,
+                "z_index": 10,
             }
         ],
     }
@@ -156,7 +162,7 @@ async def test_scheme_routes_migrate_legacy_node_position_layout(
     )
 
     assert migrated.status_code == 200, migrated.text
-    assert migrated.json()["layout"]["version"] == 4
+    assert migrated.json()["layout"]["version"] == 5
     assert migrated.json()["layout"]["node_positions"] == {node_id: {"x": 40.0, "y": 80.0}}
     assert migrated.json()["layout"]["cards"] == []
 

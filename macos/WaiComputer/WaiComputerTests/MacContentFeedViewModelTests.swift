@@ -40,13 +40,17 @@ final class MacContentFeedViewModelTests: XCTestCase {
         XCTAssertTrue(source.contains("private func redoLayout()"))
         XCTAssertTrue(source.contains("private func duplicateSelected()"))
         XCTAssertTrue(source.contains("private func toggleSelectedLock()"))
+        XCTAssertTrue(source.contains("private func arrangeSelected(_ action: LayerAction)"))
         XCTAssertTrue(source.contains("private func isItemLocked(_ id: String) -> Bool"))
+        XCTAssertTrue(source.contains("private enum LayerAction"))
         XCTAssertTrue(source.contains("Image(systemName: \"arrow.uturn.backward\")"))
         XCTAssertTrue(source.contains("Image(systemName: \"arrow.uturn.forward\")"))
         XCTAssertTrue(source.contains("Image(systemName: \"square.on.square\")"))
         XCTAssertTrue(source.contains("Image(systemName: isSelectedLocked ? \"lock.open\" : \"lock\")"))
+        XCTAssertTrue(source.contains("Image(systemName: \"square.3.layers.3d.top.filled\")"))
         XCTAssertTrue(source.contains(".disabled(!canDuplicateSelected)"))
         XCTAssertTrue(source.contains(".disabled(!canLockSelected)"))
+        XCTAssertTrue(source.contains(".disabled(!canArrangeSelected)"))
         XCTAssertBefore("private func pushUndoSnapshot()", "private func duplicateSelected()", in: source)
     }
 

@@ -89,7 +89,7 @@ interface BoardItemHandle {
   kind: BoardItemKind;
 }
 
-const SCHEME_LAYOUT_VERSION = 4 as const;
+const SCHEME_LAYOUT_VERSION = 5 as const;
 const DEFAULT_VIEWPORT: SchemeViewport = { x: 0, y: 0, zoom: 1 };
 const MIN_ZOOM = 0.25;
 const MAX_ZOOM = 2.8;
@@ -129,6 +129,10 @@ const COPY = {
     duplicate: "Duplicate",
     lock: "Lock",
     unlock: "Unlock",
+    bringFront: "Front",
+    bringForward: "Forward",
+    sendBackward: "Backward",
+    sendBack: "Back",
     emptyTitle: "No schemes yet",
     emptyBody: "Create one from a prompt. Wai will build a cited board from your recordings, materials, and chats.",
     noSelection: "Select a scheme or create a new one.",
@@ -154,6 +158,10 @@ const COPY = {
     duplicate: "Дублировать",
     lock: "Заблокировать",
     unlock: "Разблокировать",
+    bringFront: "Наверх",
+    bringForward: "Вперед",
+    sendBackward: "Назад",
+    sendBack: "Вниз",
     emptyTitle: "Схем пока нет",
     emptyBody: "Создайте схему по запросу. Wai соберет доску с источниками из записей, материалов и чатов.",
     noSelection: "Выберите схему или создайте новую.",
@@ -186,6 +194,31 @@ function blankLayout(): SchemeCanvasLayout {
   };
 }
 
+type LayerAction = "front" | "forward" | "backward" | "back";
+type LayerItem = { id: string; zIndex: number };
+
+function normaliseLayoutLayers(layout: SchemeCanvasLayout): SchemeCanvasLayout {
+  const existingIndexes = layoutLayerItems(layout)
+    .map((item) => item.zIndex)
+    .filter(Number.isFinite);
+  let nextIndex = existingIndexes.length === 0 ? 1 : Math.max(...existingIndexes) + 1;
+  const withIndex = <T extends { z_index: number }>(items: T[]) =>
+    items.map((item) => ({
+      ...item,
+      z_index: Number.isFinite(item.z_index) ? item.z_index : nextIndex++,
+    }));
+
+  return {
+    ...layout,
+    connectors: withIndex(layout.connectors),
+    strokes: withIndex(layout.strokes),
+    shapes: withIndex(layout.shapes),
+    frames: withIndex(layout.frames),
+    texts: withIndex(layout.texts),
+    cards: withIndex(layout.cards),
+  };
+}
+
 function isPosition(value: unknown): value is SchemePosition {
   return (
     typeof value === "object" &&
@@ -202,19 +235,19 @@ function layoutForScheme(scheme: Scheme | null): SchemeCanvasLayout {
   if (!("version" in maybeLegacy) && Object.values(maybeLegacy).every(isPosition)) {
     return { ...blankLayout(), node_positions: maybeLegacy as Record<string, SchemePosition> };
   }
-  return {
+  return normaliseLayoutLayers({
     ...blankLayout(),
     ...raw,
     version: SCHEME_LAYOUT_VERSION,
     viewport: { ...DEFAULT_VIEWPORT, ...(raw.viewport ?? {}) },
     node_positions: raw.node_positions ?? {},
-    strokes: (raw.strokes ?? []).map((stroke) => ({ ...stroke, locked: stroke.locked ?? false })),
-    cards: (raw.cards ?? []).map((card) => ({ ...card, locked: card.locked ?? false })),
-    shapes: (raw.shapes ?? []).map((shape) => ({ ...shape, locked: shape.locked ?? false })),
-    frames: (raw.frames ?? []).map((frame) => ({ ...frame, locked: frame.locked ?? false })),
-    texts: (raw.texts ?? []).map((text) => ({ ...text, locked: text.locked ?? false })),
-    connectors: (raw.connectors ?? []).map((connector) => ({ ...connector, locked: connector.locked ?? false })),
-  };
+    strokes: (raw.strokes ?? []).map((stroke) => ({ ...stroke, locked: stroke.locked ?? false, z_index: stroke.z_index ?? Number.NaN })),
+    cards: (raw.cards ?? []).map((card) => ({ ...card, locked: card.locked ?? false, z_index: card.z_index ?? Number.NaN })),
+    shapes: (raw.shapes ?? []).map((shape) => ({ ...shape, locked: shape.locked ?? false, z_index: shape.z_index ?? Number.NaN })),
+    frames: (raw.frames ?? []).map((frame) => ({ ...frame, locked: frame.locked ?? false, z_index: frame.z_index ?? Number.NaN })),
+    texts: (raw.texts ?? []).map((text) => ({ ...text, locked: text.locked ?? false, z_index: text.z_index ?? Number.NaN })),
+    connectors: (raw.connectors ?? []).map((connector) => ({ ...connector, locked: connector.locked ?? false, z_index: connector.z_index ?? Number.NaN })),
+  });
 }
 
 function nodePosition(node: SchemeNode, layout: SchemeCanvasLayout): SchemePosition {
@@ -287,6 +320,64 @@ function canLockLayoutItem(itemId: string | null, layout: SchemeCanvasLayout): b
     layout.texts.some((candidate) => candidate.id === itemId) ||
     layout.strokes.some((candidate) => candidate.id === itemId) ||
     layout.connectors.some((candidate) => candidate.id === itemId)
+  );
+}
+
+function layoutLayerItems(layout: SchemeCanvasLayout): LayerItem[] {
+  return [
+    ...layout.connectors.map((connector) => ({ id: connector.id, zIndex: connector.z_index })),
+    ...layout.strokes.map((stroke) => ({ id: stroke.id, zIndex: stroke.z_index })),
+    ...layout.shapes.map((shape) => ({ id: shape.id, zIndex: shape.z_index })),
+    ...layout.frames.map((frame) => ({ id: frame.id, zIndex: frame.z_index })),
+    ...layout.texts.map((text) => ({ id: text.id, zIndex: text.z_index })),
+    ...layout.cards.map((card) => ({ id: card.id, zIndex: card.z_index })),
+  ];
+}
+
+function nextLayerIndex(layout: SchemeCanvasLayout): number {
+  const indexes = layoutLayerItems(layout).map((item) => item.zIndex);
+  return indexes.length === 0 ? 1 : Math.max(...indexes) + 1;
+}
+
+function layerZIndex(zIndex: number): number {
+  return 10 + zIndex;
+}
+
+function setLayoutItemZIndex(layout: SchemeCanvasLayout, itemId: string, zIndex: number): SchemeCanvasLayout {
+  return {
+    ...layout,
+    cards: layout.cards.map((card) => (card.id === itemId ? { ...card, z_index: zIndex } : card)),
+    shapes: layout.shapes.map((shape) => (shape.id === itemId ? { ...shape, z_index: zIndex } : shape)),
+    frames: layout.frames.map((frame) => (frame.id === itemId ? { ...frame, z_index: zIndex } : frame)),
+    texts: layout.texts.map((text) => (text.id === itemId ? { ...text, z_index: zIndex } : text)),
+    strokes: layout.strokes.map((stroke) => (stroke.id === itemId ? { ...stroke, z_index: zIndex } : stroke)),
+    connectors: layout.connectors.map((connector) =>
+      connector.id === itemId ? { ...connector, z_index: zIndex } : connector,
+    ),
+  };
+}
+
+function arrangeLayoutItem(layout: SchemeCanvasLayout, itemId: string, action: LayerAction): SchemeCanvasLayout {
+  const normalised = normaliseLayoutLayers(layout);
+  const items = layoutLayerItems(normalised).sort((a, b) => a.zIndex - b.zIndex);
+  const currentIndex = items.findIndex((item) => item.id === itemId);
+  if (currentIndex === -1) return layout;
+
+  if (action === "front") {
+    return setLayoutItemZIndex(normalised, itemId, items[items.length - 1].zIndex + 1);
+  }
+  if (action === "back") {
+    return setLayoutItemZIndex(normalised, itemId, items[0].zIndex - 1);
+  }
+
+  const neighborIndex = action === "forward" ? currentIndex + 1 : currentIndex - 1;
+  if (neighborIndex < 0 || neighborIndex >= items.length) return normalised;
+  const current = items[currentIndex];
+  const neighbor = items[neighborIndex];
+  return setLayoutItemZIndex(
+    setLayoutItemZIndex(normalised, current.id, neighbor.zIndex),
+    neighbor.id,
+    current.zIndex,
   );
 }
 
@@ -454,6 +545,10 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
     () => isLayoutItemLocked(selectedItem, layout),
     [layout, selectedItem],
   );
+  const canArrangeSelected = useMemo(
+    () => canLockLayoutItem(selectedItem, layout) && !isLayoutItemLocked(selectedItem, layout),
+    [layout, selectedItem],
+  );
 
   const commitLayout = useCallback(
     async (nextLayout: SchemeCanvasLayout) => {
@@ -608,6 +703,7 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
         text: locale === "ru" ? "Заметка" : "Note",
         color: "#f7d774",
         locked: false,
+        z_index: nextLayerIndex(layoutRef.current),
       };
       const nextLayout = { ...layoutRef.current, cards: [...layoutRef.current.cards, card] };
       setSelectedItem(card.id);
@@ -631,6 +727,7 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
         color: kind === "ellipse" ? "#7c3aed" : "#2563eb",
         fill: "transparent",
         locked: false,
+        z_index: nextLayerIndex(layoutRef.current),
       };
       const nextLayout = { ...layoutRef.current, shapes: [...layoutRef.current.shapes, shape] };
       setSelectedItem(shape.id);
@@ -654,6 +751,7 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
         color: "#0f766e",
         fill: "transparent",
         locked: false,
+        z_index: nextLayerIndex(layoutRef.current),
       };
       const nextLayout = { ...layoutRef.current, frames: [...layoutRef.current.frames, frame] };
       setSelectedItem(frame.id);
@@ -677,6 +775,7 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
         color: "#111827",
         font_size: 22,
         locked: false,
+        z_index: nextLayerIndex(layoutRef.current),
       };
       const nextLayout = { ...layoutRef.current, texts: [...layoutRef.current.texts, text] };
       setSelectedItem(text.id);
@@ -699,6 +798,7 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
         label: null,
         color: "#475569",
         locked: false,
+        z_index: nextLayerIndex(layoutRef.current),
       };
       const nextLayout = {
         ...layoutRef.current,
@@ -766,6 +866,7 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
           color: "#111827",
           width: 3,
           locked: false,
+          z_index: nextLayerIndex(layoutRef.current),
         };
         const nextLayout = { ...layoutRef.current, strokes: [...layoutRef.current.strokes, stroke] };
         setLayout(nextLayout);
@@ -1012,6 +1113,15 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
     void commitLayout(nextLayout);
   }, [canLockSelected, commitLayout, pushUndoSnapshot, selectedItem]);
 
+  const arrangeSelected = useCallback((action: LayerAction) => {
+    if (!selectedItem || !canArrangeSelected) return;
+    pushUndoSnapshot();
+    const nextLayout = arrangeLayoutItem(layoutRef.current, selectedItem, action);
+    setLayout(nextLayout);
+    layoutRef.current = nextLayout;
+    void commitLayout(nextLayout);
+  }, [canArrangeSelected, commitLayout, pushUndoSnapshot, selectedItem]);
+
   const duplicateSelected = useCallback(() => {
     if (!selectedItem || !canDuplicateSelected) return;
     pushUndoSnapshot();
@@ -1022,28 +1132,28 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
 
     const card = current.cards.find((candidate) => candidate.id === selectedItem);
     if (card) {
-      const duplicate = { ...card, id: createId("card"), x: card.x + offset, y: card.y + offset };
+      const duplicate = { ...card, id: createId("card"), x: card.x + offset, y: card.y + offset, z_index: nextLayerIndex(current) };
       nextLayout.cards.push(duplicate);
       nextSelectedItem = duplicate.id;
     }
 
     const shape = current.shapes.find((candidate) => candidate.id === selectedItem);
     if (shape) {
-      const duplicate = { ...shape, id: createId("shape"), x: shape.x + offset, y: shape.y + offset };
+      const duplicate = { ...shape, id: createId("shape"), x: shape.x + offset, y: shape.y + offset, z_index: nextLayerIndex(current) };
       nextLayout.shapes.push(duplicate);
       nextSelectedItem = duplicate.id;
     }
 
     const frame = current.frames.find((candidate) => candidate.id === selectedItem);
     if (frame) {
-      const duplicate = { ...frame, id: createId("frame"), x: frame.x + offset, y: frame.y + offset };
+      const duplicate = { ...frame, id: createId("frame"), x: frame.x + offset, y: frame.y + offset, z_index: nextLayerIndex(current) };
       nextLayout.frames.push(duplicate);
       nextSelectedItem = duplicate.id;
     }
 
     const text = current.texts.find((candidate) => candidate.id === selectedItem);
     if (text) {
-      const duplicate = { ...text, id: createId("text"), x: text.x + offset, y: text.y + offset };
+      const duplicate = { ...text, id: createId("text"), x: text.x + offset, y: text.y + offset, z_index: nextLayerIndex(current) };
       nextLayout.texts.push(duplicate);
       nextSelectedItem = duplicate.id;
     }
@@ -1054,6 +1164,7 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
         ...stroke,
         id: createId("stroke"),
         points: stroke.points.map((point) => ({ x: point.x + offset, y: point.y + offset })),
+        z_index: nextLayerIndex(current),
       };
       nextLayout.strokes.push(duplicate);
       nextSelectedItem = duplicate.id;
@@ -1164,6 +1275,18 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
               <button type="button" disabled={!canLockSelected} onClick={toggleSelectedLock}>
                 {selectedItemLocked ? copy.unlock : copy.lock}
               </button>
+              <button type="button" disabled={!canArrangeSelected} onClick={() => arrangeSelected("front")}>
+                {copy.bringFront}
+              </button>
+              <button type="button" disabled={!canArrangeSelected} onClick={() => arrangeSelected("forward")}>
+                {copy.bringForward}
+              </button>
+              <button type="button" disabled={!canArrangeSelected} onClick={() => arrangeSelected("backward")}>
+                {copy.sendBackward}
+              </button>
+              <button type="button" disabled={!canArrangeSelected} onClick={() => arrangeSelected("back")}>
+                {copy.sendBack}
+              </button>
               <button type="button" disabled={!canDuplicateSelected} onClick={duplicateSelected}>
                 {copy.duplicate}
               </button>
@@ -1218,14 +1341,22 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
                       />
                     );
                   })}
-                  {layout.connectors.map((connector) => {
-                    const source = itemCenter(connector.source_id, positionedNodes, layout);
-                    const target = itemCenter(connector.target_id, positionedNodes, layout);
-                    const points = source && target ? [source, target] : connector.points;
-                    if (points.length < 2) return null;
-                    return (
+                </svg>
+
+                {layout.connectors.map((connector) => {
+                  const source = itemCenter(connector.source_id, positionedNodes, layout);
+                  const target = itemCenter(connector.target_id, positionedNodes, layout);
+                  const points = source && target ? [source, target] : connector.points;
+                  if (points.length < 2) return null;
+                  return (
+                    <svg
+                      key={connector.id}
+                      data-scheme-board-item="true"
+                      className="scheme-board__svg-item"
+                      aria-hidden="true"
+                      style={{ zIndex: layerZIndex(connector.z_index) }}
+                    >
                       <polyline
-                        key={connector.id}
                         className={[
                           selectedItem === connector.id ? "scheme-board__connector--selected" : "",
                           connector.locked ? "scheme-board__item--locked" : "",
@@ -1237,11 +1368,19 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
                           setSelectedItem(connector.id);
                         }}
                       />
-                    );
-                  })}
-                  {layout.strokes.map((stroke) => (
+                    </svg>
+                  );
+                })}
+
+                {layout.strokes.map((stroke) => (
+                  <svg
+                    key={stroke.id}
+                    data-scheme-board-item="true"
+                    className="scheme-board__svg-item"
+                    aria-hidden="true"
+                    style={{ zIndex: layerZIndex(stroke.z_index) }}
+                  >
                     <polyline
-                      key={stroke.id}
                       className={[
                         selectedItem === stroke.id ? "scheme-board__stroke--selected" : "",
                         stroke.locked ? "scheme-board__item--locked" : "",
@@ -1254,11 +1393,18 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
                         setSelectedItem(stroke.id);
                       }}
                     />
-                  ))}
-                  {layout.shapes.map((shape) => (
+                  </svg>
+                ))}
+
+                {layout.shapes.map((shape) => (
+                  <svg
+                    key={shape.id}
+                    data-scheme-board-item="true"
+                    className="scheme-board__svg-item"
+                    aria-hidden="true"
+                    style={{ zIndex: layerZIndex(shape.z_index) }}
+                  >
                     <path
-                      key={shape.id}
-                      data-scheme-board-item="true"
                       className={[
                         selectedItem === shape.id ? "scheme-board__shape--selected" : "",
                         shape.locked ? "scheme-board__item--locked" : "",
@@ -1270,8 +1416,8 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
                         handleItemPointerDown(event, { id: shape.id, kind: "shape" }, { x: shape.x, y: shape.y })
                       }
                     />
-                  ))}
-                </svg>
+                  </svg>
+                ))}
 
                 {layout.frames.map((frame) => (
                   <div
@@ -1289,6 +1435,7 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
                       height: frame.height,
                       borderColor: frame.color,
                       backgroundColor: frame.fill === "transparent" ? undefined : frame.fill,
+                      zIndex: layerZIndex(frame.z_index),
                     }}
                     onPointerDown={(event) =>
                       handleItemPointerDown(event, { id: frame.id, kind: "frame" }, { x: frame.x, y: frame.y })
@@ -1325,6 +1472,7 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
                       height: text.height,
                       color: text.color,
                       fontSize: text.font_size,
+                      zIndex: layerZIndex(text.z_index),
                     }}
                     onPointerDown={(event) =>
                       handleItemPointerDown(event, { id: text.id, kind: "text" }, { x: text.x, y: text.y })
@@ -1351,7 +1499,7 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
                     type="button"
                     data-scheme-board-item="true"
                     className={`scheme-node scheme-node--${node.kind} ${selectedItem === node.id ? "scheme-node--selected" : ""}`}
-                    style={{ left: node.position.x, top: node.position.y }}
+                    style={{ left: node.position.x, top: node.position.y, zIndex: 20 }}
                     aria-label={`${node.title} ${node.body ?? ""}`.trim()}
                     onPointerDown={(event) =>
                       handleItemPointerDown(event, { id: node.id, kind: "node" }, node.position)
@@ -1378,6 +1526,7 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
                       width: card.width,
                       height: card.height,
                       backgroundColor: card.color,
+                      zIndex: layerZIndex(card.z_index),
                     }}
                     onPointerDown={(event) =>
                       handleItemPointerDown(event, { id: card.id, kind: "card" }, { x: card.x, y: card.y })

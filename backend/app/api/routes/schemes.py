@@ -25,8 +25,10 @@ from app.models.brain_map import BrainMap, BrainMapRevision
 
 router = APIRouter(prefix="/schemes", tags=["schemes"])
 
-SCHEME_LAYOUT_VERSION = 4
+SCHEME_LAYOUT_VERSION = 5
 SCHEME_SHAPE_KINDS = {"rectangle", "ellipse"}
+SCHEME_Z_INDEX_MIN = -1_000_000
+SCHEME_Z_INDEX_MAX = 1_000_000
 
 
 class SchemePosition(BaseModel):
@@ -46,6 +48,7 @@ class SchemeStroke(BaseModel):
     color: str = Field(default="#111827", min_length=1, max_length=40)
     width: float = Field(default=3, gt=0, le=40)
     locked: bool = False
+    z_index: int = Field(default=0, ge=SCHEME_Z_INDEX_MIN, le=SCHEME_Z_INDEX_MAX)
 
 
 class SchemeCanvasCard(BaseModel):
@@ -57,6 +60,7 @@ class SchemeCanvasCard(BaseModel):
     text: str = Field(min_length=1, max_length=2000)
     color: str = Field(default="#f7d774", min_length=1, max_length=40)
     locked: bool = False
+    z_index: int = Field(default=0, ge=SCHEME_Z_INDEX_MIN, le=SCHEME_Z_INDEX_MAX)
 
 
 class SchemeCanvasShape(BaseModel):
@@ -69,6 +73,7 @@ class SchemeCanvasShape(BaseModel):
     color: str = Field(default="#2563eb", min_length=1, max_length=40)
     fill: str = Field(default="transparent", min_length=1, max_length=40)
     locked: bool = False
+    z_index: int = Field(default=0, ge=SCHEME_Z_INDEX_MIN, le=SCHEME_Z_INDEX_MAX)
 
 
 class SchemeCanvasFrame(BaseModel):
@@ -81,6 +86,7 @@ class SchemeCanvasFrame(BaseModel):
     color: str = Field(default="#0f766e", min_length=1, max_length=40)
     fill: str = Field(default="transparent", min_length=1, max_length=40)
     locked: bool = False
+    z_index: int = Field(default=0, ge=SCHEME_Z_INDEX_MIN, le=SCHEME_Z_INDEX_MAX)
 
 
 class SchemeTextBlock(BaseModel):
@@ -93,6 +99,7 @@ class SchemeTextBlock(BaseModel):
     color: str = Field(default="#111827", min_length=1, max_length=40)
     font_size: float = Field(default=20, ge=8, le=96)
     locked: bool = False
+    z_index: int = Field(default=0, ge=SCHEME_Z_INDEX_MIN, le=SCHEME_Z_INDEX_MAX)
 
 
 class SchemeConnector(BaseModel):
@@ -103,6 +110,7 @@ class SchemeConnector(BaseModel):
     label: str | None = Field(default=None, max_length=300)
     color: str = Field(default="#475569", min_length=1, max_length=40)
     locked: bool = False
+    z_index: int = Field(default=0, ge=SCHEME_Z_INDEX_MIN, le=SCHEME_Z_INDEX_MAX)
 
 
 class SchemeCanvasLayout(BaseModel):

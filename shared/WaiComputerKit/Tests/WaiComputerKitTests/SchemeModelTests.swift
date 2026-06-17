@@ -130,7 +130,7 @@ final class SchemeModelTests: XCTestCase {
 
         XCTAssertEqual(scheme.id, "scheme-1")
         XCTAssertEqual(scheme.schemeType, "decision")
-        XCTAssertEqual(scheme.layout.version, 4)
+        XCTAssertEqual(scheme.layout.version, 5)
         XCTAssertEqual(scheme.layout.nodePositions["lens:root"]?.x, 12)
         XCTAssertEqual(scheme.currentRevision?.projection.nodes.first?.position.y, -8)
         XCTAssertEqual(scheme.currentRevision?.projection.edges.first?.label, "Decision")
@@ -139,7 +139,7 @@ final class SchemeModelTests: XCTestCase {
     func testSchemeDecodesCanvasLayoutPrimitives() throws {
         let json = """
         {
-          "version": 4,
+          "version": 5,
           "viewport": {"x": 10, "y": -20, "zoom": 1.4},
           "node_positions": {"lens:root": {"x": 12, "y": -8}},
           "strokes": [
@@ -148,7 +148,8 @@ final class SchemeModelTests: XCTestCase {
               "points": [{"x": 0, "y": 0}, {"x": 20, "y": 30}],
               "color": "#111827",
               "width": 4,
-              "locked": true
+              "locked": true,
+              "z_index": 11
             }
           ],
           "cards": [
@@ -160,7 +161,8 @@ final class SchemeModelTests: XCTestCase {
               "height": 150,
               "text": "Open issue",
               "color": "#f7d774",
-              "locked": true
+              "locked": true,
+              "z_index": 60
             }
           ],
           "shapes": [
@@ -218,16 +220,22 @@ final class SchemeModelTests: XCTestCase {
         XCTAssertEqual(layout.nodePositions["lens:root"]?.y, -8)
         XCTAssertEqual(layout.strokes.first?.points.last?.x, 20)
         XCTAssertEqual(layout.strokes.first?.locked, true)
+        XCTAssertEqual(layout.strokes.first?.zIndex, 11)
         XCTAssertEqual(layout.cards.first?.text, "Open issue")
         XCTAssertEqual(layout.cards.first?.locked, true)
+        XCTAssertEqual(layout.cards.first?.zIndex, 60)
         XCTAssertEqual(layout.shapes.first?.kind, "ellipse")
         XCTAssertEqual(layout.shapes.first?.locked, false)
+        XCTAssertEqual(layout.shapes.first?.zIndex, 0)
         XCTAssertEqual(layout.frames.first?.title, "Launch plan")
         XCTAssertEqual(layout.frames.first?.locked, false)
+        XCTAssertEqual(layout.frames.first?.zIndex, 0)
         XCTAssertEqual(layout.texts.first?.fontSize, 22)
         XCTAssertEqual(layout.texts.first?.locked, false)
+        XCTAssertEqual(layout.texts.first?.zIndex, 0)
         XCTAssertEqual(layout.connectors.first?.targetId, "card-1")
         XCTAssertEqual(layout.connectors.first?.locked, false)
+        XCTAssertEqual(layout.connectors.first?.zIndex, 0)
     }
 
     func testAPIClientSchemeEndpoints() async throws {
@@ -322,7 +330,7 @@ final class SchemeModelTests: XCTestCase {
         ])
         XCTAssertEqual(seen[1].body?["prompt"] as? String, "Map launch decisions")
         let layout = seen[3].body?["layout"] as? [String: Any]
-        XCTAssertEqual(layout?["version"] as? Int, 4)
+        XCTAssertEqual(layout?["version"] as? Int, 5)
         let viewport = layout?["viewport"] as? [String: Any]
         XCTAssertEqual(viewport?["zoom"] as? Double, 1.2)
         let positions = layout?["node_positions"] as? [String: Any]
@@ -332,5 +340,6 @@ final class SchemeModelTests: XCTestCase {
         let strokes = layout?["strokes"] as? [[String: Any]]
         XCTAssertEqual(strokes?.first?["id"] as? String, "stroke-1")
         XCTAssertEqual(strokes?.first?["locked"] as? Bool, false)
+        XCTAssertEqual(strokes?.first?["z_index"] as? Int, 0)
     }
 }

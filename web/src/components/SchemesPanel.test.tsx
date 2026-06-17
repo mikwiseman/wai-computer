@@ -19,7 +19,7 @@ vi.mock("@/lib/api", () => ({
 
 function layout(overrides: Partial<SchemeCanvasLayout> = {}): SchemeCanvasLayout {
   return {
-    version: 4,
+    version: 5,
     viewport: { x: 0, y: 0, zoom: 1 },
     node_positions: {},
     strokes: [],
@@ -154,7 +154,7 @@ describe("SchemesPanel", () => {
         "scheme-1",
         {
           layout: expect.objectContaining({
-            version: 4,
+            version: 5,
             node_positions: expect.objectContaining({
               "signal:decision:1": expect.objectContaining({ x: 380, y: -160 }),
             }),
@@ -367,6 +367,7 @@ describe("SchemesPanel", () => {
             text: "Existing note",
             color: "#f7d774",
             locked: false,
+            z_index: 10,
           },
         ],
       }),
@@ -400,6 +401,75 @@ describe("SchemesPanel", () => {
     );
   });
 
+  it("arranges a selected board object to the front and back", async () => {
+    const initial = scheme({
+      layout: layout({
+        cards: [
+          {
+            id: "card-bottom",
+            x: 40,
+            y: 60,
+            width: 220,
+            height: 150,
+            text: "Bottom note",
+            color: "#f7d774",
+            locked: false,
+            z_index: 10,
+          },
+          {
+            id: "card-top",
+            x: 70,
+            y: 90,
+            width: 220,
+            height: 150,
+            text: "Top note",
+            color: "#f7d774",
+            locked: false,
+            z_index: 20,
+          },
+        ],
+      }),
+    });
+    mockListSchemes.mockResolvedValue({ schemes: [initial] });
+    mockGetScheme.mockResolvedValue(initial);
+
+    render(<SchemesPanel />);
+
+    const notes = await screen.findAllByLabelText("Sticky note");
+    fireEvent.pointerDown(notes[0].parentElement as Element, { pointerId: 1, clientX: 0, clientY: 0, button: 0 });
+    fireEvent.click(screen.getByRole("button", { name: "Front" }));
+
+    await waitFor(() =>
+      expect(mockUpdateScheme).toHaveBeenCalledWith(
+        "scheme-1",
+        {
+          layout: expect.objectContaining({
+            cards: [
+              expect.objectContaining({ id: "card-bottom", z_index: 21 }),
+              expect.objectContaining({ id: "card-top", z_index: 20 }),
+            ],
+          }),
+        },
+      ),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+
+    await waitFor(() =>
+      expect(mockUpdateScheme).toHaveBeenCalledWith(
+        "scheme-1",
+        {
+          layout: expect.objectContaining({
+            cards: [
+              expect.objectContaining({ id: "card-bottom", z_index: 19 }),
+              expect.objectContaining({ id: "card-top", z_index: 20 }),
+            ],
+          }),
+        },
+      ),
+    );
+  });
+
   it("locks and unlocks a selected board object", async () => {
     const initial = scheme({
       layout: layout({
@@ -413,6 +483,7 @@ describe("SchemesPanel", () => {
             text: "Existing note",
             color: "#f7d774",
             locked: false,
+            z_index: 10,
           },
         ],
       }),

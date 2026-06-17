@@ -28,6 +28,7 @@ public struct SchemeStroke: Codable, Identifiable, Sendable, Equatable {
     public var color: String
     public var width: Double
     public var locked: Bool
+    public var zIndex: Int
 
     private enum CodingKeys: String, CodingKey {
         case id
@@ -35,14 +36,16 @@ public struct SchemeStroke: Codable, Identifiable, Sendable, Equatable {
         case color
         case width
         case locked
+        case zIndex = "z_index"
     }
 
-    public init(id: String, points: [SchemePosition], color: String = "#111827", width: Double = 3, locked: Bool = false) {
+    public init(id: String, points: [SchemePosition], color: String = "#111827", width: Double = 3, locked: Bool = false, zIndex: Int = 0) {
         self.id = id
         self.points = points
         self.color = color
         self.width = width
         self.locked = locked
+        self.zIndex = zIndex
     }
 
     public init(from decoder: Decoder) throws {
@@ -52,6 +55,7 @@ public struct SchemeStroke: Codable, Identifiable, Sendable, Equatable {
         color = try container.decodeIfPresent(String.self, forKey: .color) ?? "#111827"
         width = try container.decodeIfPresent(Double.self, forKey: .width) ?? 3
         locked = try container.decodeIfPresent(Bool.self, forKey: .locked) ?? false
+        zIndex = try container.decodeIfPresent(Int.self, forKey: .zIndex) ?? 0
     }
 }
 
@@ -64,6 +68,7 @@ public struct SchemeCanvasCard: Codable, Identifiable, Sendable, Equatable {
     public var text: String
     public var color: String
     public var locked: Bool
+    public var zIndex: Int
 
     private enum CodingKeys: String, CodingKey {
         case id
@@ -74,6 +79,7 @@ public struct SchemeCanvasCard: Codable, Identifiable, Sendable, Equatable {
         case text
         case color
         case locked
+        case zIndex = "z_index"
     }
 
     public init(
@@ -84,7 +90,8 @@ public struct SchemeCanvasCard: Codable, Identifiable, Sendable, Equatable {
         height: Double,
         text: String,
         color: String = "#f7d774",
-        locked: Bool = false
+        locked: Bool = false,
+        zIndex: Int = 0
     ) {
         self.id = id
         self.x = x
@@ -94,6 +101,7 @@ public struct SchemeCanvasCard: Codable, Identifiable, Sendable, Equatable {
         self.text = text
         self.color = color
         self.locked = locked
+        self.zIndex = zIndex
     }
 
     public init(from decoder: Decoder) throws {
@@ -106,6 +114,7 @@ public struct SchemeCanvasCard: Codable, Identifiable, Sendable, Equatable {
         text = try container.decode(String.self, forKey: .text)
         color = try container.decodeIfPresent(String.self, forKey: .color) ?? "#f7d774"
         locked = try container.decodeIfPresent(Bool.self, forKey: .locked) ?? false
+        zIndex = try container.decodeIfPresent(Int.self, forKey: .zIndex) ?? 0
     }
 }
 
@@ -119,6 +128,7 @@ public struct SchemeCanvasShape: Codable, Identifiable, Sendable, Equatable {
     public var color: String
     public var fill: String
     public var locked: Bool
+    public var zIndex: Int
 
     private enum CodingKeys: String, CodingKey {
         case id
@@ -130,6 +140,7 @@ public struct SchemeCanvasShape: Codable, Identifiable, Sendable, Equatable {
         case color
         case fill
         case locked
+        case zIndex = "z_index"
     }
 
     public init(
@@ -141,7 +152,8 @@ public struct SchemeCanvasShape: Codable, Identifiable, Sendable, Equatable {
         height: Double,
         color: String = "#2563eb",
         fill: String = "transparent",
-        locked: Bool = false
+        locked: Bool = false,
+        zIndex: Int = 0
     ) {
         self.id = id
         self.kind = kind
@@ -152,6 +164,7 @@ public struct SchemeCanvasShape: Codable, Identifiable, Sendable, Equatable {
         self.color = color
         self.fill = fill
         self.locked = locked
+        self.zIndex = zIndex
     }
 
     public init(from decoder: Decoder) throws {
@@ -165,6 +178,7 @@ public struct SchemeCanvasShape: Codable, Identifiable, Sendable, Equatable {
         color = try container.decodeIfPresent(String.self, forKey: .color) ?? "#2563eb"
         fill = try container.decodeIfPresent(String.self, forKey: .fill) ?? "transparent"
         locked = try container.decodeIfPresent(Bool.self, forKey: .locked) ?? false
+        zIndex = try container.decodeIfPresent(Int.self, forKey: .zIndex) ?? 0
     }
 }
 
@@ -178,6 +192,7 @@ public struct SchemeCanvasFrame: Codable, Identifiable, Sendable, Equatable {
     public var color: String
     public var fill: String
     public var locked: Bool
+    public var zIndex: Int
 
     private enum CodingKeys: String, CodingKey {
         case id
@@ -189,6 +204,7 @@ public struct SchemeCanvasFrame: Codable, Identifiable, Sendable, Equatable {
         case color
         case fill
         case locked
+        case zIndex = "z_index"
     }
 
     public init(
@@ -200,7 +216,8 @@ public struct SchemeCanvasFrame: Codable, Identifiable, Sendable, Equatable {
         title: String,
         color: String = "#0f766e",
         fill: String = "transparent",
-        locked: Bool = false
+        locked: Bool = false,
+        zIndex: Int = 0
     ) {
         self.id = id
         self.x = x
@@ -211,6 +228,7 @@ public struct SchemeCanvasFrame: Codable, Identifiable, Sendable, Equatable {
         self.color = color
         self.fill = fill
         self.locked = locked
+        self.zIndex = zIndex
     }
 
     public init(from decoder: Decoder) throws {
@@ -224,6 +242,7 @@ public struct SchemeCanvasFrame: Codable, Identifiable, Sendable, Equatable {
         color = try container.decodeIfPresent(String.self, forKey: .color) ?? "#0f766e"
         fill = try container.decodeIfPresent(String.self, forKey: .fill) ?? "transparent"
         locked = try container.decodeIfPresent(Bool.self, forKey: .locked) ?? false
+        zIndex = try container.decodeIfPresent(Int.self, forKey: .zIndex) ?? 0
     }
 }
 
@@ -237,6 +256,7 @@ public struct SchemeTextBlock: Codable, Identifiable, Sendable, Equatable {
     public var color: String
     public var fontSize: Double
     public var locked: Bool
+    public var zIndex: Int
 
     private enum CodingKeys: String, CodingKey {
         case id
@@ -248,6 +268,7 @@ public struct SchemeTextBlock: Codable, Identifiable, Sendable, Equatable {
         case color
         case fontSize = "font_size"
         case locked
+        case zIndex = "z_index"
     }
 
     public init(
@@ -259,7 +280,8 @@ public struct SchemeTextBlock: Codable, Identifiable, Sendable, Equatable {
         text: String,
         color: String = "#111827",
         fontSize: Double = 20,
-        locked: Bool = false
+        locked: Bool = false,
+        zIndex: Int = 0
     ) {
         self.id = id
         self.x = x
@@ -270,6 +292,7 @@ public struct SchemeTextBlock: Codable, Identifiable, Sendable, Equatable {
         self.color = color
         self.fontSize = fontSize
         self.locked = locked
+        self.zIndex = zIndex
     }
 
     public init(from decoder: Decoder) throws {
@@ -283,6 +306,7 @@ public struct SchemeTextBlock: Codable, Identifiable, Sendable, Equatable {
         color = try container.decodeIfPresent(String.self, forKey: .color) ?? "#111827"
         fontSize = try container.decodeIfPresent(Double.self, forKey: .fontSize) ?? 20
         locked = try container.decodeIfPresent(Bool.self, forKey: .locked) ?? false
+        zIndex = try container.decodeIfPresent(Int.self, forKey: .zIndex) ?? 0
     }
 }
 
@@ -294,6 +318,7 @@ public struct SchemeConnector: Codable, Identifiable, Sendable, Equatable {
     public var label: String?
     public var color: String
     public var locked: Bool
+    public var zIndex: Int
 
     private enum CodingKeys: String, CodingKey {
         case id
@@ -303,6 +328,7 @@ public struct SchemeConnector: Codable, Identifiable, Sendable, Equatable {
         case label
         case color
         case locked
+        case zIndex = "z_index"
     }
 
     public init(
@@ -312,7 +338,8 @@ public struct SchemeConnector: Codable, Identifiable, Sendable, Equatable {
         points: [SchemePosition] = [],
         label: String? = nil,
         color: String = "#475569",
-        locked: Bool = false
+        locked: Bool = false,
+        zIndex: Int = 0
     ) {
         self.id = id
         self.sourceId = sourceId
@@ -321,6 +348,7 @@ public struct SchemeConnector: Codable, Identifiable, Sendable, Equatable {
         self.label = label
         self.color = color
         self.locked = locked
+        self.zIndex = zIndex
     }
 
     public init(from decoder: Decoder) throws {
@@ -332,6 +360,7 @@ public struct SchemeConnector: Codable, Identifiable, Sendable, Equatable {
         label = try container.decodeIfPresent(String.self, forKey: .label)
         color = try container.decodeIfPresent(String.self, forKey: .color) ?? "#475569"
         locked = try container.decodeIfPresent(Bool.self, forKey: .locked) ?? false
+        zIndex = try container.decodeIfPresent(Int.self, forKey: .zIndex) ?? 0
     }
 }
 
@@ -359,7 +388,7 @@ public struct SchemeCanvasLayout: Codable, Sendable, Equatable {
     }
 
     public init(
-        version: Int = 4,
+        version: Int = 5,
         viewport: SchemeViewport = SchemeViewport(),
         nodePositions: [String: SchemePosition] = [:],
         strokes: [SchemeStroke] = [],
@@ -383,8 +412,8 @@ public struct SchemeCanvasLayout: Codable, Sendable, Equatable {
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         if container.contains(.version) || container.contains(.nodePositions) {
-            let decodedVersion = try container.decodeIfPresent(Int.self, forKey: .version) ?? 4
-            version = max(decodedVersion, 4)
+            let decodedVersion = try container.decodeIfPresent(Int.self, forKey: .version) ?? 5
+            version = max(decodedVersion, 5)
             viewport = try container.decodeIfPresent(SchemeViewport.self, forKey: .viewport) ?? SchemeViewport()
             nodePositions = try container.decodeIfPresent([String: SchemePosition].self, forKey: .nodePositions) ?? [:]
             strokes = try container.decodeIfPresent([SchemeStroke].self, forKey: .strokes) ?? []
@@ -397,7 +426,7 @@ public struct SchemeCanvasLayout: Codable, Sendable, Equatable {
         }
 
         let legacyPositions = try [String: SchemePosition](from: decoder)
-        version = 4
+        version = 5
         viewport = SchemeViewport()
         nodePositions = legacyPositions
         strokes = []

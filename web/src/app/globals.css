@@ -5328,10 +5328,22 @@ a.primary-button[aria-disabled="true"]:hover {
   left: 50%;
   width: 0;
   height: 0;
+  isolation: isolate;
   transform-origin: 0 0;
 }
 
 .scheme-board__edges {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 1px;
+  height: 1px;
+  overflow: visible;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.scheme-board__svg-item {
   position: absolute;
   top: 0;
   left: 0;
@@ -5346,18 +5358,26 @@ a.primary-button[aria-disabled="true"]:hover {
   stroke-width: 1.5;
 }
 
+.scheme-board__svg-item polyline,
 .scheme-board__edges polyline,
 .scheme-board__edges path {
   fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.scheme-board__svg-item path {
   pointer-events: stroke;
   stroke-linecap: round;
   stroke-linejoin: round;
 }
 
+.scheme-board__svg-item polyline,
 .scheme-board__edges polyline {
   stroke-width: 2;
 }
 
+.scheme-board__svg-item path,
 .scheme-board__edges path {
   stroke-width: 2.2;
 }

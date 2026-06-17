@@ -355,7 +355,7 @@ describe("api client wrappers", () => {
 
   it("calls scheme board endpoints", async () => {
     const layout = {
-      version: 4 as const,
+      version: 5 as const,
       viewport: { x: 0, y: 0, zoom: 1 },
       node_positions: { "lens:root": { x: 24, y: -12 } },
       strokes: [
@@ -365,6 +365,7 @@ describe("api client wrappers", () => {
           color: "#111827",
           width: 3,
           locked: false,
+          z_index: 0,
         },
       ],
       cards: [],
