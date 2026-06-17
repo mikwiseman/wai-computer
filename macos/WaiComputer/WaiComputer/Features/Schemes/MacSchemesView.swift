@@ -165,6 +165,7 @@ struct MacSchemesView: View {
                         }
                     }
                 )
+                .id(scheme.id)
             }
         } else {
             ContentUnavailableViewCompat(
@@ -336,6 +337,9 @@ private struct MacSchemeBoard: View {
     @State private var draftStrokeId: String?
     @State private var selectedItemId: String?
     @State private var pendingConnector: BoardHandle?
+    @State private var undoStack: [SchemeCanvasLayout] = []
+    @State private var redoStack: [SchemeCanvasLayout] = []
+    @State private var editingItemId: String?
 
     private let nodeWidth: CGFloat = 232
     private let nodeHeight: CGFloat = 132
@@ -437,6 +441,36 @@ private struct MacSchemeBoard: View {
                 .frame(height: 22)
 
             Button {
+                undoLayout()
+            } label: {
+                Image(systemName: "arrow.uturn.backward")
+            }
+            .buttonStyle(WaiGhostButtonStyle())
+            .disabled(undoStack.isEmpty)
+            .help(t("Undo", "Отменить"))
+
+            Button {
+                redoLayout()
+            } label: {
+                Image(systemName: "arrow.uturn.forward")
+            }
+            .buttonStyle(WaiGhostButtonStyle())
+            .disabled(redoStack.isEmpty)
+            .help(t("Redo", "Повторить"))
+
+            Button {
+                duplicateSelected()
+            } label: {
+                Image(systemName: "square.on.square")
+            }
+            .buttonStyle(WaiGhostButtonStyle())
+            .disabled(!canDuplicateSelected)
+            .help(t("Duplicate", "Дублировать"))
+
+            Divider()
+                .frame(height: 22)
+
+            Button {
                 layout.viewport.zoom = max(0.25, layout.viewport.zoom - 0.12)
                 onCommit(layout)
             } label: {
@@ -483,10 +517,12 @@ private struct MacSchemeBoard: View {
                     .textFieldStyle(.roundedBorder)
                     .frame(width: 220)
                     .onSubmit {
+                        editingItemId = nil
                         onCommit(layout)
                     }
 
                 Button {
+                    editingItemId = nil
                     onCommit(layout)
                 } label: {
                     Image(systemName: "checkmark")
@@ -500,10 +536,12 @@ private struct MacSchemeBoard: View {
                     .textFieldStyle(.roundedBorder)
                     .frame(width: 220)
                     .onSubmit {
+                        editingItemId = nil
                         onCommit(layout)
                     }
 
                 Button {
+                    editingItemId = nil
                     onCommit(layout)
                 } label: {
                     Image(systemName: "checkmark")
@@ -517,10 +555,12 @@ private struct MacSchemeBoard: View {
                     .textFieldStyle(.roundedBorder)
                     .frame(width: 220)
                     .onSubmit {
+                        editingItemId = nil
                         onCommit(layout)
                     }
 
                 Button {
+                    editingItemId = nil
                     onCommit(layout)
                 } label: {
                     Image(systemName: "checkmark")
@@ -585,6 +625,15 @@ private struct MacSchemeBoard: View {
             || layout.connectors.contains { $0.id == selectedItemId }
     }
 
+    private var canDuplicateSelected: Bool {
+        guard let selectedItemId else { return false }
+        return layout.cards.contains { $0.id == selectedItemId }
+            || layout.shapes.contains { $0.id == selectedItemId }
+            || layout.frames.contains { $0.id == selectedItemId }
+            || layout.texts.contains { $0.id == selectedItemId }
+            || layout.strokes.contains { $0.id == selectedItemId }
+    }
+
     private var selectedCardText: Binding<String> {
         Binding(
             get: {
@@ -597,6 +646,7 @@ private struct MacSchemeBoard: View {
                 guard let selectedCardId,
                       let index = layout.cards.firstIndex(where: { $0.id == selectedCardId })
                 else { return }
+                beginInlineEdit(selectedCardId)
                 layout.cards[index].text = next
             }
         )
@@ -614,6 +664,7 @@ private struct MacSchemeBoard: View {
                 guard let selectedFrameId,
                       let index = layout.frames.firstIndex(where: { $0.id == selectedFrameId })
                 else { return }
+                beginInlineEdit(selectedFrameId)
                 layout.frames[index].title = next
             }
         )
@@ -631,9 +682,53 @@ private struct MacSchemeBoard: View {
                 guard let selectedTextId,
                       let index = layout.texts.firstIndex(where: { $0.id == selectedTextId })
                 else { return }
+                beginInlineEdit(selectedTextId)
                 layout.texts[index].text = next
             }
         )
+    }
+
+    private func pushUndoSnapshot() {
+        if undoStack.last != layout {
+            undoStack.append(layout)
+            if undoStack.count > 80 {
+                undoStack.removeFirst(undoStack.count - 80)
+            }
+        }
+        redoStack.removeAll()
+    }
+
+    private func undoLayout() {
+        guard let previous = undoStack.popLast() else { return }
+        redoStack.append(layout)
+        restoreLayout(previous)
+    }
+
+    private func redoLayout() {
+        guard let next = redoStack.popLast() else { return }
+        undoStack.append(layout)
+        restoreLayout(next)
+    }
+
+    private func restoreLayout(_ nextLayout: SchemeCanvasLayout) {
+        selectedItemId = nil
+        pendingConnector = nil
+        editingItemId = nil
+        draftStrokeId = nil
+        panStart = nil
+        nodeDrag = nil
+        cardDrag = nil
+        shapeDrag = nil
+        frameDrag = nil
+        textDrag = nil
+        layout = nextLayout
+        onCommit(layout)
+    }
+
+    private func beginInlineEdit(_ itemId: String) {
+        guard editingItemId != itemId else { return }
+        pushUndoSnapshot()
+        editingItemId = itemId
     }
 
     private func selectionOverlay(id: String) -> some View {
@@ -651,6 +746,7 @@ private struct MacSchemeBoard: View {
                     if let draftStrokeId {
                         appendPoint(world, toStroke: draftStrokeId)
                     } else {
+                        pushUndoSnapshot()
                         let stroke = SchemeStroke(
                             id: "stroke:\(UUID().uuidString)",
                             points: [world, world]
@@ -703,6 +799,7 @@ private struct MacSchemeBoard: View {
             .onChanged { value in
                 guard tool == .select else { return }
                 if nodeDrag?.id != node.id {
+                    pushUndoSnapshot()
                     nodeDrag = ItemDragState(id: node.id, origin: node.position)
                     selectedItemId = node.id
                 }
@@ -734,6 +831,7 @@ private struct MacSchemeBoard: View {
             .onChanged { value in
                 guard tool == .select else { return }
                 if cardDrag?.id != card.id {
+                    pushUndoSnapshot()
                     cardDrag = ItemDragState(id: card.id, origin: SchemePosition(x: card.x, y: card.y))
                     selectedItemId = card.id
                 }
@@ -765,6 +863,7 @@ private struct MacSchemeBoard: View {
             .onChanged { value in
                 guard tool == .select else { return }
                 if shapeDrag?.id != shape.id {
+                    pushUndoSnapshot()
                     shapeDrag = ItemDragState(id: shape.id, origin: SchemePosition(x: shape.x, y: shape.y))
                     selectedItemId = shape.id
                 }
@@ -796,6 +895,7 @@ private struct MacSchemeBoard: View {
             .onChanged { value in
                 guard tool == .select else { return }
                 if frameDrag?.id != frame.id {
+                    pushUndoSnapshot()
                     frameDrag = ItemDragState(id: frame.id, origin: SchemePosition(x: frame.x, y: frame.y))
                     selectedItemId = frame.id
                 }
@@ -827,6 +927,7 @@ private struct MacSchemeBoard: View {
             .onChanged { value in
                 guard tool == .select else { return }
                 if textDrag?.id != text.id {
+                    pushUndoSnapshot()
                     textDrag = ItemDragState(id: text.id, origin: SchemePosition(x: text.x, y: text.y))
                     selectedItemId = text.id
                 }
@@ -918,6 +1019,7 @@ private struct MacSchemeBoard: View {
     }
 
     private func addCard(at point: SchemePosition) {
+        pushUndoSnapshot()
         let card = SchemeCanvasCard(
             id: "card:\(UUID().uuidString)",
             x: point.x - stickyWidth / 2,
@@ -932,6 +1034,7 @@ private struct MacSchemeBoard: View {
     }
 
     private func addShape(kind: String, at point: SchemePosition) {
+        pushUndoSnapshot()
         let shape = SchemeCanvasShape(
             id: "shape:\(UUID().uuidString)",
             kind: kind,
@@ -947,6 +1050,7 @@ private struct MacSchemeBoard: View {
     }
 
     private func addFrame(at point: SchemePosition) {
+        pushUndoSnapshot()
         let frame = SchemeCanvasFrame(
             id: "frame:\(UUID().uuidString)",
             x: point.x - frameWidth / 2,
@@ -961,6 +1065,7 @@ private struct MacSchemeBoard: View {
     }
 
     private func addText(at point: SchemePosition) {
+        pushUndoSnapshot()
         let text = SchemeTextBlock(
             id: "text:\(UUID().uuidString)",
             x: point.x - textWidth / 2,
@@ -985,6 +1090,7 @@ private struct MacSchemeBoard: View {
         let handle = BoardHandle(id: id)
         if let pendingConnector {
             guard pendingConnector.id != handle.id else { return }
+            pushUndoSnapshot()
             let connector = SchemeConnector(
                 id: "connector:\(UUID().uuidString)",
                 sourceId: pendingConnector.id,
@@ -1001,6 +1107,7 @@ private struct MacSchemeBoard: View {
 
     private func deleteSelected() {
         guard let selectedItemId, canDeleteSelected else { return }
+        pushUndoSnapshot()
         layout.cards.removeAll { $0.id == selectedItemId }
         layout.shapes.removeAll { $0.id == selectedItemId }
         layout.frames.removeAll { $0.id == selectedItemId }
@@ -1011,6 +1118,62 @@ private struct MacSchemeBoard: View {
         }
         self.selectedItemId = nil
         onCommit(layout)
+    }
+
+    private func duplicateSelected() {
+        guard let selectedItemId, canDuplicateSelected else { return }
+        pushUndoSnapshot()
+        let offset = 32.0
+
+        if var card = layout.cards.first(where: { $0.id == selectedItemId }) {
+            card.id = "card:\(UUID().uuidString)"
+            card.x += offset
+            card.y += offset
+            layout.cards.append(card)
+            self.selectedItemId = card.id
+            onCommit(layout)
+            return
+        }
+
+        if var shape = layout.shapes.first(where: { $0.id == selectedItemId }) {
+            shape.id = "shape:\(UUID().uuidString)"
+            shape.x += offset
+            shape.y += offset
+            layout.shapes.append(shape)
+            self.selectedItemId = shape.id
+            onCommit(layout)
+            return
+        }
+
+        if var frame = layout.frames.first(where: { $0.id == selectedItemId }) {
+            frame.id = "frame:\(UUID().uuidString)"
+            frame.x += offset
+            frame.y += offset
+            layout.frames.append(frame)
+            self.selectedItemId = frame.id
+            onCommit(layout)
+            return
+        }
+
+        if var text = layout.texts.first(where: { $0.id == selectedItemId }) {
+            text.id = "text:\(UUID().uuidString)"
+            text.x += offset
+            text.y += offset
+            layout.texts.append(text)
+            self.selectedItemId = text.id
+            onCommit(layout)
+            return
+        }
+
+        if var stroke = layout.strokes.first(where: { $0.id == selectedItemId }) {
+            stroke.id = "stroke:\(UUID().uuidString)"
+            stroke.points = stroke.points.map { point in
+                SchemePosition(x: point.x + offset, y: point.y + offset)
+            }
+            layout.strokes.append(stroke)
+            self.selectedItemId = stroke.id
+            onCommit(layout)
+        }
     }
 
     private func updateCard(_ id: String, mutate: (inout SchemeCanvasCard) -> Void) {

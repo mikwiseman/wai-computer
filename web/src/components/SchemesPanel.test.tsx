@@ -305,4 +305,97 @@ describe("SchemesPanel", () => {
       ),
     );
   });
+
+  it("undoes and redoes a board mutation", async () => {
+    const { container } = render(<SchemesPanel />);
+
+    await screen.findByTestId("schemes-panel");
+    fireEvent.click(screen.getByRole("button", { name: "Sticky" }));
+    const viewport = container.querySelector(".scheme-board__viewport");
+    expect(viewport).not.toBeNull();
+
+    fireEvent.pointerDown(viewport as Element, { pointerId: 1, clientX: 120, clientY: 160, button: 0 });
+
+    await waitFor(() =>
+      expect(mockUpdateScheme).toHaveBeenCalledWith(
+        "scheme-1",
+        {
+          layout: expect.objectContaining({
+            cards: [expect.objectContaining({ id: "card:test-id-1" })],
+          }),
+        },
+      ),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Undo" }));
+
+    await waitFor(() =>
+      expect(mockUpdateScheme).toHaveBeenCalledWith(
+        "scheme-1",
+        {
+          layout: expect.objectContaining({
+            cards: [],
+          }),
+        },
+      ),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Redo" }));
+
+    await waitFor(() =>
+      expect(mockUpdateScheme).toHaveBeenCalledWith(
+        "scheme-1",
+        {
+          layout: expect.objectContaining({
+            cards: [expect.objectContaining({ id: "card:test-id-1" })],
+          }),
+        },
+      ),
+    );
+  });
+
+  it("duplicates a selected board object", async () => {
+    const initial = scheme({
+      layout: layout({
+        cards: [
+          {
+            id: "card-existing",
+            x: 40,
+            y: 60,
+            width: 220,
+            height: 150,
+            text: "Existing note",
+            color: "#f7d774",
+          },
+        ],
+      }),
+    });
+    mockListSchemes.mockResolvedValue({ schemes: [initial] });
+    mockGetScheme.mockResolvedValue(initial);
+
+    render(<SchemesPanel />);
+
+    const note = await screen.findByLabelText("Sticky note");
+    fireEvent.pointerDown(note.parentElement as Element, { pointerId: 1, clientX: 0, clientY: 0, button: 0 });
+    fireEvent.click(screen.getByRole("button", { name: "Duplicate" }));
+
+    await waitFor(() =>
+      expect(mockUpdateScheme).toHaveBeenCalledWith(
+        "scheme-1",
+        {
+          layout: expect.objectContaining({
+            cards: [
+              expect.objectContaining({ id: "card-existing" }),
+              expect.objectContaining({
+                id: "card:test-id-1",
+                x: 72,
+                y: 92,
+                text: "Existing note",
+              }),
+            ],
+          }),
+        },
+      ),
+    );
+  });
 });

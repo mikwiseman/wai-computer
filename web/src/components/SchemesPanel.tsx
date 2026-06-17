@@ -124,6 +124,9 @@ const COPY = {
     creating: "Creating...",
     refresh: "Refresh evidence",
     refreshing: "Refreshing...",
+    undo: "Undo",
+    redo: "Redo",
+    duplicate: "Duplicate",
     emptyTitle: "No schemes yet",
     emptyBody: "Create one from a prompt. Wai will build a cited board from your recordings, materials, and chats.",
     noSelection: "Select a scheme or create a new one.",
@@ -144,6 +147,9 @@ const COPY = {
     creating: "Создаем...",
     refresh: "Обновить факты",
     refreshing: "Обновляем...",
+    undo: "Отменить",
+    redo: "Повторить",
+    duplicate: "Дублировать",
     emptyTitle: "Схем пока нет",
     emptyBody: "Создайте схему по запросу. Wai соберет доску с источниками из записей, материалов и чатов.",
     noSelection: "Выберите схему или создайте новую.",
@@ -271,6 +277,32 @@ function shapePath(shape: SchemeCanvasShape): string {
   return `M ${shape.x} ${shape.y} h ${shape.width} v ${shape.height} h ${-shape.width} Z`;
 }
 
+function cloneLayout(layout: SchemeCanvasLayout): SchemeCanvasLayout {
+  return {
+    version: layout.version,
+    viewport: { ...layout.viewport },
+    node_positions: Object.fromEntries(
+      Object.entries(layout.node_positions).map(([id, position]) => [id, { ...position }]),
+    ),
+    strokes: layout.strokes.map((stroke) => ({
+      ...stroke,
+      points: stroke.points.map((point) => ({ ...point })),
+    })),
+    cards: layout.cards.map((card) => ({ ...card })),
+    shapes: layout.shapes.map((shape) => ({ ...shape })),
+    frames: layout.frames.map((frame) => ({ ...frame })),
+    texts: layout.texts.map((text) => ({ ...text })),
+    connectors: layout.connectors.map((connector) => ({
+      ...connector,
+      points: connector.points.map((point) => ({ ...point })),
+    })),
+  };
+}
+
+function layoutFingerprint(layout: SchemeCanvasLayout): string {
+  return JSON.stringify(layout);
+}
+
 export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
   const copy = COPY[locale];
   const [schemes, setSchemes] = useState<Scheme[]>([]);
@@ -283,11 +315,15 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
   const [tool, setTool] = useState<Tool>("select");
   const [selectedItem, setSelectedItem] = useState<string | null>(null);
   const [pendingConnector, setPendingConnector] = useState<BoardItemHandle | null>(null);
+  const [historyCounts, setHistoryCounts] = useState({ undo: 0, redo: 0 });
   const dragRef = useRef<DragState | null>(null);
   const viewportRef = useRef<HTMLDivElement | null>(null);
   const selectedRef = useRef<Scheme | null>(null);
   const layoutRef = useRef<SchemeCanvasLayout>(layout);
   const wheelCommitRef = useRef<number | null>(null);
+  const undoStackRef = useRef<SchemeCanvasLayout[]>([]);
+  const redoStackRef = useRef<SchemeCanvasLayout[]>([]);
+  const editingItemRef = useRef<string | null>(null);
 
   const selectedId = selected?.id ?? null;
   selectedRef.current = selected;
@@ -341,6 +377,10 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
     setLayout(layoutForScheme(selectedRef.current));
     setSelectedItem(null);
     setPendingConnector(null);
+    undoStackRef.current = [];
+    redoStackRef.current = [];
+    editingItemRef.current = null;
+    setHistoryCounts({ undo: 0, redo: 0 });
   }, [selectedId]);
 
   const projection = selected?.current_revision?.projection ?? null;
@@ -374,6 +414,16 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
     layout.texts,
     selectedItem,
   ]);
+  const canDuplicateSelected = useMemo(() => {
+    if (!selectedItem) return false;
+    return (
+      layout.cards.some((card) => card.id === selectedItem) ||
+      layout.shapes.some((shape) => shape.id === selectedItem) ||
+      layout.frames.some((frame) => frame.id === selectedItem) ||
+      layout.texts.some((text) => text.id === selectedItem) ||
+      layout.strokes.some((stroke) => stroke.id === selectedItem)
+    );
+  }, [layout.cards, layout.frames, layout.shapes, layout.strokes, layout.texts, selectedItem]);
 
   const commitLayout = useCallback(
     async (nextLayout: SchemeCanvasLayout) => {
@@ -395,6 +445,55 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
       return next;
     });
   }, []);
+
+  const updateHistoryCounts = useCallback(() => {
+    setHistoryCounts({
+      undo: undoStackRef.current.length,
+      redo: redoStackRef.current.length,
+    });
+  }, []);
+
+  const pushUndoSnapshot = useCallback(
+    (source: SchemeCanvasLayout = layoutRef.current) => {
+      const snapshot = cloneLayout(source);
+      const previous = undoStackRef.current[undoStackRef.current.length - 1];
+      if (!previous || layoutFingerprint(previous) !== layoutFingerprint(snapshot)) {
+        undoStackRef.current = [...undoStackRef.current.slice(-79), snapshot];
+      }
+      redoStackRef.current = [];
+      updateHistoryCounts();
+    },
+    [updateHistoryCounts],
+  );
+
+  const restoreHistoryLayout = useCallback(
+    (nextLayout: SchemeCanvasLayout) => {
+      setSelectedItem(null);
+      setPendingConnector(null);
+      dragRef.current = null;
+      editingItemRef.current = null;
+      setLayout(nextLayout);
+      layoutRef.current = nextLayout;
+      void commitLayout(nextLayout);
+    },
+    [commitLayout],
+  );
+
+  const undoLayout = useCallback(() => {
+    const previous = undoStackRef.current.pop();
+    if (!previous) return;
+    redoStackRef.current.push(cloneLayout(layoutRef.current));
+    updateHistoryCounts();
+    restoreHistoryLayout(previous);
+  }, [restoreHistoryLayout, updateHistoryCounts]);
+
+  const redoLayout = useCallback(() => {
+    const next = redoStackRef.current.pop();
+    if (!next) return;
+    undoStackRef.current.push(cloneLayout(layoutRef.current));
+    updateHistoryCounts();
+    restoreHistoryLayout(next);
+  }, [restoreHistoryLayout, updateHistoryCounts]);
 
   const handleSelect = useCallback(
     async (scheme: Scheme) => {
@@ -469,6 +568,7 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
 
   const addCard = useCallback(
     (point: SchemePosition) => {
+      pushUndoSnapshot();
       const card: SchemeCanvasCard = {
         id: createId("card"),
         x: point.x - STICKY_WIDTH / 2,
@@ -484,11 +584,12 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
       layoutRef.current = nextLayout;
       void commitLayout(nextLayout);
     },
-    [commitLayout, locale],
+    [commitLayout, locale, pushUndoSnapshot],
   );
 
   const addShape = useCallback(
     (point: SchemePosition, kind: SchemeShapeKind) => {
+      pushUndoSnapshot();
       const shape: SchemeCanvasShape = {
         id: createId("shape"),
         kind,
@@ -505,11 +606,12 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
       layoutRef.current = nextLayout;
       void commitLayout(nextLayout);
     },
-    [commitLayout],
+    [commitLayout, pushUndoSnapshot],
   );
 
   const addFrame = useCallback(
     (point: SchemePosition) => {
+      pushUndoSnapshot();
       const frame: SchemeCanvasFrame = {
         id: createId("frame"),
         x: point.x - FRAME_WIDTH / 2,
@@ -526,11 +628,12 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
       layoutRef.current = nextLayout;
       void commitLayout(nextLayout);
     },
-    [commitLayout, locale],
+    [commitLayout, locale, pushUndoSnapshot],
   );
 
   const addText = useCallback(
     (point: SchemePosition) => {
+      pushUndoSnapshot();
       const text: SchemeTextBlock = {
         id: createId("text"),
         x: point.x - TEXT_WIDTH / 2,
@@ -547,12 +650,13 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
       layoutRef.current = nextLayout;
       void commitLayout(nextLayout);
     },
-    [commitLayout, locale],
+    [commitLayout, locale, pushUndoSnapshot],
   );
 
   const addConnector = useCallback(
     (source: BoardItemHandle, target: BoardItemHandle) => {
       if (source.id === target.id) return;
+      pushUndoSnapshot();
       const connector: SchemeConnector = {
         id: createId("connector"),
         source_id: source.id,
@@ -571,7 +675,7 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
       layoutRef.current = nextLayout;
       void commitLayout(nextLayout);
     },
-    [commitLayout],
+    [commitLayout, pushUndoSnapshot],
   );
 
   const handleItemPointerDown = useCallback(
@@ -590,6 +694,7 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
       if (tool !== "select") return;
       event.currentTarget.setPointerCapture?.(event.pointerId);
       const start = pointFromEvent(event);
+      pushUndoSnapshot();
       if (item.kind === "node") {
         dragRef.current = { type: "node", nodeId: item.id, start, origin: position };
       } else if (item.kind === "card") {
@@ -602,7 +707,7 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
         dragRef.current = { type: "text", textId: item.id, start, origin: position };
       }
     },
-    [addConnector, pendingConnector, pointFromEvent, tool],
+    [addConnector, pendingConnector, pointFromEvent, pushUndoSnapshot, tool],
   );
 
   const handleViewportPointerDown = useCallback(
@@ -616,6 +721,7 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
       setPendingConnector(null);
 
       if (tool === "draw") {
+        pushUndoSnapshot();
         const stroke: SchemeStroke = {
           id: createId("stroke"),
           points: [point, point],
@@ -653,7 +759,7 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
         };
       }
     },
-    [addCard, addFrame, addShape, addText, pointFromEvent, selected, tool],
+    [addCard, addFrame, addShape, addText, pointFromEvent, pushUndoSnapshot, selected, tool],
   );
 
   const handlePointerMove = useCallback(
@@ -785,6 +891,20 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
     }));
   }, [setLocalLayout]);
 
+  const beginInlineEdit = useCallback(
+    (itemId: string) => {
+      if (editingItemRef.current === itemId) return;
+      pushUndoSnapshot();
+      editingItemRef.current = itemId;
+    },
+    [pushUndoSnapshot],
+  );
+
+  const finishInlineEdit = useCallback(() => {
+    editingItemRef.current = null;
+    void commitLayout(layoutRef.current);
+  }, [commitLayout]);
+
   const handleFrameTitleChange = useCallback((frameId: string, title: string) => {
     setLocalLayout((current) => ({
       ...current,
@@ -801,6 +921,7 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
 
   const deleteSelected = useCallback(() => {
     if (!selectedItem || !canDeleteSelected) return;
+    pushUndoSnapshot();
     const nextLayout = {
       ...layoutRef.current,
       cards: layoutRef.current.cards.filter((card) => card.id !== selectedItem),
@@ -819,7 +940,61 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
     setLayout(nextLayout);
     layoutRef.current = nextLayout;
     void commitLayout(nextLayout);
-  }, [canDeleteSelected, commitLayout, selectedItem]);
+  }, [canDeleteSelected, commitLayout, pushUndoSnapshot, selectedItem]);
+
+  const duplicateSelected = useCallback(() => {
+    if (!selectedItem || !canDuplicateSelected) return;
+    pushUndoSnapshot();
+    const offset = 32;
+    let nextSelectedItem: string | null = null;
+    const current = layoutRef.current;
+    const nextLayout = cloneLayout(current);
+
+    const card = current.cards.find((candidate) => candidate.id === selectedItem);
+    if (card) {
+      const duplicate = { ...card, id: createId("card"), x: card.x + offset, y: card.y + offset };
+      nextLayout.cards.push(duplicate);
+      nextSelectedItem = duplicate.id;
+    }
+
+    const shape = current.shapes.find((candidate) => candidate.id === selectedItem);
+    if (shape) {
+      const duplicate = { ...shape, id: createId("shape"), x: shape.x + offset, y: shape.y + offset };
+      nextLayout.shapes.push(duplicate);
+      nextSelectedItem = duplicate.id;
+    }
+
+    const frame = current.frames.find((candidate) => candidate.id === selectedItem);
+    if (frame) {
+      const duplicate = { ...frame, id: createId("frame"), x: frame.x + offset, y: frame.y + offset };
+      nextLayout.frames.push(duplicate);
+      nextSelectedItem = duplicate.id;
+    }
+
+    const text = current.texts.find((candidate) => candidate.id === selectedItem);
+    if (text) {
+      const duplicate = { ...text, id: createId("text"), x: text.x + offset, y: text.y + offset };
+      nextLayout.texts.push(duplicate);
+      nextSelectedItem = duplicate.id;
+    }
+
+    const stroke = current.strokes.find((candidate) => candidate.id === selectedItem);
+    if (stroke) {
+      const duplicate = {
+        ...stroke,
+        id: createId("stroke"),
+        points: stroke.points.map((point) => ({ x: point.x + offset, y: point.y + offset })),
+      };
+      nextLayout.strokes.push(duplicate);
+      nextSelectedItem = duplicate.id;
+    }
+
+    if (!nextSelectedItem) return;
+    setSelectedItem(nextSelectedItem);
+    setLayout(nextLayout);
+    layoutRef.current = nextLayout;
+    void commitLayout(nextLayout);
+  }, [canDuplicateSelected, commitLayout, pushUndoSnapshot, selectedItem]);
 
   const setZoom = useCallback(
     (nextZoom: number) => {
@@ -898,6 +1073,12 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
             </div>
             <div className="scheme-board__actions">
               {selected ? <span>{copy.source(selected.current_revision?.source_count ?? 0)}</span> : null}
+              <button type="button" disabled={historyCounts.undo === 0} onClick={undoLayout}>
+                {copy.undo}
+              </button>
+              <button type="button" disabled={historyCounts.redo === 0} onClick={redoLayout}>
+                {copy.redo}
+              </button>
               <button type="button" onClick={() => setZoom(layout.viewport.zoom - 0.12)}>
                 {copy.zoomOut}
               </button>
@@ -909,6 +1090,9 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
               </button>
               <button type="button" disabled={!canDeleteSelected} onClick={deleteSelected}>
                 {copy.delete}
+              </button>
+              <button type="button" disabled={!canDuplicateSelected} onClick={duplicateSelected}>
+                {copy.duplicate}
               </button>
               <button type="button" disabled={!selected || refreshing} onClick={() => void handleRefresh()}>
                 {refreshing ? copy.refreshing : copy.refresh}
@@ -1028,8 +1212,9 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
                       value={frame.title}
                       aria-label="Frame title"
                       onPointerDown={(event) => event.stopPropagation()}
+                      onFocus={() => beginInlineEdit(frame.id)}
                       onChange={(event) => handleFrameTitleChange(frame.id, event.target.value)}
-                      onBlur={() => void commitLayout(layoutRef.current)}
+                      onBlur={finishInlineEdit}
                     />
                   </div>
                 ))}
@@ -1055,8 +1240,9 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
                       value={text.text}
                       aria-label="Canvas text"
                       onPointerDown={(event) => event.stopPropagation()}
+                      onFocus={() => beginInlineEdit(text.id)}
                       onChange={(event) => handleTextBlockChange(text.id, event.target.value)}
-                      onBlur={() => void commitLayout(layoutRef.current)}
+                      onBlur={finishInlineEdit}
                     />
                   </div>
                 ))}
@@ -1099,8 +1285,9 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
                       value={card.text}
                       aria-label="Sticky note"
                       onPointerDown={(event) => event.stopPropagation()}
+                      onFocus={() => beginInlineEdit(card.id)}
                       onChange={(event) => handleCardTextChange(card.id, event.target.value)}
-                      onBlur={() => void commitLayout(layoutRef.current)}
+                      onBlur={finishInlineEdit}
                     />
                   </div>
                 ))}

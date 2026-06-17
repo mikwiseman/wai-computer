@@ -30,6 +30,22 @@ final class MacContentFeedViewModelTests: XCTestCase {
         XCTAssertBefore("identifier: \"schemes\"", "identifier: \"trash\"", in: shellSource)
     }
 
+    func testMacSchemesBoardExposesHistoryAndDuplicateControls() throws {
+        let source = try macSource("WaiComputer/Features/Schemes/MacSchemesView.swift")
+
+        XCTAssertTrue(source.contains("@State private var undoStack: [SchemeCanvasLayout] = []"))
+        XCTAssertTrue(source.contains("@State private var redoStack: [SchemeCanvasLayout] = []"))
+        XCTAssertTrue(source.contains("private func pushUndoSnapshot()"))
+        XCTAssertTrue(source.contains("private func undoLayout()"))
+        XCTAssertTrue(source.contains("private func redoLayout()"))
+        XCTAssertTrue(source.contains("private func duplicateSelected()"))
+        XCTAssertTrue(source.contains("Image(systemName: \"arrow.uturn.backward\")"))
+        XCTAssertTrue(source.contains("Image(systemName: \"arrow.uturn.forward\")"))
+        XCTAssertTrue(source.contains("Image(systemName: \"square.on.square\")"))
+        XCTAssertTrue(source.contains(".disabled(!canDuplicateSelected)"))
+        XCTAssertBefore("private func pushUndoSnapshot()", "private func duplicateSelected()", in: source)
+    }
+
     func testContentFeedViewDoesNotRenderSelectionControls() throws {
         let testFile = URL(fileURLWithPath: #filePath)
         let viewFile = testFile
