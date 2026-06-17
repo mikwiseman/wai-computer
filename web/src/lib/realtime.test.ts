@@ -22,11 +22,13 @@ const mockedDownsample = vi.mocked(downsampleTo16kInt16);
 // ---------------------------------------------------------------------------
 
 const WS_OPEN = 1;
+const WS_CLOSING = 2;
 const WS_CLOSED = 3;
 
 /** A WebSocket stand-in whose handlers and readyState the test drives. */
 class FakeWebSocket {
   static OPEN = WS_OPEN;
+  static CLOSING = WS_CLOSING;
   static instances: FakeWebSocket[] = [];
 
   url: string;
@@ -384,12 +386,12 @@ describe("RealtimeTranscriber keep-alive", () => {
     expect(ws.sent.length).toBe(before);
   });
 
-  it("defaults the keep-alive interval to 8s when null", async () => {
+  it("defaults the keep-alive interval to the provider-safe 4s when null", async () => {
     const transcriber = new RealtimeTranscriber();
     mockedCreateSession.mockResolvedValue(sessionResponse({ keep_alive_interval_seconds: null }));
     const ws = await startRecording(transcriber, fakeStream().mediaStream);
 
-    vi.advanceTimersByTime(7999);
+    vi.advanceTimersByTime(3999);
     expect(ws.sent).not.toContainEqual(JSON.stringify({ type: "KeepAlive" }));
     vi.advanceTimersByTime(1);
     expect(ws.sent).toContainEqual(JSON.stringify({ type: "KeepAlive" }));
@@ -513,16 +515,48 @@ describe("RealtimeTranscriber.stop", () => {
       data: JSON.stringify({ is_final: true, channel: { alternatives: [{ transcript: "done" }] } }),
     } as MessageEvent);
 
-    const segments = await transcriber.stop();
+    const stopPromise = transcriber.stop();
+    ws.readyState = WS_CLOSED;
+    ws.onclose?.();
+    const segments = await stopPromise;
 
     expect(ws.sent).toContainEqual(JSON.stringify({ type: "CloseStream" }));
     expect(states).toEqual(["connecting", "recording", "stopping", "idle"]);
     expect(transcriber.getState()).toBe("idle");
     expect(segments).toHaveLength(1);
     // cleanup() side effects.
-    expect(ws.closeCalls).toBe(1);
+    expect(ws.closeCalls).toBe(0);
     expect(ctx.closeCalls).toBe(1);
     expect(stream.stops).toEqual([1]);
+  });
+
+  it("waits for final frames after CloseStream before tearing down the socket", async () => {
+    const transcriber = new RealtimeTranscriber();
+    mockedCreateSession.mockResolvedValue(sessionResponse());
+    const stream = fakeStream();
+    const ws = await startRecording(transcriber, stream.mediaStream);
+
+    const stopPromise = transcriber.stop();
+    const settled = vi.fn();
+    stopPromise.then(settled, settled);
+    await Promise.resolve();
+
+    expect(ws.sent).toContainEqual(JSON.stringify({ type: "CloseStream" }));
+    expect(ws.closeCalls).toBe(0);
+    expect(settled).not.toHaveBeenCalled();
+    expect(stream.stops).toEqual([1]);
+
+    ws.onmessage?.({
+      data: JSON.stringify({
+        is_final: true,
+        channel: { alternatives: [{ transcript: "late final" }] },
+      }),
+    } as MessageEvent);
+    ws.readyState = WS_CLOSED;
+    ws.onclose?.();
+
+    await expect(stopPromise).resolves.toMatchObject([{ text: "late final" }]);
+    expect(transcriber.getState()).toBe("idle");
   });
 
   it("returns existing segments without re-stopping when idle", async () => {
@@ -536,14 +570,32 @@ describe("RealtimeTranscriber.stop", () => {
     expect(FakeWebSocket.instances).toHaveLength(0);
   });
 
-  it("swallows a throwing CloseStream send and still reaches idle", async () => {
-    const transcriber = new RealtimeTranscriber();
+  it("rejects when CloseStream cannot be sent", async () => {
+    const errors: string[] = [];
+    const transcriber = new RealtimeTranscriber({ onError: (message) => errors.push(message) });
     mockedCreateSession.mockResolvedValue(sessionResponse());
     const ws = await startRecording(transcriber, fakeStream().mediaStream);
     ws.throwOnSend = true;
 
-    await expect(transcriber.stop()).resolves.toEqual([]);
-    expect(transcriber.getState()).toBe("idle");
+    await expect(transcriber.stop()).rejects.toThrow("send failed");
+    expect(transcriber.getState()).toBe("error");
+    expect(errors).toEqual([]);
+  });
+
+  it("rejects when the provider close drain times out", async () => {
+    const transcriber = new RealtimeTranscriber();
+    mockedCreateSession.mockResolvedValue(sessionResponse());
+    const ws = await startRecording(transcriber, fakeStream().mediaStream);
+
+    const stopPromise = transcriber.stop();
+    const expectedRejection = expect(stopPromise).rejects.toThrow(
+      "Realtime transcription did not finish.",
+    );
+    await vi.advanceTimersByTimeAsync(5000);
+
+    await expectedRejection;
+    expect(ws.closeCalls).toBe(1);
+    expect(transcriber.getState()).toBe("error");
   });
 });
 
@@ -573,7 +625,10 @@ describe("RealtimeTranscriber unexpected close", () => {
     mockedCreateSession.mockResolvedValue(sessionResponse());
     const ws = await startRecording(transcriber, fakeStream().mediaStream);
 
-    await transcriber.stop(); // -> idle, also closes the socket
+    const stopPromise = transcriber.stop();
+    ws.readyState = WS_CLOSED;
+    ws.onclose?.();
+    await stopPromise; // -> idle, also closes the socket
     errors.length = 0;
     ws.onclose?.();
 
@@ -585,12 +640,16 @@ describe("RealtimeTranscriber.cleanup resilience", () => {
   it("swallows disconnect errors from the worklet node and sources", async () => {
     const transcriber = new RealtimeTranscriber();
     mockedCreateSession.mockResolvedValue(sessionResponse());
-    await startRecording(transcriber, fakeStream().mediaStream);
+    const ws = await startRecording(transcriber, fakeStream().mediaStream);
 
     // Force the node disconnect to throw; cleanup must not propagate it.
     if (lastAudioWorkletNode) lastAudioWorkletNode.throwOnDisconnect = true;
 
-    await expect(transcriber.stop()).resolves.toBeDefined();
+    const stopPromise = transcriber.stop();
+    ws.readyState = WS_CLOSED;
+    ws.onclose?.();
+
+    await expect(stopPromise).resolves.toBeDefined();
     expect(transcriber.getState()).toBe("idle");
   });
 });

@@ -54,6 +54,9 @@ export interface RealtimeTranscriberOptions {
   onError?: (message: string) => void;
 }
 
+const STOP_CLOSE_TIMEOUT_MS = 5000;
+const DEFAULT_KEEP_ALIVE_INTERVAL_SECONDS = 4;
+
 export class RealtimeTranscriber {
   private ctx: AudioContext | null = null;
   private node: AudioWorkletNode | null = null;
@@ -126,7 +129,8 @@ export class RealtimeTranscriber {
       ws.binaryType = "arraybuffer";
       this.ws = ws;
       ws.onopen = () => {
-        const intervalMs = (session.keep_alive_interval_seconds ?? 8) * 1000;
+        const intervalMs =
+          (session.keep_alive_interval_seconds ?? DEFAULT_KEEP_ALIVE_INTERVAL_SECONDS) * 1000;
         this.keepAlive = setInterval(() => {
           if (ws.readyState === WebSocket.OPEN) {
             ws.send(JSON.stringify({ type: "KeepAlive" }));
@@ -198,16 +202,24 @@ export class RealtimeTranscriber {
   async stop(): Promise<TranscriptSegmentInput[]> {
     if (this.state === "idle" || this.state === "stopping") return this.segments;
     this.setState("stopping");
-    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-      try {
-        this.ws.send(JSON.stringify({ type: "CloseStream" }));
-      } catch {
-        // best-effort close frame
-      }
+    const ws = this.ws;
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+      this.cleanup();
+      this.setState("idle");
+      return this.segments;
     }
-    this.cleanup();
-    this.setState("idle");
-    return this.segments;
+    try {
+      ws.send(JSON.stringify({ type: "CloseStream" }));
+      this.cleanupAudio();
+      await this.waitForSocketClose(ws, STOP_CLOSE_TIMEOUT_MS);
+      this.cleanupSocket();
+      this.setState("idle");
+      return this.segments;
+    } catch (error) {
+      this.cleanup();
+      this.setState("error");
+      throw error;
+    }
   }
 
   private fail(error: unknown): void {
@@ -217,6 +229,11 @@ export class RealtimeTranscriber {
   }
 
   private cleanup(): void {
+    this.cleanupAudio();
+    this.cleanupSocket();
+  }
+
+  private cleanupAudio(): void {
     if (this.keepAlive) clearInterval(this.keepAlive);
     this.keepAlive = null;
     try {
@@ -235,17 +252,48 @@ export class RealtimeTranscriber {
     if (this.ctx && this.ctx.state !== "closed") void this.ctx.close();
     this.ctx = null;
     this.node = null;
+    for (const stream of this.streams) {
+      stream.getTracks().forEach((track) => track.stop());
+    }
+    this.streams = [];
+  }
+
+  private cleanupSocket(): void {
     if (this.ws) {
       try {
-        this.ws.close();
+        if (
+          this.ws.readyState === WebSocket.CONNECTING ||
+          this.ws.readyState === WebSocket.OPEN
+        ) {
+          this.ws.close();
+        }
       } catch {
         /* already closing */
       }
     }
     this.ws = null;
-    for (const stream of this.streams) {
-      stream.getTracks().forEach((track) => track.stop());
-    }
-    this.streams = [];
+  }
+
+  private waitForSocketClose(ws: WebSocket, timeoutMs: number): Promise<void> {
+    if (ws.readyState === WebSocket.CLOSED) return Promise.resolve();
+    return new Promise((resolve, reject) => {
+      const previousOnClose = ws.onclose;
+      const previousOnError = ws.onerror;
+      let settled = false;
+      const finish = (settle: () => void): void => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        ws.onclose = previousOnClose;
+        ws.onerror = previousOnError;
+        settle();
+      };
+      const timer = setTimeout(() => {
+        finish(() => reject(new Error("Realtime transcription did not finish.")));
+      }, timeoutMs);
+      ws.onclose = () => finish(resolve);
+      ws.onerror = () =>
+        finish(() => reject(new Error("Realtime transcription connection failed during stop.")));
+    });
   }
 }

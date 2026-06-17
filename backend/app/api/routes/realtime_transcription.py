@@ -905,9 +905,7 @@ def _raise_unexpected_bridge_exceptions(tasks: set[asyncio.Task]) -> None:
         if task.cancelled():
             continue
         exception = task.exception()
-        if exception is not None and not isinstance(
-            exception, (WebSocketDisconnect, ConnectionClosed)
-        ):
+        if exception is not None and not isinstance(exception, WebSocketDisconnect):
             raise exception
 
 

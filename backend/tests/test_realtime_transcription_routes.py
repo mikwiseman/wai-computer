@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from httpx import ASGITransport, AsyncClient
+from websockets.exceptions import ConnectionClosedError
 
 from app.core.personalization import RealtimePersonalizationHints
 from app.core.realtime_transcription import (
@@ -776,6 +777,50 @@ async def test_realtime_stream_reports_unexpected_bridge_task_failure():
     assert isinstance(captured["error"], RuntimeError)
     assert websocket.json_payloads == [route.PROXY_ERROR_PAYLOAD]
     assert websocket.closed_codes == [1011]
+
+
+@pytest.mark.asyncio
+async def test_realtime_stream_records_provider_connection_closed_as_failed():
+    from app.api.routes import realtime_transcription as route
+
+    websocket = FakeWebSocket({"authorization": "Bearer proxy-token"})
+    provider = FakeProvider()
+    usage_events: list[dict[str, object]] = []
+
+    async def waiting_client_to_provider(*args, **kwargs):
+        await asyncio.sleep(60)
+
+    async def provider_connection_closed(*args, **kwargs):
+        raise ConnectionClosedError(None, None)
+
+    async def record_usage(**kwargs):
+        usage_events.append(kwargs)
+
+    with patch(
+        "app.api.routes.realtime_transcription.decode_realtime_proxy_token",
+        return_value=_claims(),
+    ), patch(
+        "app.api.routes.realtime_transcription.require_deepgram_api_key",
+        return_value="server-provider-key",
+    ), patch(
+        "app.api.routes.realtime_transcription.websockets.connect",
+        return_value=FakeProviderConnection(provider),
+    ), patch(
+        "app.api.routes.realtime_transcription._client_to_provider",
+        new=waiting_client_to_provider,
+    ), patch(
+        "app.api.routes.realtime_transcription._provider_to_client",
+        new=provider_connection_closed,
+    ), patch(
+        "app.api.routes.realtime_transcription.record_deepgram_usage_event_standalone",
+        new=record_usage,
+    ):
+        await route.stream_realtime_transcription(websocket)
+
+    assert websocket.closed_codes == [1000]
+    assert usage_events
+    assert usage_events[-1]["status"] == "failed"
+    assert usage_events[-1]["error_type"] == "ConnectionClosed"
 
 
 def test_websockets_header_kwarg_supports_newer_additional_headers(monkeypatch):

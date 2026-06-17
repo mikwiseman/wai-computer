@@ -7,7 +7,7 @@ import {
   listDictionaryWords,
 } from "@/lib/api";
 import { RealtimeTranscriber, type RealtimeState } from "@/lib/realtime";
-import type { DictationDictionaryWord } from "@/lib/types";
+import type { DictationDictionaryWord, TranscriptSegmentInput } from "@/lib/types";
 
 type Locale = "en" | "ru";
 
@@ -26,6 +26,7 @@ interface Copy {
   macUpsell: string;
   micDenied: string;
   dictionaryFailed: string;
+  historyFailed: string;
   empty: string;
 }
 
@@ -45,6 +46,7 @@ const COPY: Record<Locale, Copy> = {
     macUpsell: "For system-wide push-to-talk that types into any app, get the Mac app.",
     micDenied: "Microphone access is required to dictate.",
     dictionaryFailed: "Dictionary could not load — copied transcript without custom replacements.",
+    historyFailed: "Copied transcript, but dictation history could not be saved.",
     empty: "Didn't catch anything — try again.",
   },
   ru: {
@@ -62,6 +64,7 @@ const COPY: Record<Locale, Copy> = {
     macUpsell: "Для системной диктовки в любое приложение — установите приложение для Mac.",
     micDenied: "Для диктовки нужен доступ к микрофону.",
     dictionaryFailed: "Не удалось загрузить словарь — скопирована расшифровка без ваших замен.",
+    historyFailed: "Расшифровка скопирована, но история диктовки не сохранилась.",
     empty: "Ничего не распознал — попробуйте ещё раз.",
   },
 };
@@ -169,7 +172,16 @@ export function DictatePanel({ locale = "en" }: DictatePanelProps) {
     const transcriber = transcriberRef.current;
     if (!transcriber) return;
     const elapsed = seconds;
-    const segments = await transcriber.stop();
+    let segments: TranscriptSegmentInput[];
+    try {
+      segments = await transcriber.stop();
+    } catch (error) {
+      transcriberRef.current = null;
+      setPhase("record");
+      setState("idle");
+      setError(error instanceof Error ? error.message : "Realtime transcription error");
+      return;
+    }
     transcriberRef.current = null;
     const raw = segments
       .map((s) => s.text)
@@ -195,7 +207,7 @@ export function DictatePanel({ locale = "en" }: DictatePanelProps) {
     setState("idle");
     await copyText(replaced);
 
-    // Log to the unified dictation history/quota (best-effort).
+    // Keep the paste flow available, but do not hide a history/quota sync failure.
     try {
       await createDictationEntry({
         client_entry_id: crypto.randomUUID(),
@@ -206,9 +218,9 @@ export function DictatePanel({ locale = "en" }: DictatePanelProps) {
         occurred_at: new Date().toISOString(),
       });
     } catch {
-      // history logging failure shouldn't block the paste flow
+      setNotice(copy.historyFailed);
     }
-  }, [clearTimer, copy.dictionaryFailed, copy.empty, copyText, seconds]);
+  }, [clearTimer, copy.dictionaryFailed, copy.empty, copy.historyFailed, copyText, seconds]);
 
   const reset = useCallback(() => {
     setPhase("record");

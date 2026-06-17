@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { createRecording, saveTranscript } from "@/lib/api";
 import { RealtimeTranscriber, type RealtimeState } from "@/lib/realtime";
-import type { RecordingDetail } from "@/lib/types";
+import type { RecordingDetail, TranscriptSegmentInput } from "@/lib/types";
 
 type Locale = "en" | "ru";
 
@@ -142,7 +142,18 @@ export function LiveRecorder({
     const transcriber = transcriberRef.current;
     if (!transcriber) return;
     setState("stopping");
-    const segments = await transcriber.stop();
+    let segments: TranscriptSegmentInput[];
+    try {
+      segments = await transcriber.stop();
+    } catch (error) {
+      transcriberRef.current = null;
+      onError(error instanceof Error ? error.message : "Could not finalize the recording.");
+      setState("idle");
+      setSeconds(0);
+      setCommitted("");
+      setInterim("");
+      return;
+    }
     transcriberRef.current = null;
     if (segments.length === 0) {
       // Nothing transcribed — don't create an empty recording.

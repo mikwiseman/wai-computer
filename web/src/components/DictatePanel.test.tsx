@@ -29,6 +29,7 @@ vi.mock("@/lib/realtime", () => {
     };
     state: RealtimeState = "idle";
     stopResult: TranscriptSegmentInput[] = [];
+    stopError: Error | null = null;
     started = false;
 
     constructor(opts: FakeTranscriber["opts"]) {
@@ -49,6 +50,7 @@ vi.mock("@/lib/realtime", () => {
     }
 
     async stop() {
+      if (this.stopError) throw this.stopError;
       this.state = "idle";
       return this.stopResult;
     }
@@ -67,6 +69,7 @@ type FakeTranscriberInstance = {
   };
   state: RealtimeState;
   stopResult: TranscriptSegmentInput[];
+  stopError: Error | null;
   started: boolean;
 };
 
@@ -347,7 +350,7 @@ describe("DictatePanel stop + cleanup", () => {
     await waitFor(() => expect(writeText).toHaveBeenCalledWith("raw words"));
   });
 
-  it("does not block the paste flow when history logging fails", async () => {
+  it("does not block the paste flow when history logging fails, but surfaces the sync error", async () => {
     mockedCreateEntry.mockRejectedValue(new Error("history down"));
     await getToRecording();
     lastTranscriber().stopResult = [segment("something")];
@@ -357,6 +360,21 @@ describe("DictatePanel stop + cleanup", () => {
     // Result still renders + copies despite the history failure.
     expect(await screen.findByText("something")).toBeTruthy();
     await waitFor(() => expect(writeText).toHaveBeenCalledWith("something"));
+    expect(await screen.findByRole("status")).toHaveTextContent(
+      "dictation history could not be saved",
+    );
+  });
+
+  it("surfaces stop finalization failures without copying or logging partial text", async () => {
+    await getToRecording();
+    lastTranscriber().stopError = new Error("finalize timeout");
+
+    fireEvent.click(screen.getByRole("button", { name: "Stop" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("finalize timeout");
+    expect(writeText).not.toHaveBeenCalled();
+    expect(mockedCreateEntry).not.toHaveBeenCalled();
+    expect(screen.getByText("Start dictating")).toBeTruthy();
   });
 });
 

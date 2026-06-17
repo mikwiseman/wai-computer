@@ -31,6 +31,7 @@ const { FakeTranscriber } = vi.hoisted(() => {
     // Per-test knobs.
     static startState: RealtimeState = "recording";
     static stopSegments: TranscriptSegmentInput[] = [];
+    static stopError: Error | null = null;
 
     readonly opts: RealtimeTranscriberOptions;
     private currentState: RealtimeState = "idle";
@@ -56,6 +57,7 @@ const { FakeTranscriber } = vi.hoisted(() => {
 
     async stop(): Promise<TranscriptSegmentInput[]> {
       this.stopCalls += 1;
+      if (FakeTranscriber.stopError) throw FakeTranscriber.stopError;
       this.currentState = "idle";
       return FakeTranscriber.stopSegments;
     }
@@ -111,6 +113,7 @@ describe("LiveRecorder", () => {
     FakeTranscriber.instances = [];
     FakeTranscriber.startState = "recording";
     FakeTranscriber.stopSegments = [];
+    FakeTranscriber.stopError = null;
     vi.stubGlobal("MediaStream", FakeMediaStream);
     // Default: mic-only environment with no system-audio support.
     setMediaDevices({
@@ -365,6 +368,18 @@ describe("LiveRecorder", () => {
 
       await waitFor(() => expect(onError).toHaveBeenCalledWith("network down"));
       // Always resets to idle in the finally block, even on failure.
+      expect(screen.getByRole("button", { name: "Record in browser" })).toBeInTheDocument();
+    });
+
+    it("reports stop finalization failures without saving a partial recording", async () => {
+      FakeTranscriber.stopError = new Error("finalize timeout");
+
+      const { user, onError } = await startRecording();
+      await user.click(screen.getByRole("button", { name: "Stop & save" }));
+
+      await waitFor(() => expect(onError).toHaveBeenCalledWith("finalize timeout"));
+      expect(mockCreateRecording).not.toHaveBeenCalled();
+      expect(mockSaveTranscript).not.toHaveBeenCalled();
       expect(screen.getByRole("button", { name: "Record in browser" })).toBeInTheDocument();
     });
   });
