@@ -649,6 +649,79 @@ describe("SchemesPanel", () => {
     );
   });
 
+  it("lasso-selects objects by drawn containment and supports select-all", async () => {
+    const initial = scheme({
+      layout: layout({
+        cards: [
+          {
+            id: "card-a",
+            x: 40,
+            y: 60,
+            width: 220,
+            height: 150,
+            text: "Inside note",
+            color: "#f7d774",
+            locked: false,
+            z_index: 10,
+          },
+          {
+            id: "card-b",
+            x: 360,
+            y: 60,
+            width: 220,
+            height: 150,
+            text: "Outside note",
+            color: "#f7d774",
+            locked: false,
+            z_index: 20,
+          },
+        ],
+      }),
+    });
+    mockListSchemes.mockResolvedValue({ schemes: [initial] });
+    mockGetScheme.mockResolvedValue(initial);
+
+    const { container } = render(<SchemesPanel />);
+
+    await screen.findByText("Inside note");
+    const viewport = container.querySelector(".scheme-board__viewport");
+    expect(viewport).not.toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Lasso" }));
+    fireEvent.pointerDown(viewport as Element, { pointerId: 1, clientX: 20, clientY: 40, button: 0 });
+    fireEvent.pointerMove(viewport as Element, { pointerId: 1, clientX: 300, clientY: 40 });
+    fireEvent.pointerMove(viewport as Element, { pointerId: 1, clientX: 300, clientY: 240 });
+    fireEvent.pointerMove(viewport as Element, { pointerId: 1, clientX: 20, clientY: 240 });
+    fireEvent.pointerMove(viewport as Element, { pointerId: 1, clientX: 20, clientY: 40 });
+    fireEvent.pointerUp(viewport as Element, { pointerId: 1, clientX: 20, clientY: 40 });
+
+    expect(container.querySelectorAll(".scheme-sticky--selected")).toHaveLength(1);
+    fireEvent.click(screen.getByRole("button", { name: "Duplicate" }));
+
+    await waitFor(() =>
+      expect(mockUpdateScheme).toHaveBeenCalledWith(
+        "scheme-1",
+        {
+          layout: expect.objectContaining({
+            cards: [
+              expect.objectContaining({ id: "card-a" }),
+              expect.objectContaining({ id: "card-b" }),
+              expect.objectContaining({
+                id: "card:test-id-1",
+                x: 72,
+                y: 92,
+                text: "Inside note",
+              }),
+            ],
+          }),
+        },
+      ),
+    );
+
+    fireEvent.keyDown(viewport as Element, { key: "a", code: "KeyA", metaKey: true });
+    expect(container.querySelectorAll(".scheme-sticky--selected")).toHaveLength(3);
+  });
+
   it("locks and unlocks a selected board object", async () => {
     const initial = scheme({
       layout: layout({

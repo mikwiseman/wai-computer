@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { MouseEvent, PointerEvent, WheelEvent } from "react";
+import type { KeyboardEvent, MouseEvent, PointerEvent, WheelEvent } from "react";
 import {
   createScheme,
   getScheme,
@@ -32,6 +32,7 @@ type Locale = "en" | "ru";
 type Tool =
   | "select"
   | "pan"
+  | "lasso"
   | "draw"
   | "highlighter"
   | "eraser"
@@ -123,6 +124,11 @@ type DragState =
       start: SchemePosition;
       current: SchemePosition;
       previousItemIds: string[];
+    }
+  | {
+      type: "lasso";
+      points: SchemePosition[];
+      previousItemIds: string[];
     };
 
 interface BoardItemHandle {
@@ -167,6 +173,7 @@ const PEN_WIDTHS = [2, 3, 5, 8];
 const TOOLS: Array<{ id: Tool; label: string; ru: string }> = [
   { id: "select", label: "Select", ru: "Выбор" },
   { id: "pan", label: "Hand", ru: "Рука" },
+  { id: "lasso", label: "Lasso", ru: "Лассо" },
   { id: "draw", label: "Pen", ru: "Перо" },
   { id: "highlighter", label: "Highlight", ru: "Маркер" },
   { id: "eraser", label: "Erase", ru: "Ластик" },
@@ -520,6 +527,11 @@ function canDuplicateLayoutItem(itemId: string | null, layout: SchemeCanvasLayou
   );
 }
 
+function isEditableElement(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  return Boolean(target.closest("input, textarea, select, [contenteditable='true']"));
+}
+
 function normaliseRect(start: SchemePosition, end: SchemePosition): SelectionRect {
   const x = Math.min(start.x, end.x);
   const y = Math.min(start.y, end.y);
@@ -625,6 +637,52 @@ function selectedIdsFromMarquee(
 
 function mergeSelectionIds(first: string[], second: string[]): string[] {
   return Array.from(new Set([...first, ...second]));
+}
+
+function pointInPolygon(point: SchemePosition, polygon: SchemePosition[]): boolean {
+  if (polygon.length < 3) return false;
+  let inside = false;
+  for (let index = 0, previous = polygon.length - 1; index < polygon.length; previous = index++) {
+    const current = polygon[index];
+    const prior = polygon[previous];
+    const crosses =
+      current.y > point.y !== prior.y > point.y &&
+      point.x < ((prior.x - current.x) * (point.y - current.y)) / (prior.y - current.y) + current.x;
+    if (crosses) inside = !inside;
+  }
+  return inside;
+}
+
+function sampledBoundsPoints(bounds: BoardItemBounds): SchemePosition[] {
+  const widthSteps = bounds.width <= 1 ? 1 : 4;
+  const heightSteps = bounds.height <= 1 ? 1 : 4;
+  const points: SchemePosition[] = [];
+  for (let xIndex = 0; xIndex <= widthSteps; xIndex += 1) {
+    for (let yIndex = 0; yIndex <= heightSteps; yIndex += 1) {
+      points.push({
+        x: bounds.x + (bounds.width * xIndex) / widthSteps,
+        y: bounds.y + (bounds.height * yIndex) / heightSteps,
+      });
+    }
+  }
+  return points;
+}
+
+function boundsMostlyInsideLasso(bounds: BoardItemBounds, polygon: SchemePosition[]): boolean {
+  const samples = sampledBoundsPoints(bounds);
+  const insideCount = samples.filter((point) => pointInPolygon(point, polygon)).length;
+  return insideCount / samples.length >= 0.9;
+}
+
+function selectedIdsFromLasso(
+  points: SchemePosition[],
+  layout: SchemeCanvasLayout,
+  nodes: SchemeNode[],
+): string[] {
+  if (points.length < 3) return [];
+  return layoutItemBounds(layout, nodes)
+    .filter((bounds) => boundsMostlyInsideLasso(bounds, points))
+    .map((bounds) => bounds.id);
 }
 
 function translateSelectedLayout(
@@ -785,6 +843,16 @@ function strokePath(points: SchemeStrokePoint[]): string {
   return commands.join(" ");
 }
 
+function lassoPath(points: SchemePosition[]): string {
+  if (points.length === 0) return "";
+  const commands = [`M ${points[0].x} ${points[0].y}`];
+  for (const point of points.slice(1)) {
+    commands.push(`L ${point.x} ${point.y}`);
+  }
+  if (points.length > 2) commands.push("Z");
+  return commands.join(" ");
+}
+
 function distanceToSegment(point: SchemePosition, start: SchemePosition, end: SchemePosition): number {
   const dx = end.x - start.x;
   const dy = end.y - start.y;
@@ -854,6 +922,7 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
   const [selectedItems, setSelectedItems] = useState<string[]>([]);
   const [pendingConnector, setPendingConnector] = useState<BoardItemHandle | null>(null);
   const [marquee, setMarquee] = useState<SelectionRect | null>(null);
+  const [lassoPoints, setLassoPoints] = useState<SchemePosition[]>([]);
   const [historyCounts, setHistoryCounts] = useState({ undo: 0, redo: 0 });
   const dragRef = useRef<DragState | null>(null);
   const viewportRef = useRef<HTMLDivElement | null>(null);
@@ -921,6 +990,7 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
     setLayout(layoutForScheme(selectedRef.current));
     setSelectedItem(null);
     setMarquee(null);
+    setLassoPoints([]);
     setPendingConnector(null);
     undoStackRef.current = [];
     redoStackRef.current = [];
@@ -1015,6 +1085,8 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
     (nextLayout: SchemeCanvasLayout) => {
       setSelectedItem(null);
       setPendingConnector(null);
+      setMarquee(null);
+      setLassoPoints([]);
       dragRef.current = null;
       editingItemRef.current = null;
       setLayout(nextLayout);
@@ -1356,6 +1428,7 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
   const handleViewportPointerDown = useCallback(
     (event: PointerEvent<HTMLDivElement>) => {
       if (event.button !== 0 || !selected) return;
+      event.currentTarget.focus();
       const target = event.target as HTMLElement;
       if (target.closest("[data-scheme-board-item='true']")) return;
       event.currentTarget.setPointerCapture?.(event.pointerId);
@@ -1426,6 +1499,20 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
         setMarquee(normaliseRect(point, point));
         return;
       }
+      if (tool === "lasso") {
+        const additiveSelection = event.shiftKey || event.metaKey || event.ctrlKey;
+        if (!additiveSelection) {
+          setSelectedItem(null);
+        }
+        const points = [point];
+        dragRef.current = {
+          type: "lasso",
+          points,
+          previousItemIds: additiveSelection ? selectedItems : [],
+        };
+        setLassoPoints(points);
+        return;
+      }
       if (tool === "pan") {
         setSelectedItem(null);
         dragRef.current = {
@@ -1489,6 +1576,17 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
         dragRef.current = { ...drag, current };
         setMarquee(rect);
         const nextSelection = selectedIdsFromMarquee(rect, layoutRef.current, positionedNodes);
+        setSelectedItems(mergeSelectionIds(drag.previousItemIds, nextSelection));
+        return;
+      }
+      if (drag.type === "lasso") {
+        const point = pointFromEvent(event);
+        const previous = drag.points[drag.points.length - 1];
+        if (previous && Math.hypot(point.x - previous.x, point.y - previous.y) < 2) return;
+        const points = [...drag.points, point];
+        dragRef.current = { ...drag, points };
+        setLassoPoints(points);
+        const nextSelection = selectedIdsFromLasso(points, layoutRef.current, positionedNodes);
         setSelectedItems(mergeSelectionIds(drag.previousItemIds, nextSelection));
         return;
       }
@@ -1562,6 +1660,14 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
       setMarquee(null);
       const rect = normaliseRect(drag.start, drag.current);
       if (rect.width < 3 && rect.height < 3) {
+        setSelectedItems(drag.previousItemIds);
+      }
+      return;
+    }
+    if (drag.type === "lasso") {
+      setLassoPoints([]);
+      const bounds = boundsFromPoints("lasso", drag.points);
+      if (!bounds || (bounds.width < 3 && bounds.height < 3) || drag.points.length < 3) {
         setSelectedItems(drag.previousItemIds);
       }
       return;
@@ -1796,6 +1902,59 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
     updateViewport({ ...DEFAULT_VIEWPORT }, true);
   }, [updateViewport]);
 
+  const handleViewportKeyDown = useCallback(
+    (event: KeyboardEvent<HTMLDivElement>) => {
+      if (isEditableElement(event.target)) return;
+      const key = event.key.toLowerCase();
+      const command = event.metaKey || event.ctrlKey;
+
+      if (command && key === "a") {
+        event.preventDefault();
+        setSelectedItems(layoutItemBounds(layoutRef.current, positionedNodes).map((item) => item.id));
+        setPendingConnector(null);
+        return;
+      }
+      if (command && key === "d") {
+        event.preventDefault();
+        duplicateSelected();
+        return;
+      }
+      if (command && key === "z") {
+        event.preventDefault();
+        if (event.shiftKey) {
+          redoLayout();
+        } else {
+          undoLayout();
+        }
+        return;
+      }
+      if (key === "delete" || key === "backspace") {
+        event.preventDefault();
+        deleteSelected();
+        return;
+      }
+      if (key === "escape") {
+        event.preventDefault();
+        setSelectedItem(null);
+        setPendingConnector(null);
+        setMarquee(null);
+        setLassoPoints([]);
+        dragRef.current = null;
+        return;
+      }
+      if (key === "v") {
+        setTool("select");
+        setPendingConnector(null);
+        return;
+      }
+      if (key === "h") {
+        setTool("pan");
+        setPendingConnector(null);
+      }
+    },
+    [deleteSelected, duplicateSelected, positionedNodes, redoLayout, setSelectedItem, undoLayout],
+  );
+
   const worldTransform = `translate(${layout.viewport.x}px, ${layout.viewport.y}px) scale(${layout.viewport.zoom})`;
 
   return (
@@ -1955,10 +2114,12 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
             <div
               ref={viewportRef}
               className={`scheme-board__viewport scheme-board__viewport--${tool}`}
+              tabIndex={0}
               onPointerDown={handleViewportPointerDown}
               onPointerMove={handlePointerMove}
               onPointerUp={handlePointerUp}
               onPointerCancel={handlePointerUp}
+              onKeyDown={handleViewportKeyDown}
               onWheel={handleWheel}
             >
               <div className="scheme-board__grid" />
@@ -2215,6 +2376,11 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
                       height: marquee.height,
                     }}
                   />
+                ) : null}
+                {lassoPoints.length > 1 ? (
+                  <svg className="scheme-board__lasso" aria-hidden="true">
+                    <path d={lassoPath(lassoPoints)} />
+                  </svg>
                 ) : null}
               </div>
             </div>

@@ -264,6 +264,7 @@ private struct MacSchemeListRow: View {
 private enum MacSchemeTool: String, CaseIterable, Identifiable {
     case select
     case pan
+    case lasso
     case draw
     case highlighter
     case eraser
@@ -282,6 +283,8 @@ private enum MacSchemeTool: String, CaseIterable, Identifiable {
             return OnboardingL10n.text("Select", "Выбор", language: language)
         case .pan:
             return OnboardingL10n.text("Hand", "Рука", language: language)
+        case .lasso:
+            return OnboardingL10n.text("Lasso", "Лассо", language: language)
         case .draw:
             return OnboardingL10n.text("Pen", "Перо", language: language)
         case .highlighter:
@@ -307,6 +310,7 @@ private enum MacSchemeTool: String, CaseIterable, Identifiable {
         switch self {
         case .select: return "cursorarrow"
         case .pan: return "hand.draw"
+        case .lasso: return "lasso"
         case .draw: return "pencil.tip"
         case .highlighter: return "highlighter"
         case .eraser: return "eraser"
@@ -373,6 +377,7 @@ private struct MacSchemeBoard: View {
     @State private var multiDrag: MultiItemDragState?
     @State private var marqueeStart: SchemePosition?
     @State private var marqueeCurrent: SchemePosition?
+    @State private var lassoPoints: [SchemePosition] = []
     @State private var undoStack: [SchemeCanvasLayout] = []
     @State private var redoStack: [SchemeCanvasLayout] = []
     @State private var editingItemId: String?
@@ -886,6 +891,7 @@ private struct MacSchemeBoard: View {
         multiDrag = nil
         marqueeStart = nil
         marqueeCurrent = nil
+        lassoPoints.removeAll()
         layout = nextLayout
         onCommit(layout)
     }
@@ -1057,6 +1063,57 @@ private struct MacSchemeBoard: View {
             .map(\.id)
     }
 
+    private func selectionIds(inLasso points: [SchemePosition]) -> [String] {
+        guard points.count >= 3 else { return [] }
+        return itemBounds()
+            .filter { boundsMostlyInsideLasso($0.rect, polygon: points) }
+            .map(\.id)
+    }
+
+    private func boundsMostlyInsideLasso(_ rect: CGRect, polygon: [SchemePosition]) -> Bool {
+        let samples = sampledPoints(in: rect)
+        let insideCount = samples.filter { pointInPolygon($0, polygon: polygon) }.count
+        return Double(insideCount) / Double(samples.count) >= 0.9
+    }
+
+    private func sampledPoints(in rect: CGRect) -> [SchemePosition] {
+        let widthSteps = rect.width <= 1 ? 1 : 4
+        let heightSteps = rect.height <= 1 ? 1 : 4
+        var points: [SchemePosition] = []
+        for xIndex in 0...widthSteps {
+            for yIndex in 0...heightSteps {
+                points.append(SchemePosition(
+                    x: Double(rect.minX + (rect.width * CGFloat(xIndex)) / CGFloat(widthSteps)),
+                    y: Double(rect.minY + (rect.height * CGFloat(yIndex)) / CGFloat(heightSteps))
+                ))
+            }
+        }
+        return points
+    }
+
+    private func pointInPolygon(_ point: SchemePosition, polygon: [SchemePosition]) -> Bool {
+        guard polygon.count >= 3 else { return false }
+        var inside = false
+        var previous = polygon.count - 1
+        for index in polygon.indices {
+            let currentPoint = polygon[index]
+            let previousPoint = polygon[previous]
+            let crosses = (currentPoint.y > point.y) != (previousPoint.y > point.y)
+                && point.x < ((previousPoint.x - currentPoint.x) * (point.y - currentPoint.y))
+                    / (previousPoint.y - currentPoint.y)
+                    + currentPoint.x
+            if crosses {
+                inside.toggle()
+            }
+            previous = index
+        }
+        return inside
+    }
+
+    private func pointDistance(_ first: SchemePosition, _ second: SchemePosition) -> Double {
+        hypot(first.x - second.x, first.y - second.y)
+    }
+
     private func marqueeRect(in size: CGSize) -> CGRect? {
         guard let marqueeStart, let marqueeCurrent else { return nil }
         let worldRect = normalisedSelectionRect(from: marqueeStart, to: marqueeCurrent)
@@ -1204,6 +1261,15 @@ private struct MacSchemeBoard: View {
                     if let marqueeStart {
                         setSelection(selectionIds(in: normalisedSelectionRect(from: marqueeStart, to: world)))
                     }
+                case .lasso:
+                    if let last = lassoPoints.last {
+                        if pointDistance(world, last) >= 2 {
+                            lassoPoints.append(world)
+                        }
+                    } else {
+                        lassoPoints = [world]
+                    }
+                    setSelection(selectionIds(inLasso: lassoPoints))
                 case .sticky, .text, .rectangle, .ellipse, .frame, .connector:
                     break
                 }
@@ -1242,6 +1308,11 @@ private struct MacSchemeBoard: View {
                     }
                     marqueeStart = nil
                     marqueeCurrent = nil
+                case .lasso:
+                    if lassoPoints.count < 3 {
+                        clearSelection()
+                    }
+                    lassoPoints.removeAll()
                 case .connector:
                     pendingConnector = nil
                 }
@@ -1501,6 +1572,7 @@ private struct MacSchemeBoard: View {
         drawProjectionEdges(context: context, size: size)
         drawConnectors(context: context, size: size)
         drawStrokes(context: context, size: size)
+        drawLasso(context: context, size: size)
     }
 
     private func drawProjectionEdges(context: GraphicsContext, size: CGSize) {
@@ -1548,6 +1620,24 @@ private struct MacSchemeBoard: View {
                 style: StrokeStyle(lineWidth: CGFloat(stroke.width) * CGFloat(layout.viewport.zoom), lineCap: .round, lineJoin: .round)
             )
         }
+    }
+
+    private func drawLasso(context: GraphicsContext, size: CGSize) {
+        guard lassoPoints.count > 1 else { return }
+        var path = Path()
+        path.move(to: screenPoint(for: lassoPoints[0], in: size))
+        for point in lassoPoints.dropFirst() {
+            path.addLine(to: screenPoint(for: point, in: size))
+        }
+        if lassoPoints.count > 2 {
+            path.closeSubpath()
+            context.fill(path, with: .color(Palette.accent.opacity(0.12)))
+        }
+        context.stroke(
+            path,
+            with: .color(Palette.accent),
+            style: StrokeStyle(lineWidth: 1.5, dash: [7, 5])
+        )
     }
 
     private func addCard(at point: SchemePosition) {

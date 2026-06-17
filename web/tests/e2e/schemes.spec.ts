@@ -285,6 +285,29 @@ test("Schemes board duplicates, locks, and unlocks a placed sticky", async ({ pa
   await expect(page.locator(".scheme-sticky")).toHaveCount(2);
 
   await page.getByRole("button", { name: "Select" }).click();
+  await board.click({ position: { x: 12, y: 12 } });
+  await expect(page.locator(".scheme-sticky--selected")).toHaveCount(0);
+
+  const lassoBox = {
+    left: boardBox.x + 12,
+    top: boardBox.y + 12,
+    right: boardBox.x + boardBox.width - 12,
+    bottom: boardBox.y + boardBox.height - 12,
+  };
+
+  await page.getByRole("button", { name: "Lasso" }).click();
+  await page.mouse.move(lassoBox.left, lassoBox.top);
+  await page.mouse.down();
+  await page.mouse.move(lassoBox.right, lassoBox.top);
+  await page.mouse.move(lassoBox.right, lassoBox.bottom);
+  await expect(page.locator(".scheme-board__lasso path")).toHaveCount(1);
+  await page.mouse.move(lassoBox.left, lassoBox.bottom);
+  await page.mouse.move(lassoBox.left, lassoBox.top);
+  await page.mouse.up();
+  await expect(page.locator(".scheme-board__lasso path")).toHaveCount(0);
+  await expect(page.locator(".scheme-sticky--selected")).toHaveCount(1);
+
+  await page.getByRole("button", { name: "Select" }).click();
   const stickyTextareas = page.getByLabel("Sticky note");
   await stickyTextareas.nth(0).click({ force: true });
   await expect(page.locator(".scheme-sticky--selected")).toHaveCount(1);

@@ -5337,6 +5337,10 @@ a.primary-button[aria-disabled="true"]:hover {
   cursor: crosshair;
 }
 
+.scheme-board__viewport--lasso {
+  cursor: crosshair;
+}
+
 .scheme-board__viewport--draw,
 .scheme-board__viewport--highlighter {
   cursor: crosshair;
@@ -5382,6 +5386,25 @@ a.primary-button[aria-disabled="true"]:hover {
   box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 18%, transparent);
   pointer-events: none;
   z-index: 1000001;
+}
+
+.scheme-board__lasso {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 1px;
+  height: 1px;
+  overflow: visible;
+  pointer-events: none;
+  z-index: 1000001;
+}
+
+.scheme-board__lasso path {
+  fill: color-mix(in srgb, var(--accent) 12%, transparent);
+  stroke: var(--accent);
+  stroke-width: 1.5;
+  stroke-dasharray: 7 5;
+  vector-effect: non-scaling-stroke;
 }
 
 .scheme-board__edges {
