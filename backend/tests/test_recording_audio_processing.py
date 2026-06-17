@@ -98,6 +98,45 @@ def test_ffprobe_duration_seconds_maps_subprocess_errors(
         recording_audio_processing._ffprobe_duration_seconds(tmp_path / "clip.m4a")
 
 
+@pytest.mark.asyncio
+async def test_normalize_audio_upload_for_transcription_converts_m4a_to_flac(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[list[str], dict[str, object]]] = []
+
+    def run(args, **kwargs):
+        calls.append((args, kwargs))
+        input_path = args[args.index("-i") + 1]
+        assert input_path.endswith(".m4a")
+        return recording_audio_processing.subprocess.CompletedProcess(
+            args=args,
+            returncode=0,
+            stdout=b"flac-audio",
+            stderr=b"",
+        )
+
+    monkeypatch.setattr(recording_audio_processing.subprocess, "run", run)
+
+    audio_data, content_type = (
+        await recording_audio_processing._normalize_audio_upload_for_transcription(
+            b"m4a-audio",
+            content_type="audio/mp4; codecs=mp4a",
+        )
+    )
+
+    assert audio_data == b"flac-audio"
+    assert content_type == "audio/flac"
+    args, kwargs = calls[0]
+    assert args[0] == "ffmpeg"
+    assert "-ac" in args
+    assert args[args.index("-ac") + 1] == "1"
+    assert "-ar" in args
+    assert args[args.index("-ar") + 1] == "16000"
+    assert kwargs["capture_output"] is True
+    assert kwargs["check"] is False
+    assert kwargs["timeout"] == recording_audio_processing.AUDIO_NORMALIZATION_TIMEOUT_SECONDS
+
+
 def test_audio_processing_helper_edge_branches() -> None:
     existing = SimpleNamespace(title="Existing", language="en", failure_message="old")
     recording_audio_processing.apply_no_speech_result(existing)
@@ -113,6 +152,37 @@ def test_audio_processing_helper_edge_branches() -> None:
         recording_audio_processing.recording_processing_slow_threshold_ms(None)
         == recording_audio_processing.PROCESSING_SLOW_MIN_THRESHOLD_MS
     )
+
+
+def test_voice_identification_size_guard_does_not_emit_ops_anomaly(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sentry_anomalies: list[dict[str, object]] = []
+    monkeypatch.setattr(
+        recording_audio_processing,
+        "settings",
+        SimpleNamespace(
+            voice_identification_enabled=True,
+            voice_identification_max_audio_seconds=3600,
+            voice_identification_max_audio_bytes=30 * 1024 * 1024,
+        ),
+    )
+    monkeypatch.setattr(
+        recording_audio_processing,
+        "capture_sentry_anomaly",
+        lambda *args, **kwargs: sentry_anomalies.append(
+            {"args": args, "kwargs": kwargs}
+        ),
+    )
+
+    enabled = recording_audio_processing.voice_identification_enabled_for_audio(
+        recording_id=uuid4(),
+        duration_seconds=4119.4,
+        staged_size_bytes=131_820_844,
+    )
+
+    assert enabled is False
+    assert sentry_anomalies == []
 
 
 def test_provider_reported_audio_too_short_false_branches() -> None:
@@ -263,6 +333,170 @@ async def test_process_staged_recording_upload_persists_canonical_segments(
     assert summary_job.task_id == "celery-recording-summary"
     assert not staged_path.exists()
     transcribe.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_process_staged_recording_upload_normalizes_m4a_before_provider(
+    db_session: AsyncSession,
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user = User(
+        email="queued-m4a-processing@example.com",
+        password_hash="x",
+        default_language="en",
+    )
+    db_session.add(user)
+    await db_session.flush()
+    recording = Recording(
+        user_id=user.id,
+        title=None,
+        type="meeting",
+        status=RecordingStatus.PROCESSING.value,
+        uploaded_at=datetime.now(timezone.utc),
+        language="en",
+    )
+    db_session.add(recording)
+    await db_session.commit()
+
+    staged_path = tmp_path / "recording.m4a"
+    staged_path.write_bytes(b"m4a-audio")
+    transcript_results = [
+        TranscriptResult(
+            text="Hello from normalized audio.",
+            speaker="speaker_0",
+            is_final=True,
+            start_ms=0,
+            end_ms=1800,
+            confidence=0.94,
+        )
+    ]
+
+    normalizer = AsyncMock(return_value=(b"normalized-flac", "audio/flac"))
+    transcribe = AsyncMock(return_value=transcript_results)
+    monkeypatch.setattr(
+        recording_audio_processing,
+        "_normalize_audio_upload_for_transcription",
+        normalizer,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "app.core.recording_audio_processing._ffprobe_duration_seconds",
+        lambda *_args, **_kwargs: 12.0,
+    )
+    monkeypatch.setattr(
+        "app.core.recording_audio_processing.transcribe_audio_file",
+        transcribe,
+    )
+    monkeypatch.setattr(
+        "app.core.recording_audio_processing.generate_embedding",
+        AsyncMock(return_value=[0.1] * 1536),
+    )
+    monkeypatch.setattr(
+        "app.core.recording_audio_processing.generate_title",
+        AsyncMock(return_value="Normalized Recording"),
+    )
+    monkeypatch.setattr(
+        "app.core.recording_audio_processing.identify_speakers_for_recording",
+        AsyncMock(return_value={}),
+    )
+
+    await process_staged_recording_upload(
+        db_session,
+        recording_id=recording.id,
+        user_id=user.id,
+        staged_path=staged_path,
+        content_type="audio/mp4",
+        user_default_language="en",
+        client_duration_seconds=12,
+        staged_size_bytes=staged_path.stat().st_size,
+    )
+
+    normalizer.assert_awaited_once_with(b"m4a-audio", content_type="audio/mp4")
+    transcribe.assert_awaited_once()
+    _, kwargs = transcribe.await_args
+    assert kwargs["content_type"] == "audio/flac"
+    assert transcribe.await_args.args[0] == b"normalized-flac"
+    await db_session.refresh(recording)
+    assert recording.status == RecordingStatus.READY.value
+    assert not staged_path.exists()
+
+
+@pytest.mark.asyncio
+async def test_process_staged_recording_upload_marks_audio_decode_failed(
+    db_session: AsyncSession,
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user = User(
+        email="decode-failed-processing@example.com",
+        password_hash="x",
+        default_language="en",
+    )
+    db_session.add(user)
+    await db_session.flush()
+    recording = Recording(
+        user_id=user.id,
+        title="Decode failure",
+        type="meeting",
+        status=RecordingStatus.PROCESSING.value,
+        uploaded_at=datetime.now(timezone.utc),
+        language="en",
+    )
+    db_session.add(recording)
+    await db_session.commit()
+
+    staged_path = tmp_path / "recording.m4a"
+    staged_path.write_bytes(b"bad-m4a")
+    transcribe = AsyncMock()
+    sentry_anomalies: list[dict[str, object]] = []
+
+    monkeypatch.setattr(
+        "app.core.recording_audio_processing._ffprobe_duration_seconds",
+        lambda *_args, **_kwargs: 12.0,
+    )
+    monkeypatch.setattr(
+        "app.core.recording_audio_processing._normalize_audio_upload_for_transcription",
+        AsyncMock(
+            side_effect=recording_audio_processing.AudioNormalizationError(
+                "decode failed"
+            )
+        ),
+    )
+    monkeypatch.setattr(
+        "app.core.recording_audio_processing.transcribe_audio_file",
+        transcribe,
+    )
+    monkeypatch.setattr(
+        "app.core.recording_audio_processing.capture_sentry_anomaly",
+        lambda alert_code, message, *, category, extras, level="warning": sentry_anomalies.append(
+            {
+                "alert_code": alert_code,
+                "message": message,
+                "category": category,
+                "extras": extras,
+                "level": level,
+            }
+        ),
+    )
+
+    await process_staged_recording_upload(
+        db_session,
+        recording_id=recording.id,
+        user_id=user.id,
+        staged_path=staged_path,
+        content_type="audio/mp4",
+        user_default_language="en",
+        client_duration_seconds=12,
+        staged_size_bytes=staged_path.stat().st_size,
+    )
+
+    transcribe.assert_not_awaited()
+    await db_session.refresh(recording)
+    assert recording.status == RecordingStatus.FAILED.value
+    assert recording.failure_code == "audio_decode_failed"
+    assert not staged_path.exists()
+    assert sentry_anomalies[0]["alert_code"] == "recording.audio.decode_failed"
 
 
 @pytest.mark.asyncio
@@ -631,6 +865,10 @@ async def test_process_staged_recording_upload_marks_deepgram_400_terminal(
         AsyncMock(side_effect=error),
     )
     monkeypatch.setattr(
+        "app.core.recording_audio_processing._normalize_audio_upload_for_transcription",
+        AsyncMock(return_value=(b"bad-media", "audio/mp4")),
+    )
+    monkeypatch.setattr(
         "app.core.recording_audio_processing.capture_sentry_anomaly",
         lambda alert_code, message, *, category, extras, level="warning": sentry_anomalies.append(
             {
@@ -912,6 +1150,19 @@ async def test_process_staged_recording_upload_skips_voice_identification_for_ov
         "app.core.recording_audio_processing.identify_speakers_for_recording",
         identify_mock,
     )
+    monkeypatch.setattr(
+        "app.core.recording_audio_processing._normalize_audio_upload_for_transcription",
+        AsyncMock(return_value=(b"long-audio", "audio/flac")),
+    )
+    sentry_anomalies: list[dict[str, object]] = []
+
+    def capture_anomaly(code: str, message: str, **kwargs: object) -> None:
+        sentry_anomalies.append({"code": code, "message": message, **kwargs})
+
+    monkeypatch.setattr(
+        "app.core.recording_audio_processing.capture_sentry_anomaly",
+        capture_anomaly,
+    )
 
     await process_staged_recording_upload(
         db_session,
@@ -935,6 +1186,7 @@ async def test_process_staged_recording_upload_skips_voice_identification_for_ov
     assert refreshed is not None
     assert refreshed.status == RecordingStatus.READY.value
     assert refreshed.failure_code is None
+    assert sentry_anomalies == []
 
 
 @pytest.mark.asyncio
@@ -1417,6 +1669,10 @@ async def test_process_staged_recording_upload_continues_after_duration_probe_fa
         transcribe,
     )
     monkeypatch.setattr(
+        "app.core.recording_audio_processing._normalize_audio_upload_for_transcription",
+        AsyncMock(return_value=(b"provider-media", "audio/flac")),
+    )
+    monkeypatch.setattr(
         "app.core.recording_audio_processing.capture_sentry_anomaly",
         capture,
     )
@@ -1500,6 +1756,10 @@ async def test_process_staged_recording_upload_retries_after_previous_decode_fai
     monkeypatch.setattr(
         "app.core.recording_audio_processing.transcribe_audio_file",
         transcribe,
+    )
+    monkeypatch.setattr(
+        "app.core.recording_audio_processing._normalize_audio_upload_for_transcription",
+        AsyncMock(return_value=(b"provider-media", "audio/flac")),
     )
     monkeypatch.setattr(
         "app.core.recording_audio_processing.capture_sentry_anomaly",
