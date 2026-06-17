@@ -22,6 +22,8 @@ import type {
   SchemeProjection,
   SchemeShapeKind,
   SchemeStroke,
+  SchemeStrokeKind,
+  SchemeStrokePoint,
   SchemeTextBlock,
   SchemeViewport,
 } from "@/lib/types";
@@ -31,6 +33,8 @@ type Tool =
   | "select"
   | "pan"
   | "draw"
+  | "highlighter"
+  | "eraser"
   | "sticky"
   | "text"
   | "rectangle"
@@ -106,6 +110,9 @@ type DragState =
       strokeId: string;
     }
   | {
+      type: "eraser";
+    }
+  | {
       type: "multi";
       start: SchemePosition;
       origin: SchemeCanvasLayout;
@@ -132,7 +139,7 @@ interface ProjectionSourceSummary {
   created_at?: string | null;
 }
 
-const SCHEME_LAYOUT_VERSION = 6 as const;
+const SCHEME_LAYOUT_VERSION = 7 as const;
 const DEFAULT_VIEWPORT: SchemeViewport = { x: 0, y: 0, zoom: 1 };
 const MIN_ZOOM = 0.25;
 const MAX_ZOOM = 2.8;
@@ -149,10 +156,20 @@ const TEXT_HEIGHT = 120;
 const SOURCE_WIDTH = 320;
 const SOURCE_HEIGHT = 170;
 const MAX_PINNED_SOURCE_BLOCKS = 12;
+const DEFAULT_PEN_COLOR = "#111827";
+const DEFAULT_HIGHLIGHTER_COLOR = "#facc15";
+const DEFAULT_PEN_WIDTH = 3;
+const DEFAULT_HIGHLIGHTER_WIDTH = 14;
+const DEFAULT_HIGHLIGHTER_OPACITY = 0.35;
+const ERASER_RADIUS = 14;
+const PEN_COLORS = ["#111827", "#dc2626", "#2563eb", "#16a34a", "#7c3aed"];
+const PEN_WIDTHS = [2, 3, 5, 8];
 const TOOLS: Array<{ id: Tool; label: string; ru: string }> = [
   { id: "select", label: "Select", ru: "Выбор" },
   { id: "pan", label: "Hand", ru: "Рука" },
-  { id: "draw", label: "Draw", ru: "Рисовать" },
+  { id: "draw", label: "Pen", ru: "Перо" },
+  { id: "highlighter", label: "Highlight", ru: "Маркер" },
+  { id: "eraser", label: "Erase", ru: "Ластик" },
   { id: "sticky", label: "Sticky", ru: "Стикер" },
   { id: "text", label: "Text", ru: "Текст" },
   { id: "rectangle", label: "Box", ru: "Блок" },
@@ -278,6 +295,29 @@ function isPosition(value: unknown): value is SchemePosition {
   );
 }
 
+function normaliseStrokePoint(point: SchemePosition | SchemeStrokePoint): SchemeStrokePoint {
+  const pressure = (point as SchemeStrokePoint).pressure;
+  return {
+    x: point.x,
+    y: point.y,
+    pressure: typeof pressure === "number" && Number.isFinite(pressure) ? clamp(pressure, 0, 1) : 1,
+  };
+}
+
+function normaliseStroke(stroke: SchemeStroke): SchemeStroke {
+  const kind: SchemeStrokeKind = stroke.kind === "highlighter" ? "highlighter" : "pen";
+  return {
+    ...stroke,
+    kind,
+    color: stroke.color ?? (kind === "highlighter" ? DEFAULT_HIGHLIGHTER_COLOR : DEFAULT_PEN_COLOR),
+    width: stroke.width ?? (kind === "highlighter" ? DEFAULT_HIGHLIGHTER_WIDTH : DEFAULT_PEN_WIDTH),
+    opacity: stroke.opacity ?? (kind === "highlighter" ? DEFAULT_HIGHLIGHTER_OPACITY : 1),
+    points: (stroke.points ?? []).map(normaliseStrokePoint),
+    locked: stroke.locked ?? false,
+    z_index: stroke.z_index ?? Number.NaN,
+  };
+}
+
 function layoutForScheme(scheme: Scheme | null): SchemeCanvasLayout {
   const raw = scheme?.layout;
   if (!raw) return blankLayout();
@@ -291,7 +331,7 @@ function layoutForScheme(scheme: Scheme | null): SchemeCanvasLayout {
     version: SCHEME_LAYOUT_VERSION,
     viewport: { ...DEFAULT_VIEWPORT, ...(raw.viewport ?? {}) },
     node_positions: raw.node_positions ?? {},
-    strokes: (raw.strokes ?? []).map((stroke) => ({ ...stroke, locked: stroke.locked ?? false, z_index: stroke.z_index ?? Number.NaN })),
+    strokes: (raw.strokes ?? []).map(normaliseStroke),
     cards: (raw.cards ?? []).map((card) => ({ ...card, locked: card.locked ?? false, z_index: card.z_index ?? Number.NaN })),
     shapes: (raw.shapes ?? []).map((shape) => ({ ...shape, locked: shape.locked ?? false, z_index: shape.z_index ?? Number.NaN })),
     frames: (raw.frames ?? []).map((frame) => ({ ...frame, locked: frame.locked ?? false, z_index: frame.z_index ?? Number.NaN })),
@@ -619,7 +659,7 @@ function translateSelectedLayout(
     ),
     strokes: layout.strokes.map((stroke) =>
       selected.has(stroke.id)
-        ? { ...stroke, points: stroke.points.map((point) => ({ x: point.x + dx, y: point.y + dy })) }
+        ? { ...stroke, points: stroke.points.map((point) => ({ ...point, x: point.x + dx, y: point.y + dy })) }
         : stroke,
     ),
     connectors: layout.connectors.map((connector) =>
@@ -723,6 +763,55 @@ function shapePath(shape: SchemeCanvasShape): string {
   return `M ${shape.x} ${shape.y} h ${shape.width} v ${shape.height} h ${-shape.width} Z`;
 }
 
+function strokePath(points: SchemeStrokePoint[]): string {
+  if (points.length === 0) return "";
+  if (points.length === 1) return `M ${points[0].x} ${points[0].y}`;
+  if (points.length === 2) {
+    return `M ${points[0].x} ${points[0].y} L ${points[1].x} ${points[1].y}`;
+  }
+
+  const commands = [`M ${points[0].x} ${points[0].y}`];
+  for (let index = 1; index < points.length - 1; index += 1) {
+    const current = points[index];
+    const next = points[index + 1];
+    const mid = {
+      x: (current.x + next.x) / 2,
+      y: (current.y + next.y) / 2,
+    };
+    commands.push(`Q ${current.x} ${current.y} ${mid.x} ${mid.y}`);
+  }
+  const last = points[points.length - 1];
+  commands.push(`L ${last.x} ${last.y}`);
+  return commands.join(" ");
+}
+
+function distanceToSegment(point: SchemePosition, start: SchemePosition, end: SchemePosition): number {
+  const dx = end.x - start.x;
+  const dy = end.y - start.y;
+  if (dx === 0 && dy === 0) {
+    return Math.hypot(point.x - start.x, point.y - start.y);
+  }
+  const ratio = clamp(((point.x - start.x) * dx + (point.y - start.y) * dy) / (dx * dx + dy * dy), 0, 1);
+  const projection = { x: start.x + ratio * dx, y: start.y + ratio * dy };
+  return Math.hypot(point.x - projection.x, point.y - projection.y);
+}
+
+function strokeContainsPoint(stroke: SchemeStroke, point: SchemePosition, radius = ERASER_RADIUS): boolean {
+  if (stroke.points.length < 2) return false;
+  const threshold = Math.max(radius, stroke.width / 2 + 6);
+  for (let index = 1; index < stroke.points.length; index += 1) {
+    if (distanceToSegment(point, stroke.points[index - 1], stroke.points[index]) <= threshold) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function eraseStrokesAtPoint(layout: SchemeCanvasLayout, point: SchemePosition): SchemeCanvasLayout {
+  const nextStrokes = layout.strokes.filter((stroke) => stroke.locked || !strokeContainsPoint(stroke, point));
+  return nextStrokes.length === layout.strokes.length ? layout : { ...layout, strokes: nextStrokes };
+}
+
 function cloneLayout(layout: SchemeCanvasLayout): SchemeCanvasLayout {
   return {
     version: layout.version,
@@ -760,6 +849,8 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
   const [refreshing, setRefreshing] = useState(false);
   const [layout, setLayout] = useState<SchemeCanvasLayout>(blankLayout);
   const [tool, setTool] = useState<Tool>("select");
+  const [penColor, setPenColor] = useState(DEFAULT_PEN_COLOR);
+  const [penWidth, setPenWidth] = useState(DEFAULT_PEN_WIDTH);
   const [selectedItems, setSelectedItems] = useState<string[]>([]);
   const [pendingConnector, setPendingConnector] = useState<BoardItemHandle | null>(null);
   const [marquee, setMarquee] = useState<SelectionRect | null>(null);
@@ -1028,6 +1119,17 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
     [],
   );
 
+  const strokePointFromEvent = useCallback(
+    (event: PointerEvent<Element>): SchemeStrokePoint => {
+      const pressure = typeof event.pressure === "number" && event.pressure > 0 ? event.pressure : 1;
+      return {
+        ...pointFromEvent(event),
+        pressure: clamp(pressure, 0, 1),
+      };
+    },
+    [pointFromEvent],
+  );
+
   const updateViewport = useCallback(
     (viewport: SchemeViewport, shouldCommit = false) => {
       const nextLayout = { ...layoutRef.current, viewport };
@@ -1260,14 +1362,18 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
       const point = pointFromEvent(event);
       setPendingConnector(null);
 
-      if (tool === "draw") {
+      if (tool === "draw" || tool === "highlighter") {
+        const strokePoint = strokePointFromEvent(event);
+        const isHighlighter = tool === "highlighter";
         setSelectedItem(null);
         pushUndoSnapshot();
         const stroke: SchemeStroke = {
           id: createId("stroke"),
-          points: [point, point],
-          color: "#111827",
-          width: 3,
+          points: [strokePoint, strokePoint],
+          kind: isHighlighter ? "highlighter" : "pen",
+          color: isHighlighter ? DEFAULT_HIGHLIGHTER_COLOR : penColor,
+          width: isHighlighter ? DEFAULT_HIGHLIGHTER_WIDTH : penWidth,
+          opacity: isHighlighter ? DEFAULT_HIGHLIGHTER_OPACITY : 1,
           locked: false,
           z_index: nextLayerIndex(layoutRef.current),
         };
@@ -1275,6 +1381,15 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
         setLayout(nextLayout);
         layoutRef.current = nextLayout;
         dragRef.current = { type: "stroke", strokeId: stroke.id };
+        return;
+      }
+      if (tool === "eraser") {
+        setSelectedItem(null);
+        pushUndoSnapshot();
+        const nextLayout = eraseStrokesAtPoint(layoutRef.current, point);
+        setLayout(nextLayout);
+        layoutRef.current = nextLayout;
+        dragRef.current = { type: "eraser" };
         return;
       }
       if (tool === "sticky") {
@@ -1321,7 +1436,21 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
         };
       }
     },
-    [addCard, addFrame, addShape, addText, pointFromEvent, pushUndoSnapshot, selected, selectedItems, setSelectedItem, tool],
+    [
+      addCard,
+      addFrame,
+      addShape,
+      addText,
+      penColor,
+      penWidth,
+      pointFromEvent,
+      pushUndoSnapshot,
+      selected,
+      selectedItems,
+      setSelectedItem,
+      strokePointFromEvent,
+      tool,
+    ],
   );
 
   const handlePointerMove = useCallback(
@@ -1338,7 +1467,7 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
         return;
       }
       if (drag.type === "stroke") {
-        const point = pointFromEvent(event);
+        const point = strokePointFromEvent(event);
         setLocalLayout((current) => ({
           ...current,
           strokes: current.strokes.map((stroke) =>
@@ -1347,6 +1476,11 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
               : stroke,
           ),
         }));
+        return;
+      }
+      if (drag.type === "eraser") {
+        const point = pointFromEvent(event);
+        setLocalLayout((current) => eraseStrokesAtPoint(current, point));
         return;
       }
       if (drag.type === "marquee") {
@@ -1417,7 +1551,7 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
         }));
       }
     },
-    [pointFromEvent, positionedNodes, setLocalLayout, updateViewport],
+    [pointFromEvent, positionedNodes, setLocalLayout, strokePointFromEvent, updateViewport],
   );
 
   const handlePointerUp = useCallback(() => {
@@ -1435,6 +1569,7 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
     if (
       drag.type === "pan" ||
       drag.type === "stroke" ||
+      drag.type === "eraser" ||
       drag.type === "multi" ||
       drag.type === "node" ||
       drag.type === "card" ||
@@ -1635,7 +1770,7 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
         const duplicate = {
           ...stroke,
           id: createId("stroke"),
-          points: stroke.points.map((point) => ({ x: point.x + offset, y: point.y + offset })),
+          points: stroke.points.map((point) => ({ ...point, x: point.x + offset, y: point.y + offset })),
           z_index: nextZIndex++,
         };
         nextLayout.strokes.push(duplicate);
@@ -1787,6 +1922,32 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
                 {locale === "ru" ? candidate.ru : candidate.label}
               </button>
             ))}
+            {tool === "draw" ? (
+              <div className="scheme-board__draw-settings" aria-label="Pen settings">
+                <div className="scheme-board__swatches">
+                  {PEN_COLORS.map((color) => (
+                    <button
+                      key={color}
+                      type="button"
+                      className={penColor === color ? "scheme-board__swatch scheme-board__swatch--active" : "scheme-board__swatch"}
+                      style={{ background: color }}
+                      aria-label={`Pen color ${color}`}
+                      aria-pressed={penColor === color}
+                      onClick={() => setPenColor(color)}
+                    />
+                  ))}
+                </div>
+                <input
+                  type="range"
+                  min={PEN_WIDTHS[0]}
+                  max={PEN_WIDTHS[PEN_WIDTHS.length - 1]}
+                  step="1"
+                  value={penWidth}
+                  aria-label="Pen width"
+                  onChange={(event) => setPenWidth(Number(event.target.value))}
+                />
+              </div>
+            ) : null}
             {pendingConnector ? <span>{copy.connectorHint}</span> : null}
           </div>
 
@@ -1853,14 +2014,17 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
                     aria-hidden="true"
                     style={{ zIndex: layerZIndex(stroke.z_index) }}
                   >
-                    <polyline
+                    <path
                       className={[
                         selectedItemSet.has(stroke.id) ? "scheme-board__stroke--selected" : "",
                         stroke.locked ? "scheme-board__item--locked" : "",
                       ].filter(Boolean).join(" ")}
-                      points={stroke.points.map((point) => `${point.x},${point.y}`).join(" ")}
+                      d={strokePath(stroke.points)}
                       stroke={stroke.color}
                       strokeWidth={stroke.width}
+                      strokeOpacity={stroke.opacity}
+                      fill="none"
+                      style={{ strokeWidth: stroke.width }}
                       onPointerDown={(event) => selectBoardItem(event, stroke.id)}
                     />
                   </svg>

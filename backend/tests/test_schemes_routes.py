@@ -33,15 +33,17 @@ async def test_create_list_get_and_update_scheme_layout(client, auth_headers, mo
 
     node_id = payload["current_revision"]["projection"]["nodes"][0]["id"]
     layout = {
-        "version": 6,
+        "version": 7,
         "viewport": {"x": 20, "y": -10, "zoom": 1.2},
         "node_positions": {node_id: {"x": 128.5, "y": -64.25}},
         "strokes": [
             {
                 "id": "stroke-1",
-                "points": [{"x": 1, "y": 2}, {"x": 12, "y": 18}],
-                "color": "#111827",
-                "width": 4,
+                "points": [{"x": 1, "y": 2, "pressure": 0.5}, {"x": 12, "y": 18, "pressure": 0.72}],
+                "kind": "highlighter",
+                "color": "#facc15",
+                "width": 14,
+                "opacity": 0.35,
                 "locked": True,
                 "z_index": 11,
             }
@@ -181,7 +183,7 @@ async def test_scheme_routes_migrate_legacy_node_position_layout(
     )
 
     assert migrated.status_code == 200, migrated.text
-    assert migrated.json()["layout"]["version"] == 6
+    assert migrated.json()["layout"]["version"] == 7
     assert migrated.json()["layout"]["node_positions"] == {node_id: {"x": 40.0, "y": 80.0}}
     assert migrated.json()["layout"]["cards"] == []
     assert migrated.json()["layout"]["sources"] == []
@@ -235,7 +237,7 @@ async def test_scheme_routes_validate_layout_shape(client, auth_headers, monkeyp
         headers=auth_headers,
         json={
             "layout": {
-                "version": 6,
+                "version": 7,
                 "sources": [
                     {
                         "id": "source-bad",
@@ -254,6 +256,25 @@ async def test_scheme_routes_validate_layout_shape(client, auth_headers, monkeyp
     )
 
     assert unsupported_source.status_code == 422
+
+    unsupported_stroke = await client.patch(
+        f"/api/schemes/{created.json()['id']}",
+        headers=auth_headers,
+        json={
+            "layout": {
+                "version": 7,
+                "strokes": [
+                    {
+                        "id": "stroke-bad",
+                        "points": [{"x": 0, "y": 0}, {"x": 10, "y": 10}],
+                        "kind": "airbrush",
+                    }
+                ],
+            }
+        },
+    )
+
+    assert unsupported_stroke.status_code == 422
 
 
 async def test_scheme_routes_are_user_scoped(client, auth_headers, monkeypatch) -> None:

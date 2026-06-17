@@ -355,15 +355,17 @@ describe("api client wrappers", () => {
 
   it("calls scheme board endpoints", async () => {
     const layout = {
-      version: 6 as const,
+      version: 7 as const,
       viewport: { x: 0, y: 0, zoom: 1 },
       node_positions: { "lens:root": { x: 24, y: -12 } },
       strokes: [
         {
           id: "stroke-1",
-          points: [{ x: 0, y: 0 }, { x: 20, y: 40 }],
-          color: "#111827",
-          width: 3,
+          points: [{ x: 0, y: 0, pressure: 1 }, { x: 20, y: 40, pressure: 0.75 }],
+          kind: "pen",
+          color: "#2563eb",
+          width: 5,
+          opacity: 1,
           locked: false,
           z_index: 0,
         },

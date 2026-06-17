@@ -19,7 +19,7 @@ vi.mock("@/lib/api", () => ({
 
 function layout(overrides: Partial<SchemeCanvasLayout> = {}): SchemeCanvasLayout {
   return {
-    version: 6,
+    version: 7,
     viewport: { x: 0, y: 0, zoom: 1 },
     node_positions: {},
     strokes: [],
@@ -175,7 +175,7 @@ describe("SchemesPanel", () => {
         "scheme-1",
         {
           layout: expect.objectContaining({
-            version: 6,
+            version: 7,
             node_positions: expect.objectContaining({
               "signal:decision:1": expect.objectContaining({ x: 380, y: -160 }),
             }),
@@ -196,7 +196,7 @@ describe("SchemesPanel", () => {
         "scheme-1",
         {
           layout: expect.objectContaining({
-            version: 6,
+            version: 7,
             sources: [
               expect.objectContaining({
                 id: "source-block:item:1",
@@ -245,7 +245,7 @@ describe("SchemesPanel", () => {
     const { container } = render(<SchemesPanel />);
 
     await screen.findByTestId("schemes-panel");
-    fireEvent.click(screen.getByRole("button", { name: "Draw" }));
+    fireEvent.click(screen.getByRole("button", { name: "Pen" }));
     const viewport = container.querySelector(".scheme-board__viewport");
     expect(viewport).not.toBeNull();
 
@@ -261,12 +261,66 @@ describe("SchemesPanel", () => {
             strokes: [
               expect.objectContaining({
                 id: "stroke:test-id-1",
+                kind: "pen",
+                color: "#111827",
+                width: 3,
+                opacity: 1,
                 points: expect.arrayContaining([
-                  expect.objectContaining({ x: 20, y: 30 }),
-                  expect.objectContaining({ x: 48, y: 66 }),
+                  expect.objectContaining({ x: 20, y: 30, pressure: 1 }),
+                  expect.objectContaining({ x: 48, y: 66, pressure: 1 }),
                 ]),
               }),
             ],
+          }),
+        },
+      ),
+    );
+  });
+
+  it("persists highlighter strokes and erases unlocked strokes by path", async () => {
+    const { container } = render(<SchemesPanel />);
+
+    await screen.findByTestId("schemes-panel");
+    fireEvent.click(screen.getByRole("button", { name: "Highlight" }));
+    const viewport = container.querySelector(".scheme-board__viewport");
+    expect(viewport).not.toBeNull();
+
+    fireEvent.pointerDown(viewport as Element, { pointerId: 1, clientX: 22, clientY: 32, button: 0 });
+    fireEvent.pointerMove(viewport as Element, { pointerId: 1, clientX: 80, clientY: 32, pressure: 0.6 });
+    fireEvent.pointerUp(viewport as Element, { pointerId: 1, clientX: 80, clientY: 32 });
+
+    await waitFor(() =>
+      expect(mockUpdateScheme).toHaveBeenLastCalledWith(
+        "scheme-1",
+        {
+          layout: expect.objectContaining({
+            strokes: [
+              expect.objectContaining({
+                id: "stroke:test-id-1",
+                kind: "highlighter",
+                color: "#facc15",
+                width: 14,
+                opacity: 0.35,
+                points: expect.arrayContaining([
+                  expect.objectContaining({ x: 80, y: 32, pressure: expect.any(Number) }),
+                ]),
+              }),
+            ],
+          }),
+        },
+      ),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Erase" }));
+    fireEvent.pointerDown(viewport as Element, { pointerId: 2, clientX: 50, clientY: 32, button: 0 });
+    fireEvent.pointerUp(viewport as Element, { pointerId: 2, clientX: 50, clientY: 32 });
+
+    await waitFor(() =>
+      expect(mockUpdateScheme).toHaveBeenLastCalledWith(
+        "scheme-1",
+        {
+          layout: expect.objectContaining({
+            strokes: [],
           }),
         },
       ),

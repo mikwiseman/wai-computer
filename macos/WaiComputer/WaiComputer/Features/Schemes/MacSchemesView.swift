@@ -265,6 +265,8 @@ private enum MacSchemeTool: String, CaseIterable, Identifiable {
     case select
     case pan
     case draw
+    case highlighter
+    case eraser
     case sticky
     case text
     case rectangle
@@ -281,7 +283,11 @@ private enum MacSchemeTool: String, CaseIterable, Identifiable {
         case .pan:
             return OnboardingL10n.text("Hand", "Рука", language: language)
         case .draw:
-            return OnboardingL10n.text("Draw", "Рисовать", language: language)
+            return OnboardingL10n.text("Pen", "Перо", language: language)
+        case .highlighter:
+            return OnboardingL10n.text("Highlight", "Маркер", language: language)
+        case .eraser:
+            return OnboardingL10n.text("Erase", "Ластик", language: language)
         case .sticky:
             return OnboardingL10n.text("Sticky", "Стикер", language: language)
         case .text:
@@ -302,6 +308,8 @@ private enum MacSchemeTool: String, CaseIterable, Identifiable {
         case .select: return "cursorarrow"
         case .pan: return "hand.draw"
         case .draw: return "pencil.tip"
+        case .highlighter: return "highlighter"
+        case .eraser: return "eraser"
         case .sticky: return "note.text"
         case .text: return "textformat"
         case .rectangle: return "rectangle"
@@ -358,6 +366,7 @@ private struct MacSchemeBoard: View {
     @State private var textDrag: ItemDragState?
     @State private var sourceDrag: ItemDragState?
     @State private var draftStrokeId: String?
+    @State private var eraserDidPushUndo = false
     @State private var selectedItemId: String?
     @State private var selectedItemIds: [String] = []
     @State private var pendingConnector: BoardHandle?
@@ -381,6 +390,12 @@ private struct MacSchemeBoard: View {
     private let sourceWidth: Double = 320
     private let sourceHeight: Double = 170
     private let maxPinnedSourceBlocks = 12
+    private let penColor = "#111827"
+    private let penWidth = 3.0
+    private let highlighterColor = "#facc15"
+    private let highlighterWidth = 14.0
+    private let highlighterOpacity = 0.35
+    private let eraserRadius = 14.0
 
     var body: some View {
         VStack(spacing: 0) {
@@ -1099,7 +1114,7 @@ private struct MacSchemeBoard: View {
         }
         for index in next.strokes.indices where selected.contains(next.strokes[index].id) {
             next.strokes[index].points = next.strokes[index].points.map {
-                SchemePosition(x: $0.x + dx, y: $0.y + dy)
+                SchemePosition(x: $0.x + dx, y: $0.y + dy, pressure: $0.pressure)
             }
         }
         for index in next.connectors.indices where selected.contains(next.connectors[index].id) {
@@ -1139,24 +1154,38 @@ private struct MacSchemeBoard: View {
     }
 
     private func boardGesture(size: CGSize) -> some Gesture {
-        DragGesture(minimumDistance: tool == .draw ? 1 : 0)
+        DragGesture(minimumDistance: (tool == .draw || tool == .highlighter || tool == .eraser) ? 1 : 0)
             .onChanged { value in
                 let world = worldPoint(for: value.location, in: size)
                 switch tool {
-                case .draw:
+                case .draw, .highlighter:
                     if let draftStrokeId {
                         appendPoint(world, toStroke: draftStrokeId)
                     } else {
                         pushUndoSnapshot()
+                        let isHighlighter = tool == .highlighter
                         let stroke = SchemeStroke(
                             id: "stroke:\(UUID().uuidString)",
-                            points: [world, world],
+                            points: [
+                                SchemePosition(x: world.x, y: world.y, pressure: 1),
+                                SchemePosition(x: world.x, y: world.y, pressure: 1),
+                            ],
+                            kind: isHighlighter ? "highlighter" : "pen",
+                            color: isHighlighter ? highlighterColor : penColor,
+                            width: isHighlighter ? highlighterWidth : penWidth,
+                            opacity: isHighlighter ? highlighterOpacity : 1,
                             zIndex: nextLayerIndex()
                         )
                         layout.strokes.append(stroke)
                         draftStrokeId = stroke.id
                         selectSingle(stroke.id)
                     }
+                case .eraser:
+                    if !eraserDidPushUndo {
+                        pushUndoSnapshot()
+                        eraserDidPushUndo = true
+                    }
+                    eraseStrokes(at: world)
                 case .pan:
                     if panStart == nil {
                         panStart = layout.viewport
@@ -1192,9 +1221,15 @@ private struct MacSchemeBoard: View {
                     addShape(kind: "ellipse", at: world)
                 case .frame:
                     addFrame(at: world)
-                case .draw:
+                case .draw, .highlighter:
                     draftStrokeId = nil
                     onCommit(layout)
+                case .eraser:
+                    if eraserDidPushUndo {
+                        eraseStrokes(at: world)
+                        onCommit(layout)
+                    }
+                    eraserDidPushUndo = false
                 case .pan:
                     panStart = nil
                     onCommit(layout)
@@ -1506,7 +1541,10 @@ private struct MacSchemeBoard: View {
             }
             context.stroke(
                 path,
-                with: .color(schemeColor(stroke.color, defaultColor: Palette.textPrimary).opacity(stroke.locked ? 0.45 : 1)),
+                with: .color(
+                    schemeColor(stroke.color, defaultColor: Palette.textPrimary)
+                        .opacity(stroke.locked ? min(stroke.opacity, 0.45) : stroke.opacity)
+                ),
                 style: StrokeStyle(lineWidth: CGFloat(stroke.width) * CGFloat(layout.viewport.zoom), lineCap: .round, lineJoin: .round)
             )
         }
@@ -1646,7 +1684,36 @@ private struct MacSchemeBoard: View {
 
     private func appendPoint(_ point: SchemePosition, toStroke strokeId: String) {
         guard let index = layout.strokes.firstIndex(where: { $0.id == strokeId }) else { return }
-        layout.strokes[index].points.append(point)
+        layout.strokes[index].points.append(SchemePosition(x: point.x, y: point.y, pressure: 1))
+    }
+
+    private func eraseStrokes(at point: SchemePosition) {
+        layout.strokes.removeAll { stroke in
+            !stroke.locked && strokeContains(stroke, point: point)
+        }
+    }
+
+    private func strokeContains(_ stroke: SchemeStroke, point: SchemePosition) -> Bool {
+        guard stroke.points.count >= 2 else { return false }
+        let threshold = max(eraserRadius, stroke.width / 2 + 6)
+        for index in 1..<stroke.points.count {
+            if distance(point, toSegmentFrom: stroke.points[index - 1], to: stroke.points[index]) <= threshold {
+                return true
+            }
+        }
+        return false
+    }
+
+    private func distance(_ point: SchemePosition, toSegmentFrom start: SchemePosition, to end: SchemePosition) -> Double {
+        let dx = end.x - start.x
+        let dy = end.y - start.y
+        guard dx != 0 || dy != 0 else {
+            return hypot(point.x - start.x, point.y - start.y)
+        }
+        let rawRatio = ((point.x - start.x) * dx + (point.y - start.y) * dy) / (dx * dx + dy * dy)
+        let ratio = min(1, max(0, rawRatio))
+        let projected = SchemePosition(x: start.x + ratio * dx, y: start.y + ratio * dy)
+        return hypot(point.x - projected.x, point.y - projected.y)
     }
 
     private func handleConnectorTap(id: String) {
@@ -1823,7 +1890,7 @@ private struct MacSchemeBoard: View {
             if var stroke = layout.strokes.first(where: { $0.id == selectedItemId }) {
                 stroke.id = "stroke:\(UUID().uuidString)"
                 stroke.points = stroke.points.map { point in
-                    SchemePosition(x: point.x + offset, y: point.y + offset)
+                    SchemePosition(x: point.x + offset, y: point.y + offset, pressure: point.pressure)
                 }
                 stroke.zIndex = nextLayerIndex()
                 layout.strokes.append(stroke)

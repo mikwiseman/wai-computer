@@ -3,7 +3,7 @@ import { expect, test, type Page, type Route } from "@playwright/test";
 const baseTimestamp = "2026-06-17T10:00:00Z";
 
 type SchemeLayout = {
-  version: 6;
+  version: 7;
   viewport: { x: number; y: number; zoom: number };
   node_positions: Record<string, { x: number; y: number }>;
   strokes: Array<Record<string, unknown>>;
@@ -17,7 +17,7 @@ type SchemeLayout = {
 
 function blankLayout(): SchemeLayout {
   return {
-    version: 6,
+    version: 7,
     viewport: { x: 0, y: 0, zoom: 1 },
     node_positions: {},
     strokes: [],
@@ -244,6 +244,29 @@ test("Schemes board duplicates, locks, and unlocks a placed sticky", async ({ pa
   if (!boardBox) {
     throw new Error("Schemes board viewport is not measurable");
   }
+
+  await page.getByRole("button", { name: "Highlight" }).click();
+  await page.mouse.move(boardBox.x + 120, boardBox.y + 120);
+  await page.mouse.down();
+  await page.mouse.move(boardBox.x + 210, boardBox.y + 120);
+  await page.mouse.up();
+  await expect(page.locator(".scheme-board__svg-item path[stroke='#facc15']")).toHaveCount(1);
+  expect(layoutUpdates.at(-1)?.strokes).toEqual([
+    expect.objectContaining({
+      kind: "highlighter",
+      color: "#facc15",
+      width: 14,
+      opacity: 0.35,
+    }),
+  ]);
+
+  await page.getByRole("button", { name: "Erase" }).click();
+  await page.mouse.move(boardBox.x + 150, boardBox.y + 120);
+  await page.mouse.down();
+  await page.mouse.move(boardBox.x + 200, boardBox.y + 120);
+  await page.mouse.up();
+  await expect(page.locator(".scheme-board__svg-item path[stroke='#facc15']")).toHaveCount(0);
+  expect(layoutUpdates.at(-1)?.strokes).toEqual([]);
 
   await page.getByRole("button", { name: "Sticky" }).click();
   await board.click({ position: { x: Math.max(140, boardBox.width - 140), y: boardBox.height - 100 } });

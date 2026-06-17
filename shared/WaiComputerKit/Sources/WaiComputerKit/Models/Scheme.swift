@@ -3,10 +3,12 @@ import Foundation
 public struct SchemePosition: Codable, Sendable, Equatable {
     public var x: Double
     public var y: Double
+    public var pressure: Double?
 
-    public init(x: Double, y: Double) {
+    public init(x: Double, y: Double, pressure: Double? = nil) {
         self.x = x
         self.y = y
+        self.pressure = pressure
     }
 }
 
@@ -25,25 +27,40 @@ public struct SchemeViewport: Codable, Sendable, Equatable {
 public struct SchemeStroke: Codable, Identifiable, Sendable, Equatable {
     public var id: String
     public var points: [SchemePosition]
+    public var kind: String
     public var color: String
     public var width: Double
+    public var opacity: Double
     public var locked: Bool
     public var zIndex: Int
 
     private enum CodingKeys: String, CodingKey {
         case id
         case points
+        case kind
         case color
         case width
+        case opacity
         case locked
         case zIndex = "z_index"
     }
 
-    public init(id: String, points: [SchemePosition], color: String = "#111827", width: Double = 3, locked: Bool = false, zIndex: Int = 0) {
+    public init(
+        id: String,
+        points: [SchemePosition],
+        kind: String = "pen",
+        color: String = "#111827",
+        width: Double = 3,
+        opacity: Double = 1,
+        locked: Bool = false,
+        zIndex: Int = 0
+    ) {
         self.id = id
         self.points = points
+        self.kind = kind
         self.color = color
         self.width = width
+        self.opacity = opacity
         self.locked = locked
         self.zIndex = zIndex
     }
@@ -52,8 +69,10 @@ public struct SchemeStroke: Codable, Identifiable, Sendable, Equatable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         id = try container.decode(String.self, forKey: .id)
         points = try container.decode([SchemePosition].self, forKey: .points)
+        kind = try container.decodeIfPresent(String.self, forKey: .kind) ?? "pen"
         color = try container.decodeIfPresent(String.self, forKey: .color) ?? "#111827"
         width = try container.decodeIfPresent(Double.self, forKey: .width) ?? 3
+        opacity = try container.decodeIfPresent(Double.self, forKey: .opacity) ?? (kind == "highlighter" ? 0.35 : 1)
         locked = try container.decodeIfPresent(Bool.self, forKey: .locked) ?? false
         zIndex = try container.decodeIfPresent(Int.self, forKey: .zIndex) ?? 0
     }
@@ -474,7 +493,7 @@ public struct SchemeCanvasLayout: Codable, Sendable, Equatable {
     }
 
     public init(
-        version: Int = 6,
+        version: Int = 7,
         viewport: SchemeViewport = SchemeViewport(),
         nodePositions: [String: SchemePosition] = [:],
         strokes: [SchemeStroke] = [],
@@ -500,8 +519,8 @@ public struct SchemeCanvasLayout: Codable, Sendable, Equatable {
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         if container.contains(.version) || container.contains(.nodePositions) {
-            let decodedVersion = try container.decodeIfPresent(Int.self, forKey: .version) ?? 6
-            version = max(decodedVersion, 6)
+            let decodedVersion = try container.decodeIfPresent(Int.self, forKey: .version) ?? 7
+            version = max(decodedVersion, 7)
             viewport = try container.decodeIfPresent(SchemeViewport.self, forKey: .viewport) ?? SchemeViewport()
             nodePositions = try container.decodeIfPresent([String: SchemePosition].self, forKey: .nodePositions) ?? [:]
             strokes = try container.decodeIfPresent([SchemeStroke].self, forKey: .strokes) ?? []
@@ -515,7 +534,7 @@ public struct SchemeCanvasLayout: Codable, Sendable, Equatable {
         }
 
         let legacyPositions = try [String: SchemePosition](from: decoder)
-        version = 6
+        version = 7
         viewport = SchemeViewport()
         nodePositions = legacyPositions
         strokes = []

@@ -25,9 +25,10 @@ from app.models.brain_map import BrainMap, BrainMapRevision
 
 router = APIRouter(prefix="/schemes", tags=["schemes"])
 
-SCHEME_LAYOUT_VERSION = 6
+SCHEME_LAYOUT_VERSION = 7
 SCHEME_SHAPE_KINDS = {"rectangle", "ellipse"}
 SCHEME_SOURCE_KINDS = {"item", "recording", "chat"}
+SCHEME_STROKE_KINDS = {"pen", "highlighter"}
 SCHEME_Z_INDEX_MIN = -1_000_000
 SCHEME_Z_INDEX_MAX = 1_000_000
 
@@ -35,6 +36,10 @@ SCHEME_Z_INDEX_MAX = 1_000_000
 class SchemePosition(BaseModel):
     x: float
     y: float
+
+
+class SchemeStrokePoint(SchemePosition):
+    pressure: float = Field(default=1, ge=0, le=1)
 
 
 class SchemeViewport(BaseModel):
@@ -45,9 +50,11 @@ class SchemeViewport(BaseModel):
 
 class SchemeStroke(BaseModel):
     id: str = Field(min_length=1)
-    points: list[SchemePosition] = Field(min_length=2)
+    points: list[SchemeStrokePoint] = Field(min_length=2)
+    kind: str = Field(default="pen", min_length=1, max_length=40)
     color: str = Field(default="#111827", min_length=1, max_length=40)
     width: float = Field(default=3, gt=0, le=40)
+    opacity: float = Field(default=1, gt=0, le=1)
     locked: bool = False
     z_index: int = Field(default=0, ge=SCHEME_Z_INDEX_MIN, le=SCHEME_Z_INDEX_MAX)
 
@@ -147,6 +154,9 @@ class SchemeCanvasLayout(BaseModel):
 
     @classmethod
     def validate_shape_kinds(cls, layout: "SchemeCanvasLayout") -> "SchemeCanvasLayout":
+        for stroke in layout.strokes:
+            if stroke.kind not in SCHEME_STROKE_KINDS:
+                raise ValueError(f"Unsupported scheme stroke kind: {stroke.kind}")
         for shape in layout.shapes:
             if shape.kind not in SCHEME_SHAPE_KINDS:
                 raise ValueError(f"Unsupported scheme shape kind: {shape.kind}")

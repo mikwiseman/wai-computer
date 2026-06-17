@@ -945,17 +945,25 @@ export interface SchemePosition {
   y: number;
 }
 
+export interface SchemeStrokePoint extends SchemePosition {
+  pressure: number;
+}
+
 export interface SchemeViewport {
   x: number;
   y: number;
   zoom: number;
 }
 
+export type SchemeStrokeKind = "pen" | "highlighter";
+
 export interface SchemeStroke {
   id: string;
-  points: SchemePosition[];
+  points: SchemeStrokePoint[];
+  kind: SchemeStrokeKind;
   color: string;
   width: number;
+  opacity: number;
   locked: boolean;
   z_index: number;
 }
