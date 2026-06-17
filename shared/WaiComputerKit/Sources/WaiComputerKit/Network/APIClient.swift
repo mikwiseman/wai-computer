@@ -1550,6 +1550,50 @@ public actor APIClient {
         try await requestNoContent(.DELETE, path: "/api/comparisons/\(id)")
     }
 
+    // MARK: - Schemes
+
+    public func listSchemes(limit: Int = 50, status: String? = nil) async throws -> SchemesResponse {
+        var queryItems = [URLQueryItem(name: "limit", value: "\(limit)")]
+        if let status {
+            queryItems.append(URLQueryItem(name: "status", value: status))
+        }
+        return try await request(.GET, path: "/api/schemes", queryItems: queryItems)
+    }
+
+    public func createScheme(
+        prompt: String,
+        title: String? = nil,
+        schemeType: String? = nil,
+        sourceScope: [String: JSONValue]? = nil
+    ) async throws -> Scheme {
+        let payload = CreateSchemeRequest(
+            prompt: prompt,
+            title: title,
+            schemeType: schemeType,
+            sourceScope: sourceScope
+        )
+        return try await request(.POST, path: "/api/schemes", body: payload)
+    }
+
+    public func getScheme(id: String) async throws -> Scheme {
+        return try await request(.GET, path: "/api/schemes/\(id)")
+    }
+
+    public func updateSchemeLayout(
+        id: String,
+        layout: SchemeCanvasLayout
+    ) async throws -> Scheme {
+        return try await request(
+            .PATCH,
+            path: "/api/schemes/\(id)",
+            body: UpdateSchemeRequest(layout: layout)
+        )
+    }
+
+    public func refreshScheme(id: String) async throws -> SchemeRevision {
+        return try await request(.POST, path: "/api/schemes/\(id)/refresh")
+    }
+
     // MARK: - Action Items Endpoints
 
     public func listActionItems(status: ActionItem.Status? = nil, priority: ActionItem.Priority? = nil) async throws -> [ActionItem] {
@@ -2245,6 +2289,24 @@ private struct CreateComparisonRequest: Encodable {
         case title
         case intent
     }
+}
+
+private struct CreateSchemeRequest: Encodable {
+    var prompt: String
+    var title: String?
+    var schemeType: String?
+    var sourceScope: [String: JSONValue]?
+
+    private enum CodingKeys: String, CodingKey {
+        case prompt
+        case title
+        case schemeType = "scheme_type"
+        case sourceScope = "source_scope"
+    }
+}
+
+private struct UpdateSchemeRequest: Encodable {
+    var layout: SchemeCanvasLayout
 }
 
 /// PATCH body that always emits folder_id — null moves the object out of its

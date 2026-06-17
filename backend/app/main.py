@@ -36,6 +36,7 @@ from app.api.routes import (
     realtime_voice,
     recordings,
     reminders,
+    schemes,
     search,
     sentry_webhook,
     system,
@@ -212,6 +213,7 @@ app.include_router(folders.router, prefix="/api")
 app.include_router(inbox.router, prefix="/api")
 app.include_router(items.router, prefix="/api")
 app.include_router(comparisons.router, prefix="/api")
+app.include_router(schemes.router, prefix="/api")
 app.include_router(mcp_connect.router, prefix="/api")
 app.include_router(memory_proposals.router, prefix="/api")
 app.include_router(brain_spaces.router, prefix="/api")

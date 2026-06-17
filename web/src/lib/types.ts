@@ -940,6 +940,138 @@ export interface ItemListResponse {
   total: number;
 }
 
+export interface SchemePosition {
+  x: number;
+  y: number;
+}
+
+export interface SchemeViewport {
+  x: number;
+  y: number;
+  zoom: number;
+}
+
+export interface SchemeStroke {
+  id: string;
+  points: SchemePosition[];
+  color: string;
+  width: number;
+}
+
+export interface SchemeCanvasCard {
+  id: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  text: string;
+  color: string;
+}
+
+export type SchemeShapeKind = "rectangle" | "ellipse";
+
+export interface SchemeCanvasShape {
+  id: string;
+  kind: SchemeShapeKind;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  color: string;
+  fill: string;
+}
+
+export interface SchemeConnector {
+  id: string;
+  source_id: string | null;
+  target_id: string | null;
+  points: SchemePosition[];
+  label: string | null;
+  color: string;
+}
+
+export interface SchemeCanvasLayout {
+  version: 2;
+  viewport: SchemeViewport;
+  node_positions: Record<string, SchemePosition>;
+  strokes: SchemeStroke[];
+  cards: SchemeCanvasCard[];
+  shapes: SchemeCanvasShape[];
+  connectors: SchemeConnector[];
+}
+
+export interface SchemeNode {
+  id: string;
+  kind: string;
+  title: string;
+  body?: string | null;
+  lane?: string | null;
+  source_kind?: string;
+  source_id?: string;
+  entity_id?: string;
+  entity_type?: string;
+  citation_ids?: string[];
+  position: SchemePosition;
+}
+
+export interface SchemeEdge {
+  id: string;
+  source: string;
+  target: string;
+  kind: string;
+  label?: string | null;
+  citation_ids?: string[];
+}
+
+export interface SchemeProjection {
+  version: number;
+  scheme_type: string;
+  map_type?: string;
+  title: string;
+  prompt: string;
+  summary: string;
+  nodes: SchemeNode[];
+  edges: SchemeEdge[];
+  stats: Record<string, unknown>;
+  briefing: Record<string, unknown> | null;
+  citations: Array<Record<string, unknown>>;
+  freshness: Record<string, unknown>;
+}
+
+export interface SchemeRevision {
+  id: string;
+  scheme_id: string;
+  revision_index: number;
+  projection: SchemeProjection;
+  source_fingerprint: string;
+  source_count: number;
+  freshness: Record<string, unknown>;
+  diff: Record<string, unknown>;
+  citations: Array<Record<string, unknown>>;
+  compiled_at: string;
+  created_at: string;
+}
+
+export interface Scheme {
+  id: string;
+  space_id: string | null;
+  title: string;
+  prompt: string;
+  scheme_type: string;
+  origin: string;
+  status: string;
+  source_scope: Record<string, unknown> | null;
+  layout: SchemeCanvasLayout | null;
+  current_revision_id: string | null;
+  current_revision: SchemeRevision | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SchemesResponse {
+  schemes: Scheme[];
+}
+
 export interface ComparisonColumn {
   name: string;
   type: string;

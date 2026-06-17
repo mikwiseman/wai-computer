@@ -1,0 +1,914 @@
+"use client";
+
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { PointerEvent, WheelEvent } from "react";
+import {
+  createScheme,
+  getScheme,
+  listSchemes,
+  refreshScheme,
+  updateScheme,
+} from "@/lib/api";
+import type {
+  Scheme,
+  SchemeCanvasCard,
+  SchemeCanvasLayout,
+  SchemeCanvasShape,
+  SchemeConnector,
+  SchemeNode,
+  SchemePosition,
+  SchemeShapeKind,
+  SchemeStroke,
+  SchemeViewport,
+} from "@/lib/types";
+
+type Locale = "en" | "ru";
+type Tool = "select" | "pan" | "draw" | "sticky" | "rectangle" | "ellipse" | "connector";
+type BoardItemKind = "node" | "card" | "shape";
+
+interface SchemesPanelProps {
+  locale?: Locale;
+  onError?: (message: string) => void;
+}
+
+type DragState =
+  | {
+      type: "node";
+      nodeId: string;
+      start: SchemePosition;
+      origin: SchemePosition;
+    }
+  | {
+      type: "card";
+      cardId: string;
+      start: SchemePosition;
+      origin: SchemePosition;
+    }
+  | {
+      type: "shape";
+      shapeId: string;
+      start: SchemePosition;
+      origin: SchemePosition;
+    }
+  | {
+      type: "pan";
+      startClientX: number;
+      startClientY: number;
+      origin: SchemeViewport;
+    }
+  | {
+      type: "stroke";
+      strokeId: string;
+    };
+
+interface BoardItemHandle {
+  id: string;
+  kind: BoardItemKind;
+}
+
+const SCHEME_LAYOUT_VERSION = 2 as const;
+const DEFAULT_VIEWPORT: SchemeViewport = { x: 0, y: 0, zoom: 1 };
+const MIN_ZOOM = 0.25;
+const MAX_ZOOM = 2.8;
+const NODE_WIDTH = 232;
+const NODE_HEIGHT = 132;
+const STICKY_WIDTH = 220;
+const STICKY_HEIGHT = 150;
+const SHAPE_WIDTH = 220;
+const SHAPE_HEIGHT = 130;
+const TOOLS: Array<{ id: Tool; label: string; ru: string }> = [
+  { id: "select", label: "Select", ru: "Выбор" },
+  { id: "pan", label: "Hand", ru: "Рука" },
+  { id: "draw", label: "Draw", ru: "Рисовать" },
+  { id: "sticky", label: "Sticky", ru: "Стикер" },
+  { id: "rectangle", label: "Box", ru: "Блок" },
+  { id: "ellipse", label: "Oval", ru: "Овал" },
+  { id: "connector", label: "Connect", ru: "Связь" },
+];
+
+const COPY = {
+  en: {
+    title: "Schemes",
+    subtitle: "Infinite boards for mapping evidence, decisions, drawings, and working structure.",
+    promptPlaceholder: "Map a project, decision, timeline, or open question",
+    create: "Create scheme",
+    creating: "Creating...",
+    refresh: "Refresh evidence",
+    refreshing: "Refreshing...",
+    emptyTitle: "No schemes yet",
+    emptyBody: "Create one from a prompt. Wai will build a cited board from your recordings, materials, and chats.",
+    noSelection: "Select a scheme or create a new one.",
+    noProjection: "No cited projection yet. You can still draw and structure the board.",
+    reset: "Reset view",
+    zoomIn: "Zoom in",
+    zoomOut: "Zoom out",
+    delete: "Delete",
+    source: (count: number) => `${count} source${count === 1 ? "" : "s"}`,
+    connectorHint: "Click a second object to connect it.",
+    loading: "Loading...",
+  },
+  ru: {
+    title: "Схемы",
+    subtitle: "Бесконечные доски для фактов, решений, рисунков и рабочей структуры.",
+    promptPlaceholder: "Собрать карту проекта, решения, таймлайна или вопроса",
+    create: "Создать схему",
+    creating: "Создаем...",
+    refresh: "Обновить факты",
+    refreshing: "Обновляем...",
+    emptyTitle: "Схем пока нет",
+    emptyBody: "Создайте схему по запросу. Wai соберет доску с источниками из записей, материалов и чатов.",
+    noSelection: "Выберите схему или создайте новую.",
+    noProjection: "Проекции пока нет. На доске уже можно рисовать и собирать структуру.",
+    reset: "Сбросить вид",
+    zoomIn: "Приблизить",
+    zoomOut: "Отдалить",
+    delete: "Удалить",
+    source: (count: number) => `${count} источн.`,
+    connectorHint: "Нажмите второй объект, чтобы соединить.",
+    loading: "Загрузка...",
+  },
+} as const;
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
+}
+
+function blankLayout(): SchemeCanvasLayout {
+  return {
+    version: SCHEME_LAYOUT_VERSION,
+    viewport: { ...DEFAULT_VIEWPORT },
+    node_positions: {},
+    strokes: [],
+    cards: [],
+    shapes: [],
+    connectors: [],
+  };
+}
+
+function isPosition(value: unknown): value is SchemePosition {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    typeof (value as { x?: unknown }).x === "number" &&
+    typeof (value as { y?: unknown }).y === "number"
+  );
+}
+
+function layoutForScheme(scheme: Scheme | null): SchemeCanvasLayout {
+  const raw = scheme?.layout;
+  if (!raw) return blankLayout();
+  const maybeLegacy = raw as unknown as Record<string, unknown>;
+  if (!("version" in maybeLegacy) && Object.values(maybeLegacy).every(isPosition)) {
+    return { ...blankLayout(), node_positions: maybeLegacy as Record<string, SchemePosition> };
+  }
+  return {
+    ...blankLayout(),
+    ...raw,
+    viewport: { ...DEFAULT_VIEWPORT, ...(raw.viewport ?? {}) },
+    node_positions: raw.node_positions ?? {},
+    strokes: raw.strokes ?? [],
+    cards: raw.cards ?? [],
+    shapes: raw.shapes ?? [],
+    connectors: raw.connectors ?? [],
+  };
+}
+
+function nodePosition(node: SchemeNode, layout: SchemeCanvasLayout): SchemePosition {
+  return layout.node_positions[node.id] ?? node.position;
+}
+
+function nodeKindLabel(kind: string): string {
+  return kind.replaceAll("_", " ");
+}
+
+function createId(prefix: string): string {
+  return `${prefix}:${crypto.randomUUID()}`;
+}
+
+function applyRevision(scheme: Scheme, revision: NonNullable<Scheme["current_revision"]>): Scheme {
+  return {
+    ...scheme,
+    current_revision_id: revision.id,
+    current_revision: revision,
+  };
+}
+
+function itemCenter(
+  itemId: string | null,
+  nodes: SchemeNode[],
+  layout: SchemeCanvasLayout,
+): SchemePosition | null {
+  if (!itemId) return null;
+  const node = nodes.find((candidate) => candidate.id === itemId);
+  if (node) {
+    return { x: node.position.x + NODE_WIDTH / 2, y: node.position.y + NODE_HEIGHT / 2 };
+  }
+  const card = layout.cards.find((candidate) => candidate.id === itemId);
+  if (card) {
+    return { x: card.x + card.width / 2, y: card.y + card.height / 2 };
+  }
+  const shape = layout.shapes.find((candidate) => candidate.id === itemId);
+  if (shape) {
+    return { x: shape.x + shape.width / 2, y: shape.y + shape.height / 2 };
+  }
+  return null;
+}
+
+function shapePath(shape: SchemeCanvasShape): string {
+  if (shape.kind === "ellipse") {
+    const rx = shape.width / 2;
+    const ry = shape.height / 2;
+    const cx = shape.x + rx;
+    const cy = shape.y + ry;
+    return [
+      `M ${cx - rx} ${cy}`,
+      `a ${rx} ${ry} 0 1 0 ${shape.width} 0`,
+      `a ${rx} ${ry} 0 1 0 ${-shape.width} 0`,
+    ].join(" ");
+  }
+  return `M ${shape.x} ${shape.y} h ${shape.width} v ${shape.height} h ${-shape.width} Z`;
+}
+
+export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
+  const copy = COPY[locale];
+  const [schemes, setSchemes] = useState<Scheme[]>([]);
+  const [selected, setSelected] = useState<Scheme | null>(null);
+  const [prompt, setPrompt] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [creating, setCreating] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [layout, setLayout] = useState<SchemeCanvasLayout>(blankLayout);
+  const [tool, setTool] = useState<Tool>("select");
+  const [selectedItem, setSelectedItem] = useState<string | null>(null);
+  const [pendingConnector, setPendingConnector] = useState<BoardItemHandle | null>(null);
+  const dragRef = useRef<DragState | null>(null);
+  const viewportRef = useRef<HTMLDivElement | null>(null);
+  const selectedRef = useRef<Scheme | null>(null);
+  const layoutRef = useRef<SchemeCanvasLayout>(layout);
+  const wheelCommitRef = useRef<number | null>(null);
+
+  const selectedId = selected?.id ?? null;
+  selectedRef.current = selected;
+  layoutRef.current = layout;
+
+  const reportError = useCallback(
+    (err: unknown, defaultMessage: string) => {
+      onError?.(err instanceof Error ? err.message : defaultMessage);
+    },
+    [onError],
+  );
+
+  const replaceScheme = useCallback((scheme: Scheme) => {
+    setSelected(scheme);
+    setLayout(layoutForScheme(scheme));
+    setSchemes((current) => current.map((item) => (item.id === scheme.id ? scheme : item)));
+  }, []);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const response = await listSchemes();
+      setSchemes(response.schemes);
+      setSelected((current) => {
+        if (current && response.schemes.some((scheme) => scheme.id === current.id)) {
+          return response.schemes.find((scheme) => scheme.id === current.id) ?? current;
+        }
+        return response.schemes[0] ?? null;
+      });
+    } catch (err) {
+      reportError(err, "Couldn't load schemes.");
+    } finally {
+      setLoading(false);
+    }
+  }, [reportError]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  useEffect(
+    () => () => {
+      if (wheelCommitRef.current !== null) {
+        window.clearTimeout(wheelCommitRef.current);
+      }
+    },
+    [],
+  );
+
+  useEffect(() => {
+    setLayout(layoutForScheme(selectedRef.current));
+    setSelectedItem(null);
+    setPendingConnector(null);
+  }, [selectedId]);
+
+  const projection = selected?.current_revision?.projection ?? null;
+  const positionedNodes = useMemo(() => {
+    if (!projection) return [];
+    return projection.nodes.map((node) => ({
+      ...node,
+      position: nodePosition(node, layout),
+    }));
+  }, [projection, layout]);
+  const nodeById = useMemo(
+    () => new Map(positionedNodes.map((node) => [node.id, node])),
+    [positionedNodes],
+  );
+  const canDeleteSelected = useMemo(() => {
+    if (!selectedItem) return false;
+    return (
+      layout.cards.some((card) => card.id === selectedItem) ||
+      layout.shapes.some((shape) => shape.id === selectedItem) ||
+      layout.strokes.some((stroke) => stroke.id === selectedItem) ||
+      layout.connectors.some((connector) => connector.id === selectedItem)
+    );
+  }, [layout.cards, layout.connectors, layout.shapes, layout.strokes, selectedItem]);
+
+  const commitLayout = useCallback(
+    async (nextLayout: SchemeCanvasLayout) => {
+      if (!selectedRef.current) return;
+      try {
+        const updated = await updateScheme(selectedRef.current.id, { layout: nextLayout });
+        replaceScheme(updated);
+      } catch (err) {
+        reportError(err, "Couldn't save scheme board.");
+      }
+    },
+    [replaceScheme, reportError],
+  );
+
+  const setLocalLayout = useCallback((updater: (current: SchemeCanvasLayout) => SchemeCanvasLayout) => {
+    setLayout((current) => {
+      const next = updater(current);
+      layoutRef.current = next;
+      return next;
+    });
+  }, []);
+
+  const handleSelect = useCallback(
+    async (scheme: Scheme) => {
+      setSelected(scheme);
+      setLayout(layoutForScheme(scheme));
+      try {
+        const detail = await getScheme(scheme.id);
+        replaceScheme(detail);
+      } catch (err) {
+        reportError(err, "Couldn't open scheme.");
+      }
+    },
+    [replaceScheme, reportError],
+  );
+
+  const handleCreate = useCallback(async () => {
+    const value = prompt.trim();
+    if (!value || creating) return;
+    setCreating(true);
+    try {
+      const created = await createScheme({ prompt: value });
+      setPrompt("");
+      setSchemes((current) => [created, ...current.filter((item) => item.id !== created.id)]);
+      setSelected(created);
+      setLayout(layoutForScheme(created));
+    } catch (err) {
+      reportError(err, "Couldn't create scheme.");
+    } finally {
+      setCreating(false);
+    }
+  }, [creating, prompt, reportError]);
+
+  const handleRefresh = useCallback(async () => {
+    if (!selected || refreshing) return;
+    setRefreshing(true);
+    try {
+      const revision = await refreshScheme(selected.id);
+      const next = applyRevision(selected, revision);
+      replaceScheme(next);
+    } catch (err) {
+      reportError(err, "Couldn't refresh scheme.");
+    } finally {
+      setRefreshing(false);
+    }
+  }, [refreshing, replaceScheme, reportError, selected]);
+
+  const pointFromEvent = useCallback(
+    (event: PointerEvent<Element>): SchemePosition => {
+      const rect = viewportRef.current?.getBoundingClientRect();
+      if (!rect) return { x: 0, y: 0 };
+      return {
+        x:
+          (event.clientX - rect.left - rect.width / 2 - layoutRef.current.viewport.x) /
+          layoutRef.current.viewport.zoom,
+        y:
+          (event.clientY - rect.top - rect.height / 2 - layoutRef.current.viewport.y) /
+          layoutRef.current.viewport.zoom,
+      };
+    },
+    [],
+  );
+
+  const updateViewport = useCallback(
+    (viewport: SchemeViewport, shouldCommit = false) => {
+      const nextLayout = { ...layoutRef.current, viewport };
+      setLayout(nextLayout);
+      layoutRef.current = nextLayout;
+      if (shouldCommit) void commitLayout(nextLayout);
+    },
+    [commitLayout],
+  );
+
+  const addCard = useCallback(
+    (point: SchemePosition) => {
+      const card: SchemeCanvasCard = {
+        id: createId("card"),
+        x: point.x - STICKY_WIDTH / 2,
+        y: point.y - STICKY_HEIGHT / 2,
+        width: STICKY_WIDTH,
+        height: STICKY_HEIGHT,
+        text: locale === "ru" ? "Заметка" : "Note",
+        color: "#f7d774",
+      };
+      const nextLayout = { ...layoutRef.current, cards: [...layoutRef.current.cards, card] };
+      setSelectedItem(card.id);
+      setLayout(nextLayout);
+      layoutRef.current = nextLayout;
+      void commitLayout(nextLayout);
+    },
+    [commitLayout, locale],
+  );
+
+  const addShape = useCallback(
+    (point: SchemePosition, kind: SchemeShapeKind) => {
+      const shape: SchemeCanvasShape = {
+        id: createId("shape"),
+        kind,
+        x: point.x - SHAPE_WIDTH / 2,
+        y: point.y - SHAPE_HEIGHT / 2,
+        width: SHAPE_WIDTH,
+        height: SHAPE_HEIGHT,
+        color: kind === "ellipse" ? "#7c3aed" : "#2563eb",
+        fill: "transparent",
+      };
+      const nextLayout = { ...layoutRef.current, shapes: [...layoutRef.current.shapes, shape] };
+      setSelectedItem(shape.id);
+      setLayout(nextLayout);
+      layoutRef.current = nextLayout;
+      void commitLayout(nextLayout);
+    },
+    [commitLayout],
+  );
+
+  const addConnector = useCallback(
+    (source: BoardItemHandle, target: BoardItemHandle) => {
+      if (source.id === target.id) return;
+      const connector: SchemeConnector = {
+        id: createId("connector"),
+        source_id: source.id,
+        target_id: target.id,
+        points: [],
+        label: null,
+        color: "#475569",
+      };
+      const nextLayout = {
+        ...layoutRef.current,
+        connectors: [...layoutRef.current.connectors, connector],
+      };
+      setPendingConnector(null);
+      setSelectedItem(connector.id);
+      setLayout(nextLayout);
+      layoutRef.current = nextLayout;
+      void commitLayout(nextLayout);
+    },
+    [commitLayout],
+  );
+
+  const handleItemPointerDown = useCallback(
+    (event: PointerEvent<Element>, item: BoardItemHandle, position: SchemePosition) => {
+      if (event.button !== 0) return;
+      event.stopPropagation();
+      setSelectedItem(item.id);
+      if (tool === "connector") {
+        if (pendingConnector) {
+          addConnector(pendingConnector, item);
+        } else {
+          setPendingConnector(item);
+        }
+        return;
+      }
+      if (tool !== "select") return;
+      event.currentTarget.setPointerCapture?.(event.pointerId);
+      const start = pointFromEvent(event);
+      if (item.kind === "node") {
+        dragRef.current = { type: "node", nodeId: item.id, start, origin: position };
+      } else if (item.kind === "card") {
+        dragRef.current = { type: "card", cardId: item.id, start, origin: position };
+      } else {
+        dragRef.current = { type: "shape", shapeId: item.id, start, origin: position };
+      }
+    },
+    [addConnector, pendingConnector, pointFromEvent, tool],
+  );
+
+  const handleViewportPointerDown = useCallback(
+    (event: PointerEvent<HTMLDivElement>) => {
+      if (event.button !== 0 || !selected) return;
+      const target = event.target as HTMLElement;
+      if (target.closest("[data-scheme-board-item='true']")) return;
+      event.currentTarget.setPointerCapture?.(event.pointerId);
+      const point = pointFromEvent(event);
+      setSelectedItem(null);
+      setPendingConnector(null);
+
+      if (tool === "draw") {
+        const stroke: SchemeStroke = {
+          id: createId("stroke"),
+          points: [point, point],
+          color: "#111827",
+          width: 3,
+        };
+        const nextLayout = { ...layoutRef.current, strokes: [...layoutRef.current.strokes, stroke] };
+        setLayout(nextLayout);
+        layoutRef.current = nextLayout;
+        dragRef.current = { type: "stroke", strokeId: stroke.id };
+        return;
+      }
+      if (tool === "sticky") {
+        addCard(point);
+        return;
+      }
+      if (tool === "rectangle" || tool === "ellipse") {
+        addShape(point, tool);
+        return;
+      }
+      if (tool === "pan" || tool === "select") {
+        dragRef.current = {
+          type: "pan",
+          startClientX: event.clientX,
+          startClientY: event.clientY,
+          origin: layoutRef.current.viewport,
+        };
+      }
+    },
+    [addCard, addShape, pointFromEvent, selected, tool],
+  );
+
+  const handlePointerMove = useCallback(
+    (event: PointerEvent<HTMLDivElement>) => {
+      const drag = dragRef.current;
+      if (!drag) return;
+      if (drag.type === "pan") {
+        const nextViewport = {
+          ...drag.origin,
+          x: drag.origin.x + event.clientX - drag.startClientX,
+          y: drag.origin.y + event.clientY - drag.startClientY,
+        };
+        updateViewport(nextViewport);
+        return;
+      }
+      if (drag.type === "stroke") {
+        const point = pointFromEvent(event);
+        setLocalLayout((current) => ({
+          ...current,
+          strokes: current.strokes.map((stroke) =>
+            stroke.id === drag.strokeId
+              ? { ...stroke, points: [...stroke.points, point] }
+              : stroke,
+          ),
+        }));
+        return;
+      }
+
+      const point = pointFromEvent(event);
+      const dx = point.x - drag.start.x;
+      const dy = point.y - drag.start.y;
+      if (drag.type === "node") {
+        setLocalLayout((current) => ({
+          ...current,
+          node_positions: {
+            ...current.node_positions,
+            [drag.nodeId]: { x: drag.origin.x + dx, y: drag.origin.y + dy },
+          },
+        }));
+      } else if (drag.type === "card") {
+        setLocalLayout((current) => ({
+          ...current,
+          cards: current.cards.map((card) =>
+            card.id === drag.cardId ? { ...card, x: drag.origin.x + dx, y: drag.origin.y + dy } : card,
+          ),
+        }));
+      } else if (drag.type === "shape") {
+        setLocalLayout((current) => ({
+          ...current,
+          shapes: current.shapes.map((shape) =>
+            shape.id === drag.shapeId
+              ? { ...shape, x: drag.origin.x + dx, y: drag.origin.y + dy }
+              : shape,
+          ),
+        }));
+      }
+    },
+    [pointFromEvent, setLocalLayout, updateViewport],
+  );
+
+  const handlePointerUp = useCallback(() => {
+    if (!dragRef.current) return;
+    const drag = dragRef.current;
+    dragRef.current = null;
+    if (drag.type === "pan" || drag.type === "stroke" || drag.type === "node" || drag.type === "card" || drag.type === "shape") {
+      void commitLayout(layoutRef.current);
+    }
+  }, [commitLayout]);
+
+  const handleWheel = useCallback(
+    (event: WheelEvent<HTMLDivElement>) => {
+      if (!selected) return;
+      event.preventDefault();
+      const rect = viewportRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      const current = layoutRef.current.viewport;
+      const before = {
+        x: (event.clientX - rect.left - rect.width / 2 - current.x) / current.zoom,
+        y: (event.clientY - rect.top - rect.height / 2 - current.y) / current.zoom,
+      };
+      const nextZoom = clamp(current.zoom * (event.deltaY > 0 ? 0.92 : 1.08), MIN_ZOOM, MAX_ZOOM);
+      const nextViewport = {
+        x: event.clientX - rect.left - rect.width / 2 - before.x * nextZoom,
+        y: event.clientY - rect.top - rect.height / 2 - before.y * nextZoom,
+        zoom: nextZoom,
+      };
+      updateViewport(nextViewport);
+      if (wheelCommitRef.current !== null) {
+        window.clearTimeout(wheelCommitRef.current);
+      }
+      wheelCommitRef.current = window.setTimeout(() => {
+        void commitLayout(layoutRef.current);
+        wheelCommitRef.current = null;
+      }, 300);
+    },
+    [commitLayout, selected, updateViewport],
+  );
+
+  const handleCardTextChange = useCallback((cardId: string, text: string) => {
+    setLocalLayout((current) => ({
+      ...current,
+      cards: current.cards.map((card) => (card.id === cardId ? { ...card, text } : card)),
+    }));
+  }, [setLocalLayout]);
+
+  const deleteSelected = useCallback(() => {
+    if (!selectedItem || !canDeleteSelected) return;
+    const nextLayout = {
+      ...layoutRef.current,
+      cards: layoutRef.current.cards.filter((card) => card.id !== selectedItem),
+      shapes: layoutRef.current.shapes.filter((shape) => shape.id !== selectedItem),
+      strokes: layoutRef.current.strokes.filter((stroke) => stroke.id !== selectedItem),
+      connectors: layoutRef.current.connectors.filter(
+        (connector) =>
+          connector.id !== selectedItem &&
+          connector.source_id !== selectedItem &&
+          connector.target_id !== selectedItem,
+      ),
+    };
+    setSelectedItem(null);
+    setLayout(nextLayout);
+    layoutRef.current = nextLayout;
+    void commitLayout(nextLayout);
+  }, [canDeleteSelected, commitLayout, selectedItem]);
+
+  const setZoom = useCallback(
+    (nextZoom: number) => {
+      updateViewport({ ...layoutRef.current.viewport, zoom: clamp(nextZoom, MIN_ZOOM, MAX_ZOOM) }, true);
+    },
+    [updateViewport],
+  );
+
+  const resetView = useCallback(() => {
+    updateViewport({ ...DEFAULT_VIEWPORT }, true);
+  }, [updateViewport]);
+
+  const worldTransform = `translate(${layout.viewport.x}px, ${layout.viewport.y}px) scale(${layout.viewport.zoom})`;
+
+  return (
+    <section className="schemes-panel" data-testid="schemes-panel">
+      <header className="schemes-panel__header">
+        <div>
+          <h3>{copy.title}</h3>
+          <p>{copy.subtitle}</p>
+        </div>
+        <form
+          className="schemes-panel__create"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void handleCreate();
+          }}
+        >
+          <input
+            value={prompt}
+            onChange={(event) => setPrompt(event.target.value)}
+            placeholder={copy.promptPlaceholder}
+            aria-label={copy.promptPlaceholder}
+          />
+          <button type="submit" disabled={!prompt.trim() || creating}>
+            {creating ? copy.creating : copy.create}
+          </button>
+        </form>
+      </header>
+
+      <div className="schemes-panel__body">
+        <aside className="schemes-panel__list" aria-label={copy.title}>
+          {loading ? (
+            <p className="schemes-panel__status">{copy.loading}</p>
+          ) : schemes.length === 0 ? (
+            <div className="schemes-panel__empty">
+              <strong>{copy.emptyTitle}</strong>
+              <span>{copy.emptyBody}</span>
+            </div>
+          ) : (
+            schemes.map((scheme) => (
+              <button
+                key={scheme.id}
+                type="button"
+                className={`scheme-list-row ${selected?.id === scheme.id ? "scheme-list-row--active" : ""}`}
+                aria-current={selected?.id === scheme.id ? "true" : undefined}
+                onClick={() => void handleSelect(scheme)}
+              >
+                <strong>{scheme.title}</strong>
+                <span>
+                  {nodeKindLabel(scheme.scheme_type)} /{" "}
+                  {copy.source(scheme.current_revision?.source_count ?? 0)}
+                </span>
+              </button>
+            ))
+          )}
+        </aside>
+
+        <div className="scheme-board">
+          <div className="scheme-board__toolbar">
+            <div>
+              <strong>{selected?.title ?? copy.title}</strong>
+              <span>
+                {projection?.summary ?? (selected ? copy.noProjection : copy.noSelection)}
+              </span>
+            </div>
+            <div className="scheme-board__actions">
+              {selected ? <span>{copy.source(selected.current_revision?.source_count ?? 0)}</span> : null}
+              <button type="button" onClick={() => setZoom(layout.viewport.zoom - 0.12)}>
+                {copy.zoomOut}
+              </button>
+              <button type="button" onClick={() => setZoom(layout.viewport.zoom + 0.12)}>
+                {copy.zoomIn}
+              </button>
+              <button type="button" onClick={resetView}>
+                {copy.reset}
+              </button>
+              <button type="button" disabled={!canDeleteSelected} onClick={deleteSelected}>
+                {copy.delete}
+              </button>
+              <button type="button" disabled={!selected || refreshing} onClick={() => void handleRefresh()}>
+                {refreshing ? copy.refreshing : copy.refresh}
+              </button>
+            </div>
+          </div>
+
+          <div className="scheme-board__tools" role="toolbar" aria-label="Scheme board tools">
+            {TOOLS.map((candidate) => (
+              <button
+                key={candidate.id}
+                type="button"
+                className={tool === candidate.id ? "scheme-board__tool scheme-board__tool--active" : "scheme-board__tool"}
+                aria-pressed={tool === candidate.id}
+                onClick={() => {
+                  setTool(candidate.id);
+                  setPendingConnector(null);
+                }}
+              >
+                {locale === "ru" ? candidate.ru : candidate.label}
+              </button>
+            ))}
+            {pendingConnector ? <span>{copy.connectorHint}</span> : null}
+          </div>
+
+          {selected ? (
+            <div
+              ref={viewportRef}
+              className={`scheme-board__viewport scheme-board__viewport--${tool}`}
+              onPointerDown={handleViewportPointerDown}
+              onPointerMove={handlePointerMove}
+              onPointerUp={handlePointerUp}
+              onPointerCancel={handlePointerUp}
+              onWheel={handleWheel}
+            >
+              <div className="scheme-board__grid" />
+              <div className="scheme-board__world" style={{ transform: worldTransform }}>
+                <svg className="scheme-board__edges" aria-hidden="true">
+                  {projection?.edges.map((edge) => {
+                    const source = nodeById.get(edge.source);
+                    const target = nodeById.get(edge.target);
+                    if (!source || !target) return null;
+                    return (
+                      <line
+                        key={edge.id}
+                        x1={source.position.x + NODE_WIDTH / 2}
+                        y1={source.position.y + NODE_HEIGHT / 2}
+                        x2={target.position.x + NODE_WIDTH / 2}
+                        y2={target.position.y + NODE_HEIGHT / 2}
+                      />
+                    );
+                  })}
+                  {layout.connectors.map((connector) => {
+                    const source = itemCenter(connector.source_id, positionedNodes, layout);
+                    const target = itemCenter(connector.target_id, positionedNodes, layout);
+                    const points = source && target ? [source, target] : connector.points;
+                    if (points.length < 2) return null;
+                    return (
+                      <polyline
+                        key={connector.id}
+                        className={selectedItem === connector.id ? "scheme-board__connector--selected" : undefined}
+                        points={points.map((point) => `${point.x},${point.y}`).join(" ")}
+                        stroke={connector.color}
+                        onPointerDown={(event) => {
+                          event.stopPropagation();
+                          setSelectedItem(connector.id);
+                        }}
+                      />
+                    );
+                  })}
+                  {layout.strokes.map((stroke) => (
+                    <polyline
+                      key={stroke.id}
+                      className={selectedItem === stroke.id ? "scheme-board__stroke--selected" : undefined}
+                      points={stroke.points.map((point) => `${point.x},${point.y}`).join(" ")}
+                      stroke={stroke.color}
+                      strokeWidth={stroke.width}
+                      onPointerDown={(event) => {
+                        event.stopPropagation();
+                        setSelectedItem(stroke.id);
+                      }}
+                    />
+                  ))}
+                  {layout.shapes.map((shape) => (
+                    <path
+                      key={shape.id}
+                      data-scheme-board-item="true"
+                      className={selectedItem === shape.id ? "scheme-board__shape--selected" : undefined}
+                      d={shapePath(shape)}
+                      stroke={shape.color}
+                      fill={shape.fill}
+                      onPointerDown={(event) =>
+                        handleItemPointerDown(event, { id: shape.id, kind: "shape" }, { x: shape.x, y: shape.y })
+                      }
+                    />
+                  ))}
+                </svg>
+
+                {positionedNodes.map((node) => (
+                  <button
+                    key={node.id}
+                    type="button"
+                    data-scheme-board-item="true"
+                    className={`scheme-node scheme-node--${node.kind} ${selectedItem === node.id ? "scheme-node--selected" : ""}`}
+                    style={{ left: node.position.x, top: node.position.y }}
+                    aria-label={`${node.title} ${node.body ?? ""}`.trim()}
+                    onPointerDown={(event) =>
+                      handleItemPointerDown(event, { id: node.id, kind: "node" }, node.position)
+                    }
+                  >
+                    <span>{nodeKindLabel(node.kind)}</span>
+                    <strong>{node.title}</strong>
+                    {node.body ? <small>{node.body}</small> : null}
+                  </button>
+                ))}
+
+                {layout.cards.map((card) => (
+                  <div
+                    key={card.id}
+                    data-scheme-board-item="true"
+                    className={`scheme-sticky ${selectedItem === card.id ? "scheme-sticky--selected" : ""}`}
+                    style={{
+                      left: card.x,
+                      top: card.y,
+                      width: card.width,
+                      height: card.height,
+                      backgroundColor: card.color,
+                    }}
+                    onPointerDown={(event) =>
+                      handleItemPointerDown(event, { id: card.id, kind: "card" }, { x: card.x, y: card.y })
+                    }
+                  >
+                    <textarea
+                      value={card.text}
+                      aria-label="Sticky note"
+                      onPointerDown={(event) => event.stopPropagation()}
+                      onChange={(event) => handleCardTextChange(card.id, event.target.value)}
+                      onBlur={() => void commitLayout(layoutRef.current)}
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <div className="scheme-board__placeholder">{copy.noSelection}</div>
+          )}
+        </div>
+      </div>
+    </section>
+  );
+}

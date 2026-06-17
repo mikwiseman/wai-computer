@@ -19,6 +19,17 @@ final class MacContentFeedViewModelTests: XCTestCase {
         XCTAssertFalse(propertyNames.contains("isComparing"))
     }
 
+    func testMacShellRoutesSchemesFromSidebarToDetailView() throws {
+        let shellSource = try macSource("WaiComputer/App/MacContentView.swift")
+
+        XCTAssertTrue(shellSource.contains("case schemes"))
+        XCTAssertTrue(shellSource.contains("identifier: \"schemes\""))
+        XCTAssertTrue(shellSource.contains("selectedSection = .schemes"))
+        XCTAssertTrue(shellSource.contains("MacSchemesView(apiClient: appState.getAPIClient())"))
+        XCTAssertBefore("identifier: \"inbox\"", "identifier: \"schemes\"", in: shellSource)
+        XCTAssertBefore("identifier: \"schemes\"", "identifier: \"trash\"", in: shellSource)
+    }
+
     func testContentFeedViewDoesNotRenderSelectionControls() throws {
         let testFile = URL(fileURLWithPath: #filePath)
         let viewFile = testFile

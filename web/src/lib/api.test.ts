@@ -353,6 +353,45 @@ describe("api client wrappers", () => {
     ).rejects.toThrow("Media upload response missing recording_id.");
   });
 
+  it("calls scheme board endpoints", async () => {
+    const layout = {
+      version: 2 as const,
+      viewport: { x: 0, y: 0, zoom: 1 },
+      node_positions: { "lens:root": { x: 24, y: -12 } },
+      strokes: [
+        {
+          id: "stroke-1",
+          points: [{ x: 0, y: 0 }, { x: 20, y: 40 }],
+          color: "#111827",
+          width: 3,
+        },
+      ],
+      cards: [],
+      shapes: [],
+      connectors: [],
+    };
+
+    await api.listSchemes();
+    await api.createScheme({ prompt: "Map recent decisions" });
+    await api.getScheme("scheme-1");
+    await api.updateScheme("scheme-1", { layout });
+    await api.refreshScheme("scheme-1");
+
+    expect(mockedApiFetch).toHaveBeenNthCalledWith(1, "/api/schemes");
+    expect(mockedApiFetch).toHaveBeenNthCalledWith(2, "/api/schemes", {
+      method: "POST",
+      body: JSON.stringify({ prompt: "Map recent decisions" }),
+    });
+    expect(mockedApiFetch).toHaveBeenNthCalledWith(3, "/api/schemes/scheme-1");
+    expect(mockedApiFetch).toHaveBeenNthCalledWith(4, "/api/schemes/scheme-1", {
+      method: "PATCH",
+      body: JSON.stringify({ layout }),
+    });
+    expect(mockedApiFetch).toHaveBeenNthCalledWith(5, "/api/schemes/scheme-1/refresh", {
+      method: "POST",
+    });
+  });
+
   it("applies createRecording defaults", async () => {
     await api.createRecording({});
     expect(mockedApiFetch).toHaveBeenCalledWith("/api/recordings", {

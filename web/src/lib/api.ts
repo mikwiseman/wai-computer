@@ -63,6 +63,10 @@ import type {
   SelfHostMigrationContract,
   SelfHostProvisionRequest,
   SelfHostProvisionResponse,
+  Scheme,
+  SchemeCanvasLayout,
+  SchemeRevision,
+  SchemesResponse,
   StartAgentRunRequest,
   TranscriptSegmentInput,
   SpeakerStatsResponse,
@@ -807,6 +811,52 @@ export function reprocessItem(itemId: string, input?: { body?: string }): Promis
   return apiFetch<Item>(`/api/items/${itemId}/reprocess`, {
     method: "POST",
     body: JSON.stringify(input ?? {}),
+  });
+}
+
+// --- Schemes: infinite boards over cited brain projections ---
+
+export function listSchemes(params?: {
+  status?: string;
+  limit?: number;
+}): Promise<SchemesResponse> {
+  return apiFetch<SchemesResponse>(`/api/schemes${asQuery(params ?? {})}`);
+}
+
+export function createScheme(input: {
+  prompt: string;
+  title?: string | null;
+  scheme_type?: string | null;
+  origin?: string;
+  source_scope?: Record<string, unknown> | null;
+}): Promise<Scheme> {
+  return apiFetch<Scheme>("/api/schemes", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function getScheme(schemeId: string): Promise<Scheme> {
+  return apiFetch<Scheme>(`/api/schemes/${schemeId}`);
+}
+
+export function updateScheme(
+  schemeId: string,
+  input: {
+    title?: string | null;
+    status?: string | null;
+    layout?: SchemeCanvasLayout | null;
+  },
+): Promise<Scheme> {
+  return apiFetch<Scheme>(`/api/schemes/${schemeId}`, {
+    method: "PATCH",
+    body: JSON.stringify(input),
+  });
+}
+
+export function refreshScheme(schemeId: string): Promise<SchemeRevision> {
+  return apiFetch<SchemeRevision>(`/api/schemes/${schemeId}/refresh`, {
+    method: "POST",
   });
 }
 
