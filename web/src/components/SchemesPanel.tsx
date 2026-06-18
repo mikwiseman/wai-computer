@@ -58,6 +58,18 @@ interface BoardItemBounds {
   height: number;
 }
 
+interface BoardBounds {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+interface BoardViewportSize {
+  width: number;
+  height: number;
+}
+
 interface ResizeLimits {
   minWidth: number;
   minHeight: number;
@@ -167,6 +179,10 @@ const DEFAULT_VIEWPORT: SchemeViewport = { x: 0, y: 0, zoom: 1 };
 const MIN_ZOOM = 0.25;
 const MAX_ZOOM = 2.8;
 const FRAME_FOCUS_PADDING = 96;
+const BOARD_FIT_PADDING = 112;
+const OVERVIEW_WIDTH = 200;
+const OVERVIEW_HEIGHT = 140;
+const OVERVIEW_PADDING = 10;
 const DEFAULT_GRID_SIZE = 40;
 const MIN_GRID_SIZE = 8;
 const MAX_GRID_SIZE = 240;
@@ -230,6 +246,8 @@ const COPY = {
     frames: "Frames",
     previousFrame: "Previous frame",
     nextFrame: "Next frame",
+    fitBoard: "Fit board",
+    overview: "Board overview",
     duplicate: "Duplicate",
     lock: "Lock",
     unlock: "Unlock",
@@ -265,6 +283,8 @@ const COPY = {
     frames: "Фреймы",
     previousFrame: "Предыдущий фрейм",
     nextFrame: "Следующий фрейм",
+    fitBoard: "Вся доска",
+    overview: "Обзор доски",
     duplicate: "Дублировать",
     lock: "Заблокировать",
     unlock: "Разблокировать",
@@ -356,6 +376,21 @@ function viewportForFrame(frame: SchemeCanvasFrame, rect: DOMRect): SchemeViewpo
   return {
     x: -centerX * zoom,
     y: -centerY * zoom,
+    zoom,
+  };
+}
+
+function viewportForBounds(bounds: BoardBounds, rect: DOMRect): SchemeViewport {
+  const availableWidth = Math.max(1, rect.width - BOARD_FIT_PADDING);
+  const availableHeight = Math.max(1, rect.height - BOARD_FIT_PADDING);
+  const zoom = clamp(
+    Math.min(availableWidth / Math.max(1, bounds.width), availableHeight / Math.max(1, bounds.height)),
+    MIN_ZOOM,
+    MAX_ZOOM,
+  );
+  return {
+    x: -(bounds.x + bounds.width / 2) * zoom,
+    y: -(bounds.y + bounds.height / 2) * zoom,
     zoom,
   };
 }
@@ -672,6 +707,81 @@ function boundsFromPoints(id: string, points: SchemePosition[]): BoardItemBounds
     y,
     width: Math.max(...xs) - x,
     height: Math.max(...ys) - y,
+  };
+}
+
+function contentBoundsForItems(items: BoardItemBounds[]): BoardBounds | null {
+  if (items.length === 0) return null;
+  const minX = Math.min(...items.map((item) => item.x));
+  const minY = Math.min(...items.map((item) => item.y));
+  const maxX = Math.max(...items.map((item) => item.x + Math.max(1, item.width)));
+  const maxY = Math.max(...items.map((item) => item.y + Math.max(1, item.height)));
+  return {
+    x: minX,
+    y: minY,
+    width: Math.max(1, maxX - minX),
+    height: Math.max(1, maxY - minY),
+  };
+}
+
+function overviewMetrics(bounds: BoardBounds, width: number, height: number) {
+  const availableWidth = Math.max(1, width - OVERVIEW_PADDING * 2);
+  const availableHeight = Math.max(1, height - OVERVIEW_PADDING * 2);
+  const scale = Math.min(
+    availableWidth / Math.max(1, bounds.width),
+    availableHeight / Math.max(1, bounds.height),
+  );
+  const scaledWidth = bounds.width * scale;
+  const scaledHeight = bounds.height * scale;
+  return {
+    scale,
+    originX: (width - scaledWidth) / 2,
+    originY: (height - scaledHeight) / 2,
+  };
+}
+
+function overviewItemStyle(item: BoardItemBounds, bounds: BoardBounds) {
+  const metrics = overviewMetrics(bounds, OVERVIEW_WIDTH, OVERVIEW_HEIGHT);
+  return {
+    left: metrics.originX + (item.x - bounds.x) * metrics.scale,
+    top: metrics.originY + (item.y - bounds.y) * metrics.scale,
+    width: Math.max(2, item.width * metrics.scale),
+    height: Math.max(2, item.height * metrics.scale),
+  };
+}
+
+function overviewViewportStyle(
+  viewport: SchemeViewport,
+  viewportSize: BoardViewportSize,
+  bounds: BoardBounds,
+) {
+  if (viewportSize.width <= 1 || viewportSize.height <= 1) return null;
+  const metrics = overviewMetrics(bounds, OVERVIEW_WIDTH, OVERVIEW_HEIGHT);
+  const zoom = Math.max(MIN_ZOOM, viewport.zoom);
+  const worldViewport = {
+    x: (-viewportSize.width / 2 - viewport.x) / zoom,
+    y: (-viewportSize.height / 2 - viewport.y) / zoom,
+    width: viewportSize.width / zoom,
+    height: viewportSize.height / zoom,
+  };
+  return {
+    left: metrics.originX + (worldViewport.x - bounds.x) * metrics.scale,
+    top: metrics.originY + (worldViewport.y - bounds.y) * metrics.scale,
+    width: Math.max(2, worldViewport.width * metrics.scale),
+    height: Math.max(2, worldViewport.height * metrics.scale),
+  };
+}
+
+function overviewPointFromEvent(
+  clientX: number,
+  clientY: number,
+  rect: DOMRect,
+  bounds: BoardBounds,
+): SchemePosition {
+  const metrics = overviewMetrics(bounds, rect.width, rect.height);
+  return {
+    x: bounds.x + (clientX - rect.left - metrics.originX) / metrics.scale,
+    y: bounds.y + (clientY - rect.top - metrics.originY) / metrics.scale,
   };
 }
 
@@ -1216,6 +1326,7 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
   const [marquee, setMarquee] = useState<SelectionRect | null>(null);
   const [lassoPoints, setLassoPoints] = useState<SchemePosition[]>([]);
   const [historyCounts, setHistoryCounts] = useState({ undo: 0, redo: 0 });
+  const [viewportSize, setViewportSize] = useState<BoardViewportSize>({ width: 0, height: 0 });
   const dragRef = useRef<DragState | null>(null);
   const viewportRef = useRef<HTMLDivElement | null>(null);
   const selectedRef = useRef<Scheme | null>(null);
@@ -1290,6 +1401,20 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
     setHistoryCounts({ undo: 0, redo: 0 });
   }, [selectedId, setSelectedItem]);
 
+  useEffect(() => {
+    const measureViewport = () => {
+      const rect = viewportRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      setViewportSize((current) => {
+        if (current.width === rect.width && current.height === rect.height) return current;
+        return { width: rect.width, height: rect.height };
+      });
+    };
+    measureViewport();
+    window.addEventListener("resize", measureViewport);
+    return () => window.removeEventListener("resize", measureViewport);
+  }, [selectedId]);
+
   const projection = selected?.current_revision?.projection ?? null;
   const positionedNodes = useMemo(() => {
     if (!projection) return [];
@@ -1330,6 +1455,12 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
     if (selectedItems.length !== 1 || isLayoutItemLocked(selectedItems[0], layout)) return null;
     return resizableItem(layout, selectedItems[0]);
   }, [layout, selectedItems]);
+  const boardItems = useMemo(() => layoutItemBounds(layout, positionedNodes), [layout, positionedNodes]);
+  const boardContentBounds = useMemo(() => contentBoundsForItems(boardItems), [boardItems]);
+  const overviewViewport = useMemo(
+    () => (boardContentBounds ? overviewViewportStyle(layout.viewport, viewportSize, boardContentBounds) : null),
+    [boardContentBounds, layout.viewport, viewportSize],
+  );
   const projectionSources = useMemo(() => projectionSourceSummaries(projection), [projection]);
   const unpinnedProjectionSources = useMemo(() => {
     const pinned = new Set(layout.sources.map((source) => source.citation_id));
@@ -2334,6 +2465,56 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
     updateViewport({ ...DEFAULT_VIEWPORT }, true);
   }, [updateViewport]);
 
+  const fitBoard = useCallback(() => {
+    const rect = viewportRef.current?.getBoundingClientRect();
+    if (!rect || !boardContentBounds) return;
+    updateViewport(viewportForBounds(boardContentBounds, rect), true);
+  }, [boardContentBounds, updateViewport]);
+
+  const focusOverviewPoint = useCallback(
+    (point: SchemePosition) => {
+      updateViewport(
+        {
+          ...layoutRef.current.viewport,
+          x: -point.x * layoutRef.current.viewport.zoom,
+          y: -point.y * layoutRef.current.viewport.zoom,
+        },
+        true,
+      );
+    },
+    [updateViewport],
+  );
+
+  const focusFromOverviewEvent = useCallback(
+    (event: PointerEvent<HTMLButtonElement>) => {
+      if (!boardContentBounds) return;
+      const rect = event.currentTarget.getBoundingClientRect();
+      focusOverviewPoint(overviewPointFromEvent(event.clientX, event.clientY, rect, boardContentBounds));
+    },
+    [boardContentBounds, focusOverviewPoint],
+  );
+
+  const handleOverviewPointerDown = useCallback(
+    (event: PointerEvent<HTMLButtonElement>) => {
+      if (!boardContentBounds || event.button !== 0) return;
+      event.preventDefault();
+      event.stopPropagation();
+      event.currentTarget.setPointerCapture?.(event.pointerId);
+      focusFromOverviewEvent(event);
+    },
+    [boardContentBounds, focusFromOverviewEvent],
+  );
+
+  const handleOverviewPointerMove = useCallback(
+    (event: PointerEvent<HTMLButtonElement>) => {
+      if (!boardContentBounds || (event.buttons & 1) !== 1) return;
+      event.preventDefault();
+      event.stopPropagation();
+      focusFromOverviewEvent(event);
+    },
+    [boardContentBounds, focusFromOverviewEvent],
+  );
+
   const handleViewportKeyDown = useCallback(
     (event: KeyboardEvent<HTMLDivElement>) => {
       if (isEditableElement(event.target)) return;
@@ -2472,6 +2653,9 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
               </button>
               <button type="button" onClick={resetView}>
                 {copy.reset}
+              </button>
+              <button type="button" disabled={!boardContentBounds} onClick={fitBoard}>
+                {copy.fitBoard}
               </button>
               <button type="button" disabled={!canDeleteSelected} onClick={deleteSelected}>
                 {copy.delete}
@@ -2906,6 +3090,26 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
                   </svg>
                 ) : null}
               </div>
+              {boardContentBounds ? (
+                <button
+                  type="button"
+                  className="scheme-board__overview"
+                  aria-label={copy.overview}
+                  onPointerDown={handleOverviewPointerDown}
+                  onPointerMove={handleOverviewPointerMove}
+                >
+                  {boardItems.map((item) => (
+                    <span
+                      key={item.id}
+                      className="scheme-board__overview-item"
+                      style={overviewItemStyle(item, boardContentBounds)}
+                    />
+                  ))}
+                  {overviewViewport ? (
+                    <span className="scheme-board__overview-viewport" style={overviewViewport} />
+                  ) : null}
+                </button>
+              ) : null}
             </div>
           ) : (
             <div className="scheme-board__placeholder">{copy.noSelection}</div>

@@ -5459,6 +5459,43 @@ a.primary-button[aria-disabled="true"]:hover {
   transform-origin: 0 0;
 }
 
+.scheme-board__overview {
+  position: absolute;
+  left: 0.85rem;
+  bottom: 0.85rem;
+  width: 200px;
+  height: 140px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0;
+  overflow: hidden;
+  background:
+    linear-gradient(color-mix(in srgb, var(--ink) 7%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in srgb, var(--ink) 7%, transparent) 1px, transparent 1px),
+    color-mix(in srgb, var(--surface) 94%, var(--accent) 6%);
+  background-size: 18px 18px;
+  box-shadow: 0 14px 34px color-mix(in srgb, var(--ink) 16%, transparent);
+  cursor: crosshair;
+  z-index: 1000004;
+}
+
+.scheme-board__overview-item {
+  position: absolute;
+  border: 1px solid color-mix(in srgb, var(--accent) 62%, transparent);
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--accent) 24%, transparent);
+  pointer-events: none;
+}
+
+.scheme-board__overview-viewport {
+  position: absolute;
+  border: 2px solid var(--accent);
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--surface) 90%, transparent);
+  pointer-events: none;
+}
+
 .scheme-board__marquee {
   position: absolute;
   border: 1px solid var(--accent);

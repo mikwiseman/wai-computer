@@ -348,6 +348,71 @@ describe("SchemesPanel", () => {
     expect(focusedLayout.viewport.y).toBeLessThan(0);
   });
 
+  it("fits the whole board and jumps the camera from the board overview", async () => {
+    const boardLayout = layout({
+      cards: [
+        {
+          id: "card-far",
+          x: 2400,
+          y: 1200,
+          width: 260,
+          height: 180,
+          text: "Far plan",
+          color: "#f7d774",
+          locked: false,
+          z_index: 4,
+        },
+      ],
+    });
+    mockListSchemes.mockResolvedValue({ schemes: [scheme({ layout: boardLayout })] });
+    mockGetScheme.mockResolvedValue(scheme({ layout: boardLayout }));
+    const { container } = render(<SchemesPanel />);
+
+    await screen.findByText("Far plan");
+    const viewport = container.querySelector(".scheme-board__viewport") as HTMLElement | null;
+    expect(viewport).not.toBeNull();
+    vi.spyOn(viewport as HTMLElement, "getBoundingClientRect").mockReturnValue({
+      x: 0,
+      y: 0,
+      left: 0,
+      top: 0,
+      right: 1000,
+      bottom: 600,
+      width: 1000,
+      height: 600,
+      toJSON: () => ({}),
+    } as DOMRect);
+
+    fireEvent.click(screen.getByRole("button", { name: "Fit board" }));
+
+    await waitFor(() => expect(mockUpdateScheme).toHaveBeenCalled());
+    const fitLayout = mockUpdateScheme.mock.calls.at(-1)?.[1]?.layout as SchemeCanvasLayout;
+    expect(fitLayout.viewport.zoom).toBeLessThan(1);
+    expect(fitLayout.viewport.x).toBeLessThan(-250);
+    expect(fitLayout.viewport.y).toBeLessThan(-100);
+
+    const overview = screen.getByRole("button", { name: "Board overview" }) as HTMLElement;
+    vi.spyOn(overview, "getBoundingClientRect").mockReturnValue({
+      x: 0,
+      y: 0,
+      left: 0,
+      top: 0,
+      right: 200,
+      bottom: 140,
+      width: 200,
+      height: 140,
+      toJSON: () => ({}),
+    } as DOMRect);
+    fireEvent.pointerDown(overview, { pointerId: 1, clientX: 100, clientY: 70, button: 0, buttons: 1 });
+    fireEvent.pointerMove(overview, { pointerId: 1, clientX: 190, clientY: 120, buttons: 1 });
+
+    await waitFor(() => {
+      const overviewLayout = mockUpdateScheme.mock.calls.at(-1)?.[1]?.layout as SchemeCanvasLayout;
+      expect(overviewLayout.viewport.x).toBeLessThan(-600);
+      expect(overviewLayout.viewport.y).toBeLessThan(-250);
+    });
+  });
+
   it("draws a persisted freehand stroke", async () => {
     const { container } = render(<SchemesPanel />);
 

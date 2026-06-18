@@ -434,6 +434,7 @@ private struct MacSchemeBoard: View {
     private let minGridSize = 8.0
     private let maxGridSize = 240.0
     private let frameFocusPadding = 96.0
+    private let boardFitPadding = 112.0
 
     var body: some View {
         VStack(spacing: 0) {
@@ -522,6 +523,22 @@ private struct MacSchemeBoard: View {
                             .position(x: marqueeRect.midX, y: marqueeRect.midY)
                             .zIndex(1_000_001)
                             .allowsHitTesting(false)
+                    }
+
+                    if let boardContentBounds {
+                        MacSchemeOverviewMap(
+                            bounds: boardContentBounds,
+                            items: itemBounds(),
+                            viewport: layout.viewport,
+                            boardSize: proxy.size,
+                            onFocus: focusBoardOverviewPoint
+                        )
+                        .frame(width: 180, height: 126)
+                        .position(
+                            x: proxy.size.width >= 208 ? 104 : proxy.size.width / 2,
+                            y: max(78, proxy.size.height - 78)
+                        )
+                        .zIndex(1_000_004)
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -727,6 +744,15 @@ private struct MacSchemeBoard: View {
             .help(t("Reset View", "Сбросить вид"))
 
             Button {
+                fitBoard()
+            } label: {
+                Image(systemName: "arrow.down.right.and.arrow.up.left")
+            }
+            .buttonStyle(WaiGhostButtonStyle())
+            .disabled(boardContentBounds == nil)
+            .help(t("Fit Board", "Вся доска"))
+
+            Button {
                 deleteSelected()
             } label: {
                 Image(systemName: "trash")
@@ -908,16 +934,48 @@ private struct MacSchemeBoard: View {
         orderedFrames.map(\.id)
     }
 
+    private var boardContentBounds: CGRect? {
+        let rects = itemBounds().map(\.rect)
+        guard var bounds = rects.first else { return nil }
+        for rect in rects.dropFirst() {
+            bounds = bounds.union(rect)
+        }
+        return CGRect(
+            x: bounds.minX,
+            y: bounds.minY,
+            width: max(1, bounds.width),
+            height: max(1, bounds.height)
+        )
+    }
+
+    private func viewportForBounds(_ bounds: CGRect, in size: CGSize, padding: Double) -> SchemeViewport {
+        guard size.width > 1, size.height > 1 else { return layout.viewport }
+        let availableWidth = max(1, Double(size.width) - padding)
+        let availableHeight = max(1, Double(size.height) - padding)
+        let zoom = min(
+            2.8,
+            max(
+                0.25,
+                min(
+                    availableWidth / max(1, Double(bounds.width)),
+                    availableHeight / max(1, Double(bounds.height))
+                )
+            )
+        )
+        return SchemeViewport(
+            x: -Double(bounds.midX) * zoom,
+            y: -Double(bounds.midY) * zoom,
+            zoom: zoom
+        )
+    }
+
     private func focusFrame(_ frame: SchemeCanvasFrame) {
         guard boardSize.width > 1, boardSize.height > 1 else { return }
-        let availableWidth = max(1, Double(boardSize.width) - frameFocusPadding)
-        let availableHeight = max(1, Double(boardSize.height) - frameFocusPadding)
-        let zoom = min(2.8, max(0.25, min(availableWidth / frame.width, availableHeight / frame.height)))
         layout.frameOrder = normalisedFrameOrder()
-        layout.viewport = SchemeViewport(
-            x: -(frame.x + frame.width / 2) * zoom,
-            y: -(frame.y + frame.height / 2) * zoom,
-            zoom: zoom
+        layout.viewport = viewportForBounds(
+            CGRect(x: frame.x, y: frame.y, width: frame.width, height: frame.height),
+            in: boardSize,
+            padding: frameFocusPadding
         )
         selectSingle(frame.id)
         onCommit(layout)
@@ -930,6 +988,21 @@ private struct MacSchemeBoard: View {
         let baseIndex = currentIndex ?? (offset > 0 ? -1 : 0)
         let nextIndex = (baseIndex + offset + frames.count) % frames.count
         focusFrame(frames[nextIndex])
+    }
+
+    private func fitBoard() {
+        guard boardSize.width > 1, boardSize.height > 1, let boardContentBounds else { return }
+        layout.viewport = viewportForBounds(boardContentBounds, in: boardSize, padding: boardFitPadding)
+        onCommit(layout)
+    }
+
+    private func focusBoardOverviewPoint(_ point: SchemePosition) {
+        layout.viewport = SchemeViewport(
+            x: -point.x * layout.viewport.zoom,
+            y: -point.y * layout.viewport.zoom,
+            zoom: layout.viewport.zoom
+        )
+        onCommit(layout)
     }
 
     private var selectedCardId: String? {
@@ -2606,6 +2679,140 @@ private enum SchemeNodeProxy {
             citationIds: source.citationIds,
             position: position
         )
+    }
+}
+
+private struct MacSchemeOverviewMap: View {
+    let bounds: CGRect
+    let items: [(id: String, rect: CGRect)]
+    let viewport: SchemeViewport
+    let boardSize: CGSize
+    let onFocus: (SchemePosition) -> Void
+
+    private struct Metrics {
+        let scale: CGFloat
+        let originX: CGFloat
+        let originY: CGFloat
+    }
+
+    private let padding: CGFloat = 10
+
+    var body: some View {
+        GeometryReader { proxy in
+            let metrics = overviewMetrics(size: proxy.size)
+            ZStack(alignment: .topLeading) {
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(Color(nsColor: .textBackgroundColor).opacity(0.94))
+
+                GridLines()
+                    .stroke(Palette.border.opacity(0.6), lineWidth: 0.5)
+
+                ForEach(items.indices, id: \.self) { index in
+                    let rect = overviewRect(items[index].rect, metrics: metrics)
+                    RoundedRectangle(cornerRadius: 3)
+                        .fill(Palette.accent.opacity(0.24))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 3)
+                                .stroke(Palette.accent.opacity(0.62), lineWidth: 1)
+                        )
+                        .frame(width: rect.width, height: rect.height)
+                        .position(x: rect.midX, y: rect.midY)
+                }
+
+                if let rect = viewportRect(metrics: metrics) {
+                    RoundedRectangle(cornerRadius: 4)
+                        .fill(Palette.accent.opacity(0.10))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 4)
+                                .stroke(Palette.accent, lineWidth: 1.5)
+                        )
+                        .frame(width: rect.width, height: rect.height)
+                        .position(x: rect.midX, y: rect.midY)
+                }
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .overlay(
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(Palette.border, lineWidth: 1)
+            )
+            .shadow(color: Color.black.opacity(0.14), radius: 12, y: 4)
+            .contentShape(RoundedRectangle(cornerRadius: 8))
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { value in
+                        onFocus(worldPoint(value.location, metrics: metrics))
+                    }
+                    .onEnded { value in
+                        onFocus(worldPoint(value.location, metrics: metrics))
+                    }
+            )
+            .accessibilityIdentifier("scheme-board-overview")
+            .accessibilityLabel(Text("Board overview"))
+        }
+    }
+
+    private func overviewMetrics(size: CGSize) -> Metrics {
+        let availableWidth = max(1, size.width - padding * 2)
+        let availableHeight = max(1, size.height - padding * 2)
+        let scale = min(
+            availableWidth / max(1, bounds.width),
+            availableHeight / max(1, bounds.height)
+        )
+        let scaledWidth = bounds.width * scale
+        let scaledHeight = bounds.height * scale
+        return Metrics(
+            scale: scale,
+            originX: (size.width - scaledWidth) / 2,
+            originY: (size.height - scaledHeight) / 2
+        )
+    }
+
+    private func overviewRect(_ rect: CGRect, metrics: Metrics) -> CGRect {
+        CGRect(
+            x: metrics.originX + (rect.minX - bounds.minX) * metrics.scale,
+            y: metrics.originY + (rect.minY - bounds.minY) * metrics.scale,
+            width: max(2, rect.width * metrics.scale),
+            height: max(2, rect.height * metrics.scale)
+        )
+    }
+
+    private func viewportRect(metrics: Metrics) -> CGRect? {
+        guard boardSize.width > 1, boardSize.height > 1, viewport.zoom > 0 else { return nil }
+        let zoom = CGFloat(viewport.zoom)
+        let worldRect = CGRect(
+            x: (-boardSize.width / 2 - CGFloat(viewport.x)) / zoom,
+            y: (-boardSize.height / 2 - CGFloat(viewport.y)) / zoom,
+            width: boardSize.width / zoom,
+            height: boardSize.height / zoom
+        )
+        return overviewRect(worldRect, metrics: metrics)
+    }
+
+    private func worldPoint(_ point: CGPoint, metrics: Metrics) -> SchemePosition {
+        SchemePosition(
+            x: Double(bounds.minX + (point.x - metrics.originX) / metrics.scale),
+            y: Double(bounds.minY + (point.y - metrics.originY) / metrics.scale)
+        )
+    }
+
+    private struct GridLines: Shape {
+        func path(in rect: CGRect) -> Path {
+            var path = Path()
+            let spacing: CGFloat = 18
+            var x = spacing
+            while x < rect.width {
+                path.move(to: CGPoint(x: x, y: 0))
+                path.addLine(to: CGPoint(x: x, y: rect.height))
+                x += spacing
+            }
+            var y = spacing
+            while y < rect.height {
+                path.move(to: CGPoint(x: 0, y: y))
+                path.addLine(to: CGPoint(x: rect.width, y: y))
+                y += spacing
+            }
+            return path
+        }
     }
 }
 

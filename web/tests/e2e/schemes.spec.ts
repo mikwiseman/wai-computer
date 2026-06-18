@@ -247,6 +247,7 @@ test("Schemes board duplicates, locks, and unlocks a placed sticky", async ({ pa
 
   const board = page.locator(".scheme-board__viewport");
   await expect(board).toBeVisible();
+  await expect(page.getByRole("button", { name: "Board overview" })).toBeVisible();
   const boardBox = await board.boundingBox();
   if (!boardBox) {
     throw new Error("Schemes board viewport is not measurable");
