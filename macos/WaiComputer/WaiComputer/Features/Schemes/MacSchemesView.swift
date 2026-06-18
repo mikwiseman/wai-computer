@@ -440,117 +440,128 @@ private struct MacSchemeBoard: View {
         VStack(spacing: 0) {
             controls
 
-            GeometryReader { proxy in
-                ZStack(alignment: .topLeading) {
-                    Canvas { context, size in
-                        drawBoard(context: context, size: size)
-                    }
-                    .zIndex(0)
+            HStack(spacing: 0) {
+                GeometryReader { proxy in
+                    ZStack(alignment: .topLeading) {
+                        Canvas { context, size in
+                            drawBoard(context: context, size: size)
+                        }
+                        .zIndex(0)
 
-                    ForEach(layout.frames) { frame in
-                        MacSchemeFrameView(frame: frame)
-                            .frame(width: CGFloat(frame.width), height: CGFloat(frame.height))
-                            .overlay(selectionOverlay(id: frame.id))
-                            .overlay(resizeHandleOverlay(id: frame.id, kind: .frame))
-                            .position(screenPoint(for: frameCenter(frame), in: proxy.size))
-                            .zIndex(layerZIndex(frame.zIndex))
-                            .highPriorityGesture(frameGesture(for: frame))
-                            .accessibilityIdentifier("scheme-frame-\(frame.id)")
-                    }
+                        ForEach(layout.frames) { frame in
+                            MacSchemeFrameView(frame: frame)
+                                .frame(width: CGFloat(frame.width), height: CGFloat(frame.height))
+                                .overlay(selectionOverlay(id: frame.id))
+                                .overlay(resizeHandleOverlay(id: frame.id, kind: .frame))
+                                .position(screenPoint(for: frameCenter(frame), in: proxy.size))
+                                .zIndex(layerZIndex(frame.zIndex))
+                                .highPriorityGesture(frameGesture(for: frame))
+                                .accessibilityIdentifier("scheme-frame-\(frame.id)")
+                        }
 
-                    ForEach(layout.texts) { text in
-                        MacSchemeTextBlockView(text: text)
-                            .frame(width: CGFloat(text.width), height: CGFloat(text.height))
-                            .overlay(selectionOverlay(id: text.id))
-                            .overlay(resizeHandleOverlay(id: text.id, kind: .text))
-                            .position(screenPoint(for: textCenter(text), in: proxy.size))
-                            .zIndex(layerZIndex(text.zIndex))
-                            .highPriorityGesture(textGesture(for: text))
-                            .accessibilityIdentifier("scheme-text-\(text.id)")
-                    }
+                        ForEach(layout.texts) { text in
+                            MacSchemeTextBlockView(text: text)
+                                .frame(width: CGFloat(text.width), height: CGFloat(text.height))
+                                .overlay(selectionOverlay(id: text.id))
+                                .overlay(resizeHandleOverlay(id: text.id, kind: .text))
+                                .position(screenPoint(for: textCenter(text), in: proxy.size))
+                                .zIndex(layerZIndex(text.zIndex))
+                                .highPriorityGesture(textGesture(for: text))
+                                .accessibilityIdentifier("scheme-text-\(text.id)")
+                        }
 
-                    ForEach(layout.sources) { source in
-                        MacSchemeSourceBlockView(source: source)
-                            .frame(width: CGFloat(source.width), height: CGFloat(source.height))
-                            .overlay(selectionOverlay(id: source.id))
-                            .overlay(resizeHandleOverlay(id: source.id, kind: .source))
-                            .position(screenPoint(for: sourceCenter(source), in: proxy.size))
-                            .zIndex(layerZIndex(source.zIndex))
-                            .highPriorityGesture(sourceGesture(for: source))
-                            .accessibilityIdentifier("scheme-source-\(source.id)")
-                    }
+                        ForEach(layout.sources) { source in
+                            MacSchemeSourceBlockView(source: source)
+                                .frame(width: CGFloat(source.width), height: CGFloat(source.height))
+                                .overlay(selectionOverlay(id: source.id))
+                                .overlay(resizeHandleOverlay(id: source.id, kind: .source))
+                                .position(screenPoint(for: sourceCenter(source), in: proxy.size))
+                                .zIndex(layerZIndex(source.zIndex))
+                                .highPriorityGesture(sourceGesture(for: source))
+                                .accessibilityIdentifier("scheme-source-\(source.id)")
+                        }
 
-                    ForEach(positionedNodes) { node in
-                        MacSchemeNodeCard(node: node)
-                            .frame(width: nodeWidth, height: nodeHeight)
-                            .overlay(selectionOverlay(id: node.id))
-                            .position(screenPoint(for: nodeCenter(node), in: proxy.size))
-                            .zIndex(20)
-                            .highPriorityGesture(nodeGesture(for: node))
-                            .accessibilityIdentifier("scheme-node-\(node.id)")
-                    }
+                        ForEach(positionedNodes) { node in
+                            MacSchemeNodeCard(node: node)
+                                .frame(width: nodeWidth, height: nodeHeight)
+                                .overlay(selectionOverlay(id: node.id))
+                                .position(screenPoint(for: nodeCenter(node), in: proxy.size))
+                                .zIndex(20)
+                                .highPriorityGesture(nodeGesture(for: node))
+                                .accessibilityIdentifier("scheme-node-\(node.id)")
+                        }
 
-                    ForEach(layout.cards) { card in
-                        MacSchemeStickyCard(card: card)
-                            .frame(width: CGFloat(card.width), height: CGFloat(card.height))
-                            .overlay(selectionOverlay(id: card.id))
-                            .overlay(resizeHandleOverlay(id: card.id, kind: .card))
-                            .position(screenPoint(for: cardCenter(card), in: proxy.size))
-                            .zIndex(layerZIndex(card.zIndex))
-                            .highPriorityGesture(cardGesture(for: card))
-                            .accessibilityIdentifier("scheme-card-\(card.id)")
-                    }
+                        ForEach(layout.cards) { card in
+                            MacSchemeStickyCard(card: card)
+                                .frame(width: CGFloat(card.width), height: CGFloat(card.height))
+                                .overlay(selectionOverlay(id: card.id))
+                                .overlay(resizeHandleOverlay(id: card.id, kind: .card))
+                                .position(screenPoint(for: cardCenter(card), in: proxy.size))
+                                .zIndex(layerZIndex(card.zIndex))
+                                .highPriorityGesture(cardGesture(for: card))
+                                .accessibilityIdentifier("scheme-card-\(card.id)")
+                        }
 
-                    ForEach(layout.shapes) { shape in
-                        MacSchemeShapeView(shape: shape)
-                            .frame(
-                                width: CGFloat(shape.width) * CGFloat(layout.viewport.zoom),
-                                height: CGFloat(shape.height) * CGFloat(layout.viewport.zoom)
+                        ForEach(layout.shapes) { shape in
+                            MacSchemeShapeView(shape: shape)
+                                .frame(
+                                    width: CGFloat(shape.width) * CGFloat(layout.viewport.zoom),
+                                    height: CGFloat(shape.height) * CGFloat(layout.viewport.zoom)
+                                )
+                                .overlay(selectionOverlay(id: shape.id))
+                                .overlay(resizeHandleOverlay(id: shape.id, kind: .shape))
+                                .position(screenPoint(for: shapeCenter(shape), in: proxy.size))
+                                .zIndex(layerZIndex(shape.zIndex))
+                                .highPriorityGesture(shapeGesture(for: shape))
+                                .accessibilityIdentifier("scheme-shape-\(shape.id)")
+                        }
+
+                        if let marqueeRect = marqueeRect(in: proxy.size) {
+                            Rectangle()
+                                .fill(Palette.accent.opacity(0.14))
+                                .overlay(Rectangle().stroke(Palette.accent, lineWidth: 1))
+                                .frame(width: marqueeRect.width, height: marqueeRect.height)
+                                .position(x: marqueeRect.midX, y: marqueeRect.midY)
+                                .zIndex(1_000_001)
+                                .allowsHitTesting(false)
+                        }
+
+                        if let boardContentBounds {
+                            MacSchemeOverviewMap(
+                                bounds: boardContentBounds,
+                                items: itemBounds(),
+                                viewport: layout.viewport,
+                                boardSize: proxy.size,
+                                onFocus: focusBoardOverviewPoint
                             )
-                            .overlay(selectionOverlay(id: shape.id))
-                            .overlay(resizeHandleOverlay(id: shape.id, kind: .shape))
-                            .position(screenPoint(for: shapeCenter(shape), in: proxy.size))
-                            .zIndex(layerZIndex(shape.zIndex))
-                            .highPriorityGesture(shapeGesture(for: shape))
-                            .accessibilityIdentifier("scheme-shape-\(shape.id)")
+                            .frame(width: 180, height: 126)
+                            .position(
+                                x: proxy.size.width >= 208 ? 104 : proxy.size.width / 2,
+                                y: max(78, proxy.size.height - 78)
+                            )
+                            .zIndex(1_000_004)
+                        }
                     }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(boardBackground)
+                    .contentShape(Rectangle())
+                    .gesture(boardGesture(size: proxy.size))
+                    .onAppear {
+                        boardSize = proxy.size
+                    }
+                    .onChangeCompat(of: proxy.size) {
+                        boardSize = proxy.size
+                    }
+                }
 
-                    if let marqueeRect = marqueeRect(in: proxy.size) {
-                        Rectangle()
-                            .fill(Palette.accent.opacity(0.14))
-                            .overlay(Rectangle().stroke(Palette.accent, lineWidth: 1))
-                            .frame(width: marqueeRect.width, height: marqueeRect.height)
-                            .position(x: marqueeRect.midX, y: marqueeRect.midY)
-                            .zIndex(1_000_001)
-                            .allowsHitTesting(false)
-                    }
-
-                    if let boardContentBounds {
-                        MacSchemeOverviewMap(
-                            bounds: boardContentBounds,
-                            items: itemBounds(),
-                            viewport: layout.viewport,
-                            boardSize: proxy.size,
-                            onFocus: focusBoardOverviewPoint
-                        )
-                        .frame(width: 180, height: 126)
-                        .position(
-                            x: proxy.size.width >= 208 ? 104 : proxy.size.width / 2,
-                            y: max(78, proxy.size.height - 78)
-                        )
-                        .zIndex(1_000_004)
-                    }
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(boardBackground)
-                .contentShape(Rectangle())
-                .gesture(boardGesture(size: proxy.size))
-                .onAppear {
-                    boardSize = proxy.size
-                }
-                .onChangeCompat(of: proxy.size) {
-                    boardSize = proxy.size
-                }
+                MacSchemeOutlinePanel(
+                    title: t("Board outline", "Структура доски"),
+                    emptyText: t("No board objects yet.", "На доске пока нет объектов."),
+                    items: boardOutlineItems,
+                    selectedItemIds: Set(selectedItemIds),
+                    onFocus: focusOutlineItem
+                )
+                .frame(width: 220)
             }
         }
     }
@@ -934,6 +945,105 @@ private struct MacSchemeBoard: View {
         orderedFrames.map(\.id)
     }
 
+    private var boardOutlineItems: [MacSchemeOutlineItem] {
+        var items: [MacSchemeOutlineItem] = []
+
+        func append(
+            id: String,
+            kind: String,
+            label: String,
+            detail: String,
+            rect: CGRect
+        ) {
+            items.append(MacSchemeOutlineItem(
+                id: id,
+                kind: kind,
+                label: label,
+                detail: detail,
+                rect: rect,
+                order: items.count
+            ))
+        }
+
+        for frame in orderedFrames {
+            append(
+                id: frame.id,
+                kind: t("Frame", "Фрейм"),
+                label: outlineLabel(frame.title, fallback: t("Untitled frame", "Без названия")),
+                detail: "\(Int(frame.width)) x \(Int(frame.height))",
+                rect: CGRect(x: frame.x, y: frame.y, width: frame.width, height: frame.height)
+            )
+        }
+        for node in positionedNodes {
+            append(
+                id: node.id,
+                kind: t("Node", "Узел"),
+                label: outlineLabel(node.title, fallback: t("Untitled node", "Узел без названия")),
+                detail: node.kind,
+                rect: CGRect(x: node.position.x, y: node.position.y, width: Double(nodeWidth), height: Double(nodeHeight))
+            )
+        }
+        for source in layout.sources {
+            append(
+                id: source.id,
+                kind: t("Source", "Источник"),
+                label: outlineLabel(source.title, fallback: t("Untitled source", "Источник без названия")),
+                detail: source.sourceKind,
+                rect: CGRect(x: source.x, y: source.y, width: source.width, height: source.height)
+            )
+        }
+        for card in layout.cards {
+            append(
+                id: card.id,
+                kind: t("Sticky", "Стикер"),
+                label: outlineLabel(card.text, fallback: t("Untitled sticky", "Пустой стикер")),
+                detail: card.locked ? t("locked", "заблокировано") : t("sticky note", "стикер"),
+                rect: CGRect(x: card.x, y: card.y, width: card.width, height: card.height)
+            )
+        }
+        for text in layout.texts {
+            append(
+                id: text.id,
+                kind: t("Text", "Текст"),
+                label: outlineLabel(text.text, fallback: t("Untitled text", "Текст без названия")),
+                detail: "\(Int(text.fontSize))px",
+                rect: CGRect(x: text.x, y: text.y, width: text.width, height: text.height)
+            )
+        }
+        for shape in layout.shapes {
+            append(
+                id: shape.id,
+                kind: t("Shape", "Фигура"),
+                label: shape.kind == "ellipse" ? t("Oval", "Овал") : t("Box", "Блок"),
+                detail: shape.locked ? t("locked", "заблокировано") : shape.kind,
+                rect: CGRect(x: shape.x, y: shape.y, width: shape.width, height: shape.height)
+            )
+        }
+        for stroke in layout.strokes {
+            guard let bounds = pointsBounds(id: stroke.id, points: stroke.points) else { continue }
+            append(
+                id: stroke.id,
+                kind: t("Drawing", "Рисунок"),
+                label: stroke.kind == "highlighter" ? t("Highlighter stroke", "Маркер") : t("Pen stroke", "Штрих"),
+                detail: stroke.locked ? t("locked", "заблокировано") : "\(stroke.points.count) \(t("points", "точек"))",
+                rect: bounds.rect
+            )
+        }
+        for connector in layout.connectors {
+            let points = connectorPoints(connector)
+            guard let bounds = pointsBounds(id: connector.id, points: points) else { continue }
+            append(
+                id: connector.id,
+                kind: t("Connector", "Связь"),
+                label: outlineLabel(connector.label, fallback: t("Connector", "Связь")),
+                detail: connector.locked ? t("locked", "заблокировано") : "\(points.count) \(t("points", "точек"))",
+                rect: bounds.rect
+            )
+        }
+
+        return items
+    }
+
     private var boardContentBounds: CGRect? {
         let rects = itemBounds().map(\.rect)
         guard var bounds = rects.first else { return nil }
@@ -969,6 +1079,43 @@ private struct MacSchemeBoard: View {
         )
     }
 
+    private func viewportForFocusedBounds(_ bounds: CGRect, in size: CGSize, padding: Double) -> SchemeViewport {
+        guard size.width > 1, size.height > 1 else { return layout.viewport }
+        let availableWidth = max(1, Double(size.width) - padding)
+        let availableHeight = max(1, Double(size.height) - padding)
+        let currentZoom = min(2.8, max(0.25, layout.viewport.zoom))
+        let fitsAtCurrentZoom =
+            Double(bounds.width) * currentZoom <= availableWidth
+            && Double(bounds.height) * currentZoom <= availableHeight
+        let zoom = fitsAtCurrentZoom
+            ? currentZoom
+            : min(
+                2.8,
+                max(
+                    0.25,
+                    min(
+                        availableWidth / max(1, Double(bounds.width)),
+                        availableHeight / max(1, Double(bounds.height))
+                    )
+                )
+            )
+        return SchemeViewport(
+            x: -Double(bounds.midX) * zoom,
+            y: -Double(bounds.midY) * zoom,
+            zoom: zoom
+        )
+    }
+
+    private func outlineLabel(_ value: String?, fallback: String) -> String {
+        let firstLine = (value ?? "")
+            .split(separator: "\n")
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .first { !$0.isEmpty }
+        guard let firstLine else { return fallback }
+        if firstLine.count <= 64 { return firstLine }
+        return String(firstLine.prefix(61)) + "..."
+    }
+
     private func focusFrame(_ frame: SchemeCanvasFrame) {
         guard boardSize.width > 1, boardSize.height > 1 else { return }
         layout.frameOrder = normalisedFrameOrder()
@@ -1002,6 +1149,13 @@ private struct MacSchemeBoard: View {
             y: -point.y * layout.viewport.zoom,
             zoom: layout.viewport.zoom
         )
+        onCommit(layout)
+    }
+
+    private func focusOutlineItem(_ item: MacSchemeOutlineItem) {
+        guard boardSize.width > 1, boardSize.height > 1 else { return }
+        selectSingle(item.id)
+        layout.viewport = viewportForFocusedBounds(item.rect, in: boardSize, padding: boardFitPadding)
         onCommit(layout)
     }
 
@@ -2679,6 +2833,111 @@ private enum SchemeNodeProxy {
             citationIds: source.citationIds,
             position: position
         )
+    }
+}
+
+private struct MacSchemeOutlineItem: Identifiable {
+    let id: String
+    let kind: String
+    let label: String
+    let detail: String
+    let rect: CGRect
+    let order: Int
+}
+
+private struct MacSchemeOutlinePanel: View {
+    let title: String
+    let emptyText: String
+    let items: [MacSchemeOutlineItem]
+    let selectedItemIds: Set<String>
+    let onFocus: (MacSchemeOutlineItem) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Spacing.sm) {
+            HStack(spacing: Spacing.sm) {
+                Text(title)
+                    .font(Typography.bodySmall.weight(.semibold))
+                    .foregroundColor(Palette.textPrimary)
+                    .lineLimit(1)
+
+                Spacer(minLength: 0)
+
+                Text("\(items.count)")
+                    .font(Typography.caption.weight(.semibold))
+                    .foregroundColor(Palette.textSecondary)
+                    .padding(.horizontal, Spacing.xs)
+                    .padding(.vertical, 2)
+                    .background(
+                        Capsule()
+                            .fill(Color(nsColor: .textBackgroundColor))
+                            .overlay(Capsule().stroke(Palette.border, lineWidth: 1))
+                    )
+            }
+
+            if items.isEmpty {
+                Text(emptyText)
+                    .font(Typography.bodySmall)
+                    .foregroundColor(Palette.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else {
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: Spacing.xs) {
+                        ForEach(items) { item in
+                            Button {
+                                onFocus(item)
+                            } label: {
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text(item.kind)
+                                        .font(Typography.caption)
+                                        .foregroundColor(Palette.textSecondary)
+                                        .lineLimit(1)
+
+                                    Text(item.label)
+                                        .font(Typography.bodySmall.weight(.semibold))
+                                        .foregroundColor(Palette.textPrimary)
+                                        .lineLimit(1)
+
+                                    Text(item.detail)
+                                        .font(Typography.caption)
+                                        .foregroundColor(Palette.textSecondary)
+                                        .lineLimit(1)
+                                }
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(.horizontal, Spacing.sm)
+                                .padding(.vertical, Spacing.xs)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 8)
+                                        .fill(
+                                            selectedItemIds.contains(item.id)
+                                                ? Palette.accent.opacity(0.14)
+                                                : Color(nsColor: .textBackgroundColor)
+                                        )
+                                        .overlay(
+                                            RoundedRectangle(cornerRadius: 8)
+                                                .stroke(
+                                                    selectedItemIds.contains(item.id) ? Palette.accent : Palette.border,
+                                                    lineWidth: 1
+                                                )
+                                        )
+                                )
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityIdentifier("scheme-outline-\(item.id)")
+                        }
+                    }
+                }
+            }
+        }
+        .padding(Spacing.md)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(Palette.surfaceSubtle)
+        .overlay(alignment: .leading) {
+            Rectangle()
+                .fill(Palette.border)
+                .frame(width: 1)
+        }
+        .accessibilityIdentifier("scheme-board-outline")
+        .accessibilityLabel(Text(title))
     }
 }
 

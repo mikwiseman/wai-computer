@@ -70,6 +70,25 @@ interface BoardViewportSize {
   height: number;
 }
 
+type BoardOutlineKind =
+  | "node"
+  | "sticky"
+  | "source"
+  | "frame"
+  | "text"
+  | "shape"
+  | "drawing"
+  | "connector";
+
+interface BoardOutlineItem {
+  id: string;
+  kind: BoardOutlineKind;
+  label: string;
+  detail: string;
+  bounds: BoardItemBounds;
+  order: number;
+}
+
 interface ResizeLimits {
   minWidth: number;
   minHeight: number;
@@ -248,6 +267,18 @@ const COPY = {
     nextFrame: "Next frame",
     fitBoard: "Fit board",
     overview: "Board overview",
+    outline: "Board outline",
+    outlineEmpty: "No board objects yet.",
+    outlineKinds: {
+      node: "Node",
+      sticky: "Sticky",
+      source: "Source",
+      frame: "Frame",
+      text: "Text",
+      shape: "Shape",
+      drawing: "Drawing",
+      connector: "Connector",
+    },
     duplicate: "Duplicate",
     lock: "Lock",
     unlock: "Unlock",
@@ -285,6 +316,18 @@ const COPY = {
     nextFrame: "Следующий фрейм",
     fitBoard: "Вся доска",
     overview: "Обзор доски",
+    outline: "Структура доски",
+    outlineEmpty: "На доске пока нет объектов.",
+    outlineKinds: {
+      node: "Узел",
+      sticky: "Стикер",
+      source: "Источник",
+      frame: "Фрейм",
+      text: "Текст",
+      shape: "Фигура",
+      drawing: "Рисунок",
+      connector: "Связь",
+    },
     duplicate: "Дублировать",
     lock: "Заблокировать",
     unlock: "Разблокировать",
@@ -388,6 +431,31 @@ function viewportForBounds(bounds: BoardBounds, rect: DOMRect): SchemeViewport {
     MIN_ZOOM,
     MAX_ZOOM,
   );
+  return {
+    x: -(bounds.x + bounds.width / 2) * zoom,
+    y: -(bounds.y + bounds.height / 2) * zoom,
+    zoom,
+  };
+}
+
+function viewportForFocusedBounds(
+  bounds: BoardItemBounds,
+  rect: DOMRect,
+  currentZoom: number,
+): SchemeViewport {
+  const availableWidth = Math.max(1, rect.width - BOARD_FIT_PADDING);
+  const availableHeight = Math.max(1, rect.height - BOARD_FIT_PADDING);
+  const clampedCurrentZoom = clamp(currentZoom, MIN_ZOOM, MAX_ZOOM);
+  const fitsAtCurrentZoom =
+    bounds.width * clampedCurrentZoom <= availableWidth &&
+    bounds.height * clampedCurrentZoom <= availableHeight;
+  const zoom = fitsAtCurrentZoom
+    ? clampedCurrentZoom
+    : clamp(
+        Math.min(availableWidth / Math.max(1, bounds.width), availableHeight / Math.max(1, bounds.height)),
+        MIN_ZOOM,
+        MAX_ZOOM,
+      );
   return {
     x: -(bounds.x + bounds.width / 2) * zoom,
     y: -(bounds.y + bounds.height / 2) * zoom,
@@ -783,6 +851,107 @@ function overviewPointFromEvent(
     x: bounds.x + (clientX - rect.left - metrics.originX) / metrics.scale,
     y: bounds.y + (clientY - rect.top - metrics.originY) / metrics.scale,
   };
+}
+
+function shortBoardLabel(value: string | null | undefined, fallback: string): string {
+  const firstLine = (value ?? "").split("\n").map((line) => line.trim()).find(Boolean);
+  if (!firstLine) return fallback;
+  return firstLine.length > 64 ? `${firstLine.slice(0, 61)}...` : firstLine;
+}
+
+function boardOutlineItemsForLayout(
+  layout: SchemeCanvasLayout,
+  nodes: SchemeNode[],
+  orderedFrames: SchemeCanvasFrame[],
+): BoardOutlineItem[] {
+  const items: BoardOutlineItem[] = [];
+  const pushItem = (
+    item: Omit<BoardOutlineItem, "order">,
+  ) => {
+    items.push({ ...item, order: items.length });
+  };
+
+  orderedFrames.forEach((frame) => {
+    pushItem({
+      id: frame.id,
+      kind: "frame",
+      label: shortBoardLabel(frame.title, "Untitled frame"),
+      detail: `${Math.round(frame.width)} x ${Math.round(frame.height)}`,
+      bounds: { id: frame.id, x: frame.x, y: frame.y, width: frame.width, height: frame.height },
+    });
+  });
+  nodes.forEach((node) => {
+    pushItem({
+      id: node.id,
+      kind: "node",
+      label: shortBoardLabel(node.title, "Untitled node"),
+      detail: nodeKindLabel(node.kind),
+      bounds: { id: node.id, x: node.position.x, y: node.position.y, width: NODE_WIDTH, height: NODE_HEIGHT },
+    });
+  });
+  layout.sources.forEach((source) => {
+    pushItem({
+      id: source.id,
+      kind: "source",
+      label: shortBoardLabel(source.title, "Untitled source"),
+      detail: source.source_kind,
+      bounds: { id: source.id, x: source.x, y: source.y, width: source.width, height: source.height },
+    });
+  });
+  layout.cards.forEach((card) => {
+    pushItem({
+      id: card.id,
+      kind: "sticky",
+      label: shortBoardLabel(card.text, "Untitled sticky"),
+      detail: card.locked ? "locked" : "sticky note",
+      bounds: { id: card.id, x: card.x, y: card.y, width: card.width, height: card.height },
+    });
+  });
+  layout.texts.forEach((text) => {
+    pushItem({
+      id: text.id,
+      kind: "text",
+      label: shortBoardLabel(text.text, "Untitled text"),
+      detail: `${Math.round(text.font_size)}px`,
+      bounds: { id: text.id, x: text.x, y: text.y, width: text.width, height: text.height },
+    });
+  });
+  layout.shapes.forEach((shape) => {
+    pushItem({
+      id: shape.id,
+      kind: "shape",
+      label: shape.kind === "ellipse" ? "Oval" : "Box",
+      detail: shape.locked ? "locked" : shape.kind,
+      bounds: { id: shape.id, x: shape.x, y: shape.y, width: shape.width, height: shape.height },
+    });
+  });
+  layout.strokes.forEach((stroke) => {
+    const bounds = boundsFromPoints(stroke.id, stroke.points);
+    if (!bounds) return;
+    pushItem({
+      id: stroke.id,
+      kind: "drawing",
+      label: stroke.kind === "highlighter" ? "Highlighter stroke" : "Pen stroke",
+      detail: stroke.locked ? "locked" : `${stroke.points.length} points`,
+      bounds,
+    });
+  });
+  layout.connectors.forEach((connector) => {
+    const source = itemCenter(connector.source_id, nodes, layout);
+    const target = itemCenter(connector.target_id, nodes, layout);
+    const points = source && target ? [source, target] : connector.points;
+    const bounds = boundsFromPoints(connector.id, points);
+    if (!bounds) return;
+    pushItem({
+      id: connector.id,
+      kind: "connector",
+      label: "Connector",
+      detail: connector.locked ? "locked" : `${points.length} points`,
+      bounds,
+    });
+  });
+
+  return items;
 }
 
 function layoutItemBounds(layout: SchemeCanvasLayout, nodes: SchemeNode[]): BoardItemBounds[] {
@@ -1467,6 +1636,10 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
     return projectionSources.filter((source) => !pinned.has(source.id));
   }, [layout.sources, projectionSources]);
   const orderedFrames = useMemo(() => orderedFramesForLayout(layout), [layout]);
+  const boardOutlineItems = useMemo(
+    () => boardOutlineItemsForLayout(layout, positionedNodes, orderedFrames),
+    [layout, positionedNodes, orderedFrames],
+  );
   const activeFrameIndex = useMemo(() => {
     if (selectedItems.length !== 1) return -1;
     return orderedFrames.findIndex((frame) => frame.id === selectedItems[0]);
@@ -2471,6 +2644,16 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
     updateViewport(viewportForBounds(boardContentBounds, rect), true);
   }, [boardContentBounds, updateViewport]);
 
+  const focusOutlineItem = useCallback(
+    (item: BoardOutlineItem) => {
+      const rect = viewportRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      setSelectedItem(item.id);
+      updateViewport(viewportForFocusedBounds(item.bounds, rect, layoutRef.current.viewport.zoom), true);
+    },
+    [setSelectedItem, updateViewport],
+  );
+
   const focusOverviewPoint = useCallback(
     (point: SchemePosition) => {
       updateViewport(
@@ -2788,17 +2971,18 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
           ) : null}
 
           {selected ? (
-            <div
-              ref={viewportRef}
-              className={`scheme-board__viewport scheme-board__viewport--${tool}`}
-              tabIndex={0}
-              onPointerDown={handleViewportPointerDown}
-              onPointerMove={handlePointerMove}
-              onPointerUp={handlePointerUp}
-              onPointerCancel={handlePointerUp}
-              onKeyDown={handleViewportKeyDown}
-              onWheel={handleWheel}
-            >
+            <div className="scheme-board__workspace">
+              <div
+                ref={viewportRef}
+                className={`scheme-board__viewport scheme-board__viewport--${tool}`}
+                tabIndex={0}
+                onPointerDown={handleViewportPointerDown}
+                onPointerMove={handlePointerMove}
+                onPointerUp={handlePointerUp}
+                onPointerCancel={handlePointerUp}
+                onKeyDown={handleViewportKeyDown}
+                onWheel={handleWheel}
+              >
               <div className="scheme-board__grid" style={gridStyle} />
               <div className="scheme-board__world" style={{ transform: worldTransform }}>
                 <svg className="scheme-board__edges" aria-hidden="true">
@@ -3110,6 +3294,36 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
                   ) : null}
                 </button>
               ) : null}
+              </div>
+              <aside className="scheme-board__outline" aria-label={copy.outline}>
+                <div className="scheme-board__outline-header">
+                  <strong>{copy.outline}</strong>
+                  <span>{boardOutlineItems.length}</span>
+                </div>
+                {boardOutlineItems.length > 0 ? (
+                  <div className="scheme-board__outline-list">
+                    {boardOutlineItems.map((item) => (
+                      <button
+                        key={`${item.id}-${item.order}`}
+                        type="button"
+                        className={[
+                          "scheme-board__outline-row",
+                          selectedItemSet.has(item.id) ? "scheme-board__outline-row--active" : "",
+                        ].filter(Boolean).join(" ")}
+                        aria-pressed={selectedItemSet.has(item.id)}
+                        aria-label={`${copy.outlineKinds[item.kind]} ${item.label}`}
+                        onClick={() => focusOutlineItem(item)}
+                      >
+                        <span>{copy.outlineKinds[item.kind]}</span>
+                        <strong>{item.label}</strong>
+                        <small>{item.detail}</small>
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <p>{copy.outlineEmpty}</p>
+                )}
+              </aside>
             </div>
           ) : (
             <div className="scheme-board__placeholder">{copy.noSelection}</div>

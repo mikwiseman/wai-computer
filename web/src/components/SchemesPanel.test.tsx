@@ -368,7 +368,7 @@ describe("SchemesPanel", () => {
     mockGetScheme.mockResolvedValue(scheme({ layout: boardLayout }));
     const { container } = render(<SchemesPanel />);
 
-    await screen.findByText("Far plan");
+    await screen.findByDisplayValue("Far plan");
     const viewport = container.querySelector(".scheme-board__viewport") as HTMLElement | null;
     expect(viewport).not.toBeNull();
     vi.spyOn(viewport as HTMLElement, "getBoundingClientRect").mockReturnValue({
@@ -410,6 +410,51 @@ describe("SchemesPanel", () => {
       const overviewLayout = mockUpdateScheme.mock.calls.at(-1)?.[1]?.layout as SchemeCanvasLayout;
       expect(overviewLayout.viewport.x).toBeLessThan(-600);
       expect(overviewLayout.viewport.y).toBeLessThan(-250);
+    });
+  });
+
+  it("shows a board outline and focuses an item from it", async () => {
+    const boardLayout = layout({
+      cards: [
+        {
+          id: "card-far",
+          x: 2400,
+          y: 1200,
+          width: 260,
+          height: 180,
+          text: "Far plan",
+          color: "#f7d774",
+          locked: false,
+          z_index: 4,
+        },
+      ],
+    });
+    mockListSchemes.mockResolvedValue({ schemes: [scheme({ layout: boardLayout })] });
+    mockGetScheme.mockResolvedValue(scheme({ layout: boardLayout }));
+    const { container } = render(<SchemesPanel />);
+
+    await screen.findByDisplayValue("Far plan");
+    expect(screen.getByRole("complementary", { name: "Board outline" })).toBeVisible();
+    const viewport = container.querySelector(".scheme-board__viewport") as HTMLElement | null;
+    expect(viewport).not.toBeNull();
+    vi.spyOn(viewport as HTMLElement, "getBoundingClientRect").mockReturnValue({
+      x: 0,
+      y: 0,
+      left: 0,
+      top: 0,
+      right: 1000,
+      bottom: 600,
+      width: 1000,
+      height: 600,
+      toJSON: () => ({}),
+    } as DOMRect);
+
+    fireEvent.click(screen.getByRole("button", { name: "Sticky Far plan" }));
+
+    await waitFor(() => {
+      const focusedLayout = mockUpdateScheme.mock.calls.at(-1)?.[1]?.layout as SchemeCanvasLayout;
+      expect(focusedLayout.viewport.x).toBeLessThan(-2000);
+      expect(focusedLayout.viewport.y).toBeLessThan(-1000);
     });
   });
 
@@ -851,7 +896,7 @@ describe("SchemesPanel", () => {
 
     const { container } = render(<SchemesPanel />);
 
-    await screen.findByText("First note");
+    await screen.findByDisplayValue("First note");
     const viewport = container.querySelector(".scheme-board__viewport");
     expect(viewport).not.toBeNull();
 
@@ -914,7 +959,7 @@ describe("SchemesPanel", () => {
 
     const { container } = render(<SchemesPanel />);
 
-    await screen.findByText("Inside note");
+    await screen.findByDisplayValue("Inside note");
     const viewport = container.querySelector(".scheme-board__viewport");
     expect(viewport).not.toBeNull();
 
