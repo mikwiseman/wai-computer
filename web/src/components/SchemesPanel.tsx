@@ -162,10 +162,13 @@ interface ProjectionSourceSummary {
   created_at?: string | null;
 }
 
-const SCHEME_LAYOUT_VERSION = 7 as const;
+const SCHEME_LAYOUT_VERSION = 8 as const;
 const DEFAULT_VIEWPORT: SchemeViewport = { x: 0, y: 0, zoom: 1 };
 const MIN_ZOOM = 0.25;
 const MAX_ZOOM = 2.8;
+const DEFAULT_GRID_SIZE = 40;
+const MIN_GRID_SIZE = 8;
+const MAX_GRID_SIZE = 240;
 const NODE_WIDTH = 232;
 const NODE_HEIGHT = 132;
 const STICKY_WIDTH = 220;
@@ -221,6 +224,8 @@ const COPY = {
     refreshing: "Refreshing...",
     undo: "Undo",
     redo: "Redo",
+    snapToGrid: "Snap to grid",
+    gridSize: "Grid size",
     duplicate: "Duplicate",
     lock: "Lock",
     unlock: "Unlock",
@@ -251,6 +256,8 @@ const COPY = {
     refreshing: "Обновляем...",
     undo: "Отменить",
     redo: "Повторить",
+    snapToGrid: "Привязка к сетке",
+    gridSize: "Размер сетки",
     duplicate: "Дублировать",
     lock: "Заблокировать",
     unlock: "Разблокировать",
@@ -277,9 +284,40 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
 
+function normaliseGridSize(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value)
+    ? clamp(value, MIN_GRID_SIZE, MAX_GRID_SIZE)
+    : DEFAULT_GRID_SIZE;
+}
+
+function snapValue(value: number, gridSize: number): number {
+  return Math.round(value / gridSize) * gridSize;
+}
+
+function snapPosition(position: SchemePosition, layout: SchemeCanvasLayout): SchemePosition {
+  const gridSize = normaliseGridSize(layout.grid_size);
+  return {
+    x: snapValue(position.x, gridSize),
+    y: snapValue(position.y, gridSize),
+  };
+}
+
+function positionForNewItem(
+  point: SchemePosition,
+  width: number,
+  height: number,
+  layout: SchemeCanvasLayout,
+  shouldSnap: boolean,
+): SchemePosition {
+  const position = { x: point.x - width / 2, y: point.y - height / 2 };
+  return shouldSnap ? snapPosition(position, layout) : position;
+}
+
 function blankLayout(): SchemeCanvasLayout {
   return {
     version: SCHEME_LAYOUT_VERSION,
+    snap_to_grid: false,
+    grid_size: DEFAULT_GRID_SIZE,
     viewport: { ...DEFAULT_VIEWPORT },
     node_positions: {},
     strokes: [],
@@ -351,7 +389,7 @@ function normaliseStroke(stroke: SchemeStroke): SchemeStroke {
 }
 
 function layoutForScheme(scheme: Scheme | null): SchemeCanvasLayout {
-  const raw = scheme?.layout;
+  const raw = scheme?.layout as Partial<SchemeCanvasLayout> | null;
   if (!raw) return blankLayout();
   const maybeLegacy = raw as unknown as Record<string, unknown>;
   if (!("version" in maybeLegacy) && Object.values(maybeLegacy).every(isPosition)) {
@@ -361,6 +399,8 @@ function layoutForScheme(scheme: Scheme | null): SchemeCanvasLayout {
     ...blankLayout(),
     ...raw,
     version: SCHEME_LAYOUT_VERSION,
+    snap_to_grid: Boolean(raw.snap_to_grid),
+    grid_size: normaliseGridSize(raw.grid_size),
     viewport: { ...DEFAULT_VIEWPORT, ...(raw.viewport ?? {}) },
     node_positions: raw.node_positions ?? {},
     strokes: (raw.strokes ?? []).map(normaliseStroke),
@@ -716,6 +756,41 @@ function resizedBounds(
   };
 }
 
+function snapResizedBounds(
+  origin: BoardItemBounds,
+  kind: ResizableItemKind,
+  handle: ResizeHandle,
+  bounds: BoardItemBounds,
+  layout: SchemeCanvasLayout,
+): BoardItemBounds {
+  const limits = RESIZE_LIMITS[kind];
+  const gridSize = normaliseGridSize(layout.grid_size);
+  let x = bounds.x;
+  let y = bounds.y;
+  let width = bounds.width;
+  let height = bounds.height;
+
+  if (handle.endsWith("w")) {
+    const right = origin.x + origin.width;
+    width = clamp(right - snapValue(bounds.x, gridSize), limits.minWidth, limits.maxWidth);
+    x = right - width;
+  } else {
+    x = origin.x;
+    width = clamp(snapValue(bounds.x + bounds.width, gridSize) - origin.x, limits.minWidth, limits.maxWidth);
+  }
+
+  if (handle.startsWith("n")) {
+    const bottom = origin.y + origin.height;
+    height = clamp(bottom - snapValue(bounds.y, gridSize), limits.minHeight, limits.maxHeight);
+    y = bottom - height;
+  } else {
+    y = origin.y;
+    height = clamp(snapValue(bounds.y + bounds.height, gridSize) - origin.y, limits.minHeight, limits.maxHeight);
+  }
+
+  return { id: origin.id, x, y, width, height };
+}
+
 function resizeLayoutItem(
   layout: SchemeCanvasLayout,
   itemId: string,
@@ -862,6 +937,32 @@ function translateSelectedLayout(
         : connector,
     ),
   };
+}
+
+function translatedNodesForLayout(nodes: SchemeNode[], layout: SchemeCanvasLayout): SchemeNode[] {
+  return nodes.map((node) => ({
+    ...node,
+    position: layout.node_positions[node.id] ?? node.position,
+  }));
+}
+
+function snapTranslatedSelectedLayout(
+  origin: SchemeCanvasLayout,
+  itemIds: string[],
+  dx: number,
+  dy: number,
+  nodes: SchemeNode[],
+  shouldSnap: boolean,
+): SchemeCanvasLayout {
+  const translated = translateSelectedLayout(origin, itemIds, dx, dy);
+  if (!shouldSnap) return translated;
+
+  const translatedNodes = translatedNodesForLayout(nodes, translated);
+  const anchor = layoutItemBounds(translated, translatedNodes).find((bounds) => itemIds.includes(bounds.id));
+  if (!anchor) return translated;
+
+  const snapped = snapPosition({ x: anchor.x, y: anchor.y }, origin);
+  return translateSelectedLayout(origin, itemIds, dx + snapped.x - anchor.x, dy + snapped.y - anchor.y);
 }
 
 function layoutLayerItems(layout: SchemeCanvasLayout): LayerItem[] {
@@ -1019,6 +1120,8 @@ function eraseStrokesAtPoint(layout: SchemeCanvasLayout, point: SchemePosition):
 function cloneLayout(layout: SchemeCanvasLayout): SchemeCanvasLayout {
   return {
     version: layout.version,
+    snap_to_grid: layout.snap_to_grid,
+    grid_size: layout.grid_size,
     viewport: { ...layout.viewport },
     node_positions: Object.fromEntries(
       Object.entries(layout.node_positions).map(([id, position]) => [id, { ...position }]),
@@ -1331,6 +1434,10 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
     [],
   );
 
+  const shouldSnapEvent = useCallback((event: PointerEvent<Element>): boolean => {
+    return layoutRef.current.snap_to_grid && !event.metaKey && !event.ctrlKey;
+  }, []);
+
   const strokePointFromEvent = useCallback(
     (event: PointerEvent<Element>): SchemeStrokePoint => {
       const pressure = typeof event.pressure === "number" && event.pressure > 0 ? event.pressure : 1;
@@ -1352,13 +1459,41 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
     [commitLayout],
   );
 
+  const updateSnapToGrid = useCallback(
+    (enabled: boolean) => {
+      const nextLayout = {
+        ...layoutRef.current,
+        snap_to_grid: enabled,
+        grid_size: normaliseGridSize(layoutRef.current.grid_size),
+      };
+      setLayout(nextLayout);
+      layoutRef.current = nextLayout;
+      void commitLayout(nextLayout);
+    },
+    [commitLayout],
+  );
+
+  const updateGridSize = useCallback(
+    (value: number) => {
+      const nextLayout = {
+        ...layoutRef.current,
+        grid_size: normaliseGridSize(value),
+      };
+      setLayout(nextLayout);
+      layoutRef.current = nextLayout;
+      void commitLayout(nextLayout);
+    },
+    [commitLayout],
+  );
+
   const addCard = useCallback(
-    (point: SchemePosition) => {
+    (point: SchemePosition, shouldSnap: boolean) => {
       pushUndoSnapshot();
+      const position = positionForNewItem(point, STICKY_WIDTH, STICKY_HEIGHT, layoutRef.current, shouldSnap);
       const card: SchemeCanvasCard = {
         id: createId("card"),
-        x: point.x - STICKY_WIDTH / 2,
-        y: point.y - STICKY_HEIGHT / 2,
+        x: position.x,
+        y: position.y,
         width: STICKY_WIDTH,
         height: STICKY_HEIGHT,
         text: locale === "ru" ? "Заметка" : "Note",
@@ -1376,13 +1511,14 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
   );
 
   const addShape = useCallback(
-    (point: SchemePosition, kind: SchemeShapeKind) => {
+    (point: SchemePosition, kind: SchemeShapeKind, shouldSnap: boolean) => {
       pushUndoSnapshot();
+      const position = positionForNewItem(point, SHAPE_WIDTH, SHAPE_HEIGHT, layoutRef.current, shouldSnap);
       const shape: SchemeCanvasShape = {
         id: createId("shape"),
         kind,
-        x: point.x - SHAPE_WIDTH / 2,
-        y: point.y - SHAPE_HEIGHT / 2,
+        x: position.x,
+        y: position.y,
         width: SHAPE_WIDTH,
         height: SHAPE_HEIGHT,
         color: kind === "ellipse" ? "#7c3aed" : "#2563eb",
@@ -1400,12 +1536,13 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
   );
 
   const addFrame = useCallback(
-    (point: SchemePosition) => {
+    (point: SchemePosition, shouldSnap: boolean) => {
       pushUndoSnapshot();
+      const position = positionForNewItem(point, FRAME_WIDTH, FRAME_HEIGHT, layoutRef.current, shouldSnap);
       const frame: SchemeCanvasFrame = {
         id: createId("frame"),
-        x: point.x - FRAME_WIDTH / 2,
-        y: point.y - FRAME_HEIGHT / 2,
+        x: position.x,
+        y: position.y,
         width: FRAME_WIDTH,
         height: FRAME_HEIGHT,
         title: locale === "ru" ? "Фрейм" : "Frame",
@@ -1424,12 +1561,13 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
   );
 
   const addText = useCallback(
-    (point: SchemePosition) => {
+    (point: SchemePosition, shouldSnap: boolean) => {
       pushUndoSnapshot();
+      const position = positionForNewItem(point, TEXT_WIDTH, TEXT_HEIGHT, layoutRef.current, shouldSnap);
       const text: SchemeTextBlock = {
         id: createId("text"),
-        x: point.x - TEXT_WIDTH / 2,
-        y: point.y - TEXT_HEIGHT / 2,
+        x: position.x,
+        y: position.y,
         width: TEXT_WIDTH,
         height: TEXT_HEIGHT,
         text: locale === "ru" ? "Текст" : "Text",
@@ -1595,6 +1733,7 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
       if (target.closest("[data-scheme-board-item='true']")) return;
       event.currentTarget.setPointerCapture?.(event.pointerId);
       const point = pointFromEvent(event);
+      const shouldSnap = shouldSnapEvent(event);
       setPendingConnector(null);
 
       if (tool === "draw" || tool === "highlighter") {
@@ -1629,22 +1768,22 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
       }
       if (tool === "sticky") {
         setSelectedItem(null);
-        addCard(point);
+        addCard(point, shouldSnap);
         return;
       }
       if (tool === "text") {
         setSelectedItem(null);
-        addText(point);
+        addText(point, shouldSnap);
         return;
       }
       if (tool === "rectangle" || tool === "ellipse") {
         setSelectedItem(null);
-        addShape(point, tool);
+        addShape(point, tool, shouldSnap);
         return;
       }
       if (tool === "frame") {
         setSelectedItem(null);
-        addFrame(point);
+        addFrame(point, shouldSnap);
         return;
       }
       if (tool === "select") {
@@ -1697,6 +1836,7 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
       selected,
       selectedItems,
       setSelectedItem,
+      shouldSnapEvent,
       strokePointFromEvent,
       tool,
     ],
@@ -1756,7 +1896,10 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
         const point = pointFromEvent(event);
         const dx = point.x - drag.start.x;
         const dy = point.y - drag.start.y;
-        const bounds = resizedBounds(drag.origin, drag.itemKind, drag.handle, dx, dy);
+        const resized = resizedBounds(drag.origin, drag.itemKind, drag.handle, dx, dy);
+        const bounds = shouldSnapEvent(event)
+          ? snapResizedBounds(drag.origin, drag.itemKind, drag.handle, resized, layoutRef.current)
+          : resized;
         setLocalLayout((current) => resizeLayoutItem(current, drag.itemId, drag.itemKind, bounds));
         return;
       }
@@ -1764,62 +1907,83 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
       const point = pointFromEvent(event);
       const dx = point.x - drag.start.x;
       const dy = point.y - drag.start.y;
+      const shouldSnap = shouldSnapEvent(event);
       if (drag.type === "multi") {
-        setLocalLayout(() => translateSelectedLayout(drag.origin, drag.itemIds, dx, dy));
+        setLocalLayout(() =>
+          snapTranslatedSelectedLayout(drag.origin, drag.itemIds, dx, dy, positionedNodes, shouldSnap),
+        );
       } else if (drag.type === "node") {
+        const position = shouldSnap
+          ? snapPosition({ x: drag.origin.x + dx, y: drag.origin.y + dy }, layoutRef.current)
+          : { x: drag.origin.x + dx, y: drag.origin.y + dy };
         setLocalLayout((current) => ({
           ...current,
           node_positions: {
             ...current.node_positions,
-            [drag.nodeId]: { x: drag.origin.x + dx, y: drag.origin.y + dy },
+            [drag.nodeId]: position,
           },
         }));
       } else if (drag.type === "card") {
+        const position = shouldSnap
+          ? snapPosition({ x: drag.origin.x + dx, y: drag.origin.y + dy }, layoutRef.current)
+          : { x: drag.origin.x + dx, y: drag.origin.y + dy };
         setLocalLayout((current) => ({
           ...current,
           cards: current.cards.map((card) =>
-            card.id === drag.cardId ? { ...card, x: drag.origin.x + dx, y: drag.origin.y + dy } : card,
+            card.id === drag.cardId ? { ...card, x: position.x, y: position.y } : card,
           ),
         }));
       } else if (drag.type === "shape") {
+        const position = shouldSnap
+          ? snapPosition({ x: drag.origin.x + dx, y: drag.origin.y + dy }, layoutRef.current)
+          : { x: drag.origin.x + dx, y: drag.origin.y + dy };
         setLocalLayout((current) => ({
           ...current,
           shapes: current.shapes.map((shape) =>
             shape.id === drag.shapeId
-              ? { ...shape, x: drag.origin.x + dx, y: drag.origin.y + dy }
+              ? { ...shape, x: position.x, y: position.y }
               : shape,
           ),
         }));
       } else if (drag.type === "frame") {
+        const position = shouldSnap
+          ? snapPosition({ x: drag.origin.x + dx, y: drag.origin.y + dy }, layoutRef.current)
+          : { x: drag.origin.x + dx, y: drag.origin.y + dy };
         setLocalLayout((current) => ({
           ...current,
           frames: current.frames.map((frame) =>
             frame.id === drag.frameId
-              ? { ...frame, x: drag.origin.x + dx, y: drag.origin.y + dy }
+              ? { ...frame, x: position.x, y: position.y }
               : frame,
           ),
         }));
       } else if (drag.type === "text") {
+        const position = shouldSnap
+          ? snapPosition({ x: drag.origin.x + dx, y: drag.origin.y + dy }, layoutRef.current)
+          : { x: drag.origin.x + dx, y: drag.origin.y + dy };
         setLocalLayout((current) => ({
           ...current,
           texts: current.texts.map((text) =>
             text.id === drag.textId
-              ? { ...text, x: drag.origin.x + dx, y: drag.origin.y + dy }
+              ? { ...text, x: position.x, y: position.y }
               : text,
           ),
         }));
       } else if (drag.type === "source") {
+        const position = shouldSnap
+          ? snapPosition({ x: drag.origin.x + dx, y: drag.origin.y + dy }, layoutRef.current)
+          : { x: drag.origin.x + dx, y: drag.origin.y + dy };
         setLocalLayout((current) => ({
           ...current,
           sources: current.sources.map((source) =>
             source.id === drag.sourceId
-              ? { ...source, x: drag.origin.x + dx, y: drag.origin.y + dy }
+              ? { ...source, x: position.x, y: position.y }
               : source,
           ),
         }));
       }
     },
-    [pointFromEvent, positionedNodes, setLocalLayout, strokePointFromEvent, updateViewport],
+    [pointFromEvent, positionedNodes, setLocalLayout, shouldSnapEvent, strokePointFromEvent, updateViewport],
   );
 
   const handlePointerUp = useCallback(() => {
@@ -2127,6 +2291,11 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
   );
 
   const worldTransform = `translate(${layout.viewport.x}px, ${layout.viewport.y}px) scale(${layout.viewport.zoom})`;
+  const gridScreenSize = Math.max(4, normaliseGridSize(layout.grid_size) * layout.viewport.zoom);
+  const gridStyle = {
+    backgroundSize: `${gridScreenSize}px ${gridScreenSize}px`,
+    backgroundPosition: `calc(50% + ${layout.viewport.x}px) calc(50% + ${layout.viewport.y}px)`,
+  };
 
   return (
     <section className="schemes-panel" data-testid="schemes-panel">
@@ -2279,6 +2448,27 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
               </div>
             ) : null}
             {pendingConnector ? <span>{copy.connectorHint}</span> : null}
+            <label className="scheme-board__snap-toggle">
+              <input
+                type="checkbox"
+                checked={layout.snap_to_grid}
+                aria-label={copy.snapToGrid}
+                onChange={(event) => updateSnapToGrid(event.target.checked)}
+              />
+              <span>{copy.snapToGrid}</span>
+            </label>
+            <label className="scheme-board__grid-size">
+              <span>{copy.gridSize}</span>
+              <input
+                type="number"
+                min={MIN_GRID_SIZE}
+                max={MAX_GRID_SIZE}
+                step={4}
+                value={normaliseGridSize(layout.grid_size)}
+                aria-label={copy.gridSize}
+                onChange={(event) => updateGridSize(Number(event.target.value))}
+              />
+            </label>
           </div>
 
           {selected ? (
@@ -2293,7 +2483,7 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
               onKeyDown={handleViewportKeyDown}
               onWheel={handleWheel}
             >
-              <div className="scheme-board__grid" />
+              <div className="scheme-board__grid" style={gridStyle} />
               <div className="scheme-board__world" style={{ transform: worldTransform }}>
                 <svg className="scheme-board__edges" aria-hidden="true">
                   {projection?.edges.map((edge) => {

@@ -25,12 +25,15 @@ from app.models.brain_map import BrainMap, BrainMapRevision
 
 router = APIRouter(prefix="/schemes", tags=["schemes"])
 
-SCHEME_LAYOUT_VERSION = 7
+SCHEME_LAYOUT_VERSION = 8
 SCHEME_SHAPE_KINDS = {"rectangle", "ellipse"}
 SCHEME_SOURCE_KINDS = {"item", "recording", "chat"}
 SCHEME_STROKE_KINDS = {"pen", "highlighter"}
 SCHEME_Z_INDEX_MIN = -1_000_000
 SCHEME_Z_INDEX_MAX = 1_000_000
+SCHEME_GRID_SIZE_DEFAULT = 40
+SCHEME_GRID_SIZE_MIN = 8
+SCHEME_GRID_SIZE_MAX = 240
 
 
 class SchemePosition(BaseModel):
@@ -142,6 +145,12 @@ class SchemeCanvasLayout(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     version: int = SCHEME_LAYOUT_VERSION
+    snap_to_grid: bool = False
+    grid_size: float = Field(
+        default=SCHEME_GRID_SIZE_DEFAULT,
+        ge=SCHEME_GRID_SIZE_MIN,
+        le=SCHEME_GRID_SIZE_MAX,
+    )
     viewport: SchemeViewport = Field(default_factory=SchemeViewport)
     node_positions: dict[str, SchemePosition] = Field(default_factory=dict)
     strokes: list[SchemeStroke] = Field(default_factory=list)

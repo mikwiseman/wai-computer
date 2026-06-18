@@ -469,6 +469,8 @@ public struct SchemeConnector: Codable, Identifiable, Sendable, Equatable {
 
 public struct SchemeCanvasLayout: Codable, Sendable, Equatable {
     public var version: Int
+    public var snapToGrid: Bool
+    public var gridSize: Double
     public var viewport: SchemeViewport
     public var nodePositions: [String: SchemePosition]
     public var strokes: [SchemeStroke]
@@ -481,6 +483,8 @@ public struct SchemeCanvasLayout: Codable, Sendable, Equatable {
 
     private enum CodingKeys: String, CodingKey {
         case version
+        case snapToGrid = "snap_to_grid"
+        case gridSize = "grid_size"
         case viewport
         case nodePositions = "node_positions"
         case strokes
@@ -493,7 +497,9 @@ public struct SchemeCanvasLayout: Codable, Sendable, Equatable {
     }
 
     public init(
-        version: Int = 7,
+        version: Int = 8,
+        snapToGrid: Bool = false,
+        gridSize: Double = 40,
         viewport: SchemeViewport = SchemeViewport(),
         nodePositions: [String: SchemePosition] = [:],
         strokes: [SchemeStroke] = [],
@@ -505,6 +511,8 @@ public struct SchemeCanvasLayout: Codable, Sendable, Equatable {
         connectors: [SchemeConnector] = []
     ) {
         self.version = version
+        self.snapToGrid = snapToGrid
+        self.gridSize = gridSize
         self.viewport = viewport
         self.nodePositions = nodePositions
         self.strokes = strokes
@@ -519,8 +527,10 @@ public struct SchemeCanvasLayout: Codable, Sendable, Equatable {
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         if container.contains(.version) || container.contains(.nodePositions) {
-            let decodedVersion = try container.decodeIfPresent(Int.self, forKey: .version) ?? 7
-            version = max(decodedVersion, 7)
+            let decodedVersion = try container.decodeIfPresent(Int.self, forKey: .version) ?? 8
+            version = max(decodedVersion, 8)
+            snapToGrid = try container.decodeIfPresent(Bool.self, forKey: .snapToGrid) ?? false
+            gridSize = try container.decodeIfPresent(Double.self, forKey: .gridSize) ?? 40
             viewport = try container.decodeIfPresent(SchemeViewport.self, forKey: .viewport) ?? SchemeViewport()
             nodePositions = try container.decodeIfPresent([String: SchemePosition].self, forKey: .nodePositions) ?? [:]
             strokes = try container.decodeIfPresent([SchemeStroke].self, forKey: .strokes) ?? []
@@ -534,7 +544,9 @@ public struct SchemeCanvasLayout: Codable, Sendable, Equatable {
         }
 
         let legacyPositions = try [String: SchemePosition](from: decoder)
-        version = 7
+        version = 8
+        snapToGrid = false
+        gridSize = 40
         viewport = SchemeViewport()
         nodePositions = legacyPositions
         strokes = []

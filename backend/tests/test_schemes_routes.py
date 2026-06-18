@@ -33,7 +33,9 @@ async def test_create_list_get_and_update_scheme_layout(client, auth_headers, mo
 
     node_id = payload["current_revision"]["projection"]["nodes"][0]["id"]
     layout = {
-        "version": 7,
+        "version": 8,
+        "snap_to_grid": True,
+        "grid_size": 40,
         "viewport": {"x": 20, "y": -10, "zoom": 1.2},
         "node_positions": {node_id: {"x": 128.5, "y": -64.25}},
         "strokes": [
@@ -183,7 +185,9 @@ async def test_scheme_routes_migrate_legacy_node_position_layout(
     )
 
     assert migrated.status_code == 200, migrated.text
-    assert migrated.json()["layout"]["version"] == 7
+    assert migrated.json()["layout"]["version"] == 8
+    assert migrated.json()["layout"]["snap_to_grid"] is False
+    assert migrated.json()["layout"]["grid_size"] == 40
     assert migrated.json()["layout"]["node_positions"] == {node_id: {"x": 40.0, "y": 80.0}}
     assert migrated.json()["layout"]["cards"] == []
     assert migrated.json()["layout"]["sources"] == []
@@ -210,12 +214,20 @@ async def test_scheme_routes_validate_layout_shape(client, auth_headers, monkeyp
 
     assert invalid.status_code == 422
 
+    invalid_grid = await client.patch(
+        f"/api/schemes/{created.json()['id']}",
+        headers=auth_headers,
+        json={"layout": {"version": 8, "grid_size": 4}},
+    )
+
+    assert invalid_grid.status_code == 422
+
     unsupported_shape = await client.patch(
         f"/api/schemes/{created.json()['id']}",
         headers=auth_headers,
         json={
             "layout": {
-                "version": 2,
+                "version": 8,
                 "shapes": [
                     {
                         "id": "shape-bad",
@@ -237,7 +249,7 @@ async def test_scheme_routes_validate_layout_shape(client, auth_headers, monkeyp
         headers=auth_headers,
         json={
             "layout": {
-                "version": 7,
+                "version": 8,
                 "sources": [
                     {
                         "id": "source-bad",
@@ -262,7 +274,7 @@ async def test_scheme_routes_validate_layout_shape(client, auth_headers, monkeyp
         headers=auth_headers,
         json={
             "layout": {
-                "version": 7,
+                "version": 8,
                 "strokes": [
                     {
                         "id": "stroke-bad",

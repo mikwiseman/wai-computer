@@ -141,7 +141,9 @@ final class SchemeModelTests: XCTestCase {
 
         XCTAssertEqual(scheme.id, "scheme-1")
         XCTAssertEqual(scheme.schemeType, "decision")
-        XCTAssertEqual(scheme.layout.version, 7)
+        XCTAssertEqual(scheme.layout.version, 8)
+        XCTAssertFalse(scheme.layout.snapToGrid)
+        XCTAssertEqual(scheme.layout.gridSize, 40)
         XCTAssertEqual(scheme.layout.nodePositions["lens:root"]?.x, 12)
         XCTAssertEqual(scheme.currentRevision?.projection.nodes.first?.position.y, -8)
         XCTAssertEqual(scheme.currentRevision?.projection.nodes.last?.sourceKind, "item")
@@ -152,7 +154,9 @@ final class SchemeModelTests: XCTestCase {
     func testSchemeDecodesCanvasLayoutPrimitives() throws {
         let json = """
         {
-          "version": 7,
+          "version": 8,
+          "snap_to_grid": true,
+          "grid_size": 32,
           "viewport": {"x": 10, "y": -20, "zoom": 1.4},
           "node_positions": {"lens:root": {"x": 12, "y": -8}},
           "strokes": [
@@ -250,6 +254,9 @@ final class SchemeModelTests: XCTestCase {
         let layout = try JSONDecoder().decode(SchemeCanvasLayout.self, from: json)
 
         XCTAssertEqual(layout.viewport.zoom, 1.4)
+        XCTAssertEqual(layout.version, 8)
+        XCTAssertTrue(layout.snapToGrid)
+        XCTAssertEqual(layout.gridSize, 32)
         XCTAssertEqual(layout.nodePositions["lens:root"]?.y, -8)
         XCTAssertEqual(layout.strokes.first?.points.last?.x, 20)
         XCTAssertEqual(layout.strokes.first?.points.last?.pressure, 0.8)
@@ -348,6 +355,8 @@ final class SchemeModelTests: XCTestCase {
         _ = try await client.updateSchemeLayout(
             id: "scheme-1",
             layout: SchemeCanvasLayout(
+                snapToGrid: true,
+                gridSize: 32,
                 viewport: SchemeViewport(x: 1, y: 2, zoom: 1.2),
                 nodePositions: ["lens:root": SchemePosition(x: 20, y: -10)],
                 strokes: [
@@ -389,7 +398,9 @@ final class SchemeModelTests: XCTestCase {
         ])
         XCTAssertEqual(seen[1].body?["prompt"] as? String, "Map launch decisions")
         let layout = seen[3].body?["layout"] as? [String: Any]
-        XCTAssertEqual(layout?["version"] as? Int, 7)
+        XCTAssertEqual(layout?["version"] as? Int, 8)
+        XCTAssertEqual(layout?["snap_to_grid"] as? Bool, true)
+        XCTAssertEqual(layout?["grid_size"] as? Double, 32)
         let viewport = layout?["viewport"] as? [String: Any]
         XCTAssertEqual(viewport?["zoom"] as? Double, 1.2)
         let positions = layout?["node_positions"] as? [String: Any]

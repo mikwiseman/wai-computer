@@ -1053,6 +1053,8 @@ export interface SchemeConnector {
 
 export interface SchemeCanvasLayout {
   version: number;
+  snap_to_grid: boolean;
+  grid_size: number;
   viewport: SchemeViewport;
   node_positions: Record<string, SchemePosition>;
   strokes: SchemeStroke[];

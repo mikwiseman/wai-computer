@@ -3,7 +3,9 @@ import { expect, test, type Page, type Route } from "@playwright/test";
 const baseTimestamp = "2026-06-17T10:00:00Z";
 
 type SchemeLayout = {
-  version: 7;
+  version: 8;
+  snap_to_grid: boolean;
+  grid_size: number;
   viewport: { x: number; y: number; zoom: number };
   node_positions: Record<string, { x: number; y: number }>;
   strokes: Array<Record<string, unknown>>;
@@ -17,7 +19,9 @@ type SchemeLayout = {
 
 function blankLayout(): SchemeLayout {
   return {
-    version: 7,
+    version: 8,
+    snap_to_grid: false,
+    grid_size: 40,
     viewport: { x: 0, y: 0, zoom: 1 },
     node_positions: {},
     strokes: [],
@@ -227,6 +231,7 @@ test("Schemes board duplicates, locks, and unlocks a placed sticky", async ({ pa
   await expect(page.getByTestId("workspace-title")).toContainText("Schemes");
   await expect(page.getByTestId("schemes-panel")).toBeVisible();
   await expect(page.getByRole("button", { name: "Pin sources" })).toBeEnabled();
+  await expect(page.getByRole("checkbox", { name: "Snap to grid" })).toBeVisible();
   await page.getByRole("button", { name: "Pin sources" }).click();
   await expect(page.locator(".scheme-source")).toHaveCount(1);
   expect(layoutUpdates.at(-1)?.sources).toEqual([
@@ -269,8 +274,12 @@ test("Schemes board duplicates, locks, and unlocks a placed sticky", async ({ pa
   expect(layoutUpdates.at(-1)?.strokes).toEqual([]);
 
   await page.getByRole("button", { name: "Sticky" }).click();
+  await page.getByRole("checkbox", { name: "Snap to grid" }).check();
   await board.click({ position: { x: Math.max(220, boardBox.width - 260), y: boardBox.height - 100 } });
   await expect(page.locator(".scheme-sticky")).toHaveCount(1);
+  expect(layoutUpdates.at(-1)?.snap_to_grid).toBe(true);
+  expect(Math.abs(Number(layoutUpdates.at(-1)?.cards[0]?.x ?? 1) % 40)).toBe(0);
+  expect(Math.abs(Number(layoutUpdates.at(-1)?.cards[0]?.y ?? 1) % 40)).toBe(0);
   await expect(page.getByRole("button", { name: "Duplicate" })).toBeEnabled();
   const resizeHandle = page.locator('[data-scheme-resize-handle="se"]').first();
   await expect(resizeHandle).toBeVisible();

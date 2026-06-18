@@ -19,7 +19,9 @@ vi.mock("@/lib/api", () => ({
 
 function layout(overrides: Partial<SchemeCanvasLayout> = {}): SchemeCanvasLayout {
   return {
-    version: 7,
+    version: 8,
+    snap_to_grid: false,
+    grid_size: 40,
     viewport: { x: 0, y: 0, zoom: 1 },
     node_positions: {},
     strokes: [],
@@ -175,7 +177,7 @@ describe("SchemesPanel", () => {
         "scheme-1",
         {
           layout: expect.objectContaining({
-            version: 7,
+            version: 8,
             node_positions: expect.objectContaining({
               "signal:decision:1": expect.objectContaining({ x: 380, y: -160 }),
             }),
@@ -196,7 +198,7 @@ describe("SchemesPanel", () => {
         "scheme-1",
         {
           layout: expect.objectContaining({
-            version: 7,
+            version: 8,
             sources: [
               expect.objectContaining({
                 id: "source-block:item:1",
@@ -233,6 +235,51 @@ describe("SchemesPanel", () => {
               expect.objectContaining({
                 id: "card:test-id-1",
                 text: "Note",
+              }),
+            ],
+          }),
+        },
+      ),
+    );
+  });
+
+  it("persists snap settings and places new objects on the grid", async () => {
+    const { container } = render(<SchemesPanel />);
+
+    await screen.findByTestId("schemes-panel");
+    fireEvent.click(screen.getByRole("checkbox", { name: "Snap to grid" }));
+
+    await waitFor(() =>
+      expect(mockUpdateScheme).toHaveBeenCalledWith(
+        "scheme-1",
+        {
+          layout: expect.objectContaining({
+            version: 8,
+            snap_to_grid: true,
+            grid_size: 40,
+          }),
+        },
+      ),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Sticky" }));
+    const viewport = container.querySelector(".scheme-board__viewport");
+    expect(viewport).not.toBeNull();
+
+    fireEvent.pointerDown(viewport as Element, { pointerId: 1, clientX: 127, clientY: 166, button: 0 });
+
+    await waitFor(() =>
+      expect(mockUpdateScheme).toHaveBeenLastCalledWith(
+        "scheme-1",
+        {
+          layout: expect.objectContaining({
+            snap_to_grid: true,
+            grid_size: 40,
+            cards: [
+              expect.objectContaining({
+                id: "card:test-id-1",
+                x: 0,
+                y: 80,
               }),
             ],
           }),

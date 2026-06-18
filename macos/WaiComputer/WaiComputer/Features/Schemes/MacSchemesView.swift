@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 import WaiComputerKit
 
@@ -428,6 +429,9 @@ private struct MacSchemeBoard: View {
     private let highlighterWidth = 14.0
     private let highlighterOpacity = 0.35
     private let eraserRadius = 14.0
+    private let defaultGridSize = 40.0
+    private let minGridSize = 8.0
+    private let maxGridSize = 240.0
 
     var body: some View {
         VStack(spacing: 0) {
@@ -573,6 +577,29 @@ private struct MacSchemeBoard: View {
             .buttonStyle(WaiGhostButtonStyle())
             .disabled(redoStack.isEmpty)
             .help(t("Redo", "Повторить"))
+
+            Button {
+                layout.snapToGrid.toggle()
+                layout.gridSize = normalisedGridSize(layout.gridSize)
+                onCommit(layout)
+            } label: {
+                Image(systemName: layout.snapToGrid ? "grid.circle.fill" : "grid.circle")
+            }
+            .buttonStyle(WaiGhostButtonStyle())
+            .help(t("Snap to Grid", "Привязка к сетке"))
+
+            Stepper(value: $layout.gridSize, in: minGridSize...maxGridSize, step: 4) {
+                Text("\(Int(normalisedGridSize(layout.gridSize)))")
+                    .font(Typography.caption)
+                    .foregroundStyle(Palette.textSecondary)
+                    .frame(width: 34, alignment: .trailing)
+            }
+            .frame(width: 92)
+            .help(t("Grid Size", "Размер сетки"))
+            .onChangeCompat(of: layout.gridSize) {
+                layout.gridSize = normalisedGridSize(layout.gridSize)
+                onCommit(layout)
+            }
 
             Button {
                 duplicateSelected()
@@ -745,6 +772,44 @@ private struct MacSchemeBoard: View {
             Color(nsColor: .textBackgroundColor)
             Palette.surfaceSubtle.opacity(0.55)
         }
+    }
+
+    private var isSnapBypassed: Bool {
+        NSEvent.modifierFlags.contains(.command) || NSEvent.modifierFlags.contains(.control)
+    }
+
+    private func normalisedGridSize(_ value: Double) -> Double {
+        min(maxGridSize, max(minGridSize, value.isFinite ? value : defaultGridSize))
+    }
+
+    private func snapValue(_ value: Double) -> Double {
+        let gridSize = normalisedGridSize(layout.gridSize)
+        return (value / gridSize).rounded() * gridSize
+    }
+
+    private func snapPosition(_ position: SchemePosition, isBypassed: Bool = false) -> SchemePosition {
+        guard layout.snapToGrid, !isBypassed else { return position }
+        return SchemePosition(x: snapValue(position.x), y: snapValue(position.y), pressure: position.pressure)
+    }
+
+    private func snapRect(_ rect: (x: Double, y: Double, width: Double, height: Double), handle: ResizeHandle?) -> (x: Double, y: Double, width: Double, height: Double) {
+        guard layout.snapToGrid, !isSnapBypassed else { return rect }
+        guard let handle else {
+            return (x: snapValue(rect.x), y: snapValue(rect.y), width: rect.width, height: rect.height)
+        }
+
+        let right = rect.x + rect.width
+        let bottom = rect.y + rect.height
+        let snappedX = handle.isWest ? snapValue(rect.x) : rect.x
+        let snappedY = handle.isNorth ? snapValue(rect.y) : rect.y
+        let snappedRight = handle.isWest ? right : snapValue(right)
+        let snappedBottom = handle.isNorth ? bottom : snapValue(bottom)
+        return (
+            x: snappedX,
+            y: snappedY,
+            width: max(1, snappedRight - snappedX),
+            height: max(1, snappedBottom - snappedY)
+        )
     }
 
     private var positionedNodes: [SchemeNode] {
@@ -1084,6 +1149,35 @@ private struct MacSchemeBoard: View {
         return (id: id, rect: CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY))
     }
 
+    private func itemRect(in candidate: SchemeCanvasLayout, id: String) -> CGRect? {
+        if let node = projection?.nodes.first(where: { $0.id == id }) {
+            let position = candidate.nodePositions[id] ?? node.position
+            return CGRect(x: position.x, y: position.y, width: Double(nodeWidth), height: Double(nodeHeight))
+        }
+        if let card = candidate.cards.first(where: { $0.id == id }) {
+            return CGRect(x: card.x, y: card.y, width: card.width, height: card.height)
+        }
+        if let shape = candidate.shapes.first(where: { $0.id == id }) {
+            return CGRect(x: shape.x, y: shape.y, width: shape.width, height: shape.height)
+        }
+        if let frame = candidate.frames.first(where: { $0.id == id }) {
+            return CGRect(x: frame.x, y: frame.y, width: frame.width, height: frame.height)
+        }
+        if let text = candidate.texts.first(where: { $0.id == id }) {
+            return CGRect(x: text.x, y: text.y, width: text.width, height: text.height)
+        }
+        if let source = candidate.sources.first(where: { $0.id == id }) {
+            return CGRect(x: source.x, y: source.y, width: source.width, height: source.height)
+        }
+        if let stroke = candidate.strokes.first(where: { $0.id == id }) {
+            return pointsBounds(id: stroke.id, points: stroke.points)?.rect
+        }
+        if let connector = candidate.connectors.first(where: { $0.id == id }) {
+            return pointsBounds(id: connector.id, points: connector.points)?.rect
+        }
+        return nil
+    }
+
     private func normalisedSelectionRect(from start: SchemePosition, to end: SchemePosition) -> CGRect {
         let minX = min(start.x, end.x)
         let minY = min(start.y, end.y)
@@ -1173,9 +1267,19 @@ private struct MacSchemeBoard: View {
         translation: CGSize
     ) -> SchemeCanvasLayout {
         let selected = Set(itemIds)
-        let dx = Double(translation.width / CGFloat(origin.viewport.zoom))
-        let dy = Double(translation.height / CGFloat(origin.viewport.zoom))
+        let baseDx = Double(translation.width / CGFloat(origin.viewport.zoom))
+        let baseDy = Double(translation.height / CGFloat(origin.viewport.zoom))
+        var dx = baseDx
+        var dy = baseDy
         var next = origin
+
+        if origin.snapToGrid, !isSnapBypassed,
+           let anchor = itemIds.compactMap({ itemRect(in: origin, id: $0) }).first {
+            let targetX = Double(anchor.minX) + baseDx
+            let targetY = Double(anchor.minY) + baseDy
+            dx += snapValue(targetX) - targetX
+            dy += snapValue(targetY) - targetY
+        }
 
         for itemId in selected {
             if let position = next.nodePositions[itemId] {
@@ -1214,6 +1318,14 @@ private struct MacSchemeBoard: View {
         }
 
         return next
+    }
+
+    private func draggedPosition(from origin: SchemePosition, translation: CGSize) -> SchemePosition {
+        let position = SchemePosition(
+            x: origin.x + Double(translation.width / CGFloat(layout.viewport.zoom)),
+            y: origin.y + Double(translation.height / CGFloat(layout.viewport.zoom))
+        )
+        return snapPosition(position, isBypassed: isSnapBypassed)
     }
 
     private func beginMultiDragIfNeeded(id: String, translation: CGSize) -> Bool {
@@ -1414,11 +1526,19 @@ private struct MacSchemeBoard: View {
         let limits = resizeLimits(for: kind)
         let nextWidth = min(limits.maxWidth, max(limits.minWidth, handle.isWest ? width - dx : width + dx))
         let nextHeight = min(limits.maxHeight, max(limits.minHeight, handle.isNorth ? height - dy : height + dy))
-        return (
+        let snapped = snapRect((
             x: handle.isWest ? x + width - nextWidth : x,
             y: handle.isNorth ? y + height - nextHeight : y,
             width: nextWidth,
             height: nextHeight
+        ), handle: handle)
+        let clampedWidth = min(limits.maxWidth, max(limits.minWidth, snapped.width))
+        let clampedHeight = min(limits.maxHeight, max(limits.minHeight, snapped.height))
+        return (
+            x: handle.isWest ? x + width - clampedWidth : snapped.x,
+            y: handle.isNorth ? y + height - clampedHeight : snapped.y,
+            width: clampedWidth,
+            height: clampedHeight
         )
     }
 
@@ -1557,10 +1677,7 @@ private struct MacSchemeBoard: View {
                     selectSingle(node.id)
                 }
                 let origin = nodeDrag?.origin ?? node.position
-                layout.nodePositions[node.id] = SchemePosition(
-                    x: origin.x + Double(value.translation.width / CGFloat(layout.viewport.zoom)),
-                    y: origin.y + Double(value.translation.height / CGFloat(layout.viewport.zoom))
-                )
+                layout.nodePositions[node.id] = draggedPosition(from: origin, translation: value.translation)
             }
             .onEnded { value in
                 if tool == .connector {
@@ -1570,10 +1687,7 @@ private struct MacSchemeBoard: View {
                 guard tool == .select else { return }
                 if endMultiDragIfNeeded(id: node.id, translation: value.translation) { return }
                 let origin = nodeDrag?.origin ?? node.position
-                layout.nodePositions[node.id] = SchemePosition(
-                    x: origin.x + Double(value.translation.width / CGFloat(layout.viewport.zoom)),
-                    y: origin.y + Double(value.translation.height / CGFloat(layout.viewport.zoom))
-                )
+                layout.nodePositions[node.id] = draggedPosition(from: origin, translation: value.translation)
                 selectSingle(node.id)
                 nodeDrag = nil
                 onCommit(layout)
@@ -1595,9 +1709,10 @@ private struct MacSchemeBoard: View {
                     selectSingle(card.id)
                 }
                 let origin = cardDrag?.origin ?? SchemePosition(x: card.x, y: card.y)
+                let position = draggedPosition(from: origin, translation: value.translation)
                 updateCard(card.id) {
-                    $0.x = origin.x + Double(value.translation.width / CGFloat(layout.viewport.zoom))
-                    $0.y = origin.y + Double(value.translation.height / CGFloat(layout.viewport.zoom))
+                    $0.x = position.x
+                    $0.y = position.y
                 }
             }
             .onEnded { value in
@@ -1613,9 +1728,10 @@ private struct MacSchemeBoard: View {
                 guard tool == .select else { return }
                 if endMultiDragIfNeeded(id: card.id, translation: value.translation) { return }
                 let origin = cardDrag?.origin ?? SchemePosition(x: card.x, y: card.y)
+                let position = draggedPosition(from: origin, translation: value.translation)
                 updateCard(card.id) {
-                    $0.x = origin.x + Double(value.translation.width / CGFloat(layout.viewport.zoom))
-                    $0.y = origin.y + Double(value.translation.height / CGFloat(layout.viewport.zoom))
+                    $0.x = position.x
+                    $0.y = position.y
                 }
                 selectSingle(card.id)
                 cardDrag = nil
@@ -1638,9 +1754,10 @@ private struct MacSchemeBoard: View {
                     selectSingle(shape.id)
                 }
                 let origin = shapeDrag?.origin ?? SchemePosition(x: shape.x, y: shape.y)
+                let position = draggedPosition(from: origin, translation: value.translation)
                 updateShape(shape.id) {
-                    $0.x = origin.x + Double(value.translation.width / CGFloat(layout.viewport.zoom))
-                    $0.y = origin.y + Double(value.translation.height / CGFloat(layout.viewport.zoom))
+                    $0.x = position.x
+                    $0.y = position.y
                 }
             }
             .onEnded { value in
@@ -1656,9 +1773,10 @@ private struct MacSchemeBoard: View {
                 guard tool == .select else { return }
                 if endMultiDragIfNeeded(id: shape.id, translation: value.translation) { return }
                 let origin = shapeDrag?.origin ?? SchemePosition(x: shape.x, y: shape.y)
+                let position = draggedPosition(from: origin, translation: value.translation)
                 updateShape(shape.id) {
-                    $0.x = origin.x + Double(value.translation.width / CGFloat(layout.viewport.zoom))
-                    $0.y = origin.y + Double(value.translation.height / CGFloat(layout.viewport.zoom))
+                    $0.x = position.x
+                    $0.y = position.y
                 }
                 selectSingle(shape.id)
                 shapeDrag = nil
@@ -1681,9 +1799,10 @@ private struct MacSchemeBoard: View {
                     selectSingle(frame.id)
                 }
                 let origin = frameDrag?.origin ?? SchemePosition(x: frame.x, y: frame.y)
+                let position = draggedPosition(from: origin, translation: value.translation)
                 updateFrame(frame.id) {
-                    $0.x = origin.x + Double(value.translation.width / CGFloat(layout.viewport.zoom))
-                    $0.y = origin.y + Double(value.translation.height / CGFloat(layout.viewport.zoom))
+                    $0.x = position.x
+                    $0.y = position.y
                 }
             }
             .onEnded { value in
@@ -1699,9 +1818,10 @@ private struct MacSchemeBoard: View {
                 guard tool == .select else { return }
                 if endMultiDragIfNeeded(id: frame.id, translation: value.translation) { return }
                 let origin = frameDrag?.origin ?? SchemePosition(x: frame.x, y: frame.y)
+                let position = draggedPosition(from: origin, translation: value.translation)
                 updateFrame(frame.id) {
-                    $0.x = origin.x + Double(value.translation.width / CGFloat(layout.viewport.zoom))
-                    $0.y = origin.y + Double(value.translation.height / CGFloat(layout.viewport.zoom))
+                    $0.x = position.x
+                    $0.y = position.y
                 }
                 selectSingle(frame.id)
                 frameDrag = nil
@@ -1724,9 +1844,10 @@ private struct MacSchemeBoard: View {
                     selectSingle(text.id)
                 }
                 let origin = textDrag?.origin ?? SchemePosition(x: text.x, y: text.y)
+                let position = draggedPosition(from: origin, translation: value.translation)
                 updateText(text.id) {
-                    $0.x = origin.x + Double(value.translation.width / CGFloat(layout.viewport.zoom))
-                    $0.y = origin.y + Double(value.translation.height / CGFloat(layout.viewport.zoom))
+                    $0.x = position.x
+                    $0.y = position.y
                 }
             }
             .onEnded { value in
@@ -1742,9 +1863,10 @@ private struct MacSchemeBoard: View {
                 guard tool == .select else { return }
                 if endMultiDragIfNeeded(id: text.id, translation: value.translation) { return }
                 let origin = textDrag?.origin ?? SchemePosition(x: text.x, y: text.y)
+                let position = draggedPosition(from: origin, translation: value.translation)
                 updateText(text.id) {
-                    $0.x = origin.x + Double(value.translation.width / CGFloat(layout.viewport.zoom))
-                    $0.y = origin.y + Double(value.translation.height / CGFloat(layout.viewport.zoom))
+                    $0.x = position.x
+                    $0.y = position.y
                 }
                 selectSingle(text.id)
                 textDrag = nil
@@ -1767,9 +1889,10 @@ private struct MacSchemeBoard: View {
                     selectSingle(source.id)
                 }
                 let origin = sourceDrag?.origin ?? SchemePosition(x: source.x, y: source.y)
+                let position = draggedPosition(from: origin, translation: value.translation)
                 updateSource(source.id) {
-                    $0.x = origin.x + Double(value.translation.width / CGFloat(layout.viewport.zoom))
-                    $0.y = origin.y + Double(value.translation.height / CGFloat(layout.viewport.zoom))
+                    $0.x = position.x
+                    $0.y = position.y
                 }
             }
             .onEnded { value in
@@ -1785,9 +1908,10 @@ private struct MacSchemeBoard: View {
                 guard tool == .select else { return }
                 if endMultiDragIfNeeded(id: source.id, translation: value.translation) { return }
                 let origin = sourceDrag?.origin ?? SchemePosition(x: source.x, y: source.y)
+                let position = draggedPosition(from: origin, translation: value.translation)
                 updateSource(source.id) {
-                    $0.x = origin.x + Double(value.translation.width / CGFloat(layout.viewport.zoom))
-                    $0.y = origin.y + Double(value.translation.height / CGFloat(layout.viewport.zoom))
+                    $0.x = position.x
+                    $0.y = position.y
                 }
                 selectSingle(source.id)
                 sourceDrag = nil
@@ -1796,10 +1920,38 @@ private struct MacSchemeBoard: View {
     }
 
     private func drawBoard(context: GraphicsContext, size: CGSize) {
+        drawGrid(context: context, size: size)
         drawProjectionEdges(context: context, size: size)
         drawConnectors(context: context, size: size)
         drawStrokes(context: context, size: size)
         drawLasso(context: context, size: size)
+    }
+
+    private func drawGrid(context: GraphicsContext, size: CGSize) {
+        let spacing = CGFloat(normalisedGridSize(layout.gridSize) * layout.viewport.zoom)
+        guard spacing >= 4 else { return }
+
+        let originX = size.width / 2 + CGFloat(layout.viewport.x)
+        let originY = size.height / 2 + CGFloat(layout.viewport.y)
+        var path = Path()
+
+        var x = originX.truncatingRemainder(dividingBy: spacing)
+        if x < 0 { x += spacing }
+        while x <= size.width {
+            path.move(to: CGPoint(x: x, y: 0))
+            path.addLine(to: CGPoint(x: x, y: size.height))
+            x += spacing
+        }
+
+        var y = originY.truncatingRemainder(dividingBy: spacing)
+        if y < 0 { y += spacing }
+        while y <= size.height {
+            path.move(to: CGPoint(x: 0, y: y))
+            path.addLine(to: CGPoint(x: size.width, y: y))
+            y += spacing
+        }
+
+        context.stroke(path, with: .color(Palette.textSecondary.opacity(0.08)), lineWidth: 1)
     }
 
     private func drawProjectionEdges(context: GraphicsContext, size: CGSize) {
@@ -1869,10 +2021,14 @@ private struct MacSchemeBoard: View {
 
     private func addCard(at point: SchemePosition) {
         pushUndoSnapshot()
+        let rect = snapRect(
+            (x: point.x - stickyWidth / 2, y: point.y - stickyHeight / 2, width: stickyWidth, height: stickyHeight),
+            handle: nil
+        )
         let card = SchemeCanvasCard(
             id: "card:\(UUID().uuidString)",
-            x: point.x - stickyWidth / 2,
-            y: point.y - stickyHeight / 2,
+            x: rect.x,
+            y: rect.y,
             width: stickyWidth,
             height: stickyHeight,
             text: t("Note", "Заметка"),
@@ -1885,11 +2041,15 @@ private struct MacSchemeBoard: View {
 
     private func addShape(kind: String, at point: SchemePosition) {
         pushUndoSnapshot()
+        let rect = snapRect(
+            (x: point.x - shapeWidth / 2, y: point.y - shapeHeight / 2, width: shapeWidth, height: shapeHeight),
+            handle: nil
+        )
         let shape = SchemeCanvasShape(
             id: "shape:\(UUID().uuidString)",
             kind: kind,
-            x: point.x - shapeWidth / 2,
-            y: point.y - shapeHeight / 2,
+            x: rect.x,
+            y: rect.y,
             width: shapeWidth,
             height: shapeHeight,
             color: kind == "ellipse" ? "#7c3aed" : "#2563eb",
@@ -1902,10 +2062,14 @@ private struct MacSchemeBoard: View {
 
     private func addFrame(at point: SchemePosition) {
         pushUndoSnapshot()
+        let rect = snapRect(
+            (x: point.x - frameWidth / 2, y: point.y - frameHeight / 2, width: frameWidth, height: frameHeight),
+            handle: nil
+        )
         let frame = SchemeCanvasFrame(
             id: "frame:\(UUID().uuidString)",
-            x: point.x - frameWidth / 2,
-            y: point.y - frameHeight / 2,
+            x: rect.x,
+            y: rect.y,
             width: frameWidth,
             height: frameHeight,
             title: t("Frame", "Фрейм"),
@@ -1918,10 +2082,14 @@ private struct MacSchemeBoard: View {
 
     private func addText(at point: SchemePosition) {
         pushUndoSnapshot()
+        let rect = snapRect(
+            (x: point.x - textWidth / 2, y: point.y - textHeight / 2, width: textWidth, height: textHeight),
+            handle: nil
+        )
         let text = SchemeTextBlock(
             id: "text:\(UUID().uuidString)",
-            x: point.x - textWidth / 2,
-            y: point.y - textHeight / 2,
+            x: rect.x,
+            y: rect.y,
             width: textWidth,
             height: textHeight,
             text: t("Text", "Текст"),

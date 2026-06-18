@@ -5294,6 +5294,36 @@ a.primary-button[aria-disabled="true"]:hover {
   accent-color: var(--accent);
 }
 
+.scheme-board__snap-toggle,
+.scheme-board__grid-size {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-height: 2rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.3rem 0.55rem;
+  background: var(--panel);
+  color: var(--ink-soft);
+  font-size: 0.78rem;
+}
+
+.scheme-board__snap-toggle input {
+  width: 0.9rem;
+  height: 0.9rem;
+  accent-color: var(--accent);
+}
+
+.scheme-board__grid-size input {
+  width: 4.2rem;
+  border: 0;
+  border-radius: 6px;
+  padding: 0.2rem 0.3rem;
+  background: var(--panel-raised);
+  color: var(--ink);
+  font: inherit;
+}
+
 .scheme-board__swatches {
   display: flex;
   align-items: center;
@@ -5365,7 +5395,6 @@ a.primary-button[aria-disabled="true"]:hover {
   background:
     linear-gradient(color-mix(in srgb, var(--ink) 5%, transparent) 1px, transparent 1px),
     linear-gradient(90deg, color-mix(in srgb, var(--ink) 5%, transparent) 1px, transparent 1px);
-  background-size: 40px 40px;
   pointer-events: none;
 }
 
