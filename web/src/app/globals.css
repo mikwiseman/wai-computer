@@ -5341,6 +5341,10 @@ a.primary-button[aria-disabled="true"]:hover {
   font-weight: 750;
 }
 
+.scheme-board__frames .scheme-board__presentation-status {
+  color: var(--accent);
+}
+
 .scheme-board__frames button {
   flex: 0 0 auto;
   border: 1px solid var(--border);

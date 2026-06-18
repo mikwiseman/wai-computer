@@ -641,6 +641,18 @@ private struct MacSchemeBoard: View {
                 Divider()
                     .frame(height: 22)
 
+                Button {
+                    if isPresenting {
+                        exitPresentation()
+                    } else {
+                        startPresentation()
+                    }
+                } label: {
+                    Image(systemName: isPresenting ? "xmark.rectangle" : "play.rectangle")
+                }
+                .buttonStyle(WaiGhostButtonStyle())
+                .help(isPresenting ? t("Exit Presentation", "Закрыть презентацию") : t("Start Presentation", "Начать презентацию"))
+
                 Menu {
                     ForEach(orderedFrames) { frame in
                         Button(frame.title) {
@@ -654,20 +666,34 @@ private struct MacSchemeBoard: View {
                 .help(t("Frames", "Фреймы"))
 
                 Button {
-                    focusAdjacentFrame(offset: -1)
+                    if isPresenting {
+                        advancePresentation(offset: -1)
+                    } else {
+                        focusAdjacentFrame(offset: -1)
+                    }
                 } label: {
                     Image(systemName: "chevron.left")
                 }
                 .buttonStyle(WaiGhostButtonStyle())
-                .help(t("Previous Frame", "Предыдущий фрейм"))
+                .help(isPresenting ? t("Previous Slide", "Предыдущий слайд") : t("Previous Frame", "Предыдущий фрейм"))
 
                 Button {
-                    focusAdjacentFrame(offset: 1)
+                    if isPresenting {
+                        advancePresentation(offset: 1)
+                    } else {
+                        focusAdjacentFrame(offset: 1)
+                    }
                 } label: {
                     Image(systemName: "chevron.right")
                 }
                 .buttonStyle(WaiGhostButtonStyle())
-                .help(t("Next Frame", "Следующий фрейм"))
+                .help(isPresenting ? t("Next Slide", "Следующий слайд") : t("Next Frame", "Следующий фрейм"))
+
+                if let presentationFrameIndex {
+                    Text("\(t("Presenting", "Презентация")) \(presentationFrameIndex + 1) / \(orderedFrames.count)")
+                        .font(Typography.caption)
+                        .foregroundStyle(Palette.accent)
+                }
             }
 
             Button {
@@ -941,8 +967,32 @@ private struct MacSchemeBoard: View {
         return ordered
     }
 
+    private var presentationFrame: SchemeCanvasFrame? {
+        guard layout.presentation.active, let frameId = layout.presentation.frameId else { return nil }
+        return orderedFrames.first { $0.id == frameId }
+    }
+
+    private var presentationFrameIndex: Int? {
+        guard let presentationFrame else { return nil }
+        return orderedFrames.firstIndex { $0.id == presentationFrame.id }
+    }
+
+    private var isPresenting: Bool {
+        presentationFrame != nil
+    }
+
     private func normalisedFrameOrder() -> [String] {
         orderedFrames.map(\.id)
+    }
+
+    private func normalisePresentationState() {
+        guard layout.presentation.active,
+              let frameId = layout.presentation.frameId,
+              layout.frames.contains(where: { $0.id == frameId })
+        else {
+            layout.presentation = SchemePresentationState()
+            return
+        }
     }
 
     private var boardOutlineItems: [MacSchemeOutlineItem] {
@@ -1119,6 +1169,9 @@ private struct MacSchemeBoard: View {
     private func focusFrame(_ frame: SchemeCanvasFrame) {
         guard boardSize.width > 1, boardSize.height > 1 else { return }
         layout.frameOrder = normalisedFrameOrder()
+        layout.presentation = layout.presentation.active
+            ? SchemePresentationState(active: true, frameId: frame.id)
+            : SchemePresentationState()
         layout.viewport = viewportForBounds(
             CGRect(x: frame.x, y: frame.y, width: frame.width, height: frame.height),
             in: boardSize,
@@ -1131,10 +1184,38 @@ private struct MacSchemeBoard: View {
     private func focusAdjacentFrame(offset: Int) {
         let frames = orderedFrames
         guard !frames.isEmpty else { return }
-        let currentIndex = selectedItemId.flatMap { selected in frames.firstIndex { $0.id == selected } }
+        let presentingFrameId = layout.presentation.active ? layout.presentation.frameId : nil
+        let currentIndex = presentingFrameId.flatMap { frameId in frames.firstIndex { $0.id == frameId } }
+            ?? selectedItemId.flatMap { selected in frames.firstIndex { $0.id == selected } }
         let baseIndex = currentIndex ?? (offset > 0 ? -1 : 0)
         let nextIndex = (baseIndex + offset + frames.count) % frames.count
         focusFrame(frames[nextIndex])
+    }
+
+    private func startPresentation() {
+        let frames = orderedFrames
+        guard boardSize.width > 1, boardSize.height > 1, !frames.isEmpty else { return }
+        let currentFrame = layout.presentation.frameId.flatMap { frameId in frames.first { $0.id == frameId } }
+        let selectedFrame = selectedFrameId.flatMap { frameId in frames.first { $0.id == frameId } }
+        let frame = currentFrame ?? selectedFrame ?? frames[0]
+        layout.frameOrder = normalisedFrameOrder()
+        layout.presentation = SchemePresentationState(active: true, frameId: frame.id)
+        layout.viewport = viewportForBounds(
+            CGRect(x: frame.x, y: frame.y, width: frame.width, height: frame.height),
+            in: boardSize,
+            padding: frameFocusPadding
+        )
+        selectSingle(frame.id)
+        onCommit(layout)
+    }
+
+    private func exitPresentation() {
+        layout.presentation = SchemePresentationState()
+        onCommit(layout)
+    }
+
+    private func advancePresentation(offset: Int) {
+        focusAdjacentFrame(offset: offset)
     }
 
     private func fitBoard() {
@@ -2543,6 +2624,7 @@ private struct MacSchemeBoard: View {
         layout.shapes.removeAll { selected.contains($0.id) }
         layout.frames.removeAll { selected.contains($0.id) }
         layout.frameOrder = normalisedFrameOrder()
+        normalisePresentationState()
         layout.texts.removeAll { selected.contains($0.id) }
         layout.sources.removeAll { selected.contains($0.id) }
         layout.strokes.removeAll { selected.contains($0.id) }

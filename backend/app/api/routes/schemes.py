@@ -25,7 +25,7 @@ from app.models.brain_map import BrainMap, BrainMapRevision
 
 router = APIRouter(prefix="/schemes", tags=["schemes"])
 
-SCHEME_LAYOUT_VERSION = 9
+SCHEME_LAYOUT_VERSION = 10
 SCHEME_SHAPE_KINDS = {"rectangle", "ellipse"}
 SCHEME_SOURCE_KINDS = {"item", "recording", "chat"}
 SCHEME_STROKE_KINDS = {"pen", "highlighter"}
@@ -49,6 +49,11 @@ class SchemeViewport(BaseModel):
     x: float = 0
     y: float = 0
     zoom: float = Field(default=1, gt=0, le=4)
+
+
+class SchemePresentationState(BaseModel):
+    active: bool = False
+    frame_id: str | None = Field(default=None, min_length=1)
 
 
 class SchemeStroke(BaseModel):
@@ -152,6 +157,7 @@ class SchemeCanvasLayout(BaseModel):
         le=SCHEME_GRID_SIZE_MAX,
     )
     viewport: SchemeViewport = Field(default_factory=SchemeViewport)
+    presentation: SchemePresentationState = Field(default_factory=SchemePresentationState)
     node_positions: dict[str, SchemePosition] = Field(default_factory=dict)
     strokes: list[SchemeStroke] = Field(default_factory=list)
     cards: list[SchemeCanvasCard] = Field(default_factory=list)
@@ -165,13 +171,19 @@ class SchemeCanvasLayout(BaseModel):
     @model_validator(mode="after")
     def validate_frame_order(self) -> "SchemeCanvasLayout":
         frame_ids = [frame.id for frame in self.frames]
+        frame_id_set = set(frame_ids)
         if not self.frame_order:
             self.frame_order = frame_ids
-            return self
-        if len(set(self.frame_order)) != len(self.frame_order):
+        elif len(set(self.frame_order)) != len(self.frame_order):
             raise ValueError("Scheme frame_order contains duplicate frame ids")
-        if set(self.frame_order) != set(frame_ids):
+        elif set(self.frame_order) != frame_id_set:
             raise ValueError("Scheme frame_order must contain exactly the current frame ids")
+        if self.presentation.frame_id and self.presentation.frame_id not in frame_id_set:
+            raise ValueError("Scheme presentation frame_id must reference a current frame")
+        if self.presentation.active and self.presentation.frame_id is None:
+            raise ValueError("Scheme presentation must name a frame when active")
+        if not self.presentation.active:
+            self.presentation.frame_id = None
         return self
 
     @classmethod

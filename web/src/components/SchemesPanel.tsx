@@ -193,7 +193,7 @@ interface ProjectionSourceSummary {
   created_at?: string | null;
 }
 
-const SCHEME_LAYOUT_VERSION = 9 as const;
+const SCHEME_LAYOUT_VERSION = 10 as const;
 const DEFAULT_VIEWPORT: SchemeViewport = { x: 0, y: 0, zoom: 1 };
 const MIN_ZOOM = 0.25;
 const MAX_ZOOM = 2.8;
@@ -265,6 +265,11 @@ const COPY = {
     frames: "Frames",
     previousFrame: "Previous frame",
     nextFrame: "Next frame",
+    previousSlide: "Previous slide",
+    nextSlide: "Next slide",
+    startPresentation: "Start presentation",
+    exitPresentation: "Exit presentation",
+    presenting: (index: number, total: number) => `Presenting ${index} / ${total}`,
     fitBoard: "Fit board",
     overview: "Board overview",
     outline: "Board outline",
@@ -314,6 +319,11 @@ const COPY = {
     frames: "Фреймы",
     previousFrame: "Предыдущий фрейм",
     nextFrame: "Следующий фрейм",
+    previousSlide: "Предыдущий слайд",
+    nextSlide: "Следующий слайд",
+    startPresentation: "Начать презентацию",
+    exitPresentation: "Закрыть презентацию",
+    presenting: (index: number, total: number) => `Презентация ${index} / ${total}`,
     fitBoard: "Вся доска",
     overview: "Обзор доски",
     outline: "Структура доски",
@@ -406,6 +416,21 @@ function orderedFramesForLayout(layout: SchemeCanvasLayout): SchemeCanvasFrame[]
   });
 }
 
+function normalisePresentation(
+  presentation: Partial<SchemeCanvasLayout["presentation"]> | null | undefined,
+  frames: SchemeCanvasFrame[],
+): SchemeCanvasLayout["presentation"] {
+  const frameIds = new Set(frames.map((frame) => frame.id));
+  const frameId = typeof presentation?.frame_id === "string" && frameIds.has(presentation.frame_id)
+    ? presentation.frame_id
+    : null;
+  const active = Boolean(presentation?.active) && frameId !== null;
+  return {
+    active,
+    frame_id: active ? frameId : null,
+  };
+}
+
 function viewportForFrame(frame: SchemeCanvasFrame, rect: DOMRect): SchemeViewport {
   const availableWidth = Math.max(1, rect.width - FRAME_FOCUS_PADDING);
   const availableHeight = Math.max(1, rect.height - FRAME_FOCUS_PADDING);
@@ -469,6 +494,7 @@ function blankLayout(): SchemeCanvasLayout {
     snap_to_grid: false,
     grid_size: DEFAULT_GRID_SIZE,
     viewport: { ...DEFAULT_VIEWPORT },
+    presentation: { active: false, frame_id: null },
     node_positions: {},
     strokes: [],
     cards: [],
@@ -553,6 +579,7 @@ function layoutForScheme(scheme: Scheme | null): SchemeCanvasLayout {
     snap_to_grid: Boolean(raw.snap_to_grid),
     grid_size: normaliseGridSize(raw.grid_size),
     viewport: { ...DEFAULT_VIEWPORT, ...(raw.viewport ?? {}) },
+    presentation: { active: false, frame_id: null },
     node_positions: raw.node_positions ?? {},
     strokes: (raw.strokes ?? []).map(normaliseStroke),
     cards: (raw.cards ?? []).map((card) => ({ ...card, locked: card.locked ?? false, z_index: card.z_index ?? Number.NaN })),
@@ -571,6 +598,7 @@ function layoutForScheme(scheme: Scheme | null): SchemeCanvasLayout {
   return {
     ...nextLayout,
     frame_order: normaliseFrameOrder(nextLayout.frames, raw.frame_order),
+    presentation: normalisePresentation(raw.presentation, nextLayout.frames),
   };
 }
 
@@ -1454,6 +1482,7 @@ function cloneLayout(layout: SchemeCanvasLayout): SchemeCanvasLayout {
     snap_to_grid: layout.snap_to_grid,
     grid_size: layout.grid_size,
     viewport: { ...layout.viewport },
+    presentation: { ...normalisePresentation(layout.presentation, layout.frames) },
     node_positions: Object.fromEntries(
       Object.entries(layout.node_positions).map(([id, position]) => [id, { ...position }]),
     ),
@@ -1640,10 +1669,22 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
     () => boardOutlineItemsForLayout(layout, positionedNodes, orderedFrames),
     [layout, positionedNodes, orderedFrames],
   );
+  const presentation = useMemo(
+    () => normalisePresentation(layout.presentation, layout.frames),
+    [layout.presentation, layout.frames],
+  );
   const activeFrameIndex = useMemo(() => {
     if (selectedItems.length !== 1) return -1;
     return orderedFrames.findIndex((frame) => frame.id === selectedItems[0]);
   }, [orderedFrames, selectedItems]);
+  const presentationFrameIndex = useMemo(() => {
+    if (!presentation.active) return -1;
+    return orderedFrames.findIndex((frame) => frame.id === presentation.frame_id);
+  }, [orderedFrames, presentation]);
+  const isPresenting = presentationFrameIndex >= 0;
+  const presentationFrame = isPresenting ? orderedFrames[presentationFrameIndex] : null;
+  const previousFrameLabel = isPresenting ? copy.previousSlide : copy.previousFrame;
+  const nextFrameLabel = isPresenting ? copy.nextSlide : copy.nextFrame;
 
   const commitLayout = useCallback(
     async (nextLayout: SchemeCanvasLayout) => {
@@ -1825,9 +1866,13 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
     (frame: SchemeCanvasFrame) => {
       const rect = viewportRef.current?.getBoundingClientRect();
       if (!rect) return;
+      const currentPresentation = normalisePresentation(layoutRef.current.presentation, layoutRef.current.frames);
       const nextLayout = {
         ...layoutRef.current,
         frame_order: normaliseFrameOrder(layoutRef.current.frames, layoutRef.current.frame_order),
+        presentation: currentPresentation.active
+          ? { active: true, frame_id: frame.id }
+          : currentPresentation,
         viewport: viewportForFrame(frame, rect),
       };
       setSelectedItem(frame.id);
@@ -1842,7 +1887,11 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
     (offset: number) => {
       const frames = orderedFramesForLayout(layoutRef.current);
       if (frames.length === 0) return;
-      const currentIndex = selectedItems.length === 1
+      const currentPresentation = normalisePresentation(layoutRef.current.presentation, layoutRef.current.frames);
+      const presentingFrameId = currentPresentation.active ? currentPresentation.frame_id : null;
+      const currentIndex = presentingFrameId
+        ? frames.findIndex((frame) => frame.id === presentingFrameId)
+        : selectedItems.length === 1
         ? frames.findIndex((frame) => frame.id === selectedItems[0])
         : -1;
       const baseIndex = currentIndex === -1 ? (offset > 0 ? -1 : 0) : currentIndex;
@@ -1851,6 +1900,44 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
     },
     [focusFrame, selectedItems],
   );
+
+  const startPresentation = useCallback(() => {
+    const frames = orderedFramesForLayout(layoutRef.current);
+    const rect = viewportRef.current?.getBoundingClientRect();
+    if (frames.length === 0 || !rect) return;
+    const currentPresentation = normalisePresentation(layoutRef.current.presentation, layoutRef.current.frames);
+    const selectedFrame = selectedItems.length === 1
+      ? frames.find((frame) => frame.id === selectedItems[0])
+      : undefined;
+    const currentFrame = currentPresentation.frame_id
+      ? frames.find((frame) => frame.id === currentPresentation.frame_id)
+      : undefined;
+    const frame = currentFrame ?? selectedFrame ?? frames[0];
+    const nextLayout = {
+      ...layoutRef.current,
+      frame_order: normaliseFrameOrder(layoutRef.current.frames, layoutRef.current.frame_order),
+      presentation: { active: true, frame_id: frame.id },
+      viewport: viewportForFrame(frame, rect),
+    };
+    setSelectedItem(frame.id);
+    setLayout(nextLayout);
+    layoutRef.current = nextLayout;
+    void commitLayout(nextLayout);
+  }, [commitLayout, selectedItems, setSelectedItem]);
+
+  const exitPresentation = useCallback(() => {
+    const nextLayout = {
+      ...layoutRef.current,
+      presentation: { active: false, frame_id: null },
+    };
+    setLayout(nextLayout);
+    layoutRef.current = nextLayout;
+    void commitLayout(nextLayout);
+  }, [commitLayout]);
+
+  const advancePresentation = useCallback((offset: number) => {
+    focusAdjacentFrame(offset);
+  }, [focusAdjacentFrame]);
 
   const updateSnapToGrid = useCallback(
     (enabled: boolean) => {
@@ -2489,14 +2576,14 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
     if (selectedItems.length === 0 || !canDeleteSelected) return;
     pushUndoSnapshot();
     const selected = new Set(selectedItems);
+    const frames = layoutRef.current.frames.filter((frame) => !selected.has(frame.id));
     const nextLayout = {
       ...layoutRef.current,
       cards: layoutRef.current.cards.filter((card) => !selected.has(card.id)),
       shapes: layoutRef.current.shapes.filter((shape) => !selected.has(shape.id)),
-      frames: layoutRef.current.frames.filter((frame) => !selected.has(frame.id)),
-      frame_order: normaliseFrameOrder(layoutRef.current.frames, layoutRef.current.frame_order).filter(
-        (frameId) => !selected.has(frameId),
-      ),
+      frames,
+      frame_order: normaliseFrameOrder(frames, layoutRef.current.frame_order),
+      presentation: normalisePresentation(layoutRef.current.presentation, frames),
       texts: layoutRef.current.texts.filter((text) => !selected.has(text.id)),
       sources: layoutRef.current.sources.filter((source) => !selected.has(source.id)),
       strokes: layoutRef.current.strokes.filter((stroke) => !selected.has(stroke.id)),
@@ -2840,6 +2927,13 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
               <button type="button" disabled={!boardContentBounds} onClick={fitBoard}>
                 {copy.fitBoard}
               </button>
+              <button
+                type="button"
+                disabled={orderedFrames.length === 0}
+                onClick={isPresenting ? exitPresentation : startPresentation}
+              >
+                {isPresenting ? copy.exitPresentation : copy.startPresentation}
+              </button>
               <button type="button" disabled={!canDeleteSelected} onClick={deleteSelected}>
                 {copy.delete}
               </button>
@@ -2937,22 +3031,28 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
 
           {orderedFrames.length > 0 ? (
             <div className="scheme-board__frames" aria-label={copy.frames}>
-              <span>{copy.frames}</span>
+              {isPresenting && presentationFrame ? (
+                <span className="scheme-board__presentation-status">
+                  {copy.presenting(presentationFrameIndex + 1, orderedFrames.length)}
+                </span>
+              ) : (
+                <span>{copy.frames}</span>
+              )}
               <button
                 type="button"
                 className="scheme-board__frame-step"
-                aria-label={copy.previousFrame}
-                title={copy.previousFrame}
-                onClick={() => focusAdjacentFrame(-1)}
+                aria-label={previousFrameLabel}
+                title={previousFrameLabel}
+                onClick={() => (isPresenting ? advancePresentation(-1) : focusAdjacentFrame(-1))}
               >
                 <span aria-hidden="true">{"<"}</span>
               </button>
               <button
                 type="button"
                 className="scheme-board__frame-step"
-                aria-label={copy.nextFrame}
-                title={copy.nextFrame}
-                onClick={() => focusAdjacentFrame(1)}
+                aria-label={nextFrameLabel}
+                title={nextFrameLabel}
+                onClick={() => (isPresenting ? advancePresentation(1) : focusAdjacentFrame(1))}
               >
                 <span aria-hidden="true">{">"}</span>
               </button>
@@ -2960,8 +3060,12 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
                 <button
                   key={frame.id}
                   type="button"
-                  className={index === activeFrameIndex ? "scheme-board__frame-link scheme-board__frame-link--active" : "scheme-board__frame-link"}
-                  aria-pressed={index === activeFrameIndex}
+                  className={
+                    index === activeFrameIndex || frame.id === presentation.frame_id
+                      ? "scheme-board__frame-link scheme-board__frame-link--active"
+                      : "scheme-board__frame-link"
+                  }
+                  aria-pressed={index === activeFrameIndex || frame.id === presentation.frame_id}
                   onClick={() => focusFrame(frame)}
                 >
                   {frame.title}

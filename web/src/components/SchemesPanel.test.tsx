@@ -19,10 +19,11 @@ vi.mock("@/lib/api", () => ({
 
 function layout(overrides: Partial<SchemeCanvasLayout> = {}): SchemeCanvasLayout {
   return {
-    version: 9,
+    version: 10,
     snap_to_grid: false,
     grid_size: 40,
     viewport: { x: 0, y: 0, zoom: 1 },
+    presentation: { active: false, frame_id: null },
     node_positions: {},
     strokes: [],
     cards: [],
@@ -178,7 +179,7 @@ describe("SchemesPanel", () => {
         "scheme-1",
         {
           layout: expect.objectContaining({
-            version: 9,
+            version: 10,
             node_positions: expect.objectContaining({
               "signal:decision:1": expect.objectContaining({ x: 380, y: -160 }),
             }),
@@ -199,7 +200,7 @@ describe("SchemesPanel", () => {
         "scheme-1",
         {
           layout: expect.objectContaining({
-            version: 9,
+            version: 10,
             sources: [
               expect.objectContaining({
                 id: "source-block:item:1",
@@ -255,7 +256,7 @@ describe("SchemesPanel", () => {
         "scheme-1",
         {
           layout: expect.objectContaining({
-            version: 9,
+            version: 10,
             snap_to_grid: true,
             grid_size: 40,
           }),
@@ -346,6 +347,78 @@ describe("SchemesPanel", () => {
     expect(focusedLayout.viewport.zoom).toBeGreaterThan(1);
     expect(focusedLayout.viewport.x).toBeLessThan(0);
     expect(focusedLayout.viewport.y).toBeLessThan(0);
+  });
+
+  it("starts frame presentation and advances the persisted slide", async () => {
+    const boardLayout = layout({
+      frames: [
+        {
+          id: "frame-a",
+          x: -400,
+          y: -240,
+          width: 400,
+          height: 300,
+          title: "Discovery",
+          color: "#0f766e",
+          fill: "transparent",
+          locked: false,
+          z_index: 1,
+        },
+        {
+          id: "frame-b",
+          x: 600,
+          y: 120,
+          width: 500,
+          height: 320,
+          title: "Delivery",
+          color: "#0f766e",
+          fill: "transparent",
+          locked: false,
+          z_index: 2,
+        },
+      ],
+      frame_order: ["frame-b", "frame-a"],
+    });
+    mockListSchemes.mockResolvedValue({ schemes: [scheme({ layout: boardLayout })] });
+    mockGetScheme.mockResolvedValue(scheme({ layout: boardLayout }));
+    const { container } = render(<SchemesPanel />);
+
+    await screen.findByRole("button", { name: "Delivery" });
+    const viewport = container.querySelector(".scheme-board__viewport") as HTMLElement | null;
+    expect(viewport).not.toBeNull();
+    vi.spyOn(viewport as HTMLElement, "getBoundingClientRect").mockReturnValue({
+      x: 0,
+      y: 0,
+      left: 0,
+      top: 0,
+      right: 1000,
+      bottom: 600,
+      width: 1000,
+      height: 600,
+      toJSON: () => ({}),
+    } as DOMRect);
+
+    fireEvent.click(screen.getByRole("button", { name: "Start presentation" }));
+
+    await waitFor(() => {
+      const startedLayout = mockUpdateScheme.mock.calls.at(-1)?.[1]?.layout as SchemeCanvasLayout;
+      expect(startedLayout.presentation).toEqual({ active: true, frame_id: "frame-b" });
+      expect(startedLayout.viewport.x).toBeLessThan(0);
+    });
+
+    fireEvent.click(await screen.findByRole("button", { name: "Next slide" }));
+
+    await waitFor(() => {
+      const advancedLayout = mockUpdateScheme.mock.calls.at(-1)?.[1]?.layout as SchemeCanvasLayout;
+      expect(advancedLayout.presentation).toEqual({ active: true, frame_id: "frame-a" });
+    });
+
+    fireEvent.click(await screen.findByRole("button", { name: "Exit presentation" }));
+
+    await waitFor(() => {
+      const exitedLayout = mockUpdateScheme.mock.calls.at(-1)?.[1]?.layout as SchemeCanvasLayout;
+      expect(exitedLayout.presentation).toEqual({ active: false, frame_id: null });
+    });
   });
 
   it("fits the whole board and jumps the camera from the board overview", async () => {

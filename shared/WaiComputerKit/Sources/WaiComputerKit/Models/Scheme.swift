@@ -24,6 +24,27 @@ public struct SchemeViewport: Codable, Sendable, Equatable {
     }
 }
 
+public struct SchemePresentationState: Codable, Sendable, Equatable {
+    public var active: Bool
+    public var frameId: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case active
+        case frameId = "frame_id"
+    }
+
+    public init(active: Bool = false, frameId: String? = nil) {
+        self.active = active
+        self.frameId = frameId
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        active = try container.decodeIfPresent(Bool.self, forKey: .active) ?? false
+        frameId = try container.decodeIfPresent(String.self, forKey: .frameId)
+    }
+}
+
 public struct SchemeStroke: Codable, Identifiable, Sendable, Equatable {
     public var id: String
     public var points: [SchemePosition]
@@ -472,6 +493,7 @@ public struct SchemeCanvasLayout: Codable, Sendable, Equatable {
     public var snapToGrid: Bool
     public var gridSize: Double
     public var viewport: SchemeViewport
+    public var presentation: SchemePresentationState
     public var nodePositions: [String: SchemePosition]
     public var strokes: [SchemeStroke]
     public var cards: [SchemeCanvasCard]
@@ -487,6 +509,7 @@ public struct SchemeCanvasLayout: Codable, Sendable, Equatable {
         case snapToGrid = "snap_to_grid"
         case gridSize = "grid_size"
         case viewport
+        case presentation
         case nodePositions = "node_positions"
         case strokes
         case cards
@@ -509,9 +532,10 @@ public struct SchemeCanvasLayout: Codable, Sendable, Equatable {
     }
 
     public init(
-        version: Int = 9,
+        version: Int = 10,
         snapToGrid: Bool = false,
         gridSize: Double = 40,
+        presentation: SchemePresentationState = SchemePresentationState(),
         frameOrder: [String] = [],
         viewport: SchemeViewport = SchemeViewport(),
         nodePositions: [String: SchemePosition] = [:],
@@ -526,6 +550,7 @@ public struct SchemeCanvasLayout: Codable, Sendable, Equatable {
         self.version = version
         self.snapToGrid = snapToGrid
         self.gridSize = gridSize
+        self.presentation = presentation
         self.viewport = viewport
         self.nodePositions = nodePositions
         self.strokes = strokes
@@ -541,11 +566,12 @@ public struct SchemeCanvasLayout: Codable, Sendable, Equatable {
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         if container.contains(.version) || container.contains(.nodePositions) {
-            let decodedVersion = try container.decodeIfPresent(Int.self, forKey: .version) ?? 9
-            version = max(decodedVersion, 9)
+            let decodedVersion = try container.decodeIfPresent(Int.self, forKey: .version) ?? 10
+            version = max(decodedVersion, 10)
             snapToGrid = try container.decodeIfPresent(Bool.self, forKey: .snapToGrid) ?? false
             gridSize = try container.decodeIfPresent(Double.self, forKey: .gridSize) ?? 40
             viewport = try container.decodeIfPresent(SchemeViewport.self, forKey: .viewport) ?? SchemeViewport()
+            presentation = try container.decodeIfPresent(SchemePresentationState.self, forKey: .presentation) ?? SchemePresentationState()
             nodePositions = try container.decodeIfPresent([String: SchemePosition].self, forKey: .nodePositions) ?? [:]
             strokes = try container.decodeIfPresent([SchemeStroke].self, forKey: .strokes) ?? []
             cards = try container.decodeIfPresent([SchemeCanvasCard].self, forKey: .cards) ?? []
@@ -560,10 +586,11 @@ public struct SchemeCanvasLayout: Codable, Sendable, Equatable {
         }
 
         let legacyPositions = try [String: SchemePosition](from: decoder)
-        version = 9
+        version = 10
         snapToGrid = false
         gridSize = 40
         viewport = SchemeViewport()
+        presentation = SchemePresentationState()
         nodePositions = legacyPositions
         strokes = []
         cards = []

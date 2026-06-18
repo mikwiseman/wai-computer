@@ -955,6 +955,11 @@ export interface SchemeViewport {
   zoom: number;
 }
 
+export interface SchemePresentationState {
+  active: boolean;
+  frame_id: string | null;
+}
+
 export type SchemeStrokeKind = "pen" | "highlighter";
 
 export interface SchemeStroke {
@@ -1056,6 +1061,7 @@ export interface SchemeCanvasLayout {
   snap_to_grid: boolean;
   grid_size: number;
   viewport: SchemeViewport;
+  presentation: SchemePresentationState;
   node_positions: Record<string, SchemePosition>;
   strokes: SchemeStroke[];
   cards: SchemeCanvasCard[];
