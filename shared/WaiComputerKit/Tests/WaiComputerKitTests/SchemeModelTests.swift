@@ -141,7 +141,7 @@ final class SchemeModelTests: XCTestCase {
 
         XCTAssertEqual(scheme.id, "scheme-1")
         XCTAssertEqual(scheme.schemeType, "decision")
-        XCTAssertEqual(scheme.layout.version, 11)
+        XCTAssertEqual(scheme.layout.version, 12)
         XCTAssertFalse(scheme.layout.snapToGrid)
         XCTAssertEqual(scheme.layout.gridSize, 40)
         XCTAssertFalse(scheme.layout.presentation.active)
@@ -157,7 +157,7 @@ final class SchemeModelTests: XCTestCase {
     func testSchemeDecodesCanvasLayoutPrimitives() throws {
         let json = """
         {
-          "version": 11,
+          "version": 12,
           "snap_to_grid": true,
           "grid_size": 32,
           "viewport": {"x": 10, "y": -20, "zoom": 1.4},
@@ -261,14 +261,34 @@ final class SchemeModelTests: XCTestCase {
               "text": "Confirm the launch owner.",
               "resolved": false
             }
-          ]
+          ],
+          "facilitation": {
+            "voting": {
+              "active": true,
+              "title": "Launch vote",
+              "votes_per_person": 3,
+              "one_vote_per_object": true,
+              "show_results": true,
+              "selected_item_ids": ["card-1", "lens:root"],
+              "votes": [
+                {"item_id": "card-1", "count": 2},
+                {"item_id": "lens:root", "count": 1}
+              ]
+            },
+            "timer": {
+              "active": true,
+              "duration_seconds": 300,
+              "started_at_ms": 1790000000000,
+              "paused_remaining_seconds": null
+            }
+          }
         }
         """.data(using: .utf8)!
 
         let layout = try JSONDecoder().decode(SchemeCanvasLayout.self, from: json)
 
         XCTAssertEqual(layout.viewport.zoom, 1.4)
-        XCTAssertEqual(layout.version, 11)
+        XCTAssertEqual(layout.version, 12)
         XCTAssertTrue(layout.snapToGrid)
         XCTAssertEqual(layout.gridSize, 32)
         XCTAssertTrue(layout.presentation.active)
@@ -303,6 +323,15 @@ final class SchemeModelTests: XCTestCase {
         XCTAssertEqual(layout.comments.first?.id, "comment-1")
         XCTAssertEqual(layout.comments.first?.text, "Confirm the launch owner.")
         XCTAssertEqual(layout.comments.first?.resolved, false)
+        XCTAssertEqual(layout.facilitation.voting.active, true)
+        XCTAssertEqual(layout.facilitation.voting.title, "Launch vote")
+        XCTAssertEqual(layout.facilitation.voting.oneVotePerObject, true)
+        XCTAssertEqual(layout.facilitation.voting.selectedItemIds, ["card-1", "lens:root"])
+        XCTAssertEqual(layout.facilitation.voting.votes.first?.itemId, "card-1")
+        XCTAssertEqual(layout.facilitation.voting.votes.first?.count, 2)
+        XCTAssertEqual(layout.facilitation.timer.active, true)
+        XCTAssertEqual(layout.facilitation.timer.durationSeconds, 300)
+        XCTAssertEqual(layout.facilitation.timer.startedAtMs, 1_790_000_000_000)
     }
 
     func testAPIClientSchemeEndpoints() async throws {
@@ -424,7 +453,24 @@ final class SchemeModelTests: XCTestCase {
                         text: "Confirm the launch owner.",
                         resolved: false
                     )
-                ]
+                ],
+                facilitation: SchemeFacilitationState(
+                    voting: SchemeVotingSession(
+                        active: true,
+                        title: "Launch vote",
+                        votesPerPerson: 3,
+                        oneVotePerObject: true,
+                        showResults: true,
+                        selectedItemIds: ["card-1"],
+                        votes: [SchemeVote(itemId: "card-1", count: 2)]
+                    ),
+                    timer: SchemeTimerState(
+                        active: true,
+                        durationSeconds: 300,
+                        startedAtMs: 1_790_000_000_000,
+                        pausedRemainingSeconds: nil
+                    )
+                )
             )
         )
         _ = try await client.refreshScheme(id: "scheme-1")
@@ -439,7 +485,7 @@ final class SchemeModelTests: XCTestCase {
         ])
         XCTAssertEqual(seen[1].body?["prompt"] as? String, "Map launch decisions")
         let layout = seen[3].body?["layout"] as? [String: Any]
-        XCTAssertEqual(layout?["version"] as? Int, 11)
+        XCTAssertEqual(layout?["version"] as? Int, 12)
         XCTAssertEqual(layout?["snap_to_grid"] as? Bool, true)
         XCTAssertEqual(layout?["grid_size"] as? Double, 32)
         let presentation = layout?["presentation"] as? [String: Any]
@@ -467,5 +513,20 @@ final class SchemeModelTests: XCTestCase {
         XCTAssertEqual(comments?.first?["id"] as? String, "comment-1")
         XCTAssertEqual(comments?.first?["text"] as? String, "Confirm the launch owner.")
         XCTAssertEqual(comments?.first?["resolved"] as? Bool, false)
+        let facilitation = layout?["facilitation"] as? [String: Any]
+        let voting = facilitation?["voting"] as? [String: Any]
+        XCTAssertEqual(voting?["active"] as? Bool, true)
+        XCTAssertEqual(voting?["title"] as? String, "Launch vote")
+        XCTAssertEqual(voting?["votes_per_person"] as? Int, 3)
+        XCTAssertEqual(voting?["one_vote_per_object"] as? Bool, true)
+        XCTAssertEqual(voting?["show_results"] as? Bool, true)
+        XCTAssertEqual(voting?["selected_item_ids"] as? [String], ["card-1"])
+        let votes = voting?["votes"] as? [[String: Any]]
+        XCTAssertEqual(votes?.first?["item_id"] as? String, "card-1")
+        XCTAssertEqual(votes?.first?["count"] as? Int, 2)
+        let timer = facilitation?["timer"] as? [String: Any]
+        XCTAssertEqual(timer?["active"] as? Bool, true)
+        XCTAssertEqual(timer?["duration_seconds"] as? Int, 300)
+        XCTAssertEqual(timer?["started_at_ms"] as? Int, 1_790_000_000_000)
     }
 }

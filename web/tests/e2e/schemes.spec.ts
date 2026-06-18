@@ -5,7 +5,7 @@ const baseTimestamp = "2026-06-17T10:00:00Z";
 test.use({ viewport: { width: 1280, height: 900 } });
 
 type SchemeLayout = {
-  version: 11;
+  version: 12;
   snap_to_grid: boolean;
   grid_size: number;
   viewport: { x: number; y: number; zoom: number };
@@ -20,11 +20,28 @@ type SchemeLayout = {
   sources: Array<Record<string, unknown>>;
   connectors: Array<Record<string, unknown>>;
   comments: Array<Record<string, unknown>>;
+  facilitation: {
+    voting: {
+      active: boolean;
+      title: string;
+      votes_per_person: number;
+      one_vote_per_object: boolean;
+      show_results: boolean;
+      selected_item_ids: string[];
+      votes: Array<{ item_id: string; count: number }>;
+    };
+    timer: {
+      active: boolean;
+      duration_seconds: number;
+      started_at_ms: number | null;
+      paused_remaining_seconds: number | null;
+    };
+  };
 };
 
 function blankLayout(): SchemeLayout {
   return {
-    version: 11,
+    version: 12,
     snap_to_grid: false,
     grid_size: 40,
     viewport: { x: 0, y: 0, zoom: 1 },
@@ -39,6 +56,23 @@ function blankLayout(): SchemeLayout {
     sources: [],
     connectors: [],
     comments: [],
+    facilitation: {
+      voting: {
+        active: false,
+        title: "Vote",
+        votes_per_person: 3,
+        one_vote_per_object: false,
+        show_results: true,
+        selected_item_ids: [],
+        votes: [],
+      },
+      timer: {
+        active: false,
+        duration_seconds: 300,
+        started_at_ms: null,
+        paused_remaining_seconds: null,
+      },
+    },
   };
 }
 
@@ -254,12 +288,16 @@ test("Schemes board duplicates, locks, and unlocks a placed sticky", async ({ pa
   const board = page.locator(".scheme-board__viewport");
   await expect(board).toBeVisible();
   await expect(page.getByRole("button", { name: "Board overview" })).toBeVisible();
-  const boardBox = await board.boundingBox();
+  let boardBox = await board.boundingBox();
   if (!boardBox) {
     throw new Error("Schemes board viewport is not measurable");
   }
 
   await page.getByRole("button", { name: "Highlight" }).click();
+  boardBox = await board.boundingBox();
+  if (!boardBox) {
+    throw new Error("Schemes board viewport is not measurable after selecting Highlight");
+  }
   await page.mouse.move(boardBox.x + 120, boardBox.y + 120);
   await page.mouse.down();
   await page.mouse.move(boardBox.x + 210, boardBox.y + 120);
@@ -275,6 +313,10 @@ test("Schemes board duplicates, locks, and unlocks a placed sticky", async ({ pa
   ]);
 
   await page.getByRole("button", { name: "Erase" }).click();
+  boardBox = await board.boundingBox();
+  if (!boardBox) {
+    throw new Error("Schemes board viewport is not measurable after selecting Erase");
+  }
   await page.mouse.move(boardBox.x + 150, boardBox.y + 120);
   await page.mouse.down();
   await page.mouse.move(boardBox.x + 200, boardBox.y + 120);
@@ -284,9 +326,13 @@ test("Schemes board duplicates, locks, and unlocks a placed sticky", async ({ pa
 
   await page.getByRole("button", { name: "Sticky" }).click();
   await page.getByRole("checkbox", { name: "Snap to grid" }).check();
+  boardBox = await board.boundingBox();
+  if (!boardBox) {
+    throw new Error("Schemes board viewport is not measurable after selecting Sticky");
+  }
   const stickyPosition = {
-    x: Math.max(220, boardBox.width - 260),
-    y: Math.max(180, boardBox.height - 220),
+    x: Math.max(160, Math.min(220, boardBox.width - 160)),
+    y: 120,
   };
   await board.click({ position: stickyPosition });
   await expect(page.locator(".scheme-sticky")).toHaveCount(1);
@@ -324,14 +370,18 @@ test("Schemes board duplicates, locks, and unlocks a placed sticky", async ({ pa
 
   // Firefox does not reliably replay this freehand lasso path; unit tests plus Chromium/WebKit cover it.
   if (testInfo.project.name !== "firefox") {
+    await page.getByRole("button", { name: "Lasso" }).click();
+    boardBox = await board.boundingBox();
+    if (!boardBox) {
+      throw new Error("Schemes board viewport is not measurable after selecting Lasso");
+    }
     const lassoBox = {
       left: boardBox.x + 12,
       top: boardBox.y + 12,
       right: boardBox.x + boardBox.width - 12,
-      bottom: boardBox.y + boardBox.height - 12,
+      bottom: Math.min(boardBox.y + 360, boardBox.y + boardBox.height - 12),
     };
 
-    await page.getByRole("button", { name: "Lasso" }).click();
     await page.mouse.move(lassoBox.left, lassoBox.top);
     await page.mouse.down();
     await page.mouse.move(lassoBox.right, lassoBox.top);
@@ -386,14 +436,18 @@ test("Schemes board adds and resolves a persisted comment pin", async ({ page })
   await expect(page.getByTestId("workspace-title")).toContainText("Schemes");
   const board = page.locator(".scheme-board__viewport");
   await expect(board).toBeVisible();
-  const boardBox = await board.boundingBox();
+  let boardBox = await board.boundingBox();
   if (!boardBox) {
     throw new Error("Schemes board viewport is not measurable");
   }
 
   await page.getByRole("button", { name: "Comment" }).click();
   await expect(board).toHaveClass(/scheme-board__viewport--comment/);
-  await page.mouse.click(boardBox.x + boardBox.width - 80, boardBox.y + boardBox.height - 80);
+  boardBox = await board.boundingBox();
+  if (!boardBox) {
+    throw new Error("Schemes board viewport is not measurable after selecting Comment");
+  }
+  await board.click({ position: { x: Math.max(24, boardBox.width - 80), y: 80 } });
 
   await expect(page.locator(".scheme-comment-pin")).toHaveCount(1);
   await expect(page.getByRole("region", { name: "Comments" })).toBeVisible();
@@ -410,4 +464,47 @@ test("Schemes board adds and resolves a persisted comment pin", async ({ page })
 
   await page.getByRole("button", { name: "Resolve comment" }).click();
   await expect.poll(() => layoutUpdates.at(-1)?.comments[0]?.resolved).toBe(true);
+});
+
+test("Schemes board starts voting and a persisted timer", async ({ page }) => {
+  const layoutUpdates = await installSchemesApiMock(page);
+
+  await page.goto("/login");
+  await page.getByTestId("auth-email").fill("qa@example.com");
+  await page.getByTestId("password-mode-button").click();
+  await page.getByTestId("auth-password").fill("password123");
+  await page.getByTestId("auth-submit").click();
+
+  await expect(page.getByTestId("user-email")).toContainText("qa@example.com");
+  await page.getByTestId("tab-schemes").click();
+  await expect(page.getByTestId("workspace-title")).toContainText("Schemes");
+  const board = page.locator(".scheme-board__viewport");
+  await expect(board).toBeVisible();
+  let boardBox = await board.boundingBox();
+  if (!boardBox) {
+    throw new Error("Schemes board viewport is not measurable");
+  }
+
+  await page.getByRole("button", { name: "Sticky" }).click();
+  boardBox = await board.boundingBox();
+  if (!boardBox) {
+    throw new Error("Schemes board viewport is not measurable after selecting Sticky");
+  }
+  await board.click({ position: { x: Math.max(24, boardBox.width - 90), y: 90 } });
+  await expect(page.locator(".scheme-sticky")).toHaveCount(1);
+
+  await page.getByRole("button", { name: "Start vote" }).click();
+  await expect.poll(() => layoutUpdates.at(-1)?.facilitation.voting.active).toBe(true);
+
+  await page.getByRole("button", { name: "Add vote" }).click();
+  await expect(page.locator(".scheme-vote-badge")).toContainText("1");
+  await expect.poll(() => layoutUpdates.at(-1)?.facilitation.voting.votes[0]?.count).toBe(1);
+
+  await page.getByRole("button", { name: "Start timer" }).click();
+  await expect.poll(() => layoutUpdates.at(-1)?.facilitation.timer.active).toBe(true);
+  await expect.poll(() => typeof layoutUpdates.at(-1)?.facilitation.timer.started_at_ms).toBe("number");
+
+  await page.getByRole("button", { name: "Pause timer" }).click();
+  await expect.poll(() => layoutUpdates.at(-1)?.facilitation.timer.active).toBe(false);
+  await expect.poll(() => typeof layoutUpdates.at(-1)?.facilitation.timer.paused_remaining_seconds).toBe("number");
 });

@@ -25,7 +25,7 @@ from app.models.brain_map import BrainMap, BrainMapRevision
 
 router = APIRouter(prefix="/schemes", tags=["schemes"])
 
-SCHEME_LAYOUT_VERSION = 11
+SCHEME_LAYOUT_VERSION = 12
 SCHEME_SHAPE_KINDS = {"rectangle", "ellipse"}
 SCHEME_SOURCE_KINDS = {"item", "recording", "chat"}
 SCHEME_STROKE_KINDS = {"pen", "highlighter"}
@@ -154,6 +154,50 @@ class SchemeCanvasComment(BaseModel):
     resolved: bool = False
 
 
+class SchemeVote(BaseModel):
+    item_id: str = Field(min_length=1, max_length=240)
+    count: int = Field(default=0, ge=0, le=999)
+
+
+class SchemeVotingSession(BaseModel):
+    active: bool = False
+    title: str = Field(default="Vote", min_length=1, max_length=160)
+    votes_per_person: int = Field(default=3, ge=1, le=99)
+    one_vote_per_object: bool = False
+    show_results: bool = True
+    selected_item_ids: list[str] = Field(default_factory=list, max_length=500)
+    votes: list[SchemeVote] = Field(default_factory=list, max_length=500)
+
+    @model_validator(mode="after")
+    def validate_unique_vote_targets(self) -> "SchemeVotingSession":
+        vote_ids = [vote.item_id for vote in self.votes]
+        if len(set(vote_ids)) != len(vote_ids):
+            raise ValueError("Scheme voting votes must contain unique item ids")
+        if len(set(self.selected_item_ids)) != len(self.selected_item_ids):
+            raise ValueError("Scheme voting selected_item_ids must be unique")
+        return self
+
+
+class SchemeTimerState(BaseModel):
+    active: bool = False
+    duration_seconds: int = Field(default=300, ge=60, le=604_800)
+    started_at_ms: int | None = Field(default=None, ge=0)
+    paused_remaining_seconds: int | None = Field(default=None, ge=0, le=604_800)
+
+    @model_validator(mode="after")
+    def validate_timer_state(self) -> "SchemeTimerState":
+        if self.active and self.started_at_ms is None:
+            raise ValueError("Active scheme timer must include started_at_ms")
+        if self.active and self.paused_remaining_seconds is not None:
+            raise ValueError("Active scheme timer cannot include paused_remaining_seconds")
+        return self
+
+
+class SchemeFacilitationState(BaseModel):
+    voting: SchemeVotingSession = Field(default_factory=SchemeVotingSession)
+    timer: SchemeTimerState = Field(default_factory=SchemeTimerState)
+
+
 class SchemeCanvasLayout(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -176,6 +220,7 @@ class SchemeCanvasLayout(BaseModel):
     sources: list[SchemeCanvasSourceBlock] = Field(default_factory=list)
     connectors: list[SchemeConnector] = Field(default_factory=list)
     comments: list[SchemeCanvasComment] = Field(default_factory=list)
+    facilitation: SchemeFacilitationState = Field(default_factory=SchemeFacilitationState)
 
     @model_validator(mode="after")
     def validate_frame_order(self) -> "SchemeCanvasLayout":

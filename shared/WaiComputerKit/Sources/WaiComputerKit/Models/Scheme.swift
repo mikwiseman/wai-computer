@@ -527,6 +527,130 @@ public struct SchemeCanvasComment: Codable, Identifiable, Sendable, Equatable {
     }
 }
 
+public struct SchemeVote: Codable, Identifiable, Sendable, Equatable {
+    public var itemId: String
+    public var count: Int
+
+    public var id: String { itemId }
+
+    private enum CodingKeys: String, CodingKey {
+        case itemId = "item_id"
+        case count
+    }
+
+    public init(itemId: String, count: Int = 0) {
+        self.itemId = itemId
+        self.count = count
+    }
+}
+
+public struct SchemeVotingSession: Codable, Sendable, Equatable {
+    public var active: Bool
+    public var title: String
+    public var votesPerPerson: Int
+    public var oneVotePerObject: Bool
+    public var showResults: Bool
+    public var selectedItemIds: [String]
+    public var votes: [SchemeVote]
+
+    private enum CodingKeys: String, CodingKey {
+        case active
+        case title
+        case votesPerPerson = "votes_per_person"
+        case oneVotePerObject = "one_vote_per_object"
+        case showResults = "show_results"
+        case selectedItemIds = "selected_item_ids"
+        case votes
+    }
+
+    public init(
+        active: Bool = false,
+        title: String = "Vote",
+        votesPerPerson: Int = 3,
+        oneVotePerObject: Bool = false,
+        showResults: Bool = true,
+        selectedItemIds: [String] = [],
+        votes: [SchemeVote] = []
+    ) {
+        self.active = active
+        self.title = title
+        self.votesPerPerson = votesPerPerson
+        self.oneVotePerObject = oneVotePerObject
+        self.showResults = showResults
+        self.selectedItemIds = selectedItemIds
+        self.votes = votes
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        active = try container.decodeIfPresent(Bool.self, forKey: .active) ?? false
+        title = try container.decodeIfPresent(String.self, forKey: .title) ?? "Vote"
+        votesPerPerson = try container.decodeIfPresent(Int.self, forKey: .votesPerPerson) ?? 3
+        oneVotePerObject = try container.decodeIfPresent(Bool.self, forKey: .oneVotePerObject) ?? false
+        showResults = try container.decodeIfPresent(Bool.self, forKey: .showResults) ?? true
+        selectedItemIds = try container.decodeIfPresent([String].self, forKey: .selectedItemIds) ?? []
+        votes = try container.decodeIfPresent([SchemeVote].self, forKey: .votes) ?? []
+    }
+}
+
+public struct SchemeTimerState: Codable, Sendable, Equatable {
+    public var active: Bool
+    public var durationSeconds: Int
+    public var startedAtMs: Int?
+    public var pausedRemainingSeconds: Int?
+
+    private enum CodingKeys: String, CodingKey {
+        case active
+        case durationSeconds = "duration_seconds"
+        case startedAtMs = "started_at_ms"
+        case pausedRemainingSeconds = "paused_remaining_seconds"
+    }
+
+    public init(
+        active: Bool = false,
+        durationSeconds: Int = 300,
+        startedAtMs: Int? = nil,
+        pausedRemainingSeconds: Int? = nil
+    ) {
+        self.active = active
+        self.durationSeconds = durationSeconds
+        self.startedAtMs = startedAtMs
+        self.pausedRemainingSeconds = pausedRemainingSeconds
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        active = try container.decodeIfPresent(Bool.self, forKey: .active) ?? false
+        durationSeconds = try container.decodeIfPresent(Int.self, forKey: .durationSeconds) ?? 300
+        startedAtMs = try container.decodeIfPresent(Int.self, forKey: .startedAtMs)
+        pausedRemainingSeconds = try container.decodeIfPresent(Int.self, forKey: .pausedRemainingSeconds)
+    }
+}
+
+public struct SchemeFacilitationState: Codable, Sendable, Equatable {
+    public var voting: SchemeVotingSession
+    public var timer: SchemeTimerState
+
+    private enum CodingKeys: String, CodingKey {
+        case voting
+        case timer
+    }
+
+    public init(
+        voting: SchemeVotingSession = SchemeVotingSession(),
+        timer: SchemeTimerState = SchemeTimerState()
+    ) {
+        self.voting = voting
+        self.timer = timer
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        voting = try container.decodeIfPresent(SchemeVotingSession.self, forKey: .voting) ?? SchemeVotingSession()
+        timer = try container.decodeIfPresent(SchemeTimerState.self, forKey: .timer) ?? SchemeTimerState()
+    }
+}
+
 public struct SchemeCanvasLayout: Codable, Sendable, Equatable {
     public var version: Int
     public var snapToGrid: Bool
@@ -543,6 +667,7 @@ public struct SchemeCanvasLayout: Codable, Sendable, Equatable {
     public var sources: [SchemeCanvasSourceBlock]
     public var connectors: [SchemeConnector]
     public var comments: [SchemeCanvasComment]
+    public var facilitation: SchemeFacilitationState
 
     private enum CodingKeys: String, CodingKey {
         case version
@@ -560,6 +685,7 @@ public struct SchemeCanvasLayout: Codable, Sendable, Equatable {
         case sources
         case connectors
         case comments
+        case facilitation
     }
 
     private static func normaliseFrameOrder(frames: [SchemeCanvasFrame], frameOrder: [String]) -> [String] {
@@ -573,7 +699,7 @@ public struct SchemeCanvasLayout: Codable, Sendable, Equatable {
     }
 
     public init(
-        version: Int = 11,
+        version: Int = 12,
         snapToGrid: Bool = false,
         gridSize: Double = 40,
         presentation: SchemePresentationState = SchemePresentationState(),
@@ -587,7 +713,8 @@ public struct SchemeCanvasLayout: Codable, Sendable, Equatable {
         texts: [SchemeTextBlock] = [],
         sources: [SchemeCanvasSourceBlock] = [],
         connectors: [SchemeConnector] = [],
-        comments: [SchemeCanvasComment] = []
+        comments: [SchemeCanvasComment] = [],
+        facilitation: SchemeFacilitationState = SchemeFacilitationState()
     ) {
         self.version = version
         self.snapToGrid = snapToGrid
@@ -604,13 +731,14 @@ public struct SchemeCanvasLayout: Codable, Sendable, Equatable {
         self.sources = sources
         self.connectors = connectors
         self.comments = comments
+        self.facilitation = facilitation
     }
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         if container.contains(.version) || container.contains(.nodePositions) {
-            let decodedVersion = try container.decodeIfPresent(Int.self, forKey: .version) ?? 11
-            version = max(decodedVersion, 11)
+            let decodedVersion = try container.decodeIfPresent(Int.self, forKey: .version) ?? 12
+            version = max(decodedVersion, 12)
             snapToGrid = try container.decodeIfPresent(Bool.self, forKey: .snapToGrid) ?? false
             gridSize = try container.decodeIfPresent(Double.self, forKey: .gridSize) ?? 40
             viewport = try container.decodeIfPresent(SchemeViewport.self, forKey: .viewport) ?? SchemeViewport()
@@ -626,11 +754,12 @@ public struct SchemeCanvasLayout: Codable, Sendable, Equatable {
             sources = try container.decodeIfPresent([SchemeCanvasSourceBlock].self, forKey: .sources) ?? []
             connectors = try container.decodeIfPresent([SchemeConnector].self, forKey: .connectors) ?? []
             comments = try container.decodeIfPresent([SchemeCanvasComment].self, forKey: .comments) ?? []
+            facilitation = try container.decodeIfPresent(SchemeFacilitationState.self, forKey: .facilitation) ?? SchemeFacilitationState()
             return
         }
 
         let legacyPositions = try [String: SchemePosition](from: decoder)
-        version = 11
+        version = 12
         snapToGrid = false
         gridSize = 40
         viewport = SchemeViewport()
@@ -645,6 +774,7 @@ public struct SchemeCanvasLayout: Codable, Sendable, Equatable {
         sources = []
         connectors = []
         comments = []
+        facilitation = SchemeFacilitationState()
     }
 }
 

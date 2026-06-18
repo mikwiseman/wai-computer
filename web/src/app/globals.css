@@ -6065,6 +6065,96 @@ a.primary-button[aria-disabled="true"]:hover {
   box-shadow: none;
 }
 
+.scheme-vote-badge {
+  position: absolute;
+  display: grid;
+  min-width: 28px;
+  height: 28px;
+  place-items: center;
+  border: 2px solid var(--panel);
+  border-radius: 999px;
+  padding: 0 0.35rem;
+  background: var(--accent);
+  color: var(--panel);
+  box-shadow: 0 10px 22px rgba(15, 23, 42, 0.2);
+  font-size: var(--font-label-small-size);
+  font-weight: 900;
+  line-height: 1;
+  pointer-events: none;
+}
+
+.scheme-board__facilitation {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  border-top: 1px solid var(--border);
+  padding-top: 0.75rem;
+}
+
+.scheme-board__facilitation-header,
+.scheme-board__facilitation-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.scheme-board__facilitation-header strong,
+.scheme-board__facilitation-card-header strong {
+  color: var(--ink);
+  font-size: var(--font-body-small-size);
+}
+
+.scheme-board__facilitation-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.55rem;
+  background: var(--panel-raised);
+}
+
+.scheme-board__facilitation-card-header span,
+.scheme-board__facilitation-card small,
+.scheme-board__facilitation-card p {
+  color: var(--ink-soft);
+  font-size: var(--font-label-small-size);
+  line-height: 1.35;
+}
+
+.scheme-board__facilitation-card small,
+.scheme-board__facilitation-card p {
+  margin: 0;
+}
+
+.scheme-board__timer-readout {
+  font-variant-numeric: tabular-nums;
+}
+
+.scheme-board__facilitation-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.scheme-board__facilitation-actions button {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0.24rem 0.55rem;
+  background: var(--panel);
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--font-label-small-size);
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.scheme-board__facilitation-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
 .scheme-board__comments {
   border-top: 1px solid var(--border);
   padding-top: 0.75rem;

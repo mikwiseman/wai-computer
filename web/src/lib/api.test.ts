@@ -355,7 +355,7 @@ describe("api client wrappers", () => {
 
   it("calls scheme board endpoints", async () => {
     const layout = {
-      version: 11 as const,
+      version: 12 as const,
       viewport: { x: 0, y: 0, zoom: 1 },
       snap_to_grid: true,
       grid_size: 40,
@@ -381,6 +381,23 @@ describe("api client wrappers", () => {
       sources: [],
       connectors: [],
       comments: [],
+      facilitation: {
+        voting: {
+          active: false,
+          title: "Vote",
+          votes_per_person: 3,
+          one_vote_per_object: false,
+          show_results: true,
+          selected_item_ids: [],
+          votes: [],
+        },
+        timer: {
+          active: false,
+          duration_seconds: 300,
+          started_at_ms: null,
+          paused_remaining_seconds: null,
+        },
+      },
     };
 
     await api.listSchemes();

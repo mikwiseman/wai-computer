@@ -18,6 +18,7 @@ import type {
   SchemeCanvasShape,
   SchemeCanvasSourceBlock,
   SchemeConnector,
+  SchemeFacilitationState,
   SchemeNode,
   SchemePosition,
   SchemeProjection,
@@ -25,8 +26,11 @@ import type {
   SchemeStroke,
   SchemeStrokeKind,
   SchemeStrokePoint,
+  SchemeTimerState,
   SchemeTextBlock,
   SchemeViewport,
+  SchemeVote,
+  SchemeVotingSession,
 } from "@/lib/types";
 
 type Locale = "en" | "ru";
@@ -202,8 +206,11 @@ interface ProjectionSourceSummary {
   created_at?: string | null;
 }
 
-const SCHEME_LAYOUT_VERSION = 11 as const;
+const SCHEME_LAYOUT_VERSION = 12 as const;
 const DEFAULT_VIEWPORT: SchemeViewport = { x: 0, y: 0, zoom: 1 };
+const MIN_TIMER_SECONDS = 60;
+const DEFAULT_TIMER_SECONDS = 300;
+const MAX_TIMER_SECONDS = 604_800;
 const MIN_ZOOM = 0.25;
 const MAX_ZOOM = 2.8;
 const FRAME_FOCUS_PADDING = 96;
@@ -304,6 +311,21 @@ const COPY = {
     reopenComment: "Reopen comment",
     resolvedComment: "resolved",
     defaultCommentText: "Comment",
+    facilitation: "Facilitation",
+    voting: "Voting",
+    vote: "Vote",
+    votes: (count: number) => `${count} vote${count === 1 ? "" : "s"}`,
+    startVote: "Start vote",
+    addVote: "Add vote",
+    endVote: "End vote",
+    clearVote: "Clear votes",
+    voteScope: (count: number) => `${count} objects`,
+    noVoteTarget: "Select an object to vote.",
+    timer: "Timer",
+    startTimer: "Start timer",
+    pauseTimer: "Pause timer",
+    stopTimer: "Stop timer",
+    addMinute: "+1 min",
     duplicate: "Duplicate",
     lock: "Lock",
     unlock: "Unlock",
@@ -367,6 +389,21 @@ const COPY = {
     reopenComment: "Открыть комментарий",
     resolvedComment: "закрыт",
     defaultCommentText: "Комментарий",
+    facilitation: "Фасилитация",
+    voting: "Голосование",
+    vote: "Голос",
+    votes: (count: number) => `${count} голос.`,
+    startVote: "Начать голосование",
+    addVote: "Добавить голос",
+    endVote: "Завершить",
+    clearVote: "Очистить голоса",
+    voteScope: (count: number) => `${count} объект.`,
+    noVoteTarget: "Выберите объект для голоса.",
+    timer: "Таймер",
+    startTimer: "Запустить таймер",
+    pauseTimer: "Пауза",
+    stopTimer: "Сбросить",
+    addMinute: "+1 мин",
     duplicate: "Дублировать",
     lock: "Заблокировать",
     unlock: "Разблокировать",
@@ -460,6 +497,129 @@ function normalisePresentation(
   };
 }
 
+function blankVotingSession(): SchemeVotingSession {
+  return {
+    active: false,
+    title: "Vote",
+    votes_per_person: 3,
+    one_vote_per_object: false,
+    show_results: true,
+    selected_item_ids: [],
+    votes: [],
+  };
+}
+
+function blankTimerState(): SchemeTimerState {
+  return {
+    active: false,
+    duration_seconds: DEFAULT_TIMER_SECONDS,
+    started_at_ms: null,
+    paused_remaining_seconds: null,
+  };
+}
+
+function blankFacilitation(): SchemeFacilitationState {
+  return {
+    voting: blankVotingSession(),
+    timer: blankTimerState(),
+  };
+}
+
+function uniqueStrings(values: unknown): string[] {
+  if (!Array.isArray(values)) return [];
+  return Array.from(new Set(values.filter((value): value is string => typeof value === "string" && value.length > 0)));
+}
+
+function normaliseVote(vote: Partial<SchemeVote> | null | undefined): SchemeVote | null {
+  if (!vote || typeof vote.item_id !== "string" || vote.item_id.length === 0) return null;
+  if (typeof vote.count !== "number" || !Number.isFinite(vote.count)) return null;
+  return {
+    item_id: vote.item_id,
+    count: Math.max(0, Math.floor(vote.count)),
+  };
+}
+
+function normaliseVoting(voting: Partial<SchemeVotingSession> | null | undefined): SchemeVotingSession {
+  const base = blankVotingSession();
+  const votes = Array.isArray(voting?.votes)
+    ? voting.votes.flatMap((vote) => {
+        const normalised = normaliseVote(vote);
+        return normalised ? [normalised] : [];
+      })
+    : [];
+  const votesByItem = new Map<string, SchemeVote>();
+  votes.forEach((vote) => {
+    votesByItem.set(vote.item_id, vote);
+  });
+  return {
+    active: Boolean(voting?.active),
+    title: typeof voting?.title === "string" && voting.title.trim() ? voting.title : base.title,
+    votes_per_person:
+      typeof voting?.votes_per_person === "number" && Number.isFinite(voting.votes_per_person)
+        ? clamp(Math.floor(voting.votes_per_person), 1, 99)
+        : base.votes_per_person,
+    one_vote_per_object: Boolean(voting?.one_vote_per_object),
+    show_results: voting?.show_results ?? base.show_results,
+    selected_item_ids: uniqueStrings(voting?.selected_item_ids),
+    votes: Array.from(votesByItem.values()).filter((vote) => vote.count > 0),
+  };
+}
+
+function normaliseTimer(timer: Partial<SchemeTimerState> | null | undefined): SchemeTimerState {
+  const durationSeconds =
+    typeof timer?.duration_seconds === "number" && Number.isFinite(timer.duration_seconds)
+      ? clamp(Math.floor(timer.duration_seconds), MIN_TIMER_SECONDS, MAX_TIMER_SECONDS)
+      : DEFAULT_TIMER_SECONDS;
+  const startedAtMs =
+    typeof timer?.started_at_ms === "number" && Number.isFinite(timer.started_at_ms)
+      ? Math.floor(timer.started_at_ms)
+      : null;
+  const pausedRemainingSeconds =
+    typeof timer?.paused_remaining_seconds === "number" && Number.isFinite(timer.paused_remaining_seconds)
+      ? clamp(Math.floor(timer.paused_remaining_seconds), 0, MAX_TIMER_SECONDS)
+      : null;
+  return {
+    active: Boolean(timer?.active) && startedAtMs !== null,
+    duration_seconds: durationSeconds,
+    started_at_ms: Boolean(timer?.active) && startedAtMs !== null ? startedAtMs : null,
+    paused_remaining_seconds: Boolean(timer?.active) ? null : pausedRemainingSeconds,
+  };
+}
+
+function normaliseFacilitation(
+  facilitation: Partial<SchemeFacilitationState> | null | undefined,
+): SchemeFacilitationState {
+  return {
+    voting: normaliseVoting(facilitation?.voting),
+    timer: normaliseTimer(facilitation?.timer),
+  };
+}
+
+function cloneFacilitation(facilitation: SchemeFacilitationState): SchemeFacilitationState {
+  return {
+    voting: {
+      ...facilitation.voting,
+      selected_item_ids: [...facilitation.voting.selected_item_ids],
+      votes: facilitation.voting.votes.map((vote) => ({ ...vote })),
+    },
+    timer: { ...facilitation.timer },
+  };
+}
+
+function timerRemainingSeconds(timer: SchemeTimerState, nowMs: number): number {
+  if (!timer.active || timer.started_at_ms === null) {
+    return timer.paused_remaining_seconds ?? timer.duration_seconds;
+  }
+  const elapsedSeconds = Math.max(0, Math.floor((nowMs - timer.started_at_ms) / 1000));
+  return Math.max(0, timer.duration_seconds - elapsedSeconds);
+}
+
+function formatTimer(seconds: number): string {
+  const minutes = Math.floor(seconds / 60);
+  const remainder = Math.max(0, seconds % 60);
+  return `${minutes}:${String(remainder).padStart(2, "0")}`;
+}
+
 function viewportForFrame(frame: SchemeCanvasFrame, rect: DOMRect): SchemeViewport {
   const availableWidth = Math.max(1, rect.width - FRAME_FOCUS_PADDING);
   const availableHeight = Math.max(1, rect.height - FRAME_FOCUS_PADDING);
@@ -534,6 +694,7 @@ function blankLayout(): SchemeCanvasLayout {
     sources: [],
     connectors: [],
     comments: [],
+    facilitation: blankFacilitation(),
   };
 }
 
@@ -633,6 +794,7 @@ function layoutForScheme(scheme: Scheme | null): SchemeCanvasLayout {
     })),
     connectors: (raw.connectors ?? []).map((connector) => ({ ...connector, locked: connector.locked ?? false, z_index: connector.z_index ?? Number.NaN })),
     comments: (raw.comments ?? []).map(normaliseComment),
+    facilitation: normaliseFacilitation(raw.facilitation),
   });
   return {
     ...nextLayout,
@@ -1570,6 +1732,7 @@ function cloneLayout(layout: SchemeCanvasLayout): SchemeCanvasLayout {
       points: connector.points.map((point) => ({ ...point })),
     })),
     comments: layout.comments.map((comment) => ({ ...comment })),
+    facilitation: cloneFacilitation(layout.facilitation),
   };
 }
 
@@ -1595,6 +1758,7 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
   const [lassoPoints, setLassoPoints] = useState<SchemePosition[]>([]);
   const [historyCounts, setHistoryCounts] = useState({ undo: 0, redo: 0 });
   const [viewportSize, setViewportSize] = useState<BoardViewportSize>({ width: 0, height: 0 });
+  const [nowMs, setNowMs] = useState(() => Date.now());
   const dragRef = useRef<DragState | null>(null);
   const viewportRef = useRef<HTMLDivElement | null>(null);
   const selectedRef = useRef<Scheme | null>(null);
@@ -1603,6 +1767,8 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
   const undoStackRef = useRef<SchemeCanvasLayout[]>([]);
   const redoStackRef = useRef<SchemeCanvasLayout[]>([]);
   const editingItemRef = useRef<string | null>(null);
+  const commitSequenceRef = useRef(0);
+  const pendingCommitRef = useRef<Promise<void>>(Promise.resolve());
 
   const selectedId = selected?.id ?? null;
   const selectedItemSet = useMemo(() => new Set(selectedItems), [selectedItems]);
@@ -1666,6 +1832,8 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
     undoStackRef.current = [];
     redoStackRef.current = [];
     editingItemRef.current = null;
+    commitSequenceRef.current += 1;
+    pendingCommitRef.current = Promise.resolve();
     setHistoryCounts({ undo: 0, redo: 0 });
   }, [selectedId, setSelectedItem]);
 
@@ -1682,6 +1850,13 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
     window.addEventListener("resize", measureViewport);
     return () => window.removeEventListener("resize", measureViewport);
   }, [selectedId]);
+
+  useEffect(() => {
+    if (!layout.facilitation.timer.active) return undefined;
+    setNowMs(Date.now());
+    const intervalId = window.setInterval(() => setNowMs(Date.now()), 1_000);
+    return () => window.clearInterval(intervalId);
+  }, [layout.facilitation.timer.active]);
 
   const projection = selected?.current_revision?.projection ?? null;
   const positionedNodes = useMemo(() => {
@@ -1724,7 +1899,32 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
     return resizableItem(layout, selectedItems[0]);
   }, [layout, selectedItems]);
   const boardItems = useMemo(() => layoutItemBounds(layout, positionedNodes), [layout, positionedNodes]);
+  const boardItemIds = useMemo(() => new Set(boardItems.map((item) => item.id)), [boardItems]);
   const boardContentBounds = useMemo(() => contentBoundsForItems(boardItems), [boardItems]);
+  const selectedVoteTargetId = useMemo(() => {
+    const selectedTarget = selectedItems.find((itemId) => boardItemIds.has(itemId));
+    if (selectedTarget) return selectedTarget;
+    return layout.facilitation.voting.selected_item_ids.find((itemId) => boardItemIds.has(itemId)) ?? null;
+  }, [boardItemIds, layout.facilitation.voting.selected_item_ids, selectedItems]);
+  const voteTotal = useMemo(
+    () => layout.facilitation.voting.votes.reduce((sum, vote) => sum + vote.count, 0),
+    [layout.facilitation.voting.votes],
+  );
+  const voteScopeCount = useMemo(() => {
+    const selectedScopeCount = layout.facilitation.voting.selected_item_ids.filter((itemId) =>
+      boardItemIds.has(itemId),
+    ).length;
+    return selectedScopeCount > 0 ? selectedScopeCount : boardItems.length;
+  }, [boardItemIds, boardItems.length, layout.facilitation.voting.selected_item_ids]);
+  const voteBadges = useMemo(() => {
+    if (!layout.facilitation.voting.show_results) return [];
+    const boundsById = new Map(boardItems.map((item) => [item.id, item]));
+    return layout.facilitation.voting.votes.flatMap((vote) => {
+      const bounds = boundsById.get(vote.item_id);
+      return bounds && vote.count > 0 ? [{ vote, bounds }] : [];
+    });
+  }, [boardItems, layout.facilitation.voting.show_results, layout.facilitation.voting.votes]);
+  const remainingTimerSeconds = timerRemainingSeconds(layout.facilitation.timer, nowMs);
   const overviewViewport = useMemo(
     () => (boardContentBounds ? overviewViewportStyle(layout.viewport, viewportSize, boardContentBounds) : null),
     [boardContentBounds, layout.viewport, viewportSize],
@@ -1761,14 +1961,24 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
   const nextFrameLabel = isPresenting ? copy.nextSlide : copy.nextFrame;
 
   const commitLayout = useCallback(
-    async (nextLayout: SchemeCanvasLayout) => {
-      if (!selectedRef.current) return;
-      try {
-        const updated = await updateScheme(selectedRef.current.id, { layout: nextLayout });
-        replaceScheme(updated);
-      } catch (err) {
-        reportError(err, "Couldn't save scheme board.");
-      }
+    (nextLayout: SchemeCanvasLayout) => {
+      const schemeId = selectedRef.current?.id;
+      if (!schemeId) return Promise.resolve();
+      const sequence = ++commitSequenceRef.current;
+      const task = pendingCommitRef.current
+        .catch(() => undefined)
+        .then(async () => {
+          try {
+            const updated = await updateScheme(schemeId, { layout: nextLayout });
+            if (sequence === commitSequenceRef.current && selectedRef.current?.id === schemeId) {
+              replaceScheme(updated);
+            }
+          } catch (err) {
+            reportError(err, "Couldn't save scheme board.");
+          }
+        });
+      pendingCommitRef.current = task;
+      return task;
     },
     [replaceScheme, reportError],
   );
@@ -2309,7 +2519,7 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
   const handleViewportPointerDown = useCallback(
     (event: PointerEvent<HTMLDivElement>) => {
       if (event.button !== 0 || !selected) return;
-      event.currentTarget.focus();
+      event.currentTarget.focus({ preventScroll: true });
       const target = event.target as HTMLElement;
       if (target.closest("[data-scheme-board-item='true']")) return;
       event.currentTarget.setPointerCapture?.(event.pointerId);
@@ -2709,6 +2919,145 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
     void commitLayout(nextLayout);
   }, [commitLayout, pushUndoSnapshot, setSelectedItem]);
 
+  const commitFacilitation = useCallback(
+    (updater: (current: SchemeFacilitationState) => SchemeFacilitationState) => {
+      pushUndoSnapshot();
+      const nextLayout = {
+        ...layoutRef.current,
+        facilitation: updater(layoutRef.current.facilitation),
+      };
+      setLayout(nextLayout);
+      layoutRef.current = nextLayout;
+      void commitLayout(nextLayout);
+    },
+    [commitLayout, pushUndoSnapshot],
+  );
+
+  const startVotingSession = useCallback(() => {
+    const selectedTargets = selectedItems.filter((itemId) => boardItemIds.has(itemId));
+    const selectedItemIds = selectedTargets.length > 0 ? selectedTargets : boardItems.map((item) => item.id);
+    if (selectedItemIds.length === 0) return;
+    commitFacilitation((current) => ({
+      ...current,
+      voting: {
+        ...blankVotingSession(),
+        active: true,
+        selected_item_ids: selectedItemIds,
+      },
+    }));
+  }, [boardItemIds, boardItems, commitFacilitation, selectedItems]);
+
+  const addVote = useCallback(
+    (itemId: string | null) => {
+      if (!itemId) return;
+      const currentVoting = layoutRef.current.facilitation.voting;
+      if (!currentVoting.active) return;
+      if (currentVoting.selected_item_ids.length > 0 && !currentVoting.selected_item_ids.includes(itemId)) return;
+      commitFacilitation((current) => {
+        const existing = current.voting.votes.find((vote) => vote.item_id === itemId);
+        const nextCount = current.voting.one_vote_per_object ? 1 : (existing?.count ?? 0) + 1;
+        const votes = existing
+          ? current.voting.votes.map((vote) =>
+              vote.item_id === itemId ? { ...vote, count: nextCount } : vote,
+            )
+          : [...current.voting.votes, { item_id: itemId, count: nextCount }];
+        return {
+          ...current,
+          voting: {
+            ...current.voting,
+            votes,
+          },
+        };
+      });
+    },
+    [commitFacilitation],
+  );
+
+  const endVotingSession = useCallback(() => {
+    commitFacilitation((current) => ({
+      ...current,
+      voting: {
+        ...current.voting,
+        active: false,
+      },
+    }));
+  }, [commitFacilitation]);
+
+  const clearVotingSession = useCallback(() => {
+    commitFacilitation((current) => ({
+      ...current,
+      voting: blankVotingSession(),
+    }));
+  }, [commitFacilitation]);
+
+  const startTimer = useCallback(() => {
+    const startedAtMs = Date.now();
+    const remainingSeconds = timerRemainingSeconds(layoutRef.current.facilitation.timer, startedAtMs);
+    const nextDurationSeconds = remainingSeconds > 0 ? remainingSeconds : DEFAULT_TIMER_SECONDS;
+    commitFacilitation((current) => ({
+      ...current,
+      timer: {
+        active: true,
+        duration_seconds: clamp(nextDurationSeconds, MIN_TIMER_SECONDS, MAX_TIMER_SECONDS),
+        started_at_ms: startedAtMs,
+        paused_remaining_seconds: null,
+      },
+    }));
+    setNowMs(startedAtMs);
+  }, [commitFacilitation]);
+
+  const pauseTimer = useCallback(() => {
+    const pausedAtMs = Date.now();
+    const timer = layoutRef.current.facilitation.timer;
+    if (!timer.active) return;
+    const pausedRemainingSeconds = timerRemainingSeconds(timer, pausedAtMs);
+    commitFacilitation((current) => ({
+      ...current,
+      timer: {
+        ...current.timer,
+        active: false,
+        started_at_ms: null,
+        paused_remaining_seconds: pausedRemainingSeconds,
+      },
+    }));
+    setNowMs(pausedAtMs);
+  }, [commitFacilitation]);
+
+  const stopTimer = useCallback(() => {
+    commitFacilitation((current) => ({
+      ...current,
+      timer: blankTimerState(),
+    }));
+    setNowMs(Date.now());
+  }, [commitFacilitation]);
+
+  const addTimerMinute = useCallback(() => {
+    commitFacilitation((current) => {
+      if (current.timer.active) {
+        return {
+          ...current,
+          timer: {
+            ...current.timer,
+            duration_seconds: clamp(current.timer.duration_seconds + 60, MIN_TIMER_SECONDS, MAX_TIMER_SECONDS),
+          },
+        };
+      }
+      const nextDurationSeconds = clamp(current.timer.duration_seconds + 60, MIN_TIMER_SECONDS, MAX_TIMER_SECONDS);
+      const nextPausedRemainingSeconds =
+        current.timer.paused_remaining_seconds === null
+          ? nextDurationSeconds
+          : clamp(current.timer.paused_remaining_seconds + 60, 0, MAX_TIMER_SECONDS);
+      return {
+        ...current,
+        timer: {
+          ...current.timer,
+          duration_seconds: nextDurationSeconds,
+          paused_remaining_seconds: nextPausedRemainingSeconds,
+        },
+      };
+    });
+  }, [commitFacilitation]);
+
   const deleteSelected = useCallback(() => {
     if (selectedItems.length === 0 || !canDeleteSelected) return;
     pushUndoSnapshot();
@@ -2731,6 +3080,16 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
           (connector.target_id === null || !selected.has(connector.target_id)),
       ),
       comments: layoutRef.current.comments.filter((comment) => !selected.has(comment.id)),
+      facilitation: {
+        ...layoutRef.current.facilitation,
+        voting: {
+          ...layoutRef.current.facilitation.voting,
+          selected_item_ids: layoutRef.current.facilitation.voting.selected_item_ids.filter(
+            (itemId) => !selected.has(itemId),
+          ),
+          votes: layoutRef.current.facilitation.voting.votes.filter((vote) => !selected.has(vote.item_id)),
+        },
+      },
     };
     setSelectedItem(null);
     setLayout(nextLayout);
@@ -3492,6 +3851,20 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
                     <span>{index + 1}</span>
                   </button>
                 ))}
+                {voteBadges.map(({ vote, bounds }) => (
+                  <span
+                    key={vote.item_id}
+                    className="scheme-vote-badge"
+                    style={{
+                      left: bounds.x + Math.max(12, bounds.width) - 14,
+                      top: bounds.y - 14,
+                      zIndex: 1_000_004,
+                    }}
+                    aria-label={copy.votes(vote.count)}
+                  >
+                    {vote.count}
+                  </span>
+                ))}
                 {selectedResizable ? (
                   <div
                     className="scheme-board__resize-frame"
@@ -3588,6 +3961,73 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
                 ) : (
                   <p>{copy.outlineEmpty}</p>
                 )}
+                <section className="scheme-board__facilitation" aria-label={copy.facilitation}>
+                  <div className="scheme-board__facilitation-header">
+                    <strong>{copy.facilitation}</strong>
+                  </div>
+                  <div className="scheme-board__facilitation-card">
+                    <div className="scheme-board__facilitation-card-header">
+                      <span>{copy.voting}</span>
+                      <strong>{copy.votes(voteTotal)}</strong>
+                    </div>
+                    <small>{copy.voteScope(voteScopeCount)}</small>
+                    <div className="scheme-board__facilitation-actions">
+                      {layout.facilitation.voting.active ? (
+                        <>
+                          <button
+                            type="button"
+                            disabled={!selectedVoteTargetId}
+                            onClick={() => addVote(selectedVoteTargetId)}
+                          >
+                            {copy.addVote}
+                          </button>
+                          <button type="button" onClick={endVotingSession}>
+                            {copy.endVote}
+                          </button>
+                        </>
+                      ) : (
+                        <button type="button" disabled={boardItems.length === 0} onClick={startVotingSession}>
+                          {copy.startVote}
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        disabled={!layout.facilitation.voting.active && voteTotal === 0}
+                        onClick={clearVotingSession}
+                      >
+                        {copy.clearVote}
+                      </button>
+                    </div>
+                    {layout.facilitation.voting.active && !selectedVoteTargetId ? (
+                      <p>{copy.noVoteTarget}</p>
+                    ) : null}
+                  </div>
+                  <div className="scheme-board__facilitation-card">
+                    <div className="scheme-board__facilitation-card-header">
+                      <span>{copy.timer}</span>
+                      <strong className="scheme-board__timer-readout">
+                        {formatTimer(remainingTimerSeconds)}
+                      </strong>
+                    </div>
+                    <div className="scheme-board__facilitation-actions">
+                      {layout.facilitation.timer.active ? (
+                        <button type="button" onClick={pauseTimer}>
+                          {copy.pauseTimer}
+                        </button>
+                      ) : (
+                        <button type="button" onClick={startTimer}>
+                          {copy.startTimer}
+                        </button>
+                      )}
+                      <button type="button" onClick={stopTimer}>
+                        {copy.stopTimer}
+                      </button>
+                      <button type="button" onClick={addTimerMinute}>
+                        {copy.addMinute}
+                      </button>
+                    </div>
+                  </div>
+                </section>
                 <section className="scheme-board__comments" aria-label={copy.comments}>
                   <div className="scheme-board__comments-header">
                     <strong>{copy.comments}</strong>

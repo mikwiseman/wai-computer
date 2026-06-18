@@ -415,6 +415,7 @@ private struct MacSchemeBoard: View {
     @State private var redoStack: [SchemeCanvasLayout] = []
     @State private var editingItemId: String?
     @State private var boardSize: CGSize = .zero
+    @State private var timerNow = Date()
 
     private let nodeWidth: CGFloat = 232
     private let nodeHeight: CGFloat = 132
@@ -441,6 +442,9 @@ private struct MacSchemeBoard: View {
     private let maxGridSize = 240.0
     private let frameFocusPadding = 96.0
     private let boardFitPadding = 112.0
+    private let minTimerSeconds = 60
+    private let defaultTimerSeconds = 300
+    private let maxTimerSeconds = 604_800
 
     var body: some View {
         VStack(spacing: 0) {
@@ -532,6 +536,20 @@ private struct MacSchemeBoard: View {
                                 .accessibilityIdentifier("scheme-comment-\(comment.id)")
                         }
 
+                        ForEach(layout.facilitation.voting.votes.filter { $0.count > 0 }) { vote in
+                            if let rect = itemRect(in: layoutWithCurrentNodePositions(), id: vote.itemId) {
+                                MacSchemeVoteBadge(count: vote.count)
+                                    .position(
+                                        screenPoint(
+                                            for: SchemePosition(x: Double(rect.maxX), y: Double(rect.minY)),
+                                            in: proxy.size
+                                        )
+                                    )
+                                    .zIndex(1_000_004)
+                                    .accessibilityIdentifier("scheme-vote-\(vote.itemId)")
+                            }
+                        }
+
                         if let marqueeRect = marqueeRect(in: proxy.size) {
                             Rectangle()
                                 .fill(Palette.accent.opacity(0.14))
@@ -579,6 +597,36 @@ private struct MacSchemeBoard: View {
                         onFocus: focusOutlineItem
                     )
 
+                    MacSchemeFacilitationPanel(
+                        title: t("Facilitation", "Фасилитация"),
+                        votingTitle: t("Voting", "Голосование"),
+                        timerTitle: t("Timer", "Таймер"),
+                        voting: layout.facilitation.voting,
+                        timer: layout.facilitation.timer,
+                        voteTotalText: voteCountText(voteTotal),
+                        voteScopeText: "\(voteScopeCount) \(t("objects", "объектов"))",
+                        selectedVoteTargetId: selectedVoteTargetId,
+                        noVoteTargetText: t("Select an object to vote.", "Выберите объект для голоса."),
+                        timerReadout: formattedTimerRemaining,
+                        startVoteText: t("Start vote", "Начать голосование"),
+                        addVoteText: t("Add vote", "Добавить голос"),
+                        endVoteText: t("End vote", "Завершить"),
+                        clearVoteText: t("Clear votes", "Очистить голоса"),
+                        startTimerText: t("Start timer", "Запустить таймер"),
+                        pauseTimerText: t("Pause timer", "Пауза"),
+                        stopTimerText: t("Stop timer", "Сбросить"),
+                        addMinuteText: t("+1 min", "+1 мин"),
+                        onStartVoting: startVotingSession,
+                        onAddVote: addVote,
+                        onEndVoting: endVotingSession,
+                        onClearVoting: clearVotingSession,
+                        onStartTimer: startTimer,
+                        onPauseTimer: pauseTimer,
+                        onStopTimer: stopTimer,
+                        onAddTimerMinute: addTimerMinute
+                    )
+                    .frame(height: 238)
+
                     MacSchemeCommentsPanel(
                         title: t("Comments", "Комментарии"),
                         emptyText: t("No comments yet.", "Комментариев пока нет."),
@@ -598,6 +646,11 @@ private struct MacSchemeBoard: View {
                     .frame(height: 260)
                 }
                 .frame(width: 240)
+            }
+        }
+        .onReceive(Timer.publish(every: 1, on: .main, in: .common).autoconnect()) { next in
+            if layout.facilitation.timer.active {
+                timerNow = next
             }
         }
     }
@@ -1313,6 +1366,35 @@ private struct MacSchemeBoard: View {
 
     private var unresolvedCommentCount: Int {
         layout.comments.filter { !$0.resolved }.count
+    }
+
+    private var selectedVoteTargetId: String? {
+        let currentLayout = layoutWithCurrentNodePositions()
+        if let selectedTarget = selectedItemIds.first(where: { itemRect(in: currentLayout, id: $0) != nil }) {
+            return selectedTarget
+        }
+        return layout.facilitation.voting.selectedItemIds.first { itemRect(in: currentLayout, id: $0) != nil }
+    }
+
+    private var voteTotal: Int {
+        layout.facilitation.voting.votes.reduce(0) { $0 + $1.count }
+    }
+
+    private var voteScopeCount: Int {
+        let currentLayout = layoutWithCurrentNodePositions()
+        let scopedCount = layout.facilitation.voting.selectedItemIds
+            .filter { itemRect(in: currentLayout, id: $0) != nil }
+            .count
+        return scopedCount > 0 ? scopedCount : itemBounds().count
+    }
+
+    private var timerRemainingSeconds: Int {
+        timerRemainingSeconds(at: timerNow)
+    }
+
+    private var formattedTimerRemaining: String {
+        let seconds = max(0, timerRemainingSeconds)
+        return "\(seconds / 60):\(String(format: "%02d", seconds % 60))"
     }
 
     private var canDeleteSelected: Bool {
@@ -2768,6 +2850,8 @@ private struct MacSchemeBoard: View {
                 || $0.sourceId.map { selected.contains($0) } == true
                 || $0.targetId.map { selected.contains($0) } == true
         }
+        layout.facilitation.voting.selectedItemIds.removeAll { selected.contains($0) }
+        layout.facilitation.voting.votes.removeAll { selected.contains($0.itemId) }
         clearSelection()
         onCommit(layout)
     }
@@ -2778,6 +2862,123 @@ private struct MacSchemeBoard: View {
             comment.resolved.toggle()
         }
         selectSingle(commentId)
+        onCommit(layout)
+    }
+
+    private func currentEpochMilliseconds() -> Int {
+        Int(Date().timeIntervalSince1970 * 1_000)
+    }
+
+    private func voteCountText(_ count: Int) -> String {
+        if language == .russian {
+            return "\(count) голос."
+        }
+        return "\(count) vote\(count == 1 ? "" : "s")"
+    }
+
+    private func startVotingSession() {
+        let currentLayout = layoutWithCurrentNodePositions()
+        let selectedTargets = selectedItemIds.filter { itemRect(in: currentLayout, id: $0) != nil }
+        let selectedItemIds = selectedTargets.isEmpty ? itemBounds().map(\.id) : selectedTargets
+        guard !selectedItemIds.isEmpty else { return }
+        pushUndoSnapshot()
+        layout.facilitation.voting = SchemeVotingSession(
+            active: true,
+            selectedItemIds: selectedItemIds
+        )
+        onCommit(layout)
+    }
+
+    private func addVote(to itemId: String) {
+        guard layout.facilitation.voting.active else { return }
+        let scopedItemIds = layout.facilitation.voting.selectedItemIds
+        guard scopedItemIds.isEmpty || scopedItemIds.contains(itemId) else { return }
+        pushUndoSnapshot()
+        if let index = layout.facilitation.voting.votes.firstIndex(where: { $0.itemId == itemId }) {
+            layout.facilitation.voting.votes[index].count = layout.facilitation.voting.oneVotePerObject
+                ? 1
+                : layout.facilitation.voting.votes[index].count + 1
+        } else {
+            layout.facilitation.voting.votes.append(SchemeVote(itemId: itemId, count: 1))
+        }
+        onCommit(layout)
+    }
+
+    private func endVotingSession() {
+        pushUndoSnapshot()
+        layout.facilitation.voting.active = false
+        onCommit(layout)
+    }
+
+    private func clearVotingSession() {
+        pushUndoSnapshot()
+        layout.facilitation.voting = SchemeVotingSession()
+        onCommit(layout)
+    }
+
+    private func timerRemainingSeconds(at date: Date) -> Int {
+        let timer = layout.facilitation.timer
+        guard timer.active, let startedAtMs = timer.startedAtMs else {
+            return timer.pausedRemainingSeconds ?? timer.durationSeconds
+        }
+        let elapsedSeconds = max(0, Int((date.timeIntervalSince1970 * 1_000 - Double(startedAtMs)) / 1_000))
+        return max(0, timer.durationSeconds - elapsedSeconds)
+    }
+
+    private func startTimer() {
+        pushUndoSnapshot()
+        let now = Date()
+        let startedAtMs = currentEpochMilliseconds()
+        let remainingSeconds = timerRemainingSeconds(at: now)
+        let nextDurationSeconds = remainingSeconds > 0 ? remainingSeconds : defaultTimerSeconds
+        layout.facilitation.timer = SchemeTimerState(
+            active: true,
+            durationSeconds: min(max(nextDurationSeconds, minTimerSeconds), maxTimerSeconds),
+            startedAtMs: startedAtMs,
+            pausedRemainingSeconds: nil
+        )
+        timerNow = now
+        onCommit(layout)
+    }
+
+    private func pauseTimer() {
+        guard layout.facilitation.timer.active else { return }
+        pushUndoSnapshot()
+        let now = Date()
+        layout.facilitation.timer = SchemeTimerState(
+            active: false,
+            durationSeconds: layout.facilitation.timer.durationSeconds,
+            startedAtMs: nil,
+            pausedRemainingSeconds: timerRemainingSeconds(at: now)
+        )
+        timerNow = now
+        onCommit(layout)
+    }
+
+    private func stopTimer() {
+        pushUndoSnapshot()
+        layout.facilitation.timer = SchemeTimerState()
+        timerNow = Date()
+        onCommit(layout)
+    }
+
+    private func addTimerMinute() {
+        pushUndoSnapshot()
+        if layout.facilitation.timer.active {
+            layout.facilitation.timer.durationSeconds =
+                min(max(layout.facilitation.timer.durationSeconds + 60, minTimerSeconds), maxTimerSeconds)
+        } else {
+            let nextDurationSeconds =
+                min(max(layout.facilitation.timer.durationSeconds + 60, minTimerSeconds), maxTimerSeconds)
+            let nextPausedRemainingSeconds =
+                min(
+                    max((layout.facilitation.timer.pausedRemainingSeconds ?? nextDurationSeconds - 60) + 60, 0),
+                    maxTimerSeconds
+                )
+            layout.facilitation.timer.durationSeconds = nextDurationSeconds
+            layout.facilitation.timer.pausedRemainingSeconds =
+                nextPausedRemainingSeconds
+        }
         onCommit(layout)
     }
 
@@ -3168,6 +3369,154 @@ private struct MacSchemeOutlinePanel: View {
                 .frame(width: 1)
         }
         .accessibilityIdentifier("scheme-board-outline")
+        .accessibilityLabel(Text(title))
+    }
+}
+
+private struct MacSchemeVoteBadge: View {
+    let count: Int
+
+    var body: some View {
+        Text("\(count)")
+            .font(Typography.caption.weight(.heavy))
+            .foregroundColor(.white)
+            .frame(minWidth: 28, minHeight: 28)
+            .padding(.horizontal, 3)
+            .background(Circle().fill(Palette.accent))
+            .overlay(Circle().stroke(Color(nsColor: .textBackgroundColor), lineWidth: 2))
+            .shadow(color: Color.black.opacity(0.18), radius: 8, y: 3)
+            .allowsHitTesting(false)
+            .accessibilityLabel(Text("\(count) votes"))
+    }
+}
+
+private struct MacSchemeFacilitationPanel: View {
+    let title: String
+    let votingTitle: String
+    let timerTitle: String
+    let voting: SchemeVotingSession
+    let timer: SchemeTimerState
+    let voteTotalText: String
+    let voteScopeText: String
+    let selectedVoteTargetId: String?
+    let noVoteTargetText: String
+    let timerReadout: String
+    let startVoteText: String
+    let addVoteText: String
+    let endVoteText: String
+    let clearVoteText: String
+    let startTimerText: String
+    let pauseTimerText: String
+    let stopTimerText: String
+    let addMinuteText: String
+    let onStartVoting: () -> Void
+    let onAddVote: (String) -> Void
+    let onEndVoting: () -> Void
+    let onClearVoting: () -> Void
+    let onStartTimer: () -> Void
+    let onPauseTimer: () -> Void
+    let onStopTimer: () -> Void
+    let onAddTimerMinute: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Spacing.sm) {
+            Text(title)
+                .font(Typography.bodySmall.weight(.semibold))
+                .foregroundColor(Palette.textPrimary)
+                .lineLimit(1)
+
+            VStack(alignment: .leading, spacing: Spacing.xs) {
+                HStack(spacing: Spacing.xs) {
+                    Text(votingTitle)
+                        .font(Typography.caption)
+                        .foregroundColor(Palette.textSecondary)
+                    Spacer(minLength: 0)
+                    Text(voteTotalText)
+                        .font(Typography.bodySmall.weight(.semibold))
+                        .foregroundColor(Palette.textPrimary)
+                }
+                Text(voteScopeText)
+                    .font(Typography.caption)
+                    .foregroundColor(Palette.textSecondary)
+
+                HStack(spacing: Spacing.xs) {
+                    if voting.active {
+                        Button(addVoteText) {
+                            if let selectedVoteTargetId {
+                                onAddVote(selectedVoteTargetId)
+                            }
+                        }
+                        .buttonStyle(WaiGhostButtonStyle())
+                        .disabled(selectedVoteTargetId == nil)
+
+                        Button(endVoteText, action: onEndVoting)
+                            .buttonStyle(WaiGhostButtonStyle())
+                    } else {
+                        Button(startVoteText, action: onStartVoting)
+                            .buttonStyle(WaiGhostButtonStyle())
+                    }
+
+                    Button(clearVoteText, action: onClearVoting)
+                        .buttonStyle(WaiGhostButtonStyle())
+                        .disabled(!voting.active && voting.votes.isEmpty)
+                }
+
+                if voting.active && selectedVoteTargetId == nil {
+                    Text(noVoteTargetText)
+                        .font(Typography.caption)
+                        .foregroundColor(Palette.textSecondary)
+                }
+            }
+            .padding(Spacing.xs)
+            .background(
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(Color(nsColor: .controlBackgroundColor))
+                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(Palette.border, lineWidth: 1))
+            )
+
+            VStack(alignment: .leading, spacing: Spacing.xs) {
+                HStack(spacing: Spacing.xs) {
+                    Text(timerTitle)
+                        .font(Typography.caption)
+                        .foregroundColor(Palette.textSecondary)
+                    Spacer(minLength: 0)
+                    Text(timerReadout)
+                        .font(Typography.bodySmall.monospacedDigit().weight(.semibold))
+                        .foregroundColor(Palette.textPrimary)
+                }
+
+                HStack(spacing: Spacing.xs) {
+                    if timer.active {
+                        Button(pauseTimerText, action: onPauseTimer)
+                            .buttonStyle(WaiGhostButtonStyle())
+                    } else {
+                        Button(startTimerText, action: onStartTimer)
+                            .buttonStyle(WaiGhostButtonStyle())
+                    }
+
+                    Button(stopTimerText, action: onStopTimer)
+                        .buttonStyle(WaiGhostButtonStyle())
+
+                    Button(addMinuteText, action: onAddTimerMinute)
+                        .buttonStyle(WaiGhostButtonStyle())
+                }
+            }
+            .padding(Spacing.xs)
+            .background(
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(Color(nsColor: .controlBackgroundColor))
+                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(Palette.border, lineWidth: 1))
+            )
+        }
+        .padding(Spacing.md)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(Palette.surfaceSubtle)
+        .overlay(alignment: .top) {
+            Rectangle()
+                .fill(Palette.border)
+                .frame(height: 1)
+        }
+        .accessibilityIdentifier("scheme-board-facilitation")
         .accessibilityLabel(Text(title))
     }
 }

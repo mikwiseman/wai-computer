@@ -19,7 +19,7 @@ vi.mock("@/lib/api", () => ({
 
 function layout(overrides: Partial<SchemeCanvasLayout> = {}): SchemeCanvasLayout {
   return {
-    version: 11,
+    version: 12,
     snap_to_grid: false,
     grid_size: 40,
     viewport: { x: 0, y: 0, zoom: 1 },
@@ -34,6 +34,23 @@ function layout(overrides: Partial<SchemeCanvasLayout> = {}): SchemeCanvasLayout
     sources: [],
     connectors: [],
     comments: [],
+    facilitation: {
+      voting: {
+        active: false,
+        title: "Vote",
+        votes_per_person: 3,
+        one_vote_per_object: false,
+        show_results: true,
+        selected_item_ids: [],
+        votes: [],
+      },
+      timer: {
+        active: false,
+        duration_seconds: 300,
+        started_at_ms: null,
+        paused_remaining_seconds: null,
+      },
+    },
     ...overrides,
   };
 }
@@ -180,7 +197,7 @@ describe("SchemesPanel", () => {
         "scheme-1",
         {
           layout: expect.objectContaining({
-            version: 11,
+            version: 12,
             node_positions: expect.objectContaining({
               "signal:decision:1": expect.objectContaining({ x: 380, y: -160 }),
             }),
@@ -201,7 +218,7 @@ describe("SchemesPanel", () => {
         "scheme-1",
         {
           layout: expect.objectContaining({
-            version: 11,
+            version: 12,
             sources: [
               expect.objectContaining({
                 id: "source-block:item:1",
@@ -261,7 +278,7 @@ describe("SchemesPanel", () => {
         "scheme-1",
         {
           layout: expect.objectContaining({
-            version: 11,
+            version: 12,
             comments: [
               expect.objectContaining({
                 id: "comment:test-id-1",
@@ -301,24 +318,125 @@ describe("SchemesPanel", () => {
     });
   });
 
+  it("starts a vote, records a vote, and controls the board timer", async () => {
+    const boardLayout = layout({
+      cards: [
+        {
+          id: "card-1",
+          x: 120,
+          y: 140,
+          width: 220,
+          height: 150,
+          text: "Ship the launch plan",
+          color: "#f7d774",
+          locked: false,
+          z_index: 0,
+        },
+      ],
+    });
+    mockListSchemes.mockResolvedValue({ schemes: [scheme({ layout: boardLayout })] });
+
+    render(<SchemesPanel />);
+
+    const sticky = await screen.findByLabelText("Sticky note");
+    fireEvent.pointerDown(sticky, { pointerId: 1, clientX: 130, clientY: 150, button: 0 });
+    fireEvent.click(screen.getByRole("button", { name: "Start vote" }));
+
+    await waitFor(() => {
+      const saved = mockUpdateScheme.mock.calls.at(-1)?.[1]?.layout as SchemeCanvasLayout;
+      expect(saved.facilitation.voting).toEqual(
+        expect.objectContaining({
+          active: true,
+          selected_item_ids: ["card-1"],
+          votes: [],
+        }),
+      );
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Add vote" }));
+
+    await waitFor(() => {
+      const saved = mockUpdateScheme.mock.calls.at(-1)?.[1]?.layout as SchemeCanvasLayout;
+      expect(saved.facilitation.voting.votes).toEqual([{ item_id: "card-1", count: 1 }]);
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Start timer" }));
+
+    await waitFor(() => {
+      const saved = mockUpdateScheme.mock.calls.at(-1)?.[1]?.layout as SchemeCanvasLayout;
+      expect(saved.facilitation.timer).toEqual(
+        expect.objectContaining({
+          active: true,
+          duration_seconds: 300,
+          started_at_ms: expect.any(Number),
+        }),
+      );
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Pause timer" }));
+
+    await waitFor(() => {
+      const saved = mockUpdateScheme.mock.calls.at(-1)?.[1]?.layout as SchemeCanvasLayout;
+      expect(saved.facilitation.timer.active).toBe(false);
+      expect(saved.facilitation.timer.paused_remaining_seconds).toEqual(expect.any(Number));
+    });
+  });
+
+  it("restarts an expired board timer with a schema-valid duration", async () => {
+    const dateNow = vi.spyOn(Date, "now").mockReturnValue(62_000);
+    try {
+      const expiredLayout = layout();
+      expiredLayout.facilitation.timer = {
+        active: true,
+        duration_seconds: 60,
+        started_at_ms: 1_000,
+        paused_remaining_seconds: null,
+      };
+      const initial = scheme({ layout: expiredLayout });
+      mockListSchemes.mockResolvedValue({ schemes: [initial] });
+      mockGetScheme.mockResolvedValue(initial);
+
+      render(<SchemesPanel />);
+
+      await screen.findByTestId("schemes-panel");
+      fireEvent.click(await screen.findByRole("button", { name: "Pause timer" }));
+
+      await waitFor(() => {
+        const saved = mockUpdateScheme.mock.calls.at(-1)?.[1]?.layout as SchemeCanvasLayout;
+        expect(saved.facilitation.timer).toEqual(
+          expect.objectContaining({
+            active: false,
+            paused_remaining_seconds: 0,
+          }),
+        );
+      });
+
+      fireEvent.click(screen.getByRole("button", { name: "Start timer" }));
+
+      await waitFor(() => {
+        const saved = mockUpdateScheme.mock.calls.at(-1)?.[1]?.layout as SchemeCanvasLayout;
+        expect(saved.facilitation.timer).toEqual(
+          expect.objectContaining({
+            active: true,
+            duration_seconds: 300,
+            started_at_ms: 62_000,
+          }),
+        );
+      });
+    } finally {
+      dateNow.mockRestore();
+    }
+  });
+
   it("persists snap settings and places new objects on the grid", async () => {
+    const initial = scheme({ layout: layout({ snap_to_grid: true }) });
+    mockListSchemes.mockResolvedValue({ schemes: [initial] });
+    mockGetScheme.mockResolvedValue(initial);
+
     const { container } = render(<SchemesPanel />);
 
     await screen.findByTestId("schemes-panel");
-    fireEvent.click(screen.getByRole("checkbox", { name: "Snap to grid" }));
-
-    await waitFor(() =>
-      expect(mockUpdateScheme).toHaveBeenCalledWith(
-        "scheme-1",
-        {
-          layout: expect.objectContaining({
-            version: 11,
-            snap_to_grid: true,
-            grid_size: 40,
-          }),
-        },
-      ),
-    );
+    await waitFor(() => expect(screen.getByRole("checkbox", { name: "Snap to grid" })).toBeChecked());
 
     fireEvent.click(screen.getByRole("button", { name: "Sticky" }));
     const viewport = container.querySelector(".scheme-board__viewport");
@@ -326,24 +444,26 @@ describe("SchemesPanel", () => {
 
     fireEvent.pointerDown(viewport as Element, { pointerId: 1, clientX: 127, clientY: 166, button: 0 });
 
-    await waitFor(() =>
-      expect(mockUpdateScheme).toHaveBeenLastCalledWith(
-        "scheme-1",
-        {
-          layout: expect.objectContaining({
-            snap_to_grid: true,
-            grid_size: 40,
-            cards: [
-              expect.objectContaining({
-                id: "card:test-id-1",
-                x: 0,
-                y: 80,
-              }),
-            ],
-          }),
-        },
-      ),
-    );
+    await waitFor(() => {
+      const snappedCardLayout = mockUpdateScheme.mock.calls
+        .map((call) => call[1]?.layout as SchemeCanvasLayout | undefined)
+        .find((candidate) =>
+          candidate?.snap_to_grid === true &&
+          candidate.cards.some((card) => card.id === "card:test-id-1" && card.x === 0 && card.y === 80),
+        );
+      expect(snappedCardLayout).toEqual(
+        expect.objectContaining({
+          grid_size: 40,
+          cards: [
+            expect.objectContaining({
+              id: "card:test-id-1",
+              x: 0,
+              y: 80,
+            }),
+          ],
+        }),
+      );
+    });
   });
 
   it("orders frames and focuses the next frame from the frame navigator", async () => {

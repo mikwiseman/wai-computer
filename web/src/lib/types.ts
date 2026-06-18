@@ -1064,6 +1064,33 @@ export interface SchemeCanvasComment {
   resolved: boolean;
 }
 
+export interface SchemeVote {
+  item_id: string;
+  count: number;
+}
+
+export interface SchemeVotingSession {
+  active: boolean;
+  title: string;
+  votes_per_person: number;
+  one_vote_per_object: boolean;
+  show_results: boolean;
+  selected_item_ids: string[];
+  votes: SchemeVote[];
+}
+
+export interface SchemeTimerState {
+  active: boolean;
+  duration_seconds: number;
+  started_at_ms: number | null;
+  paused_remaining_seconds: number | null;
+}
+
+export interface SchemeFacilitationState {
+  voting: SchemeVotingSession;
+  timer: SchemeTimerState;
+}
+
 export interface SchemeCanvasLayout {
   version: number;
   snap_to_grid: boolean;
@@ -1080,6 +1107,7 @@ export interface SchemeCanvasLayout {
   sources: SchemeCanvasSourceBlock[];
   connectors: SchemeConnector[];
   comments: SchemeCanvasComment[];
+  facilitation: SchemeFacilitationState;
 }
 
 export interface SchemeNode {

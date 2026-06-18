@@ -33,7 +33,7 @@ async def test_create_list_get_and_update_scheme_layout(client, auth_headers, mo
 
     node_id = payload["current_revision"]["projection"]["nodes"][0]["id"]
     layout = {
-        "version": 11,
+        "version": 12,
         "snap_to_grid": True,
         "grid_size": 40,
         "viewport": {"x": 20, "y": -10, "zoom": 1.2},
@@ -146,6 +146,26 @@ async def test_create_list_get_and_update_scheme_layout(client, auth_headers, mo
                 "resolved": False,
             }
         ],
+        "facilitation": {
+            "voting": {
+                "active": True,
+                "title": "Launch vote",
+                "votes_per_person": 3,
+                "one_vote_per_object": True,
+                "show_results": True,
+                "selected_item_ids": ["card-1", node_id],
+                "votes": [
+                    {"item_id": "card-1", "count": 2},
+                    {"item_id": node_id, "count": 1},
+                ],
+            },
+            "timer": {
+                "active": True,
+                "duration_seconds": 300,
+                "started_at_ms": 1_790_000_000_000,
+                "paused_remaining_seconds": None,
+            },
+        },
     }
     updated = await client.patch(
         f"/api/schemes/{scheme_id}",
@@ -196,7 +216,7 @@ async def test_scheme_routes_migrate_legacy_node_position_layout(
     )
 
     assert migrated.status_code == 200, migrated.text
-    assert migrated.json()["layout"]["version"] == 11
+    assert migrated.json()["layout"]["version"] == 12
     assert migrated.json()["layout"]["snap_to_grid"] is False
     assert migrated.json()["layout"]["grid_size"] == 40
     assert migrated.json()["layout"]["presentation"] == {"active": False, "frame_id": None}
@@ -205,6 +225,23 @@ async def test_scheme_routes_migrate_legacy_node_position_layout(
     assert migrated.json()["layout"]["cards"] == []
     assert migrated.json()["layout"]["sources"] == []
     assert migrated.json()["layout"]["comments"] == []
+    assert migrated.json()["layout"]["facilitation"] == {
+        "voting": {
+            "active": False,
+            "title": "Vote",
+            "votes_per_person": 3,
+            "one_vote_per_object": False,
+            "show_results": True,
+            "selected_item_ids": [],
+            "votes": [],
+        },
+        "timer": {
+            "active": False,
+            "duration_seconds": 300,
+            "started_at_ms": None,
+            "paused_remaining_seconds": None,
+        },
+    }
 
 
 async def test_scheme_routes_validate_layout_shape(client, auth_headers, monkeypatch) -> None:
@@ -231,7 +268,7 @@ async def test_scheme_routes_validate_layout_shape(client, auth_headers, monkeyp
     invalid_grid = await client.patch(
         f"/api/schemes/{created.json()['id']}",
         headers=auth_headers,
-        json={"layout": {"version": 11, "grid_size": 4}},
+        json={"layout": {"version": 12, "grid_size": 4}},
     )
 
     assert invalid_grid.status_code == 422
@@ -241,7 +278,7 @@ async def test_scheme_routes_validate_layout_shape(client, auth_headers, monkeyp
         headers=auth_headers,
         json={
             "layout": {
-                "version": 11,
+                "version": 12,
                 "frames": [
                     {
                         "id": "frame-1",
@@ -264,7 +301,7 @@ async def test_scheme_routes_validate_layout_shape(client, auth_headers, monkeyp
         headers=auth_headers,
         json={
             "layout": {
-                "version": 11,
+                "version": 12,
                 "frames": [
                     {
                         "id": "frame-1",
@@ -288,7 +325,7 @@ async def test_scheme_routes_validate_layout_shape(client, auth_headers, monkeyp
         headers=auth_headers,
         json={
             "layout": {
-                "version": 11,
+                "version": 12,
                 "shapes": [
                     {
                         "id": "shape-bad",
@@ -310,7 +347,7 @@ async def test_scheme_routes_validate_layout_shape(client, auth_headers, monkeyp
         headers=auth_headers,
         json={
             "layout": {
-                "version": 11,
+                "version": 12,
                 "sources": [
                     {
                         "id": "source-bad",
@@ -335,7 +372,7 @@ async def test_scheme_routes_validate_layout_shape(client, auth_headers, monkeyp
         headers=auth_headers,
         json={
             "layout": {
-                "version": 11,
+                "version": 12,
                 "strokes": [
                     {
                         "id": "stroke-bad",
@@ -354,7 +391,7 @@ async def test_scheme_routes_validate_layout_shape(client, auth_headers, monkeyp
         headers=auth_headers,
         json={
             "layout": {
-                "version": 11,
+                "version": 12,
                 "comments": [
                     {
                         "id": "comment-bad",
@@ -368,6 +405,24 @@ async def test_scheme_routes_validate_layout_shape(client, auth_headers, monkeyp
     )
 
     assert empty_comment.status_code == 422
+
+    invalid_votes = await client.patch(
+        f"/api/schemes/{created.json()['id']}",
+        headers=auth_headers,
+        json={
+            "layout": {
+                "version": 12,
+                "facilitation": {
+                    "voting": {
+                        "votes_per_person": 0,
+                        "votes": [{"item_id": "card-1", "count": -1}],
+                    }
+                },
+            }
+        },
+    )
+
+    assert invalid_votes.status_code == 422
 
 
 async def test_scheme_routes_are_user_scoped(client, auth_headers, monkeypatch) -> None:
