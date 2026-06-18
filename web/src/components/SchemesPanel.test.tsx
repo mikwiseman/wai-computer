@@ -19,7 +19,7 @@ vi.mock("@/lib/api", () => ({
 
 function layout(overrides: Partial<SchemeCanvasLayout> = {}): SchemeCanvasLayout {
   return {
-    version: 10,
+    version: 11,
     snap_to_grid: false,
     grid_size: 40,
     viewport: { x: 0, y: 0, zoom: 1 },
@@ -33,6 +33,7 @@ function layout(overrides: Partial<SchemeCanvasLayout> = {}): SchemeCanvasLayout
     texts: [],
     sources: [],
     connectors: [],
+    comments: [],
     ...overrides,
   };
 }
@@ -179,7 +180,7 @@ describe("SchemesPanel", () => {
         "scheme-1",
         {
           layout: expect.objectContaining({
-            version: 10,
+            version: 11,
             node_positions: expect.objectContaining({
               "signal:decision:1": expect.objectContaining({ x: 380, y: -160 }),
             }),
@@ -200,7 +201,7 @@ describe("SchemesPanel", () => {
         "scheme-1",
         {
           layout: expect.objectContaining({
-            version: 10,
+            version: 11,
             sources: [
               expect.objectContaining({
                 id: "source-block:item:1",
@@ -245,6 +246,61 @@ describe("SchemesPanel", () => {
     );
   });
 
+  it("adds, edits, and resolves a comment pin on the infinite board", async () => {
+    const { container } = render(<SchemesPanel />);
+
+    await screen.findByTestId("schemes-panel");
+    fireEvent.click(screen.getByRole("button", { name: "Comment" }));
+    const viewport = container.querySelector(".scheme-board__viewport");
+    expect(viewport).not.toBeNull();
+
+    fireEvent.pointerDown(viewport as Element, { pointerId: 1, clientX: 180, clientY: 210, button: 0 });
+
+    await waitFor(() =>
+      expect(mockUpdateScheme).toHaveBeenCalledWith(
+        "scheme-1",
+        {
+          layout: expect.objectContaining({
+            version: 11,
+            comments: [
+              expect.objectContaining({
+                id: "comment:test-id-1",
+                text: "Comment",
+                resolved: false,
+              }),
+            ],
+          }),
+        },
+      ),
+    );
+
+    const commentText = await screen.findByLabelText("Comment text");
+    fireEvent.change(commentText, { target: { value: "Confirm the launch owner." } });
+    fireEvent.blur(commentText);
+
+    await waitFor(() => {
+      const saved = mockUpdateScheme.mock.calls.at(-1)?.[1]?.layout as SchemeCanvasLayout;
+      expect(saved.comments[0]).toEqual(
+        expect.objectContaining({
+          text: "Confirm the launch owner.",
+          resolved: false,
+        }),
+      );
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Resolve comment" }));
+
+    await waitFor(() => {
+      const saved = mockUpdateScheme.mock.calls.at(-1)?.[1]?.layout as SchemeCanvasLayout;
+      expect(saved.comments[0]).toEqual(
+        expect.objectContaining({
+          text: "Confirm the launch owner.",
+          resolved: true,
+        }),
+      );
+    });
+  });
+
   it("persists snap settings and places new objects on the grid", async () => {
     const { container } = render(<SchemesPanel />);
 
@@ -256,7 +312,7 @@ describe("SchemesPanel", () => {
         "scheme-1",
         {
           layout: expect.objectContaining({
-            version: 10,
+            version: 11,
             snap_to_grid: true,
             grid_size: 40,
           }),

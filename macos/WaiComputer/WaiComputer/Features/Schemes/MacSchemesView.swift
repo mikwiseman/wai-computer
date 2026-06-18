@@ -275,6 +275,7 @@ private enum MacSchemeTool: String, CaseIterable, Identifiable {
     case ellipse
     case frame
     case connector
+    case comment
 
     var id: String { rawValue }
 
@@ -304,6 +305,8 @@ private enum MacSchemeTool: String, CaseIterable, Identifiable {
             return OnboardingL10n.text("Frame", "Фрейм", language: language)
         case .connector:
             return OnboardingL10n.text("Connect", "Связь", language: language)
+        case .comment:
+            return OnboardingL10n.text("Comment", "Комментарий", language: language)
         }
     }
 
@@ -321,6 +324,7 @@ private enum MacSchemeTool: String, CaseIterable, Identifiable {
         case .ellipse: return "oval"
         case .frame: return "rectangle.dashed"
         case .connector: return "point.topleft.down.curvedto.point.bottomright.up"
+        case .comment: return "text.bubble"
         }
     }
 }
@@ -396,6 +400,7 @@ private struct MacSchemeBoard: View {
     @State private var frameDrag: ItemDragState?
     @State private var textDrag: ItemDragState?
     @State private var sourceDrag: ItemDragState?
+    @State private var commentDrag: ItemDragState?
     @State private var resizeDrag: ResizeDragState?
     @State private var draftStrokeId: String?
     @State private var eraserDidPushUndo = false
@@ -423,6 +428,7 @@ private struct MacSchemeBoard: View {
     private let textHeight: Double = 120
     private let sourceWidth: Double = 320
     private let sourceHeight: Double = 170
+    private let commentPinSize: Double = 34
     private let maxPinnedSourceBlocks = 12
     private let penColor = "#111827"
     private let penWidth = 3.0
@@ -516,6 +522,16 @@ private struct MacSchemeBoard: View {
                                 .accessibilityIdentifier("scheme-shape-\(shape.id)")
                         }
 
+                        ForEach(Array(layout.comments.enumerated()), id: \.element.id) { index, comment in
+                            MacSchemeCommentPin(comment: comment, index: index + 1)
+                                .frame(width: commentPinSize, height: commentPinSize)
+                                .overlay(selectionOverlay(id: comment.id))
+                                .position(screenPoint(for: SchemePosition(x: comment.x, y: comment.y), in: proxy.size))
+                                .zIndex(1_000_003)
+                                .highPriorityGesture(commentGesture(for: comment))
+                                .accessibilityIdentifier("scheme-comment-\(comment.id)")
+                        }
+
                         if let marqueeRect = marqueeRect(in: proxy.size) {
                             Rectangle()
                                 .fill(Palette.accent.opacity(0.14))
@@ -554,14 +570,34 @@ private struct MacSchemeBoard: View {
                     }
                 }
 
-                MacSchemeOutlinePanel(
-                    title: t("Board outline", "Структура доски"),
-                    emptyText: t("No board objects yet.", "На доске пока нет объектов."),
-                    items: boardOutlineItems,
-                    selectedItemIds: Set(selectedItemIds),
-                    onFocus: focusOutlineItem
-                )
-                .frame(width: 220)
+                VStack(spacing: 0) {
+                    MacSchemeOutlinePanel(
+                        title: t("Board outline", "Структура доски"),
+                        emptyText: t("No board objects yet.", "На доске пока нет объектов."),
+                        items: boardOutlineItems,
+                        selectedItemIds: Set(selectedItemIds),
+                        onFocus: focusOutlineItem
+                    )
+
+                    MacSchemeCommentsPanel(
+                        title: t("Comments", "Комментарии"),
+                        emptyText: t("No comments yet.", "Комментариев пока нет."),
+                        unresolvedText: "\(unresolvedCommentCount) \(t("open", "открыто"))",
+                        comments: $layout.comments,
+                        selectedCommentId: selectedItemId,
+                        commentTextLabel: t("Comment text", "Текст комментария"),
+                        resolveText: t("Resolve", "Закрыть"),
+                        reopenText: t("Reopen", "Открыть"),
+                        saveText: t("Save", "Сохранить"),
+                        resolvedText: t("resolved", "закрыто"),
+                        onSelect: { selectSingle($0) },
+                        onBeginEdit: beginInlineEdit,
+                        onCommit: { onCommit(layout) },
+                        onToggleResolved: toggleCommentResolved
+                    )
+                    .frame(height: 260)
+                }
+                .frame(width: 240)
             }
         }
     }
@@ -1090,6 +1126,20 @@ private struct MacSchemeBoard: View {
                 rect: bounds.rect
             )
         }
+        for comment in layout.comments {
+            append(
+                id: comment.id,
+                kind: t("Comment", "Комментарий"),
+                label: outlineLabel(comment.text, fallback: t("Comment", "Комментарий")),
+                detail: comment.resolved ? t("resolved", "закрыто") : t("open", "открыто"),
+                rect: CGRect(
+                    x: comment.x - commentPinSize / 2,
+                    y: comment.y - commentPinSize / 2,
+                    width: commentPinSize,
+                    height: commentPinSize
+                )
+            )
+        }
 
         return items
     }
@@ -1261,9 +1311,13 @@ private struct MacSchemeBoard: View {
         return selectedItemId
     }
 
+    private var unresolvedCommentCount: Int {
+        layout.comments.filter { !$0.resolved }.count
+    }
+
     private var canDeleteSelected: Bool {
         !selectedItemIds.isEmpty
-            && selectedItemIds.allSatisfy { canLockItem($0) && !isItemLocked($0) }
+            && selectedItemIds.allSatisfy { canDeleteItem($0) && !isItemLocked($0) }
     }
 
     private var canDuplicateSelected: Bool {
@@ -1373,6 +1427,7 @@ private struct MacSchemeBoard: View {
         frameDrag = nil
         textDrag = nil
         sourceDrag = nil
+        commentDrag = nil
         resizeDrag = nil
         multiDrag = nil
         marqueeStart = nil
@@ -1423,6 +1478,10 @@ private struct MacSchemeBoard: View {
             || layout.sources.contains { $0.id == id }
             || layout.strokes.contains { $0.id == id }
             || layout.connectors.contains { $0.id == id }
+    }
+
+    private func canDeleteItem(_ id: String) -> Bool {
+        canLockItem(id) || layout.comments.contains { $0.id == id }
     }
 
     private func canDuplicateItem(_ id: String) -> Bool {
@@ -1519,6 +1578,17 @@ private struct MacSchemeBoard: View {
         bounds += layout.connectors.compactMap { connector in
             pointsBounds(id: connector.id, points: connectorPoints(connector))
         }
+        bounds += layout.comments.map { comment in
+            (
+                id: comment.id,
+                rect: CGRect(
+                    x: comment.x - commentPinSize / 2,
+                    y: comment.y - commentPinSize / 2,
+                    width: commentPinSize,
+                    height: commentPinSize
+                )
+            )
+        }
         return bounds
     }
 
@@ -1562,6 +1632,14 @@ private struct MacSchemeBoard: View {
         }
         if let connector = candidate.connectors.first(where: { $0.id == id }) {
             return pointsBounds(id: connector.id, points: connector.points)?.rect
+        }
+        if let comment = candidate.comments.first(where: { $0.id == id }) {
+            return CGRect(
+                x: comment.x - commentPinSize / 2,
+                y: comment.y - commentPinSize / 2,
+                width: commentPinSize,
+                height: commentPinSize
+            )
         }
         return nil
     }
@@ -1693,6 +1771,10 @@ private struct MacSchemeBoard: View {
         for index in next.sources.indices where selected.contains(next.sources[index].id) {
             next.sources[index].x += dx
             next.sources[index].y += dy
+        }
+        for index in next.comments.indices where selected.contains(next.comments[index].id) {
+            next.comments[index].x += dx
+            next.comments[index].y += dy
         }
         for index in next.strokes.indices where selected.contains(next.strokes[index].id) {
             next.strokes[index].points = next.strokes[index].points.map {
@@ -2005,7 +2087,7 @@ private struct MacSchemeBoard: View {
                         lassoPoints = [world]
                     }
                     setSelection(selectionIds(inLasso: lassoPoints))
-                case .sticky, .text, .rectangle, .ellipse, .frame, .connector:
+                case .sticky, .text, .rectangle, .ellipse, .frame, .connector, .comment:
                     break
                 }
             }
@@ -2022,6 +2104,8 @@ private struct MacSchemeBoard: View {
                     addShape(kind: "ellipse", at: world)
                 case .frame:
                     addFrame(at: world)
+                case .comment:
+                    addComment(at: world)
                 case .draw, .highlighter:
                     draftStrokeId = nil
                     onCommit(layout)
@@ -2307,6 +2391,41 @@ private struct MacSchemeBoard: View {
             }
     }
 
+    private func commentGesture(for comment: SchemeCanvasComment) -> some Gesture {
+        DragGesture(minimumDistance: 1)
+            .onChanged { value in
+                guard tool == .select else { return }
+                if beginMultiDragIfNeeded(id: comment.id, translation: value.translation) { return }
+                if commentDrag?.id != comment.id {
+                    pushUndoSnapshot()
+                    commentDrag = ItemDragState(id: comment.id, origin: SchemePosition(x: comment.x, y: comment.y))
+                    selectSingle(comment.id)
+                }
+                let origin = commentDrag?.origin ?? SchemePosition(x: comment.x, y: comment.y)
+                let position = draggedPosition(from: origin, translation: value.translation)
+                updateComment(comment.id) {
+                    $0.x = position.x
+                    $0.y = position.y
+                }
+            }
+            .onEnded { value in
+                guard tool == .select else {
+                    selectSingle(comment.id)
+                    return
+                }
+                if endMultiDragIfNeeded(id: comment.id, translation: value.translation) { return }
+                let origin = commentDrag?.origin ?? SchemePosition(x: comment.x, y: comment.y)
+                let position = draggedPosition(from: origin, translation: value.translation)
+                updateComment(comment.id) {
+                    $0.x = position.x
+                    $0.y = position.y
+                }
+                selectSingle(comment.id)
+                commentDrag = nil
+                onCommit(layout)
+            }
+    }
+
     private func drawBoard(context: GraphicsContext, size: CGSize) {
         drawGrid(context: context, size: size)
         drawProjectionEdges(context: context, size: size)
@@ -2491,6 +2610,21 @@ private struct MacSchemeBoard: View {
         onCommit(layout)
     }
 
+    private func addComment(at point: SchemePosition) {
+        pushUndoSnapshot()
+        let position = snapPosition(point, isBypassed: isSnapBypassed)
+        let comment = SchemeCanvasComment(
+            id: "comment:\(UUID().uuidString)",
+            x: position.x,
+            y: position.y,
+            text: t("Comment", "Комментарий"),
+            resolved: false
+        )
+        layout.comments.append(comment)
+        selectSingle(comment.id)
+        onCommit(layout)
+    }
+
     private func pinProjectionSources() {
         let sources = unpinnedProjectionSources
         guard !sources.isEmpty else { return }
@@ -2627,6 +2761,7 @@ private struct MacSchemeBoard: View {
         normalisePresentationState()
         layout.texts.removeAll { selected.contains($0.id) }
         layout.sources.removeAll { selected.contains($0.id) }
+        layout.comments.removeAll { selected.contains($0.id) }
         layout.strokes.removeAll { selected.contains($0.id) }
         layout.connectors.removeAll {
             selected.contains($0.id)
@@ -2634,6 +2769,15 @@ private struct MacSchemeBoard: View {
                 || $0.targetId.map { selected.contains($0) } == true
         }
         clearSelection()
+        onCommit(layout)
+    }
+
+    private func toggleCommentResolved(_ commentId: String) {
+        pushUndoSnapshot()
+        updateComment(commentId) { comment in
+            comment.resolved.toggle()
+        }
+        selectSingle(commentId)
         onCommit(layout)
     }
 
@@ -2803,6 +2947,11 @@ private struct MacSchemeBoard: View {
     private func updateSource(_ id: String, mutate: (inout SchemeCanvasSourceBlock) -> Void) {
         guard let index = layout.sources.firstIndex(where: { $0.id == id }) else { return }
         mutate(&layout.sources[index])
+    }
+
+    private func updateComment(_ id: String, mutate: (inout SchemeCanvasComment) -> Void) {
+        guard let index = layout.comments.firstIndex(where: { $0.id == id }) else { return }
+        mutate(&layout.comments[index])
     }
 
     private func updateStroke(_ id: String, mutate: (inout SchemeStroke) -> Void) {
@@ -3023,6 +3172,111 @@ private struct MacSchemeOutlinePanel: View {
     }
 }
 
+private struct MacSchemeCommentsPanel: View {
+    let title: String
+    let emptyText: String
+    let unresolvedText: String
+    @Binding var comments: [SchemeCanvasComment]
+    let selectedCommentId: String?
+    let commentTextLabel: String
+    let resolveText: String
+    let reopenText: String
+    let saveText: String
+    let resolvedText: String
+    let onSelect: (String) -> Void
+    let onBeginEdit: (String) -> Void
+    let onCommit: () -> Void
+    let onToggleResolved: (String) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Spacing.sm) {
+            HStack(spacing: Spacing.sm) {
+                Text(title)
+                    .font(Typography.bodySmall.weight(.semibold))
+                    .foregroundColor(Palette.textPrimary)
+                    .lineLimit(1)
+
+                Spacer(minLength: 0)
+
+                Text(unresolvedText)
+                    .font(Typography.caption.weight(.semibold))
+                    .foregroundColor(Palette.textSecondary)
+            }
+
+            if comments.isEmpty {
+                Text(emptyText)
+                    .font(Typography.bodySmall)
+                    .foregroundColor(Palette.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else {
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: Spacing.xs) {
+                        ForEach($comments) { $comment in
+                            let isSelected = selectedCommentId == comment.id
+                            VStack(alignment: .leading, spacing: Spacing.xs) {
+                                TextEditor(text: $comment.text)
+                                    .font(Typography.bodySmall)
+                                    .frame(height: 64)
+                                    .scrollContentBackground(.hidden)
+                                    .background(Color(nsColor: .textBackgroundColor))
+                                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 6)
+                                            .stroke(isSelected ? Palette.accent : Palette.border, lineWidth: 1)
+                                    )
+                                    .onTapGesture {
+                                        onSelect(comment.id)
+                                        onBeginEdit(comment.id)
+                                    }
+                                    .accessibilityLabel(Text(commentTextLabel))
+
+                                HStack(spacing: Spacing.xs) {
+                                    Button(comment.resolved ? reopenText : resolveText) {
+                                        onSelect(comment.id)
+                                        onToggleResolved(comment.id)
+                                    }
+                                    .buttonStyle(WaiGhostButtonStyle())
+
+                                    Button(saveText) {
+                                        onSelect(comment.id)
+                                        onCommit()
+                                    }
+                                    .buttonStyle(WaiGhostButtonStyle())
+
+                                    if comment.resolved {
+                                        Text(resolvedText)
+                                            .font(Typography.caption)
+                                            .foregroundColor(Palette.textSecondary)
+                                    }
+                                }
+                            }
+                            .padding(Spacing.xs)
+                            .background(
+                                RoundedRectangle(cornerRadius: 8)
+                                    .fill(isSelected ? Palette.accent.opacity(0.10) : Color(nsColor: .controlBackgroundColor))
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 8)
+                                            .stroke(isSelected ? Palette.accent : Palette.border, lineWidth: 1)
+                                    )
+                            )
+                        }
+                    }
+                }
+            }
+        }
+        .padding(Spacing.md)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(Palette.surfaceSubtle)
+        .overlay(alignment: .top) {
+            Rectangle()
+                .fill(Palette.border)
+                .frame(height: 1)
+        }
+        .accessibilityIdentifier("scheme-board-comments")
+        .accessibilityLabel(Text(title))
+    }
+}
+
 private struct MacSchemeOverviewMap: View {
     let bounds: CGRect
     let items: [(id: String, rect: CGRect)]
@@ -3154,6 +3408,35 @@ private struct MacSchemeOverviewMap: View {
             }
             return path
         }
+    }
+}
+
+private struct MacSchemeCommentPin: View {
+    let comment: SchemeCanvasComment
+    let index: Int
+
+    var body: some View {
+        ZStack {
+            Circle()
+                .fill(comment.resolved ? Color(nsColor: .controlBackgroundColor) : Palette.accent)
+                .overlay(
+                    Circle()
+                        .stroke(comment.resolved ? Palette.border : Palette.accent.opacity(0.55), lineWidth: 1)
+                )
+                .shadow(color: Color.black.opacity(comment.resolved ? 0 : 0.16), radius: 8, y: 3)
+
+            Image(systemName: "text.bubble")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(comment.resolved ? Palette.textSecondary : Palette.onAccent)
+                .accessibilityHidden(true)
+
+            Text("\(index)")
+                .font(.system(size: 9, weight: .bold))
+                .foregroundStyle(comment.resolved ? Palette.textSecondary : Palette.onAccent)
+                .offset(x: 10, y: -10)
+        }
+        .opacity(comment.resolved ? 0.72 : 1)
+        .accessibilityLabel(Text("Comment \(comment.text)"))
     }
 }
 

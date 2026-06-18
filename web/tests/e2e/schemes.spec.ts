@@ -5,7 +5,7 @@ const baseTimestamp = "2026-06-17T10:00:00Z";
 test.use({ viewport: { width: 1280, height: 900 } });
 
 type SchemeLayout = {
-  version: 10;
+  version: 11;
   snap_to_grid: boolean;
   grid_size: number;
   viewport: { x: number; y: number; zoom: number };
@@ -19,11 +19,12 @@ type SchemeLayout = {
   texts: Array<Record<string, unknown>>;
   sources: Array<Record<string, unknown>>;
   connectors: Array<Record<string, unknown>>;
+  comments: Array<Record<string, unknown>>;
 };
 
 function blankLayout(): SchemeLayout {
   return {
-    version: 10,
+    version: 11,
     snap_to_grid: false,
     grid_size: 40,
     viewport: { x: 0, y: 0, zoom: 1 },
@@ -37,6 +38,7 @@ function blankLayout(): SchemeLayout {
     texts: [],
     sources: [],
     connectors: [],
+    comments: [],
   };
 }
 
@@ -368,4 +370,44 @@ test("Schemes board duplicates, locks, and unlocks a placed sticky", async ({ pa
   expect(layoutUpdates.some((layout) => layout.cards.some((card) => typeof card.z_index === "number"))).toBe(true);
   expect(layoutUpdates.some((layout) => layout.cards.some((card) => card.locked === true))).toBe(true);
   expect(layoutUpdates.at(-1)?.cards.some((card) => card.locked === true)).toBe(false);
+});
+
+test("Schemes board adds and resolves a persisted comment pin", async ({ page }) => {
+  const layoutUpdates = await installSchemesApiMock(page);
+
+  await page.goto("/login");
+  await page.getByTestId("auth-email").fill("qa@example.com");
+  await page.getByTestId("password-mode-button").click();
+  await page.getByTestId("auth-password").fill("password123");
+  await page.getByTestId("auth-submit").click();
+
+  await expect(page.getByTestId("user-email")).toContainText("qa@example.com");
+  await page.getByTestId("tab-schemes").click();
+  await expect(page.getByTestId("workspace-title")).toContainText("Schemes");
+  const board = page.locator(".scheme-board__viewport");
+  await expect(board).toBeVisible();
+  const boardBox = await board.boundingBox();
+  if (!boardBox) {
+    throw new Error("Schemes board viewport is not measurable");
+  }
+
+  await page.getByRole("button", { name: "Comment" }).click();
+  await expect(board).toHaveClass(/scheme-board__viewport--comment/);
+  await page.mouse.click(boardBox.x + boardBox.width - 80, boardBox.y + boardBox.height - 80);
+
+  await expect(page.locator(".scheme-comment-pin")).toHaveCount(1);
+  await expect(page.getByRole("region", { name: "Comments" })).toBeVisible();
+  expect(layoutUpdates.at(-1)?.comments).toEqual([
+    expect.objectContaining({
+      text: "Comment",
+      resolved: false,
+    }),
+  ]);
+
+  await page.getByLabel("Comment text").fill("Confirm the launch owner.");
+  await page.getByLabel("Comment text").blur();
+  await expect.poll(() => String(layoutUpdates.at(-1)?.comments[0]?.text ?? "")).toBe("Confirm the launch owner.");
+
+  await page.getByRole("button", { name: "Resolve comment" }).click();
+  await expect.poll(() => layoutUpdates.at(-1)?.comments[0]?.resolved).toBe(true);
 });

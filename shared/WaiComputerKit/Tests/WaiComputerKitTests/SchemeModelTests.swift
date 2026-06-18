@@ -141,7 +141,7 @@ final class SchemeModelTests: XCTestCase {
 
         XCTAssertEqual(scheme.id, "scheme-1")
         XCTAssertEqual(scheme.schemeType, "decision")
-        XCTAssertEqual(scheme.layout.version, 10)
+        XCTAssertEqual(scheme.layout.version, 11)
         XCTAssertFalse(scheme.layout.snapToGrid)
         XCTAssertEqual(scheme.layout.gridSize, 40)
         XCTAssertFalse(scheme.layout.presentation.active)
@@ -157,7 +157,7 @@ final class SchemeModelTests: XCTestCase {
     func testSchemeDecodesCanvasLayoutPrimitives() throws {
         let json = """
         {
-          "version": 10,
+          "version": 11,
           "snap_to_grid": true,
           "grid_size": 32,
           "viewport": {"x": 10, "y": -20, "zoom": 1.4},
@@ -252,6 +252,15 @@ final class SchemeModelTests: XCTestCase {
               "label": "blocks",
               "color": "#475569"
             }
+          ],
+          "comments": [
+            {
+              "id": "comment-1",
+              "x": 180,
+              "y": -96,
+              "text": "Confirm the launch owner.",
+              "resolved": false
+            }
           ]
         }
         """.data(using: .utf8)!
@@ -259,7 +268,7 @@ final class SchemeModelTests: XCTestCase {
         let layout = try JSONDecoder().decode(SchemeCanvasLayout.self, from: json)
 
         XCTAssertEqual(layout.viewport.zoom, 1.4)
-        XCTAssertEqual(layout.version, 10)
+        XCTAssertEqual(layout.version, 11)
         XCTAssertTrue(layout.snapToGrid)
         XCTAssertEqual(layout.gridSize, 32)
         XCTAssertTrue(layout.presentation.active)
@@ -291,6 +300,9 @@ final class SchemeModelTests: XCTestCase {
         XCTAssertEqual(layout.connectors.first?.targetId, "card-1")
         XCTAssertEqual(layout.connectors.first?.locked, false)
         XCTAssertEqual(layout.connectors.first?.zIndex, 0)
+        XCTAssertEqual(layout.comments.first?.id, "comment-1")
+        XCTAssertEqual(layout.comments.first?.text, "Confirm the launch owner.")
+        XCTAssertEqual(layout.comments.first?.resolved, false)
     }
 
     func testAPIClientSchemeEndpoints() async throws {
@@ -403,6 +415,15 @@ final class SchemeModelTests: XCTestCase {
                         subtitle: "recording",
                         excerpt: "Recorded decision context."
                     )
+                ],
+                comments: [
+                    SchemeCanvasComment(
+                        id: "comment-1",
+                        x: 180,
+                        y: -96,
+                        text: "Confirm the launch owner.",
+                        resolved: false
+                    )
                 ]
             )
         )
@@ -418,7 +439,7 @@ final class SchemeModelTests: XCTestCase {
         ])
         XCTAssertEqual(seen[1].body?["prompt"] as? String, "Map launch decisions")
         let layout = seen[3].body?["layout"] as? [String: Any]
-        XCTAssertEqual(layout?["version"] as? Int, 10)
+        XCTAssertEqual(layout?["version"] as? Int, 11)
         XCTAssertEqual(layout?["snap_to_grid"] as? Bool, true)
         XCTAssertEqual(layout?["grid_size"] as? Double, 32)
         let presentation = layout?["presentation"] as? [String: Any]
@@ -442,5 +463,9 @@ final class SchemeModelTests: XCTestCase {
         let sources = layout?["sources"] as? [[String: Any]]
         XCTAssertEqual(sources?.first?["source_kind"] as? String, "recording")
         XCTAssertEqual(sources?.first?["citation_id"] as? String, "recording:22222222-2222-2222-2222-222222222222")
+        let comments = layout?["comments"] as? [[String: Any]]
+        XCTAssertEqual(comments?.first?["id"] as? String, "comment-1")
+        XCTAssertEqual(comments?.first?["text"] as? String, "Confirm the launch owner.")
+        XCTAssertEqual(comments?.first?["resolved"] as? Bool, false)
     }
 }

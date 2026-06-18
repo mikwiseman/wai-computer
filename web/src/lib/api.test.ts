@@ -355,7 +355,7 @@ describe("api client wrappers", () => {
 
   it("calls scheme board endpoints", async () => {
     const layout = {
-      version: 10 as const,
+      version: 11 as const,
       viewport: { x: 0, y: 0, zoom: 1 },
       snap_to_grid: true,
       grid_size: 40,
@@ -380,6 +380,7 @@ describe("api client wrappers", () => {
       texts: [],
       sources: [],
       connectors: [],
+      comments: [],
     };
 
     await api.listSchemes();

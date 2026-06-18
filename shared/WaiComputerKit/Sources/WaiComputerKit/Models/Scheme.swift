@@ -488,6 +488,45 @@ public struct SchemeConnector: Codable, Identifiable, Sendable, Equatable {
     }
 }
 
+public struct SchemeCanvasComment: Codable, Identifiable, Sendable, Equatable {
+    public var id: String
+    public var x: Double
+    public var y: Double
+    public var text: String
+    public var resolved: Bool
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case x
+        case y
+        case text
+        case resolved
+    }
+
+    public init(
+        id: String,
+        x: Double,
+        y: Double,
+        text: String,
+        resolved: Bool = false
+    ) {
+        self.id = id
+        self.x = x
+        self.y = y
+        self.text = text
+        self.resolved = resolved
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        x = try container.decode(Double.self, forKey: .x)
+        y = try container.decode(Double.self, forKey: .y)
+        text = try container.decode(String.self, forKey: .text)
+        resolved = try container.decodeIfPresent(Bool.self, forKey: .resolved) ?? false
+    }
+}
+
 public struct SchemeCanvasLayout: Codable, Sendable, Equatable {
     public var version: Int
     public var snapToGrid: Bool
@@ -503,6 +542,7 @@ public struct SchemeCanvasLayout: Codable, Sendable, Equatable {
     public var texts: [SchemeTextBlock]
     public var sources: [SchemeCanvasSourceBlock]
     public var connectors: [SchemeConnector]
+    public var comments: [SchemeCanvasComment]
 
     private enum CodingKeys: String, CodingKey {
         case version
@@ -519,6 +559,7 @@ public struct SchemeCanvasLayout: Codable, Sendable, Equatable {
         case texts
         case sources
         case connectors
+        case comments
     }
 
     private static func normaliseFrameOrder(frames: [SchemeCanvasFrame], frameOrder: [String]) -> [String] {
@@ -532,7 +573,7 @@ public struct SchemeCanvasLayout: Codable, Sendable, Equatable {
     }
 
     public init(
-        version: Int = 10,
+        version: Int = 11,
         snapToGrid: Bool = false,
         gridSize: Double = 40,
         presentation: SchemePresentationState = SchemePresentationState(),
@@ -545,7 +586,8 @@ public struct SchemeCanvasLayout: Codable, Sendable, Equatable {
         frames: [SchemeCanvasFrame] = [],
         texts: [SchemeTextBlock] = [],
         sources: [SchemeCanvasSourceBlock] = [],
-        connectors: [SchemeConnector] = []
+        connectors: [SchemeConnector] = [],
+        comments: [SchemeCanvasComment] = []
     ) {
         self.version = version
         self.snapToGrid = snapToGrid
@@ -561,13 +603,14 @@ public struct SchemeCanvasLayout: Codable, Sendable, Equatable {
         self.texts = texts
         self.sources = sources
         self.connectors = connectors
+        self.comments = comments
     }
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         if container.contains(.version) || container.contains(.nodePositions) {
-            let decodedVersion = try container.decodeIfPresent(Int.self, forKey: .version) ?? 10
-            version = max(decodedVersion, 10)
+            let decodedVersion = try container.decodeIfPresent(Int.self, forKey: .version) ?? 11
+            version = max(decodedVersion, 11)
             snapToGrid = try container.decodeIfPresent(Bool.self, forKey: .snapToGrid) ?? false
             gridSize = try container.decodeIfPresent(Double.self, forKey: .gridSize) ?? 40
             viewport = try container.decodeIfPresent(SchemeViewport.self, forKey: .viewport) ?? SchemeViewport()
@@ -582,11 +625,12 @@ public struct SchemeCanvasLayout: Codable, Sendable, Equatable {
             texts = try container.decodeIfPresent([SchemeTextBlock].self, forKey: .texts) ?? []
             sources = try container.decodeIfPresent([SchemeCanvasSourceBlock].self, forKey: .sources) ?? []
             connectors = try container.decodeIfPresent([SchemeConnector].self, forKey: .connectors) ?? []
+            comments = try container.decodeIfPresent([SchemeCanvasComment].self, forKey: .comments) ?? []
             return
         }
 
         let legacyPositions = try [String: SchemePosition](from: decoder)
-        version = 10
+        version = 11
         snapToGrid = false
         gridSize = 40
         viewport = SchemeViewport()
@@ -600,6 +644,7 @@ public struct SchemeCanvasLayout: Codable, Sendable, Equatable {
         texts = []
         sources = []
         connectors = []
+        comments = []
     }
 }
 

@@ -25,7 +25,7 @@ from app.models.brain_map import BrainMap, BrainMapRevision
 
 router = APIRouter(prefix="/schemes", tags=["schemes"])
 
-SCHEME_LAYOUT_VERSION = 10
+SCHEME_LAYOUT_VERSION = 11
 SCHEME_SHAPE_KINDS = {"rectangle", "ellipse"}
 SCHEME_SOURCE_KINDS = {"item", "recording", "chat"}
 SCHEME_STROKE_KINDS = {"pen", "highlighter"}
@@ -146,6 +146,14 @@ class SchemeConnector(BaseModel):
     z_index: int = Field(default=0, ge=SCHEME_Z_INDEX_MIN, le=SCHEME_Z_INDEX_MAX)
 
 
+class SchemeCanvasComment(BaseModel):
+    id: str = Field(min_length=1)
+    x: float
+    y: float
+    text: str = Field(min_length=1, max_length=4000)
+    resolved: bool = False
+
+
 class SchemeCanvasLayout(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -167,6 +175,7 @@ class SchemeCanvasLayout(BaseModel):
     texts: list[SchemeTextBlock] = Field(default_factory=list)
     sources: list[SchemeCanvasSourceBlock] = Field(default_factory=list)
     connectors: list[SchemeConnector] = Field(default_factory=list)
+    comments: list[SchemeCanvasComment] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def validate_frame_order(self) -> "SchemeCanvasLayout":

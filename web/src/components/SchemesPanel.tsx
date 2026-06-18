@@ -12,6 +12,7 @@ import {
 import type {
   Scheme,
   SchemeCanvasCard,
+  SchemeCanvasComment,
   SchemeCanvasFrame,
   SchemeCanvasLayout,
   SchemeCanvasShape,
@@ -41,9 +42,10 @@ type Tool =
   | "rectangle"
   | "ellipse"
   | "frame"
-  | "connector";
-type BoardItemKind = "node" | "card" | "shape" | "frame" | "text" | "source";
-type ResizableItemKind = Exclude<BoardItemKind, "node">;
+  | "connector"
+  | "comment";
+type BoardItemKind = "node" | "card" | "shape" | "frame" | "text" | "source" | "comment";
+type ResizableItemKind = Exclude<BoardItemKind, "node" | "comment">;
 type ResizeHandle = "nw" | "ne" | "sw" | "se";
 interface SchemesPanelProps {
   locale?: Locale;
@@ -78,7 +80,8 @@ type BoardOutlineKind =
   | "text"
   | "shape"
   | "drawing"
-  | "connector";
+  | "connector"
+  | "comment";
 
 interface BoardOutlineItem {
   id: string;
@@ -141,6 +144,12 @@ type DragState =
       origin: SchemePosition;
     }
   | {
+      type: "comment";
+      commentId: string;
+      start: SchemePosition;
+      origin: SchemePosition;
+    }
+  | {
       type: "pan";
       startClientX: number;
       startClientY: number;
@@ -193,7 +202,7 @@ interface ProjectionSourceSummary {
   created_at?: string | null;
 }
 
-const SCHEME_LAYOUT_VERSION = 10 as const;
+const SCHEME_LAYOUT_VERSION = 11 as const;
 const DEFAULT_VIEWPORT: SchemeViewport = { x: 0, y: 0, zoom: 1 };
 const MIN_ZOOM = 0.25;
 const MAX_ZOOM = 2.8;
@@ -217,6 +226,7 @@ const TEXT_WIDTH = 260;
 const TEXT_HEIGHT = 120;
 const SOURCE_WIDTH = 320;
 const SOURCE_HEIGHT = 170;
+const COMMENT_PIN_SIZE = 34;
 const RESIZE_LIMITS: Record<ResizableItemKind, ResizeLimits> = {
   card: { minWidth: 24, minHeight: 24, maxWidth: 1200, maxHeight: 1200 },
   shape: { minWidth: 16, minHeight: 16, maxWidth: 2000, maxHeight: 2000 },
@@ -247,6 +257,7 @@ const TOOLS: Array<{ id: Tool; label: string; ru: string }> = [
   { id: "ellipse", label: "Oval", ru: "Овал" },
   { id: "frame", label: "Frame", ru: "Фрейм" },
   { id: "connector", label: "Connect", ru: "Связь" },
+  { id: "comment", label: "Comment", ru: "Комментарий" },
 ];
 
 const COPY = {
@@ -283,7 +294,16 @@ const COPY = {
       shape: "Shape",
       drawing: "Drawing",
       connector: "Connector",
+      comment: "Comment",
     },
+    comments: "Comments",
+    commentsEmpty: "No comments yet.",
+    unresolvedComments: (count: number) => `${count} open`,
+    commentText: "Comment text",
+    resolveComment: "Resolve comment",
+    reopenComment: "Reopen comment",
+    resolvedComment: "resolved",
+    defaultCommentText: "Comment",
     duplicate: "Duplicate",
     lock: "Lock",
     unlock: "Unlock",
@@ -337,7 +357,16 @@ const COPY = {
       shape: "Фигура",
       drawing: "Рисунок",
       connector: "Связь",
+      comment: "Комментарий",
     },
+    comments: "Комментарии",
+    commentsEmpty: "Комментариев пока нет.",
+    unresolvedComments: (count: number) => `${count} открыт.`,
+    commentText: "Текст комментария",
+    resolveComment: "Закрыть комментарий",
+    reopenComment: "Открыть комментарий",
+    resolvedComment: "закрыт",
+    defaultCommentText: "Комментарий",
     duplicate: "Дублировать",
     lock: "Заблокировать",
     unlock: "Разблокировать",
@@ -504,6 +533,7 @@ function blankLayout(): SchemeCanvasLayout {
     texts: [],
     sources: [],
     connectors: [],
+    comments: [],
   };
 }
 
@@ -565,6 +595,14 @@ function normaliseStroke(stroke: SchemeStroke): SchemeStroke {
   };
 }
 
+function normaliseComment(comment: SchemeCanvasComment): SchemeCanvasComment {
+  return {
+    ...comment,
+    text: comment.text,
+    resolved: comment.resolved ?? false,
+  };
+}
+
 function layoutForScheme(scheme: Scheme | null): SchemeCanvasLayout {
   const raw = scheme?.layout as Partial<SchemeCanvasLayout> | null;
   if (!raw) return blankLayout();
@@ -594,6 +632,7 @@ function layoutForScheme(scheme: Scheme | null): SchemeCanvasLayout {
       z_index: source.z_index ?? Number.NaN,
     })),
     connectors: (raw.connectors ?? []).map((connector) => ({ ...connector, locked: connector.locked ?? false, z_index: connector.z_index ?? Number.NaN })),
+    comments: (raw.comments ?? []).map(normaliseComment),
   });
   return {
     ...nextLayout,
@@ -761,6 +800,11 @@ function canLockLayoutItem(itemId: string | null, layout: SchemeCanvasLayout): b
     layout.strokes.some((candidate) => candidate.id === itemId) ||
     layout.connectors.some((candidate) => candidate.id === itemId)
   );
+}
+
+function canDeleteLayoutItem(itemId: string | null, layout: SchemeCanvasLayout): boolean {
+  if (!itemId) return false;
+  return canLockLayoutItem(itemId, layout) || layout.comments.some((candidate) => candidate.id === itemId);
 }
 
 function canDuplicateLayoutItem(itemId: string | null, layout: SchemeCanvasLayout): boolean {
@@ -978,6 +1022,21 @@ function boardOutlineItemsForLayout(
       bounds,
     });
   });
+  layout.comments.forEach((comment) => {
+    pushItem({
+      id: comment.id,
+      kind: "comment",
+      label: shortBoardLabel(comment.text, "Comment"),
+      detail: comment.resolved ? "resolved" : "open",
+      bounds: {
+        id: comment.id,
+        x: comment.x - COMMENT_PIN_SIZE / 2,
+        y: comment.y - COMMENT_PIN_SIZE / 2,
+        width: COMMENT_PIN_SIZE,
+        height: COMMENT_PIN_SIZE,
+      },
+    });
+  });
 
   return items;
 }
@@ -1037,6 +1096,13 @@ function layoutItemBounds(layout: SchemeCanvasLayout, nodes: SchemeNode[]): Boar
       const bounds = boundsFromPoints(connector.id, points);
       return bounds ? [bounds] : [];
     }),
+    ...layout.comments.map((comment) => ({
+      id: comment.id,
+      x: comment.x - COMMENT_PIN_SIZE / 2,
+      y: comment.y - COMMENT_PIN_SIZE / 2,
+      width: COMMENT_PIN_SIZE,
+      height: COMMENT_PIN_SIZE,
+    })),
   ];
 }
 
@@ -1285,6 +1351,9 @@ function translateSelectedLayout(
     sources: layout.sources.map((source) =>
       selected.has(source.id) ? { ...source, x: source.x + dx, y: source.y + dy } : source,
     ),
+    comments: layout.comments.map((comment) =>
+      selected.has(comment.id) ? { ...comment, x: comment.x + dx, y: comment.y + dy } : comment,
+    ),
     strokes: layout.strokes.map((stroke) =>
       selected.has(stroke.id)
         ? { ...stroke, points: stroke.points.map((point) => ({ ...point, x: point.x + dx, y: point.y + dy })) }
@@ -1500,6 +1569,7 @@ function cloneLayout(layout: SchemeCanvasLayout): SchemeCanvasLayout {
       ...connector,
       points: connector.points.map((point) => ({ ...point })),
     })),
+    comments: layout.comments.map((comment) => ({ ...comment })),
   };
 }
 
@@ -1628,7 +1698,7 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
   const canDeleteSelected = useMemo(
     () =>
       selectedItems.length > 0 &&
-      selectedItems.every((itemId) => canLockLayoutItem(itemId, layout) && !isLayoutItemLocked(itemId, layout)),
+      selectedItems.every((itemId) => canDeleteLayoutItem(itemId, layout) && !isLayoutItemLocked(itemId, layout)),
     [layout, selectedItems],
   );
   const canDuplicateSelected = useMemo(
@@ -1668,6 +1738,10 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
   const boardOutlineItems = useMemo(
     () => boardOutlineItemsForLayout(layout, positionedNodes, orderedFrames),
     [layout, positionedNodes, orderedFrames],
+  );
+  const unresolvedCommentCount = useMemo(
+    () => layout.comments.filter((comment) => !comment.resolved).length,
+    [layout.comments],
   );
   const presentation = useMemo(
     () => normalisePresentation(layout.presentation, layout.frames),
@@ -2069,6 +2143,26 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
     [commitLayout, locale, pushUndoSnapshot, setSelectedItem],
   );
 
+  const addComment = useCallback(
+    (point: SchemePosition, shouldSnap: boolean) => {
+      pushUndoSnapshot();
+      const position = shouldSnap ? snapPosition(point, layoutRef.current) : point;
+      const comment: SchemeCanvasComment = {
+        id: createId("comment"),
+        x: position.x,
+        y: position.y,
+        text: copy.defaultCommentText,
+        resolved: false,
+      };
+      const nextLayout = { ...layoutRef.current, comments: [...layoutRef.current.comments, comment] };
+      setSelectedItem(comment.id);
+      setLayout(nextLayout);
+      layoutRef.current = nextLayout;
+      void commitLayout(nextLayout);
+    },
+    [commitLayout, copy.defaultCommentText, pushUndoSnapshot, setSelectedItem],
+  );
+
   const addConnector = useCallback(
     (source: BoardItemHandle, target: BoardItemHandle) => {
       if (source.id === target.id) return;
@@ -2136,6 +2230,7 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
         return;
       }
       if (tool === "connector") {
+        if (item.kind === "comment") return;
         if (pendingConnector) {
           addConnector(pendingConnector, item);
         } else {
@@ -2170,6 +2265,8 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
         dragRef.current = { type: "frame", frameId: item.id, start, origin: position };
       } else if (item.kind === "source") {
         dragRef.current = { type: "source", sourceId: item.id, start, origin: position };
+      } else if (item.kind === "comment") {
+        dragRef.current = { type: "comment", commentId: item.id, start, origin: position };
       } else {
         dragRef.current = { type: "text", textId: item.id, start, origin: position };
       }
@@ -2270,6 +2367,11 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
         addFrame(point, shouldSnap);
         return;
       }
+      if (tool === "comment") {
+        setSelectedItem(null);
+        addComment(point, shouldSnap);
+        return;
+      }
       if (tool === "select") {
         const additiveSelection = event.shiftKey || event.metaKey || event.ctrlKey;
         if (!additiveSelection) {
@@ -2310,6 +2412,7 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
     },
     [
       addCard,
+      addComment,
       addFrame,
       addShape,
       addText,
@@ -2465,6 +2568,16 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
               : source,
           ),
         }));
+      } else if (drag.type === "comment") {
+        const position = shouldSnap
+          ? snapPosition({ x: drag.origin.x + dx, y: drag.origin.y + dy }, layoutRef.current)
+          : { x: drag.origin.x + dx, y: drag.origin.y + dy };
+        setLocalLayout((current) => ({
+          ...current,
+          comments: current.comments.map((comment) =>
+            comment.id === drag.commentId ? { ...comment, x: position.x, y: position.y } : comment,
+          ),
+        }));
       }
     },
     [pointFromEvent, positionedNodes, setLocalLayout, shouldSnapEvent, strokePointFromEvent, updateViewport],
@@ -2500,6 +2613,7 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
       drag.type === "shape" ||
       drag.type === "frame" ||
       drag.type === "source" ||
+      drag.type === "comment" ||
       drag.type === "text" ||
       drag.type === "resize"
     ) {
@@ -2572,6 +2686,29 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
     }));
   }, [setLocalLayout]);
 
+  const handleCommentTextChange = useCallback((commentId: string, text: string) => {
+    setLocalLayout((current) => ({
+      ...current,
+      comments: current.comments.map((comment) =>
+        comment.id === commentId ? { ...comment, text } : comment,
+      ),
+    }));
+  }, [setLocalLayout]);
+
+  const toggleCommentResolved = useCallback((commentId: string, resolved: boolean) => {
+    pushUndoSnapshot();
+    const nextLayout = {
+      ...layoutRef.current,
+      comments: layoutRef.current.comments.map((comment) =>
+        comment.id === commentId ? { ...comment, resolved } : comment,
+      ),
+    };
+    setSelectedItem(commentId);
+    setLayout(nextLayout);
+    layoutRef.current = nextLayout;
+    void commitLayout(nextLayout);
+  }, [commitLayout, pushUndoSnapshot, setSelectedItem]);
+
   const deleteSelected = useCallback(() => {
     if (selectedItems.length === 0 || !canDeleteSelected) return;
     pushUndoSnapshot();
@@ -2593,6 +2730,7 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
           (connector.source_id === null || !selected.has(connector.source_id)) &&
           (connector.target_id === null || !selected.has(connector.target_id)),
       ),
+      comments: layoutRef.current.comments.filter((comment) => !selected.has(comment.id)),
     };
     setSelectedItem(null);
     setLayout(nextLayout);
@@ -3331,6 +3469,29 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
                     />
                   </div>
                 ))}
+                {layout.comments.map((comment, index) => (
+                  <button
+                    key={comment.id}
+                    type="button"
+                    data-scheme-board-item="true"
+                    className={[
+                      "scheme-comment-pin",
+                      selectedItemSet.has(comment.id) ? "scheme-comment-pin--selected" : "",
+                      comment.resolved ? "scheme-comment-pin--resolved" : "",
+                    ].filter(Boolean).join(" ")}
+                    style={{
+                      left: comment.x - COMMENT_PIN_SIZE / 2,
+                      top: comment.y - COMMENT_PIN_SIZE / 2,
+                      zIndex: 1_000_003,
+                    }}
+                    aria-label={`Comment ${comment.text}`}
+                    onPointerDown={(event) =>
+                      handleItemPointerDown(event, { id: comment.id, kind: "comment" }, { x: comment.x, y: comment.y })
+                    }
+                  >
+                    <span>{index + 1}</span>
+                  </button>
+                ))}
                 {selectedResizable ? (
                   <div
                     className="scheme-board__resize-frame"
@@ -3427,6 +3588,47 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
                 ) : (
                   <p>{copy.outlineEmpty}</p>
                 )}
+                <section className="scheme-board__comments" aria-label={copy.comments}>
+                  <div className="scheme-board__comments-header">
+                    <strong>{copy.comments}</strong>
+                    <span>{copy.unresolvedComments(unresolvedCommentCount)}</span>
+                  </div>
+                  {layout.comments.length > 0 ? (
+                    <div className="scheme-board__comments-list">
+                      {layout.comments.map((comment) => (
+                        <div
+                          key={comment.id}
+                          className={[
+                            "scheme-board__comment-row",
+                            selectedItemSet.has(comment.id) ? "scheme-board__comment-row--active" : "",
+                            comment.resolved ? "scheme-board__comment-row--resolved" : "",
+                          ].filter(Boolean).join(" ")}
+                        >
+                          <textarea
+                            value={comment.text}
+                            aria-label={copy.commentText}
+                            onFocus={() => {
+                              setSelectedItem(comment.id);
+                              beginInlineEdit(comment.id);
+                            }}
+                            onChange={(event) => handleCommentTextChange(comment.id, event.target.value)}
+                            onBlur={finishInlineEdit}
+                          />
+                          <button
+                            type="button"
+                            aria-label={comment.resolved ? copy.reopenComment : copy.resolveComment}
+                            onClick={() => toggleCommentResolved(comment.id, !comment.resolved)}
+                          >
+                            {comment.resolved ? copy.reopenComment : copy.resolveComment}
+                          </button>
+                          {comment.resolved ? <small>{copy.resolvedComment}</small> : null}
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p>{copy.commentsEmpty}</p>
+                  )}
+                </section>
               </aside>
             </div>
           ) : (

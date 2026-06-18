@@ -1056,6 +1056,14 @@ export interface SchemeConnector {
   z_index: number;
 }
 
+export interface SchemeCanvasComment {
+  id: string;
+  x: number;
+  y: number;
+  text: string;
+  resolved: boolean;
+}
+
 export interface SchemeCanvasLayout {
   version: number;
   snap_to_grid: boolean;
@@ -1071,6 +1079,7 @@ export interface SchemeCanvasLayout {
   texts: SchemeTextBlock[];
   sources: SchemeCanvasSourceBlock[];
   connectors: SchemeConnector[];
+  comments: SchemeCanvasComment[];
 }
 
 export interface SchemeNode {
