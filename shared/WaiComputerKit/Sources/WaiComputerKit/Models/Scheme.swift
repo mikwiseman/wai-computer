@@ -477,6 +477,7 @@ public struct SchemeCanvasLayout: Codable, Sendable, Equatable {
     public var cards: [SchemeCanvasCard]
     public var shapes: [SchemeCanvasShape]
     public var frames: [SchemeCanvasFrame]
+    public var frameOrder: [String]
     public var texts: [SchemeTextBlock]
     public var sources: [SchemeCanvasSourceBlock]
     public var connectors: [SchemeConnector]
@@ -491,15 +492,27 @@ public struct SchemeCanvasLayout: Codable, Sendable, Equatable {
         case cards
         case shapes
         case frames
+        case frameOrder = "frame_order"
         case texts
         case sources
         case connectors
     }
 
+    private static func normaliseFrameOrder(frames: [SchemeCanvasFrame], frameOrder: [String]) -> [String] {
+        let frameIds = Set(frames.map(\.id))
+        var seen: Set<String> = []
+        var ordered = frameOrder.filter { frameId in
+            frameIds.contains(frameId) && seen.insert(frameId).inserted
+        }
+        ordered.append(contentsOf: frames.map(\.id).filter { seen.insert($0).inserted })
+        return ordered
+    }
+
     public init(
-        version: Int = 8,
+        version: Int = 9,
         snapToGrid: Bool = false,
         gridSize: Double = 40,
+        frameOrder: [String] = [],
         viewport: SchemeViewport = SchemeViewport(),
         nodePositions: [String: SchemePosition] = [:],
         strokes: [SchemeStroke] = [],
@@ -519,6 +532,7 @@ public struct SchemeCanvasLayout: Codable, Sendable, Equatable {
         self.cards = cards
         self.shapes = shapes
         self.frames = frames
+        self.frameOrder = Self.normaliseFrameOrder(frames: frames, frameOrder: frameOrder)
         self.texts = texts
         self.sources = sources
         self.connectors = connectors
@@ -527,8 +541,8 @@ public struct SchemeCanvasLayout: Codable, Sendable, Equatable {
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         if container.contains(.version) || container.contains(.nodePositions) {
-            let decodedVersion = try container.decodeIfPresent(Int.self, forKey: .version) ?? 8
-            version = max(decodedVersion, 8)
+            let decodedVersion = try container.decodeIfPresent(Int.self, forKey: .version) ?? 9
+            version = max(decodedVersion, 9)
             snapToGrid = try container.decodeIfPresent(Bool.self, forKey: .snapToGrid) ?? false
             gridSize = try container.decodeIfPresent(Double.self, forKey: .gridSize) ?? 40
             viewport = try container.decodeIfPresent(SchemeViewport.self, forKey: .viewport) ?? SchemeViewport()
@@ -537,6 +551,8 @@ public struct SchemeCanvasLayout: Codable, Sendable, Equatable {
             cards = try container.decodeIfPresent([SchemeCanvasCard].self, forKey: .cards) ?? []
             shapes = try container.decodeIfPresent([SchemeCanvasShape].self, forKey: .shapes) ?? []
             frames = try container.decodeIfPresent([SchemeCanvasFrame].self, forKey: .frames) ?? []
+            let decodedFrameOrder = try container.decodeIfPresent([String].self, forKey: .frameOrder) ?? []
+            frameOrder = Self.normaliseFrameOrder(frames: frames, frameOrder: decodedFrameOrder)
             texts = try container.decodeIfPresent([SchemeTextBlock].self, forKey: .texts) ?? []
             sources = try container.decodeIfPresent([SchemeCanvasSourceBlock].self, forKey: .sources) ?? []
             connectors = try container.decodeIfPresent([SchemeConnector].self, forKey: .connectors) ?? []
@@ -544,7 +560,7 @@ public struct SchemeCanvasLayout: Codable, Sendable, Equatable {
         }
 
         let legacyPositions = try [String: SchemePosition](from: decoder)
-        version = 8
+        version = 9
         snapToGrid = false
         gridSize = 40
         viewport = SchemeViewport()
@@ -553,6 +569,7 @@ public struct SchemeCanvasLayout: Codable, Sendable, Equatable {
         cards = []
         shapes = []
         frames = []
+        frameOrder = []
         texts = []
         sources = []
         connectors = []

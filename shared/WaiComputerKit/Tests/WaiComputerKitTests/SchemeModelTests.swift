@@ -141,9 +141,10 @@ final class SchemeModelTests: XCTestCase {
 
         XCTAssertEqual(scheme.id, "scheme-1")
         XCTAssertEqual(scheme.schemeType, "decision")
-        XCTAssertEqual(scheme.layout.version, 8)
+        XCTAssertEqual(scheme.layout.version, 9)
         XCTAssertFalse(scheme.layout.snapToGrid)
         XCTAssertEqual(scheme.layout.gridSize, 40)
+        XCTAssertEqual(scheme.layout.frameOrder, [String]())
         XCTAssertEqual(scheme.layout.nodePositions["lens:root"]?.x, 12)
         XCTAssertEqual(scheme.currentRevision?.projection.nodes.first?.position.y, -8)
         XCTAssertEqual(scheme.currentRevision?.projection.nodes.last?.sourceKind, "item")
@@ -154,7 +155,7 @@ final class SchemeModelTests: XCTestCase {
     func testSchemeDecodesCanvasLayoutPrimitives() throws {
         let json = """
         {
-          "version": 8,
+          "version": 9,
           "snap_to_grid": true,
           "grid_size": 32,
           "viewport": {"x": 10, "y": -20, "zoom": 1.4},
@@ -208,6 +209,7 @@ final class SchemeModelTests: XCTestCase {
               "fill": "transparent"
             }
           ],
+          "frame_order": ["frame-1"],
           "texts": [
             {
               "id": "text-1",
@@ -254,9 +256,10 @@ final class SchemeModelTests: XCTestCase {
         let layout = try JSONDecoder().decode(SchemeCanvasLayout.self, from: json)
 
         XCTAssertEqual(layout.viewport.zoom, 1.4)
-        XCTAssertEqual(layout.version, 8)
+        XCTAssertEqual(layout.version, 9)
         XCTAssertTrue(layout.snapToGrid)
         XCTAssertEqual(layout.gridSize, 32)
+        XCTAssertEqual(layout.frameOrder, ["frame-1"])
         XCTAssertEqual(layout.nodePositions["lens:root"]?.y, -8)
         XCTAssertEqual(layout.strokes.first?.points.last?.x, 20)
         XCTAssertEqual(layout.strokes.first?.points.last?.pressure, 0.8)
@@ -357,6 +360,7 @@ final class SchemeModelTests: XCTestCase {
             layout: SchemeCanvasLayout(
                 snapToGrid: true,
                 gridSize: 32,
+                frameOrder: ["frame-1"],
                 viewport: SchemeViewport(x: 1, y: 2, zoom: 1.2),
                 nodePositions: ["lens:root": SchemePosition(x: 20, y: -10)],
                 strokes: [
@@ -367,6 +371,16 @@ final class SchemeModelTests: XCTestCase {
                         color: "#2563eb",
                         width: 5,
                         opacity: 1
+                    )
+                ],
+                frames: [
+                    SchemeCanvasFrame(
+                        id: "frame-1",
+                        x: -120,
+                        y: -80,
+                        width: 520,
+                        height: 360,
+                        title: "Launch plan"
                     )
                 ],
                 sources: [
@@ -398,9 +412,10 @@ final class SchemeModelTests: XCTestCase {
         ])
         XCTAssertEqual(seen[1].body?["prompt"] as? String, "Map launch decisions")
         let layout = seen[3].body?["layout"] as? [String: Any]
-        XCTAssertEqual(layout?["version"] as? Int, 8)
+        XCTAssertEqual(layout?["version"] as? Int, 9)
         XCTAssertEqual(layout?["snap_to_grid"] as? Bool, true)
         XCTAssertEqual(layout?["grid_size"] as? Double, 32)
+        XCTAssertEqual(layout?["frame_order"] as? [String], ["frame-1"])
         let viewport = layout?["viewport"] as? [String: Any]
         XCTAssertEqual(viewport?["zoom"] as? Double, 1.2)
         let positions = layout?["node_positions"] as? [String: Any]

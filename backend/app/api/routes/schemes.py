@@ -8,7 +8,7 @@ from typing import Any
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Query, status
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 from app.api.deps import CurrentUser, Database
 from app.core.brain_maps import (
@@ -25,7 +25,7 @@ from app.models.brain_map import BrainMap, BrainMapRevision
 
 router = APIRouter(prefix="/schemes", tags=["schemes"])
 
-SCHEME_LAYOUT_VERSION = 8
+SCHEME_LAYOUT_VERSION = 9
 SCHEME_SHAPE_KINDS = {"rectangle", "ellipse"}
 SCHEME_SOURCE_KINDS = {"item", "recording", "chat"}
 SCHEME_STROKE_KINDS = {"pen", "highlighter"}
@@ -157,9 +157,22 @@ class SchemeCanvasLayout(BaseModel):
     cards: list[SchemeCanvasCard] = Field(default_factory=list)
     shapes: list[SchemeCanvasShape] = Field(default_factory=list)
     frames: list[SchemeCanvasFrame] = Field(default_factory=list)
+    frame_order: list[str] = Field(default_factory=list)
     texts: list[SchemeTextBlock] = Field(default_factory=list)
     sources: list[SchemeCanvasSourceBlock] = Field(default_factory=list)
     connectors: list[SchemeConnector] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_frame_order(self) -> "SchemeCanvasLayout":
+        frame_ids = [frame.id for frame in self.frames]
+        if not self.frame_order:
+            self.frame_order = frame_ids
+            return self
+        if len(set(self.frame_order)) != len(self.frame_order):
+            raise ValueError("Scheme frame_order contains duplicate frame ids")
+        if set(self.frame_order) != set(frame_ids):
+            raise ValueError("Scheme frame_order must contain exactly the current frame ids")
+        return self
 
     @classmethod
     def validate_shape_kinds(cls, layout: "SchemeCanvasLayout") -> "SchemeCanvasLayout":

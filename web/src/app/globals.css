@@ -5324,6 +5324,57 @@ a.primary-button[aria-disabled="true"]:hover {
   font: inherit;
 }
 
+.scheme-board__frames {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  border-top: 1px solid var(--border);
+  padding: 0.45rem 0.6rem;
+  overflow-x: auto;
+  background: var(--panel);
+}
+
+.scheme-board__frames span {
+  flex: 0 0 auto;
+  color: var(--ink-soft);
+  font-size: var(--font-label-small-size);
+  font-weight: 750;
+}
+
+.scheme-board__frames button {
+  flex: 0 0 auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.35rem 0.55rem;
+  background: var(--panel-raised);
+  color: var(--ink-soft);
+  font: inherit;
+  font-size: var(--font-label-small-size);
+  font-weight: 720;
+  cursor: pointer;
+}
+
+.scheme-board__frame-step {
+  display: inline-grid;
+  place-items: center;
+  width: 1.9rem;
+  height: 1.9rem;
+  padding: 0 !important;
+}
+
+.scheme-board__frame-link {
+  max-width: 14rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.scheme-board__frame-link--active {
+  border-color: var(--accent) !important;
+  background: var(--accent-soft) !important;
+  color: var(--accent) !important;
+}
+
 .scheme-board__swatches {
   display: flex;
   align-items: center;

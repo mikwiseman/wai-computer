@@ -3,7 +3,7 @@ import { expect, test, type Page, type Route } from "@playwright/test";
 const baseTimestamp = "2026-06-17T10:00:00Z";
 
 type SchemeLayout = {
-  version: 8;
+  version: 9;
   snap_to_grid: boolean;
   grid_size: number;
   viewport: { x: number; y: number; zoom: number };
@@ -12,6 +12,7 @@ type SchemeLayout = {
   cards: Array<Record<string, unknown>>;
   shapes: Array<Record<string, unknown>>;
   frames: Array<Record<string, unknown>>;
+  frame_order: string[];
   texts: Array<Record<string, unknown>>;
   sources: Array<Record<string, unknown>>;
   connectors: Array<Record<string, unknown>>;
@@ -19,7 +20,7 @@ type SchemeLayout = {
 
 function blankLayout(): SchemeLayout {
   return {
-    version: 8,
+    version: 9,
     snap_to_grid: false,
     grid_size: 40,
     viewport: { x: 0, y: 0, zoom: 1 },
@@ -28,6 +29,7 @@ function blankLayout(): SchemeLayout {
     cards: [],
     shapes: [],
     frames: [],
+    frame_order: [],
     texts: [],
     sources: [],
     connectors: [],

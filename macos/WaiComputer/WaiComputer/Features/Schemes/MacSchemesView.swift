@@ -409,6 +409,7 @@ private struct MacSchemeBoard: View {
     @State private var undoStack: [SchemeCanvasLayout] = []
     @State private var redoStack: [SchemeCanvasLayout] = []
     @State private var editingItemId: String?
+    @State private var boardSize: CGSize = .zero
 
     private let nodeWidth: CGFloat = 232
     private let nodeHeight: CGFloat = 132
@@ -432,6 +433,7 @@ private struct MacSchemeBoard: View {
     private let defaultGridSize = 40.0
     private let minGridSize = 8.0
     private let maxGridSize = 240.0
+    private let frameFocusPadding = 96.0
 
     var body: some View {
         VStack(spacing: 0) {
@@ -526,6 +528,12 @@ private struct MacSchemeBoard: View {
                 .background(boardBackground)
                 .contentShape(Rectangle())
                 .gesture(boardGesture(size: proxy.size))
+                .onAppear {
+                    boardSize = proxy.size
+                }
+                .onChangeCompat(of: proxy.size) {
+                    boardSize = proxy.size
+                }
             }
         }
     }
@@ -599,6 +607,39 @@ private struct MacSchemeBoard: View {
             .onChangeCompat(of: layout.gridSize) {
                 layout.gridSize = normalisedGridSize(layout.gridSize)
                 onCommit(layout)
+            }
+
+            if !orderedFrames.isEmpty {
+                Divider()
+                    .frame(height: 22)
+
+                Menu {
+                    ForEach(orderedFrames) { frame in
+                        Button(frame.title) {
+                            focusFrame(frame)
+                        }
+                    }
+                } label: {
+                    Image(systemName: "rectangle.stack")
+                }
+                .buttonStyle(WaiGhostButtonStyle())
+                .help(t("Frames", "Фреймы"))
+
+                Button {
+                    focusAdjacentFrame(offset: -1)
+                } label: {
+                    Image(systemName: "chevron.left")
+                }
+                .buttonStyle(WaiGhostButtonStyle())
+                .help(t("Previous Frame", "Предыдущий фрейм"))
+
+                Button {
+                    focusAdjacentFrame(offset: 1)
+                } label: {
+                    Image(systemName: "chevron.right")
+                }
+                .buttonStyle(WaiGhostButtonStyle())
+                .help(t("Next Frame", "Следующий фрейм"))
             }
 
             Button {
@@ -850,6 +891,45 @@ private struct MacSchemeBoard: View {
     private var unpinnedProjectionSources: [ProjectionSourceSummary] {
         let pinned = Set(layout.sources.map(\.citationId))
         return projectionSourceSummaries.filter { !pinned.contains($0.id) }
+    }
+
+    private var orderedFrames: [SchemeCanvasFrame] {
+        let frameById = Dictionary(uniqueKeysWithValues: layout.frames.map { ($0.id, $0) })
+        var seen: Set<String> = []
+        var ordered = layout.frameOrder.compactMap { frameId -> SchemeCanvasFrame? in
+            guard let frame = frameById[frameId], seen.insert(frameId).inserted else { return nil }
+            return frame
+        }
+        ordered.append(contentsOf: layout.frames.filter { seen.insert($0.id).inserted })
+        return ordered
+    }
+
+    private func normalisedFrameOrder() -> [String] {
+        orderedFrames.map(\.id)
+    }
+
+    private func focusFrame(_ frame: SchemeCanvasFrame) {
+        guard boardSize.width > 1, boardSize.height > 1 else { return }
+        let availableWidth = max(1, Double(boardSize.width) - frameFocusPadding)
+        let availableHeight = max(1, Double(boardSize.height) - frameFocusPadding)
+        let zoom = min(2.8, max(0.25, min(availableWidth / frame.width, availableHeight / frame.height)))
+        layout.frameOrder = normalisedFrameOrder()
+        layout.viewport = SchemeViewport(
+            x: -(frame.x + frame.width / 2) * zoom,
+            y: -(frame.y + frame.height / 2) * zoom,
+            zoom: zoom
+        )
+        selectSingle(frame.id)
+        onCommit(layout)
+    }
+
+    private func focusAdjacentFrame(offset: Int) {
+        let frames = orderedFrames
+        guard !frames.isEmpty else { return }
+        let currentIndex = selectedItemId.flatMap { selected in frames.firstIndex { $0.id == selected } }
+        let baseIndex = currentIndex ?? (offset > 0 ? -1 : 0)
+        let nextIndex = (baseIndex + offset + frames.count) % frames.count
+        focusFrame(frames[nextIndex])
     }
 
     private var selectedCardId: String? {
@@ -2075,7 +2155,9 @@ private struct MacSchemeBoard: View {
             title: t("Frame", "Фрейм"),
             zIndex: nextLayerIndex()
         )
+        let currentFrameOrder = normalisedFrameOrder()
         layout.frames.append(frame)
+        layout.frameOrder = currentFrameOrder + [frame.id]
         selectSingle(frame.id)
         onCommit(layout)
     }
@@ -2233,6 +2315,7 @@ private struct MacSchemeBoard: View {
         layout.cards.removeAll { selected.contains($0.id) }
         layout.shapes.removeAll { selected.contains($0.id) }
         layout.frames.removeAll { selected.contains($0.id) }
+        layout.frameOrder = normalisedFrameOrder()
         layout.texts.removeAll { selected.contains($0.id) }
         layout.sources.removeAll { selected.contains($0.id) }
         layout.strokes.removeAll { selected.contains($0.id) }
@@ -2348,6 +2431,7 @@ private struct MacSchemeBoard: View {
                 frame.y += offset
                 frame.zIndex = nextLayerIndex()
                 layout.frames.append(frame)
+                layout.frameOrder.append(frame.id)
                 nextSelection.append(frame.id)
                 continue
             }

@@ -355,7 +355,7 @@ describe("api client wrappers", () => {
 
   it("calls scheme board endpoints", async () => {
     const layout = {
-      version: 8 as const,
+      version: 9 as const,
       viewport: { x: 0, y: 0, zoom: 1 },
       snap_to_grid: true,
       grid_size: 40,
@@ -375,6 +375,7 @@ describe("api client wrappers", () => {
       cards: [],
       shapes: [],
       frames: [],
+      frame_order: [],
       texts: [],
       sources: [],
       connectors: [],

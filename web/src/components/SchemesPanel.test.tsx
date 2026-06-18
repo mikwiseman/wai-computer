@@ -19,7 +19,7 @@ vi.mock("@/lib/api", () => ({
 
 function layout(overrides: Partial<SchemeCanvasLayout> = {}): SchemeCanvasLayout {
   return {
-    version: 8,
+    version: 9,
     snap_to_grid: false,
     grid_size: 40,
     viewport: { x: 0, y: 0, zoom: 1 },
@@ -28,6 +28,7 @@ function layout(overrides: Partial<SchemeCanvasLayout> = {}): SchemeCanvasLayout
     cards: [],
     shapes: [],
     frames: [],
+    frame_order: [],
     texts: [],
     sources: [],
     connectors: [],
@@ -177,7 +178,7 @@ describe("SchemesPanel", () => {
         "scheme-1",
         {
           layout: expect.objectContaining({
-            version: 8,
+            version: 9,
             node_positions: expect.objectContaining({
               "signal:decision:1": expect.objectContaining({ x: 380, y: -160 }),
             }),
@@ -198,7 +199,7 @@ describe("SchemesPanel", () => {
         "scheme-1",
         {
           layout: expect.objectContaining({
-            version: 8,
+            version: 9,
             sources: [
               expect.objectContaining({
                 id: "source-block:item:1",
@@ -254,7 +255,7 @@ describe("SchemesPanel", () => {
         "scheme-1",
         {
           layout: expect.objectContaining({
-            version: 8,
+            version: 9,
             snap_to_grid: true,
             grid_size: 40,
           }),
@@ -286,6 +287,65 @@ describe("SchemesPanel", () => {
         },
       ),
     );
+  });
+
+  it("orders frames and focuses the next frame from the frame navigator", async () => {
+    const boardLayout = layout({
+      frames: [
+        {
+          id: "frame-a",
+          x: -400,
+          y: -240,
+          width: 400,
+          height: 300,
+          title: "Discovery",
+          color: "#0f766e",
+          fill: "transparent",
+          locked: false,
+          z_index: 1,
+        },
+        {
+          id: "frame-b",
+          x: 600,
+          y: 120,
+          width: 500,
+          height: 320,
+          title: "Delivery",
+          color: "#0f766e",
+          fill: "transparent",
+          locked: false,
+          z_index: 2,
+        },
+      ],
+      frame_order: ["frame-b", "frame-a"],
+    });
+    mockListSchemes.mockResolvedValue({ schemes: [scheme({ layout: boardLayout })] });
+    mockGetScheme.mockResolvedValue(scheme({ layout: boardLayout }));
+    const { container } = render(<SchemesPanel />);
+
+    await screen.findByRole("button", { name: "Delivery" });
+    const viewport = container.querySelector(".scheme-board__viewport") as HTMLElement | null;
+    expect(viewport).not.toBeNull();
+    vi.spyOn(viewport as HTMLElement, "getBoundingClientRect").mockReturnValue({
+      x: 0,
+      y: 0,
+      left: 0,
+      top: 0,
+      right: 1000,
+      bottom: 600,
+      width: 1000,
+      height: 600,
+      toJSON: () => ({}),
+    } as DOMRect);
+
+    fireEvent.click(screen.getByRole("button", { name: "Next frame" }));
+
+    await waitFor(() => expect(mockUpdateScheme).toHaveBeenCalled());
+    const focusedLayout = mockUpdateScheme.mock.calls.at(-1)?.[1]?.layout as SchemeCanvasLayout;
+    expect(focusedLayout.frame_order).toEqual(["frame-b", "frame-a"]);
+    expect(focusedLayout.viewport.zoom).toBeGreaterThan(1);
+    expect(focusedLayout.viewport.x).toBeLessThan(0);
+    expect(focusedLayout.viewport.y).toBeLessThan(0);
   });
 
   it("draws a persisted freehand stroke", async () => {

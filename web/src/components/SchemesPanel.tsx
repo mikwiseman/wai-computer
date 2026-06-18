@@ -162,10 +162,11 @@ interface ProjectionSourceSummary {
   created_at?: string | null;
 }
 
-const SCHEME_LAYOUT_VERSION = 8 as const;
+const SCHEME_LAYOUT_VERSION = 9 as const;
 const DEFAULT_VIEWPORT: SchemeViewport = { x: 0, y: 0, zoom: 1 };
 const MIN_ZOOM = 0.25;
 const MAX_ZOOM = 2.8;
+const FRAME_FOCUS_PADDING = 96;
 const DEFAULT_GRID_SIZE = 40;
 const MIN_GRID_SIZE = 8;
 const MAX_GRID_SIZE = 240;
@@ -226,6 +227,9 @@ const COPY = {
     redo: "Redo",
     snapToGrid: "Snap to grid",
     gridSize: "Grid size",
+    frames: "Frames",
+    previousFrame: "Previous frame",
+    nextFrame: "Next frame",
     duplicate: "Duplicate",
     lock: "Lock",
     unlock: "Unlock",
@@ -258,6 +262,9 @@ const COPY = {
     redo: "Повторить",
     snapToGrid: "Привязка к сетке",
     gridSize: "Размер сетки",
+    frames: "Фреймы",
+    previousFrame: "Предыдущий фрейм",
+    nextFrame: "Следующий фрейм",
     duplicate: "Дублировать",
     lock: "Заблокировать",
     unlock: "Разблокировать",
@@ -313,6 +320,46 @@ function positionForNewItem(
   return shouldSnap ? snapPosition(position, layout) : position;
 }
 
+function normaliseFrameOrder(frames: SchemeCanvasFrame[], frameOrder: unknown): string[] {
+  const frameIds = frames.map((frame) => frame.id);
+  const frameIdSet = new Set(frameIds);
+  const ordered = Array.isArray(frameOrder)
+    ? frameOrder.filter((id): id is string => typeof id === "string" && frameIdSet.has(id))
+    : [];
+  const seen = new Set<string>();
+  const uniqueOrdered = ordered.filter((id) => {
+    if (seen.has(id)) return false;
+    seen.add(id);
+    return true;
+  });
+  return [...uniqueOrdered, ...frameIds.filter((id) => !seen.has(id))];
+}
+
+function orderedFramesForLayout(layout: SchemeCanvasLayout): SchemeCanvasFrame[] {
+  const frameById = new Map(layout.frames.map((frame) => [frame.id, frame]));
+  return normaliseFrameOrder(layout.frames, layout.frame_order).flatMap((id) => {
+    const frame = frameById.get(id);
+    return frame ? [frame] : [];
+  });
+}
+
+function viewportForFrame(frame: SchemeCanvasFrame, rect: DOMRect): SchemeViewport {
+  const availableWidth = Math.max(1, rect.width - FRAME_FOCUS_PADDING);
+  const availableHeight = Math.max(1, rect.height - FRAME_FOCUS_PADDING);
+  const zoom = clamp(
+    Math.min(availableWidth / frame.width, availableHeight / frame.height),
+    MIN_ZOOM,
+    MAX_ZOOM,
+  );
+  const centerX = frame.x + frame.width / 2;
+  const centerY = frame.y + frame.height / 2;
+  return {
+    x: -centerX * zoom,
+    y: -centerY * zoom,
+    zoom,
+  };
+}
+
 function blankLayout(): SchemeCanvasLayout {
   return {
     version: SCHEME_LAYOUT_VERSION,
@@ -324,6 +371,7 @@ function blankLayout(): SchemeCanvasLayout {
     cards: [],
     shapes: [],
     frames: [],
+    frame_order: [],
     texts: [],
     sources: [],
     connectors: [],
@@ -395,7 +443,7 @@ function layoutForScheme(scheme: Scheme | null): SchemeCanvasLayout {
   if (!("version" in maybeLegacy) && Object.values(maybeLegacy).every(isPosition)) {
     return { ...blankLayout(), node_positions: maybeLegacy as Record<string, SchemePosition> };
   }
-  return normaliseLayoutLayers({
+  const nextLayout = normaliseLayoutLayers({
     ...blankLayout(),
     ...raw,
     version: SCHEME_LAYOUT_VERSION,
@@ -417,6 +465,10 @@ function layoutForScheme(scheme: Scheme | null): SchemeCanvasLayout {
     })),
     connectors: (raw.connectors ?? []).map((connector) => ({ ...connector, locked: connector.locked ?? false, z_index: connector.z_index ?? Number.NaN })),
   });
+  return {
+    ...nextLayout,
+    frame_order: normaliseFrameOrder(nextLayout.frames, raw.frame_order),
+  };
 }
 
 function nodePosition(node: SchemeNode, layout: SchemeCanvasLayout): SchemePosition {
@@ -1133,6 +1185,7 @@ function cloneLayout(layout: SchemeCanvasLayout): SchemeCanvasLayout {
     cards: layout.cards.map((card) => ({ ...card })),
     shapes: layout.shapes.map((shape) => ({ ...shape })),
     frames: layout.frames.map((frame) => ({ ...frame })),
+    frame_order: [...layout.frame_order],
     texts: layout.texts.map((text) => ({ ...text })),
     sources: layout.sources.map((source) => ({ ...source })),
     connectors: layout.connectors.map((connector) => ({
@@ -1282,6 +1335,11 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
     const pinned = new Set(layout.sources.map((source) => source.citation_id));
     return projectionSources.filter((source) => !pinned.has(source.id));
   }, [layout.sources, projectionSources]);
+  const orderedFrames = useMemo(() => orderedFramesForLayout(layout), [layout]);
+  const activeFrameIndex = useMemo(() => {
+    if (selectedItems.length !== 1) return -1;
+    return orderedFrames.findIndex((frame) => frame.id === selectedItems[0]);
+  }, [orderedFrames, selectedItems]);
 
   const commitLayout = useCallback(
     async (nextLayout: SchemeCanvasLayout) => {
@@ -1459,6 +1517,37 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
     [commitLayout],
   );
 
+  const focusFrame = useCallback(
+    (frame: SchemeCanvasFrame) => {
+      const rect = viewportRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      const nextLayout = {
+        ...layoutRef.current,
+        frame_order: normaliseFrameOrder(layoutRef.current.frames, layoutRef.current.frame_order),
+        viewport: viewportForFrame(frame, rect),
+      };
+      setSelectedItem(frame.id);
+      setLayout(nextLayout);
+      layoutRef.current = nextLayout;
+      void commitLayout(nextLayout);
+    },
+    [commitLayout, setSelectedItem],
+  );
+
+  const focusAdjacentFrame = useCallback(
+    (offset: number) => {
+      const frames = orderedFramesForLayout(layoutRef.current);
+      if (frames.length === 0) return;
+      const currentIndex = selectedItems.length === 1
+        ? frames.findIndex((frame) => frame.id === selectedItems[0])
+        : -1;
+      const baseIndex = currentIndex === -1 ? (offset > 0 ? -1 : 0) : currentIndex;
+      const nextIndex = (baseIndex + offset + frames.length) % frames.length;
+      focusFrame(frames[nextIndex]);
+    },
+    [focusFrame, selectedItems],
+  );
+
   const updateSnapToGrid = useCallback(
     (enabled: boolean) => {
       const nextLayout = {
@@ -1551,7 +1640,11 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
         locked: false,
         z_index: nextLayerIndex(layoutRef.current),
       };
-      const nextLayout = { ...layoutRef.current, frames: [...layoutRef.current.frames, frame] };
+      const nextLayout = {
+        ...layoutRef.current,
+        frames: [...layoutRef.current.frames, frame],
+        frame_order: [...normaliseFrameOrder(layoutRef.current.frames, layoutRef.current.frame_order), frame.id],
+      };
       setSelectedItem(frame.id);
       setLayout(nextLayout);
       layoutRef.current = nextLayout;
@@ -2097,6 +2190,9 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
       cards: layoutRef.current.cards.filter((card) => !selected.has(card.id)),
       shapes: layoutRef.current.shapes.filter((shape) => !selected.has(shape.id)),
       frames: layoutRef.current.frames.filter((frame) => !selected.has(frame.id)),
+      frame_order: normaliseFrameOrder(layoutRef.current.frames, layoutRef.current.frame_order).filter(
+        (frameId) => !selected.has(frameId),
+      ),
       texts: layoutRef.current.texts.filter((text) => !selected.has(text.id)),
       sources: layoutRef.current.sources.filter((source) => !selected.has(source.id)),
       strokes: layoutRef.current.strokes.filter((stroke) => !selected.has(stroke.id)),
@@ -2186,6 +2282,7 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
       if (frame) {
         const duplicate = { ...frame, id: createId("frame"), x: frame.x + offset, y: frame.y + offset, z_index: nextZIndex++ };
         nextLayout.frames.push(duplicate);
+        nextLayout.frame_order.push(duplicate.id);
         nextSelectedItems.push(duplicate.id);
         continue;
       }
@@ -2470,6 +2567,41 @@ export function SchemesPanel({ locale = "en", onError }: SchemesPanelProps) {
               />
             </label>
           </div>
+
+          {orderedFrames.length > 0 ? (
+            <div className="scheme-board__frames" aria-label={copy.frames}>
+              <span>{copy.frames}</span>
+              <button
+                type="button"
+                className="scheme-board__frame-step"
+                aria-label={copy.previousFrame}
+                title={copy.previousFrame}
+                onClick={() => focusAdjacentFrame(-1)}
+              >
+                <span aria-hidden="true">{"<"}</span>
+              </button>
+              <button
+                type="button"
+                className="scheme-board__frame-step"
+                aria-label={copy.nextFrame}
+                title={copy.nextFrame}
+                onClick={() => focusAdjacentFrame(1)}
+              >
+                <span aria-hidden="true">{">"}</span>
+              </button>
+              {orderedFrames.map((frame, index) => (
+                <button
+                  key={frame.id}
+                  type="button"
+                  className={index === activeFrameIndex ? "scheme-board__frame-link scheme-board__frame-link--active" : "scheme-board__frame-link"}
+                  aria-pressed={index === activeFrameIndex}
+                  onClick={() => focusFrame(frame)}
+                >
+                  {frame.title}
+                </button>
+              ))}
+            </div>
+          ) : null}
 
           {selected ? (
             <div

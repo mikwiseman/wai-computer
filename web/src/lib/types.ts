@@ -1061,6 +1061,7 @@ export interface SchemeCanvasLayout {
   cards: SchemeCanvasCard[];
   shapes: SchemeCanvasShape[];
   frames: SchemeCanvasFrame[];
+  frame_order: string[];
   texts: SchemeTextBlock[];
   sources: SchemeCanvasSourceBlock[];
   connectors: SchemeConnector[];
