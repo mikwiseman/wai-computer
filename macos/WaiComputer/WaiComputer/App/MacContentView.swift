@@ -133,7 +133,6 @@ struct MacMainView: View {
 
     enum SidebarSection: Hashable {
         case inbox
-        case schemes
         case allRecordings
         case folder(String)
         case trash
@@ -154,7 +153,7 @@ struct MacMainView: View {
         switch selectedSection {
         case .trash, .none:
             return true
-        case .inbox, .schemes, .allRecordings, .folder(_), .content, .search, .history, .dictionary, .wai, .settings:
+        case .inbox, .allRecordings, .folder(_), .content, .search, .history, .dictionary, .wai, .settings:
             return false
         }
     }
@@ -184,8 +183,6 @@ struct MacMainView: View {
         switch selectedSection {
         case .inbox:
             return t("Inbox", "Инбокс")
-        case .schemes:
-            return t("Schemes", "Схемы")
         case .allRecordings:
             return t("Inbox", "Инбокс")
         case .folder(let folderId):
@@ -598,7 +595,6 @@ struct MacMainView: View {
             case "inbox": selectedSection = .inbox
             case "allRecordings": selectedSection = .inbox
             case "content": selectedSection = .inbox
-            case "schemes": selectedSection = .schemes
             case "history": selectedSection = .history
             case "dictionary": selectedSection = .dictionary
             case "agents": selectedSection = .inbox
@@ -703,12 +699,6 @@ struct MacMainView: View {
                 } isTargeted: { targeted in
                     updateDropTarget("inbox", targeted: targeted)
                 }
-                sidebarRow(
-                    t("Schemes", "Схемы"),
-                    icon: "square.grid.3x3",
-                    section: .schemes,
-                    identifier: "schemes"
-                )
                 sidebarRow(
                     t("Trash", "Корзина"),
                     icon: "trash",
@@ -1027,8 +1017,6 @@ struct MacMainView: View {
     @ViewBuilder
     private var detailContentView: some View {
         switch selectedSection {
-        case .schemes:
-            MacSchemesView(apiClient: appState.getAPIClient())
         case .inbox, .allRecordings, .folder(_), .content, .wai:
             MacInboxView(
                 apiClient: appState.getAPIClient(),

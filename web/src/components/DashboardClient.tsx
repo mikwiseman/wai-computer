@@ -59,7 +59,6 @@ import { DictationStatsHeader } from "@/components/DictationStatsHeader";
 import { DeleteAccountSection } from "@/components/DeleteAccountSection";
 import { AddAnythingPanel } from "@/components/AddAnythingPanel";
 import { DictatePanel } from "@/components/DictatePanel";
-import { SchemesPanel } from "@/components/SchemesPanel";
 import { PasswordField } from "@/components/PasswordField";
 import { Skeleton } from "@/components/Skeleton";
 import { ApiError } from "@/lib/http";
@@ -91,7 +90,6 @@ type DashboardView =
   | "add"
   | "content"
   | "library"
-  | "schemes"
   | "folder"
   | "trash"
   | "search"
@@ -115,7 +113,6 @@ const DASHBOARD_VIEW_KEYS = [
   "add",
   "content",
   "library",
-  "schemes",
   "trash",
   "search",
   "dictate",
@@ -169,7 +166,6 @@ interface DashboardCopy {
     inbox: { label: string; detail: string };
     wai: { label: string; detail: string };
     library: { label: string; detail: string };
-    schemes: { label: string; detail: string };
     folders: { label: string };
     trash: { label: string; detail: string };
     search: { label: string; detail: string };
@@ -352,7 +348,6 @@ const COPY: Record<Locale, DashboardCopy> = {
       inbox: { label: "Inbox", detail: "Recordings, materials, and chats" },
       wai: { label: "Inbox", detail: "Recordings, materials, and chats" },
       library: { label: "Inbox", detail: "Recordings, materials, and chats" },
-      schemes: { label: "Schemes", detail: "Infinite boards for decisions and projects" },
       folders: { label: "Folders" },
       trash: { label: "Trash", detail: "Restore or delete forever" },
       search: { label: "Search", detail: "Find a moment across transcripts" },
@@ -548,7 +543,6 @@ const COPY: Record<Locale, DashboardCopy> = {
       inbox: { label: "Инбокс", detail: "Записи, материалы и чаты" },
       wai: { label: "Инбокс", detail: "Записи, материалы и чаты" },
       library: { label: "Инбокс", detail: "Записи, материалы и чаты" },
-      schemes: { label: "Схемы", detail: "Бесконечные доски решений и проектов" },
       folders: { label: "Папки" },
       trash: { label: "Корзина", detail: "Восстановить или удалить навсегда" },
       search: { label: "Поиск", detail: "Найти момент по всем расшифровкам" },
@@ -1736,11 +1730,6 @@ export function DashboardClient() {
           count: null,
         },
         {
-          key: "schemes",
-          label: copy.nav.schemes.label,
-          count: null,
-        },
-        {
           key: "trash",
           label: copy.nav.trash.label,
           count: displayCount(trashRecordings.length),
@@ -2131,7 +2120,6 @@ export function DashboardClient() {
           />
         ) : null}
         {view === "trash" ? renderLibrary("trash", trashRecordings) : null}
-        {view === "schemes" ? <SchemesPanel locale={locale} onError={setMessage} /> : null}
         {view === "search" ? renderSearchView() : null}
         {view === "dictate" ? <DictatePanel locale={locale} /> : null}
         {view === "history" ? renderHistoryView() : null}

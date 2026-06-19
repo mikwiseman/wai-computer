@@ -1356,7 +1356,7 @@ describe("DashboardClient", () => {
 
   // --- Sidebar surface parity with Mac (Folders, Dictation History, Dictionary) ---
 
-  it("renders the new sidebar entries: history and dictionary tabs and Folders group", async () => {
+  it("renders the sidebar without removed Schemes surface", async () => {
     arrangeHappyPathMocks();
     render(<DashboardClient />);
     await waitForDashboardReady();
@@ -1364,6 +1364,7 @@ describe("DashboardClient", () => {
     expect(screen.getByTestId("tab-history")).toBeInTheDocument();
     expect(screen.getByTestId("tab-dictionary")).toBeInTheDocument();
     expect(screen.getByTestId("tab-inbox")).toBeInTheDocument();
+    expect(screen.queryByTestId("tab-schemes")).not.toBeInTheDocument();
     expect(screen.queryByTestId("tab-library")).not.toBeInTheDocument();
     expect(screen.queryByTestId("tab-wai")).not.toBeInTheDocument();
     expect(screen.queryByTestId("tab-add")).not.toBeInTheDocument();
