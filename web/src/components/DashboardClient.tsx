@@ -62,7 +62,6 @@ import { DictatePanel } from "@/components/DictatePanel";
 import { PasswordField } from "@/components/PasswordField";
 import { Skeleton } from "@/components/Skeleton";
 import { ApiError } from "@/lib/http";
-import { deleteChat } from "@/lib/companion";
 import type {
   BulkAction,
   DictationDictionaryWord,
@@ -95,7 +94,9 @@ type DashboardView =
   | "settings";
 type DetailMode = "active" | "trash";
 type Locale = "en" | "ru";
-type OpenableInboxSourceKind = Extract<InboxSourceKind, "recording" | "item" | "chat">;
+type VisibleInboxSourceKind = Exclude<InboxSourceKind, "chat">;
+type VisibleInboxRow = InboxRow & { source_kind: VisibleInboxSourceKind };
+type OpenableInboxSourceKind = VisibleInboxSourceKind;
 type PendingInboxSource = {
   sourceKind: OpenableInboxSourceKind;
   sourceId: string;
@@ -327,7 +328,7 @@ const COPY: Record<Locale, DashboardCopy> = {
     fallbackTitle: "WaiComputer",
     retryLoadSettings: "Retry loading account settings",
     nav: {
-      inbox: { label: "Inbox", detail: "Recordings, materials, and chats" },
+      inbox: { label: "Inbox", detail: "Recordings and materials" },
       folders: { label: "Folders" },
       trash: { label: "Trash", detail: "Restore or delete forever" },
       search: { label: "Search", detail: "Search your second brain and ask Wai" },
@@ -356,7 +357,7 @@ const COPY: Record<Locale, DashboardCopy> = {
       deleted: "Folder deleted.",
       emptyHint: "No folders yet — create one to organize Inbox items.",
       folderEmptyTitle: "No Items in This Folder",
-      folderEmptyBody: "Add a recording, file, link, text, or chat to this folder.",
+      folderEmptyBody: "Add a recording, file, link, or text to this folder.",
     },
     history: {
       title: "Dictation History",
@@ -459,7 +460,7 @@ const COPY: Record<Locale, DashboardCopy> = {
     settings: {
       workspaceGroupTitle: "Inbox & sources",
       workspaceGroupBody:
-        "Choose where WaiComputer runs, connect sources, and keep every recording, material, and chat flowing into Inbox.",
+        "Choose where WaiComputer runs, connect sources, and keep every recording and material flowing into Inbox.",
       voiceGroupTitle: "Voice, summaries & appearance",
       voiceGroupBody:
         "Tune language, voice identity, summaries, and the visual theme.",
@@ -549,7 +550,7 @@ const COPY: Record<Locale, DashboardCopy> = {
       deleted: "Папка удалена.",
       emptyHint: "Папок пока нет — создайте, чтобы упорядочить объекты Инбокса.",
       folderEmptyTitle: "В этой папке пока нет объектов",
-      folderEmptyBody: "Добавьте запись, файл, ссылку, текст или чат в эту папку.",
+      folderEmptyBody: "Добавьте запись, файл, ссылку или текст в эту папку.",
     },
     history: {
       title: "История диктовки",
@@ -655,7 +656,7 @@ const COPY: Record<Locale, DashboardCopy> = {
     settings: {
       workspaceGroupTitle: "Инбокс и источники",
       workspaceGroupBody:
-        "Выберите, где работает WaiComputer, подключите источники и отправляйте записи, материалы и чаты в Инбокс.",
+        "Выберите, где работает WaiComputer, подключите источники и отправляйте записи и материалы в Инбокс.",
       voiceGroupTitle: "Голос, саммари и внешний вид",
       voiceGroupBody:
         "Настройте язык, голосовой профиль, саммари и тему.",
@@ -818,6 +819,7 @@ export function DashboardClient() {
 
   const [searchMode, setSearchMode] = useState<SearchMode>("everything");
   const [searchQuery, setSearchQuery] = useState("");
+  const [searchChatId, setSearchChatId] = useState<string | null>(null);
   const [searchResponse, setSearchResponse] = useState<SearchResponse | null>(null);
   const [unifiedResponse, setUnifiedResponse] = useState<UnifiedSearchResponse | null>(null);
 
@@ -2040,7 +2042,6 @@ export function DashboardClient() {
             pendingSource={pendingInboxSource}
             onPendingSourceConsumed={handlePendingInboxSourceConsumed}
             initialRecording={selectedRecording}
-            recordings={recordings}
             folders={folders}
             recordingTitle={recordingTitle}
             recordingType={recordingType}
@@ -2061,7 +2062,6 @@ export function DashboardClient() {
             folderId={currentFolder.id}
             folderName={currentFolder.name}
             reloadToken={inboxReloadToken}
-            recordings={recordings}
             folders={folders}
             recordingTitle={recordingTitle}
             recordingType={recordingType}
@@ -2442,7 +2442,13 @@ export function DashboardClient() {
                     <p>{hit.snippet}</p>
                     <div className="search-result-footer">
                       <small>
-                        {(hit.source_kind === "item" ? hit.kind : "recording").toUpperCase()} /{" "}
+                        {(
+                          hit.source_kind === "chat"
+                            ? "Wai"
+                            : hit.source_kind === "item"
+                              ? hit.kind
+                              : "recording"
+                        ).toUpperCase()} /{" "}
                         {copy.search.score} {hit.score.toFixed(2)}
                       </small>
                       <button
@@ -2451,6 +2457,8 @@ export function DashboardClient() {
                         onClick={() => {
                           if (hit.source_kind === "recording") {
                             void handleSelectRecording(hit.parent_id);
+                          } else if (hit.source_kind === "chat") {
+                            setSearchChatId(hit.parent_id);
                           } else {
                             setView("inbox");
                           }
@@ -2501,7 +2509,7 @@ export function DashboardClient() {
           <CompanionPanel
             recordings={recordings}
             locale={locale}
-            onChatCreated={() => setInboxReloadToken((token) => token + 1)}
+            initialChatId={searchChatId}
           />
         </div>
       </div>
@@ -2942,22 +2950,19 @@ export function DashboardClient() {
   }
 }
 
-type InboxFilterKind = "all" | InboxSourceKind;
+type InboxFilterKind = "all" | VisibleInboxSourceKind;
 type InboxFilterStatus = "all" | InboxStatusFilter;
 
-function inboxTitle(row: InboxRow, locale: Locale): string {
+function inboxTitle(row: VisibleInboxRow, locale: Locale): string {
   const title = row.title?.trim();
   if (title) return title;
   if (row.source_kind === "recording") {
     return locale === "ru" ? "Без названия" : "Untitled recording";
   }
-  if (row.source_kind === "chat") {
-    return "Wai";
-  }
   return locale === "ru" ? "Без названия" : "Untitled material";
 }
 
-function inboxStatusLabel(row: InboxRow, locale: Locale): string | null {
+function inboxStatusLabel(row: VisibleInboxRow, locale: Locale): string | null {
   if (row.status === "ready") return null;
   if (locale === "ru") {
     if (row.status === "processing") return "обработка";
@@ -2971,26 +2976,21 @@ function inboxStatusLabel(row: InboxRow, locale: Locale): string | null {
   return "archived";
 }
 
-function sourceLabel(kind: InboxSourceKind, locale: Locale): string {
+function sourceLabel(kind: VisibleInboxSourceKind, locale: Locale): string {
   if (locale === "ru") {
     if (kind === "recording") return "Запись";
-    if (kind === "item") return "Материал";
-    return "Wai";
+    return "Материал";
   }
   if (kind === "recording") return "Recording";
-  if (kind === "item") return "Material";
-  return "Wai";
+  return "Material";
 }
 
-function inboxSublabel(row: InboxRow, locale: Locale): string | null {
+function inboxSublabel(row: VisibleInboxRow): string | null {
   if (!row.sublabel) return null;
-  if (row.source_kind === "chat" && row.sublabel === "Agent thread") {
-    return locale === "ru" ? "Агентская сессия" : "Agent session";
-  }
   return row.sublabel;
 }
 
-function recordingRowFromDetail(detail: RecordingDetail): InboxRow {
+function recordingRowFromDetail(detail: RecordingDetail): VisibleInboxRow {
   return {
     id: `recording:${detail.id}`,
     source_kind: "recording",
@@ -3027,7 +3027,11 @@ function recordingRowFromDetail(detail: RecordingDetail): InboxRow {
   };
 }
 
-function InboxKindIcon({ kind }: { kind: InboxSourceKind }) {
+function visibleInboxRows(rows: InboxRow[]): VisibleInboxRow[] {
+  return rows.filter((row): row is VisibleInboxRow => row.source_kind !== "chat");
+}
+
+function InboxKindIcon({ kind }: { kind: VisibleInboxSourceKind }) {
   if (kind === "recording") {
     return (
       <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -3067,7 +3071,6 @@ function UniversalInboxPanel({
   pendingSource,
   onPendingSourceConsumed,
   initialRecording,
-  recordings,
   folders,
   recordingTitle,
   recordingType,
@@ -3088,7 +3091,6 @@ function UniversalInboxPanel({
   pendingSource?: PendingInboxSource | null;
   onPendingSourceConsumed?: () => void;
   initialRecording?: RecordingDetail | null;
-  recordings: Recording[];
   folders: Folder[];
   recordingTitle: string;
   recordingType: RecordingType;
@@ -3107,8 +3109,8 @@ function UniversalInboxPanel({
   onItemsChanged: () => void;
   onError: (message: string | null) => void;
 }) {
-  const [rows, setRows] = useState<InboxRow[]>([]);
-  const [selectedRow, setSelectedRow] = useState<InboxRow | null>(null);
+  const [rows, setRows] = useState<VisibleInboxRow[]>([]);
+  const [selectedRow, setSelectedRow] = useState<VisibleInboxRow | null>(null);
   const [selectedRecording, setSelectedRecording] = useState<RecordingDetail | null>(
     null,
   );
@@ -3136,7 +3138,7 @@ function UniversalInboxPanel({
       inboxRequestId.current = requestId;
       try {
         let cursor: string | null = null;
-        const collected: InboxRow[] = [];
+        const collected: VisibleInboxRow[] = [];
         for (let page = 0; page < 5; page += 1) {
           const response = await listInbox({
             limit: 100,
@@ -3144,8 +3146,9 @@ function UniversalInboxPanel({
             source_kind: source.sourceKind,
             folder_id: folderId ?? undefined,
           });
-          collected.push(...response.rows);
-          const row = response.rows.find(
+          const visibleRows = visibleInboxRows(response.rows);
+          collected.push(...visibleRows);
+          const row = visibleRows.find(
             (candidate) =>
               candidate.source_kind === source.sourceKind &&
               candidate.source_id === source.sourceId,
@@ -3206,11 +3209,12 @@ function UniversalInboxPanel({
         });
         if (requestId !== inboxRequestId.current) return rows;
         setLoadError(null);
+        const visibleRows = visibleInboxRows(response.rows);
         setRows((current) =>
-          mode === "append" ? [...current, ...response.rows] : response.rows,
+          mode === "append" ? [...current, ...visibleRows] : visibleRows,
         );
         setNextCursor(response.next_cursor);
-        return response.rows;
+        return visibleRows;
       } catch (error: unknown) {
         if (requestId === inboxRequestId.current) {
           const message = formatError(error);
@@ -3387,9 +3391,8 @@ function UniversalInboxPanel({
     lastToggledIndexRef.current = index;
   }
 
-  // Bulk operations work across kinds: recordings batch through the bulk
-  // endpoint, items and chats go through their per-id APIs. Kinds run
-  // sequentially; ids within a kind run in parallel.
+  // Bulk operations work across visible Inbox kinds: recordings batch through
+  // the bulk endpoint, while materials go through their per-id API.
   async function bulkMoveSelectedToFolder(targetFolderId: string) {
     if (bulkBusy) return;
     const selected = rows.filter((row) => selectedRowIds.has(row.id));
@@ -3400,16 +3403,6 @@ function UniversalInboxPanel({
     const itemIds = selected
       .filter((row) => row.source_kind === "item")
       .map((row) => row.source_id);
-    // Wai chats are not filed into folders. Skip them silently unless the
-    // selection holds nothing else.
-    if (recordingIds.length === 0 && itemIds.length === 0) {
-      onError(
-        locale === "ru"
-          ? "Чаты Wai нельзя положить в папку."
-          : "Wai chats can't be filed into folders.",
-      );
-      return;
-    }
     setBulkBusy(true);
     onError(null);
     try {
@@ -3441,9 +3434,6 @@ function UniversalInboxPanel({
     const itemIds = rowsToTrash
       .filter((row) => row.source_kind === "item")
       .map((row) => row.source_id);
-    const chatIds = rowsToTrash
-      .filter((row) => row.source_kind === "chat")
-      .map((row) => row.source_id);
     setBulkBusy(true);
     onError(null);
     try {
@@ -3452,9 +3442,6 @@ function UniversalInboxPanel({
       }
       if (itemIds.length > 0) {
         await Promise.all(itemIds.map((id) => deleteItem(id)));
-      }
-      if (chatIds.length > 0) {
-        await Promise.all(chatIds.map((id) => deleteChat(id)));
       }
       // Mark the parent's open recording as trashed so the initialRecording
       // effect doesn't resurrect the row from a detail fetch that resolved
@@ -3520,7 +3507,6 @@ function UniversalInboxPanel({
     { key: "all", label: locale === "ru" ? "Все" : "All" },
     { key: "recording", label: locale === "ru" ? "Записи" : "Recordings" },
     { key: "item", label: locale === "ru" ? "Материалы" : "Materials" },
-    { key: "chat", label: "Wai" },
   ];
   const statusFilters: Array<{ key: InboxFilterStatus; label: string }> = [
     { key: "all", label: locale === "ru" ? "Любой статус" : "Any status" },
@@ -3685,10 +3671,7 @@ function UniversalInboxPanel({
           <ul className="inbox-list">
             {rows.map((row, index) => {
               const statusLabel = inboxStatusLabel(row, locale);
-              const sublabel = inboxSublabel(row, locale);
-              // Chats are not filed into folders, so only recordings and items
-              // can be dragged onto the sidebar.
-              const draggable = row.source_kind !== "chat";
+              const sublabel = inboxSublabel(row);
               return (
                 <li key={row.id}>
                   {selectMode ? (
@@ -3709,24 +3692,18 @@ function UniversalInboxPanel({
                     data-testid={
                       row.source_kind === "recording"
                         ? `select-recording-${row.source_id}`
-                        : row.source_kind === "chat"
-                          ? `select-chat-${row.source_id}`
                         : `select-item-${row.source_id}`
                     }
-                    draggable={draggable}
-                    onDragStart={
-                      draggable
-                        ? (event) => {
-                            event.dataTransfer.setData(
-                              row.source_kind === "recording"
-                                ? "application/x-wai-recording"
-                                : "application/x-wai-item",
-                              row.source_id,
-                            );
-                            event.dataTransfer.effectAllowed = "move";
-                          }
-                        : undefined
-                    }
+                    draggable
+                    onDragStart={(event) => {
+                      event.dataTransfer.setData(
+                        row.source_kind === "recording"
+                          ? "application/x-wai-recording"
+                          : "application/x-wai-item",
+                        row.source_id,
+                      );
+                      event.dataTransfer.effectAllowed = "move";
+                    }}
                     onClick={(event) => {
                       // In select mode the row body toggles the selection
                       // instead of opening the detail pane.
@@ -3907,7 +3884,7 @@ function UniversalInboxPanel({
               <Skeleton height="0.8rem" lines={6} />
             </div>
           )
-        ) : selectedRow.source_kind === "item" ? (
+        ) : (
           <ItemDetail
             itemId={selectedRow.source_id}
             locale={locale}
@@ -3918,15 +3895,6 @@ function UniversalInboxPanel({
               void loadInbox("replace");
             }}
             onItemChange={() => void loadInbox("replace")}
-          />
-        ) : (
-          <CompanionPanel
-            recordings={recordings}
-            locale={locale}
-            initialChatId={selectedRow.source_id}
-            onChatCreated={() => void loadInbox("replace")}
-            viewingFolderId={folderId}
-            embedded
           />
         )}
       </section>

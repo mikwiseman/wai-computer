@@ -4,9 +4,9 @@ import UniformTypeIdentifiers
 import WaiComputerKit
 
 extension UTType {
-    /// In-app drag payload for moving inbox content (recordings, materials,
-    /// Wai chats) between folders. Declared as an exported type in Info.plist
-    /// so the identifier resolves without a runtime warning.
+    /// In-app drag payload for moving inbox content between folders. Declared
+    /// as an exported type in Info.plist so the identifier resolves without a
+    /// runtime warning.
     static let waiInboxMove = UTType(exportedAs: "is.waiwai.computer.inbox-move")
 }
 
@@ -29,7 +29,6 @@ private enum InboxCreateMode {
 
 struct MacInboxView: View {
     let apiClient: APIClient
-    let recordings: [Recording]
     let folders: [Folder]
     let recordingsRevision: Int
     let foldersRevision: Int
@@ -42,13 +41,12 @@ struct MacInboxView: View {
     let onLibraryChanged: () async -> Void
     let onPendingDetailConsumed: () -> Void
     let onPendingCommandConsumed: () -> Void
-    /// Files a row (any kind) into a folder; nil unfiles into Inbox. Backs
-    /// the rows' "Move to Folder" context menu — the discoverable sibling of
-    /// sidebar drag-and-drop.
+    /// Files a row into a folder; nil unfiles into Inbox. Backs the rows'
+    /// "Move to Folder" context menu — the discoverable sibling of sidebar
+    /// drag-and-drop.
     let onMoveRow: (InboxDragItem, String?) -> Void
 
     @EnvironmentObject private var languageManager: LanguageManager
-    @EnvironmentObject private var dictationManager: DictationManager
     @StateObject private var model: MacInboxViewModel
     @State private var selectedDetail: InboxDetailRef?
     @State private var showingImporter = false
@@ -61,7 +59,6 @@ struct MacInboxView: View {
 
     init(
         apiClient: APIClient,
-        recordings: [Recording],
         folders: [Folder],
         recordingsRevision: Int,
         foldersRevision: Int,
@@ -77,7 +74,6 @@ struct MacInboxView: View {
         onMoveRow: @escaping (InboxDragItem, String?) -> Void = { _, _ in }
     ) {
         self.apiClient = apiClient
-        self.recordings = recordings
         self.folders = folders
         self.recordingsRevision = recordingsRevision
         self.foldersRevision = foldersRevision
@@ -96,7 +92,7 @@ struct MacInboxView: View {
             sourceKind: initialSourceKind,
             folderId: folderId
         ))
-        _focusedCreateMode = State(initialValue: Self.defaultCreateMode(for: initialSourceKind))
+        _focusedCreateMode = State(initialValue: Self.defaultCreateMode(for: Self.visibleScope(initialSourceKind)))
     }
 
     private var importTypes: [UTType] {
@@ -171,8 +167,8 @@ struct MacInboxView: View {
                 focusedCreateMode = Self.defaultCreateMode(for: next)
             }
             // The right pane follows the scope: a detail from another kind
-            // (e.g. a Wai chat open while switching to Записи) gives way to
-            // this scope's composer. A detail that matches the scope stays.
+            // gives way to this scope's composer. A detail that matches the
+            // scope stays.
             if let open = selectedDetail, let scope = next, open.kind != scope {
                 selectedDetail = nil
             }
@@ -289,12 +285,7 @@ struct MacInboxView: View {
                 "Upload a file or paste a link, note, or text.",
                 "Загрузите файл или вставьте ссылку, заметку или текст."
             )
-        case .chat?:
-            return t(
-                "Existing Wai threads open from the list.",
-                "Открывайте существующие диалоги Wai из списка."
-            )
-        case nil:
+        case .chat?, nil:
             return t(
                 "Record, upload a file, or paste a link or text.",
                 "Запишите, загрузите файл или вставьте ссылку либо текст."
@@ -312,17 +303,19 @@ struct MacInboxView: View {
         // "+" menu and ⌘U — focusCreateMode widens the scope on demand.
         case .recording?: return [.record]
         case .item?: return [.file, .paste]
-        case .chat?: return []
-        case nil: return [.record, .file, .paste]
+        case .chat?, nil: return [.record, .file, .paste]
         }
     }
 
     private static func defaultCreateMode(for scope: InboxSourceKind?) -> InboxCreateMode {
         switch scope {
-        case .recording?, nil: return .record
+        case .recording?, .chat?, nil: return .record
         case .item?: return .paste
-        case .chat?: return .record
         }
+    }
+
+    private static func visibleScope(_ sourceKind: InboxSourceKind?) -> InboxSourceKind? {
+        sourceKind == .chat ? nil : sourceKind
     }
 
     /// Focus a composer mode requested explicitly (menu bar, shortcuts,
@@ -478,12 +471,9 @@ struct MacInboxView: View {
         // list). The host re-renders only when its Equatable inputs change.
         MacInboxDetailHost(
             detail: selectedDetail,
-            recordings: recordings,
             folders: folders,
             recordingsRevision: recordingsRevision,
             foldersRevision: foldersRevision,
-            viewingFolderId: folderId,
-            language: languageManager.current,
             apiClient: apiClient,
             onCloseDetail: {
                 self.selectedDetail = nil
@@ -496,23 +486,6 @@ struct MacInboxView: View {
                 Task {
                     await model.load()
                     await onLibraryChanged()
-                }
-            },
-            onOpenCitation: { recordingId, _ in
-                // Open the cited recording in this pane — the same selection
-                // the list rows drive. startMs is ignored until the detail
-                // view grows a seek API.
-                self.selectedDetail = InboxDetailRef(kind: .recording, id: recordingId)
-            },
-            onVoiceInput: {
-                // Tap to start / tap to stop over the existing dictation
-                // pipeline — the transcript pastes into the focused composer.
-                Task {
-                    if dictationManager.state == .listening {
-                        await dictationManager.stopAndInsert()
-                    } else {
-                        await dictationManager.startDictation()
-                    }
                 }
             }
         )
@@ -784,30 +757,23 @@ struct MacInboxView: View {
     }
 }
 
-/// Hosts the selected detail (recording / material / Wai chat) behind an
-/// Equatable wrapper so list-side state churn (pagination, banners) cannot
-/// re-render it. Closures and the API client are deliberately excluded from
-/// equality — they capture stable @State storage and a stable client.
+/// Hosts the selected detail behind an Equatable wrapper so list-side state
+/// churn (pagination, banners) cannot re-render it. Closures and the API
+/// client are deliberately excluded from equality — they capture stable @State
+/// storage and a stable client.
 private struct MacInboxDetailHost: View, Equatable {
     let detail: InboxDetailRef
-    let recordings: [Recording]
     let folders: [Folder]
     let recordingsRevision: Int
     let foldersRevision: Int
-    let viewingFolderId: String?
-    let language: LanguageManager.SupportedLanguage
     let apiClient: APIClient
     let onCloseDetail: () -> Void
     let onContentChanged: () -> Void
-    let onOpenCitation: (String, Int?) -> Void
-    let onVoiceInput: () -> Void
 
     static func == (lhs: MacInboxDetailHost, rhs: MacInboxDetailHost) -> Bool {
         lhs.detail == rhs.detail
             && lhs.recordingsRevision == rhs.recordingsRevision
             && lhs.foldersRevision == rhs.foldersRevision
-            && lhs.viewingFolderId == rhs.viewingFolderId
-            && lhs.language == rhs.language
     }
 
     var body: some View {
@@ -832,26 +798,7 @@ private struct MacInboxDetailHost: View, Equatable {
                 onUpdated: {}
             )
         case .chat:
-            CompanionView(
-                apiClient: apiClient,
-                recordings: recordings,
-                initialChatId: detail.id,
-                showsConversationSwitcher: false,
-                viewingFolderId: viewingFolderId,
-                onTurnCompleted: { completion in
-                    MacWaiTaskNotificationCenter.shared.notifyTaskFinished(
-                        title: OnboardingL10n.text("Wai finished", "Wai закончил", language: language),
-                        body: completion.preview ?? OnboardingL10n.text(
-                            "Your Wai task is ready.", "Задача Wai готова.", language: language
-                        ),
-                        chatId: completion.chatId
-                    )
-                },
-                onOpenCitation: onOpenCitation,
-                onVoiceInput: onVoiceInput
-            )
-            .environment(\.locale, MacDateFormatting.locale(for: language))
-            .companionAccentColor(Palette.accent)
+            EmptyView()
         }
     }
 }
@@ -1250,9 +1197,7 @@ private struct MacInboxEmptyState: View {
                         Label(t("Paste Link or Text", "Вставить ссылку или текст"), systemImage: "link")
                     }
                     .buttonStyle(.bordered)
-                case .chat?:
-                    EmptyView()
-                case nil:
+                case .chat?, nil:
                     Button(action: onRecord) {
                         Label(t("Record", "Записать"), systemImage: "waveform")
                     }
@@ -1282,8 +1227,8 @@ private struct MacInboxEmptyState: View {
         switch sourceKind {
         case .recording: return "waveform"
         case .item: return "doc.text"
-        case .chat: return "sparkles"
         case .none: return "tray.full"
+        case .chat: return "tray.full"
         }
     }
 
@@ -1293,9 +1238,11 @@ private struct MacInboxEmptyState: View {
             return t("No Recordings Yet", "Записей пока нет")
         case .item:
             return t("No Materials Yet", "Материалов пока нет")
-        case .chat:
-            return t("No Wai Threads Yet", "Диалогов Wai пока нет")
         case .none:
+            return folderName != nil
+                ? t("This Folder Is Empty", "Эта папка пуста")
+                : t("Inbox Is Empty", "Инбокс пуст")
+        case .chat:
             return folderName != nil
                 ? t("This Folder Is Empty", "Эта папка пуста")
                 : t("Inbox Is Empty", "Инбокс пуст")
@@ -1308,9 +1255,12 @@ private struct MacInboxEmptyState: View {
             return t("Record now or import audio/video.", "Запишите сейчас или импортируйте аудио/видео.")
         case .item:
             return t("Upload a file or paste a link/text.", "Загрузите файл или вставьте ссылку/текст.")
-        case .chat:
-            return t("Existing Wai threads created from Search will appear here.", "Существующие диалоги Wai из Поиска появятся здесь.")
         case .none:
+            return t(
+                "Record, upload a file, or paste a link.",
+                "Запишите, загрузите файл или вставьте ссылку."
+            )
+        case .chat:
             return t(
                 "Record, upload a file, or paste a link.",
                 "Запишите, загрузите файл или вставьте ссылку."
@@ -1363,7 +1313,7 @@ private struct MacInboxDisplayRow: Identifiable, Equatable {
         case .item:
             return text("Untitled Material", "Материал без названия", language: language)
         case .chat:
-            return text("Wai", "Wai", language: language)
+            return text("Untitled Material", "Материал без названия", language: language)
         }
     }
 
@@ -1394,15 +1344,12 @@ private struct MacInboxDisplayRow: Identifiable, Equatable {
         case .item:
             return text("Material", "Материал", language: language)
         case .chat:
-            return "Wai"
+            return text("Material", "Материал", language: language)
         }
     }
 
     private static func displaySublabel(for row: InboxRow, language: LanguageManager.SupportedLanguage) -> String? {
         guard let sublabel = row.sublabel else { return nil }
-        if row.sourceKind == .chat && sublabel == "Agent thread" {
-            return text("Agent thread", "Агентский диалог", language: language)
-        }
         return sublabel
     }
 
@@ -1439,7 +1386,7 @@ private struct MacInboxDisplayRow: Identifiable, Equatable {
         switch sourceKind {
         case .recording: return "waveform"
         case .item: return "doc.text"
-        case .chat: return "sparkles"
+        case .chat: return "doc.text"
         }
     }
 
@@ -1531,9 +1478,8 @@ private struct MacInboxRowsList: View {
     }
 
     private func draggableRow(_ display: MacInboxDisplayRow, index: Int) -> some View {
-        // Every inbox kind files into folders now — recordings, materials,
-        // and Wai chats all drag to the sidebar (folders / Inbox / Trash).
-        // The context menu is the same move, discoverable and keyboardable.
+        // Every visible inbox kind files into folders. The context menu is the
+        // same move, discoverable and keyboardable.
         MacInboxListRow(
             display: display,
             onSelect: { onSelect(rows[index]) }

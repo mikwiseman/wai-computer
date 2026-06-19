@@ -774,8 +774,12 @@ describe("DashboardClient", () => {
           source_kind: "item", parent_id: "i1", chunk_id: "c2", title: "Solar PDF",
           kind: "pdf", snippet: "solar economics", score: 0.7, created_at: null,
         },
+        {
+          source_kind: "chat", parent_id: "chat-1", chunk_id: "c3", title: "Launch thread",
+          kind: "chat", snippet: "Wai answered from the second brain", score: 0.6, created_at: null,
+        },
       ],
-      total: 2,
+      total: 3,
     });
 
     render(<DashboardClient />);
@@ -790,6 +794,7 @@ describe("DashboardClient", () => {
     );
     expect(screen.getByText("Solar PDF")).toBeInTheDocument();
     expect(screen.getByText("Planning")).toBeInTheDocument();
+    expect(screen.getByTestId("unified-result-c3")).toHaveTextContent("WAI / Score 0.60");
     expect(mockUnifiedSearch).toHaveBeenCalledWith({ q: "solar", limit: 25 });
   });
 
@@ -1875,13 +1880,11 @@ describe("DashboardClient", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("surfaces a notice instead of filing when only Wai chats are selected", async () => {
+  it("hides Wai chat rows from Inbox so Search owns Wai", async () => {
     arrangeHappyPathMocks();
-    mockListFolders.mockResolvedValue([
-      { id: "folder-work", name: "Work", created_at: "2026-05-27T00:00:00Z" },
-    ]);
     mockListInbox.mockResolvedValue({
       rows: [
+        recordingInboxRow({ ...baseRecording, id: "r1", title: "A" }),
         inboxRow({
           id: "chat:c1",
           source_kind: "chat",
@@ -1894,41 +1897,24 @@ describe("DashboardClient", () => {
       next_cursor: null,
       has_more: false,
     });
-    const user = userEvent.setup();
 
     render(<DashboardClient />);
     await waitForDashboardReady();
     await waitFor(() => {
-      expect(screen.getByTestId("select-chat-c1")).toBeInTheDocument();
+      expect(screen.getByTestId("select-recording-r1")).toBeInTheDocument();
     });
 
-    await user.click(screen.getByTestId("select-mode-toggle"));
-    await user.click(screen.getByTestId("select-checkbox-chat:c1"));
-    await user.selectOptions(screen.getByTestId("bulk-move-folder"), "folder-work");
-
-    await waitFor(() => {
-      expect(screen.getByTestId("dashboard-message")).toHaveTextContent(
-        "Wai chats can't be filed into folders.",
-      );
-    });
-    expect(mockBulkRecordingOperation).not.toHaveBeenCalled();
-    expect(mockAssignItemToFolder).not.toHaveBeenCalled();
+    expect(screen.queryByText("Plan trip")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("select-chat-c1")).not.toBeInTheDocument();
+    expect(screen.queryByText("Wai")).not.toBeInTheDocument();
   });
 
-  it("bulk-trashes selected inbox rows with the per-kind delete APIs", async () => {
+  it("bulk-trashes selected inbox rows with the visible per-kind delete APIs", async () => {
     arrangeHappyPathMocks();
     mockListInbox.mockResolvedValue({
       rows: [
         recordingInboxRow({ ...baseRecording, id: "r1", title: "A" }),
         inboxRow({ id: "item:i1", source_id: "i1", title: "Doc", folder_id: null }),
-        inboxRow({
-          id: "chat:c1",
-          source_kind: "chat",
-          source_id: "c1",
-          detail: { kind: "chat", id: "c1" },
-          title: "Plan trip",
-          folder_id: null,
-        }),
       ],
       next_cursor: null,
       has_more: false,
@@ -1945,16 +1931,15 @@ describe("DashboardClient", () => {
     await user.click(screen.getByTestId("select-mode-toggle"));
     await user.click(screen.getByTestId("select-checkbox-recording:r1"));
     await user.click(screen.getByTestId("select-checkbox-item:i1"));
-    await user.click(screen.getByTestId("select-checkbox-chat:c1"));
-    expect(screen.getByTestId("bulk-bar")).toHaveTextContent("3 selected");
+    expect(screen.getByTestId("bulk-bar")).toHaveTextContent("2 selected");
 
     await user.click(screen.getByTestId("bulk-trash"));
 
     await waitFor(() => {
       expect(mockBulkRecordingOperation).toHaveBeenCalledWith(["r1"], "delete");
       expect(mockDeleteItem).toHaveBeenCalledWith("i1");
-      expect(mockDeleteChat).toHaveBeenCalledWith("c1");
     });
+    expect(mockDeleteChat).not.toHaveBeenCalled();
     await waitFor(() => {
       expect(screen.queryByTestId("bulk-bar")).not.toBeInTheDocument();
     });

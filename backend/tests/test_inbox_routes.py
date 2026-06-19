@@ -159,22 +159,18 @@ async def test_inbox_returns_mixed_newest_first_privacy_safe_rows(
 
     rows = data["rows"]
     assert [row["source_kind"] for row in rows] == [
-        "chat",
         "item",
         "item",
         "recording",
         "recording",
         "recording",
     ]
-    assert rows[0]["id"] == f"chat:{seeded['chat'].id}"
-    assert rows[0]["detail"] == {"kind": "chat", "id": str(seeded["chat"].id)}
-    assert rows[0]["source_label"] == "Wai"
-    assert rows[0]["sublabel"] == "Agent thread"
-    assert rows[1]["status"] == "needs_input"
-    assert rows[2]["has_summary"] is True
-    assert rows[3]["status"] == "failed"
-    assert rows[3]["error"]["code"] == "transcription_failed"
-    assert rows[5]["folder_id"] == str(seeded["folder"].id)
+    assert rows[0]["status"] == "needs_input"
+    assert rows[1]["has_summary"] is True
+    assert rows[2]["status"] == "failed"
+    assert rows[2]["error"]["code"] == "transcription_failed"
+    assert rows[4]["folder_id"] == str(seeded["folder"].id)
+    assert f"chat:{seeded['chat'].id}" not in {row["id"] for row in rows}
     assert all("body" not in row for row in rows)
     assert all("messages" not in row for row in rows)
     assert "Private" not in str(rows)
@@ -230,7 +226,7 @@ async def test_inbox_filters_by_source_status_and_folder(
     assert all(row["folder_id"] == str(seeded["folder"].id) for row in folder_rows)
 
 
-async def test_inbox_ready_status_includes_summaries_and_chats(
+async def test_inbox_ready_status_includes_summaries_without_chats(
     client: AsyncClient, auth_headers: dict, db_session: AsyncSession
 ) -> None:
     user_id = await _current_user_id(client, auth_headers)
@@ -240,10 +236,10 @@ async def test_inbox_ready_status_includes_summaries_and_chats(
 
     assert resp.status_code == 200, resp.text
     assert {row["id"] for row in resp.json()["rows"]} == {
-        f"chat:{seeded['chat'].id}",
         f"item:{seeded['item'].id}",
         f"recording:{seeded['recording'].id}",
     }
+    assert all(row["source_kind"] != "chat" for row in resp.json()["rows"])
 
 
 async def test_inbox_item_processing_and_processing_error_attention_filters(
@@ -362,26 +358,25 @@ async def test_inbox_cursor_paginates_across_source_tiebreakers(
         content_hash=uuid4().hex,
         created_at=now,
     )
-    chat = Conversation(user_id=user_id, title="Same time chat", created_at=now)
-    db_session.add_all([recording, item, chat])
+    db_session.add_all([recording, item])
     await db_session.flush()
     db_session.add(ItemSummary(item_id=item.id, summary="Ready."))
     await db_session.commit()
 
-    page1 = await client.get("/api/inbox", headers=auth_headers, params={"limit": 2})
+    page1 = await client.get("/api/inbox", headers=auth_headers, params={"limit": 1})
     assert page1.status_code == 200, page1.text
-    assert [row["source_kind"] for row in page1.json()["rows"]] == ["chat", "item"]
+    assert [row["source_kind"] for row in page1.json()["rows"]] == ["item"]
 
     page2 = await client.get(
         "/api/inbox",
         headers=auth_headers,
-        params={"limit": 2, "cursor": page1.json()["next_cursor"]},
+        params={"limit": 1, "cursor": page1.json()["next_cursor"]},
     )
     assert page2.status_code == 200, page2.text
     assert [row["id"] for row in page2.json()["rows"]] == [f"recording:{recording.id}"]
 
 
-async def test_inbox_item_and_chat_cursors_use_source_specific_ids(
+async def test_inbox_item_cursor_uses_source_specific_ids_and_rejects_chat_source(
     client: AsyncClient, auth_headers: dict, db_session: AsyncSession
 ) -> None:
     user_id = await _current_user_id(client, auth_headers)
@@ -421,29 +416,15 @@ async def test_inbox_item_and_chat_cursors_use_source_specific_ids(
             "cursor": item_page1.json()["next_cursor"],
         },
     )
-    chat_page1 = await client.get(
-        "/api/inbox",
-        headers=auth_headers,
-        params={"source_kind": "chat", "limit": 2},
-    )
-    chat_page2 = await client.get(
-        "/api/inbox",
-        headers=auth_headers,
-        params={
-            "source_kind": "chat",
-            "limit": 2,
-            "cursor": chat_page1.json()["next_cursor"],
-        },
+    chats_only = await client.get(
+        "/api/inbox", headers=auth_headers, params={"source_kind": "chat", "limit": 2}
     )
 
     assert item_page1.status_code == 200, item_page1.text
     assert item_page2.status_code == 200, item_page2.text
     assert len(item_page1.json()["rows"]) == 2
     assert len(item_page2.json()["rows"]) == 1
-    assert chat_page1.status_code == 200, chat_page1.text
-    assert chat_page2.status_code == 200, chat_page2.text
-    assert len(chat_page1.json()["rows"]) == 2
-    assert len(chat_page2.json()["rows"]) == 1
+    assert chats_only.status_code == 422
 
 
 async def test_inbox_rejects_invalid_cursor_and_requires_auth(
@@ -505,10 +486,10 @@ async def test_inbox_is_scoped_to_authenticated_user(
     assert resp.json()["rows"] == []
 
 
-async def test_inbox_folder_scope_includes_filed_chats(
+async def test_inbox_folder_scope_excludes_filed_chats(
     client: AsyncClient, auth_headers: dict
 ) -> None:
-    """A Wai chat filed into a folder shows up in that folder's inbox scope."""
+    """A filed Wai chat stays searchable, but it is not Inbox content."""
     folder_resp = await client.post(
         "/api/folders", json={"name": "Launch"}, headers=auth_headers
     )
@@ -533,22 +514,16 @@ async def test_inbox_folder_scope_includes_filed_chats(
     )
     assert scoped.status_code == 200
     scoped_rows = scoped.json()["rows"]
-    chat_row = next(
-        (row for row in scoped_rows if row["id"] == f"chat:{chat_id}"), None
-    )
-    assert chat_row is not None, "filed chat must appear in folder scope"
-    assert chat_row["folder_id"] == folder_id
+    assert f"chat:{chat_id}" not in {row["id"] for row in scoped_rows}
 
     chats_only = await client.get(
         "/api/inbox",
         headers=auth_headers,
         params={"folder_id": folder_id, "source_kind": "chat"},
     )
-    assert chats_only.status_code == 200
-    assert {row["id"] for row in chats_only.json()["rows"]} == {f"chat:{chat_id}"}
+    assert chats_only.status_code == 422
 
-    # The unscoped chat list still includes the filed chat.
     all_chats = await client.get(
         "/api/inbox", headers=auth_headers, params={"source_kind": "chat"}
     )
-    assert f"chat:{chat_id}" in {row["id"] for row in all_chats.json()["rows"]}
+    assert all_chats.status_code == 422

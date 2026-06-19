@@ -1,8 +1,7 @@
 """Universal inbox read model.
 
-The inbox is intentionally additive: recordings, materials, and Wai chats keep
-their source tables and detail routes. This route returns one normalized,
-privacy-safe list for client navigation and filtering.
+Inbox is the capture surface for recordings and saved materials. Wai chats stay
+available through Search and companion routes, but they are not Inbox rows.
 """
 
 from __future__ import annotations
@@ -20,17 +19,16 @@ from sqlalchemy import and_, exists, func, not_, or_, select
 
 from app.api.deps import CurrentUser, Database
 from app.api.routes.items import _derive_status, _item_error
-from app.models.companion import Conversation
 from app.models.item import Item, ItemSummary
 from app.models.recording import Recording, RecordingStatus, Summary
 
 router = APIRouter(prefix="/inbox", tags=["inbox"])
 
-InboxSourceKind = Literal["recording", "item", "chat"]
+InboxSourceKind = Literal["recording", "item"]
 InboxStatus = Literal["ready", "processing", "needs_input", "failed", "archived"]
 InboxStatusFilter = Literal["ready", "processing", "needs_attention"]
 
-SOURCE_RANK: dict[str, int] = {"recording": 0, "item": 1, "chat": 2}
+SOURCE_RANK: dict[str, int] = {"recording": 0, "item": 1}
 
 
 class InboxDetailRef(BaseModel):
@@ -142,9 +140,7 @@ def _cursor_clause(activity_expr, source_kind: InboxSourceKind, cursor: InboxCur
 def uuid_column_for_source(source_kind: InboxSourceKind):
     if source_kind == "recording":
         return Recording.id
-    if source_kind == "item":
-        return Item.id
-    return Conversation.id
+    return Item.id
 
 
 def _recording_status(status_value: str) -> InboxStatus:
@@ -332,61 +328,6 @@ async def _item_rows(
     return rows
 
 
-async def _chat_rows(
-    db: Database,
-    user_id: uuid.UUID,
-    limit: int,
-    cursor: InboxCursor | None,
-    status_filter: InboxStatusFilter | None,
-    folder_id: uuid.UUID | None,
-) -> list[InboxRow]:
-    if status_filter not in (None, "ready"):
-        return []
-    activity_expr = func.coalesce(Conversation.last_message_at, Conversation.created_at)
-    stmt = select(Conversation, activity_expr.label("activity_at")).where(
-        Conversation.user_id == user_id,
-        Conversation.deleted_at.is_(None),
-        Conversation.archived_at.is_(None),
-    )
-    if folder_id is not None:
-        stmt = stmt.where(Conversation.folder_id == folder_id)
-    if cursor is not None:
-        stmt = stmt.where(_cursor_clause(activity_expr, "chat", cursor))
-
-    result = await db.execute(
-        stmt.order_by(activity_expr.desc(), Conversation.id.desc()).limit(limit + 1)
-    )
-    rows: list[InboxRow] = []
-    for chat, activity_at in result.all():
-        rows.append(
-            InboxRow(
-                id=f"chat:{chat.id}",
-                source_kind="chat",
-                source_id=str(chat.id),
-                detail=InboxDetailRef(kind="chat", id=str(chat.id)),
-                title=chat.title,
-                source_label="Wai",
-                sublabel="Agent thread",
-                activity_at=activity_at,
-                created_at=chat.created_at,
-                updated_at=chat.updated_at,
-                occurred_at=chat.last_message_at,
-                status="ready",
-                source_status=None,
-                error=None,
-                folder_id=str(chat.folder_id) if chat.folder_id else None,
-                duration_seconds=None,
-                language=None,
-                has_summary=None,
-                is_starred=False,
-                is_pinned=chat.pinned_at is not None,
-                is_archived=False,
-                is_trashed=False,
-            )
-        )
-    return rows
-
-
 @router.get("", response_model=InboxResponse)
 async def list_inbox(
     user: CurrentUser,
@@ -421,11 +362,6 @@ async def list_inbox(
                 folder_id,
             )
         )
-    if _source_allowed(source_kind, "chat"):
-        rows.extend(
-            await _chat_rows(db, user.id, limit, decoded_cursor, status, folder_id)
-        )
-
     rows.sort(key=_sort_key, reverse=True)
     has_more = len(rows) > limit
     page_rows = rows[:limit]

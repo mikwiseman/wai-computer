@@ -137,7 +137,7 @@ final class MacContentFeedViewModelTests: XCTestCase {
         let source = try macSource("WaiComputer/Features/Inbox/MacInboxView.swift")
 
         XCTAssertTrue(source.contains("@State private var focusedCreateMode: InboxCreateMode = .record"))
-        XCTAssertTrue(source.contains("Self.defaultCreateMode(for: initialSourceKind)"))
+        XCTAssertTrue(source.contains("Self.defaultCreateMode(for: Self.visibleScope(initialSourceKind))"))
         XCTAssertTrue(source.contains("isActive: focusedCreateMode == .file"))
         XCTAssertTrue(source.contains("case .file:"))
         XCTAssertFalse(source.contains("activeCreateMode"))
@@ -407,16 +407,12 @@ final class MacContentFeedViewModelTests: XCTestCase {
         XCTAssertTrue(source.contains("ScrollView {"))
     }
 
-    func testInboxChatDetailUsesFocusedCompanionWithoutSwitcher() throws {
+    func testInboxDoesNotHostFocusedCompanion() throws {
         let source = try macSource("WaiComputer/Features/Inbox/MacInboxView.swift")
 
-        XCTAssertTrue(source.contains("showsConversationSwitcher: false"))
-    }
-
-    func testInboxChatDetailPassesFolderContextToFocusedCompanion() throws {
-        let source = try macSource("WaiComputer/Features/Inbox/MacInboxView.swift")
-
-        XCTAssertTrue(source.contains("viewingFolderId: folderId"))
+        XCTAssertFalse(source.contains("CompanionView("))
+        XCTAssertFalse(source.contains("showsConversationSwitcher: false"))
+        XCTAssertFalse(source.contains("viewingFolderId: folderId"))
     }
 
     func testInboxDetailEquatableGateUsesRevisionInputsInsteadOfFullArrays() throws {
@@ -425,7 +421,7 @@ final class MacContentFeedViewModelTests: XCTestCase {
         let librarySource = try macSource("WaiComputer/Features/Library/MacLibraryViewModel.swift")
 
         // The detail host intentionally uses .equatable() to avoid re-diffing a
-        // selected recording/material/chat when inbox rows paginate or banners
+        // selected recording/material when inbox rows paginate or banners
         // change. The equality check itself must stay O(1): comparing the full
         // recording/folder arrays on every list-side invalidation turns the
         // guard into a main-actor hitch on large libraries.
@@ -511,13 +507,12 @@ final class MacContentFeedViewModelTests: XCTestCase {
         XCTAssertTrue(modelSource.contains("private static func sortedCitations("))
     }
 
-    func testInboxFocusedCompanionNotifiesWhenTurnCompletes() throws {
-        let source = try macSource("WaiComputer/Features/Inbox/MacInboxView.swift")
+    func testSearchCompanionNotifiesWhenTurnCompletes() throws {
+        let source = try macSource("WaiComputer/Features/Search/MacSearchView.swift")
 
         XCTAssertTrue(source.contains("onTurnCompleted: { completion in"))
         XCTAssertTrue(source.contains("MacWaiTaskNotificationCenter.shared.notifyTaskFinished("))
-        XCTAssertTrue(source.contains("body: completion.preview ?? OnboardingL10n.text("))
-        XCTAssertTrue(source.contains("\"Your Wai task is ready.\", \"Задача Wai готова.\", language: language"))
+        XCTAssertTrue(source.contains("body: completion.preview ?? t(\"Your Wai task is ready.\", \"Задача Wai готова.\"),"))
     }
 
     func testMacWaiTaskNotificationCenterRequestsPermissionInForegroundOnly() throws {
@@ -567,8 +562,9 @@ final class MacContentFeedViewModelTests: XCTestCase {
         let searchSource = try macSource("WaiComputer/Features/Search/MacSearchView.swift")
         let shellSource = try macSource("WaiComputer/App/MacContentView.swift")
 
-        XCTAssertTrue(inboxSource.contains("case .chat:"))
-        XCTAssertTrue(inboxSource.contains("CompanionView("))
+        XCTAssertFalse(inboxSource.contains("CompanionView("))
+        XCTAssertFalse(inboxSource.contains("No Wai Threads Yet"))
+        XCTAssertFalse(inboxSource.contains("Existing Wai threads"))
         XCTAssertTrue(searchSource.contains("CompanionView("))
         XCTAssertTrue(searchSource.contains("Search your second brain"))
         XCTAssertTrue(searchSource.contains("activeChatId = hit.parentId"))
@@ -582,10 +578,12 @@ final class MacContentFeedViewModelTests: XCTestCase {
     func testInboxViewModelClearsStaleErrorAfterSuccessfulReload() throws {
         let source = try macSource("WaiComputer/Features/Inbox/MacInboxViewModel.swift")
 
-        XCTAssertBefore("errorMessage = nil", "rows = response.rows", in: source)
-        XCTAssertBefore("errorMessage = nil", "rows.append(contentsOf: response.rows)", in: source)
-        XCTAssertBefore("rowsRevision = rowsRevision.replacingRows()", "rows = response.rows", in: source)
-        XCTAssertBefore("rowsRevision = rowsRevision.appendingRows(from: rows.count)", "rows.append(contentsOf: response.rows)", in: source)
+        XCTAssertBefore("errorMessage = nil", "rows = Self.visibleRows(response.rows)", in: source)
+        XCTAssertBefore("errorMessage = nil", "rows.append(contentsOf: Self.visibleRows(response.rows))", in: source)
+        XCTAssertBefore("rowsRevision = rowsRevision.replacingRows()", "rows = Self.visibleRows(response.rows)", in: source)
+        XCTAssertBefore("rowsRevision = rowsRevision.appendingRows(from: rows.count)", "rows.append(contentsOf: Self.visibleRows(response.rows))", in: source)
+        XCTAssertTrue(source.contains("sourceKind == .chat ? nil : sourceKind"))
+        XCTAssertTrue(source.contains("rows.filter { $0.sourceKind != .chat }"))
     }
 
     func testCompanionViewCanHideChatSwitcherAndDoesNotShowChatCounts() throws {

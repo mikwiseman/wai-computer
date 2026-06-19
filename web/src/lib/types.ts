@@ -854,7 +854,7 @@ export interface SearchResponse {
 // --- Second brain: universal items, comparisons, unified search, ingestion ---
 
 export interface UnifiedHit {
-  source_kind: "recording" | "item";
+  source_kind: "recording" | "item" | "chat";
   parent_id: string;
   chunk_id: string;
   title: string | null;

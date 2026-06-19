@@ -166,10 +166,10 @@ async def test_create_multiple_folders_sorted_alphabetically(
 
 
 @pytest.mark.asyncio
-async def test_folder_counts_include_recordings_items_and_chats(
+async def test_folder_counts_include_recordings_and_items_only(
     client: AsyncClient, auth_headers: dict
 ) -> None:
-    """Folder badges aggregate recordings, materials, and Wai chats."""
+    """Folder badges aggregate visible Inbox content only."""
     folder = await _create_folder(client, auth_headers, name="Mixed")
     recording = await _create_recording(client, auth_headers, folder_id=folder["id"])
     item_response = await client.post(
@@ -197,7 +197,7 @@ async def test_folder_counts_include_recordings_items_and_chats(
     listed = await client.get("/api/folders", headers=auth_headers)
     assert listed.status_code == 200
     target = next(f for f in listed.json() if f["id"] == folder["id"])
-    assert target["item_count"] == 3
+    assert target["item_count"] == 2
 
     delete_response = await client.delete(
         f"/api/folders/{folder['id']}", headers=auth_headers

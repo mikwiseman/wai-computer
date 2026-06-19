@@ -89,13 +89,14 @@ final class MacInboxViewModel: ObservableObject {
 
     init(apiClient: APIClient, sourceKind: InboxSourceKind? = nil, folderId: String? = nil) {
         self.apiClient = apiClient
-        self.sourceKind = sourceKind
+        self.sourceKind = Self.visibleScope(sourceKind)
         self.folderId = folderId
     }
 
     func configureScope(sourceKind: InboxSourceKind?, folderId: String?) async {
-        guard self.sourceKind != sourceKind || self.folderId != folderId else { return }
-        self.sourceKind = sourceKind
+        let visibleScope = Self.visibleScope(sourceKind)
+        guard self.sourceKind != visibleScope || self.folderId != folderId else { return }
+        self.sourceKind = visibleScope
         self.folderId = folderId
         nextCursor = nil
         await load()
@@ -126,7 +127,7 @@ final class MacInboxViewModel: ObservableObject {
             guard generation == loadGeneration else { return }
             errorMessage = nil
             rowsRevision = rowsRevision.replacingRows()
-            rows = response.rows
+            rows = Self.visibleRows(response.rows)
             nextCursor = response.nextCursor
         } catch {
             guard generation == loadGeneration else { return }
@@ -149,7 +150,7 @@ final class MacInboxViewModel: ObservableObject {
             guard generation == loadGeneration else { return }
             errorMessage = nil
             rowsRevision = rowsRevision.appendingRows(from: rows.count)
-            rows.append(contentsOf: response.rows)
+            rows.append(contentsOf: Self.visibleRows(response.rows))
             self.nextCursor = response.nextCursor
         } catch {
             guard generation == loadGeneration else { return }
@@ -158,9 +159,17 @@ final class MacInboxViewModel: ObservableObject {
     }
 
     func setSourceKind(_ next: InboxSourceKind?) async {
-        sourceKind = next
+        sourceKind = Self.visibleScope(next)
         nextCursor = nil
         await load()
+    }
+
+    private static func visibleScope(_ sourceKind: InboxSourceKind?) -> InboxSourceKind? {
+        sourceKind == .chat ? nil : sourceKind
+    }
+
+    private static func visibleRows(_ rows: [InboxRow]) -> [InboxRow] {
+        rows.filter { $0.sourceKind != .chat }
     }
 
     func addDraft() async -> InboxDetailRef? {

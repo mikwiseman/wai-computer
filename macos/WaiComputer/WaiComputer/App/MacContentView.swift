@@ -779,8 +779,8 @@ struct MacMainView: View {
         )
     }
 
-    /// Move a dragged inbox row (recording, material, or Wai chat) onto a
-    /// sidebar folder target, refreshing the affected lists afterwards.
+    /// Move a dragged inbox row onto a sidebar folder target, refreshing the
+    /// affected lists afterwards.
     private func handleInboxDrop(_ items: [InboxDragItem], folderId: String?) -> Bool {
         guard let item = items.first else { return false }
         moveInboxDragItem(item, to: folderId)
@@ -1018,7 +1018,6 @@ struct MacMainView: View {
         case .inbox, .allRecordings, .folder(_), .content:
             MacInboxView(
                 apiClient: appState.getAPIClient(),
-                recordings: libraryViewModel.recordings,
                 folders: libraryViewModel.folders,
                 recordingsRevision: libraryViewModel.recordingsRevision,
                 foldersRevision: libraryViewModel.foldersRevision,
