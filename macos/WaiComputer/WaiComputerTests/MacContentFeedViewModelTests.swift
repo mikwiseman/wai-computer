@@ -144,7 +144,8 @@ final class MacContentFeedViewModelTests: XCTestCase {
         // The composer only offers actions matching the current source scope.
         XCTAssertTrue(source.contains("private var allowedCreateModes: [InboxCreateMode]"))
         XCTAssertTrue(source.contains("if allowedCreateModes.contains(.record)"))
-        XCTAssertTrue(source.contains("if allowedCreateModes.contains(.ask)"))
+        XCTAssertTrue(source.contains("if allowedCreateModes.contains(.paste)"))
+        XCTAssertFalse(source.contains("if allowedCreateModes.contains(.ask)"))
     }
 
     func testInboxRecordComposerExposesStartRecordingIdentifier() throws {
@@ -358,7 +359,7 @@ final class MacContentFeedViewModelTests: XCTestCase {
         XCTAssertTrue(source.contains("postInboxCommand(.pasteLinkOrText)"))
         XCTAssertTrue(source.contains(".keyboardShortcut(\"v\", modifiers: [.command, .option])"))
         XCTAssertTrue(source.contains("Button(\"Wai\")"))
-        XCTAssertTrue(source.contains("postInboxCommand(.askWai)"))
+        XCTAssertTrue(source.contains("postNavigationTarget(\"search\")"))
         XCTAssertTrue(source.contains(".keyboardShortcut(\"a\", modifiers: [.command, .option])"))
     }
 
@@ -539,38 +540,40 @@ final class MacContentFeedViewModelTests: XCTestCase {
         XCTAssertTrue(source.contains("MacWaiTaskNotificationCenter.shared.configure()"))
     }
 
-    func testMacNotificationTapRoutesFinishedChatToInbox() throws {
+    func testMacNotificationTapRoutesFinishedChatToSearch() throws {
         let appSource = try macSource("WaiComputer/App/WaiComputerMacApp.swift")
         let contentSource = try macSource("WaiComputer/App/MacContentView.swift")
         let notificationSource = try macSource("WaiComputer/Features/Inbox/MacWaiTaskNotificationCenter.swift")
 
-        XCTAssertTrue(appSource.contains("static let macOpenInboxChat = Notification.Name(\"macOpenInboxChat\")"))
-        XCTAssertTrue(notificationSource.contains("NotificationCenter.default.post(name: .macOpenInboxChat, object: chatId)"))
-        XCTAssertTrue(contentSource.contains("NotificationCenter.default.publisher(for: .macOpenInboxChat)"))
-        XCTAssertTrue(contentSource.contains("pendingInboxDetail = InboxDetailRef(kind: .chat, id: chatId)"))
-        XCTAssertTrue(contentSource.contains("selectedSection = .inbox"))
+        XCTAssertTrue(appSource.contains("static let macOpenWaiChat = Notification.Name(\"macOpenWaiChat\")"))
+        XCTAssertTrue(notificationSource.contains("NotificationCenter.default.post(name: .macOpenWaiChat, object: chatId)"))
+        XCTAssertTrue(contentSource.contains("NotificationCenter.default.publisher(for: .macOpenWaiChat)"))
+        XCTAssertTrue(contentSource.contains("pendingSearchChatId = chatId"))
+        XCTAssertTrue(contentSource.contains("selectedSection = .search"))
     }
 
-    func testInboxPresentsWaiChatAsAgentThread() throws {
-        let source = try macSource("WaiComputer/Features/Inbox/MacInboxView.swift")
-
-        XCTAssertTrue(source.contains("New Wai Session"))
-        XCTAssertTrue(source.contains("Give Wai a task"))
-        XCTAssertFalse(source.contains("Ask Wai"))
-        XCTAssertFalse(source.contains("New Wai Chat"))
-        XCTAssertFalse(source.contains("Wai Chat"))
-    }
-
-    func testInboxIsTheOnlyWaiAgentSurface() throws {
+    func testInboxDoesNotCreateWaiThreads() throws {
         let inboxSource = try macSource("WaiComputer/Features/Inbox/MacInboxView.swift")
+        let viewModelSource = try macSource("WaiComputer/Features/Inbox/MacInboxViewModel.swift")
+
+        XCTAssertFalse(inboxSource.contains("MacInboxAskComposer"))
+        XCTAssertFalse(inboxSource.contains("New Wai Session"))
+        XCTAssertFalse(inboxSource.contains("mac-inbox-ask-field"))
+        XCTAssertFalse(viewModelSource.contains("createCompanionChat"))
+    }
+
+    func testSearchIsTheWaiAgentSurface() throws {
+        let inboxSource = try macSource("WaiComputer/Features/Inbox/MacInboxView.swift")
+        let searchSource = try macSource("WaiComputer/Features/Search/MacSearchView.swift")
         let shellSource = try macSource("WaiComputer/App/MacContentView.swift")
 
         XCTAssertTrue(inboxSource.contains("case .chat:"))
         XCTAssertTrue(inboxSource.contains("CompanionView("))
-        XCTAssertTrue(inboxSource.contains("New Wai Session"))
-        XCTAssertTrue(inboxSource.contains("Give Wai a task"))
-        XCTAssertFalse(inboxSource.contains("Ask Wai"))
-        XCTAssertTrue(shellSource.contains(#"case "agents": selectedSection = .inbox"#))
+        XCTAssertTrue(searchSource.contains("CompanionView("))
+        XCTAssertTrue(searchSource.contains("Search your second brain"))
+        XCTAssertTrue(searchSource.contains("activeChatId = hit.parentId"))
+        XCTAssertTrue(shellSource.contains(#"case "agents": selectedSection = .search"#))
+        XCTAssertTrue(shellSource.contains(#"case "wai": selectedSection = .search"#))
         XCTAssertFalse(shellSource.contains("case agents"))
         XCTAssertFalse(shellSource.contains("MacAgentsView("))
         XCTAssertFalse(shellSource.contains(#"sidebarRow(t("Agents""#))
@@ -669,7 +672,7 @@ final class MacContentFeedViewModelTests: XCTestCase {
         XCTAssertTrue(source.contains("if ! peekaboo list windows --pid \"$TARGET_PID\""))
         XCTAssertTrue(source.contains("peekaboo perform-action --snapshot \"$fresh_snapshot\" --on \"$element_id\" --action AXPress"))
         XCTAssertTrue(source.contains("peekaboo set-value \"$value\" --snapshot \"$fresh_snapshot\" --on \"$element_id\""))
-        XCTAssertTrue(source.contains("set_identifier_label_role_value search-bar \"Search recordings...\" \"text field\" search search-field"))
+        XCTAssertTrue(source.contains("set_identifier_label_role_value search-bar \"Search your second brain...\" \"text field\" search search-field"))
         XCTAssertTrue(source.contains("click_identifier_label_role search-bar Search button search-submit"))
         XCTAssertTrue(source.contains("element_id_by_identifier_label_role \"$json_path\" \"$identifier\" \"$label\" \"$role\""))
         XCTAssertTrue(source.contains("set_target_window_bounds()"))

@@ -328,18 +328,4 @@ final class MacInboxViewModel: ObservableObject {
         selectedUploadFileHasScopedAccess = false
     }
 
-    func newChat() async -> InboxDetailRef? {
-        guard !isAdding else { return nil }
-        isAdding = true
-        defer { isAdding = false }
-        do {
-            let chat = try await apiClient.createCompanionChat()
-            let detail = InboxDetailRef(kind: .chat, id: chat.id)
-            await load()
-            return rows.first { $0.id == "chat:\(chat.id)" }?.detail ?? detail
-        } catch {
-            errorMessage = error.localizedDescription
-            return nil
-        }
-    }
 }

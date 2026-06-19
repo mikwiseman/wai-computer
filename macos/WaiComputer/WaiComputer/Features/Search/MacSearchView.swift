@@ -5,22 +5,47 @@ struct MacSearchView: View {
     @EnvironmentObject var appState: MacAppState
     @EnvironmentObject private var languageManager: LanguageManager
     @StateObject private var viewModel = MacSearchViewModel()
+    @State private var activeChatId: String?
     @FocusState private var searchFieldFocused: Bool
+    let recordings: [Recording]
+    let initialChatId: String?
     let onOpenRecording: (String) -> Void
     let onOpenItem: (String) -> Void
-    let onOpenChat: (String) -> Void
+    let onInitialChatConsumed: () -> Void
 
     init(
+        recordings: [Recording],
+        initialChatId: String? = nil,
         onOpenRecording: @escaping (String) -> Void = { _ in },
         onOpenItem: @escaping (String) -> Void = { _ in },
-        onOpenChat: @escaping (String) -> Void = { _ in }
+        onInitialChatConsumed: @escaping () -> Void = {}
     ) {
+        self.recordings = recordings
+        self.initialChatId = initialChatId
         self.onOpenRecording = onOpenRecording
         self.onOpenItem = onOpenItem
-        self.onOpenChat = onOpenChat
+        self.onInitialChatConsumed = onInitialChatConsumed
     }
 
     var body: some View {
+        HSplitView {
+            searchPane
+                .frame(minWidth: 380, idealWidth: 620, maxWidth: .infinity)
+
+            waiPane
+                .frame(minWidth: 380, idealWidth: 520, maxWidth: .infinity)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .onAppear {
+            searchFieldFocused = true
+            consumeInitialChatIfNeeded(initialChatId)
+        }
+        .onChangeCompat(of: initialChatId) { _, chatId in
+            consumeInitialChatIfNeeded(chatId)
+        }
+    }
+
+    private var searchPane: some View {
         VStack(spacing: 0) {
             searchHeader
 
@@ -30,7 +55,26 @@ struct MacSearchView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .onAppear { searchFieldFocused = true }
+    }
+
+    private var waiPane: some View {
+        CompanionView(
+            apiClient: appState.getAPIClient(),
+            recordings: recordings,
+            initialChatId: activeChatId,
+            onTurnCompleted: { completion in
+                MacWaiTaskNotificationCenter.shared.notifyTaskFinished(
+                    title: t("Wai finished", "Wai закончил"),
+                    body: completion.preview ?? t("Your Wai task is ready.", "Задача Wai готова."),
+                    chatId: completion.chatId
+                )
+            },
+            onOpenCitation: { recordingId, _ in
+                onOpenRecording(recordingId)
+            }
+        )
+        .environment(\.locale, MacDateFormatting.locale(for: languageManager.current))
+        .companionAccentColor(Palette.accent)
     }
 
     private var searchHeader: some View {
@@ -41,7 +85,7 @@ struct MacSearchView: View {
 
                 TextField(
                     viewModel.scope == .everything
-                        ? t("Search everything...", "Искать везде...")
+                        ? t("Search your second brain...", "Искать по второму мозгу...")
                         : t("Search recordings...", "Искать в записях..."),
                     text: $viewModel.query
                 )
@@ -132,13 +176,13 @@ struct MacSearchView: View {
         } else if hasNoResults {
             ContentUnavailableViewCompat(
                 viewModel.scope == .everything
-                    ? t("Search Everything", "Поиск по всему")
+                    ? t("Search Your Second Brain", "Поиск по второму мозгу")
                     : t("Search Your Recordings", "Поиск по записям"),
                 systemImage: "magnifyingglass",
                 description: Text(
                     viewModel.scope == .everything
-                        ? t("Search across recordings and everything you've added.",
-                            "Ищи по записям и всему, что добавлено.")
+                        ? t("Search everything you've added, then ask Wai from the same place.",
+                            "Ищи по всему добавленному и спрашивай Wai здесь же.")
                         : t("Search across all your recording transcripts.",
                             "Ищи по всем расшифровкам записей.")
                 )
@@ -194,7 +238,7 @@ struct MacSearchView: View {
         case "recording":
             onOpenRecording(hit.parentId)
         case "chat":
-            onOpenChat(hit.parentId)
+            activeChatId = hit.parentId
         default:
             onOpenItem(hit.parentId)
         }
@@ -212,14 +256,28 @@ struct MacSearchView: View {
     private func performSearch() {
         guard !viewModel.query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         #if DEBUG
-        if let response = appState.uiTestSearchResponse(query: viewModel.query) {
-            viewModel.applySearchResponse(response)
-            return
+        switch viewModel.scope {
+        case .everything:
+            if let response = appState.uiTestUnifiedSearchResponse(query: viewModel.query) {
+                viewModel.applyUnifiedSearchResponse(response)
+                return
+            }
+        case .recordings:
+            if let response = appState.uiTestSearchResponse(query: viewModel.query) {
+                viewModel.applySearchResponse(response)
+                return
+            }
         }
         #endif
         Task {
             await viewModel.search(apiClient: appState.getAPIClient())
         }
+    }
+
+    private func consumeInitialChatIfNeeded(_ chatId: String?) {
+        guard let chatId else { return }
+        activeChatId = chatId
+        onInitialChatConsumed()
     }
 
     private func t(_ english: String, _ russian: String) -> String {
@@ -399,7 +457,7 @@ class MacSearchViewModel: ObservableObject {
     @Published var isLoading = false
     @Published var error: String?
     @Published var hasSearched = false
-    @Published var scope: SearchScope = .recordings
+    @Published var scope: SearchScope = .everything
 
     private var searchTask: Task<Void, Never>?
 
@@ -409,6 +467,17 @@ class MacSearchViewModel: ObservableObject {
         hasSearched = true
         isLoading = false
         results = response.results
+        unifiedResults = []
+        totalResults = response.total
+    }
+
+    func applyUnifiedSearchResponse(_ response: UnifiedSearchResponse) {
+        lastSubmittedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        error = nil
+        hasSearched = true
+        isLoading = false
+        results = []
+        unifiedResults = response.results
         totalResults = response.total
     }
 

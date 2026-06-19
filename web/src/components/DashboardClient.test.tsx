@@ -182,6 +182,12 @@ const baseRecording = {
   created_at: "2026-02-27T00:00:00Z",
 };
 
+type TestRecording = Omit<typeof baseRecording, "title" | "status" | "failure_message"> & {
+  title: string | null;
+  status: string;
+  failure_message: string | null;
+};
+
 const baseRecordingDetail = {
   ...baseRecording,
   segments: [{ id: "s1", speaker: "A", content: "Hello", start_ms: 0, end_ms: 100, confidence: 0.9 }],
@@ -254,7 +260,7 @@ function inboxRow(overrides: Record<string, unknown> = {}) {
   };
 }
 
-function recordingInboxRow(recording: typeof baseRecording = baseRecording) {
+function recordingInboxRow(recording: TestRecording = baseRecording) {
   return inboxRow({
     id: `recording:${recording.id}`,
     source_kind: "recording",
@@ -484,6 +490,7 @@ describe("DashboardClient", () => {
       mockSearch,
       mockSemanticSearch,
       mockFulltextSearch,
+      mockUnifiedSearch,
       mockChangePassword,
       mockGetSettings,
       mockUpdateSettings,
@@ -542,6 +549,7 @@ describe("DashboardClient", () => {
     mockListDictationEntries.mockResolvedValue([]);
     mockListDictionaryWords.mockResolvedValue([]);
     mockListPersonalizationTerms.mockResolvedValue([]);
+    mockListChats.mockResolvedValue({ chats: [] });
     mockListAgents.mockResolvedValue({ agents: [] });
     mockListAllAgentRuns.mockResolvedValue({ runs: [] });
     mockListAgentActions.mockResolvedValue({ actions: [] });
@@ -633,6 +641,7 @@ describe("DashboardClient", () => {
     });
 
     await openSearchView(user);
+    await user.selectOptions(screen.getByTestId("search-mode"), "hybrid");
     await user.type(screen.getByTestId("search-query"), "roadmap");
     await user.click(screen.getByTestId("search-submit"));
     await waitFor(() => {
@@ -752,7 +761,7 @@ describe("DashboardClient", () => {
     });
   });
 
-  it("renders unified results across recordings and items in Everything mode", async () => {
+  it("renders unified results across recordings and items by default", async () => {
     arrangeHappyPathMocks();
     const user = userEvent.setup();
     mockUnifiedSearch.mockResolvedValue({
@@ -772,7 +781,7 @@ describe("DashboardClient", () => {
     render(<DashboardClient />);
     await waitForDashboardReady();
     await openSearchView(user);
-    await user.selectOptions(screen.getByTestId("search-mode"), "everything");
+    expect(screen.getByTestId("search-mode")).toHaveValue("everything");
     await user.type(screen.getByTestId("search-query"), "solar");
     await user.click(screen.getByTestId("search-submit"));
 
@@ -819,6 +828,7 @@ describe("DashboardClient", () => {
     render(<DashboardClient />);
     await waitForDashboardReady();
     await openSearchView(user);
+    await user.selectOptions(screen.getByTestId("search-mode"), "hybrid");
 
     await user.type(screen.getByTestId("search-query"), "roadmap");
     await user.click(screen.getByTestId("search-submit"));
@@ -851,6 +861,7 @@ describe("DashboardClient", () => {
     render(<DashboardClient />);
     await waitForDashboardReady();
     await openSearchView(user);
+    await user.selectOptions(screen.getByTestId("search-mode"), "hybrid");
 
     await user.type(screen.getByTestId("search-query"), "nonexistent");
     await user.click(screen.getByTestId("search-submit"));
@@ -887,6 +898,7 @@ describe("DashboardClient", () => {
     render(<DashboardClient />);
     await waitForDashboardReady();
     await openSearchView(user);
+    await user.selectOptions(screen.getByTestId("search-mode"), "hybrid");
 
     // Perform a search to populate results
     await user.type(screen.getByTestId("search-query"), "roadmap");
@@ -923,6 +935,7 @@ describe("DashboardClient", () => {
       expect(screen.getByTestId("dashboard-message")).toHaveTextContent("Enter a search query.");
     });
     expect(mockSearch).not.toHaveBeenCalled();
+    expect(mockUnifiedSearch).not.toHaveBeenCalled();
     expect(screen.getByTestId("search-total")).toHaveTextContent("Total: 0");
   });
 
@@ -1327,6 +1340,7 @@ describe("DashboardClient", () => {
     render(<DashboardClient />);
     await waitForDashboardReady();
     await openSearchView(user);
+    await user.selectOptions(screen.getByTestId("search-mode"), "hybrid");
 
     // Search in hybrid mode
     await user.type(screen.getByTestId("search-query"), "test");
@@ -1373,16 +1387,18 @@ describe("DashboardClient", () => {
     expect(screen.getByTestId("open-create-folder")).toBeInTheDocument();
   });
 
-  it("routes legacy agents URLs to Inbox instead of rendering a separate agent surface", async () => {
+  it.each(["wai", "agents"])("routes legacy %s URLs to Search", async (viewName) => {
     arrangeHappyPathMocks();
-    window.history.pushState({}, "", "/dashboard?view=agents");
+    window.history.pushState({}, "", `/dashboard?view=${viewName}`);
 
     try {
       render(<DashboardClient />);
       await waitForDashboardReady();
 
-      expect(screen.getByTestId("workspace-title")).toHaveTextContent("Inbox");
+      expect(screen.getByTestId("workspace-title")).toHaveTextContent("Search");
+      expect(screen.getByTestId("search-wai-panel")).toBeInTheDocument();
       expect(screen.queryByTestId("tab-agents")).not.toBeInTheDocument();
+      expect(screen.queryByTestId("tab-wai")).not.toBeInTheDocument();
     } finally {
       window.history.pushState({}, "", "/dashboard");
     }

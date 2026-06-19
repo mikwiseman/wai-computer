@@ -122,6 +122,7 @@ struct MacMainView: View {
     @State private var pendingRecordingSelectionAfterSectionChange: PendingRecordingSelection?
     @State private var pendingInboxDetail: InboxDetailRef?
     @State private var pendingInboxCommand: MacInboxCommand?
+    @State private var pendingSearchChatId: String?
     @State private var recordingDisplayCache = MacRecordingDisplayCache()
     /// Sidebar row currently highlighted as a drag-and-drop target (e.g.
     /// "folder-<id>", "inbox", "trash"). Drives the drop highlight.
@@ -140,7 +141,6 @@ struct MacMainView: View {
         case search
         case history
         case dictionary
-        case wai
         case settings
     }
 
@@ -153,7 +153,7 @@ struct MacMainView: View {
         switch selectedSection {
         case .trash, .none:
             return true
-        case .inbox, .allRecordings, .folder(_), .content, .search, .history, .dictionary, .wai, .settings:
+        case .inbox, .allRecordings, .folder(_), .content, .search, .history, .dictionary, .settings:
             return false
         }
     }
@@ -197,8 +197,6 @@ struct MacMainView: View {
             return t("History", "История")
         case .dictionary:
             return t("Dictionary", "Словарь")
-        case .wai:
-            return t("Inbox", "Инбокс")
         case .settings:
             return t("Settings", "Настройки")
         case .none:
@@ -582,9 +580,9 @@ struct MacMainView: View {
         .onReceive(NotificationCenter.default.publisher(for: .macCreateFolder)) { _ in
             beginCreateFolderFromCommand()
         }
-        .onReceive(NotificationCenter.default.publisher(for: .macOpenInboxChat)) { notification in
+        .onReceive(NotificationCenter.default.publisher(for: .macOpenWaiChat)) { notification in
             guard let chatId = notification.object as? String else { return }
-            openInboxChat(chatId)
+            openSearchChat(chatId)
         }
         .onReceive(NotificationCenter.default.publisher(for: .init("navigateToSettings"))) { _ in
             selectedSection = .settings
@@ -597,10 +595,10 @@ struct MacMainView: View {
             case "content": selectedSection = .inbox
             case "history": selectedSection = .history
             case "dictionary": selectedSection = .dictionary
-            case "agents": selectedSection = .inbox
+            case "agents": selectedSection = .search
             case "search": selectedSection = .search
             case "trash": selectedSection = .trash
-            case "wai": selectedSection = .inbox
+            case "wai": selectedSection = .search
             default: break
             }
         }
@@ -1017,7 +1015,7 @@ struct MacMainView: View {
     @ViewBuilder
     private var detailContentView: some View {
         switch selectedSection {
-        case .inbox, .allRecordings, .folder(_), .content, .wai:
+        case .inbox, .allRecordings, .folder(_), .content:
             MacInboxView(
                 apiClient: appState.getAPIClient(),
                 recordings: libraryViewModel.recordings,
@@ -1111,14 +1109,16 @@ struct MacMainView: View {
             }
         case .search:
             MacSearchView(
+                recordings: libraryViewModel.recordings,
+                initialChatId: pendingSearchChatId,
                 onOpenRecording: { recordingId in
                     openSearchResult(recordingId)
                 },
                 onOpenItem: { itemId in
                     openInboxSource(InboxDetailRef(kind: .item, id: itemId))
                 },
-                onOpenChat: { chatId in
-                    openInboxChat(chatId)
+                onInitialChatConsumed: {
+                    pendingSearchChatId = nil
                 }
             )
         case .history:
@@ -1136,8 +1136,6 @@ struct MacMainView: View {
             return .recording
         case .content:
             return .item
-        case .wai:
-            return .chat
         default:
             return nil
         }
@@ -1320,11 +1318,12 @@ struct MacMainView: View {
         selectedSection = .inbox
     }
 
-    private func openInboxChat(_ chatId: String) {
+    private func openSearchChat(_ chatId: String) {
         prefetchedRecordingDetail = nil
         selectedRecordingIds.removeAll()
-        pendingInboxDetail = InboxDetailRef(kind: .chat, id: chatId)
-        selectedSection = .inbox
+        pendingInboxDetail = nil
+        pendingSearchChatId = chatId
+        selectedSection = .search
     }
 
     private func selectRecording(_ recordingId: String, in section: SidebarSection) {

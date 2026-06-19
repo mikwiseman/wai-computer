@@ -2834,29 +2834,6 @@ a.primary-button[aria-disabled="true"]:hover {
   color: var(--ink-soft);
 }
 
-/* Type-and-go: a composer in the inbox so the first thing typed IS the turn. */
-.inbox-ask-form {
-  display: flex;
-  flex-direction: column;
-  gap: 0.6rem;
-}
-
-.inbox-ask-form__input {
-  width: 100%;
-  resize: vertical;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--surface-subtle);
-  padding: 0.55rem 0.7rem;
-  font: var(--font-reading);
-}
-
-.inbox-ask-form__actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-}
-
 .source-list {
   display: grid;
   gap: 0.6rem;
@@ -2893,6 +2870,18 @@ a.primary-button[aria-disabled="true"]:hover {
 
 .search-form {
   grid-template-columns: minmax(0, 1fr) minmax(150px, 180px) auto;
+}
+
+.search-workspace {
+  display: grid;
+  grid-template-columns: minmax(320px, 0.9fr) minmax(380px, 1.1fr);
+  gap: 1rem;
+  min-height: calc(100dvh - 104px);
+}
+
+.search-tool-panel,
+.search-wai-panel {
+  min-height: 0;
 }
 
 .search-results,
@@ -5352,7 +5341,8 @@ a.primary-button[aria-disabled="true"]:hover {
 @media (max-width: 960px) {
   .web-app-shell,
   .inbox-grid,
-  .library-grid {
+  .library-grid,
+  .search-workspace {
     grid-template-columns: 1fr;
   }
 
@@ -5375,7 +5365,8 @@ a.primary-button[aria-disabled="true"]:hover {
   }
 
   .inbox-grid,
-  .library-grid {
+  .library-grid,
+  .search-workspace {
     min-height: auto;
   }
 

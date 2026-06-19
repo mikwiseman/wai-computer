@@ -153,6 +153,27 @@ enum MacUITestFixtures {
         return try! JSONDecoder().decode(SearchResponse.self, from: data)
     }()
 
+    static let unifiedSearchResponse: UnifiedSearchResponse = {
+        let data = """
+        {
+            "results": [
+                {
+                    "source_kind": "recording",
+                    "parent_id": "rec-1",
+                    "chunk_id": "search-seg-1",
+                    "title": "Weekly Team Standup",
+                    "kind": "meeting",
+                    "snippet": "The recording feature is working well. We need to finish the transcript view and search functionality.",
+                    "score": 1.0,
+                    "created_at": "2024-03-01T00:00:00Z"
+                }
+            ],
+            "total": 1
+        }
+        """.data(using: .utf8)!
+        return try! JSONDecoder().decode(UnifiedSearchResponse.self, from: data)
+    }()
+
     static let recordingDetail = RecordingDetail(
         id: readyRecording.id,
         title: readyRecording.title,

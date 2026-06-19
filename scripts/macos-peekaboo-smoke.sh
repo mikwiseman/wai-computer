@@ -513,8 +513,8 @@ run_main_search_smoke() {
   ui_contains "$json_path" "sidebar-settings" || die "Settings sidebar item missing"
 
   click_identifier "$json_path" sidebar-search
-  json_path="$(wait_for_ui_text search-ready "Search recordings")"
-  set_identifier_label_role_value search-bar "Search recordings..." "text field" search search-field
+  json_path="$(wait_for_ui_text search-ready "Search your second brain")"
+  set_identifier_label_role_value search-bar "Search your second brain..." "text field" search search-field
 
   json_path="$(capture_ui search-query-entered)"
   ui_contains "$json_path" "Search" || die "Search submit button missing"
@@ -522,7 +522,7 @@ run_main_search_smoke() {
   json_path="$(wait_for_ui_text search-results "Weekly Team Standup")"
   ui_contains "$json_path" "%" && die "Search result should not expose a percent relevance score"
 
-  click_identifier "$json_path" search-result-row-rec-1
+  click_identifier "$json_path" unified-result-search-seg-1
   wait_for_ui_text search-result-detail "Good morning everyone"
 }
 

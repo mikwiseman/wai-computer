@@ -25,7 +25,6 @@ private enum InboxCreateMode {
     case record
     case file
     case paste
-    case ask
 }
 
 struct MacInboxView: View {
@@ -59,8 +58,6 @@ struct MacInboxView: View {
     /// user explicitly chooses to add — this keeps the giant "Add to Inbox" wall
     /// out of folder browsing. Always ignored in the Inbox (folderId == nil).
     @State private var folderComposerActive = false
-    @State private var askDraft: String = ""
-    @State private var pendingChatMessage: String?
 
     init(
         apiClient: APIClient,
@@ -238,11 +235,6 @@ struct MacInboxView: View {
                 } label: {
                     Label(t("Paste Link or Text", "Вставить ссылку или текст"), systemImage: "link")
                 }
-                Button {
-                    openAskComposer()
-                } label: {
-                    Label(t("Wai", "Wai"), systemImage: "sparkles")
-                }
             } label: {
                 Image(systemName: "plus")
                     .font(.system(size: 15, weight: .semibold))
@@ -268,13 +260,13 @@ struct MacInboxView: View {
     private var headerSubtitle: String {
         if scopedFolder != nil {
             return t(
-                "Recordings, materials, and Wai agent threads in this folder",
-                "Записи, материалы и агентские диалоги Wai в этой папке"
+                "Recordings and materials in this folder",
+                "Записи и материалы в этой папке"
             )
         }
         return t(
-            "Recordings, materials, and Wai agent threads in one place",
-            "Записи, материалы и агентские диалоги Wai в одном месте"
+            "Recordings and materials in one place",
+            "Записи и материалы в одном месте"
         )
     }
 
@@ -299,13 +291,13 @@ struct MacInboxView: View {
             )
         case .chat?:
             return t(
-                "Give Wai a task — search, remember, plan, or act.",
-                "Дайте Wai задачу — искать, помнить, планировать или действовать."
+                "Existing Wai threads open from the list.",
+                "Открывайте существующие диалоги Wai из списка."
             )
         case nil:
             return t(
-                "Record, upload a file, paste a link or text, or give Wai a task.",
-                "Запишите, загрузите файл, вставьте ссылку или текст, или дайте Wai задачу."
+                "Record, upload a file, or paste a link or text.",
+                "Запишите, загрузите файл или вставьте ссылку либо текст."
             )
         }
     }
@@ -320,8 +312,8 @@ struct MacInboxView: View {
         // "+" menu and ⌘U — focusCreateMode widens the scope on demand.
         case .recording?: return [.record]
         case .item?: return [.file, .paste]
-        case .chat?: return [.ask]
-        case nil: return [.record, .file, .paste, .ask]
+        case .chat?: return []
+        case nil: return [.record, .file, .paste]
         }
     }
 
@@ -329,7 +321,7 @@ struct MacInboxView: View {
         switch scope {
         case .recording?, nil: return .record
         case .item?: return .paste
-        case .chat?: return .ask
+        case .chat?: return .record
         }
     }
 
@@ -342,7 +334,6 @@ struct MacInboxView: View {
                 switch mode {
                 case .record: return .recording
                 case .paste: return .item
-                case .ask: return .chat
                 case .file: return nil
                 }
             }()
@@ -359,7 +350,6 @@ struct MacInboxView: View {
             )) {
                 Text(t("Recordings", "Записи")).tag(Optional.some(InboxSourceKind.recording))
                 Text(t("Materials", "Материалы")).tag(Optional.some(InboxSourceKind.item))
-                Text(t("Wai", "Wai")).tag(Optional.some(InboxSourceKind.chat))
                 Text(t("All", "Все")).tag(Optional<InboxSourceKind>.none)
             }
             .pickerStyle(.segmented)
@@ -408,8 +398,7 @@ struct MacInboxView: View {
                         selectedDetail = nil
                         focusCreateMode(.paste)
                         folderComposerActive = true
-                    },
-                    onChat: openAskComposer
+                    }
                 )
             } else {
                 MacInboxRowsList(
@@ -494,7 +483,6 @@ struct MacInboxView: View {
             recordingsRevision: recordingsRevision,
             foldersRevision: foldersRevision,
             viewingFolderId: folderId,
-            pendingChatMessage: pendingChatMessage,
             language: languageManager.current,
             apiClient: apiClient,
             onCloseDetail: {
@@ -510,7 +498,6 @@ struct MacInboxView: View {
                     await onLibraryChanged()
                 }
             },
-            onPendingChatMessageConsumed: { pendingChatMessage = nil },
             onOpenCitation: { recordingId, _ in
                 // Open the cited recording in this pane — the same selection
                 // the list rows drive. startMs is ignored until the detail
@@ -615,16 +602,6 @@ struct MacInboxView: View {
                                     action: { focusCreateMode(.paste) }
                                 )
                             }
-                            if allowedCreateModes.contains(.ask) {
-                                MacInboxCreateAction(
-                                    title: t("Wai", "Wai"),
-                                    subtitle: t("Search, remember, plan, or act", "Искать, помнить, планировать или действовать"),
-                                    systemImage: "sparkles",
-                                    accent: Palette.accent,
-                                    isActive: focusedCreateMode == .ask,
-                                    action: { focusCreateMode(.ask) }
-                                )
-                            }
                         }
                     }
 
@@ -661,13 +638,6 @@ struct MacInboxView: View {
                             submitTitle: pasteSubmitTitle,
                             onSubmit: addDraft
                         )
-                    case .ask:
-                        MacInboxAskComposer(
-                            draft: $askDraft,
-                            isWorking: model.isAdding,
-                            onSubmit: { startAskThread(message: askDraft) },
-                            onBlank: { startAskThread() }
-                        )
                     }
                 }
                 .padding(Spacing.xl)
@@ -703,15 +673,6 @@ struct MacInboxView: View {
         if model.selectedUploadFile == nil, canStartInboxUpload {
             showingImporter = true
         }
-    }
-
-    /// Switch the right pane to the Wai composer. The thread itself is created
-    /// lazily on Start / Blank thread, so entry points no longer litter the
-    /// Inbox with persistent empty chats.
-    private func openAskComposer() {
-        selectedDetail = nil
-        focusCreateMode(.ask)
-        folderComposerActive = true
     }
 
     /// Explicit picker request from inside the file composer ("Choose
@@ -781,20 +742,6 @@ struct MacInboxView: View {
         }
     }
 
-    private func startAskThread(message: String? = nil) {
-        let trimmed = message?.trimmingCharacters(in: .whitespacesAndNewlines)
-        focusCreateMode(.ask)
-        Task {
-            if let detail = await model.newChat() {
-                if let trimmed, !trimmed.isEmpty {
-                    pendingChatMessage = trimmed
-                }
-                askDraft = ""
-                selectedDetail = detail
-            }
-        }
-    }
-
     private func consumePendingCommandIfNeeded() {
         guard let pendingCommand else { return }
         performInboxCommand(pendingCommand)
@@ -816,8 +763,6 @@ struct MacInboxView: View {
             selectedDetail = nil
             focusCreateMode(.paste)
             folderComposerActive = true
-        case .askWai:
-            openAskComposer()
         }
     }
 
@@ -850,12 +795,10 @@ private struct MacInboxDetailHost: View, Equatable {
     let recordingsRevision: Int
     let foldersRevision: Int
     let viewingFolderId: String?
-    let pendingChatMessage: String?
     let language: LanguageManager.SupportedLanguage
     let apiClient: APIClient
     let onCloseDetail: () -> Void
     let onContentChanged: () -> Void
-    let onPendingChatMessageConsumed: () -> Void
     let onOpenCitation: (String, Int?) -> Void
     let onVoiceInput: () -> Void
 
@@ -864,7 +807,6 @@ private struct MacInboxDetailHost: View, Equatable {
             && lhs.recordingsRevision == rhs.recordingsRevision
             && lhs.foldersRevision == rhs.foldersRevision
             && lhs.viewingFolderId == rhs.viewingFolderId
-            && lhs.pendingChatMessage == rhs.pendingChatMessage
             && lhs.language == rhs.language
     }
 
@@ -894,8 +836,6 @@ private struct MacInboxDetailHost: View, Equatable {
                 apiClient: apiClient,
                 recordings: recordings,
                 initialChatId: detail.id,
-                initialMessage: pendingChatMessage,
-                onInitialMessageConsumed: onPendingChatMessageConsumed,
                 showsConversationSwitcher: false,
                 viewingFolderId: viewingFolderId,
                 onTurnCompleted: { completion in
@@ -1213,67 +1153,6 @@ private extension View {
     }
 }
 
-private struct MacInboxAskComposer: View {
-    @Binding var draft: String
-    let isWorking: Bool
-    let onSubmit: () -> Void
-    let onBlank: () -> Void
-
-    @EnvironmentObject private var languageManager: LanguageManager
-
-    private var trimmed: String {
-        draft.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: Spacing.sm) {
-            Text(t("New Wai Session", "Новая сессия Wai"))
-                .font(Typography.headingMedium)
-            TextField(
-                t(
-                    "Give Wai a task to search, remember, plan, or act...",
-                    "Дайте Wai задачу: искать, помнить, планировать или действовать..."
-                ),
-                text: $draft,
-                axis: .vertical
-            )
-            .textFieldStyle(.roundedBorder)
-            .lineLimit(3...8)
-            .onSubmit { if !trimmed.isEmpty { onSubmit() } }
-            .accessibilityIdentifier("mac-inbox-ask-field")
-
-            HStack(spacing: Spacing.sm) {
-                Button(action: onSubmit) {
-                    if isWorking {
-                        ProgressView().controlSize(.small)
-                    } else {
-                        Text(t("Start", "Начать"))
-                    }
-                }
-                .buttonStyle(.borderedProminent)
-                .disabled(trimmed.isEmpty || isWorking)
-                .accessibilityIdentifier("mac-inbox-ask-primary-button")
-
-                Button(t("Blank thread", "Пустой диалог"), action: onBlank)
-                    .buttonStyle(.bordered)
-                    .disabled(isWorking)
-                Spacer()
-            }
-        }
-        .padding(Spacing.lg)
-        .background(Palette.surfaceSubtle)
-        .overlay(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .stroke(Palette.border, lineWidth: 1)
-        )
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-    }
-
-    private func t(_ english: String, _ russian: String) -> String {
-        OnboardingL10n.text(english, russian, language: languageManager.current)
-    }
-}
-
 private struct MacInboxCreateAction: View {
     let title: String
     let subtitle: String
@@ -1325,7 +1204,6 @@ private struct MacInboxEmptyState: View {
     let onRecord: () -> Void
     let onUpload: () -> Void
     let onPaste: () -> Void
-    let onChat: () -> Void
 
     @EnvironmentObject private var languageManager: LanguageManager
 
@@ -1373,10 +1251,7 @@ private struct MacInboxEmptyState: View {
                     }
                     .buttonStyle(.bordered)
                 case .chat?:
-                    Button(action: onChat) {
-                        Label(t("New Wai Thread", "Новый диалог Wai"), systemImage: "sparkles")
-                    }
-                    .buttonStyle(.borderedProminent)
+                    EmptyView()
                 case nil:
                     Button(action: onRecord) {
                         Label(t("Record", "Записать"), systemImage: "waveform")
@@ -1385,11 +1260,6 @@ private struct MacInboxEmptyState: View {
 
                     Button(action: onUpload) {
                         Label(t("Upload", "Загрузить"), systemImage: "square.and.arrow.down")
-                    }
-                    .buttonStyle(.bordered)
-
-                    Button(action: onChat) {
-                        Label(t("Wai", "Wai"), systemImage: "sparkles")
                     }
                     .buttonStyle(.bordered)
 
@@ -1439,11 +1309,11 @@ private struct MacInboxEmptyState: View {
         case .item:
             return t("Upload a file or paste a link/text.", "Загрузите файл или вставьте ссылку/текст.")
         case .chat:
-            return t("Give Wai a task to search, remember, plan, or act.", "Дайте Wai задачу: искать, помнить, планировать или действовать.")
+            return t("Existing Wai threads created from Search will appear here.", "Существующие диалоги Wai из Поиска появятся здесь.")
         case .none:
             return t(
-                "Record, upload a file, paste a link, or give Wai a task.",
-                "Запишите, загрузите файл, вставьте ссылку или дайте Wai задачу."
+                "Record, upload a file, or paste a link.",
+                "Запишите, загрузите файл или вставьте ссылку."
             )
         }
     }

@@ -89,7 +89,7 @@ final class NavigationUITests: XCTestCase {
         app.activate()
         searchButton.tap()
 
-        let searchField = app.textFields["Search recordings..."]
+        let searchField = app.textFields["Search your second brain..."]
         XCTAssertTrue(searchField.waitForExistence(timeout: 5), "Search text field should appear after navigating to Search")
 
         // Navigate back to All Recordings — list title should reappear

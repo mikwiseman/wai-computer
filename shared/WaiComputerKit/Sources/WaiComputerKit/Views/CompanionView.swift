@@ -1003,8 +1003,7 @@ public struct CompanionView: View {
                     self.isLoadingChat = false
                 }
             }
-            if let initialChatId,
-               list.chats.contains(where: { $0.id == initialChatId }) {
+            if let initialChatId {
                 await loadChat(initialChatId)
             } else if let chatId = list.chats.first?.id {
                 await loadChat(chatId)

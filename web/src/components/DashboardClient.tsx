@@ -62,7 +62,7 @@ import { DictatePanel } from "@/components/DictatePanel";
 import { PasswordField } from "@/components/PasswordField";
 import { Skeleton } from "@/components/Skeleton";
 import { ApiError } from "@/lib/http";
-import { createChat, deleteChat } from "@/lib/companion";
+import { deleteChat } from "@/lib/companion";
 import type {
   BulkAction,
   DictationDictionaryWord,
@@ -86,10 +86,6 @@ import type {
 type SearchMode = "hybrid" | "semantic" | "fts" | "everything";
 type DashboardView =
   | "inbox"
-  | "wai"
-  | "add"
-  | "content"
-  | "library"
   | "folder"
   | "trash"
   | "search"
@@ -109,10 +105,6 @@ type PendingInboxSource = {
 const LIST_LIMIT = 100;
 const DASHBOARD_VIEW_KEYS = [
   "inbox",
-  "wai",
-  "add",
-  "content",
-  "library",
   "trash",
   "search",
   "dictate",
@@ -125,16 +117,10 @@ function isDashboardView(value: string | null): value is DashboardView {
   return DASHBOARD_VIEW_KEYS.includes(value as (typeof DASHBOARD_VIEW_KEYS)[number]);
 }
 
-function canonicalDashboardView(value: DashboardView): DashboardView {
-  if (
-    value === "add"
-    || value === "content"
-    || value === "library"
-    || value === "wai"
-  ) {
-    return "inbox";
-  }
-  return value;
+function dashboardViewFromLocationValue(value: string | null): DashboardView | null {
+  if (value === "wai" || value === "agents") return "search";
+  if (value === "add" || value === "content" || value === "library") return "inbox";
+  return isDashboardView(value) ? value : null;
 }
 
 function viewFromCurrentLocation(): DashboardView | null {
@@ -142,14 +128,12 @@ function viewFromCurrentLocation(): DashboardView | null {
 
   const params = new URLSearchParams(window.location.search);
   const requested = params.get("view") ?? params.get("tab");
-  if (requested === "agents") return "inbox";
-  if (isDashboardView(requested)) return canonicalDashboardView(requested);
+  const requestedView = dashboardViewFromLocationValue(requested);
+  if (requestedView) return requestedView;
 
   const hash = window.location.hash.replace(/^#/, "");
   if (hash === "server-data" || hash === "settings") return "settings";
-  if (hash === "agents") return "inbox";
-  if (isDashboardView(hash)) return canonicalDashboardView(hash);
-  return null;
+  return dashboardViewFromLocationValue(hash);
 }
 
 interface DashboardCopy {
@@ -164,8 +148,6 @@ interface DashboardCopy {
   // Sidebar nav (label + one-line value prop subtitle)
   nav: {
     inbox: { label: string; detail: string };
-    wai: { label: string; detail: string };
-    library: { label: string; detail: string };
     folders: { label: string };
     trash: { label: string; detail: string };
     search: { label: string; detail: string };
@@ -346,11 +328,9 @@ const COPY: Record<Locale, DashboardCopy> = {
     retryLoadSettings: "Retry loading account settings",
     nav: {
       inbox: { label: "Inbox", detail: "Recordings, materials, and chats" },
-      wai: { label: "Inbox", detail: "Recordings, materials, and chats" },
-      library: { label: "Inbox", detail: "Recordings, materials, and chats" },
       folders: { label: "Folders" },
       trash: { label: "Trash", detail: "Restore or delete forever" },
-      search: { label: "Search", detail: "Find a moment across transcripts" },
+      search: { label: "Search", detail: "Search your second brain and ask Wai" },
       history: { label: "Dictation History", detail: "Voice to text inserts" },
       dictionary: { label: "Dictionary", detail: "Custom dictation replacements" },
       settings: { label: "Settings", detail: "Account, data, and integrations" },
@@ -463,7 +443,7 @@ const COPY: Record<Locale, DashboardCopy> = {
       typeReflection: "Reflection",
     },
     search: {
-      placeholder: "Search recordings...",
+      placeholder: "Search your second brain...",
       submit: "Search",
       hybrid: "Hybrid",
       semantic: "Semantic",
@@ -541,11 +521,9 @@ const COPY: Record<Locale, DashboardCopy> = {
     retryLoadSettings: "Повторить загрузку настроек",
     nav: {
       inbox: { label: "Инбокс", detail: "Записи, материалы и чаты" },
-      wai: { label: "Инбокс", detail: "Записи, материалы и чаты" },
-      library: { label: "Инбокс", detail: "Записи, материалы и чаты" },
       folders: { label: "Папки" },
       trash: { label: "Корзина", detail: "Восстановить или удалить навсегда" },
-      search: { label: "Поиск", detail: "Найти момент по всем расшифровкам" },
+      search: { label: "Поиск", detail: "Искать по второму мозгу и спрашивать Wai" },
       history: { label: "История диктовки", detail: "Голос превращённый в текст" },
       dictionary: { label: "Словарь", detail: "Свои замены для диктовки" },
       settings: { label: "Настройки", detail: "Аккаунт, данные и интеграции" },
@@ -661,7 +639,7 @@ const COPY: Record<Locale, DashboardCopy> = {
       typeReflection: "Размышление",
     },
     search: {
-      placeholder: "Искать в записях...",
+      placeholder: "Искать по второму мозгу...",
       submit: "Найти",
       hybrid: "Гибридный",
       semantic: "Семантический",
@@ -838,7 +816,7 @@ export function DashboardClient() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [selectedMode, setSelectedMode] = useState<DetailMode>("active");
 
-  const [searchMode, setSearchMode] = useState<SearchMode>("hybrid");
+  const [searchMode, setSearchMode] = useState<SearchMode>("everything");
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResponse, setSearchResponse] = useState<SearchResponse | null>(null);
   const [unifiedResponse, setUnifiedResponse] = useState<UnifiedSearchResponse | null>(null);
@@ -1656,7 +1634,7 @@ export function DashboardClient() {
 
   const goToView = useCallback((next: DashboardView) => {
     setMessage(null);
-    setView(canonicalDashboardView(next));
+    setView(next);
     setSelectedRecording(null);
     setIsShortcutCheatsheetOpen(false);
   }, []);
@@ -1793,7 +1771,7 @@ export function DashboardClient() {
                       setActiveFolderId(null);
                       setSelectedRecording(null);
                       setSelectedMode("active");
-                      setView(canonicalDashboardView(item.key));
+                      setView(item.key);
                       if (item.key === "trash") {
                         void loadTrashRecordingsState();
                       }
@@ -2061,28 +2039,6 @@ export function DashboardClient() {
             reloadToken={inboxReloadToken}
             pendingSource={pendingInboxSource}
             onPendingSourceConsumed={handlePendingInboxSourceConsumed}
-            initialRecording={selectedRecording}
-            recordings={recordings}
-            folders={folders}
-            recordingTitle={recordingTitle}
-            recordingType={recordingType}
-            onRecordingTitleChange={setRecordingTitle}
-            onRecordingTypeChange={setRecordingType}
-            onRecordingUpdate={handleRecordingDetailUpdate}
-            onAssignRecordingToFolder={handleAssignRecordingToFolder}
-            onDeleteRecording={handleDeleteRecording}
-            onRefreshRecordings={loadRecordingsState}
-            onItemsChanged={() => setItemsReloadKey((key) => key + 1)}
-            onError={setMessage}
-          />
-        ) : null}
-        {view === "library" || view === "wai" || view === "add" || view === "content" ? (
-          <UniversalInboxPanel
-            locale={locale}
-            copy={copy}
-            folderId={null}
-            folderName={null}
-            reloadToken={inboxReloadToken}
             initialRecording={selectedRecording}
             recordings={recordings}
             folders={folders}
@@ -2441,63 +2397,92 @@ export function DashboardClient() {
 
   function renderSearchView() {
     return (
-      <section className="tool-panel">
-        <form className="search-form" onSubmit={handleSearch}>
-          <input
-            ref={searchInputRef}
-            data-testid="search-query"
-            placeholder={copy.search.placeholder}
-            aria-label={copy.search.placeholder}
-            value={searchQuery}
-            onChange={(event) => setSearchQuery(event.target.value)}
-          />
-          <select
-            data-testid="search-mode"
-            aria-label={copy.search.submit}
-            value={searchMode}
-            onChange={(event) => {
-              setSearchMode(event.target.value as SearchMode);
-              setSearchResponse(null);
-              setUnifiedResponse(null);
-            }}
-          >
-            <option value="hybrid">{copy.search.hybrid}</option>
-            <option value="semantic">{copy.search.semantic}</option>
-            <option value="fts">{copy.search.fts}</option>
-            <option value="everything">{copy.search.everything}</option>
-          </select>
-          <button data-testid="search-submit" type="submit">
-            {copy.search.submit}
-          </button>
-        </form>
+      <div className="search-workspace">
+        <section className="tool-panel search-tool-panel">
+          <form className="search-form" onSubmit={handleSearch}>
+            <input
+              ref={searchInputRef}
+              data-testid="search-query"
+              placeholder={copy.search.placeholder}
+              aria-label={copy.search.placeholder}
+              value={searchQuery}
+              onChange={(event) => setSearchQuery(event.target.value)}
+            />
+            <select
+              data-testid="search-mode"
+              aria-label={copy.search.submit}
+              value={searchMode}
+              onChange={(event) => {
+                setSearchMode(event.target.value as SearchMode);
+                setSearchResponse(null);
+                setUnifiedResponse(null);
+              }}
+            >
+              <option value="everything">{copy.search.everything}</option>
+              <option value="hybrid">{copy.search.hybrid}</option>
+              <option value="semantic">{copy.search.semantic}</option>
+              <option value="fts">{copy.search.fts}</option>
+            </select>
+            <button data-testid="search-submit" type="submit">
+              {copy.search.submit}
+            </button>
+          </form>
 
-        <p data-testid="search-total" className="muted-text">
-          {copy.search.total(
-            (searchMode === "everything" ? unifiedResponse?.total : searchResponse?.total) ?? 0,
-          )}
-        </p>
-        {searchMode === "everything" && unifiedResponse?.results ? (
-          unifiedResponse.results.length > 0 ? (
-            <ul className="search-results" data-testid="unified-search-results">
-              {unifiedResponse.results.map((hit) => (
-                <li key={hit.chunk_id} data-testid={`unified-result-${hit.chunk_id}`}>
-                  <strong>{hit.title ?? copy.library.untitled}</strong>
-                  <p>{hit.snippet}</p>
+          <p data-testid="search-total" className="muted-text">
+            {copy.search.total(
+              (searchMode === "everything" ? unifiedResponse?.total : searchResponse?.total) ?? 0,
+            )}
+          </p>
+          {searchMode === "everything" && unifiedResponse?.results ? (
+            unifiedResponse.results.length > 0 ? (
+              <ul className="search-results" data-testid="unified-search-results">
+                {unifiedResponse.results.map((hit) => (
+                  <li key={hit.chunk_id} data-testid={`unified-result-${hit.chunk_id}`}>
+                    <strong>{hit.title ?? copy.library.untitled}</strong>
+                    <p>{hit.snippet}</p>
+                    <div className="search-result-footer">
+                      <small>
+                        {(hit.source_kind === "item" ? hit.kind : "recording").toUpperCase()} /{" "}
+                        {copy.search.score} {hit.score.toFixed(2)}
+                      </small>
+                      <button
+                        type="button"
+                        className="ghost-button compact-button"
+                        onClick={() => {
+                          if (hit.source_kind === "recording") {
+                            void handleSelectRecording(hit.parent_id);
+                          } else {
+                            setView("inbox");
+                          }
+                        }}
+                      >
+                        {copy.search.open}
+                      </button>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <div className="empty-state" data-testid="search-no-results">
+                <h3>{copy.search.noResultsTitle}</h3>
+                <p>{copy.search.noResultsBody}</p>
+              </div>
+            )
+          ) : searchResponse?.results && searchResponse.results.length > 0 ? (
+            <ul className="search-results" data-testid="search-results">
+              {searchResponse.results.map((result) => (
+                <li key={result.segment_id} data-testid={`search-result-${result.segment_id}`}>
+                  <strong>{result.recording_title ?? copy.library.untitled}</strong>
+                  <p>{result.content}</p>
                   <div className="search-result-footer">
                     <small>
-                      {(hit.source_kind === "item" ? hit.kind : "recording").toUpperCase()} /{" "}
-                      {copy.search.score} {hit.score.toFixed(2)}
+                      {result.speaker ? `${result.speaker} / ` : ""}
+                      {copy.search.score} {result.score.toFixed(2)}
                     </small>
                     <button
                       type="button"
                       className="ghost-button compact-button"
-                      onClick={() => {
-                        if (hit.source_kind === "recording") {
-                          void handleSelectRecording(hit.parent_id);
-                        } else {
-                          setView("inbox");
-                        }
-                      }}
+                      onClick={() => void handleSelectRecording(result.recording_id)}
                     >
                       {copy.search.open}
                     </button>
@@ -2505,41 +2490,21 @@ export function DashboardClient() {
                 </li>
               ))}
             </ul>
-          ) : (
+          ) : searchResponse && searchResponse.total === 0 ? (
             <div className="empty-state" data-testid="search-no-results">
               <h3>{copy.search.noResultsTitle}</h3>
               <p>{copy.search.noResultsBody}</p>
             </div>
-          )
-        ) : searchResponse?.results && searchResponse.results.length > 0 ? (
-          <ul className="search-results" data-testid="search-results">
-            {searchResponse.results.map((result) => (
-              <li key={result.segment_id} data-testid={`search-result-${result.segment_id}`}>
-                <strong>{result.recording_title ?? copy.library.untitled}</strong>
-                <p>{result.content}</p>
-                <div className="search-result-footer">
-                  <small>
-                    {result.speaker ? `${result.speaker} / ` : ""}
-                    {copy.search.score} {result.score.toFixed(2)}
-                  </small>
-                  <button
-                    type="button"
-                    className="ghost-button compact-button"
-                    onClick={() => void handleSelectRecording(result.recording_id)}
-                  >
-                    {copy.search.open}
-                  </button>
-                </div>
-              </li>
-            ))}
-          </ul>
-        ) : searchResponse && searchResponse.total === 0 ? (
-          <div className="empty-state" data-testid="search-no-results">
-            <h3>{copy.search.noResultsTitle}</h3>
-            <p>{copy.search.noResultsBody}</p>
-          </div>
-        ) : null}
-      </section>
+          ) : null}
+        </section>
+        <div className="wai-panel search-wai-panel" data-testid="search-wai-panel">
+          <CompanionPanel
+            recordings={recordings}
+            locale={locale}
+            onChatCreated={() => setInboxReloadToken((token) => token + 1)}
+          />
+        </div>
+      </div>
     );
   }
 
@@ -3160,10 +3125,6 @@ function UniversalInboxPanel({
   const [selectedRowIds, setSelectedRowIds] = useState<Set<string>>(new Set());
   const [bulkBusy, setBulkBusy] = useState(false);
   const lastToggledIndexRef = useRef<number | null>(null);
-  // Type-and-go: the inbox composer's draft + the first message handed to a
-  // freshly created chat so the agent starts on the user's first line.
-  const [chatDraft, setChatDraft] = useState("");
-  const [initialChatMessage, setInitialChatMessage] = useState<string | null>(null);
   const inboxRequestId = useRef(0);
 
   const selectInboxSource = useCallback(
@@ -3384,42 +3345,6 @@ function UniversalInboxPanel({
       setSelectedRecording(detail);
       setSelectedRow(recordingRowFromDetail(detail));
       onRecordingUpdate(detail);
-      setShowCreate(false);
-    } catch (error: unknown) {
-      onError(formatError(error));
-    }
-  }
-
-  async function handleNewChat(message?: string) {
-    onError(null);
-    try {
-      const chat = await createChat();
-      await loadInbox("replace");
-      if (message && message.trim()) setInitialChatMessage(message.trim());
-      setSelectedRow({
-        id: `chat:${chat.id}`,
-        source_kind: "chat",
-        source_id: chat.id,
-        detail: { kind: "chat", id: chat.id },
-        title: chat.title,
-        source_label: "Wai",
-        sublabel: "Agent session",
-        activity_at: chat.last_message_at ?? chat.created_at,
-        created_at: chat.created_at,
-        updated_at: chat.updated_at,
-        occurred_at: chat.last_message_at,
-        status: "ready",
-        source_status: null,
-        error: null,
-        folder_id: null,
-        duration_seconds: null,
-        language: null,
-        has_summary: null,
-        is_starred: false,
-        is_pinned: chat.pinned_at !== null,
-        is_archived: false,
-        is_trashed: false,
-      });
       setShowCreate(false);
     } catch (error: unknown) {
       onError(formatError(error));
@@ -3752,8 +3677,8 @@ function UniversalInboxPanel({
             <h3>{locale === "ru" ? "Пока пусто" : "Nothing here yet"}</h3>
             <p>
               {locale === "ru"
-                ? "Добавьте запись, файл, ссылку, текст или диалог Wai."
-                : "Add a recording, file, link, text, or Wai thread."}
+                ? "Добавьте запись, файл, ссылку или текст."
+                : "Add a recording, file, link, or text."}
             </p>
           </div>
         ) : (
@@ -3871,8 +3796,8 @@ function UniversalInboxPanel({
                 <h3>{locale === "ru" ? "Добавить в Инбокс" : "Add to Inbox"}</h3>
                 <p>
                   {locale === "ru"
-                    ? "Запишите, загрузите файл, вставьте ссылку или дайте Wai задачу."
-                    : "Record, upload a file, paste a link, or give Wai a task."}
+                    ? "Запишите, загрузите файл, вставьте ссылку или текст."
+                    : "Record, upload a file, paste a link, or add text."}
                 </p>
               </div>
               <button
@@ -3935,61 +3860,6 @@ function UniversalInboxPanel({
                 />
               </section>
 
-              <section className="inbox-command-card">
-                <div>
-                  <h4>Wai</h4>
-                  <p>
-                    {locale === "ru"
-                      ? "Искать, помнить, планировать или действовать."
-                      : "Search, remember, plan, or act."}
-                  </p>
-                </div>
-                <form
-                  className="inbox-ask-form"
-                  onSubmit={(event) => {
-                    event.preventDefault();
-                    const msg = chatDraft.trim();
-                    if (!msg) return;
-                    setChatDraft("");
-                    void handleNewChat(msg);
-                  }}
-                >
-                  <textarea
-                    className="inbox-ask-form__input"
-                    value={chatDraft}
-                    onChange={(event) => setChatDraft(event.target.value)}
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter" && !event.shiftKey) {
-                        event.preventDefault();
-                        event.currentTarget.closest("form")?.requestSubmit();
-                      }
-                    }}
-                    rows={2}
-                    placeholder={
-                      locale === "ru"
-                        ? "Попросите Wai искать, помнить, планировать или действовать…"
-                        : "Ask Wai to search, remember, plan, or act…"
-                    }
-                    aria-label={locale === "ru" ? "Спросить Wai" : "Ask Wai"}
-                  />
-                  <div className="inbox-ask-form__actions">
-                    <button
-                      type="submit"
-                      className="wai-primary-button"
-                      disabled={chatDraft.trim().length === 0}
-                    >
-                      {locale === "ru" ? "Спросить" : "Ask"}
-                    </button>
-                    <button
-                      type="button"
-                      className="ghost-button compact-button"
-                      onClick={() => void handleNewChat()}
-                    >
-                      {locale === "ru" ? "Пустой диалог" : "Blank thread"}
-                    </button>
-                  </div>
-                </form>
-              </section>
             </div>
 
             <details className="inbox-manual-recording">
@@ -4054,8 +3924,6 @@ function UniversalInboxPanel({
             recordings={recordings}
             locale={locale}
             initialChatId={selectedRow.source_id}
-            initialMessage={initialChatMessage}
-            onInitialMessageConsumed={() => setInitialChatMessage(null)}
             onChatCreated={() => void loadInbox("replace")}
             viewingFolderId={folderId}
             embedded

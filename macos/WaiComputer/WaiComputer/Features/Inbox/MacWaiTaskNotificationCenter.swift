@@ -105,7 +105,7 @@ final class MacWaiTaskNotificationCenter: NSObject, UNUserNotificationCenterDele
 
         Task { @MainActor in
             Self.reopenMainWindowIfPossible()
-            NotificationCenter.default.post(name: .macOpenInboxChat, object: chatId)
+            NotificationCenter.default.post(name: .macOpenWaiChat, object: chatId)
             completionHandler()
         }
     }

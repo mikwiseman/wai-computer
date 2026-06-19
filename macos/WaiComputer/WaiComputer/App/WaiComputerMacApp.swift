@@ -8,7 +8,7 @@ extension Notification.Name {
     static let showNewRecording = Notification.Name("showNewRecording")
     static let macInboxCommand = Notification.Name("macInboxCommand")
     static let macCreateFolder = Notification.Name("macCreateFolder")
-    static let macOpenInboxChat = Notification.Name("macOpenInboxChat")
+    static let macOpenWaiChat = Notification.Name("macOpenWaiChat")
     static let waicomputerIncomingURL = Notification.Name("waicomputerIncomingURL")
     static let waicomputerCheckForUpdates = Notification.Name("waicomputerCheckForUpdates")
 }
@@ -18,7 +18,6 @@ enum MacInboxCommand: String, Equatable {
     case recordNow
     case uploadFile
     case pasteLinkOrText
-    case askWai
 }
 
 @main
@@ -219,7 +218,7 @@ struct WaiComputerMacApp: App {
                 .disabled(isRecordingActivityVisible || !appState.isAuthenticated)
 
                 Button("Wai") {
-                    postInboxCommand(.askWai)
+                    postNavigationTarget("search")
                 }
                 .keyboardShortcut("a", modifiers: [.command, .option])
                 .disabled(isRecordingActivityVisible || !appState.isAuthenticated)
@@ -311,6 +310,10 @@ struct WaiComputerMacApp: App {
 
     private func postInboxCommand(_ command: MacInboxCommand) {
         NotificationCenter.default.post(name: .macInboxCommand, object: command.rawValue)
+    }
+
+    private func postNavigationTarget(_ target: String) {
+        NotificationCenter.default.post(name: .init("navigateTo"), object: target)
     }
 }
 
@@ -1551,6 +1554,17 @@ class MacAppState: ObservableObject {
               !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         else { return nil }
         return MacUITestFixtures.searchResponse
+        #else
+        return nil
+        #endif
+    }
+
+    func uiTestUnifiedSearchResponse(query: String) -> UnifiedSearchResponse? {
+        #if DEBUG
+        guard testingMode.isMainView,
+              !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        else { return nil }
+        return MacUITestFixtures.unifiedSearchResponse
         #else
         return nil
         #endif

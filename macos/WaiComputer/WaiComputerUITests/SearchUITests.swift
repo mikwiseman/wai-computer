@@ -44,7 +44,7 @@ final class SearchUITests: XCTestCase {
         let app = launchToSearch()
 
         // Search text field (found by placeholder)
-        let searchField = app.textFields["Search recordings..."]
+        let searchField = app.textFields["Search your second brain..."]
         XCTAssertTrue(waitForElement(searchField, in: app, timeout: 5))
 
         let searchButton = app.buttons.matching(identifier: "search-submit-button").firstMatch
@@ -61,7 +61,7 @@ final class SearchUITests: XCTestCase {
         let app = launchToSearch()
 
         // Verify search field appears (confirms we're on the search screen)
-        let searchField = app.textFields["Search recordings..."]
+        let searchField = app.textFields["Search your second brain..."]
         XCTAssertTrue(waitForElement(searchField, in: app, timeout: 5))
 
         XCTAssertFalse(app.buttons.matching(identifier: "tab-hybrid").firstMatch.exists)
@@ -74,7 +74,7 @@ final class SearchUITests: XCTestCase {
     func testSearchResultRowOpensRecording() throws {
         let app = launchToSearch()
 
-        let searchField = app.textFields["Search recordings..."]
+        let searchField = app.textFields["Search your second brain..."]
         XCTAssertTrue(waitForElement(searchField, in: app, timeout: 5))
         searchField.click()
         searchField.typeText("search")
@@ -83,7 +83,7 @@ final class SearchUITests: XCTestCase {
         XCTAssertTrue(waitForElement(searchButton, in: app, timeout: 3))
         searchButton.tap()
 
-        let resultRow = app.buttons.matching(identifier: "search-result-row-rec-1").firstMatch
+        let resultRow = app.buttons.matching(identifier: "unified-result-search-seg-1").firstMatch
         XCTAssertTrue(waitForElement(resultRow, in: app, timeout: 3))
         XCTAssertFalse(app.staticTexts.matching(NSPredicate(format: "label MATCHES %@", #"^\d+%$"#)).firstMatch.exists)
 
