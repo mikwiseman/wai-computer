@@ -159,3 +159,53 @@ async def mark_abandoned_pending_upload_recordings(
         },
     )
     return marked_count
+
+
+async def mark_stale_pending_upload_recordings(
+    db: AsyncSession,
+    *,
+    stale_after: timedelta,
+    now: datetime | None = None,
+) -> int:
+    """Fail old pre-upload rows that still have no server-side audio evidence.
+
+    Duplicate-start recovery handles fresh app restart races. This slower sweep
+    handles rows old enough that they should no longer be presented as active
+    uploads, while preserving anything with uploaded audio or transcript data.
+    """
+    if stale_after.total_seconds() <= 0:
+        return 0
+
+    effective_now = now or datetime.now(timezone.utc)
+    cutoff = effective_now - stale_after
+    result = await db.execute(
+        select(Recording).where(
+            Recording.status == RecordingStatus.PENDING_UPLOAD.value,
+            Recording.deleted_at.is_(None),
+            Recording.uploaded_at.is_(None),
+            Recording.audio_url.is_(None),
+            Recording.created_at < cutoff,
+            ~exists().where(Segment.recording_id == Recording.id),
+        )
+    )
+    candidates = list(result.scalars().all())
+    if not candidates:
+        return 0
+
+    for recording in candidates:
+        recording.status = RecordingStatus.FAILED.value
+        recording.failure_code = ABANDONED_UPLOAD_FAILURE_CODE
+        recording.failure_message = _abandoned_upload_failure_message(recording.language)
+
+    await db.commit()
+    marked_count = len(candidates)
+    capture_sentry_message(
+        "Stale pending upload recordings marked failed",
+        level="warning",
+        extras={
+            "alert_code": "recording.upload.stale_abandoned",
+            "count": marked_count,
+            "stale_after_seconds": int(stale_after.total_seconds()),
+        },
+    )
+    return marked_count

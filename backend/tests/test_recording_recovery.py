@@ -8,6 +8,7 @@ from app.core.recording_recovery import (
     ABANDONED_UPLOAD_FAILURE_CODE,
     INTERRUPTED_PROCESSING_FAILURE_CODE,
     mark_abandoned_pending_upload_recordings,
+    mark_stale_pending_upload_recordings,
     mark_stale_processing_recordings,
 )
 from app.models.recording import Recording, RecordingStatus, Segment
@@ -221,6 +222,158 @@ async def test_mark_abandoned_pending_upload_recordings_preserves_active_and_non
         "non-empty": RecordingStatus.PENDING_UPLOAD.value,
         "later": RecordingStatus.PROCESSING.value,
     }
+
+
+@pytest.mark.asyncio
+async def test_mark_stale_pending_upload_recordings_fails_only_old_empty_rows(
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    alerts: list[dict] = []
+    monkeypatch.setattr(
+        "app.core.recording_recovery.capture_sentry_message",
+        lambda _message, *, level, extras: alerts.append({"level": level, "extras": extras}),
+    )
+    user = User(email="pending-stale@example.com", password_hash="x")
+    db_session.add(user)
+    await db_session.flush()
+
+    now = datetime(2026, 6, 23, 12, 0, tzinfo=timezone.utc)
+    stale_empty = Recording(
+        user_id=user.id,
+        title="stale-empty",
+        type="meeting",
+        status=RecordingStatus.PENDING_UPLOAD.value,
+        language="ru",
+        created_at=now - timedelta(days=8),
+        updated_at=now - timedelta(days=8),
+    )
+    recent_empty = Recording(
+        user_id=user.id,
+        title="recent-empty",
+        type="meeting",
+        status=RecordingStatus.PENDING_UPLOAD.value,
+        created_at=now - timedelta(days=2),
+        updated_at=now - timedelta(days=2),
+    )
+    stale_uploaded = Recording(
+        user_id=user.id,
+        title="stale-uploaded",
+        type="meeting",
+        status=RecordingStatus.PENDING_UPLOAD.value,
+        uploaded_at=now - timedelta(days=8),
+        created_at=now - timedelta(days=8),
+        updated_at=now - timedelta(days=8),
+    )
+    stale_audio_url = Recording(
+        user_id=user.id,
+        title="stale-audio-url",
+        type="meeting",
+        status=RecordingStatus.PENDING_UPLOAD.value,
+        audio_url="https://example.com/audio.m4a",
+        created_at=now - timedelta(days=8),
+        updated_at=now - timedelta(days=8),
+    )
+    stale_with_segment = Recording(
+        user_id=user.id,
+        title="stale-with-segment",
+        type="meeting",
+        status=RecordingStatus.PENDING_UPLOAD.value,
+        created_at=now - timedelta(days=8),
+        updated_at=now - timedelta(days=8),
+    )
+    ready = Recording(
+        user_id=user.id,
+        title="ready",
+        type="meeting",
+        status=RecordingStatus.READY.value,
+        created_at=now - timedelta(days=8),
+        updated_at=now - timedelta(days=8),
+    )
+    db_session.add_all(
+        [
+            stale_empty,
+            recent_empty,
+            stale_uploaded,
+            stale_audio_url,
+            stale_with_segment,
+            ready,
+        ]
+    )
+    await db_session.flush()
+    db_session.add(
+        Segment(
+            recording_id=stale_with_segment.id,
+            speaker="Speaker 1",
+            content="kept",
+            start_ms=0,
+            end_ms=1000,
+        )
+    )
+    await db_session.commit()
+
+    count = await mark_stale_pending_upload_recordings(
+        db_session,
+        stale_after=timedelta(days=7),
+        now=now,
+    )
+
+    assert count == 1
+    rows = (await db_session.execute(select(Recording))).scalars().all()
+    by_title = {row.title: row for row in rows}
+    assert by_title["stale-empty"].status == RecordingStatus.FAILED.value
+    assert by_title["stale-empty"].failure_code == ABANDONED_UPLOAD_FAILURE_CODE
+    assert by_title["stale-empty"].failure_message == (
+        "Запись была начата, но аудио не загрузилось. "
+        "Если локальная копия сохранилась, она сможет повторить загрузку."
+    )
+    assert by_title["recent-empty"].status == RecordingStatus.PENDING_UPLOAD.value
+    assert by_title["stale-uploaded"].status == RecordingStatus.PENDING_UPLOAD.value
+    assert by_title["stale-audio-url"].status == RecordingStatus.PENDING_UPLOAD.value
+    assert by_title["stale-with-segment"].status == RecordingStatus.PENDING_UPLOAD.value
+    assert by_title["ready"].status == RecordingStatus.READY.value
+    assert alerts == [
+        {
+            "level": "warning",
+            "extras": {
+                "alert_code": "recording.upload.stale_abandoned",
+                "count": 1,
+                "stale_after_seconds": 604800,
+            },
+        }
+    ]
+
+
+@pytest.mark.asyncio
+async def test_mark_stale_pending_upload_recordings_ignores_disabled_cutoff(
+    db_session: AsyncSession,
+) -> None:
+    user = User(email="pending-stale-disabled@example.com", password_hash="x")
+    db_session.add(user)
+    await db_session.flush()
+
+    now = datetime(2026, 6, 23, 12, 0, tzinfo=timezone.utc)
+    stale_empty = Recording(
+        user_id=user.id,
+        title="stale-empty",
+        type="meeting",
+        status=RecordingStatus.PENDING_UPLOAD.value,
+        created_at=now - timedelta(days=8),
+        updated_at=now - timedelta(days=8),
+    )
+    db_session.add(stale_empty)
+    await db_session.commit()
+
+    count = await mark_stale_pending_upload_recordings(
+        db_session,
+        stale_after=timedelta(seconds=0),
+        now=now,
+    )
+
+    assert count == 0
+    row = await db_session.get(Recording, stale_empty.id)
+    assert row is not None
+    assert row.status == RecordingStatus.PENDING_UPLOAD.value
 
 
 def test_stale_cutoff_stays_above_recording_task_hard_limit():

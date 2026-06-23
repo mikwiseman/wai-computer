@@ -21,6 +21,7 @@ from app.core.recording_audio_processing import (
 )
 from app.core.recording_recovery import (
     mark_abandoned_pending_upload_recordings,
+    mark_stale_pending_upload_recordings,
     mark_stale_processing_recordings,
 )
 from app.core.retry_policy import is_retryable_exception
@@ -105,6 +106,10 @@ async def _recover_stale_recording_processing() -> int:
             duplicate_window=timedelta(
                 minutes=settings.recording_pending_upload_duplicate_window_minutes
             ),
+        )
+        recovered_count += await mark_stale_pending_upload_recordings(
+            db,
+            stale_after=timedelta(days=settings.recording_pending_upload_stale_after_days),
         )
     return recovered_count
 

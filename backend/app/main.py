@@ -57,6 +57,7 @@ from app.core.observability import (
 )
 from app.core.recording_recovery import (
     mark_abandoned_pending_upload_recordings,
+    mark_stale_pending_upload_recordings,
     mark_stale_processing_recordings,
 )
 from app.db.session import async_session_maker
@@ -153,6 +154,19 @@ async def lifespan(app: FastAPI):
         if recovered_count:
             logger.warning(
                 "marked abandoned pending-upload recordings as failed count=%s",
+                recovered_count,
+            )
+    if app_settings.recording_pending_upload_stale_after_days > 0:
+        async with async_session_maker() as session:
+            recovered_count = await mark_stale_pending_upload_recordings(
+                session,
+                stale_after=timedelta(
+                    days=app_settings.recording_pending_upload_stale_after_days
+                ),
+            )
+        if recovered_count:
+            logger.warning(
+                "marked stale pending-upload recordings as failed count=%s",
                 recovered_count,
             )
     async with AsyncExitStack() as stack:

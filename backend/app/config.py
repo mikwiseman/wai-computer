@@ -186,6 +186,9 @@ class Settings(BaseSettings):
     # created immediately after it is an abandoned start, not an active meeting.
     recording_pending_upload_duplicate_after_minutes: int = 15
     recording_pending_upload_duplicate_window_minutes: int = 5
+    # Slow cleanup for pre-upload rows with no server-side evidence. Local
+    # recovery can still retry because upload_abandoned is a retryable failure.
+    recording_pending_upload_stale_after_days: int = 7
 
     # Telegram bot integration. Token and webhook secret are backend-only.
     telegram_bot_token: str = ""
