@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import exists, select, update
+from sqlalchemy import and_, exists, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.observability import capture_sentry_message
@@ -67,8 +67,13 @@ async def mark_stale_processing_recordings(
                     RecordingStatus.PROCESSING.value,
                 ]
             ),
-            Recording.uploaded_at.is_not(None),
-            Recording.uploaded_at < cutoff,
+            or_(
+                Recording.uploaded_at < cutoff,
+                and_(
+                    Recording.uploaded_at.is_(None),
+                    Recording.updated_at < cutoff,
+                ),
+            ),
         )
         .values(
             status=RecordingStatus.FAILED.value,

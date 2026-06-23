@@ -88,6 +88,67 @@ async def test_mark_stale_processing_recordings_fails_only_orphaned_rows(
     ]
 
 
+@pytest.mark.asyncio
+async def test_mark_stale_processing_recordings_fails_old_rows_without_uploaded_at(
+    db_session: AsyncSession,
+) -> None:
+    user = User(email="recovery-missing-uploaded-at@example.com", password_hash="x")
+    db_session.add(user)
+    await db_session.flush()
+
+    now = datetime(2026, 6, 23, 12, 0, tzinfo=timezone.utc)
+    stale_processing = Recording(
+        user_id=user.id,
+        title="stale-processing-no-uploaded-at",
+        type="meeting",
+        status=RecordingStatus.PROCESSING.value,
+        uploaded_at=None,
+        created_at=now - timedelta(hours=10),
+        updated_at=now - timedelta(hours=10),
+    )
+    stale_uploading = Recording(
+        user_id=user.id,
+        title="stale-uploading-no-uploaded-at",
+        type="meeting",
+        status=RecordingStatus.UPLOADING.value,
+        uploaded_at=None,
+        created_at=now - timedelta(hours=11),
+        updated_at=now - timedelta(hours=11),
+    )
+    active_processing = Recording(
+        user_id=user.id,
+        title="active-processing-no-uploaded-at",
+        type="meeting",
+        status=RecordingStatus.PROCESSING.value,
+        uploaded_at=None,
+        created_at=now - timedelta(minutes=3),
+        updated_at=now - timedelta(minutes=3),
+    )
+    db_session.add_all([stale_processing, stale_uploading, active_processing])
+    await db_session.commit()
+
+    count = await mark_stale_processing_recordings(
+        db_session,
+        stale_after=timedelta(hours=8),
+        now=now,
+    )
+
+    assert count == 2
+    rows = (await db_session.execute(select(Recording))).scalars().all()
+    by_title = {row.title: row for row in rows}
+    assert by_title["stale-processing-no-uploaded-at"].status == RecordingStatus.FAILED.value
+    assert by_title["stale-processing-no-uploaded-at"].failure_code == (
+        INTERRUPTED_PROCESSING_FAILURE_CODE
+    )
+    assert by_title["stale-uploading-no-uploaded-at"].status == RecordingStatus.FAILED.value
+    assert by_title["stale-uploading-no-uploaded-at"].failure_code == (
+        INTERRUPTED_PROCESSING_FAILURE_CODE
+    )
+    assert by_title["active-processing-no-uploaded-at"].status == (
+        RecordingStatus.PROCESSING.value
+    )
+
+
 def test_interrupted_failure_message_localizes_ru_and_en():
     from app.core.recording_recovery import (
         INTERRUPTED_PROCESSING_FAILURE_MESSAGES,
