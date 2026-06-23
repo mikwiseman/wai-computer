@@ -1,12 +1,20 @@
 """Extended tests for recording routes — edge cases, error paths, and boundary conditions."""
 
+import asyncio
 from unittest.mock import AsyncMock
 from uuid import uuid4
 
 import pytest
-from httpx import AsyncClient
+from httpx import ASGITransport, AsyncClient
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.api.routes import recordings
+from app.core.security import create_access_token
+from app.db.session import get_db
+from app.main import app
+from app.models.recording import Recording
+from app.models.user import User
 from tests.conftest import LEGAL_ACCEPTANCE
 
 
@@ -612,6 +620,96 @@ async def test_create_recording_reuses_fresh_untitled_pending_start(
     )
     assert list_response.status_code == 200
     assert [recording["id"] for recording in list_response.json()] == [first["id"]]
+
+
+async def test_create_recording_reuses_fresh_blank_title_pending_start(
+    client: AsyncClient,
+    auth_headers: dict,
+):
+    payload = {"title": "", "type": "meeting", "language": "multi"}
+    first_response = await client.post(
+        "/api/recordings",
+        headers=auth_headers,
+        json=payload,
+    )
+    assert first_response.status_code == 201
+    first = first_response.json()
+    assert first["title"] is None
+
+    second_response = await client.post(
+        "/api/recordings",
+        headers=auth_headers,
+        json=payload,
+    )
+    assert second_response.status_code == 200
+    assert second_response.json()["id"] == first["id"]
+
+    list_response = await client.get(
+        "/api/recordings",
+        headers=auth_headers,
+        params={"type": "meeting"},
+    )
+    assert list_response.status_code == 200
+    assert [recording["id"] for recording in list_response.json()] == [first["id"]]
+
+
+async def test_create_recording_serializes_concurrent_untitled_pending_starts(
+    db_session: AsyncSession,
+):
+    """Concurrent native start retries must not create duplicate pending rows."""
+    user = User(email=f"recording-race-{uuid4().hex}@example.com", password_hash="x")
+    db_session.add(user)
+    await db_session.commit()
+    token = create_access_token(user.id)
+    headers = {"Authorization": f"Bearer {token}"}
+
+    assert db_session.bind is not None
+    session_maker = async_sessionmaker(
+        db_session.bind,
+        class_=AsyncSession,
+        expire_on_commit=False,
+    )
+
+    async def override_get_db():
+        async with session_maker() as session:
+            try:
+                yield session
+                await session.commit()
+            except Exception:
+                await session.rollback()
+                raise
+
+    app.dependency_overrides[get_db] = override_get_db
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as ac:
+            responses = await asyncio.gather(
+                *(
+                    ac.post(
+                        "/api/recordings",
+                        headers=headers,
+                        json={"title": None, "type": "meeting", "language": "multi"},
+                    )
+                    for _ in range(2)
+                )
+            )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert sorted(response.status_code for response in responses) == [200, 201]
+    response_ids = {response.json()["id"] for response in responses}
+    assert len(response_ids) == 1
+
+    rows = (
+        await db_session.execute(
+            select(Recording).where(
+                Recording.user_id == user.id,
+                Recording.type == "meeting",
+            )
+        )
+    ).scalars().all()
+    assert len(rows) == 1
+    assert str(rows[0].id) in response_ids
 
 
 # ---------------------------------------------------------------------------

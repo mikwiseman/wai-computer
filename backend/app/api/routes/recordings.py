@@ -24,7 +24,7 @@ from fastapi import (
     status,
 )
 from pydantic import BaseModel, Field, field_validator
-from sqlalchemy import delete, exists, select, text, update
+from sqlalchemy import delete, exists, func, or_, select, text, update
 from sqlalchemy.orm import selectinload
 
 from app.api.deps import CurrentUser, Database
@@ -361,6 +361,13 @@ class CreateRecordingRequest(BaseModel):
     language: str | None = None
     folder_id: UUID | None = None
 
+    @field_validator("title")
+    @classmethod
+    def normalize_title(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return value if value.strip() else None
+
     @field_validator("language")
     @classmethod
     def normalize_language(cls, value: str | None) -> str | None:
@@ -399,7 +406,7 @@ async def _fresh_reusable_pending_recording(
             Recording.deleted_at.is_(None),
             Recording.uploaded_at.is_(None),
             Recording.audio_url.is_(None),
-            Recording.title.is_(None),
+            or_(Recording.title.is_(None), Recording.title == ""),
             Recording.created_at >= cutoff,
             ~exists().where(Segment.recording_id == Recording.id),
         )
@@ -407,6 +414,49 @@ async def _fresh_reusable_pending_recording(
         .limit(1)
     )
     return result.scalar_one_or_none()
+
+
+def _is_fresh_pending_start_reusable(request: CreateRecordingRequest) -> bool:
+    if app_settings.recording_create_duplicate_window_seconds <= 0:
+        return False
+    return not bool(request.title and request.title.strip())
+
+
+def _fresh_pending_start_lock_key(
+    *,
+    user_id: UUID,
+    recording_type: str,
+    language: str | None,
+    folder_id: UUID | None,
+) -> int:
+    lock_material = "\x1f".join(
+        [
+            "recording-fresh-pending-start-v1",
+            str(user_id),
+            recording_type,
+            language or "",
+            str(folder_id) if folder_id else "",
+        ]
+    )
+    digest = sha256(lock_material.encode("utf-8")).digest()
+    return int.from_bytes(digest[:8], "big") & ((1 << 63) - 1)
+
+
+async def _lock_fresh_pending_recording_start(
+    *,
+    user_id: UUID,
+    recording_type: str,
+    language: str | None,
+    folder_id: UUID | None,
+    db: Database,
+) -> None:
+    lock_key = _fresh_pending_start_lock_key(
+        user_id=user_id,
+        recording_type=recording_type,
+        language=language,
+        folder_id=folder_id,
+    )
+    await db.execute(select(func.pg_advisory_xact_lock(lock_key)))
 
 
 class UpdateRecordingRequest(BaseModel):
@@ -1518,6 +1568,14 @@ async def create_recording(
     language = request.language if request.language is not None else user.default_language
     folder = await _require_folder(request.folder_id, user.id, db)
     folder_id = folder.id if folder else None
+    if _is_fresh_pending_start_reusable(request):
+        await _lock_fresh_pending_recording_start(
+            user_id=user.id,
+            recording_type=request.type,
+            language=language,
+            folder_id=folder_id,
+            db=db,
+        )
     reusable_recording = await _fresh_reusable_pending_recording(
         user_id=user.id,
         request=request,
