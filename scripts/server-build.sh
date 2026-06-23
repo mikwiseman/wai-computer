@@ -21,6 +21,7 @@ DEPLOY_BUILD_TIMEOUT_SECONDS="${DEPLOY_BUILD_TIMEOUT_SECONDS:-1800}"
 DEPLOY_HEALTH_WAIT_TIMEOUT_SECONDS="${DEPLOY_HEALTH_WAIT_TIMEOUT_SECONDS:-240}"
 MIN_FREE_DISK_MB="${MIN_FREE_DISK_MB:-4096}"
 ALLOW_SERVER_SIDE_BUILD="${ALLOW_SERVER_SIDE_BUILD:-0}"
+ALLOW_ACTIVE_TRANSCRIPTION_DEPLOY="${ALLOW_ACTIVE_TRANSCRIPTION_DEPLOY:-0}"
 
 if [[ -z "$GIT_SHA" ]]; then
   echo "ERROR: GIT_SHA is required for production builds" >&2
@@ -72,6 +73,57 @@ docker_compose() {
 
 docker_compose_timeout() {
   timeout "$DEPLOY_BUILD_TIMEOUT_SECONDS" docker compose --env-file "$PROD_ENV_FILE" "$@"
+}
+
+assert_no_active_transcription_tasks() {
+  local worker_running
+  local active_output
+  local active_task_names
+  local critical_task_names=(
+    "app.tasks.media_import.import_uploaded_media"
+    "app.tasks.recording_audio_processing.process_staged_recording_upload"
+  )
+  local task_name
+
+  case "$ALLOW_ACTIVE_TRANSCRIPTION_DEPLOY" in
+    0)
+      ;;
+    1)
+      echo "WARNING: ALLOW_ACTIVE_TRANSCRIPTION_DEPLOY=1; deploy may interrupt active transcription work." >&2
+      return 0
+      ;;
+    *)
+      echo "ERROR: ALLOW_ACTIVE_TRANSCRIPTION_DEPLOY must be 0 or 1" >&2
+      exit 1
+      ;;
+  esac
+
+  worker_running="$(docker inspect --format '{{.State.Running}}' waicomputer-celery-worker 2>/dev/null || true)"
+  if [[ "$worker_running" != "true" ]]; then
+    return 0
+  fi
+
+  if ! active_output="$(docker_compose exec -T celery-worker celery -A app.tasks.celery_app:celery_app inspect active --timeout=5 2>&1)"; then
+    echo "ERROR: could not inspect active Celery tasks before deploy." >&2
+    echo "Refusing to restart the worker without knowing whether transcription work is in flight." >&2
+    echo "Set ALLOW_ACTIVE_TRANSCRIPTION_DEPLOY=1 only for an explicit emergency deploy." >&2
+    exit 1
+  fi
+
+  active_task_names="$(
+    for task_name in "${critical_task_names[@]}"; do
+      if printf '%s\n' "$active_output" | grep -Fq "$task_name"; then
+        printf '%s\n' "$task_name"
+      fi
+    done | sort -u
+  )"
+  if [[ -n "$active_task_names" ]]; then
+    echo "ERROR: refusing to deploy while Celery has active transcription work." >&2
+    echo "Active task types:" >&2
+    printf '%s\n' "$active_task_names" >&2
+    echo "Wait for these tasks to finish, or set ALLOW_ACTIVE_TRANSCRIPTION_DEPLOY=1 for an explicit emergency deploy." >&2
+    exit 1
+  fi
 }
 
 require_image() {
@@ -149,6 +201,7 @@ trap restart_celery_on_exit EXIT
 
 docker_compose config >/dev/null
 require_disk_headroom
+assert_no_active_transcription_tasks
 
 if [[ "$ALLOW_SERVER_SIDE_BUILD" == "1" ]]; then
   echo "WARNING: Server-side image builds are enabled for this deploy." >&2

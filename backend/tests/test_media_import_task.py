@@ -14,7 +14,7 @@ import pytest
 
 from app.core import recording_import
 from app.core.recording_import import RecordingImportError
-from app.models.recording import Recording
+from app.models.recording import Recording, RecordingStatus, Segment
 from app.models.user import User
 from app.tasks import media_import
 
@@ -177,6 +177,53 @@ async def test_import_uses_precreated_recording(db_session, monkeypatch, tmp_pat
     )
 
     assert captured["recording"].id == recording.id
+
+
+@pytest.mark.asyncio
+async def test_import_skips_ready_recording_redelivery_without_staged_file(
+    db_session, monkeypatch, tmp_path
+) -> None:
+    user = User(email=f"media-ready-{uuid4().hex}@example.com", password_hash="x")
+    db_session.add(user)
+    await db_session.flush()
+    recording = Recording(
+        user_id=user.id,
+        title="clip",
+        type="note",
+        status=RecordingStatus.READY.value,
+    )
+    db_session.add(recording)
+    await db_session.flush()
+    db_session.add(
+        Segment(
+            recording_id=recording.id,
+            speaker="Speaker 1",
+            content="Already transcribed.",
+            start_ms=0,
+            end_ms=1000,
+        )
+    )
+    await db_session.flush()
+
+    @asynccontextmanager
+    async def fake_ctx():
+        yield db_session
+
+    async def fail_import(**kwargs):
+        raise AssertionError("ready redelivery must not re-run media import")
+
+    monkeypatch.setattr(media_import, "get_db_context", fake_ctx)
+    monkeypatch.setattr(media_import, "import_media_as_recording", fail_import)
+
+    await media_import._import(
+        user_id=str(user.id),
+        recording_id=str(recording.id),
+        staged_path=str(tmp_path / "missing.mp4"),
+        filename="clip.mp4",
+        content_type="video/mp4",
+        title=None,
+        language="en",
+    )
 
 
 @pytest.mark.asyncio

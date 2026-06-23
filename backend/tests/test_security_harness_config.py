@@ -86,6 +86,20 @@ def test_server_build_aligns_telegram_webhook_after_public_health():
     )
 
 
+def test_server_build_refuses_to_restart_active_transcription_tasks():
+    script = (REPO_ROOT / "scripts/server-build.sh").read_text()
+
+    assert 'ALLOW_ACTIVE_TRANSCRIPTION_DEPLOY="${ALLOW_ACTIVE_TRANSCRIPTION_DEPLOY:-0}"' in script
+    assert "app.tasks.media_import.import_uploaded_media" in script
+    assert "app.tasks.recording_audio_processing.process_staged_recording_upload" in script
+    assert "refusing to deploy while Celery has active transcription work" in script
+    guard_call = "require_disk_headroom\nassert_no_active_transcription_tasks"
+    assert guard_call in script
+    assert script.index(guard_call) < script.index(
+        'if [[ "$ALLOW_SERVER_SIDE_BUILD" == "1" ]]'
+    )
+
+
 def test_production_compose_uses_sha_tagged_deploy_images():
     compose = yaml.safe_load((BACKEND_ROOT / "docker-compose.yml").read_text())
 
@@ -107,6 +121,13 @@ def test_deploy_builds_and_loads_images_before_remote_swap():
     assert "docker save" in script
     assert "docker load" in script
     assert "ALLOW_SERVER_SIDE_BUILD='0'" in script
+
+
+def test_deploy_forwards_active_transcription_override_to_remote_build():
+    script = (REPO_ROOT / "scripts/deploy-api.sh").read_text()
+
+    assert 'ALLOW_ACTIVE_TRANSCRIPTION_DEPLOY="${ALLOW_ACTIVE_TRANSCRIPTION_DEPLOY:-0}"' in script
+    assert "ALLOW_ACTIVE_TRANSCRIPTION_DEPLOY='${ALLOW_ACTIVE_TRANSCRIPTION_DEPLOY}'" in script
 
 
 def test_server_side_image_builds_require_explicit_opt_in():
