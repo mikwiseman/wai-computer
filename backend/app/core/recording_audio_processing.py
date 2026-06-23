@@ -1028,16 +1028,7 @@ async def process_staged_recording_upload(
         recording.status = RecordingStatus.READY.value
         recording.failure_code = None
         recording.failure_message = None
-        await record_recording_transcript_words(db, recording, transcript_text)
         await db.commit()
-        await start_recording_summary_generation_job(
-            db,
-            recording_id=recording_id,
-            user_id=user_id,
-            enqueue=_enqueue_recording_summary_generation,
-            skip_if_summary_exists=True,
-            raise_on_enqueue_error=False,
-        )
         _recording_lifecycle_breadcrumb(
             "Recording transcript persisted",
             recording_id=recording_id,
@@ -1045,6 +1036,46 @@ async def process_staged_recording_upload(
                 "duration_seconds": recording.duration_seconds,
                 "segment_count": len(speech_transcript_results),
             },
+        )
+
+        try:
+            await record_recording_transcript_words(db, recording, transcript_text)
+            await db.commit()
+        except Exception as exc:
+            await db.rollback()
+            logger.warning(
+                "Recording billing failed after transcript persisted recording_id=%s",
+                recording_id,
+                exc_info=True,
+            )
+            capture_sentry_anomaly(
+                "recording.billing.degraded",
+                "Recording completed with degraded billing ledger",
+                category="recording",
+                extras={
+                    "recording_id": str(recording_id),
+                    "error_type": type(exc).__name__,
+                    "error_fingerprint": fingerprint_text(str(exc)),
+                },
+                level="warning",
+            )
+            reloaded_recording = await db.get(Recording, recording_id)
+            if reloaded_recording is not None:
+                recording = reloaded_recording
+            segment_result = await db.execute(
+                select(Segment)
+                .where(Segment.recording_id == recording_id)
+                .order_by(Segment.start_ms, Segment.end_ms)
+            )
+            persisted_segments = list(segment_result.scalars().all())
+
+        await start_recording_summary_generation_job(
+            db,
+            recording_id=recording_id,
+            user_id=user_id,
+            enqueue=_enqueue_recording_summary_generation,
+            skip_if_summary_exists=True,
+            raise_on_enqueue_error=False,
         )
 
         voice_identification_enabled = voice_identification_enabled_for_audio(

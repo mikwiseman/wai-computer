@@ -680,6 +680,137 @@ async def test_process_staged_recording_upload_commits_transcript_before_embeddi
 
 
 @pytest.mark.asyncio
+async def test_process_staged_recording_upload_commits_transcript_before_billing(
+    db_session: AsyncSession,
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user = User(email="billing-degraded@example.com", password_hash="x", default_language="en")
+    db_session.add(user)
+    await db_session.flush()
+    recording = Recording(
+        user_id=user.id,
+        title=None,
+        type="meeting",
+        status=RecordingStatus.PROCESSING.value,
+        uploaded_at=datetime.now(timezone.utc),
+        language="en",
+    )
+    db_session.add(recording)
+    await db_session.commit()
+
+    staged_path = tmp_path / "billing-degraded.wav"
+    staged_path.write_bytes(b"audio")
+    retry_path = tmp_path / "retry.wav"
+    retry_path.write_bytes(b"audio")
+    transcript_results = [
+        TranscriptResult(
+            text="Transcript must survive billing ledger failures.",
+            speaker="speaker_0",
+            is_final=True,
+            start_ms=0,
+            end_ms=2600,
+            confidence=0.93,
+        )
+    ]
+
+    async def _fail_billing(*_args, **_kwargs):
+        raise RuntimeError("billing ledger unavailable")
+
+    transcribe = AsyncMock(return_value=transcript_results)
+    degraded: list[dict[str, object]] = []
+    monkeypatch.setattr(
+        "app.core.recording_audio_processing.transcribe_audio_file",
+        transcribe,
+    )
+    monkeypatch.setattr(
+        "app.core.recording_audio_processing.record_recording_transcript_words",
+        _fail_billing,
+    )
+    monkeypatch.setattr(
+        "app.core.recording_audio_processing.generate_embedding",
+        AsyncMock(return_value=[0.1] * 1536),
+    )
+    monkeypatch.setattr(
+        "app.core.recording_audio_processing.generate_title",
+        AsyncMock(return_value="Billing Degraded"),
+    )
+    monkeypatch.setattr(
+        "app.core.recording_audio_processing.identify_speakers_for_recording",
+        AsyncMock(return_value={}),
+    )
+    monkeypatch.setattr(
+        "app.core.recording_audio_processing.capture_sentry_anomaly",
+        lambda alert_code, message, *, category, extras, level="warning": degraded.append(
+            {
+                "alert_code": alert_code,
+                "message": message,
+                "category": category,
+                "extras": extras,
+                "level": level,
+            }
+        ),
+    )
+
+    await process_staged_recording_upload(
+        db_session,
+        recording_id=recording.id,
+        user_id=user.id,
+        staged_path=staged_path,
+        content_type="audio/wav",
+        user_default_language="en",
+    )
+
+    await db_session.refresh(recording)
+    segments = (
+        (await db_session.execute(select(Segment).where(Segment.recording_id == recording.id)))
+        .scalars()
+        .all()
+    )
+    summary_job = (
+        await db_session.execute(
+            select(SummaryGenerationJob).where(SummaryGenerationJob.recording_id == recording.id)
+        )
+    ).scalar_one()
+
+    assert recording.status == RecordingStatus.READY.value
+    assert recording.failure_code is None
+    assert [segment.content for segment in segments] == [
+        "Transcript must survive billing ledger failures."
+    ]
+    assert summary_job.status == SummaryGenerationStatus.QUEUED.value
+    assert not staged_path.exists()
+    assert len(degraded) == 1
+    degraded_extras = degraded[0]["extras"]
+    assert isinstance(degraded_extras, dict)
+    assert degraded == [
+        {
+            "alert_code": "recording.billing.degraded",
+            "message": "Recording completed with degraded billing ledger",
+            "category": "recording",
+            "extras": {
+                "recording_id": str(recording.id),
+                "error_type": "RuntimeError",
+                "error_fingerprint": degraded_extras["error_fingerprint"],
+            },
+            "level": "warning",
+        }
+    ]
+
+    await process_staged_recording_upload(
+        db_session,
+        recording_id=recording.id,
+        user_id=user.id,
+        staged_path=retry_path,
+        content_type="audio/wav",
+        user_default_language="en",
+    )
+
+    transcribe.assert_awaited_once()
+    assert not retry_path.exists()
+
+
+@pytest.mark.asyncio
 async def test_process_staged_recording_upload_marks_failed_on_non_retryable_error(
     db_session: AsyncSession,
     tmp_path,
