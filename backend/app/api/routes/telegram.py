@@ -740,6 +740,55 @@ async def _delete_status_message(
         logger.warning("telegram status delete failed error=%s", type(exc).__name__)
 
 
+def _pending_recording_status_message_id(account: TelegramAccount | None) -> int | None:
+    if account is None or not isinstance(account.active_context, dict):
+        return None
+    if account.active_context.get("ref_type") != "pending_recording":
+        return None
+    message_id = account.active_context.get("status_message_id")
+    return message_id if isinstance(message_id, int) else None
+
+
+async def _notify_telegram_internal_error(
+    db: AsyncSession,
+    client: TelegramBotClient,
+    *,
+    message: dict[str, Any] | None,
+    account: TelegramAccount | None,
+    status_message_id: int | None,
+) -> None:
+    if not isinstance(message, dict):
+        return
+    chat_id = _telegram_chat_id(message)
+    if chat_id is None:
+        return
+
+    if account is not None:
+        try:
+            await _set_telegram_import_error_context(
+                db,
+                account,
+                message=TELEGRAM_RECORDING_IMPORT_ERROR_REPLY,
+            )
+        except Exception:
+            logger.exception("telegram import error context update failed")
+            with suppress(Exception):
+                await db.rollback()
+
+    try:
+        await client.send_message(
+            chat_id,
+            TELEGRAM_RECORDING_IMPORT_ERROR_REPLY,
+            reply_to_message_id=message.get("message_id"),
+        )
+    except TelegramClientError as exc:
+        logger.warning("telegram internal-error reply failed error=%s", type(exc).__name__)
+    except Exception:
+        logger.exception("telegram internal-error reply crashed")
+
+    await _delete_status_message(client, chat_id=chat_id, message_id=status_message_id)
+
+
 async def _send_chat_action_until_cancelled(
     client: TelegramBotClient,
     chat_id: int,
@@ -3820,6 +3869,8 @@ async def _handle_update(update: dict[str, Any]) -> None:
         return
     client = TelegramBotClient()
     async with get_db_context() as db:
+        message: dict[str, Any] | None = None
+        account: TelegramAccount | None = None
         try:
             callback_query = update.get("callback_query")
             if isinstance(callback_query, dict):
@@ -3829,10 +3880,11 @@ async def _handle_update(update: dict[str, Any]) -> None:
                 await _mark_update(db, update_id, "completed")
                 return
 
-            message = update.get("message")
-            if not isinstance(message, dict):
+            raw_message = update.get("message")
+            if not isinstance(raw_message, dict):
                 await _mark_update(db, update_id, "completed")
                 return
+            message = raw_message
 
             from_user = _telegram_user(message)
             chat_id = _telegram_chat_id(message)
@@ -3992,6 +4044,21 @@ async def _handle_update(update: dict[str, Any]) -> None:
             )
         except Exception:
             logger.exception("telegram update failed update_id=%s", update_id)
+            status_message_id = None
+            with suppress(Exception):
+                status_message_id = _pending_recording_status_message_id(account)
+            notify_account = account
+            if not db.is_active:
+                with suppress(Exception):
+                    await db.rollback()
+                notify_account = None
+            await _notify_telegram_internal_error(
+                db,
+                client,
+                message=message,
+                account=notify_account,
+                status_message_id=status_message_id,
+            )
             await _mark_update(db, update_id, "failed", "internal_error", "Telegram update failed")
 
 

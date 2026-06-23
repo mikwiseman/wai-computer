@@ -3705,6 +3705,215 @@ async def test_handle_update_branches_and_failures(db_session: AsyncSession, mon
     internal_failed = await db_session.get(TelegramUpdate, 107)
     assert internal_failed.status == "failed"
     assert internal_failed.error_code == "internal_error"
+    assert capture.messages[-1]["chat_id"] == 51
+    assert capture.messages[-1]["reply_to_message_id"] == 26
+    assert capture.messages[-1]["text"] == telegram_routes.TELEGRAM_RECORDING_IMPORT_ERROR_REPLY
+
+
+@pytest.mark.asyncio
+async def test_handle_update_deletes_pending_media_status_on_internal_error(
+    db_session: AsyncSession,
+    monkeypatch,
+):
+    user = await _user(db_session, "media-internal-error@example.com")
+    account = TelegramAccount(
+        user_id=user.id,
+        telegram_user_id=72,
+        telegram_chat_id=72,
+        active_context={
+            "ref_type": "pending_recording",
+            "status_message_id": 44,
+        },
+    )
+    db_session.add(account)
+    db_session.add(
+        TelegramUpdate(
+            update_id=400,
+            status="accepted",
+            received_at=datetime.now(timezone.utc),
+        )
+    )
+    await db_session.commit()
+    capture = _TelegramCapture()
+
+    @asynccontextmanager
+    async def fake_db_context():
+        yield db_session
+
+    monkeypatch.setattr(telegram_routes, "TelegramBotClient", lambda: capture)
+    monkeypatch.setattr(telegram_routes, "get_db_context", fake_db_context)
+    monkeypatch.setattr(
+        telegram_routes,
+        "_route_media_message",
+        AsyncMock(side_effect=ValueError("boom")),
+    )
+
+    await telegram_routes._handle_update(
+        {
+            "update_id": 400,
+            "message": {
+                "message_id": 40,
+                "from": {"id": 72},
+                "chat": {"id": 72},
+                "voice": {"file_id": "file-id"},
+            },
+        }
+    )
+
+    update = await db_session.get(TelegramUpdate, 400)
+    await db_session.refresh(account)
+    assert update.status == "failed"
+    assert update.error_code == "internal_error"
+    assert capture.messages[-1]["chat_id"] == 72
+    assert capture.messages[-1]["reply_to_message_id"] == 40
+    assert capture.messages[-1]["text"] == telegram_routes.TELEGRAM_RECORDING_IMPORT_ERROR_REPLY
+    assert capture.deleted_messages == [{"chat_id": 72, "message_id": 44}]
+    assert account.active_context["ref_type"] == "recording_import_error"
+
+
+@pytest.mark.asyncio
+async def test_notify_telegram_internal_error_helper_guards_and_failures(
+    db_session: AsyncSession,
+    monkeypatch,
+):
+    user = await _user(db_session, "notify-internal-error@example.com")
+    account = TelegramAccount(
+        user_id=user.id,
+        telegram_user_id=73,
+        telegram_chat_id=73,
+        active_context={"ref_type": "recording", "status_message_id": 55},
+    )
+    db_session.add(account)
+    await db_session.commit()
+    capture = _TelegramCapture()
+
+    assert telegram_routes._pending_recording_status_message_id(None) is None
+    assert telegram_routes._pending_recording_status_message_id(account) is None
+
+    await telegram_routes._notify_telegram_internal_error(
+        db_session,
+        capture,
+        message=None,
+        account=account,
+        status_message_id=55,
+    )
+    await telegram_routes._notify_telegram_internal_error(
+        db_session,
+        capture,
+        message={"message_id": 41},
+        account=account,
+        status_message_id=55,
+    )
+    assert capture.messages == []
+    assert capture.deleted_messages == []
+
+    async def fail_context(*args, **kwargs):
+        raise RuntimeError("context failed")
+
+    monkeypatch.setattr(telegram_routes, "_set_telegram_import_error_context", fail_context)
+    await telegram_routes._notify_telegram_internal_error(
+        db_session,
+        capture,
+        message={"message_id": 42, "chat": {"id": 73}},
+        account=account,
+        status_message_id=55,
+    )
+    assert capture.messages[-1]["text"] == telegram_routes.TELEGRAM_RECORDING_IMPORT_ERROR_REPLY
+    assert capture.deleted_messages == [{"chat_id": 73, "message_id": 55}]
+
+    class TelegramSendFailure(_TelegramCapture):
+        async def send_message(self, *args, **kwargs):
+            raise TelegramClientError("send failed")
+
+    failed_send = TelegramSendFailure()
+    await telegram_routes._notify_telegram_internal_error(
+        db_session,
+        failed_send,
+        message={"message_id": 43, "chat": {"id": 73}},
+        account=None,
+        status_message_id=56,
+    )
+    assert failed_send.deleted_messages == [{"chat_id": 73, "message_id": 56}]
+
+    class TelegramSendCrash(_TelegramCapture):
+        async def send_message(self, *args, **kwargs):
+            raise RuntimeError("send crashed")
+
+    crashed_send = TelegramSendCrash()
+    await telegram_routes._notify_telegram_internal_error(
+        db_session,
+        crashed_send,
+        message={"message_id": 44, "chat": {"id": 73}},
+        account=None,
+        status_message_id=57,
+    )
+    assert crashed_send.deleted_messages == [{"chat_id": 73, "message_id": 57}]
+
+
+@pytest.mark.asyncio
+async def test_handle_update_internal_error_rolls_back_inactive_session(
+    db_session: AsyncSession,
+    monkeypatch,
+):
+    user = await _user(db_session, "inactive-error@example.com")
+    db_session.add(TelegramAccount(user_id=user.id, telegram_user_id=74, telegram_chat_id=74))
+    db_session.add(
+        TelegramUpdate(
+            update_id=401,
+            status="accepted",
+            received_at=datetime.now(timezone.utc),
+        )
+    )
+    await db_session.commit()
+    capture = _TelegramCapture()
+
+    class InactiveSessionProxy:
+        is_active = False
+
+        def __init__(self, session: AsyncSession) -> None:
+            self.session = session
+            self.rollback_called = False
+
+        def __getattr__(self, name: str):
+            return getattr(self.session, name)
+
+        async def rollback(self) -> None:
+            self.rollback_called = True
+            await self.session.rollback()
+
+    proxy = InactiveSessionProxy(db_session)
+
+    @asynccontextmanager
+    async def fake_db_context():
+        yield proxy
+
+    monkeypatch.setattr(telegram_routes, "TelegramBotClient", lambda: capture)
+    monkeypatch.setattr(telegram_routes, "get_db_context", fake_db_context)
+    monkeypatch.setattr(
+        telegram_routes,
+        "_route_media_message",
+        AsyncMock(side_effect=ValueError("boom")),
+    )
+
+    await telegram_routes._handle_update(
+        {
+            "update_id": 401,
+            "message": {
+                "message_id": 45,
+                "from": {"id": 74},
+                "chat": {"id": 74},
+                "voice": {"file_id": "file-id"},
+            },
+        }
+    )
+
+    update = await db_session.get(TelegramUpdate, 401)
+    assert proxy.rollback_called is True
+    assert update.status == "failed"
+    assert update.error_code == "internal_error"
+    assert capture.messages[-1]["text"] == telegram_routes.TELEGRAM_RECORDING_IMPORT_ERROR_REPLY
+
+    await telegram_routes._mark_update(db_session, 999_999, "failed")
 
 
 @pytest.mark.asyncio
