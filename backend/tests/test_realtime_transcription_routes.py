@@ -489,6 +489,28 @@ class CloseStreamDelayedFinalProvider:
         return FINAL_CLOSE_STREAM_RESULT
 
 
+class CloseStreamThenConnectionClosedProvider:
+    def __init__(self) -> None:
+        self.sent: list[bytes | str] = []
+        self.closed = False
+        self._close_stream_received = asyncio.Event()
+
+    async def send(self, payload: bytes | str) -> None:
+        self.sent.append(payload)
+        if isinstance(payload, str) and '"type":"CloseStream"' in payload.replace(" ", ""):
+            self._close_stream_received.set()
+
+    async def close(self) -> None:
+        self.closed = True
+
+    def __aiter__(self):
+        return self
+
+    async def __anext__(self) -> bytes | str:
+        await self._close_stream_received.wait()
+        raise ConnectionClosedError(None, None)
+
+
 class FakeProviderConnection:
     def __init__(self, provider: FakeProvider) -> None:
         self.provider = provider
@@ -510,6 +532,11 @@ class FailingProviderConnection:
 
 class SendJsonFailingWebSocket(FakeWebSocket):
     async def send_json(self, payload: dict[str, object]) -> None:
+        raise RuntimeError("websocket already closed")
+
+
+class SendTextFailingWebSocket(FakeWebSocket):
+    async def send_text(self, payload: str) -> None:
         raise RuntimeError("websocket already closed")
 
 
@@ -823,6 +850,75 @@ async def test_realtime_stream_records_provider_connection_closed_as_failed():
     assert usage_events[-1]["error_type"] == "ConnectionClosed"
 
 
+@pytest.mark.asyncio
+async def test_realtime_stream_records_client_send_runtime_error_as_successful_disconnect():
+    from app.api.routes import realtime_transcription as route
+
+    websocket = SendTextFailingWebSocket({"authorization": "Bearer proxy-token"})
+    provider = FakeProvider(messages=['{"type":"Results","is_final":true}'])
+    usage_events: list[dict[str, object]] = []
+
+    async def record_usage(**kwargs):
+        usage_events.append(kwargs)
+
+    with patch(
+        "app.api.routes.realtime_transcription.decode_realtime_proxy_token",
+        return_value=_claims(),
+    ), patch(
+        "app.api.routes.realtime_transcription.require_deepgram_api_key",
+        return_value="server-provider-key",
+    ), patch(
+        "app.api.routes.realtime_transcription.websockets.connect",
+        return_value=FakeProviderConnection(provider),
+    ), patch(
+        "app.api.routes.realtime_transcription.record_deepgram_usage_event_standalone",
+        new=record_usage,
+    ):
+        await route.stream_realtime_transcription(websocket)
+
+    assert websocket.json_payloads == []
+    assert websocket.closed_codes == [1000]
+    assert usage_events
+    assert usage_events[-1]["status"] == "succeeded"
+    assert usage_events[-1]["error_type"] is None
+
+
+@pytest.mark.asyncio
+async def test_realtime_stream_records_provider_close_after_close_stream_as_success():
+    from app.api.routes import realtime_transcription as route
+
+    websocket = FakeWebSocket({"authorization": "Bearer proxy-token"})
+    provider = CloseStreamThenConnectionClosedProvider()
+    usage_events: list[dict[str, object]] = []
+    websocket.queue_receive({"type": "websocket.receive", "text": '{"type":"CloseStream"}'})
+    websocket.queue_receive({"type": "websocket.disconnect"})
+
+    async def record_usage(**kwargs):
+        usage_events.append(kwargs)
+
+    with patch(
+        "app.api.routes.realtime_transcription.decode_realtime_proxy_token",
+        return_value=_claims(),
+    ), patch(
+        "app.api.routes.realtime_transcription.require_deepgram_api_key",
+        return_value="server-provider-key",
+    ), patch(
+        "app.api.routes.realtime_transcription.websockets.connect",
+        return_value=FakeProviderConnection(provider),
+    ), patch(
+        "app.api.routes.realtime_transcription.record_deepgram_usage_event_standalone",
+        new=record_usage,
+    ):
+        await route.stream_realtime_transcription(websocket)
+
+    assert provider.sent == ['{"type":"CloseStream"}']
+    assert websocket.json_payloads == []
+    assert websocket.closed_codes == [1000]
+    assert usage_events
+    assert usage_events[-1]["status"] == "succeeded"
+    assert usage_events[-1]["error_type"] is None
+
+
 def test_websockets_header_kwarg_supports_newer_additional_headers(monkeypatch):
     from app.api.routes import realtime_transcription as route
 
@@ -845,7 +941,7 @@ async def test_client_to_provider_forwards_audio_and_control_messages():
     websocket.queue_receive({"type": "lifespan.noop"})
     websocket.queue_receive({"type": "websocket.disconnect"})
 
-    await route._client_to_provider(websocket, provider)
+    await route._client_to_provider(websocket, provider, asyncio.Event())
 
     assert provider.sent == [b"pcm", '{"type":"KeepAlive"}']
     assert provider.closed is True
@@ -858,7 +954,7 @@ async def test_provider_to_client_forwards_binary_and_text_messages():
     websocket = FakeWebSocket()
     provider = FakeProvider(messages=[b"binary", "text"])
 
-    await route._provider_to_client(websocket, provider)
+    await route._provider_to_client(websocket, provider, asyncio.Event())
 
     assert websocket.sent_bytes == [b"binary"]
     assert websocket.sent_text == ["text"]

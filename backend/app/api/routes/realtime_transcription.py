@@ -87,7 +87,14 @@ PROXY_ERROR_SESSION_EXPIRED = {
 }
 CLIENT_DISCONNECTED = "client_disconnected"
 PROVIDER_FINALIZING = "provider_finalizing"
+PROVIDER_COMPLETED = "provider_completed"
+PROVIDER_CLOSED_AFTER_CLOSE_STREAM = "provider_closed_after_close_stream"
 ClientToProviderExit = Literal["client_disconnected", "provider_finalizing"]
+ProviderToClientExit = Literal[
+    "client_disconnected",
+    "provider_completed",
+    "provider_closed_after_close_stream",
+]
 
 
 class RealtimeReplacementHintRequest(BaseModel):
@@ -690,8 +697,13 @@ async def stream_realtime_transcription(websocket: WebSocket) -> None:
             max_size=2 * 1024 * 1024,
         ) as provider:
             provider_opened = True
-            upstream = asyncio.create_task(_client_to_provider(websocket, provider))
-            downstream = asyncio.create_task(_provider_to_client(websocket, provider))
+            close_stream_sent = asyncio.Event()
+            upstream = asyncio.create_task(
+                _client_to_provider(websocket, provider, close_stream_sent)
+            )
+            downstream = asyncio.create_task(
+                _provider_to_client(websocket, provider, close_stream_sent)
+            )
             done, pending = await asyncio.wait(
                 {upstream, downstream},
                 timeout=max_stream_seconds if max_stream_seconds > 0 else None,
@@ -870,7 +882,11 @@ async def stream_realtime_transcription(websocket: WebSocket) -> None:
         )
 
 
-async def _client_to_provider(websocket: WebSocket, provider) -> ClientToProviderExit:
+async def _client_to_provider(
+    websocket: WebSocket,
+    provider,
+    close_stream_sent_event: asyncio.Event,
+) -> ClientToProviderExit:
     close_stream_sent = False
     while True:
         message = await websocket.receive()
@@ -890,14 +906,38 @@ async def _client_to_provider(websocket: WebSocket, provider) -> ClientToProvide
             await provider.send(text)
             if _is_close_stream_message(text):
                 close_stream_sent = True
+                close_stream_sent_event.set()
 
 
-async def _provider_to_client(websocket: WebSocket, provider) -> None:
-    async for message in provider:
-        if isinstance(message, bytes):
-            await websocket.send_bytes(message)
-        else:
-            await websocket.send_text(message)
+async def _provider_to_client(
+    websocket: WebSocket,
+    provider,
+    close_stream_sent_event: asyncio.Event,
+) -> ProviderToClientExit:
+    try:
+        async for message in provider:
+            try:
+                if isinstance(message, bytes):
+                    await websocket.send_bytes(message)
+                else:
+                    await websocket.send_text(message)
+            except (RuntimeError, WebSocketDisconnect):
+                add_sentry_breadcrumb(
+                    category="transcription.stream",
+                    message="client send closed",
+                    data={"provider": "deepgram"},
+                )
+                return CLIENT_DISCONNECTED
+    except ConnectionClosed:
+        if close_stream_sent_event.is_set():
+            add_sentry_breadcrumb(
+                category="transcription.stream",
+                message="provider closed after client close_stream",
+                data={"provider": "deepgram"},
+            )
+            return PROVIDER_CLOSED_AFTER_CLOSE_STREAM
+        raise
+    return PROVIDER_COMPLETED
 
 
 def _raise_unexpected_bridge_exceptions(tasks: set[asyncio.Task]) -> None:
