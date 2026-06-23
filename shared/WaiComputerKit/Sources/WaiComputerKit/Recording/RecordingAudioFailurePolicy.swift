@@ -11,6 +11,7 @@ public enum RecordingAudioFailurePolicy {
         "staged_file_missing",
         "staging_failed",
         "transcription_halted",
+        "upload_abandoned",
         "upload_size_mismatch",
         "audio_decode_failed",
     ]

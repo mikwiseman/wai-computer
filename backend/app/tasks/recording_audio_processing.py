@@ -19,7 +19,10 @@ from app.core.recording_audio_processing import (
 from app.core.recording_audio_processing import (
     process_staged_recording_upload as process_staged_recording_upload_core,
 )
-from app.core.recording_recovery import mark_stale_processing_recordings
+from app.core.recording_recovery import (
+    mark_abandoned_pending_upload_recordings,
+    mark_stale_processing_recordings,
+)
 from app.core.retry_policy import is_retryable_exception
 from app.db.session import get_db_context
 from app.tasks.celery_app import celery_app
@@ -86,14 +89,24 @@ async def _mark_processing_timeout(*, recording_id: str) -> None:
 
 async def _recover_stale_recording_processing() -> int:
     stale_after_minutes = settings.recording_processing_stale_after_minutes
-    if stale_after_minutes <= 0:
-        return 0
+    recovered_count = 0
 
     async with get_db_context() as db:
-        return await mark_stale_processing_recordings(
+        if stale_after_minutes > 0:
+            recovered_count += await mark_stale_processing_recordings(
+                db,
+                stale_after=timedelta(minutes=stale_after_minutes),
+            )
+        recovered_count += await mark_abandoned_pending_upload_recordings(
             db,
-            stale_after=timedelta(minutes=stale_after_minutes),
+            abandoned_after=timedelta(
+                minutes=settings.recording_pending_upload_duplicate_after_minutes
+            ),
+            duplicate_window=timedelta(
+                minutes=settings.recording_pending_upload_duplicate_window_minutes
+            ),
         )
+    return recovered_count
 
 
 @celery_app.task(

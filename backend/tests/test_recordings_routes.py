@@ -1494,13 +1494,15 @@ async def test_provider_rejected_audio_upload_cannot_be_retried(
 
 
 @pytest.mark.asyncio
-async def test_audio_decode_failed_upload_can_be_retried(
+@pytest.mark.parametrize("failure_code", ["audio_decode_failed", "upload_abandoned"])
+async def test_retryable_audio_upload_failure_can_be_retried(
     client: AsyncClient,
     auth_headers: dict,
     db_session: AsyncSession,
     monkeypatch: pytest.MonkeyPatch,
+    failure_code: str,
 ):
-    """A fresh upload must be allowed after a prior local decode failure."""
+    """A fresh upload must be allowed after a prior retryable audio failure."""
     recording = await _create_recording(client, auth_headers, title=None)
     recording_id = UUID(recording["id"])
     stored = (
@@ -1508,7 +1510,7 @@ async def test_audio_decode_failed_upload_can_be_retried(
     ).scalar_one()
     stored.status = RecordingStatus.FAILED.value
     stored.uploaded_at = datetime.now(timezone.utc)
-    stored.failure_code = "audio_decode_failed"
+    stored.failure_code = failure_code
     stored.failure_message = "Could not read the uploaded audio file."
     await db_session.commit()
 
@@ -1534,7 +1536,7 @@ async def test_audio_decode_failed_upload_can_be_retried(
     _, enqueue_kwargs = enqueue_processing.await_args
     assert enqueue_kwargs["recording_id"] == recording_id
     assert enqueue_kwargs["client_duration_seconds"] == 103
-    assert enqueue_kwargs["previous_failure_code"] == "audio_decode_failed"
+    assert enqueue_kwargs["previous_failure_code"] == failure_code
 
     refreshed = (
         await db_session.execute(select(Recording).where(Recording.id == recording_id))

@@ -181,6 +181,11 @@ class Settings(BaseSettings):
     # an in-flight or queued transcription (e.g. an API restart on deploy killing
     # a live ~5.9h job, or a recording waiting behind one on the solo worker).
     recording_processing_stale_after_minutes: int = 480
+    # Fast cleanup for the duplicate-start failure mode: an old pending_upload
+    # row with no upload/segments plus a newer same-type row from the same user
+    # created immediately after it is an abandoned start, not an active meeting.
+    recording_pending_upload_duplicate_after_minutes: int = 15
+    recording_pending_upload_duplicate_window_minutes: int = 5
 
     # Telegram bot integration. Token and webhook secret are backend-only.
     telegram_bot_token: str = ""

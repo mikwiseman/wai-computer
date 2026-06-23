@@ -55,7 +55,10 @@ from app.core.observability import (
     end_request_context,
     initialize_sentry,
 )
-from app.core.recording_recovery import mark_stale_processing_recordings
+from app.core.recording_recovery import (
+    mark_abandoned_pending_upload_recordings,
+    mark_stale_processing_recordings,
+)
 from app.db.session import async_session_maker
 from app.mcp_server import create_mcp_app
 
@@ -134,6 +137,22 @@ async def lifespan(app: FastAPI):
         if recovered_count:
             logger.warning(
                 "marked stale processing recordings as failed count=%s",
+                recovered_count,
+            )
+    if app_settings.recording_pending_upload_duplicate_after_minutes > 0:
+        async with async_session_maker() as session:
+            recovered_count = await mark_abandoned_pending_upload_recordings(
+                session,
+                abandoned_after=timedelta(
+                    minutes=app_settings.recording_pending_upload_duplicate_after_minutes
+                ),
+                duplicate_window=timedelta(
+                    minutes=app_settings.recording_pending_upload_duplicate_window_minutes
+                ),
+            )
+        if recovered_count:
+            logger.warning(
+                "marked abandoned pending-upload recordings as failed count=%s",
                 recovered_count,
             )
     async with AsyncExitStack() as stack:

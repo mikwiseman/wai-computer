@@ -5,10 +5,12 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.recording_recovery import (
+    ABANDONED_UPLOAD_FAILURE_CODE,
     INTERRUPTED_PROCESSING_FAILURE_CODE,
+    mark_abandoned_pending_upload_recordings,
     mark_stale_processing_recordings,
 )
-from app.models.recording import Recording, RecordingStatus
+from app.models.recording import Recording, RecordingStatus, Segment
 from app.models.user import User
 
 
@@ -96,6 +98,129 @@ def test_interrupted_failure_message_localizes_ru_and_en():
     assert _interrupted_failure_message("en") == INTERRUPTED_PROCESSING_FAILURE_MESSAGES["en"]
     assert _interrupted_failure_message(None) == INTERRUPTED_PROCESSING_FAILURE_MESSAGES["en"]
     assert _interrupted_failure_message("") == INTERRUPTED_PROCESSING_FAILURE_MESSAGES["en"]
+
+
+@pytest.mark.asyncio
+async def test_mark_abandoned_pending_upload_recordings_fails_duplicate_orphan(
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    alerts: list[dict] = []
+    monkeypatch.setattr(
+        "app.core.recording_recovery.capture_sentry_message",
+        lambda _message, *, level, extras: alerts.append({"level": level, "extras": extras}),
+    )
+    user = User(email="pending-duplicate@example.com", password_hash="x")
+    db_session.add(user)
+    await db_session.flush()
+
+    now = datetime(2026, 6, 22, 12, 30, tzinfo=timezone.utc)
+    orphan = Recording(
+        user_id=user.id,
+        title="orphan",
+        type="meeting",
+        status=RecordingStatus.PENDING_UPLOAD.value,
+        created_at=now - timedelta(minutes=27),
+        updated_at=now - timedelta(minutes=27),
+    )
+    successor = Recording(
+        user_id=user.id,
+        title="real recording",
+        type="meeting",
+        status=RecordingStatus.READY.value,
+        uploaded_at=now - timedelta(minutes=5),
+        created_at=now - timedelta(minutes=26, seconds=45),
+        updated_at=now - timedelta(minutes=1),
+    )
+    db_session.add_all([orphan, successor])
+    await db_session.commit()
+
+    count = await mark_abandoned_pending_upload_recordings(
+        db_session,
+        abandoned_after=timedelta(minutes=15),
+        duplicate_window=timedelta(minutes=5),
+        now=now,
+    )
+
+    assert count == 1
+    rows = (await db_session.execute(select(Recording))).scalars().all()
+    by_title = {row.title: row for row in rows}
+    assert by_title["orphan"].status == RecordingStatus.FAILED.value
+    assert by_title["orphan"].failure_code == ABANDONED_UPLOAD_FAILURE_CODE
+    assert by_title["real recording"].status == RecordingStatus.READY.value
+    assert alerts == [
+        {
+            "level": "warning",
+            "extras": {
+                "alert_code": "recording.upload.abandoned",
+                "count": 1,
+                "abandoned_after_seconds": 900,
+                "duplicate_window_seconds": 300,
+            },
+        }
+    ]
+
+
+@pytest.mark.asyncio
+async def test_mark_abandoned_pending_upload_recordings_preserves_active_and_non_empty_rows(
+    db_session: AsyncSession,
+) -> None:
+    user = User(email="pending-active@example.com", password_hash="x")
+    db_session.add(user)
+    await db_session.flush()
+
+    now = datetime(2026, 6, 22, 12, 30, tzinfo=timezone.utc)
+    active_without_successor = Recording(
+        user_id=user.id,
+        title="active",
+        type="meeting",
+        status=RecordingStatus.PENDING_UPLOAD.value,
+        created_at=now - timedelta(minutes=27),
+        updated_at=now - timedelta(minutes=27),
+    )
+    non_empty = Recording(
+        user_id=user.id,
+        title="non-empty",
+        type="meeting",
+        status=RecordingStatus.PENDING_UPLOAD.value,
+        created_at=now - timedelta(minutes=27),
+        updated_at=now - timedelta(minutes=27),
+    )
+    successor = Recording(
+        user_id=user.id,
+        title="later",
+        type="meeting",
+        status=RecordingStatus.PROCESSING.value,
+        created_at=now - timedelta(minutes=26, seconds=45),
+        updated_at=now - timedelta(minutes=26, seconds=45),
+    )
+    db_session.add_all([active_without_successor, non_empty, successor])
+    await db_session.flush()
+    db_session.add(
+        Segment(
+            recording_id=non_empty.id,
+            speaker="Speaker 1",
+            content="already has transcript",
+            start_ms=0,
+            end_ms=1000,
+        )
+    )
+    await db_session.commit()
+
+    count = await mark_abandoned_pending_upload_recordings(
+        db_session,
+        abandoned_after=timedelta(minutes=15),
+        duplicate_window=timedelta(seconds=10),
+        now=now,
+    )
+
+    assert count == 0
+    rows = (await db_session.execute(select(Recording))).scalars().all()
+    assert {row.title: row.status for row in rows} == {
+        "active": RecordingStatus.PENDING_UPLOAD.value,
+        "non-empty": RecordingStatus.PENDING_UPLOAD.value,
+        "later": RecordingStatus.PROCESSING.value,
+    }
 
 
 def test_stale_cutoff_stays_above_recording_task_hard_limit():

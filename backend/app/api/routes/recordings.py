@@ -846,6 +846,7 @@ AUDIO_UPLOAD_RETRYABLE_FAILURE_CODES = {
     "staged_file_missing",
     "staging_failed",
     "transcription_halted",
+    "upload_abandoned",
 }
 
 
