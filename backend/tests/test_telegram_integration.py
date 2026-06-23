@@ -342,6 +342,174 @@ async def test_import_media_as_recording_persists_transcript_and_summary(
 
 
 @pytest.mark.asyncio
+async def test_import_media_keeps_transcript_when_summary_fails(
+    db_session: AsyncSession,
+    monkeypatch,
+    tmp_path,
+):
+    user = await _user(db_session, "telegram-summary-fails@example.com")
+    await db_session.commit()
+    monkeypatch.setattr("app.core.recording_import.settings.upload_staging_dir", str(tmp_path))
+    monkeypatch.setattr(
+        "app.core.recording_import.capture_sentry_anomaly",
+        lambda *_args, **_kwargs: None,
+        raising=False,
+    )
+
+    async def fake_transcribe(*args, **kwargs):
+        return [
+            TranscriptResult(
+                text="Транскрипт сохранен",
+                speaker="speaker_1",
+                is_final=True,
+                start_ms=0,
+                end_ms=1400,
+                confidence=0.96,
+            )
+        ]
+
+    async def fake_summary(*args, **kwargs):
+        raise RuntimeError("summary offline")
+
+    monkeypatch.setattr("app.core.recording_import.transcribe_audio_file", fake_transcribe)
+    monkeypatch.setattr(
+        "app.core.recording_import.generate_embedding",
+        AsyncMock(return_value=None),
+    )
+    monkeypatch.setattr(
+        "app.core.recording_import.identify_speakers_for_recording",
+        AsyncMock(return_value={}),
+    )
+    monkeypatch.setattr(
+        "app.core.recording_import.extract_speaker_names",
+        AsyncMock(return_value={}),
+    )
+    monkeypatch.setattr("app.core.recording_import.summarize_transcript", fake_summary)
+
+    result = await import_media_as_recording(
+        db=db_session,
+        user=user,
+        data=b"fake wav",
+        filename="voice.wav",
+        content_type="audio/wav",
+        title="Telegram audio",
+        source_label="telegram",
+        language="ru",
+    )
+
+    assert result.recording.status == RecordingStatus.READY.value
+    assert result.recording.failure_code is None
+    assert result.transcript == "Транскрипт сохранен"
+    assert result.summary is None
+
+    recording = (
+        await db_session.execute(select(Recording).where(Recording.id == result.recording.id))
+    ).scalar_one()
+    segments = (
+        (await db_session.execute(select(Segment).where(Segment.recording_id == recording.id)))
+        .scalars()
+        .all()
+    )
+    summary = (
+        await db_session.execute(select(Summary).where(Summary.recording_id == recording.id))
+    ).scalar_one_or_none()
+    assert recording.status == RecordingStatus.READY.value
+    assert len(segments) == 1
+    assert segments[0].content == "Транскрипт сохранен"
+    assert summary is None
+
+
+@pytest.mark.asyncio
+async def test_import_media_keeps_transcript_when_billing_fails(
+    db_session: AsyncSession,
+    monkeypatch,
+    tmp_path,
+):
+    user = await _user(db_session, "telegram-billing-fails@example.com")
+    await db_session.commit()
+    monkeypatch.setattr("app.core.recording_import.settings.upload_staging_dir", str(tmp_path))
+    monkeypatch.setattr(
+        "app.core.recording_import.capture_sentry_anomaly",
+        lambda *_args, **_kwargs: None,
+        raising=False,
+    )
+
+    async def fake_transcribe(*args, **kwargs):
+        return [
+            TranscriptResult(
+                text="Транскрипт и саммари сохранены",
+                speaker="speaker_1",
+                is_final=True,
+                start_ms=0,
+                end_ms=1600,
+                confidence=0.95,
+            )
+        ]
+
+    async def fake_summary(*args, **kwargs):
+        return SummaryResult(
+            title="Billing degraded",
+            summary="Саммари сохранено.",
+            key_points=[],
+            decisions=[],
+            action_items=[],
+            topics=[],
+            people_mentioned=[],
+            follow_up_questions=[],
+            sentiment="neutral",
+            highlights=[],
+        )
+
+    async def broken_billing(*args, **kwargs):
+        raise RuntimeError("billing offline")
+
+    monkeypatch.setattr("app.core.recording_import.transcribe_audio_file", fake_transcribe)
+    monkeypatch.setattr(
+        "app.core.recording_import.generate_embedding",
+        AsyncMock(return_value=None),
+    )
+    monkeypatch.setattr(
+        "app.core.recording_import.identify_speakers_for_recording",
+        AsyncMock(return_value={}),
+    )
+    monkeypatch.setattr(
+        "app.core.recording_import.extract_speaker_names",
+        AsyncMock(return_value={}),
+    )
+    monkeypatch.setattr("app.core.recording_import.summarize_transcript", fake_summary)
+    monkeypatch.setattr(
+        "app.core.recording_import.record_recording_transcript_words",
+        broken_billing,
+    )
+
+    result = await import_media_as_recording(
+        db=db_session,
+        user=user,
+        data=b"fake wav",
+        filename="voice.wav",
+        content_type="audio/wav",
+        title=None,
+        source_label="telegram",
+        language="ru",
+    )
+
+    assert result.recording.status == RecordingStatus.READY.value
+    assert result.transcript == "Транскрипт и саммари сохранены"
+    assert result.summary is not None
+
+    recording = (
+        await db_session.execute(select(Recording).where(Recording.id == result.recording.id))
+    ).scalar_one()
+    summary = (
+        await db_session.execute(select(Summary).where(Summary.recording_id == recording.id))
+    ).scalar_one()
+    assert recording.status == RecordingStatus.READY.value
+    assert recording.title == "Billing degraded"
+    assert recording.billed_word_count == 0
+    assert summary.summary == "Саммари сохранено."
+
+
+@pytest.mark.asyncio
 async def test_import_media_marks_failed_on_cost_guard_rejection(
     db_session: AsyncSession,
     monkeypatch,

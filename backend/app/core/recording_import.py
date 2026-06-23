@@ -26,6 +26,7 @@ from app.core.deepgram_usage import (
 )
 from app.core.embeddings import generate_embedding
 from app.core.error_sanitizer import sanitize_failure_message
+from app.core.observability import capture_sentry_anomaly, fingerprint_text
 from app.core.personalization import (
     load_user_keyterms,
     load_user_replacements,
@@ -742,6 +743,38 @@ async def _mark_failed(
     return recording
 
 
+async def _reload_recording(
+    db: AsyncSession,
+    *,
+    recording_id: UUID,
+    fallback: Recording,
+) -> Recording:
+    result = await db.execute(select(Recording).where(Recording.id == recording_id))
+    return result.scalar_one_or_none() or fallback
+
+
+def _capture_import_degraded(
+    alert_code: str,
+    message: str,
+    *,
+    recording_id: UUID | None,
+    source_label: str,
+    exc: Exception,
+) -> None:
+    capture_sentry_anomaly(
+        alert_code,
+        message,
+        category="recording",
+        extras={
+            "recording_id": str(recording_id) if recording_id is not None else None,
+            "source_label": source_label,
+            "error_type": type(exc).__name__,
+            "error_fingerprint": fingerprint_text(str(exc)),
+        },
+        level="warning",
+    )
+
+
 async def transcribe_media_bytes(
     *,
     db: AsyncSession,
@@ -911,44 +944,101 @@ async def import_media_as_recording(
             transcript_results=speech_results,
             duration_seconds=duration_seconds,
         )
-        summary_result = await summarize_transcript(
-            _labeled_summary_transcript(speech_results, speaker_names),
-            language=_summary_language(user, recording),
-            style=_summary_style(
-                user,
-                source_label=source_label,
-                media_kind=media_kind,
-            ),
-            instructions=combine_summary_instructions(
-                base_instructions=_summary_instructions(
-                    user,
-                    source_label=source_label,
-                    media_kind=media_kind,
-                ),
-                personalization_instructions=await summary_personalization_instructions(
-                    db,
-                    user_id=user.id,
-                ),
-                override_instructions=_speaker_roster_instructions(speaker_names),
-            ),
-        )
-        if not explicit_title:
-            generated_title = summary_result.title.strip()
-            if generated_title:
-                recording.title = generated_title[:500]
-        summary = await _persist_summary(
-            db=db,
-            recording=recording,
-            transcript_results=speech_results,
-            summary_result=summary_result,
-        )
         recording.status = RecordingStatus.READY.value
         recording.failure_code = None
         recording.failure_message = None
-        await record_recording_transcript_words(db, recording, transcript)
         await db.commit()
         await db.refresh(recording)
-        await db.refresh(summary)
+        summary_user_id = user.id
+        summary_language = _summary_language(user, recording)
+        summary_style = _summary_style(
+            user,
+            source_label=source_label,
+            media_kind=media_kind,
+        )
+        base_summary_instructions = _summary_instructions(
+            user,
+            source_label=source_label,
+            media_kind=media_kind,
+        )
+
+        try:
+            await record_recording_transcript_words(db, recording, transcript)
+            await db.commit()
+            await db.refresh(recording)
+        except Exception as exc:
+            await db.rollback()
+            logger.warning(
+                "external recording billing failed after transcript persisted "
+                "recording_id=%s source=%s",
+                recording_id,
+                source_label,
+                exc_info=True,
+            )
+            _capture_import_degraded(
+                "recording.import.billing.degraded",
+                "Recording import completed with degraded billing ledger",
+                recording_id=recording_id,
+                source_label=source_label,
+                exc=exc,
+            )
+            if recording_id is not None:
+                recording = await _reload_recording(
+                    db,
+                    recording_id=recording_id,
+                    fallback=recording,
+                )
+
+        summary: Summary | None = None
+        try:
+            summary_result = await summarize_transcript(
+                _labeled_summary_transcript(speech_results, speaker_names),
+                language=summary_language,
+                style=summary_style,
+                instructions=combine_summary_instructions(
+                    base_instructions=base_summary_instructions,
+                    personalization_instructions=await summary_personalization_instructions(
+                        db,
+                        user_id=summary_user_id,
+                    ),
+                    override_instructions=_speaker_roster_instructions(speaker_names),
+                ),
+            )
+            if not explicit_title:
+                generated_title = summary_result.title.strip()
+                if generated_title:
+                    recording.title = generated_title[:500]
+            summary = await _persist_summary(
+                db=db,
+                recording=recording,
+                transcript_results=speech_results,
+                summary_result=summary_result,
+            )
+            await db.commit()
+            await db.refresh(recording)
+            await db.refresh(summary)
+        except Exception as exc:
+            await db.rollback()
+            logger.warning(
+                "external recording summary failed after transcript persisted "
+                "recording_id=%s source=%s",
+                recording_id,
+                source_label,
+                exc_info=True,
+            )
+            _capture_import_degraded(
+                "recording.import.summary.degraded",
+                "Recording import completed with degraded summary generation",
+                recording_id=recording_id,
+                source_label=source_label,
+                exc=exc,
+            )
+            if recording_id is not None:
+                recording = await _reload_recording(
+                    db,
+                    recording_id=recording_id,
+                    fallback=recording,
+                )
         return ImportedRecordingResult(
             recording=recording,
             transcript=transcript,
