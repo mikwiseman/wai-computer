@@ -2863,6 +2863,41 @@ async def test_handle_media_message_marks_pending_context_before_import(
 
 
 @pytest.mark.asyncio
+async def test_handle_media_message_surfaces_unexpected_import_crash(
+    db_session: AsyncSession,
+    monkeypatch,
+):
+    user = await _user(db_session, "telegram-media-crash@example.com")
+    account = TelegramAccount(user_id=user.id, telegram_user_id=57, telegram_chat_id=57)
+    db_session.add(account)
+    await db_session.commit()
+    capture = _TelegramCapture()
+
+    async def broken_import(**kwargs):
+        raise RuntimeError("provider worker crashed")
+
+    monkeypatch.setattr(telegram_routes, "import_media_as_recording", broken_import)
+
+    await telegram_routes._handle_media_message(
+        db_session,
+        capture,
+        message={"message_id": 23, "chat": {"id": 57}},
+        account=account,
+        media={"kind": "voice", "file_id": "file-id"},
+    )
+
+    assert "Расшифровываю" in capture.messages[0]["text"]
+    assert capture.messages[-1]["text"] == telegram_routes.TELEGRAM_RECORDING_IMPORT_ERROR_REPLY
+    assert capture.messages[-1]["reply_to_message_id"] == 23
+    assert capture.deleted_messages == [{"chat_id": 57, "message_id": 1}]
+    assert account.active_context["ref_type"] == "recording_import_error"
+    assert (
+        account.active_context["message"]
+        == telegram_routes.TELEGRAM_RECORDING_IMPORT_ERROR_REPLY
+    )
+
+
+@pytest.mark.asyncio
 async def test_handle_document_message_imports_html_material_and_replies(
     db_session: AsyncSession,
     monkeypatch,

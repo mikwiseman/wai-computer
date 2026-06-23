@@ -124,6 +124,7 @@ BOT_LINK_CODE_LENGTH = 8
 CHAT_ACTION_INTERVAL_SECONDS = 4.0
 REMINDER_TEXT_LIMIT = 1200
 TELEGRAM_PENDING_RECORDING_TTL = timedelta(hours=6)
+TELEGRAM_RECORDING_IMPORT_ERROR_REPLY = "Не смог обработать запись. Попробуй позже."
 TELEGRAM_WAI_GENERIC_ERROR_REPLY = "Не получилось обработать запрос к Wai. Попробуй еще раз."
 TELEGRAM_WAI_RETRYABLE_ERROR_REPLY = (
     "Wai уперся во временный лимит провайдера. Попробуй еще раз через минуту."
@@ -3755,6 +3756,20 @@ async def _handle_media_message(
         )
         await _set_telegram_import_error_context(db, account, message=exc.message)
         await client.send_message(chat_id, exc.message)
+        await _delete_status_message(client, chat_id=chat_id, message_id=status_message_id)
+        return
+    except Exception:  # noqa: BLE001 - a Telegram import must always answer the sender.
+        logger.exception("telegram media import crashed kind=%s", media.get("kind"))
+        await _set_telegram_import_error_context(
+            db,
+            account,
+            message=TELEGRAM_RECORDING_IMPORT_ERROR_REPLY,
+        )
+        await client.send_message(
+            chat_id,
+            TELEGRAM_RECORDING_IMPORT_ERROR_REPLY,
+            reply_to_message_id=message.get("message_id"),
+        )
         await _delete_status_message(client, chat_id=chat_id, message_id=status_message_id)
         return
     finally:
