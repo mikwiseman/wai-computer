@@ -99,102 +99,35 @@ def test_ffprobe_duration_seconds_maps_subprocess_errors(
 
 
 @pytest.mark.asyncio
-async def test_normalize_audio_upload_for_transcription_converts_m4a_to_flac(
+@pytest.mark.parametrize(
+    ("content_type", "payload"),
+    [
+        ("audio/mp4; codecs=mp4a", b"m4a-audio"),
+        ("audio/m4a", b"m4a-audio"),
+        ("audio/x-m4a", b"m4a-audio"),
+        ("video/mp4", b"mp4-video"),
+        ("audio/wav", b"wav-audio"),
+    ],
+)
+async def test_normalize_audio_upload_for_transcription_keeps_deepgram_supported_containers(
     monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    calls: list[tuple[list[str], dict[str, object]]] = []
-
-    def run(args, **kwargs):
-        calls.append((args, kwargs))
-        input_path = args[args.index("-i") + 1]
-        assert input_path.endswith(".m4a")
-        with open(input_path, "rb") as source_file:
-            assert source_file.read() == b"m4a-audio"
-        return recording_audio_processing.subprocess.CompletedProcess(
-            args=args,
-            returncode=0,
-            stdout=b"flac-audio",
-            stderr=b"",
-        )
-
-    monkeypatch.setattr(recording_audio_processing.subprocess, "run", run)
-
-    audio_data, content_type = (
-        await recording_audio_processing._normalize_audio_upload_for_transcription(
-            b"m4a-audio",
-            content_type="audio/mp4; codecs=mp4a",
-        )
-    )
-
-    assert audio_data == b"flac-audio"
-    assert content_type == "audio/flac"
-    args, kwargs = calls[0]
-    assert args[0] == "ffmpeg"
-    assert "-ac" in args
-    assert args[args.index("-ac") + 1] == "1"
-    assert "-ar" in args
-    assert args[args.index("-ar") + 1] == "16000"
-    assert kwargs["capture_output"] is True
-    assert kwargs["check"] is False
-    assert kwargs["timeout"] == recording_audio_processing.AUDIO_NORMALIZATION_TIMEOUT_SECONDS
-
-
-@pytest.mark.asyncio
-async def test_normalize_audio_upload_for_transcription_skips_wav(
-    monkeypatch: pytest.MonkeyPatch,
+    content_type: str,
+    payload: bytes,
 ) -> None:
     def run(*_args, **_kwargs):
-        raise AssertionError("ffmpeg should not run for WAV uploads")
+        raise AssertionError("ffmpeg should not run for Deepgram-supported containers")
 
     monkeypatch.setattr(recording_audio_processing.subprocess, "run", run)
 
-    audio_data, content_type = (
+    audio_data, returned_content_type = (
         await recording_audio_processing._normalize_audio_upload_for_transcription(
-            b"wav-audio",
-            content_type="audio/wav",
+            payload,
+            content_type=content_type,
         )
     )
 
-    assert audio_data == b"wav-audio"
-    assert content_type == "audio/wav"
-
-
-@pytest.mark.asyncio
-async def test_normalize_audio_upload_for_transcription_raises_on_ffmpeg_failure(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr(
-        recording_audio_processing.subprocess,
-        "run",
-        lambda args, **_kwargs: recording_audio_processing.subprocess.CompletedProcess(
-            args=args,
-            returncode=1,
-            stdout=b"",
-            stderr=b"unsupported container",
-        ),
-    )
-
-    with pytest.raises(recording_audio_processing.AudioNormalizationError):
-        await recording_audio_processing._normalize_audio_upload_for_transcription(
-            b"bad-m4a",
-            content_type="audio/mp4",
-        )
-
-
-@pytest.mark.asyncio
-async def test_normalize_audio_upload_for_transcription_maps_subprocess_errors(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    def run(*_args, **_kwargs):
-        raise OSError("ffmpeg missing")
-
-    monkeypatch.setattr(recording_audio_processing.subprocess, "run", run)
-
-    with pytest.raises(recording_audio_processing.AudioNormalizationError):
-        await recording_audio_processing._normalize_audio_upload_for_transcription(
-            b"m4a-audio",
-            content_type="audio/m4a",
-        )
+    assert audio_data == payload
+    assert returned_content_type == content_type
 
 
 def test_audio_processing_helper_edge_branches() -> None:
@@ -396,7 +329,7 @@ async def test_process_staged_recording_upload_persists_canonical_segments(
 
 
 @pytest.mark.asyncio
-async def test_process_staged_recording_upload_normalizes_m4a_before_provider(
+async def test_process_staged_recording_upload_sends_m4a_container_to_provider(
     db_session: AsyncSession,
     tmp_path,
     monkeypatch: pytest.MonkeyPatch,
@@ -432,14 +365,7 @@ async def test_process_staged_recording_upload_normalizes_m4a_before_provider(
         )
     ]
 
-    normalizer = AsyncMock(return_value=(b"normalized-flac", "audio/flac"))
     transcribe = AsyncMock(return_value=transcript_results)
-    monkeypatch.setattr(
-        recording_audio_processing,
-        "_normalize_audio_upload_for_transcription",
-        normalizer,
-        raising=False,
-    )
     monkeypatch.setattr(
         "app.core.recording_audio_processing._ffprobe_duration_seconds",
         lambda *_args, **_kwargs: 12.0,
@@ -472,91 +398,13 @@ async def test_process_staged_recording_upload_normalizes_m4a_before_provider(
         staged_size_bytes=staged_path.stat().st_size,
     )
 
-    normalizer.assert_awaited_once_with(b"m4a-audio", content_type="audio/mp4")
     transcribe.assert_awaited_once()
     _, kwargs = transcribe.await_args
-    assert kwargs["content_type"] == "audio/flac"
-    assert transcribe.await_args.args[0] == b"normalized-flac"
+    assert kwargs["content_type"] == "audio/mp4"
+    assert transcribe.await_args.args[0] == b"m4a-audio"
     await db_session.refresh(recording)
     assert recording.status == RecordingStatus.READY.value
     assert not staged_path.exists()
-
-
-@pytest.mark.asyncio
-async def test_process_staged_recording_upload_marks_audio_decode_failed(
-    db_session: AsyncSession,
-    tmp_path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    user = User(
-        email="decode-failed-processing@example.com",
-        password_hash="x",
-        default_language="en",
-    )
-    db_session.add(user)
-    await db_session.flush()
-    recording = Recording(
-        user_id=user.id,
-        title="Decode failure",
-        type="meeting",
-        status=RecordingStatus.PROCESSING.value,
-        uploaded_at=datetime.now(timezone.utc),
-        language="en",
-    )
-    db_session.add(recording)
-    await db_session.commit()
-
-    staged_path = tmp_path / "recording.m4a"
-    staged_path.write_bytes(b"bad-m4a")
-    transcribe = AsyncMock()
-    sentry_anomalies: list[dict[str, object]] = []
-
-    monkeypatch.setattr(
-        "app.core.recording_audio_processing._ffprobe_duration_seconds",
-        lambda *_args, **_kwargs: 12.0,
-    )
-    monkeypatch.setattr(
-        "app.core.recording_audio_processing._normalize_audio_upload_for_transcription",
-        AsyncMock(
-            side_effect=recording_audio_processing.AudioNormalizationError(
-                "decode failed"
-            )
-        ),
-    )
-    monkeypatch.setattr(
-        "app.core.recording_audio_processing.transcribe_audio_file",
-        transcribe,
-    )
-    monkeypatch.setattr(
-        "app.core.recording_audio_processing.capture_sentry_anomaly",
-        lambda alert_code, message, *, category, extras, level="warning": sentry_anomalies.append(
-            {
-                "alert_code": alert_code,
-                "message": message,
-                "category": category,
-                "extras": extras,
-                "level": level,
-            }
-        ),
-    )
-
-    await process_staged_recording_upload(
-        db_session,
-        recording_id=recording.id,
-        user_id=user.id,
-        staged_path=staged_path,
-        content_type="audio/mp4",
-        user_default_language="en",
-        client_duration_seconds=12,
-        staged_size_bytes=staged_path.stat().st_size,
-    )
-
-    transcribe.assert_not_awaited()
-    await db_session.refresh(recording)
-    assert recording.status == RecordingStatus.FAILED.value
-    assert recording.failure_code == "audio_decode_failed"
-    assert not staged_path.exists()
-    assert sentry_anomalies[0]["alert_code"] == "recording.audio.decode_failed"
 
 
 @pytest.mark.asyncio
@@ -782,9 +630,10 @@ async def test_process_staged_recording_upload_commits_transcript_before_embeddi
     async def _cancel_embedding(*_args, **_kwargs):
         raise asyncio.CancelledError()
 
+    transcribe = AsyncMock(return_value=transcript_results)
     monkeypatch.setattr(
         "app.core.recording_audio_processing.transcribe_audio_file",
-        AsyncMock(return_value=transcript_results),
+        transcribe,
     )
     monkeypatch.setattr(
         "app.core.recording_audio_processing.generate_embedding",
@@ -1194,9 +1043,18 @@ async def test_process_staged_recording_upload_skips_voice_identification_for_ov
         "voice_identification_max_audio_bytes",
         30 * 1024 * 1024,
     )
+    transcribe = AsyncMock(return_value=transcript_results)
     monkeypatch.setattr(
         "app.core.recording_audio_processing.transcribe_audio_file",
-        AsyncMock(return_value=transcript_results),
+        transcribe,
+    )
+
+    def fail_ffprobe(*_args, **_kwargs):
+        raise AssertionError("large non-WAV uploads should use client duration without ffprobe")
+
+    monkeypatch.setattr(
+        "app.core.recording_audio_processing._ffprobe_duration_seconds",
+        fail_ffprobe,
     )
     monkeypatch.setattr(
         "app.core.recording_audio_processing.generate_embedding",
@@ -1209,10 +1067,6 @@ async def test_process_staged_recording_upload_skips_voice_identification_for_ov
     monkeypatch.setattr(
         "app.core.recording_audio_processing.identify_speakers_for_recording",
         identify_mock,
-    )
-    monkeypatch.setattr(
-        "app.core.recording_audio_processing._normalize_audio_upload_for_transcription",
-        AsyncMock(return_value=(b"long-audio", "audio/flac")),
     )
     sentry_anomalies: list[dict[str, object]] = []
 
@@ -1235,6 +1089,10 @@ async def test_process_staged_recording_upload_skips_voice_identification_for_ov
         staged_size_bytes=51_219_221,
     )
 
+    transcribe.assert_awaited_once()
+    assert transcribe.await_args.args[0] == b"audio"
+    assert transcribe.await_args.kwargs["content_type"] == "audio/mp4"
+    assert transcribe.await_args.kwargs["audio_duration_seconds"] == 9_236
     identify_mock.assert_awaited_once()
     assert identify_mock.await_args.kwargs["enabled"] is False
     segment = (

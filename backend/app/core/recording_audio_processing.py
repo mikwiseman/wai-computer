@@ -2,12 +2,10 @@
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import math
 import re
 import subprocess
-import tempfile
 import time
 import wave
 from pathlib import Path
@@ -89,23 +87,12 @@ PROVIDER_REQUEST_FAILURE_CODE = "provider_request_failed"
 MIN_FILE_STT_AUDIO_SECONDS = 0.1
 AUDIO_DURATION_PROBE_MAX_BYTES = 30 * 1024 * 1024
 AUDIO_DURATION_PROBE_TIMEOUT_SECONDS = 10
-AUDIO_NORMALIZATION_TIMEOUT_SECONDS = 180
 PROCESSING_SLOW_MIN_THRESHOLD_MS = 300_000
 PROCESSING_AUDIO_DURATION_MULTIPLIER = 4.0
-M4A_LIKE_CONTENT_TYPES = {
-    "audio/mp4",
-    "audio/m4a",
-    "audio/x-m4a",
-    "video/mp4",
-}
 
 
 class AudioDurationProbeError(Exception):
     """Raised when a staged non-WAV upload duration cannot be probed locally."""
-
-
-class AudioNormalizationError(Exception):
-    """Raised when a staged upload cannot be decoded into provider-safe audio."""
 
 
 def copy_locale_from_recording_language(
@@ -273,79 +260,15 @@ def _non_wav_duration_seconds(path: Path, _content_type: str) -> float:
     return _ffprobe_duration_seconds(path)
 
 
-def _should_normalize_audio_upload_for_transcription(content_type: str) -> bool:
-    normalized = content_type.split(";", 1)[0].strip().lower()
-    return normalized in M4A_LIKE_CONTENT_TYPES
-
-
 async def _normalize_audio_upload_for_transcription(
     audio_data: bytes,
     *,
     content_type: str,
 ) -> tuple[bytes, str]:
-    if not _should_normalize_audio_upload_for_transcription(content_type):
-        return audio_data, content_type
-
-    normalized_content_type = content_type.split(";", 1)[0].strip().lower()
-    source_suffix = ".mp4" if normalized_content_type == "video/mp4" else ".m4a"
-
-    def convert_to_flac() -> subprocess.CompletedProcess[bytes]:
-        with tempfile.NamedTemporaryFile(suffix=source_suffix) as source_file:
-            source_file.write(audio_data)
-            source_file.flush()
-            return subprocess.run(
-                [
-                    "ffmpeg",
-                    "-hide_banner",
-                    "-loglevel",
-                    "error",
-                    "-i",
-                    source_file.name,
-                    "-vn",
-                    "-ac",
-                    "1",
-                    "-ar",
-                    "16000",
-                    "-acodec",
-                    "flac",
-                    "-f",
-                    "flac",
-                    "pipe:1",
-                ],
-                capture_output=True,
-                timeout=AUDIO_NORMALIZATION_TIMEOUT_SECONDS,
-                check=False,
-            )
-
-    try:
-        completed = await asyncio.to_thread(convert_to_flac)
-    except (OSError, subprocess.SubprocessError) as exc:
-        raise AudioNormalizationError("ffmpeg could not decode uploaded audio.") from exc
-
-    if completed.returncode != 0 or not completed.stdout:
-        stderr = completed.stderr.decode("utf-8", errors="replace").strip()
-        detail = stderr or f"ffmpeg exited with status {completed.returncode}."
-        raise AudioNormalizationError(detail)
-
-    logger.info(
-        "normalized recording upload for provider source_content_type=%s "
-        "provider_content_type=audio/flac source_bytes=%s provider_bytes=%s",
-        content_type,
-        len(audio_data),
-        len(completed.stdout),
-    )
-    add_sentry_breadcrumb(
-        category="recording",
-        message="Recording upload normalized before provider transcription",
-        data={
-            "source_content_type": content_type,
-            "provider_content_type": "audio/flac",
-            "source_bytes": len(audio_data),
-            "provider_bytes": len(completed.stdout),
-        },
-        level="info",
-    )
-    return completed.stdout, "audio/flac"
+    # Deepgram batch STT accepts common container formats (MP4/M4A/WAV/FLAC/Ogg/WebM)
+    # and auto-detects them from headers. Keep the original bytes here instead of
+    # expanding multi-hour compressed audio into a large in-memory WAV/FLAC buffer.
+    return audio_data, content_type
 
 
 def _audio_duration_seconds(
@@ -1300,38 +1223,6 @@ async def process_staged_recording_upload(
             transcript_end_ms=max_end_ms,
         )
         logger.info("audio processing completed latency_ms=%s", processing_latency_ms)
-    except AudioNormalizationError as exc:
-        await db.rollback()
-        logger.warning(
-            "Recording uploaded audio decode failed recording_id=%s "
-            "content_type=%s staged_size_bytes=%s error_type=%s error_fingerprint=%s",
-            recording_id,
-            content_type,
-            staged_size_bytes,
-            type(exc).__name__,
-            fingerprint_text(str(exc)),
-        )
-        capture_sentry_anomaly(
-            "recording.audio.decode_failed",
-            "Recording uploaded audio could not be decoded",
-            category="recording",
-            extras={
-                "recording_id": str(recording_id),
-                "content_type": content_type,
-                "staged_size_bytes": staged_size_bytes,
-                "error_type": type(exc).__name__,
-                "error_fingerprint": fingerprint_text(str(exc)),
-            },
-            level="warning",
-        )
-        await mark_recording_processing_failed(
-            db,
-            recording_id=recording_id,
-            failure_code="audio_decode_failed",
-            failure_message="Could not read the uploaded audio file.",
-        )
-        delete_staged_file(staged_path)
-        return
     except TranscriptionGuardError as exc:
         await db.rollback()
         logger.warning(
