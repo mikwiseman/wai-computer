@@ -156,6 +156,69 @@ async def test_import_with_precomputed_skips_second_transcription(
 
 
 @pytest.mark.asyncio
+async def test_import_batches_multi_segment_embeddings(
+    db_session: AsyncSession, monkeypatch, tmp_path
+):
+    user = await _user(db_session, "routing-batch-embeddings@example.com")
+    await db_session.commit()
+    monkeypatch.setattr("app.core.recording_import.settings.upload_staging_dir", str(tmp_path))
+
+    async def fake_transcribe(*_args, **_kwargs):
+        return [_speech("один"), _speech("два"), _speech("три")]
+
+    async def fail_single_embedding(_text: str, **_: object):
+        raise AssertionError("multi-segment imports must use batch embeddings")
+
+    embedding_batches: list[list[str]] = []
+
+    async def fake_embeddings(texts: list[str], **_: object):
+        embedding_batches.append(list(texts))
+        return [[0.1] * 1536, [0.2] * 1536, [0.3] * 1536]
+
+    async def fake_identify(**_kwargs):
+        return {}
+
+    async def fake_summary(_transcript: str, **_kwargs):
+        return SummaryResult(
+            title="Запись",
+            summary="Саммари.",
+            key_points=[],
+            decisions=[],
+            action_items=[],
+            topics=[],
+            people_mentioned=[],
+            follow_up_questions=[],
+            sentiment="neutral",
+            highlights=[],
+        )
+
+    monkeypatch.setattr("app.core.recording_import.transcribe_audio_file", fake_transcribe)
+    monkeypatch.setattr("app.core.recording_import.generate_embedding", fail_single_embedding)
+    monkeypatch.setattr(
+        "app.core.recording_import.generate_embeddings",
+        fake_embeddings,
+        raising=False,
+    )
+    monkeypatch.setattr("app.core.recording_import.identify_speakers_for_recording", fake_identify)
+    monkeypatch.setattr("app.core.recording_import.summarize_transcript", fake_summary)
+
+    result = await import_media_as_recording(
+        db=db_session,
+        user=user,
+        data=b"fake wav",
+        filename="meeting.wav",
+        content_type="audio/wav",
+        title=None,
+        source_label="upload",
+        language="ru",
+    )
+
+    assert result.recording.status == RecordingStatus.READY.value
+    assert result.transcript == "один два три"
+    assert embedding_batches == [["один", "два", "три"]]
+
+
+@pytest.mark.asyncio
 async def test_import_prefers_known_media_duration_over_provider_timestamp_drift(
     db_session: AsyncSession, monkeypatch, tmp_path
 ):

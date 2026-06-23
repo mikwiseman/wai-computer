@@ -18,6 +18,11 @@ from app.core.openai_client import get_openai_client
 logger = logging.getLogger(__name__)
 
 
+def _embedding_response_index(item: object, fallback: int) -> int:
+    index = getattr(item, "index", fallback)
+    return index if isinstance(index, int) else fallback
+
+
 async def generate_embedding(
     text: str,
     *,
@@ -199,7 +204,11 @@ async def generate_embeddings(
         response=response,
         latency_ms=round((time.perf_counter() - started) * 1000),
     )
-    return [list(item.embedding) for item in response.data]
+    ordered_data = sorted(
+        enumerate(response.data),
+        key=lambda item: _embedding_response_index(item[1], item[0]),
+    )
+    return [list(item.embedding) for _, item in ordered_data]
 
 
 async def _record_embedding_usage(

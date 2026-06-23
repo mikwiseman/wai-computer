@@ -67,6 +67,20 @@ async def test_generate_embeddings_batches_multiple_texts(mock_openai_client):
     assert result == fake
 
 
+async def test_generate_embeddings_orders_results_by_response_index(mock_openai_client):
+    fake = [[0.1] * 1536, [0.2] * 1536]
+    mock_openai_client.embeddings.create.return_value = MagicMock(
+        data=[
+            MagicMock(index=1, embedding=fake[1]),
+            MagicMock(index=0, embedding=fake[0]),
+        ]
+    )
+
+    result = await generate_embeddings(["a", "b"])
+
+    assert result == fake
+
+
 async def test_generate_embeddings_reraises_provider_error(mock_openai_client):
     mock_openai_client.embeddings.create.side_effect = RuntimeError("provider unavailable")
 

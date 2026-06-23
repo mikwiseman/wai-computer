@@ -24,7 +24,7 @@ from app.core.deepgram_usage import (
     provider_error_code,
     record_deepgram_usage_event,
 )
-from app.core.embeddings import generate_embedding
+from app.core.embeddings import generate_embedding, generate_embeddings
 from app.core.error_sanitizer import sanitize_failure_message
 from app.core.observability import capture_sentry_anomaly, fingerprint_text
 from app.core.personalization import (
@@ -58,6 +58,7 @@ from app.models.user import User
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
+SEGMENT_EMBEDDING_BATCH_SIZE = 256
 
 TELEGRAM_IMPORT_SUMMARY_INSTRUCTIONS = """\
 For Telegram voice/audio imports, the `summary` field IS the complete
@@ -568,6 +569,7 @@ async def _persist_segments(
     except Exception:
         logger.exception("speaker name extraction failed for imported recording")
 
+    segment_rows: list[tuple[TranscriptResult, str]] = []
     transcript_parts: list[str] = []
     max_end_ms = 0
     for tr in transcript_results:
@@ -576,18 +578,15 @@ async def _persist_segments(
             continue
         transcript_parts.append(text)
         max_end_ms = max(max_end_ms, tr.end_ms)
-        embedding = None
-        try:
-            embedding = await generate_embedding(
-                with_title_context(recording.title, text),
-                usage_user_id=user_id,
-                usage_recording_id=recording.id,
-                usage_feature="recording",
-                usage_operation="embedding.segment",
-            )
-        except Exception:
-            logger.warning("failed to generate imported segment embedding")
+        segment_rows.append((tr, text))
 
+    embeddings = await _generate_imported_segment_embeddings(
+        recording=recording,
+        user_id=user_id,
+        texts=[text for _, text in segment_rows],
+    )
+
+    for (tr, text), embedding in zip(segment_rows, embeddings, strict=True):
         assignment = speaker_assignments.get(tr.speaker) if tr.speaker else None
         assigned_person_id, match_confidence = (
             assignment if assignment is not None else (None, None)
@@ -615,6 +614,58 @@ async def _persist_segments(
         if getattr(assignment, "name", "").strip()
     }
     return " ".join(transcript_parts), speaker_names
+
+
+async def _generate_imported_segment_embeddings(
+    *,
+    recording: Recording,
+    user_id: UUID,
+    texts: list[str],
+) -> list[list[float] | None]:
+    if not texts:
+        return []
+    if len(texts) == 1:
+        try:
+            return [
+                await generate_embedding(
+                    with_title_context(recording.title, texts[0]),
+                    usage_user_id=user_id,
+                    usage_recording_id=recording.id,
+                    usage_feature="recording",
+                    usage_operation="embedding.segment",
+                )
+            ]
+        except Exception:
+            logger.warning("failed to generate imported segment embedding")
+            return [None]
+
+    embeddings: list[list[float] | None] = [None] * len(texts)
+    for offset in range(0, len(texts), SEGMENT_EMBEDDING_BATCH_SIZE):
+        batch_texts = texts[offset : offset + SEGMENT_EMBEDDING_BATCH_SIZE]
+        try:
+            batch_embeddings = await generate_embeddings(
+                [with_title_context(recording.title, text) for text in batch_texts],
+                usage_user_id=user_id,
+                usage_recording_id=recording.id,
+                usage_feature="recording",
+                usage_operation="embedding.segment",
+            )
+        except Exception:
+            logger.warning(
+                "failed to generate imported segment embedding batch",
+                exc_info=True,
+            )
+            continue
+        if len(batch_embeddings) != len(batch_texts):
+            logger.warning(
+                "imported segment embedding batch returned unexpected count "
+                "expected=%s actual=%s",
+                len(batch_texts),
+                len(batch_embeddings),
+            )
+            continue
+        embeddings[offset : offset + len(batch_embeddings)] = batch_embeddings
+    return embeddings
 
 
 async def _persist_summary(
