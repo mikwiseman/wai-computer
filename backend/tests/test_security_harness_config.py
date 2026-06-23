@@ -100,6 +100,21 @@ def test_server_build_refuses_to_restart_active_transcription_tasks():
     )
 
 
+def test_server_build_prunes_stale_deploy_images_before_disk_check():
+    script = (REPO_ROOT / "scripts/server-build.sh").read_text()
+
+    assert "prune_stale_deploy_images" in script
+    assert 'keep_images=("$WAICOMPUTER_BACKEND_IMAGE" "$WAICOMPUTER_WEB_IMAGE")' in script
+    assert "docker ps -a --format '{{.Image}}'" in script
+    assert "Removing stale WaiComputer deploy images" in script
+    prune_call = (
+        "docker_compose config >/dev/null\n"
+        "prune_stale_deploy_images\n"
+        "require_disk_headroom"
+    )
+    assert prune_call in script
+
+
 def test_production_compose_uses_sha_tagged_deploy_images():
     compose = yaml.safe_load((BACKEND_ROOT / "docker-compose.yml").read_text())
 

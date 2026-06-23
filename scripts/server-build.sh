@@ -75,6 +75,43 @@ docker_compose_timeout() {
   timeout "$DEPLOY_BUILD_TIMEOUT_SECONDS" docker compose --env-file "$PROD_ENV_FILE" "$@"
 }
 
+prune_stale_deploy_images() {
+  local keep_images=("$WAICOMPUTER_BACKEND_IMAGE" "$WAICOMPUTER_WEB_IMAGE")
+  local image
+  local keep_image
+  local stale_images=()
+
+  while IFS= read -r image; do
+    if [[ -n "$image" ]]; then
+      keep_images+=("$image")
+    fi
+  done < <(docker ps -a --format '{{.Image}}' | sort -u)
+
+  while IFS= read -r image; do
+    if [[ -z "$image" ]]; then
+      continue
+    fi
+    for keep_image in "${keep_images[@]}"; do
+      if [[ "$image" == "$keep_image" ]]; then
+        continue 2
+      fi
+    done
+    stale_images+=("$image")
+  done < <(
+    docker image ls --format '{{.Repository}}:{{.Tag}}' \
+      | grep -E '^waicomputer-(backend|web):' \
+      || true
+  )
+
+  if (( ${#stale_images[@]} == 0 )); then
+    return 0
+  fi
+
+  echo "Removing stale WaiComputer deploy images before disk headroom check ..."
+  printf '%s\n' "${stale_images[@]}"
+  docker image rm "${stale_images[@]}"
+}
+
 assert_no_active_transcription_tasks() {
   local worker_running
   local active_output
@@ -200,6 +237,7 @@ restart_celery_on_exit() {
 trap restart_celery_on_exit EXIT
 
 docker_compose config >/dev/null
+prune_stale_deploy_images
 require_disk_headroom
 assert_no_active_transcription_tasks
 
