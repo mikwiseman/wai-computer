@@ -24,7 +24,7 @@ from fastapi import (
     status,
 )
 from pydantic import BaseModel, Field, field_validator
-from sqlalchemy import delete, select, text, update
+from sqlalchemy import delete, exists, select, text, update
 from sqlalchemy.orm import selectinload
 
 from app.api.deps import CurrentUser, Database
@@ -369,6 +369,44 @@ class CreateRecordingRequest(BaseModel):
 
         normalized = value.strip().lower()
         return normalized or None
+
+
+async def _fresh_reusable_pending_recording(
+    *,
+    user_id: UUID,
+    request: CreateRecordingRequest,
+    language: str | None,
+    folder_id: UUID | None,
+    db: Database,
+) -> Recording | None:
+    """Return a just-created native recording row for duplicate start requests."""
+    if app_settings.recording_create_duplicate_window_seconds <= 0:
+        return None
+    if request.title and request.title.strip():
+        return None
+
+    cutoff = datetime.now(timezone.utc) - timedelta(
+        seconds=app_settings.recording_create_duplicate_window_seconds
+    )
+    result = await db.execute(
+        select(Recording)
+        .where(
+            Recording.user_id == user_id,
+            Recording.type == request.type,
+            Recording.language == language,
+            Recording.folder_id == folder_id,
+            Recording.status == RecordingStatus.PENDING_UPLOAD.value,
+            Recording.deleted_at.is_(None),
+            Recording.uploaded_at.is_(None),
+            Recording.audio_url.is_(None),
+            Recording.title.is_(None),
+            Recording.created_at >= cutoff,
+            ~exists().where(Segment.recording_id == Recording.id),
+        )
+        .order_by(Recording.created_at.desc())
+        .limit(1)
+    )
+    return result.scalar_one_or_none()
 
 
 class UpdateRecordingRequest(BaseModel):
@@ -1467,6 +1505,7 @@ async def bulk_recording_operation(
 @router.post("", response_model=RecordingResponse, status_code=status.HTTP_201_CREATED)
 async def create_recording(
     request: CreateRecordingRequest,
+    response: Response,
     user: CurrentUser,
     db: Database,
 ) -> RecordingResponse:
@@ -1478,6 +1517,30 @@ async def create_recording(
     )
     language = request.language if request.language is not None else user.default_language
     folder = await _require_folder(request.folder_id, user.id, db)
+    folder_id = folder.id if folder else None
+    reusable_recording = await _fresh_reusable_pending_recording(
+        user_id=user.id,
+        request=request,
+        language=language,
+        folder_id=folder_id,
+        db=db,
+    )
+    if reusable_recording is not None:
+        bind_recording_context(str(reusable_recording.id))
+        response.status_code = status.HTTP_200_OK
+        logger.info(
+            "recording duplicate start reused type=%s language=%s",
+            request.type,
+            language,
+        )
+        add_sentry_breadcrumb(
+            category="recording",
+            message="Reused duplicate recording start",
+            data={"type": request.type, "recording_id": str(reusable_recording.id)},
+            level="warning",
+        )
+        return _serialize_recording(reusable_recording)
+
     recording = Recording(
         user_id=user.id,
         title=request.title,
@@ -1486,7 +1549,7 @@ async def create_recording(
         title_auto_generated=not bool(request.title and request.title.strip()),
         type=request.type,
         language=language,
-        folder_id=folder.id if folder else None,
+        folder_id=folder_id,
     )
     db.add(recording)
     await db.flush()

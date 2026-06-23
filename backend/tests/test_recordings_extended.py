@@ -583,6 +583,37 @@ async def test_create_recording_empty_language_becomes_null(
     assert response.status_code == 201
 
 
+async def test_create_recording_reuses_fresh_untitled_pending_start(
+    client: AsyncClient,
+    auth_headers: dict,
+):
+    """A retry/double-start for the same native recording must not create a duplicate row."""
+    payload = {"title": None, "type": "meeting", "language": "multi"}
+    first_response = await client.post(
+        "/api/recordings",
+        headers=auth_headers,
+        json=payload,
+    )
+    assert first_response.status_code == 201
+    first = first_response.json()
+
+    second_response = await client.post(
+        "/api/recordings",
+        headers=auth_headers,
+        json=payload,
+    )
+    assert second_response.status_code == 200
+    assert second_response.json()["id"] == first["id"]
+
+    list_response = await client.get(
+        "/api/recordings",
+        headers=auth_headers,
+        params={"type": "meeting"},
+    )
+    assert list_response.status_code == 200
+    assert [recording["id"] for recording in list_response.json()] == [first["id"]]
+
+
 # ---------------------------------------------------------------------------
 # Upload with nonexistent recording_id for another user
 # ---------------------------------------------------------------------------

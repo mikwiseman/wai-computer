@@ -184,6 +184,7 @@ class Settings(BaseSettings):
     # Fast cleanup for the duplicate-start failure mode: an old pending_upload
     # row with no upload/segments plus a newer same-type row from the same user
     # created immediately after it is an abandoned start, not an active meeting.
+    recording_create_duplicate_window_seconds: int = 30
     recording_pending_upload_duplicate_after_minutes: int = 15
     recording_pending_upload_duplicate_window_minutes: int = 5
     # Slow cleanup for pre-upload rows with no server-side evidence. Local

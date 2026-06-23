@@ -554,11 +554,13 @@ async def test_recording_route_direct_paths(
 
     created = await recordings.create_recording(
         recordings.CreateRecordingRequest(title="Planning", type="meeting", language="en"),
+        Response(),
         user,
         db_session,
     )
     created_note = await recordings.create_recording(
         recordings.CreateRecordingRequest(title=None, type="note", language="en"),
+        Response(),
         user,
         db_session,
     )
@@ -689,6 +691,7 @@ async def test_recording_route_direct_paths(
 
     generated_recording = await recordings.create_recording(
         recordings.CreateRecordingRequest(title=None, type="note", language="en"),
+        Response(),
         user,
         db_session,
     )
