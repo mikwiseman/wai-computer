@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import and_, exists, or_, select, update
+from sqlalchemy import and_, case, exists, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.observability import capture_sentry_message
@@ -78,7 +78,13 @@ async def mark_stale_processing_recordings(
         .values(
             status=RecordingStatus.FAILED.value,
             failure_code=INTERRUPTED_PROCESSING_FAILURE_CODE,
-            failure_message=INTERRUPTED_PROCESSING_FAILURE_MESSAGES["en"],
+            failure_message=case(
+                (
+                    Recording.language.ilike("ru%"),
+                    INTERRUPTED_PROCESSING_FAILURE_MESSAGES["ru"],
+                ),
+                else_=INTERRUPTED_PROCESSING_FAILURE_MESSAGES["en"],
+            ),
         )
     )
     await db.commit()

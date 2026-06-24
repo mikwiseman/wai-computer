@@ -203,7 +203,7 @@ async def test_recover_missing_summary_generation_jobs_enqueues_only_never_start
     recovered = await recover_missing_summary_generation_jobs(
         db_session,
         enqueue=lambda job_id: enqueued.append(job_id) or f"celery-{job_id}",
-        limit=10,
+        limit=1,
     )
 
     jobs = (
@@ -361,6 +361,129 @@ async def test_recover_missing_summary_generation_jobs_fails_orphaned_queued_enq
     assert recovered == 0
     assert orphaned_job.status == SummaryGenerationStatus.FAILED.value
     assert orphaned_job.error_code == "summary_enqueue_failed"
+
+
+@pytest.mark.asyncio
+async def test_recover_missing_summary_generation_jobs_reenqueues_failed_enqueue_job(
+    db_session: AsyncSession,
+) -> None:
+    user = await _user(db_session)
+    recording = await _recording(db_session, user)
+    failed_job = SummaryGenerationJob(
+        recording_id=recording.id,
+        user_id=user.id,
+        status=SummaryGenerationStatus.FAILED.value,
+        stage="failed",
+        progress_percent=100,
+        transcript_hash=summary_transcript_hash(
+            build_summary_transcript(await _segments(db_session, recording))
+        ),
+        task_id=None,
+        error_code="summary_enqueue_failed",
+        error_message="Failed to start summary generation.",
+        failed_at=datetime.now(timezone.utc),
+    )
+    db_session.add(failed_job)
+    await db_session.flush()
+
+    enqueued: list[UUID] = []
+
+    recovered = await recover_missing_summary_generation_jobs(
+        db_session,
+        enqueue=lambda job_id: enqueued.append(job_id) or f"celery-{job_id}",
+        limit=10,
+    )
+
+    await db_session.refresh(failed_job)
+    assert recovered == 1
+    assert enqueued == [failed_job.id]
+    assert failed_job.status == SummaryGenerationStatus.QUEUED.value
+    assert failed_job.stage == "queued"
+    assert failed_job.progress_percent == 5
+    assert failed_job.task_id == f"celery-{failed_job.id}"
+    assert failed_job.error_code is None
+    assert failed_job.error_message is None
+    assert failed_job.failed_at is None
+
+
+@pytest.mark.asyncio
+async def test_recover_missing_summary_generation_jobs_keeps_failed_enqueue_on_retry_error(
+    db_session: AsyncSession,
+) -> None:
+    user = await _user(db_session)
+    recording = await _recording(db_session, user)
+    failed_job = SummaryGenerationJob(
+        recording_id=recording.id,
+        user_id=user.id,
+        status=SummaryGenerationStatus.FAILED.value,
+        stage="failed",
+        progress_percent=100,
+        transcript_hash=summary_transcript_hash(
+            build_summary_transcript(await _segments(db_session, recording))
+        ),
+        task_id=None,
+        error_code="summary_enqueue_failed",
+        error_message="Failed to start summary generation.",
+        failed_at=datetime.now(timezone.utc),
+    )
+    db_session.add(failed_job)
+    await db_session.flush()
+
+    def raise_enqueue_error(job_id: UUID) -> str:
+        raise RuntimeError("broker still unavailable")
+
+    recovered = await recover_missing_summary_generation_jobs(
+        db_session,
+        enqueue=raise_enqueue_error,
+        limit=10,
+    )
+
+    await db_session.refresh(failed_job)
+    assert recovered == 0
+    assert failed_job.status == SummaryGenerationStatus.FAILED.value
+    assert failed_job.stage == "failed"
+    assert failed_job.progress_percent == 100
+    assert failed_job.error_code == "summary_enqueue_failed"
+    assert failed_job.error_message == "Failed to start summary generation."
+    assert failed_job.failed_at is not None
+    assert failed_job.task_id is None
+
+
+@pytest.mark.asyncio
+async def test_recover_missing_summary_generation_jobs_keeps_stale_failed_enqueue_job_failed(
+    db_session: AsyncSession,
+) -> None:
+    user = await _user(db_session)
+    recording = await _recording(db_session, user)
+    failed_job = SummaryGenerationJob(
+        recording_id=recording.id,
+        user_id=user.id,
+        status=SummaryGenerationStatus.FAILED.value,
+        stage="failed",
+        progress_percent=100,
+        transcript_hash="stale",
+        task_id=None,
+        error_code="summary_enqueue_failed",
+        error_message="Failed to start summary generation.",
+        failed_at=datetime.now(timezone.utc),
+    )
+    db_session.add(failed_job)
+    await db_session.flush()
+
+    enqueued: list[UUID] = []
+
+    recovered = await recover_missing_summary_generation_jobs(
+        db_session,
+        enqueue=lambda job_id: enqueued.append(job_id) or f"celery-{job_id}",
+        limit=10,
+    )
+
+    await db_session.refresh(failed_job)
+    assert recovered == 0
+    assert enqueued == []
+    assert failed_job.status == SummaryGenerationStatus.FAILED.value
+    assert failed_job.error_code == "stale_transcript"
+    assert failed_job.task_id is None
 
 
 @pytest.mark.asyncio

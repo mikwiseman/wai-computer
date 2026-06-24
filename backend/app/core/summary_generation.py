@@ -12,7 +12,7 @@ from uuid import UUID
 from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import aliased, selectinload
 
 from app.core.entity_graph import seed_entities_from_extraction, seed_entities_from_summary
 from app.core.personalization import summary_personalization_instructions
@@ -485,7 +485,72 @@ async def recover_missing_summary_generation_jobs(
         .limit(1)
         .exists()
     )
+    active_summary_job = aliased(SummaryGenerationJob)
+    has_active_summary_job = (
+        select(active_summary_job.id)
+        .where(
+            active_summary_job.recording_id == Recording.id,
+            active_summary_job.status.in_(ACTIVE_SUMMARY_GENERATION_STATUSES),
+        )
+        .limit(1)
+        .exists()
+    )
     recovered = 0
+
+    failed_enqueue_jobs = (
+        await db.execute(
+            select(SummaryGenerationJob)
+            .join(Recording, Recording.id == SummaryGenerationJob.recording_id)
+            .where(
+                SummaryGenerationJob.status == SummaryGenerationStatus.FAILED.value,
+                SummaryGenerationJob.error_code == "summary_enqueue_failed",
+                SummaryGenerationJob.task_id.is_(None),
+                has_segments,
+                ~has_summary,
+                ~has_active_summary_job,
+            )
+            .options(selectinload(SummaryGenerationJob.recording).selectinload(Recording.segments))
+            .order_by(
+                SummaryGenerationJob.failed_at.asc().nulls_last(),
+                SummaryGenerationJob.created_at.asc(),
+                SummaryGenerationJob.id.asc(),
+            )
+            .limit(limit)
+        )
+    ).scalars().all()
+    for job in failed_enqueue_jobs:
+        transcript_hash = summary_transcript_hash(build_summary_transcript(job.recording.segments))
+        if transcript_hash != job.transcript_hash:
+            mark_summary_generation_failed(
+                job,
+                error_code="stale_transcript",
+                error_message="Transcript changed before summary generation started.",
+            )
+            await db.commit()
+            continue
+
+        job.status = SummaryGenerationStatus.QUEUED.value
+        job.stage = "queued"
+        job.progress_percent = 5
+        job.error_code = None
+        job.error_message = None
+        job.failed_at = None
+        try:
+            job.task_id = enqueue(job.id)
+        except Exception:  # noqa: BLE001 - broker failure is persisted below.
+            mark_summary_generation_failed(
+                job,
+                error_code="summary_enqueue_failed",
+                error_message="Failed to start summary generation.",
+            )
+            await db.commit()
+            continue
+        await db.commit()
+        recovered += 1
+
+    remaining_limit = limit - recovered
+    if remaining_limit <= 0:
+        return recovered
 
     orphaned_jobs = (
         await db.execute(
@@ -500,7 +565,7 @@ async def recover_missing_summary_generation_jobs(
             )
             .options(selectinload(SummaryGenerationJob.recording).selectinload(Recording.segments))
             .order_by(SummaryGenerationJob.created_at.asc(), SummaryGenerationJob.id.asc())
-            .limit(limit)
+            .limit(remaining_limit)
         )
     ).scalars().all()
     for job in orphaned_jobs:

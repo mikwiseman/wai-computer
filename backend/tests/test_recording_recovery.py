@@ -149,6 +149,53 @@ async def test_mark_stale_processing_recordings_fails_old_rows_without_uploaded_
     )
 
 
+@pytest.mark.asyncio
+async def test_mark_stale_processing_recordings_localizes_failure_message(
+    db_session: AsyncSession,
+) -> None:
+    user = User(email="recovery-localized@example.com", password_hash="x")
+    db_session.add(user)
+    await db_session.flush()
+
+    now = datetime(2026, 6, 25, 12, 0, tzinfo=timezone.utc)
+    stale_ru = Recording(
+        user_id=user.id,
+        title="stale-ru",
+        type="meeting",
+        status=RecordingStatus.PROCESSING.value,
+        uploaded_at=now - timedelta(hours=9),
+        language="ru",
+    )
+    stale_en = Recording(
+        user_id=user.id,
+        title="stale-en",
+        type="meeting",
+        status=RecordingStatus.PROCESSING.value,
+        uploaded_at=now - timedelta(hours=9),
+        language="en",
+    )
+    db_session.add_all([stale_ru, stale_en])
+    await db_session.commit()
+
+    count = await mark_stale_processing_recordings(
+        db_session,
+        stale_after=timedelta(hours=8),
+        now=now,
+    )
+
+    assert count == 2
+    rows = (await db_session.execute(select(Recording))).scalars().all()
+    by_title = {row.title: row for row in rows}
+    assert (
+        by_title["stale-ru"].failure_message
+        == "Обработка была прервана. Импортируй файл ещё раз."
+    )
+    assert (
+        by_title["stale-en"].failure_message
+        == "Processing was interrupted. Please re-import the file."
+    )
+
+
 def test_interrupted_failure_message_localizes_ru_and_en():
     from app.core.recording_recovery import (
         INTERRUPTED_PROCESSING_FAILURE_MESSAGES,
