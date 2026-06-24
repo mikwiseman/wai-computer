@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from types import SimpleNamespace
 from uuid import UUID, uuid4
 
@@ -404,6 +404,208 @@ async def test_recover_missing_summary_generation_jobs_reenqueues_failed_enqueue
     assert failed_job.error_code is None
     assert failed_job.error_message is None
     assert failed_job.failed_at is None
+
+
+@pytest.mark.asyncio
+async def test_recover_missing_summary_generation_jobs_reenqueues_stale_running_job(
+    db_session: AsyncSession,
+) -> None:
+    user = await _user(db_session)
+    recording = await _recording(db_session, user)
+    running_job = SummaryGenerationJob(
+        recording_id=recording.id,
+        user_id=user.id,
+        status=SummaryGenerationStatus.RUNNING.value,
+        stage="generating_summary",
+        progress_percent=35,
+        transcript_hash=summary_transcript_hash(
+            build_summary_transcript(await _segments(db_session, recording))
+        ),
+        task_id="lost-worker-task",
+        started_at=datetime.now(timezone.utc) - timedelta(minutes=61),
+        attempt_count=1,
+    )
+    db_session.add(running_job)
+    await db_session.flush()
+
+    enqueued: list[UUID] = []
+
+    recovered = await recover_missing_summary_generation_jobs(
+        db_session,
+        enqueue=lambda job_id: enqueued.append(job_id) or f"celery-{job_id}",
+        limit=10,
+        running_stale_after_minutes=45,
+    )
+
+    await db_session.refresh(running_job)
+    assert recovered == 1
+    assert enqueued == [running_job.id]
+    assert running_job.status == SummaryGenerationStatus.QUEUED.value
+    assert running_job.stage == "queued"
+    assert running_job.progress_percent == 5
+    assert running_job.task_id == f"celery-{running_job.id}"
+    assert running_job.started_at is None
+    assert running_job.error_code is None
+    assert running_job.error_message is None
+    assert running_job.failed_at is None
+
+
+@pytest.mark.asyncio
+async def test_recover_missing_summary_generation_jobs_fails_exhausted_stale_running_job(
+    db_session: AsyncSession,
+) -> None:
+    user = await _user(db_session)
+    recording = await _recording(db_session, user)
+    running_job = SummaryGenerationJob(
+        recording_id=recording.id,
+        user_id=user.id,
+        status=SummaryGenerationStatus.RUNNING.value,
+        stage="generating_summary",
+        progress_percent=35,
+        transcript_hash=summary_transcript_hash(
+            build_summary_transcript(await _segments(db_session, recording))
+        ),
+        task_id="lost-worker-task",
+        started_at=datetime.now(timezone.utc) - timedelta(minutes=61),
+        attempt_count=4,
+    )
+    db_session.add(running_job)
+    await db_session.flush()
+
+    enqueued: list[UUID] = []
+
+    recovered = await recover_missing_summary_generation_jobs(
+        db_session,
+        enqueue=lambda job_id: enqueued.append(job_id) or f"celery-{job_id}",
+        limit=10,
+        running_stale_after_minutes=45,
+    )
+
+    await db_session.refresh(running_job)
+    assert recovered == 0
+    assert enqueued == []
+    assert running_job.status == SummaryGenerationStatus.FAILED.value
+    assert running_job.stage == "failed"
+    assert running_job.progress_percent == 100
+    assert running_job.error_code == "summary_worker_lost"
+    assert running_job.failed_at is not None
+
+
+@pytest.mark.asyncio
+async def test_recover_missing_summary_generation_jobs_fails_stale_running_transcript(
+    db_session: AsyncSession,
+) -> None:
+    user = await _user(db_session)
+    recording = await _recording(db_session, user)
+    running_job = SummaryGenerationJob(
+        recording_id=recording.id,
+        user_id=user.id,
+        status=SummaryGenerationStatus.RUNNING.value,
+        stage="generating_summary",
+        progress_percent=35,
+        transcript_hash="stale",
+        task_id="lost-worker-task",
+        started_at=datetime.now(timezone.utc) - timedelta(minutes=61),
+        attempt_count=1,
+    )
+    db_session.add(running_job)
+    await db_session.flush()
+
+    enqueued: list[UUID] = []
+
+    recovered = await recover_missing_summary_generation_jobs(
+        db_session,
+        enqueue=lambda job_id: enqueued.append(job_id) or f"celery-{job_id}",
+        limit=10,
+        running_stale_after_minutes=45,
+    )
+
+    await db_session.refresh(running_job)
+    assert recovered == 0
+    assert enqueued == []
+    assert running_job.status == SummaryGenerationStatus.FAILED.value
+    assert running_job.stage == "failed"
+    assert running_job.error_code == "stale_transcript"
+
+
+@pytest.mark.asyncio
+async def test_recover_missing_summary_generation_jobs_fails_stale_running_enqueue_error(
+    db_session: AsyncSession,
+) -> None:
+    user = await _user(db_session)
+    recording = await _recording(db_session, user)
+    running_job = SummaryGenerationJob(
+        recording_id=recording.id,
+        user_id=user.id,
+        status=SummaryGenerationStatus.RUNNING.value,
+        stage="generating_summary",
+        progress_percent=35,
+        transcript_hash=summary_transcript_hash(
+            build_summary_transcript(await _segments(db_session, recording))
+        ),
+        task_id="lost-worker-task",
+        started_at=datetime.now(timezone.utc) - timedelta(minutes=61),
+        attempt_count=1,
+    )
+    db_session.add(running_job)
+    await db_session.flush()
+
+    def raise_enqueue_error(job_id: UUID) -> str:
+        raise RuntimeError("broker unavailable")
+
+    recovered = await recover_missing_summary_generation_jobs(
+        db_session,
+        enqueue=raise_enqueue_error,
+        limit=10,
+        running_stale_after_minutes=45,
+    )
+
+    await db_session.refresh(running_job)
+    assert recovered == 0
+    assert running_job.status == SummaryGenerationStatus.FAILED.value
+    assert running_job.stage == "failed"
+    assert running_job.error_code == "summary_enqueue_failed"
+
+
+@pytest.mark.asyncio
+async def test_recover_missing_summary_generation_jobs_keeps_fresh_running_job_active(
+    db_session: AsyncSession,
+) -> None:
+    user = await _user(db_session)
+    recording = await _recording(db_session, user)
+    running_job = SummaryGenerationJob(
+        recording_id=recording.id,
+        user_id=user.id,
+        status=SummaryGenerationStatus.RUNNING.value,
+        stage="generating_summary",
+        progress_percent=35,
+        transcript_hash=summary_transcript_hash(
+            build_summary_transcript(await _segments(db_session, recording))
+        ),
+        task_id="live-task",
+        started_at=datetime.now(timezone.utc) - timedelta(minutes=10),
+        attempt_count=1,
+    )
+    db_session.add(running_job)
+    await db_session.flush()
+
+    enqueued: list[UUID] = []
+
+    recovered = await recover_missing_summary_generation_jobs(
+        db_session,
+        enqueue=lambda job_id: enqueued.append(job_id) or f"celery-{job_id}",
+        limit=10,
+        running_stale_after_minutes=45,
+    )
+
+    await db_session.refresh(running_job)
+    assert recovered == 0
+    assert enqueued == []
+    assert running_job.status == SummaryGenerationStatus.RUNNING.value
+    assert running_job.stage == "generating_summary"
+    assert running_job.task_id == "live-task"
+    assert running_job.started_at is not None
+    assert running_job.error_code is None
 
 
 @pytest.mark.asyncio
@@ -1001,10 +1203,10 @@ async def test_summary_generation_recovery_task_helper(monkeypatch) -> None:
     async def fake_db_context():
         yield "recovery-db"
 
-    calls: list[tuple[object, object, int]] = []
+    calls: list[tuple[object, object, int, int]] = []
 
-    async def fake_recover(db, *, enqueue, limit: int):
-        calls.append((db, enqueue, limit))
+    async def fake_recover(db, *, enqueue, limit: int, running_stale_after_minutes: int):
+        calls.append((db, enqueue, limit, running_stale_after_minutes))
         return 3
 
     monkeypatch.setattr(task_module, "get_db_context", fake_db_context)
@@ -1013,7 +1215,14 @@ async def test_summary_generation_recovery_task_helper(monkeypatch) -> None:
     recovered = await task_module._recover_missing_summary_generation_jobs(limit=7)
 
     assert recovered == 3
-    assert calls == [("recovery-db", task_module._enqueue_recording_summary_generation, 7)]
+    assert calls == [
+        (
+            "recovery-db",
+            task_module._enqueue_recording_summary_generation,
+            7,
+            task_module.get_settings().summary_generation_running_stale_after_minutes,
+        )
+    ]
 
 
 def test_summary_generation_celery_task_runs_async_helper(monkeypatch) -> None:

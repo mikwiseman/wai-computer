@@ -190,6 +190,10 @@ class Settings(BaseSettings):
     # Slow cleanup for pre-upload rows with no server-side evidence. Local
     # recovery can still retry because upload_abandoned is a retryable failure.
     recording_pending_upload_stale_after_days: int = 7
+    # Summary tasks have a 960s hard Celery limit; keep stale-running recovery
+    # above that plus retry/backoff headroom so we reclaim worker-loss hangs
+    # without racing a live summary generation.
+    summary_generation_running_stale_after_minutes: int = 45
 
     # Telegram bot integration. Token and webhook secret are backend-only.
     telegram_bot_token: str = ""

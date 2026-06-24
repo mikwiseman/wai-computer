@@ -8,6 +8,7 @@ from uuid import UUID
 
 from billiard.exceptions import SoftTimeLimitExceeded
 
+from app.config import get_settings
 from app.core.observability import (
     capture_sentry_anomaly,
     capture_sentry_exception,
@@ -87,11 +88,13 @@ async def _generate_recording_summary(
 
 
 async def _recover_missing_summary_generation_jobs(*, limit: int = 5) -> int:
+    settings = get_settings()
     async with get_db_context() as db:
         return await recover_missing_summary_generation_jobs_core(
             db,
             enqueue=_enqueue_recording_summary_generation,
             limit=limit,
+            running_stale_after_minutes=settings.summary_generation_running_stale_after_minutes,
         )
 
 

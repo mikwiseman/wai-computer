@@ -6,7 +6,7 @@ import hashlib
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from uuid import UUID
 
 from sqlalchemy import delete, select
@@ -46,6 +46,7 @@ ACTIVE_SUMMARY_GENERATION_STATUSES = {
 }
 WAITING_FOR_TRANSCRIPT_STAGE = "waiting_for_transcript"
 WAITING_FOR_TRANSCRIPT_HASH = hashlib.sha256(b"").hexdigest()
+SUMMARY_GENERATION_MAX_STALE_RUNNING_ATTEMPTS = 4
 
 
 class SummaryGenerationEnqueueError(RuntimeError):
@@ -462,10 +463,14 @@ async def recover_missing_summary_generation_jobs(
     *,
     enqueue: Callable[[UUID], str],
     limit: int = 5,
+    running_stale_after_minutes: int = 45,
 ) -> int:
     """Enqueue summaries for ready recordings that have no runnable task."""
     if limit <= 0:
         return 0
+    running_stale_cutoff = datetime.now(timezone.utc) - timedelta(
+        minutes=running_stale_after_minutes
+    )
 
     has_segments = (
         select(Segment.id)
@@ -532,6 +537,67 @@ async def recover_missing_summary_generation_jobs(
         job.status = SummaryGenerationStatus.QUEUED.value
         job.stage = "queued"
         job.progress_percent = 5
+        job.error_code = None
+        job.error_message = None
+        job.failed_at = None
+        try:
+            job.task_id = enqueue(job.id)
+        except Exception:  # noqa: BLE001 - broker failure is persisted below.
+            mark_summary_generation_failed(
+                job,
+                error_code="summary_enqueue_failed",
+                error_message="Failed to start summary generation.",
+            )
+            await db.commit()
+            continue
+        await db.commit()
+        recovered += 1
+
+    remaining_limit = limit - recovered
+    if remaining_limit <= 0:
+        return recovered
+
+    stale_running_jobs = (
+        await db.execute(
+            select(SummaryGenerationJob)
+            .join(Recording, Recording.id == SummaryGenerationJob.recording_id)
+            .where(
+                SummaryGenerationJob.status == SummaryGenerationStatus.RUNNING.value,
+                SummaryGenerationJob.started_at.is_not(None),
+                SummaryGenerationJob.started_at <= running_stale_cutoff,
+                has_segments,
+                ~has_summary,
+            )
+            .options(selectinload(SummaryGenerationJob.recording).selectinload(Recording.segments))
+            .order_by(SummaryGenerationJob.started_at.asc(), SummaryGenerationJob.id.asc())
+            .limit(remaining_limit)
+        )
+    ).scalars().all()
+    for job in stale_running_jobs:
+        transcript_hash = summary_transcript_hash(build_summary_transcript(job.recording.segments))
+        if transcript_hash != job.transcript_hash:
+            mark_summary_generation_failed(
+                job,
+                error_code="stale_transcript",
+                error_message="Transcript changed while summary generation was running.",
+            )
+            await db.commit()
+            continue
+
+        if job.attempt_count >= SUMMARY_GENERATION_MAX_STALE_RUNNING_ATTEMPTS:
+            mark_summary_generation_failed(
+                job,
+                error_code="summary_worker_lost",
+                error_message="Summary generation stopped before finishing. Please try again.",
+            )
+            await db.commit()
+            continue
+
+        job.status = SummaryGenerationStatus.QUEUED.value
+        job.stage = "queued"
+        job.progress_percent = 5
+        job.task_id = None
+        job.started_at = None
         job.error_code = None
         job.error_message = None
         job.failed_at = None
