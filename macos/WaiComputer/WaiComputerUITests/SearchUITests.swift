@@ -51,6 +51,8 @@ final class SearchUITests: XCTestCase {
         XCTAssertTrue(waitForElement(searchButton, in: app, timeout: 3))
         XCTAssertEqual(searchButton.label, "Search")
 
+        XCTAssertFalse(app.descendants(matching: .any).matching(identifier: "search-scope").firstMatch.exists)
+
         // Empty state text
         let emptyStateText = app.staticTexts.matching(identifier: "search-empty-state").firstMatch
         XCTAssertTrue(waitForElement(emptyStateText, in: app, timeout: 3))
@@ -67,6 +69,7 @@ final class SearchUITests: XCTestCase {
         XCTAssertFalse(app.buttons.matching(identifier: "tab-hybrid").firstMatch.exists)
         XCTAssertFalse(app.buttons.matching(identifier: "tab-semantic").firstMatch.exists)
         XCTAssertFalse(app.buttons.matching(identifier: "tab-full-text").firstMatch.exists)
+        XCTAssertFalse(app.descendants(matching: .any).matching(identifier: "search-scope").firstMatch.exists)
         XCTAssertTrue(searchField.exists, "Search field should remain after switching modes")
     }
 

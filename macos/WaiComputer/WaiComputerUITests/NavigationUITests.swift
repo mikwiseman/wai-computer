@@ -36,11 +36,11 @@ final class NavigationUITests: XCTestCase {
             .firstMatch
         XCTAssertTrue(waitForElement(sidebar, in: app, timeout: 8))
 
-        // Verify Library section items
-        let allRecordings = app.descendants(matching: .any)
-            .matching(identifier: "sidebar-all-recordings")
+        // Verify sidebar section items
+        let inbox = app.descendants(matching: .any)
+            .matching(identifier: "sidebar-inbox")
             .firstMatch
-        XCTAssertTrue(waitForElement(allRecordings, in: app, timeout: 3))
+        XCTAssertTrue(waitForElement(inbox, in: app, timeout: 3))
 
         let trash = app.descendants(matching: .any)
             .matching(identifier: "sidebar-trash")
@@ -62,6 +62,11 @@ final class NavigationUITests: XCTestCase {
             .firstMatch
         XCTAssertTrue(waitForElement(search, in: app, timeout: 3))
 
+        let wai = app.descendants(matching: .any)
+            .matching(identifier: "sidebar-wai")
+            .firstMatch
+        XCTAssertTrue(waitForElement(wai, in: app, timeout: 3))
+
         let settings = app.descendants(matching: .any)
             .matching(identifier: "sidebar-settings")
             .firstMatch
@@ -77,7 +82,7 @@ final class NavigationUITests: XCTestCase {
     func testNavigateBetweenSections() throws {
         let app = launchAuthenticatedApp()
 
-        // Wait for initial state — library list title should show "All Recordings"
+        // Wait for initial state — Inbox should be visible.
         let listTitle = app.descendants(matching: .any)
             .matching(identifier: "library-list-title")
             .firstMatch
@@ -92,11 +97,18 @@ final class NavigationUITests: XCTestCase {
         let searchField = app.textFields["Search your second brain..."]
         XCTAssertTrue(searchField.waitForExistence(timeout: 5), "Search text field should appear after navigating to Search")
 
-        // Navigate back to All Recordings — list title should reappear
-        let allRecordingsButton = app.buttons.matching(identifier: "sidebar-all-recordings").firstMatch
-        XCTAssertTrue(waitForElement(allRecordingsButton, in: app, timeout: 3))
+        // Navigate to Wai — search field should leave, proving Wai is separate.
+        let waiButton = app.buttons.matching(identifier: "sidebar-wai").firstMatch
+        XCTAssertTrue(waitForElement(waiButton, in: app, timeout: 3))
         app.activate()
-        allRecordingsButton.tap()
+        waiButton.tap()
+        XCTAssertFalse(searchField.waitForExistence(timeout: 2), "Search text field should not remain on Wai")
+
+        // Navigate back to Inbox — list title should reappear.
+        let inboxButton = app.buttons.matching(identifier: "sidebar-inbox").firstMatch
+        XCTAssertTrue(waitForElement(inboxButton, in: app, timeout: 3))
+        app.activate()
+        inboxButton.tap()
 
         XCTAssertTrue(listTitle.waitForExistence(timeout: 5), "Library list title should reappear after navigating back")
     }

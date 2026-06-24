@@ -144,7 +144,8 @@ final class MacContentFeedViewModelTests: XCTestCase {
         // The composer only offers actions matching the current source scope.
         XCTAssertTrue(source.contains("private var allowedCreateModes: [InboxCreateMode]"))
         XCTAssertTrue(source.contains("if allowedCreateModes.contains(.record)"))
-        XCTAssertTrue(source.contains("if allowedCreateModes.contains(.paste)"))
+        XCTAssertTrue(source.contains("if allowedCreateModes.contains(.file)"))
+        XCTAssertFalse(source.contains("if allowedCreateModes.contains(.paste)"))
         XCTAssertFalse(source.contains("if allowedCreateModes.contains(.ask)"))
     }
 
@@ -318,35 +319,39 @@ final class MacContentFeedViewModelTests: XCTestCase {
         XCTAssertFalse(source.contains("completedRecordingTranscriptChunks(from: transition.transcript)"))
     }
 
-    func testInboxSourceFilterPutsAllLastAndShellDefaultsInboxToRecordings() throws {
+    func testInboxSourceFilterOmitsAllAndShellDefaultsInboxToRecordings() throws {
         let inboxSource = try macSource("WaiComputer/Features/Inbox/MacInboxView.swift")
+        let modelSource = try macSource("WaiComputer/Features/Inbox/MacInboxViewModel.swift")
         let shellSource = try macSource("WaiComputer/App/MacContentView.swift")
 
-        // Все is the last segment, Записи the first.
-        let recordingsTag = inboxSource.range(of: "tag(Optional.some(InboxSourceKind.recording))")
-        let allTag = inboxSource.range(of: "tag(Optional<InboxSourceKind>.none)")
-        let recordingsIndex = try XCTUnwrap(recordingsTag).lowerBound
-        let allIndex = try XCTUnwrap(allTag).lowerBound
-        XCTAssertLessThan(recordingsIndex, allIndex)
+        XCTAssertTrue(inboxSource.contains("tag(Optional.some(InboxSourceKind.recording))"))
+        XCTAssertTrue(inboxSource.contains("tag(Optional.some(InboxSourceKind.item))"))
+        XCTAssertFalse(inboxSource.contains("tag(Optional<InboxSourceKind>.none)"))
+        XCTAssertFalse(inboxSource.contains("Text(t(\"All\", \"Все\"))"))
+        XCTAssertTrue(modelSource.contains("sourceKind == .item ? .item : .recording"))
         // Opening the Inbox section starts scoped to recordings.
         XCTAssertTrue(shellSource.contains("case .inbox, .allRecordings:\n            return .recording"))
     }
 
-    func testCommandNOpensInboxCreatePaneInsteadOfStartingRecording() throws {
+    func testCommandNUsesContextualInboxAction() throws {
         let appSource = try macSource("WaiComputer/App/WaiComputerMacApp.swift")
         let shellSource = try macSource("WaiComputer/App/MacContentView.swift")
         let inboxSource = try macSource("WaiComputer/Features/Inbox/MacInboxView.swift")
 
         XCTAssertTrue(appSource.contains("Button(t(\"New Inbox Item\", \"Новый объект в Инбоксе\"))"))
         XCTAssertTrue(appSource.contains(".keyboardShortcut(\"n\", modifiers: .command)"))
-        XCTAssertTrue(appSource.contains("postInboxCommand(.showCreatePane)"))
+        XCTAssertTrue(appSource.contains("postInboxCommand(.contextualNew)"))
         XCTAssertTrue(shellSource.contains("routeInboxCommand(command)"))
-        XCTAssertTrue(inboxSource.contains("case .showCreatePane:"))
+        XCTAssertTrue(shellSource.contains("activeInboxSourceKind == .item ? .uploadFile : .recordNow"))
+        XCTAssertTrue(shellSource.contains("private var currentSectionCanHandleInboxCommand: Bool"))
+        XCTAssertTrue(shellSource.contains("if !currentSectionCanHandleInboxCommand"))
+        XCTAssertTrue(inboxSource.contains("case .contextualNew:"))
+        XCTAssertTrue(inboxSource.contains("performContextualNew()"))
         XCTAssertFalse(appSource.contains(".keyboardShortcut(\"n\", modifiers: .command)\n                .disabled(isRecordingActivityVisible || !appState.isAuthenticated)\n\n                Divider()\n\n                Button(t(\"Import Audio File\""))
         XCTAssertFalse(appSource.contains("Task { await appState.startRecording(type: .meeting, inputSource: .dual) }\n                }\n                .keyboardShortcut(\"n\", modifiers: .command)"))
     }
 
-    func testInboxCommandMenuCoversAllCreateActionsWithShortcuts() throws {
+    func testInboxCommandMenuCoversCreateActionsWithShortcuts() throws {
         let source = try macSource("WaiComputer/App/WaiComputerMacApp.swift")
 
         XCTAssertTrue(source.contains("Button(t(\"Record Now\", \"Записать сейчас\"))"))
@@ -355,11 +360,11 @@ final class MacContentFeedViewModelTests: XCTestCase {
         XCTAssertTrue(source.contains("Button(t(\"Upload File\", \"Загрузить файл\"))"))
         XCTAssertTrue(source.contains("postInboxCommand(.uploadFile)"))
         XCTAssertTrue(source.contains(".keyboardShortcut(\"u\", modifiers: [.command, .option])"))
-        XCTAssertTrue(source.contains("Button(t(\"Paste Link or Text\", \"Вставить ссылку или текст\"))"))
-        XCTAssertTrue(source.contains("postInboxCommand(.pasteLinkOrText)"))
-        XCTAssertTrue(source.contains(".keyboardShortcut(\"v\", modifiers: [.command, .option])"))
+        XCTAssertFalse(source.contains("Button(t(\"Paste Link or Text\", \"Вставить ссылку или текст\"))"))
+        XCTAssertFalse(source.contains("postInboxCommand(.pasteLinkOrText)"))
+        XCTAssertFalse(source.contains(".keyboardShortcut(\"v\", modifiers: [.command, .option])"))
         XCTAssertTrue(source.contains("Button(\"Wai\")"))
-        XCTAssertTrue(source.contains("postNavigationTarget(\"search\")"))
+        XCTAssertTrue(source.contains("postNavigationTarget(\"wai\")"))
         XCTAssertTrue(source.contains(".keyboardShortcut(\"a\", modifiers: [.command, .option])"))
     }
 
@@ -407,12 +412,36 @@ final class MacContentFeedViewModelTests: XCTestCase {
         XCTAssertTrue(source.contains("ScrollView {"))
     }
 
+    func testInboxDoesNotExposePasteMaterialComposer() throws {
+        let source = try macSource("WaiComputer/Features/Inbox/MacInboxView.swift")
+        let appSource = try macSource("WaiComputer/App/WaiComputerMacApp.swift")
+
+        XCTAssertFalse(source.contains("MacInboxPasteComposer"))
+        XCTAssertFalse(source.contains("mac-inbox-paste-field"))
+        XCTAssertFalse(source.contains("Paste Link or Text"))
+        XCTAssertFalse(source.contains("Вставить ссылку или текст"))
+        XCTAssertFalse(source.contains("Link, note, or long text"))
+        XCTAssertFalse(source.contains("Ссылка, заметка или длинный текст"))
+        XCTAssertFalse(appSource.contains("pasteLinkOrText"))
+    }
+
     func testInboxDoesNotHostFocusedCompanion() throws {
         let source = try macSource("WaiComputer/Features/Inbox/MacInboxView.swift")
 
         XCTAssertFalse(source.contains("CompanionView("))
         XCTAssertFalse(source.contains("showsConversationSwitcher: false"))
         XCTAssertFalse(source.contains("viewingFolderId: folderId"))
+    }
+
+    func testSidebarFoldersAcceptInboxRowsAndFileDrops() throws {
+        let source = try macSource("WaiComputer/App/MacContentView.swift")
+
+        XCTAssertTrue(source.contains(".dropDestination(for: InboxDragItem.self) { items, _ in"))
+        XCTAssertTrue(source.contains("handleInboxDrop(items, folderId: folder.id)"))
+        XCTAssertTrue(source.contains(".dropDestination(for: URL.self) { urls, _ in"))
+        XCTAssertTrue(source.contains("handleFileDrop(urls, folderId: folder.id)"))
+        XCTAssertTrue(source.contains("handleFileDrop(urls, folderId: nil)"))
+        XCTAssertTrue(source.contains("uploadItem(fileURL: url, folderId: folderId)"))
     }
 
     func testInboxDetailEquatableGateUsesRevisionInputsInsteadOfFullArrays() throws {
@@ -535,7 +564,7 @@ final class MacContentFeedViewModelTests: XCTestCase {
         XCTAssertTrue(source.contains("MacWaiTaskNotificationCenter.shared.configure()"))
     }
 
-    func testMacNotificationTapRoutesFinishedChatToSearch() throws {
+    func testMacNotificationTapRoutesFinishedChatToWai() throws {
         let appSource = try macSource("WaiComputer/App/WaiComputerMacApp.swift")
         let contentSource = try macSource("WaiComputer/App/MacContentView.swift")
         let notificationSource = try macSource("WaiComputer/Features/Inbox/MacWaiTaskNotificationCenter.swift")
@@ -544,7 +573,7 @@ final class MacContentFeedViewModelTests: XCTestCase {
         XCTAssertTrue(notificationSource.contains("NotificationCenter.default.post(name: .macOpenWaiChat, object: chatId)"))
         XCTAssertTrue(contentSource.contains("NotificationCenter.default.publisher(for: .macOpenWaiChat)"))
         XCTAssertTrue(contentSource.contains("pendingSearchChatId = chatId"))
-        XCTAssertTrue(contentSource.contains("selectedSection = .search"))
+        XCTAssertTrue(contentSource.contains("selectedSection = .wai"))
     }
 
     func testInboxDoesNotCreateWaiThreads() throws {
@@ -557,7 +586,7 @@ final class MacContentFeedViewModelTests: XCTestCase {
         XCTAssertFalse(viewModelSource.contains("createCompanionChat"))
     }
 
-    func testSearchIsTheWaiAgentSurface() throws {
+    func testWaiHasDedicatedAgentSurfaceSeparateFromSearch() throws {
         let inboxSource = try macSource("WaiComputer/Features/Inbox/MacInboxView.swift")
         let searchSource = try macSource("WaiComputer/Features/Search/MacSearchView.swift")
         let shellSource = try macSource("WaiComputer/App/MacContentView.swift")
@@ -567,9 +596,12 @@ final class MacContentFeedViewModelTests: XCTestCase {
         XCTAssertFalse(inboxSource.contains("Existing Wai threads"))
         XCTAssertTrue(searchSource.contains("CompanionView("))
         XCTAssertTrue(searchSource.contains("Search your second brain"))
-        XCTAssertTrue(searchSource.contains("activeChatId = hit.parentId"))
-        XCTAssertTrue(shellSource.contains(#"case "agents": selectedSection = .search"#))
-        XCTAssertTrue(shellSource.contains(#"case "wai": selectedSection = .search"#))
+        XCTAssertTrue(searchSource.contains("case .search:"))
+        XCTAssertTrue(searchSource.contains("case .wai:"))
+        XCTAssertTrue(searchSource.contains("onOpenChat(hit.parentId)"))
+        XCTAssertTrue(shellSource.contains(#"case "agents": selectedSection = .wai"#))
+        XCTAssertTrue(shellSource.contains(#"case "wai": selectedSection = .wai"#))
+        XCTAssertTrue(shellSource.contains("sidebarRow(\"Wai\", icon: \"sparkles\", section: .wai, identifier: \"wai\")"))
         XCTAssertFalse(shellSource.contains("case agents"))
         XCTAssertFalse(shellSource.contains("MacAgentsView("))
         XCTAssertFalse(shellSource.contains(#"sidebarRow(t("Agents""#))
@@ -582,7 +614,7 @@ final class MacContentFeedViewModelTests: XCTestCase {
         XCTAssertBefore("errorMessage = nil", "rows.append(contentsOf: Self.visibleRows(response.rows))", in: source)
         XCTAssertBefore("rowsRevision = rowsRevision.replacingRows()", "rows = Self.visibleRows(response.rows)", in: source)
         XCTAssertBefore("rowsRevision = rowsRevision.appendingRows(from: rows.count)", "rows.append(contentsOf: Self.visibleRows(response.rows))", in: source)
-        XCTAssertTrue(source.contains("sourceKind == .chat ? nil : sourceKind"))
+        XCTAssertTrue(source.contains("sourceKind == .item ? .item : .recording"))
         XCTAssertTrue(source.contains("rows.filter { $0.sourceKind != .chat }"))
     }
 

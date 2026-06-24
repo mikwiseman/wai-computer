@@ -165,7 +165,7 @@ final class MacInboxViewModel: ObservableObject {
     }
 
     private static func visibleScope(_ sourceKind: InboxSourceKind?) -> InboxSourceKind? {
-        sourceKind == .chat ? nil : sourceKind
+        sourceKind == .item ? .item : .recording
     }
 
     private static func visibleRows(_ rows: [InboxRow]) -> [InboxRow] {

@@ -24,7 +24,6 @@ struct InboxDragItem: Codable, Transferable, Equatable {
 private enum InboxCreateMode {
     case record
     case file
-    case paste
 }
 
 struct MacInboxView: View {
@@ -37,6 +36,7 @@ struct MacInboxView: View {
     let reloadToken: UUID
     let pendingDetail: InboxDetailRef?
     let pendingCommand: MacInboxCommand?
+    let onSourceKindChanged: (InboxSourceKind) -> Void
     let onStartRecording: () -> Void
     let onLibraryChanged: () async -> Void
     let onPendingDetailConsumed: () -> Void
@@ -67,6 +67,7 @@ struct MacInboxView: View {
         reloadToken: UUID = UUID(),
         pendingDetail: InboxDetailRef? = nil,
         pendingCommand: MacInboxCommand? = nil,
+        onSourceKindChanged: @escaping (InboxSourceKind) -> Void = { _ in },
         onStartRecording: @escaping () -> Void,
         onLibraryChanged: @escaping () async -> Void,
         onPendingDetailConsumed: @escaping () -> Void = {},
@@ -82,6 +83,7 @@ struct MacInboxView: View {
         self.reloadToken = reloadToken
         self.pendingDetail = pendingDetail
         self.pendingCommand = pendingCommand
+        self.onSourceKindChanged = onSourceKindChanged
         self.onStartRecording = onStartRecording
         self.onLibraryChanged = onLibraryChanged
         self.onPendingDetailConsumed = onPendingDetailConsumed
@@ -124,6 +126,7 @@ struct MacInboxView: View {
         .task {
             await model.configureScope(sourceKind: initialSourceKind, folderId: folderId)
             await model.load()
+            notifySourceKindChanged(model.sourceKind)
             consumePendingDetailIfNeeded()
             consumePendingCommandIfNeeded()
         }
@@ -172,6 +175,7 @@ struct MacInboxView: View {
             if let open = selectedDetail, let scope = next, open.kind != scope {
                 selectedDetail = nil
             }
+            notifySourceKindChanged(next)
         }
         .dropDestination(for: URL.self) { urls, _ in
             handleDroppedFiles(urls)
@@ -211,35 +215,17 @@ struct MacInboxView: View {
                     .foregroundStyle(Palette.textSecondary)
             }
             Spacer()
-            Menu {
-                Button {
-                    selectedDetail = nil
-                    focusCreateMode(.record)
-                    onStartRecording()
-                } label: {
-                    Label(t("Record Now", "Записать сейчас"), systemImage: "waveform")
-                }
-                Button {
-                    openFileComposer()
-                } label: {
-                    Label(t("Upload File", "Загрузить файл"), systemImage: "square.and.arrow.down")
-                }
-                Button {
-                    selectedDetail = nil
-                    focusCreateMode(.paste)
-                    folderComposerActive = true
-                } label: {
-                    Label(t("Paste Link or Text", "Вставить ссылку или текст"), systemImage: "link")
-                }
+            Button {
+                performContextualNew()
             } label: {
                 Image(systemName: "plus")
                     .font(.system(size: 15, weight: .semibold))
                     .frame(width: 30, height: 30)
             }
             .buttonStyle(.borderless)
-            .menuStyle(.borderlessButton)
-            .help(t("Add to Inbox", "Добавить в Инбокс"))
+            .help(contextualNewHelpText)
             .accessibilityLabel(t("New inbox item", "Новый объект в Инбоксе"))
+            .accessibilityIdentifier("mac-inbox-contextual-new")
         }
         .padding(Spacing.lg)
     }
@@ -282,15 +268,21 @@ struct MacInboxView: View {
             )
         case .item?:
             return t(
-                "Upload a file or paste a link, note, or text.",
-                "Загрузите файл или вставьте ссылку, заметку или текст."
+                "Upload a file.",
+                "Загрузите файл."
             )
         case .chat?, nil:
             return t(
-                "Record, upload a file, or paste a link or text.",
-                "Запишите, загрузите файл или вставьте ссылку либо текст."
+                "Record or upload a file.",
+                "Запишите или загрузите файл."
             )
         }
+    }
+
+    private var contextualNewHelpText: String {
+        model.sourceKind == .item
+            ? t("Upload File", "Загрузить файл")
+            : t("Record Now", "Записать сейчас")
     }
 
     /// The create actions that match the current source scope. Being offered
@@ -298,24 +290,21 @@ struct MacInboxView: View {
     /// mirrors what the user is looking at.
     private var allowedCreateModes: [InboxCreateMode] {
         switch model.sourceKind {
-        // Записи is record-only: one scope, one CTA. Uploading audio/video
-        // (which also lands as a recording) stays reachable via the header
-        // "+" menu and ⌘U — focusCreateMode widens the scope on demand.
         case .recording?: return [.record]
-        case .item?: return [.file, .paste]
-        case .chat?, nil: return [.record, .file, .paste]
+        case .item?: return [.file]
+        case .chat?, nil: return [.record]
         }
     }
 
     private static func defaultCreateMode(for scope: InboxSourceKind?) -> InboxCreateMode {
         switch scope {
         case .recording?, .chat?, nil: return .record
-        case .item?: return .paste
+        case .item?: return .file
         }
     }
 
     private static func visibleScope(_ sourceKind: InboxSourceKind?) -> InboxSourceKind? {
-        sourceKind == .chat ? nil : sourceKind
+        sourceKind == .item ? .item : .recording
     }
 
     /// Focus a composer mode requested explicitly (menu bar, shortcuts,
@@ -326,8 +315,7 @@ struct MacInboxView: View {
             let scope: InboxSourceKind? = {
                 switch mode {
                 case .record: return .recording
-                case .paste: return .item
-                case .file: return nil
+                case .file: return .item
                 }
             }()
             Task { await model.setSourceKind(scope) }
@@ -343,7 +331,6 @@ struct MacInboxView: View {
             )) {
                 Text(t("Recordings", "Записи")).tag(Optional.some(InboxSourceKind.recording))
                 Text(t("Materials", "Материалы")).tag(Optional.some(InboxSourceKind.item))
-                Text(t("All", "Все")).tag(Optional<InboxSourceKind>.none)
             }
             .pickerStyle(.segmented)
             .labelsHidden()
@@ -386,12 +373,7 @@ struct MacInboxView: View {
                     sourceKind: model.sourceKind,
                     folderName: scopedFolder?.name,
                     onRecord: onStartRecording,
-                    onUpload: openFileComposer,
-                    onPaste: {
-                        selectedDetail = nil
-                        focusCreateMode(.paste)
-                        folderComposerActive = true
-                    }
+                    onUpload: openFileComposer
                 )
             } else {
                 MacInboxRowsList(
@@ -565,16 +547,6 @@ struct MacInboxView: View {
                                     action: { openFileComposer() }
                                 )
                             }
-                            if allowedCreateModes.contains(.paste) {
-                                MacInboxCreateAction(
-                                    title: t("Paste", "Вставить"),
-                                    subtitle: t("Link, note, or long text", "Ссылка, заметка или длинный текст"),
-                                    systemImage: "link",
-                                    accent: Palette.accent,
-                                    isActive: focusedCreateMode == .paste,
-                                    action: { focusCreateMode(.paste) }
-                                )
-                            }
                         }
                     }
 
@@ -604,13 +576,6 @@ struct MacInboxView: View {
                             onUpload: uploadPendingFile,
                             onRemove: { model.clearSelectedUploadFile() }
                         )
-                    case .paste:
-                        MacInboxPasteComposer(
-                            draft: $model.draft,
-                            isAdding: model.isAdding,
-                            submitTitle: pasteSubmitTitle,
-                            onSubmit: addDraft
-                        )
                     }
                 }
                 .padding(Spacing.xl)
@@ -622,14 +587,6 @@ struct MacInboxView: View {
             handleDroppedFiles(urls)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-    }
-
-    private var pasteSubmitTitle: String {
-        let trimmed = model.draft.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        if trimmed.hasPrefix("http://") || trimmed.hasPrefix("https://") {
-            return t("Save Link", "Сохранить ссылку")
-        }
-        return t("Save Text", "Сохранить текст")
     }
 
     private var canStartInboxUpload: Bool {
@@ -706,13 +663,19 @@ struct MacInboxView: View {
         return true
     }
 
-    private func addDraft() {
-        Task {
-            if let detail = await model.addDraft() {
-                selectedDetail = detail
-            }
-            await onLibraryChanged()
+    private func performContextualNew() {
+        if model.sourceKind == .item {
+            openFileComposer()
+        } else {
+            selectedDetail = nil
+            focusCreateMode(.record)
+            folderComposerActive = true
+            onStartRecording()
         }
+    }
+
+    private func notifySourceKindChanged(_ sourceKind: InboxSourceKind?) {
+        onSourceKindChanged(sourceKind == .item ? .item : .recording)
     }
 
     private func consumePendingCommandIfNeeded() {
@@ -723,19 +686,19 @@ struct MacInboxView: View {
 
     private func performInboxCommand(_ command: MacInboxCommand) {
         switch command {
+        case .contextualNew:
+            performContextualNew()
         case .showCreatePane:
             selectedDetail = nil
             focusCreateMode(Self.defaultCreateMode(for: model.sourceKind))
+            folderComposerActive = true
         case .recordNow:
             selectedDetail = nil
             focusCreateMode(.record)
+            folderComposerActive = true
             onStartRecording()
         case .uploadFile:
             openFileComposer()
-        case .pasteLinkOrText:
-            selectedDetail = nil
-            focusCreateMode(.paste)
-            folderComposerActive = true
         }
     }
 
@@ -979,66 +942,6 @@ private struct MacInboxFileComposer: View {
     }
 }
 
-private struct MacInboxPasteComposer: View {
-    @Binding var draft: String
-    let isAdding: Bool
-    let submitTitle: String
-    let onSubmit: () -> Void
-
-    @EnvironmentObject private var languageManager: LanguageManager
-
-    private var trimmedDraft: String {
-        draft.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: Spacing.sm) {
-            Text(t("Paste link or text", "Вставить ссылку или текст"))
-                .font(Typography.headingMedium)
-            TextField(
-                t("Paste a link, note, transcript, or any text...", "Вставьте ссылку, заметку, транскрипт или любой текст..."),
-                text: $draft,
-                axis: .vertical
-            )
-            .textFieldStyle(.roundedBorder)
-            .lineLimit(4...8)
-            .onSubmit(onSubmit)
-            .accessibilityIdentifier("mac-inbox-paste-field")
-
-            HStack(spacing: Spacing.sm) {
-                Button(action: onSubmit) {
-                    if isAdding {
-                        ProgressView().controlSize(.small)
-                    } else {
-                        Text(submitTitle)
-                    }
-                }
-                .buttonStyle(.borderedProminent)
-                .disabled(trimmedDraft.isEmpty || isAdding)
-                .accessibilityIdentifier("mac-inbox-paste-primary-button")
-
-                if trimmedDraft.isEmpty {
-                    Text(t("Paste text or a link to continue.", "Вставьте текст или ссылку, чтобы продолжить."))
-                        .font(Typography.label)
-                        .foregroundStyle(Palette.textSecondary)
-                }
-                Spacer()
-            }
-        }
-        .padding(Spacing.lg)
-        .background(Palette.surfaceSubtle)
-        .overlay(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .stroke(Palette.border, lineWidth: 1)
-        )
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-    }
-
-    private func t(_ english: String, _ russian: String) -> String {
-        OnboardingL10n.text(english, russian, language: languageManager.current)
-    }
-}
-
 private struct MacInboxInlineActionComposer: View {
     let systemImage: String
     let title: String
@@ -1150,7 +1053,6 @@ private struct MacInboxEmptyState: View {
     var folderName: String? = nil
     let onRecord: () -> Void
     let onUpload: () -> Void
-    let onPaste: () -> Void
 
     @EnvironmentObject private var languageManager: LanguageManager
 
@@ -1182,40 +1084,16 @@ private struct MacInboxEmptyState: View {
                         Label(t("Record", "Записать"), systemImage: "waveform")
                     }
                     .buttonStyle(.borderedProminent)
-
-                    Button(action: onUpload) {
-                        Label(t("Upload", "Загрузить"), systemImage: "square.and.arrow.down")
-                    }
-                    .buttonStyle(.bordered)
                 case .item?:
                     Button(action: onUpload) {
                         Label(t("Upload", "Загрузить"), systemImage: "square.and.arrow.down")
                     }
                     .buttonStyle(.borderedProminent)
-
-                    Button(action: onPaste) {
-                        Label(t("Paste Link or Text", "Вставить ссылку или текст"), systemImage: "link")
-                    }
-                    .buttonStyle(.bordered)
                 case .chat?, nil:
                     Button(action: onRecord) {
                         Label(t("Record", "Записать"), systemImage: "waveform")
                     }
                     .buttonStyle(.borderedProminent)
-
-                    Button(action: onUpload) {
-                        Label(t("Upload", "Загрузить"), systemImage: "square.and.arrow.down")
-                    }
-                    .buttonStyle(.bordered)
-
-                    Menu {
-                        Button(action: onPaste) {
-                            Label(t("Paste Link or Text", "Вставить ссылку или текст"), systemImage: "link")
-                        }
-                    } label: {
-                        Label(t("More", "Ещё"), systemImage: "ellipsis")
-                    }
-                    .buttonStyle(.bordered)
                 }
             }
         }
@@ -1252,18 +1130,18 @@ private struct MacInboxEmptyState: View {
     private var message: String {
         switch sourceKind {
         case .recording:
-            return t("Record now or import audio/video.", "Запишите сейчас или импортируйте аудио/видео.")
+            return t("Start a new recording.", "Начните новую запись.")
         case .item:
-            return t("Upload a file or paste a link/text.", "Загрузите файл или вставьте ссылку/текст.")
+            return t("Upload a file.", "Загрузите файл.")
         case .none:
             return t(
-                "Record, upload a file, or paste a link.",
-                "Запишите, загрузите файл или вставьте ссылку."
+                "Start a new recording.",
+                "Начните новую запись."
             )
         case .chat:
             return t(
-                "Record, upload a file, or paste a link.",
-                "Запишите, загрузите файл или вставьте ссылку."
+                "Start a new recording.",
+                "Начните новую запись."
             )
         }
     }

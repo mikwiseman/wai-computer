@@ -14,10 +14,10 @@ extension Notification.Name {
 }
 
 enum MacInboxCommand: String, Equatable {
+    case contextualNew
     case showCreatePane
     case recordNow
     case uploadFile
-    case pasteLinkOrText
 }
 
 @main
@@ -186,7 +186,7 @@ struct WaiComputerMacApp: App {
                 }
 
                 Button(t("New Inbox Item", "Новый объект в Инбоксе")) {
-                    postInboxCommand(.showCreatePane)
+                    postInboxCommand(.contextualNew)
                 }
                 .keyboardShortcut("n", modifiers: .command)
                 .disabled(isRecordingActivityVisible || !appState.isAuthenticated)
@@ -211,14 +211,8 @@ struct WaiComputerMacApp: App {
                 .keyboardShortcut("u", modifiers: [.command, .option])
                 .disabled(isRecordingActivityVisible || !appState.isAuthenticated)
 
-                Button(t("Paste Link or Text", "Вставить ссылку или текст")) {
-                    postInboxCommand(.pasteLinkOrText)
-                }
-                .keyboardShortcut("v", modifiers: [.command, .option])
-                .disabled(isRecordingActivityVisible || !appState.isAuthenticated)
-
                 Button("Wai") {
-                    postNavigationTarget("search")
+                    postNavigationTarget("wai")
                 }
                 .keyboardShortcut("a", modifiers: [.command, .option])
                 .disabled(isRecordingActivityVisible || !appState.isAuthenticated)
@@ -272,6 +266,10 @@ struct WaiComputerMacApp: App {
                     NotificationCenter.default.post(name: .init("navigateTo"), object: "search")
                 }
                 .keyboardShortcut("f", modifiers: .command)
+
+                Button("Wai") {
+                    NotificationCenter.default.post(name: .init("navigateTo"), object: "wai")
+                }
             }
 
             // Remove the default "New Window" from the Window menu

@@ -123,6 +123,7 @@ struct MacMainView: View {
     @State private var pendingInboxDetail: InboxDetailRef?
     @State private var pendingInboxCommand: MacInboxCommand?
     @State private var pendingSearchChatId: String?
+    @State private var activeInboxSourceKind: InboxSourceKind = .recording
     @State private var recordingDisplayCache = MacRecordingDisplayCache()
     /// Sidebar row currently highlighted as a drag-and-drop target (e.g.
     /// "folder-<id>", "inbox", "trash"). Drives the drop highlight.
@@ -139,6 +140,7 @@ struct MacMainView: View {
         case trash
         case content
         case search
+        case wai
         case history
         case dictionary
         case settings
@@ -153,7 +155,7 @@ struct MacMainView: View {
         switch selectedSection {
         case .trash, .none:
             return true
-        case .inbox, .allRecordings, .folder(_), .content, .search, .history, .dictionary, .settings:
+        case .inbox, .allRecordings, .folder(_), .content, .search, .wai, .history, .dictionary, .settings:
             return false
         }
     }
@@ -193,6 +195,8 @@ struct MacMainView: View {
             return t("Inbox", "Инбокс")
         case .search:
             return t("Search", "Поиск")
+        case .wai:
+            return "Wai"
         case .history:
             return t("History", "История")
         case .dictionary:
@@ -595,10 +599,10 @@ struct MacMainView: View {
             case "content": selectedSection = .inbox
             case "history": selectedSection = .history
             case "dictionary": selectedSection = .dictionary
-            case "agents": selectedSection = .search
+            case "agents": selectedSection = .wai
             case "search": selectedSection = .search
             case "trash": selectedSection = .trash
-            case "wai": selectedSection = .search
+            case "wai": selectedSection = .wai
             default: break
             }
         }
@@ -697,6 +701,11 @@ struct MacMainView: View {
                 } isTargeted: { targeted in
                     updateDropTarget("inbox", targeted: targeted)
                 }
+                .dropDestination(for: URL.self) { urls, _ in
+                    handleFileDrop(urls, folderId: nil)
+                } isTargeted: { targeted in
+                    updateDropTarget("inbox", targeted: targeted)
+                }
                 sidebarRow(
                     t("Trash", "Корзина"),
                     icon: "trash",
@@ -744,6 +753,7 @@ struct MacMainView: View {
 
             Section {
                 sidebarRow(t("Search", "Поиск"), icon: "magnifyingglass", section: .search, identifier: "search")
+                sidebarRow("Wai", icon: "sparkles", section: .wai, identifier: "wai")
                 sidebarRow(t("Settings", "Настройки"), icon: "gear", section: .settings, identifier: "settings")
             } header: {
                 Text(t("Tools", "Инструменты"))
@@ -786,6 +796,38 @@ struct MacMainView: View {
         moveInboxDragItem(item, to: folderId)
         dropTargetIdentifier = nil
         return true
+    }
+
+    private func handleFileDrop(_ urls: [URL], folderId: String?) -> Bool {
+        guard urls.count == 1, let url = urls.first else {
+            libraryViewModel.error = t(
+                "Drop one file at a time.",
+                "Перетащите один файл за раз."
+            )
+            dropTargetIdentifier = nil
+            return false
+        }
+        uploadDroppedFile(url, to: folderId)
+        dropTargetIdentifier = nil
+        return true
+    }
+
+    private func uploadDroppedFile(_ url: URL, to folderId: String?) {
+        Task {
+            let scoped = url.startAccessingSecurityScopedResource()
+            defer {
+                if scoped {
+                    url.stopAccessingSecurityScopedResource()
+                }
+            }
+            do {
+                _ = try await appState.getAPIClient().uploadItem(fileURL: url, folderId: folderId)
+                inboxReloadToken = UUID()
+                await libraryViewModel.loadLibrary(apiClient: appState.getAPIClient())
+            } catch {
+                libraryViewModel.error = error.userFacingMessage(context: .library)
+            }
+        }
     }
 
     /// One move routine for both affordances — sidebar drops and the rows'
@@ -874,6 +916,11 @@ struct MacMainView: View {
         }
         .dropDestination(for: InboxDragItem.self) { items, _ in
             handleInboxDrop(items, folderId: folder.id)
+        } isTargeted: { targeted in
+            updateDropTarget(dropKey, targeted: targeted)
+        }
+        .dropDestination(for: URL.self) { urls, _ in
+            handleFileDrop(urls, folderId: folder.id)
         } isTargeted: { targeted in
             updateDropTarget(dropKey, targeted: targeted)
         }
@@ -1026,6 +1073,9 @@ struct MacMainView: View {
                 reloadToken: inboxReloadToken,
                 pendingDetail: pendingInboxDetail,
                 pendingCommand: pendingInboxCommand,
+                onSourceKindChanged: { sourceKind in
+                    activeInboxSourceKind = sourceKind
+                },
                 onStartRecording: {
                     startRecording(type: .meeting, inputSource: .dual, folderId: currentFolderId)
                 },
@@ -1108,13 +1158,25 @@ struct MacMainView: View {
             }
         case .search:
             MacSearchView(
+                mode: .search,
                 recordings: libraryViewModel.recordings,
-                initialChatId: pendingSearchChatId,
                 onOpenRecording: { recordingId in
                     openSearchResult(recordingId)
                 },
                 onOpenItem: { itemId in
                     openInboxSource(InboxDetailRef(kind: .item, id: itemId))
+                },
+                onOpenChat: { chatId in
+                    openSearchChat(chatId)
+                }
+            )
+        case .wai:
+            MacSearchView(
+                mode: .wai,
+                recordings: libraryViewModel.recordings,
+                initialChatId: pendingSearchChatId,
+                onOpenRecording: { recordingId in
+                    openSearchResult(recordingId)
                 },
                 onInitialChatConsumed: {
                     pendingSearchChatId = nil
@@ -1132,6 +1194,8 @@ struct MacMainView: View {
     private var inboxInitialSourceKind: InboxSourceKind? {
         switch selectedSection {
         case .inbox, .allRecordings:
+            return .recording
+        case .folder(_):
             return .recording
         case .content:
             return .item
@@ -1254,7 +1318,7 @@ struct MacMainView: View {
     /// open AND the user has opted in (default off) — never a silent 24/7 loop.
     @MainActor
     private func syncDesktopAgent() {
-        let shouldRunDesktopAgent = computerUseEnabled && selectedSection == .inbox
+        let shouldRunDesktopAgent = computerUseEnabled && selectedSection == .wai
         guard shouldRunDesktopAgent else {
             desktopAgent.stop()
             return
@@ -1269,8 +1333,28 @@ struct MacMainView: View {
         selectedRecordingIds.removeAll()
         prefetchedRecordingDetail = nil
         pendingInboxDetail = nil
-        pendingInboxCommand = command
-        selectedSection = .inbox
+        pendingInboxCommand = command == .contextualNew ? contextualInboxCommand() : command
+        if !currentSectionCanHandleInboxCommand {
+            selectedSection = .inbox
+        }
+    }
+
+    private func contextualInboxCommand() -> MacInboxCommand {
+        switch selectedSection {
+        case .inbox, .allRecordings, .folder(_), .content:
+            return activeInboxSourceKind == .item ? .uploadFile : .recordNow
+        default:
+            return .recordNow
+        }
+    }
+
+    private var currentSectionCanHandleInboxCommand: Bool {
+        switch selectedSection {
+        case .inbox, .allRecordings, .folder(_), .content:
+            return true
+        default:
+            return false
+        }
     }
 
     private func beginCreateFolderFromCommand() {
@@ -1322,7 +1406,7 @@ struct MacMainView: View {
         selectedRecordingIds.removeAll()
         pendingInboxDetail = nil
         pendingSearchChatId = chatId
-        selectedSection = .search
+        selectedSection = .wai
     }
 
     private func selectRecording(_ recordingId: String, in section: SidebarSection) {

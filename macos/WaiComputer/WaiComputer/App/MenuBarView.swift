@@ -149,7 +149,7 @@ struct MenuBarView: View {
                     .padding(.horizontal, Spacing.lg)
                 } else {
                     Button {
-                        appState.pendingMainWindowAction = .inboxCommand(.showCreatePane)
+                        appState.pendingMainWindowAction = .inboxCommand(.contextualNew)
                         openMainWindow()
                     } label: {
                         HStack {
