@@ -65,12 +65,25 @@ async def _generate_recording_summary(
             )
         raise
 
-    async with get_db_context() as db:
-        await persist_summary_generation_result(
-            db,
-            job_id=job_uuid,
-            summary_result=summary_result,
-        )
+    try:
+        async with get_db_context() as db:
+            await persist_summary_generation_result(
+                db,
+                job_id=job_uuid,
+                summary_result=summary_result,
+            )
+    except Exception as exc:  # noqa: BLE001
+        capture_sentry_exception(exc)
+        if is_retryable_exception(exc):
+            raise
+        async with get_db_context() as db:
+            await fail_summary_generation_job(
+                db,
+                job_id=job_uuid,
+                error_code="summary_persist_failed",
+                error_message="Summary generation failed while saving the result.",
+            )
+        raise
 
 
 async def _recover_missing_summary_generation_jobs(*, limit: int = 5) -> int:

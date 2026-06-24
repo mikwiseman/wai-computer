@@ -10,6 +10,7 @@ from uuid import UUID, uuid4
 import httpx
 import pytest
 from sqlalchemy import select
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.summarizer import SummaryResult
@@ -604,6 +605,105 @@ async def test_summary_generation_task_marks_summarization_failure(monkeypatch) 
 
     assert calls == [("prepare", "prepare-db"), ("summarization_failed", "fail-db")]
     assert len(captured) == 1
+
+
+@pytest.mark.asyncio
+async def test_summary_generation_task_marks_persist_failure(monkeypatch) -> None:
+    from app.tasks import summary_generation as task_module
+
+    db_objects = ["prepare-db", "persist-db", "fail-db"]
+    job_id = uuid4()
+
+    @asynccontextmanager
+    async def fake_db_context():
+        yield db_objects.pop(0)
+
+    calls: list[tuple[str, object]] = []
+    payload = SimpleNamespace(job_id=job_id, transcript="text")
+
+    async def fake_prepare(db, **kwargs):
+        calls.append(("prepare", db))
+        return payload
+
+    async def fake_generate(received_payload):
+        calls.append(("generate", received_payload))
+        return _summary_result()
+
+    async def fake_persist(db, *, job_id: UUID, summary_result: SummaryResult):
+        calls.append(("persist", db))
+        raise RuntimeError("summary write invariant failed")
+
+    async def fake_fail(db, *, job_id: UUID, error_code: str, error_message: str):
+        calls.append((error_code, db))
+        assert error_message == "Summary generation failed while saving the result."
+
+    captured: list[Exception] = []
+    monkeypatch.setattr(task_module, "get_db_context", fake_db_context)
+    monkeypatch.setattr(task_module, "prepare_summary_generation_payload", fake_prepare)
+    monkeypatch.setattr(task_module, "generate_summary_for_payload", fake_generate)
+    monkeypatch.setattr(task_module, "persist_summary_generation_result", fake_persist)
+    monkeypatch.setattr(task_module, "fail_summary_generation_job", fake_fail)
+    monkeypatch.setattr(task_module, "capture_sentry_exception", captured.append)
+
+    with pytest.raises(RuntimeError, match="summary write invariant failed"):
+        await task_module._generate_recording_summary(job_id=str(job_id))
+
+    assert calls == [
+        ("prepare", "prepare-db"),
+        ("generate", payload),
+        ("persist", "persist-db"),
+        ("summary_persist_failed", "fail-db"),
+    ]
+    assert len(captured) == 1
+
+
+@pytest.mark.asyncio
+async def test_summary_generation_task_leaves_retryable_persist_failure_active(
+    monkeypatch,
+) -> None:
+    from app.tasks import summary_generation as task_module
+
+    db_objects = ["prepare-db", "persist-db", "fail-db"]
+    job_id = uuid4()
+
+    @asynccontextmanager
+    async def fake_db_context():
+        yield db_objects.pop(0)
+
+    payload = SimpleNamespace(job_id=job_id, transcript="text")
+
+    async def fake_prepare(db, **kwargs):
+        return payload
+
+    async def fake_generate(received_payload):
+        return _summary_result()
+
+    async def fake_persist(db, *, job_id: UUID, summary_result: SummaryResult):
+        raise OperationalError(
+            "UPDATE summary_generation_jobs",
+            {},
+            RuntimeError("database unavailable"),
+        )
+
+    fail_calls: list[str] = []
+    captured: list[Exception] = []
+
+    async def fake_fail(db, **kwargs):
+        fail_calls.append(db)
+
+    monkeypatch.setattr(task_module, "get_db_context", fake_db_context)
+    monkeypatch.setattr(task_module, "prepare_summary_generation_payload", fake_prepare)
+    monkeypatch.setattr(task_module, "generate_summary_for_payload", fake_generate)
+    monkeypatch.setattr(task_module, "persist_summary_generation_result", fake_persist)
+    monkeypatch.setattr(task_module, "fail_summary_generation_job", fake_fail)
+    monkeypatch.setattr(task_module, "capture_sentry_exception", captured.append)
+
+    with pytest.raises(OperationalError):
+        await task_module._generate_recording_summary(job_id=str(job_id))
+
+    assert fail_calls == []
+    assert len(captured) == 1
+    assert db_objects == ["fail-db"]
 
 
 @pytest.mark.asyncio
