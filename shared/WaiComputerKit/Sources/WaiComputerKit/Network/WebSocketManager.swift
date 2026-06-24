@@ -59,6 +59,7 @@ public enum WebSocketConnectionError: Error, LocalizedError, Sendable {
 public enum WebSocketEvent: Sendable {
     case connected
     case transcript(LiveTranscriptSegment)
+    case transcriptReplacement(LiveTranscriptSegment)
     case disconnected(Error?)
     case reconnecting(attempt: Int, maxAttempts: Int)
     case reconnected
@@ -611,8 +612,16 @@ public actor WebSocketManager {
             endMs: startMs + durationMs,
             confidence: confidence
         )
-        if isFinal, let emittedSegment = collectCommittedSegment(segment) {
-            eventContinuation?.yield(.transcript(emittedSegment))
+        if isFinal {
+            let hasProviderTiming = payload["start"] is Double || payload["duration"] is Double
+            switch collectCommittedSegment(segment, hasProviderTiming: hasProviderTiming) {
+            case .appended(let emittedSegment):
+                eventContinuation?.yield(.transcript(emittedSegment))
+            case .replaced(let emittedSegment):
+                eventContinuation?.yield(.transcriptReplacement(emittedSegment))
+            case .droppedDuplicate:
+                break
+            }
         } else if !isFinal {
             eventContinuation?.yield(.transcript(segment))
         }
@@ -641,14 +650,42 @@ public actor WebSocketManager {
             ?? "Deepgram realtime transcription error"
     }
 
-    private func collectCommittedSegment(_ segment: LiveTranscriptSegment) -> LiveTranscriptSegment? {
+    private enum CommittedSegmentCollectionResult {
+        case appended(LiveTranscriptSegment)
+        case replaced(LiveTranscriptSegment)
+        case droppedDuplicate
+    }
+
+    private func collectCommittedSegment(
+        _ segment: LiveTranscriptSegment,
+        hasProviderTiming: Bool
+    ) -> CommittedSegmentCollectionResult {
         if let last = collectedSegments.last,
            normalizedTranscriptText(last.text) == normalizedTranscriptText(segment.text) {
-            return nil
+            return .droppedDuplicate
+        }
+
+        if let lastIndex = collectedSegments.indices.last,
+           shouldReplaceLastFinal(
+            collectedSegments[lastIndex],
+            with: segment,
+            hasProviderTiming: hasProviderTiming
+           ) {
+            let previous = collectedSegments[lastIndex]
+            let replacement = LiveTranscriptSegment(
+                text: segment.text,
+                speaker: segment.speaker ?? previous.speaker,
+                isFinal: true,
+                startMs: segment.startMs,
+                endMs: max(segment.endMs, previous.endMs),
+                confidence: segment.confidence
+            )
+            collectedSegments[lastIndex] = replacement
+            return .replaced(replacement)
         }
 
         collectedSegments.append(segment)
-        return segment
+        return .appended(segment)
     }
 
     private func normalizedTranscriptText(_ text: String) -> String {
@@ -656,6 +693,32 @@ public actor WebSocketManager {
             .split(whereSeparator: \.isWhitespace)
             .joined(separator: " ")
             .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func shouldReplaceLastFinal(
+        _ last: LiveTranscriptSegment,
+        with next: LiveTranscriptSegment,
+        hasProviderTiming: Bool
+    ) -> Bool {
+        guard hasProviderTiming else { return false }
+        let lastTokens = transcriptTokens(last.text)
+        let nextTokens = transcriptTokens(next.text)
+        guard !lastTokens.isEmpty,
+              nextTokens.count > lastTokens.count,
+              Array(nextTokens.prefix(lastTokens.count)) == lastTokens else {
+            return false
+        }
+
+        let sameStart = abs(next.startMs - last.startMs) <= 20
+        let overlaps = next.startMs < last.endMs && next.endMs > last.startMs
+        return sameStart || overlaps
+    }
+
+    private func transcriptTokens(_ text: String) -> [String] {
+        text
+            .lowercased()
+            .components(separatedBy: CharacterSet.alphanumerics.inverted)
+            .filter { !$0.isEmpty }
     }
 
     // MARK: - Reconnection

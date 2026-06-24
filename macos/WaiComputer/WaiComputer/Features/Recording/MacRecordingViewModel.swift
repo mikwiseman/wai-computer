@@ -1627,6 +1627,11 @@ class MacRecordingViewModel: ObservableObject {
             // line again.
             let interim = buildInterimTranscriptText()
             setLiveTranscript(committed: committed, interim: interim)
+        case .transcriptReplacement(let segment):
+            let committed = replaceLastCommittedTranscriptLine(segment)
+            interimText = ""
+            interimSpeaker = nil
+            setLiveTranscript(committed: committed, interim: buildInterimTranscriptText())
         case .disconnected(let err):
             if let err, phase == .recording {
                 await continueRecordingWithoutLiveTranscription(
@@ -1798,6 +1803,17 @@ class MacRecordingViewModel: ObservableObject {
             return committedTranscript + " " + segment.text
         }
         return committedTranscript + "\n\n\(displaySpeaker(segment.speaker ?? "Speaker")): \(segment.text)"
+    }
+
+    private func replaceLastCommittedTranscriptLine(_ segment: LiveTranscriptSegment) -> String {
+        if committedLines.isEmpty {
+            return appendCommittedTranscriptLine(segment)
+        }
+        committedLines[committedLines.count - 1] = (speaker: segment.speaker, text: segment.text)
+        committedTranscriptHasSpeakerLabels = committedLines.contains { line in
+            Self.hasSpeakerLabel(line.speaker)
+        }
+        return buildCommittedTranscriptText()
     }
 
     private static func hasSpeakerLabel(_ speaker: String?) -> Bool {

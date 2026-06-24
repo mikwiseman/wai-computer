@@ -94,6 +94,14 @@ final class WebSocketManagerTests: XCTestCase {
             XCTFail("Expected .transcript")
         }
 
+        let replacementEvent = WebSocketEvent.transcriptReplacement(segment)
+        if case .transcriptReplacement(let seg) = replacementEvent {
+            XCTAssertEqual(seg.text, "Test")
+            XCTAssertTrue(seg.isFinal)
+        } else {
+            XCTFail("Expected .transcriptReplacement")
+        }
+
         // .disconnected with nil error
         let disconnectedNil = WebSocketEvent.disconnected(nil)
         if case .disconnected(let error) = disconnectedNil {

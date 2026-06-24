@@ -1026,6 +1026,17 @@ class RecordingViewModel: ObservableObject {
             currentTranscript = buildTranscriptText()
             committedTranscript = buildCommittedTranscriptText()
             interimTranscript = buildInterimTranscriptText()
+        case .transcriptReplacement(let segment):
+            if committedLines.isEmpty {
+                committedLines.append((speaker: segment.speaker, text: segment.text))
+            } else {
+                committedLines[committedLines.count - 1] = (speaker: segment.speaker, text: segment.text)
+            }
+            interimText = ""
+            interimSpeaker = nil
+            currentTranscript = buildTranscriptText()
+            committedTranscript = buildCommittedTranscriptText()
+            interimTranscript = buildInterimTranscriptText()
         case .disconnected(let err):
             if let err, phase == .recording {
                 await continueRecordingWithoutLiveTranscription(

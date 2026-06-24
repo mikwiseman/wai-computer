@@ -61,4 +61,34 @@ final class MacRecordingViewModelRealtimeFailureTests: XCTestCase {
         XCTAssertEqual(viewModel.currentRecordingId, "rec-local")
         XCTAssertEqual(viewModel.duration, 42)
     }
+
+    func testRealtimeTranscriptReplacementUpdatesLastCommittedLine() async {
+        let viewModel = MacRecordingViewModel(testingMode: .live)
+        viewModel.testingBeginRecordingForRealtimeFailure(recordingId: "rec-local", duration: 12)
+
+        await viewModel.testingHandleWebSocketEvent(
+            .transcript(LiveTranscriptSegment(
+                text: "Hello world",
+                speaker: nil,
+                isFinal: true,
+                startMs: 0,
+                endMs: 800,
+                confidence: 0.92
+            ))
+        )
+        await viewModel.testingHandleWebSocketEvent(
+            .transcriptReplacement(LiveTranscriptSegment(
+                text: "Hello world today",
+                speaker: nil,
+                isFinal: true,
+                startMs: 0,
+                endMs: 1200,
+                confidence: 0.94
+            ))
+        )
+
+        XCTAssertEqual(viewModel.currentTranscript, "Hello world today")
+        XCTAssertEqual(viewModel.committedTranscript, "Hello world today")
+        XCTAssertEqual(viewModel.committedTranscriptChunks.map(\.text), ["Hello world today"])
+    }
 }
