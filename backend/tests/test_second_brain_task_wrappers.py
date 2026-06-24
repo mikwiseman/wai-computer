@@ -10,6 +10,7 @@ work is stubbed out.
 from unittest.mock import patch
 
 import pytest
+from sqlalchemy.exc import OperationalError
 
 from app.tasks import (
     comparison_generation,
@@ -47,6 +48,33 @@ def test_item_summary_task_reraises_and_captures() -> None:
     cap.assert_called_once()
 
 
+def test_item_summary_task_retries_retryable_failure(monkeypatch) -> None:
+    class RetrySentinelError(Exception):
+        pass
+
+    retryable_error = OperationalError("UPDATE items", {}, RuntimeError("database unavailable"))
+    retry_calls: list[Exception] = []
+
+    def fake_retry(*, exc: Exception):
+        retry_calls.append(exc)
+        raise RetrySentinelError
+
+    with (
+        patch.object(
+            item_summary_generation,
+            "_generate_item_summary",
+            _coro_factory(raises=retryable_error),
+        ),
+        patch.object(item_summary_generation, "capture_sentry_exception") as cap,
+    ):
+        monkeypatch.setattr(item_summary_generation.generate_item_summary_task, "retry", fake_retry)
+        with pytest.raises(RetrySentinelError):
+            item_summary_generation.generate_item_summary_task(item_id="abc")
+
+    assert retry_calls == [retryable_error]
+    cap.assert_called_once()
+
+
 def test_comparison_task_success() -> None:
     with patch.object(comparison_generation, "_generate", _coro_factory()):
         comparison_generation.generate_comparison_task(comparison_id="c1", intent="x")
@@ -60,5 +88,4 @@ def test_comparison_task_reraises_and_captures() -> None:
         with pytest.raises(ValueError):
             comparison_generation.generate_comparison_task(comparison_id="c1")
     cap.assert_called_once()
-
 

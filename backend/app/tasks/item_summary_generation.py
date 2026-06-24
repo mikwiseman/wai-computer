@@ -23,6 +23,7 @@ from app.core.observability import (
 from app.db.session import get_db_context
 from app.models.item import Item
 from app.tasks.celery_app import celery_app
+from app.tasks.retry_policy import is_retryable_exception
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +49,10 @@ async def _generate_item_summary(*, item_id: str) -> None:
     reject_on_worker_lost=True,
     soft_time_limit=900,
     time_limit=960,
+    max_retries=3,
+    retry_backoff=True,
+    retry_backoff_max=600,
+    retry_jitter=True,
 )
 def generate_item_summary_task(self, *, item_id: str) -> None:
     try:
@@ -65,6 +70,17 @@ def generate_item_summary_task(self, *, item_id: str) -> None:
         raise
     except Exception as exc:  # noqa: BLE001
         capture_sentry_exception(exc)
+        retry_count = int(getattr(self.request, "retries", 0) or 0)
+        if is_retryable_exception(exc) and retry_count < int(self.max_retries or 0):
+            logger.info(
+                "item summary task retrying item_id=%s retries=%s error_type=%s "
+                "error_fingerprint=%s",
+                item_id,
+                retry_count,
+                type(exc).__name__,
+                fingerprint_text(str(exc)),
+            )
+            raise self.retry(exc=exc)
         logger.error(
             "item summary task failed item_id=%s error_type=%s error_fingerprint=%s",
             item_id,
