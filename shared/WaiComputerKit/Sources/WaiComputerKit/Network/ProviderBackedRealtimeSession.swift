@@ -446,12 +446,34 @@ public actor ProviderBackedRealtimeSession: ProviderSession {
             return
         }
         let fallbackStart = collectedSegments.last?.endMs ?? 0
+        let resolvedStart = startMs ?? fallbackStart
+        let resolvedEnd = endMs ?? startMs ?? fallbackStart
+        if let lastIndex = collectedSegments.indices.last,
+           Self.shouldReplaceLastFinal(
+            collectedSegments[lastIndex],
+            with: transcript,
+            startMs: startMs,
+            endMs: endMs
+           ) {
+            let previous = collectedSegments[lastIndex]
+            let segment = LiveTranscriptSegment(
+                text: transcript,
+                speaker: speaker ?? previous.speaker,
+                isFinal: true,
+                startMs: startMs ?? previous.startMs,
+                endMs: max(resolvedEnd, previous.endMs),
+                confidence: confidence
+            )
+            collectedSegments[lastIndex] = segment
+            eventContinuation.yield(.committedReplacement(segment))
+            return
+        }
         let segment = LiveTranscriptSegment(
             text: transcript,
             speaker: speaker,
             isFinal: true,
-            startMs: startMs ?? fallbackStart,
-            endMs: endMs ?? startMs ?? fallbackStart,
+            startMs: resolvedStart,
+            endMs: resolvedEnd,
             confidence: confidence
         )
         collectedSegments.append(segment)
@@ -503,6 +525,38 @@ public actor ProviderBackedRealtimeSession: ProviderSession {
             .split(whereSeparator: \.isWhitespace)
             .joined(separator: " ")
             .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private static func shouldReplaceLastFinal(
+        _ last: LiveTranscriptSegment,
+        with transcript: String,
+        startMs: Int?,
+        endMs: Int?
+    ) -> Bool {
+        let lastTokens = transcriptTokens(last.text)
+        let nextTokens = transcriptTokens(transcript)
+        guard !lastTokens.isEmpty,
+              nextTokens.count > lastTokens.count,
+              Array(nextTokens.prefix(lastTokens.count)) == lastTokens else {
+            return false
+        }
+
+        guard startMs != nil || endMs != nil else {
+            return false
+        }
+
+        let nextStart = startMs ?? last.startMs
+        let nextEnd = endMs ?? nextStart
+        let sameStart = abs(nextStart - last.startMs) <= 20
+        let overlaps = nextStart < last.endMs && nextEnd > last.startMs
+        return sameStart || overlaps
+    }
+
+    private static func transcriptTokens(_ text: String) -> [String] {
+        text
+            .lowercased()
+            .components(separatedBy: CharacterSet.alphanumerics.inverted)
+            .filter { !$0.isEmpty }
     }
 
     static func encodeJSON(_ payload: [String: Any]) -> String {

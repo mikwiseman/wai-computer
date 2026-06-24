@@ -26,6 +26,7 @@ public enum TranscriptionEvent: @unchecked Sendable {
     case opened(sessionId: String)
     case interim(text: String, language: String?)
     case committed(LiveTranscriptSegment)
+    case committedReplacement(LiveTranscriptSegment)
     case voiceProfile(VoiceProfile)
     case providerWarning(ProviderError)
     case usage(promptedSeconds: Double)

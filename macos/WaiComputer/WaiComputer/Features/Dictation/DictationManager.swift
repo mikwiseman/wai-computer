@@ -1788,6 +1788,23 @@ final class DictationManager: ObservableObject {
             currentInterim = ""
             captureLiveTranscriptCandidate()
             interimTranscript = buildTranscript()
+        case .committedReplacement(let segment):
+            if !firstTokenReported {
+                firstTokenReported = true
+                instrumentationSession?.event(.firstTokenReceived, data: ["isFinal": true])
+            }
+            instrumentationSession?.event(.committedTranscript, data: [
+                "chars": segment.text.count,
+                "replacement": true,
+            ])
+            if committedTexts.isEmpty {
+                committedTexts.append(segment.text)
+            } else {
+                committedTexts[committedTexts.count - 1] = segment.text
+            }
+            currentInterim = ""
+            captureLiveTranscriptCandidate()
+            interimTranscript = buildTranscript()
         case .voiceProfile:
             break
         case .providerWarning(let providerError):

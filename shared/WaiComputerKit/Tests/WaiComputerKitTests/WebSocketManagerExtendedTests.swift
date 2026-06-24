@@ -429,6 +429,52 @@ final class WebSocketManagerExtendedTests: XCTestCase {
         XCTAssertEqual(segments.map(\.text), ["Same provider final."])
     }
 
+    func testProviderBackedExtendedFinalTranscriptReplacesEarlierFinal() async {
+        let session = ProviderBackedRealtimeSession(config: config(language: "en"))
+        var events = session.events.makeAsyncIterator()
+
+        await session.testingHandleDeepgramMessage("""
+        {
+            "type": "Results",
+            "is_final": true,
+            "start": 0.0,
+            "duration": 0.8,
+            "channel": {
+                "alternatives": [
+                    {"transcript": "Hello world", "confidence": 0.92}
+                ]
+            }
+        }
+        """)
+        if case .committed(let segment)? = await events.next() {
+            XCTAssertEqual(segment.text, "Hello world")
+        } else {
+            XCTFail("Expected initial committed event")
+        }
+        await session.testingHandleDeepgramMessage("""
+        {
+            "type": "Results",
+            "is_final": true,
+            "from_finalize": true,
+            "start": 0.0,
+            "duration": 1.2,
+            "channel": {
+                "alternatives": [
+                    {"transcript": "Hello world today", "confidence": 0.94}
+                ]
+            }
+        }
+        """)
+        if case .committedReplacement(let segment)? = await events.next() {
+            XCTAssertEqual(segment.text, "Hello world today")
+        } else {
+            XCTFail("Expected committed replacement event")
+        }
+
+        let segments = await session.testingCollectedSegments()
+        XCTAssertEqual(segments.map(\.text), ["Hello world today"])
+    }
+
     func testProviderBackedEmptyFinalizeFrameMarksFinalization() async {
         let session = ProviderBackedRealtimeSession(config: config(language: "en"))
 

@@ -70,6 +70,51 @@ private actor SlowOpeningDictationProvider: ProviderSession {
     }
 }
 
+private actor ReplacementEventDictationProvider: ProviderSession {
+    nonisolated let events: AsyncStream<TranscriptionEvent>
+
+    private let eventContinuation: AsyncStream<TranscriptionEvent>.Continuation
+
+    init() {
+        let events = AsyncStream.makeStream(of: TranscriptionEvent.self)
+        self.events = events.stream
+        self.eventContinuation = events.continuation
+    }
+
+    func open() async throws {}
+
+    func send(pcm16: Data) async throws {}
+
+    func endTurn() async throws {
+        eventContinuation.yield(.committed(LiveTranscriptSegment(
+            text: "hello world",
+            speaker: nil,
+            isFinal: true,
+            startMs: 0,
+            endMs: 800,
+            confidence: 0.92
+        )))
+        eventContinuation.yield(.committedReplacement(LiveTranscriptSegment(
+            text: "hello world today",
+            speaker: nil,
+            isFinal: true,
+            startMs: 0,
+            endMs: 1_200,
+            confidence: 0.94
+        )))
+    }
+
+    func close(timeout: Duration) async throws -> [LiveTranscriptSegment] {
+        try? await Task.sleep(for: .milliseconds(50))
+        eventContinuation.finish()
+        return []
+    }
+
+    func cancel() async {
+        eventContinuation.finish()
+    }
+}
+
 final class DictationSessionCommitTests: XCTestCase {
     func testCommitDuringArmingReturnsDeferredCommitOutcome() async throws {
         let gate = DictationCommitGate()
@@ -105,6 +150,17 @@ final class DictationSessionCommitTests: XCTestCase {
         XCTAssertEqual(outcome.segments.map(\.text), ["fast release still transcribes"])
         let providerWasClosed = await provider.wasClosed()
         XCTAssertTrue(providerWasClosed)
+    }
+
+    func testCommitUsesReplacementEventWhenCloseReturnsNoSegments() async throws {
+        let provider = ReplacementEventDictationProvider()
+        let session = try makeSession(provider: provider)
+
+        try await session.arm()
+        let outcome = try await session.commit(timeout: .seconds(1))
+
+        XCTAssertEqual(outcome.transcript, "hello world today")
+        XCTAssertEqual(outcome.segments.map(\.text), ["hello world today"])
     }
 
     private func makeSession(provider: any ProviderSession) throws -> DictationSession {

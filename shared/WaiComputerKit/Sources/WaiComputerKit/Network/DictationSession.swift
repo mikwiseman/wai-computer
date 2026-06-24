@@ -195,6 +195,12 @@ public actor DictationSession {
             if let lang { detectedLanguage = lang }
         case .committed(let segment):
             accumulatedSegments.append(segment)
+        case .committedReplacement(let segment):
+            if accumulatedSegments.isEmpty {
+                accumulatedSegments.append(segment)
+            } else {
+                accumulatedSegments[accumulatedSegments.count - 1] = segment
+            }
         case .providerWarning(let err):
             sessionLog.warning("[Session \(self.id.uuidString, privacy: .public)] provider warning fingerprint=\(err.fingerprint, privacy: .public)")
         case .closed(let reason):
