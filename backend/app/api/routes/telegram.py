@@ -3871,6 +3871,7 @@ async def _handle_update(update: dict[str, Any]) -> None:
     async with get_db_context() as db:
         message: dict[str, Any] | None = None
         account: TelegramAccount | None = None
+        media_message = False
         try:
             callback_query = update.get("callback_query")
             if isinstance(callback_query, dict):
@@ -3953,6 +3954,7 @@ async def _handle_update(update: dict[str, Any]) -> None:
 
             media = _extract_media(message)
             if media is not None:
+                media_message = True
                 await _route_media_message(
                     db,
                     client,
@@ -4052,13 +4054,14 @@ async def _handle_update(update: dict[str, Any]) -> None:
                 with suppress(Exception):
                     await db.rollback()
                 notify_account = None
-            await _notify_telegram_internal_error(
-                db,
-                client,
-                message=message,
-                account=notify_account,
-                status_message_id=status_message_id,
-            )
+            if media_message or status_message_id is not None:
+                await _notify_telegram_internal_error(
+                    db,
+                    client,
+                    message=message,
+                    account=notify_account,
+                    status_message_id=status_message_id,
+                )
             await _mark_update(db, update_id, "failed", "internal_error", "Telegram update failed")
 
 

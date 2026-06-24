@@ -3917,6 +3917,54 @@ async def test_handle_update_internal_error_rolls_back_inactive_session(
 
 
 @pytest.mark.asyncio
+async def test_handle_update_internal_text_error_does_not_send_recording_import_reply(
+    db_session: AsyncSession,
+    monkeypatch,
+):
+    user = await _user(db_session, "text-internal-error@example.com")
+    db_session.add(TelegramAccount(user_id=user.id, telegram_user_id=75, telegram_chat_id=75))
+    db_session.add(
+        TelegramUpdate(
+            update_id=402,
+            status="accepted",
+            received_at=datetime.now(timezone.utc),
+        )
+    )
+    await db_session.commit()
+    capture = _TelegramCapture()
+
+    @asynccontextmanager
+    async def fake_db_context():
+        yield db_session
+
+    monkeypatch.setattr(telegram_routes, "TelegramBotClient", lambda: capture)
+    monkeypatch.setattr(telegram_routes, "get_db_context", fake_db_context)
+    monkeypatch.setattr(
+        telegram_routes,
+        "_route_text_like",
+        AsyncMock(side_effect=ValueError("text boom")),
+    )
+
+    await telegram_routes._handle_update(
+        {
+            "update_id": 402,
+            "message": {
+                "message_id": 46,
+                "from": {"id": 75},
+                "chat": {"id": 75},
+                "text": "find this",
+            },
+        }
+    )
+
+    update = await db_session.get(TelegramUpdate, 402)
+    assert update.status == "failed"
+    assert update.error_code == "internal_error"
+    assert capture.messages == []
+    assert capture.deleted_messages == []
+
+
+@pytest.mark.asyncio
 async def test_webhook_accepts_valid_secret_once(client, db_session: AsyncSession, monkeypatch):
     calls: list[int] = []
 
