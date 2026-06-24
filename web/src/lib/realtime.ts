@@ -12,6 +12,8 @@ export interface RealtimeResult {
   transcript: string;
   isFinal: boolean;
   speaker: number | null;
+  startMs: number | null;
+  endMs: number | null;
 }
 
 /** Parse a Deepgram realtime result frame. Pure + unit-tested. */
@@ -36,7 +38,8 @@ export function parseRealtimeMessage(raw: string): RealtimeResult | null {
   if (Array.isArray(words) && words.length > 0 && typeof words[0].speaker === "number") {
     speaker = words[0].speaker as number;
   }
-  return { transcript, isFinal, speaker };
+  const timing = realtimeResultTiming(root, words);
+  return { transcript, isFinal, speaker, startMs: timing.startMs, endMs: timing.endMs };
 }
 
 export type RealtimeState = "idle" | "connecting" | "recording" | "stopping" | "error";
@@ -56,6 +59,85 @@ export interface RealtimeTranscriberOptions {
 
 const STOP_CLOSE_TIMEOUT_MS = 5000;
 const DEFAULT_KEEP_ALIVE_INTERVAL_SECONDS = 4;
+const FINAL_REPLACEMENT_START_TOLERANCE_MS = 20;
+
+function realtimeResultTiming(
+  root: Record<string, unknown>,
+  words: Array<Record<string, unknown>> | undefined,
+): { startMs: number | null; endMs: number | null } {
+  const rootStart = numberOrNull(root.start);
+  const rootDuration = numberOrNull(root.duration);
+  if (rootStart != null && rootDuration != null) {
+    const startMs = secondsToMs(rootStart);
+    return {
+      startMs,
+      endMs: startMs + secondsToMs(rootDuration),
+    };
+  }
+
+  if (Array.isArray(words) && words.length > 0) {
+    const firstStart = numberOrNull(words[0]?.start);
+    const lastEnd = numberOrNull(words[words.length - 1]?.end);
+    return {
+      startMs: firstStart == null ? null : secondsToMs(firstStart),
+      endMs: lastEnd == null ? null : secondsToMs(lastEnd),
+    };
+  }
+
+  return { startMs: null, endMs: null };
+}
+
+function numberOrNull(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function secondsToMs(value: number): number {
+  return Math.round(value * 1000);
+}
+
+function normalizedTokens(value: string): string[] {
+  return Array.from(value.matchAll(/[\p{L}\p{N}]+/gu), (match) => match[0].toLowerCase());
+}
+
+function isStrictTokenPrefix(prefix: string, value: string): boolean {
+  const prefixTokens = normalizedTokens(prefix);
+  const valueTokens = normalizedTokens(value);
+  return (
+    prefixTokens.length > 0 &&
+    valueTokens.length > prefixTokens.length &&
+    prefixTokens.every((token, index) => token === valueTokens[index])
+  );
+}
+
+function sameFinalRange(
+  previous: TranscriptSegmentInput,
+  next: TranscriptSegmentInput,
+): boolean {
+  const sameStart =
+    Math.abs(previous.start_ms - next.start_ms) <= FINAL_REPLACEMENT_START_TOLERANCE_MS;
+  const overlaps = next.start_ms < previous.end_ms && next.end_ms > previous.start_ms;
+  return sameStart || overlaps;
+}
+
+function shouldReplacePreviousFinal(
+  previous: TranscriptSegmentInput | undefined,
+  next: TranscriptSegmentInput,
+  hasProviderTiming: boolean,
+): previous is TranscriptSegmentInput {
+  if (!previous || !hasProviderTiming) return false;
+  if (!sameFinalRange(previous, next)) return false;
+  return isStrictTokenPrefix(previous.text, next.text);
+}
+
+function shouldDropDuplicateFinal(
+  previous: TranscriptSegmentInput | undefined,
+  next: TranscriptSegmentInput,
+  hasProviderTiming: boolean,
+): boolean {
+  if (!previous || !hasProviderTiming) return false;
+  if (!sameFinalRange(previous, next)) return false;
+  return previous.text.trim().toLowerCase() === next.text.trim().toLowerCase();
+}
 
 export class RealtimeTranscriber {
   private ctx: AudioContext | null = null;
@@ -180,18 +262,24 @@ export class RealtimeTranscriber {
     const result = parseRealtimeMessage(event.data);
     if (!result) return;
     if (result.isFinal) {
-      const startMs = this.lastFinalMs;
-      const endMs = Date.now() - this.startedAt;
-      this.lastFinalMs = endMs;
-      this.segments.push({
+      const hasProviderTiming = result.startMs != null || result.endMs != null;
+      const fallbackEndMs = Date.now() - this.startedAt;
+      const startMs = result.startMs ?? this.lastFinalMs;
+      const endMs = result.endMs ?? fallbackEndMs;
+      const segment = {
         text: result.transcript,
         speaker: result.speaker != null ? `Speaker ${result.speaker + 1}` : null,
         start_ms: startMs,
         end_ms: endMs,
-      });
-      this.committedText = this.committedText
-        ? `${this.committedText} ${result.transcript}`
-        : result.transcript;
+      };
+      const previous = this.segments.at(-1);
+      if (shouldReplacePreviousFinal(previous, segment, hasProviderTiming)) {
+        this.segments[this.segments.length - 1] = segment;
+      } else if (!shouldDropDuplicateFinal(previous, segment, hasProviderTiming)) {
+        this.segments.push(segment);
+      }
+      this.lastFinalMs = Math.max(this.lastFinalMs, endMs);
+      this.committedText = this.segments.map((item) => item.text).join(" ");
       this.interimText = "";
     } else {
       this.interimText = result.transcript;

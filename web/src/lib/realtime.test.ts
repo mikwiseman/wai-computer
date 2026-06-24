@@ -199,6 +199,8 @@ describe("parseRealtimeMessage", () => {
       transcript: "Hello there",
       isFinal: true,
       speaker: 0,
+      startMs: null,
+      endMs: null,
     });
   });
 
@@ -211,6 +213,44 @@ describe("parseRealtimeMessage", () => {
       transcript: "partial",
       isFinal: false,
       speaker: null,
+      startMs: null,
+      endMs: null,
+    });
+  });
+
+  it("parses provider timing from root start and duration", () => {
+    const raw = JSON.stringify({
+      is_final: true,
+      start: 1.25,
+      duration: 2.5,
+      channel: { alternatives: [{ transcript: "timed result" }] },
+    });
+    expect(parseRealtimeMessage(raw)).toMatchObject({
+      transcript: "timed result",
+      startMs: 1250,
+      endMs: 3750,
+    });
+  });
+
+  it("falls back to word timing when root timing is absent", () => {
+    const raw = JSON.stringify({
+      is_final: true,
+      channel: {
+        alternatives: [
+          {
+            transcript: "word timed",
+            words: [
+              { word: "word", start: 0.4, end: 0.8 },
+              { word: "timed", start: 0.9, end: 1.2 },
+            ],
+          },
+        ],
+      },
+    });
+    expect(parseRealtimeMessage(raw)).toMatchObject({
+      transcript: "word timed",
+      startMs: 400,
+      endMs: 1200,
     });
   });
 
@@ -472,6 +512,64 @@ describe("RealtimeTranscriber.onMessage", () => {
     } as MessageEvent);
 
     expect(transcriber.getSegments()[0]).toMatchObject({ text: "solo", speaker: null });
+  });
+
+  it("replaces an earlier final when the provider sends an extended final for the same range", async () => {
+    const updates: Array<{ committed: string; interim: string }> = [];
+    const transcriber = new RealtimeTranscriber({ onUpdate: (u) => updates.push(u) });
+    mockedCreateSession.mockResolvedValue(sessionResponse());
+    const ws = await startRecording(transcriber, fakeStream().mediaStream);
+
+    ws.onmessage?.({
+      data: JSON.stringify({
+        is_final: true,
+        start: 0,
+        duration: 1.0,
+        channel: { alternatives: [{ transcript: "hello world", words: [{ speaker: 0 }] }] },
+      }),
+    } as MessageEvent);
+    ws.onmessage?.({
+      data: JSON.stringify({
+        is_final: true,
+        start: 0,
+        duration: 1.8,
+        channel: { alternatives: [{ transcript: "hello world today", words: [{ speaker: 0 }] }] },
+      }),
+    } as MessageEvent);
+
+    expect(updates.at(-1)).toEqual({ committed: "hello world today", interim: "" });
+    expect(transcriber.getSegments()).toEqual([
+      {
+        text: "hello world today",
+        speaker: "Speaker 1",
+        start_ms: 0,
+        end_ms: 1800,
+      },
+    ]);
+  });
+
+  it("drops an exact duplicate final for the same provider range", async () => {
+    const updates: Array<{ committed: string; interim: string }> = [];
+    const transcriber = new RealtimeTranscriber({ onUpdate: (u) => updates.push(u) });
+    mockedCreateSession.mockResolvedValue(sessionResponse());
+    const ws = await startRecording(transcriber, fakeStream().mediaStream);
+
+    const frame = {
+      is_final: true,
+      start: 0.2,
+      duration: 0.9,
+      channel: { alternatives: [{ transcript: "repeat me", words: [{ speaker: 0 }] }] },
+    };
+    ws.onmessage?.({ data: JSON.stringify(frame) } as MessageEvent);
+    ws.onmessage?.({ data: JSON.stringify(frame) } as MessageEvent);
+
+    expect(updates.at(-1)).toEqual({ committed: "repeat me", interim: "" });
+    expect(transcriber.getSegments()).toHaveLength(1);
+    expect(transcriber.getSegments()[0]).toMatchObject({
+      text: "repeat me",
+      start_ms: 200,
+      end_ms: 1100,
+    });
   });
 
   it("updates interim text without committing for non-final frames", async () => {
