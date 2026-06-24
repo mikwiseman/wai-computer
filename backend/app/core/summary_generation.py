@@ -463,7 +463,7 @@ async def recover_missing_summary_generation_jobs(
     enqueue: Callable[[UUID], str],
     limit: int = 5,
 ) -> int:
-    """Enqueue summaries for ready recordings that never received a summary job."""
+    """Enqueue summaries for ready recordings that have no runnable task."""
     if limit <= 0:
         return 0
 
@@ -487,6 +487,49 @@ async def recover_missing_summary_generation_jobs(
     )
     recovered = 0
 
+    orphaned_jobs = (
+        await db.execute(
+            select(SummaryGenerationJob)
+            .join(Recording, Recording.id == SummaryGenerationJob.recording_id)
+            .where(
+                SummaryGenerationJob.status == SummaryGenerationStatus.QUEUED.value,
+                SummaryGenerationJob.stage != WAITING_FOR_TRANSCRIPT_STAGE,
+                SummaryGenerationJob.task_id.is_(None),
+                has_segments,
+                ~has_summary,
+            )
+            .options(selectinload(SummaryGenerationJob.recording).selectinload(Recording.segments))
+            .order_by(SummaryGenerationJob.created_at.asc(), SummaryGenerationJob.id.asc())
+            .limit(limit)
+        )
+    ).scalars().all()
+    for job in orphaned_jobs:
+        transcript_hash = summary_transcript_hash(build_summary_transcript(job.recording.segments))
+        if transcript_hash != job.transcript_hash:
+            mark_summary_generation_failed(
+                job,
+                error_code="stale_transcript",
+                error_message="Transcript changed before summary generation started.",
+            )
+            await db.commit()
+            continue
+        try:
+            job.task_id = enqueue(job.id)
+        except Exception:  # noqa: BLE001 - broker failure is persisted below.
+            mark_summary_generation_failed(
+                job,
+                error_code="summary_enqueue_failed",
+                error_message="Failed to start summary generation.",
+            )
+            await db.commit()
+            continue
+        await db.commit()
+        recovered += 1
+
+    remaining_limit = limit - recovered
+    if remaining_limit <= 0:
+        return recovered
+
     waiting_rows = (
         await db.execute(
             select(SummaryGenerationJob.recording_id, SummaryGenerationJob.user_id)
@@ -498,7 +541,7 @@ async def recover_missing_summary_generation_jobs(
                 ~has_summary,
             )
             .order_by(SummaryGenerationJob.created_at.asc(), SummaryGenerationJob.id.asc())
-            .limit(limit)
+            .limit(remaining_limit)
         )
     ).all()
     for recording_id, user_id in waiting_rows:

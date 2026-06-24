@@ -260,6 +260,110 @@ async def test_recover_missing_summary_generation_jobs_enqueues_waiting_job_with
 
 
 @pytest.mark.asyncio
+async def test_recover_missing_summary_generation_jobs_enqueues_orphaned_queued_job(
+    db_session: AsyncSession,
+) -> None:
+    user = await _user(db_session)
+    recording = await _recording(db_session, user)
+    orphaned_job = SummaryGenerationJob(
+        recording_id=recording.id,
+        user_id=user.id,
+        status=SummaryGenerationStatus.QUEUED.value,
+        stage="queued",
+        progress_percent=5,
+        transcript_hash=summary_transcript_hash(
+            build_summary_transcript(await _segments(db_session, recording))
+        ),
+        task_id=None,
+    )
+    db_session.add(orphaned_job)
+    await db_session.flush()
+
+    enqueued: list[UUID] = []
+
+    recovered = await recover_missing_summary_generation_jobs(
+        db_session,
+        enqueue=lambda job_id: enqueued.append(job_id) or f"celery-{job_id}",
+        limit=10,
+    )
+
+    await db_session.refresh(orphaned_job)
+    assert recovered == 1
+    assert enqueued == [orphaned_job.id]
+    assert orphaned_job.status == SummaryGenerationStatus.QUEUED.value
+    assert orphaned_job.stage == "queued"
+    assert orphaned_job.task_id == f"celery-{orphaned_job.id}"
+
+
+@pytest.mark.asyncio
+async def test_recover_missing_summary_generation_jobs_fails_stale_orphaned_queued_job(
+    db_session: AsyncSession,
+) -> None:
+    user = await _user(db_session)
+    recording = await _recording(db_session, user)
+    orphaned_job = SummaryGenerationJob(
+        recording_id=recording.id,
+        user_id=user.id,
+        status=SummaryGenerationStatus.QUEUED.value,
+        stage="queued",
+        progress_percent=5,
+        transcript_hash="stale",
+        task_id=None,
+    )
+    db_session.add(orphaned_job)
+    await db_session.flush()
+
+    enqueued: list[UUID] = []
+
+    recovered = await recover_missing_summary_generation_jobs(
+        db_session,
+        enqueue=lambda job_id: enqueued.append(job_id) or f"celery-{job_id}",
+        limit=10,
+    )
+
+    await db_session.refresh(orphaned_job)
+    assert recovered == 0
+    assert enqueued == []
+    assert orphaned_job.status == SummaryGenerationStatus.FAILED.value
+    assert orphaned_job.error_code == "stale_transcript"
+
+
+@pytest.mark.asyncio
+async def test_recover_missing_summary_generation_jobs_fails_orphaned_queued_enqueue_error(
+    db_session: AsyncSession,
+) -> None:
+    user = await _user(db_session)
+    recording = await _recording(db_session, user)
+    orphaned_job = SummaryGenerationJob(
+        recording_id=recording.id,
+        user_id=user.id,
+        status=SummaryGenerationStatus.QUEUED.value,
+        stage="queued",
+        progress_percent=5,
+        transcript_hash=summary_transcript_hash(
+            build_summary_transcript(await _segments(db_session, recording))
+        ),
+        task_id=None,
+    )
+    db_session.add(orphaned_job)
+    await db_session.flush()
+
+    def raise_enqueue_error(job_id: UUID) -> str:
+        raise RuntimeError("broker unavailable")
+
+    recovered = await recover_missing_summary_generation_jobs(
+        db_session,
+        enqueue=raise_enqueue_error,
+        limit=10,
+    )
+
+    await db_session.refresh(orphaned_job)
+    assert recovered == 0
+    assert orphaned_job.status == SummaryGenerationStatus.FAILED.value
+    assert orphaned_job.error_code == "summary_enqueue_failed"
+
+
+@pytest.mark.asyncio
 async def test_apply_and_persist_summary_result_replaces_generated_outputs(
     db_session: AsyncSession,
 ) -> None:
