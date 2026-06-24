@@ -49,6 +49,9 @@ public actor DictationSession {
     private var deferredCommit = false
     private var detectedLanguage: String?
     private var accumulatedSegments: [LiveTranscriptSegment] = []
+    private var completedOutcome: Outcome?
+    private static let deferredCommitPollInterval: Duration = .milliseconds(50)
+    private static let deferredCommitMaxPolls = 240
 
     /// Construct from an already-acquired audio lease and an unopened
     /// provider session. The session is responsible for closing both
@@ -92,13 +95,43 @@ public actor DictationSession {
     /// Signal end-of-turn. Drains transcript with a bounded wait, then
     /// returns the assembled outcome.
     public func commit(timeout: Duration = .seconds(3)) async throws -> Outcome {
+        if let completedOutcome {
+            return completedOutcome
+        }
+
         if phase == .arming || phase == .ready {
             // Hotkey released before we even finished connecting. Defer the
             // commit so the listening loop applies it as soon as it transitions.
             deferredCommit = true
-            // Wait briefly for arm() to complete.
-            for _ in 0..<30 where phase != .listening { try? await Task.sleep(for: .milliseconds(50)) }
+            for _ in 0..<Self.deferredCommitMaxPolls where phase == .arming || phase == .ready {
+                try? await Task.sleep(for: Self.deferredCommitPollInterval)
+            }
+            if phase == .arming || phase == .ready {
+                throw ProviderError.transcriberInternal(
+                    message: "dictation commit timed out before realtime session became ready"
+                )
+            }
         }
+
+        if phase == .finalizing {
+            for _ in 0..<Self.deferredCommitMaxPolls where completedOutcome == nil && phase == .finalizing {
+                try? await Task.sleep(for: Self.deferredCommitPollInterval)
+            }
+            if phase == .finalizing {
+                throw ProviderError.transcriberInternal(
+                    message: "dictation commit timed out waiting for realtime finalization"
+                )
+            }
+        }
+
+        if let completedOutcome {
+            return completedOutcome
+        }
+
+        if case .failed(let message) = phase {
+            throw ProviderError.transcriberInternal(message: message)
+        }
+
         guard phase == .listening else {
             return Outcome(segments: [], transcript: "", language: detectedLanguage)
         }
@@ -117,8 +150,10 @@ public actor DictationSession {
 
             await stopBackgroundWorkAndReleaseLease()
 
+            let outcome = Outcome(segments: segments, transcript: transcript, language: detectedLanguage)
+            completedOutcome = outcome
             phase = .done
-            return Outcome(segments: segments, transcript: transcript, language: detectedLanguage)
+            return outcome
         } catch {
             phase = .failed("provider.finalize: \(error.localizedDescription)")
             await stopBackgroundWorkAndReleaseLease()
