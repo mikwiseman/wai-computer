@@ -91,6 +91,7 @@ from app.models.entity import Entity, EntityMention
 from app.models.highlight import Highlight
 from app.models.person import Person
 from app.models.recording import (
+    ACTIVE_RECORDING_STATUSES,
     ActionItem,
     Folder,
     Recording,
@@ -1020,6 +1021,8 @@ async def _mark_recording_failed(
     failure_code: str,
     failure_message: str,
 ) -> None:
+    if recording.status not in ACTIVE_RECORDING_STATUSES:
+        return
     recording.status = RecordingStatus.FAILED.value
     recording.failure_code = failure_code
     recording.failure_message = sanitize_failure_message(failure_message)

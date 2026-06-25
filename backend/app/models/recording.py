@@ -38,6 +38,15 @@ class RecordingStatus(str, enum.Enum):
     FAILED = "failed"
 
 
+ACTIVE_RECORDING_STATUSES = frozenset(
+    {
+        RecordingStatus.PENDING_UPLOAD.value,
+        RecordingStatus.UPLOADING.value,
+        RecordingStatus.PROCESSING.value,
+    }
+)
+
+
 class SummaryGenerationStatus(str, enum.Enum):
     """Lifecycle states for manual summary generation jobs."""
 

@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.recording_import import (
     TranscribedMedia,
+    _mark_failed,
     import_media_as_recording,
     transcribe_media_bytes,
 )
@@ -153,6 +154,38 @@ async def test_import_with_precomputed_skips_second_transcription(
     )
     assert len(segments) == 1
     assert segments[0].content == "полный текст записи"
+
+
+@pytest.mark.asyncio
+async def test_mark_failed_keeps_ready_import_recording_terminal(db_session: AsyncSession):
+    user = await _user(db_session, email="ready-import@example.com")
+    recording = Recording(
+        user_id=user.id,
+        title="Ready import",
+        type="note",
+        status=RecordingStatus.READY.value,
+        failure_code=None,
+        failure_message=None,
+    )
+    db_session.add(recording)
+    await db_session.commit()
+    recording_id = recording.id
+
+    marked = await _mark_failed(
+        db=db_session,
+        recording_id=recording_id,
+        code="late_processing_failed",
+        message="Late import failure after ready.",
+    )
+
+    assert marked is recording
+    db_session.expire_all()
+    refreshed = (
+        await db_session.execute(select(Recording).where(Recording.id == recording_id))
+    ).scalar_one()
+    assert refreshed.status == RecordingStatus.READY.value
+    assert refreshed.failure_code is None
+    assert refreshed.failure_message is None
 
 
 @pytest.mark.asyncio

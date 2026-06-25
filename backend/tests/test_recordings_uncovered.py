@@ -22,6 +22,7 @@ import app.api.routes.recordings as recordings_module
 from app.models.highlight import Highlight
 from app.models.recording import (
     Recording,
+    RecordingStatus,
     Segment,
     Summary,
     SummaryGenerationStatus,
@@ -576,6 +577,35 @@ async def test_save_transcript_validation_error_marks_recording_failed(
     ).scalar_one()
     assert row.status == "failed"
     assert row.failure_code == "transcript_validation_failed"
+
+
+@pytest.mark.asyncio
+async def test_mark_recording_failed_by_id_keeps_ready_recording_terminal(
+    client: AsyncClient, auth_headers: dict, db_session
+):
+    rec = await _create_recording(client, auth_headers, title="Ready terminal")
+    row = (
+        await db_session.execute(select(Recording).where(Recording.id == UUID(rec["id"])))
+    ).scalar_one()
+    row.status = RecordingStatus.READY.value
+    row.failure_code = None
+    row.failure_message = None
+    await db_session.commit()
+
+    await recordings_module._mark_recording_failed_by_id(
+        UUID(rec["id"]),
+        db_session,
+        "late_transcript_save_failed",
+        "Late transcript save failed after ready.",
+    )
+
+    db_session.expire_all()
+    refreshed = (
+        await db_session.execute(select(Recording).where(Recording.id == UUID(rec["id"])))
+    ).scalar_one()
+    assert refreshed.status == RecordingStatus.READY.value
+    assert refreshed.failure_code is None
+    assert refreshed.failure_message is None
 
 
 @pytest.mark.asyncio

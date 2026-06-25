@@ -53,7 +53,14 @@ from app.core.transcription_options import DEFAULT_FILE_STT_MODEL
 from app.core.voice_identification import identify_speakers_for_recording
 from app.models.highlight import Highlight
 from app.models.person import RecordingSpeakerEmbedding
-from app.models.recording import ActionItem, Recording, RecordingStatus, Segment, Summary
+from app.models.recording import (
+    ACTIVE_RECORDING_STATUSES,
+    ActionItem,
+    Recording,
+    RecordingStatus,
+    Segment,
+    Summary,
+)
 from app.models.user import User
 
 logger = logging.getLogger(__name__)
@@ -787,6 +794,8 @@ async def _mark_failed(
     recording = result.scalar_one_or_none()
     if recording is None:
         return None
+    if recording.status not in ACTIVE_RECORDING_STATUSES:
+        return recording
     recording.status = RecordingStatus.FAILED.value
     recording.failure_code = code
     recording.failure_message = sanitize_failure_message(message)
