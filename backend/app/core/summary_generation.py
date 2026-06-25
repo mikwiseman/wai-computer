@@ -46,6 +46,11 @@ ACTIVE_SUMMARY_GENERATION_STATUSES = {
 }
 WAITING_FOR_TRANSCRIPT_STAGE = "waiting_for_transcript"
 WAITING_FOR_TRANSCRIPT_HASH = hashlib.sha256(b"").hexdigest()
+WAIT_FOR_TRANSCRIPT_RECORDING_STATUSES = (
+    RecordingStatus.PENDING_UPLOAD.value,
+    RecordingStatus.UPLOADING.value,
+    RecordingStatus.PROCESSING.value,
+)
 SUMMARY_GENERATION_MAX_STALE_RUNNING_ATTEMPTS = 4
 
 
@@ -78,11 +83,7 @@ def summary_transcript_hash(transcript: str) -> str:
 
 
 def can_wait_for_transcript(recording: Recording) -> bool:
-    return recording.status in {
-        RecordingStatus.PENDING_UPLOAD.value,
-        RecordingStatus.UPLOADING.value,
-        RecordingStatus.PROCESSING.value,
-    }
+    return recording.status in WAIT_FOR_TRANSCRIPT_RECORDING_STATUSES
 
 
 def resolve_summary_language_preference(
@@ -660,6 +661,28 @@ async def recover_missing_summary_generation_jobs(
     remaining_limit = limit - recovered
     if remaining_limit <= 0:
         return recovered
+
+    terminal_waiting_jobs = (
+        await db.execute(
+            select(SummaryGenerationJob)
+            .join(Recording, Recording.id == SummaryGenerationJob.recording_id)
+            .where(
+                SummaryGenerationJob.status == SummaryGenerationStatus.QUEUED.value,
+                SummaryGenerationJob.stage == WAITING_FOR_TRANSCRIPT_STAGE,
+                Recording.status.notin_(WAIT_FOR_TRANSCRIPT_RECORDING_STATUSES),
+                ~has_segments,
+            )
+            .order_by(SummaryGenerationJob.created_at.asc(), SummaryGenerationJob.id.asc())
+            .limit(remaining_limit)
+        )
+    ).scalars().all()
+    for job in terminal_waiting_jobs:
+        mark_summary_generation_failed(
+            job,
+            error_code="no_transcript_segments",
+            error_message="No transcript segments to summarize.",
+        )
+        await db.commit()
 
     waiting_rows = (
         await db.execute(

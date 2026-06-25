@@ -260,6 +260,54 @@ async def test_recover_missing_summary_generation_jobs_enqueues_waiting_job_with
 
 
 @pytest.mark.asyncio
+async def test_recover_missing_summary_generation_jobs_fails_terminal_waiting_job(
+    db_session: AsyncSession,
+) -> None:
+    user = await _user(db_session)
+    ready_recording = await _recording(db_session, user, with_segments=False)
+    failed_recording = await _recording(db_session, user, with_segments=False)
+    failed_recording.status = RecordingStatus.FAILED.value
+    jobs = [
+        SummaryGenerationJob(
+            recording_id=ready_recording.id,
+            user_id=user.id,
+            status=SummaryGenerationStatus.QUEUED.value,
+            stage=WAITING_FOR_TRANSCRIPT_STAGE,
+            progress_percent=5,
+            transcript_hash=WAITING_FOR_TRANSCRIPT_HASH,
+        ),
+        SummaryGenerationJob(
+            recording_id=failed_recording.id,
+            user_id=user.id,
+            status=SummaryGenerationStatus.QUEUED.value,
+            stage=WAITING_FOR_TRANSCRIPT_STAGE,
+            progress_percent=5,
+            transcript_hash=WAITING_FOR_TRANSCRIPT_HASH,
+        ),
+    ]
+    db_session.add_all(jobs)
+    await db_session.flush()
+
+    enqueued: list[UUID] = []
+
+    recovered = await recover_missing_summary_generation_jobs(
+        db_session,
+        enqueue=lambda job_id: enqueued.append(job_id) or f"celery-{job_id}",
+        limit=10,
+    )
+
+    assert recovered == 0
+    assert enqueued == []
+    for job in jobs:
+        await db_session.refresh(job)
+        assert job.status == SummaryGenerationStatus.FAILED.value
+        assert job.stage == "failed"
+        assert job.progress_percent == 100
+        assert job.error_code == "no_transcript_segments"
+        assert job.failed_at is not None
+
+
+@pytest.mark.asyncio
 async def test_recover_missing_summary_generation_jobs_enqueues_orphaned_queued_job(
     db_session: AsyncSession,
 ) -> None:
