@@ -202,6 +202,7 @@ async def apply_summary_result(
     recording: Recording,
     summary_result: SummaryResult,
     entity_extractor=None,
+    enrich_entities: bool = True,
 ) -> Summary:
     if recording.summary:
         recording.summary.summary = summary_result.summary
@@ -263,6 +264,23 @@ async def apply_summary_result(
     recording.updated_at = datetime.now(timezone.utc)
     await db.flush()
 
+    if enrich_entities:
+        await enrich_recording_entities_from_summary(
+            db,
+            recording=recording,
+            summary_result=summary_result,
+            entity_extractor=entity_extractor,
+        )
+    return summary
+
+
+async def enrich_recording_entities_from_summary(
+    db: AsyncSession,
+    *,
+    recording: Recording,
+    summary_result: SummaryResult,
+    entity_extractor=None,
+) -> None:
     # Wire the knowledge graph from the transcript: rich, TYPED entities
     # (person / project / topic / organization) plus entity->entity relations,
     # so entity wiki pages render a populated "related" section. Extraction is
@@ -299,7 +317,6 @@ async def apply_summary_result(
             people=summary_result.people_mentioned,
             topics=summary_result.topics,
         )
-    return summary
 
 
 async def start_recording_summary_generation_job(
@@ -873,7 +890,12 @@ async def persist_summary_generation_result(
         )
         return job
 
-    await apply_summary_result(db, recording=recording, summary_result=summary_result)
+    await apply_summary_result(
+        db,
+        recording=recording,
+        summary_result=summary_result,
+        enrich_entities=False,
+    )
     job.status = SummaryGenerationStatus.SUCCEEDED.value
     job.stage = "complete"
     job.progress_percent = 100
@@ -882,6 +904,26 @@ async def persist_summary_generation_result(
     job.completed_at = datetime.now(timezone.utc)
     job.failed_at = None
     await db.flush()
+
+    # Commit the user-visible summary and terminal job state before slower
+    # best-effort entity enrichment so the UI can leave "summarizing" as soon as
+    # the summary itself is durable.
+    await db.commit()
+
+    try:
+        await enrich_recording_entities_from_summary(
+            db,
+            recording=recording,
+            summary_result=summary_result,
+        )
+        await db.commit()
+    except Exception as exc:  # noqa: BLE001 - enrichment is best-effort after summary commit.
+        await db.rollback()
+        logger.warning(
+            "entity enrichment failed after summary persisted recording=%s err=%s",
+            recording.id,
+            exc,
+        )
     return job
 
 

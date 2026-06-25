@@ -11,7 +11,7 @@ import httpx
 import pytest
 from sqlalchemy import select
 from sqlalchemy.exc import OperationalError
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.summarizer import SummaryResult
 from app.core.summary_generation import (
@@ -819,6 +819,136 @@ async def test_apply_and_persist_summary_result_replaces_generated_outputs(
     ).scalars().all()
     assert len(mentions) == 2
     assert all(m.source_kind == "recording" for m in mentions)
+
+
+@pytest.mark.asyncio
+async def test_persist_summary_generation_result_commits_visible_summary_before_entity_extraction(
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user = await _user(db_session)
+    recording = await _recording(db_session, user)
+    transcript = build_summary_transcript(await _segments(db_session, recording))
+    job = SummaryGenerationJob(
+        recording_id=recording.id,
+        user_id=user.id,
+        status=SummaryGenerationStatus.RUNNING.value,
+        stage="generating_summary",
+        progress_percent=35,
+        transcript_hash=summary_transcript_hash(transcript),
+    )
+    db_session.add(job)
+    await db_session.commit()
+
+    observed: list[tuple[str, str, int, str | None] | None] = []
+    session_maker = async_sessionmaker(
+        db_session.bind,
+        class_=AsyncSession,
+        expire_on_commit=False,
+    )
+
+    async def observing_extractor(_transcript: str) -> list[dict[str, object]]:
+        async with session_maker() as probe:
+            row = (
+                await probe.execute(
+                    select(
+                        SummaryGenerationJob.status,
+                        SummaryGenerationJob.stage,
+                        SummaryGenerationJob.progress_percent,
+                        Summary.summary,
+                    )
+                    .outerjoin(
+                        Summary,
+                        Summary.recording_id == SummaryGenerationJob.recording_id,
+                    )
+                    .where(SummaryGenerationJob.id == job.id)
+                )
+            ).one_or_none()
+            observed.append(row._tuple() if row is not None else None)
+        return []
+
+    monkeypatch.setattr(
+        "app.core.summary_generation.extract_entities",
+        observing_extractor,
+    )
+
+    persisted = await persist_summary_generation_result(
+        db_session,
+        job_id=job.id,
+        summary_result=_summary_result(),
+    )
+
+    assert persisted is job
+    assert observed == [
+        (
+            SummaryGenerationStatus.SUCCEEDED.value,
+            "complete",
+            100,
+            "Generated summary.",
+        )
+    ]
+
+
+@pytest.mark.asyncio
+async def test_persist_summary_generation_result_keeps_summary_done_when_enrichment_fails(
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user = await _user(db_session)
+    recording = await _recording(db_session, user)
+    transcript = build_summary_transcript(await _segments(db_session, recording))
+    job = SummaryGenerationJob(
+        recording_id=recording.id,
+        user_id=user.id,
+        status=SummaryGenerationStatus.RUNNING.value,
+        stage="generating_summary",
+        progress_percent=35,
+        transcript_hash=summary_transcript_hash(transcript),
+    )
+    db_session.add(job)
+    await db_session.commit()
+
+    async def fail_enrichment(*_args: object, **_kwargs: object) -> None:
+        raise RuntimeError("entity graph unavailable")
+
+    monkeypatch.setattr(
+        "app.core.summary_generation.enrich_recording_entities_from_summary",
+        fail_enrichment,
+    )
+
+    persisted = await persist_summary_generation_result(
+        db_session,
+        job_id=job.id,
+        summary_result=_summary_result(),
+    )
+
+    assert persisted is job
+
+    session_maker = async_sessionmaker(
+        db_session.bind,
+        class_=AsyncSession,
+        expire_on_commit=False,
+    )
+    async with session_maker() as probe:
+        row = (
+            await probe.execute(
+                select(
+                    SummaryGenerationJob.status,
+                    SummaryGenerationJob.stage,
+                    SummaryGenerationJob.progress_percent,
+                    Summary.summary,
+                )
+                .join(Summary, Summary.recording_id == SummaryGenerationJob.recording_id)
+                .where(SummaryGenerationJob.id == job.id)
+            )
+        ).one()
+
+    assert row._tuple() == (
+        SummaryGenerationStatus.SUCCEEDED.value,
+        "complete",
+        100,
+        "Generated summary.",
+    )
 
 
 @pytest.mark.asyncio
