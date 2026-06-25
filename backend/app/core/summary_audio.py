@@ -396,6 +396,8 @@ async def fail_summary_audio_generation_job(
     artifact = await _load_artifact_for_update(db, artifact_id)
     if artifact is None:
         return None
+    if artifact.status not in ACTIVE_SUMMARY_AUDIO_STATUSES:
+        return artifact
     mark_summary_audio_failed(artifact, error_code=error_code, error_message=error_message)
     await db.flush()
     return artifact

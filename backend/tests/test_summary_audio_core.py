@@ -188,9 +188,9 @@ async def test_summary_audio_text_builders_and_safe_file_paths(db_session, tmp_p
         user_id=user.id,
         item_id=item.id,
         source_kind="item",
-        status=SummaryAudioStatus.SUCCEEDED.value,
-        stage="complete",
-        progress_percent=100,
+        status=SummaryAudioStatus.QUEUED.value,
+        stage="queued",
+        progress_percent=5,
         summary_hash=summary_audio_hash("x"),
         input_char_count=1,
         provider="xai",
@@ -212,3 +212,45 @@ async def test_summary_audio_text_builders_and_safe_file_paths(db_session, tmp_p
         error_message="Failed.",
     )
     assert artifact.status == SummaryAudioStatus.FAILED.value
+
+
+async def test_fail_summary_audio_generation_job_keeps_succeeded_artifact_terminal(
+    db_session,
+) -> None:
+    user = await _user(db_session)
+    item = await _item_with_summary(db_session, user)
+    artifact = SummaryAudioArtifact(
+        user_id=user.id,
+        item_id=item.id,
+        source_kind="item",
+        status=SummaryAudioStatus.SUCCEEDED.value,
+        stage="complete",
+        progress_percent=100,
+        summary_hash=summary_audio_hash("x"),
+        input_char_count=1,
+        provider="xai",
+        model="xai-text-to-speech",
+        voice_id="ara",
+        language="auto",
+        storage_path=f"{user.id}/summary.mp3",
+        content_type="audio/mpeg",
+        byte_size=7,
+    )
+    db_session.add(artifact)
+    await db_session.flush()
+
+    marked = await fail_summary_audio_generation_job(
+        db_session,
+        artifact_id=artifact.id,
+        error_code="late_timeout",
+        error_message="Late timeout after the audio was already saved.",
+    )
+
+    assert marked is artifact
+    assert artifact.status == SummaryAudioStatus.SUCCEEDED.value
+    assert artifact.stage == "complete"
+    assert artifact.progress_percent == 100
+    assert artifact.error_code is None
+    assert artifact.error_message is None
+    assert artifact.storage_path == f"{user.id}/summary.mp3"
+    assert artifact.byte_size == 7
