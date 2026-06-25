@@ -13,6 +13,8 @@ from app.core.realtime_transcription import (
     RealtimeTranscriptionProxyClaims,
     UnsupportedRealtimeLanguageError,
     _build_deepgram_realtime_session,
+    _merge_realtime_keyterms,
+    _merge_realtime_replacements,
     build_deepgram_realtime_url_from_proxy_claims,
     create_realtime_transcription_session,
     decode_realtime_proxy_token,
@@ -44,16 +46,42 @@ async def test_create_realtime_transcription_session_uses_deepgram_recording_def
     claims = decode_realtime_proxy_token(session.token)
     assert claims.language == "multi"
     assert claims.model == DEEPGRAM_REALTIME_MODEL
+    assert "WaiComputer" in claims.keyterms
+    assert "Wai Computer" in claims.keyterms
+    assert ("во ecomputer", "WaiComputer") in claims.replacements
     provider_url = build_realtime_websocket_url(
         language=claims.language,
         channels=claims.channels,
         purpose=claims.purpose,
         model=claims.model,
+        keyterms=claims.keyterms,
+        replacements=claims.replacements,
     )
+    assert "keyterm=WaiComputer" in provider_url
+    assert "replace=%D0%B2%D0%BE+ecomputer%3AWaiComputer" in provider_url
     assert "smart_format=true" in provider_url
     assert "interim_results=true" in provider_url
     assert "utterances=true" in provider_url
     assert "endpointing=300" in provider_url
+
+
+def test_product_realtime_hints_skip_blanks_and_duplicates():
+    keyterms = _merge_realtime_keyterms(["", "  WaiComputer  ", "Custom Term"])
+    replacements = _merge_realtime_replacements(
+        [
+            ("", "Ignored"),
+            ("missing-replacement", ""),
+            ("wai computer", "Wrong"),
+            ("Custom", "Canonical"),
+        ]
+    )
+
+    assert keyterms.count("WaiComputer") == 1
+    assert "Custom Term" in keyterms
+    assert ("wai computer", "WaiComputer") in replacements
+    assert ("Custom", "Canonical") in replacements
+    assert ("wai computer", "Wrong") not in replacements
+    assert all(find and replace for find, replace in replacements)
 
 
 @pytest.mark.asyncio
@@ -135,15 +163,15 @@ async def test_create_dictation_session_carries_replacements_to_provider_url():
             purpose="dictation",
             keyterms=["WaiComputer"],
             replacements=[("WaiCompyuter", "WaiComputer"), ("Bolnichny", "больничный")],
-        )
+    )
 
     claims = decode_realtime_proxy_token(session.token)
-    assert claims.replacements == [
-        ("WaiCompyuter", "WaiComputer"),
-        ("Bolnichny", "больничный"),
-    ]
+    assert ("wai computer", "WaiComputer") in claims.replacements
+    assert ("WaiCompyuter", "WaiComputer") in claims.replacements
+    assert ("Bolnichny", "больничный") in claims.replacements
     provider_url = build_deepgram_realtime_url_from_proxy_claims(claims)
     assert "keyterm=WaiComputer" in provider_url
+    assert "replace=wai+computer%3AWaiComputer" in provider_url
     assert "replace=waicompyuter%3AWaiComputer" in provider_url
     assert "replace=bolnichny%3A" in provider_url
 
@@ -258,6 +286,7 @@ def _encode_proxy_payload(overrides: dict[str, object]) -> str:
         ({"keyterms": "not-a-list"}, "keyterms"),
         ({"keyterms": [1, 2]}, "keyterms"),
         ({"replacements": "not-a-list"}, "replacements"),
+        ({"replacements": ["bad"]}, "replacements"),
         ({"replacements": [{"find": "bad"}]}, "replacements"),
         ({"replacements": [{"find": "bad", "replace": 123}]}, "replacements"),
     ],

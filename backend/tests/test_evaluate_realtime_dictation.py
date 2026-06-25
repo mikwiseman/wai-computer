@@ -103,3 +103,13 @@ def test_gate_summary_fails_on_latency_or_error_regression() -> None:
         "prefetched deepgram:nova-3 had 1 error runs",
         "prefetched deepgram:nova-3 p95_first_text_ms=1200ms > 1000ms",
     ]
+
+
+def test_startup_buffered_chunk_count_matches_elapsed_connect_time() -> None:
+    module = _load_module()
+
+    assert module.startup_buffered_chunk_count(0, total_chunks=20) == 0
+    assert module.startup_buffered_chunk_count(99, total_chunks=20) == 0
+    assert module.startup_buffered_chunk_count(100, total_chunks=20) == 1
+    assert module.startup_buffered_chunk_count(850, total_chunks=20) == 8
+    assert module.startup_buffered_chunk_count(5_000, total_chunks=20) == 20

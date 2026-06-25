@@ -119,8 +119,8 @@ async def test_realtime_transcription_session_mints_local_proxy_token(
     claims = decode_realtime_proxy_token(payload["token"])
     assert claims.language == "ru"
     assert claims.purpose == "dictation"
-    assert claims.keyterms == []
-    assert claims.replacements == []
+    assert "WaiComputer" in claims.keyterms
+    assert ("во ecomputer", "WaiComputer") in claims.replacements
 
 
 @pytest.mark.asyncio

@@ -6,7 +6,11 @@
 
 import { createTranscriptionSession } from "@/lib/api";
 import { downsampleTo16kInt16 } from "@/lib/audio/pcm";
-import type { RealtimeSessionResponse, TranscriptSegmentInput } from "@/lib/types";
+import type {
+  RealtimeSessionResponse,
+  RealtimeTranscriptionReplacement,
+  TranscriptSegmentInput,
+} from "@/lib/types";
 
 export interface RealtimeResult {
   transcript: string;
@@ -52,6 +56,8 @@ export interface RealtimeUpdate {
 export interface RealtimeTranscriberOptions {
   language?: string;
   purpose?: "recording" | "dictation";
+  keyterms?: string[];
+  replacements?: RealtimeTranscriptionReplacement[];
   onUpdate?: (update: RealtimeUpdate) => void;
   onState?: (state: RealtimeState) => void;
   onError?: (message: string) => void;
@@ -211,6 +217,8 @@ export class RealtimeTranscriber {
       session = await createTranscriptionSession({
         language: this.opts.language,
         purpose: this.opts.purpose ?? "recording",
+        keyterms: this.opts.keyterms,
+        replacements: this.opts.replacements,
       });
     } catch (error) {
       if (!this.isConnecting()) return;

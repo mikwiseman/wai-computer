@@ -391,6 +391,25 @@ describe("RealtimeTranscriber socket URL building", () => {
     expect(ws.url).toBe("wss://host/stream?x=1&token=tok%20123");
   });
 
+  it("passes realtime dictionary hints when creating the session", async () => {
+    const transcriber = new RealtimeTranscriber({
+      language: "ru",
+      purpose: "dictation",
+      keyterms: ["WaiComputer"],
+      replacements: [{ find: "wai computer", replace: "WaiComputer" }],
+    });
+    mockedCreateSession.mockResolvedValue(sessionResponse());
+
+    await startRecording(transcriber, fakeStream().mediaStream);
+
+    expect(mockedCreateSession).toHaveBeenCalledWith({
+      language: "ru",
+      purpose: "dictation",
+      keyterms: ["WaiComputer"],
+      replacements: [{ find: "wai computer", replace: "WaiComputer" }],
+    });
+  });
+
   it("falls back to window.location (wss for https) when websocket_url is null", async () => {
     Object.defineProperty(window, "location", {
       value: { protocol: "https:", host: "wai.computer" },

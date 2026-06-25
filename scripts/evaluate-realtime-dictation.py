@@ -119,6 +119,12 @@ def chunks(pcm: bytes) -> list[bytes]:
     return [pcm[index : index + chunk_bytes] for index in range(0, len(pcm), chunk_bytes)]
 
 
+def startup_buffered_chunk_count(elapsed_before_stream_ms: int, *, total_chunks: int) -> int:
+    if elapsed_before_stream_ms <= 0 or total_chunks <= 0:
+        return 0
+    return min(total_chunks, elapsed_before_stream_ms // CHUNK_MS)
+
+
 def silence(ms: int = FINAL_SILENCE_MS) -> bytes:
     return b"\x00" * (SAMPLE_RATE * BYTES_PER_SAMPLE * ms // 1000)
 
@@ -301,6 +307,11 @@ async def stream_provider(
 
     async with websockets.connect(url, additional_headers=headers, max_size=8 * 1024 * 1024) as ws:
         connect_ms = elapsed_ms(connect_started)
+        audio_chunks = chunks(pcm)
+        buffered_chunk_count = startup_buffered_chunk_count(
+            elapsed_ms(press_started),
+            total_chunks=len(audio_chunks),
+        )
 
         async def keep_alive_loop() -> None:
             interval = int(config.get("keep_alive_interval_seconds") or 4)
@@ -310,7 +321,9 @@ async def stream_provider(
 
         async def send_loop() -> None:
             try:
-                for chunk in chunks(pcm):
+                for chunk in audio_chunks[:buffered_chunk_count]:
+                    await ws.send(chunk)
+                for chunk in audio_chunks[buffered_chunk_count:]:
                     await ws.send(chunk)
                     await asyncio.sleep(CHUNK_MS / 1000)
                 await ws.send(silence())
@@ -361,6 +374,8 @@ async def stream_provider(
     quality = transcript_metrics(transcript)
     return {
         "connect_ms": connect_ms,
+        "startup_buffered_ms": buffered_chunk_count * CHUNK_MS,
+        "startup_buffered_chunks": buffered_chunk_count,
         "first_text_ms": first_text_ms,
         "first_final_ms": first_final_ms,
         "final_ms": elapsed_ms(press_started),
@@ -408,6 +423,8 @@ async def run_one(
         "mint_ms": mint_ms,
         "prefetch_ms": prefetch_ms,
         "connect_ms": stream["connect_ms"],
+        "startup_buffered_ms": stream["startup_buffered_ms"],
+        "startup_buffered_chunks": stream["startup_buffered_chunks"],
         "first_text_ms": stream["first_text_ms"],
         "first_final_ms": stream["first_final_ms"],
         "final_ms": stream["final_ms"],

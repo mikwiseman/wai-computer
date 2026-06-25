@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 
-import { DictatePanel, applyDictionary } from "./DictatePanel";
+import { DictatePanel, applyDictionary, dictionaryRealtimeHints } from "./DictatePanel";
 import {
   createDictationEntry,
   listDictionaryWords,
@@ -26,6 +26,8 @@ vi.mock("@/lib/realtime", () => {
       onState?: (s: RealtimeState) => void;
       onUpdate?: (u: { committed: string; interim: string }) => void;
       onError?: (m: string) => void;
+      keyterms?: string[];
+      replacements?: Array<{ find: string; replace: string }>;
     };
     state: RealtimeState = "idle";
     stopResult: TranscriptSegmentInput[] = [];
@@ -64,11 +66,13 @@ const mockedCreateEntry = vi.mocked(createDictationEntry);
 const mockedListWords = vi.mocked(listDictionaryWords);
 
 type FakeTranscriberInstance = {
-  opts: {
-    onState?: (s: RealtimeState) => void;
-    onUpdate?: (u: { committed: string; interim: string }) => void;
-    onError?: (m: string) => void;
-  };
+    opts: {
+      onState?: (s: RealtimeState) => void;
+      onUpdate?: (u: { committed: string; interim: string }) => void;
+      onError?: (m: string) => void;
+      keyterms?: string[];
+      replacements?: Array<{ find: string; replace: string }>;
+    };
   state: RealtimeState;
   stopResult: TranscriptSegmentInput[];
   stopError: Error | null;
@@ -163,6 +167,18 @@ describe("applyDictionary", () => {
     expect(vocabulary).toContain("Kubernetes");
   });
 
+  it("builds realtime keyterms and replacements from dictionary entries", () => {
+    const hints = dictionaryRealtimeHints([
+      word("Deepgram", null),
+      word("wai computer", "WaiComputer"),
+    ]);
+
+    expect(hints).toEqual({
+      keyterms: ["Deepgram", "WaiComputer"],
+      replacements: [{ find: "wai computer", replace: "WaiComputer" }],
+    });
+  });
+
   it("leaves text unchanged with an empty dictionary", () => {
     const result = applyDictionary("plain text", []);
     expect(result.text).toBe("plain text");
@@ -183,6 +199,13 @@ describe("DictatePanel rendering", () => {
     render(<DictatePanel locale="ru" />);
     expect(screen.getByText("Начать диктовку")).toBeTruthy();
     expect(screen.getByText(/вставьте расшифровку/)).toBeTruthy();
+  });
+
+  it("prefetches dictionary hints before the user starts dictating", async () => {
+    render(<DictatePanel />);
+
+    await waitFor(() => expect(mockedListWords).toHaveBeenCalledTimes(1));
+    expect((RealtimeTranscriber as unknown as { last: unknown }).last).toBeNull();
   });
 });
 
@@ -314,6 +337,21 @@ describe("DictatePanel stop + cleanup", () => {
     expect(await screen.findByRole("status")).toHaveTextContent("Didn't catch anything");
     // Back to the start button — no post-processing attempted.
     expect(screen.getByText("Start dictating")).toBeTruthy();
+  });
+
+  it("passes dictionary hints into realtime startup", async () => {
+    mockedListWords.mockResolvedValue([
+      { client_word_id: "1", word: "wai computer", replacement: "WaiComputer", occurred_at: "x" },
+      { client_word_id: "2", word: "Deepgram", replacement: null, occurred_at: "x" },
+    ]);
+    render(<DictatePanel />);
+
+    await startDictation();
+
+    expect(lastTranscriber().opts.keyterms).toEqual(["WaiComputer", "Deepgram"]);
+    expect(lastTranscriber().opts.replacements).toEqual([
+      { find: "wai computer", replace: "WaiComputer" },
+    ]);
   });
 
   it("applies dictionary replacements, copies the transcript, and logs history", async () => {

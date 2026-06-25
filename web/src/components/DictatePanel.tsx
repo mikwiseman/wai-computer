@@ -7,9 +7,14 @@ import {
   listDictionaryWords,
 } from "@/lib/api";
 import { RealtimeTranscriber, type RealtimeState } from "@/lib/realtime";
-import type { DictationDictionaryWord, TranscriptSegmentInput } from "@/lib/types";
+import type {
+  DictationDictionaryWord,
+  RealtimeTranscriptionReplacement,
+  TranscriptSegmentInput,
+} from "@/lib/types";
 
 type Locale = "en" | "ru";
+type DictionaryRealtimeHints = ReturnType<typeof dictionaryRealtimeHints>;
 
 interface Copy {
   heading: string;
@@ -93,6 +98,35 @@ export function applyDictionary(
   return { text: out, vocabulary };
 }
 
+export function dictionaryRealtimeHints(words: DictationDictionaryWord[]): {
+  keyterms: string[];
+  replacements: RealtimeTranscriptionReplacement[];
+} {
+  const keyterms: string[] = [];
+  const keytermSet = new Set<string>();
+  const replacements: RealtimeTranscriptionReplacement[] = [];
+
+  function addKeyterm(value: string): void {
+    const clean = value.trim();
+    if (!clean) return;
+    const key = clean.toLocaleLowerCase();
+    if (keytermSet.has(key)) return;
+    keytermSet.add(key);
+    keyterms.push(clean);
+  }
+
+  for (const entry of words) {
+    if (entry.replacement) {
+      addKeyterm(entry.replacement);
+      replacements.push({ find: entry.word, replace: entry.replacement });
+    } else {
+      addKeyterm(entry.word);
+    }
+  }
+
+  return { keyterms, replacements };
+}
+
 function countWords(text: string): number {
   const trimmed = text.trim();
   return trimmed ? trimmed.split(/\s+/).length : 0;
@@ -126,6 +160,11 @@ export function DictatePanel({ locale = "en" }: DictatePanelProps) {
   const transcriberRef = useRef<RealtimeTranscriber | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const mountedRef = useRef(true);
+  const dictionaryHintsRef = useRef<DictionaryRealtimeHints>({
+    keyterms: [],
+    replacements: [],
+  });
+  const dictionaryLoadRef = useRef<Promise<DictationDictionaryWord[]> | null>(null);
 
   const clearTimer = useCallback(() => {
     if (timerRef.current) {
@@ -142,15 +181,33 @@ export function DictatePanel({ locale = "en" }: DictatePanelProps) {
     void transcriber.stop().catch(reportRealtimeCleanupError);
   }, [clearTimer]);
 
+  const loadDictionaryWords = useCallback(() => {
+    if (dictionaryLoadRef.current) return dictionaryLoadRef.current;
+    dictionaryLoadRef.current = listDictionaryWords()
+      .then((words) => {
+        dictionaryHintsRef.current = dictionaryRealtimeHints(words);
+        return words;
+      })
+      .catch((error: unknown) => {
+        dictionaryLoadRef.current = null;
+        throw error;
+      });
+    return dictionaryLoadRef.current;
+  }, []);
+
   useEffect(() => {
     mountedRef.current = true;
+    void loadDictionaryWords().catch(() => {
+      // The start/stop paths surface dictionary failures when they affect output.
+    });
     return () => {
       mountedRef.current = false;
       teardownTranscriber();
     };
-  }, [teardownTranscriber]);
+  }, [loadDictionaryWords, teardownTranscriber]);
 
   const start = useCallback(async () => {
+    const dictionaryLoad = loadDictionaryWords();
     setError(null);
     setNotice(null);
     setResult("");
@@ -169,8 +226,19 @@ export function DictatePanel({ locale = "en" }: DictatePanelProps) {
       stopMediaStream(stream);
       return;
     }
+    try {
+      await dictionaryLoad;
+    } catch {
+      setNotice(copy.dictionaryFailed);
+    }
+    if (!mountedRef.current) {
+      stopMediaStream(stream);
+      return;
+    }
     const transcriber = new RealtimeTranscriber({
       purpose: "dictation",
+      keyterms: dictionaryHintsRef.current.keyterms,
+      replacements: dictionaryHintsRef.current.replacements,
       onState: (nextState) => {
         if (mountedRef.current) setState(nextState);
       },
@@ -194,7 +262,7 @@ export function DictatePanel({ locale = "en" }: DictatePanelProps) {
     ) {
       timerRef.current = setInterval(() => setSeconds((s) => s + 1), 1000);
     }
-  }, [clearTimer, copy.micDenied]);
+  }, [clearTimer, copy.dictionaryFailed, copy.micDenied, loadDictionaryWords]);
 
   const copyText = useCallback(async (text: string) => {
     try {
@@ -234,6 +302,8 @@ export function DictatePanel({ locale = "en" }: DictatePanelProps) {
     let words: DictationDictionaryWord[] = [];
     try {
       words = await listDictionaryWords();
+      dictionaryHintsRef.current = dictionaryRealtimeHints(words);
+      dictionaryLoadRef.current = Promise.resolve(words);
     } catch {
       setNotice(copy.dictionaryFailed);
     }
@@ -257,7 +327,14 @@ export function DictatePanel({ locale = "en" }: DictatePanelProps) {
     } catch {
       setNotice(copy.historyFailed);
     }
-  }, [clearTimer, copy.dictionaryFailed, copy.empty, copy.historyFailed, copyText, seconds]);
+  }, [
+    clearTimer,
+    copy.dictionaryFailed,
+    copy.empty,
+    copy.historyFailed,
+    copyText,
+    seconds,
+  ]);
 
   const reset = useCallback(() => {
     setPhase("record");

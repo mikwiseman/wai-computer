@@ -34,6 +34,19 @@ from app.models.user import User
 
 REALTIME_PROXY_AUDIENCE = "wai-computer-realtime-transcription"
 REALTIME_PROXY_TOKEN_TTL_SECONDS = 60
+PRODUCT_REALTIME_KEYTERMS = (
+    "WaiComputer",
+    "Wai Computer",
+    "ВайКомпьютер",
+    "Вай Компьютер",
+)
+PRODUCT_REALTIME_REPLACEMENTS = (
+    ("wai computer", "WaiComputer"),
+    ("вай компьютер", "WaiComputer"),
+    ("вайкомпьютер", "WaiComputer"),
+    ("во ecomputer", "WaiComputer"),
+    ("ecomputer", "WaiComputer"),
+)
 
 
 class UnsupportedRealtimeLanguageError(ValueError):
@@ -70,6 +83,39 @@ class RealtimeTranscriptionProxyClaims:
     purpose: Literal["recording", "dictation"]
     keyterms: list[str] = field(default_factory=list)
     replacements: list[tuple[str, str]] = field(default_factory=list)
+
+
+def _merge_realtime_keyterms(keyterms: list[str] | None) -> list[str]:
+    merged: list[str] = []
+    seen: set[str] = set()
+    for term in (*PRODUCT_REALTIME_KEYTERMS, *(keyterms or [])):
+        clean = term.strip()
+        if not clean:
+            continue
+        key = clean.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        merged.append(clean)
+    return merged
+
+
+def _merge_realtime_replacements(
+    replacements: list[tuple[str, str]] | None,
+) -> list[tuple[str, str]]:
+    merged: list[tuple[str, str]] = []
+    seen: set[str] = set()
+    for find, replace in (*PRODUCT_REALTIME_REPLACEMENTS, *(replacements or [])):
+        find_clean = find.strip()
+        replace_clean = replace.strip()
+        if not find_clean or not replace_clean:
+            continue
+        key = find_clean.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        merged.append((find_clean, replace_clean))
+    return merged
 
 
 def create_realtime_proxy_token(
@@ -192,8 +238,8 @@ async def _build_deepgram_realtime_session(
         channels=resolved_channels,
         purpose=purpose,
         model=model,
-        keyterms=keyterms,
-        replacements=replacements,
+        keyterms=_merge_realtime_keyterms(keyterms),
+        replacements=_merge_realtime_replacements(replacements),
     )
     return RealtimeTranscriptionSession(
         provider="deepgram",

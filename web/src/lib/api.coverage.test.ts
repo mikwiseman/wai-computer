@@ -175,6 +175,25 @@ describe("api transcription session + voice enrollment", () => {
     });
   });
 
+  it("createTranscriptionSession forwards realtime keyterms and replacements", async () => {
+    await api.createTranscriptionSession({
+      language: "ru",
+      purpose: "dictation",
+      keyterms: ["WaiComputer", "Deepgram"],
+      replacements: [{ find: "wai computer", replace: "WaiComputer" }],
+    });
+    expect(mockedApiFetch).toHaveBeenCalledWith("/api/transcription/session", {
+      method: "POST",
+      body: JSON.stringify({
+        language: "ru",
+        channels: 1,
+        purpose: "dictation",
+        keyterms: ["WaiComputer", "Deepgram"],
+        replacements: [{ find: "wai computer", replace: "WaiComputer" }],
+      }),
+    });
+  });
+
   it("enrollVoice uploads audio with a default filename and no optional fields", async () => {
     const audio = new Blob(["wav"], { type: "audio/wav" });
     await api.enrollVoice({ audio });

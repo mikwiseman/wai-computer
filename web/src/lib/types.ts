@@ -624,6 +624,11 @@ export interface RealtimeSessionResponse {
   auth_scheme: string;
 }
 
+export interface RealtimeTranscriptionReplacement {
+  find: string;
+  replace: string;
+}
+
 export interface TranscriptSegmentInput {
   text: string;
   speaker?: string | null;

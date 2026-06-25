@@ -75,6 +75,7 @@ import type {
   TelegramPairing,
   TokenResponse,
   TranscriptionOptions,
+  RealtimeTranscriptionReplacement,
   TranscriptSearchResponse,
   TranscriptStatsResponse,
   User,
@@ -584,14 +585,25 @@ export function rematchSpeakers(recordingId: string): Promise<RematchSpeakersRes
 export function createTranscriptionSession(input?: {
   language?: string;
   purpose?: "recording" | "dictation";
+  keyterms?: string[];
+  replacements?: RealtimeTranscriptionReplacement[];
 }): Promise<RealtimeSessionResponse> {
+  const body: {
+    language: string;
+    channels: number;
+    purpose: "recording" | "dictation";
+    keyterms?: string[];
+    replacements?: RealtimeTranscriptionReplacement[];
+  } = {
+    language: input?.language ?? "multi",
+    channels: 1,
+    purpose: input?.purpose ?? "recording",
+  };
+  if (input?.keyterms !== undefined) body.keyterms = input.keyterms;
+  if (input?.replacements !== undefined) body.replacements = input.replacements;
   return apiFetch<RealtimeSessionResponse>("/api/transcription/session", {
     method: "POST",
-    body: JSON.stringify({
-      language: input?.language ?? "multi",
-      channels: 1,
-      purpose: input?.purpose ?? "recording",
-    }),
+    body: JSON.stringify(body),
   });
 }
 
