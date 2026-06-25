@@ -4,13 +4,19 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-libra
 import { DictatePanel, applyDictionary, dictionaryRealtimeHints } from "./DictatePanel";
 import {
   createDictationEntry,
+  createTranscriptionSession,
   listDictionaryWords,
 } from "@/lib/api";
 import { RealtimeTranscriber, type RealtimeState } from "@/lib/realtime";
-import type { DictationDictionaryWord, TranscriptSegmentInput } from "@/lib/types";
+import type {
+  DictationDictionaryWord,
+  RealtimeSessionResponse,
+  TranscriptSegmentInput,
+} from "@/lib/types";
 
 vi.mock("@/lib/api", () => ({
   createDictationEntry: vi.fn(),
+  createTranscriptionSession: vi.fn(),
   listDictionaryWords: vi.fn(),
 }));
 
@@ -29,6 +35,7 @@ vi.mock("@/lib/realtime", () => {
       keyterms?: string[];
       replacements?: Array<{ find: string; replace: string }>;
     };
+    startOptions: unknown = null;
     state: RealtimeState = "idle";
     stopResult: TranscriptSegmentInput[] = [];
     stopError: Error | null = null;
@@ -40,7 +47,8 @@ vi.mock("@/lib/realtime", () => {
       FakeTranscriber.last = this;
     }
 
-    async start() {
+    async start(_stream: MediaStream, options?: unknown) {
+      this.startOptions = options ?? null;
       this.started = true;
       if (FakeTranscriber.startSetsRecording) {
         this.state = "recording";
@@ -59,10 +67,27 @@ vi.mock("@/lib/realtime", () => {
       return this.stopResult;
     }
   }
-  return { RealtimeTranscriber: FakeTranscriber };
+  function realtimeSessionRequestKey(request: {
+    language?: string;
+    purpose: "recording" | "dictation";
+    keyterms?: string[];
+    replacements?: Array<{ find: string; replace: string }>;
+  }) {
+    return JSON.stringify({
+      language: request.language ?? "multi",
+      purpose: request.purpose,
+      keyterms: (request.keyterms ?? []).map((value) => value.trim()).filter(Boolean),
+      replacements: (request.replacements ?? [])
+        .map((value) => ({ find: value.find.trim(), replace: value.replace.trim() }))
+        .filter((value) => value.find && value.replace),
+    });
+  }
+
+  return { RealtimeTranscriber: FakeTranscriber, realtimeSessionRequestKey };
 });
 
 const mockedCreateEntry = vi.mocked(createDictationEntry);
+const mockedCreateSession = vi.mocked(createTranscriptionSession);
 const mockedListWords = vi.mocked(listDictionaryWords);
 
 type FakeTranscriberInstance = {
@@ -72,7 +97,8 @@ type FakeTranscriberInstance = {
       onError?: (m: string) => void;
       keyterms?: string[];
       replacements?: Array<{ find: string; replace: string }>;
-    };
+  };
+  startOptions: unknown;
   state: RealtimeState;
   stopResult: TranscriptSegmentInput[];
   stopError: Error | null;
@@ -89,6 +115,25 @@ function lastTranscriber(): FakeTranscriberInstance {
 
 function segment(text: string): TranscriptSegmentInput {
   return { text, start_ms: 0, end_ms: 1000 };
+}
+
+function sessionResponse(over: Partial<RealtimeSessionResponse> = {}): RealtimeSessionResponse {
+  return {
+    provider: "deepgram",
+    token: "prefetched token",
+    expires_in_seconds: 60,
+    sample_rate: 16000,
+    audio_format: "linear16",
+    language: "multi",
+    channels: 1,
+    model: "nova-3",
+    keep_alive_interval_seconds: 8,
+    commit_strategy: null,
+    no_verbatim: false,
+    websocket_url: "wss://wai.computer/api/transcription/stream",
+    auth_scheme: "query",
+    ...over,
+  };
 }
 
 const getUserMedia = vi.fn();
@@ -126,6 +171,7 @@ beforeEach(() => {
     value: { writeText },
   });
   mockedListWords.mockResolvedValue([]);
+  mockedCreateSession.mockResolvedValue(sessionResponse());
   mockedCreateEntry.mockResolvedValue(undefined as never);
 });
 
@@ -201,10 +247,19 @@ describe("DictatePanel rendering", () => {
     expect(screen.getByText(/вставьте расшифровку/)).toBeTruthy();
   });
 
-  it("prefetches dictionary hints before the user starts dictating", async () => {
+  it("prefetches dictionary hints and realtime session before the user starts dictating", async () => {
+    mockedListWords.mockResolvedValue([
+      { client_word_id: "1", word: "wai computer", replacement: "WaiComputer", occurred_at: "x" },
+    ]);
     render(<DictatePanel />);
 
     await waitFor(() => expect(mockedListWords).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(mockedCreateSession).toHaveBeenCalledTimes(1));
+    expect(mockedCreateSession).toHaveBeenCalledWith({
+      purpose: "dictation",
+      keyterms: ["WaiComputer"],
+      replacements: [{ find: "wai computer", replace: "WaiComputer" }],
+    });
     expect((RealtimeTranscriber as unknown as { last: unknown }).last).toBeNull();
   });
 });
@@ -352,6 +407,29 @@ describe("DictatePanel stop + cleanup", () => {
     expect(lastTranscriber().opts.replacements).toEqual([
       { find: "wai computer", replace: "WaiComputer" },
     ]);
+  });
+
+  it("passes the prefetched realtime session into startup without reminting", async () => {
+    mockedListWords.mockResolvedValue([
+      { client_word_id: "1", word: "Deepgram", replacement: null, occurred_at: "x" },
+    ]);
+    mockedCreateSession.mockResolvedValueOnce(sessionResponse({ token: "warm dictation" }));
+    render(<DictatePanel />);
+    await waitFor(() => expect(mockedCreateSession).toHaveBeenCalledTimes(1));
+
+    await startDictation();
+
+    expect(mockedCreateSession).toHaveBeenCalledTimes(1);
+    expect(lastTranscriber().startOptions).toEqual({
+      prefetchedSession: {
+        request: {
+          purpose: "dictation",
+          keyterms: ["Deepgram"],
+          replacements: [],
+        },
+        session: sessionResponse({ token: "warm dictation" }),
+      },
+    });
   });
 
   it("applies dictionary replacements, copies the transcript, and logs history", async () => {

@@ -51,6 +51,14 @@ class ModelCandidate:
         return f"{self.provider}:{self.model}"
 
 
+@dataclass(frozen=True)
+class ProviderMessage:
+    text: str | None
+    is_final: bool
+    finalization_marker: bool
+    speech_started: bool = False
+
+
 DEFAULT_CANDIDATES = (
     ModelCandidate("deepgram", "nova-3"),
 )
@@ -247,16 +255,16 @@ def websocket_target(config: dict[str, Any]) -> tuple[str, dict[str, str]]:
     return url, {"Authorization": f"Bearer {config['token']}"}
 
 
-def parse_message(provider: str, raw: str | bytes) -> tuple[str | None, bool, bool]:
+def parse_message(provider: str, raw: str | bytes) -> ProviderMessage:
     if isinstance(raw, bytes):
         try:
             raw = raw.decode("utf-8")
         except UnicodeDecodeError:
-            return None, False, False
+            return ProviderMessage(None, False, False)
     try:
         payload = json.loads(raw)
     except json.JSONDecodeError:
-        return None, False, False
+        return ProviderMessage(None, False, False)
 
     if provider == "deepgram":
         message_type = payload.get("type")
@@ -265,9 +273,11 @@ def parse_message(provider: str, raw: str | bytes) -> tuple[str | None, bool, bo
             alternative = alternatives[0] if alternatives else {}
             is_final = bool(payload.get("is_final"))
             from_finalize = bool(payload.get("from_finalize"))
-            return cleaned(alternative.get("transcript")), is_final, from_finalize
+            return ProviderMessage(cleaned(alternative.get("transcript")), is_final, from_finalize)
+        if message_type == "SpeechStarted":
+            return ProviderMessage(None, False, False, speech_started=True)
         if message_type == "Metadata":
-            return None, False, True
+            return ProviderMessage(None, False, True)
         if message_type in {"Error", "error"}:
             raise RuntimeError(
                 payload.get("message")
@@ -275,7 +285,7 @@ def parse_message(provider: str, raw: str | bytes) -> tuple[str | None, bool, bo
                 or payload.get("reason")
                 or "Deepgram realtime error"
             )
-    return None, False, False
+    return ProviderMessage(None, False, False)
 
 
 def cleaned(value: Any) -> str | None:
@@ -295,6 +305,7 @@ async def stream_provider(
     connect_started = time.perf_counter()
     final_segments: list[str] = []
     partial_text = ""
+    first_speech_ms: int | None = None
     first_text_ms: int | None = None
     first_final_ms: int | None = None
     send_done = asyncio.Event()
@@ -332,28 +343,33 @@ async def stream_provider(
                 send_done.set()
 
         async def receive_loop() -> None:
-            nonlocal first_text_ms, first_final_ms, partial_text, finalization_marker_received
+            nonlocal first_speech_ms, first_text_ms, first_final_ms, partial_text
+            nonlocal finalization_marker_received
             while True:
                 try:
                     timeout = 2.5 if send_done.is_set() else 8
                     raw = await asyncio.wait_for(ws.recv(), timeout=timeout)
                 except (TimeoutError, ConnectionClosed):
                     return
-                text, is_final, finalization_marker = parse_message(provider, raw)
-                finalization_marker_received = finalization_marker_received or finalization_marker
-                if finalization_marker_received and not text:
+                message = parse_message(provider, raw)
+                if message.speech_started and first_speech_ms is None:
+                    first_speech_ms = elapsed_ms(press_started)
+                finalization_marker_received = (
+                    finalization_marker_received or message.finalization_marker
+                )
+                if finalization_marker_received and not message.text:
                     return
-                if not text:
+                if not message.text:
                     continue
                 if first_text_ms is None:
                     first_text_ms = elapsed_ms(press_started)
-                if is_final:
-                    append_final(text)
+                if message.is_final:
+                    append_final(message.text)
                     first_final_ms = first_final_ms or elapsed_ms(press_started)
                     if transcript_ok(" ".join(final_segments)):
                         return
                 else:
-                    partial_text = text
+                    partial_text = message.text
 
         keep_alive_task = asyncio.create_task(keep_alive_loop())
         send_task = asyncio.create_task(send_loop())
@@ -376,6 +392,7 @@ async def stream_provider(
         "connect_ms": connect_ms,
         "startup_buffered_ms": buffered_chunk_count * CHUNK_MS,
         "startup_buffered_chunks": buffered_chunk_count,
+        "first_speech_ms": first_speech_ms,
         "first_text_ms": first_text_ms,
         "first_final_ms": first_final_ms,
         "final_ms": elapsed_ms(press_started),
@@ -425,6 +442,7 @@ async def run_one(
         "connect_ms": stream["connect_ms"],
         "startup_buffered_ms": stream["startup_buffered_ms"],
         "startup_buffered_chunks": stream["startup_buffered_chunks"],
+        "first_speech_ms": stream["first_speech_ms"],
         "first_text_ms": stream["first_text_ms"],
         "first_final_ms": stream["first_final_ms"],
         "final_ms": stream["final_ms"],
@@ -448,6 +466,7 @@ def summarize(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
     summaries = []
     for (mode, provider, model), rows in grouped.items():
         ok_rows = [row for row in rows if row.get("ok")]
+        first_speech_values = metric_values(ok_rows, "first_speech_ms")
         first_text_values = metric_values(ok_rows, "first_text_ms")
         final_values = metric_values(ok_rows, "final_ms")
         connect_values = metric_values(ok_rows, "connect_ms")
@@ -462,6 +481,8 @@ def summarize(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 "runs": len(rows),
                 "ok_runs": len(ok_rows),
                 "error_runs": len(rows) - len(ok_rows),
+                "median_first_speech_ms": median(first_speech_values),
+                "p95_first_speech_ms": percentile(first_speech_values),
                 "median_first_text_ms": median(first_text_values),
                 "p95_first_text_ms": percentile(first_text_values),
                 "median_final_ms": median(final_values),

@@ -4,9 +4,16 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
   createDictationEntry,
+  createTranscriptionSession,
   listDictionaryWords,
 } from "@/lib/api";
-import { RealtimeTranscriber, type RealtimeState } from "@/lib/realtime";
+import {
+  RealtimeTranscriber,
+  realtimeSessionRequestKey,
+  type PrefetchedRealtimeSession,
+  type RealtimeSessionRequest,
+  type RealtimeState,
+} from "@/lib/realtime";
 import type {
   DictationDictionaryWord,
   RealtimeTranscriptionReplacement,
@@ -15,6 +22,10 @@ import type {
 
 type Locale = "en" | "ru";
 type DictionaryRealtimeHints = ReturnType<typeof dictionaryRealtimeHints>;
+type DictationSessionPrefetch = {
+  key: string;
+  promise: Promise<PrefetchedRealtimeSession>;
+};
 
 interface Copy {
   heading: string;
@@ -143,6 +154,14 @@ function reportRealtimeCleanupError(error: unknown): void {
   }
 }
 
+function dictationSessionRequest(hints: DictionaryRealtimeHints): RealtimeSessionRequest {
+  return {
+    purpose: "dictation",
+    keyterms: hints.keyterms,
+    replacements: hints.replacements,
+  };
+}
+
 interface DictatePanelProps {
   locale?: Locale;
 }
@@ -165,6 +184,7 @@ export function DictatePanel({ locale = "en" }: DictatePanelProps) {
     replacements: [],
   });
   const dictionaryLoadRef = useRef<Promise<DictationDictionaryWord[]> | null>(null);
+  const sessionPrefetchRef = useRef<DictationSessionPrefetch | null>(null);
 
   const clearTimer = useCallback(() => {
     if (timerRef.current) {
@@ -195,16 +215,52 @@ export function DictatePanel({ locale = "en" }: DictatePanelProps) {
     return dictionaryLoadRef.current;
   }, []);
 
+  const prefetchDictationSession = useCallback((hints: DictionaryRealtimeHints) => {
+    const request = dictationSessionRequest(hints);
+    const key = realtimeSessionRequestKey(request);
+    const existing = sessionPrefetchRef.current;
+    if (existing?.key === key) return existing.promise;
+
+    const promise = createTranscriptionSession(request)
+      .then((session) => ({ request, session }))
+      .catch((error: unknown) => {
+        if (sessionPrefetchRef.current?.key === key) {
+          sessionPrefetchRef.current = null;
+        }
+        throw error;
+      });
+    sessionPrefetchRef.current = { key, promise };
+    return promise;
+  }, []);
+
+  const takePrefetchedDictationSession = useCallback((hints: DictionaryRealtimeHints) => {
+    const request = dictationSessionRequest(hints);
+    const key = realtimeSessionRequestKey(request);
+    const existing = sessionPrefetchRef.current;
+    if (!existing || existing.key !== key) return Promise.resolve(null);
+    sessionPrefetchRef.current = null;
+    return existing.promise.catch(() => null);
+  }, []);
+
   useEffect(() => {
     mountedRef.current = true;
-    void loadDictionaryWords().catch(() => {
-      // The start/stop paths surface dictionary failures when they affect output.
-    });
+    void loadDictionaryWords()
+      .then((words) => {
+        if (!mountedRef.current) return;
+        const hints = dictionaryRealtimeHints(words);
+        dictionaryHintsRef.current = hints;
+        void prefetchDictationSession(hints).catch(() => {
+          // The start path surfaces session failures if they still affect startup.
+        });
+      })
+      .catch(() => {
+        // The start/stop paths surface dictionary failures when they affect output.
+      });
     return () => {
       mountedRef.current = false;
       teardownTranscriber();
     };
-  }, [loadDictionaryWords, teardownTranscriber]);
+  }, [loadDictionaryWords, prefetchDictationSession, teardownTranscriber]);
 
   const start = useCallback(async () => {
     const dictionaryLoad = loadDictionaryWords();
@@ -235,6 +291,11 @@ export function DictatePanel({ locale = "en" }: DictatePanelProps) {
       stopMediaStream(stream);
       return;
     }
+    const prefetchedSession = await takePrefetchedDictationSession(dictionaryHintsRef.current);
+    if (!mountedRef.current) {
+      stopMediaStream(stream);
+      return;
+    }
     const transcriber = new RealtimeTranscriber({
       purpose: "dictation",
       keyterms: dictionaryHintsRef.current.keyterms,
@@ -254,7 +315,7 @@ export function DictatePanel({ locale = "en" }: DictatePanelProps) {
       },
     });
     transcriberRef.current = transcriber;
-    await transcriber.start(stream);
+    await transcriber.start(stream, { prefetchedSession });
     if (
       mountedRef.current &&
       transcriberRef.current === transcriber &&
@@ -262,7 +323,13 @@ export function DictatePanel({ locale = "en" }: DictatePanelProps) {
     ) {
       timerRef.current = setInterval(() => setSeconds((s) => s + 1), 1000);
     }
-  }, [clearTimer, copy.dictionaryFailed, copy.micDenied, loadDictionaryWords]);
+  }, [
+    clearTimer,
+    copy.dictionaryFailed,
+    copy.micDenied,
+    loadDictionaryWords,
+    takePrefetchedDictationSession,
+  ]);
 
   const copyText = useCallback(async (text: string) => {
     try {
@@ -295,6 +362,9 @@ export function DictatePanel({ locale = "en" }: DictatePanelProps) {
     if (!raw) {
       setState("idle");
       setNotice(copy.empty);
+      void prefetchDictationSession(dictionaryHintsRef.current).catch(() => {
+        // The next start path will mint and surface a failure if prefetch still fails.
+      });
       return;
     }
 
@@ -304,6 +374,9 @@ export function DictatePanel({ locale = "en" }: DictatePanelProps) {
       words = await listDictionaryWords();
       dictionaryHintsRef.current = dictionaryRealtimeHints(words);
       dictionaryLoadRef.current = Promise.resolve(words);
+      void prefetchDictationSession(dictionaryHintsRef.current).catch(() => {
+        // The next start path will mint and surface a failure if prefetch still fails.
+      });
     } catch {
       setNotice(copy.dictionaryFailed);
     }
@@ -333,6 +406,7 @@ export function DictatePanel({ locale = "en" }: DictatePanelProps) {
     copy.empty,
     copy.historyFailed,
     copyText,
+    prefetchDictationSession,
     seconds,
   ]);
 
@@ -344,7 +418,10 @@ export function DictatePanel({ locale = "en" }: DictatePanelProps) {
     setNotice(null);
     setError(null);
     setSeconds(0);
-  }, []);
+    void prefetchDictationSession(dictionaryHintsRef.current).catch(() => {
+      // The next start path will mint and surface a failure if prefetch still fails.
+    });
+  }, [prefetchDictationSession]);
 
   const isRecording = state === "connecting" || state === "recording" || state === "stopping";
 

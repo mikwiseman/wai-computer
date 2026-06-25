@@ -63,6 +63,22 @@ export interface RealtimeTranscriberOptions {
   onError?: (message: string) => void;
 }
 
+export interface RealtimeSessionRequest {
+  language?: string;
+  purpose: "recording" | "dictation";
+  keyterms?: string[];
+  replacements?: RealtimeTranscriptionReplacement[];
+}
+
+export interface PrefetchedRealtimeSession {
+  request: RealtimeSessionRequest;
+  session: RealtimeSessionResponse;
+}
+
+export interface RealtimeStartOptions {
+  prefetchedSession?: PrefetchedRealtimeSession | null;
+}
+
 const STOP_CLOSE_TIMEOUT_MS = 5000;
 const DEFAULT_KEEP_ALIVE_INTERVAL_SECONDS = 4;
 const FINAL_REPLACEMENT_START_TOLERANCE_MS = 20;
@@ -150,6 +166,30 @@ function shouldDropDuplicateFinal(
   return previous.text.trim().toLowerCase() === next.text.trim().toLowerCase();
 }
 
+export function realtimeSessionRequestKey(request: RealtimeSessionRequest): string {
+  return JSON.stringify({
+    language: request.language ?? "multi",
+    purpose: request.purpose,
+    keyterms: normalizeKeyterms(request.keyterms),
+    replacements: normalizeReplacements(request.replacements),
+  });
+}
+
+function normalizeKeyterms(values: string[] | undefined): string[] {
+  return (values ?? []).map((value) => value.trim()).filter(Boolean);
+}
+
+function normalizeReplacements(
+  values: RealtimeTranscriptionReplacement[] | undefined,
+): RealtimeTranscriptionReplacement[] {
+  return (values ?? [])
+    .map((value) => ({
+      find: value.find.trim(),
+      replace: value.replace.trim(),
+    }))
+    .filter((value) => value.find && value.replace);
+}
+
 export class RealtimeTranscriber {
   private ctx: AudioContext | null = null;
   private node: AudioWorkletNode | null = null;
@@ -192,7 +232,7 @@ export class RealtimeTranscriber {
     this.opts.onState?.(state);
   }
 
-  async start(input: MediaStream | MediaStream[]): Promise<void> {
+  async start(input: MediaStream | MediaStream[], options: RealtimeStartOptions = {}): Promise<void> {
     if (this.state !== "idle") return;
     this.stopRequested = false;
     this.didSendFinalize = false;
@@ -212,14 +252,10 @@ export class RealtimeTranscriber {
       return;
     }
     this.startedAt = Date.now();
+    const request = this.sessionRequest();
     let session: RealtimeSessionResponse;
     try {
-      session = await createTranscriptionSession({
-        language: this.opts.language,
-        purpose: this.opts.purpose ?? "recording",
-        keyterms: this.opts.keyterms,
-        replacements: this.opts.replacements,
-      });
+      session = await this.sessionConfig(request, options.prefetchedSession);
     } catch (error) {
       if (!this.isConnecting()) return;
       this.fail(error);
@@ -234,6 +270,28 @@ export class RealtimeTranscriber {
       if (!this.isConnecting()) return;
       this.fail(error);
     }
+  }
+
+  private sessionRequest(): RealtimeSessionRequest {
+    return {
+      language: this.opts.language,
+      purpose: this.opts.purpose ?? "recording",
+      keyterms: this.opts.keyterms,
+      replacements: this.opts.replacements,
+    };
+  }
+
+  private async sessionConfig(
+    request: RealtimeSessionRequest,
+    prefetchedSession: PrefetchedRealtimeSession | null | undefined,
+  ): Promise<RealtimeSessionResponse> {
+    if (
+      prefetchedSession &&
+      realtimeSessionRequestKey(prefetchedSession.request) === realtimeSessionRequestKey(request)
+    ) {
+      return prefetchedSession.session;
+    }
+    return createTranscriptionSession(request);
   }
 
   private socketUrl(session: RealtimeSessionResponse): string {

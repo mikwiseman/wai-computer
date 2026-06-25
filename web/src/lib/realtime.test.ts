@@ -4,7 +4,11 @@ import { createTranscriptionSession } from "@/lib/api";
 import { downsampleTo16kInt16 } from "@/lib/audio/pcm";
 import type { RealtimeSessionResponse } from "@/lib/types";
 
-import { RealtimeTranscriber, parseRealtimeMessage } from "./realtime";
+import {
+  RealtimeTranscriber,
+  parseRealtimeMessage,
+  type RealtimeStartOptions,
+} from "./realtime";
 
 vi.mock("@/lib/api", () => ({
   createTranscriptionSession: vi.fn(),
@@ -178,8 +182,9 @@ afterEach(() => {
 async function startRecording(
   transcriber: RealtimeTranscriber,
   stream: MediaStream,
+  options?: RealtimeStartOptions,
 ): Promise<FakeWebSocket> {
-  const startPromise = transcriber.start(stream);
+  const startPromise = transcriber.start(stream, options);
   // openSocket awaits ws.onopen; fire it on the freshly-constructed socket.
   await vi.waitFor(() => expect(FakeWebSocket.instances.length).toBe(1));
   const ws = FakeWebSocket.instances[0];
@@ -408,6 +413,54 @@ describe("RealtimeTranscriber socket URL building", () => {
       keyterms: ["WaiComputer"],
       replacements: [{ find: "wai computer", replace: "WaiComputer" }],
     });
+  });
+
+  it("uses a matching prefetched session without minting during start", async () => {
+    const request = {
+      language: "ru",
+      purpose: "dictation" as const,
+      keyterms: ["WaiComputer"],
+      replacements: [{ find: "wai computer", replace: "WaiComputer" }],
+    };
+    const transcriber = new RealtimeTranscriber(request);
+    const ws = await startRecording(transcriber, fakeStream().mediaStream, {
+      prefetchedSession: {
+        request,
+        session: sessionResponse({
+          token: "warm token",
+          websocket_url: "wss://wai.computer/api/transcription/stream",
+        }),
+      },
+    });
+
+    expect(mockedCreateSession).not.toHaveBeenCalled();
+    expect(ws.url).toBe("wss://wai.computer/api/transcription/stream?token=warm%20token");
+  });
+
+  it("mints a fresh session instead of using stale prefetched hints", async () => {
+    const transcriber = new RealtimeTranscriber({
+      purpose: "dictation",
+      keyterms: ["Current"],
+    });
+    mockedCreateSession.mockResolvedValue(sessionResponse({ token: "fresh token" }));
+
+    const ws = await startRecording(transcriber, fakeStream().mediaStream, {
+      prefetchedSession: {
+        request: {
+          purpose: "dictation",
+          keyterms: ["Stale"],
+        },
+        session: sessionResponse({ token: "stale token" }),
+      },
+    });
+
+    expect(mockedCreateSession).toHaveBeenCalledWith({
+      language: undefined,
+      purpose: "dictation",
+      keyterms: ["Current"],
+      replacements: undefined,
+    });
+    expect(ws.url).toBe("wss://wai.computer/api/transcription/stream?token=fresh%20token");
   });
 
   it("falls back to window.location (wss for https) when websocket_url is null", async () => {

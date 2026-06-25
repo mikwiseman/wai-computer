@@ -28,6 +28,7 @@ def test_summarize_reports_p95_and_error_runs() -> None:
             "provider": "deepgram",
             "model": "nova-3",
             "ok": True,
+            "first_speech_ms": 220,
             "first_text_ms": 400,
             "final_ms": 1200,
             "connect_ms": 100,
@@ -47,6 +48,7 @@ def test_summarize_reports_p95_and_error_runs() -> None:
             "provider": "deepgram",
             "model": "nova-3",
             "ok": True,
+            "first_speech_ms": 300,
             "first_text_ms": 800,
             "final_ms": 1500,
             "connect_ms": 200,
@@ -66,6 +68,8 @@ def test_summarize_reports_p95_and_error_runs() -> None:
             "runs": 3,
             "ok_runs": 2,
             "error_runs": 1,
+            "median_first_speech_ms": 260,
+            "p95_first_speech_ms": 300,
             "median_first_text_ms": 600,
             "p95_first_text_ms": 800,
             "median_final_ms": 1350,
@@ -113,3 +117,14 @@ def test_startup_buffered_chunk_count_matches_elapsed_connect_time() -> None:
     assert module.startup_buffered_chunk_count(100, total_chunks=20) == 1
     assert module.startup_buffered_chunk_count(850, total_chunks=20) == 8
     assert module.startup_buffered_chunk_count(5_000, total_chunks=20) == 20
+
+
+def test_parse_message_marks_deepgram_speech_started() -> None:
+    module = _load_module()
+
+    message = module.parse_message("deepgram", '{"type":"SpeechStarted","channel":[0]}')
+
+    assert message.text is None
+    assert message.is_final is False
+    assert message.finalization_marker is False
+    assert message.speech_started is True

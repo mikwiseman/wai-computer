@@ -48,17 +48,18 @@ lines = [
     f"- Base URL: `{payload.get('base_url', '-')}`",
     f"- Fixture seconds: `{payload.get('fixture_seconds', '-')}`",
     "",
-    "| Mode | Provider | Model | OK | First text p50 | Final p50 | WER p50 |",
-    "| --- | --- | --- | ---: | ---: | ---: | ---: |",
+    "| Mode | Provider | Model | OK | Speech p50 | First text p50 | Final p50 | WER p50 |",
+    "| --- | --- | --- | ---: | ---: | ---: | ---: | ---: |",
 ]
 for row in payload.get("summary", []):
     lines.append(
-        "| {mode} | {provider} | `{model}` | {ok_runs}/{runs} | {first} ms | {final} ms | {wer} |".format(
+        "| {mode} | {provider} | `{model}` | {ok_runs}/{runs} | {speech} ms | {first} ms | {final} ms | {wer} |".format(
             mode=row.get("mode", "-"),
             provider=row.get("provider", "-"),
             model=row.get("model", "-"),
             ok_runs=row.get("ok_runs", 0),
             runs=row.get("runs", 0),
+            speech=row.get("median_first_speech_ms"),
             first=row.get("median_first_text_ms"),
             final=row.get("median_final_ms"),
             wer=row.get("median_wer"),
