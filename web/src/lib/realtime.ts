@@ -60,6 +60,7 @@ export interface RealtimeTranscriberOptions {
 const STOP_CLOSE_TIMEOUT_MS = 5000;
 const DEFAULT_KEEP_ALIVE_INTERVAL_SECONDS = 4;
 const FINAL_REPLACEMENT_START_TOLERANCE_MS = 20;
+const STARTUP_AUDIO_BUFFER_MAX_BYTES = 1_048_576;
 
 function realtimeResultTiming(
   root: Record<string, unknown>,
@@ -151,6 +152,8 @@ export class RealtimeTranscriber {
   private lastFinalMs = 0;
   private committedText = "";
   private interimText = "";
+  private readonly pendingAudio: ArrayBufferLike[] = [];
+  private pendingAudioBytes = 0;
   private readonly segments: TranscriptSegmentInput[] = [];
   private readonly opts: RealtimeTranscriberOptions;
 
@@ -166,6 +169,10 @@ export class RealtimeTranscriber {
     return this.segments;
   }
 
+  private isConnecting(): boolean {
+    return this.state === "connecting";
+  }
+
   private setState(state: RealtimeState): void {
     this.state = state;
     this.opts.onState?.(state);
@@ -175,6 +182,13 @@ export class RealtimeTranscriber {
     if (this.state !== "idle") return;
     this.streams = Array.isArray(input) ? input : [input];
     this.setState("connecting");
+    try {
+      await this.startAudio();
+      this.startedAt = Date.now();
+    } catch (error) {
+      this.fail(error);
+      return;
+    }
     let session: RealtimeSessionResponse;
     try {
       session = await createTranscriptionSession({
@@ -185,10 +199,10 @@ export class RealtimeTranscriber {
       this.fail(error);
       return;
     }
+    if (!this.isConnecting()) return;
     try {
       await this.openSocket(session);
-      await this.startAudio();
-      this.startedAt = Date.now();
+      if (!this.isConnecting()) return;
       this.setState("recording");
     } catch (error) {
       this.fail(error);
@@ -211,18 +225,36 @@ export class RealtimeTranscriber {
       ws.binaryType = "arraybuffer";
       this.ws = ws;
       ws.onopen = () => {
-        const intervalMs =
-          (session.keep_alive_interval_seconds ?? DEFAULT_KEEP_ALIVE_INTERVAL_SECONDS) * 1000;
-        this.keepAlive = setInterval(() => {
-          if (ws.readyState === WebSocket.OPEN) {
-            ws.send(JSON.stringify({ type: "KeepAlive" }));
+        if (this.ws !== ws || !this.isConnecting()) {
+          try {
+            ws.close();
+          } catch {
+            /* already closing */
           }
-        }, intervalMs);
-        resolve();
+          resolve();
+          return;
+        }
+        try {
+          const intervalMs =
+            (session.keep_alive_interval_seconds ?? DEFAULT_KEEP_ALIVE_INTERVAL_SECONDS) * 1000;
+          this.keepAlive = setInterval(() => {
+            if (ws.readyState === WebSocket.OPEN) {
+              ws.send(JSON.stringify({ type: "KeepAlive" }));
+            }
+          }, intervalMs);
+          this.flushPendingAudio();
+          resolve();
+        } catch (error) {
+          reject(error);
+        }
       };
       ws.onmessage = (event) => this.onMessage(event);
       ws.onerror = () => reject(new Error("Realtime transcription connection failed"));
       ws.onclose = () => {
+        if (this.state === "connecting") {
+          reject(new Error("Realtime transcription connection closed before it was ready"));
+          return;
+        }
         // A close during active recording is an unexpected drop — surface it
         // rather than silently degrading.
         if (this.state === "recording") {
@@ -243,9 +275,7 @@ export class RealtimeTranscriber {
     node.port.onmessage = (event) => {
       const float = event.data as Float32Array;
       const int16 = downsampleTo16kInt16(float, ctx.sampleRate);
-      if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-        this.ws.send(int16.buffer);
-      }
+      this.sendOrBufferAudio(int16.buffer);
     };
     // Connect every input stream (mic + optional system audio) to the worklet;
     // the Web Audio graph sums them into one combined PCM stream. NOT connected
@@ -255,6 +285,35 @@ export class RealtimeTranscriber {
       source.connect(node);
       this.sources.push(source);
     }
+  }
+
+  private sendOrBufferAudio(payload: ArrayBufferLike): void {
+    const ws = this.ws;
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      this.flushPendingAudio();
+      ws.send(payload);
+      return;
+    }
+    if (this.state !== "connecting") return;
+    this.pendingAudio.push(payload);
+    this.pendingAudioBytes += payload.byteLength;
+    if (this.pendingAudioBytes > STARTUP_AUDIO_BUFFER_MAX_BYTES) {
+      this.fail(new Error("Realtime transcription connection took too long."));
+    }
+  }
+
+  private flushPendingAudio(): void {
+    const ws = this.ws;
+    if (!ws || ws.readyState !== WebSocket.OPEN || this.pendingAudio.length === 0) return;
+    for (const payload of this.pendingAudio) {
+      ws.send(payload);
+    }
+    this.clearPendingAudio();
+  }
+
+  private clearPendingAudio(): void {
+    this.pendingAudio.length = 0;
+    this.pendingAudioBytes = 0;
   }
 
   private onMessage(event: MessageEvent): void {
@@ -340,6 +399,7 @@ export class RealtimeTranscriber {
     if (this.ctx && this.ctx.state !== "closed") void this.ctx.close();
     this.ctx = null;
     this.node = null;
+    this.clearPendingAudio();
     for (const stream of this.streams) {
       stream.getTracks().forEach((track) => track.stop());
     }

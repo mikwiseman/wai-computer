@@ -21,19 +21,22 @@ const mockedDownsample = vi.mocked(downsampleTo16kInt16);
 // Controllable browser-API fakes (jsdom ships none of these).
 // ---------------------------------------------------------------------------
 
+const WS_CONNECTING = 0;
 const WS_OPEN = 1;
 const WS_CLOSING = 2;
 const WS_CLOSED = 3;
 
 /** A WebSocket stand-in whose handlers and readyState the test drives. */
 class FakeWebSocket {
+  static CONNECTING = WS_CONNECTING;
   static OPEN = WS_OPEN;
   static CLOSING = WS_CLOSING;
+  static CLOSED = WS_CLOSED;
   static instances: FakeWebSocket[] = [];
 
   url: string;
   binaryType = "";
-  readyState = WS_OPEN;
+  readyState = WS_CONNECTING;
   onopen: (() => void) | null = null;
   onmessage: ((event: MessageEvent) => void) | null = null;
   onerror: (() => void) | null = null;
@@ -180,6 +183,7 @@ async function startRecording(
   // openSocket awaits ws.onopen; fire it on the freshly-constructed socket.
   await vi.waitFor(() => expect(FakeWebSocket.instances.length).toBe(1));
   const ws = FakeWebSocket.instances[0];
+  ws.readyState = WS_OPEN;
   ws.onopen?.();
   await startPromise;
   return ws;
@@ -439,6 +443,37 @@ describe("RealtimeTranscriber keep-alive", () => {
 });
 
 describe("RealtimeTranscriber audio streaming", () => {
+  it("buffers startup PCM while the socket is CONNECTING and flushes it first", async () => {
+    const transcriber = new RealtimeTranscriber();
+    mockedCreateSession.mockResolvedValue(sessionResponse());
+    const startPromise = transcriber.start(fakeStream().mediaStream);
+
+    await vi.waitFor(() => expect(lastAudioWorkletNode).not.toBeNull());
+    const startupFloat = new Float32Array([0.1, 0.2]);
+    const startupInt16 = new Int16Array([7, 8]);
+    mockedDownsample.mockReturnValueOnce(startupInt16);
+    lastAudioWorkletNode?.port.onmessage?.({ data: startupFloat } as MessageEvent);
+
+    await vi.waitFor(() => expect(FakeWebSocket.instances.length).toBe(1));
+    const ws = FakeWebSocket.instances[0];
+    expect(ws.readyState).toBe(WS_CONNECTING);
+    expect(ws.sent).toEqual([]);
+
+    ws.readyState = WS_OPEN;
+    ws.onopen?.();
+    await startPromise;
+
+    expect(mockedDownsample).toHaveBeenCalledWith(startupFloat, 48000);
+    expect(ws.sent[0]).toBe(startupInt16.buffer);
+
+    const liveFloat = new Float32Array([0.3, 0.4]);
+    const liveInt16 = new Int16Array([9, 10]);
+    mockedDownsample.mockReturnValueOnce(liveInt16);
+    lastAudioWorkletNode?.port.onmessage?.({ data: liveFloat } as MessageEvent);
+
+    expect(ws.sent[1]).toBe(liveInt16.buffer);
+  });
+
   it("downsamples worklet PCM and sends the Int16 buffer over an OPEN socket", async () => {
     const transcriber = new RealtimeTranscriber();
     mockedCreateSession.mockResolvedValue(sessionResponse());
