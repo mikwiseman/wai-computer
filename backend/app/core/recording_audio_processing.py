@@ -193,6 +193,12 @@ async def mark_recording_processing_failed(
     failed = await db.get(Recording, recording_id)
     if failed is None:
         return
+    if failed.status != RecordingStatus.PROCESSING.value:
+        logger.info(
+            "skipping recording processing failure mark for recording in status=%s",
+            failed.status,
+        )
+        return
     failed.status = RecordingStatus.FAILED.value
     failed.failure_code = failure_code
     failed.failure_message = sanitize_failure_message(failure_message)

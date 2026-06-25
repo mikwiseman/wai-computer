@@ -237,6 +237,38 @@ async def test_mark_recording_processing_failed_missing_recording_noops(
 
 
 @pytest.mark.asyncio
+async def test_mark_recording_processing_failed_keeps_ready_recording_terminal(
+    db_session: AsyncSession,
+) -> None:
+    user = User(email="ready-processing-terminal@example.com", password_hash="x")
+    db_session.add(user)
+    await db_session.flush()
+    recording = Recording(
+        user_id=user.id,
+        title="Already transcribed",
+        type="meeting",
+        status=RecordingStatus.READY.value,
+        uploaded_at=datetime.now(timezone.utc),
+        language="en",
+    )
+    db_session.add(recording)
+    await db_session.commit()
+
+    await recording_audio_processing.mark_recording_processing_failed(
+        db_session,
+        recording_id=recording.id,
+        failure_code="processing_timeout",
+        failure_message="Late timeout after processing completed.",
+    )
+
+    await db_session.refresh(recording)
+    assert recording.status == RecordingStatus.READY.value
+    assert recording.title == "Already transcribed"
+    assert recording.failure_code is None
+    assert recording.failure_message is None
+
+
+@pytest.mark.asyncio
 async def test_process_staged_recording_upload_persists_canonical_segments(
     db_session: AsyncSession,
     tmp_path,
