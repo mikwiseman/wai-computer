@@ -52,6 +52,7 @@ WAIT_FOR_TRANSCRIPT_RECORDING_STATUSES = (
     RecordingStatus.PROCESSING.value,
 )
 SUMMARY_GENERATION_MAX_STALE_RUNNING_ATTEMPTS = 4
+ORPHANED_SUMMARY_GENERATION_REENQUEUE_AFTER = timedelta(seconds=30)
 
 
 class SummaryGenerationEnqueueError(RuntimeError):
@@ -84,6 +85,19 @@ def summary_transcript_hash(transcript: str) -> str:
 
 def can_wait_for_transcript(recording: Recording) -> bool:
     return recording.status in WAIT_FOR_TRANSCRIPT_RECORDING_STATUSES
+
+
+def is_orphaned_queued_summary_job(job: SummaryGenerationJob) -> bool:
+    if job.status != SummaryGenerationStatus.QUEUED.value or job.task_id:
+        return False
+    if job.stage == WAITING_FOR_TRANSCRIPT_STAGE:
+        return False
+    queued_at = job.requested_at or job.created_at
+    if queued_at is None:
+        return True
+    if queued_at.tzinfo is None:
+        queued_at = queued_at.replace(tzinfo=timezone.utc)
+    return datetime.now(timezone.utc) - queued_at >= ORPHANED_SUMMARY_GENERATION_REENQUEUE_AFTER
 
 
 def resolve_summary_language_preference(
@@ -426,6 +440,32 @@ async def start_recording_summary_generation_job(
             await db.commit()
             return active_job
         if active_job.transcript_hash == transcript_hash:
+            if is_orphaned_queued_summary_job(active_job):
+                active_job.stage = "queued"
+                active_job.progress_percent = 5
+                active_job.error_code = None
+                active_job.error_message = None
+                active_job.failed_at = None
+                if instructions_override is not None:
+                    active_job.instructions_override = instructions_override
+                await db.commit()
+
+                try:
+                    active_job.task_id = enqueue(active_job.id)
+                except Exception as exc:  # noqa: BLE001 - broker failure is persisted below.
+                    mark_summary_generation_failed(
+                        active_job,
+                        error_code="summary_enqueue_failed",
+                        error_message="Failed to start summary generation.",
+                    )
+                    await db.commit()
+                    if raise_on_enqueue_error:
+                        raise SummaryGenerationEnqueueError(
+                            "Failed to start summary generation"
+                        ) from exc
+                    return active_job
+
+                await db.commit()
             return active_job
         mark_summary_generation_failed(
             active_job,

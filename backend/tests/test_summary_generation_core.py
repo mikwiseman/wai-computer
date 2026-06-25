@@ -17,9 +17,11 @@ from app.core.summarizer import SummaryResult
 from app.core.summary_generation import (
     WAITING_FOR_TRANSCRIPT_HASH,
     WAITING_FOR_TRANSCRIPT_STAGE,
+    SummaryGenerationEnqueueError,
     apply_summary_result,
     build_summary_transcript,
     fail_summary_generation_job,
+    is_orphaned_queued_summary_job,
     latest_summary_generation_job,
     load_active_summary_generation_job,
     persist_summary_generation_result,
@@ -27,6 +29,7 @@ from app.core.summary_generation import (
     recover_missing_summary_generation_jobs,
     resolve_summary_language_preference,
     resolve_summary_style_preference,
+    start_recording_summary_generation_job,
     summary_transcript_hash,
 )
 from app.models.entity import Entity, EntityMention
@@ -160,6 +163,67 @@ def test_summary_generation_pure_helpers() -> None:
     assert latest_summary_generation_job(
         SimpleNamespace(summary_generation_jobs=[older, newer])
     ) is newer
+
+
+def test_is_orphaned_queued_summary_job_filters_fresh_and_active_jobs() -> None:
+    fresh_requested_at = datetime.now(timezone.utc)
+    old_requested_at = datetime.now(timezone.utc) - timedelta(minutes=1)
+    old_naive_requested_at = old_requested_at.replace(tzinfo=None)
+
+    assert not is_orphaned_queued_summary_job(
+        SimpleNamespace(
+            status=SummaryGenerationStatus.RUNNING.value,
+            task_id=None,
+            stage="queued",
+            requested_at=old_requested_at,
+            created_at=None,
+        )
+    )
+    assert not is_orphaned_queued_summary_job(
+        SimpleNamespace(
+            status=SummaryGenerationStatus.QUEUED.value,
+            task_id="live-task",
+            stage="queued",
+            requested_at=old_requested_at,
+            created_at=None,
+        )
+    )
+    assert not is_orphaned_queued_summary_job(
+        SimpleNamespace(
+            status=SummaryGenerationStatus.QUEUED.value,
+            task_id=None,
+            stage=WAITING_FOR_TRANSCRIPT_STAGE,
+            requested_at=old_requested_at,
+            created_at=None,
+        )
+    )
+    assert not is_orphaned_queued_summary_job(
+        SimpleNamespace(
+            status=SummaryGenerationStatus.QUEUED.value,
+            task_id=None,
+            stage="queued",
+            requested_at=fresh_requested_at,
+            created_at=None,
+        )
+    )
+    assert is_orphaned_queued_summary_job(
+        SimpleNamespace(
+            status=SummaryGenerationStatus.QUEUED.value,
+            task_id=None,
+            stage="queued",
+            requested_at=old_naive_requested_at,
+            created_at=None,
+        )
+    )
+    assert is_orphaned_queued_summary_job(
+        SimpleNamespace(
+            status=SummaryGenerationStatus.QUEUED.value,
+            task_id=None,
+            stage="queued",
+            requested_at=None,
+            created_at=None,
+        )
+    )
 
 
 @pytest.mark.asyncio
@@ -323,6 +387,7 @@ async def test_recover_missing_summary_generation_jobs_enqueues_orphaned_queued_
             build_summary_transcript(await _segments(db_session, recording))
         ),
         task_id=None,
+        requested_at=datetime.now(timezone.utc) - timedelta(minutes=1),
     )
     db_session.add(orphaned_job)
     await db_session.flush()
@@ -341,6 +406,125 @@ async def test_recover_missing_summary_generation_jobs_enqueues_orphaned_queued_
     assert orphaned_job.status == SummaryGenerationStatus.QUEUED.value
     assert orphaned_job.stage == "queued"
     assert orphaned_job.task_id == f"celery-{orphaned_job.id}"
+
+
+@pytest.mark.asyncio
+async def test_start_summary_generation_reenqueues_orphaned_active_queued_job(
+    db_session: AsyncSession,
+) -> None:
+    user = await _user(db_session)
+    recording = await _recording(db_session, user)
+    orphaned_job = SummaryGenerationJob(
+        recording_id=recording.id,
+        user_id=user.id,
+        status=SummaryGenerationStatus.QUEUED.value,
+        stage="queued",
+        progress_percent=5,
+        transcript_hash=summary_transcript_hash(
+            build_summary_transcript(await _segments(db_session, recording))
+        ),
+        task_id=None,
+        requested_at=datetime.now(timezone.utc) - timedelta(minutes=1),
+    )
+    db_session.add(orphaned_job)
+    await db_session.flush()
+
+    enqueued: list[UUID] = []
+
+    job = await start_recording_summary_generation_job(
+        db_session,
+        recording_id=recording.id,
+        user_id=user.id,
+        enqueue=lambda job_id: enqueued.append(job_id) or f"celery-{job_id}",
+    )
+
+    await db_session.refresh(orphaned_job)
+    assert job is orphaned_job
+    assert enqueued == [orphaned_job.id]
+    assert orphaned_job.status == SummaryGenerationStatus.QUEUED.value
+    assert orphaned_job.stage == "queued"
+    assert orphaned_job.progress_percent == 5
+    assert orphaned_job.task_id == f"celery-{orphaned_job.id}"
+    assert orphaned_job.error_code is None
+    assert orphaned_job.error_message is None
+
+
+@pytest.mark.asyncio
+async def test_start_summary_generation_keeps_fresh_queued_job_without_task_id(
+    db_session: AsyncSession,
+) -> None:
+    user = await _user(db_session)
+    recording = await _recording(db_session, user)
+    fresh_job = SummaryGenerationJob(
+        recording_id=recording.id,
+        user_id=user.id,
+        status=SummaryGenerationStatus.QUEUED.value,
+        stage="queued",
+        progress_percent=5,
+        transcript_hash=summary_transcript_hash(
+            build_summary_transcript(await _segments(db_session, recording))
+        ),
+        task_id=None,
+    )
+    db_session.add(fresh_job)
+    await db_session.flush()
+
+    enqueued: list[UUID] = []
+
+    job = await start_recording_summary_generation_job(
+        db_session,
+        recording_id=recording.id,
+        user_id=user.id,
+        enqueue=lambda job_id: enqueued.append(job_id) or f"celery-{job_id}",
+    )
+
+    await db_session.refresh(fresh_job)
+    assert job is fresh_job
+    assert enqueued == []
+    assert fresh_job.status == SummaryGenerationStatus.QUEUED.value
+    assert fresh_job.stage == "queued"
+    assert fresh_job.task_id is None
+
+
+@pytest.mark.asyncio
+async def test_start_summary_generation_fails_orphaned_active_job_on_enqueue_error(
+    db_session: AsyncSession,
+) -> None:
+    user = await _user(db_session)
+    recording = await _recording(db_session, user)
+    orphaned_job = SummaryGenerationJob(
+        recording_id=recording.id,
+        user_id=user.id,
+        status=SummaryGenerationStatus.QUEUED.value,
+        stage="queued",
+        progress_percent=5,
+        transcript_hash=summary_transcript_hash(
+            build_summary_transcript(await _segments(db_session, recording))
+        ),
+        task_id=None,
+        requested_at=datetime.now(timezone.utc) - timedelta(minutes=1),
+    )
+    db_session.add(orphaned_job)
+    await db_session.flush()
+
+    def raise_enqueue_error(job_id: UUID) -> str:
+        raise RuntimeError("broker unavailable")
+
+    with pytest.raises(SummaryGenerationEnqueueError):
+        await start_recording_summary_generation_job(
+            db_session,
+            recording_id=recording.id,
+            user_id=user.id,
+            enqueue=raise_enqueue_error,
+        )
+
+    await db_session.refresh(orphaned_job)
+    assert orphaned_job.status == SummaryGenerationStatus.FAILED.value
+    assert orphaned_job.stage == "failed"
+    assert orphaned_job.progress_percent == 100
+    assert orphaned_job.task_id is None
+    assert orphaned_job.error_code == "summary_enqueue_failed"
+    assert orphaned_job.failed_at is not None
 
 
 @pytest.mark.asyncio
