@@ -75,6 +75,7 @@ celery_app = Celery(
 )
 
 DEFAULT_TASK_EXCHANGE = Exchange("celery", type="direct")
+RECORDING_TASK_EXCHANGE = Exchange("recording", type="direct")
 SUMMARY_TASK_EXCHANGE = Exchange("summary", type="direct")
 
 celery_app.conf.update(
@@ -88,9 +89,18 @@ celery_app.conf.update(
     task_default_routing_key="celery",
     task_queues=(
         Queue("celery", DEFAULT_TASK_EXCHANGE, routing_key="celery"),
+        Queue("recording", RECORDING_TASK_EXCHANGE, routing_key="recording"),
         Queue("summary", SUMMARY_TASK_EXCHANGE, routing_key="summary"),
     ),
     task_routes={
+        "app.tasks.recording_audio_processing.process_staged_recording_upload": {
+            "queue": "recording",
+            "routing_key": "recording",
+        },
+        "app.tasks.media_import.import_uploaded_media": {
+            "queue": "recording",
+            "routing_key": "recording",
+        },
         "app.tasks.summary_generation.generate_recording_summary": {
             "queue": "summary",
             "routing_key": "summary",

@@ -33,15 +33,23 @@ def test_celery_worker_runs_voice_identification_in_isolated_single_task_worker(
     compose = yaml.safe_load((BACKEND_ROOT / "docker-compose.yml").read_text())
     api_service = compose["services"]["api"]
     worker_service = compose["services"]["celery-worker"]
+    recording_worker_service = compose["services"]["celery-recording-worker"]
 
     assert api_service["environment"]["VOICE_IDENTIFICATION_ENABLED"] == "false"
-    assert worker_service["environment"]["VOICE_IDENTIFICATION_ENABLED"] == "true"
+    assert worker_service["environment"]["VOICE_IDENTIFICATION_ENABLED"] == "false"
+    assert recording_worker_service["environment"]["VOICE_IDENTIFICATION_ENABLED"] == "true"
     assert "speechbrain_cache:/root/.cache/speechbrain" not in api_service["volumes"]
-    assert "speechbrain_cache:/root/.cache/speechbrain" in worker_service["volumes"]
+    assert "speechbrain_cache:/root/.cache/speechbrain" not in worker_service["volumes"]
+    assert "speechbrain_cache:/root/.cache/speechbrain" in recording_worker_service["volumes"]
     assert "speechbrain_cache" in compose["volumes"]
     assert "--concurrency=1" in worker_service["command"]
     assert "--queues=celery" in worker_service["command"]
-    assert worker_service["deploy"]["resources"]["limits"]["memory"] == "1536M"
+    assert "-B" in worker_service["command"]
+    assert "--concurrency=1" in recording_worker_service["command"]
+    assert "--queues=recording" in recording_worker_service["command"]
+    assert "-B" not in recording_worker_service["command"]
+    assert worker_service["deploy"]["resources"]["limits"]["memory"] == "768M"
+    assert recording_worker_service["deploy"]["resources"]["limits"]["memory"] == "1536M"
 
 
 def test_summary_generation_runs_in_dedicated_non_voice_worker():
@@ -88,16 +96,38 @@ def test_server_build_only_starts_defined_compose_services():
 
     requested = match.group("services").split()
     assert "telegram-bot-api" in requested
+    assert "celery-recording-worker" in requested
     assert "celery-summary-worker" in requested
     missing = sorted(set(requested) - set(compose["services"]))
     assert missing == []
 
 
+def test_server_build_manages_recording_worker_during_deploy():
+    script = (REPO_ROOT / "scripts/server-build.sh").read_text()
+
+    assert (
+        "docker_compose up -d celery-worker celery-recording-worker celery-summary-worker"
+        in script
+    )
+    assert (
+        "docker_compose stop celery-worker celery-recording-worker celery-summary-worker"
+        in script
+    )
+    assert "waicomputer-celery-recording-worker" in script
+    assert "Celery recording worker health check" in script
+
+
 def test_server_build_manages_summary_worker_during_deploy():
     script = (REPO_ROOT / "scripts/server-build.sh").read_text()
 
-    assert "docker_compose up -d celery-worker celery-summary-worker" in script
-    assert "docker_compose stop celery-worker celery-summary-worker" in script
+    assert (
+        "docker_compose up -d celery-worker celery-recording-worker celery-summary-worker"
+        in script
+    )
+    assert (
+        "docker_compose stop celery-worker celery-recording-worker celery-summary-worker"
+        in script
+    )
     assert "waicomputer-celery-summary-worker" in script
     assert "Celery summary worker health check" in script
 
@@ -116,6 +146,8 @@ def test_server_build_refuses_to_restart_active_transcription_tasks():
     script = (REPO_ROOT / "scripts/server-build.sh").read_text()
 
     assert 'ALLOW_ACTIVE_TRANSCRIPTION_DEPLOY="${ALLOW_ACTIVE_TRANSCRIPTION_DEPLOY:-0}"' in script
+    assert "waicomputer-celery-worker" in script
+    assert "waicomputer-celery-recording-worker" in script
     assert "app.tasks.media_import.import_uploaded_media" in script
     assert "app.tasks.recording_audio_processing.process_staged_recording_upload" in script
     assert "refusing to deploy while Celery has active transcription work" in script
@@ -148,6 +180,10 @@ def test_production_compose_uses_sha_tagged_deploy_images():
         "${WAICOMPUTER_BACKEND_IMAGE:-waicomputer-backend:local}"
     )
     assert compose["services"]["celery-worker"]["image"] == compose["services"]["api"]["image"]
+    assert (
+        compose["services"]["celery-recording-worker"]["image"]
+        == compose["services"]["api"]["image"]
+    )
     assert (
         compose["services"]["celery-summary-worker"]["image"]
         == compose["services"]["api"]["image"]

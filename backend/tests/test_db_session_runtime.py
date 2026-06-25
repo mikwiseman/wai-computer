@@ -257,6 +257,25 @@ def test_summary_tasks_are_routed_to_dedicated_queue():
     }
 
 
+def test_recording_transcription_tasks_are_routed_to_dedicated_queue():
+    import app.tasks.media_import  # noqa: F401
+    import app.tasks.recording_audio_processing  # noqa: F401
+
+    routes = celery_app_module.celery_app.conf.task_routes
+    queues = {queue.name: queue for queue in celery_app_module.celery_app.conf.task_queues}
+
+    assert queues["recording"].exchange.name == "recording"
+    assert queues["recording"].routing_key == "recording"
+    assert routes["app.tasks.recording_audio_processing.process_staged_recording_upload"] == {
+        "queue": "recording",
+        "routing_key": "recording",
+    }
+    assert routes["app.tasks.media_import.import_uploaded_media"] == {
+        "queue": "recording",
+        "routing_key": "recording",
+    }
+
+
 def test_embedding_backfill_task_is_registered_for_periodic_repair():
     import app.tasks.embedding_backfill  # noqa: F401
 

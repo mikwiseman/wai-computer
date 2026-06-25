@@ -29,7 +29,7 @@ if [[ -z "$GIT_SHA" ]]; then
 fi
 WAICOMPUTER_BACKEND_IMAGE="${WAICOMPUTER_BACKEND_IMAGE:-waicomputer-backend:${GIT_SHA}}"
 WAICOMPUTER_WEB_IMAGE="${WAICOMPUTER_WEB_IMAGE:-waicomputer-web:${GIT_SHA}}"
-DEPLOY_SERVICES=(telegram-bot-api api web celery-worker celery-summary-worker caddy)
+DEPLOY_SERVICES=(telegram-bot-api api web celery-worker celery-recording-worker celery-summary-worker caddy)
 export GIT_SHA GIT_DIRTY WAICOMPUTER_BACKEND_IMAGE WAICOMPUTER_WEB_IMAGE
 
 wait_for_service() {
@@ -113,6 +113,9 @@ prune_stale_deploy_images() {
 }
 
 assert_no_active_transcription_tasks() {
+  local worker_entry
+  local worker_container
+  local worker_service
   local worker_running
   local active_output
   local active_task_names
@@ -135,32 +138,39 @@ assert_no_active_transcription_tasks() {
       ;;
   esac
 
-  worker_running="$(docker inspect --format '{{.State.Running}}' waicomputer-celery-worker 2>/dev/null || true)"
-  if [[ "$worker_running" != "true" ]]; then
-    return 0
-  fi
+  for worker_entry in \
+    "waicomputer-celery-worker:celery-worker" \
+    "waicomputer-celery-recording-worker:celery-recording-worker"; do
+    worker_container="${worker_entry%%:*}"
+    worker_service="${worker_entry##*:}"
+    worker_running="$(docker inspect --format '{{.State.Running}}' "$worker_container" 2>/dev/null || true)"
+    if [[ "$worker_running" != "true" ]]; then
+      continue
+    fi
 
-  if ! active_output="$(docker_compose exec -T celery-worker celery -A app.tasks.celery_app:celery_app inspect active --timeout=5 2>&1)"; then
-    echo "ERROR: could not inspect active Celery tasks before deploy." >&2
-    echo "Refusing to restart the worker without knowing whether transcription work is in flight." >&2
-    echo "Set ALLOW_ACTIVE_TRANSCRIPTION_DEPLOY=1 only for an explicit emergency deploy." >&2
-    exit 1
-  fi
+    if ! active_output="$(docker_compose exec -T "$worker_service" celery -A app.tasks.celery_app:celery_app inspect active --timeout=5 2>&1)"; then
+      echo "ERROR: could not inspect active Celery tasks before deploy for $worker_service." >&2
+      echo "Refusing to restart workers without knowing whether transcription work is in flight." >&2
+      echo "Set ALLOW_ACTIVE_TRANSCRIPTION_DEPLOY=1 only for an explicit emergency deploy." >&2
+      exit 1
+    fi
 
-  active_task_names="$(
-    for task_name in "${critical_task_names[@]}"; do
-      if printf '%s\n' "$active_output" | grep -Fq "$task_name"; then
-        printf '%s\n' "$task_name"
-      fi
-    done | sort -u
-  )"
-  if [[ -n "$active_task_names" ]]; then
-    echo "ERROR: refusing to deploy while Celery has active transcription work." >&2
-    echo "Active task types:" >&2
-    printf '%s\n' "$active_task_names" >&2
-    echo "Wait for these tasks to finish, or set ALLOW_ACTIVE_TRANSCRIPTION_DEPLOY=1 for an explicit emergency deploy." >&2
-    exit 1
-  fi
+    active_task_names="$(
+      for task_name in "${critical_task_names[@]}"; do
+        if printf '%s\n' "$active_output" | grep -Fq "$task_name"; then
+          printf '%s\n' "$task_name"
+        fi
+      done | sort -u
+    )"
+    if [[ -n "$active_task_names" ]]; then
+      echo "ERROR: refusing to deploy while Celery has active transcription work." >&2
+      echo "Worker service: $worker_service" >&2
+      echo "Active task types:" >&2
+      printf '%s\n' "$active_task_names" >&2
+      echo "Wait for these tasks to finish, or set ALLOW_ACTIVE_TRANSCRIPTION_DEPLOY=1 for an explicit emergency deploy." >&2
+      exit 1
+    fi
+  done
 }
 
 require_image() {
@@ -231,7 +241,7 @@ CELERY_STOPPED_FOR_BUILD=false
 restart_celery_on_exit() {
   if [[ "$CELERY_STOPPED_FOR_BUILD" == "true" ]]; then
     echo "Restarting celery workers after interrupted deploy..."
-    docker_compose up -d celery-worker celery-summary-worker || true
+    docker_compose up -d celery-worker celery-recording-worker celery-summary-worker || true
   fi
 }
 trap restart_celery_on_exit EXIT
@@ -247,7 +257,7 @@ if [[ "$ALLOW_SERVER_SIDE_BUILD" == "1" ]]; then
   # building all images concurrently (BuildKit parallelism); stopping the worker
   # first frees ~1 GB of headroom for the heavy web (Next.js) build. Celery's
   # queue must already be drained before a deploy.
-  docker_compose stop celery-worker celery-summary-worker
+  docker_compose stop celery-worker celery-recording-worker celery-summary-worker
   CELERY_STOPPED_FOR_BUILD=true
   docker_compose_timeout build api
   docker_compose_timeout build web
@@ -302,6 +312,13 @@ wait_for_service \
   24 \
   5 \
   "docker logs --tail 200 waicomputer-celery-worker"
+
+wait_for_service \
+  "Celery recording worker health check" \
+  "[[ \"$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}unknown{{end}}' waicomputer-celery-recording-worker 2>/dev/null)\" == healthy ]]" \
+  24 \
+  5 \
+  "docker logs --tail 200 waicomputer-celery-recording-worker"
 
 wait_for_service \
   "Celery summary worker health check" \
