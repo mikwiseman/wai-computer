@@ -230,6 +230,24 @@ def test_recording_audio_processing_task_has_reliability_options():
     )
 
 
+def test_summary_tasks_are_routed_to_dedicated_queue():
+    import app.tasks.item_summary_generation  # noqa: F401
+    import app.tasks.summary_generation  # noqa: F401
+
+    routes = celery_app_module.celery_app.conf.task_routes
+
+    assert celery_app_module.celery_app.conf.task_default_queue == "celery"
+    assert routes["app.tasks.summary_generation.generate_recording_summary"] == {
+        "queue": "summary"
+    }
+    assert routes["app.tasks.summary_generation.recover_missing_summary_generation_jobs"] == {
+        "queue": "summary"
+    }
+    assert routes["app.tasks.item_summary_generation.generate_item_summary"] == {
+        "queue": "summary"
+    }
+
+
 def test_embedding_backfill_task_is_registered_for_periodic_repair():
     import app.tasks.embedding_backfill  # noqa: F401
 

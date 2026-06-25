@@ -10,6 +10,7 @@ from uuid import uuid4
 from celery import Celery
 from celery.schedules import crontab
 from celery.signals import before_task_publish, task_postrun, task_prerun, worker_process_init
+from kombu import Queue
 
 from app.config import get_settings
 from app.core.observability import (
@@ -79,6 +80,22 @@ celery_app.conf.update(
     result_serializer="json",
     timezone="UTC",
     enable_utc=True,
+    task_default_queue="celery",
+    task_queues=(
+        Queue("celery"),
+        Queue("summary"),
+    ),
+    task_routes={
+        "app.tasks.summary_generation.generate_recording_summary": {
+            "queue": "summary"
+        },
+        "app.tasks.summary_generation.recover_missing_summary_generation_jobs": {
+            "queue": "summary"
+        },
+        "app.tasks.item_summary_generation.generate_item_summary": {
+            "queue": "summary"
+        },
+    },
     task_track_started=True,
     task_time_limit=3600,
     worker_prefetch_multiplier=1,

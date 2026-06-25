@@ -29,7 +29,7 @@ if [[ -z "$GIT_SHA" ]]; then
 fi
 WAICOMPUTER_BACKEND_IMAGE="${WAICOMPUTER_BACKEND_IMAGE:-waicomputer-backend:${GIT_SHA}}"
 WAICOMPUTER_WEB_IMAGE="${WAICOMPUTER_WEB_IMAGE:-waicomputer-web:${GIT_SHA}}"
-DEPLOY_SERVICES=(telegram-bot-api api web celery-worker caddy)
+DEPLOY_SERVICES=(telegram-bot-api api web celery-worker celery-summary-worker caddy)
 export GIT_SHA GIT_DIRTY WAICOMPUTER_BACKEND_IMAGE WAICOMPUTER_WEB_IMAGE
 
 wait_for_service() {
@@ -230,8 +230,8 @@ export SENTRY_UPLOAD_REQUIRED=1
 CELERY_STOPPED_FOR_BUILD=false
 restart_celery_on_exit() {
   if [[ "$CELERY_STOPPED_FOR_BUILD" == "true" ]]; then
-    echo "Restarting celery-worker after interrupted deploy..."
-    docker_compose up -d celery-worker || true
+    echo "Restarting celery workers after interrupted deploy..."
+    docker_compose up -d celery-worker celery-summary-worker || true
   fi
 }
 trap restart_celery_on_exit EXIT
@@ -247,7 +247,7 @@ if [[ "$ALLOW_SERVER_SIDE_BUILD" == "1" ]]; then
   # building all images concurrently (BuildKit parallelism); stopping the worker
   # first frees ~1 GB of headroom for the heavy web (Next.js) build. Celery's
   # queue must already be drained before a deploy.
-  docker_compose stop celery-worker
+  docker_compose stop celery-worker celery-summary-worker
   CELERY_STOPPED_FOR_BUILD=true
   docker_compose_timeout build api
   docker_compose_timeout build web
@@ -302,6 +302,13 @@ wait_for_service \
   24 \
   5 \
   "docker logs --tail 200 waicomputer-celery-worker"
+
+wait_for_service \
+  "Celery summary worker health check" \
+  "[[ \"$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}unknown{{end}}' waicomputer-celery-summary-worker 2>/dev/null)\" == healthy ]]" \
+  24 \
+  5 \
+  "docker logs --tail 200 waicomputer-celery-summary-worker"
 
 # Caddy bind-mounts Caddyfile by path. rsync replaces files by rename, giving
 # them a new inode; restart Caddy when the mounted file inside the container does

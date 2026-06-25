@@ -40,7 +40,23 @@ def test_celery_worker_runs_voice_identification_in_isolated_single_task_worker(
     assert "speechbrain_cache:/root/.cache/speechbrain" in worker_service["volumes"]
     assert "speechbrain_cache" in compose["volumes"]
     assert "--concurrency=1" in worker_service["command"]
+    assert "--queues=celery" in worker_service["command"]
     assert worker_service["deploy"]["resources"]["limits"]["memory"] == "1536M"
+
+
+def test_summary_generation_runs_in_dedicated_non_voice_worker():
+    compose = yaml.safe_load((BACKEND_ROOT / "docker-compose.yml").read_text())
+    worker_service = compose["services"]["celery-worker"]
+    summary_worker_service = compose["services"]["celery-summary-worker"]
+
+    assert summary_worker_service["image"] == worker_service["image"]
+    assert summary_worker_service["container_name"] == "waicomputer-celery-summary-worker"
+    assert summary_worker_service["environment"]["VOICE_IDENTIFICATION_ENABLED"] == "false"
+    assert "--queues=summary" in summary_worker_service["command"]
+    assert "--concurrency=1" in summary_worker_service["command"]
+    assert "-B" not in summary_worker_service["command"]
+    assert "speechbrain_cache:/root/.cache/speechbrain" not in summary_worker_service["volumes"]
+    assert summary_worker_service["deploy"]["resources"]["limits"]["memory"] == "512M"
 
 
 def test_production_telegram_media_uses_local_bot_api_service():
@@ -72,8 +88,18 @@ def test_server_build_only_starts_defined_compose_services():
 
     requested = match.group("services").split()
     assert "telegram-bot-api" in requested
+    assert "celery-summary-worker" in requested
     missing = sorted(set(requested) - set(compose["services"]))
     assert missing == []
+
+
+def test_server_build_manages_summary_worker_during_deploy():
+    script = (REPO_ROOT / "scripts/server-build.sh").read_text()
+
+    assert "docker_compose up -d celery-worker celery-summary-worker" in script
+    assert "docker_compose stop celery-worker celery-summary-worker" in script
+    assert "waicomputer-celery-summary-worker" in script
+    assert "Celery summary worker health check" in script
 
 
 def test_server_build_aligns_telegram_webhook_after_public_health():
@@ -122,6 +148,10 @@ def test_production_compose_uses_sha_tagged_deploy_images():
         "${WAICOMPUTER_BACKEND_IMAGE:-waicomputer-backend:local}"
     )
     assert compose["services"]["celery-worker"]["image"] == compose["services"]["api"]["image"]
+    assert (
+        compose["services"]["celery-summary-worker"]["image"]
+        == compose["services"]["api"]["image"]
+    )
     assert compose["services"]["web"]["image"] == (
         "${WAICOMPUTER_WEB_IMAGE:-waicomputer-web:local}"
     )

@@ -258,7 +258,50 @@ services:
       resources:
         limits:
           memory: 1536M
-    command: ["celery", "-A", "app.tasks.celery_app:celery_app", "worker", "--loglevel=info", "--concurrency=1", "-B"]
+    command: ["celery", "-A", "app.tasks.celery_app:celery_app", "worker", "--loglevel=info", "--concurrency=1", "--queues=celery", "-B"]
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A app.tasks.celery_app:celery_app inspect ping -d \"celery@$$HOSTNAME\" --timeout=5 | grep -q OK"]
+      interval: 30s
+      timeout: 10s
+      start_period: 20s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    restart: unless-stopped
+
+  celery-summary-worker:
+    image: ${WAICOMPUTER_BACKEND_IMAGE:-waicomputer-backend:local}
+    build:
+      context: .
+      args:
+        GIT_SHA: ${GIT_SHA:-}
+        GIT_DIRTY: ${GIT_DIRTY:-false}
+    container_name: waicomputer-celery-summary-worker
+    env_file:
+      - ${WAICOMPUTER_ENV_FILE:-.env}
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      REDIS_URL: redis://redis:6379/0
+      VOICE_IDENTIFICATION_ENABLED: "false"
+      GIT_SHA: ${GIT_SHA:-}
+      GIT_DIRTY: ${GIT_DIRTY:-false}
+    volumes:
+      - summary_audio:/var/lib/waicomputer/summary-audio
+    networks:
+      - internal
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+    command: ["celery", "-A", "app.tasks.celery_app:celery_app", "worker", "--loglevel=info", "--concurrency=1", "--queues=summary"]
     healthcheck:
       test: ["CMD-SHELL", "celery -A app.tasks.celery_app:celery_app inspect ping -d \"celery@$$HOSTNAME\" --timeout=5 | grep -q OK"]
       interval: 30s
