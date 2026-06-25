@@ -31,6 +31,7 @@ vi.mock("@/lib/realtime", () => {
     stopResult: TranscriptSegmentInput[] = [];
     stopError: Error | null = null;
     started = false;
+    stopCalls = 0;
 
     constructor(opts: FakeTranscriber["opts"]) {
       this.opts = opts;
@@ -50,6 +51,7 @@ vi.mock("@/lib/realtime", () => {
     }
 
     async stop() {
+      this.stopCalls += 1;
       if (this.stopError) throw this.stopError;
       this.state = "idle";
       return this.stopResult;
@@ -71,6 +73,7 @@ type FakeTranscriberInstance = {
   stopResult: TranscriptSegmentInput[];
   stopError: Error | null;
   started: boolean;
+  stopCalls: number;
 };
 
 // Reach the static `last` instance the component just constructed.
@@ -86,6 +89,20 @@ function segment(text: string): TranscriptSegmentInput {
 
 const getUserMedia = vi.fn();
 const writeText = vi.fn();
+
+function deferred<T>(): {
+  promise: Promise<T>;
+  resolve: (value: T) => void;
+  reject: (error: unknown) => void;
+} {
+  let resolve!: (value: T) => void;
+  let reject!: (error: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
 
 beforeEach(() => {
   const Fake = RealtimeTranscriber as unknown as {
@@ -375,6 +392,46 @@ describe("DictatePanel stop + cleanup", () => {
     expect(writeText).not.toHaveBeenCalled();
     expect(mockedCreateEntry).not.toHaveBeenCalled();
     expect(screen.getByText("Start dictating")).toBeTruthy();
+  });
+
+  it("stops an active transcriber on unmount without copying or logging history", async () => {
+    render(<DictatePanel />);
+    await startDictation();
+    const transcriber = lastTranscriber();
+    act(() => {
+      transcriber.state = "recording";
+      transcriber.opts.onState?.("recording");
+    });
+    transcriber.stopResult = [segment("unmounted text")];
+
+    cleanup();
+
+    await waitFor(() => expect(transcriber.stopCalls).toBe(1));
+    expect(writeText).not.toHaveBeenCalled();
+    expect(mockedCreateEntry).not.toHaveBeenCalled();
+  });
+
+  it("stops a late microphone stream when permission resolves after unmount", async () => {
+    const permission = deferred<MediaStream>();
+    const stopTrack = vi.fn();
+    const lateStream = {
+      getTracks: () => [{ stop: stopTrack }],
+    } as unknown as MediaStream;
+    getUserMedia.mockReturnValueOnce(permission.promise);
+    render(<DictatePanel />);
+
+    fireEvent.click(screen.getByText("Start dictating"));
+    cleanup();
+    await act(async () => {
+      permission.resolve(lateStream);
+      await permission.promise;
+      await Promise.resolve();
+    });
+
+    expect(stopTrack).toHaveBeenCalledTimes(1);
+    expect(
+      (RealtimeTranscriber as unknown as { last: unknown }).last,
+    ).toBeNull();
   });
 });
 

@@ -93,6 +93,20 @@ function setMediaDevices(value: Partial<MediaDevices>): void {
 
 const micStream = { id: "mic" } as unknown as MediaStream;
 
+function deferred<T>(): {
+  promise: Promise<T>;
+  resolve: (value: T) => void;
+  reject: (error: unknown) => void;
+} {
+  let resolve!: (value: T) => void;
+  let reject!: (error: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
+
 // jsdom has no MediaStream. The component does `new MediaStream(audioTracks)`
 // to keep only the system-audio track; without a stub that throws and the
 // system-audio branch silently falls back to mic-only.
@@ -415,5 +429,44 @@ describe("LiveRecorder", () => {
     act(() => transcriber.emitError("Realtime connection lost"));
 
     expect(onError).toHaveBeenCalledWith("Realtime connection lost");
+  });
+
+  it("stops an active transcriber on unmount without saving an empty recording", async () => {
+    const user = userEvent.setup();
+    const { unmount } = render(<LiveRecorder onRecordingComplete={vi.fn()} onError={vi.fn()} />);
+    await user.click(screen.getByRole("button", { name: "Record in browser" }));
+    await waitFor(() => expect(screen.getByText("Listening…")).toBeInTheDocument());
+    const transcriber = FakeTranscriber.instances[0];
+
+    unmount();
+
+    await waitFor(() => expect(transcriber.stopCalls).toBe(1));
+    expect(mockCreateRecording).not.toHaveBeenCalled();
+    expect(mockSaveTranscript).not.toHaveBeenCalled();
+  });
+
+  it("stops a late microphone stream when permission resolves after unmount", async () => {
+    const permission = deferred<MediaStream>();
+    const stopTrack = vi.fn();
+    const lateStream = {
+      getTracks: () => [{ stop: stopTrack }],
+    } as unknown as MediaStream;
+    setMediaDevices({
+      getUserMedia: vi.fn().mockReturnValue(permission.promise),
+    });
+    const { unmount } = render(<LiveRecorder onRecordingComplete={vi.fn()} onError={vi.fn()} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Record in browser" }));
+    unmount();
+    await act(async () => {
+      permission.resolve(lateStream);
+      await permission.promise;
+      await Promise.resolve();
+    });
+
+    expect(stopTrack).toHaveBeenCalledTimes(1);
+    expect(FakeTranscriber.instances).toHaveLength(0);
+    expect(mockCreateRecording).not.toHaveBeenCalled();
+    expect(mockSaveTranscript).not.toHaveBeenCalled();
   });
 });

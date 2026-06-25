@@ -45,6 +45,21 @@ function formatTimer(totalSeconds: number): string {
   return `${minutes}:${secs.toString().padStart(2, "0")}`;
 }
 
+function stopMediaStream(stream: MediaStream): void {
+  stream.getTracks().forEach((track) => track.stop());
+}
+
+function stopMediaStreams(streams: MediaStream[]): void {
+  streams.forEach(stopMediaStream);
+}
+
+function reportRealtimeCleanupError(error: unknown): void {
+  const message = error instanceof Error ? error.message : String(error);
+  if (typeof console !== "undefined") {
+    console.warn("Realtime transcription cleanup failed:", message);
+  }
+}
+
 interface LiveRecorderProps {
   onRecordingComplete: (detail: RecordingDetail) => void;
   onError: (message: string) => void;
@@ -70,6 +85,7 @@ export function LiveRecorder({
     && typeof navigator.mediaDevices?.getDisplayMedia === "function";
   const transcriberRef = useRef<RealtimeTranscriber | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const mountedRef = useRef(true);
 
   const clearTimer = useCallback(() => {
     if (timerRef.current) {
@@ -78,7 +94,21 @@ export function LiveRecorder({
     }
   }, []);
 
-  useEffect(() => () => clearTimer(), [clearTimer]);
+  const teardownTranscriber = useCallback(() => {
+    clearTimer();
+    const transcriber = transcriberRef.current;
+    transcriberRef.current = null;
+    if (!transcriber) return;
+    void transcriber.stop().catch(reportRealtimeCleanupError);
+  }, [clearTimer]);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      teardownTranscriber();
+    };
+  }, [teardownTranscriber]);
 
   const start = useCallback(async () => {
     setCommitted("");
@@ -90,6 +120,10 @@ export function LiveRecorder({
       streams.push(await navigator.mediaDevices.getUserMedia({ audio: true }));
     } catch {
       onError(copy.micDenied);
+      return;
+    }
+    if (!mountedRef.current) {
+      stopMediaStreams(streams);
       return;
     }
     if (includeSystem && supportsSystemAudio) {
@@ -105,6 +139,10 @@ export function LiveRecorder({
         if (audioTracks.length > 0) {
           streams.push(new MediaStream(audioTracks));
         } else {
+          if (!mountedRef.current) {
+            stopMediaStreams(streams);
+            return;
+          }
           setNote(
             locale === "ru"
               ? "Системное аудио не выбрано — запись только с микрофона."
@@ -112,6 +150,10 @@ export function LiveRecorder({
           );
         }
       } catch {
+        if (!mountedRef.current) {
+          stopMediaStreams(streams);
+          return;
+        }
         setNote(
           locale === "ru"
             ? "Системное аудио недоступно — запись только с микрофона."
@@ -119,20 +161,32 @@ export function LiveRecorder({
         );
       }
     }
+    if (!mountedRef.current) {
+      stopMediaStreams(streams);
+      return;
+    }
     const transcriber = new RealtimeTranscriber({
-      onState: setState,
+      onState: (nextState) => {
+        if (mountedRef.current) setState(nextState);
+      },
       onUpdate: ({ committed: c, interim: i }) => {
+        if (!mountedRef.current) return;
         setCommitted(c);
         setInterim(i);
       },
       onError: (message) => {
+        if (!mountedRef.current) return;
         clearTimer();
         onError(message);
       },
     });
     transcriberRef.current = transcriber;
     await transcriber.start(streams);
-    if (transcriber.getState() === "recording") {
+    if (
+      mountedRef.current &&
+      transcriberRef.current === transcriber &&
+      transcriber.getState() === "recording"
+    ) {
       timerRef.current = setInterval(() => setSeconds((s) => s + 1), 1000);
     }
   }, [clearTimer, copy.micDenied, includeSystem, locale, onError, supportsSystemAudio]);
@@ -141,12 +195,12 @@ export function LiveRecorder({
     clearTimer();
     const transcriber = transcriberRef.current;
     if (!transcriber) return;
+    transcriberRef.current = null;
     setState("stopping");
     let segments: TranscriptSegmentInput[];
     try {
       segments = await transcriber.stop();
     } catch (error) {
-      transcriberRef.current = null;
       onError(error instanceof Error ? error.message : "Could not finalize the recording.");
       setState("idle");
       setSeconds(0);
@@ -154,7 +208,6 @@ export function LiveRecorder({
       setInterim("");
       return;
     }
-    transcriberRef.current = null;
     if (segments.length === 0) {
       // Nothing transcribed — don't create an empty recording.
       setState("idle");

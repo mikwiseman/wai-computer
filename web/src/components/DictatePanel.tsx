@@ -98,6 +98,17 @@ function countWords(text: string): number {
   return trimmed ? trimmed.split(/\s+/).length : 0;
 }
 
+function stopMediaStream(stream: MediaStream): void {
+  stream.getTracks().forEach((track) => track.stop());
+}
+
+function reportRealtimeCleanupError(error: unknown): void {
+  const message = error instanceof Error ? error.message : String(error);
+  if (typeof console !== "undefined") {
+    console.warn("Realtime transcription cleanup failed:", message);
+  }
+}
+
 interface DictatePanelProps {
   locale?: Locale;
 }
@@ -114,6 +125,7 @@ export function DictatePanel({ locale = "en" }: DictatePanelProps) {
   const [error, setError] = useState<string | null>(null);
   const transcriberRef = useRef<RealtimeTranscriber | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const mountedRef = useRef(true);
 
   const clearTimer = useCallback(() => {
     if (timerRef.current) {
@@ -122,7 +134,21 @@ export function DictatePanel({ locale = "en" }: DictatePanelProps) {
     }
   }, []);
 
-  useEffect(() => () => clearTimer(), [clearTimer]);
+  const teardownTranscriber = useCallback(() => {
+    clearTimer();
+    const transcriber = transcriberRef.current;
+    transcriberRef.current = null;
+    if (!transcriber) return;
+    void transcriber.stop().catch(reportRealtimeCleanupError);
+  }, [clearTimer]);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      teardownTranscriber();
+    };
+  }, [teardownTranscriber]);
 
   const start = useCallback(async () => {
     setError(null);
@@ -139,21 +165,33 @@ export function DictatePanel({ locale = "en" }: DictatePanelProps) {
       setError(copy.micDenied);
       return;
     }
+    if (!mountedRef.current) {
+      stopMediaStream(stream);
+      return;
+    }
     const transcriber = new RealtimeTranscriber({
       purpose: "dictation",
-      onState: setState,
+      onState: (nextState) => {
+        if (mountedRef.current) setState(nextState);
+      },
       onUpdate: ({ committed: c, interim: i }) => {
+        if (!mountedRef.current) return;
         setCommitted(c);
         setInterim(i);
       },
       onError: (message) => {
+        if (!mountedRef.current) return;
         clearTimer();
         setError(message);
       },
     });
     transcriberRef.current = transcriber;
     await transcriber.start(stream);
-    if (transcriber.getState() === "recording") {
+    if (
+      mountedRef.current &&
+      transcriberRef.current === transcriber &&
+      transcriber.getState() === "recording"
+    ) {
       timerRef.current = setInterval(() => setSeconds((s) => s + 1), 1000);
     }
   }, [clearTimer, copy.micDenied]);
@@ -171,18 +209,17 @@ export function DictatePanel({ locale = "en" }: DictatePanelProps) {
     clearTimer();
     const transcriber = transcriberRef.current;
     if (!transcriber) return;
+    transcriberRef.current = null;
     const elapsed = seconds;
     let segments: TranscriptSegmentInput[];
     try {
       segments = await transcriber.stop();
     } catch (error) {
-      transcriberRef.current = null;
       setPhase("record");
       setState("idle");
       setError(error instanceof Error ? error.message : "Realtime transcription error");
       return;
     }
-    transcriberRef.current = null;
     const raw = segments
       .map((s) => s.text)
       .join(" ")
