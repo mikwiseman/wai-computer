@@ -227,6 +227,157 @@ async def test_import_skips_ready_recording_redelivery_without_staged_file(
 
 
 @pytest.mark.asyncio
+async def test_import_marks_precreated_recording_failed_when_staged_file_missing(
+    db_session, monkeypatch, tmp_path
+) -> None:
+    user = User(email=f"media-missing-{uuid4().hex}@example.com", password_hash="x")
+    db_session.add(user)
+    await db_session.flush()
+    recording = Recording(
+        user_id=user.id,
+        title="missing clip",
+        type="note",
+        status=RecordingStatus.PROCESSING.value,
+    )
+    db_session.add(recording)
+    await db_session.flush()
+    recording_id = recording.id
+
+    @asynccontextmanager
+    async def fake_ctx():
+        yield db_session
+
+    async def fail_import(**kwargs):
+        raise AssertionError("missing staged file must not run media import")
+
+    monkeypatch.setattr(media_import, "get_db_context", fake_ctx)
+    monkeypatch.setattr(media_import, "import_media_as_recording", fail_import)
+
+    await media_import._import(
+        user_id=str(user.id),
+        recording_id=str(recording_id),
+        staged_path=str(tmp_path / "missing.mp4"),
+        filename="clip.mp4",
+        content_type="video/mp4",
+        title=None,
+        language="en",
+    )
+
+    db_session.expire_all()
+    failed = await db_session.get(Recording, recording_id)
+    assert failed is not None
+    assert failed.status == RecordingStatus.FAILED.value
+    assert failed.failure_code == "staged_file_missing"
+    assert failed.failure_message == "Uploaded media file was missing before processing."
+
+
+@pytest.mark.asyncio
+async def test_import_keeps_terminal_recording_when_staged_file_missing(
+    db_session, monkeypatch, tmp_path
+) -> None:
+    user = User(email=f"media-terminal-missing-{uuid4().hex}@example.com", password_hash="x")
+    db_session.add(user)
+    await db_session.flush()
+    recording = Recording(
+        user_id=user.id,
+        title="terminal clip",
+        type="note",
+        status=RecordingStatus.FAILED.value,
+        failure_code="bad_media",
+        failure_message="Original failure.",
+    )
+    db_session.add(recording)
+    await db_session.flush()
+    recording_id = recording.id
+
+    @asynccontextmanager
+    async def fake_ctx():
+        yield db_session
+
+    async def fail_import(**kwargs):
+        raise AssertionError("terminal missing staged file must not run media import")
+
+    monkeypatch.setattr(media_import, "get_db_context", fake_ctx)
+    monkeypatch.setattr(media_import, "import_media_as_recording", fail_import)
+
+    await media_import._import(
+        user_id=str(user.id),
+        recording_id=str(recording_id),
+        staged_path=str(tmp_path / "missing.mp4"),
+        filename="clip.mp4",
+        content_type="video/mp4",
+        title=None,
+        language="en",
+    )
+
+    db_session.expire_all()
+    terminal = await db_session.get(Recording, recording_id)
+    assert terminal is not None
+    assert terminal.status == RecordingStatus.FAILED.value
+    assert terminal.failure_code == "bad_media"
+    assert terminal.failure_message == "Original failure."
+
+
+@pytest.mark.asyncio
+async def test_import_without_precreated_recording_raises_when_staged_file_missing(
+    db_session, monkeypatch, tmp_path
+) -> None:
+    user = User(email=f"media-missing-no-row-{uuid4().hex}@example.com", password_hash="x")
+    db_session.add(user)
+    await db_session.flush()
+
+    @asynccontextmanager
+    async def fake_ctx():
+        yield db_session
+
+    monkeypatch.setattr(media_import, "get_db_context", fake_ctx)
+
+    with pytest.raises(FileNotFoundError):
+        await media_import._import(
+            user_id=str(user.id),
+            staged_path=str(tmp_path / "missing.mp4"),
+            filename="clip.mp4",
+            content_type="video/mp4",
+            title=None,
+            language="en",
+        )
+
+
+@pytest.mark.asyncio
+async def test_import_recording_gone_skips_pipeline(db_session, monkeypatch, tmp_path) -> None:
+    user = User(email=f"media-recording-gone-{uuid4().hex}@example.com", password_hash="x")
+    db_session.add(user)
+    await db_session.flush()
+    staged = tmp_path / "clip.mp4"
+    staged.write_bytes(b"video-bytes")
+
+    @asynccontextmanager
+    async def fake_ctx():
+        yield db_session
+
+    called = False
+
+    async def fake_import(**kwargs):
+        nonlocal called
+        called = True
+
+    monkeypatch.setattr(media_import, "get_db_context", fake_ctx)
+    monkeypatch.setattr(media_import, "import_media_as_recording", fake_import)
+
+    await media_import._import(
+        user_id=str(user.id),
+        recording_id=str(uuid4()),
+        staged_path=str(staged),
+        filename="clip.mp4",
+        content_type="video/mp4",
+        title=None,
+        language="en",
+    )
+
+    assert called is False
+
+
+@pytest.mark.asyncio
 async def test_precreated_recording_is_failed_when_normalization_rejects_media(
     db_session, monkeypatch
 ) -> None:

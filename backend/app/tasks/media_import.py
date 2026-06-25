@@ -28,7 +28,7 @@ from app.core.observability import (
 )
 from app.core.recording_import import import_media_as_recording
 from app.db.session import get_db_context
-from app.models.recording import Recording, RecordingStatus, Segment
+from app.models.recording import ACTIVE_RECORDING_STATUSES, Recording, RecordingStatus, Segment
 from app.models.user import User
 from app.tasks.celery_app import celery_app
 from app.tasks.retry_policy import is_retryable_exception
@@ -41,6 +41,37 @@ async def _recording_has_segments(recording_id: UUID, db: AsyncSession) -> bool:
         select(Segment.id).where(Segment.recording_id == recording_id).limit(1)
     )
     return result.scalar_one_or_none() is not None
+
+
+async def _mark_missing_staged_file(
+    db: AsyncSession,
+    *,
+    recording: Recording,
+    content_type: str | None,
+) -> None:
+    if recording.status not in ACTIVE_RECORDING_STATUSES:
+        logger.info(
+            "media import: terminal recording missing staged file, skipping "
+            "recording_id=%s status=%s",
+            recording.id,
+            recording.status,
+        )
+        return
+    logger.error("media import staged file missing recording_id=%s", recording.id)
+    recording.status = RecordingStatus.FAILED.value
+    recording.failure_code = "staged_file_missing"
+    recording.failure_message = "Uploaded media file was missing before processing."
+    await db.commit()
+    capture_sentry_anomaly(
+        "recording.media_import.staged_file.missing",
+        "Uploaded media staged file was missing before processing",
+        category="recording",
+        extras={
+            "recording_id": str(recording.id),
+            "content_type": content_type,
+        },
+        level="error",
+    )
 
 
 async def _import(
@@ -82,7 +113,17 @@ async def _import(
                     "media import: recording already ready, skipping redelivery"
                 )
                 return
-        data = Path(staged_path).read_bytes()
+        staged_file = Path(staged_path)
+        if not staged_file.exists():
+            if recording is not None:
+                await _mark_missing_staged_file(
+                    db,
+                    recording=recording,
+                    content_type=content_type,
+                )
+                return
+            raise FileNotFoundError(staged_path)
+        data = staged_file.read_bytes()
         await import_media_as_recording(
             db=db,
             user=user,
