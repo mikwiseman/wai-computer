@@ -21,6 +21,25 @@ private actor DictationCommitGate {
     }
 }
 
+private actor DictationCloseGate {
+    private var isOpen = false
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+
+    func wait() async {
+        guard !isOpen else { return }
+        await withCheckedContinuation { continuation in
+            waiters.append(continuation)
+        }
+    }
+
+    func open() {
+        isOpen = true
+        let waiters = waiters
+        self.waiters = []
+        waiters.forEach { $0.resume() }
+    }
+}
+
 private actor SlowOpeningDictationProvider: ProviderSession {
     nonisolated let events: AsyncStream<TranscriptionEvent>
     nonisolated let openStarted: AsyncStream<Void>
@@ -67,6 +86,55 @@ private actor SlowOpeningDictationProvider: ProviderSession {
 
     func wasClosed() -> Bool {
         didClose
+    }
+}
+
+private actor BlockingCloseDictationProvider: ProviderSession {
+    nonisolated let events: AsyncStream<TranscriptionEvent>
+    nonisolated let closeStarted: AsyncStream<Void>
+
+    private let eventContinuation: AsyncStream<TranscriptionEvent>.Continuation
+    private let closeStartedContinuation: AsyncStream<Void>.Continuation
+    private let gate: DictationCloseGate
+    private let finalSegment: LiveTranscriptSegment
+    private var sendCount = 0
+
+    init(gate: DictationCloseGate, finalSegment: LiveTranscriptSegment) {
+        self.gate = gate
+        self.finalSegment = finalSegment
+
+        let events = AsyncStream.makeStream(of: TranscriptionEvent.self)
+        self.events = events.stream
+        self.eventContinuation = events.continuation
+
+        let closeStarted = AsyncStream.makeStream(of: Void.self)
+        self.closeStarted = closeStarted.stream
+        self.closeStartedContinuation = closeStarted.continuation
+    }
+
+    func open() async throws {}
+
+    func send(pcm16: Data) async throws {
+        sendCount += 1
+    }
+
+    func endTurn() async throws {
+        eventContinuation.yield(.committed(finalSegment))
+    }
+
+    func close(timeout: Duration) async throws -> [LiveTranscriptSegment] {
+        closeStartedContinuation.yield()
+        await gate.wait()
+        eventContinuation.finish()
+        return [finalSegment]
+    }
+
+    func cancel() async {
+        eventContinuation.finish()
+    }
+
+    func sentChunks() -> Int {
+        sendCount
     }
 }
 
@@ -163,6 +231,50 @@ final class DictationSessionCommitTests: XCTestCase {
         XCTAssertEqual(outcome.segments.map(\.text), ["hello world today"])
     }
 
+    func testCommitStopsSendingLiveAudioDuringProviderCloseDrain() async throws {
+        let gate = DictationCloseGate()
+        let finalSegment = LiveTranscriptSegment(
+            text: "ready to send",
+            speaker: nil,
+            isFinal: true,
+            startMs: 0,
+            endMs: 900,
+            confidence: 0.95
+        )
+        let provider = BlockingCloseDictationProvider(gate: gate, finalSegment: finalSegment)
+        let harness = try makeLiveAudioSession(provider: provider)
+
+        try await harness.session.arm()
+
+        _ = harness.continuation.yield(try XCTUnwrap(MockAudioCapture.constantBuffer(
+            value: 0.25,
+            frameCount: 160
+        )))
+        try await waitForSentChunks(provider, count: 1)
+
+        let commitTask = Task {
+            try await harness.session.commit(timeout: .seconds(1))
+        }
+
+        var closeStarted = provider.closeStarted.makeAsyncIterator()
+        _ = await closeStarted.next()
+
+        _ = harness.continuation.yield(try XCTUnwrap(MockAudioCapture.constantBuffer(
+            value: 0.5,
+            frameCount: 160
+        )))
+        try await Task.sleep(for: .milliseconds(150))
+
+        let chunksAfterFinalizing = await provider.sentChunks()
+        XCTAssertEqual(chunksAfterFinalizing, 1)
+
+        await gate.open()
+        harness.continuation.finish()
+
+        let outcome = try await commitTask.value
+        XCTAssertEqual(outcome.transcript, "ready to send")
+    }
+
     private func makeSession(provider: any ProviderSession) throws -> DictationSession {
         let (stream, continuation) = AsyncStream.makeStream(of: AVAudioPCMBuffer.self)
         continuation.finish()
@@ -180,5 +292,53 @@ final class DictationSessionCommitTests: XCTestCase {
             outputFormat: format
         )
         return DictationSession(provider: provider, lease: lease, host: AudioEngineHost.shared)
+    }
+
+    private struct LiveAudioSessionHarness {
+        let session: DictationSession
+        let continuation: AsyncStream<AVAudioPCMBuffer>.Continuation
+    }
+
+    private func makeLiveAudioSession(
+        provider: any ProviderSession
+    ) throws -> LiveAudioSessionHarness {
+        let (stream, continuation) = AsyncStream.makeStream(of: AVAudioPCMBuffer.self)
+        let format = try XCTUnwrap(AVAudioFormat(
+            commonFormat: .pcmFormatFloat32,
+            sampleRate: 16_000,
+            channels: 1,
+            interleaved: false
+        ))
+        let lease = AudioEngineHost.Lease(
+            id: UUID(),
+            preRoll: [],
+            buffers: stream,
+            nativeInputFormat: format,
+            outputFormat: format
+        )
+        return LiveAudioSessionHarness(
+            session: DictationSession(
+                provider: provider,
+                lease: lease,
+                host: AudioEngineHost.shared
+            ),
+            continuation: continuation
+        )
+    }
+
+    private func waitForSentChunks(
+        _ provider: BlockingCloseDictationProvider,
+        count: Int,
+        timeout: Duration = .seconds(1)
+    ) async throws {
+        let clock = ContinuousClock()
+        let deadline = clock.now + timeout
+        while clock.now < deadline {
+            if await provider.sentChunks() >= count {
+                return
+            }
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        XCTFail("Timed out waiting for \(count) sent chunks")
     }
 }

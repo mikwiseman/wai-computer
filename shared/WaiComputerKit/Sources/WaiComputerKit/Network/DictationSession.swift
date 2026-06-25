@@ -234,6 +234,7 @@ public actor DictationSession {
     }
 
     private func sendBuffer(_ buffer: AVAudioPCMBuffer) async {
+        guard phase == .listening else { return }
         guard let pcm16 = AudioEncoder().encode(buffer) else { return }
         do {
             try await provider.send(pcm16: pcm16)
