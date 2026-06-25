@@ -202,6 +202,12 @@ async def mark_recording_processing_failed(
     failed.status = RecordingStatus.FAILED.value
     failed.failure_code = failure_code
     failed.failure_message = sanitize_failure_message(failure_message)
+    await fail_active_summary_generation_jobs(
+        db,
+        recording_id=recording_id,
+        error_code="recording_processing_failed",
+        error_message="Recording processing failed before transcript was available.",
+    )
     await db.commit()
 
 

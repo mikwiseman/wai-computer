@@ -15,6 +15,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import recording_audio_processing
 from app.core.recording_audio_processing import process_staged_recording_upload
+from app.core.summary_generation import (
+    WAITING_FOR_TRANSCRIPT_HASH,
+    WAITING_FOR_TRANSCRIPT_STAGE,
+)
 from app.core.transcript_utils import TranscriptResult
 from app.models.billing import UsageWeek
 from app.models.person import Person, RecordingSpeakerEmbedding
@@ -266,6 +270,52 @@ async def test_mark_recording_processing_failed_keeps_ready_recording_terminal(
     assert recording.title == "Already transcribed"
     assert recording.failure_code is None
     assert recording.failure_message is None
+
+
+@pytest.mark.asyncio
+async def test_mark_recording_processing_failed_fails_waiting_summary_job(
+    db_session: AsyncSession,
+) -> None:
+    user = User(email="processing-summary-waiting@example.com", password_hash="x")
+    db_session.add(user)
+    await db_session.flush()
+    recording = Recording(
+        user_id=user.id,
+        title="Processing",
+        type="meeting",
+        status=RecordingStatus.PROCESSING.value,
+        uploaded_at=datetime.now(timezone.utc),
+        language="en",
+    )
+    db_session.add(recording)
+    await db_session.flush()
+    job = SummaryGenerationJob(
+        recording_id=recording.id,
+        user_id=user.id,
+        status=SummaryGenerationStatus.QUEUED.value,
+        stage=WAITING_FOR_TRANSCRIPT_STAGE,
+        progress_percent=5,
+        transcript_hash=WAITING_FOR_TRANSCRIPT_HASH,
+    )
+    db_session.add(job)
+    await db_session.commit()
+
+    await recording_audio_processing.mark_recording_processing_failed(
+        db_session,
+        recording_id=recording.id,
+        failure_code="provider_rejected_audio",
+        failure_message="The transcription provider rejected this audio file.",
+    )
+
+    await db_session.refresh(recording)
+    await db_session.refresh(job)
+    assert recording.status == RecordingStatus.FAILED.value
+    assert recording.failure_code == "provider_rejected_audio"
+    assert job.status == SummaryGenerationStatus.FAILED.value
+    assert job.stage == "failed"
+    assert job.progress_percent == 100
+    assert job.error_code == "recording_processing_failed"
+    assert job.failed_at is not None
 
 
 @pytest.mark.asyncio
