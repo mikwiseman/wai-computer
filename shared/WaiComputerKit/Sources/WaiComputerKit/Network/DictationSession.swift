@@ -239,7 +239,12 @@ public actor DictationSession {
         do {
             try await provider.send(pcm16: pcm16)
         } catch {
+            guard phase == .listening else { return }
+            let message = "provider.send: \(String(describing: error))"
+            phase = .failed(message)
             sessionLog.warning("[Session \(self.id.uuidString, privacy: .public)] audio send failed")
+            await provider.cancel()
+            await stopBackgroundWorkAndReleaseLease()
         }
     }
 

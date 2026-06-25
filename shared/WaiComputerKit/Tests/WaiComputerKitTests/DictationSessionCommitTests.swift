@@ -183,6 +183,48 @@ private actor ReplacementEventDictationProvider: ProviderSession {
     }
 }
 
+private actor FailingSendDictationProvider: ProviderSession {
+    nonisolated let events: AsyncStream<TranscriptionEvent>
+    nonisolated let sendStarted: AsyncStream<Void>
+
+    private let eventContinuation: AsyncStream<TranscriptionEvent>.Continuation
+    private let sendStartedContinuation: AsyncStream<Void>.Continuation
+    private var cancelCount = 0
+
+    init() {
+        let events = AsyncStream.makeStream(of: TranscriptionEvent.self)
+        self.events = events.stream
+        self.eventContinuation = events.continuation
+
+        let sendStarted = AsyncStream.makeStream(of: Void.self)
+        self.sendStarted = sendStarted.stream
+        self.sendStartedContinuation = sendStarted.continuation
+    }
+
+    func open() async throws {}
+
+    func send(pcm16: Data) async throws {
+        sendStartedContinuation.yield()
+        throw ProviderError.transcriberInternal(message: "socket send failed")
+    }
+
+    func endTurn() async throws {}
+
+    func close(timeout: Duration) async throws -> [LiveTranscriptSegment] {
+        eventContinuation.finish()
+        return []
+    }
+
+    func cancel() async {
+        cancelCount += 1
+        eventContinuation.finish()
+    }
+
+    func wasCancelled() -> Bool {
+        cancelCount > 0
+    }
+}
+
 final class DictationSessionCommitTests: XCTestCase {
     func testCommitDuringArmingReturnsDeferredCommitOutcome() async throws {
         let gate = DictationCommitGate()
@@ -275,6 +317,34 @@ final class DictationSessionCommitTests: XCTestCase {
         XCTAssertEqual(outcome.transcript, "ready to send")
     }
 
+    func testAudioSendFailureFailsSessionAndCancelsProvider() async throws {
+        let provider = FailingSendDictationProvider()
+        let harness = try makeLiveAudioSession(provider: provider)
+
+        try await harness.session.arm()
+        var sendStarted = provider.sendStarted.makeAsyncIterator()
+
+        _ = harness.continuation.yield(try XCTUnwrap(MockAudioCapture.constantBuffer(
+            value: 0.25,
+            frameCount: 160
+        )))
+        _ = await sendStarted.next()
+
+        let failureMessage = try await waitForFailedPhase(harness.session)
+        XCTAssertTrue(failureMessage.contains("provider.send"))
+        let providerWasCancelled = await provider.wasCancelled()
+        XCTAssertTrue(providerWasCancelled)
+
+        do {
+            _ = try await harness.session.commit(timeout: .milliseconds(100))
+            XCTFail("commit should throw after an audio send failure")
+        } catch {
+            XCTAssertTrue(String(describing: error).contains("socket send failed"))
+        }
+
+        harness.continuation.finish()
+    }
+
     private func makeSession(provider: any ProviderSession) throws -> DictationSession {
         let (stream, continuation) = AsyncStream.makeStream(of: AVAudioPCMBuffer.self)
         continuation.finish()
@@ -340,5 +410,21 @@ final class DictationSessionCommitTests: XCTestCase {
             try await Task.sleep(for: .milliseconds(20))
         }
         XCTFail("Timed out waiting for \(count) sent chunks")
+    }
+
+    private func waitForFailedPhase(
+        _ session: DictationSession,
+        timeout: Duration = .seconds(1)
+    ) async throws -> String {
+        let clock = ContinuousClock()
+        let deadline = clock.now + timeout
+        while clock.now < deadline {
+            if case .failed(let message) = await session.phase {
+                return message
+            }
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        XCTFail("Timed out waiting for failed phase")
+        return ""
     }
 }
