@@ -235,16 +235,25 @@ def test_summary_tasks_are_routed_to_dedicated_queue():
     import app.tasks.summary_generation  # noqa: F401
 
     routes = celery_app_module.celery_app.conf.task_routes
+    queues = {queue.name: queue for queue in celery_app_module.celery_app.conf.task_queues}
 
     assert celery_app_module.celery_app.conf.task_default_queue == "celery"
+    assert celery_app_module.celery_app.conf.task_default_routing_key == "celery"
+    assert queues["celery"].exchange.name == "celery"
+    assert queues["celery"].routing_key == "celery"
+    assert queues["summary"].exchange.name == "summary"
+    assert queues["summary"].routing_key == "summary"
     assert routes["app.tasks.summary_generation.generate_recording_summary"] == {
-        "queue": "summary"
+        "queue": "summary",
+        "routing_key": "summary",
     }
     assert routes["app.tasks.summary_generation.recover_missing_summary_generation_jobs"] == {
-        "queue": "summary"
+        "queue": "summary",
+        "routing_key": "summary",
     }
     assert routes["app.tasks.item_summary_generation.generate_item_summary"] == {
-        "queue": "summary"
+        "queue": "summary",
+        "routing_key": "summary",
     }
 
 

@@ -10,7 +10,7 @@ from uuid import uuid4
 from celery import Celery
 from celery.schedules import crontab
 from celery.signals import before_task_publish, task_postrun, task_prerun, worker_process_init
-from kombu import Queue
+from kombu import Exchange, Queue
 
 from app.config import get_settings
 from app.core.observability import (
@@ -74,6 +74,9 @@ celery_app = Celery(
     backend=settings.redis_url,
 )
 
+DEFAULT_TASK_EXCHANGE = Exchange("celery", type="direct")
+SUMMARY_TASK_EXCHANGE = Exchange("summary", type="direct")
+
 celery_app.conf.update(
     task_serializer="json",
     accept_content=["json"],
@@ -81,19 +84,24 @@ celery_app.conf.update(
     timezone="UTC",
     enable_utc=True,
     task_default_queue="celery",
+    task_default_exchange="celery",
+    task_default_routing_key="celery",
     task_queues=(
-        Queue("celery"),
-        Queue("summary"),
+        Queue("celery", DEFAULT_TASK_EXCHANGE, routing_key="celery"),
+        Queue("summary", SUMMARY_TASK_EXCHANGE, routing_key="summary"),
     ),
     task_routes={
         "app.tasks.summary_generation.generate_recording_summary": {
-            "queue": "summary"
+            "queue": "summary",
+            "routing_key": "summary",
         },
         "app.tasks.summary_generation.recover_missing_summary_generation_jobs": {
-            "queue": "summary"
+            "queue": "summary",
+            "routing_key": "summary",
         },
         "app.tasks.item_summary_generation.generate_item_summary": {
-            "queue": "summary"
+            "queue": "summary",
+            "routing_key": "summary",
         },
     },
     task_track_started=True,
