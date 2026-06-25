@@ -489,6 +489,51 @@ describe("RealtimeTranscriber audio streaming", () => {
     expect(ws.sent).toContainEqual(int16.buffer);
   });
 
+  it("fails and tears down when live PCM cannot be sent", async () => {
+    const errors: string[] = [];
+    const states: string[] = [];
+    const transcriber = new RealtimeTranscriber({
+      onError: (message) => errors.push(message),
+      onState: (state) => states.push(state),
+    });
+    mockedCreateSession.mockResolvedValue(sessionResponse());
+    const stream = fakeStream();
+    const ws = await startRecording(transcriber, stream.mediaStream);
+
+    ws.throwOnSend = true;
+    mockedDownsample.mockReturnValue(new Int16Array([11, 12]));
+    lastAudioWorkletNode?.port.onmessage?.({ data: new Float32Array([0.5]) } as MessageEvent);
+
+    expect(errors).toEqual(["send failed"]);
+    expect(states.at(-1)).toBe("error");
+    expect(transcriber.getState()).toBe("error");
+    expect(stream.stops).toEqual([1]);
+    expect(ws.closeCalls).toBe(1);
+  });
+
+  it("fails startup when buffered PCM cannot be flushed to the opened socket", async () => {
+    const errors: string[] = [];
+    const transcriber = new RealtimeTranscriber({ onError: (message) => errors.push(message) });
+    mockedCreateSession.mockResolvedValue(sessionResponse());
+    const stream = fakeStream();
+    const startPromise = transcriber.start(stream.mediaStream);
+
+    await vi.waitFor(() => expect(lastAudioWorkletNode).not.toBeNull());
+    mockedDownsample.mockReturnValueOnce(new Int16Array([21, 22]));
+    lastAudioWorkletNode?.port.onmessage?.({ data: new Float32Array([0.2]) } as MessageEvent);
+    await vi.waitFor(() => expect(FakeWebSocket.instances.length).toBe(1));
+
+    const ws = FakeWebSocket.instances[0];
+    ws.throwOnSend = true;
+    ws.readyState = WS_OPEN;
+    ws.onopen?.();
+    await startPromise;
+
+    expect(errors).toEqual(["send failed"]);
+    expect(transcriber.getState()).toBe("error");
+    expect(stream.stops).toEqual([1]);
+  });
+
   it("drops worklet PCM when the socket is not OPEN", async () => {
     const transcriber = new RealtimeTranscriber();
     mockedCreateSession.mockResolvedValue(sessionResponse());
@@ -500,6 +545,29 @@ describe("RealtimeTranscriber audio streaming", () => {
     lastAudioWorkletNode?.port.onmessage?.({ data: new Float32Array([0.5]) } as MessageEvent);
 
     expect(ws.sent.length).toBe(before);
+  });
+});
+
+describe("RealtimeTranscriber keep-alive failures", () => {
+  it("fails and tears down when a KeepAlive frame cannot be sent", async () => {
+    const errors: string[] = [];
+    const states: string[] = [];
+    const transcriber = new RealtimeTranscriber({
+      onError: (message) => errors.push(message),
+      onState: (state) => states.push(state),
+    });
+    mockedCreateSession.mockResolvedValue(sessionResponse({ keep_alive_interval_seconds: 5 }));
+    const stream = fakeStream();
+    const ws = await startRecording(transcriber, stream.mediaStream);
+
+    ws.throwOnSend = true;
+    vi.advanceTimersByTime(5000);
+
+    expect(errors).toEqual(["send failed"]);
+    expect(states.at(-1)).toBe("error");
+    expect(transcriber.getState()).toBe("error");
+    expect(stream.stops).toEqual([1]);
+    expect(ws.closeCalls).toBe(1);
   });
 });
 

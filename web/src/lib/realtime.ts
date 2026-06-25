@@ -248,10 +248,14 @@ export class RealtimeTranscriber {
             (session.keep_alive_interval_seconds ?? DEFAULT_KEEP_ALIVE_INTERVAL_SECONDS) * 1000;
           this.keepAlive = setInterval(() => {
             if (ws.readyState === WebSocket.OPEN) {
-              ws.send(JSON.stringify({ type: "KeepAlive" }));
+              this.sendSocketPayload(ws, JSON.stringify({ type: "KeepAlive" }));
             }
           }, intervalMs);
-          this.flushPendingAudio();
+          const flushError = this.flushPendingAudio();
+          if (flushError) {
+            reject(flushError);
+            return;
+          }
           resolve();
         } catch (error) {
           reject(error);
@@ -307,8 +311,8 @@ export class RealtimeTranscriber {
   private sendOrBufferAudio(payload: ArrayBufferLike): void {
     const ws = this.ws;
     if (ws && ws.readyState === WebSocket.OPEN) {
-      this.flushPendingAudio();
-      ws.send(payload);
+      if (this.flushPendingAudio()) return;
+      this.sendSocketPayload(ws, payload);
       return;
     }
     if (this.state !== "connecting") return;
@@ -319,13 +323,27 @@ export class RealtimeTranscriber {
     }
   }
 
-  private flushPendingAudio(): void {
+  private flushPendingAudio(): Error | null {
     const ws = this.ws;
-    if (!ws || ws.readyState !== WebSocket.OPEN || this.pendingAudio.length === 0) return;
+    if (!ws || ws.readyState !== WebSocket.OPEN || this.pendingAudio.length === 0) return null;
     for (const payload of this.pendingAudio) {
-      ws.send(payload);
+      const error = this.sendSocketPayload(ws, payload);
+      if (error) return error;
     }
     this.clearPendingAudio();
+    return null;
+  }
+
+  private sendSocketPayload(ws: WebSocket, payload: string | ArrayBufferLike): Error | null {
+    try {
+      ws.send(payload);
+      return null;
+    } catch (error) {
+      const normalized =
+        error instanceof Error ? error : new Error("Realtime transcription send failed.");
+      this.fail(normalized);
+      return normalized;
+    }
   }
 
   private clearPendingAudio(): void {
