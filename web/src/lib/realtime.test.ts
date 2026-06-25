@@ -717,11 +717,13 @@ describe("RealtimeTranscriber.stop", () => {
     } as MessageEvent);
 
     const stopPromise = transcriber.stop();
+    expect(ws.sent).toContainEqual(JSON.stringify({ type: "Finalize" }));
+    await vi.advanceTimersByTimeAsync(2500);
+    expect(ws.sent).toContainEqual(JSON.stringify({ type: "CloseStream" }));
     ws.readyState = WS_CLOSED;
     ws.onclose?.();
     const segments = await stopPromise;
 
-    expect(ws.sent).toContainEqual(JSON.stringify({ type: "CloseStream" }));
     expect(states).toEqual(["connecting", "recording", "stopping", "idle"]);
     expect(transcriber.getState()).toBe("idle");
     expect(segments).toHaveLength(1);
@@ -742,7 +744,7 @@ describe("RealtimeTranscriber.stop", () => {
     stopPromise.then(settled, settled);
     await Promise.resolve();
 
-    expect(ws.sent).toContainEqual(JSON.stringify({ type: "CloseStream" }));
+    expect(ws.sent).toContainEqual(JSON.stringify({ type: "Finalize" }));
     expect(ws.closeCalls).toBe(0);
     expect(settled).not.toHaveBeenCalled();
     expect(stream.stops).toEqual([1]);
@@ -750,13 +752,49 @@ describe("RealtimeTranscriber.stop", () => {
     ws.onmessage?.({
       data: JSON.stringify({
         is_final: true,
+        from_finalize: true,
         channel: { alternatives: [{ transcript: "late final" }] },
       }),
     } as MessageEvent);
+    await vi.advanceTimersByTimeAsync(650);
+    expect(ws.sent).toContainEqual(JSON.stringify({ type: "CloseStream" }));
     ws.readyState = WS_CLOSED;
     ws.onclose?.();
 
     await expect(stopPromise).resolves.toMatchObject([{ text: "late final" }]);
+    expect(transcriber.getState()).toBe("idle");
+  });
+
+  it("returns late final frames after a quiet drain even when the provider socket stays open", async () => {
+    const transcriber = new RealtimeTranscriber();
+    mockedCreateSession.mockResolvedValue(sessionResponse());
+    const stream = fakeStream();
+    const ws = await startRecording(transcriber, stream.mediaStream);
+
+    const stopPromise = transcriber.stop();
+    await vi.advanceTimersByTimeAsync(2500);
+    expect(ws.sent).toContainEqual(JSON.stringify({ type: "CloseStream" }));
+    let settled: "resolved" | "rejected" | undefined;
+    stopPromise.then(
+      () => {
+        settled = "resolved";
+      },
+      () => {
+        settled = "rejected";
+      },
+    );
+
+    ws.onmessage?.({
+      data: JSON.stringify({
+        is_final: true,
+        channel: { alternatives: [{ transcript: "late quiet final" }] },
+      }),
+    } as MessageEvent);
+    await vi.advanceTimersByTimeAsync(1000);
+
+    expect(settled).toBe("resolved");
+    await expect(stopPromise).resolves.toMatchObject([{ text: "late quiet final" }]);
+    expect(ws.closeCalls).toBe(1);
     expect(transcriber.getState()).toBe("idle");
   });
 
@@ -808,20 +846,19 @@ describe("RealtimeTranscriber.stop", () => {
     expect(errors).toEqual([]);
   });
 
-  it("rejects when the provider close drain times out", async () => {
+  it("closes locally when the provider close drain has no transcript activity", async () => {
     const transcriber = new RealtimeTranscriber();
     mockedCreateSession.mockResolvedValue(sessionResponse());
     const ws = await startRecording(transcriber, fakeStream().mediaStream);
 
     const stopPromise = transcriber.stop();
-    const expectedRejection = expect(stopPromise).rejects.toThrow(
-      "Realtime transcription did not finish.",
-    );
-    await vi.advanceTimersByTimeAsync(5000);
+    await vi.advanceTimersByTimeAsync(2500);
+    expect(ws.sent).toContainEqual(JSON.stringify({ type: "CloseStream" }));
+    await vi.advanceTimersByTimeAsync(2500);
 
-    await expectedRejection;
+    await expect(stopPromise).resolves.toEqual([]);
     expect(ws.closeCalls).toBe(1);
-    expect(transcriber.getState()).toBe("error");
+    expect(transcriber.getState()).toBe("idle");
   });
 });
 

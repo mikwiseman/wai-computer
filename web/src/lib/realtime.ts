@@ -61,6 +61,10 @@ const STOP_CLOSE_TIMEOUT_MS = 5000;
 const DEFAULT_KEEP_ALIVE_INTERVAL_SECONDS = 4;
 const FINAL_REPLACEMENT_START_TOLERANCE_MS = 20;
 const STARTUP_AUDIO_BUFFER_MAX_BYTES = 1_048_576;
+const REALTIME_DRAIN_POLL_INTERVAL_MS = 50;
+const REALTIME_DRAIN_MINIMUM_WAIT_MS = 650;
+const REALTIME_DRAIN_NO_TRANSCRIPT_WAIT_MS = 2500;
+const REALTIME_DRAIN_QUIET_WINDOW_MS = 900;
 
 function realtimeResultTiming(
   root: Record<string, unknown>,
@@ -155,6 +159,9 @@ export class RealtimeTranscriber {
   private readonly pendingAudio: ArrayBufferLike[] = [];
   private pendingAudioBytes = 0;
   private stopRequested = false;
+  private didSendFinalize = false;
+  private finalizationMarkerReceived = false;
+  private lastRealtimeEventAt: number | null = null;
   private readonly segments: TranscriptSegmentInput[] = [];
   private readonly opts: RealtimeTranscriberOptions;
 
@@ -182,6 +189,9 @@ export class RealtimeTranscriber {
   async start(input: MediaStream | MediaStream[]): Promise<void> {
     if (this.state !== "idle") return;
     this.stopRequested = false;
+    this.didSendFinalize = false;
+    this.finalizationMarkerReceived = false;
+    this.lastRealtimeEventAt = null;
     this.streams = Array.isArray(input) ? input : [input];
     this.setState("connecting");
     try {
@@ -353,7 +363,9 @@ export class RealtimeTranscriber {
 
   private onMessage(event: MessageEvent): void {
     if (typeof event.data !== "string") return;
+    const root = parseRealtimeRoot(event.data);
     const result = parseRealtimeMessage(event.data);
+    this.recordRealtimeActivity(root, result);
     if (!result) return;
     if (result.isFinal) {
       const hasProviderTiming = result.startMs != null || result.endMs != null;
@@ -381,6 +393,36 @@ export class RealtimeTranscriber {
     this.opts.onUpdate?.({ committed: this.committedText, interim: this.interimText });
   }
 
+  private recordRealtimeActivity(
+    root: Record<string, unknown> | null,
+    result: RealtimeResult | null,
+  ): void {
+    if (!root) return;
+    const type = typeof root.type === "string" ? root.type : "";
+    if (type === "UtteranceEnd") {
+      this.markRealtimeEvent();
+      return;
+    }
+    if (type === "Metadata" && this.didSendFinalize) {
+      this.markRealtimeEvent(true);
+      return;
+    }
+    if (root.from_finalize === true) {
+      this.markRealtimeEvent(true);
+      return;
+    }
+    if (result) {
+      this.markRealtimeEvent();
+    }
+  }
+
+  private markRealtimeEvent(finalizationMarker = false): void {
+    this.lastRealtimeEventAt = Date.now();
+    if (finalizationMarker) {
+      this.finalizationMarkerReceived = true;
+    }
+  }
+
   async stop(): Promise<TranscriptSegmentInput[]> {
     if (this.state === "idle" || this.state === "stopping") return this.segments;
     this.stopRequested = true;
@@ -392,9 +434,15 @@ export class RealtimeTranscriber {
       return this.segments;
     }
     try {
-      ws.send(JSON.stringify({ type: "CloseStream" }));
+      this.sendStopControlPayload(ws, "Finalize");
+      this.didSendFinalize = true;
       this.cleanupAudio();
-      await this.waitForSocketClose(ws, STOP_CLOSE_TIMEOUT_MS);
+      await this.waitForRealtimeDrain(ws, STOP_CLOSE_TIMEOUT_MS);
+      if (ws.readyState === WebSocket.OPEN) {
+        this.lastRealtimeEventAt = null;
+        this.sendStopControlPayload(ws, "CloseStream");
+        await this.waitForRealtimeDrain(ws, STOP_CLOSE_TIMEOUT_MS);
+      }
       this.cleanupSocket();
       this.setState("idle");
       return this.segments;
@@ -402,6 +450,14 @@ export class RealtimeTranscriber {
       this.cleanup();
       this.setState("error");
       throw error;
+    }
+  }
+
+  private sendStopControlPayload(ws: WebSocket, type: "Finalize" | "CloseStream"): void {
+    try {
+      ws.send(JSON.stringify({ type }));
+    } catch (error) {
+      throw error instanceof Error ? error : new Error("Realtime transcription send failed.");
     }
   }
 
@@ -458,26 +514,66 @@ export class RealtimeTranscriber {
     this.ws = null;
   }
 
-  private waitForSocketClose(ws: WebSocket, timeoutMs: number): Promise<void> {
+  private waitForRealtimeDrain(ws: WebSocket, timeoutMs: number): Promise<void> {
     if (ws.readyState === WebSocket.CLOSED) return Promise.resolve();
     return new Promise((resolve, reject) => {
       const previousOnClose = ws.onclose;
       const previousOnError = ws.onerror;
       let settled = false;
+      let timer: ReturnType<typeof setTimeout> | null = null;
+      const startedAt = Date.now();
+      const deadlineAt = startedAt + timeoutMs;
       const finish = (settle: () => void): void => {
         if (settled) return;
         settled = true;
-        clearTimeout(timer);
+        if (timer) clearTimeout(timer);
         ws.onclose = previousOnClose;
         ws.onerror = previousOnError;
         settle();
       };
-      const timer = setTimeout(() => {
-        finish(() => reject(new Error("Realtime transcription did not finish.")));
-      }, timeoutMs);
+      const poll = (): void => {
+        if (
+          ws.readyState === WebSocket.CLOSED ||
+          !this.shouldKeepWaitingForRealtimeDrain(startedAt, deadlineAt)
+        ) {
+          finish(resolve);
+          return;
+        }
+        timer = setTimeout(poll, REALTIME_DRAIN_POLL_INTERVAL_MS);
+      };
       ws.onclose = () => finish(resolve);
       ws.onerror = () =>
         finish(() => reject(new Error("Realtime transcription connection failed during stop.")));
+      poll();
     });
+  }
+
+  private shouldKeepWaitingForRealtimeDrain(startedAt: number, deadlineAt: number): boolean {
+    const now = Date.now();
+    if (now >= deadlineAt) return false;
+
+    const minimumWaitUntil = startedAt + REALTIME_DRAIN_MINIMUM_WAIT_MS;
+    if (this.finalizationMarkerReceived && now >= minimumWaitUntil) {
+      return false;
+    }
+
+    if (this.lastRealtimeEventAt != null) {
+      return !(
+        now >= minimumWaitUntil &&
+        now - this.lastRealtimeEventAt >= REALTIME_DRAIN_QUIET_WINDOW_MS
+      );
+    }
+
+    return now < startedAt + REALTIME_DRAIN_NO_TRANSCRIPT_WAIT_MS;
+  }
+}
+
+function parseRealtimeRoot(raw: string): Record<string, unknown> | null {
+  try {
+    const payload = JSON.parse(raw);
+    if (!payload || typeof payload !== "object" || Array.isArray(payload)) return null;
+    return payload as Record<string, unknown>;
+  } catch {
+    return null;
   }
 }
