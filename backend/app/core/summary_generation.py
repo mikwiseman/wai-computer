@@ -937,6 +937,8 @@ async def fail_summary_generation_job(
     job = await _load_job_for_update(db, job_id)
     if job is None:
         return None
+    if job.status not in ACTIVE_SUMMARY_GENERATION_STATUSES:
+        return job
     mark_summary_generation_failed(job, error_code=error_code, error_message=error_message)
     await db.flush()
     return job

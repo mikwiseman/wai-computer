@@ -1123,10 +1123,47 @@ async def test_persist_and_fail_summary_generation_error_paths(
         error_message="Manual failure.",
     )
     assert marked is completed_job
-    assert completed_job.status == SummaryGenerationStatus.FAILED.value
-    assert completed_job.stage == "failed"
+    assert completed_job.status == SummaryGenerationStatus.SUCCEEDED.value
+    assert completed_job.stage == "complete"
     assert completed_job.progress_percent == 100
-    assert completed_job.failed_at is not None
+    assert completed_job.error_code is None
+    assert completed_job.failed_at is None
+
+
+@pytest.mark.asyncio
+async def test_fail_summary_generation_job_keeps_succeeded_job_terminal(
+    db_session: AsyncSession,
+) -> None:
+    user = await _user(db_session)
+    recording = await _recording(db_session, user)
+    completed_at = datetime.now(timezone.utc) - timedelta(seconds=5)
+    completed_job = SummaryGenerationJob(
+        recording_id=recording.id,
+        user_id=user.id,
+        status=SummaryGenerationStatus.SUCCEEDED.value,
+        stage="complete",
+        progress_percent=100,
+        transcript_hash="already-complete",
+        completed_at=completed_at,
+    )
+    db_session.add(completed_job)
+    await db_session.flush()
+
+    marked = await fail_summary_generation_job(
+        db_session,
+        job_id=completed_job.id,
+        error_code="late_timeout",
+        error_message="Late timeout after the summary was already saved.",
+    )
+
+    assert marked is completed_job
+    assert completed_job.status == SummaryGenerationStatus.SUCCEEDED.value
+    assert completed_job.stage == "complete"
+    assert completed_job.progress_percent == 100
+    assert completed_job.error_code is None
+    assert completed_job.error_message is None
+    assert completed_job.completed_at == completed_at
+    assert completed_job.failed_at is None
 
 
 @pytest.mark.asyncio
