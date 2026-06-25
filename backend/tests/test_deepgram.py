@@ -65,7 +65,7 @@ def test_build_realtime_websocket_url_uses_faster_endpointing_for_dictation() ->
         purpose="recording",
     )
 
-    assert "endpointing=200" in dictation
+    assert "endpointing=10" in dictation
     assert "endpointing=300" in recording
 
 

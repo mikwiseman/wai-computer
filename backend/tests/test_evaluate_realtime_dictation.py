@@ -128,3 +128,18 @@ def test_parse_message_marks_deepgram_speech_started() -> None:
     assert message.is_final is False
     assert message.finalization_marker is False
     assert message.speech_started is True
+
+
+def test_write_report_updates_latest_copy(tmp_path) -> None:
+    module = _load_module()
+    output = tmp_path / "timestamped.json"
+    latest = tmp_path / "latest.json"
+    payload = {
+        "generated_at": "2026-06-25T00:00:00Z",
+        "summary": [{"mode": "prefetched", "provider": "deepgram"}],
+    }
+
+    module.write_report(payload, output, latest_output=latest)
+
+    assert output.read_text(encoding="utf-8") == latest.read_text(encoding="utf-8")
+    assert '"provider": "deepgram"' in latest.read_text(encoding="utf-8")

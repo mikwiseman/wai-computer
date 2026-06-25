@@ -22,7 +22,9 @@ DEEPGRAM_UTTERANCE_END_MS = 1_000
 # Meeting recording keeps a slightly longer value so spoken number sequences
 # stay together for formatting. Dictation optimizes for commit latency.
 DEEPGRAM_RECORDING_ENDPOINTING_MS = 300
-DEEPGRAM_DICTATION_ENDPOINTING_MS = 200
+# Deepgram recommends 10 ms endpointing for short chatbot-style utterances.
+# Dictation can safely emit smaller final segments; commit latency matters more.
+DEEPGRAM_DICTATION_ENDPOINTING_MS = 10
 DEEPGRAM_ENDPOINTING_MS = DEEPGRAM_RECORDING_ENDPOINTING_MS
 DEEPGRAM_MAX_KEYTERMS = 100
 DEEPGRAM_MAX_KEYTERM_CHARS = 100

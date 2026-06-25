@@ -39,6 +39,7 @@ SAMPLE_RATE = 16_000
 BYTES_PER_SAMPLE = 2
 CHUNK_MS = 100
 FINAL_SILENCE_MS = 240
+LATEST_OUTPUT = ROOT / "artifacts/benchmarks/realtime-dictation-eval-latest.json"
 
 
 @dataclass(frozen=True)
@@ -565,6 +566,21 @@ def gate_summary(summary: dict[str, Any]) -> list[str]:
     return failures
 
 
+def write_report(
+    payload: dict[str, Any],
+    output: Path,
+    *,
+    latest_output: Path = LATEST_OUTPUT,
+) -> None:
+    report = json.dumps(payload, ensure_ascii=False, indent=2) + "\n"
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(report, encoding="utf-8")
+    if output.resolve() == latest_output.resolve():
+        return
+    latest_output.parent.mkdir(parents=True, exist_ok=True)
+    latest_output.write_text(report, encoding="utf-8")
+
+
 async def async_main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--base-url", default="https://wai.computer")
@@ -612,8 +628,7 @@ async def async_main() -> None:
         "results": results,
     }
     output = Path(args.output)
-    output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    write_report(payload, output)
     print(f"wrote {output}")
     if gate_failures:
         print("gate failures:", flush=True)
