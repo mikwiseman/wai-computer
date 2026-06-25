@@ -319,6 +319,55 @@ async def test_import_keeps_terminal_recording_when_staged_file_missing(
 
 
 @pytest.mark.asyncio
+async def test_import_keeps_terminal_recording_when_staged_file_still_exists(
+    db_session, monkeypatch, tmp_path
+) -> None:
+    user = User(email=f"media-terminal-present-{uuid4().hex}@example.com", password_hash="x")
+    db_session.add(user)
+    await db_session.flush()
+    recording = Recording(
+        user_id=user.id,
+        title="terminal clip",
+        type="note",
+        status=RecordingStatus.FAILED.value,
+        failure_code="bad_media",
+        failure_message="Original failure.",
+    )
+    db_session.add(recording)
+    await db_session.flush()
+    recording_id = recording.id
+    staged = tmp_path / "clip.mp4"
+    staged.write_bytes(b"video-bytes")
+
+    @asynccontextmanager
+    async def fake_ctx():
+        yield db_session
+
+    async def fail_import(**kwargs):
+        raise AssertionError("terminal redelivery must not run media import")
+
+    monkeypatch.setattr(media_import, "get_db_context", fake_ctx)
+    monkeypatch.setattr(media_import, "import_media_as_recording", fail_import)
+
+    await media_import._import(
+        user_id=str(user.id),
+        recording_id=str(recording_id),
+        staged_path=str(staged),
+        filename="clip.mp4",
+        content_type="video/mp4",
+        title=None,
+        language="en",
+    )
+
+    db_session.expire_all()
+    terminal = await db_session.get(Recording, recording_id)
+    assert terminal is not None
+    assert terminal.status == RecordingStatus.FAILED.value
+    assert terminal.failure_code == "bad_media"
+    assert terminal.failure_message == "Original failure."
+
+
+@pytest.mark.asyncio
 async def test_import_without_precreated_recording_raises_when_staged_file_missing(
     db_session, monkeypatch, tmp_path
 ) -> None:

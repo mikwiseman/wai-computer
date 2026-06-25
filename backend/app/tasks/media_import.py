@@ -28,19 +28,12 @@ from app.core.observability import (
 )
 from app.core.recording_import import import_media_as_recording
 from app.db.session import get_db_context
-from app.models.recording import ACTIVE_RECORDING_STATUSES, Recording, RecordingStatus, Segment
+from app.models.recording import ACTIVE_RECORDING_STATUSES, Recording, RecordingStatus
 from app.models.user import User
 from app.tasks.celery_app import celery_app
 from app.tasks.retry_policy import is_retryable_exception
 
 logger = logging.getLogger(__name__)
-
-
-async def _recording_has_segments(recording_id: UUID, db: AsyncSession) -> bool:
-    result = await db.execute(
-        select(Segment.id).where(Segment.recording_id == recording_id).limit(1)
-    )
-    return result.scalar_one_or_none() is not None
 
 
 async def _mark_missing_staged_file(
@@ -106,11 +99,12 @@ async def _import(
             if recording is None:
                 logger.warning("media import: recording gone, dropping staged upload")
                 return
-            if recording.status == RecordingStatus.READY.value and await _recording_has_segments(
-                recording.id, db
-            ):
+            if recording.status not in ACTIVE_RECORDING_STATUSES:
                 logger.info(
-                    "media import: recording already ready, skipping redelivery"
+                    "media import: recording already terminal, skipping redelivery "
+                    "recording_id=%s status=%s",
+                    recording.id,
+                    recording.status,
                 )
                 return
         staged_file = Path(staged_path)
