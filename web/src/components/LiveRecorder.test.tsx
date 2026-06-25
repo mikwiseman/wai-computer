@@ -223,6 +223,26 @@ describe("LiveRecorder", () => {
     }
   });
 
+  it("lets the user stop while the realtime connection is still connecting", async () => {
+    FakeTranscriber.startState = "connecting";
+    const user = userEvent.setup();
+    render(<LiveRecorder onRecordingComplete={vi.fn()} onError={vi.fn()} />);
+
+    await user.click(screen.getByRole("button", { name: "Record in browser" }));
+    await waitFor(() => expect(screen.getByText("Connecting…")).toBeInTheDocument());
+
+    const stopButton = screen.getByRole("button", { name: "Stop & save" });
+    expect(stopButton).not.toBeDisabled();
+    await user.click(stopButton);
+
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Record in browser" })).toBeInTheDocument(),
+    );
+    expect(FakeTranscriber.instances[0].stopCalls).toBe(1);
+    expect(mockCreateRecording).not.toHaveBeenCalled();
+    expect(mockSaveTranscript).not.toHaveBeenCalled();
+  });
+
   describe("with system-audio support", () => {
     it("captures shared system audio and forwards both streams", async () => {
       const sysTrack = { stop: vi.fn() } as unknown as MediaStreamTrack;

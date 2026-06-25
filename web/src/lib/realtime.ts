@@ -154,6 +154,7 @@ export class RealtimeTranscriber {
   private interimText = "";
   private readonly pendingAudio: ArrayBufferLike[] = [];
   private pendingAudioBytes = 0;
+  private stopRequested = false;
   private readonly segments: TranscriptSegmentInput[] = [];
   private readonly opts: RealtimeTranscriberOptions;
 
@@ -180,15 +181,21 @@ export class RealtimeTranscriber {
 
   async start(input: MediaStream | MediaStream[]): Promise<void> {
     if (this.state !== "idle") return;
+    this.stopRequested = false;
     this.streams = Array.isArray(input) ? input : [input];
     this.setState("connecting");
     try {
       await this.startAudio();
-      this.startedAt = Date.now();
     } catch (error) {
+      if (!this.isConnecting()) return;
       this.fail(error);
       return;
     }
+    if (!this.isConnecting()) {
+      this.cleanupAudio();
+      return;
+    }
+    this.startedAt = Date.now();
     let session: RealtimeSessionResponse;
     try {
       session = await createTranscriptionSession({
@@ -196,6 +203,7 @@ export class RealtimeTranscriber {
         purpose: this.opts.purpose ?? "recording",
       });
     } catch (error) {
+      if (!this.isConnecting()) return;
       this.fail(error);
       return;
     }
@@ -205,6 +213,7 @@ export class RealtimeTranscriber {
       if (!this.isConnecting()) return;
       this.setState("recording");
     } catch (error) {
+      if (!this.isConnecting()) return;
       this.fail(error);
     }
   }
@@ -251,6 +260,10 @@ export class RealtimeTranscriber {
       ws.onmessage = (event) => this.onMessage(event);
       ws.onerror = () => reject(new Error("Realtime transcription connection failed"));
       ws.onclose = () => {
+        if (this.stopRequested) {
+          resolve();
+          return;
+        }
         if (this.state === "connecting") {
           reject(new Error("Realtime transcription connection closed before it was ready"));
           return;
@@ -270,6 +283,10 @@ export class RealtimeTranscriber {
     const ctx = new AudioContext();
     this.ctx = ctx;
     await ctx.audioWorklet.addModule("/realtime-pcm-worklet.js");
+    if (!this.isConnecting()) {
+      if (ctx.state !== "closed") void ctx.close();
+      return;
+    }
     const node = new AudioWorkletNode(ctx, "realtime-pcm-recorder");
     this.node = node;
     node.port.onmessage = (event) => {
@@ -348,6 +365,7 @@ export class RealtimeTranscriber {
 
   async stop(): Promise<TranscriptSegmentInput[]> {
     if (this.state === "idle" || this.state === "stopping") return this.segments;
+    this.stopRequested = true;
     this.setState("stopping");
     const ws = this.ws;
     if (!ws || ws.readyState !== WebSocket.OPEN) {

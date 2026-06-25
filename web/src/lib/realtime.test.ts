@@ -703,6 +703,31 @@ describe("RealtimeTranscriber.stop", () => {
     expect(FakeWebSocket.instances).toHaveLength(0);
   });
 
+  it("cancels a CONNECTING socket and lets start settle", async () => {
+    const transcriber = new RealtimeTranscriber();
+    mockedCreateSession.mockResolvedValue(sessionResponse());
+    const stream = fakeStream();
+    const startPromise = transcriber.start(stream.mediaStream);
+
+    await vi.waitFor(() => expect(FakeWebSocket.instances.length).toBe(1));
+    const ws = FakeWebSocket.instances[0];
+    const stopPromise = transcriber.stop();
+
+    await expect(stopPromise).resolves.toEqual([]);
+    expect(ws.closeCalls).toBe(1);
+    expect(stream.stops).toEqual([1]);
+
+    let startSettled = false;
+    startPromise.finally(() => {
+      startSettled = true;
+    });
+    ws.onclose?.();
+
+    await vi.waitFor(() => expect(startSettled).toBe(true));
+    await expect(startPromise).resolves.toBeUndefined();
+    expect(transcriber.getState()).toBe("idle");
+  });
+
   it("rejects when CloseStream cannot be sent", async () => {
     const errors: string[] = [];
     const transcriber = new RealtimeTranscriber({ onError: (message) => errors.push(message) });

@@ -246,7 +246,7 @@ describe("DictatePanel recording lifecycle", () => {
     expect(screen.getByRole("alert").textContent).toContain("boom");
   });
 
-  it("renders the connecting label while connecting (Stop disabled)", async () => {
+  it("renders the connecting label while connecting with Stop enabled", async () => {
     render(<DictatePanel />);
     await startDictation();
 
@@ -256,7 +256,7 @@ describe("DictatePanel recording lifecycle", () => {
 
     expect(screen.getByText("Connecting…")).toBeTruthy();
     const stopBtn = screen.getByRole("button", { name: "Stop" });
-    expect((stopBtn as HTMLButtonElement).disabled).toBe(true);
+    expect((stopBtn as HTMLButtonElement).disabled).toBe(false);
     // No recording dot while merely connecting.
     expect(document.querySelector(".live-recorder__dot")).toBeNull();
   });

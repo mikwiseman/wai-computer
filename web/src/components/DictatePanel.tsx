@@ -291,7 +291,7 @@ export function DictatePanel({ locale = "en" }: DictatePanelProps) {
               type="button"
               className="ghost-button compact-button danger-button"
               onClick={() => void stop()}
-              disabled={state !== "recording"}
+              disabled={state !== "connecting" && state !== "recording"}
             >
               {copy.stop}
             </button>
