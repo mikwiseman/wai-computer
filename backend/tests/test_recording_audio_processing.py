@@ -290,6 +290,10 @@ async def test_process_staged_recording_upload_persists_canonical_segments(
         "app.core.recording_audio_processing.identify_speakers_for_recording",
         AsyncMock(return_value={}),
     )
+    monkeypatch.setattr(
+        "app.core.recording_audio_processing.extract_speaker_names",
+        AsyncMock(return_value={}),
+    )
 
     await process_staged_recording_upload(
         db_session,
@@ -808,6 +812,117 @@ async def test_process_staged_recording_upload_commits_transcript_before_billing
 
     transcribe.assert_awaited_once()
     assert not retry_path.exists()
+
+
+@pytest.mark.asyncio
+async def test_process_staged_recording_upload_batches_segment_embeddings(
+    db_session: AsyncSession,
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user = User(email="batched-embeddings@example.com", password_hash="x")
+    db_session.add(user)
+    await db_session.flush()
+    recording = Recording(
+        user_id=user.id,
+        title=None,
+        type="meeting",
+        status=RecordingStatus.PROCESSING.value,
+        uploaded_at=datetime.now(timezone.utc),
+        language="en",
+    )
+    db_session.add(recording)
+    await db_session.commit()
+
+    staged_path = tmp_path / "batched-embeddings.wav"
+    staged_path.write_bytes(b"audio")
+    transcript_results = [
+        TranscriptResult(
+            text="First segment.",
+            speaker="speaker_0",
+            is_final=True,
+            start_ms=0,
+            end_ms=1000,
+            confidence=0.93,
+        ),
+        TranscriptResult(
+            text="Second segment.",
+            speaker="speaker_1",
+            is_final=True,
+            start_ms=1000,
+            end_ms=2000,
+            confidence=0.94,
+        ),
+    ]
+    batched_calls: list[dict[str, object]] = []
+
+    async def _generate_embeddings(texts: list[str], **kwargs: object) -> list[list[float]]:
+        batched_calls.append({"texts": texts, "kwargs": kwargs})
+        return [[0.2] * 1536, [0.3] * 1536]
+
+    monkeypatch.setattr(
+        "app.core.recording_audio_processing.transcribe_audio_file",
+        AsyncMock(return_value=transcript_results),
+    )
+    monkeypatch.setattr(
+        "app.core.recording_audio_processing.generate_title",
+        AsyncMock(return_value="Batch Title"),
+    )
+    monkeypatch.setattr(
+        "app.core.recording_audio_processing.identify_speakers_for_recording",
+        AsyncMock(return_value={}),
+    )
+    monkeypatch.setattr(
+        "app.core.recording_audio_processing.extract_speaker_names",
+        AsyncMock(return_value={}),
+    )
+    monkeypatch.setattr(
+        recording_audio_processing,
+        "generate_embedding",
+        AsyncMock(return_value=[0.1] * 1536),
+    )
+    monkeypatch.setattr(
+        recording_audio_processing,
+        "generate_embeddings",
+        _generate_embeddings,
+        raising=False,
+    )
+
+    await process_staged_recording_upload(
+        db_session,
+        recording_id=recording.id,
+        user_id=user.id,
+        staged_path=staged_path,
+        content_type="audio/wav",
+        user_default_language="en",
+    )
+
+    assert len(batched_calls) == 1
+    assert batched_calls[0]["texts"] == [
+        "Batch Title › First segment.",
+        "Batch Title › Second segment.",
+    ]
+    kwargs = batched_calls[0]["kwargs"]
+    assert kwargs["usage_user_id"] == user.id
+    assert kwargs["usage_recording_id"] == recording.id
+    assert kwargs["usage_feature"] == "recording"
+    assert kwargs["usage_operation"] == "embedding.segment.batch"
+
+    segments = (
+        (
+            await db_session.execute(
+                select(Segment)
+                .where(Segment.recording_id == recording.id)
+                .order_by(Segment.start_ms)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert [list(segment.embedding) for segment in segments] == [
+        [0.2] * 1536,
+        [0.3] * 1536,
+    ]
 
 
 @pytest.mark.asyncio

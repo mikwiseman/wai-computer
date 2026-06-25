@@ -24,7 +24,7 @@ from app.core.deepgram_usage import (
     provider_error_code,
     record_deepgram_usage_event,
 )
-from app.core.embeddings import generate_embedding
+from app.core.embeddings import generate_embedding, generate_embeddings
 from app.core.error_sanitizer import sanitize_failure_message
 from app.core.observability import (
     add_sentry_breadcrumb,
@@ -599,6 +599,68 @@ def _log_transcript_coverage(
             level="warning",
             extras=alert_data,
         )
+
+
+async def _embed_recording_segments(
+    *,
+    recording: Recording,
+    segments: list[Segment],
+    user_id: UUID,
+    recording_id: UUID,
+) -> int:
+    embedding_inputs = [
+        (segment, with_title_context(recording.title, segment.content.strip()))
+        for segment in segments
+        if segment.content.strip()
+    ]
+    if not embedding_inputs:
+        return 0
+
+    if len(embedding_inputs) == 1:
+        segment, text = embedding_inputs[0]
+        try:
+            segment.embedding = await generate_embedding(
+                text,
+                usage_user_id=user_id,
+                usage_recording_id=recording_id,
+                usage_feature="recording",
+                usage_operation="embedding.segment",
+            )
+        except Exception as exc:
+            logger.warning(
+                "Failed to generate embedding error_type=%s error_fingerprint=%s",
+                type(exc).__name__,
+                fingerprint_text(str(exc)),
+            )
+            return 1
+        return 0
+
+    texts = [text for _, text in embedding_inputs]
+    try:
+        embeddings = await generate_embeddings(
+            texts,
+            usage_user_id=user_id,
+            usage_recording_id=recording_id,
+            usage_feature="recording",
+            usage_operation="embedding.segment.batch",
+        )
+        if len(embeddings) != len(embedding_inputs):
+            raise ValueError(
+                "Embedding batch result count did not match segment count."
+            )
+    except Exception as exc:
+        logger.warning(
+            "Failed to generate segment embedding batch count=%s error_type=%s "
+            "error_fingerprint=%s",
+            len(embedding_inputs),
+            type(exc).__name__,
+            fingerprint_text(str(exc)),
+        )
+        return len(embedding_inputs)
+
+    for (segment, _), embedding in zip(embedding_inputs, embeddings, strict=True):
+        segment.embedding = embedding
+    return 0
 
 
 async def process_staged_recording_upload(
@@ -1191,26 +1253,12 @@ async def process_staged_recording_upload(
         await db.commit()
         delete_staged_file(staged_path)
 
-        embedding_failure_count = 0
-        for segment in persisted_segments:
-            text = segment.content.strip()
-            if not text:
-                continue
-            try:
-                segment.embedding = await generate_embedding(
-                    with_title_context(recording.title, text),
-                    usage_user_id=user_id,
-                    usage_recording_id=recording_id,
-                    usage_feature="recording",
-                    usage_operation="embedding.segment",
-                )
-            except Exception as exc:
-                embedding_failure_count += 1
-                logger.warning(
-                    "Failed to generate embedding error_type=%s error_fingerprint=%s",
-                    type(exc).__name__,
-                    fingerprint_text(str(exc)),
-                )
+        embedding_failure_count = await _embed_recording_segments(
+            recording=recording,
+            segments=persisted_segments,
+            user_id=user_id,
+            recording_id=recording_id,
+        )
 
         await db.commit()
         if embedding_failure_count:
