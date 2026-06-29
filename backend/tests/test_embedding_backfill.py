@@ -5,10 +5,14 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock
 
+import httpx
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.embedding_backfill import backfill_missing_segment_embeddings
+from app.core.embedding_backfill import (
+    EMBEDDING_BACKFILL_MAX_INPUT_CHARS,
+    backfill_missing_segment_embeddings,
+)
 from app.models.recording import Recording, Segment
 from app.models.user import User
 
@@ -141,6 +145,69 @@ async def test_backfill_missing_segment_embeddings_isolates_poison_rows(
     assert result.isolated_failures == 1
     assert list(first.embedding) == [0.4] * 1536
     assert second.embedding is None
+
+
+@pytest.mark.asyncio
+async def test_backfill_missing_segment_embeddings_trims_overlong_segment_input(
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user = User(email="embedding-backfill-long@example.com", password_hash="x")
+    db_session.add(user)
+    await db_session.flush()
+    recording = Recording(user_id=user.id, title="Long", type="meeting", status="ready")
+    db_session.add(recording)
+    await db_session.flush()
+    segment = Segment(
+        recording_id=recording.id,
+        speaker="speaker_0",
+        content="x" * (EMBEDDING_BACKFILL_MAX_INPUT_CHARS + 500),
+        embedding=None,
+    )
+    db_session.add(segment)
+    await db_session.commit()
+    seen: list[list[str]] = []
+
+    async def fake_generate(texts: list[str], **_: object) -> list[list[float]]:
+        seen.append(texts)
+        return [[0.5] * 1536 for _ in texts]
+
+    monkeypatch.setattr("app.core.embedding_backfill.generate_embeddings", fake_generate)
+
+    result = await backfill_missing_segment_embeddings(db_session, batch_size=10, limit=20)
+
+    await db_session.refresh(segment)
+    assert result.filled == 1
+    assert len(seen[0][0]) == EMBEDDING_BACKFILL_MAX_INPUT_CHARS
+    assert list(segment.embedding) == [0.5] * 1536
+
+
+@pytest.mark.asyncio
+async def test_backfill_missing_segment_embeddings_aborts_systemic_provider_failures(
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user = User(email="embedding-backfill-systemic@example.com", password_hash="x")
+    db_session.add(user)
+    await db_session.flush()
+    recording = Recording(user_id=user.id, title="Systemic", type="meeting", status="ready")
+    db_session.add(recording)
+    await db_session.flush()
+    db_session.add_all(
+        [
+            Segment(recording_id=recording.id, content="first", embedding=None),
+            Segment(recording_id=recording.id, content="second", embedding=None),
+        ]
+    )
+    await db_session.commit()
+
+    generate = AsyncMock(side_effect=httpx.TimeoutException("provider timeout"))
+    monkeypatch.setattr("app.core.embedding_backfill.generate_embeddings", generate)
+
+    with pytest.raises(httpx.TimeoutException):
+        await backfill_missing_segment_embeddings(db_session, batch_size=10, limit=20)
+
+    generate.assert_awaited_once()
 
 
 @pytest.mark.asyncio

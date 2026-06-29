@@ -53,6 +53,8 @@ def _is_retryable_exception(exc: BaseException) -> bool:
 
     api_status_error = getattr(openai, "APIStatusError", None)
     if api_status_error is not None and isinstance(exc, api_status_error):
+        if is_openai_insufficient_quota(exc):
+            return False
         return _status_is_retryable(getattr(exc, "status_code", None))
 
     retryable_names = (
@@ -67,3 +69,30 @@ def _is_retryable_exception(exc: BaseException) -> bool:
         if (cls := getattr(openai, name, None)) is not None
     )
     return bool(retryable_classes) and isinstance(exc, retryable_classes)
+
+
+def is_openai_insufficient_quota(exc: BaseException) -> bool:
+    """Return true for OpenAI quota exhaustion, which cannot succeed by retrying."""
+    if openai is None:
+        return False
+    return any(_is_openai_insufficient_quota(item) for item in _exception_chain(exc))
+
+
+def _is_openai_insufficient_quota(exc: BaseException) -> bool:
+    if _openai_error_value(exc, "code") == "insufficient_quota":
+        return True
+    return _openai_error_value(exc, "type") == "insufficient_quota"
+
+
+def _openai_error_value(exc: BaseException, key: str) -> str | None:
+    direct = getattr(exc, key, None)
+    if isinstance(direct, str):
+        return direct
+    body = getattr(exc, "body", None)
+    if isinstance(body, dict):
+        error = body.get("error")
+        if isinstance(error, dict):
+            value = error.get(key)
+            if isinstance(value, str):
+                return value
+    return None

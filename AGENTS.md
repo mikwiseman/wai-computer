@@ -40,6 +40,13 @@ cd backend && docker compose up --build
 
 ## Tests
 
+Use these commands as a verification menu, not as an every-build checklist. For
+normal local work, run the smallest repo-native check that proves the changed
+behavior, plus lint/format checks for the touched surface when useful. Run
+broader suites for shared critical paths, risky changes, and release/deploy
+work. `scripts/qa-loop.sh` is a long-running release/stability gate, not a
+routine build gate.
+
 ```bash
 cd backend && pytest -x -q           # unit (95% coverage gate; see pyproject cov-fail-under)
 cd backend && pytest -m integration --no-cov

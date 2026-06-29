@@ -35,6 +35,14 @@ def _docx_bytes(text: str) -> bytes:
     return buf.getvalue()
 
 
+def _docx_xml_bytes(document_xml: str) -> bytes:
+    buf = BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.writestr("[Content_Types].xml", "")
+        zf.writestr("word/document.xml", document_xml)
+    return buf.getvalue()
+
+
 def _pptx_bytes(text: str) -> bytes:
     slide_xml = f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
     <p:sld xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"
@@ -154,6 +162,27 @@ async def test_extract_document_text_handles_html_docx_json_and_csv() -> None:
     csv_text = await extract_document_text("csv", b"name,value\nlatency,120\n")
     assert "name, value" in csv_text
     assert "latency, 120" in csv_text
+
+
+@pytest.mark.asyncio
+async def test_extract_docx_handles_inline_breaks_tabs_and_text_fallback() -> None:
+    rich_docx = _docx_xml_bytes(
+        """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+        <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+          <w:body><w:p><w:r><w:t>Alpha</w:t><w:tab/><w:t>Beta</w:t><w:br/><w:t>Gamma</w:t></w:r></w:p></w:body>
+        </w:document>
+        """
+    )
+    assert await extract_document_text("docx", rich_docx) == "Alpha Beta\nGamma"
+
+    fallback_docx = _docx_xml_bytes(
+        """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+        <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+          <w:body><w:r><w:t>Loose text body</w:t></w:r></w:body>
+        </w:document>
+        """
+    )
+    assert await extract_document_text("docx", fallback_docx) == "Loose text body"
 
 
 @pytest.mark.asyncio

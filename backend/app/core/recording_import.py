@@ -36,6 +36,7 @@ from app.core.recording_audio_processing import (
     apply_no_speech_failure,
     voice_identification_enabled_for_audio,
 )
+from app.core.retry_policy import is_openai_insufficient_quota, is_retryable_exception
 from app.core.speaker_name_extraction import (
     apply_extracted_names,
     extract_speaker_names,
@@ -642,8 +643,13 @@ async def _generate_imported_segment_embeddings(
                     usage_operation="embedding.segment",
                 )
             ]
-        except Exception:
-            logger.warning("failed to generate imported segment embedding")
+        except Exception as exc:
+            logger.warning(
+                "failed to generate imported segment embedding error_type=%s "
+                "error_fingerprint=%s",
+                type(exc).__name__,
+                fingerprint_text(str(exc)),
+            )
             return [None]
 
     embeddings: list[list[float] | None] = [None] * len(texts)
@@ -657,11 +663,16 @@ async def _generate_imported_segment_embeddings(
                 usage_feature="recording",
                 usage_operation="embedding.segment",
             )
-        except Exception:
+        except Exception as exc:
             logger.warning(
-                "failed to generate imported segment embedding batch",
-                exc_info=True,
+                "failed to generate imported segment embedding batch count=%s "
+                "error_type=%s error_fingerprint=%s",
+                len(batch_texts),
+                type(exc).__name__,
+                fingerprint_text(str(exc)),
             )
+            if _should_stop_import_embedding_batches(exc):
+                break
             continue
         if len(batch_embeddings) != len(batch_texts):
             logger.warning(
@@ -673,6 +684,10 @@ async def _generate_imported_segment_embeddings(
             continue
         embeddings[offset : offset + len(batch_embeddings)] = batch_embeddings
     return embeddings
+
+
+def _should_stop_import_embedding_batches(exc: BaseException) -> bool:
+    return is_retryable_exception(exc) or is_openai_insufficient_quota(exc)
 
 
 async def _persist_summary(

@@ -207,7 +207,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: 64M
+          memory: 128M
     healthcheck:
       test:
         [
@@ -257,7 +257,7 @@ services:
       resources:
         limits:
           memory: 768M
-    command: ["celery", "-A", "app.tasks.celery_app:celery_app", "worker", "--loglevel=info", "--concurrency=1", "--queues=celery", "-B"]
+    command: ["celery", "-A", "app.tasks.celery_app:celery_app", "worker", "--loglevel=info", "--concurrency=1", "--queues=celery", "--max-memory-per-child=600000", "-B"]
     healthcheck:
       test: ["CMD-SHELL", "celery -A app.tasks.celery_app:celery_app inspect ping -d \"celery@$$HOSTNAME\" --timeout=5 | grep -q OK"]
       interval: 30s
@@ -304,7 +304,7 @@ services:
       resources:
         limits:
           memory: 1536M
-    command: ["celery", "-A", "app.tasks.celery_app:celery_app", "worker", "--loglevel=info", "--concurrency=1", "--queues=recording"]
+    command: ["celery", "-A", "app.tasks.celery_app:celery_app", "worker", "--loglevel=info", "--concurrency=1", "--queues=recording", "--max-memory-per-child=900000"]
     healthcheck:
       test: ["CMD-SHELL", "celery -A app.tasks.celery_app:celery_app inspect ping -d \"celery@$$HOSTNAME\" --timeout=5 | grep -q OK"]
       interval: 30s
@@ -347,7 +347,7 @@ services:
       resources:
         limits:
           memory: 512M
-    command: ["celery", "-A", "app.tasks.celery_app:celery_app", "worker", "--loglevel=info", "--concurrency=1", "--queues=summary"]
+    command: ["celery", "-A", "app.tasks.celery_app:celery_app", "worker", "--loglevel=info", "--concurrency=1", "--queues=summary", "--max-memory-per-child=450000"]
     healthcheck:
       test: ["CMD-SHELL", "celery -A app.tasks.celery_app:celery_app inspect ping -d \"celery@$$HOSTNAME\" --timeout=5 | grep -q OK"]
       interval: 30s

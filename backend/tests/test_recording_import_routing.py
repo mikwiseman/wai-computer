@@ -2,12 +2,17 @@
 
 from __future__ import annotations
 
+from unittest.mock import AsyncMock
+
+import httpx
 import pytest
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.recording_import import (
+    SEGMENT_EMBEDDING_BATCH_SIZE,
     TranscribedMedia,
+    _generate_imported_segment_embeddings,
     _mark_failed,
     import_media_as_recording,
     transcribe_media_bytes,
@@ -249,6 +254,30 @@ async def test_import_batches_multi_segment_embeddings(
     assert result.recording.status == RecordingStatus.READY.value
     assert result.transcript == "один два три"
     assert embedding_batches == [["один", "два", "три"]]
+
+
+@pytest.mark.asyncio
+async def test_import_embedding_batches_stop_after_systemic_provider_failure(
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user = await _user(db_session, "routing-embedding-timeout@example.com")
+    recording = Recording(user_id=user.id, title="Provider down", type="note")
+    db_session.add(recording)
+    await db_session.flush()
+
+    generate = AsyncMock(side_effect=httpx.TimeoutException("provider timeout"))
+    monkeypatch.setattr("app.core.recording_import.generate_embeddings", generate)
+
+    texts = ["segment"] * (SEGMENT_EMBEDDING_BATCH_SIZE + 1)
+    embeddings = await _generate_imported_segment_embeddings(
+        recording=recording,
+        user_id=user.id,
+        texts=texts,
+    )
+
+    assert embeddings == [None] * len(texts)
+    generate.assert_awaited_once()
 
 
 @pytest.mark.asyncio

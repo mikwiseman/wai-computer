@@ -3,11 +3,16 @@
 from __future__ import annotations
 
 import httpx
+import openai
 from redis.exceptions import ConnectionError as RedisConnectionError
 from redis.exceptions import TimeoutError as RedisTimeoutError
 from sqlalchemy.exc import OperationalError
 
-from app.core.retry_policy import _status_is_retryable, is_retryable_exception
+from app.core.retry_policy import (
+    _status_is_retryable,
+    is_openai_insufficient_quota,
+    is_retryable_exception,
+)
 
 
 def test_retry_policy_retries_transient_http_statuses() -> None:
@@ -50,3 +55,32 @@ def test_retry_policy_retries_wrapped_transient_errors() -> None:
         raise RuntimeError("summarizer wrapped provider error") from cause
     except RuntimeError as exc:
         assert is_retryable_exception(exc)
+
+
+def test_retry_policy_stops_at_suppressed_exception_context() -> None:
+    try:
+        try:
+            raise httpx.TimeoutException("hidden context")
+        except httpx.TimeoutException:
+            raise RuntimeError("suppressed") from None
+    except RuntimeError as exc:
+        assert not is_retryable_exception(exc)
+
+
+def test_retry_policy_does_not_retry_openai_insufficient_quota() -> None:
+    request = httpx.Request("POST", "https://api.openai.com/v1/embeddings")
+    response = httpx.Response(429, request=request)
+    exc = openai.RateLimitError(
+        "quota exhausted",
+        response=response,
+        body={"error": {"code": "insufficient_quota", "type": "insufficient_quota"}},
+    )
+
+    assert not is_retryable_exception(exc)
+
+
+def test_openai_insufficient_quota_detects_direct_error_attributes() -> None:
+    class DirectQuotaError(Exception):
+        code = "insufficient_quota"
+
+    assert is_openai_insufficient_quota(DirectQuotaError("quota exhausted"))

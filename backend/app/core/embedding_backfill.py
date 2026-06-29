@@ -12,9 +12,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.embeddings import generate_embeddings
 from app.core.observability import fingerprint_text
+from app.core.retry_policy import is_openai_insufficient_quota, is_retryable_exception
 from app.models.recording import Recording, Segment
 
 logger = logging.getLogger(__name__)
+
+EMBEDDING_BACKFILL_MAX_INPUT_CHARS = 6000
 
 
 @dataclass(frozen=True)
@@ -40,6 +43,17 @@ def _candidate_filters(user_id: UUID | None) -> list:
     if user_id is not None:
         filters.append(Recording.user_id == user_id)
     return filters
+
+
+def _embedding_input_text(text: str) -> str:
+    stripped = text.strip()
+    if len(stripped) <= EMBEDDING_BACKFILL_MAX_INPUT_CHARS:
+        return stripped
+    return stripped[:EMBEDDING_BACKFILL_MAX_INPUT_CHARS].rstrip()
+
+
+def _should_abort_batch(exc: BaseException) -> bool:
+    return is_retryable_exception(exc) or is_openai_insufficient_quota(exc)
 
 
 async def _remaining_candidate_count(db: AsyncSession, *, user_id: UUID | None) -> int:
@@ -119,12 +133,21 @@ async def backfill_missing_segment_embeddings(
     isolated_failures = 0
     for start in range(0, len(rows), batch_size):
         batch = rows[start : start + batch_size]
-        texts = [segment.content.strip() for segment in batch]
+        texts = [_embedding_input_text(segment.content) for segment in batch]
         scanned += len(batch)
         batches += 1
         try:
             embeddings = await _generate_checked_embeddings(texts, user_id=user_id)
         except Exception as exc:
+            if _should_abort_batch(exc):
+                logger.warning(
+                    "embedding backfill provider failure batch_size=%s error_type=%s "
+                    "error_fingerprint=%s",
+                    len(batch),
+                    type(exc).__name__,
+                    fingerprint_text(str(exc)),
+                )
+                raise
             logger.warning(
                 "embedding backfill batch failed batch_size=%s error_type=%s "
                 "error_fingerprint=%s",
