@@ -6,7 +6,6 @@ import json
 import sys
 import zipfile
 from io import BytesIO
-from pathlib import Path
 from types import ModuleType, SimpleNamespace
 
 import pytest
@@ -296,6 +295,7 @@ async def test_extract_document_text_handles_pptx_xlsx_rtf_and_text_encodings() 
     ("ext", "expected_mime"),
     [
         ("xls", "application/vnd.ms-excel"),
+        ("doc", "application/msword"),
         ("ppt", "application/vnd.ms-powerpoint"),
         ("epub", "application/epub+zip"),
         ("eml", "message/rfc822"),
@@ -495,32 +495,23 @@ async def test_extract_document_text_rejects_invalid_or_empty_documents() -> Non
 
 
 @pytest.mark.asyncio
-async def test_extract_legacy_doc_requires_converter(monkeypatch, tmp_path: Path) -> None:
-    del tmp_path
-    monkeypatch.setattr("app.core.document_extract.shutil.which", lambda name: None)
-    with pytest.raises(DocumentExtractionError) as exc:
-        await extract_document_text("doc", b"binary doc")
-    assert exc.value.code == "converter_missing"
-
-
-@pytest.mark.asyncio
-async def test_extract_legacy_doc_uses_converter_and_surfaces_failures(
+async def test_extract_legacy_doc_uses_kreuzberg(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr("app.core.document_extract.shutil.which", lambda name: "/bin/antiword")
-    monkeypatch.setattr(
-        "app.core.document_extract.subprocess.run",
-        lambda *_args, **_kwargs: SimpleNamespace(returncode=0, stdout="Legacy doc body"),
-    )
-    assert await extract_document_text("doc", b"binary doc") == "Legacy doc body"
+    calls: list[tuple[bytes, str]] = []
+
+    def fake_extract_bytes_sync(data: bytes, mime_type: str):
+        calls.append((data, mime_type))
+        return SimpleNamespace(content="Legacy doc body")
 
     monkeypatch.setattr(
-        "app.core.document_extract.subprocess.run",
-        lambda *_args, **_kwargs: SimpleNamespace(returncode=1, stdout=""),
+        document_extract_module,
+        "extract_bytes_sync",
+        fake_extract_bytes_sync,
     )
-    with pytest.raises(DocumentExtractionError) as exc:
-        await extract_document_text("doc", b"binary doc")
-    assert exc.value.code == "doc_extract_failed"
+
+    assert await extract_document_text("doc", b"binary doc") == "Legacy doc body"
+    assert calls == [(b"binary doc", "application/msword")]
 
 
 def test_document_kind_for_extension() -> None:

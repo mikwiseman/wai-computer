@@ -12,9 +12,6 @@ import csv
 import io
 import json
 import re
-import shutil
-import subprocess
-import tempfile
 import zipfile
 from html import unescape
 from html.parser import HTMLParser
@@ -29,6 +26,7 @@ from app.config import get_settings
 from app.core.source_fetch import SourceFetchError, _extract_pdf_text, _pdf_page_count
 
 _KREUZBERG_DOCUMENT_EXTENSIONS = {
+    "doc",
     "xls",
     "ppt",
     "epub",
@@ -65,6 +63,7 @@ _EXT_ALIASES = {
 
 _KREUZBERG_MIME_TYPES = {
     "xls": "application/vnd.ms-excel",
+    "doc": "application/msword",
     "ppt": "application/vnd.ms-powerpoint",
     "epub": "application/epub+zip",
     "eml": "message/rfc822",
@@ -169,8 +168,6 @@ async def extract_document_text(
         return _extract_html(data)
     if ext == "docx":
         return _extract_docx(data)
-    if ext == "doc":
-        return await asyncio.to_thread(_extract_doc_with_antiword, data)
     if ext == "rtf":
         return _extract_rtf(data)
     if ext == "csv":
@@ -389,29 +386,6 @@ def _extract_with_kreuzberg(ext: str, data: bytes) -> str:
             f"Couldn't read this {label} file.",
         )
     return _require_text(content, f"No readable text found in this {label} file.")
-
-
-def _extract_doc_with_antiword(data: bytes) -> str:
-    antiword = shutil.which("antiword")
-    if not antiword:
-        raise DocumentExtractionError(
-            "converter_missing",
-            "DOC import needs the document converter on the server.",
-        )
-    with tempfile.NamedTemporaryFile(suffix=".doc") as tmp:
-        tmp.write(data)
-        tmp.flush()
-        result = subprocess.run(
-            [antiword, tmp.name],
-            check=False,
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
-    if result.returncode != 0:
-        raise DocumentExtractionError("doc_extract_failed", "Couldn't read this DOC file.")
-    return _require_text(result.stdout, "No readable text found in this DOC file.")
-
 
 def _extract_rtf(data: bytes) -> str:
     raw = _decode_text(data)
