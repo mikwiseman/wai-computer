@@ -618,6 +618,17 @@ final class MacContentFeedViewModelTests: XCTestCase {
         XCTAssertTrue(source.contains("rows.filter { $0.sourceKind != .chat }"))
     }
 
+    func testInboxViewModelRefreshesWhileProcessingRowsAreVisible() throws {
+        let source = try macSource("WaiComputer/Features/Inbox/MacInboxViewModel.swift")
+
+        XCTAssertTrue(source.contains("private var processingRefreshTask: Task<Void, Never>?"))
+        XCTAssertTrue(source.contains("processingRefreshTask?.cancel()"))
+        XCTAssertTrue(source.contains("rows.contains(where: { $0.status == .processing })"))
+        XCTAssertTrue(source.contains("try? await Task.sleep(for: .seconds(4))"))
+        XCTAssertTrue(source.contains("await self?.refreshProcessingRowsIfCurrent(generation: generation)"))
+        XCTAssertTrue(source.contains("scheduleProcessingRefreshIfNeeded()"))
+    }
+
     func testCompanionViewCanHideChatSwitcherAndDoesNotShowChatCounts() throws {
         let source = try sharedSource("Sources/WaiComputerKit/Views/CompanionView.swift")
 

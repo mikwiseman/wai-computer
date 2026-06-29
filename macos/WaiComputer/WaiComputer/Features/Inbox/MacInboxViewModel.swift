@@ -86,6 +86,11 @@ final class MacInboxViewModel: ObservableObject {
     let apiClient: APIClient
     private var folderId: String?
     private var selectedUploadFileHasScopedAccess = false
+    private var processingRefreshTask: Task<Void, Never>?
+
+    deinit {
+        processingRefreshTask?.cancel()
+    }
 
     init(apiClient: APIClient, sourceKind: InboxSourceKind? = nil, folderId: String? = nil) {
         self.apiClient = apiClient
@@ -99,6 +104,7 @@ final class MacInboxViewModel: ObservableObject {
         self.sourceKind = visibleScope
         self.folderId = folderId
         nextCursor = nil
+        processingRefreshTask?.cancel()
         await load()
     }
 
@@ -129,6 +135,7 @@ final class MacInboxViewModel: ObservableObject {
             rowsRevision = rowsRevision.replacingRows()
             rows = Self.visibleRows(response.rows)
             nextCursor = response.nextCursor
+            scheduleProcessingRefreshIfNeeded()
         } catch {
             guard generation == loadGeneration else { return }
             errorMessage = error.localizedDescription
@@ -152,6 +159,7 @@ final class MacInboxViewModel: ObservableObject {
             rowsRevision = rowsRevision.appendingRows(from: rows.count)
             rows.append(contentsOf: Self.visibleRows(response.rows))
             self.nextCursor = response.nextCursor
+            scheduleProcessingRefreshIfNeeded()
         } catch {
             guard generation == loadGeneration else { return }
             errorMessage = error.localizedDescription
@@ -170,6 +178,23 @@ final class MacInboxViewModel: ObservableObject {
 
     private static func visibleRows(_ rows: [InboxRow]) -> [InboxRow] {
         rows.filter { $0.sourceKind != .chat }
+    }
+
+    private func scheduleProcessingRefreshIfNeeded() {
+        processingRefreshTask?.cancel()
+        guard rows.contains(where: { $0.status == .processing }) else { return }
+
+        let generation = loadGeneration
+        processingRefreshTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(4))
+            guard !Task.isCancelled else { return }
+            await self?.refreshProcessingRowsIfCurrent(generation: generation)
+        }
+    }
+
+    private func refreshProcessingRowsIfCurrent(generation: Int) async {
+        guard generation == loadGeneration else { return }
+        await load()
     }
 
     func addDraft() async -> InboxDetailRef? {
