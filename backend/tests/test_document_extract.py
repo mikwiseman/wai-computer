@@ -3,14 +3,17 @@
 from __future__ import annotations
 
 import json
+import sys
 import zipfile
 from io import BytesIO
 from pathlib import Path
-from types import SimpleNamespace
+from types import ModuleType, SimpleNamespace
 
 import pytest
 
+from app.core import document_extract as document_extract_module
 from app.core.document_extract import (
+    SUPPORTED_DOCUMENT_EXTENSIONS,
     DocumentExtractionError,
     document_kind_for_extension,
     extract_document_text,
@@ -72,6 +75,23 @@ def _xlsx_bytes() -> bytes:
     return buf.getvalue()
 
 
+def _odf_bytes(mime_type: str, body_xml: str) -> bytes:
+    content_xml = f"""<?xml version="1.0" encoding="UTF-8"?>
+    <office:document-content
+        xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0"
+        xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0"
+        xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0"
+        xmlns:draw="urn:oasis:names:tc:opendocument:xmlns:drawing:1.0">
+      <office:body>{body_xml}</office:body>
+    </office:document-content>
+    """
+    buf = BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.writestr("mimetype", mime_type)
+        zf.writestr("content.xml", content_xml)
+    return buf.getvalue()
+
+
 def test_resolve_document_extension_covers_common_materials() -> None:
     assert resolve_document_extension("contract.pdf", "application/octet-stream") == "pdf"
     assert resolve_document_extension("brief.DOCX", None) == "docx"
@@ -83,6 +103,33 @@ def test_resolve_document_extension_covers_common_materials() -> None:
     assert resolve_document_extension("archive.zip", "application/zip") == ""
     assert resolve_document_extension("note.markdown", None) == "md"
     assert resolve_document_extension("page.htm", None) == "html"
+
+
+@pytest.mark.parametrize(
+    ("filename", "mime_type", "expected"),
+    [
+        ("legacy.xls", "application/vnd.ms-excel", "xls"),
+        ("slides.ppt", "application/vnd.ms-powerpoint", "ppt"),
+        ("brief.odt", "application/vnd.oasis.opendocument.text", "odt"),
+        ("sheet.ods", "application/vnd.oasis.opendocument.spreadsheet", "ods"),
+        ("deck.odp", "application/vnd.oasis.opendocument.presentation", "odp"),
+        ("book.epub", "application/epub+zip", "epub"),
+        ("mail.eml", "message/rfc822", "eml"),
+        ("outlook.msg", "application/vnd.ms-outlook", "msg"),
+        ("snapshot.mhtml", "application/x-mimearchive", "mhtml"),
+        ("config.yaml", "application/x-yaml", "yaml"),
+        ("config.yml", "text/yaml", "yaml"),
+        ("feed.xml", "application/xml", "xml"),
+    ],
+)
+def test_resolve_document_extension_covers_broad_document_formats(
+    filename: str,
+    mime_type: str,
+    expected: str,
+) -> None:
+    assert resolve_document_extension(filename, None) == expected
+    assert resolve_document_extension(None, mime_type) == expected
+    assert expected in SUPPORTED_DOCUMENT_EXTENSIONS
 
 
 def test_title_from_filename_removes_generic_placeholders() -> None:
@@ -110,6 +157,91 @@ async def test_extract_document_text_handles_html_docx_json_and_csv() -> None:
 
 
 @pytest.mark.asyncio
+async def test_extract_pdf_handles_text_ocr_and_error_paths(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(document_extract_module, "_extract_pdf_text", lambda _data: " PDF body ")
+    assert await extract_document_text("pdf", b"pdf") == "PDF body"
+
+    monkeypatch.setattr(document_extract_module, "_extract_pdf_text", lambda _data: "")
+    monkeypatch.setattr(
+        document_extract_module,
+        "get_settings",
+        lambda: SimpleNamespace(ocr_enabled=False, ocr_max_pages=2),
+    )
+    with pytest.raises(DocumentExtractionError) as no_text:
+        await extract_document_text("pdf", b"pdf")
+    assert no_text.value.code == "pdf_no_text"
+
+    monkeypatch.setattr(
+        document_extract_module,
+        "get_settings",
+        lambda: SimpleNamespace(ocr_enabled=True, ocr_max_pages=2),
+    )
+    monkeypatch.setattr(document_extract_module, "_pdf_page_count", lambda _data: 3)
+    with pytest.raises(DocumentExtractionError) as too_long:
+        await extract_document_text("pdf", b"pdf")
+    assert too_long.value.code == "pdf_ocr_too_long"
+
+    ocr_module = ModuleType("app.core.ocr")
+
+    class FakeOcrError(Exception):
+        pass
+
+    async def fake_ocr_pdf(_data: bytes, **_kwargs: object) -> str:
+        return " OCR body "
+
+    ocr_module.OcrError = FakeOcrError
+    ocr_module.ocr_pdf = fake_ocr_pdf
+    monkeypatch.setitem(sys.modules, "app.core.ocr", ocr_module)
+    monkeypatch.setattr(document_extract_module, "_pdf_page_count", lambda _data: 1)
+
+    assert await extract_document_text("pdf", b"pdf") == "OCR body"
+
+    async def fail_ocr_pdf(_data: bytes, **_kwargs: object) -> str:
+        raise FakeOcrError("ocr provider failed")
+
+    ocr_module.ocr_pdf = fail_ocr_pdf
+    with pytest.raises(DocumentExtractionError) as ocr_failed:
+        await extract_document_text("pdf", b"pdf")
+    assert ocr_failed.value.code == "ocr_failed"
+
+    async def empty_ocr_pdf(_data: bytes, **_kwargs: object) -> str:
+        return ""
+
+    ocr_module.ocr_pdf = empty_ocr_pdf
+    with pytest.raises(DocumentExtractionError) as empty_ocr:
+        await extract_document_text("pdf", b"pdf")
+    assert empty_ocr.value.code == "no_readable_text"
+
+
+@pytest.mark.asyncio
+async def test_extract_html_falls_back_and_surfaces_parser_errors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    trafilatura_module = ModuleType("trafilatura")
+    trafilatura_module.extract = lambda *_args, **_kwargs: None
+    monkeypatch.setitem(sys.modules, "trafilatura", trafilatura_module)
+
+    html = (
+        b"<html><body><script>hidden text</script><h1>Visible heading</h1>"
+        b"<p>Readable paragraph body.</p></body></html>"
+    )
+    text = await extract_document_text("html", html)
+    assert "Visible heading" in text
+    assert "Readable paragraph body" in text
+    assert "hidden text" not in text
+
+    def fail_extract(*_args: object, **_kwargs: object) -> str:
+        raise RuntimeError("parser failed")
+
+    trafilatura_module.extract = fail_extract
+    with pytest.raises(DocumentExtractionError) as exc:
+        await extract_document_text("html", html)
+    assert exc.value.code == "html_extract_failed"
+
+
+@pytest.mark.asyncio
 async def test_extract_document_text_handles_pptx_xlsx_rtf_and_text_encodings() -> None:
     pptx_text = await extract_document_text("pptx", _pptx_bytes("Launch slide body"))
     assert "Launch slide body" in pptx_text
@@ -128,6 +260,182 @@ async def test_extract_document_text_handles_pptx_xlsx_rtf_and_text_encodings() 
 
     cp1251_text = await extract_document_text("txt", "Русский текст".encode("cp1251"))
     assert cp1251_text == "Русский текст"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("ext", "expected_mime"),
+    [
+        ("xls", "application/vnd.ms-excel"),
+        ("ppt", "application/vnd.ms-powerpoint"),
+        ("epub", "application/epub+zip"),
+        ("eml", "message/rfc822"),
+        ("msg", "application/vnd.ms-outlook"),
+        ("mhtml", "application/x-mimearchive"),
+        ("yaml", "application/x-yaml"),
+        ("xml", "application/xml"),
+    ],
+)
+async def test_extract_document_text_uses_kreuzberg_for_broad_formats(
+    monkeypatch: pytest.MonkeyPatch,
+    ext: str,
+    expected_mime: str,
+) -> None:
+    calls: list[tuple[bytes, str]] = []
+
+    def fake_extract_bytes_sync(data: bytes, mime_type: str):
+        calls.append((data, mime_type))
+        return SimpleNamespace(content=f"Readable {ext} body")
+
+    monkeypatch.setattr(
+        "app.core.document_extract.extract_bytes_sync",
+        fake_extract_bytes_sync,
+    )
+
+    text = await extract_document_text(ext, b"document bytes")
+
+    assert text == f"Readable {ext} body"
+    assert calls == [(b"document bytes", expected_mime)]
+
+
+@pytest.mark.asyncio
+async def test_extract_document_text_handles_open_document_formats() -> None:
+    odt_text = await extract_document_text(
+        "odt",
+        _odf_bytes(
+            "application/vnd.oasis.opendocument.text",
+            "<office:text><text:p>ODT roadmap body</text:p></office:text>",
+        ),
+    )
+    assert "ODT roadmap body" in odt_text
+
+    ods_text = await extract_document_text(
+        "ods",
+        _odf_bytes(
+            "application/vnd.oasis.opendocument.spreadsheet",
+            (
+                "<office:spreadsheet><table:table><table:table-row>"
+                "<table:table-cell><text:p>ODS metric</text:p></table:table-cell>"
+                "</table:table-row></table:table></office:spreadsheet>"
+            ),
+        ),
+    )
+    assert "ODS metric" in ods_text
+
+    odp_text = await extract_document_text(
+        "odp",
+        _odf_bytes(
+            "application/vnd.oasis.opendocument.presentation",
+            (
+                "<office:presentation><draw:page><text:p>ODP slide body</text:p>"
+                "</draw:page></office:presentation>"
+            ),
+        ),
+    )
+    assert "ODP slide body" in odp_text
+
+
+@pytest.mark.asyncio
+async def test_extract_document_text_surfaces_malformed_office_documents() -> None:
+    missing_docx = BytesIO()
+    with zipfile.ZipFile(missing_docx, "w") as zf:
+        zf.writestr("[Content_Types].xml", "")
+    with pytest.raises(DocumentExtractionError) as missing_docx_error:
+        await extract_document_text("docx", missing_docx.getvalue())
+    assert missing_docx_error.value.code == "docx_extract_failed"
+
+    broken_docx = BytesIO()
+    with zipfile.ZipFile(broken_docx, "w") as zf:
+        zf.writestr("word/document.xml", b"<not xml")
+    with pytest.raises(DocumentExtractionError) as broken_docx_error:
+        await extract_document_text("docx", broken_docx.getvalue())
+    assert broken_docx_error.value.code == "xml_parse_failed"
+
+    empty_pptx = BytesIO()
+    with zipfile.ZipFile(empty_pptx, "w") as zf:
+        zf.writestr("[Content_Types].xml", "")
+    with pytest.raises(DocumentExtractionError) as empty_pptx_error:
+        await extract_document_text("pptx", empty_pptx.getvalue())
+    assert empty_pptx_error.value.code == "no_readable_text"
+
+    missing_odf = BytesIO()
+    with zipfile.ZipFile(missing_odf, "w") as zf:
+        zf.writestr("mimetype", "application/vnd.oasis.opendocument.text")
+    with pytest.raises(DocumentExtractionError) as missing_odf_error:
+        await extract_document_text("odt", missing_odf.getvalue())
+    assert missing_odf_error.value.code == "opendocument_extract_failed"
+
+    broken_odf = BytesIO()
+    with zipfile.ZipFile(broken_odf, "w") as zf:
+        zf.writestr("content.xml", b"<not xml")
+    with pytest.raises(DocumentExtractionError) as broken_odf_error:
+        await extract_document_text("odt", broken_odf.getvalue())
+    assert broken_odf_error.value.code == "xml_parse_failed"
+
+
+@pytest.mark.asyncio
+async def test_extract_xlsx_handles_numeric_and_missing_shared_strings() -> None:
+    sheet = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+    <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+      <sheetData>
+        <row><c><v>42</v></c><c t="inlineStr"><is><t>units</t></is></c></row>
+      </sheetData>
+    </worksheet>
+    """
+    workbook = BytesIO()
+    with zipfile.ZipFile(workbook, "w") as zf:
+        zf.writestr("xl/worksheets/sheet1.xml", sheet)
+
+    text = await extract_document_text("xlsx", workbook.getvalue())
+
+    assert text == "42, units"
+
+
+@pytest.mark.asyncio
+async def test_extract_with_kreuzberg_surfaces_converter_failures(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def missing_dependency(_data: bytes, _mime_type: str) -> object:
+        raise document_extract_module.MissingDependencyError("missing converter")
+
+    monkeypatch.setattr(
+        document_extract_module,
+        "extract_bytes_sync",
+        missing_dependency,
+    )
+    with pytest.raises(DocumentExtractionError) as missing:
+        await extract_document_text("xls", b"legacy spreadsheet")
+    assert missing.value.code == "converter_missing"
+
+    def extraction_failure(_data: bytes, _mime_type: str) -> object:
+        raise document_extract_module.KreuzbergError("conversion failed")
+
+    monkeypatch.setattr(
+        document_extract_module,
+        "extract_bytes_sync",
+        extraction_failure,
+    )
+    with pytest.raises(DocumentExtractionError) as failed:
+        await extract_document_text("xls", b"legacy spreadsheet")
+    assert failed.value.code == "document_extract_failed"
+
+    monkeypatch.setattr(
+        document_extract_module,
+        "extract_bytes_sync",
+        lambda _data, _mime_type: SimpleNamespace(content=None),
+    )
+    with pytest.raises(DocumentExtractionError) as non_string:
+        await extract_document_text("xls", b"legacy spreadsheet")
+    assert non_string.value.code == "document_extract_failed"
+
+    monkeypatch.setattr(
+        document_extract_module,
+        "extract_bytes_sync",
+        lambda _data, _mime_type: SimpleNamespace(content=""),
+    )
+    with pytest.raises(DocumentExtractionError) as empty:
+        await extract_document_text("xls", b"legacy spreadsheet")
+    assert empty.value.code == "no_readable_text"
 
 
 @pytest.mark.asyncio
@@ -190,5 +498,9 @@ def test_document_kind_for_extension() -> None:
     assert document_kind_for_extension("pdf") == "pdf"
     assert document_kind_for_extension("html") == "article"
     assert document_kind_for_extension("docx") == "document"
+    assert document_kind_for_extension("odt") == "document"
     assert document_kind_for_extension("xlsx") == "spreadsheet"
+    assert document_kind_for_extension("xls") == "spreadsheet"
     assert document_kind_for_extension("pptx") == "presentation"
+    assert document_kind_for_extension("odp") == "presentation"
+    assert document_kind_for_extension("eml") == "email"

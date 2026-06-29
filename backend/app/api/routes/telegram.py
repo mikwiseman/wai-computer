@@ -62,8 +62,7 @@ from app.core.document_extract import (
     resolve_document_extension,
 )
 from app.core.item_ingest import ingest_item
-from app.core.item_processing import process_item
-from app.core.item_summary import generate_item_summary
+from app.core.item_processing import process_item, summarize_and_embed_item
 from app.core.item_telegram import format_fetch_error_reply, format_item_reply
 from app.core.item_titles import clean_title, title_from_filename
 from app.core.mcp_tools import (
@@ -295,8 +294,9 @@ def _telegram_help_text(*, linked: bool) -> str:
         "/settings — где управлять привязкой\n\n"
         "Можно без команд: «запомни люблю короткие ответы», "
         "«покажи последние встречи», «найди дорожная карта». "
-        "Голосовые, аудио и видео сохраняю как записи. PDF, DOCX, DOC, HTML, "
-        "TXT, Markdown, RTF, CSV, JSON, PPTX и XLSX добавляю в материалы."
+        "Голосовые, аудио и видео сохраняю как записи. PDF, Word, PowerPoint, "
+        "Excel, OpenDocument, HTML/MHTML, TXT/Markdown/RTF, CSV/JSON/YAML/XML, "
+        "EPUB и email-файлы добавляю в материалы."
     )
 
 
@@ -693,7 +693,8 @@ async def _send_unsupported_document_message(
         chat_id,
         (
             "Не могу извлечь текст из этого типа файла. Поддерживаются PDF, "
-            "DOCX, DOC, HTML, TXT, Markdown, RTF, CSV, JSON, PPTX и XLSX. "
+            "Word, PowerPoint, Excel, OpenDocument, HTML/MHTML, TXT/Markdown/RTF, "
+            "CSV/JSON/YAML/XML, EPUB и email-файлы. "
             "Аудио и видео сохраняю как записи."
         ),
         reply_to_message_id=reply_to_message_id,
@@ -2537,6 +2538,7 @@ async def _ensure_telegram_conversation(
     db: AsyncSession,
     account: TelegramAccount,
 ) -> Conversation:
+    await db.refresh(account, attribute_names=["user_id", "companion_conversation_id"])
     if account.companion_conversation_id is not None:
         result = await db.execute(
             select(Conversation).where(
@@ -3158,7 +3160,7 @@ async def _handle_document_message(
     if created or summary is None:
         action_task = asyncio.create_task(_send_chat_action_until_cancelled(client, chat_id))
         try:
-            summary = await generate_item_summary(db, item)
+            summary = await summarize_and_embed_item(db, item)
             await db.flush()
         except Exception:  # noqa: BLE001 - keep the saved item and surface the failure.
             logger.exception("telegram document processing failed ext=%s", ext)
@@ -3295,7 +3297,7 @@ async def _handle_photo_message(
     if created or summary is None:
         action_task = asyncio.create_task(_send_chat_action_until_cancelled(client, chat_id))
         try:
-            summary = await generate_item_summary(db, item)
+            summary = await summarize_and_embed_item(db, item)
             await db.flush()
         except Exception:  # noqa: BLE001 - keep the saved item and surface the failure.
             logger.exception("telegram photo processing failed")
@@ -3651,7 +3653,7 @@ async def _handle_forwarded_text(
     if created or summary is None:
         action_task = asyncio.create_task(_send_chat_action_until_cancelled(client, chat_id))
         try:
-            summary = await generate_item_summary(db, item)
+            summary = await summarize_and_embed_item(db, item)
             await db.flush()
         except Exception:  # noqa: BLE001 - keep the saved item and surface the failure.
             logger.exception("telegram forwarded text summary failed")

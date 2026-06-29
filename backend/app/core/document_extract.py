@@ -22,8 +22,24 @@ from typing import Any, Iterable
 from unicodedata import category
 from xml.etree import ElementTree
 
+from kreuzberg import extract_bytes_sync
+from kreuzberg.exceptions import KreuzbergError, MissingDependencyError
+
 from app.config import get_settings
 from app.core.source_fetch import SourceFetchError, _extract_pdf_text, _pdf_page_count
+
+_KREUZBERG_DOCUMENT_EXTENSIONS = {
+    "xls",
+    "ppt",
+    "epub",
+    "eml",
+    "msg",
+    "mhtml",
+    "yaml",
+    "xml",
+}
+
+_OPEN_DOCUMENT_EXTENSIONS = {"odt", "ods", "odp"}
 
 SUPPORTED_DOCUMENT_EXTENSIONS = {
     "pdf",
@@ -37,11 +53,25 @@ SUPPORTED_DOCUMENT_EXTENSIONS = {
     "json",
     "pptx",
     "xlsx",
-}
+} | _KREUZBERG_DOCUMENT_EXTENSIONS | _OPEN_DOCUMENT_EXTENSIONS
 
 _EXT_ALIASES = {
     "markdown": "md",
     "htm": "html",
+    "mht": "mhtml",
+    "xhtml": "html",
+    "yml": "yaml",
+}
+
+_KREUZBERG_MIME_TYPES = {
+    "xls": "application/vnd.ms-excel",
+    "ppt": "application/vnd.ms-powerpoint",
+    "epub": "application/epub+zip",
+    "eml": "message/rfc822",
+    "msg": "application/vnd.ms-outlook",
+    "mhtml": "application/x-mimearchive",
+    "yaml": "application/x-yaml",
+    "xml": "application/xml",
 }
 
 _MIME_EXTENSIONS = {
@@ -61,6 +91,22 @@ _MIME_EXTENSIONS = {
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "docx",
     "application/vnd.openxmlformats-officedocument.presentationml.presentation": "pptx",
     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "xlsx",
+    "application/vnd.ms-excel": "xls",
+    "application/vnd.ms-powerpoint": "ppt",
+    "application/vnd.oasis.opendocument.text": "odt",
+    "application/vnd.oasis.opendocument.spreadsheet": "ods",
+    "application/vnd.oasis.opendocument.presentation": "odp",
+    "application/epub+zip": "epub",
+    "message/rfc822": "eml",
+    "application/vnd.ms-outlook": "msg",
+    "application/x-mimearchive": "mhtml",
+    "multipart/related": "mhtml",
+    "application/x-yaml": "yaml",
+    "application/yaml": "yaml",
+    "text/yaml": "yaml",
+    "text/x-yaml": "yaml",
+    "application/xml": "xml",
+    "text/xml": "xml",
 }
 
 
@@ -89,14 +135,16 @@ def document_kind_for_extension(ext: str) -> str:
     """Map file formats onto the existing Item kind vocabulary."""
     if ext == "pdf":
         return "pdf"
-    if ext == "html":
+    if ext in {"html", "mhtml"}:
         return "article"
-    if ext in {"pptx"}:
+    if ext in {"pptx", "ppt", "odp"}:
         return "presentation"
-    if ext in {"xlsx", "csv"}:
+    if ext in {"xlsx", "xls", "ods", "csv"}:
         return "spreadsheet"
-    if ext in {"doc", "docx", "rtf"}:
+    if ext in {"doc", "docx", "rtf", "odt", "epub"}:
         return "document"
+    if ext in {"eml", "msg"}:
+        return "email"
     return "note"
 
 
@@ -133,6 +181,10 @@ async def extract_document_text(
         return _extract_pptx(data)
     if ext == "xlsx":
         return _extract_xlsx(data)
+    if ext in _OPEN_DOCUMENT_EXTENSIONS:
+        return _extract_open_document(data, ext)
+    if ext in _KREUZBERG_DOCUMENT_EXTENSIONS:
+        return await asyncio.to_thread(_extract_with_kreuzberg, ext, data)
     raise AssertionError(f"unhandled document extension: {ext}")
 
 
@@ -302,6 +354,43 @@ def _extract_xlsx(data: bytes) -> str:
     return _require_text("\n".join(rows), "No readable text found in this XLSX file.")
 
 
+def _extract_open_document(data: bytes, ext: str) -> str:
+    label = ext.upper()
+    try:
+        with zipfile.ZipFile(io.BytesIO(data)) as zf:
+            xml = zf.read("content.xml")
+    except (KeyError, zipfile.BadZipFile) as exc:
+        raise DocumentExtractionError(
+            "opendocument_extract_failed",
+            f"Couldn't read this {label} file.",
+        ) from exc
+    return _xml_text_content(xml, f"No readable text found in this {label} file.")
+
+
+def _extract_with_kreuzberg(ext: str, data: bytes) -> str:
+    mime_type = _KREUZBERG_MIME_TYPES[ext]
+    label = ext.upper()
+    try:
+        result = extract_bytes_sync(data, mime_type)
+    except MissingDependencyError as exc:
+        raise DocumentExtractionError(
+            "converter_missing",
+            f"{label} import needs the document converter on the server.",
+        ) from exc
+    except KreuzbergError as exc:
+        raise DocumentExtractionError(
+            "document_extract_failed",
+            f"Couldn't read this {label} file.",
+        ) from exc
+    content = getattr(result, "content", None)
+    if not isinstance(content, str):
+        raise DocumentExtractionError(
+            "document_extract_failed",
+            f"Couldn't read this {label} file.",
+        )
+    return _require_text(content, f"No readable text found in this {label} file.")
+
+
 def _extract_doc_with_antiword(data: bytes) -> str:
     antiword = shutil.which("antiword")
     if not antiword:
@@ -389,6 +478,23 @@ def _paragraph_text_from_xml(xml: bytes, *, paragraph_tag: str, text_tag: str) -
         texts = [node.text for node in _iter_local(root, text_tag) if node.text]
         return _normalize_extracted_text(" ".join(texts))
     return "\n".join(lines)
+
+
+def _xml_text_content(xml: bytes, message: str) -> str:
+    try:
+        root = ElementTree.fromstring(xml)
+    except ElementTree.ParseError as exc:
+        raise DocumentExtractionError(
+            "xml_parse_failed",
+            "Couldn't parse this Office document.",
+        ) from exc
+    parts: list[str] = []
+    for node in root.iter():
+        if node.text:
+            parts.append(node.text)
+        if node.tail:
+            parts.append(node.tail)
+    return _require_text(_normalize_extracted_text(" ".join(parts)), message)
 
 
 def _xlsx_shared_strings(zf: zipfile.ZipFile) -> list[str]:

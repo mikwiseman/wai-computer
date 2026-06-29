@@ -36,6 +36,7 @@ dependencies = [
     "youtube-transcript-api>=1.2.4,<2.0",
     "yt-dlp>=2026.6.9",
     "pdfplumber>=0.11.9,<1.0",
+    "kreuzberg>=4.9.9,<5.0",
 ]
 
 [project.optional-dependencies]

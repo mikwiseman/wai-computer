@@ -210,6 +210,42 @@ def test_extract_document_accepts_supported_material_documents():
     )
 
 
+@pytest.mark.parametrize(
+    ("filename", "mime_type", "expected_ext"),
+    [
+        ("legacy.xls", "application/vnd.ms-excel", "xls"),
+        ("slides.ppt", "application/vnd.ms-powerpoint", "ppt"),
+        ("brief.odt", "application/vnd.oasis.opendocument.text", "odt"),
+        ("sheet.ods", "application/vnd.oasis.opendocument.spreadsheet", "ods"),
+        ("deck.odp", "application/vnd.oasis.opendocument.presentation", "odp"),
+        ("book.epub", "application/epub+zip", "epub"),
+        ("mail.eml", "message/rfc822", "eml"),
+        ("outlook.msg", "application/vnd.ms-outlook", "msg"),
+        ("snapshot.mhtml", "application/x-mimearchive", "mhtml"),
+        ("config.yaml", "application/x-yaml", "yaml"),
+        ("feed.xml", "application/xml", "xml"),
+    ],
+)
+def test_extract_document_accepts_broad_material_documents(
+    filename: str,
+    mime_type: str,
+    expected_ext: str,
+) -> None:
+    document = telegram_routes._extract_document(
+        {
+            "document": {
+                "file_id": "doc-id",
+                "file_name": filename,
+                "mime_type": mime_type,
+            }
+        }
+    )
+
+    assert document is not None
+    assert document["kind"] == "document"
+    assert document["document_ext"] == expected_ext
+
+
 @pytest.mark.asyncio
 async def test_import_media_as_recording_persists_transcript_and_summary(
     db_session: AsyncSession,
@@ -2058,6 +2094,29 @@ async def test_handle_text_message_reuses_wai_conversation(
 
 
 @pytest.mark.asyncio
+async def test_ensure_telegram_conversation_refreshes_expired_account_columns(
+    db_session: AsyncSession,
+) -> None:
+    user = await _user(db_session, "telegram-expired-account@example.com")
+    conversation = Conversation(user_id=user.id, title="Telegram", scope={"source": "telegram"})
+    db_session.add(conversation)
+    await db_session.flush()
+    account = TelegramAccount(
+        user_id=user.id,
+        telegram_user_id=4301,
+        telegram_chat_id=4301,
+        companion_conversation_id=conversation.id,
+    )
+    db_session.add(account)
+    await db_session.commit()
+    db_session.expire(account, ["user_id", "companion_conversation_id"])
+
+    reused = await telegram_routes._ensure_telegram_conversation(db_session, account)
+
+    assert reused.id == conversation.id
+
+
+@pytest.mark.asyncio
 async def test_handle_text_message_renders_action_proposals(
     db_session: AsyncSession,
     monkeypatch,
@@ -2937,6 +2996,7 @@ async def test_handle_document_message_imports_html_material_and_replies(
         return []
 
     monkeypatch.setattr("app.core.item_ingest.generate_embeddings", fake_embeddings)
+    monkeypatch.setattr("app.core.item_processing.generate_embeddings", fake_embeddings)
     monkeypatch.setattr("app.core.item_summary.summarize_content", fake_summarize)
     monkeypatch.setattr("app.core.item_summary.extract_key_moments", fake_moments)
 
@@ -2971,6 +3031,78 @@ async def test_handle_document_message_imports_html_material_and_replies(
     assert capture.deleted_messages == [{"chat_id": 54, "message_id": 1}]
     assert "<b>stt-benchmarks-2026</b>" in capture.messages[-1]["text"]
     assert "Сравнение моделей" in capture.messages[-1]["text"]
+
+
+@pytest.mark.asyncio
+async def test_handle_document_message_summarizes_every_supported_document_extension(
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user = await _user(db_session, "telegram-all-docs@example.com")
+    account = TelegramAccount(user_id=user.id, telegram_user_id=5401, telegram_chat_id=5401)
+    db_session.add(account)
+    await db_session.commit()
+    capture = _TelegramCapture()
+    capture.data = b"converted document bytes"
+    extracted: list[str] = []
+    summarized: list[str] = []
+
+    async def fake_embeddings(texts: list[str], **_: object) -> list[list[float]]:
+        return [[0.03] * 1536 for _ in texts]
+
+    async def fake_extract_document_text(ext: str, data: bytes) -> str:
+        extracted.append(ext)
+        assert data == capture.data
+        return f"Readable {ext} document body"
+
+    async def fake_summarize_and_embed_item(db: AsyncSession, item: Item) -> ItemSummary:
+        ext = str((item.metadata_ or {})["telegram"]["ext"])
+        summarized.append(ext)
+        summary = ItemSummary(
+            item_id=item.id,
+            summary=f"Summary for {ext}",
+            key_points=[],
+            decisions=[],
+            action_items=[],
+            topics=[],
+            people_mentioned=[],
+            highlights=[],
+            key_moments=[],
+            sentiment="neutral",
+        )
+        db.add(summary)
+        return summary
+
+    monkeypatch.setattr("app.core.item_ingest.generate_embeddings", fake_embeddings)
+    monkeypatch.setattr(telegram_routes, "extract_document_text", fake_extract_document_text)
+    monkeypatch.setattr(
+        telegram_routes,
+        "summarize_and_embed_item",
+        fake_summarize_and_embed_item,
+    )
+
+    for index, ext in enumerate(sorted(telegram_routes.SUPPORTED_DOCUMENT_EXTENSIONS), start=1):
+        capture.file = TelegramFile("file-id", f"documents/sample-{index}.{ext}", len(capture.data))
+        await telegram_routes._handle_document_message(
+            db_session,
+            capture,
+            message={"message_id": index, "chat": {"id": 5401}},
+            account=account,
+            document={
+                "kind": "document",
+                "file_id": "file-id",
+                "file_unique_id": f"unique-{ext}",
+                "file_name": f"sample-{index}.{ext}",
+                "mime_type": "application/octet-stream",
+                "file_size": len(capture.data),
+            },
+        )
+
+    expected_exts = sorted(telegram_routes.SUPPORTED_DOCUMENT_EXTENSIONS)
+    assert extracted == expected_exts
+    assert summarized == expected_exts
+    assert "Summary for" in capture.messages[-1]["text"]
+    assert "Не могу извлечь текст" not in "\n".join(message["text"] for message in capture.messages)
 
 
 @pytest.mark.asyncio
@@ -3279,7 +3411,7 @@ async def test_handle_document_message_reports_validation_extraction_and_process
 
     capture = _TelegramCapture()
     monkeypatch.setattr(telegram_routes, "ingest_item", fake_ingest)
-    monkeypatch.setattr(telegram_routes, "generate_item_summary", fail_summary)
+    monkeypatch.setattr(telegram_routes, "summarize_and_embed_item", fail_summary)
     await telegram_routes._handle_document_message(
         db_session,
         capture,

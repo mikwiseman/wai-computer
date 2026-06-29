@@ -7,7 +7,7 @@ from sqlalchemy import select
 
 from app.core import item_processing
 from app.core.item_ingest import ingest_item
-from app.core.item_processing import process_item
+from app.core.item_processing import process_item, summarize_and_embed_item
 from app.core.source_fetch import FetchedContent, SourceFetchError
 from app.core.summarizer import KeyMoment, SummaryResult
 from app.models.item import ItemChunk, ItemSummary
@@ -104,6 +104,167 @@ async def test_process_url_item_fetches_then_summarizes(db_session, monkeypatch)
     ).scalar_one_or_none()
     assert summary is not None
     assert summary.key_moments[0]["moment"] == "m"
+
+
+async def test_process_item_embeds_generated_summary_before_body(
+    db_session, monkeypatch
+) -> None:
+    user = await _make_user(db_session)
+    item, _ = await ingest_item(
+        db_session,
+        user.id,
+        source="telegram",
+        kind="article",
+        title="Original title",
+        body="Full article body about raw facts only.",
+        embed=False,
+    )
+    _patch_summary(monkeypatch)
+    embedded_batches: list[list[str]] = []
+
+    async def capturing_embedder(texts: list[str]) -> list[list[float]]:
+        embedded_batches.append(list(texts))
+        return [[0.02] * 1536 for _ in texts]
+
+    await process_item(db_session, item, embedder=capturing_embedder)
+
+    assert embedded_batches
+    flattened = "\n".join(text for batch in embedded_batches for text in batch)
+    assert "summary" in flattened
+    assert "Full article body about raw facts only." in flattened
+    chunks = (
+        await db_session.execute(select(ItemChunk).where(ItemChunk.item_id == item.id))
+    ).scalars().all()
+    assert any("summary" in chunk.content for chunk in chunks)
+
+
+async def test_process_body_item_without_summary_embeds_body_only(db_session) -> None:
+    user = await _make_user(db_session)
+    item, _ = await ingest_item(
+        db_session,
+        user.id,
+        source="telegram",
+        kind="note",
+        title="Raw note",
+        body="Body that should be indexed without a generated summary.",
+        embed=False,
+    )
+    batches: list[list[str]] = []
+
+    async def capture_embedder(texts: list[str]) -> list[list[float]]:
+        batches.append(list(texts))
+        return [[0.02] * 1536 for _ in texts]
+
+    await process_item(
+        db_session,
+        item,
+        embedder=capture_embedder,
+        summarize=False,
+    )
+
+    chunks = (
+        await db_session.execute(select(ItemChunk).where(ItemChunk.item_id == item.id))
+    ).scalars().all()
+    assert chunks
+    assert any("Body that should be indexed" in chunk.content for chunk in chunks)
+    assert item.embedding is not None
+    assert "Body that should be indexed" in "\n".join(
+        text for batch in batches for text in batch
+    )
+
+
+async def test_process_item_without_body_returns_without_embedding(db_session) -> None:
+    user = await _make_user(db_session)
+    item, _ = await ingest_item(
+        db_session,
+        user.id,
+        source="telegram",
+        kind="note",
+        title="Empty capture",
+        body=None,
+        embed=False,
+    )
+
+    async def fail_embedder(_texts: list[str]) -> list[list[float]]:
+        raise AssertionError("empty item should not be embedded")
+
+    result = await process_item(
+        db_session,
+        item,
+        embedder=fail_embedder,
+        summarize=False,
+    )
+
+    assert result is item
+    assert item.embedding is None
+
+
+async def test_process_item_preserves_chunks_on_embedding_count_mismatch(
+    db_session,
+) -> None:
+    user = await _make_user(db_session)
+    item, _ = await ingest_item(
+        db_session,
+        user.id,
+        source="telegram",
+        kind="note",
+        title="Existing",
+        body="Existing chunk body.",
+        embed=True,
+        embedder=_fake_embedder,
+    )
+    before = (
+        await db_session.execute(select(ItemChunk).where(ItemChunk.item_id == item.id))
+    ).scalars().all()
+    assert before
+
+    async def bad_embedder(_texts: list[str]) -> list[list[float]]:
+        return []
+
+    with pytest.raises(ValueError, match="item chunk count"):
+        await process_item(
+            db_session,
+            item,
+            embedder=bad_embedder,
+            summarize=False,
+        )
+
+    after = (
+        await db_session.execute(select(ItemChunk).where(ItemChunk.item_id == item.id))
+    ).scalars().all()
+    assert [chunk.content for chunk in after] == [chunk.content for chunk in before]
+
+
+async def test_summarize_and_embed_item_validates_document_embedding_count(
+    db_session,
+    monkeypatch,
+) -> None:
+    user = await _make_user(db_session)
+    item, _ = await ingest_item(
+        db_session,
+        user.id,
+        source="telegram",
+        kind="article",
+        title="Doc count",
+        body="Article body.",
+        embed=False,
+    )
+    _patch_summary(monkeypatch)
+    calls = 0
+
+    async def bad_doc_embedder(texts: list[str]) -> list[list[float]]:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            return [[0.02] * 1536 for _ in texts]
+        return []
+
+    with pytest.raises(ValueError, match="item document count"):
+        await summarize_and_embed_item(
+            db_session,
+            item,
+            embedder=bad_doc_embedder,
+        )
 
 
 async def test_process_fetch_error_marks_needs_input(db_session) -> None:

@@ -20,7 +20,7 @@ from app.core.summarizer import SummaryResult
 from app.core.telegram_client import TelegramFile, TelegramFileTooLargeError
 from app.models.agent import Agent, AgentRun
 from app.models.companion_pending_action import CompanionPendingAction
-from app.models.item import Item
+from app.models.item import Item, ItemChunk
 from app.models.telegram import TelegramAccount
 from app.models.user import User
 
@@ -167,7 +167,7 @@ def _pending_action(
 
 
 def _fake_item_pipeline(monkeypatch) -> None:
-    """Make ingest_item + generate_item_summary run for real without network."""
+    """Make ingest/process item summary + embeddings run without network."""
 
     async def fake_embeddings(texts: list[str], **_: object) -> list[list[float]]:
         return [[0.01] * 1536 for _ in texts]
@@ -190,6 +190,7 @@ def _fake_item_pipeline(monkeypatch) -> None:
         return []
 
     monkeypatch.setattr("app.core.item_ingest.generate_embeddings", fake_embeddings)
+    monkeypatch.setattr("app.core.item_processing.generate_embeddings", fake_embeddings)
     monkeypatch.setattr("app.core.item_summary.summarize_content", fake_summarize)
     monkeypatch.setattr("app.core.item_summary.extract_key_moments", fake_moments)
 
@@ -414,7 +415,7 @@ async def test_handle_photo_message_ingest_and_summary_failures(
     async def fail_summary(*args: object, **kwargs: object):
         raise RuntimeError("summarizer down")
 
-    monkeypatch.setattr(telegram_routes, "generate_item_summary", fail_summary)
+    monkeypatch.setattr(telegram_routes, "summarize_and_embed_item", fail_summary)
     capture = _Capture()
     await telegram_routes._handle_photo_message(
         db_session,
@@ -459,6 +460,10 @@ async def test_route_text_like_saves_forwarded_long_text(
     assert item.source_ref == "telegram:text:9201:41"
     assert item.metadata_["telegram"]["forwarded"] is True
     assert "Заметка о продуктовой стратегии" in item.title
+    chunks = (
+        await db_session.execute(select(ItemChunk).where(ItemChunk.item_id == item.id))
+    ).scalars().all()
+    assert any("Краткое содержание распознанного текста." in c.content for c in chunks)
     assert account.active_context["ref_type"] == "item"
     assert account.active_context["ref_id"] == str(item.id)
     reply = capture.messages[-1]
@@ -503,7 +508,7 @@ async def test_handle_forwarded_text_failure_paths(
     async def fail_summary(*args: object, **kwargs: object):
         raise RuntimeError("summarizer down")
 
-    monkeypatch.setattr(telegram_routes, "generate_item_summary", fail_summary)
+    monkeypatch.setattr(telegram_routes, "summarize_and_embed_item", fail_summary)
     capture = _Capture()
     await telegram_routes._handle_forwarded_text(
         db_session,
