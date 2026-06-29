@@ -302,9 +302,12 @@ class TestContentSummariesAndMoments:
         )
 
         assert "content is a article" in prompt
-        assert "4-6 sentence" in prompt
+        assert "clear prose" in prompt
+        assert "proper nouns, numbers, and direct quotes verbatim" in prompt
+        assert "4-10 sentences" in prompt
         assert "ru" in prompt
         assert "Keep project names exact" in prompt
+        assert "preserving accuracy" in prompt
 
         default_prompt = summarizer_module.build_content_summary_prompt(
             content_kind="content",
@@ -312,7 +315,7 @@ class TestContentSummariesAndMoments:
             style="unknown-style",
         )
         assert "dominant language of the content" in default_prompt
-        assert "2-3 sentence" in default_prompt
+        assert "4-10 sentences" in default_prompt
 
     async def test_summarize_content_returns_structured_result(self):
         mock_response = _parsed_response(_summary_schema_payload(title="Saved Article"))

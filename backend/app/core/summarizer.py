@@ -530,6 +530,11 @@ Rules:
 - Do not invent facts. Only include information actually present in the content.
   Use null for unknown nullable fields and empty arrays for absent lists; never
   pad to look complete.
+- Write the `summary` field in clear prose. For substantive content, target
+  4-10 sentences; for very short content, stay short and do not pad.
+- Keep proper nouns, numbers, and direct quotes verbatim. Preserve project,
+  company, product, person, place, date, price, metric, and quoted wording
+  exactly when the content provides it.
 - Hard caps: key_points <= 15, decisions <= 20, action_items <= 30, topics <=
   20, people_mentioned <= 30, follow_up_questions <= 10, highlights <= 10.
 - Keep descriptions specific: names, dates, numbers, quoted phrases.
@@ -542,6 +547,27 @@ Rules:
 - action_items: only extract genuine tasks/next-steps the content implies for
   the reader; for purely informational content this may be empty.
 """
+
+
+CONTENT_STYLE_INSTRUCTIONS = {
+    "brief": (
+        "Keep the summary to 1-2 sentences. Preserve exact names, numbers, and "
+        "quoted wording while being concise."
+    ),
+    "medium": (
+        "Write a clear 4-10 sentence prose summary for substantive content. "
+        "For a short note, stay shorter and do not pad."
+    ),
+    "detailed": (
+        "Write a thorough 4-10 sentence prose summary. Cover the full content, "
+        "including important context, names, dates, numbers, quotes, and conclusions."
+    ),
+    "structured": (
+        "Cover the content completely — every distinct point, decision, and action, "
+        "with no padding. Use clear prose for the summary and structured list fields "
+        "for details."
+    ),
+}
 
 
 MEDIA_CONTENT_SUMMARY_INSTRUCTIONS = """\
@@ -590,7 +616,10 @@ def build_content_summary_prompt(
     if _is_time_based_content_kind(content_kind):
         parts.append("\n" + MEDIA_CONTENT_SUMMARY_INSTRUCTIONS)
 
-    style_text = STYLE_INSTRUCTIONS.get(style, STYLE_INSTRUCTIONS[DEFAULT_SUMMARY_STYLE])
+    style_text = CONTENT_STYLE_INSTRUCTIONS.get(
+        style,
+        CONTENT_STYLE_INSTRUCTIONS[DEFAULT_SUMMARY_STYLE],
+    )
     parts.append(f"\nSTYLE: {style_text}")
 
     if language and language != DEFAULT_SUMMARY_LANGUAGE:
@@ -604,7 +633,10 @@ def build_content_summary_prompt(
         )
 
     if instructions and instructions.strip():
-        parts.append(f"\nADDITIONAL INSTRUCTIONS: {instructions.strip()}")
+        parts.append(
+            "\nADDITIONAL INSTRUCTIONS: "
+            f"{instructions.strip()}\nApply these while preserving accuracy."
+        )
 
     parts.append("\nContent:\n")
     return "\n".join(parts)
