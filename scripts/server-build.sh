@@ -237,11 +237,11 @@ export SENTRY_AUTH_TOKEN
 SENTRY_AUTH_TOKEN=$(read_env_key SENTRY_AUTH_TOKEN)
 export SENTRY_UPLOAD_REQUIRED=1
 
-CELERY_STOPPED_FOR_BUILD=false
+RESTART_CELERY_ON_EXIT=false
 restart_celery_on_exit() {
-  if [[ "$CELERY_STOPPED_FOR_BUILD" == "true" ]]; then
+  if [[ "$RESTART_CELERY_ON_EXIT" == "true" ]]; then
     echo "Restarting celery workers after interrupted deploy..."
-    docker_compose up -d celery-worker celery-recording-worker celery-summary-worker || true
+    docker_compose up -d --no-build --pull never celery-worker celery-recording-worker celery-summary-worker || true
   fi
 }
 trap restart_celery_on_exit EXIT
@@ -258,7 +258,7 @@ if [[ "$ALLOW_SERVER_SIDE_BUILD" == "1" ]]; then
   # first frees ~1 GB of headroom for the heavy web (Next.js) build. Celery's
   # queue must already be drained before a deploy.
   docker_compose stop celery-worker celery-recording-worker celery-summary-worker
-  CELERY_STOPPED_FOR_BUILD=true
+  RESTART_CELERY_ON_EXIT=true
   docker_compose_timeout build api
   docker_compose_timeout build web
 elif [[ "$ALLOW_SERVER_SIDE_BUILD" == "0" ]]; then
@@ -275,6 +275,7 @@ fi
 # schema during the brief window until `up -d` recreates the containers.
 docker_compose_timeout run --rm --no-deps --pull never api alembic upgrade head
 
+RESTART_CELERY_ON_EXIT=true
 docker_compose up \
   -d \
   --remove-orphans \
@@ -283,7 +284,6 @@ docker_compose up \
   --wait \
   --wait-timeout "$DEPLOY_HEALTH_WAIT_TIMEOUT_SECONDS" \
   "${DEPLOY_SERVICES[@]}"
-CELERY_STOPPED_FOR_BUILD=false
 
 wait_for_service \
   "Telegram Bot API service" \
@@ -326,6 +326,8 @@ wait_for_service \
   24 \
   5 \
   "docker logs --tail 200 waicomputer-celery-summary-worker"
+
+RESTART_CELERY_ON_EXIT=false
 
 # Caddy bind-mounts Caddyfile by path. rsync replaces files by rename, giving
 # them a new inode; restart Caddy when the mounted file inside the container does

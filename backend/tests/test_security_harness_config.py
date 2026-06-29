@@ -106,7 +106,8 @@ def test_server_build_manages_recording_worker_during_deploy():
     script = (REPO_ROOT / "scripts/server-build.sh").read_text()
 
     assert (
-        "docker_compose up -d celery-worker celery-recording-worker celery-summary-worker"
+        "docker_compose up -d --no-build --pull never "
+        "celery-worker celery-recording-worker celery-summary-worker"
         in script
     )
     assert (
@@ -121,7 +122,8 @@ def test_server_build_manages_summary_worker_during_deploy():
     script = (REPO_ROOT / "scripts/server-build.sh").read_text()
 
     assert (
-        "docker_compose up -d celery-worker celery-recording-worker celery-summary-worker"
+        "docker_compose up -d --no-build --pull never "
+        "celery-worker celery-recording-worker celery-summary-worker"
         in script
     )
     assert (
@@ -130,6 +132,23 @@ def test_server_build_manages_summary_worker_during_deploy():
     )
     assert "waicomputer-celery-summary-worker" in script
     assert "Celery summary worker health check" in script
+
+
+def test_server_build_restarts_celery_after_interrupted_service_swap_without_building():
+    script = (REPO_ROOT / "scripts/server-build.sh").read_text()
+
+    assert "RESTART_CELERY_ON_EXIT=false" in script
+    assert (
+        "docker_compose up -d --no-build --pull never "
+        "celery-worker celery-recording-worker celery-summary-worker"
+    ) in script
+    swap_start = script.index(
+        "RESTART_CELERY_ON_EXIT=true\n"
+        "docker_compose up \\"
+    )
+    worker_ready = script.index('"Celery summary worker health check"')
+    swap_done = script.index("RESTART_CELERY_ON_EXIT=false", swap_start)
+    assert swap_start < worker_ready < swap_done
 
 
 def test_server_build_aligns_telegram_webhook_after_public_health():
