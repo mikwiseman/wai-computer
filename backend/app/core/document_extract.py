@@ -69,7 +69,7 @@ _KREUZBERG_MIME_TYPES = {
     "epub": "application/epub+zip",
     "eml": "message/rfc822",
     "msg": "application/vnd.ms-outlook",
-    "mhtml": "application/x-mimearchive",
+    "mhtml": "message/rfc822",
     "yaml": "application/x-yaml",
     "xml": "application/xml",
 }
