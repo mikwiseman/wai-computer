@@ -176,11 +176,11 @@ celery_app.conf.beat_schedule = {
     },
     "embedding-backfill-every-30-minutes": {
         "task": "app.tasks.embedding_backfill.backfill_missing_segment_embeddings",
-        "schedule": timedelta(minutes=settings.embedding_backfill_interval_minutes),
+        "schedule": crontab(minute=f"*/{settings.embedding_backfill_interval_minutes}"),
     },
     "billing-renewals-every-15-minutes": {
         "task": "app.tasks.billing_renewals.charge_due_tinkoff_renewals",
-        "schedule": timedelta(minutes=15),
+        "schedule": crontab(minute="*/15"),
     },
     "billing-renewal-reminders-daily": {
         # Heads-up email ~3 days before each T-Bank recurring charge.
@@ -193,7 +193,7 @@ celery_app.conf.beat_schedule = {
     },
     "summary-generation-recovery-every-15-minutes": {
         "task": "app.tasks.summary_generation.recover_missing_summary_generation_jobs",
-        "schedule": timedelta(minutes=15),
+        "schedule": crontab(minute="*/15"),
         "kwargs": {"limit": 5},
     },
     "agent-dispatch-every-minute": {

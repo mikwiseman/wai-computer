@@ -1,5 +1,7 @@
 from types import SimpleNamespace
 
+from celery.schedules import crontab
+
 from app.db import session as session_module
 from app.tasks import celery_app as celery_app_module
 
@@ -284,6 +286,20 @@ def test_embedding_backfill_task_is_registered_for_periodic_repair():
         in celery_app_module.celery_app.tasks
     )
     assert "embedding-backfill-every-30-minutes" in celery_app_module.celery_app.conf.beat_schedule
+
+
+def test_monitor_critical_periodic_tasks_use_wall_clock_schedules():
+    monitored_schedules = {
+        "embedding-backfill-every-30-minutes": "*/30",
+        "billing-renewals-every-15-minutes": "*/15",
+        "summary-generation-recovery-every-15-minutes": "*/15",
+    }
+
+    for schedule_name, expected_minute in monitored_schedules.items():
+        schedule = celery_app_module.celery_app.conf.beat_schedule[schedule_name]["schedule"]
+
+        assert isinstance(schedule, crontab)
+        assert schedule._orig_minute == expected_minute
 
 
 def test_recording_processing_recovery_task_is_registered_for_periodic_repair():
