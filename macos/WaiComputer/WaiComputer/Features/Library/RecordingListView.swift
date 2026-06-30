@@ -15,6 +15,7 @@ struct RecordingListView: View {
     let onMoveToFolder: ([String], String?) -> Void
     let onRequestRename: (String) -> Void
     @EnvironmentObject private var languageManager: LanguageManager
+    @FocusState private var listFocused: Bool
 
     var body: some View {
         List(recordings, selection: $selectedRecordingIds) { recording in
@@ -75,16 +76,14 @@ struct RecordingListView: View {
                 }
         }
         .listStyle(.inset)
+        .focusable()
+        .focused($listFocused)
+        .focusedValue(\.macSelectionCommands, listFocused ? selectionCommandContext : nil)
         .disabled(isOperationInProgress)
         .onDeleteCommand {
-            let ids = Array(selectedRecordingIds)
-            guard !ids.isEmpty, !isOperationInProgress else { return }
-            if isTrash {
-                onPermanentDelete(ids)
-            } else {
-                onTrash(ids)
-            }
+            deleteSelectedRecordings()
         }
+        .simultaneousGesture(TapGesture().onEnded { listFocused = true })
     }
 
     private func t(_ english: String, _ russian: String) -> String {
@@ -105,6 +104,71 @@ struct RecordingListView: View {
 
         let selectedIds = Set(contextSelection)
         return recordings.contains { selectedIds.contains($0.id) && $0.folderId != nil }
+    }
+
+    private var visibleRecordingIds: [String] {
+        recordings.map(\.id)
+    }
+
+    private var selectedIdsInVisibleOrder: [String] {
+        visibleRecordingIds.filter { selectedRecordingIds.contains($0) }
+    }
+
+    private var canActOnSelection: Bool {
+        !selectedRecordingIds.isEmpty && !isOperationInProgress
+    }
+
+    private var selectionCommandContext: MacSelectionCommandContext {
+        MacSelectionCommandContext(
+            canSelectAll: !recordings.isEmpty && selectedRecordingIds.count < recordings.count && !isOperationInProgress,
+            canClearSelection: !selectedRecordingIds.isEmpty && !isOperationInProgress,
+            canDelete: canActOnSelection,
+            canMoveToTrash: canActOnSelection && !isTrash,
+            canRestore: canActOnSelection && isTrash,
+            canDeletePermanently: canActOnSelection && isTrash,
+            selectAll: selectAllRecordings,
+            clearSelection: clearRecordingSelection,
+            delete: deleteSelectedRecordings,
+            moveToTrash: moveSelectedRecordingsToTrash,
+            restore: restoreSelectedRecordings,
+            deletePermanently: deleteSelectedRecordingsPermanently
+        )
+    }
+
+    private func selectAllRecordings() {
+        guard !isOperationInProgress else { return }
+        selectedRecordingIds = Set(recordings.map(\.id))
+    }
+
+    private func clearRecordingSelection() {
+        guard !isOperationInProgress else { return }
+        selectedRecordingIds.removeAll()
+    }
+
+    private func deleteSelectedRecordings() {
+        if isTrash {
+            deleteSelectedRecordingsPermanently()
+        } else {
+            moveSelectedRecordingsToTrash()
+        }
+    }
+
+    private func moveSelectedRecordingsToTrash() {
+        let ids = selectedIdsInVisibleOrder
+        guard !ids.isEmpty, !isOperationInProgress, !isTrash else { return }
+        onTrash(ids)
+    }
+
+    private func restoreSelectedRecordings() {
+        let ids = selectedIdsInVisibleOrder
+        guard !ids.isEmpty, !isOperationInProgress, isTrash else { return }
+        onRestore(ids)
+    }
+
+    private func deleteSelectedRecordingsPermanently() {
+        let ids = selectedIdsInVisibleOrder
+        guard !ids.isEmpty, !isOperationInProgress, isTrash else { return }
+        onPermanentDelete(ids)
     }
 }
 

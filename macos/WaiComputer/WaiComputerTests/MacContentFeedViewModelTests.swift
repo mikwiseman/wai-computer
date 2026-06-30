@@ -50,7 +50,7 @@ final class MacContentFeedViewModelTests: XCTestCase {
         // frame on macOS 26 — the "inbox scroll freezes" bug — so its return
         // is treated as a regression, as is an unrecycled LazyVStack.
         XCTAssertTrue(source.contains("MacInboxRowsList("))
-        XCTAssertTrue(source.contains("List {"))
+        XCTAssertTrue(source.contains("List(selection: $selectedRowIDs) {"))
         XCTAssertTrue(source.contains("rowsRevision: model.rowsRevision"))
         XCTAssertTrue(source.contains("displayCache.displayRows("))
         XCTAssertTrue(source.contains("revision: rowsRevision,"))
@@ -230,6 +230,37 @@ final class MacContentFeedViewModelTests: XCTestCase {
         XCTAssertFalse(viewSource.contains("isPinnedToBottom"))
         XCTAssertFalse(viewSource.contains("Text(recordingVM.committedTranscript)"))
         XCTAssertFalse(viewSource.contains("LazyVStack"))
+    }
+
+    func testMacSelectionCommandsExposeStandardKeyboardShortcuts() throws {
+        let appSource = try macSource("WaiComputer/App/WaiComputerMacApp.swift")
+        let commandsSource = try macSource("WaiComputer/App/MacSelectionCommands.swift")
+        let recordingListSource = try macSource("WaiComputer/Features/Library/RecordingListView.swift")
+        let inboxSource = try macSource("WaiComputer/Features/Inbox/MacInboxView.swift")
+        let inboxModelSource = try macSource("WaiComputer/Features/Inbox/MacInboxViewModel.swift")
+
+        XCTAssertTrue(appSource.contains("MacSelectionCommands()"))
+        XCTAssertTrue(commandsSource.contains("CommandGroup(after: .pasteboard)"))
+        XCTAssertTrue(commandsSource.contains(".keyboardShortcut(\"a\", modifiers: .command)"))
+        XCTAssertTrue(commandsSource.contains(".keyboardShortcut(.delete, modifiers: [])"))
+        XCTAssertTrue(commandsSource.contains(".keyboardShortcut(.delete, modifiers: .command)"))
+        XCTAssertTrue(commandsSource.contains(".keyboardShortcut(.delete, modifiers: [.command, .shift])"))
+        XCTAssertTrue(recordingListSource.contains("selectedRecordingIds = Set(recordings.map(\\.id))"))
+        XCTAssertTrue(recordingListSource.contains(".focusedValue(\\.macSelectionCommands"))
+        XCTAssertTrue(inboxSource.contains("@State private var selectedRowIDs: Set<String> = []"))
+        XCTAssertTrue(inboxSource.contains("List(selection: $selectedRowIDs)"))
+        XCTAssertTrue(inboxSource.contains(".focusedValue(\\.macSelectionCommands"))
+        XCTAssertTrue(inboxModelSource.contains("func deleteRows(_ details: [InboxDetailRef]) async -> Bool"))
+        XCTAssertTrue(inboxModelSource.contains("try await apiClient.deleteRecording(id: detail.id, permanent: false)"))
+        XCTAssertTrue(inboxModelSource.contains("try await apiClient.deleteItem(id: detail.id)"))
+    }
+
+    func testDictationMayStartWhileMeetingRecordingIsActive() throws {
+        let appSource = try macSource("WaiComputer/App/WaiComputerMacApp.swift")
+
+        XCTAssertTrue(appSource.contains("static func canStartDictationDuringRecording(phase: MacRecordingPhase)"))
+        XCTAssertTrue(appSource.contains("phase == .idle || phase == .recording"))
+        XCTAssertFalse(appSource.contains("recordingViewModel?.phase == .idle"))
     }
 
     func testAskAnythingAnswerStreamsWithoutRebuildingThePanelOrOneHugeTextView() throws {

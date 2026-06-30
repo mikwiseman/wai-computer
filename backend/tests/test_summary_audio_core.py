@@ -161,6 +161,40 @@ async def test_summary_audio_payload_persists_file_and_usage(
     assert event.estimated_cost_usd is not None
 
 
+async def test_summary_audio_payload_uses_summary_not_full_source_text(db_session) -> None:
+    user = await _user(db_session)
+
+    recording = await _recording_with_summary(db_session, user)
+    recording.segments[0].content = "FULL TRANSCRIPT TEXT THAT MUST NOT BE SPOKEN"
+    recording.summary.summary = "SUMMARY TEXT THAT MUST BE SPOKEN"
+    await db_session.flush()
+    recording_artifact = await start_summary_audio_artifact(
+        db_session, source_kind="recording", source_id=recording.id, user_id=user.id
+    )
+    recording_payload = await prepare_summary_audio_generation_payload(
+        db_session, artifact_id=recording_artifact.id
+    )
+
+    assert recording_payload is not None
+    assert "SUMMARY TEXT THAT MUST BE SPOKEN" in recording_payload.text
+    assert "FULL TRANSCRIPT TEXT THAT MUST NOT BE SPOKEN" not in recording_payload.text
+
+    item = await _item_with_summary(db_session, user)
+    item.body = "FULL DOCUMENT BODY THAT MUST NOT BE SPOKEN"
+    item.summary.summary = "ITEM SUMMARY TEXT THAT MUST BE SPOKEN"
+    await db_session.flush()
+    item_artifact = await start_summary_audio_artifact(
+        db_session, source_kind="item", source_id=item.id, user_id=user.id
+    )
+    item_payload = await prepare_summary_audio_generation_payload(
+        db_session, artifact_id=item_artifact.id
+    )
+
+    assert item_payload is not None
+    assert "ITEM SUMMARY TEXT THAT MUST BE SPOKEN" in item_payload.text
+    assert "FULL DOCUMENT BODY THAT MUST NOT BE SPOKEN" not in item_payload.text
+
+
 async def test_prepare_summary_audio_marks_stale_summary(db_session) -> None:
     user = await _user(db_session)
     item = await _item_with_summary(db_session, user)

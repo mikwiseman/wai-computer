@@ -49,6 +49,7 @@ struct MacInboxView: View {
     @EnvironmentObject private var languageManager: LanguageManager
     @StateObject private var model: MacInboxViewModel
     @State private var selectedDetail: InboxDetailRef?
+    @State private var selectedRowIDs: Set<String> = []
     @State private var showingImporter = false
     @State private var focusedCreateMode: InboxCreateMode = .record
     /// In a folder, the right pane is a calm "nothing selected" placeholder by
@@ -110,8 +111,11 @@ struct MacInboxView: View {
     }
 
     private var selectedRowID: String? {
+        if selectedRowIDs.count == 1 {
+            return selectedRowIDs.first
+        }
         guard let selectedDetail else { return nil }
-        return "\(selectedDetail.kind.rawValue):\(selectedDetail.id)"
+        return rowID(for: selectedDetail)
     }
 
     var body: some View {
@@ -153,7 +157,11 @@ struct MacInboxView: View {
             consumePendingCommandIfNeeded()
         }
         .onChangeCompat(of: model.rows) { _, _ in
+            reconcileSelectionWithRows()
             consumePendingDetailIfNeeded()
+        }
+        .onChangeCompat(of: selectedRowIDs) { _, _ in
+            syncSelectedDetailWithSelection()
         }
         .onChangeCompat(of: selectedRowID) { _, next in
             // Picking a row returns a folder to its calm placeholder. Clears are
@@ -174,6 +182,7 @@ struct MacInboxView: View {
             // scope stays.
             if let open = selectedDetail, let scope = next, open.kind != scope {
                 selectedDetail = nil
+                selectedRowIDs.removeAll()
             }
             notifySourceKindChanged(next)
         }
@@ -381,14 +390,14 @@ struct MacInboxView: View {
                     rowsRevision: model.rowsRevision,
                     folders: folders,
                     language: languageManager.current,
-                    selectedRowID: selectedRowID,
+                    selectedRowIDs: $selectedRowIDs,
                     canLoadMore: model.nextCursor != nil,
                     isLoadingMore: model.isLoadingMore,
-                    onSelect: { row in
-                        selectedDetail = row.detail
-                    },
                     onLoadMore: {
                         Task { await model.loadMore() }
+                    },
+                    onDeleteSelection: { details in
+                        deleteInboxRows(details)
                     },
                     onMove: onMoveRow
                 )
@@ -399,7 +408,14 @@ struct MacInboxView: View {
 
     @ViewBuilder
     private var detailPane: some View {
-        if let selectedDetail {
+        if selectedRowIDs.count > 1 {
+            MacInboxBulkSelectionDetailView(
+                selectionCount: selectedRowIDs.count,
+                isDeleting: model.isAdding,
+                onDelete: deleteSelectedInboxRows
+            )
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        } else if let selectedDetail {
             selectedDetailView(selectedDetail)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         } else if folderId != nil && !folderComposerActive {
@@ -458,7 +474,7 @@ struct MacInboxView: View {
             foldersRevision: foldersRevision,
             apiClient: apiClient,
             onCloseDetail: {
-                self.selectedDetail = nil
+                self.clearInboxSelection()
                 Task {
                     await model.load()
                     await onLibraryChanged()
@@ -597,7 +613,7 @@ struct MacInboxView: View {
     /// during an in-flight add this shows the upload's progress instead of an
     /// error banner; the picker only opens when a new choice can actually start.
     private func openFileComposer() {
-        selectedDetail = nil
+        clearInboxSelection()
         focusCreateMode(.file)
         folderComposerActive = true
         if model.selectedUploadFile == nil, canStartInboxUpload {
@@ -615,7 +631,7 @@ struct MacInboxView: View {
             )
             return
         }
-        selectedDetail = nil
+        clearInboxSelection()
         focusCreateMode(.file)
         folderComposerActive = true
         showingImporter = true
@@ -629,7 +645,7 @@ struct MacInboxView: View {
             )
             return
         }
-        selectedDetail = nil
+        clearInboxSelection()
         focusCreateMode(.file)
         folderComposerActive = true
         model.selectUploadFile(url)
@@ -646,6 +662,7 @@ struct MacInboxView: View {
         Task {
             if let detail = await model.submitSelectedUploadFile() {
                 selectedDetail = detail
+                selectedRowIDs = [rowID(for: detail)]
             }
             await onLibraryChanged()
         }
@@ -667,7 +684,7 @@ struct MacInboxView: View {
         if model.sourceKind == .item {
             openFileComposer()
         } else {
-            selectedDetail = nil
+            clearInboxSelection()
             focusCreateMode(.record)
             folderComposerActive = true
             onStartRecording()
@@ -689,11 +706,11 @@ struct MacInboxView: View {
         case .contextualNew:
             performContextualNew()
         case .showCreatePane:
-            selectedDetail = nil
+            clearInboxSelection()
             focusCreateMode(Self.defaultCreateMode(for: model.sourceKind))
             folderComposerActive = true
         case .recordNow:
-            selectedDetail = nil
+            clearInboxSelection()
             focusCreateMode(.record)
             folderComposerActive = true
             onStartRecording()
@@ -708,11 +725,71 @@ struct MacInboxView: View {
             $0.detail.kind == pendingDetail.kind && $0.detail.id == pendingDetail.id
         }) {
             selectedDetail = row.detail
+            selectedRowIDs = [row.id]
             onPendingDetailConsumed()
             return
         }
         selectedDetail = pendingDetail
         onPendingDetailConsumed()
+    }
+
+    private func rowID(for detail: InboxDetailRef) -> String {
+        "\(detail.kind.rawValue):\(detail.id)"
+    }
+
+    private var selectedInboxRows: [InboxRow] {
+        model.rows.filter { selectedRowIDs.contains($0.id) }
+    }
+
+    private var selectedInboxDetails: [InboxDetailRef] {
+        selectedInboxRows.map(\.detail)
+    }
+
+    private func clearInboxSelection() {
+        selectedDetail = nil
+        selectedRowIDs.removeAll()
+    }
+
+    private func reconcileSelectionWithRows() {
+        guard !selectedRowIDs.isEmpty else { return }
+        let validRowIDs = Set(model.rows.map(\.id))
+        let nextSelection = selectedRowIDs.intersection(validRowIDs)
+        if nextSelection != selectedRowIDs {
+            selectedRowIDs = nextSelection
+        }
+        if selectedRowIDs.isEmpty {
+            selectedDetail = nil
+        }
+    }
+
+    private func syncSelectedDetailWithSelection() {
+        switch selectedRowIDs.count {
+        case 0:
+            selectedDetail = nil
+        case 1:
+            guard let selectedRowID = selectedRowIDs.first,
+                  let row = model.rows.first(where: { $0.id == selectedRowID })
+            else { return }
+            selectedDetail = row.detail
+            folderComposerActive = false
+        default:
+            selectedDetail = nil
+            folderComposerActive = false
+        }
+    }
+
+    private func deleteSelectedInboxRows() {
+        deleteInboxRows(selectedInboxDetails)
+    }
+
+    private func deleteInboxRows(_ details: [InboxDetailRef]) {
+        guard !details.isEmpty else { return }
+        Task {
+            let didDelete = await model.deleteRows(details)
+            guard didDelete else { return }
+            clearInboxSelection()
+            await onLibraryChanged()
+        }
     }
 
     private func t(_ english: String, _ russian: String) -> String {
@@ -763,6 +840,55 @@ private struct MacInboxDetailHost: View, Equatable {
         case .chat:
             EmptyView()
         }
+    }
+}
+
+private struct MacInboxBulkSelectionDetailView: View {
+    let selectionCount: Int
+    let isDeleting: Bool
+    let onDelete: () -> Void
+    @EnvironmentObject private var languageManager: LanguageManager
+
+    var body: some View {
+        VStack(spacing: Spacing.lg) {
+            Image(systemName: "checklist")
+                .font(.system(size: 28, weight: .semibold))
+                .foregroundStyle(Palette.accent)
+                .frame(width: 60, height: 60)
+                .background(Palette.accentSubtle)
+                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+
+            VStack(spacing: Spacing.xxs) {
+                Text(t("\(selectionCount) Items Selected", "Выбрано объектов: \(selectionCount)"))
+                    .font(Typography.displaySmall)
+                Text(t(
+                    "Use the menu or Delete key to remove them.",
+                    "Используйте меню или клавишу Delete, чтобы удалить выбранное."
+                ))
+                .font(Typography.bodySmall)
+                .foregroundStyle(Palette.textSecondary)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: 360)
+            }
+
+            Button(role: .destructive, action: onDelete) {
+                if isDeleting {
+                    ProgressView()
+                        .controlSize(.small)
+                } else {
+                    Label(t("Delete Selected", "Удалить выбранное"), systemImage: "trash")
+                }
+            }
+            .buttonStyle(.bordered)
+            .disabled(isDeleting)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(Spacing.xl)
+    }
+
+    private func t(_ english: String, _ russian: String) -> String {
+        OnboardingL10n.text(english, russian, language: languageManager.current)
     }
 }
 
@@ -1298,17 +1424,18 @@ private struct MacInboxRowsList: View {
     let rowsRevision: MacInboxRowsRevision
     let folders: [Folder]
     let language: LanguageManager.SupportedLanguage
-    let selectedRowID: String?
+    @Binding var selectedRowIDs: Set<String>
     let canLoadMore: Bool
     let isLoadingMore: Bool
-    let onSelect: (InboxRow) -> Void
     let onLoadMore: () -> Void
+    let onDeleteSelection: ([InboxDetailRef]) -> Void
     let onMove: (InboxDragItem, String?) -> Void
 
     /// Memoizes the O(N) localize + date-format row mapping across
     /// re-renders, and maps only the appended tail on pagination — the same
     /// motivation as the old coordinator cache, minus the full re-map per page.
     @State private var displayCache = MacInboxDisplayRowCache()
+    @FocusState private var listFocused: Bool
 
     /// Trigger pagination when one of the last few rows appears —
     /// matches the old 256px-before-bottom threshold (4 × 64pt rows).
@@ -1320,13 +1447,14 @@ private struct MacInboxRowsList: View {
             revision: rowsRevision,
             language: language
         )
-        List {
+        List(selection: $selectedRowIDs) {
             ForEach(displayRows) { display in
-                draggableRow(display, index: display.index)
+                draggableRow(display, displayRows: displayRows)
+                    .tag(display.id)
                     .listRowInsets(EdgeInsets())
                     .listRowSeparator(.hidden)
                     .listRowBackground(
-                        display.id == selectedRowID
+                        selectedRowIDs.contains(display.id)
                             ? Palette.accent.opacity(0.16)
                             : Color.clear
                     )
@@ -1352,31 +1480,97 @@ private struct MacInboxRowsList: View {
         }
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
+        .focusable()
+        .focused($listFocused)
+        .focusedValue(\.macSelectionCommands, listFocused ? selectionCommandContext(displayRows: displayRows) : nil)
+        .onDeleteCommand {
+            deleteSelectedRows(displayRows)
+        }
+        .simultaneousGesture(TapGesture().onEnded { listFocused = true })
         .accessibilityIdentifier("mac-inbox-rows")
     }
 
-    private func draggableRow(_ display: MacInboxDisplayRow, index: Int) -> some View {
+    private func draggableRow(
+        _ display: MacInboxDisplayRow,
+        displayRows: [MacInboxDisplayRow]
+    ) -> some View {
         // Every visible inbox kind files into folders. The context menu is the
         // same move, discoverable and keyboardable.
-        MacInboxListRow(
-            display: display,
-            onSelect: { onSelect(rows[index]) }
-        )
+        MacInboxListRow(display: display)
         .draggable(InboxDragItem(kind: display.sourceKind, id: display.detail.id))
         .contextMenu {
+            let contextDetails = contextDetails(for: display, displayRows: displayRows)
             Menu(Self.text("Move to Folder", "Переместить в папку", language: language)) {
                 Button(Self.text("Inbox (no folder)", "Инбокс (без папки)", language: language)) {
-                    onMove(InboxDragItem(kind: display.sourceKind, id: display.detail.id), nil)
+                    moveDetails(contextDetails, toFolder: nil)
                 }
                 if !folders.isEmpty {
                     Divider()
                     ForEach(folders) { folder in
                         Button(folder.name) {
-                            onMove(InboxDragItem(kind: display.sourceKind, id: display.detail.id), folder.id)
+                            moveDetails(contextDetails, toFolder: folder.id)
                         }
                     }
                 }
             }
+
+            Divider()
+
+            Button(
+                contextDetails.count > 1
+                    ? Self.text("Delete Selected", "Удалить выбранное", language: language)
+                    : Self.text("Delete", "Удалить", language: language),
+                role: .destructive
+            ) {
+                onDeleteSelection(contextDetails)
+            }
+        }
+    }
+
+    private func selectionCommandContext(displayRows: [MacInboxDisplayRow]) -> MacSelectionCommandContext {
+        let selectedDetails = selectedDetails(in: displayRows)
+        let selectedRecordingOnly = !selectedDetails.isEmpty
+            && selectedDetails.allSatisfy { $0.kind == .recording }
+        return MacSelectionCommandContext(
+            canSelectAll: !displayRows.isEmpty && selectedRowIDs.count < displayRows.count,
+            canClearSelection: !selectedRowIDs.isEmpty,
+            canDelete: !selectedDetails.isEmpty,
+            canMoveToTrash: selectedRecordingOnly,
+            canRestore: false,
+            canDeletePermanently: false,
+            selectAll: { selectedRowIDs = Set(displayRows.map(\.id)) },
+            clearSelection: { selectedRowIDs.removeAll() },
+            delete: { deleteSelectedRows(displayRows) },
+            moveToTrash: { deleteSelectedRows(displayRows) },
+            restore: {},
+            deletePermanently: {}
+        )
+    }
+
+    private func selectedDetails(in displayRows: [MacInboxDisplayRow]) -> [InboxDetailRef] {
+        displayRows
+            .filter { selectedRowIDs.contains($0.id) }
+            .map(\.detail)
+    }
+
+    private func contextDetails(
+        for display: MacInboxDisplayRow,
+        displayRows: [MacInboxDisplayRow]
+    ) -> [InboxDetailRef] {
+        guard selectedRowIDs.contains(display.id) else { return [display.detail] }
+        let details = selectedDetails(in: displayRows)
+        return details.isEmpty ? [display.detail] : details
+    }
+
+    private func deleteSelectedRows(_ displayRows: [MacInboxDisplayRow]) {
+        let details = selectedDetails(in: displayRows)
+        guard !details.isEmpty else { return }
+        onDeleteSelection(details)
+    }
+
+    private func moveDetails(_ details: [InboxDetailRef], toFolder folderId: String?) {
+        for detail in details {
+            onMove(InboxDragItem(kind: detail.kind, id: detail.id), folderId)
         }
     }
 
@@ -1394,7 +1588,6 @@ private struct MacInboxRowsList: View {
 /// fixed 64pt height).
 private struct MacInboxListRow: View {
     let display: MacInboxDisplayRow
-    let onSelect: () -> Void
 
     var body: some View {
         HStack(spacing: 8) {
@@ -1435,10 +1628,8 @@ private struct MacInboxListRow: View {
         .padding(.horizontal, 16)
         .frame(height: 64)
         .contentShape(Rectangle())
-        .onTapGesture(perform: onSelect)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(display.accessibilityLabel)
-        .accessibilityAddTraits(.isButton)
     }
 
     /// All kinds share the accent: modes differ by glyph + title, so the

@@ -356,6 +356,49 @@ final class MacInboxViewModel: ObservableObject {
         }
     }
 
+    func deleteRows(_ details: [InboxDetailRef]) async -> Bool {
+        let details = uniqueDetails(details)
+        guard !details.isEmpty, !isAdding else { return false }
+        isAdding = true
+        defer { isAdding = false }
+
+        do {
+            for detail in details {
+                switch detail.kind {
+                case .recording:
+                    try await apiClient.deleteRecording(id: detail.id, permanent: false)
+                case .item:
+                    try await apiClient.deleteItem(id: detail.id)
+                case .chat:
+                    try await apiClient.deleteCompanionChat(chatId: detail.id)
+                }
+            }
+            errorMessage = nil
+            statusMessage = Self.deleteStatusMessage(count: details.count)
+            await load()
+            return true
+        } catch {
+            errorMessage = error.localizedDescription
+            await load()
+            return false
+        }
+    }
+
+    private func uniqueDetails(_ details: [InboxDetailRef]) -> [InboxDetailRef] {
+        var seen = Set<String>()
+        return details.filter { detail in
+            seen.insert("\(detail.kind.rawValue):\(detail.id)").inserted
+        }
+    }
+
+    private static func deleteStatusMessage(count: Int) -> String {
+        OnboardingL10n.text(
+            count == 1 ? "Deleted 1 item." : "Deleted \(count) items.",
+            count == 1 ? "Удалён 1 объект." : "Удалено объектов: \(count).",
+            language: LanguageManager.shared.current
+        )
+    }
+
     private func releaseSelectedUploadAccess() {
         guard selectedUploadFileHasScopedAccess else { return }
         selectedUploadFile?.url.stopAccessingSecurityScopedResource()

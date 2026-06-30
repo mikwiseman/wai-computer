@@ -272,6 +272,8 @@ struct WaiComputerMacApp: App {
                 }
             }
 
+            MacSelectionCommands()
+
             // Remove the default "New Window" from the Window menu
             CommandGroup(replacing: .windowList) {}
         }
@@ -804,11 +806,12 @@ class MacAppState: ObservableObject {
             dictationManager.configure(
                 apiClient: apiClient,
                 canStart: { [weak recordingViewModel] in
-                    recordingViewModel?.phase == .idle
+                    guard let recordingViewModel else { return false }
+                    return Self.canStartDictationDuringRecording(phase: recordingViewModel.phase)
                 },
                 canStartReason: { [weak recordingViewModel] in
                     guard let recordingViewModel else { return "recording_view_model_unavailable" }
-                    return "recording_phase_\(String(describing: recordingViewModel.phase))"
+                    return Self.dictationStartGateReason(phase: recordingViewModel.phase)
                 }
             )
             return
@@ -1274,11 +1277,12 @@ class MacAppState: ObservableObject {
             dictationManager.configure(
                 apiClient: apiClient,
                 canStart: { [weak recordingViewModel] in
-                    recordingViewModel?.phase == .idle
+                    guard let recordingViewModel else { return false }
+                    return Self.canStartDictationDuringRecording(phase: recordingViewModel.phase)
                 },
                 canStartReason: { [weak recordingViewModel] in
                     guard let recordingViewModel else { return "recording_view_model_unavailable" }
-                    return "recording_phase_\(String(describing: recordingViewModel.phase))"
+                    return Self.dictationStartGateReason(phase: recordingViewModel.phase)
                 }
             )
             dictationManager.historyStore?.attach(apiClient: apiClient)
@@ -1300,6 +1304,17 @@ class MacAppState: ObservableObject {
     func resumePendingRecordingSyncIfNeeded() async {
         guard isAuthenticated else { return }
         await PendingRecordingSyncCoordinator.shared.scheduleSync(using: apiClient)
+    }
+
+    static func canStartDictationDuringRecording(phase: MacRecordingPhase) -> Bool {
+        phase == .idle || phase == .recording
+    }
+
+    private static func dictationStartGateReason(phase: MacRecordingPhase) -> String {
+        if canStartDictationDuringRecording(phase: phase) {
+            return "dictation_allowed_recording_phase_\(String(describing: phase))"
+        }
+        return "recording_phase_\(String(describing: phase))"
     }
 
     /// Push the build-time WAIDownloadRegion stamp to the server once per

@@ -74,6 +74,7 @@
 		9270DF3835C1779D8BE98818 /* BetaChannelStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9BFE1773C36640DCD060CE4B /* BetaChannelStore.swift */; };
 		993E2B7420345FC3F5DA5CF0 /* WaiComputerUITestAppLauncher.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9771DF357F99B4824512ECA8 /* WaiComputerUITestAppLauncher.swift */; };
 		9CB1EDA2B545C45D111C2574 /* NavigationUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 44103A255DC3F06F6F53A9CF /* NavigationUITests.swift */; };
+		9E66B6FB0CC1C5A0A5394C77 /* MacSelectionCommands.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8F537C39519FD9EA4AFA763 /* MacSelectionCommands.swift */; };
 		9FBAB99C8DBEE0A314C6944D /* AppLanguagePicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = F64605678EEFC8F7DE615F3F /* AppLanguagePicker.swift */; };
 		A1A2DBF4C85EAAE93AA66634 /* PermissionBanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = E94E6128F2B3E55CCE6BA664 /* PermissionBanner.swift */; };
 		A25CDE15B154421DCBBB27CB /* TextInserter.swift in Sources */ = {isa = PBXBuildFile; fileRef = F560C57D16BE3A93BBAF6818 /* TextInserter.swift */; };
@@ -202,6 +203,7 @@
 		A75D539F70136F36847122EB /* DictationHistoryStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DictationHistoryStore.swift; sourceTree = "<group>"; };
 		A80153273D9F1FD16D6149A5 /* MacRecordingDetailViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacRecordingDetailViewModel.swift; sourceTree = "<group>"; };
 		A8E1F34165AE553FA42FDE91 /* LiveRecordingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveRecordingView.swift; sourceTree = "<group>"; };
+		A8F537C39519FD9EA4AFA763 /* MacSelectionCommands.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacSelectionCommands.swift; sourceTree = "<group>"; };
 		AA555164F098038E385713E6 /* RecordingListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingListView.swift; sourceTree = "<group>"; };
 		ADBC57F73E87E52347E0863C /* DictationContextCollector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DictationContextCollector.swift; sourceTree = "<group>"; };
 		ADBED4F779C56684AE439776 /* MacInboxView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacInboxView.swift; sourceTree = "<group>"; };
@@ -416,6 +418,7 @@
 			isa = PBXGroup;
 			children = (
 				4A467DA7396A262853AB8271 /* MacContentView.swift */,
+				A8F537C39519FD9EA4AFA763 /* MacSelectionCommands.swift */,
 				5AE430667ABB0A462CBD158E /* MacTestingSupport.swift */,
 				8720A51453F6A00129C44413 /* MenuBarView.swift */,
 				E94E6128F2B3E55CCE6BA664 /* PermissionBanner.swift */,
@@ -686,6 +689,7 @@
 				AE73FDAE37F83D477BEC08B4 /* MacRecordingDetailViewModel.swift in Sources */,
 				29625FE4075A7077D7DAEE00 /* MacRecordingViewModel.swift in Sources */,
 				51E2AE1578658E50AFA2B3B4 /* MacSearchView.swift in Sources */,
+				9E66B6FB0CC1C5A0A5394C77 /* MacSelectionCommands.swift in Sources */,
 				8C849F5A4A5B0B522D8F9C9F /* MacSettingsView.swift in Sources */,
 				D2A363024BFAEFF6C5A7AF7E /* MacTestingSupport.swift in Sources */,
 				EF2C21D95E8EDDC1BE25FD41 /* MacTranscriptView.swift in Sources */,
