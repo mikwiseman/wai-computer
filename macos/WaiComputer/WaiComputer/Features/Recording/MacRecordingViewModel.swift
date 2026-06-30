@@ -144,7 +144,7 @@ class MacRecordingViewModel: ObservableObject {
     private var recordingActivity: NSObjectProtocol?
 
     private enum RecordingPersistenceResult {
-        case remoteSaved(notice: String?, breadcrumbMessage: String)
+        case remoteSaved(breadcrumbMessage: String)
         case localBackup
         case localPermanentBackup(String)
         case failed(String)
@@ -653,7 +653,7 @@ class MacRecordingViewModel: ObservableObject {
 
             let transcriptSaved: Bool
             if let recordingId {
-                let persistenceResult = await self.persistRecordingForBackgroundSync(
+                let persistenceResult = await self.persistRecordingCloudFirst(
                     recordingId: recordingId,
                     client: client,
                     segments: finalizedSegments,
@@ -1106,9 +1106,7 @@ class MacRecordingViewModel: ObservableObject {
         client: APIClient?,
         segments: [LiveTranscriptSegment],
         durationSeconds: Int,
-        audioFileURL: URL?,
-        directSaveNotice: String?,
-        recoveredTranscriptNotice: String?
+        audioFileURL: URL?
     ) async -> RecordingPersistenceResult {
         guard let client else {
             let technicalReason = "Recording client unavailable."
@@ -1180,10 +1178,7 @@ class MacRecordingViewModel: ObservableObject {
                     )
                 }
 
-                return .remoteSaved(
-                    notice: directSaveNotice,
-                    breadcrumbMessage: "audio uploaded for transcription"
-                )
+                return .remoteSaved(breadcrumbMessage: "audio uploaded for transcription")
             } catch {
                 SentryHelper.captureError(
                     error,
@@ -1223,7 +1218,7 @@ class MacRecordingViewModel: ObservableObject {
                 ) ? .localBackup : .failed(technicalReason)
             }
 
-            return .remoteSaved(notice: directSaveNotice, breadcrumbMessage: "transcript saved")
+            return .remoteSaved(breadcrumbMessage: "transcript saved")
         } catch {
             SentryHelper.captureError(error, extras: ["action": "saveTranscript", "recordingId": recordingId])
             audioLog.warning("Transcript save failed recordingId=\(recordingId, privacy: .public)")
@@ -1237,55 +1232,6 @@ class MacRecordingViewModel: ObservableObject {
                 technicalReason: technicalReason
             ) ? .localBackup : .failed(technicalReason)
         }
-    }
-
-    private func persistRecordingForBackgroundSync(
-        recordingId: String,
-        client: APIClient?,
-        segments: [LiveTranscriptSegment],
-        durationSeconds: Int,
-        audioFileURL: URL?
-    ) async -> RecordingPersistenceResult {
-        let hasAudioFile = audioFileURL.map { FileManager.default.fileExists(atPath: $0.path) } == true
-        let audioBytes = audioFileURL.flatMap {
-            try? $0.resourceValues(forKeys: [.fileSizeKey]).fileSize
-        } ?? 0
-
-        do {
-            _ = try saveTranscriptBackup(
-                recordingId: recordingId,
-                segments: segments,
-                durationSeconds: TimeInterval(durationSeconds)
-            )
-        } catch {
-            SentryHelper.captureError(
-                error,
-                extras: [
-                    "action": "saveRecordingForBackgroundSync",
-                    "recordingId": recordingId,
-                    "hasAudioFile": hasAudioFile,
-                ]
-            )
-            return .failed(error.userFacingMessage(context: .recording))
-        }
-
-        SentryHelper.addBreadcrumb(
-            category: "recording",
-            message: "recording queued for background sync",
-            data: [
-                "recordingId": recordingId,
-                "segments": segments.count,
-                "durationSeconds": durationSeconds,
-                "hasAudioFile": hasAudioFile,
-                "audioBytes": audioBytes,
-            ]
-        )
-
-        if let client {
-            await PendingRecordingSyncCoordinator.shared.scheduleSync(using: client)
-        }
-
-        return .localBackup
     }
 
     private func retainLocalBackupWhileServerProcessesAudio(
@@ -1427,16 +1373,13 @@ class MacRecordingViewModel: ObservableObject {
         segmentsCount: Int
     ) async -> Bool {
         switch result {
-        case .remoteSaved(let notice, let breadcrumbMessage):
+        case .remoteSaved(let breadcrumbMessage):
             try? RecordingBackupStore.removeRecording(recordingId: recordingId)
             SentryHelper.addBreadcrumb(
                 category: "recording",
                 message: breadcrumbMessage,
                 data: ["recordingId": recordingId, "segments": segmentsCount]
             )
-            if let notice {
-                postRecoveryNotice(notice)
-            }
             error = nil
             return true
         case .localBackup:

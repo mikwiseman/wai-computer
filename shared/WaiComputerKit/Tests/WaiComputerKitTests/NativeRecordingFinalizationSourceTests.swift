@@ -47,6 +47,25 @@ final class NativeRecordingFinalizationSourceTests: XCTestCase {
         }
     }
 
+    func testMacRecordingStopPersistsCloudFirstBeforeFallingBackToBackgroundSync() throws {
+        let macSource = try repoSource("macos/WaiComputer/WaiComputer/Features/Recording/MacRecordingViewModel.swift")
+
+        let stopRecording = try functionBody(
+            named: "func stopRecording() async",
+            in: macSource,
+            endingBefore: "/// Honest-failure path for the audio loop:"
+        )
+
+        XCTAssertTrue(
+            stopRecording.contains("persistRecordingCloudFirst("),
+            "Meeting stop should immediately push the finalized recording to server processing when the API is reachable."
+        )
+        XCTAssertFalse(
+            stopRecording.contains("persistRecordingForBackgroundSync("),
+            "Background sync should be the fallback path, not the primary stop path for finished meetings."
+        )
+    }
+
     private func functionBody(
         named declaration: String,
         in source: String,
