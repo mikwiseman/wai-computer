@@ -1502,7 +1502,7 @@ class MacAppState: ObservableObject {
            let recordingId = recordingViewModel.currentRecordingId {
             completedRecordingContext = CompletedRecordingContext(
                 recordingId: recordingId,
-                transcript: recordingViewModel.currentTranscript,
+                transcript: "",
                 duration: recordingViewModel.duration,
                 recordingType: recordingViewModel.recordingType
             )

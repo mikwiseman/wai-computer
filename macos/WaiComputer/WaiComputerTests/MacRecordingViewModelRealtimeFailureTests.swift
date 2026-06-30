@@ -2,42 +2,13 @@ import XCTest
 import WaiComputerKit
 
 @MainActor
-final class MacRecordingViewModelRealtimeFailureTests: XCTestCase {
-    func testReconnectionFailureKeepsLocalRecordingActive() async {
-        let viewModel = MacRecordingViewModel(testingMode: .live)
-        viewModel.testingBeginRecordingForRealtimeFailure(recordingId: "rec-local", duration: 124)
-
-        await viewModel.testingHandleWebSocketEvent(
-            .reconnectionFailed(WebSocketConnectionError.reconnectionExhausted(10))
-        )
-
-        XCTAssertEqual(viewModel.phase, .recording)
-        XCTAssertTrue(viewModel.isRecording)
-        XCTAssertTrue(viewModel.liveTranscriptionOffline)
-        XCTAssertEqual(viewModel.connectionState, .connected)
-        XCTAssertEqual(viewModel.currentRecordingId, "rec-local")
-        XCTAssertNil(viewModel.error)
-    }
-
-    func testWebSocketDisconnectKeepsLocalRecordingActive() async {
-        let viewModel = MacRecordingViewModel(testingMode: .live)
-        viewModel.testingBeginRecordingForRealtimeFailure(recordingId: "rec-local", duration: 30)
-
-        await viewModel.testingHandleWebSocketEvent(
-            .disconnected(WebSocketConnectionError.disconnected(URLError(.networkConnectionLost)))
-        )
-
-        XCTAssertEqual(viewModel.phase, .recording)
-        XCTAssertTrue(viewModel.isRecording)
-        XCTAssertTrue(viewModel.liveTranscriptionOffline)
-        XCTAssertEqual(viewModel.connectionState, .connected)
-        XCTAssertEqual(viewModel.currentRecordingId, "rec-local")
-        XCTAssertNil(viewModel.error)
-    }
-
+final class MacRecordingViewModelStateTests: XCTestCase {
     func testPauseAndResumeKeepRecordingSessionActive() async {
-        let viewModel = MacRecordingViewModel(testingMode: .live)
-        viewModel.testingBeginRecordingForRealtimeFailure(recordingId: "rec-local", duration: 42)
+        let viewModel = MacRecordingViewModel(testingMode: .uiTest(.recordingFlow))
+        await viewModel.startRecording(
+            apiClient: APIClient(baseURL: URL(string: "https://example.test")!),
+            type: .meeting
+        )
 
         await viewModel.pauseRecording()
 
@@ -48,8 +19,8 @@ final class MacRecordingViewModelRealtimeFailureTests: XCTestCase {
         XCTAssertTrue(viewModel.canStopRecording)
         XCTAssertEqual(viewModel.statusText(language: .english), "Paused")
         XCTAssertEqual(viewModel.statusText(language: .russian), "Пауза")
-        XCTAssertEqual(viewModel.currentRecordingId, "rec-local")
-        XCTAssertEqual(viewModel.duration, 42)
+        XCTAssertEqual(viewModel.currentRecordingId, MacUITestFixtures.completedRecording.id)
+        XCTAssertEqual(viewModel.duration, TimeInterval(MacUITestFixtures.completedRecording.durationSeconds ?? 0))
 
         await viewModel.resumeRecording()
 
@@ -58,37 +29,42 @@ final class MacRecordingViewModelRealtimeFailureTests: XCTestCase {
         XCTAssertFalse(viewModel.isPaused)
         XCTAssertTrue(viewModel.canPauseRecording)
         XCTAssertEqual(viewModel.statusText(language: .english), "Recording")
-        XCTAssertEqual(viewModel.currentRecordingId, "rec-local")
-        XCTAssertEqual(viewModel.duration, 42)
+        XCTAssertEqual(viewModel.currentRecordingId, MacUITestFixtures.completedRecording.id)
+        XCTAssertEqual(viewModel.duration, TimeInterval(MacUITestFixtures.completedRecording.durationSeconds ?? 0))
     }
 
-    func testRealtimeTranscriptReplacementUpdatesLastCommittedLine() async {
-        let viewModel = MacRecordingViewModel(testingMode: .live)
-        viewModel.testingBeginRecordingForRealtimeFailure(recordingId: "rec-local", duration: 12)
+    func testMacRecordingViewModelDoesNotExposeRealtimeTranscriptionTestHooks() throws {
+        let source = try macSource("WaiComputer/Features/Recording/MacRecordingViewModel.swift")
 
-        await viewModel.testingHandleWebSocketEvent(
-            .transcript(LiveTranscriptSegment(
-                text: "Hello world",
-                speaker: nil,
-                isFinal: true,
-                startMs: 0,
-                endMs: 800,
-                confidence: 0.92
-            ))
-        )
-        await viewModel.testingHandleWebSocketEvent(
-            .transcriptReplacement(LiveTranscriptSegment(
-                text: "Hello world today",
-                speaker: nil,
-                isFinal: true,
-                startMs: 0,
-                endMs: 1200,
-                confidence: 0.94
-            ))
-        )
+        XCTAssertFalse(source.contains("testingHandleWebSocketEvent"))
+        XCTAssertFalse(source.contains("testingBeginRecordingForRealtimeFailure"))
+        XCTAssertFalse(source.contains("WebSocketEvent"))
+        XCTAssertFalse(source.contains("liveTranscriptionOffline"))
+        XCTAssertFalse(source.contains("connectionState"))
+    }
 
-        XCTAssertEqual(viewModel.currentTranscript, "Hello world today")
-        XCTAssertEqual(viewModel.committedTranscript, "Hello world today")
-        XCTAssertEqual(viewModel.committedTranscriptChunks.map(\.text), ["Hello world today"])
+    private func macSource(_ relativePath: String) throws -> String {
+        let file = try repoRoot().appendingPathComponent("macos/WaiComputer").appendingPathComponent(relativePath)
+        return try String(contentsOf: file, encoding: .utf8)
+    }
+
+    private func repoRoot() throws -> URL {
+        let candidates = [
+            URL(fileURLWithPath: #filePath),
+            URL(fileURLWithPath: FileManager.default.currentDirectoryPath),
+        ]
+
+        for candidate in candidates {
+            var directory = candidate.hasDirectoryPath ? candidate : candidate.deletingLastPathComponent()
+            while directory.path != directory.deletingLastPathComponent().path {
+                let marker = directory.appendingPathComponent("scripts/macos-peekaboo-smoke.sh")
+                if FileManager.default.fileExists(atPath: marker.path) {
+                    return directory
+                }
+                directory.deleteLastPathComponent()
+            }
+        }
+
+        throw XCTSkip("Unable to locate wai-computer repo root from test runtime")
     }
 }

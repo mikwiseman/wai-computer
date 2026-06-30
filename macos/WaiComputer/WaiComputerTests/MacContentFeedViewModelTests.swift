@@ -156,79 +156,78 @@ final class MacContentFeedViewModelTests: XCTestCase {
         XCTAssertTrue(source.contains("accessibilityIdentifier(identifier)"))
     }
 
-    func testLiveRecordingTranscriptPublishesOnlyOneDisplayInvalidationPerEvent() throws {
-        let source = try macSource("WaiComputer/Features/Recording/MacRecordingViewModel.swift")
+    func testLiveRecordingViewShowsFinalTranscriptionStatusInsteadOfLiveTranscript() throws {
+        let source = try macSource("WaiComputer/Features/Recording/LiveRecordingView.swift")
 
-        // Live transcription events arrive several times per second. The model
-        // must not publish a third, full-string currentTranscript copy on every
-        // event, and it must batch committed/interim display updates behind one
-        // explicit objectWillChange send.
-        XCTAssertFalse(source.contains("@Published var currentTranscript"))
-        XCTAssertTrue(source.contains("var currentTranscript: String {"))
-        XCTAssertTrue(source.contains("private(set) var committedTranscript = \"\""))
-        XCTAssertTrue(source.contains("private(set) var interimTranscript = \"\""))
-        XCTAssertTrue(source.contains("objectWillChange.send()"))
-        XCTAssertTrue(source.contains("setLiveTranscript(committed: committed, interim: interim)"))
-        XCTAssertFalse(source.contains("currentTranscript = combinedTranscript(committed: committed, interim: interim)"))
+        // Meeting capture no longer exposes provisional transcript text while
+        // the call is still running. The UI should only explain that the final
+        // transcript and summary appear after Stop.
+        XCTAssertTrue(source.contains("recordingStatusBody"))
+        XCTAssertTrue(source.contains("recordingVM.emptyTranscriptText"))
+        XCTAssertTrue(source.contains(".accessibilityIdentifier(\"recording-final-transcription-status\")"))
+        XCTAssertFalse(source.contains("ForEach(recordingVM.committedTranscriptChunks)"))
+        XCTAssertFalse(source.contains("recordingVM.interimTranscript"))
+        XCTAssertFalse(source.contains("\"live-transcript-list\""))
+        XCTAssertFalse(source.contains("\"transcript-jump-to-latest\""))
+        XCTAssertFalse(source.contains("Live transcription unavailable"))
+        XCTAssertFalse(source.contains("Живая расшифровка недоступна"))
     }
 
-    func testLiveRecordingInterimEventsDoNotRebuildCommittedTranscript() throws {
+    func testMacRecordingViewModelDoesNotExposeLiveTranscriptState() throws {
         let source = try macSource("WaiComputer/Features/Recording/MacRecordingViewModel.swift")
 
-        // Interim transcript events are frequent during long recordings. They
-        // must update only the rolling interim text, not join every committed
-        // line again on each tick.
-        XCTAssertTrue(source.contains("private var committedTranscriptHasSpeakerLabels = false"))
-        XCTAssertTrue(source.contains("private func appendCommittedTranscriptLine("))
-        XCTAssertTrue(source.contains("appendCommittedTranscriptLine(segment)"))
-        XCTAssertFalse(source.contains("let committed = buildCommittedTranscriptText()"))
-        XCTAssertFalse(source.contains("committedLines.contains { speaker, _ in"))
+        // macOS meeting recording is final-only: no realtime socket, no live
+        // transcript state, and no websocket event handler in the recording VM.
+        XCTAssertFalse(source.contains("var currentTranscript"))
+        XCTAssertFalse(source.contains("committedTranscript"))
+        XCTAssertFalse(source.contains("interimTranscript"))
+        XCTAssertFalse(source.contains("WebSocketManager"))
+        XCTAssertFalse(source.contains("handleWebSocketEvent"))
+        XCTAssertFalse(source.contains("finishStreaming("))
+        XCTAssertFalse(source.contains("RealtimeTranscriptSegmentFinalizer"))
     }
 
-    func testRealtimeSendFailuresUseExplicitOfflineTransitionOnNativeRecordings() throws {
+    func testRealtimeSendFailuresUseExplicitOfflineTransitionOnIOSRecordingsOnly() throws {
         let macSource = try macSource("WaiComputer/Features/Recording/MacRecordingViewModel.swift")
         let iosSource = try repoSource("ios/WaiComputer/WaiComputer/Features/Recording/RecordingViewModel.swift")
 
-        for source in [macSource, iosSource] {
-            XCTAssertTrue(source.contains("reason: \"realtime_audio_send_failed\""))
-            XCTAssertTrue(source.contains("\"context\": \"recording.live_transcription.disabled\""))
-            XCTAssertTrue(source.contains("await continueRecordingWithoutLiveTranscription("))
-            XCTAssertFalse(source.contains("await MainActor.run { self.liveTranscriptionOffline = true }"))
-            XCTAssertFalse(source.contains("await MainActor.run { [weak self] in self?.liveTranscriptionOffline = true }"))
-        }
+        XCTAssertFalse(macSource.contains("sendAudio(data:"))
+        XCTAssertFalse(macSource.contains("continueRecordingWithoutLiveTranscription("))
+        XCTAssertFalse(macSource.contains("reason: \"realtime_audio_send_failed\""))
+        XCTAssertFalse(macSource.contains("\"context\": \"recording.live_transcription.disabled\""))
+
+        XCTAssertTrue(iosSource.contains("reason: \"realtime_audio_send_failed\""))
+        XCTAssertTrue(iosSource.contains("\"context\": \"recording.live_transcription.disabled\""))
+        XCTAssertTrue(iosSource.contains("await continueRecordingWithoutLiveTranscription("))
+        XCTAssertFalse(iosSource.contains("await MainActor.run { self.liveTranscriptionOffline = true }"))
+        XCTAssertFalse(iosSource.contains("await MainActor.run { [weak self] in self?.liveTranscriptionOffline = true }"))
     }
 
-    func testLiveRecordingViewAvoidsFullTranscriptObservationForScrollFollow() throws {
+    func testLiveRecordingViewDoesNotKeepScrollFollowStateForLiveTranscript() throws {
         let source = try macSource("WaiComputer/Features/Recording/LiveRecordingView.swift")
-        let modelSource = try macSource("WaiComputer/Features/Recording/MacRecordingViewModel.swift")
 
-        // The live tail can grow very large. Auto-follow should be driven by a
-        // cheap layout token, not by reading the full combined transcript string
-        // from the view on every interim tick.
-        XCTAssertTrue(modelSource.contains("private(set) var committedTranscriptRevision = 0"))
-        XCTAssertTrue(modelSource.contains("private(set) var interimTranscriptRevision = 0"))
-        XCTAssertTrue(source.contains("LiveTranscriptScrollToken("))
-        XCTAssertTrue(source.contains("committedRevision: recordingVM.committedTranscriptRevision"))
-        XCTAssertTrue(source.contains("interimRevision: recordingVM.interimTranscriptRevision"))
-        XCTAssertTrue(source.contains("private var transcriptHasContent: Bool"))
-        XCTAssertTrue(source.contains(".onChangeCompat(of: transcriptScrollToken)"))
+        // With final-only transcription there is no live transcript tail to
+        // auto-follow, so the recording view should not subscribe to revision
+        // counters or keep scroll pinning state.
+        XCTAssertFalse(source.contains("LiveTranscriptScrollToken"))
+        XCTAssertFalse(source.contains("committedRevision: recordingVM.committedTranscriptRevision"))
+        XCTAssertFalse(source.contains("interimRevision: recordingVM.interimTranscriptRevision"))
+        XCTAssertFalse(source.contains("private var transcriptHasContent: Bool"))
+        XCTAssertFalse(source.contains(".onChangeCompat(of: transcriptScrollToken)"))
         XCTAssertFalse(source.contains("recordingVM.currentTranscript"))
         XCTAssertFalse(source.contains("recordingVM.committedTranscript.count"))
         XCTAssertFalse(source.contains("recordingVM.interimTranscript.count"))
     }
 
-    func testLiveRecordingViewUsesRecyclingRowsForLongTranscriptDisplay() throws {
+    func testLiveRecordingViewDoesNotRenderLiveTranscriptRows() throws {
         let viewSource = try macSource("WaiComputer/Features/Recording/LiveRecordingView.swift")
-        let modelSource = try macSource("WaiComputer/Features/Recording/MacRecordingViewModel.swift")
 
-        // Long live recordings must not keep laying out one ever-growing Text.
-        // The view reads pre-split committed chunks from the model and renders
-        // them as platform-recycled rows.
-        XCTAssertTrue(modelSource.contains("private(set) var committedTranscriptChunks: [LiveTranscriptDisplayChunk] = []"))
-        XCTAssertTrue(modelSource.contains("committedTranscriptChunks = Self.liveTranscriptDisplayChunks(from: committed)"))
-        XCTAssertTrue(viewSource.contains("List {"))
-        XCTAssertTrue(viewSource.contains("ForEach(recordingVM.committedTranscriptChunks)"))
-        XCTAssertTrue(viewSource.contains(".liveTranscriptListRow()"))
+        // Final-only transcription means the meeting screen should not render
+        // provisional rows at all.
+        XCTAssertFalse(viewSource.contains("ForEach(recordingVM.committedTranscriptChunks)"))
+        XCTAssertFalse(viewSource.contains(".liveTranscriptListRow()"))
+        XCTAssertFalse(viewSource.contains("TranscriptBottomDistanceKey"))
+        XCTAssertFalse(viewSource.contains("isPinnedToBottom"))
         XCTAssertFalse(viewSource.contains("Text(recordingVM.committedTranscript)"))
         XCTAssertFalse(viewSource.contains("LazyVStack"))
     }

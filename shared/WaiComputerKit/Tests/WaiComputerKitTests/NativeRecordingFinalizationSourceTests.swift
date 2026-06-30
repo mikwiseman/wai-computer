@@ -22,29 +22,22 @@ final class NativeRecordingFinalizationSourceTests: XCTestCase {
         }
     }
 
-    func testNativeRecordingRealtimeCloseFailuresAreCapturedDuringFinalization() throws {
+    func testIOSRecordingRealtimeCloseFailuresAreCapturedDuringFinalization() throws {
         let macSource = try repoSource("macos/WaiComputer/WaiComputer/Features/Recording/MacRecordingViewModel.swift")
         let iosSource = try repoSource("ios/WaiComputer/WaiComputer/Features/Recording/RecordingViewModel.swift")
 
-        let macFinishStreaming = try functionBody(
-            named: "private func finishStreaming(_ manager: WebSocketManager?) async -> Bool",
-            in: macSource,
-            endingBefore: "private func makeAudioCapture("
-        )
         let iosFinishStreaming = try functionBody(
             named: "private func finishStreaming(_ manager: WebSocketManager?) async -> Bool",
             in: iosSource,
             endingBefore: "private func startTimer()"
         )
 
-        for source in [macFinishStreaming, iosFinishStreaming] {
-            XCTAssertTrue(source.contains("recording.provider.close_failed"))
-            XCTAssertTrue(source.contains("SentryHelper.captureError("))
-            XCTAssertTrue(source.contains("SentryHelper.addBreadcrumb("))
-            XCTAssertTrue(source.contains("\"stage\": \"recording_finalize\""))
-            XCTAssertFalse(source.contains("catch {\n            audioLog.error(\"Failed to finalize realtime transcription stream\")\n            return false"))
-            XCTAssertFalse(source.contains("catch {\n            recordingLog.warning(\"Failed to finalize realtime transcription stream\")\n            return false"))
-        }
+        XCTAssertFalse(macSource.contains("private func finishStreaming(_ manager: WebSocketManager?) async -> Bool"))
+        XCTAssertTrue(iosFinishStreaming.contains("recording.provider.close_failed"))
+        XCTAssertTrue(iosFinishStreaming.contains("SentryHelper.captureError("))
+        XCTAssertTrue(iosFinishStreaming.contains("SentryHelper.addBreadcrumb("))
+        XCTAssertTrue(iosFinishStreaming.contains("\"stage\": \"recording_finalize\""))
+        XCTAssertFalse(iosFinishStreaming.contains("catch {\n            recordingLog.warning(\"Failed to finalize realtime transcription stream\")\n            return false"))
     }
 
     func testMacRecordingStopPersistsCloudFirstBeforeFallingBackToBackgroundSync() throws {
@@ -63,6 +56,48 @@ final class NativeRecordingFinalizationSourceTests: XCTestCase {
         XCTAssertFalse(
             stopRecording.contains("persistRecordingForBackgroundSync("),
             "Background sync should be the fallback path, not the primary stop path for finished meetings."
+        )
+    }
+
+    func testMacRecordingDoesNotStartRealtimeTranscriptionDuringRecording() throws {
+        let macSource = try repoSource("macos/WaiComputer/WaiComputer/Features/Recording/MacRecordingViewModel.swift")
+
+        let startRecording = try functionBody(
+            named: "func startRecording(",
+            in: macSource,
+            endingBefore: "    func stopRecording() async"
+        )
+
+        XCTAssertFalse(
+            startRecording.contains("createRealtimeTranscriptionSession("),
+            "Native meeting recording should not stream audio to realtime STT while capture is still in progress."
+        )
+        XCTAssertFalse(
+            startRecording.contains("WebSocketManager("),
+            "Native meeting recording should rely on final audio upload, not an in-progress transcript socket."
+        )
+        XCTAssertFalse(
+            startRecording.contains("sendAudio(data:"),
+            "Recording buffers should be written locally only; final transcription starts after Stop."
+        )
+    }
+
+    func testMacRecordingStopDoesNotFinalizeRealtimeTranscriptSegments() throws {
+        let macSource = try repoSource("macos/WaiComputer/WaiComputer/Features/Recording/MacRecordingViewModel.swift")
+
+        let stopRecording = try functionBody(
+            named: "func stopRecording() async",
+            in: macSource,
+            endingBefore: "/// Honest-failure path for the audio loop:"
+        )
+
+        XCTAssertFalse(
+            stopRecording.contains("finishStreaming("),
+            "Stop should finalize local audio and upload it for canonical file STT, not drain a live transcript."
+        )
+        XCTAssertFalse(
+            stopRecording.contains("collectedSegments"),
+            "Stop should not save in-progress realtime transcript segments as the final transcript."
         )
     }
 

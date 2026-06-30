@@ -11,6 +11,7 @@ from sqlalchemy.exc import MissingGreenlet
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.summarizer import SummaryResult
+from app.core.summary_generation import WAITING_FOR_TRANSCRIPT_STAGE
 from app.models.entity import Entity, EntityMention
 from app.models.person import Person
 from app.models.recording import (
@@ -1270,14 +1271,25 @@ async def test_upload_accepts_audio_content_type_without_extension(
 async def test_upload_success_with_mocked_services(
     client: AsyncClient,
     auth_headers: dict,
+    db_session: AsyncSession,
     monkeypatch: pytest.MonkeyPatch,
 ):
-    """Successful upload should stage audio and enqueue canonical processing."""
+    """Successful upload should stage audio, queue processing, and start a waiting summary job."""
     recording = await _create_recording(client, auth_headers, title=None)
     enqueue_processing = AsyncMock()
     monkeypatch.setattr(
         "app.api.routes.recordings.enqueue_recording_audio_processing",
         enqueue_processing,
+    )
+    enqueued_summary_jobs: list[str] = []
+
+    def fake_enqueue_summary(job_id: UUID) -> str:
+        enqueued_summary_jobs.append(str(job_id))
+        return "unexpected-before-transcript"
+
+    monkeypatch.setattr(
+        "app.api.routes.recordings.enqueue_summary_generation",
+        fake_enqueue_summary,
     )
 
     response = await client.post(
@@ -1294,6 +1306,16 @@ async def test_upload_success_with_mocked_services(
     assert data["status"] == "processing"
     assert data["duration_seconds"] is None
     assert data["segments"] == []
+    generation = data["summary_generation"]
+    assert generation["status"] == SummaryGenerationStatus.QUEUED.value
+    assert generation["stage"] == WAITING_FOR_TRANSCRIPT_STAGE
+    assert generation["progress_percent"] == 5
+    assert generation["job_id"] is not None
+    assert enqueued_summary_jobs == []
+    summary_job = await db_session.get(SummaryGenerationJob, UUID(generation["job_id"]))
+    assert summary_job is not None
+    assert summary_job.recording_id == UUID(recording["id"])
+    assert summary_job.task_id is None
     enqueue_processing.assert_awaited_once()
     _, enqueue_kwargs = enqueue_processing.await_args
     assert enqueue_kwargs["recording_id"] == UUID(recording["id"])

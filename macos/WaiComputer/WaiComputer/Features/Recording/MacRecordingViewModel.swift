@@ -65,11 +65,6 @@ enum MacRecordingPhase: Equatable {
     case finalizing
 }
 
-enum RecordingConnectionState: Equatable {
-    case connected
-    case reconnecting(attempt: Int, maxAttempts: Int)
-}
-
 /// Typed classification for the current recording `error`, so alert actions
 /// (e.g. "Open Microphone Settings") key off semantics instead of matching
 /// localized message substrings — which silently broke for non-English UI.
@@ -93,33 +88,11 @@ class MacRecordingViewModel: ObservableObject {
     @Published var recordingInputSource: MacRecordingInputSource = SystemAudioGate.isSupported ? .dual : .microphone
     @Published var duration: TimeInterval = 0
     @Published var hasSystemAudio = false
-    var currentTranscript: String {
-        combinedTranscript(committed: committedTranscript, interim: interimTranscript)
-    }
-    /// Final, committed transcript without the interim/predicted tail. Drives
-    /// the high-contrast portion of the live view so users can ignore the
-    /// faded interim text that streams ahead of their speech.
-    private(set) var committedTranscript = ""
-    private(set) var committedTranscriptChunks: [LiveTranscriptDisplayChunk] = []
-    private(set) var committedTranscriptRevision = 0
-    /// Latest interim partial — the model's running guess that may be revised.
-    private(set) var interimTranscript = ""
-    private(set) var interimTranscriptRevision = 0
     @Published var currentRecordingId: String?
     @Published var isServerComplete = false
     @Published private(set) var phase: MacRecordingPhase = .idle
     @Published private(set) var isPaused = false
     @Published var systemAudioWarning: String?
-    @Published var connectionState: RecordingConnectionState = .connected
-    @Published private(set) var liveTranscriptionOffline = false
-
-    /// Committed (final) transcript lines, with speaker labels when available.
-    private var committedLines: [(speaker: String?, text: String)] = []
-    private var committedTranscriptHasSpeakerLabels = false
-    /// Current interim text (replaced on each new interim result)
-    private var interimText = ""
-    /// Speaker of the current interim result
-    private var interimSpeaker: String?
 
     /// Guards against starting a new recording while cleanup is in progress
     private var isCleaningUp = false
@@ -135,10 +108,8 @@ class MacRecordingViewModel: ObservableObject {
     private var audioCapture: (any AudioCaptureProtocol)?
     private var audioEncoder: AudioEncoder?
     private var audioFileWriter: AudioFileWriter?
-    private var webSocketManager: WebSocketManager?
     private var timerTask: Task<Void, Never>?
     private var audioTask: Task<Void, Never>?
-    private var transcriptTask: Task<Void, Never>?
     private var cleanupTask: Task<Void, Never>?
     private var systemAudioMonitorTask: Task<Void, Never>?
     private var recordingActivity: NSObjectProtocol?
@@ -230,9 +201,17 @@ class MacRecordingViewModel: ObservableObject {
             if isPaused {
                 return t("Paused.", "Пауза.", language: language)
             }
-            return t("Listening...", "Слушаем...", language: language)
+            return t(
+                "Recording audio. Transcript and summary will appear after you stop.",
+                "Записываем аудио. Расшифровка и сводка появятся после остановки.",
+                language: language
+            )
         case .finalizing:
-            return t("Saving...", "Сохраняем...", language: language)
+            return t(
+                "Uploading final audio for transcription and summary...",
+                "Загружаем финальное аудио для расшифровки и сводки...",
+                language: language
+            )
         }
     }
 
@@ -274,14 +253,8 @@ class MacRecordingViewModel: ObservableObject {
 
         isLoading = true
         error = nil
-        setLiveTranscript(committed: "", interim: "")
-        committedLines = []
-        committedTranscriptHasSpeakerLabels = false
-        interimText = ""
-        interimSpeaker = nil
         isServerComplete = false
         isPaused = false
-        liveTranscriptionOffline = false
         currentRecordingId = nil
         recordingType = type
         recordingInputSource = inputSource
@@ -299,7 +272,6 @@ class MacRecordingViewModel: ObservableObject {
         #if DEBUG
         if testingMode.isRecordingFlow {
             currentRecordingId = MacUITestFixtures.completedRecording.id
-            setLiveTranscript(committed: "UI test live transcript.", interim: "")
             duration = TimeInterval(MacUITestFixtures.completedRecording.durationSeconds ?? 0)
             setPhase(.recording)
             isLoading = false
@@ -381,59 +353,16 @@ class MacRecordingViewModel: ObservableObject {
                 try await capture.startRecording()
             }
 
-            // Now we know the real channel count. Local persistence keeps the
-            // capture channel layout; realtime STT uses the server-declared
-            // PCM format from the minted session.
+            // Now we know the real channel count. Recording writes only the
+            // final local audio file; canonical transcription starts after Stop
+            // from the uploaded file so users do not see provisional text while
+            // the meeting is still in progress.
             let channels = audioChannels
             let channelMode = isDualMixedToMono ? "mono-mix" : channels > 1 ? "multichannel" : "mono"
             audioLog.info("Audio capture channels=\(channels, privacy: .public) mode=\(channelMode, privacy: .public)")
 
-            let ws = WebSocketManager(apiClient: apiClient, language: language, channels: channels)
-            self.webSocketManager = ws
-            var liveEncoder: RealtimePCMEncoder?
-
-            // Set up event stream BEFORE connecting
-            let eventStream = await ws.events
-
-            // Start receiving transcripts BEFORE connecting
-            transcriptTask = Task { [weak self] in
-                guard let self else { return }
-                for await event in eventStream {
-                    await self.handleWebSocketEvent(event)
-                }
-            }
-
-            // Connect to the configured realtime transcription provider.
-            var isLiveTranscriptionActive = true
-            do {
-                let liveSessionConfig = try await apiClient.createRealtimeTranscriptionSession(
-                    language: language,
-                    channels: channels,
-                    purpose: .recording
-                )
-                liveEncoder = RealtimePCMEncoder(
-                    targetSampleRate: liveSessionConfig.sampleRate,
-                    channels: liveSessionConfig.channels
-                )
-                try await ws.connect(using: liveSessionConfig)
-            } catch {
-                audioLog.warning("Live transcription unavailable at recording start")
-                SentryHelper.addBreadcrumb(
-                    category: "recording",
-                    message: "live transcription unavailable at recording start",
-                    level: .warning,
-                    data: [
-                        "recordingId": recordingId,
-                        "reason": error.localizedDescription,
-                    ]
-                )
-                isLiveTranscriptionActive = false
-                liveTranscriptionOffline = true
-            }
-
             let encoder = AudioEncoder(channels: channels)
             audioEncoder = encoder
-            let realtimeEncoder = liveEncoder
 
             // Create local audio file writer for persistence (local-first)
             try RecordingBackupStore.ensureDirectoryForRecording(recordingId: recordingId)
@@ -443,7 +372,7 @@ class MacRecordingViewModel: ObservableObject {
             try RecordingBackupStore.markHasAudioFile(recordingId: recordingId)
             audioLog.info("Local recording audio file prepared recordingId=\(recordingId, privacy: .public)")
 
-            // Start the audio-sending loop
+            // Start the audio persistence loop.
             audioLog.info("Starting recording audio task")
             var bufferCount = 0
             let diskFullMessage = t(
@@ -476,23 +405,6 @@ class MacRecordingViewModel: ObservableObject {
                                 Task { await self.stopAfterAudioWriteFailure() }
                             }
                             return
-                        }
-
-                        if isLiveTranscriptionActive {
-                            do {
-                                guard let liveData = realtimeEncoder?.encode(buffer) else {
-                                    throw WebSocketConnectionError.serverError("Failed to encode realtime audio")
-                                }
-                                try await ws.sendAudio(data: liveData)
-                            } catch {
-                                audioLog.warning("Realtime audio send failed; continuing with local backup only")
-                                // Transcription dropped — fallback to local-only for the rest of this recording
-                                isLiveTranscriptionActive = false
-                                await continueRecordingWithoutLiveTranscription(
-                                    reason: "realtime_audio_send_failed",
-                                    error: error
-                                )
-                            }
                         }
                     }
                 }
@@ -586,8 +498,6 @@ class MacRecordingViewModel: ObservableObject {
 
         isCleaningUp = true
 
-        let ws = webSocketManager
-        let tTask = transcriptTask
         let recordingId = currentRecordingId
         let client = self.apiClient
         let timerDuration = duration
@@ -595,8 +505,6 @@ class MacRecordingViewModel: ObservableObject {
         let sendingTask = audioTask
         let fileWriter = audioFileWriter
         audioTask = nil
-        webSocketManager = nil
-        transcriptTask = nil
         self.apiClient = nil
         audioCapture = nil
         audioFileWriter = nil
@@ -642,28 +550,19 @@ class MacRecordingViewModel: ObservableObject {
                 )
                 : nil
 
-            let didFinalize = await self.finishStreaming(ws)
-            let segments = await ws?.collectedSegments ?? []
-            let finalizedSegments = await MainActor.run {
-                self.finalizedSegments(from: segments, didFinalize: didFinalize)
-            }
-
-            tTask?.cancel()
-            await ws?.disconnect()
-
             let transcriptSaved: Bool
             if let recordingId {
                 let persistenceResult = await self.persistRecordingCloudFirst(
                     recordingId: recordingId,
                     client: client,
-                    segments: finalizedSegments,
+                    segments: [],
                     durationSeconds: persistedDurationSeconds,
                     audioFileURL: uploadableAudioFileURL
                 )
                 transcriptSaved = await self.applyRecordingPersistenceResult(
                     persistenceResult,
                     recordingId: recordingId,
-                    segmentsCount: finalizedSegments.count
+                    segmentsCount: 0
                 )
             } else {
                 transcriptSaved = false
@@ -746,16 +645,12 @@ class MacRecordingViewModel: ObservableObject {
 
         isCleaningUp = true
 
-        let ws = webSocketManager
-        let tTask = transcriptTask
         let recordingId = currentRecordingId
         let client = self.apiClient
         let capture = audioCapture
         let sendingTask = audioTask
         let fileWriter = audioFileWriter
         audioTask = nil
-        webSocketManager = nil
-        transcriptTask = nil
         self.apiClient = nil
         audioCapture = nil
         audioFileWriter = nil
@@ -765,9 +660,6 @@ class MacRecordingViewModel: ObservableObject {
 
             await capture?.stopRecording()
             _ = await sendingTask?.result
-
-            tTask?.cancel()
-            await ws?.disconnect()
 
             try? fileWriter?.finalize()
             if let fileURL = fileWriter?.fileURL {
@@ -790,11 +682,6 @@ class MacRecordingViewModel: ObservableObject {
                 self.isServerComplete = false
                 self.recording = nil
                 self.currentRecordingId = nil
-                self.setLiveTranscript(committed: "", interim: "")
-                self.committedLines = []
-                self.committedTranscriptHasSpeakerLabels = false
-                self.interimText = ""
-                self.interimSpeaker = nil
                 self.audioEncoder = nil
                 self.endRecordingActivity(reason: "discard")
                 self.setPhase(.idle)
@@ -807,17 +694,11 @@ class MacRecordingViewModel: ObservableObject {
         await task.value
     }
 
-    /// Reset transcript and recording state.
+    /// Reset recording state.
     func resetState() {
-        setLiveTranscript(committed: "", interim: "")
-        committedLines = []
-        committedTranscriptHasSpeakerLabels = false
-        interimText = ""
-        interimSpeaker = nil
         currentRecordingId = nil
         isServerComplete = false
         systemAudioWarning = nil
-        connectionState = .connected
         duration = 0
         isPaused = false
     }
@@ -857,25 +738,6 @@ class MacRecordingViewModel: ObservableObject {
     func clearError() {
         error = nil
     }
-
-    #if DEBUG
-    func testingBeginRecordingForRealtimeFailure(
-        recordingId: String,
-        duration: TimeInterval = 0
-    ) {
-        currentRecordingId = recordingId
-        self.duration = duration
-        liveTranscriptionOffline = false
-        isPaused = false
-        connectionState = .connected
-        error = nil
-        setPhase(.recording)
-    }
-
-    func testingHandleWebSocketEvent(_ event: WebSocketEvent) async {
-        await handleWebSocketEvent(event)
-    }
-    #endif
 
     // MARK: - Private
 
@@ -1084,13 +946,7 @@ class MacRecordingViewModel: ObservableObject {
         segments: [LiveTranscriptSegment],
         durationSeconds: TimeInterval? = nil
     ) throws -> RecordingBackup {
-        let transcript = {
-            let finalized = transcriptText(from: segments)
-            if !finalized.isEmpty {
-                return finalized
-            }
-            return currentTranscript.trimmingCharacters(in: .whitespacesAndNewlines)
-        }()
+        let transcript = transcriptText(from: segments)
         return try RecordingBackupStore.saveRecording(
             recordingId: recordingId,
             title: recording?.title,
@@ -1195,6 +1051,13 @@ class MacRecordingViewModel: ObservableObject {
                     technicalReason: technicalReason
                 ) ? .localBackup : .failed(technicalReason)
             }
+        }
+
+        guard !segments.isEmpty else {
+            return .failed(t(
+                "Recording was too short to transcribe. Please record a little longer and try again.",
+                "Запись слишком короткая для расшифровки. Запишите чуть дольше и попробуйте снова."
+            ))
         }
 
         do {
@@ -1408,19 +1271,6 @@ class MacRecordingViewModel: ObservableObject {
             .joined(separator: "\n\n")
     }
 
-    private func finalizedSegments(
-        from segments: [LiveTranscriptSegment],
-        didFinalize: Bool
-    ) -> [LiveTranscriptSegment] {
-        RealtimeTranscriptSegmentFinalizer.finalizedSegments(
-            providerSegments: segments,
-            liveTranscript: currentTranscript,
-            liveSpeaker: interimSpeaker,
-            durationSeconds: duration,
-            didFinalize: didFinalize
-        )
-    }
-
     private func startTimer() {
         timerTask?.cancel()
         timerTask = Task { [weak self] in
@@ -1491,18 +1341,12 @@ class MacRecordingViewModel: ObservableObject {
         systemAudioWarning = nil
         audioTask?.cancel()
         audioTask = nil
-        transcriptTask?.cancel()
-        transcriptTask = nil
         await audioCapture?.stopRecording()
         audioCapture = nil
         audioEncoder = nil
         try? audioFileWriter?.finalize()
         audioFileWriter = nil
-
-        let ws = webSocketManager
-        webSocketManager = nil
         apiClient = nil
-        await ws?.disconnect()
 
         if let recordingId, let client {
             do {
@@ -1540,307 +1384,6 @@ class MacRecordingViewModel: ObservableObject {
             phase = newPhase
             isRecording = newPhase == .recording
             isLoading = newPhase == .preparing
-        }
-    }
-
-    private func handleWebSocketEvent(_ event: WebSocketEvent) async {
-        switch event {
-        case .connected:
-            break
-        case .transcript(let segment):
-            let committed: String
-            if segment.isFinal {
-                committed = appendCommittedTranscriptLine(segment)
-                interimText = ""
-                interimSpeaker = nil
-            } else {
-                interimText = segment.text
-                interimSpeaker = segment.speaker
-                if !committedTranscriptHasSpeakerLabels, Self.hasSpeakerLabel(segment.speaker) {
-                    committedTranscriptHasSpeakerLabels = true
-                    committed = buildCommittedTranscriptText()
-                } else {
-                    committed = committedTranscript
-                }
-            }
-
-            // Interim events arrive several times per second. Keep committed
-            // transcript construction incremental so those ticks only update
-            // the rolling interim tail instead of joining every previous final
-            // line again.
-            let interim = buildInterimTranscriptText()
-            setLiveTranscript(committed: committed, interim: interim)
-        case .transcriptReplacement(let segment):
-            let committed = replaceLastCommittedTranscriptLine(segment)
-            interimText = ""
-            interimSpeaker = nil
-            setLiveTranscript(committed: committed, interim: buildInterimTranscriptText())
-        case .disconnected(let err):
-            if let err, phase == .recording {
-                await continueRecordingWithoutLiveTranscription(
-                    reason: "websocket_disconnected",
-                    error: err
-                )
-            } else if let err, phase != .finalizing, phase != .idle {
-                error = err.userFacingMessage(context: .recording)
-            }
-        case .reconnecting(let attempt, let maxAttempts):
-            connectionState = .reconnecting(attempt: attempt, maxAttempts: maxAttempts)
-        case .reconnected:
-            connectionState = .connected
-            error = nil
-        case .reconnectionFailed(let err):
-            connectionState = .connected
-            if phase == .recording {
-                await continueRecordingWithoutLiveTranscription(
-                    reason: "websocket_reconnection_failed",
-                    error: err
-                )
-            } else if phase != .finalizing, phase != .idle {
-                error = err?.userFacingMessage(context: .recording)
-                    ?? UserFacingErrorFormatter.message(
-                        for: WebSocketConnectionError.reconnectionExhausted(10),
-                        context: .recording
-                    )
-            }
-        }
-    }
-
-    private func continueRecordingWithoutLiveTranscription(
-        reason: String,
-        error: Error?
-    ) async {
-        guard phase == .recording else {
-            if let error, phase != .finalizing, phase != .idle {
-                self.error = error.userFacingMessage(context: .recording)
-            }
-            return
-        }
-
-        connectionState = .connected
-        liveTranscriptionOffline = true
-        self.error = nil
-
-        SentryHelper.addBreadcrumb(
-            category: "recording",
-            message: "live transcription disabled while local recording continues",
-            level: .warning,
-            data: [
-                "recordingId": currentRecordingId ?? "unknown",
-                "reason": reason,
-                "durationSeconds": duration,
-                "errorType": error.map { String(describing: type(of: $0)) } ?? "none",
-            ]
-        )
-        if let error {
-            SentryHelper.captureError(
-                error,
-                extras: [
-                    "context": "recording.live_transcription.disabled",
-                    "recordingId": currentRecordingId ?? "unknown",
-                    "reason": reason,
-                    "durationSeconds": duration,
-                    "errorType": String(describing: type(of: error)),
-                ]
-            )
-        }
-        await webSocketManager?.stopRealtimeStreamingForLocalRecording(reason: reason)
-    }
-
-    /// Combine already-built committed + interim text for the full live
-    /// transcript. Takes the pieces as parameters so callers can build each once.
-    private func combinedTranscript(committed: String, interim: String) -> String {
-        if interim.isEmpty { return committed }
-        if committed.isEmpty { return interim }
-        // Speaker mode uses paragraph break, single-channel uses space.
-        return shouldShowSpeakers
-            ? committed + "\n\n" + interim
-            : committed + " " + interim
-    }
-
-    private static let liveTranscriptChunkLimit = 1_800
-
-    private static func liveTranscriptDisplayChunks(from transcript: String) -> [LiveTranscriptDisplayChunk] {
-        let normalized = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !normalized.isEmpty else { return [] }
-
-        var chunks: [LiveTranscriptDisplayChunk] = []
-        var chunkId = 0
-        var start = normalized.startIndex
-
-        while start < normalized.endIndex {
-            let hardEnd = normalized.index(
-                start,
-                offsetBy: liveTranscriptChunkLimit,
-                limitedBy: normalized.endIndex
-            ) ?? normalized.endIndex
-            var end = hardEnd
-
-            if hardEnd < normalized.endIndex {
-                let slice = normalized[start..<hardEnd]
-                if let newline = slice.lastIndex(of: "\n"),
-                   normalized.distance(from: start, to: newline) > liveTranscriptChunkLimit / 2 {
-                    end = normalized.index(after: newline)
-                } else if let space = slice.lastIndex(of: " "),
-                          normalized.distance(from: start, to: space) > liveTranscriptChunkLimit / 2 {
-                    end = normalized.index(after: space)
-                }
-            }
-
-            let text = String(normalized[start..<end])
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-            if !text.isEmpty {
-                chunks.append(LiveTranscriptDisplayChunk(id: chunkId, text: text))
-                chunkId += 1
-            }
-
-            start = end
-        }
-
-        return chunks
-    }
-
-    private func setLiveTranscript(committed: String, interim: String) {
-        guard committedTranscript != committed || interimTranscript != interim else { return }
-        objectWillChange.send()
-        if committedTranscript != committed {
-            committedTranscriptChunks = Self.liveTranscriptDisplayChunks(from: committed)
-            committedTranscriptRevision += 1
-        }
-        if interimTranscript != interim {
-            interimTranscriptRevision += 1
-        }
-        committedTranscript = committed
-        interimTranscript = interim
-    }
-
-    /// True when realtime metadata carries any non-empty speaker labels.
-    private var shouldShowSpeakers: Bool {
-        committedTranscriptHasSpeakerLabels || Self.hasSpeakerLabel(interimSpeaker)
-    }
-
-    private func appendCommittedTranscriptLine(_ segment: LiveTranscriptSegment) -> String {
-        let previousUsesSpeakerLabels = committedTranscriptHasSpeakerLabels
-        let previousSpeaker = committedLines.last?.speaker
-        committedLines.append((speaker: segment.speaker, text: segment.text))
-
-        if Self.hasSpeakerLabel(segment.speaker) {
-            committedTranscriptHasSpeakerLabels = true
-        }
-
-        if !previousUsesSpeakerLabels, committedTranscriptHasSpeakerLabels {
-            return buildCommittedTranscriptText()
-        }
-
-        guard committedTranscriptHasSpeakerLabels else {
-            if committedTranscript.isEmpty {
-                return segment.text
-            }
-            return committedTranscript + " " + segment.text
-        }
-
-        if committedTranscript.isEmpty {
-            return "\(displaySpeaker(segment.speaker ?? "Speaker")): \(segment.text)"
-        }
-        if previousSpeaker == segment.speaker {
-            return committedTranscript + " " + segment.text
-        }
-        return committedTranscript + "\n\n\(displaySpeaker(segment.speaker ?? "Speaker")): \(segment.text)"
-    }
-
-    private func replaceLastCommittedTranscriptLine(_ segment: LiveTranscriptSegment) -> String {
-        if committedLines.isEmpty {
-            return appendCommittedTranscriptLine(segment)
-        }
-        committedLines[committedLines.count - 1] = (speaker: segment.speaker, text: segment.text)
-        committedTranscriptHasSpeakerLabels = committedLines.contains { line in
-            Self.hasSpeakerLabel(line.speaker)
-        }
-        return buildCommittedTranscriptText()
-    }
-
-    private static func hasSpeakerLabel(_ speaker: String?) -> Bool {
-        !(speaker?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
-    }
-
-    /// Committed lines only — never includes the rolling interim guess.
-    private func buildCommittedTranscriptText() -> String {
-        guard shouldShowSpeakers else {
-            return committedLines.map(\.text).joined(separator: " ")
-        }
-        var parts: [String] = []
-        var currentSpeaker: String? = nil
-        var currentText = ""
-        for line in committedLines {
-            let speaker = line.speaker ?? "Speaker"
-            if speaker == currentSpeaker {
-                currentText += " " + line.text
-            } else {
-                if !currentText.isEmpty, let s = currentSpeaker {
-                    parts.append("\(displaySpeaker(s)): \(currentText)")
-                }
-                currentSpeaker = speaker
-                currentText = line.text
-            }
-        }
-        if !currentText.isEmpty, let s = currentSpeaker {
-            parts.append("\(displaySpeaker(s)): \(currentText)")
-        }
-        return parts.joined(separator: "\n\n")
-    }
-
-    /// Just the trailing interim text, with speaker prefix when relevant.
-    private func buildInterimTranscriptText() -> String {
-        guard !interimText.isEmpty else { return "" }
-        if !shouldShowSpeakers {
-            return interimText
-        }
-        // Avoid duplicating the speaker prefix when the interim line continues
-        // the same (raw) speaker as the most recent committed line.
-        let lastSpeaker = committedLines.last?.speaker
-        if interimSpeaker == lastSpeaker {
-            return interimText
-        }
-        let speaker = interimSpeaker.map(displaySpeaker) ?? "..."
-        return "\(speaker): \(interimText)"
-    }
-
-    /// Localize a raw diarization label ("speaker_0") to the app-language display
-    /// label ("Говорящий 1" / "Speaker 1") for the live transcript (129).
-    private func displaySpeaker(_ rawLabel: String) -> String {
-        SpeakerLabelCopy.userFacingLabel(rawLabel, languageCode: speakerLanguageCode)
-            ?? t("Speaker", "Говорящий")
-    }
-
-    private var speakerLanguageCode: String {
-        switch LanguageManager.shared.current {
-        case .followSystem:
-            return LanguageManager.shared.preferredLocale.identifier
-        case .english, .russian:
-            return LanguageManager.shared.current.rawValue
-        }
-    }
-
-    private func finishStreaming(_ manager: WebSocketManager?) async -> Bool {
-        guard let manager else { return true }
-        do {
-            return try await manager.finishStreaming(timeout: .seconds(5))
-        } catch {
-            SentryHelper.addBreadcrumb(
-                category: "recording.provider",
-                message: "recording.provider.close_failed",
-                level: .error,
-                data: ["stage": "recording_finalize"]
-            )
-            SentryHelper.captureError(
-                error,
-                extras: [
-                    "context": "recording.provider.close_failed",
-                    "stage": "recording_finalize",
-                ]
-            )
-            audioLog.error("Failed to finalize realtime transcription stream")
-            return false
         }
     }
 
@@ -1986,14 +1529,8 @@ class MacRecordingViewModel: ObservableObject {
         timerTask?.cancel()
         systemAudioMonitorTask?.cancel()
         audioTask?.cancel()
-        transcriptTask?.cancel()
         cleanupTask?.cancel()
     }
-}
-
-struct LiveTranscriptDisplayChunk: Identifiable, Equatable {
-    let id: Int
-    let text: String
 }
 
 private extension AVAuthorizationStatus {

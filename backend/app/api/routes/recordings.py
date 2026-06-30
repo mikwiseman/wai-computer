@@ -3467,6 +3467,15 @@ async def upload_audio_file(
             detail="Failed to start recording processing",
         ) from exc
 
+    await start_recording_summary_generation_job(
+        db,
+        recording_id=recording_id,
+        user_id=user_id,
+        enqueue=enqueue_summary_generation,
+        skip_if_summary_exists=True,
+        raise_on_enqueue_error=False,
+    )
+
     db.expire_all()
     recording = await _load_recording_detail(recording_id, user_id, db, include_deleted=True)
     if recording is None:
