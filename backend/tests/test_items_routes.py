@@ -286,8 +286,10 @@ async def test_create_item_enqueue_failure_is_visible_not_swallowed(
 # --- POST /items/upload (document upload) ---
 
 
-async def test_upload_markdown_creates_note_item(client, auth_headers) -> None:
-    with patch("app.tasks.item_summary_generation.generate_item_summary_task.delay"):
+async def test_upload_markdown_creates_note_item_and_enqueues_summary(
+    client, auth_headers
+) -> None:
+    with patch("app.tasks.item_summary_generation.generate_item_summary_task.delay") as delay:
         resp = await client.post(
             "/api/items/upload",
             files={"file": ("notes.md", b"# Solar\n\nCosts fell sharply.", "text/markdown")},
@@ -298,6 +300,7 @@ async def test_upload_markdown_creates_note_item(client, auth_headers) -> None:
     assert data["kind"] == "note"
     assert data["title"] == "notes"
     assert data["status"] == "summarizing"
+    delay.assert_called_once()
 
 
 @pytest.mark.parametrize("target", ["missing", "other_user"])

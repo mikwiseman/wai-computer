@@ -12,7 +12,7 @@ extension UTType {
 
 /// Transferable identifier for dragging any inbox row onto a folder
 /// (or onto Inbox / Trash) in the sidebar.
-struct InboxDragItem: Codable, Transferable, Equatable {
+struct InboxDragItem: Codable, Transferable, Equatable, Hashable {
     let kind: InboxSourceKind
     let id: String
 

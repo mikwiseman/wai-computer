@@ -792,8 +792,8 @@ struct MacMainView: View {
     /// Move a dragged inbox row onto a sidebar folder target, refreshing the
     /// affected lists afterwards.
     private func handleInboxDrop(_ items: [InboxDragItem], folderId: String?) -> Bool {
-        guard let item = items.first else { return false }
-        moveInboxDragItem(item, to: folderId)
+        guard !items.isEmpty else { return false }
+        moveInboxDragItems(items, to: folderId)
         dropTargetIdentifier = nil
         return true
     }
@@ -833,27 +833,56 @@ struct MacMainView: View {
     /// One move routine for both affordances — sidebar drops and the rows'
     /// "Move to Folder" context menu.
     private func moveInboxDragItem(_ item: InboxDragItem, to folderId: String?) {
-        switch item.kind {
-        case .recording:
+        moveInboxDragItems([item], to: folderId)
+    }
+
+    private func moveInboxDragItems(_ items: [InboxDragItem], to folderId: String?) {
+        let uniqueItems = uniqueDragItems(items)
+        guard !uniqueItems.isEmpty else { return }
+
+        let recordingItems = uniqueItems.filter { $0.kind == .recording }
+        let recordingIds = recordingDropIds(from: recordingItems)
+        if !recordingIds.isEmpty {
             if isTrashSection {
                 // Dragging out of Trash means "bring it back" — restore first,
                 // then file it where it was dropped (nil unfiles into Inbox).
-                restoreAndMoveRecording(item.id, to: folderId)
+                restoreAndMoveRecordings(recordingIds, to: folderId)
             } else {
-                moveRecordings([item.id], to: folderId)
+                moveRecordings(recordingIds, to: folderId)
             }
-        case .item:
+        }
+
+        for item in uniqueItems where item.kind == .item {
             moveInboxItem(item.id, to: folderId)
-        case .chat:
+        }
+        for item in uniqueItems where item.kind == .chat {
             moveInboxChat(item.id, to: folderId)
         }
     }
 
-    private func restoreAndMoveRecording(_ id: String, to folderId: String?) {
+    private func uniqueDragItems(_ items: [InboxDragItem]) -> [InboxDragItem] {
+        var seen = Set<InboxDragItem>()
+        return items.filter { seen.insert($0).inserted }
+    }
+
+    private func recordingDropIds(from items: [InboxDragItem]) -> [String] {
+        let recordingIds = uniqueDragItems(items)
+            .filter { $0.kind == .recording }
+            .map(\.id)
+        guard recordingIds.count == 1,
+              let recordingId = recordingIds.first,
+              selectedRecordingIds.contains(recordingId) else {
+            return recordingIds
+        }
+        return Array(selectedRecordingIds)
+    }
+
+    private func restoreAndMoveRecordings(_ ids: [String], to folderId: String?) {
+        guard !ids.isEmpty else { return }
         Task {
-            await libraryViewModel.restoreRecordings(ids: [id], apiClient: appState.getAPIClient())
-            await libraryViewModel.moveRecordings(ids: [id], to: folderId, apiClient: appState.getAPIClient())
-            selectedRecordingIds.subtract([id])
+            await libraryViewModel.restoreRecordings(ids: ids, apiClient: appState.getAPIClient())
+            await libraryViewModel.moveRecordings(ids: ids, to: folderId, apiClient: appState.getAPIClient())
+            selectedRecordingIds.subtract(ids)
             prefetchedRecordingDetail = nil
             inboxReloadToken = UUID()
         }
@@ -867,8 +896,14 @@ struct MacMainView: View {
     /// Trash keeps its existing semantics: recordings only. Materials and
     /// chats are deleted from their detail panes instead.
     private func handleTrashDrop(_ items: [InboxDragItem]) -> Bool {
-        guard let item = items.first, item.kind == .recording else { return false }
-        trashRecordings([item.id])
+        let uniqueItems = uniqueDragItems(items)
+        guard !uniqueItems.isEmpty,
+              uniqueItems.allSatisfy({ $0.kind == .recording }) else {
+            return false
+        }
+        let recordingIds = recordingDropIds(from: uniqueItems)
+        guard !recordingIds.isEmpty else { return false }
+        trashRecordings(recordingIds)
         dropTargetIdentifier = nil
         return true
     }

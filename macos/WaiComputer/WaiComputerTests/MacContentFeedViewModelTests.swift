@@ -443,6 +443,41 @@ final class MacContentFeedViewModelTests: XCTestCase {
         XCTAssertTrue(source.contains("uploadItem(fileURL: url, folderId: folderId)"))
     }
 
+    func testSidebarDropsMoveEveryInboxDragItem() throws {
+        let source = try macSource("WaiComputer/App/MacContentView.swift")
+        let inboxSource = try macSource("WaiComputer/Features/Inbox/MacInboxView.swift")
+
+        XCTAssertTrue(inboxSource.contains("struct InboxDragItem: Codable, Transferable, Equatable, Hashable"))
+        XCTAssertTrue(source.contains("moveInboxDragItems(items, to: folderId)"))
+        XCTAssertTrue(source.contains("private func uniqueDragItems(_ items: [InboxDragItem]) -> [InboxDragItem]"))
+        XCTAssertTrue(source.contains("let recordingIds = recordingDropIds(from: recordingItems)"))
+        XCTAssertTrue(source.contains("moveRecordings(recordingIds, to: folderId)"))
+        XCTAssertTrue(source.contains("restoreAndMoveRecordings(recordingIds, to: folderId)"))
+        XCTAssertTrue(source.contains("for item in uniqueItems where item.kind == .item"))
+        XCTAssertTrue(source.contains("for item in uniqueItems where item.kind == .chat"))
+        XCTAssertFalse(source.contains("guard let item = items.first"))
+    }
+
+    func testSidebarRecordingDropsExpandSelectedRecordingGroup() throws {
+        let source = try macSource("WaiComputer/App/MacContentView.swift")
+
+        XCTAssertTrue(source.contains("private func recordingDropIds(from items: [InboxDragItem]) -> [String]"))
+        XCTAssertTrue(source.contains("selectedRecordingIds.contains(recordingId)"))
+        XCTAssertTrue(source.contains("return Array(selectedRecordingIds)"))
+        XCTAssertTrue(source.contains("restoreAndMoveRecordings(_ ids: [String], to folderId: String?)"))
+        XCTAssertTrue(source.contains("selectedRecordingIds.subtract(ids)"))
+    }
+
+    func testTrashDropsRequireRecordingsAndSupportMultiDrag() throws {
+        let source = try macSource("WaiComputer/App/MacContentView.swift")
+
+        XCTAssertTrue(source.contains("uniqueItems.allSatisfy({ $0.kind == .recording })"))
+        XCTAssertTrue(source.contains("let recordingIds = recordingDropIds(from: uniqueItems)"))
+        XCTAssertTrue(source.contains("trashRecordings(recordingIds)"))
+        XCTAssertFalse(source.contains("guard let item = items.first, item.kind == .recording"))
+        XCTAssertFalse(source.contains("trashRecordings([item.id])"))
+    }
+
     func testInboxDetailEquatableGateUsesRevisionInputsInsteadOfFullArrays() throws {
         let source = try macSource("WaiComputer/Features/Inbox/MacInboxView.swift")
         let shellSource = try macSource("WaiComputer/App/MacContentView.swift")
