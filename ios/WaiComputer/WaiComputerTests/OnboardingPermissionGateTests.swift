@@ -522,6 +522,26 @@ final class OnboardingPermissionGateTests: XCTestCase {
         XCTAssertTrue(dictionaryViewSource.contains("private final class DictationDictionaryDisplayCache"))
     }
 
+    func testIOSDictionaryRowsUseReadableMacStyleStackedMetadata() throws {
+        let source = try iosSource("WaiComputer/Features/Dictation/DictationDictionaryView.swift")
+        let rowSource = try sourceSlice(
+            source,
+            startingAt: "private func wordRow(_ word: DictionaryWord)",
+            endingBefore: "private func badge(label: String, color: Color)"
+        )
+
+        XCTAssertTrue(rowSource.contains("HStack(alignment: .top, spacing: Spacing.md)"))
+        XCTAssertTrue(rowSource.contains("VStack(alignment: .leading, spacing: Spacing.xs)"))
+        XCTAssertTrue(rowSource.contains("Typography.headingMedium"))
+        XCTAssertTrue(rowSource.contains("Typography.bodySmall"))
+        XCTAssertTrue(rowSource.contains("dictionaryWordBadges(for: word)"))
+        XCTAssertTrue(rowSource.contains("RoundedRectangle(cornerRadius: 8, style: .continuous)"))
+        XCTAssertTrue(rowSource.contains("Image(systemName: \"xmark.circle.fill\")"))
+        XCTAssertFalse(rowSource.contains("HStack(spacing: 8)"))
+        XCTAssertFalse(rowSource.contains(".font(.caption2)"))
+        XCTAssertFalse(rowSource.contains(".font(.caption)"))
+    }
+
     func testComparisonViewsMatchMacReadableTableAndErrorStates() throws {
         let source = try iosSource("WaiComputer/Features/Materials/ComparisonView.swift")
         let appSource = try iosSource("WaiComputer/App/WaiComputerApp.swift")
@@ -727,6 +747,59 @@ final class OnboardingPermissionGateTests: XCTestCase {
         XCTAssertTrue(source.contains("compactRecordingLayout"))
     }
 
+    func testCompactRecordingViewUsesMacStyleCaptureSurface() throws {
+        let source = try iosSource("WaiComputer/Features/Recording/RecordingView.swift")
+
+        XCTAssertTrue(source.contains("compactRecordingHero"))
+        XCTAssertTrue(source.contains("compactRecordingStatusCard"))
+        XCTAssertTrue(source.contains("recording-compact-controls"))
+        XCTAssertTrue(source.contains("Typography.displaySmall"))
+        XCTAssertTrue(source.contains("Typography.monoLarge"))
+        XCTAssertTrue(source.contains("Palette.surfaceSubtle"))
+        XCTAssertFalse(source.contains(".frame(width: 200, height: 200)"))
+        XCTAssertFalse(source.contains(".font(.system(size: 48, weight: .light, design: .monospaced))"))
+    }
+
+    func testRecordingWarningsUseMacStyleInlineStatusBanner() throws {
+        let source = try iosSource("WaiComputer/Features/Recording/RecordingView.swift")
+        let bannerSource = try sourceSlice(
+            source,
+            startingAt: "private func warningBanner",
+            endingBefore: "private func liveTranscriptPreview"
+        )
+
+        XCTAssertTrue(bannerSource.contains("Typography.headingSmall"))
+        XCTAssertTrue(bannerSource.contains("Typography.caption"))
+        XCTAssertTrue(bannerSource.contains("Palette.accent"))
+        XCTAssertTrue(bannerSource.contains("Palette.accentSubtle"))
+        XCTAssertTrue(bannerSource.contains("Palette.border"))
+        XCTAssertTrue(bannerSource.contains("RoundedRectangle(cornerRadius: 14, style: .continuous)"))
+        XCTAssertFalse(bannerSource.contains(".font(.subheadline.weight(.medium))"))
+        XCTAssertFalse(bannerSource.contains(".font(.caption)"))
+        XCTAssertFalse(bannerSource.contains(".background(Color.orange)"))
+        XCTAssertFalse(bannerSource.contains(".padding(.horizontal)"))
+    }
+
+    func testRecordingRecoveryBannerUsesMacStyleStatusSurface() throws {
+        let source = try iosSource("WaiComputer/App/ContentView.swift")
+        let bannerSource = try sourceSlice(
+            source,
+            startingAt: "private struct RecordingRecoveryBanner",
+            endingBefore: "#Preview"
+        )
+
+        XCTAssertTrue(bannerSource.contains("Typography.headingSmall"))
+        XCTAssertTrue(bannerSource.contains("Typography.caption"))
+        XCTAssertTrue(bannerSource.contains("Palette.accent"))
+        XCTAssertTrue(bannerSource.contains("Palette.accentSubtle"))
+        XCTAssertTrue(bannerSource.contains("Palette.border"))
+        XCTAssertTrue(bannerSource.contains("RoundedRectangle(cornerRadius: 14, style: .continuous)"))
+        XCTAssertFalse(bannerSource.contains(".foregroundStyle(.green)"))
+        XCTAssertFalse(bannerSource.contains(".font(.headline)"))
+        XCTAssertFalse(bannerSource.contains(".font(.subheadline)"))
+        XCTAssertFalse(bannerSource.contains(".shadow(color: .black.opacity(0.12), radius: 10, y: 4)"))
+    }
+
     func testSettingsViewHasRegularWidthMacStyleDashboardLayout() throws {
         let source = try iosSource("WaiComputer/Features/Settings/SettingsView.swift")
 
@@ -737,6 +810,25 @@ final class OnboardingPermissionGateTests: XCTestCase {
         XCTAssertTrue(source.contains("settings-regular-recording-panel"))
         XCTAssertTrue(source.contains("settings-regular-integrations-panel"))
         XCTAssertTrue(source.contains("compactSettingsList"))
+    }
+
+    func testCompactSettingsAccountHeaderUsesMacStyleSurface() throws {
+        let source = try iosSource("WaiComputer/Features/Settings/SettingsView.swift")
+        let headerSource = try sourceSlice(
+            source,
+            startingAt: "private func compactAccountHeader",
+            endingBefore: "private var regularSettingsLayout"
+        )
+
+        XCTAssertTrue(source.contains("compactAccountHeader(user)"))
+        XCTAssertTrue(headerSource.contains("settings-compact-account-header"))
+        XCTAssertTrue(headerSource.contains("WaiTriangleIcon(size: 28)"))
+        XCTAssertTrue(headerSource.contains("Typography.headingMedium"))
+        XCTAssertTrue(headerSource.contains("Typography.caption"))
+        XCTAssertTrue(headerSource.contains("Palette.surfaceSubtle"))
+        XCTAssertTrue(headerSource.contains("Palette.border"))
+        XCTAssertFalse(headerSource.contains(".font(.largeTitle)"))
+        XCTAssertFalse(headerSource.contains(".font(.headline)"))
     }
 
     func testSettingsAboutPanelUsesIOSUpdateSemantics() throws {
@@ -815,7 +907,37 @@ final class OnboardingPermissionGateTests: XCTestCase {
         XCTAssertTrue(companionSource.contains("wai-regular-thread-sidebar"))
         XCTAssertTrue(companionSource.contains("wai-compact-companion-layout"))
         XCTAssertTrue(companionSource.contains("chatList.frame(width: 280)"))
-        XCTAssertTrue(companionSource.contains("chatList.frame(maxHeight: 220)"))
+        XCTAssertTrue(companionSource.contains("compactThreadSheet"))
+        XCTAssertTrue(companionSource.contains(".sheet(isPresented: $showChats)"))
+        XCTAssertTrue(companionSource.contains(".presentationDetents([.medium, .large])"))
+        XCTAssertFalse(companionSource.contains("chatList.frame(maxHeight: 220)"))
+    }
+
+    func testIOSWaiCompanionUsesConversationFirstCompactChatUX() throws {
+        let companionSource = try String(
+            contentsOf: try repoRoot()
+                .appendingPathComponent("shared/WaiComputerKit/Sources/WaiComputerKit/Views/CompanionView.swift"),
+            encoding: .utf8
+        )
+        let messageRowsSource = try sourceSlice(
+            companionSource,
+            startingAt: "private var messageRows: some View",
+            endingBefore: "private var loadingState"
+        )
+        let composerSource = try sourceSlice(
+            companionSource,
+            startingAt: "private var composer: some View",
+            endingBefore: "private func renameSheet"
+        )
+
+        XCTAssertTrue(companionSource.contains("Text(t(\"What can I help with?\", \"Чем помочь?\"))"))
+        XCTAssertTrue(companionSource.contains("starterPromptButton(prompt)"))
+        XCTAssertTrue(companionSource.contains("compactHeaderIconButton"))
+        XCTAssertTrue(composerSource.contains("composerErrorBanner(message)"))
+        XCTAssertTrue(composerSource.contains("Image(systemName: \"arrow.up\")"))
+        XCTAssertTrue(composerSource.contains("RoundedRectangle(cornerRadius: usesCompactChatPresentation ? 24 : 14"))
+        XCTAssertFalse(messageRowsSource.contains("Text(errorMessage)"))
+        XCTAssertFalse(companionSource.contains(".font(.system(size: 22, weight: .semibold, design: .serif))"))
     }
 
     func testAuthViewUsesMacStyleRegularLayout() throws {

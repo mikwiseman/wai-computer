@@ -84,29 +84,48 @@ struct RecordingView: View {
     }
 
     private var compactRecordingLayout: some View {
-        VStack(spacing: 32) {
-            Spacer()
+        VStack(spacing: 0) {
+            ScrollView {
+                VStack(spacing: Spacing.lg) {
+                    compactRecordingHero
+                    statusBanners
 
-            compactStatusIndicator
-            statusBanners
-            liveTranscriptPreview(maxHeight: 220)
-
-            Spacer()
-
-            // Target folder selector — only while idle, so the choice can't
-            // change mid-recording. Defaults to All Recordings (nil folderId).
-            if viewModel.phase == .idle {
-                folderSelector
+                    if viewModel.shouldShowTranscript {
+                        liveTranscriptPreview(maxHeight: 260)
+                    } else {
+                        compactRecordingStatusCard
+                    }
+                }
+                .padding(.horizontal, Spacing.lg)
+                .padding(.top, Spacing.xl)
+                .padding(.bottom, Spacing.lg)
+                .frame(maxWidth: .infinity)
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-            compactControlRow
+            Divider()
 
-            Text(viewModel.statusText)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .padding(.bottom)
-                .accessibilityLabel(viewModel.statusText)
+            VStack(spacing: Spacing.md) {
+                // Target folder selector — only while idle, so the choice can't
+                // change mid-recording. Defaults to All Recordings (nil folderId).
+                if viewModel.phase == .idle {
+                    folderSelector
+                }
+
+                compactControlRow
+
+                Text(viewModel.statusText)
+                    .font(Typography.caption)
+                    .foregroundStyle(Palette.textSecondary)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.center)
+                    .accessibilityLabel(viewModel.statusText)
+            }
+            .padding(.horizontal, Spacing.lg)
+            .padding(.vertical, Spacing.lg)
+            .background(.bar)
         }
+        .background(Color(uiColor: .systemGroupedBackground))
         .accessibilityIdentifier("recording-compact-layout")
     }
 
@@ -135,33 +154,75 @@ struct RecordingView: View {
         .accessibilityIdentifier("recording-regular-layout")
     }
 
-    private var compactStatusIndicator: some View {
-        VStack(spacing: 16) {
-            ZStack {
-                Circle()
-                    .fill(outerIndicatorColor)
-                    .frame(width: 200, height: 200)
+    private var compactRecordingHero: some View {
+        HStack(alignment: .center, spacing: Spacing.md) {
+            headerStatusGlyph
 
-                Circle()
-                    .fill(innerIndicatorColor)
-                    .frame(width: 150, height: 150)
-                    .scaleEffect(viewModel.canStopRecording && !viewModel.isPaused ? 1.1 : 1.0)
-                    .animation(
-                        .easeInOut(duration: 0.5).repeatForever(autoreverses: true),
-                        value: viewModel.canStopRecording && !viewModel.isPaused
-                    )
+            VStack(alignment: .leading, spacing: Spacing.xxs) {
+                Text(headerTitle)
+                    .font(Typography.displaySmall)
+                    .foregroundStyle(Palette.textPrimary)
+                    .lineLimit(1)
 
-                Image(systemName: indicatorSymbolName)
-                    .font(.system(size: 60))
-                    .foregroundStyle(indicatorSymbolColor)
+                Text(compactSubtitle)
+                    .font(Typography.caption)
+                    .foregroundStyle(Palette.textSecondary)
+                    .lineLimit(2)
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
 
             Text(viewModel.formattedDuration)
-                .font(.system(size: 48, weight: .light, design: .monospaced))
-                .foregroundStyle(viewModel.phase == .idle ? .secondary : .primary)
+                .font(Typography.monoLarge)
+                .foregroundStyle(viewModel.phase == .idle ? Palette.textSecondary : Palette.textPrimary)
+                .monospacedDigit()
                 .accessibilityLabel(durationAccessibilityLabel)
                 .accessibilityAddTraits(.updatesFrequently)
         }
+        .padding(Spacing.lg)
+        .background(Palette.surfaceSubtle)
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .strokeBorder(Palette.border, lineWidth: 1)
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("recording-compact-hero")
+    }
+
+    private var compactRecordingStatusCard: some View {
+        VStack(spacing: Spacing.md) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(Palette.surfaceSubtle)
+                    .frame(width: 64, height: 64)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .strokeBorder(Palette.border, lineWidth: 1)
+                    )
+
+                Image(systemName: indicatorSymbolName)
+                    .font(.system(size: 30, weight: .semibold))
+                    .foregroundStyle(indicatorSymbolColor)
+            }
+
+            Text(viewModel.emptyTranscriptText)
+                .font(Typography.reading)
+                .foregroundStyle(Palette.textSecondary)
+                .multilineTextAlignment(.center)
+                .lineSpacing(4)
+                .frame(maxWidth: 320)
+                .accessibilityIdentifier("recording-final-transcription-status")
+        }
+        .frame(maxWidth: .infinity, minHeight: 220)
+        .padding(Spacing.xl)
+        .background(Color(uiColor: .secondarySystemGroupedBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .strokeBorder(Palette.border, lineWidth: 1)
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("recording-compact-status-card")
     }
 
     private var regularRecordingHeader: some View {
@@ -324,7 +385,7 @@ struct RecordingView: View {
     }
 
     private var compactControlRow: some View {
-        HStack(spacing: 24) {
+        HStack(spacing: Spacing.sm) {
             if viewModel.phase == .recording {
                 Button(action: {
                     Task {
@@ -335,16 +396,17 @@ struct RecordingView: View {
                         }
                     }
                 }) {
-                    ZStack {
-                        Circle()
-                            .fill(Color.secondary.opacity(0.16))
-                            .frame(width: 64, height: 64)
-
-                        Image(systemName: viewModel.canResumeRecording ? "play.fill" : "pause.fill")
-                            .font(.system(size: 24, weight: .semibold))
-                            .foregroundStyle(.primary)
-                    }
+                    Label(
+                        viewModel.canResumeRecording ? t("Resume", "Продолжить") : t("Pause", "Пауза"),
+                        systemImage: viewModel.canResumeRecording ? "play.fill" : "pause.fill"
+                    )
+                    .labelStyle(.iconOnly)
+                    .font(Typography.headingSmall)
+                    .frame(width: 46, height: 46)
                 }
+                .buttonStyle(.bordered)
+                .controlSize(.large)
+                .disabled(!viewModel.canPauseRecording && !viewModel.canResumeRecording)
                 .accessibilityLabel(viewModel.canResumeRecording
                     ? t("Resume Recording", "Продолжить запись")
                     : t("Pause Recording", "Поставить запись на паузу"))
@@ -352,25 +414,20 @@ struct RecordingView: View {
             }
 
             Button(action: recordButtonAction) {
-                ZStack {
-                    Circle()
-                        .fill(buttonColor)
-                        .frame(width: 80, height: 80)
+                HStack(spacing: Spacing.xs) {
+                    Label(recordButtonTitle, systemImage: recordButtonSystemImage)
+                        .font(Typography.headingSmall)
 
-                    if viewModel.canStopRecording {
-                        RoundedRectangle(cornerRadius: 8)
-                            .fill(.white)
-                            .frame(width: 30, height: 30)
-                    } else if viewModel.isBusy {
+                    if viewModel.isBusy {
                         ProgressView()
-                            .tint(.white)
-                    } else {
-                        Circle()
-                            .fill(.white)
-                            .frame(width: 30, height: 30)
+                            .controlSize(.small)
                     }
                 }
+                .frame(maxWidth: .infinity, minHeight: 46)
             }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
+            .tint(buttonColor)
             .disabled(viewModel.isBusy)
             .accessibilityLabel(recordButtonAccessibilityLabel)
             .accessibilityHint(recordButtonAccessibilityHint)
@@ -378,20 +435,21 @@ struct RecordingView: View {
 
             if viewModel.canDiscardRecording {
                 Button(action: { showingDiscardConfirm = true }) {
-                    ZStack {
-                        Circle()
-                            .fill(Color.secondary.opacity(0.16))
-                            .frame(width: 64, height: 64)
-
-                        Image(systemName: "trash")
-                            .font(.system(size: 22, weight: .semibold))
-                            .foregroundStyle(.red)
-                    }
+                    Label(t("Discard", "Не сохранять"), systemImage: "trash")
+                        .labelStyle(.iconOnly)
+                        .font(Typography.headingSmall)
+                        .frame(width: 46, height: 46)
                 }
+                .buttonStyle(.bordered)
+                .controlSize(.large)
+                .tint(Palette.recording)
                 .accessibilityLabel(t("Discard Recording", "Не сохранять запись"))
                 .accessibilityIdentifier("discard-recording-button")
             }
         }
+        .frame(maxWidth: .infinity)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("recording-compact-controls")
     }
 
     @ViewBuilder
@@ -435,30 +493,43 @@ struct RecordingView: View {
         identifier: String,
         showsProgress: Bool = false
     ) -> some View {
-        HStack(spacing: 8) {
-            if showsProgress {
-                ProgressView()
-                    .tint(.white)
-                    .controlSize(.small)
-            } else if let systemImage {
-                Image(systemName: systemImage)
-                    .foregroundStyle(.white)
-            }
+        HStack(alignment: .top, spacing: Spacing.md) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(Palette.accentSubtle)
+                    .frame(width: 34, height: 34)
 
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title)
-                    .font(.subheadline.weight(.medium))
-                    .foregroundStyle(.white)
-                Text(message)
-                    .font(.caption)
-                    .foregroundStyle(.white.opacity(0.85))
+                if showsProgress {
+                    ProgressView()
+                        .tint(Palette.accent)
+                        .controlSize(.small)
+                } else if let systemImage {
+                    Image(systemName: systemImage)
+                        .font(Typography.headingSmall)
+                        .foregroundStyle(Palette.accent)
+                }
             }
-            Spacer()
+            .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: Spacing.xxs) {
+                Text(title)
+                    .font(Typography.headingSmall)
+                    .foregroundStyle(Palette.textPrimary)
+                    .lineLimit(2)
+                Text(message)
+                    .font(Typography.caption)
+                    .foregroundStyle(Palette.textSecondary)
+                    .lineLimit(3)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding()
-        .background(Color.orange)
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .padding(.horizontal)
+        .padding(Spacing.md)
+        .background(Palette.accentSubtle)
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .strokeBorder(Palette.border, lineWidth: 1)
+        }
         .accessibilityLabel(accessibilityLabel)
         .accessibilityIdentifier(identifier)
     }
@@ -471,7 +542,8 @@ struct RecordingView: View {
                     LazyVStack(alignment: .leading, spacing: Spacing.sm) {
                         if viewModel.currentTranscript.isEmpty {
                             Text(viewModel.emptyTranscriptText)
-                                .foregroundStyle(.secondary)
+                                .font(Typography.reading)
+                                .foregroundStyle(Palette.textSecondary)
                                 .italic()
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .padding()
@@ -479,15 +551,15 @@ struct RecordingView: View {
                             VStack(alignment: .leading, spacing: Spacing.xs) {
                                 if !viewModel.committedTranscript.isEmpty {
                                     Text(viewModel.committedTranscript)
-                                        .font(.body)
-                                        .lineSpacing(4)
+                                        .font(Typography.reading)
+                                        .lineSpacing(5)
                                         .textSelection(.enabled)
                                         .accessibilityAddTraits(.updatesFrequently)
                                 }
                                 if !viewModel.interimTranscript.isEmpty {
                                     Text(viewModel.interimTranscript)
-                                        .font(.body.italic())
-                                        .lineSpacing(4)
+                                        .font(Typography.reading.italic())
+                                        .lineSpacing(5)
                                         .foregroundStyle(Palette.textTertiary)
                                         .textSelection(.enabled)
                                         .accessibilityHidden(true)
@@ -500,9 +572,12 @@ struct RecordingView: View {
                     }
                 }
                 .frame(maxHeight: maxHeight)
-                .background(Color.gray.opacity(0.1))
-                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                .padding(.horizontal)
+                .background(Color(uiColor: .secondarySystemGroupedBackground))
+                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .strokeBorder(Palette.border, lineWidth: 1)
+                }
                 .onChange(of: viewModel.currentTranscript) { _, _ in
                     withAnimation {
                         proxy.scrollTo("transcript-bottom", anchor: .bottom)
@@ -532,13 +607,13 @@ struct RecordingView: View {
                 Text(selectedFolderName)
                     .lineLimit(1)
                 Image(systemName: "chevron.up.chevron.down")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
+                    .font(Typography.labelSmall)
+                    .foregroundStyle(Palette.textTertiary)
             }
-            .font(.subheadline)
+            .font(Typography.label)
             .padding(.horizontal, 14)
             .padding(.vertical, 8)
-            .background(Color.secondary.opacity(0.12))
+            .background(Palette.surfaceSubtle)
             .clipShape(Capsule())
         }
         .accessibilityLabel(t("Save to folder", "Сохранить в папку") + ": " + selectedFolderName)
@@ -559,35 +634,6 @@ struct RecordingView: View {
         }
     }
 
-    private var isReconnecting: Bool {
-        if case .reconnecting = viewModel.connectionState { return true }
-        return false
-    }
-
-    private var outerIndicatorColor: Color {
-        switch viewModel.phase {
-        case .recording:
-            if viewModel.isPaused { return Color.gray.opacity(0.14) }
-            return isReconnecting ? Color.orange.opacity(0.2) : Color.red.opacity(0.2)
-        case .preparing, .finalizing:
-            return Color.orange.opacity(0.18)
-        case .idle:
-            return Color.gray.opacity(0.1)
-        }
-    }
-
-    private var innerIndicatorColor: Color {
-        switch viewModel.phase {
-        case .recording:
-            if viewModel.isPaused { return Color.gray.opacity(0.25) }
-            return isReconnecting ? Color.orange.opacity(0.4) : Color.red.opacity(0.4)
-        case .preparing, .finalizing:
-            return Color.orange.opacity(0.28)
-        case .idle:
-            return Color.gray.opacity(0.2)
-        }
-    }
-
     private var indicatorSymbolName: String {
         switch viewModel.phase {
         case .recording:
@@ -603,12 +649,12 @@ struct RecordingView: View {
     private var indicatorSymbolColor: Color {
         switch viewModel.phase {
         case .recording:
-            if viewModel.isPaused { return .gray }
-            return .red
+            if viewModel.isPaused { return Palette.textSecondary }
+            return Palette.recording
         case .preparing, .finalizing:
-            return .orange
+            return Palette.accent
         case .idle:
-            return .gray
+            return Palette.accent
         }
     }
 
@@ -618,6 +664,15 @@ struct RecordingView: View {
             return t("New Recording", "Новая запись")
         default:
             return viewModel.statusText
+        }
+    }
+
+    private var compactSubtitle: String {
+        switch viewModel.phase {
+        case .idle:
+            return t("Capture a meeting or thought into your Inbox.", "Сохрани встречу или мысль в Инбокс.")
+        default:
+            return viewModel.emptyTranscriptText
         }
     }
 
@@ -721,9 +776,9 @@ struct RecordingView: View {
     private var buttonColor: Color {
         switch viewModel.phase {
         case .recording:
-            return .red
+            return Palette.recording
         case .preparing, .finalizing:
-            return .gray
+            return Palette.textTertiary
         case .idle:
             return Palette.accent
         }

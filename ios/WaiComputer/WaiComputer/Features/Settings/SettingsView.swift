@@ -119,22 +119,7 @@ struct SettingsView: View {
     private var settingsListSections: some View {
         Section(t("Account", "Аккаунт")) {
             if let user = appState.currentUser {
-                HStack {
-                    Image(systemName: "person.circle.fill")
-                        .font(.largeTitle)
-                        .foregroundStyle(Palette.accent)
-
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(user.email)
-                            .font(.headline)
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.82)
-                        Text(memberSinceText(user.createdAt))
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                .padding(.vertical, 4)
+                compactAccountHeader(user)
             }
         }
 
@@ -266,6 +251,48 @@ struct SettingsView: View {
                 ))
             }
         }
+    }
+
+    private func compactAccountHeader(_ user: User) -> some View {
+        HStack(alignment: .center, spacing: Spacing.md) {
+            WaiTriangleIcon(size: 28)
+                .frame(width: 42, height: 42)
+                .background(Palette.surfaceSubtle)
+                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .strokeBorder(Palette.border, lineWidth: 1)
+                }
+                .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: Spacing.xxs) {
+                Text(user.email)
+                    .font(Typography.headingMedium)
+                    .foregroundStyle(Palette.textPrimary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.82)
+                    .truncationMode(.middle)
+
+                HStack(spacing: Spacing.xs) {
+                    Text(memberSinceText(user.createdAt))
+                        .font(Typography.caption)
+                        .foregroundStyle(Palette.textSecondary)
+                        .lineLimit(1)
+
+                    Text(t("Signed in", "Вход выполнен"))
+                        .font(Typography.labelSmall)
+                        .foregroundStyle(Palette.accent)
+                        .padding(.horizontal, Spacing.sm)
+                        .padding(.vertical, Spacing.xxs)
+                        .background(Palette.accentSubtle)
+                        .clipShape(Capsule())
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(.vertical, Spacing.xs)
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("settings-compact-account-header")
     }
 
     private var regularSettingsLayout: some View {

@@ -1352,27 +1352,38 @@ private struct RecordingRecoveryBanner: View {
     let onDismiss: () -> Void
 
     var body: some View {
-        HStack(alignment: .top, spacing: 12) {
-            Image(systemName: "checkmark.circle.fill")
-                .foregroundStyle(.green)
-                .font(.headline)
+        HStack(alignment: .top, spacing: Spacing.md) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(Palette.accentSubtle)
+                    .frame(width: 34, height: 34)
+
+                Image(systemName: "checkmark.circle.fill")
+                    .foregroundStyle(Palette.accent)
+                    .font(Typography.headingSmall)
+            }
+            .accessibilityHidden(true)
 
             Text(message)
-                .font(.subheadline)
-                .foregroundStyle(.primary)
+                .font(Typography.caption)
+                .foregroundStyle(Palette.textPrimary)
+                .lineLimit(3)
                 .frame(maxWidth: .infinity, alignment: .leading)
 
             Button(action: onDismiss) {
-                Image(systemName: "xmark")
-                    .font(.caption.bold())
-                    .foregroundStyle(.secondary)
+                Image(systemName: "xmark.circle.fill")
+                    .font(Typography.label)
+                    .foregroundStyle(Palette.textTertiary)
             }
             .buttonStyle(.plain)
         }
-        .padding(14)
-        .background(.ultraThinMaterial)
+        .padding(Spacing.md)
+        .background(Palette.accentSubtle)
         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .shadow(color: .black.opacity(0.12), radius: 10, y: 4)
+        .overlay {
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .strokeBorder(Palette.border, lineWidth: 1)
+        }
         .accessibilityIdentifier("recording-recovery-banner")
     }
 }

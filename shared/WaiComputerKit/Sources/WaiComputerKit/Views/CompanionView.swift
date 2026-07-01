@@ -176,6 +176,14 @@ public struct CompanionView: View {
     @State private var didAutoSendInitial = false
     private let contentMaxWidth: CGFloat = CompanionLayoutMetrics.contentMaxWidth
 
+    private var usesCompactChatPresentation: Bool {
+        #if os(iOS)
+        horizontalSizeClass == .compact
+        #else
+        false
+        #endif
+    }
+
     private enum TurnStage {
         case idle
         case searching
@@ -302,14 +310,42 @@ public struct CompanionView: View {
 
     private var compactIOSContent: some View {
         VStack(spacing: 0) {
-            if showsConversationSwitcher && showChats {
-                chatList.frame(maxHeight: 220)
-                CompanionDivider()
-            }
             messageList
             composer
         }
+        .sheet(isPresented: $showChats) {
+            compactThreadSheet
+        }
         .accessibilityIdentifier("wai-compact-companion-layout")
+    }
+
+    private var compactThreadSheet: some View {
+        NavigationStack {
+            chatList
+                .navigationTitle(t("Threads", "Диалоги"))
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button(t("Done", "Готово")) {
+                            showChats = false
+                        }
+                    }
+                    ToolbarItem(placement: .primaryAction) {
+                        Button {
+                            Task {
+                                await newChat()
+                                showChats = false
+                            }
+                        } label: {
+                            Image(systemName: "square.and.pencil")
+                        }
+                        .accessibilityLabel(t("New thread", "Новый диалог"))
+                    }
+                }
+        }
+        .presentationDetents([.medium, .large])
+        .presentationDragIndicator(.visible)
+        .accessibilityIdentifier("wai-compact-thread-sheet")
     }
     #endif
 
@@ -332,31 +368,69 @@ public struct CompanionView: View {
             statusBadge
 
             if showsConversationSwitcher {
-                Button {
-                    Task { await newChat() }
-                } label: {
-                    Label(t("New thread", "Новый диалог"), systemImage: "square.and.pencil")
-                        .labelStyle(.iconOnly)
-                }
-                .buttonStyle(.bordered)
-                .help(t("New thread", "Новый диалог"))
-                .accessibilityIdentifier("wai-new-thread-button")
+                if usesCompactChatPresentation {
+                    compactHeaderIconButton(
+                        systemName: "square.and.pencil",
+                        accessibilityLabel: t("New thread", "Новый диалог"),
+                        identifier: "wai-new-thread-button"
+                    ) {
+                        Task { await newChat() }
+                    }
 
-                Button {
-                    showChats.toggle()
-                } label: {
-                    Label(showChats ? t("Hide threads", "Скрыть диалоги") : t("Show threads", "Показать диалоги"), systemImage: "bubble.left.and.bubble.right")
-                        .labelStyle(.titleAndIcon)
+                    compactHeaderIconButton(
+                        systemName: "bubble.left.and.bubble.right",
+                        accessibilityLabel: t("Threads", "Диалоги"),
+                        identifier: "wai-toggle-chats-button"
+                    ) {
+                        showChats = true
+                    }
+                } else {
+                    Button {
+                        Task { await newChat() }
+                    } label: {
+                        Label(t("New thread", "Новый диалог"), systemImage: "square.and.pencil")
+                            .labelStyle(.iconOnly)
+                    }
+                    .buttonStyle(.bordered)
+                    .help(t("New thread", "Новый диалог"))
+                    .accessibilityIdentifier("wai-new-thread-button")
+
+                    Button {
+                        showChats.toggle()
+                    } label: {
+                        Label(showChats ? t("Hide threads", "Скрыть диалоги") : t("Show threads", "Показать диалоги"), systemImage: "bubble.left.and.bubble.right")
+                            .labelStyle(.titleAndIcon)
+                    }
+                    .buttonStyle(.bordered)
+                    .help(showChats ? t("Hide threads", "Скрыть диалоги") : t("Show threads", "Показать диалоги"))
+                    .accessibilityIdentifier("wai-toggle-chats-button")
                 }
-                .buttonStyle(.bordered)
-                .help(showChats ? t("Hide threads", "Скрыть диалоги") : t("Show threads", "Показать диалоги"))
-                .accessibilityIdentifier("wai-toggle-chats-button")
             }
         }
         .frame(maxWidth: contentMaxWidth, alignment: .leading)
         .padding(.horizontal, 24)
         .padding(.vertical, 16)
         .frame(maxWidth: .infinity, alignment: .center)
+    }
+
+    private func compactHeaderIconButton(
+        systemName: String,
+        accessibilityLabel: String,
+        identifier: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Image(systemName: systemName)
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(companionAccentColor)
+                .frame(width: 38, height: 38)
+                .background(companionAccentColor.opacity(0.10))
+                .clipShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .help(accessibilityLabel)
+        .accessibilityLabel(accessibilityLabel)
+        .accessibilityIdentifier(identifier)
     }
 
     private var chatList: some View {
@@ -389,7 +463,12 @@ public struct CompanionView: View {
         let isActive = chat.id == activeChatId
         return HStack(spacing: 6) {
             Button {
-                Task { await loadChat(chat.id) }
+                Task {
+                    await loadChat(chat.id)
+                    if usesCompactChatPresentation {
+                        showChats = false
+                    }
+                }
             } label: {
                 HStack(spacing: 10) {
                     Image(systemName: "bubble.left")
@@ -501,8 +580,8 @@ public struct CompanionView: View {
                         messageRows
                     }
                     .frame(maxWidth: contentMaxWidth, alignment: .leading)
-                    .padding(.horizontal, 24)
-                    .padding(.vertical, 16)
+                    .padding(.horizontal, usesCompactChatPresentation ? 16 : 24)
+                    .padding(.vertical, usesCompactChatPresentation ? 20 : 16)
                     .frame(maxWidth: .infinity, alignment: .center)
                 }
                 .coordinateSpace(name: "chatScroll")
@@ -548,13 +627,6 @@ public struct CompanionView: View {
                 .id("streaming")
                 .companionMessageListRow()
         }
-        if let errorMessage {
-            Text(errorMessage)
-                .foregroundStyle(.red)
-                .font(.callout)
-                .padding(.vertical, 12)
-                .companionMessageListRow()
-        }
         // Invisible bottom anchor: its position in the scroll viewport tells us
         // whether the user is at the bottom.
         Color.clear
@@ -582,24 +654,92 @@ public struct CompanionView: View {
     }
 
     private var emptyState: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text(t("What should Wai do?", "Что Wai должен сделать?"))
-                .font(.system(size: 22, weight: .semibold, design: .serif))
-            Text(t("Search, remember, plan, or act across your Inbox.", "Искать, помнить, планировать или действовать по Инбоксу."))
-                .font(.callout)
-                .foregroundStyle(.secondary)
+        VStack(
+            alignment: usesCompactChatPresentation ? .center : .leading,
+            spacing: usesCompactChatPresentation ? 18 : 14
+        ) {
+            if usesCompactChatPresentation {
+                Image(systemName: "sparkles")
+                    .font(.system(size: 20, weight: .semibold))
+                    .foregroundStyle(companionAccentColor)
+                    .frame(width: 42, height: 42)
+                    .background(companionAccentColor.opacity(0.10))
+                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .accessibilityHidden(true)
+            }
 
-            FlowLayoutCompat {
-                ForEach(starterPrompts, id: \.self) { prompt in
-                    Button(prompt) { input = prompt }
-                        .buttonStyle(.bordered)
-                        .controlSize(.small)
+            VStack(
+                alignment: usesCompactChatPresentation ? .center : .leading,
+                spacing: 8
+            ) {
+                Text(t("What can I help with?", "Чем помочь?"))
+                    .font(.system(size: usesCompactChatPresentation ? 24 : 22, weight: .semibold))
+                    .multilineTextAlignment(usesCompactChatPresentation ? .center : .leading)
+
+                Text(t("Ask Wai to search recordings, remember decisions, or plan the next step.", "Попроси Wai найти записи, запомнить решения или спланировать следующий шаг."))
+                    .font(.system(size: 15))
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(usesCompactChatPresentation ? .center : .leading)
+                    .lineLimit(3)
+            }
+
+            if usesCompactChatPresentation {
+                VStack(spacing: 8) {
+                    ForEach(starterPrompts, id: \.self) { prompt in
+                        starterPromptButton(prompt)
+                    }
+                }
+                .padding(.top, 2)
+            } else {
+                FlowLayoutCompat {
+                    ForEach(starterPrompts, id: \.self) { prompt in
+                        starterPromptButton(prompt)
+                    }
                 }
             }
         }
-        .padding(.vertical, 24)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, usesCompactChatPresentation ? 48 : 24)
+        .frame(maxWidth: .infinity, alignment: usesCompactChatPresentation ? .center : .leading)
         .accessibilityIdentifier("wai-empty-state")
+    }
+
+    @ViewBuilder
+    private func starterPromptButton(_ prompt: String) -> some View {
+        if usesCompactChatPresentation {
+            Button {
+                input = prompt
+                inputFocused = true
+            } label: {
+                HStack(alignment: .center, spacing: 10) {
+                    Text(prompt)
+                        .font(.system(size: 14))
+                        .foregroundStyle(.primary)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.leading)
+                    Spacer(minLength: 8)
+                    Image(systemName: "arrow.up.forward")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 12)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color.primary.opacity(0.045))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .stroke(Color.primary.opacity(0.08), lineWidth: 1)
+                }
+                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            }
+            .buttonStyle(.plain)
+        } else {
+            Button(prompt) {
+                input = prompt
+                inputFocused = true
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+        }
     }
 
     @ViewBuilder
@@ -891,90 +1031,163 @@ public struct CompanionView: View {
     }
 
     private var composer: some View {
-        VStack(spacing: 0) {
-            CompanionDivider()
+        let canSend = !input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
 
-            HStack(alignment: .bottom, spacing: 10) {
-                TextField(
-                    t("Give Wai a task", "Дайте Wai задачу"),
-                    text: $input,
-                    axis: .vertical
-                )
-                .textFieldStyle(.plain)
-                #if os(macOS)
-                // Return sends — matching the inbox Ask composer that started
-                // this thread; Option+Return still inserts a newline with the
-                // vertical axis. iOS keeps the software keyboard's newline.
-                .onSubmit {
-                    guard !isStreaming else { return }
-                    Task { await send() }
-                }
-                #endif
-                .font(.system(size: 14))
-                .lineLimit(1...4)
-                .padding(CompanionComposerMetrics.textInsets.edgeInsets)
-                .frame(
-                    minHeight: CompanionComposerMetrics.minHeight,
-                    maxHeight: CompanionComposerMetrics.maxHeight,
-                    alignment: .topLeading
-                )
-                .background(Color.primary.opacity(0.05))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 8)
-                        .stroke(Color.primary.opacity(0.10), lineWidth: 1)
-                )
-                .clipShape(RoundedRectangle(cornerRadius: 8))
-                .focused($inputFocused)
-                // Make the whole styled box focus the field, not just the text
-                // line — the field is taller than one line so the area below it
-                // was a dead zone (130).
-                .contentShape(Rectangle())
-                .onTapGesture { inputFocused = true }
-                .accessibilityLabel(t("Message to Wai", "Сообщение для Wai"))
-                .accessibilityIdentifier("wai-message-editor")
+        return VStack(spacing: 0) {
+            if !usesCompactChatPresentation {
+                CompanionDivider()
+            }
 
-                if let onVoiceInput, !isStreaming {
-                    Button {
-                        // Focus the composer first so the host's dictation
-                        // transcribes into this field, then start it.
-                        inputFocused = true
-                        onVoiceInput()
-                    } label: {
-                        Image(systemName: "mic.fill")
-                    }
-                    .buttonStyle(.bordered)
-                    .help(t("Dictate your message", "Продиктовать сообщение"))
-                    .accessibilityIdentifier("wai-voice-input-button")
+            VStack(spacing: 8) {
+                if let message = errorMessage {
+                    composerErrorBanner(message)
                 }
 
-                if isStreaming {
-                    Button {
-                        cancelTurn()
-                    } label: {
-                        Label(t("Stop", "Стоп"), systemImage: "stop.fill")
-                            .labelStyle(.titleAndIcon)
-                            .frame(minWidth: 88)
-                    }
-                    .buttonStyle(.bordered)
-                    .accessibilityIdentifier("wai-stop-button")
-                } else {
-                    Button {
+                HStack(alignment: .bottom, spacing: 8) {
+                    TextField(
+                        t("Ask Wai anything", "Спроси Wai о чем угодно"),
+                        text: $input,
+                        axis: .vertical
+                    )
+                    .textFieldStyle(.plain)
+                    #if os(macOS)
+                    // Return sends — matching the inbox Ask composer that started
+                    // this thread; Option+Return still inserts a newline with the
+                    // vertical axis. iOS keeps the software keyboard's newline.
+                    .onSubmit {
+                        guard !isStreaming else { return }
                         Task { await send() }
-                    } label: {
-                        Label(t("Send", "Отправить"), systemImage: "paperplane.fill")
-                            .labelStyle(.titleAndIcon)
-                            .frame(minWidth: 96)
                     }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                    .accessibilityIdentifier("wai-send-button")
+                    #endif
+                    .font(.system(size: 15))
+                    .lineLimit(1...4)
+                    .padding(.horizontal, 4)
+                    .padding(.vertical, 8)
+                    .frame(
+                        minHeight: usesCompactChatPresentation ? 32 : CompanionComposerMetrics.minHeight - 12,
+                        alignment: .topLeading
+                    )
+                    .focused($inputFocused)
+                    // Make the whole styled box focus the field, not just the text
+                    // line — the field is taller than one line so the area below it
+                    // was a dead zone (130).
+                    .contentShape(Rectangle())
+                    .onTapGesture { inputFocused = true }
+                    .accessibilityLabel(t("Message to Wai", "Сообщение для Wai"))
+                    .accessibilityIdentifier("wai-message-editor")
+
+                    if let onVoiceInput, !isStreaming {
+                        Button {
+                            // Focus the composer first so the host's dictation
+                            // transcribes into this field, then start it.
+                            inputFocused = true
+                            onVoiceInput()
+                        } label: {
+                            Image(systemName: "mic.fill")
+                                .font(.system(size: 15, weight: .semibold))
+                                .frame(width: usesCompactChatPresentation ? 34 : 36, height: usesCompactChatPresentation ? 34 : 36)
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(companionAccentColor)
+                        .background(companionAccentColor.opacity(0.10))
+                        .clipShape(Circle())
+                        .help(t("Dictate your message", "Продиктовать сообщение"))
+                        .accessibilityIdentifier("wai-voice-input-button")
+                    }
+
+                    if isStreaming {
+                        Button {
+                            cancelTurn()
+                        } label: {
+                            if usesCompactChatPresentation {
+                                Image(systemName: "stop.fill")
+                                    .font(.system(size: 14, weight: .semibold))
+                                    .frame(width: 36, height: 36)
+                            } else {
+                                Label(t("Stop", "Стоп"), systemImage: "stop.fill")
+                                    .labelStyle(.titleAndIcon)
+                                    .frame(minWidth: 88)
+                            }
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(companionAccentColor)
+                        .background(companionAccentColor.opacity(0.12))
+                        .clipShape(Capsule())
+                        .accessibilityIdentifier("wai-stop-button")
+                    } else {
+                        Button {
+                            Task { await send() }
+                        } label: {
+                            if usesCompactChatPresentation {
+                                Image(systemName: "arrow.up")
+                                    .font(.system(size: 15, weight: .bold))
+                                    .frame(width: 36, height: 36)
+                            } else {
+                                Label(t("Send", "Отправить"), systemImage: "arrow.up")
+                                    .labelStyle(.titleAndIcon)
+                                    .frame(minWidth: 92)
+                            }
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(canSend ? Color.white : Color.secondary)
+                        .background(canSend ? companionAccentColor : Color.primary.opacity(0.08))
+                        .clipShape(Capsule())
+                        .disabled(!canSend)
+                        .accessibilityIdentifier("wai-send-button")
+                    }
                 }
+                .padding(.horizontal, usesCompactChatPresentation ? 8 : 10)
+                .padding(.vertical, usesCompactChatPresentation ? 6 : 8)
+                .background(Color.primary.opacity(0.045))
+                .overlay {
+                    RoundedRectangle(cornerRadius: usesCompactChatPresentation ? 24 : 14, style: .continuous)
+                        .stroke(Color.primary.opacity(0.10), lineWidth: 1)
+                }
+                .clipShape(RoundedRectangle(cornerRadius: usesCompactChatPresentation ? 24 : 14, style: .continuous))
+                .contentShape(RoundedRectangle(cornerRadius: usesCompactChatPresentation ? 24 : 14, style: .continuous))
+                .onTapGesture { inputFocused = true }
             }
             .frame(maxWidth: contentMaxWidth, alignment: .leading)
-            .padding(.horizontal, 24)
-            .padding(.vertical, 16)
+            .padding(.horizontal, usesCompactChatPresentation ? 16 : 24)
+            .padding(.vertical, usesCompactChatPresentation ? 10 : 16)
             .frame(maxWidth: .infinity, alignment: .center)
         }
+    }
+
+    private func composerErrorBanner(_ message: String) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: "exclamationmark.circle.fill")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(.red)
+                .padding(.top, 1)
+                .accessibilityHidden(true)
+
+            Text(message)
+                .font(.system(size: 13))
+                .foregroundStyle(.primary)
+                .lineLimit(3)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+            Button {
+                errorMessage = nil
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 22, height: 22)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(t("Dismiss error", "Скрыть ошибку"))
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 9)
+        .background(Color.red.opacity(0.08))
+        .overlay {
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(Color.red.opacity(0.18), lineWidth: 1)
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .accessibilityIdentifier("wai-composer-error")
     }
 
     private func renameSheet(for chat: CompanionConversation) -> some View {

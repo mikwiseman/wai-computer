@@ -390,48 +390,71 @@ struct DictationDictionaryView: View {
 
     @ViewBuilder
     private func wordRow(_ word: DictionaryWord) -> some View {
-        HStack(spacing: 8) {
-            Text(word.word)
-                .font(Typography.body)
-                .foregroundStyle(Palette.textPrimary)
+        HStack(alignment: .top, spacing: Spacing.md) {
+            VStack(alignment: .leading, spacing: Spacing.xs) {
+                HStack(alignment: .firstTextBaseline, spacing: Spacing.xs) {
+                    Text(word.word)
+                        .font(Typography.headingMedium)
+                        .foregroundStyle(Palette.textPrimary)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
 
-            if word.isLearned {
-                Image(systemName: "sparkles")
-                    .font(.caption2)
-                    .foregroundStyle(Palette.accent)
-                    .accessibilityLabel(t("Learned from your edits", "Выучено из твоих правок"))
+                    if word.isLearned {
+                        Image(systemName: "sparkles")
+                            .font(Typography.labelSmall)
+                            .foregroundStyle(Palette.accent)
+                            .accessibilityLabel(t("Learned from your edits", "Выучено из твоих правок"))
+                    }
+                }
+
+                if let replacement = word.replacement, replacement != word.word {
+                    HStack(alignment: .firstTextBaseline, spacing: Spacing.xs) {
+                        Image(systemName: "arrow.right")
+                            .font(Typography.labelSmall)
+                            .foregroundStyle(Palette.textTertiary)
+                        Text(replacement)
+                            .font(Typography.bodySmall)
+                            .foregroundStyle(Palette.textSecondary)
+                            .lineLimit(2)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+
+                dictionaryWordBadges(for: word)
             }
-
-            if let replacement = word.replacement, replacement != word.word {
-                Image(systemName: "arrow.right")
-                    .font(.caption)
-                    .foregroundStyle(Palette.textTertiary)
-                Text(replacement)
-                    .font(Typography.body)
-                    .foregroundStyle(Palette.textSecondary)
-                badge(label: replaceBadgeLabel, color: .orange)
-            } else {
-                badge(label: biasBadgeLabel, color: Palette.accent)
-            }
-
-            Spacer()
+            .frame(maxWidth: .infinity, alignment: .leading)
 
             Button {
                 dictionaryStore.delete(word)
             } label: {
-                Image(systemName: "xmark")
-                    .font(.caption)
+                Image(systemName: "xmark.circle.fill")
+                    .font(Typography.label)
                     .foregroundStyle(Palette.textTertiary)
             }
             .buttonStyle(.borderless)
             .accessibilityLabel(t("Remove word", "Удалить слово"))
         }
-        .padding(.vertical, Spacing.xxs)
-        .contentShape(Rectangle())
+        .padding(.vertical, Spacing.sm)
+        .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         .contextMenu {
             Button(t("Edit", "Изменить")) { beginEdit(word) }
             Button(t("Remove word", "Удалить слово"), role: .destructive) {
                 dictionaryStore.delete(word)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func dictionaryWordBadges(for word: DictionaryWord) -> some View {
+        HStack(spacing: Spacing.xs) {
+            if let replacement = word.replacement, replacement != word.word {
+                badge(label: replaceBadgeLabel, color: .orange)
+            } else {
+                badge(label: biasBadgeLabel, color: Palette.accent)
+            }
+
+            if word.isLearned {
+                badge(label: t("LEARNED", "ВЫУЧЕНО"), color: Palette.accent)
             }
         }
     }
