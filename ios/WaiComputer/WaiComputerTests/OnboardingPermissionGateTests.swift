@@ -940,6 +940,23 @@ final class OnboardingPermissionGateTests: XCTestCase {
         XCTAssertFalse(companionSource.contains(".font(.system(size: 22, weight: .semibold, design: .serif))"))
     }
 
+    func testIOSSpeakerAssignmentUsesMacStylePickerSurface() throws {
+        let source = try iosSource("WaiComputer/Features/Library/SpeakerChipButton.swift")
+
+        XCTAssertTrue(source.contains("accessibilityIdentifier(\"speaker-chip-button\")"))
+        XCTAssertTrue(source.contains("speakerAssignSearchField"))
+        XCTAssertTrue(source.contains("accessibilityIdentifier(\"speaker-assign-search-field\")"))
+        XCTAssertTrue(source.contains("speakerAssignErrorBanner"))
+        XCTAssertTrue(source.contains("speakerPersonRow(person)"))
+        XCTAssertTrue(source.contains("speakerCreateRow"))
+        XCTAssertTrue(source.contains("Palette.accentSubtle"))
+        XCTAssertTrue(source.contains("Palette.border"))
+        XCTAssertTrue(source.contains("Typography.label"))
+        XCTAssertFalse(source.contains(".textFieldStyle(.roundedBorder)"))
+        XCTAssertFalse(source.contains(".foregroundStyle(.blue)"))
+        XCTAssertFalse(source.contains("\"✨\\(conf)%\""))
+    }
+
     func testAuthViewUsesMacStyleRegularLayout() throws {
         let source = try iosSource("WaiComputer/App/AuthView.swift")
 

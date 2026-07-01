@@ -1,6 +1,12 @@
 import SwiftUI
 import WaiComputerKit
 
+private enum SpeakerAssignLayout {
+    static let chipCornerRadius: CGFloat = 7
+    static let rowCornerRadius: CGFloat = 10
+    static let errorIconWidth: CGFloat = 16
+}
+
 struct SpeakerChipButton: View {
     let segment: Segment
     let recordingId: String
@@ -16,18 +22,27 @@ struct SpeakerChipButton: View {
         } label: {
             HStack(spacing: 2) {
                 Text(displayLabel)
-                    .font(.caption)
-                    .fontWeight(.semibold)
-                    .foregroundStyle(segment.personId != nil ? .blue : .secondary)
-                if segment.autoAssigned, let conf = confidencePercent {
-                    Text("✨\(conf)%")
-                        .font(.system(size: 9))
-                        .foregroundStyle(.secondary)
+                    .font(Typography.label)
+                    .foregroundStyle(isAssigned ? Palette.accent : Palette.textSecondary)
+                if segment.autoAssigned {
+                    Text("✨")
+                        .font(.system(size: 10))
+                        .foregroundStyle(Palette.textTertiary)
                 }
+            }
+            .padding(.horizontal, Spacing.xs)
+            .padding(.vertical, Spacing.xxs)
+            .background(isAssigned ? Palette.accentSubtle : Palette.surfaceSubtle)
+            .clipShape(RoundedRectangle(cornerRadius: SpeakerAssignLayout.chipCornerRadius, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: SpeakerAssignLayout.chipCornerRadius, style: .continuous)
+                    .stroke(Palette.border, lineWidth: 1)
             }
         }
         .buttonStyle(.plain)
         .disabled(rawLabel == nil)
+        .accessibilityIdentifier("speaker-chip-button")
+        .accessibilityHint(Text(helpText))
         .sheet(isPresented: $isSheetPresented) {
             SpeakerAssignSheet(
                 segment: segment,
@@ -51,6 +66,20 @@ struct SpeakerChipButton: View {
     private var displayLabel: String {
         segment.userFacingSpeakerLabel(languageCode: speakerLanguageCode)
             ?? t("Speaker", "Говорящий")
+    }
+
+    private var isAssigned: Bool {
+        segment.personId != nil
+    }
+
+    private var helpText: String {
+        if let conf = confidencePercent, segment.autoAssigned {
+            return t(
+                "Auto-assigned (\(conf)% match). Tap to override.",
+                "Назначено автоматически, совпадение \(conf)%. Нажми, чтобы изменить."
+            )
+        }
+        return t("Tap to assign", "Нажми, чтобы назначить")
     }
 
     private var speakerLanguageCode: String {
@@ -94,15 +123,10 @@ private struct SpeakerAssignSheet: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                TextField(t("Search or create…", "Найти или создать…"), text: $filter)
-                    .textFieldStyle(.roundedBorder)
-                    .padding()
+                speakerAssignSearchField
 
                 if let loadError {
-                    Text(loadError)
-                        .font(.caption)
-                        .foregroundStyle(.red)
-                        .padding(.horizontal)
+                    speakerAssignErrorBanner(loadError)
                 }
 
                 List {
@@ -110,9 +134,13 @@ private struct SpeakerAssignSheet: View {
                         Button {
                             Task { await assign(personId: person.id) }
                         } label: {
-                            Text(person.displayName)
+                            speakerPersonRow(person)
                         }
                         .disabled(isWorking)
+                        .buttonStyle(.plain)
+                        .listRowSeparator(.hidden)
+                        .listRowBackground(Color.clear)
+                        .listRowInsets(EdgeInsets(top: Spacing.xs, leading: Spacing.lg, bottom: Spacing.xs, trailing: Spacing.lg))
                         .contextMenu {
                             Button(t("Rename…", "Переименовать…")) {
                                 renameDraft = person.displayName
@@ -127,19 +155,25 @@ private struct SpeakerAssignSheet: View {
                         Button {
                             Task { await assign(newName: trimmedFilter) }
                         } label: {
-                            Text("+ " + t("Create", "Создать") + " \u{201C}\(trimmedFilter)\u{201D}")
-                                .foregroundStyle(.blue)
+                            speakerCreateRow
                         }
                         .disabled(isWorking)
+                        .buttonStyle(.plain)
+                        .listRowSeparator(.hidden)
+                        .listRowBackground(Color.clear)
+                        .listRowInsets(EdgeInsets(top: Spacing.xs, leading: Spacing.lg, bottom: Spacing.xs, trailing: Spacing.lg))
                     }
                     if people.isEmpty && trimmedFilter.isEmpty {
-                        Text(t("No people yet. Type a name above.", "Людей пока нет. Введи имя выше."))
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                        speakerEmptyRow
+                            .listRowSeparator(.hidden)
+                            .listRowBackground(Color.clear)
+                            .listRowInsets(EdgeInsets(top: Spacing.xs, leading: Spacing.lg, bottom: Spacing.xs, trailing: Spacing.lg))
                     }
                 }
                 .listStyle(.plain)
+                .scrollContentBackground(.hidden)
             }
+            .background(Color(uiColor: .systemBackground))
             .navigationTitle(t("Assign Speaker", "Назначить говорящего"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -201,6 +235,136 @@ private struct SpeakerAssignSheet: View {
             }
         }
         .presentationDetents([.medium, .large])
+    }
+
+    private var speakerAssignSearchField: some View {
+        HStack(spacing: Spacing.sm) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(Palette.textTertiary)
+            TextField(t("Search or create…", "Найти или создать…"), text: $filter)
+                .textFieldStyle(.plain)
+                .font(Typography.body)
+                .foregroundStyle(Palette.textPrimary)
+                .submitLabel(.done)
+                .accessibilityIdentifier("speaker-assign-search-field")
+            if !filter.isEmpty {
+                Button {
+                    filter = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(Palette.textTertiary)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(t("Clear search", "Очистить поиск"))
+            }
+        }
+        .padding(.horizontal, Spacing.md)
+        .padding(.vertical, Spacing.sm)
+        .frame(minHeight: 44)
+        .background(Palette.surfaceSubtle)
+        .clipShape(RoundedRectangle(cornerRadius: SpeakerAssignLayout.rowCornerRadius, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: SpeakerAssignLayout.rowCornerRadius, style: .continuous)
+                .stroke(Palette.border, lineWidth: 1)
+        }
+        .padding(.horizontal, Spacing.lg)
+        .padding(.top, Spacing.lg)
+        .padding(.bottom, Spacing.sm)
+        .accessibilityIdentifier("speaker-assign-search-field")
+    }
+
+    private func speakerAssignErrorBanner(_ message: String) -> some View {
+        HStack(alignment: .top, spacing: Spacing.xs) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(Palette.recording)
+                .frame(width: SpeakerAssignLayout.errorIconWidth, alignment: .leading)
+            Text(message)
+                .font(Typography.caption)
+                .foregroundStyle(Palette.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(.horizontal, Spacing.sm)
+        .padding(.vertical, Spacing.xs)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Palette.recording.opacity(0.10))
+        .clipShape(RoundedRectangle(cornerRadius: SpeakerAssignLayout.rowCornerRadius, style: .continuous))
+        .padding(.horizontal, Spacing.lg)
+        .padding(.bottom, Spacing.sm)
+        .accessibilityIdentifier("speaker-assign-error-banner")
+    }
+
+    private func speakerPersonRow(_ person: Person) -> some View {
+        HStack(spacing: Spacing.md) {
+            Image(systemName: "person.crop.circle")
+                .font(.system(size: 16, weight: .medium))
+                .foregroundStyle(Palette.accent)
+            Text(person.displayName)
+                .font(Typography.body)
+                .foregroundStyle(Palette.textPrimary)
+                .lineLimit(1)
+            Spacer(minLength: Spacing.md)
+            Image(systemName: "chevron.right")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(Palette.textTertiary)
+        }
+        .padding(.horizontal, Spacing.md)
+        .padding(.vertical, Spacing.sm)
+        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+        .background(Palette.surfaceSubtle)
+        .clipShape(RoundedRectangle(cornerRadius: SpeakerAssignLayout.rowCornerRadius, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: SpeakerAssignLayout.rowCornerRadius, style: .continuous)
+                .stroke(Palette.border, lineWidth: 1)
+        }
+        .contentShape(RoundedRectangle(cornerRadius: SpeakerAssignLayout.rowCornerRadius, style: .continuous))
+        .accessibilityIdentifier("speaker-assign-person-row")
+    }
+
+    private var speakerCreateRow: some View {
+        HStack(spacing: Spacing.md) {
+            Image(systemName: "plus.circle.fill")
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(Palette.accent)
+            Text(t("Create", "Создать") + " \u{201C}\(trimmedFilter)\u{201D}")
+                .font(Typography.body)
+                .foregroundStyle(Palette.accent)
+                .lineLimit(1)
+                .truncationMode(.middle)
+            Spacer(minLength: Spacing.md)
+        }
+        .padding(.horizontal, Spacing.md)
+        .padding(.vertical, Spacing.sm)
+        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+        .background(Palette.accentSubtle)
+        .clipShape(RoundedRectangle(cornerRadius: SpeakerAssignLayout.rowCornerRadius, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: SpeakerAssignLayout.rowCornerRadius, style: .continuous)
+                .stroke(Palette.border, lineWidth: 1)
+        }
+        .contentShape(RoundedRectangle(cornerRadius: SpeakerAssignLayout.rowCornerRadius, style: .continuous))
+        .accessibilityIdentifier("speaker-assign-create-row")
+    }
+
+    private var speakerEmptyRow: some View {
+        HStack(alignment: .top, spacing: Spacing.sm) {
+            Image(systemName: "person.2")
+                .font(.system(size: 14, weight: .medium))
+                .foregroundStyle(Palette.textTertiary)
+            Text(t("No people yet. Type a name above.", "Людей пока нет. Введи имя выше."))
+                .font(Typography.caption)
+                .foregroundStyle(Palette.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: Spacing.md)
+        }
+        .padding(.horizontal, Spacing.md)
+        .padding(.vertical, Spacing.sm)
+        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+        .background(Palette.surfaceSubtle)
+        .clipShape(RoundedRectangle(cornerRadius: SpeakerAssignLayout.rowCornerRadius, style: .continuous))
+        .accessibilityIdentifier("speaker-assign-empty-row")
     }
 
     private var trimmedFilter: String {
