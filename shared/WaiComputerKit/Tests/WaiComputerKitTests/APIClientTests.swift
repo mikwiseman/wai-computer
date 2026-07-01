@@ -1225,7 +1225,9 @@ final class APIClientTests: XCTestCase {
             case 1:
                 XCTAssertEqual(request.httpMethod, "GET")
                 XCTAssertEqual(request.url?.path, "/api/folders")
-                return (response, Data("[]".utf8))
+                return (response, Data("""
+                [{"id":"folder-1","name":"Projects","created_at":"2026-01-01T00:00:00Z","item_count":3}]
+                """.utf8))
             case 2:
                 XCTAssertEqual(request.httpMethod, "POST")
                 XCTAssertEqual(request.url?.path, "/api/folders")
@@ -1242,15 +1244,59 @@ final class APIClientTests: XCTestCase {
         }
 
         let listed = try await client.listFolders()
-        XCTAssertTrue(listed.isEmpty)
+        XCTAssertEqual(listed.first?.itemCount, 3)
 
         let created = try await client.createFolder(name: "Projects")
         XCTAssertEqual(created.name, "Projects")
+        XCTAssertEqual(created.itemCount, 0)
 
         let updated = try await client.updateFolder(id: "folder-1", name: "Renamed")
         XCTAssertEqual(updated.name, "Renamed")
 
         try await client.deleteFolder(id: "folder-1")
+    }
+
+    func testMoveItemEmitsFolderAssignmentIncludingNull() async throws {
+        let client = makeClient()
+
+        final class RequestCounter: @unchecked Sendable {
+            var value = 0
+        }
+        let counter = RequestCounter()
+
+        MockURLProtocol.requestHandler = { request in
+            counter.value += 1
+            XCTAssertEqual(request.httpMethod, "PATCH")
+            XCTAssertEqual(request.url?.path, "/api/items/item-1")
+
+            let body = self.bodyJSON(from: request)
+            if counter.value == 1 {
+                XCTAssertEqual(body?["folder_id"] as? String, "folder-42")
+            } else {
+                XCTAssertTrue(body?["folder_id"] is NSNull)
+            }
+
+            let response = HTTPURLResponse(
+                url: request.url!,
+                statusCode: 200,
+                httpVersion: nil,
+                headerFields: nil
+            )!
+            let folderIdValue = counter.value == 1 ? #""folder-42""# : "null"
+            let payload = """
+            {"id":"item-1","source":"paste","source_ref":null,"url":null,"kind":"note",\
+            "title":"Material","body":"Body","occurred_at":null,"state":"ready",\
+            "status":"ready","error":null,"folder_id":\(folderIdValue),\
+            "created_at":"2026-06-01T00:00:00Z","summary":null}
+            """.data(using: .utf8)!
+            return (response, payload)
+        }
+
+        let moved = try await client.moveItem(id: "item-1", folderId: "folder-42")
+        XCTAssertEqual(moved.folderId, "folder-42")
+
+        let removed = try await client.moveItem(id: "item-1", folderId: nil)
+        XCTAssertNil(removed.folderId)
     }
 
     func testGetTranscriptReturnsSegments() async throws {

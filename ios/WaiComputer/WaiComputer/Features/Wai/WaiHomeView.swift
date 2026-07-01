@@ -10,12 +10,18 @@ struct WaiHomeView: View {
     @EnvironmentObject var appState: AppState
     @EnvironmentObject var languageManager: LanguageManager
 
+    let initialChatId: String?
+
     /// Recordings used purely to resolve citation chip titles inside the shared
     /// `CompanionView`. We fetch our own copy here rather than hoisting the
     /// Library view model into `AppState`; a fresh `.task` load keeps the tab
     /// self-contained at the cost of one extra list request.
     @State private var recordings: [Recording] = []
     @State private var loadError: String?
+
+    init(initialChatId: String? = nil) {
+        self.initialChatId = initialChatId
+    }
 
     private func t(_ english: String, _ russian: String) -> String {
         OnboardingL10n.text(english, russian, language: languageManager.current)
@@ -25,6 +31,7 @@ struct WaiHomeView: View {
         CompanionView(
             apiClient: appState.getAPIClient(),
             recordings: recordings,
+            initialChatId: initialChatId,
             onTurnCompleted: { completion in
                 // Mirror macOS: ping the user when an agent turn finishes while
                 // they're away from the app, deep-linking back to the Wai tab.

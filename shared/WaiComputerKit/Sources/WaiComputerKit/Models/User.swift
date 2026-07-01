@@ -480,6 +480,24 @@ public struct TelegramLinkStatus: Codable, Sendable {
     public let lastName: String?
     public let linkedAt: Date?
 
+    public init(
+        linked: Bool,
+        botUsername: String,
+        telegramUserID: Int?,
+        username: String?,
+        firstName: String?,
+        lastName: String?,
+        linkedAt: Date?
+    ) {
+        self.linked = linked
+        self.botUsername = botUsername
+        self.telegramUserID = telegramUserID
+        self.username = username
+        self.firstName = firstName
+        self.lastName = lastName
+        self.linkedAt = linkedAt
+    }
+
     private enum CodingKeys: String, CodingKey {
         case linked
         case botUsername = "bot_username"
@@ -496,6 +514,18 @@ public struct TelegramPairing: Codable, Sendable {
     public let deepLink: String
     public let webLink: String
     public let expiresAt: Date
+
+    public init(
+        botUsername: String,
+        deepLink: String,
+        webLink: String,
+        expiresAt: Date
+    ) {
+        self.botUsername = botUsername
+        self.deepLink = deepLink
+        self.webLink = webLink
+        self.expiresAt = expiresAt
+    }
 
     private enum CodingKeys: String, CodingKey {
         case botUsername = "bot_username"

@@ -16,29 +16,11 @@ struct TranscriptView: View {
         } else {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 16) {
-                    HStack {
+                    HStack(alignment: .center, spacing: Spacing.md) {
+                        Text(t("Transcript", "Расшифровка"))
+                            .waiSectionHeader()
                         Spacer()
-                        // Single tap copies clean prose (the common case); the menu
-                        // exposes the timestamped variant without making it default.
-                        Menu {
-                            Button {
-                                copyTranscript(style: .plain)
-                            } label: {
-                                Label(t("Copy text", "Скопировать текст"), systemImage: "doc.on.doc")
-                            }
-                            Button {
-                                copyTranscript(style: .timestamped)
-                            } label: {
-                                Label(t("Copy with timestamps", "Скопировать с тайм-кодами"), systemImage: "clock")
-                            }
-                        } label: {
-                            Image(systemName: copied ? "checkmark" : "doc.on.doc")
-                                .font(.caption)
-                                .foregroundStyle(copied ? .orange : .secondary)
-                        } primaryAction: {
-                            copyTranscript(style: .plain)
-                        }
-                        .accessibilityLabel(t("Copy transcript", "Скопировать расшифровку"))
+                        copyTranscriptButton
                     }
 
                     ForEach(TranscriptRendering.mergeTurns(segments, languageCode: speakerLanguageCode)) { turn in
@@ -51,6 +33,7 @@ struct TranscriptView: View {
                 }
                 .padding(24)
             }
+            .accessibilityIdentifier("transcript-content")
         }
     }
 
@@ -112,6 +95,35 @@ struct TranscriptView: View {
         )
     }
 
+    private var copyTranscriptButton: some View {
+        // Single tap copies clean prose (the common case); the menu exposes the
+        // timestamped variant without making it default.
+        Menu {
+            Button {
+                copyTranscript(style: .plain)
+            } label: {
+                Label(t("Copy text", "Скопировать текст"), systemImage: "doc.on.doc")
+            }
+            .accessibilityIdentifier("transcript-copy-plain")
+
+            Button {
+                copyTranscript(style: .timestamped)
+            } label: {
+                Label(t("Copy with timestamps", "Скопировать с тайм-кодами"), systemImage: "clock")
+            }
+            .accessibilityIdentifier("transcript-copy-timestamped")
+        } label: {
+            Label(copied ? t("Copied", "Скопировано") : t("Copy Transcript", "Скопировать расшифровку"), systemImage: copied ? "checkmark" : "doc.on.doc")
+        } primaryAction: {
+            copyTranscript(style: .plain)
+        }
+        .buttonStyle(.bordered)
+        .tint(Palette.accent)
+        .fixedSize()
+        .accessibilityIdentifier("transcript-copy-menu")
+        .accessibilityLabel(t("Copy transcript", "Скопировать расшифровку"))
+    }
+
     private func copyTranscript(style: TranscriptStyle) {
         UIPasteboard.general.string = TranscriptRendering.transcriptText(
             segments, style: style, languageCode: speakerLanguageCode
@@ -142,11 +154,10 @@ struct SegmentView: View {
     let recordingId: String?
     let onAssigned: ((RecordingDetail) -> Void)?
     @EnvironmentObject private var languageManager: LanguageManager
-    @State private var isExpanded = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack {
+        VStack(alignment: .leading, spacing: Spacing.xs) {
+            HStack(spacing: Spacing.sm) {
                 if let recordingId, let rawLabel = effectiveRawLabel, !rawLabel.isEmpty {
                     SpeakerChipButton(
                         segment: segment,
@@ -155,31 +166,22 @@ struct SegmentView: View {
                     )
                 } else if let speaker = effectiveDisplay {
                     Text(speaker)
-                        .font(.caption)
-                        .fontWeight(.semibold)
-                        .foregroundStyle(.blue)
+                        .font(Typography.label)
+                        .foregroundStyle(Palette.textSecondary)
                 }
 
-                Spacer()
-
                 Text(segment.formattedTimestamp)
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
+                    .font(Typography.mono)
+                    .foregroundStyle(Palette.textTertiary)
             }
 
             Text(segment.content)
-                .font(.body)
-                .lineLimit(isExpanded ? nil : 3)
+                .font(Typography.reading)
+                .lineSpacing(6)
+                .foregroundStyle(Palette.textPrimary)
                 .textSelection(.enabled)
-                .onTapGesture {
-                    withAnimation {
-                        isExpanded.toggle()
-                    }
-                }
         }
-        .padding()
-        .background(Color.gray.opacity(0.05))
-        .cornerRadius(8)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var effectiveRawLabel: String? {

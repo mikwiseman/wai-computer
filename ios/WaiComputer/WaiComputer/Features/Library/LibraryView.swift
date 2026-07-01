@@ -5,6 +5,7 @@ import WaiComputerKit
 struct LibraryView: View {
     @EnvironmentObject var appState: AppState
     @EnvironmentObject private var languageManager: LanguageManager
+    @Environment(\.horizontalSizeClass) private var libraryHorizontalSizeClass
     @StateObject private var viewModel = LibraryViewModel()
     @StateObject private var importViewModel = ImportViewModel()
     @StateObject private var searchViewModel = SearchViewModel()
@@ -23,6 +24,7 @@ struct LibraryView: View {
     @State private var recordingTitleDraft = ""
     @State private var editMode: EditMode = .inactive
     @State private var selectedRecordingIds = Set<String>()
+    @State private var selectedLibraryRecordingId: String?
 
     private var isScreenshotMode: Bool {
         IOSTestingMode.current.isScreenshot
@@ -30,6 +32,10 @@ struct LibraryView: View {
 
     private var isEditing: Bool {
         editMode == .active
+    }
+
+    private var isRegularWidth: Bool {
+        libraryHorizontalSizeClass == .regular
     }
 
     var body: some View {
@@ -54,12 +60,13 @@ struct LibraryView: View {
                         description: Text(t("Start recording to see your notes here", "Начни запись, чтобы увидеть заметки здесь"))
                     )
                 } else {
-                    libraryList
+                    libraryContent
                 }
             }
             .background(SearchActivityReader(isActive: $isSearchActive))
             .environment(\.editMode, $editMode)
             .navigationTitle(t("Library", "Библиотека"))
+            .navigationBarTitleDisplayMode(isRegularWidth ? .inline : .large)
             .searchable(
                 text: $searchViewModel.query,
                 placement: .navigationBarDrawer(displayMode: .automatic),
@@ -334,6 +341,9 @@ struct LibraryView: View {
                     }
                 }
             }
+            .onChange(of: viewModel.recordings.map(\.id)) { _, visibleIds in
+                reconcileLibrarySelection(visibleIds)
+            }
             .onDisappear {
                 errorAutoDismissTask?.cancel()
             }
@@ -342,7 +352,16 @@ struct LibraryView: View {
 
     // MARK: - Library List
 
-    private var libraryList: some View {
+    @ViewBuilder
+    private var libraryContent: some View {
+        if isRegularWidth {
+            regularLibraryLayout
+        } else {
+            compactLibraryList
+        }
+    }
+
+    private var compactLibraryList: some View {
         List(selection: $selectedRecordingIds) {
             // Folders section
             if !viewModel.folders.isEmpty {
@@ -353,8 +372,7 @@ struct LibraryView: View {
                             viewModel: viewModel
                         )) {
                             FolderRow(
-                                folder: folder,
-                                recordingCount: viewModel.recordingsInFolder(folder.id).count
+                                folder: folder
                             )
                         }
                         .selectionDisabled(true)
@@ -410,9 +428,185 @@ struct LibraryView: View {
         }
     }
 
+    private var regularLibraryLayout: some View {
+        HStack(spacing: 0) {
+            List(selection: $selectedRecordingIds) {
+                if !viewModel.folders.isEmpty {
+                    Section(t("Folders", "Папки")) {
+                        ForEach(viewModel.folders) { folder in
+                            NavigationLink(destination: FolderRecordingsView(
+                                folder: folder,
+                                viewModel: viewModel
+                            )) {
+                                FolderRow(folder: folder)
+                            }
+                            .selectionDisabled(true)
+                            .swipeActions(edge: .trailing) {
+                                Button(role: .destructive) {
+                                    showDeleteFolderConfirmation = folder
+                                } label: {
+                                    Label(t("Delete", "Удалить"), systemImage: "trash")
+                                }
+                            }
+                            .contextMenu {
+                                Button {
+                                    folderNameDraft = folder.name
+                                    renameFolderTarget = folder
+                                } label: {
+                                    Label(t("Rename", "Переименовать"), systemImage: "pencil")
+                                }
+                                Button(role: .destructive) {
+                                    showDeleteFolderConfirmation = folder
+                                } label: {
+                                    Label(t("Delete", "Удалить"), systemImage: "trash")
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Section(t("Recordings", "Записи")) {
+                    ForEach(viewModel.recordings) { recording in
+                        regularLibraryRow(for: recording)
+                            .tag(recording.id)
+                            .swipeActions(edge: .trailing) {
+                                Button(role: .destructive) {
+                                    Task {
+                                        await trashRecording(id: recording.id)
+                                    }
+                                } label: {
+                                    Label(t("Trash", "Корзина"), systemImage: "trash")
+                                }
+                            }
+                            .contextMenu {
+                                recordingContextMenu(for: recording)
+                            }
+                    }
+                }
+
+                if !viewModel.trashedRecordings.isEmpty {
+                    Section {
+                        NavigationLink(destination: TrashView(viewModel: viewModel)) {
+                            HStack {
+                                Image(systemName: "trash")
+                                    .foregroundStyle(.red)
+                                Text(t("Trash", "Корзина"))
+                                Spacer()
+                                Text("\(viewModel.trashedRecordings.count)")
+                                    .foregroundStyle(.secondary)
+                                    .font(.caption)
+                            }
+                        }
+                        .selectionDisabled(true)
+                    }
+                }
+            }
+            .listStyle(.plain)
+            .scrollContentBackground(.hidden)
+            .frame(minWidth: 320, idealWidth: 390, maxWidth: 460, maxHeight: .infinity, alignment: .topLeading)
+            .background(Palette.surfaceSubtle)
+            .accessibilityIdentifier("ios-library-list-pane")
+
+            Divider()
+
+            regularLibraryDetailPane
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .background(Color(uiColor: .systemGroupedBackground))
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .accessibilityIdentifier("ios-library-regular-layout")
+    }
+
+    @ViewBuilder
+    private func regularLibraryRow(for recording: Recording) -> some View {
+        if isEditing {
+            recordingPlainRow(recording)
+        } else {
+            Button {
+                selectedLibraryRecordingId = recording.id
+            } label: {
+                recordingPlainRow(recording)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .listRowBackground(selectedLibraryRecordingId == recording.id ? Palette.accentSubtle : Color.clear)
+            .accessibilityIdentifier("ios-library-row-\(recording.id)")
+        }
+    }
+
+    @ViewBuilder
+    private var regularLibraryDetailPane: some View {
+        if let id = selectedLibraryRecordingId,
+           let recording = viewModel.recordings.first(where: { $0.id == id }) {
+            recordingDetailView(for: recording)
+                .id(id)
+                .accessibilityIdentifier("ios-library-detail-pane")
+        } else {
+            regularLibraryPlaceholder
+        }
+    }
+
+    private var regularLibraryPlaceholder: some View {
+        VStack(spacing: Spacing.lg) {
+            Image(systemName: "waveform")
+                .font(.system(size: 30, weight: .semibold))
+                .foregroundStyle(Palette.accent)
+                .frame(width: 64, height: 64)
+                .background(Palette.accentSubtle)
+                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+
+            VStack(spacing: Spacing.xxs) {
+                Text(t("Select a recording", "Выберите запись"))
+                    .font(Typography.displaySmall)
+                    .foregroundStyle(Palette.textPrimary)
+                    .multilineTextAlignment(.center)
+                Text(t(
+                    "Open a transcript, summary, or AI-generated details without leaving the library list.",
+                    "Откройте расшифровку, сводку или AI-детали, не уходя из списка библиотеки."
+                ))
+                .font(Typography.bodySmall)
+                .foregroundStyle(Palette.textSecondary)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: 420)
+            }
+        }
+        .padding(Spacing.xl)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .accessibilityIdentifier("ios-library-placeholder")
+    }
+
+    private func recordingPlainRow(_ recording: Recording) -> some View {
+        RecordingRow(
+            recording: recording,
+            hasLocalRecoveryBackup: viewModel.localRecoveryRecordingIDs.contains(recording.id),
+            hasPermanentLocalFailure: viewModel.permanentLocalFailureRecordingIDs.contains(recording.id)
+        )
+    }
+
     @ViewBuilder
     private func recordingRowLink(_ recording: Recording) -> some View {
-        NavigationLink(destination: RecordingDetailView(
+        NavigationLink(destination: recordingDetailView(for: recording)) {
+            recordingPlainRow(recording)
+        }
+        .draggable(IOSInboxDragItem(kind: .recording, id: recording.id))
+        .swipeActions(edge: .trailing) {
+            Button(role: .destructive) {
+                Task {
+                    await trashRecording(id: recording.id)
+                }
+            } label: {
+                Label(t("Trash", "Корзина"), systemImage: "trash")
+            }
+        }
+        .contextMenu {
+            recordingContextMenu(for: recording)
+        }
+    }
+
+    private func recordingDetailView(for recording: Recording) -> some View {
+        RecordingDetailView(
             recording: recording,
             folders: viewModel.folders,
             onMoveToFolder: { folderId in
@@ -426,37 +620,13 @@ struct LibraryView: View {
             },
             onTrash: {
                 Task {
-                    await viewModel.trashRecording(
-                        id: recording.id,
-                        apiClient: appState.getAPIClient()
-                    )
+                    await trashRecording(id: recording.id)
                 }
             },
             onDidRename: {
                 Task { await viewModel.loadLibrary(apiClient: appState.getAPIClient()) }
             }
-        )) {
-            RecordingRow(
-                recording: recording,
-                hasLocalRecoveryBackup: viewModel.localRecoveryRecordingIDs.contains(recording.id),
-                hasPermanentLocalFailure: viewModel.permanentLocalFailureRecordingIDs.contains(recording.id)
-            )
-        }
-        .swipeActions(edge: .trailing) {
-            Button(role: .destructive) {
-                Task {
-                    await viewModel.trashRecording(
-                        id: recording.id,
-                        apiClient: appState.getAPIClient()
-                    )
-                }
-            } label: {
-                Label(t("Trash", "Корзина"), systemImage: "trash")
-            }
-        }
-        .contextMenu {
-            recordingContextMenu(for: recording)
-        }
+        )
     }
 
     // MARK: - Context Menu
@@ -502,10 +672,7 @@ struct LibraryView: View {
 
         Button(role: .destructive) {
             Task {
-                await viewModel.trashRecording(
-                    id: recording.id,
-                    apiClient: appState.getAPIClient()
-                )
+                await trashRecording(id: recording.id)
             }
         } label: {
             Label(t("Move to Trash", "Переместить в корзину"), systemImage: "trash")
@@ -518,6 +685,9 @@ struct LibraryView: View {
         let ids = Array(selectedRecordingIds)
         Task {
             await viewModel.trashRecordings(ids: ids, language: languageManager.current, apiClient: appState.getAPIClient())
+            if let selectedLibraryRecordingId, ids.contains(selectedLibraryRecordingId) {
+                self.selectedLibraryRecordingId = nil
+            }
             exitEditMode()
         }
     }
@@ -533,6 +703,29 @@ struct LibraryView: View {
     private func exitEditMode() {
         selectedRecordingIds.removeAll()
         editMode = .inactive
+    }
+
+    private func trashRecording(id: String) async {
+        await viewModel.trashRecording(
+            id: id,
+            apiClient: appState.getAPIClient()
+        )
+        clearLibrarySelectionIfNeeded(id: id)
+    }
+
+    private func clearLibrarySelectionIfNeeded(id: String) {
+        selectedRecordingIds.remove(id)
+        if selectedLibraryRecordingId == id {
+            selectedLibraryRecordingId = nil
+        }
+    }
+
+    private func reconcileLibrarySelection(_ visibleIds: [String]) {
+        let visible = Set(visibleIds)
+        selectedRecordingIds = selectedRecordingIds.intersection(visible)
+        if let selectedLibraryRecordingId, !visible.contains(selectedLibraryRecordingId) {
+            self.selectedLibraryRecordingId = nil
+        }
     }
 
     // MARK: - Search
@@ -576,7 +769,6 @@ private struct SearchActivityReader: View {
 
 struct FolderRow: View {
     let folder: Folder
-    let recordingCount: Int
 
     var body: some View {
         HStack {
@@ -585,7 +777,7 @@ struct FolderRow: View {
             Text(folder.name)
                 .font(.body)
             Spacer()
-            Text("\(recordingCount)")
+            Text("\(folder.itemCount)")
                 .foregroundStyle(.secondary)
                 .font(.caption)
         }
@@ -651,6 +843,7 @@ struct FolderRecordingsView: View {
                             )
                         }
                         .tag(recording.id)
+                        .draggable(IOSInboxDragItem(kind: .recording, id: recording.id))
                         .swipeActions(edge: .trailing) {
                             Button(role: .destructive) {
                                 Task {
@@ -786,13 +979,16 @@ struct FolderRecordingsView: View {
 struct TrashView: View {
     @EnvironmentObject var appState: AppState
     @EnvironmentObject private var languageManager: LanguageManager
+    @Environment(\.horizontalSizeClass) private var trashHorizontalSizeClass
     @ObservedObject var viewModel: LibraryViewModel
     @State private var showEmptyTrashConfirmation = false
     @State private var showBulkDeleteConfirmation = false
     @State private var editMode: EditMode = .inactive
     @State private var selection = Set<String>()
+    @State private var selectedTrashRecordingId: String?
 
     private var isEditing: Bool { editMode == .active }
+    private var isRegularWidth: Bool { trashHorizontalSizeClass == .regular }
 
     var body: some View {
         Group {
@@ -802,63 +998,11 @@ struct TrashView: View {
                     systemImage: "trash",
                     description: Text(t("Deleted recordings will appear here", "Удаленные записи появятся здесь"))
                 )
+                .accessibilityIdentifier("ios-trash-empty")
+            } else if isRegularWidth {
+                regularTrashLayout
             } else {
-                List(selection: $selection) {
-                    ForEach(viewModel.trashedRecordings) { recording in
-                        NavigationLink(destination: RecordingDetailView(
-                            recording: recording,
-                            isTrash: true,
-                            onRestore: {
-                                Task {
-                                    await viewModel.restoreRecording(
-                                        id: recording.id,
-                                        apiClient: appState.getAPIClient()
-                                    )
-                                }
-                            },
-                            onPermanentDelete: {
-                                Task {
-                                    await viewModel.permanentlyDeleteRecording(
-                                        id: recording.id,
-                                        apiClient: appState.getAPIClient()
-                                    )
-                                }
-                            }
-                        )) {
-                            RecordingRow(
-                                recording: recording,
-                                hasLocalRecoveryBackup: viewModel.localRecoveryRecordingIDs.contains(recording.id),
-                                hasPermanentLocalFailure: viewModel.permanentLocalFailureRecordingIDs.contains(recording.id)
-                            )
-                        }
-                        .tag(recording.id)
-                        .swipeActions(edge: .trailing) {
-                            Button(role: .destructive) {
-                                Task {
-                                    await viewModel.permanentlyDeleteRecording(
-                                        id: recording.id,
-                                        apiClient: appState.getAPIClient()
-                                    )
-                                }
-                            } label: {
-                                Label(t("Delete", "Удалить"), systemImage: "trash.slash")
-                            }
-                        }
-                        .swipeActions(edge: .leading) {
-                            Button {
-                                Task {
-                                    await viewModel.restoreRecording(
-                                        id: recording.id,
-                                        apiClient: appState.getAPIClient()
-                                    )
-                                }
-                            } label: {
-                                Label(t("Restore", "Восстановить"), systemImage: "arrow.uturn.backward")
-                            }
-                            .tint(.green)
-                        }
-                    }
-                }
+                compactTrashList
             }
         }
         .environment(\.editMode, $editMode)
@@ -869,6 +1013,7 @@ struct TrashView: View {
             }
         }
         .navigationTitle(t("Trash", "Корзина"))
+        .navigationBarTitleDisplayMode(isRegularWidth ? .inline : .large)
         .toolbar {
             if !viewModel.trashedRecordings.isEmpty {
                 ToolbarItem(placement: .topBarLeading) {
@@ -908,6 +1053,9 @@ struct TrashView: View {
             Button(t("Delete All Permanently", "Удалить все навсегда"), role: .destructive) {
                 Task {
                     await viewModel.emptyTrash(apiClient: appState.getAPIClient())
+                    selectedTrashRecordingId = nil
+                    selection.removeAll()
+                    editMode = .inactive
                 }
             }
             Button(t("Cancel", "Отмена"), role: .cancel) {}
@@ -923,6 +1071,9 @@ struct TrashView: View {
                 let ids = Array(selection)
                 Task {
                     await viewModel.permanentlyDeleteRecordings(ids: ids, apiClient: appState.getAPIClient())
+                    if let selectedTrashRecordingId, ids.contains(selectedTrashRecordingId) {
+                        self.selectedTrashRecordingId = nil
+                    }
                     selection.removeAll()
                     editMode = .inactive
                 }
@@ -930,6 +1081,198 @@ struct TrashView: View {
             Button(t("Cancel", "Отмена"), role: .cancel) {}
         } message: {
             Text(t("This action cannot be undone.", "Это действие нельзя отменить."))
+        }
+        .onChange(of: viewModel.trashedRecordings.map(\.id)) { _, visibleIds in
+            reconcileTrashSelection(visibleIds)
+        }
+    }
+
+    private var compactTrashList: some View {
+        List(selection: $selection) {
+            ForEach(viewModel.trashedRecordings) { recording in
+                NavigationLink(destination: trashDetailView(for: recording)) {
+                    trashRecordingRow(for: recording)
+                }
+                .tag(recording.id)
+                .swipeActions(edge: .trailing) {
+                    Button(role: .destructive) {
+                        Task {
+                            await permanentlyDeleteRecording(id: recording.id)
+                        }
+                    } label: {
+                        Label(t("Delete", "Удалить"), systemImage: "trash.slash")
+                    }
+                }
+                .swipeActions(edge: .leading) {
+                    Button {
+                        Task {
+                            await restoreRecording(id: recording.id)
+                        }
+                    } label: {
+                        Label(t("Restore", "Восстановить"), systemImage: "arrow.uturn.backward")
+                    }
+                    .tint(.green)
+                }
+            }
+        }
+    }
+
+    private var regularTrashLayout: some View {
+        HStack(spacing: 0) {
+            List(selection: $selection) {
+                ForEach(viewModel.trashedRecordings) { recording in
+                    regularTrashRow(for: recording)
+                        .tag(recording.id)
+                        .swipeActions(edge: .trailing) {
+                            Button(role: .destructive) {
+                                Task {
+                                    await permanentlyDeleteRecording(id: recording.id)
+                                }
+                            } label: {
+                                Label(t("Delete", "Удалить"), systemImage: "trash.slash")
+                            }
+                        }
+                        .swipeActions(edge: .leading) {
+                            Button {
+                                Task {
+                                    await restoreRecording(id: recording.id)
+                                }
+                            } label: {
+                                Label(t("Restore", "Восстановить"), systemImage: "arrow.uturn.backward")
+                            }
+                            .tint(.green)
+                        }
+                }
+            }
+            .listStyle(.plain)
+            .scrollContentBackground(.hidden)
+            .frame(minWidth: 320, idealWidth: 390, maxWidth: 460, maxHeight: .infinity, alignment: .topLeading)
+            .background(Palette.surfaceSubtle)
+            .accessibilityIdentifier("ios-trash-list-pane")
+
+            Divider()
+
+            regularTrashDetailPane
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .background(Color(uiColor: .systemGroupedBackground))
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .accessibilityIdentifier("ios-trash-regular-layout")
+    }
+
+    @ViewBuilder
+    private func regularTrashRow(for recording: Recording) -> some View {
+        if isEditing {
+            trashRecordingRow(for: recording)
+        } else {
+            Button {
+                selectedTrashRecordingId = recording.id
+            } label: {
+                trashRecordingRow(for: recording)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .listRowBackground(selectedTrashRecordingId == recording.id ? Palette.accentSubtle : Color.clear)
+            .accessibilityIdentifier("ios-trash-row-\(recording.id)")
+        }
+    }
+
+    private func trashRecordingRow(for recording: Recording) -> some View {
+        RecordingRow(
+            recording: recording,
+            hasLocalRecoveryBackup: viewModel.localRecoveryRecordingIDs.contains(recording.id),
+            hasPermanentLocalFailure: viewModel.permanentLocalFailureRecordingIDs.contains(recording.id)
+        )
+    }
+
+    @ViewBuilder
+    private var regularTrashDetailPane: some View {
+        if let id = selectedTrashRecordingId,
+           let recording = viewModel.trashedRecordings.first(where: { $0.id == id }) {
+            trashDetailView(for: recording)
+                .id(id)
+                .accessibilityIdentifier("ios-trash-detail-pane")
+        } else {
+            regularTrashPlaceholder
+        }
+    }
+
+    private var regularTrashPlaceholder: some View {
+        VStack(spacing: Spacing.lg) {
+            Image(systemName: "trash")
+                .font(.system(size: 30, weight: .semibold))
+                .foregroundStyle(Palette.accent)
+                .frame(width: 64, height: 64)
+                .background(Palette.accentSubtle)
+                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+
+            VStack(spacing: Spacing.xxs) {
+                Text(t("Select a deleted recording", "Выберите удаленную запись"))
+                    .font(Typography.displaySmall)
+                    .foregroundStyle(Palette.textPrimary)
+                    .multilineTextAlignment(.center)
+                Text(t(
+                    "Review the transcript before restoring it or deleting it forever.",
+                    "Проверьте расшифровку перед восстановлением или окончательным удалением."
+                ))
+                .font(Typography.bodySmall)
+                .foregroundStyle(Palette.textSecondary)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: 420)
+            }
+        }
+        .padding(Spacing.xl)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .accessibilityIdentifier("ios-trash-placeholder")
+    }
+
+    private func trashDetailView(for recording: Recording) -> some View {
+        RecordingDetailView(
+            recording: recording,
+            isTrash: true,
+            onRestore: {
+                Task {
+                    await restoreRecording(id: recording.id)
+                }
+            },
+            onPermanentDelete: {
+                Task {
+                    await permanentlyDeleteRecording(id: recording.id)
+                }
+            }
+        )
+    }
+
+    private func restoreRecording(id: String) async {
+        await viewModel.restoreRecording(
+            id: id,
+            apiClient: appState.getAPIClient()
+        )
+        clearSelectionIfNeeded(id: id)
+    }
+
+    private func permanentlyDeleteRecording(id: String) async {
+        await viewModel.permanentlyDeleteRecording(
+            id: id,
+            apiClient: appState.getAPIClient()
+        )
+        clearSelectionIfNeeded(id: id)
+    }
+
+    private func clearSelectionIfNeeded(id: String) {
+        selection.remove(id)
+        if selectedTrashRecordingId == id {
+            selectedTrashRecordingId = nil
+        }
+    }
+
+    private func reconcileTrashSelection(_ visibleIds: [String]) {
+        let visible = Set(visibleIds)
+        selection = selection.intersection(visible)
+        if let selectedTrashRecordingId, !visible.contains(selectedTrashRecordingId) {
+            self.selectedTrashRecordingId = nil
         }
     }
 
@@ -1119,44 +1462,71 @@ struct RecordingRow: View {
     @EnvironmentObject private var languageManager: LanguageManager
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(recording.title ?? t("Untitled", "Без названия"))
-                .font(.headline)
-
-            if let statusText = recording.statusDisplayText(
-                hasLocalRecoveryBackup: hasLocalRecoveryBackup,
-                hasPermanentLocalFailure: hasPermanentLocalFailure,
-                languageCode: speakerLanguageCode
-            ) {
-                Text(statusText)
-                    .font(.caption)
-                    .foregroundStyle(statusColor)
+        VStack(alignment: .leading, spacing: Spacing.xs) {
+            HStack(spacing: Spacing.sm) {
+                Text(recording.title ?? t("Untitled", "Без названия"))
+                    .font(Typography.headingMedium)
+                    .foregroundStyle(Palette.textPrimary)
                     .lineLimit(1)
+                    .truncationMode(.tail)
+                    .layoutPriority(1)
+
+                Spacer(minLength: Spacing.sm)
+
+                if let statusText = recording.statusDisplayText(
+                    hasLocalRecoveryBackup: hasLocalRecoveryBackup,
+                    hasPermanentLocalFailure: hasPermanentLocalFailure,
+                    languageCode: speakerLanguageCode
+                ) {
+                    Text(statusText)
+                        .font(Typography.label)
+                        .foregroundStyle(statusColor)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.85)
+                        .truncationMode(.tail)
+                        .fixedSize(horizontal: true, vertical: false)
+                        .layoutPriority(2)
+                }
+            }
+
+            HStack(spacing: Spacing.sm) {
+                Circle()
+                    .fill(Palette.typeColor(recording.type))
+                    .frame(width: 6, height: 6)
+
+                Text(IOSDateFormatting.string(
+                    from: recording.createdAt,
+                    dateStyle: .medium,
+                    timeStyle: .short,
+                    language: languageManager.current
+                ))
+                .font(Typography.label)
+                .foregroundStyle(Palette.textSecondary)
+
+                if let duration = recording.durationSeconds, duration > 0 {
+                    Text(formatDuration(duration))
+                        .font(Typography.mono)
+                        .foregroundStyle(Palette.textSecondary)
+                }
             }
 
             if let failurePreviewText = recording.failurePreviewText,
                recording.isFailedUpload {
                 Text(failurePreviewText)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .font(Typography.caption)
+                    .foregroundStyle(Palette.textSecondary)
                     .lineLimit(1)
             }
-
-            HStack {
-                Text(recording.createdAt.formatted(date: .abbreviated, time: .shortened))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-
-                if let duration = recording.durationSeconds {
-                    Text("\u{2022}")
-                        .foregroundStyle(.secondary)
-                    Text(formatDuration(duration))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, Spacing.xs)
+        .frame(maxWidth: .infinity, minHeight: rowMinHeight, alignment: .leading)
+    }
+
+    private var rowMinHeight: CGFloat {
+        if recording.failurePreviewText != nil, recording.isFailedUpload {
+            return 68
+        }
+        return 48
     }
 
     private func formatDuration(_ seconds: Int) -> String {
@@ -1167,9 +1537,9 @@ struct RecordingRow: View {
 
     private var statusColor: Color {
         if recording.isFailedUpload || hasPermanentLocalFailure {
-            return .red
+            return Palette.recording
         }
-        return .secondary
+        return Palette.textSecondary
     }
 
     private var speakerLanguageCode: String {
@@ -1324,8 +1694,8 @@ class LibraryViewModel: ObservableObject {
     func loadScreenshotFixtures() {
         #if DEBUG
         recordings = IOSScreenshotFixtures.recordings
-        trashedRecordings = []
-        folders = []
+        trashedRecordings = IOSScreenshotFixtures.trashedRecordings
+        folders = IOSScreenshotFixtures.folders
         localRecoveryRecordingIDs = []
         permanentLocalFailureRecordingIDs = []
         isLoading = false

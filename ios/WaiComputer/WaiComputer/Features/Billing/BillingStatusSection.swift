@@ -12,10 +12,43 @@ import WaiComputerKit
 /// usage gauge, renewal / Pro-through date, an informational region row
 /// (RU UI only), cancel-subscription, and localized errors.
 ///
-/// Renders `Section`s directly so it composes into the parent `List`.
+/// `BillingStatusSection` renders `Section`s directly for compact Lists;
+/// `BillingStatusPanel` renders the same data inline for the regular-width
+/// Account dashboard.
 struct BillingStatusSection: View {
+    @EnvironmentObject var languageManager: LanguageManager
+
+    var body: some View {
+        Section {
+            BillingStatusBody(presentation: .listSectionRows)
+        } header: {
+            Text(t("Subscription", "Подписка"))
+                .accessibilityIdentifier("settings-billing-header")
+        }
+    }
+
+    private func t(_ english: String, _ russian: String) -> String {
+        OnboardingL10n.text(english, russian, language: languageManager.current)
+    }
+}
+
+struct BillingStatusPanel: View {
+    var body: some View {
+        BillingStatusBody(presentation: .regularPanel)
+            .accessibilityIdentifier("settings-regular-billing-summary")
+    }
+}
+
+private enum BillingStatusPresentation {
+    case listSectionRows
+    case regularPanel
+}
+
+private struct BillingStatusBody: View {
     @EnvironmentObject var appState: AppState
     @EnvironmentObject var languageManager: LanguageManager
+
+    let presentation: BillingStatusPresentation
 
     @State private var subscription: BillingSubscription?
     @State private var usage: BillingUsage?
@@ -31,34 +64,14 @@ struct BillingStatusSection: View {
     }
 
     var body: some View {
-        Section {
+        Group {
             if let subscription, let usage {
-                planLine(subscription: subscription)
-                if isRussianUI, let billingRegion {
-                    regionRow(region: billingRegion)
-                }
-                usageGauge(usage: usage, isPro: subscription.isPro)
-                if subscription.isPro {
-                    proControls(subscription: subscription)
-                }
-                if let actionError {
-                    Text(actionError)
-                        .font(Typography.caption)
-                        .foregroundStyle(.red)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .accessibilityIdentifier("settings-billing-action-error")
-                }
+                loadedContent(subscription: subscription, usage: usage)
             } else if let loadError {
-                Text(loadError)
-                    .font(Typography.caption)
-                    .foregroundStyle(.red)
-                    .fixedSize(horizontal: false, vertical: true)
+                errorText(loadError, identifier: "settings-billing-load-error")
             } else {
-                ProgressView()
+                loadingContent
             }
-        } header: {
-            Text(t("Subscription", "Подписка"))
-                .accessibilityIdentifier("settings-billing-header")
         }
         .task { await loadAll() }
         .confirmationDialog(
@@ -80,11 +93,69 @@ struct BillingStatusSection: View {
 
     // MARK: - Plan + Usage
 
+    @ViewBuilder
+    private func loadedContent(subscription: BillingSubscription, usage: BillingUsage) -> some View {
+        switch presentation {
+        case .listSectionRows:
+            planLine(subscription: subscription)
+            if isRussianUI, let billingRegion {
+                regionRow(region: billingRegion)
+            }
+            usageGauge(usage: usage, isPro: subscription.isPro)
+            if subscription.isPro {
+                proControls(subscription: subscription)
+            }
+            if let actionError {
+                errorText(actionError, identifier: "settings-billing-action-error")
+            }
+        case .regularPanel:
+            VStack(alignment: .leading, spacing: Spacing.sm) {
+                regularPlanLine(subscription: subscription)
+                if isRussianUI, let billingRegion {
+                    regionRow(region: billingRegion)
+                }
+                usageGauge(usage: usage, isPro: subscription.isPro)
+                if subscription.isPro {
+                    proControls(subscription: subscription)
+                }
+                if let actionError {
+                    errorText(actionError, identifier: "settings-billing-action-error")
+                }
+            }
+            .padding(.vertical, Spacing.xs)
+        }
+    }
+
     private func planLine(subscription: BillingSubscription) -> some View {
         HStack {
             Text(subscription.plan.name)
                 .font(Typography.body.weight(.semibold))
             Spacer()
+            statusBadge(for: subscription)
+        }
+    }
+
+    private func regularPlanLine(subscription: BillingSubscription) -> some View {
+        HStack(alignment: .center, spacing: Spacing.sm) {
+            Image(systemName: "creditcard.fill")
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(Palette.textSecondary)
+                .frame(width: 24, height: 24)
+                .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: Spacing.xxs) {
+                Text(t("Subscription", "Подписка"))
+                    .font(Typography.body)
+                    .foregroundStyle(Palette.textPrimary)
+                Text(subscription.plan.name)
+                    .font(Typography.caption)
+                    .foregroundStyle(Palette.textTertiary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.82)
+            }
+
+            Spacer(minLength: Spacing.md)
+
             statusBadge(for: subscription)
         }
     }
@@ -205,6 +276,30 @@ struct BillingStatusSection: View {
         }
     }
 
+    @ViewBuilder
+    private var loadingContent: some View {
+        switch presentation {
+        case .listSectionRows:
+            ProgressView()
+        case .regularPanel:
+            HStack(spacing: Spacing.sm) {
+                ProgressView()
+                    .controlSize(.small)
+                Text(t("Loading subscription...", "Загружаем подписку..."))
+                    .font(Typography.caption)
+                    .foregroundStyle(Palette.textTertiary)
+            }
+        }
+    }
+
+    private func errorText(_ message: String, identifier: String) -> some View {
+        Text(message)
+            .font(Typography.caption)
+            .foregroundStyle(.red)
+            .fixedSize(horizontal: false, vertical: true)
+            .accessibilityIdentifier(identifier)
+    }
+
     // MARK: - Data
 
     private func displayWordsCap(usage: BillingUsage) -> Int? {
@@ -221,6 +316,18 @@ struct BillingStatusSection: View {
     }
 
     private func loadAll() async {
+        #if DEBUG
+        if IOSTestingMode.current.isScreenshot {
+            await applyLoadedBilling(
+                subscription: IOSScreenshotFixtures.billingSubscription,
+                usage: IOSScreenshotFixtures.billingUsage,
+                plans: IOSScreenshotFixtures.billingPlans,
+                region: IOSScreenshotFixtures.billingRegion
+            )
+            return
+        }
+        #endif
+
         do {
             let client = appState.getAPIClient()
             async let sub = client.getBillingSubscription()
@@ -232,18 +339,27 @@ struct BillingStatusSection: View {
             // value must NOT discard the successfully-fetched plan/usage data —
             // leave billingRegion nil so the row is simply hidden.
             let region = BillingDisplayRegion(rawValue: settings.region)
-            await MainActor.run {
-                self.subscription = s
-                self.usage = u
-                self.plans = p
-                self.billingRegion = region
-                self.loadError = nil
-                self.actionError = nil
-            }
+            await applyLoadedBilling(subscription: s, usage: u, plans: p, region: region)
         } catch {
             await MainActor.run {
                 self.loadError = localizedLoadError(error)
             }
+        }
+    }
+
+    private func applyLoadedBilling(
+        subscription: BillingSubscription,
+        usage: BillingUsage,
+        plans: [BillingPlan],
+        region: BillingDisplayRegion?
+    ) async {
+        await MainActor.run {
+            self.subscription = subscription
+            self.usage = usage
+            self.plans = plans
+            self.billingRegion = region
+            self.loadError = nil
+            self.actionError = nil
         }
     }
 

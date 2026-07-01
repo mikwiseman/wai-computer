@@ -151,12 +151,12 @@ main() {
   capture_screen "$iphone_udid" "01_record_phone.png" "record" "0"
   capture_screen "$iphone_udid" "02_library_phone.png" "library" "1"
   capture_screen "$iphone_udid" "03_detail_phone.png" "detail" "" "rec-1" "transcript"
-  capture_screen "$iphone_udid" "04_settings_phone.png" "settings" "2"
+  capture_screen "$iphone_udid" "04_settings_phone.png" "settings" "3"
 
   capture_screen "$ipad_udid" "01_record_ipad.png" "record" "0"
   capture_screen "$ipad_udid" "02_library_ipad.png" "library" "1"
   capture_screen "$ipad_udid" "03_detail_ipad.png" "detail" "" "rec-1" "transcript"
-  capture_screen "$ipad_udid" "04_settings_ipad.png" "settings" "2"
+  capture_screen "$ipad_udid" "04_settings_ipad.png" "settings" "3"
 
   sync_to_fastlane
 

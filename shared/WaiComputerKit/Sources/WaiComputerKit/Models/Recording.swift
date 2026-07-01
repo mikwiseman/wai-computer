@@ -53,17 +53,28 @@ public struct Folder: Codable, Identifiable, Sendable, Equatable {
     public let id: String
     public var name: String
     public let createdAt: Date
+    public let itemCount: Int
 
-    public init(id: String, name: String, createdAt: Date = Date()) {
+    public init(id: String, name: String, createdAt: Date = Date(), itemCount: Int = 0) {
         self.id = id
         self.name = name
         self.createdAt = createdAt
+        self.itemCount = itemCount
     }
 
     private enum CodingKeys: String, CodingKey {
         case id
         case name
         case createdAt = "created_at"
+        case itemCount = "item_count"
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        name = try container.decode(String.self, forKey: .name)
+        createdAt = try container.decode(Date.self, forKey: .createdAt)
+        itemCount = try container.decodeIfPresent(Int.self, forKey: .itemCount) ?? 0
     }
 }
 

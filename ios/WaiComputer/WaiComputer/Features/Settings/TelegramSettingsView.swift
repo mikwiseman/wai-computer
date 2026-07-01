@@ -15,6 +15,7 @@ import WaiComputerKit
 struct TelegramSettingsView: View {
     @EnvironmentObject var appState: AppState
     @EnvironmentObject var languageManager: LanguageManager
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
     @State private var telegramStatus: TelegramLinkStatus?
     @State private var telegramPairing: TelegramPairing?
@@ -25,6 +26,20 @@ struct TelegramSettingsView: View {
     @State private var telegramShowCodeEntry = false
 
     var body: some View {
+        Group {
+            if horizontalSizeClass == .regular {
+                regularLayout
+            } else {
+                compactList
+            }
+        }
+        .navigationTitle("Telegram")
+        .navigationBarTitleDisplayMode(.inline)
+        .task { await loadTelegramStatus() }
+        .onDisappear { stopTelegramLinkPolling() }
+    }
+
+    private var compactList: some View {
         List {
             Section {
                 if telegramLoading && telegramStatus == nil {
@@ -66,10 +81,315 @@ struct TelegramSettingsView: View {
                 ))
             }
         }
-        .navigationTitle("Telegram")
-        .navigationBarTitleDisplayMode(.inline)
-        .task { await loadTelegramStatus() }
-        .onDisappear { stopTelegramLinkPolling() }
+    }
+
+    private var regularLayout: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: Spacing.xl) {
+                regularHeader
+
+                LazyVGrid(
+                    columns: [GridItem(.adaptive(minimum: 320), spacing: Spacing.lg, alignment: .top)],
+                    alignment: .leading,
+                    spacing: Spacing.lg
+                ) {
+                    regularStatusPanel
+                    regularPairingPanel
+                    regularCapturePanel
+                }
+
+                if let telegramError {
+                    Text(telegramError)
+                        .font(Typography.caption)
+                        .foregroundStyle(.red)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("settings-telegram-error")
+                }
+            }
+            .padding(.horizontal, Spacing.xxl)
+            .padding(.vertical, Spacing.xxl)
+            .frame(maxWidth: 920, alignment: .topLeading)
+            .frame(maxWidth: .infinity, alignment: .top)
+        }
+        .background(Color(uiColor: .systemGroupedBackground))
+        .accessibilityIdentifier("settings-telegram-regular-layout")
+    }
+
+    private var regularHeader: some View {
+        HStack(alignment: .center, spacing: Spacing.md) {
+            Image(systemName: "paperplane")
+                .font(.system(size: 18, weight: .semibold))
+                .foregroundStyle(Palette.accent)
+                .frame(width: 42, height: 42)
+                .background(Color(uiColor: .secondarySystemGroupedBackground))
+                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .strokeBorder(Palette.border, lineWidth: 1)
+                )
+                .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: Spacing.xs) {
+                Text("Telegram")
+                    .font(Typography.displayMedium)
+                    .foregroundStyle(Palette.textPrimary)
+                Text(t(
+                    "Send voice, video, files, and text questions to Wai from Telegram.",
+                    "Отправляй голос, видео, файлы и вопросы Wai из Telegram."
+                ))
+                .font(Typography.bodySmall)
+                .foregroundStyle(Palette.textSecondary)
+            }
+        }
+        .accessibilityIdentifier("settings-telegram-regular-header")
+    }
+
+    private var regularStatusPanel: some View {
+        regularPanel(
+            title: t("Connection", "Подключение"),
+            subtitle: t(
+                "Pair @waicomputer_bot with this WaiComputer account.",
+                "Привяжи @waicomputer_bot к этому аккаунту WaiComputer."
+            ),
+            systemImage: "paperplane.circle",
+            identifier: "settings-telegram-regular-status-panel"
+        ) {
+            VStack(alignment: .leading, spacing: Spacing.md) {
+                if telegramLoading && telegramStatus == nil {
+                    HStack(spacing: Spacing.sm) {
+                        ProgressView()
+                            .controlSize(.small)
+                        Text(t("Loading Telegram status...", "Загружаем статус Telegram..."))
+                            .font(Typography.caption)
+                            .foregroundStyle(Palette.textTertiary)
+                    }
+                } else if telegramStatus?.linked == true {
+                    regularInfoRow(
+                        title: telegramDisplayName,
+                        subtitle: t("Connected", "Подключено"),
+                        systemImage: "checkmark.circle.fill",
+                        tint: .green
+                    )
+
+                    Button(role: .destructive) {
+                        Task { await unlinkTelegram() }
+                    } label: {
+                        Label(t("Disconnect Telegram", "Отключить Telegram"), systemImage: "xmark.circle")
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(telegramLoading)
+                    .accessibilityIdentifier("settings-telegram-unlink-button")
+                } else {
+                    Text(t(
+                        "Start from WaiComputer to show a QR code and deep link, or enter a code if you started inside Telegram.",
+                        "Начни из WaiComputer, чтобы показать QR-код и ссылку, или введи код, если начал в Telegram."
+                    ))
+                    .font(Typography.body)
+                    .foregroundStyle(Palette.textPrimary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                    HStack(spacing: Spacing.sm) {
+                        Button {
+                            Task { await startTelegramLink() }
+                        } label: {
+                            Label(t("Connect Telegram", "Привязать Telegram"), systemImage: "link")
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(telegramLoading)
+                        .accessibilityIdentifier("settings-telegram-link-button")
+
+                        if telegramLoading {
+                            ProgressView()
+                                .controlSize(.small)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private var regularPairingPanel: some View {
+        regularPanel(
+            title: t("Pairing", "Привязка"),
+            subtitle: t(
+                "Use a QR code, deep link, or reverse code from the bot.",
+                "Используй QR-код, ссылку или код из бота."
+            ),
+            systemImage: "qrcode",
+            identifier: "settings-telegram-regular-pairing-panel"
+        ) {
+            VStack(alignment: .leading, spacing: Spacing.md) {
+                if let pairing = telegramPairing {
+                    if let qr = qrImage(from: pairing.webLink) {
+                        Image(uiImage: qr)
+                            .interpolation(.none)
+                            .resizable()
+                            .frame(width: 160, height: 160)
+                            .accessibilityIdentifier("settings-telegram-qr")
+                    }
+
+                    Button {
+                        openTelegramPairing(pairing)
+                    } label: {
+                        Label(t("Open Telegram", "Открыть Telegram"), systemImage: "paperplane")
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(telegramLoading)
+                    .accessibilityIdentifier("settings-telegram-open-button")
+
+                    HStack(alignment: .top, spacing: Spacing.xs) {
+                        ProgressView()
+                            .controlSize(.small)
+                        Text(t(
+                            "Scan with another device or tap Open Telegram, then Start in the bot — WaiComputer finishes linking automatically.",
+                            "Отсканируй код другим устройством или нажми «Открыть Telegram», затем Start в боте — WaiComputer завершит привязку автоматически."
+                        ))
+                    }
+                    .font(Typography.caption)
+                    .foregroundStyle(Palette.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                } else {
+                    Text(t(
+                        "A QR code appears here after you start pairing.",
+                        "QR-код появится здесь после начала привязки."
+                    ))
+                    .font(Typography.caption)
+                    .foregroundStyle(Palette.textTertiary)
+                }
+
+                regularCodeEntry
+            }
+        }
+    }
+
+    private var regularCapturePanel: some View {
+        regularPanel(
+            title: t("Capture", "Захват"),
+            subtitle: t(
+                "Telegram becomes another input for your second brain.",
+                "Telegram становится ещё одним входом в твою вторую память."
+            ),
+            systemImage: "tray.and.arrow.down",
+            identifier: "settings-telegram-regular-capture-panel"
+        ) {
+            VStack(alignment: .leading, spacing: Spacing.md) {
+                regularInfoRow(
+                    title: t("Voice, video, and media", "Голос, видео и медиа"),
+                    subtitle: t(
+                        "Transcribed, summarized, and saved to your Library.",
+                        "Расшифровываются, суммаризируются и сохраняются в Библиотеку."
+                    ),
+                    systemImage: "waveform",
+                    tint: Palette.accent
+                )
+
+                Divider()
+
+                regularInfoRow(
+                    title: t("Text messages", "Текстовые сообщения"),
+                    subtitle: t(
+                        "Handled as Wai questions.",
+                        "Обрабатываются как вопросы Wai."
+                    ),
+                    systemImage: "text.bubble",
+                    tint: Palette.accent
+                )
+            }
+        }
+    }
+
+    private var regularCodeEntry: some View {
+        DisclosureGroup(isExpanded: $telegramShowCodeEntry) {
+            HStack(spacing: Spacing.sm) {
+                TextField(t("Code from the bot", "Код из бота"), text: $telegramLinkCode)
+                    .textFieldStyle(.roundedBorder)
+                    .autocorrectionDisabled()
+                    .textInputAutocapitalization(.never)
+                    .disabled(telegramLoading)
+                    .accessibilityIdentifier("settings-telegram-code-field")
+                Button {
+                    Task { await claimTelegramLinkCode() }
+                } label: {
+                    Text(t("Link", "Привязать"))
+                }
+                .disabled(telegramLoading || telegramLinkCode.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                .accessibilityIdentifier("settings-telegram-claim-code-button")
+            }
+            .padding(.top, Spacing.xs)
+        } label: {
+            Text(t("Started in Telegram?", "Начал в Telegram?"))
+                .font(Typography.caption.weight(.semibold))
+        }
+        .accessibilityIdentifier("settings-telegram-code-disclosure")
+    }
+
+    private func regularInfoRow(
+        title: String,
+        subtitle: String,
+        systemImage: String,
+        tint: Color
+    ) -> some View {
+        HStack(alignment: .top, spacing: Spacing.sm) {
+            Image(systemName: systemImage)
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(tint)
+                .frame(width: 24, height: 24)
+                .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: Spacing.xxs) {
+                Text(title)
+                    .font(Typography.body)
+                    .foregroundStyle(Palette.textPrimary)
+                Text(subtitle)
+                    .font(Typography.caption)
+                    .foregroundStyle(Palette.textTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private func regularPanel<Content: View>(
+        title: String,
+        subtitle: String?,
+        systemImage: String,
+        identifier: String,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        VStack(alignment: .leading, spacing: Spacing.md) {
+            HStack(alignment: .top, spacing: Spacing.md) {
+                Image(systemName: systemImage)
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(Palette.accent)
+                    .frame(width: 30, height: 30)
+                    .background(Palette.accentSubtle)
+                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .accessibilityHidden(true)
+
+                VStack(alignment: .leading, spacing: Spacing.xs) {
+                    Text(title)
+                        .font(Typography.headingLarge)
+                        .foregroundStyle(Palette.textPrimary)
+                    if let subtitle {
+                        Text(subtitle)
+                            .font(Typography.caption)
+                            .foregroundStyle(Palette.textSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            }
+
+            Divider()
+            content()
+        }
+        .padding(Spacing.lg)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+        .background(Color(uiColor: .secondarySystemGroupedBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .strokeBorder(Palette.border, lineWidth: 1)
+        )
+        .accessibilityIdentifier(identifier)
     }
 
     @ViewBuilder
@@ -172,6 +492,18 @@ struct TelegramSettingsView: View {
         if !silent {
             telegramLoading = true
         }
+        #if DEBUG
+        if IOSTestingMode.current.isScreenshot {
+            telegramStatus = IOSScreenshotFixtures.telegramStatus
+            telegramPairing = nil
+            telegramLinkCode = ""
+            telegramError = nil
+            if !silent {
+                telegramLoading = false
+            }
+            return
+        }
+        #endif
         do {
             telegramStatus = try await appState.getAPIClient().getTelegramLinkStatus()
             if telegramStatus?.linked == true {

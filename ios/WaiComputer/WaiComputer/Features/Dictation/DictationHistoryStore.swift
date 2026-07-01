@@ -35,19 +35,29 @@ struct DictationHistoryEntry: Identifiable, Codable {
 /// endpoints. The view layer is iOS-native; this store is identical.
 @MainActor
 final class DictationHistoryStore: ObservableObject {
-    @Published private(set) var entries: [DictationHistoryEntry] = []
+    @Published private(set) var entries: [DictationHistoryEntry] = [] {
+        didSet { entriesRevision += 1 }
+    }
+    private(set) var entriesRevision = 0
 
     private let fileURL: URL
     private let tombstonesURL: URL
     private var tombstones: Set<UUID> = []
     private var apiClient: APIClient?
 
-    init() {
+    convenience init() {
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
         let dir = appSupport.appendingPathComponent("WaiComputer", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        self.fileURL = dir.appendingPathComponent("dictation_history.json")
-        self.tombstonesURL = dir.appendingPathComponent("dictation_history_tombstones.json")
+        self.init(
+            fileURL: dir.appendingPathComponent("dictation_history.json"),
+            tombstonesURL: dir.appendingPathComponent("dictation_history_tombstones.json")
+        )
+    }
+
+    init(fileURL: URL, tombstonesURL: URL) {
+        self.fileURL = fileURL
+        self.tombstonesURL = tombstonesURL
         load()
         loadTombstones()
     }
@@ -73,6 +83,27 @@ final class DictationHistoryStore: ObservableObject {
         if apiClient != nil {
             Task { await self.pushEntry(entry) }
         }
+    }
+
+    /// Apply a user's correction to a past dictation. This is intentionally
+    /// local-only because the server create endpoint is idempotent by client id
+    /// and does not update an existing entry.
+    @discardableResult
+    func applyCorrection(to entry: DictationHistoryEntry, correctedText: String) -> Bool {
+        let trimmed = correctedText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, trimmed != entry.displayText else { return false }
+        guard let idx = entries.firstIndex(where: { $0.id == entry.id }) else { return false }
+        let old = entries[idx]
+        entries[idx] = DictationHistoryEntry(
+            id: old.id,
+            timestamp: old.timestamp,
+            rawText: old.rawText,
+            cleanedText: trimmed,
+            durationSeconds: old.durationSeconds,
+            wordCount: trimmed.split(separator: " ").count
+        )
+        save()
+        return true
     }
 
     func delete(_ entry: DictationHistoryEntry) {
@@ -113,6 +144,13 @@ final class DictationHistoryStore: ObservableObject {
             await deleteEntryOnServer(entry.id)
         }
     }
+
+    #if DEBUG
+    func loadScreenshotFixtures() {
+        entries = IOSScreenshotFixtures.dictationHistoryEntries
+        tombstones.removeAll()
+    }
+    #endif
 
     /// Pull the server's view, merge with local, then push any local-only
     /// entries up and retry any tombstoned deletes. Safe to call repeatedly.

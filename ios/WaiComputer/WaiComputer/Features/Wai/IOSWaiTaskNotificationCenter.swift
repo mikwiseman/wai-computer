@@ -1,5 +1,5 @@
 import UIKit
-import UserNotifications
+@preconcurrency import UserNotifications
 
 /// Posts a local notification when a Wai agent turn finishes while the app is in
 /// the background — the iOS counterpart of `MacWaiTaskNotificationCenter`. The
@@ -33,7 +33,7 @@ final class IOSWaiTaskNotificationCenter: NSObject, UNUserNotificationCenterDele
 
         center.getNotificationSettings { [center] settings in
             switch settings.authorizationStatus {
-            case .authorized, .provisional:
+            case .authorized, .provisional, .ephemeral:
                 Self.scheduleNotification(center: center, title: title, body: body, chatId: chatId)
             case .notDetermined:
                 center.requestAuthorization(options: [.alert, .sound]) { granted, error in
@@ -86,7 +86,12 @@ final class IOSWaiTaskNotificationCenter: NSObject, UNUserNotificationCenterDele
     ) {
         Task { @MainActor in
             // Route back to the Wai tab; the just-finished chat is the active one.
-            NotificationCenter.default.post(name: .init("navigateTo"), object: "wai")
+            let chatId = response.notification.request.content.userInfo["chatId"] as? String
+            NotificationCenter.default.post(
+                name: .init("navigateTo"),
+                object: "wai",
+                userInfo: chatId.map { ["chatId": $0] }
+            )
             completionHandler()
         }
     }

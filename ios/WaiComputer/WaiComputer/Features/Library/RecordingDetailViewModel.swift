@@ -259,10 +259,10 @@ class RecordingDetailViewModel: ObservableObject {
 
     /// Returns the exported content as a String for the caller to bridge to a
     /// temp file URL and present via ShareLink.
-    func exportRecording(format: String, locale: String?, apiClient: APIClient) async -> String? {
+    func exportRecording(format: String, locale: String?, style: String? = nil, apiClient: APIClient) async -> String? {
         guard let id = detail?.id else { return nil }
         do {
-            return try await apiClient.exportRecording(id: id, format: format, locale: locale)
+            return try await apiClient.exportRecording(id: id, format: format, locale: locale, style: style)
         } catch {
             self.error = error.userFacingMessage(context: .library)
             return nil
@@ -404,7 +404,7 @@ class RecordingDetailViewModel: ObservableObject {
     func loadScreenshotFixture(recordingId: String) {
         #if DEBUG
         loadGeneration += 1
-        detail = IOSScreenshotFixtures.detail
+        detail = IOSScreenshotFixtures.recordingDetail(id: recordingId)
         localRecoveryManifest = nil
         isLoading = false
         error = nil

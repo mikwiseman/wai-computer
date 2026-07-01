@@ -50,6 +50,21 @@
 	<string>Wai uses the microphone for notes, meetings, and realtime voice interaction.</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
+	<key>UTExportedTypeDeclarations</key>
+	<array>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>is.waiwai.computer.ios.inbox-move</string>
+			<key>UTTypeDescription</key>
+			<string>WaiComputer iOS inbox item reference</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict/>
+		</dict>
+	</array>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>

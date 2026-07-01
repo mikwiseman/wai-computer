@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		0C3C4FDF3695C0B39ACE1AAB /* ComparisonView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0D7F88C68CB688E562528E1A /* ComparisonView.swift */; };
+		0F47A77E86C200052C21537A /* IOSDictationLearningSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5CFA200C40FF5807556F39C /* IOSDictationLearningSettings.swift */; };
 		13FF112A2BDD0344A649E06D /* DictationLanguageStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0AFCA421DFEDB18DF1E3D245 /* DictationLanguageStore.swift */; };
 		2109D3C9652FA60E87786D87 /* RecordingViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = AEB1BE80746F32FBBE0D2BC4 /* RecordingViewModel.swift */; };
 		2564719B2CE4532C9FB1CC7E /* CapturedFeedView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 480CE408E8D56469DAE302D4 /* CapturedFeedView.swift */; };
@@ -105,6 +106,7 @@
 		D29A727CBD911EDCD159FE8A /* IOSWaiTaskNotificationCenter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSWaiTaskNotificationCenter.swift; sourceTree = "<group>"; };
 		D49D3185F51AF817EAB6246A /* DictationDictionaryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DictationDictionaryView.swift; sourceTree = "<group>"; };
 		E12DEC867C20F1C0219C0B62 /* DictationDictionaryStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DictationDictionaryStore.swift; sourceTree = "<group>"; };
+		E5CFA200C40FF5807556F39C /* IOSDictationLearningSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSDictationLearningSettings.swift; sourceTree = "<group>"; };
 		E73122302C84DBD8D22C976C /* RecordingDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingDetailView.swift; sourceTree = "<group>"; };
 		F10A231CE3E010E0FA5DAF1E /* ContentFeedViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentFeedViewModel.swift; sourceTree = "<group>"; };
 		F371D8CDE93BE0F63E284A00 /* SpeakerChipButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeakerChipButton.swift; sourceTree = "<group>"; };
@@ -132,6 +134,7 @@
 				C729626D2D9EBB512E95D0EC /* DictationHistoryStore.swift */,
 				33331DB5948E7060A6CCDAF0 /* DictationHistoryView.swift */,
 				0AFCA421DFEDB18DF1E3D245 /* DictationLanguageStore.swift */,
+				E5CFA200C40FF5807556F39C /* IOSDictationLearningSettings.swift */,
 				121A5759092B96CD66C56311 /* LanguagePickerView.swift */,
 			);
 			path = Dictation;
@@ -417,6 +420,7 @@
 				3781A67DB4EF9E827F3AEDAE /* DictationHistoryStore.swift in Sources */,
 				967A5E368C485EF073E65B6F /* DictationHistoryView.swift in Sources */,
 				13FF112A2BDD0344A649E06D /* DictationLanguageStore.swift in Sources */,
+				0F47A77E86C200052C21537A /* IOSDictationLearningSettings.swift in Sources */,
 				BD61911547BD85924A9C4924 /* IOSWaiTaskNotificationCenter.swift in Sources */,
 				868DCF82A866D13B39A028CA /* IdentityAndVoiceSettingsView.swift in Sources */,
 				4EDFCAF02CC86441404829AF /* ImportViewModel.swift in Sources */,

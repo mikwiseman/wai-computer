@@ -7,6 +7,7 @@ struct OnboardingView: View {
     @EnvironmentObject var appState: AppState
     @EnvironmentObject private var languageManager: LanguageManager
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
     @State private var currentPage: Int
     @State private var permissionRequested = false
@@ -40,21 +41,7 @@ struct OnboardingView: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            slideArea
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-
-            VStack(spacing: Spacing.lg) {
-                if isPermissionPage {
-                    permissionStatusView
-                }
-                pageIndicator
-                footerControls
-            }
-            .padding(.horizontal, Spacing.xl)
-            .padding(.bottom, Spacing.xl)
-            .padding(.top, Spacing.md)
-        }
+        onboardingContent
         .background(Color(uiColor: .systemBackground).ignoresSafeArea())
         .accessibilityIdentifier("onboarding-view")
         .onAppear {
@@ -93,6 +80,67 @@ struct OnboardingView: View {
         }
     }
 
+    @ViewBuilder
+    private var onboardingContent: some View {
+        if horizontalSizeClass == .regular {
+            regularOnboardingLayout
+        } else {
+            compactOnboardingLayout
+        }
+    }
+
+    private var compactOnboardingLayout: some View {
+        VStack(spacing: 0) {
+            slideArea
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+            VStack(spacing: Spacing.lg) {
+                if isPermissionPage {
+                    permissionStatusView
+                }
+                pageIndicator(isRegular: false)
+                footerControls
+            }
+            .padding(.horizontal, Spacing.xl)
+            .padding(.bottom, Spacing.xl)
+            .padding(.top, Spacing.md)
+        }
+        .accessibilityIdentifier("onboarding-compact-layout")
+    }
+
+    private var regularOnboardingLayout: some View {
+        VStack(spacing: Spacing.lg) {
+            pageIndicator(isRegular: true)
+                .padding(.top, Spacing.lg)
+
+            regularSlidePanel
+
+            regularFooterPanel
+                .padding(.bottom, Spacing.xl)
+        }
+        .padding(.horizontal, Spacing.huge)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .accessibilityIdentifier("onboarding-regular-layout")
+    }
+
+    private var regularSlidePanel: some View {
+        slideArea
+            .frame(maxWidth: 760)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .accessibilityIdentifier("onboarding-regular-slide-panel")
+    }
+
+    private var regularFooterPanel: some View {
+        VStack(spacing: Spacing.md) {
+            if isPermissionPage {
+                permissionStatusView
+            }
+            footerControls
+        }
+        .frame(maxWidth: 760)
+        .accessibilityIdentifier("onboarding-regular-footer-panel")
+    }
+
     // MARK: - Slide area
 
     private var slideArea: some View {
@@ -125,28 +173,45 @@ struct OnboardingView: View {
 
     /// Breadcrumb label + chevron indicator (mirrors macOS), localized to the
     /// in-app language. Replaces the capsule-dot indicator.
-    private var pageIndicator: some View {
-        HStack(spacing: Spacing.xs) {
+    @ViewBuilder
+    private func pageIndicator(isRegular: Bool) -> some View {
+        if isRegular {
+            pageIndicatorRow(isRegular: true)
+                .frame(maxWidth: .infinity)
+                .accessibilityIdentifier("onboarding-page-indicator")
+        } else {
+            ScrollView(.horizontal, showsIndicators: false) {
+                pageIndicatorRow(isRegular: false)
+                    .padding(.horizontal, Spacing.xl)
+            }
+            .frame(maxWidth: .infinity)
+            .accessibilityIdentifier("onboarding-page-indicator")
+        }
+    }
+
+    private func pageIndicatorRow(isRegular: Bool) -> some View {
+        HStack(spacing: isRegular ? 6 : Spacing.xs) {
             ForEach(pages.indices, id: \.self) { index in
                 if index > 0 {
                     Image(systemName: "chevron.right")
-                        .font(.system(size: 9, weight: .medium))
+                        .font(.system(size: isRegular ? 10 : 9, weight: .medium))
                         .foregroundStyle(Palette.textTertiary.opacity(0.5))
                 }
-                VStack(spacing: 5) {
+                VStack(spacing: isRegular ? 6 : 5) {
                     Text(pages[index].breadcrumbLabel(language: languageManager.current).uppercased())
-                        .font(.system(size: 10, weight: .medium))
-                        .tracking(1.1)
+                        .font(.system(size: isRegular ? 11 : 10, weight: .medium))
+                        .tracking(isRegular ? 1.3 : 1.1)
                         .foregroundStyle(index == currentPage ? Palette.textPrimary : Palette.textTertiary)
+                        .lineLimit(1)
+                        .fixedSize(horizontal: true, vertical: false)
                     Rectangle()
                         .fill(index == currentPage ? Palette.accent : Color.clear)
                         .frame(height: 1.5)
                 }
-                .padding(.horizontal, Spacing.sm)
+                .padding(.horizontal, isRegular ? Spacing.md : Spacing.sm)
                 .animation(.easeInOut(duration: 0.25), value: currentPage)
             }
         }
-        .accessibilityIdentifier("onboarding-page-indicator")
     }
 
     // MARK: - Permission status feedback

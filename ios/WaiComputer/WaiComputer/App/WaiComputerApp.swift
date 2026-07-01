@@ -1,13 +1,18 @@
 import SwiftUI
+import UIKit
 import WaiComputerKit
 
 #if DEBUG
 enum IOSScreenshotScreen: String {
     case record
     case library
+    case materials
     case detail
     case settings
     case search
+    case comparison
+    case history
+    case dictionary
 }
 #endif
 
@@ -44,15 +49,151 @@ enum IOSTestingMode: Equatable {
     }
 }
 
+/// iOS `LexiconChecking` backed by `UITextChecker`. This matches the macOS
+/// learning gate: common dictionary words are rejected, while names, brands,
+/// and product terms can become dictionary suggestions after repeated edits.
+struct IOSLexiconChecker: LexiconChecking {
+    func isKnownWord(_ token: String, language: String?) -> Bool {
+        let trimmed = token.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.contains(where: { $0.isLetter }) else { return true }
+        guard let spellLanguage = Self.spellLanguage(for: language) else {
+            return true
+        }
+
+        let range = NSRange(trimmed.startIndex..<trimmed.endIndex, in: trimmed)
+        let misspelledRange = UITextChecker().rangeOfMisspelledWord(
+            in: trimmed,
+            range: range,
+            startingAt: 0,
+            wrap: false,
+            language: spellLanguage
+        )
+        return misspelledRange.location == NSNotFound
+    }
+
+    private static func spellLanguage(for language: String?) -> String? {
+        let available = Set(UITextChecker.availableLanguages)
+        if let raw = language?.lowercased(), !raw.isEmpty,
+           raw != "multi", raw != "auto", raw != "und" {
+            let base = String(raw.prefix(2))
+            let candidates = [raw, base]
+            if let supported = candidates.first(where: { available.contains($0) }) {
+                return supported
+            }
+            return nil
+        }
+
+        for preferred in Locale.preferredLanguages {
+            let lowered = preferred.lowercased()
+            let base = String(lowered.prefix(2))
+            if available.contains(lowered) {
+                return lowered
+            }
+            if available.contains(base) {
+                return base
+            }
+        }
+        return available.contains("en") ? "en" : nil
+    }
+}
+
 #if DEBUG
 enum IOSScreenshotFixtures {
     static let createdAt = Date(timeIntervalSince1970: 1_713_158_400)
+    static let billingPeriodEnd = Date(timeIntervalSince1970: 1_784_073_600)
+    static let productFolderId = "ios-fixture-folder-product"
 
     static let user = User(
         id: "ios-screenshot-user",
         email: "hello@waiwai.is",
         createdAt: createdAt
     )
+
+    static let identity = UserIdentity(
+        firstName: "Mik",
+        lastName: "Wiseman",
+        hasVoiceprint: true
+    )
+
+    static let voiceSharing = VoiceSharingState(
+        enabled: true,
+        canEnable: true,
+        hasFirstName: true,
+        hasLastName: true,
+        hasVoiceprint: true,
+        sharedName: "Mik Wiseman"
+    )
+
+    static let telegramStatus = TelegramLinkStatus(
+        linked: false,
+        botUsername: "waicomputer_bot",
+        telegramUserID: nil,
+        username: nil,
+        firstName: nil,
+        lastName: nil,
+        linkedAt: nil
+    )
+
+    static let billingFreePlan = BillingPlan(
+        code: "free",
+        name: "Free",
+        description: "Weekly transcription allowance for personal capture.",
+        wordCapPerWeek: 50_000,
+        memoryRetentionDays: 30,
+        features: [
+            "recording": true,
+            "search": true,
+            "mcp": true,
+        ]
+    )
+
+    static let billingProPlan = BillingPlan(
+        code: "pro",
+        name: "Pro",
+        description: "Unlimited memory capture across Mac, iPhone, iPad, and agents.",
+        usdAmountMonthly: 20,
+        usdAmountYearly: 200,
+        rubAmountMonthly: 1_990,
+        rubAmountYearly: 19_900,
+        wordCapPerWeek: nil,
+        memoryRetentionDays: nil,
+        features: [
+            "recording": true,
+            "search": true,
+            "mcp": true,
+            "billing": true,
+        ]
+    )
+
+    static let billingSubscription = BillingSubscription(
+        plan: billingProPlan,
+        status: "active",
+        provider: BillingDisplayRegion.global.provider,
+        billingPeriod: BillingDisplayPeriod.month.rawValue,
+        currentPeriodEnd: billingPeriodEnd,
+        cancelAtPeriodEnd: false,
+        trialEnd: nil,
+        enforcementEnabled: true
+    )
+
+    static let billingUsage = BillingUsage(
+        wordsUsed: 84_320,
+        wordsCap: nil,
+        resetAt: billingPeriodEnd,
+        capExceeded: false
+    )
+
+    static let billingPlans = [billingFreePlan, billingProPlan]
+    static let billingRegion = BillingDisplayRegion.global
+
+    static let folders: [Folder] = [
+        Folder(
+            id: productFolderId,
+            name: "Product",
+            createdAt: createdAt.addingTimeInterval(-900_000),
+            itemCount: 3
+        ),
+    ]
 
     static let recordings: [Recording] = [
         Recording(
@@ -69,6 +210,7 @@ enum IOSScreenshotFixtures {
             type: .meeting,
             status: .ready,
             durationSeconds: 2240,
+            folderId: productFolderId,
             createdAt: createdAt.addingTimeInterval(-86_400)
         ),
         Recording(
@@ -77,6 +219,7 @@ enum IOSScreenshotFixtures {
             type: .meeting,
             status: .ready,
             durationSeconds: 1640,
+            folderId: productFolderId,
             createdAt: createdAt.addingTimeInterval(-172_800)
         ),
         Recording(
@@ -104,6 +247,125 @@ enum IOSScreenshotFixtures {
             createdAt: createdAt.addingTimeInterval(-432_000)
         ),
     ]
+
+    static let trashedRecordings: [Recording] = [
+        Recording(
+            id: "trash-1",
+            title: "Old Planning Sync",
+            type: .meeting,
+            status: .ready,
+            durationSeconds: 1420,
+            deletedAt: createdAt.addingTimeInterval(-43_200),
+            createdAt: createdAt.addingTimeInterval(-604_800)
+        ),
+    ]
+
+    static let itemListResponse: ItemListResponse = {
+        let data = """
+        {
+            "items": [
+                {
+                    "id": "item-1",
+                    "source": "paste",
+                    "url": null,
+                    "kind": "note",
+                    "title": "Mobile Release Checklist",
+                    "state": "ready",
+                    "status": "ready",
+                    "error": null,
+                    "folder_id": "ios-fixture-folder-product",
+                    "occurred_at": null,
+                    "created_at": "2024-04-15T11:00:00Z",
+                    "has_summary": true
+                },
+                {
+                    "id": "item-2",
+                    "source": "url",
+                    "url": "https://wai.computer",
+                    "kind": "article",
+                    "title": "Second Brain Launch Notes",
+                    "state": "processing",
+                    "status": "processing",
+                    "error": null,
+                    "folder_id": null,
+                    "occurred_at": null,
+                    "created_at": "2024-04-14T16:30:00Z",
+                    "has_summary": false
+                }
+            ],
+            "total": 2
+        }
+        """.data(using: .utf8)!
+        guard let response = try? JSONDecoder().decode(ItemListResponse.self, from: data) else {
+            fatalError("itemListResponse fixture JSON is malformed — fix IOSScreenshotFixtures")
+        }
+        return response
+    }()
+
+    static let items: [Item] = {
+        let data = """
+        [
+            {
+                "id": "item-1",
+                "source": "paste",
+                "source_ref": null,
+                "url": null,
+                "kind": "note",
+                "title": "Mobile Release Checklist",
+                "body": "Verify iPad workspace navigation, screenshot fixtures, unified search, and comparison tables before TestFlight.",
+                "occurred_at": null,
+                "state": "ready",
+                "status": "ready",
+                "error": null,
+                "folder_id": "ios-fixture-folder-product",
+                "created_at": "2024-04-15T11:00:00Z",
+                "summary": {
+                    "summary": "A release checklist for making the iOS app feel aligned with the Mac app before the next TestFlight build.",
+                    "key_points": [
+                        "Verify iPad workspace navigation",
+                        "Capture deterministic screenshots",
+                        "Check comparison and search surfaces"
+                    ],
+                    "topics": ["iPad", "TestFlight", "Parity"],
+                    "key_moments": [
+                        {
+                            "timestamp": null,
+                            "moment": "Confirm the iPad split workspace",
+                            "why_it_matters": "It proves the mobile UI follows the Mac app's workbench model.",
+                            "quote": null,
+                            "importance": "high",
+                            "start_ms": null,
+                            "end_ms": null
+                        }
+                    ],
+                    "sentiment": "focused"
+                },
+                "summary_audio": null
+            },
+            {
+                "id": "item-2",
+                "source": "url",
+                "source_ref": null,
+                "url": "https://wai.computer",
+                "kind": "article",
+                "title": "Second Brain Launch Notes",
+                "body": null,
+                "occurred_at": null,
+                "state": "processing",
+                "status": "processing",
+                "error": null,
+                "folder_id": null,
+                "created_at": "2024-04-14T16:30:00Z",
+                "summary": null,
+                "summary_audio": null
+            }
+        ]
+        """.data(using: .utf8)!
+        guard let items = try? JSONDecoder().decode([Item].self, from: data) else {
+            fatalError("items fixture JSON is malformed — fix IOSScreenshotFixtures")
+        }
+        return items
+    }()
 
     static let detailRecording = recordings[0]
 
@@ -195,6 +457,69 @@ enum IOSScreenshotFixtures {
         }()
     )
 
+    private static func detailFixture(for recording: Recording) -> RecordingDetail {
+        RecordingDetail(
+            id: recording.id,
+            title: recording.title,
+            type: recording.type,
+            status: recording.status,
+            durationSeconds: recording.durationSeconds,
+            language: "en",
+            folderId: recording.folderId,
+            deletedAt: recording.deletedAt,
+            createdAt: recording.createdAt,
+            segments: detail.segments,
+            summary: detail.summary,
+            summaryGeneration: detail.summaryGeneration,
+            summaryAudio: detail.summaryAudio,
+            actionItems: detail.actionItems,
+            highlights: detail.highlights
+        )
+    }
+
+    private static func trashDetailFixture(for recording: Recording) -> RecordingDetail {
+        RecordingDetail(
+            id: recording.id,
+            title: recording.title,
+            type: recording.type,
+            status: recording.status,
+            durationSeconds: recording.durationSeconds,
+            language: "en",
+            folderId: recording.folderId,
+            deletedAt: recording.deletedAt,
+            createdAt: recording.createdAt,
+            segments: [
+                Segment(
+                    id: "\(recording.id)-s1",
+                    speaker: "Mik",
+                    content: "This old planning sync is no longer needed, but keep it visible in Trash until we are sure the migration screenshots are finished.",
+                    startMs: 0,
+                    endMs: 6_400,
+                    confidence: 0.95
+                ),
+                Segment(
+                    id: "\(recording.id)-s2",
+                    speaker: "Sarah",
+                    content: "Agreed. Restore it only if we need to compare the old launch notes with the current iPad workspace.",
+                    startMs: 6_900,
+                    endMs: 13_500,
+                    confidence: 0.94
+                ),
+            ],
+            summary: Summary(
+                summary: "An archived planning sync kept in Trash while the team checks whether old launch notes are still useful for iPad workspace QA.",
+                keyPoints: [
+                    "The recording is intentionally in Trash",
+                    "Restore it only if the old launch notes are needed",
+                    "The iPad workspace remains the active QA focus",
+                ],
+                topics: ["Trash", "iPad Workspace", "Launch Notes"],
+                peopleMentioned: ["Mik", "Sarah"],
+                sentiment: "neutral"
+            )
+        )
+    }
+
     static let searchResponse: SearchResponse = {
         let data = """
         {
@@ -231,8 +556,179 @@ enum IOSScreenshotFixtures {
         return response
     }()
 
+    static let unifiedSearchResponse: UnifiedSearchResponse = {
+        let data = """
+        {
+            "results": [
+                {
+                    "source_kind": "recording",
+                    "parent_id": "rec-1",
+                    "chunk_id": "unified-search-rec-1",
+                    "title": "Weekly Team Standup",
+                    "kind": "meeting",
+                    "snippet": "The recording feature is working well. We need to finish the transcript view and search functionality.",
+                    "score": 1.0,
+                    "created_at": "2024-04-15T10:00:00Z"
+                },
+                {
+                    "source_kind": "item",
+                    "parent_id": "item-1",
+                    "chunk_id": "unified-search-item-1",
+                    "title": "Mobile Release Checklist",
+                    "kind": "note",
+                    "snippet": "Verify iPad workspace navigation, screenshot fixtures, and unified search before TestFlight.",
+                    "score": 0.86,
+                    "created_at": "2024-04-15T11:00:00Z"
+                }
+            ],
+            "total": 2
+        }
+        """.data(using: .utf8)!
+        guard let response = try? JSONDecoder().decode(UnifiedSearchResponse.self, from: data) else {
+            fatalError("unifiedSearchResponse fixture JSON is malformed — fix IOSScreenshotFixtures")
+        }
+        return response
+    }()
+
+    static let comparisonListEntries: [ComparisonListEntry] = [
+        comparisonListEntry,
+    ]
+
+    static let dictationHistoryEntries: [DictationHistoryEntry] = [
+        DictationHistoryEntry(
+            id: UUID(uuidString: "11111111-1111-1111-1111-111111111111")!,
+            timestamp: createdAt.addingTimeInterval(-1_200),
+            rawText: "open sigma board and summarize launch notes",
+            cleanedText: "Open Figma board and summarize launch notes.",
+            durationSeconds: 11,
+            wordCount: 7
+        ),
+        DictationHistoryEntry(
+            id: UUID(uuidString: "22222222-2222-2222-2222-222222222222")!,
+            timestamp: createdAt.addingTimeInterval(-3_600),
+            rawText: "share why computer release checklist",
+            cleanedText: "Share WaiComputer release checklist.",
+            durationSeconds: 8,
+            wordCount: 4
+        ),
+        DictationHistoryEntry(
+            id: UUID(uuidString: "33333333-3333-3333-3333-333333333333")!,
+            timestamp: createdAt.addingTimeInterval(-90_000),
+            rawText: "ask sarah to review testflight screenshots",
+            cleanedText: "Ask Sarah to review TestFlight screenshots.",
+            durationSeconds: 9,
+            wordCount: 6
+        ),
+    ]
+
+    static let dictionaryWords: [DictionaryWord] = [
+        DictionaryWord(
+            id: UUID(uuidString: "44444444-4444-4444-4444-444444444444")!,
+            word: "Figma",
+            replacement: nil,
+            origin: "learned",
+            createdAt: createdAt.addingTimeInterval(-7_200)
+        ),
+        DictionaryWord(
+            id: UUID(uuidString: "55555555-5555-5555-5555-555555555555")!,
+            word: "why computer",
+            replacement: "WaiComputer",
+            origin: "learned",
+            createdAt: createdAt.addingTimeInterval(-6_800)
+        ),
+        DictionaryWord(
+            id: UUID(uuidString: "66666666-6666-6666-6666-666666666666")!,
+            word: "TestFlight",
+            replacement: nil,
+            origin: "manual",
+            createdAt: createdAt.addingTimeInterval(-4_800)
+        ),
+    ]
+
+    static let comparisonSet: ComparisonSet = {
+        let data = """
+        {
+          "id": "comparison-1",
+          "title": "Mobile launch material comparison",
+          "item_ids": ["item-1", "item-2"],
+          "columns": [
+            { "name": "Purpose", "type": "text" },
+            { "name": "Current state", "type": "text" },
+            { "name": "Next action", "type": "text" }
+          ],
+          "rows": [
+            {
+              "item_id": "item-1",
+              "title": "Mobile Release Checklist",
+              "values": {
+                "Purpose": "Operational checklist for the TestFlight pass and App Store screenshot review.",
+                "Current state": "Ready to use for QA. The remaining work is visual confirmation on iPad and iPhone.",
+                "Next action": "Run the screenshot script, inspect the iPad workspace, and attach the final images to the release note."
+              }
+            },
+            {
+              "item_id": "item-2",
+              "title": "Second Brain Launch Notes",
+              "values": {
+                "Purpose": "External positioning for capture, recall, and cross-device memory workflows.",
+                "Current state": "Processing. Needs a final summary before it should be used in customer-facing copy.",
+                "Next action": "Wait for item processing, then compare the summary against the release checklist."
+              }
+            }
+          ],
+          "schema_rationale": "The table compares each material by purpose, readiness, and the next launch action so mobile QA can decide what to use immediately.",
+          "status": "ready",
+          "created_at": "2024-04-15T12:00:00Z"
+        }
+        """.data(using: .utf8)!
+        guard let set = try? JSONDecoder().decode(ComparisonSet.self, from: data) else {
+            fatalError("comparisonSet fixture JSON is malformed — fix IOSScreenshotFixtures")
+        }
+        return set
+    }()
+
+    private static let comparisonListEntry: ComparisonListEntry = {
+        let data = """
+        {
+          "id": "comparison-1",
+          "title": "Mobile launch material comparison",
+          "item_count": 2,
+          "status": "ready",
+          "created_at": "2024-04-15T12:00:00Z"
+        }
+        """.data(using: .utf8)!
+        guard let entry = try? JSONDecoder().decode(ComparisonListEntry.self, from: data) else {
+            fatalError("comparisonListEntry fixture JSON is malformed — fix IOSScreenshotFixtures")
+        }
+        return entry
+    }()
+
     static func recording(id: String) -> Recording {
         recordings.first(where: { $0.id == id }) ?? detailRecording
+    }
+
+    static func recordingDetail(id: String) -> RecordingDetail {
+        if let recording = trashedRecordings.first(where: { $0.id == id }) {
+            return trashDetailFixture(for: recording)
+        }
+        if let recording = recordings.first(where: { $0.id == id }) {
+            return recording.id == detail.id ? detail : detailFixture(for: recording)
+        }
+        return detail
+    }
+
+    static func item(id: String) -> Item {
+        guard let item = items.first(where: { $0.id == id }) else {
+            fatalError("No iOS screenshot item fixture for id \(id)")
+        }
+        return item
+    }
+
+    static func comparison(id: String) -> ComparisonSet {
+        guard comparisonSet.id == id else {
+            fatalError("No iOS screenshot comparison fixture for id \(id)")
+        }
+        return comparisonSet
     }
 }
 #endif
@@ -242,6 +738,11 @@ struct WaiComputerApp: App {
     @Environment(\.scenePhase) private var scenePhase
     @StateObject private var appState = AppState()
     @StateObject private var languageManager = LanguageManager.shared
+    @StateObject private var dictationLanguageStore = DictationLanguageStore()
+    @StateObject private var historyStore = DictationHistoryStore()
+    @StateObject private var dictionaryStore = DictationDictionaryStore()
+    @StateObject private var learningEngine = DictionaryLearningEngine(lexicon: IOSLexiconChecker())
+    @State private var didPrepareScreenshotFixtures = false
     @AppStorage(IOSThemePreferences.appearanceKey) private var appearanceModeRawValue = IOSThemePreferences.defaultAppearance.rawValue
     @AppStorage(IOSThemePreferences.accentKey) private var accentChoiceRawValue = IOSThemePreferences.defaultAccent.rawValue
 
@@ -259,17 +760,72 @@ struct WaiComputerApp: App {
                 .environment(\.locale, languageManager.preferredLocale)
                 .environmentObject(languageManager)
                 .environmentObject(appState)
+                .environmentObject(dictationLanguageStore)
+                .environmentObject(historyStore)
+                .environmentObject(dictionaryStore)
+                .environmentObject(learningEngine)
                 .preferredColorScheme(appearanceMode.preferredColorScheme)
                 .tint(accentChoice.tintColor)
+                .onAppear {
+                    prepareScreenshotFixturesIfNeeded()
+                }
+                .task(id: appState.isAuthenticated) {
+                    await syncDictationStoresForAuthState()
+                }
                 .onOpenURL { url in
                     Task { await appState.handleIncomingURL(url) }
+                }
+                .onChange(of: appState.isCheckingAuth) { _, _ in
+                    Task { await syncDictationStoresForAuthState() }
                 }
                 .onChange(of: scenePhase) { _, newPhase in
                     guard newPhase == .active else { return }
                     Task {
                         await appState.resumePendingRecordingSyncIfNeeded()
+                        await syncDictationStoresForAuthState()
                     }
                 }
+        }
+    }
+
+    @MainActor
+    private func prepareScreenshotFixturesIfNeeded() {
+        #if DEBUG
+        guard IOSTestingMode.current.isScreenshot, !didPrepareScreenshotFixtures else { return }
+        didPrepareScreenshotFixtures = true
+        historyStore.loadScreenshotFixtures()
+        dictionaryStore.loadScreenshotFixtures()
+        learningEngine.clearAll()
+        learningEngine.observeEdit(
+            produced: "open sigma board and summarize launch notes",
+            edited: "open Figma board and summarize launch notes",
+            language: "en"
+        )
+        learningEngine.observeEdit(
+            produced: "open sigma board and summarize launch notes",
+            edited: "open Figma board and summarize launch notes",
+            language: "en"
+        )
+        #endif
+    }
+
+    @MainActor
+    private func syncDictationStoresForAuthState() async {
+        guard !appState.isCheckingAuth else { return }
+
+        if appState.isAuthenticated {
+            #if DEBUG
+            guard !IOSTestingMode.current.isScreenshot else { return }
+            #endif
+
+            let client = appState.getAPIClient()
+            historyStore.attach(apiClient: client)
+            dictionaryStore.attach(apiClient: client)
+            await historyStore.hydrate()
+            await dictionaryStore.hydrate()
+        } else {
+            historyStore.clearLocalCache()
+            dictionaryStore.clearLocalCache()
         }
     }
 }
@@ -626,6 +1182,19 @@ class AppState: ObservableObject {
               !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         else { return nil }
         return IOSScreenshotFixtures.searchResponse
+        #else
+        return nil
+        #endif
+    }
+
+    /// Deterministic unified-search results for DEBUG screenshot / UI-test
+    /// runs. Mirrors the macOS `uiTestUnifiedSearchResponse` hook.
+    func uiTestUnifiedSearchResponse(query: String) -> UnifiedSearchResponse? {
+        #if DEBUG
+        guard IOSTestingMode.current.isScreenshot,
+              !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        else { return nil }
+        return IOSScreenshotFixtures.unifiedSearchResponse
         #else
         return nil
         #endif

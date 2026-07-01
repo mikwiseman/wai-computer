@@ -155,6 +155,26 @@ public struct BillingSubscription: Codable, Equatable, Sendable {
 
     public var isPro: Bool { plan.code == "pro" && status != "canceled" && status != "expired" }
 
+    public init(
+        plan: BillingPlan,
+        status: String,
+        provider: String? = nil,
+        billingPeriod: String? = nil,
+        currentPeriodEnd: Date? = nil,
+        cancelAtPeriodEnd: Bool = false,
+        trialEnd: Date? = nil,
+        enforcementEnabled: Bool = false
+    ) {
+        self.plan = plan
+        self.status = status
+        self.provider = provider
+        self.billingPeriod = billingPeriod
+        self.currentPeriodEnd = currentPeriodEnd
+        self.cancelAtPeriodEnd = cancelAtPeriodEnd
+        self.trialEnd = trialEnd
+        self.enforcementEnabled = enforcementEnabled
+    }
+
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         plan = try c.decode(BillingPlan.self, forKey: .plan)
@@ -196,6 +216,18 @@ public struct BillingUsage: Codable, Equatable, Sendable {
     public var fractionUsed: Double {
         guard let cap = wordsCap, cap > 0 else { return 0 }
         return min(1.0, max(0.0, Double(wordsUsed) / Double(cap)))
+    }
+
+    public init(
+        wordsUsed: Int,
+        wordsCap: Int?,
+        resetAt: Date,
+        capExceeded: Bool
+    ) {
+        self.wordsUsed = wordsUsed
+        self.wordsCap = wordsCap
+        self.resetAt = resetAt
+        self.capExceeded = capExceeded
     }
 }
 

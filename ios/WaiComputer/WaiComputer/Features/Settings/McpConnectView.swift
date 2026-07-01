@@ -121,6 +121,7 @@ private let mcpClientGuides: [McpClient: McpClientGuide] = [
 
 struct McpConnectView: View {
     @EnvironmentObject var languageManager: LanguageManager
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @State private var client: McpClient = .openClaw
     @State private var copiedField: String?
 
@@ -129,6 +130,28 @@ struct McpConnectView: View {
     }
 
     var body: some View {
+        Group {
+            if horizontalSizeClass == .regular {
+                regularLayout
+            } else {
+                compactForm
+            }
+        }
+        .navigationTitle("MCP")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                if let url = URL(string: mcpEndpointURL) {
+                    ShareLink(item: url) {
+                        Image(systemName: "square.and.arrow.up")
+                    }
+                    .accessibilityIdentifier("settings-mcp-share")
+                }
+            }
+        }
+    }
+
+    private var compactForm: some View {
         Form {
             Section {
                 HStack {
@@ -197,18 +220,244 @@ struct McpConnectView: View {
                 }
             }
         }
-        .navigationTitle("MCP")
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                if let url = URL(string: mcpEndpointURL) {
-                    ShareLink(item: url) {
-                        Image(systemName: "square.and.arrow.up")
+    }
+
+    private var regularLayout: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: Spacing.xl) {
+                regularHeader
+
+                LazyVGrid(
+                    columns: [GridItem(.adaptive(minimum: 320), spacing: Spacing.lg, alignment: .top)],
+                    alignment: .leading,
+                    spacing: Spacing.lg
+                ) {
+                    regularEndpointPanel
+                    regularGuidePanel
+                    regularAccessPanel
+                }
+            }
+            .padding(.horizontal, Spacing.xxl)
+            .padding(.vertical, Spacing.xxl)
+            .frame(maxWidth: 920, alignment: .topLeading)
+            .frame(maxWidth: .infinity, alignment: .top)
+        }
+        .background(Color(uiColor: .systemGroupedBackground))
+        .accessibilityIdentifier("settings-mcp-regular-layout")
+    }
+
+    private var regularHeader: some View {
+        HStack(alignment: .center, spacing: Spacing.md) {
+            Image(systemName: "link.circle")
+                .font(.system(size: 18, weight: .semibold))
+                .foregroundStyle(Palette.accent)
+                .frame(width: 42, height: 42)
+                .background(Color(uiColor: .secondarySystemGroupedBackground))
+                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .strokeBorder(Palette.border, lineWidth: 1)
+                )
+                .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: Spacing.xs) {
+                Text("MCP")
+                    .font(Typography.displayMedium)
+                    .foregroundStyle(Palette.textPrimary)
+                Text(t(
+                    "Connect agents to ask, search, and remember with your WaiComputer brain.",
+                    "Подключи агентов к вопросам, поиску и запоминанию через WaiComputer."
+                ))
+                .font(Typography.bodySmall)
+                .foregroundStyle(Palette.textSecondary)
+            }
+        }
+        .accessibilityIdentifier("settings-mcp-regular-header")
+    }
+
+    private var regularEndpointPanel: some View {
+        regularPanel(
+            title: t("Endpoint", "Адрес"),
+            subtitle: t(
+                "Paste this URL into any remote MCP client that supports OAuth.",
+                "Вставь этот адрес в любой remote MCP-клиент с OAuth."
+            ),
+            systemImage: "network",
+            identifier: "settings-mcp-regular-endpoint-panel"
+        ) {
+            VStack(alignment: .leading, spacing: Spacing.md) {
+                HStack(spacing: Spacing.sm) {
+                    Text(mcpEndpointURL)
+                        .font(Typography.mono)
+                        .foregroundStyle(Palette.textPrimary)
+                        .textSelection(.enabled)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .padding(.horizontal, Spacing.sm)
+                        .padding(.vertical, Spacing.xs)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(Color(uiColor: .tertiarySystemGroupedBackground))
+                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+
+                    Button {
+                        copy(mcpEndpointURL, field: "endpoint")
+                    } label: {
+                        Label(
+                            copiedField == "endpoint" ? t("Copied", "Скопировано") : t("Copy", "Копировать"),
+                            systemImage: copiedField == "endpoint" ? "checkmark" : "doc.on.doc"
+                        )
                     }
-                    .accessibilityIdentifier("settings-mcp-share")
+                    .buttonStyle(.bordered)
+                    .controlSize(.regular)
+                    .accessibilityIdentifier("settings-mcp-copy-endpoint")
+                }
+
+                Text(t(
+                    "Your agent opens wai.computer for approval on first connect. No token is copied into the app.",
+                    "При первом подключении агент откроет wai.computer для подтверждения. Токен не копируется в приложение."
+                ))
+                .font(Typography.caption)
+                .foregroundStyle(Palette.textTertiary)
+                .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private var regularGuidePanel: some View {
+        regularPanel(
+            title: t("Setup guide", "Инструкция"),
+            subtitle: t(
+                "Choose the client you are configuring.",
+                "Выбери клиент, который настраиваешь."
+            ),
+            systemImage: "terminal",
+            identifier: "settings-mcp-regular-guide-panel"
+        ) {
+            VStack(alignment: .leading, spacing: Spacing.md) {
+                Picker(t("Client", "Клиент"), selection: $client) {
+                    ForEach(McpClient.allCases) { value in
+                        Text(value.rawValue).tag(value)
+                    }
+                }
+                .pickerStyle(.menu)
+                .accessibilityIdentifier("settings-mcp-client-picker")
+
+                if let guide = mcpClientGuides[client] {
+                    Text(t(guide.stepsEnglish, guide.stepsRussian))
+                        .font(Typography.body)
+                        .foregroundStyle(Palette.textPrimary)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    if let snippet = guide.snippet {
+                        VStack(alignment: .leading, spacing: Spacing.sm) {
+                            ScrollView(.horizontal, showsIndicators: false) {
+                                Text(snippet)
+                                    .font(Typography.mono)
+                                    .foregroundStyle(Palette.textPrimary)
+                                    .textSelection(.enabled)
+                                    .padding(Spacing.sm)
+                            }
+                            .background(Color(uiColor: .tertiarySystemGroupedBackground))
+                            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+
+                            Button {
+                                copy(snippet, field: "snippet")
+                            } label: {
+                                Label(
+                                    copiedField == "snippet" ? t("Copied", "Скопировано") : t("Copy snippet", "Скопировать фрагмент"),
+                                    systemImage: copiedField == "snippet" ? "checkmark" : "doc.on.doc"
+                                )
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.regular)
+                            .accessibilityIdentifier("settings-mcp-copy-snippet")
+                        }
+                    }
+
+                    if let link = guide.externalLink {
+                        Link(destination: link.url) {
+                            Label(t(link.englishLabel, link.russianLabel), systemImage: "arrow.up.right")
+                        }
+                        .font(Typography.body)
+                    }
                 }
             }
         }
+    }
+
+    private var regularAccessPanel: some View {
+        regularPanel(
+            title: t("Access", "Доступ"),
+            subtitle: t(
+                "Manage approvals and API tokens on the web dashboard.",
+                "Управляй подтверждениями и API-токенами в веб-кабинете."
+            ),
+            systemImage: "lock.shield",
+            identifier: "settings-mcp-regular-access-panel"
+        ) {
+            VStack(alignment: .leading, spacing: Spacing.md) {
+                Text(t(
+                    "Each agent is approved by name on wai.computer and can be revoked any time.",
+                    "Каждый агент подтверждается по имени на wai.computer, и доступ можно отозвать в любой момент."
+                ))
+                .font(Typography.body)
+                .foregroundStyle(Palette.textPrimary)
+                .fixedSize(horizontal: false, vertical: true)
+
+                Link(destination: waiComputerWebURL) {
+                    Label(
+                        t("Manage API tokens on wai.computer", "Управление API-токенами на wai.computer"),
+                        systemImage: "safari"
+                    )
+                }
+                .font(Typography.body)
+                .accessibilityIdentifier("settings-mcp-manage-tokens")
+            }
+        }
+    }
+
+    private func regularPanel<Content: View>(
+        title: String,
+        subtitle: String?,
+        systemImage: String,
+        identifier: String,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        VStack(alignment: .leading, spacing: Spacing.md) {
+            HStack(alignment: .top, spacing: Spacing.md) {
+                Image(systemName: systemImage)
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(Palette.accent)
+                    .frame(width: 30, height: 30)
+                    .background(Palette.accentSubtle)
+                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .accessibilityHidden(true)
+
+                VStack(alignment: .leading, spacing: Spacing.xs) {
+                    Text(title)
+                        .font(Typography.headingLarge)
+                        .foregroundStyle(Palette.textPrimary)
+                    if let subtitle {
+                        Text(subtitle)
+                            .font(Typography.caption)
+                            .foregroundStyle(Palette.textSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            }
+
+            Divider()
+            content()
+        }
+        .padding(Spacing.lg)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+        .background(Color(uiColor: .secondarySystemGroupedBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .strokeBorder(Palette.border, lineWidth: 1)
+        )
+        .accessibilityIdentifier(identifier)
     }
 
     private func copy(_ value: String, field: String) {

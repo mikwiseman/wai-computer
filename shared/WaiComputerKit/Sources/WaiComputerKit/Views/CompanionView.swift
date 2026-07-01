@@ -139,6 +139,9 @@ public struct CompanionView: View {
     private let onOpenCitation: ((String, Int?) -> Void)?
     @Environment(\.locale) private var locale
     @Environment(\.companionAccentColor) private var companionAccentColor
+    #if os(iOS)
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    #endif
 
     @State private var chats: [CompanionConversation] = []
     @State private var activeChatId: String?
@@ -214,7 +217,7 @@ public struct CompanionView: View {
         .background(Color.primary.opacity(0.025))
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .task { await initialLoad() }
-        .onChange(of: initialChatId) { chatId in
+        .onChangeCompat(of: initialChatId) { _, chatId in
             guard let chatId else { return }
             Task { await loadChat(chatId) }
         }
@@ -266,16 +269,49 @@ public struct CompanionView: View {
             }
         }
         #else
+        iosContent
+        #endif
+    }
+
+    #if os(iOS)
+    @ViewBuilder
+    private var iosContent: some View {
+        if horizontalSizeClass == .regular {
+            regularIOSContent
+        } else {
+            compactIOSContent
+        }
+    }
+
+    private var regularIOSContent: some View {
+        HStack(spacing: 0) {
+            if showsConversationSwitcher && showChats {
+                chatList.frame(width: 280)
+                    .background(Color.primary.opacity(0.018))
+                    .accessibilityIdentifier("wai-regular-thread-sidebar")
+                Color.primary.opacity(0.08)
+                    .frame(width: 1)
+            }
+            VStack(spacing: 0) {
+                messageList
+                composer
+            }
+        }
+        .accessibilityIdentifier("wai-regular-companion-layout")
+    }
+
+    private var compactIOSContent: some View {
         VStack(spacing: 0) {
             if showsConversationSwitcher && showChats {
-                chatList
+                chatList.frame(maxHeight: 220)
                 CompanionDivider()
             }
             messageList
             composer
         }
-        #endif
+        .accessibilityIdentifier("wai-compact-companion-layout")
     }
+    #endif
 
     private var header: some View {
         HStack(spacing: 12) {
@@ -346,8 +382,6 @@ public struct CompanionView: View {
         }
         #if os(macOS)
         .background(Color.primary.opacity(0.018))
-        #else
-        .frame(maxHeight: 220)
         #endif
     }
 
