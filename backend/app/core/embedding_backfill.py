@@ -92,11 +92,16 @@ async def backfill_missing_segment_embeddings(
     user_id: UUID | None = None,
     batch_size: int = 64,
     limit: int = 512,
+    deadline_seconds: float | None = None,
 ) -> EmbeddingBackfillResult:
     """Fill NULL segment embeddings in bounded batches.
 
     The repair key is ``embedding IS NULL``. Transcript text is passed only to
     OpenAI and is never written to logs, Sentry extras, or the admin response.
+
+    ``deadline_seconds`` bounds the run by wall clock so the Celery soft/hard
+    time limits never fire mid-run; progress is committed per batch, so an
+    early stop (or a kill) keeps everything embedded so far.
     """
     if batch_size < 1:
         raise ValueError("batch_size must be positive")
@@ -104,6 +109,9 @@ async def backfill_missing_segment_embeddings(
         raise ValueError("limit must be positive")
 
     started = time.perf_counter()
+    deadline = (
+        time.monotonic() + deadline_seconds if deadline_seconds is not None else None
+    )
     rows = (
         (
             await db.execute(
@@ -132,6 +140,15 @@ async def backfill_missing_segment_embeddings(
     batches = 0
     isolated_failures = 0
     for start in range(0, len(rows), batch_size):
+        if deadline is not None and time.monotonic() >= deadline:
+            logger.info(
+                "embedding backfill deadline reached scanned=%s filled=%s "
+                "unprocessed=%s",
+                scanned,
+                filled,
+                len(rows) - start,
+            )
+            break
         batch = rows[start : start + batch_size]
         texts = [_embedding_input_text(segment.content) for segment in batch]
         scanned += len(batch)
@@ -174,13 +191,17 @@ async def backfill_missing_segment_embeddings(
                     continue
                 segment.embedding = embedding
                 filled += 1
+            # Commit per batch: a later abort, deadline stop, or hard kill must
+            # not discard embeddings that already succeeded (a 960s hard kill
+            # used to throw away the entire run's work).
+            await db.commit()
             continue
 
         for segment, embedding in zip(batch, embeddings, strict=True):
             segment.embedding = embedding
             filled += 1
+        await db.commit()
 
-    await db.commit()
     remaining = await _remaining_candidate_count(db, user_id=user_id)
     logger.info(
         "embedding backfill completed scanned=%s filled=%s failed=%s remaining=%s "

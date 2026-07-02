@@ -5,10 +5,12 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock
 
+import fakeredis.aioredis
 import httpx
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core import transcription_guard
 from app.core.embedding_backfill import (
     EMBEDDING_BACKFILL_MAX_INPUT_CHARS,
     backfill_missing_segment_embeddings,
@@ -211,6 +213,82 @@ async def test_backfill_missing_segment_embeddings_aborts_systemic_provider_fail
 
 
 @pytest.mark.asyncio
+async def test_backfill_commits_per_batch_so_abort_keeps_earlier_progress(
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Prod 2026-06: the 960s hard time limit killed runs mid-flight and the
+    single end-of-run commit discarded every embedding already generated."""
+    user = User(email="embedding-backfill-commit@example.com", password_hash="x")
+    db_session.add(user)
+    await db_session.flush()
+    recording = Recording(user_id=user.id, title="Commit", type="meeting", status="ready")
+    db_session.add(recording)
+    await db_session.flush()
+    first = Segment(
+        recording_id=recording.id, content="first", start_ms=0, embedding=None
+    )
+    second = Segment(
+        recording_id=recording.id, content="second", start_ms=1000, embedding=None
+    )
+    db_session.add_all([first, second])
+    await db_session.commit()
+    first_id = first.id
+
+    calls = 0
+
+    async def fake_generate(texts: list[str], **_: object) -> list[list[float]]:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            return [[0.3] * 1536 for _ in texts]
+        raise httpx.TimeoutException("provider died between batches")
+
+    monkeypatch.setattr("app.core.embedding_backfill.generate_embeddings", fake_generate)
+
+    with pytest.raises(httpx.TimeoutException):
+        await backfill_missing_segment_embeddings(db_session, batch_size=1, limit=20)
+
+    # Roll back the aborted transaction; batch 1 must already be durable.
+    await db_session.rollback()
+    refreshed = await db_session.get(Segment, first_id)
+    assert refreshed is not None
+    assert refreshed.embedding is not None
+
+
+@pytest.mark.asyncio
+async def test_backfill_stops_at_deadline_and_reports_remaining(
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user = User(email="embedding-backfill-deadline@example.com", password_hash="x")
+    db_session.add(user)
+    await db_session.flush()
+    recording = Recording(user_id=user.id, title="Deadline", type="meeting", status="ready")
+    db_session.add(recording)
+    await db_session.flush()
+    db_session.add_all(
+        [
+            Segment(recording_id=recording.id, content="first", embedding=None),
+            Segment(recording_id=recording.id, content="second", embedding=None),
+        ]
+    )
+    await db_session.commit()
+
+    generate = AsyncMock(return_value=[[0.1] * 1536])
+    monkeypatch.setattr("app.core.embedding_backfill.generate_embeddings", generate)
+
+    result = await backfill_missing_segment_embeddings(
+        db_session, batch_size=10, limit=20, deadline_seconds=0.0
+    )
+
+    generate.assert_not_awaited()
+    assert result.scanned == 0
+    assert result.filled == 0
+    assert result.remaining == 2
+
+
+@pytest.mark.asyncio
 async def test_backfill_missing_segment_embeddings_can_be_user_scoped(
     db_session: AsyncSession,
     monkeypatch: pytest.MonkeyPatch,
@@ -245,3 +323,61 @@ async def test_backfill_missing_segment_embeddings_can_be_user_scoped(
     await db_session.refresh(other_segment)
     assert user_segment.embedding is not None
     assert other_segment.embedding is None
+
+
+@pytest.mark.asyncio
+async def test_quota_alert_dedup_fires_once_per_window() -> None:
+    """The 2026-06 quota outage was silent for 5 days; the backfill now sends
+    ONE ops alert per outage window, deduplicated in Redis across workers."""
+    from app.tasks.embedding_backfill import _quota_alert_first_in_window
+
+    client = fakeredis.aioredis.FakeRedis(decode_responses=True)
+    transcription_guard.set_redis_for_tests(client)
+    try:
+        assert await _quota_alert_first_in_window() is True
+        assert await _quota_alert_first_in_window() is False
+    finally:
+        transcription_guard.set_redis_for_tests(None)
+
+
+@pytest.mark.asyncio
+async def test_quota_alert_dedup_fails_open_when_redis_down() -> None:
+    from app.tasks.embedding_backfill import _quota_alert_first_in_window
+
+    class _BrokenRedis:
+        async def set(self, *args: object, **kwargs: object) -> bool:
+            raise ConnectionError("redis down")
+
+    transcription_guard.set_redis_for_tests(_BrokenRedis())  # type: ignore[arg-type]
+    try:
+        # Better a duplicate alert than a silent outage.
+        assert await _quota_alert_first_in_window() is True
+    finally:
+        transcription_guard.set_redis_for_tests(None)
+
+
+def test_quota_alert_sends_ops_notification_only_when_first(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import app.tasks.embedding_backfill as task_module
+
+    sent: list[str] = []
+    monkeypatch.setattr(
+        task_module,
+        "notify_ops",
+        lambda *, alert_code, message, extras=None, level="warning": sent.append(alert_code),
+    )
+
+    async def first() -> bool:
+        return True
+
+    async def repeat() -> bool:
+        return False
+
+    monkeypatch.setattr(task_module, "_quota_alert_first_in_window", first)
+    task_module._alert_quota_exhausted_once()
+    assert sent == ["openai_embedding_quota_exhausted"]
+
+    monkeypatch.setattr(task_module, "_quota_alert_first_in_window", repeat)
+    task_module._alert_quota_exhausted_once()
+    assert sent == ["openai_embedding_quota_exhausted"]

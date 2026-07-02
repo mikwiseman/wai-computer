@@ -9,11 +9,56 @@ from uuid import UUID
 from app.config import get_settings
 from app.core.embedding_backfill import backfill_missing_segment_embeddings as backfill_core
 from app.core.observability import fingerprint_text
-from app.core.retry_policy import is_retryable_exception
+from app.core.ops_alerts import notify_ops
+from app.core.retry_policy import is_openai_insufficient_quota, is_retryable_exception
 from app.db.session import get_db_context
 from app.tasks.celery_app import celery_app
 
 logger = logging.getLogger(__name__)
+
+# Stay under the 900s soft / 960s hard Celery limits with margin; progress is
+# committed per batch, so stopping early loses nothing.
+BACKFILL_DEADLINE_SECONDS = 840.0
+
+# One ops alert per quota outage window, deduplicated across worker processes.
+# The 2026-06 quota exhaustion ran silently for 5 days (31k Sentry errors) —
+# embedding coverage for new recordings degraded and nobody was told.
+QUOTA_ALERT_DEDUP_KEY = "ops:openai_embedding_quota_alert"
+QUOTA_ALERT_DEDUP_TTL_SECONDS = 21_600
+
+
+async def _quota_alert_first_in_window() -> bool:
+    from app.core.transcription_guard import get_redis
+
+    try:
+        return bool(
+            await get_redis().set(
+                QUOTA_ALERT_DEDUP_KEY,
+                "1",
+                nx=True,
+                ex=QUOTA_ALERT_DEDUP_TTL_SECONDS,
+            )
+        )
+    except Exception as exc:  # noqa: BLE001 - alert loudly when dedup store is down
+        logger.warning(
+            "embedding quota alert dedup unavailable error_type=%s",
+            type(exc).__name__,
+        )
+        return True
+
+
+def _alert_quota_exhausted_once() -> None:
+    if not asyncio.run(_quota_alert_first_in_window()):
+        return
+    notify_ops(
+        alert_code="openai_embedding_quota_exhausted",
+        message=(
+            "OpenAI embedding quota exhausted — segment embedding backfill is "
+            "failing, so semantic search coverage for new recordings degrades "
+            "until the quota recovers. Check platform.openai.com billing."
+        ),
+        level="error",
+    )
 
 
 async def _backfill_missing_segment_embeddings(
@@ -29,6 +74,7 @@ async def _backfill_missing_segment_embeddings(
             user_id=UUID(user_id) if user_id else None,
             batch_size=batch_size or settings.embedding_backfill_batch_size,
             limit=limit or settings.embedding_backfill_max_segments_per_run,
+            deadline_seconds=BACKFILL_DEADLINE_SECONDS,
         )
     return result.as_dict()
 
@@ -73,6 +119,8 @@ def backfill_missing_segment_embeddings(
         )
         return result
     except Exception as exc:
+        if is_openai_insufficient_quota(exc):
+            _alert_quota_exhausted_once()
         retry_count = int(getattr(self.request, "retries", 0) or 0)
         if is_retryable_exception(exc) and retry_count < int(self.max_retries or 0):
             logger.warning(
