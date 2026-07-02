@@ -81,3 +81,22 @@ def test_chat_completion_delta_text_reads_stream_chunk() -> None:
     }
 
     assert chat_completion_delta_text(event) == "Cleaned"
+
+
+def test_cerebras_client_bounds_timeout_and_retries(monkeypatch):
+    """SDK defaults are timeout=600s + 2 retries — a sick provider could pin
+    the single-slot summary worker ~30min per call. Keep each attempt bounded."""
+    import app.core.cerebras_chat as module
+
+    monkeypatch.setattr(module, "_cerebras_client", None)
+    monkeypatch.setattr(
+        module,
+        "get_settings",
+        lambda: type(
+            "S", (), {"cerebras_api_key": "sk-test", "cerebras_api_base_url": "https://api.cerebras.test/v1"}
+        )(),
+    )
+    client = module.get_cerebras_client()
+    assert client.timeout == module.CEREBRAS_REQUEST_TIMEOUT_SECONDS
+    assert client.max_retries == module.CEREBRAS_CLIENT_MAX_RETRIES
+    monkeypatch.setattr(module, "_cerebras_client", None)

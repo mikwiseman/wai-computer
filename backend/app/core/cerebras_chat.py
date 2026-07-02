@@ -14,6 +14,13 @@ from app.config import get_settings
 _cerebras_client: openai.AsyncOpenAI | None = None
 SchemaT = TypeVar("SchemaT", bound=BaseModel)
 
+# Cerebras completions normally finish in seconds; the OpenAI SDK defaults are
+# timeout=600s with 2 internal retries, so a sick provider could pin the
+# single-slot summary worker for ~30 minutes per call (and stack under Celery's
+# own retries). Bound each attempt and keep one transient retry.
+CEREBRAS_REQUEST_TIMEOUT_SECONDS = 120.0
+CEREBRAS_CLIENT_MAX_RETRIES = 1
+
 
 class CerebrasResponseError(RuntimeError):
     """Raised when Cerebras returns an unusable chat completion."""
@@ -27,6 +34,8 @@ def get_cerebras_client() -> openai.AsyncOpenAI:
         _cerebras_client = openai.AsyncOpenAI(
             api_key=settings.cerebras_api_key,
             base_url=settings.cerebras_api_base_url,
+            timeout=CEREBRAS_REQUEST_TIMEOUT_SECONDS,
+            max_retries=CEREBRAS_CLIENT_MAX_RETRIES,
         )
     return _cerebras_client
 
