@@ -166,6 +166,7 @@ final class DictationManager: ObservableObject {
 
     private var apiClient: APIClient?
     private var sessionConfigVault: RealtimeTranscriptionSessionConfigVault?
+    private var wakePrefetchObserver: NSObjectProtocol?
     private var canStartDictation: (() -> Bool)?
     private var canStartDictationReason: (() -> String)?
     private var cachedSettings: UserSettings?
@@ -289,7 +290,33 @@ final class DictationManager: ObservableObject {
         applyHotkeyAvailability()
         prefetchDictationSessionConfig(reason: "configure")
         refreshSettingsAndPrefetch(apiClient: apiClient, reason: "configure")
+        startWakePrefetchObserver()
         log.info("Dictation manager configured")
+    }
+
+    /// Re-arm the session-config vault when the Mac wakes from sleep. The idle
+    /// refresh loop intentionally stops after its bounded window (cost guard),
+    /// so the first dictation of the morning always paid a cold mint
+    /// (prefetchHit=false in first-token latency events). One prefetch per wake
+    /// restarts the same bounded window — no unbounded minting.
+    private func startWakePrefetchObserver() {
+        stopWakePrefetchObserver()
+        wakePrefetchObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didWakeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.prefetchDictationSessionConfig(reason: "system_wake")
+            }
+        }
+    }
+
+    private func stopWakePrefetchObserver() {
+        if let wakePrefetchObserver {
+            NSWorkspace.shared.notificationCenter.removeObserver(wakePrefetchObserver)
+        }
+        wakePrefetchObserver = nil
     }
 
     /// Called when user logs out
@@ -300,6 +327,7 @@ final class DictationManager: ObservableObject {
         applyHotkeyAvailability()
         Task { await cancelDictation() }
         apiClient = nil
+        stopWakePrefetchObserver()
         let vault = sessionConfigVault
         sessionConfigVault = nil
         sessionConfigPrefetchRefreshTask?.cancel()

@@ -66,8 +66,17 @@ public actor APIClient {
     public static let maxRecordingUploadSizeBytes = 200 * 1024 * 1024
 
     private let baseURL: URL
-    private var accessToken: String?
+    private var accessToken: String? {
+        didSet { accessTokenExpiry = accessToken.flatMap(Self.jwtExpiry(of:)) }
+    }
     private var refreshToken: String?
+    /// Decoded `exp` of the current access token. Lets requests refresh
+    /// PROACTIVELY instead of discovering expiry via a 401 round-trip — after
+    /// an idle night, that 401→refresh→retry dance added ~500ms to the
+    /// dictation hot path (first-token latency threshold events).
+    private var accessTokenExpiry: Date?
+    /// Refresh this many seconds before the token actually expires.
+    private static let proactiveRefreshSkew: TimeInterval = 60
     private let session: URLSession
 
     private let encoder: JSONEncoder
@@ -92,6 +101,7 @@ public actor APIClient {
     ) {
         self.baseURL = baseURL
         self.accessToken = accessToken
+        self.accessTokenExpiry = accessToken.flatMap(Self.jwtExpiry(of:))
 
         if let session {
             self.session = session
@@ -210,6 +220,28 @@ public actor APIClient {
     }
 
     // MARK: - Auto-refresh
+
+    /// Decode the `exp` claim of a JWT without verifying the signature — the
+    /// client only needs to know when its OWN token expires.
+    static func jwtExpiry(of token: String) -> Date? {
+        let parts = token.split(separator: ".")
+        guard parts.count >= 2 else { return nil }
+        var payload = String(parts[1])
+            .replacingOccurrences(of: "-", with: "+")
+            .replacingOccurrences(of: "_", with: "/")
+        while payload.count % 4 != 0 { payload += "=" }
+        guard let data = Data(base64Encoded: payload),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let exp = object["exp"] as? TimeInterval else {
+            return nil
+        }
+        return Date(timeIntervalSince1970: exp)
+    }
+
+    private func shouldProactivelyRefresh() -> Bool {
+        guard refreshToken != nil, let expiry = accessTokenExpiry else { return false }
+        return Date() >= expiry.addingTimeInterval(-Self.proactiveRefreshSkew)
+    }
 
     /// Attempt to refresh tokens. Coalesces concurrent calls — only one refresh in flight.
     /// Returns the new access token on success.
@@ -350,6 +382,19 @@ public actor APIClient {
         extras: [String: Any] = [:],
         perform: (URLRequest) async throws -> (Data, URLResponse)
     ) async throws -> (Data, HTTPURLResponse) {
+        // Refresh a (nearly) expired token BEFORE the call instead of paying a
+        // guaranteed 401 round-trip. Best-effort: on refresh failure, fall
+        // through — the regular 401 handling below stays authoritative.
+        if shouldProactivelyRefresh() {
+            if let refreshed = try? await autoRefresh() {
+                request.setValue("Bearer \(refreshed)", forHTTPHeaderField: "Authorization")
+                SentryHelper.addBreadcrumb(
+                    category: "auth",
+                    message: "token refreshed proactively",
+                    data: ["path": path]
+                )
+            }
+        }
         let data: Data
         let response: URLResponse
         Log.api.info("→ \(method) \(path)")

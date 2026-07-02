@@ -165,6 +165,96 @@ final class APIClientTests: XCTestCase {
         _ = try await client.listRecordings()
     }
 
+    /// Build an unsigned JWT whose payload carries the given `exp`.
+    private func jwt(exp: TimeInterval) -> String {
+        func b64url(_ object: [String: Any]) -> String {
+            let data = try! JSONSerialization.data(withJSONObject: object)
+            return data.base64EncodedString()
+                .replacingOccurrences(of: "+", with: "-")
+                .replacingOccurrences(of: "/", with: "_")
+                .replacingOccurrences(of: "=", with: "")
+        }
+        return "\(b64url(["alg": "HS256", "typ": "JWT"])).\(b64url(["sub": "user", "exp": exp])).sig"
+    }
+
+    func testJWTExpiryParsesExpClaim() {
+        let expiry = APIClient.jwtExpiry(of: jwt(exp: 1_900_000_000))
+        XCTAssertEqual(expiry, Date(timeIntervalSince1970: 1_900_000_000))
+        XCTAssertNil(APIClient.jwtExpiry(of: "opaque-token"))
+    }
+
+    /// After an idle night the access token is expired; discovering that via a
+    /// 401 on the dictation hot path costs an extra round-trip (~500ms observed
+    /// in prod first-token latency events). The client knows exp locally and
+    /// must refresh BEFORE the request.
+    func testExpiredTokenRefreshesProactivelyWithoutA401RoundTrip() async throws {
+        let client = makeClient()
+        await client.setAccessToken(jwt(exp: Date().timeIntervalSince1970 - 3600))
+        await client.setRefreshToken("refresh-token")
+
+        let pathsLock = NSLock()
+        var paths: [String] = []
+        var authHeaders: [String?] = []
+
+        MockURLProtocol.requestHandler = { request in
+            pathsLock.lock()
+            paths.append(request.url!.path)
+            authHeaders.append(request.value(forHTTPHeaderField: "Authorization"))
+            pathsLock.unlock()
+
+            if request.url!.path == "/api/auth/refresh" {
+                let response = HTTPURLResponse(
+                    url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil
+                )!
+                let payload = """
+                {"access_token":"fresh-access","refresh_token":"fresh-refresh","token_type":"bearer"}
+                """.data(using: .utf8)!
+                return (response, payload)
+            }
+            let response = HTTPURLResponse(
+                url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil
+            )!
+            let payload = """
+            {"results":[],"total":0}
+            """.data(using: .utf8)!
+            return (response, payload)
+        }
+
+        _ = try await client.fulltextSearch(query: "roadmap", limit: 10, offset: 0)
+
+        pathsLock.lock()
+        defer { pathsLock.unlock() }
+        XCTAssertEqual(paths, ["/api/auth/refresh", "/api/search/fts"])
+        XCTAssertEqual(authHeaders.last ?? nil, "Bearer fresh-access")
+    }
+
+    func testValidTokenSkipsProactiveRefresh() async throws {
+        let client = makeClient()
+        await client.setAccessToken(jwt(exp: Date().timeIntervalSince1970 + 3600))
+        await client.setRefreshToken("refresh-token")
+
+        let pathsLock = NSLock()
+        var paths: [String] = []
+        MockURLProtocol.requestHandler = { request in
+            pathsLock.lock()
+            paths.append(request.url!.path)
+            pathsLock.unlock()
+            let response = HTTPURLResponse(
+                url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil
+            )!
+            let payload = """
+            {"results":[],"total":0}
+            """.data(using: .utf8)!
+            return (response, payload)
+        }
+
+        _ = try await client.fulltextSearch(query: "roadmap", limit: 10, offset: 0)
+
+        pathsLock.lock()
+        defer { pathsLock.unlock() }
+        XCTAssertEqual(paths, ["/api/search/fts"])
+    }
+
     func testUnauthorizedResponseMapsToUnauthorizedError() async {
         let client = makeClient()
 
