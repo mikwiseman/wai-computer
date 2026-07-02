@@ -34,6 +34,18 @@ def test_summary_audio_generation_task_registered():
     assert "app.tasks.summary_audio_generation.generate_summary_audio" in celery_app.tasks
 
 
+def test_worker_proc_alive_timeout_covers_slow_child_boot():
+    """Prod 2026-07: recording-worker children were SIGKILLed with "Timed out
+    waiting for UP message" on every recycle — worker_process_init runs the
+    ECAPA voice-model preload (3-5s cold, far slower under swap) before the
+    child reports UP, and billiard's default timeout is 4s. The killed child's
+    claimed task then sat until a recovery sweep re-queued it (summary
+    queue-wait p95 hit 509s)."""
+    from app.tasks.celery_app import celery_app
+
+    assert celery_app.conf.worker_proc_alive_timeout >= 60
+
+
 def test_worker_runtime_uses_nullpool_api_keeps_pooling():
     """The Celery worker switches to NullPool (no connection survives a task's
     asyncio.run() loop → no cross-loop close → no MissingGreenlet). The default

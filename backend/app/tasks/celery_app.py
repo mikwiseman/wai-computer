@@ -134,6 +134,11 @@ celery_app.conf.update(
     worker_deduplicate_successful_tasks=True,
     result_expires=3600,
     worker_max_tasks_per_child=100,
+    # Forked pool children run worker_process_init before reporting UP, and the
+    # recording worker's ECAPA preload takes 3-5s cold (far longer under swap
+    # pressure). The billiard default of 4s SIGKILLed mid-boot children on every
+    # recycle, orphaning claimed tasks until the recovery sweeps re-queued them.
+    worker_proc_alive_timeout=120,
     # Explicit imports: autodiscover_tasks only finds modules literally
     # named `tasks.py`; our task modules live under `app.tasks.<name>`.
     imports=[
