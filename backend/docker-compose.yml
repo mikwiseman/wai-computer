@@ -189,6 +189,11 @@ services:
   caddy:
     image: caddy:2-alpine
     container_name: waicomputer-caddy
+    # Caddy runs as PID 1 and never reaps orphaned children; without an init
+    # process, every healthcheck that Docker kills mid-flight leaks a zombie
+    # (ssl_client) until the container exhausts its process table (~4.5k) and
+    # can no longer fork. init: true puts tini in front to reap them.
+    init: true
     ports:
       - "80:80"
       - "443:443"
@@ -208,11 +213,15 @@ services:
       resources:
         limits:
           memory: 128M
+          pids: 256
     healthcheck:
+      # Must stay local-only: a Host:wai.computer request gets a 308 to https,
+      # which busybox wget follows out through the public edge proxy — TLS
+      # spawns an ssl_client helper and the check inherits edge/DNS flakiness.
       test:
         [
           "CMD-SHELL",
-          "wget -qO- --header='Host: wai.computer' http://127.0.0.1/health >/dev/null",
+          "wget -q -T 3 -O- http://127.0.0.1/health >/dev/null",
         ]
       interval: 30s
       timeout: 5s

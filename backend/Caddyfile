@@ -1,5 +1,12 @@
-www.wai.computer {
-    redir https://wai.computer{uri} permanent
+# No www site block: www.wai.computer has no DNS record, so ACME validation can
+# never succeed — Let's Encrypt paused the account for that hostname after
+# repeated failures. Re-add only after creating the DNS record at the edge.
+
+# Local-only health endpoint for the Docker healthcheck: plain HTTP on the
+# container loopback, no TLS handshake and no round-trip through the public
+# edge proxy.
+http://127.0.0.1 {
+    respond /health "ok" 200
 }
 
 wai.computer {
