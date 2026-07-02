@@ -919,6 +919,142 @@ async def test_realtime_stream_records_provider_close_after_close_stream_as_succ
     assert usage_events[-1]["error_type"] is None
 
 
+class DisconnectRaceProvider:
+    """Provider whose read loop only fails once WE close it — reproduces the
+    provider-close reaction to an abrupt client hang-up."""
+
+    def __init__(self) -> None:
+        self.sent: list[bytes | str] = []
+        self.closed = False
+        self._closed_event = asyncio.Event()
+
+    async def send(self, payload: bytes | str) -> None:
+        self.sent.append(payload)
+
+    async def close(self) -> None:
+        self.closed = True
+        self._closed_event.set()
+
+    def __aiter__(self):
+        return self
+
+    async def __anext__(self) -> bytes | str:
+        await self._closed_event.wait()
+        raise ConnectionClosedError(None, None)
+
+
+@pytest.mark.asyncio
+async def test_realtime_stream_client_abandon_is_not_recorded_as_failure():
+    """Abrupt client disconnect (app killed, network drop, no CloseStream):
+    upstream closes the provider, downstream's read races into
+    ConnectionClosed. That used to escape and mark the stream 'failed'
+    (22 of 49 'failed' streams in the 2026-06 window)."""
+    from app.api.routes import realtime_transcription as route
+
+    websocket = FakeWebSocket({"authorization": "Bearer proxy-token"})
+    provider = DisconnectRaceProvider()
+    usage_events: list[dict[str, object]] = []
+    websocket.queue_receive({"type": "websocket.receive", "bytes": b"pcm"})
+    websocket.queue_receive({"type": "websocket.disconnect"})
+
+    async def record_usage(**kwargs):
+        usage_events.append(kwargs)
+
+    with patch(
+        "app.api.routes.realtime_transcription.decode_realtime_proxy_token",
+        return_value=_claims(),
+    ), patch(
+        "app.api.routes.realtime_transcription.require_deepgram_api_key",
+        return_value="server-provider-key",
+    ), patch(
+        "app.api.routes.realtime_transcription.websockets.connect",
+        return_value=FakeProviderConnection(provider),
+    ), patch(
+        "app.api.routes.realtime_transcription.record_deepgram_usage_event_standalone",
+        new=record_usage,
+    ):
+        await route.stream_realtime_transcription(websocket)
+
+    assert provider.closed is True
+    assert websocket.json_payloads == []
+    assert usage_events
+    assert usage_events[-1]["status"] == "succeeded"
+    assert usage_events[-1]["error_type"] is None
+
+
+class PaymentRequiredConnection:
+    """Simulates websockets.connect rejected by Deepgram with HTTP 402."""
+
+    async def __aenter__(self):
+        error = RuntimeError("server rejected WebSocket connection: HTTP 402")
+        error.status_code = 402
+        raise error
+
+    async def __aexit__(self, exc_type, exc, tb) -> None:
+        return None
+
+
+@pytest.mark.asyncio
+async def test_realtime_stream_402_trips_provider_breaker():
+    """Deepgram credit exhaustion (2026-06-27: 9 streams failed with 402) must
+    open the circuit breaker so session mints fast-fail and ops get paged —
+    previously only the batch path fed the breaker."""
+    from app.api.routes import realtime_transcription as route
+    from app.core import transcription_guard as guard
+
+    websocket = FakeWebSocket({"authorization": "Bearer proxy-token"})
+    usage_events: list[dict[str, object]] = []
+
+    async def record_usage(**kwargs):
+        usage_events.append(kwargs)
+
+    with patch(
+        "app.api.routes.realtime_transcription.decode_realtime_proxy_token",
+        return_value=_claims(),
+    ), patch(
+        "app.api.routes.realtime_transcription.require_deepgram_api_key",
+        return_value="server-provider-key",
+    ), patch(
+        "app.api.routes.realtime_transcription.websockets.connect",
+        return_value=PaymentRequiredConnection(),
+    ), patch(
+        "app.api.routes.realtime_transcription.record_deepgram_usage_event_standalone",
+        new=record_usage,
+    ):
+        await route.stream_realtime_transcription(websocket)
+
+    assert await guard.provider_breaker_open() is True
+    assert usage_events
+    assert usage_events[-1]["status"] == "failed"
+    assert usage_events[-1]["provider_status_code"] == 402
+
+
+@pytest.mark.asyncio
+async def test_realtime_stream_success_resets_provider_breaker_streak():
+    from app.api.routes import realtime_transcription as route
+    from app.core import transcription_guard as guard
+
+    await guard.record_provider_result(success=False)
+    assert await guard.get_redis().exists("dg:breaker:fails") == 1
+
+    websocket = FakeWebSocket({"authorization": "Bearer proxy-token"})
+    provider = FakeProvider(messages=['{"type":"Results"}'])
+
+    with patch(
+        "app.api.routes.realtime_transcription.decode_realtime_proxy_token",
+        return_value=_claims(),
+    ), patch(
+        "app.api.routes.realtime_transcription.require_deepgram_api_key",
+        return_value="server-provider-key",
+    ), patch(
+        "app.api.routes.realtime_transcription.websockets.connect",
+        return_value=FakeProviderConnection(provider),
+    ):
+        await route.stream_realtime_transcription(websocket)
+
+    assert await guard.get_redis().exists("dg:breaker:fails") == 0
+
+
 def test_websockets_header_kwarg_supports_newer_additional_headers(monkeypatch):
     from app.api.routes import realtime_transcription as route
 
@@ -941,7 +1077,7 @@ async def test_client_to_provider_forwards_audio_and_control_messages():
     websocket.queue_receive({"type": "lifespan.noop"})
     websocket.queue_receive({"type": "websocket.disconnect"})
 
-    await route._client_to_provider(websocket, provider, asyncio.Event())
+    await route._client_to_provider(websocket, provider, asyncio.Event(), asyncio.Event())
 
     assert provider.sent == [b"pcm", '{"type":"KeepAlive"}']
     assert provider.closed is True
@@ -954,7 +1090,7 @@ async def test_provider_to_client_forwards_binary_and_text_messages():
     websocket = FakeWebSocket()
     provider = FakeProvider(messages=[b"binary", "text"])
 
-    await route._provider_to_client(websocket, provider, asyncio.Event())
+    await route._provider_to_client(websocket, provider, asyncio.Event(), asyncio.Event())
 
     assert websocket.sent_bytes == [b"binary"]
     assert websocket.sent_text == ["text"]

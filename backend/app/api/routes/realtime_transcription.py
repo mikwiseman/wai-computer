@@ -38,6 +38,7 @@ from app.core.transcription_guard import (
     check_minutes_budget,
     provider_breaker_open,
     record_minutes,
+    record_provider_result,
     register_mint,
     release_stream_slot,
     transcription_halted,
@@ -698,11 +699,12 @@ async def stream_realtime_transcription(websocket: WebSocket) -> None:
         ) as provider:
             provider_opened = True
             close_stream_sent = asyncio.Event()
+            client_gone = asyncio.Event()
             upstream = asyncio.create_task(
-                _client_to_provider(websocket, provider, close_stream_sent)
+                _client_to_provider(websocket, provider, close_stream_sent, client_gone)
             )
             downstream = asyncio.create_task(
-                _provider_to_client(websocket, provider, close_stream_sent)
+                _provider_to_client(websocket, provider, close_stream_sent, client_gone)
             )
             done, pending = await asyncio.wait(
                 {upstream, downstream},
@@ -794,6 +796,22 @@ async def stream_realtime_transcription(websocket: WebSocket) -> None:
         stream_status = "failed"
         stream_error_type = type(exc).__name__
         stream_provider_status_code = _provider_exception_status_code(exc)
+        # Feed the circuit breaker for provider-side failures: a refused
+        # handshake (Deepgram 402 payment / 401 auth / outage) must trip the
+        # breaker and page ops. The 2026-06-27 credits exhaustion failed 9
+        # streams here while the breaker — fed only by the batch path — stayed
+        # closed and nobody was alerted. Mid-stream anomalies without a status
+        # code stay out of the streak: they can be client-side.
+        if not provider_opened or stream_provider_status_code is not None:
+            try:
+                await record_provider_result(
+                    success=False, status_code=stream_provider_status_code
+                )
+            except Exception as guard_exc:  # noqa: BLE001 - guard must not break close-out
+                logger.warning(
+                    "realtime breaker feed failed error_type=%s",
+                    type(guard_exc).__name__,
+                )
         logger.warning(
             "deepgram realtime proxy failed error_type=%s purpose=%s",
             type(exc).__name__,
@@ -824,6 +842,14 @@ async def stream_realtime_transcription(websocket: WebSocket) -> None:
             },
         )
     else:
+        if provider_opened:
+            try:
+                await record_provider_result(success=True)
+            except Exception as guard_exc:  # noqa: BLE001 - guard must not break close-out
+                logger.warning(
+                    "realtime breaker feed failed error_type=%s",
+                    type(guard_exc).__name__,
+                )
         await _close_websocket_with_telemetry(
             websocket,
             code=1000,
@@ -886,12 +912,14 @@ async def _client_to_provider(
     websocket: WebSocket,
     provider,
     close_stream_sent_event: asyncio.Event,
+    client_gone_event: asyncio.Event,
 ) -> ClientToProviderExit:
     close_stream_sent = False
     while True:
         message = await websocket.receive()
         message_type = message.get("type")
         if message_type == "websocket.disconnect":
+            client_gone_event.set()
             if close_stream_sent:
                 return PROVIDER_FINALIZING
             await provider.close()
@@ -913,6 +941,7 @@ async def _provider_to_client(
     websocket: WebSocket,
     provider,
     close_stream_sent_event: asyncio.Event,
+    client_gone_event: asyncio.Event,
 ) -> ProviderToClientExit:
     try:
         async for message in provider:
@@ -936,6 +965,17 @@ async def _provider_to_client(
                 data={"provider": "deepgram"},
             )
             return PROVIDER_CLOSED_AFTER_CLOSE_STREAM
+        if client_gone_event.is_set():
+            # The upstream bridge closed the provider because the client hung
+            # up; racing that close used to escape here and record a routine
+            # abandon as a failed stream (22 of the 49 "failed" streams in the
+            # 2026-06 window were this).
+            add_sentry_breadcrumb(
+                category="transcription.stream",
+                message="provider closed after client disconnect",
+                data={"provider": "deepgram"},
+            )
+            return CLIENT_DISCONNECTED
         raise
     return PROVIDER_COMPLETED
 
