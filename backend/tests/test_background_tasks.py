@@ -413,6 +413,7 @@ async def test_embedding_backfill_async_wrapper_uses_db_context_and_defaults(
         user_id=UUID("00000000-0000-0000-0000-000000000011"),
         batch_size=12,
         limit=34,
+        deadline_seconds=embedding_task_module.BACKFILL_DEADLINE_SECONDS,
     )
 
 
