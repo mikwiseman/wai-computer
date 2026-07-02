@@ -1111,3 +1111,36 @@ async def test_invoice_events_ignore_missing_or_unknown_subscriptions(db_session
 
     invoices = (await db_session.execute(select(Invoice))).scalars().all()
     assert invoices == []
+
+
+@pytest.mark.asyncio
+async def test_apply_stripe_event_persists_decimal_bearing_payload(db_session):
+    """Prod 2026-06-26: the Stripe SDK deserializes tax/percentage fields as
+    Decimal; the JSONB default encoder raised TypeError and invoice.paid
+    webhooks 500ed. The engine json_serializer now stringifies them."""
+    from decimal import Decimal
+
+    from app.models.billing import BillingEvent
+
+    event = ProviderEvent(
+        type="invoice.paid",
+        subscription_id_provider=None,
+        customer_id_provider=None,
+        status=None,
+        raw={
+            "type": "invoice.paid",
+            "data": {
+                "object": {
+                    "id": "in_decimal",
+                    "total_tax_amounts": [{"effective_percent": Decimal("21.0")}],
+                }
+            },
+        },
+    )
+
+    await apply_stripe_event(db_session, event)
+
+    stored = (
+        (await db_session.execute(select(BillingEvent))).scalars().all()
+    )
+    assert any(row.type == "stripe.invoice.paid" for row in stored)

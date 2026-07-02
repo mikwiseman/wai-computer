@@ -122,11 +122,16 @@ async def db_session() -> AsyncGenerator[AsyncSession, None]:
         await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
         await conn.execute(text(f'CREATE SCHEMA "{schema_name}"'))
 
+    from app.db.session import _json_serializer
+
     engine = create_async_engine(
         TEST_DATABASE_URL,
         echo=False,
         poolclass=NullPool,
         connect_args={"server_settings": {"search_path": f"{schema_name},public"}},
+        # Mirror the production engine's JSON serializer so tests exercise the
+        # same JSONB encoding behaviour (Decimal-bearing payloads etc.).
+        json_serializer=_json_serializer,
     )
 
     async with engine.begin() as conn:

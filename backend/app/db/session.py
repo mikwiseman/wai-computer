@@ -1,6 +1,7 @@
 """Database session configuration."""
 
 import asyncio
+import json
 import os
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
@@ -11,6 +12,14 @@ from sqlalchemy.pool import NullPool
 from app.config import get_settings
 
 settings = get_settings()
+
+
+def _json_serializer(value: object) -> str:
+    """Serialize JSON/JSONB column values, stringifying types the stdlib
+    encoder rejects. External payloads stored for audit (e.g. Stripe events)
+    carry Decimal fields; the default encoder raised TypeError and failed the
+    whole request — invoice.paid webhooks 500ed in prod (2026-06-26)."""
+    return json.dumps(value, ensure_ascii=False, default=str)
 
 _engine = None
 _session_maker = None
@@ -43,6 +52,7 @@ def _create_engine():
             settings.database_url,
             echo=settings.debug,
             poolclass=NullPool,
+            json_serializer=_json_serializer,
         )
     return create_async_engine(
         settings.database_url,
@@ -51,6 +61,7 @@ def _create_engine():
         pool_size=4,
         max_overflow=2,
         pool_recycle=1800,
+        json_serializer=_json_serializer,
     )
 
 
