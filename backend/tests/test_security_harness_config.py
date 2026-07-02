@@ -49,7 +49,10 @@ def test_celery_worker_runs_voice_identification_in_isolated_single_task_worker(
     assert "--queues=recording" in recording_worker_service["command"]
     assert "-B" not in recording_worker_service["command"]
     assert worker_service["deploy"]["resources"]["limits"]["memory"] == "768M"
-    assert recording_worker_service["deploy"]["resources"]["limits"]["memory"] == "1536M"
+    # 1536M -> 1280M (2026-07-02): funds the db bump to 768M after postgres
+    # crashed into recovery mode under host memory pressure; children recycle
+    # at --max-memory-per-child=900M so the worker never nears this limit.
+    assert recording_worker_service["deploy"]["resources"]["limits"]["memory"] == "1280M"
 
 
 def test_summary_generation_runs_in_dedicated_non_voice_worker():
