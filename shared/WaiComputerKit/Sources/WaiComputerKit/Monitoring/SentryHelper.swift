@@ -134,8 +134,31 @@ public enum SentryHelper {
                     extras: mergedExtras
                 )
             case .networkError(let underlying):
+                // Same downgrade as the unwrapped-URLError path below: the
+                // auth-retry core wraps URLSession errors in
+                // APIError.networkError BEFORE reporting, so cancelled polls
+                // (-999 on every SwiftUI task cancellation) flooded Sentry
+                // through this branch (182 events on GET /recordings/{id}).
+                if underlying is CancellationError {
+                    addBreadcrumb(
+                        category: "api",
+                        message: "request cancelled",
+                        level: .warning,
+                        data: mergedExtras
+                    )
+                    return
+                }
                 if let urlError = underlying as? URLError {
                     mergedExtras["urlErrorCode"] = urlError.code.rawValue
+                    if urlError.code == .cancelled || urlError.code == .timedOut {
+                        addBreadcrumb(
+                            category: "api",
+                            message: "request \(urlError.code == .cancelled ? "cancelled" : "timed out")",
+                            level: .warning,
+                            data: mergedExtras
+                        )
+                        return
+                    }
                 }
                 captureErrorOnce(
                     apiError,
