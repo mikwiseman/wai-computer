@@ -10,7 +10,10 @@ DMG_VOLUME_NAME=${MACOS_DMG_VOLUME_NAME:-"${APP_NAME} Installer"}
 APP_ICON_PATH="$ROOT_DIR/assets/app-icon-1024.png"
 DEFAULT_DMG_BACKGROUND_BASE="$ROOT_DIR/macos/WaiComputer/Packaging/dmg-background-base.png"
 TEAM_ID=${MACOS_TEAM_ID:-<apple-team-id>}
-SIGNING_IDENTITY=${MACOS_SIGNING_IDENTITY:-"Developer ID Application: WaiWai, LLC (<apple-team-id>)"}
+# Interpolate the team into the default identity — the previous literal
+# "(<apple-team-id>)" placeholder made xcodebuild fail with "No certificate
+# for team ... matching" whenever MACOS_SIGNING_IDENTITY wasn't also set.
+SIGNING_IDENTITY=${MACOS_SIGNING_IDENTITY:-"Developer ID Application: WaiWai, LLC (${TEAM_ID})"}
 RELEASE_ROOT=${MACOS_RELEASE_ROOT:-"$ROOT_DIR/artifacts/releases/macos"}
 SPARKLE_DOWNLOAD_BASE_URL=${MACOS_SPARKLE_DOWNLOAD_BASE_URL:-"https://wai.computer/releases/macos"}
 SPARKLE_FEED_URL=${MACOS_SPARKLE_FEED_URL:-"${SPARKLE_DOWNLOAD_BASE_URL}/appcast.xml"}
