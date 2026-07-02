@@ -631,6 +631,68 @@ async def test_canonicalize_people_names_uses_llm_and_cleans_output():
     assert out == ["Коля", "Лёша"]
 
 
+def _length_truncated_response() -> MagicMock:
+    """A completion cut off by max_completion_tokens (finish_reason=length)."""
+    response = MagicMock()
+    response.model = "gpt-oss-120b"
+    response.choices = [
+        SimpleNamespace(finish_reason="length", message=SimpleNamespace(content="{"))
+    ]
+    return response
+
+
+async def test_canonicalize_people_names_retries_length_with_bigger_budget():
+    """Prod 2026-07: reasoning tokens burned the 512-token budget and the whole
+    summary failed with finish_reason=length. One bounded retry with more room."""
+    from app.core.summarizer import (
+        CANONICALIZATION_MAX_COMPLETION_TOKENS,
+        CANONICALIZATION_RETRY_MAX_COMPLETION_TOKENS,
+        _canonicalize_people_names,
+        _PeopleSchema,
+    )
+
+    ok = _parsed_response(_PeopleSchema(people=["Коля", "Лёша"]))
+    mock_client = MagicMock()
+    mock_client.chat.completions.create = AsyncMock(
+        side_effect=[_length_truncated_response(), ok]
+    )
+    with patch("app.core.summarizer.get_cerebras_client", return_value=mock_client):
+        out = await _canonicalize_people_names(["Коля", "Колей", "Лёша", "Леша"], language="ru")
+
+    assert out == ["Коля", "Лёша"]
+    budgets = [
+        call.kwargs["max_completion_tokens"]
+        for call in mock_client.chat.completions.create.await_args_list
+    ]
+    assert budgets == [
+        CANONICALIZATION_MAX_COMPLETION_TOKENS,
+        CANONICALIZATION_RETRY_MAX_COMPLETION_TOKENS,
+    ]
+
+
+async def test_canonicalize_people_names_degrades_to_deterministic_dedup_on_failure():
+    """A cosmetic name-dedup pass must never fail the whole summary: on
+    persistent LLM failure the deterministic label-stripped dedup is kept and
+    the error goes to Sentry."""
+    from app.core.summarizer import _canonicalize_people_names
+
+    mock_client = MagicMock()
+    mock_client.chat.completions.create = AsyncMock(
+        return_value=_length_truncated_response()
+    )
+    captured: list[BaseException] = []
+    with patch("app.core.summarizer.get_cerebras_client", return_value=mock_client), \
+         patch("app.core.summarizer.capture_sentry_exception", captured.append):
+        out = await _canonicalize_people_names(
+            ["Коля", "Колей", "speaker_0", "Коля"], language="ru"
+        )
+
+    # Deterministic cleanup still applied: labels stripped, exact dupes dropped.
+    assert out == ["Коля", "Колей"]
+    assert mock_client.chat.completions.create.await_count == 2
+    assert len(captured) == 1
+
+
 def test_resolve_highlight_cites_source_segment():
     from app.core.summarizer import resolve_highlight_timestamps
 

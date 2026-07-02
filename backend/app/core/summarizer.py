@@ -397,6 +397,13 @@ Names:
 """
 
 
+# gpt-oss reasoning tokens count against max_completion_tokens even at
+# reasoning_effort="low"; 512 starved the budget on 20-30 name lists and the
+# truncated JSON failed whole summaries with finish_reason=length (prod 2026-07).
+CANONICALIZATION_MAX_COMPLETION_TOKENS = 2048
+CANONICALIZATION_RETRY_MAX_COMPLETION_TOKENS = 4096
+
+
 async def _canonicalize_people_names(names: list[str], *, language: str) -> list[str]:
     """Collapse Russian case-forms/short-forms/diminutives of the same person into a
     single canonical nominative entry and drop non-name placeholders.
@@ -404,29 +411,46 @@ async def _canonicalize_people_names(names: list[str], *, language: str) -> list
     Used after the map-reduce merge, where per-chunk canonicalization can't dedupe
     people across chunks. Operates on the (clean, complete) merged union — not the
     reduce prose — so diarization speaker labels are never re-introduced.
+
+    This is a cosmetic enrichment of one field: if the LLM pass ultimately fails,
+    the summary keeps the deterministic label-stripped dedup (possibly with
+    grammatical-case duplicates) instead of failing outright — captured to Sentry,
+    never silent.
     """
     cleaned = _dedup_strings(_strip_speaker_labels(names), cap=30)
     if len(cleaned) < 2:
         return cleaned
     client = get_cerebras_client()
-    try:
+
+    async def _attempt(max_completion_tokens: int) -> list[str]:
         response = await client.chat.completions.create(
             model=settings.cerebras_llm_model,
             messages=_summary_messages(PEOPLE_CANONICALIZATION_INSTRUCTIONS, "\n".join(cleaned)),
             response_format=strict_json_response_format(_PeopleSchema, name="people_canon"),
             reasoning_effort="low",
-            max_completion_tokens=512,
+            max_completion_tokens=max_completion_tokens,
         )
-    except Exception as exc:  # noqa: BLE001 — capture for breadcrumbs then re-raise
-        capture_sentry_exception(exc)
-        raise SummarizationError(f"People canonicalization failed: {exc}") from exc
-    try:
         parsed = chat_completion_parsed(
             response, _PeopleSchema, operation="People canonicalization"
         )
-    except CerebrasResponseError as exc:
-        raise SummarizationError(f"People canonicalization failed: {exc}") from exc
-    return _dedup_strings(_strip_speaker_labels(parsed.people), cap=30)
+        return _dedup_strings(_strip_speaker_labels(parsed.people), cap=30)
+
+    try:
+        try:
+            return await _attempt(CANONICALIZATION_MAX_COMPLETION_TOKENS)
+        except CerebrasResponseError as exc:
+            if "length" not in str(exc):
+                raise
+            return await _attempt(CANONICALIZATION_RETRY_MAX_COMPLETION_TOKENS)
+    except Exception as exc:  # noqa: BLE001 — degrade loudly, never fail the summary
+        capture_sentry_exception(exc)
+        logger.warning(
+            "people canonicalization degraded to deterministic dedup "
+            "names=%s error_type=%s",
+            len(cleaned),
+            type(exc).__name__,
+        )
+        return cleaned
 
 
 async def _map_reduce_summarize(
