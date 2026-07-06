@@ -431,6 +431,7 @@ class MacRecordingViewModel: ObservableObject {
             // and bail so the phase stays idle.
             guard activeStartGeneration == startGeneration else {
                 audioLog.info("Abandoning superseded recording start")
+                tearDownConversationAutoStop()
                 await capture.stopRecording()
                 return
             }

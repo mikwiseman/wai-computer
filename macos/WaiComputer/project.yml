@@ -75,6 +75,9 @@ targets:
       - path: WaiComputer/Features/Dictation/GlobalHotkeyManager.swift
       - path: WaiComputer/Features/Settings/DictationSettingsCopy.swift
       - path: WaiComputer/Features/Recording/SystemAudioWarningPolicy.swift
+      - path: WaiComputer/Features/Recording/RecordingAutoStopSettings.swift
+      - path: WaiComputer/Features/Recording/MicrophoneUsageWatcher.swift
+      - path: WaiComputer/Features/Recording/MacRecordingAutoStopNotifier.swift
       - path: WaiComputer/Features/Content/MacContentFeedViewModel.swift
       - path: WaiComputer/Features/Recording/MacRecordingViewModel.swift
       - path: WaiComputer/Features/Library/MacRecordingDetailViewModel.swift

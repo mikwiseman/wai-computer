@@ -19,6 +19,7 @@
 		1A4F88F3C0A22ED62ADA1780 /* AppVersionInfoTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C1DC9D08ED094EA1B8216F1 /* AppVersionInfoTests.swift */; };
 		1AB91F2E353A45E92FBB3354 /* MacContentFeedViewModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 243A0A3BCE7F9A63AD87EB1B /* MacContentFeedViewModelTests.swift */; };
 		1B347B30A8A434DDB0805C1A /* DesignSystem.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D7CBD0DF428DBF6BC03ECA0 /* DesignSystem.swift */; };
+		1BF05FF8944B79038C8A8490 /* RecordingAutoStopSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C5A25958317B37D86EE82C9 /* RecordingAutoStopSettings.swift */; };
 		1E7A16239D816318A2D9F3F0 /* OnboardingLanguagesSlide.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2726E5985992C99A14EA708C /* OnboardingLanguagesSlide.swift */; };
 		1EE915616C229FC5175E37AC /* DictationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A7F640CE73D365119CD0E02 /* DictationManager.swift */; };
 		21EF38386C4A70438E902578 /* MacRecordingViewModelRealtimeFailureTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 409DADDFBAE806F6C6B225E6 /* MacRecordingViewModelRealtimeFailureTests.swift */; };
@@ -75,6 +76,7 @@
 		908000D73E621D62B2638F0E /* AppIcon.icon in Resources */ = {isa = PBXBuildFile; fileRef = 63673E10D195B18342C22A3A /* AppIcon.icon */; };
 		9270DF3835C1779D8BE98818 /* BetaChannelStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9BFE1773C36640DCD060CE4B /* BetaChannelStore.swift */; };
 		993E2B7420345FC3F5DA5CF0 /* WaiComputerUITestAppLauncher.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9771DF357F99B4824512ECA8 /* WaiComputerUITestAppLauncher.swift */; };
+		9A9E2EE08A9DC74674555BDA /* MacRecordingAutoStopNotifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0C0136AD57E2A2912B5D051D /* MacRecordingAutoStopNotifier.swift */; };
 		9CB1EDA2B545C45D111C2574 /* NavigationUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 44103A255DC3F06F6F53A9CF /* NavigationUITests.swift */; };
 		9E66B6FB0CC1C5A0A5394C77 /* MacSelectionCommands.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8F537C39519FD9EA4AFA763 /* MacSelectionCommands.swift */; };
 		9FBAB99C8DBEE0A314C6944D /* AppLanguagePicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = F64605678EEFC8F7DE615F3F /* AppLanguagePicker.swift */; };
@@ -98,6 +100,7 @@
 		BDAD47F58A5228D925DEEFFA /* OnboardingPage.swift in Sources */ = {isa = PBXBuildFile; fileRef = B18EF2DEDAC569F0D3E66FDB /* OnboardingPage.swift */; };
 		C0861985916B2F16D1BC9952 /* MacOnboardingDefaultsSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = 58B29B6DD4508D4FFF0EE604 /* MacOnboardingDefaultsSnapshot.swift */; };
 		C659C3F8862C032EE9C71662 /* DictationStartupAudioBuffer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A0125EA16CB215F68025382 /* DictationStartupAudioBuffer.swift */; };
+		C8149DD58CDBBA1094089B60 /* MicrophoneUsageWatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = 60F93FA25F08F5A271435727 /* MicrophoneUsageWatcher.swift */; };
 		C9E5627567722FF9925C20BF /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D40C2DC45228A9EEA46C9647 /* OnboardingView.swift */; };
 		CC3DD86A54875FE2C9B60418 /* DictationOverlayPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 803E7E8D86E717C36B809FE4 /* DictationOverlayPanel.swift */; };
 		CC9651D914CA0B1A697A0B83 /* MacItemDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0DF59D5D9618FFF74F46DF0 /* MacItemDetailView.swift */; };
@@ -758,13 +761,16 @@
 				BBE8C20EE2EE668EC5EF1A70 /* MacMainLayoutMetricsTests.swift in Sources */,
 				62BE9ECCF6B35690907E373B /* MacOnboardingDefaultsSnapshot.swift in Sources */,
 				EBB572D1008289D661D97E09 /* MacOnboardingDefaultsSnapshotTests.swift in Sources */,
+				9A9E2EE08A9DC74674555BDA /* MacRecordingAutoStopNotifier.swift in Sources */,
 				56D8EE11395781D2314326CA /* MacRecordingDetailViewModel.swift in Sources */,
 				48A223F36F6D51274C0EA4DF /* MacRecordingDetailViewModelTests.swift in Sources */,
 				A2DC4C0A1C7319DB52B2D2D8 /* MacRecordingViewModel.swift in Sources */,
 				21EF38386C4A70438E902578 /* MacRecordingViewModelRealtimeFailureTests.swift in Sources */,
 				5E4C93E132985A1AADECC243 /* MacTestingSupport.swift in Sources */,
 				F423AE5C768A34AE805AEED4 /* MacThemePreferencesTests.swift in Sources */,
+				C8149DD58CDBBA1094089B60 /* MicrophoneUsageWatcher.swift in Sources */,
 				16E95F20E298B1C77005D98E /* OnboardingL10n.swift in Sources */,
+				1BF05FF8944B79038C8A8490 /* RecordingAutoStopSettings.swift in Sources */,
 				E35B8D7C1FDB761C888E6A9E /* SystemAudioWarningPolicy.swift in Sources */,
 				FCD45F381A47680297CE1456 /* SystemAudioWarningPolicyTests.swift in Sources */,
 			);
