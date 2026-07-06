@@ -324,7 +324,7 @@ struct MacMainView: View {
             }
             .padding(Spacing.lg)
             .background(.ultraThinMaterial)
-            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .clipShape(RoundedRectangle(cornerRadius: Radius.md))
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
             .padding(.bottom, Spacing.xl)
         }
@@ -1659,7 +1659,7 @@ private struct LibraryBulkOperationBanner: View {
         .padding(.horizontal, Spacing.md)
         .padding(.vertical, Spacing.sm)
         .background(Palette.surfaceSubtle)
-        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .clipShape(RoundedRectangle(cornerRadius: Radius.md))
         .accessibilityIdentifier("library-bulk-operation-banner")
     }
 
@@ -1694,27 +1694,34 @@ private struct InlineLibraryErrorBanner: View {
     var body: some View {
         HStack(spacing: Spacing.sm) {
             Image(systemName: "wifi.exclamationmark")
-                .foregroundStyle(Color.black)
+                .foregroundStyle(Palette.warning)
 
             Text(message)
                 .font(Typography.bodySmall)
-                .foregroundStyle(Color.black)
+                .foregroundStyle(Palette.textPrimary)
                 .lineLimit(2)
 
             Spacer(minLength: Spacing.md)
 
             Button(action: onDismiss) {
                 Image(systemName: "xmark")
-                    .foregroundStyle(Color.black.opacity(0.85))
+                    .foregroundStyle(Palette.textSecondary)
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Dismiss library message")
         }
         .padding(.horizontal, Spacing.lg)
         .padding(.vertical, Spacing.sm)
-        .background(Color.orange)
-        .clipShape(RoundedRectangle(cornerRadius: 10))
-        .shadow(color: .black.opacity(0.18), radius: 10, y: 4)
+        // Adaptive warning surface (the old solid orange + black text broke
+        // in dark mode): tinted panel + hairline, readable in both schemes.
+        .background(Palette.warning.opacity(0.14))
+        .background(.regularMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: Radius.lg))
+        .overlay(
+            RoundedRectangle(cornerRadius: Radius.lg)
+                .strokeBorder(Palette.warning.opacity(0.35), lineWidth: 1)
+        )
+        .shadow(color: .black.opacity(0.12), radius: 10, y: 4)
         .padding(.horizontal, Spacing.lg)
         .accessibilityIdentifier("library-inline-error-banner")
     }
@@ -2346,7 +2353,7 @@ private struct RecordingRecoveryNoticeBanner: View {
     var body: some View {
         HStack(alignment: .top, spacing: Spacing.sm) {
             Image(systemName: "checkmark.circle.fill")
-                .foregroundStyle(.green)
+                .foregroundStyle(Palette.success)
 
             Text(message)
                 .font(Typography.bodySmall)
@@ -2362,7 +2369,7 @@ private struct RecordingRecoveryNoticeBanner: View {
         .padding(.horizontal, Spacing.lg)
         .padding(.vertical, Spacing.md)
         .background(.ultraThinMaterial)
-        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .clipShape(RoundedRectangle(cornerRadius: Radius.md))
         .shadow(color: .black.opacity(0.18), radius: 10, y: 4)
         .accessibilityIdentifier("recording-recovery-banner")
     }

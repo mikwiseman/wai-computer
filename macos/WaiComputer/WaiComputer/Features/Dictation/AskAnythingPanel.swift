@@ -88,12 +88,17 @@ struct AskAnythingAnswerView: View {
             answerPane
         }
         .frame(width: 820, height: 440)
-        .background(
-            RoundedRectangle(cornerRadius: 24)
-                .fill(.regularMaterial)
-        )
+        .background {
+            // Liquid Glass panel on Tahoe; regular material below.
+            if #available(macOS 26.0, *) {
+                Color.clear.glassEffect(.regular, in: .rect(cornerRadius: Radius.xxl))
+            } else {
+                RoundedRectangle(cornerRadius: Radius.xxl)
+                    .fill(.regularMaterial)
+            }
+        }
         .overlay(
-            RoundedRectangle(cornerRadius: 24)
+            RoundedRectangle(cornerRadius: Radius.xxl)
                 .strokeBorder(.white.opacity(0.26), lineWidth: 0.7)
         )
     }
@@ -212,10 +217,10 @@ struct AskAnythingAnswerView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(
-            RoundedRectangle(cornerRadius: 12)
+            RoundedRectangle(cornerRadius: Radius.lg)
                 .fill(Color(nsColor: .textBackgroundColor).opacity(0.86))
         )
-        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .clipShape(RoundedRectangle(cornerRadius: Radius.lg))
         .padding(.horizontal, Spacing.xl)
         .padding(.bottom, Spacing.xl)
     }

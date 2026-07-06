@@ -647,11 +647,11 @@ private struct OnboardingPermissionSlide: View {
                 VStack(alignment: .leading, spacing: 22) {
                     VStack(alignment: .leading, spacing: 8) {
                         Text(t("Give WaiComputer permissions", "Разрешения для WaiComputer"))
-                            .font(.system(size: 32, weight: .bold))
+                            .font(Typography.displayLarge)
                             .foregroundStyle(Palette.textPrimary)
                             .fixedSize(horizontal: false, vertical: true)
                         Text(t("on this Mac", "на этом Mac"))
-                            .font(.system(size: 32, weight: .bold))
+                            .font(Typography.displayLarge)
                             .foregroundStyle(Palette.textPrimary)
                     }
 
@@ -698,7 +698,7 @@ private struct OnboardingPermissionSlide: View {
     private var permissionExplanationPanel: some View {
         VStack(alignment: .leading, spacing: 18) {
             ZStack {
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
                     .fill(Palette.accent.opacity(0.12))
                     .frame(width: 64, height: 64)
                 Image(systemName: permissionPanelIcon)
@@ -737,11 +737,11 @@ private struct OnboardingPermissionSlide: View {
         }
         .padding(22)
         .background(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
+            RoundedRectangle(cornerRadius: Radius.xl, style: .continuous)
                 .fill(Palette.surfaceSubtle)
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
+            RoundedRectangle(cornerRadius: Radius.xl, style: .continuous)
                 .strokeBorder(Palette.border, lineWidth: 1)
         )
     }
@@ -946,11 +946,11 @@ private struct PermissionRow: View {
         }
         .padding(16)
         .background(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
+            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
                 .fill(Color(NSColor.windowBackgroundColor))
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
+            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
                 .strokeBorder(Palette.border, lineWidth: 1)
         )
     }
@@ -961,7 +961,7 @@ private struct PermissionRow: View {
         case .granted:
             Image(systemName: "checkmark.circle.fill")
                 .font(.system(size: 22))
-                .foregroundStyle(.green)
+                .foregroundStyle(Palette.success)
         case .denied:
             if let primaryAction {
                 Button(action: primaryAction.run) {

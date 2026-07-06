@@ -136,7 +136,7 @@ struct MacSearchView: View {
             }
             .padding(Spacing.md)
             .background(Palette.surfaceSubtle)
-            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .clipShape(RoundedRectangle(cornerRadius: Radius.md))
             .accessibilityIdentifier("search-bar")
         }
         .frame(maxWidth: MacMainLayoutMetrics.searchContentMaxWidth, alignment: .leading)
@@ -306,7 +306,7 @@ struct UnifiedResultRow: View {
             .padding(.horizontal, Spacing.lg)
             .padding(.vertical, Spacing.md)
             .background(isHovered ? Palette.surfaceHover : Color.clear)
-            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

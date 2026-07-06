@@ -433,7 +433,7 @@ struct MacInboxView: View {
                 .foregroundStyle(Palette.accent)
                 .frame(width: 60, height: 60)
                 .background(Palette.accentSubtle)
-                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             VStack(spacing: Spacing.xxs) {
                 Text(scopedFolder?.name ?? t("Folder", "Папка"))
                     .font(Typography.displaySmall)
@@ -501,7 +501,7 @@ struct MacInboxView: View {
                             .foregroundStyle(Palette.accent)
                             .frame(width: 42, height: 42)
                             .background(Palette.accentSubtle)
-                            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                            .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
                         VStack(alignment: .leading, spacing: Spacing.xxs) {
                             Text(createPaneTitle)
                                 .font(Typography.displaySmall)
@@ -856,7 +856,7 @@ private struct MacInboxBulkSelectionDetailView: View {
                 .foregroundStyle(Palette.accent)
                 .frame(width: 60, height: 60)
                 .background(Palette.accentSubtle)
-                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
 
             VStack(spacing: Spacing.xxs) {
                 Text(t("\(selectionCount) Items Selected", "Выбрано объектов: \(selectionCount)"))
@@ -955,10 +955,10 @@ private struct MacInboxFileComposer: View {
         .padding(Spacing.lg)
         .background(Palette.surfaceSubtle)
         .overlay(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
+            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
                 .stroke(Palette.border, lineWidth: 1)
         )
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
     }
 
     /// The drop zone doubles as the chooser button — one hero affordance
@@ -984,10 +984,10 @@ private struct MacInboxFileComposer: View {
         .accessibilityIdentifier("mac-inbox-upload-choose-button")
         .background(Palette.surfaceHover)
         .overlay(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
+            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
                 .stroke(Palette.border, style: StrokeStyle(lineWidth: 1, dash: [5, 4]))
         )
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
     }
 
     private func selectedFileRow(_ file: PendingInboxUploadFile) -> some View {
@@ -996,7 +996,7 @@ private struct MacInboxFileComposer: View {
                 .foregroundStyle(Palette.accent)
                 .frame(width: 28, height: 28)
                 .background(Palette.accent.opacity(0.12))
-                .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: Radius.sm, style: .continuous))
             VStack(alignment: .leading, spacing: 2) {
                 Text(file.filename)
                     .font(Typography.headingMedium)
@@ -1019,10 +1019,10 @@ private struct MacInboxFileComposer: View {
         .padding(Spacing.md)
         .background(Palette.surfaceHover)
         .overlay(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
+            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
                 .stroke(Palette.border, lineWidth: 1)
         )
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
         .accessibilityIdentifier("mac-inbox-selected-file")
     }
 
@@ -1085,7 +1085,7 @@ private struct MacInboxInlineActionComposer: View {
                 .foregroundStyle(accent)
                 .frame(width: 34, height: 34)
                 .background(accent.opacity(0.12))
-                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             VStack(alignment: .leading, spacing: Spacing.sm) {
                 VStack(alignment: .leading, spacing: Spacing.xxs) {
                     Text(title)
@@ -1111,10 +1111,10 @@ private struct MacInboxInlineActionComposer: View {
         .padding(Spacing.lg)
         .background(Palette.surfaceSubtle)
         .overlay(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
+            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
                 .stroke(Palette.border, lineWidth: 1)
         )
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
     }
 }
 
@@ -1145,7 +1145,7 @@ private struct MacInboxCreateAction: View {
                     .foregroundStyle(accent)
                     .frame(width: 32, height: 32)
                     .background(accent.opacity(0.12))
-                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
 
                 VStack(alignment: .leading, spacing: Spacing.xxs) {
                     Text(title)
@@ -1163,10 +1163,10 @@ private struct MacInboxCreateAction: View {
             .frame(maxWidth: .infinity, minHeight: 76, alignment: .topLeading)
             .background(isActive ? accent.opacity(0.12) : Palette.surfaceSubtle)
             .overlay(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
                     .stroke(isActive ? accent.opacity(0.42) : Palette.border, lineWidth: 1)
             )
-            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
         }
         .buttonStyle(.plain)
         .accessibilityLabel(title)
@@ -1189,7 +1189,7 @@ private struct MacInboxEmptyState: View {
                 .foregroundStyle(Palette.accent)
                 .frame(width: 62, height: 62)
                 .background(Palette.accentSubtle)
-                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
 
             VStack(spacing: Spacing.xs) {
                 Text(title)

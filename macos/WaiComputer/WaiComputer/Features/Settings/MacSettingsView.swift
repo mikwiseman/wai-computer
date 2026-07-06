@@ -573,7 +573,7 @@ struct MacSettingsView: View {
                     .frame(height: 60)
                     .scrollContentBackground(.hidden)
                     .background(Palette.surfaceSubtle)
-                    .cornerRadius(6)
+                    .cornerRadius(Radius.sm)
                     .onChangeCompat(of: summaryInstructions) { _, _ in
                         guard settingsLoaded else { return }
                         scheduleSummaryInstructionsSave(summaryInstructions)
@@ -586,7 +586,7 @@ struct MacSettingsView: View {
             if let settingsError {
                 Text(settingsError)
                     .font(Typography.caption)
-                    .foregroundStyle(.red)
+                    .foregroundStyle(Palette.danger)
                     .fixedSize(horizontal: false, vertical: true)
             }
         } header: {
@@ -866,7 +866,7 @@ struct MacSettingsView: View {
                     Text("settings.dangerZone.deleteAccount", bundle: .main)
                 }
                 .font(Typography.body)
-                .foregroundStyle(.red)
+                .foregroundStyle(Palette.danger)
                 .disabled(isDeletingAccount)
                 .accessibilityIdentifier("settings-delete-account-button")
 
@@ -937,7 +937,7 @@ struct MacSettingsView: View {
             if let serverDataError {
                 Text(serverDataError)
                     .font(Typography.caption)
-                    .foregroundStyle(.red)
+                    .foregroundStyle(Palette.danger)
                     .fixedSize(horizontal: false, vertical: true)
             }
         } header: {
@@ -1048,7 +1048,7 @@ struct MacSettingsView: View {
                         .font(.system(.body, design: .monospaced))
                         .frame(minHeight: 76)
                         .overlay(
-                            RoundedRectangle(cornerRadius: 6)
+                            RoundedRectangle(cornerRadius: Radius.sm)
                                 .stroke(Palette.border, lineWidth: 1)
                         )
                         .disabled(serverDataSubmitting)
@@ -1175,7 +1175,7 @@ struct MacSettingsView: View {
             } else if telegramStatus?.linked == true {
                 LabeledContent {
                     Text(telegramDisplayName)
-                        .foregroundStyle(.green)
+                        .foregroundStyle(Palette.success)
                 } label: {
                     Text("Telegram")
                 }
@@ -1273,7 +1273,7 @@ struct MacSettingsView: View {
             if let telegramError {
                 Text(telegramError)
                     .font(Typography.caption)
-                    .foregroundStyle(.red)
+                    .foregroundStyle(Palette.danger)
                     .fixedSize(horizontal: false, vertical: true)
             }
         } header: {
@@ -1455,7 +1455,7 @@ struct MacSettingsView: View {
 
     private var themePreview: some View {
         HStack(spacing: Spacing.md) {
-            RoundedRectangle(cornerRadius: 8)
+            RoundedRectangle(cornerRadius: Radius.md)
                 .fill(selectedAccentChoice.previewColor)
                 .frame(width: 34, height: 34)
                 .overlay(
@@ -1482,7 +1482,7 @@ struct MacSettingsView: View {
         }
         .padding(Spacing.md)
         .background(Palette.surfaceSubtle)
-        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .clipShape(RoundedRectangle(cornerRadius: Radius.md))
     }
 
     private var selectedAppearanceMode: MacAppearanceMode {
@@ -1519,9 +1519,9 @@ struct MacSettingsView: View {
             .padding(.vertical, Spacing.sm)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(isSelected ? selectedAccentChoice.previewColor.opacity(0.12) : Palette.surfaceSubtle)
-            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .clipShape(RoundedRectangle(cornerRadius: Radius.md))
             .overlay(
-                RoundedRectangle(cornerRadius: 8)
+                RoundedRectangle(cornerRadius: Radius.md)
                     .strokeBorder(isSelected ? selectedAccentChoice.previewColor : Palette.border, lineWidth: isSelected ? 1.5 : 1)
             )
         }
@@ -1747,7 +1747,7 @@ struct MacSettingsView: View {
                 case .granted:
                     Label(t("Granted", "Разрешено"), systemImage: "checkmark.circle.fill")
                         .font(Typography.bodySmall)
-                        .foregroundStyle(.green)
+                        .foregroundStyle(Palette.success)
                 case .denied:
                     Button(grantLabel ?? t("Grant", "Разрешить")) {
                         grantAction()

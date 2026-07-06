@@ -21,7 +21,7 @@ struct OnboardingWelcomeSlide: View {
 
             VStack(spacing: 12) {
                 Text(t("Welcome to WaiComputer", "Добро пожаловать в WaiComputer"))
-                    .font(.system(size: 32, weight: .bold))
+                    .font(Typography.displayLarge)
                     .foregroundStyle(Palette.textPrimary)
                     .accessibilityIdentifier("onboarding-welcome-title")
                 Text(t(
@@ -65,7 +65,7 @@ struct OnboardingWelcomeSlide: View {
             .frame(width: 240)
             .padding(2)
             .background(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
                     .fill(Color.secondary.opacity(0.12))
             )
 
@@ -103,7 +103,7 @@ struct OnboardingWelcomeSlide: View {
         .frame(maxWidth: .infinity)
         .padding(.vertical, 6)
         .background(
-            RoundedRectangle(cornerRadius: 6, style: .continuous)
+            RoundedRectangle(cornerRadius: Radius.sm, style: .continuous)
                 .fill(selected ? Color(NSColor.windowBackgroundColor) : Color.clear)
         )
         .accessibilityIdentifier(identifier)

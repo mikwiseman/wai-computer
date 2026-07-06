@@ -84,7 +84,7 @@ struct SpeakerChipView: View {
                 .padding(.vertical, Spacing.xs)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(Palette.recording.opacity(0.10))
-                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .clipShape(RoundedRectangle(cornerRadius: Radius.md))
             }
             List {
                 ForEach(visiblePeople) { person in

@@ -24,7 +24,7 @@ struct OnboardingDictationSandboxSlide: View {
                     ? t("Looks great.", "Отлично.")
                     : t("Try dictation now", "Попробуй диктовку")
                 )
-                    .font(.system(size: 30, weight: .bold))
+                    .font(Typography.displayLarge)
                     .foregroundStyle(Palette.textPrimary)
 
                 instructionLine
@@ -128,11 +128,11 @@ struct OnboardingDictationSandboxSlide: View {
                 .lineLimit(3...6)
                 .frame(maxWidth: .infinity, alignment: .topLeading)
                 .background(
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
                         .fill(Color(NSColor.windowBackgroundColor))
                 )
                 .overlay(
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
                         .strokeBorder(borderColor, lineWidth: borderWidth)
                 )
                 .focused($fieldFocused)
@@ -175,7 +175,7 @@ struct OnboardingDictationSandboxSlide: View {
                 if let errorText = dictationManager.error {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .font(.system(size: 12))
-                        .foregroundStyle(.orange)
+                        .foregroundStyle(Palette.warning)
                     Text(errorText)
                         .font(.system(size: 12))
                         .foregroundStyle(Palette.textSecondary)

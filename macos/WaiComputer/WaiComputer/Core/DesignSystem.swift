@@ -15,6 +15,25 @@ enum Spacing {
     static let huge: CGFloat = 64
 }
 
+// MARK: - Radius (concentric hierarchy)
+
+/// Corner radii follow a concentric hierarchy: controls sit inside cards,
+/// cards inside panels/sheets, each level one step larger so nested corners
+/// stay visually parallel (the Tahoe rule). Mirrors `--radius-*` in web
+/// `tokens.css`.
+enum Radius {
+    /// Chips, small inline controls
+    static let sm: CGFloat = 6
+    /// Buttons, inputs, list rows
+    static let md: CGFloat = 10
+    /// Cards, panels, popovers
+    static let lg: CGFloat = 14
+    /// Sheets, modals, floating overlays
+    static let xl: CGFloat = 18
+    /// Large floating panels (Ask Anything)
+    static let xxl: CGFloat = 24
+}
+
 // MARK: - Typography
 
 enum Typography {
@@ -281,9 +300,16 @@ enum Palette {
     /// Recording indicator
     static let recording = Color.red
 
-    /// Priority colors
-    static let priorityHigh = Color(red: 0.85, green: 0.35, blue: 0.30)
-    static let priorityMedium = Color(red: 0.80, green: 0.58, blue: 0.30)
+    /// Semantic status colors — AppKit system colors so light/dark and
+    /// Increased Contrast keep tracking the OS. Use these instead of raw
+    /// `.green`/`.orange`/`.red` literals in status UI.
+    static let success = Color(nsColor: .systemGreen)
+    static let warning = Color(nsColor: .systemOrange)
+    static let danger = Color(nsColor: .systemRed)
+
+    /// Priority colors — adaptive, aligned with the semantic set above.
+    static let priorityHigh = Color(nsColor: .systemRed)
+    static let priorityMedium = Color(nsColor: .systemOrange)
     static let priorityLow = Color(nsColor: .tertiaryLabelColor)
 
     /// Accent color for recordings (type-neutral)
@@ -302,9 +328,9 @@ struct WaiTextFieldModifier: ViewModifier {
             .font(Typography.bodyLarge)
             .padding(Spacing.md)
             .background(Palette.surfaceSubtle)
-            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .clipShape(RoundedRectangle(cornerRadius: Radius.md))
             .overlay(
-                RoundedRectangle(cornerRadius: 8)
+                RoundedRectangle(cornerRadius: Radius.md)
                     .strokeBorder(isActive ? Palette.accent : Palette.border, lineWidth: isActive ? 1.5 : 1)
             )
     }
@@ -317,7 +343,7 @@ struct WaiLargeInputModifier: ViewModifier {
             .font(Typography.headingMedium)
             .padding(Spacing.md)
             .background(Palette.surfaceSubtle)
-            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .clipShape(RoundedRectangle(cornerRadius: Radius.md))
     }
 }
 
@@ -327,11 +353,12 @@ struct WaiCardModifier: ViewModifier {
         content
             .padding(Spacing.md)
             .background(Palette.surfaceSubtle)
-            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .clipShape(RoundedRectangle(cornerRadius: Radius.lg))
     }
 }
 
-/// Accent-filled primary button
+/// Accent-filled primary button — capsule, the 2026 control shape
+/// (matches native Tahoe controls and web `.wai-primary-button`).
 struct WaiPrimaryButtonStyle: ButtonStyle {
     let isDisabled: Bool
 
@@ -342,7 +369,7 @@ struct WaiPrimaryButtonStyle: ButtonStyle {
             .padding(.horizontal, Spacing.xl)
             .padding(.vertical, Spacing.md)
             .background(isDisabled ? Palette.accent.opacity(0.4) : Palette.accent)
-            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .clipShape(Capsule())
             .opacity(configuration.isPressed ? 0.8 : 1.0)
     }
 }
@@ -422,6 +449,23 @@ extension View {
             self.scrollBounceBehavior(.basedOnSize)
         } else {
             self
+        }
+    }
+
+    /// Liquid Glass for floating chrome (banners, HUDs, overlay panels) on
+    /// macOS 26+, degrading to `.ultraThinMaterial` + hairline on 13–25.
+    /// Chrome only — content surfaces (transcripts, lists) must stay opaque.
+    @ViewBuilder
+    func waiGlassChrome(cornerRadius: CGFloat) -> some View {
+        if #available(macOS 26.0, *) {
+            self.glassEffect(.regular, in: .rect(cornerRadius: cornerRadius))
+        } else {
+            self
+                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: cornerRadius))
+                .overlay(
+                    RoundedRectangle(cornerRadius: cornerRadius)
+                        .strokeBorder(Palette.border, lineWidth: 1)
+                )
         }
     }
 

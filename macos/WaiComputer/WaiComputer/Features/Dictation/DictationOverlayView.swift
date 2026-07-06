@@ -65,13 +65,22 @@ struct DictationOverlayView: View {
         .padding(.horizontal, Spacing.lg)
         .padding(.vertical, Spacing.md)
         .frame(width: 360, height: 52)
-        .background(
-            RoundedRectangle(cornerRadius: 14)
-                .fill(.ultraThinMaterial)
-                .environment(\.colorScheme, .dark)
-        )
+        .background {
+            // Dark-tinted Liquid Glass HUD on Tahoe; dark ultra-thin material
+            // (the original look) on earlier systems.
+            if #available(macOS 26.0, *) {
+                Color.clear.glassEffect(
+                    .regular.tint(Color.black.opacity(0.5)),
+                    in: .rect(cornerRadius: Radius.lg)
+                )
+            } else {
+                RoundedRectangle(cornerRadius: Radius.lg)
+                    .fill(.ultraThinMaterial)
+                    .environment(\.colorScheme, .dark)
+            }
+        }
         .overlay(
-            RoundedRectangle(cornerRadius: 14)
+            RoundedRectangle(cornerRadius: Radius.lg)
                 .strokeBorder(.white.opacity(0.15), lineWidth: 0.5)
         )
     }

@@ -121,7 +121,7 @@ struct LiveRecordingView: View {
         HStack(spacing: Spacing.md) {
             Image(systemName: reason == .callEnded ? "phone.down.fill" : "waveform.slash")
                 .font(.system(size: 16, weight: .semibold))
-                .foregroundStyle(.orange)
+                .foregroundStyle(Palette.warning)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(reason == .callEnded

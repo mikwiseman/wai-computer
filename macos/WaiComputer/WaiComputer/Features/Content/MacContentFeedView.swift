@@ -131,10 +131,10 @@ struct MacContentFeedView: View {
         if let message = model.errorMessage {
             HStack(spacing: Spacing.xs) {
                 Image(systemName: "exclamationmark.triangle.fill")
-                    .foregroundStyle(.red)
+                    .foregroundStyle(Palette.danger)
                 Text(message)
                     .font(Typography.bodySmall)
-                    .foregroundStyle(.red)
+                    .foregroundStyle(Palette.danger)
                     .textSelection(.enabled)
                 Spacer()
                 Button {
@@ -157,7 +157,7 @@ struct MacContentFeedView: View {
         if let message = model.statusMessage {
             HStack(spacing: Spacing.xs) {
                 Image(systemName: "checkmark.circle.fill")
-                    .foregroundStyle(.green)
+                    .foregroundStyle(Palette.success)
                 Text(message)
                     .font(Typography.bodySmall)
                     .foregroundStyle(.secondary)

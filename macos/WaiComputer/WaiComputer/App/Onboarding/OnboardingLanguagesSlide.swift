@@ -17,7 +17,7 @@ struct OnboardingLanguagesSlide: View {
 
             VStack(spacing: 10) {
                 Text(t("Choose dictation languages", "Выбери языки диктовки"))
-                    .font(.system(size: 30, weight: .bold))
+                    .font(Typography.displayLarge)
                     .foregroundStyle(Palette.textPrimary)
                 Text(t(
                     "One language gives the lowest latency. Auto-detect lets you switch naturally. You can change this later in Settings.",
@@ -42,11 +42,11 @@ struct OnboardingLanguagesSlide: View {
             .frame(maxWidth: 520, maxHeight: 360)
             .padding(20)
             .background(
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                RoundedRectangle(cornerRadius: Radius.xl, style: .continuous)
                     .fill(Color(NSColor.windowBackgroundColor))
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                RoundedRectangle(cornerRadius: Radius.xl, style: .continuous)
                     .strokeBorder(Palette.border, lineWidth: 1)
             )
 

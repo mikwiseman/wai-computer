@@ -166,7 +166,7 @@ struct DictationDictionaryView: View {
         }
         .padding(Spacing.sm)
         .background(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
+            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
                 .fill(Palette.accent.opacity(0.08))
         )
     }
@@ -199,7 +199,7 @@ struct DictationDictionaryView: View {
         HStack(alignment: .top, spacing: 8) {
             Image(systemName: "exclamationmark.triangle.fill")
                 .font(.caption)
-                .foregroundStyle(.orange)
+                .foregroundStyle(Palette.warning)
             Text(t(
                 "\(dictionaryStore.words.count) entries — long vocabulary lists can confuse the recognizer and slow language detection. Keep entries focused on words that genuinely get misheard.",
                 "\(dictionaryStore.words.count) записей — длинные словари могут путать распознаватель и замедлять определение языка. Оставляй только слова, которые действительно часто слышатся неверно."
@@ -210,7 +210,7 @@ struct DictationDictionaryView: View {
         }
         .padding(10)
         .background(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
+            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
                 .fill(Color.orange.opacity(0.10))
         )
     }
@@ -248,7 +248,7 @@ struct DictationDictionaryView: View {
                         "«\(duplicate)» уже есть в словаре."
                     ))
                         .font(Typography.caption)
-                        .foregroundStyle(.red)
+                        .foregroundStyle(Palette.danger)
                     if let existing = existingEntry(matching: duplicate) {
                         Button(t("Edit the existing entry", "Изменить существующую запись")) {
                             beginEdit(existing)

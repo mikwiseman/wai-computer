@@ -80,7 +80,7 @@ struct BillingSection: View {
                     if let actionError {
                         Text(actionError)
                             .font(Typography.caption)
-                            .foregroundStyle(.red)
+                            .foregroundStyle(Palette.danger)
                             .fixedSize(horizontal: false, vertical: true)
                             .accessibilityIdentifier("settings-billing-action-error")
                     }
@@ -88,7 +88,7 @@ struct BillingSection: View {
             } else if let loadError {
                 Text(loadError)
                     .font(Typography.caption)
-                    .foregroundStyle(.red)
+                    .foregroundStyle(Palette.danger)
                     .fixedSize(horizontal: false, vertical: true)
             } else {
                 ProgressView().controlSize(.small)
@@ -234,7 +234,7 @@ struct BillingSection: View {
                 } else {
                     Text(billingErrorText(.missingPrice(region, period)))
                         .font(Typography.caption)
-                        .foregroundStyle(.red)
+                        .foregroundStyle(Palette.danger)
                 }
                 Spacer()
                 Button {
@@ -253,7 +253,7 @@ struct BillingSection: View {
         } else {
             Text(billingErrorText(.missingProPlan))
                 .font(Typography.caption)
-                .foregroundStyle(.red)
+                .foregroundStyle(Palette.danger)
         }
 
         promoControls

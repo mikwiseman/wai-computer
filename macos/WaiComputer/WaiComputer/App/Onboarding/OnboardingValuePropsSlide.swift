@@ -11,7 +11,7 @@ struct OnboardingValuePropsSlide: View {
 
             VStack(spacing: 8) {
                 Text(t("One Inbox for everything", "Один Инбокс для всего"))
-                    .font(.system(size: 30, weight: .bold))
+                    .font(Typography.displayLarge)
                     .foregroundStyle(Palette.textPrimary)
                 Text(t("Capture, organize, and give Wai tasks without switching sections.", "Сохраняй, раскладывай и давай Wai задачи без лишних разделов."))
                     .font(.system(size: 14))
@@ -62,7 +62,7 @@ struct OnboardingValuePropsSlide: View {
     private func valueCard(icon: String, title: String, primary: String, detail: String) -> some View {
         VStack(alignment: .leading, spacing: 14) {
             ZStack {
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
                     .fill(Palette.accent.opacity(0.12))
                     .frame(width: 52, height: 52)
                 Image(systemName: icon)
@@ -88,11 +88,11 @@ struct OnboardingValuePropsSlide: View {
         .padding(18)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
+            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
                 .fill(Color(NSColor.windowBackgroundColor))
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
+            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
                 .strokeBorder(Palette.border, lineWidth: 1)
         )
     }

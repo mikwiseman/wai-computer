@@ -13,11 +13,11 @@ struct NewRecordingView: View {
 
             VStack(spacing: Spacing.md) {
                 ZStack {
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
                         .fill(Palette.surfaceSubtle)
                         .frame(width: 64, height: 64)
                         .overlay(
-                            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
                                 .strokeBorder(Palette.border, lineWidth: 1)
                         )
                     Image(systemName: "waveform")
@@ -46,7 +46,7 @@ struct NewRecordingView: View {
                 .accessibilityIdentifier("start-recording-button")
             }
             .background(Palette.surfaceSubtle)
-            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .clipShape(RoundedRectangle(cornerRadius: Radius.md))
 
             // Import card (separate)
             VStack(spacing: 0) {
@@ -64,7 +64,7 @@ struct NewRecordingView: View {
                 .accessibilityIdentifier("import-audio-button")
             }
             .background(Palette.surfaceSubtle)
-            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .clipShape(RoundedRectangle(cornerRadius: Radius.md))
             .disabled(isImporting)
             .opacity(isImporting ? 0.5 : 1.0)
 

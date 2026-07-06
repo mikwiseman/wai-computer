@@ -103,7 +103,7 @@ struct DictationHistoryView: View {
                     Button(t("Clear All", "Очистить все")) {
                         showClearAllConfirmation = true
                     }
-                    .foregroundStyle(.red)
+                    .foregroundStyle(Palette.danger)
                 }
             }
         }
@@ -295,7 +295,7 @@ private struct HistoryEntryRow: View {
                 if isEditing {
                     Button { commitEdit() } label: {
                         Image(systemName: "checkmark.circle")
-                            .foregroundStyle(.green)
+                            .foregroundStyle(Palette.success)
                     }
                     .buttonStyle(.plain)
                     .help(t("Save correction", "Сохранить исправление"))

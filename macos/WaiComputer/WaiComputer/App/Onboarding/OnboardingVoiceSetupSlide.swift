@@ -20,7 +20,7 @@ struct OnboardingVoiceSetupSlide: View {
 
             VStack(spacing: 10) {
                 Text(t("Optional: identify your voice", "Опционально: распознавать твой голос"))
-                    .font(.system(size: 30, weight: .bold))
+                    .font(Typography.displayLarge)
                     .foregroundStyle(Palette.textPrimary)
                 Text(
                     t(
@@ -70,10 +70,10 @@ struct OnboardingVoiceSetupSlide: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(Spacing.lg)
             .background(
-                RoundedRectangle(cornerRadius: 14)
+                RoundedRectangle(cornerRadius: Radius.lg)
                     .fill(Palette.surfaceSubtle)
                     .overlay(
-                        RoundedRectangle(cornerRadius: 14)
+                        RoundedRectangle(cornerRadius: Radius.lg)
                             .strokeBorder(Palette.border, lineWidth: 1)
                     )
             )
@@ -100,7 +100,7 @@ struct OnboardingVoiceSetupSlide: View {
                 if let error = recorder.errorMessage {
                     Text(error)
                         .font(.caption)
-                        .foregroundStyle(.red)
+                        .foregroundStyle(Palette.danger)
                 }
             }
             Spacer()

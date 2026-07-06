@@ -13,7 +13,7 @@ struct OnboardingHotkeyPickerSlide: View {
 
             VStack(spacing: 10) {
                 Text(t("Pick your dictation key", "Выбери клавишу диктовки"))
-                    .font(.system(size: 30, weight: .bold))
+                    .font(Typography.displayLarge)
                     .foregroundStyle(Palette.textPrimary)
                 Text(t(
                     "Hold this key to dictate. Release to insert. We recommend Right Option.",
@@ -59,7 +59,7 @@ struct OnboardingHotkeyPickerSlide: View {
                     .padding(.horizontal, 14)
                     .padding(.vertical, 8)
                     .background(
-                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
                             .fill(selected ? Palette.accent : Color.gray.opacity(0.12))
                     )
 
@@ -71,11 +71,11 @@ struct OnboardingHotkeyPickerSlide: View {
             .padding(.horizontal, 12)
             .frame(maxWidth: .infinity)
             .background(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
                     .fill(Color(NSColor.windowBackgroundColor))
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
                     .strokeBorder(selected ? Palette.accent : Palette.border, lineWidth: selected ? 2 : 1)
             )
         }

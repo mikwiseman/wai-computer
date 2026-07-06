@@ -882,7 +882,7 @@ struct MacRecordingDetailView: View {
         }
         .padding(Spacing.lg)
         .background(transcriptionFailed ? Palette.recording.opacity(0.10) : Palette.surfaceSubtle)
-        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .clipShape(RoundedRectangle(cornerRadius: Radius.md))
     }
 
     private func transcriptHeader(_ detail: RecordingDetail) -> some View {
@@ -944,7 +944,7 @@ struct MacRecordingDetailView: View {
             .padding(.vertical, Spacing.sm)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(Palette.recording.opacity(0.10))
-            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .clipShape(RoundedRectangle(cornerRadius: Radius.md))
             .accessibilityIdentifier("transcript-failed-state")
         case .empty, .content:
             Text(t("No transcript yet.", "Расшифровки пока нет."))
@@ -1058,7 +1058,7 @@ struct MacRecordingDetailView: View {
         .padding(.horizontal, Spacing.md)
         .padding(.vertical, Spacing.sm)
         .background(Palette.accentSubtle)
-        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .clipShape(RoundedRectangle(cornerRadius: Radius.md))
         .accessibilityIdentifier("summary-generation-progress")
     }
 
@@ -1105,7 +1105,7 @@ struct MacRecordingDetailView: View {
         .padding(.horizontal, Spacing.md)
         .padding(.vertical, Spacing.sm)
         .background(Palette.accentSubtle)
-        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .clipShape(RoundedRectangle(cornerRadius: Radius.md))
         .accessibilityIdentifier("summary-audio-progress")
     }
 
@@ -1321,7 +1321,7 @@ private struct RecordingDetailInlineErrorBanner: View {
         .padding(.horizontal, Spacing.md)
         .padding(.vertical, Spacing.sm)
         .background(Palette.recording.opacity(0.10))
-        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .clipShape(RoundedRectangle(cornerRadius: Radius.md))
         .accessibilityIdentifier("recording-detail-inline-error")
     }
 }

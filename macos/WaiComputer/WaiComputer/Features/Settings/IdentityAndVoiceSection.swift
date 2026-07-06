@@ -34,7 +34,7 @@ struct IdentityAndVoiceSection: View {
                 if let error {
                     Text(error)
                         .font(Typography.caption)
-                        .foregroundStyle(.red)
+                        .foregroundStyle(Palette.danger)
                         .accessibilityIdentifier("settings-identity-error")
                 }
             }

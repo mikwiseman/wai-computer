@@ -72,12 +72,22 @@ struct PermissionBanner: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
-        .background(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(Color.black.opacity(0.92))
-        )
+        .background {
+            // Liquid Glass on Tahoe keeps the dark-HUD register via a dark
+            // tint (white copy stays readable); earlier systems keep the
+            // original near-black fill.
+            if #available(macOS 26.0, *) {
+                Color.clear.glassEffect(
+                    .regular.tint(Color.black.opacity(0.6)),
+                    in: .rect(cornerRadius: Radius.xl)
+                )
+            } else {
+                RoundedRectangle(cornerRadius: Radius.xl, style: .continuous)
+                    .fill(Color.black.opacity(0.92))
+            }
+        }
         .overlay(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
+            RoundedRectangle(cornerRadius: Radius.xl, style: .continuous)
                 .strokeBorder(Color.white.opacity(0.06), lineWidth: 1)
         )
         .shadow(color: Color.black.opacity(0.35), radius: 22, y: 8)

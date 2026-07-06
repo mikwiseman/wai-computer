@@ -202,7 +202,7 @@ struct MacItemDetailView: View {
         }
         .padding(Spacing.md)
         .background(Palette.accentSubtle)
-        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .clipShape(RoundedRectangle(cornerRadius: Radius.md))
     }
 
     private func summarySection(_ content: MacItemDetailContent) -> some View {
@@ -284,7 +284,7 @@ struct MacItemDetailView: View {
                 }
                 .padding(Spacing.md)
                 .background(Palette.surfaceSubtle)
-                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .clipShape(RoundedRectangle(cornerRadius: Radius.md))
             }
         }
         .accessibilityIdentifier("item-summary-section")
@@ -309,7 +309,7 @@ struct MacItemDetailView: View {
         }
         .padding(Spacing.md)
         .background(Palette.recording.opacity(0.10))
-        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .clipShape(RoundedRectangle(cornerRadius: Radius.md))
         .accessibilityIdentifier("item-summary-failed")
     }
 
@@ -436,7 +436,7 @@ struct MacItemDetailView: View {
             .padding(.horizontal, Spacing.md)
             .padding(.vertical, Spacing.sm)
             .background(Palette.recording.opacity(0.10))
-            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .clipShape(RoundedRectangle(cornerRadius: Radius.md))
             .accessibilityIdentifier("item-summary-audio-progress")
         } else if summaryAudio?.isFailed == true {
             Text(summaryAudio?.errorMessage ?? t("Summary audio generation failed.", "Не удалось создать аудио сводки."))
