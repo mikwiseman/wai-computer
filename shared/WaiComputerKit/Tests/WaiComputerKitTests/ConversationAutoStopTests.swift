@@ -60,6 +60,7 @@ final class SpeechActivityEstimatorTests: XCTestCase {
         XCTAssertFalse(estimator.isSpeech(rms: 0.000_004))
     }
 
+
     /// A conversation with natural pauses keeps the floor at the pause level,
     /// so speech keeps being detected even after minutes of talking.
     func testConversationWithPausesKeepsDetectingSpeech() {
@@ -136,11 +137,12 @@ final class ConversationAutoStopMonitorTests: XCTestCase {
         ConversationAutoStopMonitor(config: config, now: start)
     }
 
-    /// Loud speech shorthand: two consecutive speech-level frames bump voice
-    /// activity (single-frame pops are ignored by design).
+    /// Speech shorthand: sustained speech-level audio (~1 s) bumps voice
+    /// activity; short bursts are ignored by design.
     private func speak(_ monitor: ConversationAutoStopMonitor, at date: Date) {
-        monitor.recordAudioLevel(rms: 0.08, at: date)
-        monitor.recordAudioLevel(rms: 0.08, at: date.addingTimeInterval(0.16))
+        for i in 0..<6 {
+            monitor.recordAudioLevel(rms: 0.08, at: date.addingTimeInterval(Double(i) * 0.16))
+        }
     }
 
     // MARK: - Silence path
@@ -166,10 +168,30 @@ final class ConversationAutoStopMonitorTests: XCTestCase {
     }
 
     /// A single lone frame above the speech threshold (door slam) does not
-    /// reset the silence clock; two consecutive frames do.
+    /// reset the silence clock; only sustained speech does.
     func testSingleFramePopDoesNotDeferPrompt() {
         let monitor = makeMonitor()
         monitor.recordAudioLevel(rms: 0.5, at: start.addingTimeInterval(200))
+        let event = monitor.tick(at: start.addingTimeInterval(241))
+        XCTAssertEqual(event, .beginPrompt(.silence))
+    }
+
+    /// Repeated short bursts (chair creaks, keyboard runs — under the
+    /// sustained-speech length) never reset the silence clock, no matter how
+    /// often they happen. This is the real quiet-room failure mode observed
+    /// live: sporadic ~0.3 s creaks kept a hard-reset clock at zero forever.
+    func testShortBurstsDoNotResetSilenceClock() {
+        let monitor = makeMonitor()
+        for burstStart in [60.0, 120.0, 180.0, 230.0] {
+            for i in 0..<3 { // 3 frames < sustainedSpeechFrames (4)
+                monitor.recordAudioLevel(
+                    rms: 0.1,
+                    at: start.addingTimeInterval(burstStart + Double(i) * 0.16)
+                )
+            }
+            // Quiet frame ends each burst.
+            monitor.recordAudioLevel(rms: 0.000_1, at: start.addingTimeInterval(burstStart + 0.5))
+        }
         let event = monitor.tick(at: start.addingTimeInterval(241))
         XCTAssertEqual(event, .beginPrompt(.silence))
     }

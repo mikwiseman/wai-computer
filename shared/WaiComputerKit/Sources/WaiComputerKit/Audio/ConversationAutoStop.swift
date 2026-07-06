@@ -25,9 +25,13 @@ public struct SpeechActivityEstimator: Sendable {
     private var window: [Float] = []
     private var nextSlot = 0
 
+    /// Snapshot of the last classification, for diagnostics/logging.
+    public private(set) var lastLevelDb: Float = -100
+    public private(set) var lastThresholdDb: Float = -100
+
     public init(
         activationMarginDb: Float = 10,
-        absoluteMinDb: Float = -55,
+        absoluteMinDb: Float = -50,
         speechCeilingDb: Float = -35,
         windowCapacity: Int = 256
     ) {
@@ -44,6 +48,8 @@ public struct SpeechActivityEstimator: Sendable {
         let floorDb = noiseFloorDb()
         record(levelDb)
         let threshold = max(min(floorDb + activationMarginDb, speechCeilingDb), absoluteMinDb)
+        lastLevelDb = levelDb
+        lastThresholdDb = threshold
         return levelDb >= threshold
     }
 
@@ -118,15 +124,22 @@ public struct ConversationAutoStopConfig: Equatable, Sendable {
     public var callEndedTimeout: TimeInterval
     /// How long the prompt waits for a human before auto-stopping.
     public var countdown: TimeInterval
+    /// Consecutive speech-level frames (~160 ms each) required to count as
+    /// real voice. Short bursts — door slams, chair creaks, keyboard runs —
+    /// span a frame or two and must NOT reset the silence clock; actual
+    /// speech utterances sustain well past this.
+    public var sustainedSpeechFrames: Int
 
     public init(
         silenceTimeout: TimeInterval,
         callEndedTimeout: TimeInterval,
-        countdown: TimeInterval
+        countdown: TimeInterval,
+        sustainedSpeechFrames: Int = 4
     ) {
         self.silenceTimeout = silenceTimeout
         self.callEndedTimeout = callEndedTimeout
         self.countdown = countdown
+        self.sustainedSpeechFrames = sustainedSpeechFrames
     }
 
     public static let `default` = ConversationAutoStopConfig(
@@ -176,8 +189,30 @@ public final class ConversationAutoStopMonitor: @unchecked Sendable {
         return false
     }
 
-    /// Feed one capture buffer's linear RMS level. Two consecutive
-    /// speech-level frames (~320 ms) count as voice; lone pops do not.
+    /// Seconds since the last detected voice activity. Diagnostic/UI aid.
+    public func secondsSinceLastVoice(at date: Date) -> TimeInterval {
+        lock.lock()
+        defer { lock.unlock() }
+        return date.timeIntervalSince(lastVoiceAt)
+    }
+
+    /// Whether an external call-ended signal is pending confirmation.
+    public var hasPendingCallEnded: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return callEndedAt != nil
+    }
+
+    /// Last classified audio level and the threshold it was compared to (dBFS).
+    public var levelDiagnostics: (levelDb: Float, thresholdDb: Float) {
+        lock.lock()
+        defer { lock.unlock() }
+        return (estimator.lastLevelDb, estimator.lastThresholdDb)
+    }
+
+    /// Feed one capture buffer's linear RMS level. Only sustained
+    /// speech-level audio (`sustainedSpeechFrames` consecutive frames)
+    /// counts as voice; short pops and creaks do not reset the clock.
     public func recordAudioLevel(rms: Float, at date: Date) {
         lock.lock()
         defer { lock.unlock() }
@@ -185,7 +220,7 @@ public final class ConversationAutoStopMonitor: @unchecked Sendable {
 
         if estimator.isSpeech(rms: rms) {
             consecutiveSpeechFrames += 1
-            if consecutiveSpeechFrames >= 2 {
+            if consecutiveSpeechFrames >= config.sustainedSpeechFrames {
                 lastVoiceAt = date
                 callEndedAt = nil
             }

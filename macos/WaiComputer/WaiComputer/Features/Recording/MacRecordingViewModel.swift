@@ -121,6 +121,7 @@ class MacRecordingViewModel: ObservableObject {
     /// `MicrophoneUsageWatcher` (macOS 14+); stored type-erased because stored
     /// properties can't be availability-gated.
     private var micUsageWatcher: AnyObject?
+    private var autoStopStatusLogTick = 0
 
     private enum RecordingPersistenceResult {
         case remoteSaved(breadcrumbMessage: String)
@@ -775,14 +776,20 @@ class MacRecordingViewModel: ObservableObject {
     }
 
     private func startConversationAutoStop() {
-        guard RecordingAutoStopSettings.isEnabled() else { return }
-        let monitor = ConversationAutoStopMonitor(config: RecordingAutoStopSettings.config())
+        guard RecordingAutoStopSettings.isEnabled() else {
+            audioLog.info("Conversation auto-stop disabled in settings")
+            return
+        }
+        let config = RecordingAutoStopSettings.config()
+        let monitor = ConversationAutoStopMonitor(config: config)
         autoStopMonitor = monitor
+        audioLog.info("Conversation auto-stop armed silenceTimeout=\(config.silenceTimeout, privacy: .public)s callEnded=\(config.callEndedTimeout, privacy: .public)s countdown=\(config.countdown, privacy: .public)s")
         MacRecordingAutoStopNotifier.shared.requestAuthorizationIfNeeded()
 
         if #available(macOS 14.0, *) {
             let watcher = MicrophoneUsageWatcher()
             watcher.start { active, at in
+                audioLog.info("Mic usage transition otherProcessActive=\(active, privacy: .public)")
                 if active {
                     monitor.noteCallActive(at: at)
                 } else {
@@ -813,6 +820,12 @@ class MacRecordingViewModel: ObservableObject {
         if conversationEndPromptReason != nil {
             conversationEndCountdownSeconds = Int((monitor.promptCountdownRemaining(at: now) ?? 0).rounded())
         }
+        autoStopStatusLogTick += 1
+        if autoStopStatusLogTick % 15 == 0 {
+            let quiet = Int(monitor.secondsSinceLastVoice(at: now))
+            let levels = monitor.levelDiagnostics
+            audioLog.info("Auto-stop status quietSeconds=\(quiet, privacy: .public) pendingCallEnded=\(monitor.hasPendingCallEnded, privacy: .public) prompting=\(monitor.isPrompting, privacy: .public) levelDb=\(levels.levelDb, format: .fixed(precision: 1), privacy: .public) thresholdDb=\(levels.thresholdDb, format: .fixed(precision: 1), privacy: .public)")
+        }
     }
 
     private func handleAutoStopEvent(
@@ -820,6 +833,7 @@ class MacRecordingViewModel: ObservableObject {
         monitor: ConversationAutoStopMonitor,
         at now: Date
     ) {
+        audioLog.info("Auto-stop event=\(String(describing: event), privacy: .public)")
         switch event {
         case .beginPrompt(let reason):
             conversationEndPromptReason = reason
