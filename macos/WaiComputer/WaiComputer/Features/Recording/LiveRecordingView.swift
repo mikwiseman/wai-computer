@@ -14,6 +14,10 @@ struct LiveRecordingView: View {
 
             WaiDivider()
 
+            if let reason = recordingVM.conversationEndPromptReason {
+                conversationEndBanner(reason: reason)
+            }
+
             recordingStatusBody
 
             WaiDivider()
@@ -111,6 +115,60 @@ struct LiveRecordingView: View {
                 "Аудио и расшифровка будут удалены. Восстановить их нельзя."
             ))
         }
+    }
+
+    private func conversationEndBanner(reason: ConversationEndReason) -> some View {
+        HStack(spacing: Spacing.md) {
+            Image(systemName: reason == .callEnded ? "phone.down.fill" : "waveform.slash")
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(.orange)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(reason == .callEnded
+                     ? t("The call has ended.", "Звонок завершился.")
+                     : t("Sounds like the conversation is over.", "Похоже, разговор закончился."))
+                    .font(Typography.headingSmall)
+                Text(conversationEndCountdownText)
+                    .font(Typography.caption)
+                    .foregroundStyle(Palette.textSecondary)
+                    .accessibilityAddTraits(.updatesFrequently)
+            }
+
+            Spacer()
+
+            Button {
+                recordingVM.continueConversationFromPrompt()
+            } label: {
+                Text(t("Keep recording", "Продолжить запись"))
+            }
+            .buttonStyle(.bordered)
+            .accessibilityIdentifier("conversation-end-continue-button")
+
+            Button(action: stopRecording) {
+                Text(t("Stop now", "Остановить сейчас"))
+            }
+            .buttonStyle(.borderedProminent)
+            .accessibilityIdentifier("conversation-end-stop-button")
+        }
+        .padding(.horizontal, Spacing.xxl)
+        .padding(.vertical, Spacing.md)
+        .background(Color.orange.opacity(0.12))
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("conversation-end-banner")
+    }
+
+    private var conversationEndCountdownText: String {
+        let seconds = max(recordingVM.conversationEndCountdownSeconds, 0)
+        if RecordingAutoStopSettings.action() == .pause {
+            return t(
+                "Recording will pause in \(seconds)s unless the conversation continues.",
+                "Запись встанет на паузу через \(seconds) с, если разговор не продолжится."
+            )
+        }
+        return t(
+            "Recording will stop and be saved in \(seconds)s unless the conversation continues.",
+            "Запись остановится и сохранится через \(seconds) с, если разговор не продолжится."
+        )
     }
 
     private var recordingStatusBody: some View {

@@ -186,6 +186,9 @@ struct MacSettingsView: View {
     @AppStorage(MacPresentationSettings.showDockIconWhenMainWindowClosedKey) private var showDockIconWhenMainWindowClosed = false
     @AppStorage("desktopComputerUseEnabled") private var computerUseEnabled = false
     @AppStorage("dictationLearnFromEdits") private var learnFromEditsEnabled = true
+    @AppStorage(RecordingAutoStopSettings.enabledKey) private var recordingAutoStopEnabled = true
+    @AppStorage(RecordingAutoStopSettings.silenceMinutesKey) private var recordingAutoStopSilenceMinutes = RecordingAutoStopSettings.defaultSilenceMinutes
+    @AppStorage(RecordingAutoStopSettings.actionKey) private var recordingAutoStopAction = RecordingAutoStopSettings.Action.stop.rawValue
     @AppStorage(BetaChannelStore.userDefaultsKey) private var receiveBetaUpdates = false
     @EnvironmentObject var languageStore: DictationLanguageStore
     @State private var summaryLanguage = "auto"
@@ -388,8 +391,51 @@ struct MacSettingsView: View {
                 .foregroundStyle(Palette.textTertiary)
         }
 
+        recordingAutoStopSection
         summarySettingsSection
         dictationSettingsSection
+    }
+
+    private var recordingAutoStopSection: some View {
+        Section {
+            Toggle(isOn: $recordingAutoStopEnabled) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(t("Stop recording when the conversation ends", "Останавливать запись после разговора"))
+                    Text(t(
+                        "After a long silence — or when a call app hangs up — WaiComputer asks, waits a minute, then stops on its own.",
+                        "После долгой тишины — или когда приложение звонка кладет трубку — WaiComputer спросит, подождет минуту и остановит запись сам."
+                    ))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                }
+            }
+            .accessibilityIdentifier("settings-auto-stop-toggle")
+
+            if recordingAutoStopEnabled {
+                Picker(selection: $recordingAutoStopSilenceMinutes) {
+                    ForEach(RecordingAutoStopSettings.silenceMinuteChoices, id: \.self) { minutes in
+                        Text(t("\(minutes) min of silence", "\(minutes) мин тишины")).tag(minutes)
+                    }
+                } label: {
+                    Text(t("Consider the conversation over after", "Считать разговор завершенным после"))
+                }
+                .accessibilityIdentifier("settings-auto-stop-silence-picker")
+
+                Picker(selection: $recordingAutoStopAction) {
+                    Text(t("Stop and save", "Остановить и сохранить"))
+                        .tag(RecordingAutoStopSettings.Action.stop.rawValue)
+                    Text(t("Pause", "Поставить на паузу"))
+                        .tag(RecordingAutoStopSettings.Action.pause.rawValue)
+                } label: {
+                    Text(t("When the countdown runs out", "Когда отсчет истечет"))
+                }
+                .accessibilityIdentifier("settings-auto-stop-action-picker")
+            }
+        } header: {
+            Text(t("Recording", "Запись"))
+                .waiSectionHeader()
+                .accessibilityIdentifier("settings-recording-header")
+        }
     }
 
     @ViewBuilder

@@ -93,6 +93,10 @@ class MacRecordingViewModel: ObservableObject {
     @Published private(set) var phase: MacRecordingPhase = .idle
     @Published private(set) var isPaused = false
     @Published var systemAudioWarning: String?
+    /// Non-nil while the "conversation seems over" prompt is on screen.
+    @Published private(set) var conversationEndPromptReason: ConversationEndReason?
+    /// Seconds left on the prompt countdown, for the banner UI.
+    @Published private(set) var conversationEndCountdownSeconds: Int = 0
 
     /// Guards against starting a new recording while cleanup is in progress
     private var isCleaningUp = false
@@ -113,6 +117,10 @@ class MacRecordingViewModel: ObservableObject {
     private var cleanupTask: Task<Void, Never>?
     private var systemAudioMonitorTask: Task<Void, Never>?
     private var recordingActivity: NSObjectProtocol?
+    private var autoStopMonitor: ConversationAutoStopMonitor?
+    /// `MicrophoneUsageWatcher` (macOS 14+); stored type-erased because stored
+    /// properties can't be availability-gated.
+    private var micUsageWatcher: AnyObject?
 
     private enum RecordingPersistenceResult {
         case remoteSaved(breadcrumbMessage: String)
@@ -372,6 +380,8 @@ class MacRecordingViewModel: ObservableObject {
             try RecordingBackupStore.markHasAudioFile(recordingId: recordingId)
             audioLog.info("Local recording audio file prepared recordingId=\(recordingId, privacy: .public)")
 
+            startConversationAutoStop()
+
             // Start the audio persistence loop.
             audioLog.info("Starting recording audio task")
             var bufferCount = 0
@@ -379,10 +389,15 @@ class MacRecordingViewModel: ObservableObject {
                 "Disk is full. Recording stopped to preserve what was captured.",
                 "Диск заполнен. Запись остановлена для сохранения того, что успели записать."
             )
+            let autoStopMonitor = self.autoStopMonitor
             audioTask = Task.detached(priority: .userInitiated) { [weak self] in
                 guard let self else { return }
                 audioLog.info("Recording audio task started")
                 for await buffer in capture.audioBuffers {
+                    autoStopMonitor?.recordAudioLevel(
+                        rms: SpeechActivityEstimator.peakChannelRMS(of: buffer),
+                        at: Date()
+                    )
                     bufferCount += 1
                     if bufferCount <= 5 || bufferCount % 50 == 0 {
                         audioLog.debug("Recording buffer count=\(bufferCount, privacy: .public) frames=\(buffer.frameLength, privacy: .public)")
@@ -461,6 +476,7 @@ class MacRecordingViewModel: ObservableObject {
 
         setPhase(.finalizing)
         isPaused = false
+        tearDownConversationAutoStop()
 
         // Stop timer and system audio monitor
         timerTask?.cancel()
@@ -636,6 +652,7 @@ class MacRecordingViewModel: ObservableObject {
 
         setPhase(.finalizing)
         isPaused = false
+        tearDownConversationAutoStop()
 
         timerTask?.cancel()
         timerTask = nil
@@ -701,6 +718,7 @@ class MacRecordingViewModel: ObservableObject {
         systemAudioWarning = nil
         duration = 0
         isPaused = false
+        tearDownConversationAutoStop()
     }
 
     func pauseRecording() async {
@@ -708,6 +726,8 @@ class MacRecordingViewModel: ObservableObject {
         do {
             try await audioCapture?.pauseRecording()
             isPaused = true
+            autoStopMonitor?.setPaused(true, at: Date())
+            conversationEndPromptReason = nil
             SentryHelper.addBreadcrumb(
                 category: "recording",
                 message: "recording paused",
@@ -724,6 +744,7 @@ class MacRecordingViewModel: ObservableObject {
         do {
             try await audioCapture?.resumeRecording()
             isPaused = false
+            autoStopMonitor?.setPaused(false, at: Date())
             SentryHelper.addBreadcrumb(
                 category: "recording",
                 message: "recording resumed",
@@ -737,6 +758,139 @@ class MacRecordingViewModel: ObservableObject {
 
     func clearError() {
         error = nil
+    }
+
+    // MARK: - Conversation auto-stop
+
+    /// The user tapped "I'm still talking" on the end-of-conversation prompt.
+    func continueConversationFromPrompt() {
+        autoStopMonitor?.userContinued(at: Date())
+        conversationEndPromptReason = nil
+        SentryHelper.addBreadcrumb(
+            category: "recording",
+            message: "conversation end prompt dismissed by user",
+            data: ["recordingId": currentRecordingId ?? "unknown"]
+        )
+    }
+
+    private func startConversationAutoStop() {
+        guard RecordingAutoStopSettings.isEnabled() else { return }
+        let monitor = ConversationAutoStopMonitor(config: RecordingAutoStopSettings.config())
+        autoStopMonitor = monitor
+        MacRecordingAutoStopNotifier.shared.requestAuthorizationIfNeeded()
+
+        if #available(macOS 14.0, *) {
+            let watcher = MicrophoneUsageWatcher()
+            watcher.start { active, at in
+                if active {
+                    monitor.noteCallActive(at: at)
+                } else {
+                    monitor.noteCallEnded(at: at)
+                }
+            }
+            micUsageWatcher = watcher
+        }
+    }
+
+    private func tearDownConversationAutoStop() {
+        if #available(macOS 14.0, *) {
+            (micUsageWatcher as? MicrophoneUsageWatcher)?.stop()
+        }
+        micUsageWatcher = nil
+        autoStopMonitor = nil
+        conversationEndPromptReason = nil
+        conversationEndCountdownSeconds = 0
+    }
+
+    /// Runs on the recording timer (once a second) while a session is live.
+    private func processAutoStopTick() {
+        guard phase == .recording, let monitor = autoStopMonitor else { return }
+        let now = Date()
+        if let event = monitor.tick(at: now) {
+            handleAutoStopEvent(event, monitor: monitor, at: now)
+        }
+        if conversationEndPromptReason != nil {
+            conversationEndCountdownSeconds = Int((monitor.promptCountdownRemaining(at: now) ?? 0).rounded())
+        }
+    }
+
+    private func handleAutoStopEvent(
+        _ event: ConversationAutoStopEvent,
+        monitor: ConversationAutoStopMonitor,
+        at now: Date
+    ) {
+        switch event {
+        case .beginPrompt(let reason):
+            conversationEndPromptReason = reason
+            conversationEndCountdownSeconds = Int((monitor.promptCountdownRemaining(at: now) ?? 0).rounded())
+            SentryHelper.addBreadcrumb(
+                category: "recording",
+                message: "conversation end prompt shown",
+                data: [
+                    "recordingId": currentRecordingId ?? "unknown",
+                    "reason": reason.rawValue,
+                    "duration": duration,
+                ]
+            )
+            MacRecordingAutoStopNotifier.shared.notifyPromptIfInactive(
+                title: conversationEndNotificationTitle(reason: reason),
+                body: t(
+                    "Recording will stop in a minute. Open WaiComputer to keep going.",
+                    "Запись остановится через минуту. Открой WaiComputer, чтобы продолжить."
+                )
+            )
+
+        case .cancelPrompt:
+            conversationEndPromptReason = nil
+            SentryHelper.addBreadcrumb(
+                category: "recording",
+                message: "conversation end prompt canceled by speech",
+                data: ["recordingId": currentRecordingId ?? "unknown"]
+            )
+
+        case .autoStop(let reason):
+            conversationEndPromptReason = nil
+            let action = RecordingAutoStopSettings.action()
+            SentryHelper.addBreadcrumb(
+                category: "recording",
+                message: "conversation end auto action",
+                data: [
+                    "recordingId": currentRecordingId ?? "unknown",
+                    "reason": reason.rawValue,
+                    "action": action.rawValue,
+                    "duration": duration,
+                ]
+            )
+            switch action {
+            case .stop:
+                MacRecordingAutoStopNotifier.shared.notifyAutoActionIfInactive(
+                    title: t("Recording saved", "Запись сохранена"),
+                    body: t(
+                        "The conversation ended, so the recording was stopped. Transcript and summary are on the way.",
+                        "Разговор закончился, запись остановлена. Расшифровка и сводка уже готовятся."
+                    )
+                )
+                Task { await self.stopRecording() }
+            case .pause:
+                MacRecordingAutoStopNotifier.shared.notifyAutoActionIfInactive(
+                    title: t("Recording paused", "Запись на паузе"),
+                    body: t(
+                        "The conversation ended, so the recording was paused. Resume it any time.",
+                        "Разговор закончился, запись поставлена на паузу. Продолжить можно в любой момент."
+                    )
+                )
+                Task { await self.pauseRecording() }
+            }
+        }
+    }
+
+    private func conversationEndNotificationTitle(reason: ConversationEndReason) -> String {
+        switch reason {
+        case .silence:
+            return t("Conversation seems over?", "Похоже, разговор закончился?")
+        case .callEnded:
+            return t("Call ended — still recording", "Звонок завершен — запись еще идет")
+        }
     }
 
     // MARK: - Private
@@ -1278,7 +1432,9 @@ class MacRecordingViewModel: ObservableObject {
                 try? await Task.sleep(for: .seconds(1))
                 guard !Task.isCancelled else { break }
                 await MainActor.run {
-                    guard let self, !self.isPaused else { return }
+                    guard let self else { return }
+                    self.processAutoStopTick()
+                    guard !self.isPaused else { return }
                     self.duration += 1
                 }
             }
@@ -1334,6 +1490,7 @@ class MacRecordingViewModel: ObservableObject {
     private func resetAfterStartFailure() async {
         let recordingId = currentRecordingId
         let client = apiClient
+        tearDownConversationAutoStop()
         timerTask?.cancel()
         timerTask = nil
         systemAudioMonitorTask?.cancel()
