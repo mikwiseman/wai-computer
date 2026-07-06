@@ -6,8 +6,12 @@
  * so a value set in the Mac app can be matched 1:1 on web.
  *
  * Override via `data-theme="light|dark|system"` and `data-accent="<name>"` on
- * <html>. The defaults below preserve the current web behaviour (amber accent +
- * follow OS theme) so this file ships visually identical to the prod baseline.
+ * <html>. Defaults: amber accent + follow OS theme.
+ *
+ * 2026 refresh: both themes sit on one warm neutral ramp (calm editorial
+ * paper in light, warm near-black ladder in dark), radii follow a concentric
+ * sm→xl hierarchy, and shadows are warm-tinted. Every ink/accent pair is
+ * WCAG-AA-verified against the new surfaces (ratios documented inline).
  */
 
 :root {
@@ -117,9 +121,11 @@
   --font-body-small: var(--font-body-small-weight) var(--font-body-small-size) /
     var(--font-body-small-line) var(--font-family-sans);
 
-  /* Reading — 15pt regular sans, generous line-height for transcripts and
-   * summaries. Mac uses `.lineSpacing(6)` which translates to ~1.7 leading. */
-  --font-reading-size: 0.9375rem;
+  /* Reading — 16px regular sans, generous line-height for transcripts and
+   * summaries (the 2026 readability floor for reading-heavy products; the
+   * old 15px read tight over long transcripts). Mac uses `.lineSpacing(6)`
+   * which translates to ~1.7 leading. */
+  --font-reading-size: 1rem;
   --font-reading-line: 1.7;
   --font-reading-weight: 400;
   --font-reading: var(--font-reading-weight) var(--font-reading-size) /
@@ -176,11 +182,18 @@
   --motion-ease-exit: cubic-bezier(0.4, 0, 1, 1);
 
   /* ---------------------------------------------------------------------
-   * Radius — globals.css uses 8 px ubiquitously; keep that default.
+   * Radius — concentric hierarchy: controls sit inside cards, cards inside
+   * panels/modals, each level one step larger so nested corners align
+   * (the Tahoe/2026 rule).
+   *   sm — chips, small inline controls
+   *   md — buttons, inputs, list rows
+   *   lg — cards, panels, popovers
+   *   xl — modals, sheets, floating surfaces
    * --------------------------------------------------------------------- */
   --radius-sm: 6px;
-  --radius-md: 8px;
-  --radius-lg: 12px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 18px;
   --radius-pill: 999px;
 
   /* ---------------------------------------------------------------------
@@ -189,10 +202,10 @@
    * web matches that by defaulting to hairline borders + surface tokens for
    * grouping, reserving these shadows for floating overlays only.
    * --------------------------------------------------------------------- */
-  --shadow-1: 0 1px 2px rgba(24, 26, 31, 0.04),
-    0 4px 12px rgba(24, 26, 31, 0.04);
-  --shadow-2: 0 8px 24px rgba(24, 26, 31, 0.06);
-  --shadow-3: 0 16px 44px rgba(24, 26, 31, 0.08);
+  --shadow-1: 0 1px 2px rgba(31, 27, 18, 0.04),
+    0 4px 12px rgba(31, 27, 18, 0.04);
+  --shadow-2: 0 8px 24px rgba(31, 27, 18, 0.06);
+  --shadow-3: 0 16px 44px rgba(31, 27, 18, 0.08);
 
   /* ---------------------------------------------------------------------
    * Surface tokens — mirror Mac `Palette.surfaceSubtle/Hover/border`
@@ -201,9 +214,9 @@
    * These adapt automatically to light/dark because they are alpha overlays
    * on top of `--bg`.
    * --------------------------------------------------------------------- */
-  --surface-subtle: rgba(25, 26, 31, 0.05);
-  --surface-hover: rgba(25, 26, 31, 0.08);
-  --surface-hairline: rgba(25, 26, 31, 0.10);
+  --surface-subtle: rgba(32, 29, 23, 0.05);
+  --surface-hover: rgba(32, 29, 23, 0.08);
+  --surface-hairline: rgba(32, 29, 23, 0.10);
 
   /* ---------------------------------------------------------------------
    * Liquid-glass material — mirror Mac `.ultraThinMaterial`. Use on
@@ -211,23 +224,23 @@
    * matches SwiftUI's UltraThin (~24px) and falls back to a near-opaque
    * panel when backdrop-filter isn't supported.
    * --------------------------------------------------------------------- */
-  --material-thin-bg: rgba(255, 255, 255, 0.66);
-  --material-thin-border: rgba(25, 26, 31, 0.08);
+  --material-thin-bg: rgba(255, 253, 248, 0.66);
+  --material-thin-border: rgba(32, 29, 23, 0.08);
   --material-thin-blur: saturate(180%) blur(24px);
   /* Regular material — a denser glass tier (for the sidebar) so it reads deeper
    * than floating popovers/toasts: a 2-step depth hierarchy. */
-  --material-regular-bg: rgba(255, 255, 255, 0.82);
+  --material-regular-bg: rgba(255, 253, 248, 0.82);
   --material-regular-blur: saturate(180%) blur(30px);
   --material-tint-amber: rgba(255, 149, 0, 0.10);
   --material-tint-accent: var(--accent-soft);
 
   /* ---------------------------------------------------------------------
-   * Accents — 7 named accents (6 from Mac + teal for web parity).
+   * Accents — 7 named accents (6 from Mac + teal kept from web history).
    *
-   * Mac default is amber; current web default is teal (#2f756d). We define
-   * all accents here but keep teal as the active default at the bottom of
-   * the :root block. Switching is done by setting `data-accent="<name>"`
-   * on <html> (or any ancestor) — see the dispatch selectors below.
+   * Amber is the active default on BOTH platforms (`--accent` at the bottom
+   * of this block; `data-accent="amber"` in layout.tsx). Switching is done
+   * by setting `data-accent="<name>"` on <html> (or any ancestor) — see the
+   * dispatch selectors below.
    * --------------------------------------------------------------------- */
 
   /* Teal — current web default. */
@@ -295,20 +308,25 @@
    * Theme — light surfaces & ink, plus the legacy aliases used across
    * globals.css. Dark surfaces are defined in the dark-theme blocks below.
    * --------------------------------------------------------------------- */
-  --bg: #f7f7f5;
-  --panel: #ffffff;
-  --panel-subtle: #f1f3f2;
-  --panel-raised: #fbfbfa;
-  --ink: #191a1f;
-  --ink-soft: #626a73;
+  /* Warm paper neutrals — the whole light ramp sits on one warm hue (~85°
+   * OKLCH) instead of the old cool blue-gray, so the app reads as calm
+   * editorial paper (the 2026 knowledge-tool register: Claude/Notion/
+   * Granola territory). AA re-verified on the new surfaces:
+   * ink 15.7:1 · ink-soft 5.9:1 · ink-faint 5.2:1 on --bg. */
+  --bg: #f9f7f2;
+  --panel: #fffefb;
+  --panel-subtle: #f1eee6;
+  --panel-raised: #fcfaf5;
+  --ink: #201d17;
+  --ink-soft: #675f52;
   /* `-faint` is used on real metadata text (dates, counts, section eyebrows),
-   * so it must clear AA. #9199a2 was 2.69:1; #6a737d is 4.51:1 and still a clear
-   * step below --ink-soft (5.11:1). Dark-theme --ink-faint already passes. */
-  --ink-faint: #6a737d;
+   * so it must clear AA: #6f6759 is 5.22:1 on --bg and still a clear step
+   * below --ink-soft. Dark-theme --ink-faint passes too (5.69:1). */
+  --ink-faint: #6f6759;
   --warm: #b86f2e;
   --warm-soft: rgba(184, 111, 46, 0.12);
-  --border: #dcdfdf;
-  --border-strong: #c9cecf;
+  --border: #e0dbd0;
+  --border-strong: #c8c1b2;
   --danger: #ba3d37;
   --danger-contrast: #ffffff;
   /* Used as status text + icon strokes; #b86f2e was 3.66:1. #a06028 = 4.66:1. */
@@ -339,6 +357,15 @@
   --line: var(--border);
   --surface: var(--panel);
   --panel-soft: var(--panel-subtle);
+
+  /* Previously referenced-but-undefined tokens — mapped to canonical ones so
+   * the rules that use them stop silently falling back to `initial`:
+   *   --ink-muted      → inbox detail meta + brain feed meta
+   *   --border-subtle  → inbox sticky action bar divider
+   *   --text-secondary → Hermes connect tiles */
+  --ink-muted: var(--ink-faint);
+  --border-subtle: var(--surface-hairline);
+  --text-secondary: var(--ink-soft);
 }
 
 /* -----------------------------------------------------------------------
@@ -347,8 +374,9 @@
  *
  *   <html data-accent="amber"> ... </html>
  *
- * `teal` is the active default in :root; redefining it here keeps the
- * selector list symmetrical and makes the picker logic uniform.
+ * `amber` is the active default in :root; every accent (including teal) is
+ * redefined here so the selector list stays symmetrical and the picker
+ * logic uniform.
  * ----------------------------------------------------------------------- */
 [data-accent="teal"] {
   --accent: var(--accent-teal);
@@ -405,17 +433,20 @@
 [data-theme="dark"],
 :root.theme-dark {
   color-scheme: dark;
-  --bg: #101214;
-  --panel: #171a1d;
-  --panel-subtle: #202528;
-  --panel-raised: #131619;
-  --ink: #f3f5f2;
-  --ink-soft: #c2cac7;
-  --ink-faint: #8d9996;
+  /* Warm near-black ladder — the same warm hue as the light theme so both
+   * themes read as one product (not flat black; e2e guard: bg luma 18 < 80,
+   * ink luma 238 > 150). */
+  --bg: #131211;
+  --panel: #1b1917;
+  --panel-subtle: #252220;
+  --panel-raised: #161514;
+  --ink: #f1eee8;
+  --ink-soft: #c6c0b5;
+  --ink-faint: #948d80;
   --warm: #e0a15d;
   --warm-soft: rgba(224, 161, 93, 0.18);
-  --border: #30383b;
-  --border-strong: #495458;
+  --border: #363129;
+  --border-strong: #4e4840;
   --danger: #ff8a82;
   --danger-contrast: #2a0907;
   --warning: #ffb35b;
@@ -429,17 +460,17 @@
   --shadow: var(--shadow-3);
 
   /* Surface + material — alpha overlays on dark `--bg`. */
-  --surface-subtle: rgba(243, 245, 242, 0.05);
-  --surface-hover: rgba(243, 245, 242, 0.08);
-  --surface-hairline: rgba(243, 245, 242, 0.10);
-  --material-thin-bg: rgba(23, 26, 29, 0.66);
-  --material-regular-bg: rgba(23, 26, 29, 0.84);
-  --material-thin-border: rgba(243, 245, 242, 0.08);
+  --surface-subtle: rgba(241, 238, 232, 0.05);
+  --surface-hover: rgba(241, 238, 232, 0.08);
+  --surface-hairline: rgba(241, 238, 232, 0.10);
+  --material-thin-bg: rgba(24, 22, 20, 0.66);
+  --material-regular-bg: rgba(24, 22, 20, 0.84);
+  --material-thin-border: rgba(241, 238, 232, 0.08);
   --material-tint-amber: rgba(255, 159, 10, 0.14);
   --material-tint-accent: var(--accent-soft);
 
   /* Dark-mode accent palette — brighter strong + softer soft so accents
-   * still read against #101214. Mirrors the original dark block. */
+   * still read against the warm near-black --bg. */
   --accent-teal: #73d2c3;
   --accent-teal-strong: #96e4d8;
   --accent-teal-soft: rgba(115, 210, 195, 0.16);
@@ -544,17 +575,18 @@
   :root[data-theme="system"],
   :root:not([data-theme]) {
     color-scheme: dark;
-    --bg: #101214;
-    --panel: #171a1d;
-    --panel-subtle: #202528;
-    --panel-raised: #131619;
-    --ink: #f3f5f2;
-    --ink-soft: #c2cac7;
-    --ink-faint: #8d9996;
+    /* Keep in sync with the explicit [data-theme="dark"] block above. */
+    --bg: #131211;
+    --panel: #1b1917;
+    --panel-subtle: #252220;
+    --panel-raised: #161514;
+    --ink: #f1eee8;
+    --ink-soft: #c6c0b5;
+    --ink-faint: #948d80;
     --warm: #e0a15d;
     --warm-soft: rgba(224, 161, 93, 0.18);
-    --border: #30383b;
-    --border-strong: #495458;
+    --border: #363129;
+    --border-strong: #4e4840;
     --danger: #ff8a82;
     --danger-contrast: #2a0907;
     --warning: #ffb35b;
@@ -567,12 +599,12 @@
     --shadow-3: 0 20px 56px rgba(0, 0, 0, 0.34);
     --shadow: var(--shadow-3);
 
-    --surface-subtle: rgba(243, 245, 242, 0.05);
-    --surface-hover: rgba(243, 245, 242, 0.08);
-    --surface-hairline: rgba(243, 245, 242, 0.10);
-    --material-thin-bg: rgba(23, 26, 29, 0.66);
-  --material-regular-bg: rgba(23, 26, 29, 0.84);
-    --material-thin-border: rgba(243, 245, 242, 0.08);
+    --surface-subtle: rgba(241, 238, 232, 0.05);
+    --surface-hover: rgba(241, 238, 232, 0.08);
+    --surface-hairline: rgba(241, 238, 232, 0.10);
+    --material-thin-bg: rgba(24, 22, 20, 0.66);
+    --material-regular-bg: rgba(24, 22, 20, 0.84);
+    --material-thin-border: rgba(241, 238, 232, 0.08);
     --material-tint-amber: rgba(255, 159, 10, 0.14);
     --material-tint-accent: var(--accent-soft);
 

@@ -518,8 +518,8 @@ describe("layout", () => {
       "Save the meetings and voice notes you choose, then transcribe, search, and ask Wai about them.",
     );
     expect(viewport.themeColor).toEqual([
-      { media: "(prefers-color-scheme: light)", color: "#f7f7f5" },
-      { media: "(prefers-color-scheme: dark)", color: "#101214" },
+      { media: "(prefers-color-scheme: light)", color: "#f9f7f2" },
+      { media: "(prefers-color-scheme: dark)", color: "#131211" },
     ]);
 
     requestHeaderMock.acceptLanguage = null;

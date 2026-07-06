@@ -10,7 +10,7 @@
   gap: 0.25rem;
   padding: 0.25rem;
   background: var(--surface-subtle);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   width: fit-content;
   border: 1px solid var(--border, rgba(127, 127, 127, 0.18));
 }
@@ -21,7 +21,7 @@
   background: transparent;
   color: var(--ink, currentColor);
   padding: 0.4rem 0.95rem;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   font: inherit;
   font-size: 0.85rem;
   line-height: 1;
@@ -62,7 +62,7 @@
   padding: 0;
   width: 1.65rem;
   height: 1.65rem;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   cursor: pointer;
   outline: 2px solid transparent;
   outline-offset: 2px;

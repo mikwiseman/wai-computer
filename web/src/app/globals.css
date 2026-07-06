@@ -50,7 +50,7 @@
 /* Barely-visible grouping background — mirror `waiCard()`. */
 .wai-card {
   background: var(--surface-subtle);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-lg);
   padding: var(--space-md);
 }
 
@@ -64,7 +64,7 @@
 .wai-panel {
   background: var(--panel);
   border: 1px solid var(--border);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-lg);
 }
 
 /* Floating translucent surface — mirror `.ultraThinMaterial`.
@@ -74,7 +74,7 @@
   border: 1px solid var(--material-thin-border);
   -webkit-backdrop-filter: var(--material-thin-blur);
   backdrop-filter: var(--material-thin-blur);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-lg);
 }
 
 /* 1px hairline divider — mirror `WaiDivider`. */
@@ -94,7 +94,7 @@
   min-height: 38px;
   padding: var(--space-md) var(--space-xl);
   border: 0;
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-pill);
   background: var(--accent);
   color: var(--accent-contrast);
   font: var(--font-heading-small);
@@ -227,7 +227,7 @@ select {
 
 button {
   border: 0;
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   background: var(--accent);
   color: var(--accent-contrast);
   cursor: pointer;
@@ -250,7 +250,7 @@ select,
 textarea {
   width: 100%;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   background: var(--panel-raised);
   color: var(--ink);
   padding: 0.68rem 0.76rem;
@@ -330,7 +330,7 @@ h4 {
 .card {
   background: var(--panel);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-lg);
   padding: 1rem;
 }
 
@@ -354,7 +354,7 @@ h4 {
   width: min(100%, 440px);
   gap: 1.55rem;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-xl);
   background: var(--panel);
   /* Mac auth view sits on the desktop without ambient shadow — only the
    * 1px border separates it from the page. */
@@ -380,7 +380,7 @@ h4 {
 .auth-card__icon {
   width: 64px;
   height: 64px;
-  border-radius: 14px;
+  border-radius: var(--radius-lg);
   box-shadow: 0 1px 0 rgba(255, 255, 255, 0.04) inset,
     0 4px 12px rgba(24, 26, 31, 0.10);
 }
@@ -495,7 +495,7 @@ h4 {
   min-height: 8.5rem;
   padding: 0.95rem;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   background: var(--panel);
   color: var(--ink);
   text-align: left;
@@ -533,7 +533,7 @@ h4 {
   gap: 0.7rem;
   padding: 1rem;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   background: var(--panel);
 }
 
@@ -607,7 +607,7 @@ h4 {
 }
 
 .auth-card__message {
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   background: var(--panel-subtle);
   color: var(--ink-soft);
   font-size: var(--font-body-size);
@@ -630,7 +630,7 @@ h4 {
   gap: 18px;
   padding: 36px;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-xl);
   background: var(--panel);
   box-shadow: var(--shadow);
 }
@@ -665,11 +665,11 @@ a.primary-button {
   align-items: center;
   justify-content: center;
   min-height: 38px;
-  border-radius: 8px;
+  border-radius: var(--radius-pill);
   background: var(--accent);
   color: var(--accent-contrast);
   font-weight: 600;
-  padding: 0.6rem 0.9rem;
+  padding: 0.6rem 1.1rem;
   text-align: center;
   transition: background 0.16s ease, color 0.16s ease, opacity 0.16s ease;
 }
@@ -695,6 +695,7 @@ a.primary-button[aria-disabled="true"]:hover {
 .ghost-button,
 .select-button {
   border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
   background: var(--panel);
   color: var(--ink);
   box-shadow: none;
@@ -708,7 +709,8 @@ a.primary-button[aria-disabled="true"]:hover {
 
 .compact-button {
   min-height: 30px;
-  padding: 0.35rem 0.55rem;
+  padding: 0.35rem 0.7rem;
+  border-radius: var(--radius-pill);
   font-size: var(--font-label-size);
 }
 
@@ -737,7 +739,7 @@ a.primary-button[aria-disabled="true"]:hover {
 .type-dot {
   width: 7px;
   height: 7px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--warm);
 }
 
@@ -818,7 +820,7 @@ a.primary-button[aria-disabled="true"]:hover {
   max-width: min(280px, 80vw);
   padding: 8px;
   border: 1px solid var(--material-thin-border);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-lg);
   background: var(--material-thin-bg);
   -webkit-backdrop-filter: var(--material-thin-blur);
   backdrop-filter: var(--material-thin-blur);
@@ -926,7 +928,7 @@ a.primary-button[aria-disabled="true"]:hover {
   max-width: clamp(8rem, 40%, 18rem);
   min-height: 24px;
   flex-shrink: 0;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--surface-subtle);
   color: var(--ink-soft);
   font-size: var(--font-label-size);
@@ -941,7 +943,7 @@ a.primary-button[aria-disabled="true"]:hover {
 .inline-alert,
 .inline-success,
 .dashboard-message {
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   padding: 0.65rem 0.8rem;
   font-size: var(--font-body-size);
 }
@@ -1050,15 +1052,20 @@ a.primary-button[aria-disabled="true"]:hover {
   justify-content: space-between;
   gap: 0.75rem;
   width: 100%;
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   background: transparent;
-  color: var(--ink);
+  /* Calm chrome: rows rest a notch dimmer than content and sharpen on
+   * hover/selection, so the workspace, not the nav, reads as the hero. */
+  color: var(--ink-soft);
   padding: 0.62rem 0.68rem;
   text-align: left;
+  transition: color var(--motion-duration-fast) var(--motion-ease-standard),
+    background var(--motion-duration-fast) var(--motion-ease-standard);
 }
 
 .sidebar-nav__item:hover {
   background: var(--surface-subtle);
+  color: var(--ink);
 }
 
 /* Selected sidebar row — mirror Mac `listRowBackground(Palette.accent.opacity(0.15))`.
@@ -1090,7 +1097,7 @@ a.primary-button[aria-disabled="true"]:hover {
 
 .sidebar-nav__item em {
   min-width: 1.55rem;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--surface-subtle);
   color: var(--ink-soft);
   font-size: var(--font-label-size);
@@ -1165,7 +1172,7 @@ a.primary-button[aria-disabled="true"]:hover {
 .detail-panel {
   min-width: 0;
   border: 1px solid var(--surface-hairline);
-  border-radius: 8px;
+  border-radius: var(--radius-lg);
   background: var(--surface-subtle);
   box-shadow: none;
 }
@@ -1233,7 +1240,7 @@ a.primary-button[aria-disabled="true"]:hover {
 .inbox-filters select {
   min-width: 132px;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   background: var(--panel);
   color: var(--ink);
   padding: 0.4rem 0.55rem;
@@ -1251,7 +1258,7 @@ a.primary-button[aria-disabled="true"]:hover {
 .inbox-segmented button {
   flex: 0 0 auto;
   border: 1px solid transparent;
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   background: transparent;
   color: var(--ink-soft);
   padding: 0.38rem 0.55rem;
@@ -1297,7 +1304,7 @@ a.primary-button[aria-disabled="true"]:hover {
   align-items: center;
   gap: 0.65rem;
   width: 100%;
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   background: transparent;
   color: var(--ink);
   padding: 0.68rem;
@@ -1319,7 +1326,7 @@ a.primary-button[aria-disabled="true"]:hover {
   height: 1.75rem;
   place-items: center;
   border: 1px solid var(--surface-hairline);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   background: var(--panel);
   color: var(--ink-soft);
 }
@@ -1374,7 +1381,7 @@ a.primary-button[aria-disabled="true"]:hover {
 .inbox-status {
   align-self: start;
   border: 1px solid var(--surface-hairline);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   padding: 0.16rem 0.42rem;
   color: var(--ink-soft);
   font-size: var(--font-label-small-size);
@@ -1399,7 +1406,7 @@ a.primary-button[aria-disabled="true"]:hover {
 .inbox-error {
   margin: 0.55rem;
   border: 1px solid color-mix(in srgb, var(--danger) 32%, transparent);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   background: color-mix(in srgb, var(--danger) 8%, var(--panel));
 }
 
@@ -1448,7 +1455,7 @@ a.primary-button[aria-disabled="true"]:hover {
   height: 2.4rem;
   flex: 0 0 auto;
   border: 1px solid var(--surface-hairline);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   background:
     linear-gradient(90deg, transparent 28%, var(--accent) 28% 36%, transparent 36% 48%, var(--accent) 48% 56%, transparent 56% 68%, var(--accent) 68% 76%, transparent 76%),
     var(--accent-soft);
@@ -1469,7 +1476,7 @@ a.primary-button[aria-disabled="true"]:hover {
   align-content: start;
   gap: 0.85rem;
   border: 1px solid var(--surface-hairline);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   background: var(--surface-subtle);
   padding: 0.9rem;
 }
@@ -1504,7 +1511,7 @@ a.primary-button[aria-disabled="true"]:hover {
 
 .inbox-manual-recording {
   border: 1px solid var(--surface-hairline);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   background: var(--surface-subtle);
   padding: 0.7rem 0.9rem;
 }
@@ -1543,7 +1550,7 @@ a.primary-button[aria-disabled="true"]:hover {
 }
 
 .recording-list li {
-  border-radius: 8px;
+  border-radius: var(--radius-md);
 }
 
 .recording-list li + li {
@@ -1556,7 +1563,7 @@ a.primary-button[aria-disabled="true"]:hover {
   justify-content: space-between;
   gap: 0.8rem;
   width: 100%;
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   background: transparent;
   color: var(--ink);
   padding: 0.78rem;
@@ -1932,7 +1939,7 @@ a.primary-button[aria-disabled="true"]:hover {
   align-self: start;
   flex: 0 0 auto;
   padding: 0.35rem 0.55rem;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: color-mix(in srgb, var(--accent) 10%, var(--surface));
   color: var(--accent-strong);
   font-size: var(--font-label-size);
@@ -1958,7 +1965,7 @@ a.primary-button[aria-disabled="true"]:hover {
   min-width: 0;
   padding: 0.7rem 0.75rem;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   background: var(--surface-subtle);
 }
 
@@ -2059,7 +2066,7 @@ a.primary-button[aria-disabled="true"]:hover {
   overflow-x: auto;
   padding: 0.65rem 0.7rem;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   background: var(--surface);
 }
 
@@ -2320,7 +2327,7 @@ a.primary-button[aria-disabled="true"]:hover {
   display: flex;
   align-items: flex-start;
   gap: 0.75rem;
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   background: var(--surface-subtle);
   padding: 0.85rem;
 }
@@ -2330,7 +2337,7 @@ a.primary-button[aria-disabled="true"]:hover {
   height: 16px;
   margin-top: 0.25rem;
   border: 2px solid var(--ink-faint);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   flex: 0 0 auto;
 }
 
@@ -2406,7 +2413,7 @@ a.primary-button[aria-disabled="true"]:hover {
   display: inline-flex;
   align-items: center;
   gap: 0.35rem;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--surface-subtle);
   color: var(--ink-soft);
   cursor: pointer;
@@ -2444,7 +2451,7 @@ a.primary-button[aria-disabled="true"]:hover {
 .qa-bubble {
   max-width: 860px;
   border-left: 3px solid var(--accent);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   background: var(--panel);
   border-top: 1px solid var(--border);
   border-right: 1px solid var(--border);
@@ -2457,7 +2464,7 @@ a.primary-button[aria-disabled="true"]:hover {
 .qa-bubble[data-role="user"] {
   align-self: flex-end;
   max-width: min(680px, 88%);
-  border: 1px solid rgba(255, 149, 0, 0.24);
+  border: 1px solid color-mix(in srgb, var(--accent) 24%, transparent);
   border-right: 3px solid var(--accent);
   background: var(--accent-soft);
 }
@@ -2479,7 +2486,7 @@ a.primary-button[aria-disabled="true"]:hover {
   width: fit-content;
   max-width: 100%;
   margin: 0.35rem 0 0.65rem;
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   padding: 0.45rem 0.6rem;
   font-size: var(--font-body-small-size);
   font-weight: 600;
@@ -2505,7 +2512,7 @@ a.primary-button[aria-disabled="true"]:hover {
 
 .wai-card {
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   padding: 0.7rem 0.8rem;
   background: var(--panel-raised);
   font-size: 0.92rem;
@@ -2539,7 +2546,7 @@ a.primary-button[aria-disabled="true"]:hover {
   width: 0.62rem;
   height: 0.62rem;
   flex: 0 0 0.62rem;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--accent);
   box-shadow: 0 0 0 3px var(--accent-soft);
 }
@@ -2588,7 +2595,7 @@ a.primary-button[aria-disabled="true"]:hover {
   width: 0.5rem;
   height: 0.5rem;
   flex: 0 0 0.5rem;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--ink-faint);
 }
 /* Status glyphs follow "silent success, loud failure": a completed read recedes
@@ -2736,7 +2743,7 @@ a.primary-button[aria-disabled="true"]:hover {
   padding: 0.6rem 0.7rem;
   background: var(--surface-subtle);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   font-size: 0.85rem;
   overflow-x: auto;
   white-space: pre;
@@ -2757,7 +2764,7 @@ a.primary-button[aria-disabled="true"]:hover {
   font-weight: 700;
   letter-spacing: 0.03em;
   padding: 0.1rem 0.4rem;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--surface-subtle);
   border: 1px solid var(--border);
 }
@@ -2765,7 +2772,7 @@ a.primary-button[aria-disabled="true"]:hover {
   width: 100%;
   height: 320px;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   background: #fff;
 }
 .wai-artifact-code {
@@ -2798,7 +2805,7 @@ a.primary-button[aria-disabled="true"]:hover {
   gap: 0.6rem;
   border: 1px solid var(--border);
   border-left: 3px solid var(--accent);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   background: var(--surface-subtle);
   padding: 0.85rem 1rem;
 }
@@ -2815,7 +2822,7 @@ a.primary-button[aria-disabled="true"]:hover {
 
 .action-card__approve {
   border: none;
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   background: var(--accent);
   color: #fff;
   cursor: pointer;
@@ -2841,7 +2848,7 @@ a.primary-button[aria-disabled="true"]:hover {
 
 .source-card {
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   padding: 0.75rem;
 }
 
@@ -2895,7 +2902,7 @@ a.primary-button[aria-disabled="true"]:hover {
 .search-results li,
 .topic-list li {
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   padding: 0.85rem;
 }
 
@@ -2990,7 +2997,7 @@ a.primary-button[aria-disabled="true"]:hover {
   min-width: 0;
   padding: 0.45rem 0.6rem;
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: var(--panel-soft, var(--panel));
   font-family: var(--font-family-mono);
   font-size: var(--font-body-small-size);
@@ -3026,7 +3033,7 @@ a.primary-button[aria-disabled="true"]:hover {
   margin: 0;
   padding: 0.7rem 0.85rem;
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: var(--panel-soft, var(--panel));
   font-size: var(--font-body-small-size);
   line-height: 1.45;
@@ -3078,7 +3085,7 @@ a.primary-button[aria-disabled="true"]:hover {
   gap: 0.8rem;
   padding: 0.6rem 0.75rem;
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: var(--panel-soft, var(--panel));
 }
 
@@ -3135,7 +3142,7 @@ a.primary-button[aria-disabled="true"]:hover {
   display: inline-block;
   margin-left: 0.5rem;
   padding: 0.05rem 0.4rem;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--accent-soft, rgba(20, 130, 110, 0.12));
   /* --accent-strong (not --accent) so the badge clears WCAG AA on every
      accent tint — plain --accent fails on amber/green (~2:1). */
@@ -3150,7 +3157,7 @@ a.primary-button[aria-disabled="true"]:hover {
   min-width: 0;
   padding: 0.45rem 0.6rem;
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: var(--panel-soft, var(--panel));
   font-size: var(--font-body-small-size);
 }
@@ -3160,7 +3167,7 @@ a.primary-button[aria-disabled="true"]:hover {
   gap: 0.5rem;
   padding: 0.7rem 0.85rem;
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: var(--panel-soft, var(--panel));
 }
 
@@ -3195,7 +3202,7 @@ a.primary-button[aria-disabled="true"]:hover {
   max-width: 880px;
   margin: 0 auto;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   background: var(--panel);
   box-shadow: none;
 }
@@ -3310,7 +3317,7 @@ a.primary-button[aria-disabled="true"]:hover {
   justify-content: center;
   min-height: 96px;
   border: 1px dashed var(--border-strong);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   background: var(--panel);
   cursor: pointer;
   transition: border-color 0.2s, background 0.2s;
@@ -3366,7 +3373,7 @@ a.primary-button[aria-disabled="true"]:hover {
   resize: vertical;
   min-height: 56px;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   background: var(--panel);
   padding: 0.625rem 0.75rem;
   color: var(--ink);
@@ -3394,7 +3401,7 @@ a.primary-button[aria-disabled="true"]:hover {
 .add-anything__attach {
   white-space: nowrap;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   background: var(--panel);
   color: var(--ink-soft);
   padding: 0.375rem 0.625rem;
@@ -3415,7 +3422,7 @@ a.primary-button[aria-disabled="true"]:hover {
 .add-anything--dragover {
   outline: 2px dashed var(--accent);
   outline-offset: 4px;
-  border-radius: 8px;
+  border-radius: var(--radius-md);
 }
 
 .add-anything__hint {
@@ -3497,7 +3504,7 @@ a.primary-button[aria-disabled="true"]:hover {
   min-height: 2.25rem;
   min-width: 0;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   padding: 0 0.7rem;
   background: var(--panel);
   color: var(--ink);
@@ -3528,7 +3535,7 @@ a.primary-button[aria-disabled="true"]:hover {
 
 .brain-panel__error button {
   border: 1px solid var(--danger);
-  border-radius: 7px;
+  border-radius: var(--radius-sm);
   padding: 0.25rem 0.6rem;
   background: transparent;
   color: var(--danger);
@@ -3615,7 +3622,7 @@ a.primary-button[aria-disabled="true"]:hover {
 
 .brain-map-toolbar__stats span {
   border: 1px solid var(--border);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   padding: 0.15rem 0.45rem;
   background: var(--surface-subtle);
 }
@@ -3688,7 +3695,7 @@ a.primary-button[aria-disabled="true"]:hover {
   justify-content: center;
   gap: 0.12rem;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   padding: 0.45rem 0.55rem;
   background: var(--panel);
 }
@@ -3758,7 +3765,7 @@ a.primary-button[aria-disabled="true"]:hover {
 
 .brain-source-mirror__badges span {
   border: 1px solid var(--border);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   padding: 0.2rem 0.55rem;
   background: var(--surface-subtle);
   color: var(--ink-soft);
@@ -3779,7 +3786,7 @@ a.primary-button[aria-disabled="true"]:hover {
   grid-template-columns: minmax(10rem, 0.8fr) minmax(0, 1.2fr);
   gap: 0.65rem;
   border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--border));
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   padding: 0.65rem;
   background: color-mix(in srgb, var(--accent) 7%, var(--surface-subtle));
 }
@@ -3819,7 +3826,7 @@ a.primary-button[aria-disabled="true"]:hover {
 
 .brain-source-mirror__meter {
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   padding: 0.6rem;
   background: var(--surface-subtle);
 }
@@ -3847,7 +3854,7 @@ a.primary-button[aria-disabled="true"]:hover {
   position: relative;
   height: 0.4rem;
   overflow: hidden;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: color-mix(in srgb, var(--ink) 8%, transparent);
 }
 
@@ -3871,7 +3878,7 @@ a.primary-button[aria-disabled="true"]:hover {
   flex-direction: column;
   gap: 0.1rem;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   padding: 0.5rem 0.6rem;
   background: var(--surface-subtle);
   color: inherit;
@@ -3943,7 +3950,7 @@ a.primary-button[aria-disabled="true"]:hover {
   min-width: 0;
   resize: vertical;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   padding: 0.65rem 0.75rem;
   background: var(--panel);
   color: var(--ink);
@@ -3971,7 +3978,7 @@ a.primary-button[aria-disabled="true"]:hover {
 
 .brain-ask-panel__suggestions button {
   border: 1px solid var(--border);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   padding: 0.35rem 0.65rem;
   background: color-mix(in srgb, var(--panel) 82%, var(--accent) 18%);
   color: var(--ink-muted);
@@ -3995,7 +4002,7 @@ a.primary-button[aria-disabled="true"]:hover {
   flex-direction: column;
   gap: 0.55rem;
   border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--border));
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   padding: 0.75rem;
   background: var(--panel);
 }
@@ -4024,7 +4031,7 @@ a.primary-button[aria-disabled="true"]:hover {
 
 .brain-ask-answer__citations button {
   border: 1px solid var(--border);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   padding: 0.28rem 0.55rem;
   background: var(--surface-subtle);
   color: var(--ink-soft);
@@ -4086,7 +4093,7 @@ a.primary-button[aria-disabled="true"]:hover {
   justify-content: space-between;
   gap: 0.4rem;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   padding: 0.65rem;
   background: var(--surface-subtle);
   color: inherit;
@@ -4174,7 +4181,7 @@ a.primary-button[aria-disabled="true"]:hover {
   align-items: center;
   gap: 0.45rem;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   padding: 0.45rem 0.55rem;
   background: var(--surface-subtle);
 }
@@ -4199,7 +4206,7 @@ a.primary-button[aria-disabled="true"]:hover {
   grid-template-columns: minmax(0, 1fr) minmax(280px, 0.9fr);
   gap: 0.65rem;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   padding: 0.65rem;
   background: var(--surface-subtle);
 }
@@ -4251,7 +4258,7 @@ a.primary-button[aria-disabled="true"]:hover {
 .brain-map-briefing__row,
 .brain-map-briefing__questions button {
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   background: var(--panel);
   color: inherit;
   font: inherit;
@@ -4313,7 +4320,7 @@ a.primary-button[aria-disabled="true"]:hover {
   left: 0.75rem;
   z-index: 5;
   border: 1px solid var(--border);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   padding: 0.25rem 0.55rem;
   background: color-mix(in srgb, var(--panel) 94%, transparent);
   color: var(--ink-soft);
@@ -4327,7 +4334,7 @@ a.primary-button[aria-disabled="true"]:hover {
 
 .brain-map-canvas .react-flow__controls {
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   overflow: hidden;
   box-shadow: none;
 }
@@ -4340,7 +4347,7 @@ a.primary-button[aria-disabled="true"]:hover {
   align-items: flex-start;
   gap: 0.22rem;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   padding: 0.58rem 0.62rem;
   background: var(--panel-raised);
   color: var(--ink);
@@ -4474,7 +4481,7 @@ a.primary-button[aria-disabled="true"]:hover {
   flex-direction: column;
   gap: 0.2rem;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   padding: 0.65rem 0.75rem;
   background: var(--panel);
   color: var(--ink);
@@ -4528,7 +4535,7 @@ a.primary-button[aria-disabled="true"]:hover {
 
 .brain-pages__filter {
   border: 1px solid transparent;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   padding: 0.2rem 0.55rem;
   background: transparent;
   color: var(--ink-soft);
@@ -4550,7 +4557,7 @@ a.primary-button[aria-disabled="true"]:hover {
   align-items: center;
   gap: 0.625rem;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   padding: 0.625rem 0.75rem;
   background: var(--panel);
   color: inherit;
@@ -4576,7 +4583,7 @@ a.primary-button[aria-disabled="true"]:hover {
   flex: 0 0 auto;
   align-items: center;
   justify-content: center;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--accent-soft);
   color: var(--accent);
   font-size: var(--font-label-small-size);
@@ -4745,7 +4752,7 @@ a.primary-button[aria-disabled="true"]:hover {
 .brain-graph__reset {
   margin-left: auto;
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: var(--panel);
   padding: 0.2rem 0.5rem;
   cursor: pointer;
@@ -4756,7 +4763,7 @@ a.primary-button[aria-disabled="true"]:hover {
   width: 100%;
   height: 560px;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   overflow: hidden;
   background: var(--panel);
 }
@@ -4822,7 +4829,7 @@ a.primary-button[aria-disabled="true"]:hover {
   align-items: center;
   gap: 0.35rem;
   border: 1px solid var(--border);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   padding: 0.2rem 0.55rem;
   background: var(--panel);
   color: inherit;
@@ -4845,7 +4852,7 @@ a.primary-button[aria-disabled="true"]:hover {
   width: 100%;
   text-align: left;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   padding: 0.55rem 0.75rem;
   background: var(--panel);
   color: inherit;
@@ -4909,7 +4916,7 @@ a.primary-button[aria-disabled="true"]:hover {
 
 .brain-wiki__source {
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   padding: 0.5rem 0.75rem;
   background: var(--panel);
 }
@@ -4976,7 +4983,7 @@ a.primary-button[aria-disabled="true"]:hover {
 
 .add-anything__result {
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   background: var(--panel);
   padding: 1rem;
 }
@@ -5044,7 +5051,7 @@ a.primary-button[aria-disabled="true"]:hover {
 
 .items-feed__chip {
   border: 1px solid var(--border);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--panel);
   padding: 0.25rem 0.75rem;
   color: var(--ink-soft);
@@ -5071,7 +5078,7 @@ a.primary-button[aria-disabled="true"]:hover {
 .items-feed__list,
 .items-feed__detail {
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   background: var(--panel);
 }
 
@@ -5238,7 +5245,7 @@ a.primary-button[aria-disabled="true"]:hover {
   margin-top: 0.85rem;
   padding: 0.7rem 0.85rem;
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: var(--surface-subtle);
   color: var(--ink-soft);
   font-size: var(--font-body-small-size);
@@ -5288,14 +5295,14 @@ a.primary-button[aria-disabled="true"]:hover {
   gap: 0.75rem;
   min-height: 62px;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   background: var(--panel);
   padding: 0.75rem;
 }
 
 .recorder-panel--recording {
   border-color: var(--danger);
-  background: rgba(194, 65, 59, 0.08);
+  background: color-mix(in srgb, var(--danger) 8%, transparent);
 }
 
 .recorder-panel--processing {
@@ -5323,7 +5330,7 @@ a.primary-button[aria-disabled="true"]:hover {
 }
 
 .recorder-panel__stop:hover {
-  background: #9f302b;
+  background: color-mix(in srgb, var(--danger) 88%, black);
 }
 
 @keyframes spin {
@@ -5488,7 +5495,7 @@ a.primary-button[aria-disabled="true"]:hover {
   gap: 0.5rem;
   margin: 0 auto 2.5rem;
   border: 1px solid var(--color-border);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   padding: 0.25rem;
   background: var(--panel-subtle);
   align-self: center;
@@ -5505,7 +5512,7 @@ a.primary-button[aria-disabled="true"]:hover {
   border: 0;
   background: transparent;
   padding: 0.5rem 1.25rem;
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   cursor: pointer;
   font: inherit;
   color: var(--color-text-secondary);
@@ -5533,7 +5540,7 @@ a.primary-button[aria-disabled="true"]:hover {
 
 .pricing-card {
   border: 1px solid var(--color-border);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   padding: 2rem;
   background: var(--color-surface);
   display: flex;
@@ -5587,7 +5594,7 @@ a.primary-button[aria-disabled="true"]:hover {
   display: inline-block;
   width: 100%;
   padding: 0.78rem 1.1rem;
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   border: 0;
   background: var(--accent);
   color: var(--accent-contrast);
@@ -5622,7 +5629,7 @@ a.primary-button[aria-disabled="true"]:hover {
 .pricing-provider,
 .billing-provider {
   border: 1px solid var(--color-border);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   padding: 0.5rem 0.875rem 0.625rem;
   margin: 0 0 1rem;
   display: flex;
@@ -5737,7 +5744,7 @@ a.primary-button[aria-disabled="true"]:hover {
 .billing-upgrade,
 .billing-cancel {
   padding: 0.75rem 1.25rem;
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   border: 0;
   font: inherit;
   font-weight: 600;
@@ -5793,7 +5800,7 @@ a.primary-button[aria-disabled="true"]:hover {
   padding: 0.875rem 1rem;
   background: var(--color-surface);
   border: 1px solid var(--color-border);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   color: var(--color-text-secondary);
 }
 
@@ -5815,7 +5822,7 @@ a.primary-button[aria-disabled="true"]:hover {
   text-decoration: none;
   transition: opacity 0.12s ease;
   padding: 0.1rem 0.25rem;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
 }
 
 .locale-switcher__item:hover {
@@ -5842,7 +5849,7 @@ a.primary-button[aria-disabled="true"]:hover {
   max-width: 720px;
   margin: 0 auto;
   border: 1px solid var(--color-border);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   background: var(--color-surface);
   padding: 2rem;
 }
@@ -5893,7 +5900,7 @@ a.primary-button[aria-disabled="true"]:hover {
   width: 100%;
   min-width: 0;
   border: 1px solid var(--color-border);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   background: var(--color-bg);
   color: var(--color-text-primary);
   font: inherit;
@@ -5903,7 +5910,7 @@ a.primary-button[aria-disabled="true"]:hover {
 .admin-primary {
   justify-self: start;
   border: 0;
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   background: var(--accent);
   color: var(--accent-contrast);
   font: inherit;
@@ -6100,7 +6107,7 @@ a.primary-button[aria-disabled="true"]:hover {
 .admin-billing-item,
 .admin-once {
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   background: var(--panel);
 }
 
@@ -6197,7 +6204,7 @@ a.primary-button[aria-disabled="true"]:hover {
   display: block;
   width: max(2px, var(--bar-width));
   height: 0.38rem;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
 }
 
 .admin-usage-bars__tracks i[data-kind="cost"] {
@@ -6282,14 +6289,14 @@ a.primary-button[aria-disabled="true"]:hover {
   border-collapse: collapse;
   overflow: hidden;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   background: var(--panel);
 }
 
 .admin-table-wrap {
   width: 100%;
   overflow-x: auto;
-  border-radius: 8px;
+  border-radius: var(--radius-md);
 }
 
 .admin-table th,
@@ -6516,7 +6523,7 @@ a.primary-button[aria-disabled="true"]:hover {
   grid-template-columns: minmax(0, 1fr) auto auto;
   align-items: center;
   gap: 0.3rem;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   padding: 0.15rem 0.25rem;
 }
 
@@ -6610,7 +6617,7 @@ a.primary-button[aria-disabled="true"]:hover {
   flex-direction: column;
   gap: 0.85rem;
   border: 1px solid var(--material-thin-border);
-  border-radius: 12px;
+  border-radius: var(--radius-xl);
   background: var(--material-thin-bg);
   backdrop-filter: var(--material-thin-blur);
   -webkit-backdrop-filter: var(--material-thin-blur);
@@ -6655,7 +6662,7 @@ a.primary-button[aria-disabled="true"]:hover {
 .modal-field input {
   padding: 0.5rem 0.65rem;
   border: 1px solid var(--surface-hairline);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   background: var(--surface-subtle);
   color: inherit;
 }
@@ -6675,7 +6682,7 @@ a.primary-button[aria-disabled="true"]:hover {
   align-items: center;
   justify-content: space-between;
   gap: 0.8rem;
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   background: var(--panel-subtle);
   padding: 0.55rem 0.75rem;
   font-size: 0.9rem;
@@ -6712,7 +6719,7 @@ a.primary-button[aria-disabled="true"]:hover {
   align-items: start;
   gap: 0.6rem;
   border: 1px solid var(--surface-hairline);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   background: var(--surface-subtle);
   padding: 0.85rem 1rem;
 }
@@ -6747,7 +6754,7 @@ a.primary-button[aria-disabled="true"]:hover {
   align-items: center;
   gap: 0.55rem;
   border: 1px solid var(--surface-hairline);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   background: var(--surface-subtle);
   padding: 0.5rem 0.75rem;
 }
@@ -6805,7 +6812,7 @@ a.primary-button[aria-disabled="true"]:hover {
   width: 100%;
   padding: 0.5rem 0.65rem;
   border: 1px solid var(--surface-hairline);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   background: var(--surface-subtle);
   color: inherit;
 }
@@ -6814,7 +6821,7 @@ a.primary-button[aria-disabled="true"]:hover {
   display: inline-flex;
   align-items: center;
   padding: 0.1rem 0.45rem;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   font-size: 0.7rem;
   font-weight: 600;
   letter-spacing: 0.04em;
@@ -6875,7 +6882,7 @@ a.primary-button[aria-disabled="true"]:hover {
    `.sidebar-nav__item em` style. */
 .sidebar-folder-list__count {
   min-width: 1.55rem;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--panel);
   color: var(--ink-soft);
   font-size: var(--font-label-size);
@@ -7139,7 +7146,7 @@ a.primary-button[aria-disabled="true"]:hover {
   left: 0.5rem;
   z-index: 200;
   padding: 0.55rem 0.85rem;
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   background: var(--accent);
   color: var(--accent-contrast);
   font-weight: 600;
@@ -7207,7 +7214,7 @@ a.primary-button[aria-disabled="true"]:hover {
   min-width: 240px;
   max-width: min(86vw, 360px);
   padding: 0.7rem 0.85rem;
-  border-radius: 10px;
+  border-radius: var(--radius-md);
   border: 1px solid var(--material-thin-border);
   background: var(--material-thin-bg);
   backdrop-filter: var(--material-thin-blur);
@@ -7241,7 +7248,7 @@ a.primary-button[aria-disabled="true"]:hover {
   font-size: 1.1rem;
   line-height: 1;
   padding: 0.1rem 0.35rem;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   cursor: pointer;
 }
 
@@ -7316,7 +7323,7 @@ a.primary-button[aria-disabled="true"]:hover {
   }
 
   .sidebar-nav__item {
-    border-radius: 7px;
+    border-radius: var(--radius-sm);
     padding: 0.38rem 0.5rem;
   }
 
@@ -7499,7 +7506,7 @@ a.primary-button[aria-disabled="true"]:hover {
   min-width: 0;
   padding: 0.45rem 0.6rem;
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: var(--panel-soft, var(--panel));
   font-size: var(--font-body-small-size);
 }
@@ -7534,7 +7541,7 @@ a.primary-button[aria-disabled="true"]:hover {
 }
 .mcp-tile {
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: var(--radius-md);
   background: var(--surface-subtle, var(--panel));
   padding: 0.7rem 0.85rem;
 }
@@ -7578,7 +7585,7 @@ a.primary-button[aria-disabled="true"]:hover {
   min-width: 0;
   padding: 0.45rem 0.6rem;
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: var(--panel-soft, var(--panel));
   font-size: var(--font-body-small-size);
 }
@@ -7587,7 +7594,7 @@ a.primary-button[aria-disabled="true"]:hover {
   font-size: var(--font-caption-size, 0.72rem);
   font-weight: 600;
   padding: 0.2rem 0.55rem;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
 }
 .mcp-pill-on {
   color: var(--success, #2f8f5b);
@@ -7607,7 +7614,7 @@ a.primary-button[aria-disabled="true"]:hover {
 .mcp-depth select {
   padding: 0.4rem 0.5rem;
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: var(--panel-soft, var(--panel));
   font-size: var(--font-body-small-size);
 }
@@ -7632,7 +7639,7 @@ a.primary-button[aria-disabled="true"]:hover {
   resize: vertical;
   padding: 0.5rem 0.6rem;
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   font-size: var(--font-body-small-size);
 }
 .item-detail__recover-actions {
