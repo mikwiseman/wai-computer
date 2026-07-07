@@ -25,7 +25,7 @@ from fastapi import (
 )
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import delete, exists, func, or_, select, text, update
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import defer, selectinload
 
 from app.api.deps import CurrentUser, Database
 from app.api.summary_audio import (
@@ -783,9 +783,19 @@ def _serialize_recording_detail(recording: Recording) -> RecordingDetailResponse
 
 
 def _recording_detail_load_options():
-    """Eager-load every relationship used by detail serialization."""
+    """Eager-load every relationship used by detail serialization.
+
+    Segment embeddings stay deferred: the detail API never returns them, and
+    fetching 1536-dim vectors for every segment dominated the endpoint —
+    a 3.5-hour meeting (1400+ segments) spent ~4s of server TTFB just
+    hydrating vectors. Search paths that need embeddings query them in SQL
+    directly, and the live-transcript save path only inserts new segments.
+    """
     return (
-        selectinload(Recording.segments).selectinload(Segment.person),
+        selectinload(Recording.segments).options(
+            defer(Segment.embedding),
+            selectinload(Segment.person),
+        ),
         selectinload(Recording.summary),
         selectinload(Recording.summary_generation_jobs),
         selectinload(Recording.summary_audio_artifacts),
@@ -856,7 +866,10 @@ async def _load_active_share(token: str, db: Database) -> RecordingShare:
         .options(
             selectinload(RecordingShare.recording)
             .selectinload(Recording.segments)
-            .selectinload(Segment.person),
+            .options(
+                defer(Segment.embedding),
+                selectinload(Segment.person),
+            ),
             selectinload(RecordingShare.recording).selectinload(Recording.summary),
             selectinload(RecordingShare.recording).selectinload(Recording.action_items),
             selectinload(RecordingShare.recording).selectinload(Recording.highlights),

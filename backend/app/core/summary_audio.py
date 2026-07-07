@@ -13,7 +13,7 @@ from uuid import UUID
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import defer, selectinload
 
 from app.config import get_settings
 from app.core.ai_usage import (
@@ -502,7 +502,10 @@ async def _load_source_text_for_update(
             .where(Recording.id == source_id, Recording.user_id == user_id)
             .options(
                 selectinload(Recording.summary),
-                selectinload(Recording.segments).selectinload(Segment.person),
+                selectinload(Recording.segments).options(
+                    defer(Segment.embedding),
+                    selectinload(Segment.person),
+                ),
             )
             .with_for_update()
         )
@@ -540,7 +543,10 @@ async def _current_text_for_artifact(
             .where(Recording.id == artifact.recording_id, Recording.user_id == artifact.user_id)
             .options(
                 selectinload(Recording.summary),
-                selectinload(Recording.segments).selectinload(Segment.person),
+                selectinload(Recording.segments).options(
+                    defer(Segment.embedding),
+                    selectinload(Segment.person),
+                ),
             )
         )
         recording = result.scalar_one_or_none()

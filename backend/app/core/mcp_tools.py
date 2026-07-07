@@ -8,7 +8,7 @@ from uuid import UUID
 
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import defer, selectinload
 
 from app.config import get_settings
 from app.models.recording import ActionItem, Folder, Recording, Segment, Summary
@@ -155,7 +155,10 @@ async def search_recordings_for_mcp(
                 Summary.summary.ilike(pattern),
             ),
         )
-        .options(selectinload(Recording.segments), selectinload(Recording.summary))
+        .options(
+            selectinload(Recording.segments).options(defer(Segment.embedding)),
+            selectinload(Recording.summary),
+        )
         .order_by(Recording.created_at.desc())
         .limit(limit)
     )
@@ -421,7 +424,7 @@ async def fetch_recording_for_mcp(
             Recording.deleted_at.is_(None),
         )
         .options(
-            selectinload(Recording.segments),
+            selectinload(Recording.segments).options(defer(Segment.embedding)),
             selectinload(Recording.summary),
             selectinload(Recording.action_items),
         )

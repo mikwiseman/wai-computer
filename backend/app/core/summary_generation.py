@@ -12,7 +12,7 @@ from uuid import UUID
 from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import aliased, selectinload
+from sqlalchemy.orm import aliased, defer, selectinload
 
 from app.core.entity_graph import seed_entities_from_extraction, seed_entities_from_summary
 from app.core.personalization import summary_personalization_instructions
@@ -572,7 +572,11 @@ async def recover_missing_summary_generation_jobs(
                 ~has_summary,
                 ~has_active_summary_job,
             )
-            .options(selectinload(SummaryGenerationJob.recording).selectinload(Recording.segments))
+            .options(
+                selectinload(SummaryGenerationJob.recording)
+                .selectinload(Recording.segments)
+                .options(defer(Segment.embedding))
+            )
             .order_by(
                 SummaryGenerationJob.failed_at.asc().nulls_last(),
                 SummaryGenerationJob.created_at.asc(),
@@ -626,7 +630,11 @@ async def recover_missing_summary_generation_jobs(
                 has_segments,
                 ~has_summary,
             )
-            .options(selectinload(SummaryGenerationJob.recording).selectinload(Recording.segments))
+            .options(
+                selectinload(SummaryGenerationJob.recording)
+                .selectinload(Recording.segments)
+                .options(defer(Segment.embedding))
+            )
             .order_by(SummaryGenerationJob.started_at.asc(), SummaryGenerationJob.id.asc())
             .limit(remaining_limit)
         )
@@ -687,7 +695,11 @@ async def recover_missing_summary_generation_jobs(
                 has_segments,
                 ~has_summary,
             )
-            .options(selectinload(SummaryGenerationJob.recording).selectinload(Recording.segments))
+            .options(
+                selectinload(SummaryGenerationJob.recording)
+                .selectinload(Recording.segments)
+                .options(defer(Segment.embedding))
+            )
             .order_by(SummaryGenerationJob.created_at.asc(), SummaryGenerationJob.id.asc())
             .limit(remaining_limit)
         )
@@ -1018,7 +1030,12 @@ async def _load_recording_for_generation(
     include_outputs: bool,
     lock: bool = False,
 ) -> Recording | None:
-    options = [selectinload(Recording.segments).selectinload(Segment.person)]
+    options = [
+        selectinload(Recording.segments).options(
+            defer(Segment.embedding),
+            selectinload(Segment.person),
+        )
+    ]
     if include_outputs:
         options.extend(
             [

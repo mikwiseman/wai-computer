@@ -346,6 +346,51 @@ async def test_get_recording_detail_includes_assigned_segment_person(
 
 
 @pytest.mark.asyncio
+async def test_recording_detail_loader_skips_segment_embeddings(
+    client: AsyncClient,
+    auth_headers: dict,
+    db_session: AsyncSession,
+):
+    """The detail loader must not fetch segment embedding vectors.
+
+    The detail API never returns embeddings, yet loading them dominated the
+    endpoint's latency: a 3.5-hour meeting has 1400+ segments × a 1536-dim
+    vector each, which pushed server TTFB to ~4.2s on production. Deferring
+    the column keeps the payload query O(text), not O(vectors).
+    """
+    from app.api.routes.recordings import _load_recording_detail
+    from sqlalchemy import inspect as sa_inspect
+
+    recording = await _create_recording(client, auth_headers, title="Defer Embeddings")
+    recording_id = UUID(recording["id"])
+    user = (await db_session.execute(select(User))).scalar_one()
+
+    db_session.add(
+        Segment(
+            recording_id=recording_id,
+            speaker="Speaker 1",
+            raw_label="Speaker 1",
+            content="Segment with a stored embedding.",
+            start_ms=0,
+            end_ms=1500,
+            confidence=0.9,
+            embedding=[0.1] * 1536,
+        )
+    )
+    await db_session.flush()
+
+    loaded = await _load_recording_detail(recording_id, user.id, db_session)
+
+    assert loaded is not None
+    assert len(loaded.segments) == 1
+    unloaded = sa_inspect(loaded.segments[0]).unloaded
+    assert "embedding" in unloaded, (
+        "segment embeddings must stay deferred on the detail path; "
+        f"unloaded attrs: {sorted(unloaded)}"
+    )
+
+
+@pytest.mark.asyncio
 async def test_public_share_link_exports_markdown_without_auth(
     client: AsyncClient,
     auth_headers: dict,
