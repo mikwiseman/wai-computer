@@ -23,15 +23,12 @@ struct MenuBarView: View {
         return recordingVM.shouldPresentLiveView ? recordingVM.statusText : t("Ready", "Готово")
     }
 
-    private var menuDurationText: String? {
-        if let completedContext = appState.completedRecordingContext {
-            let totalSeconds = Int(completedContext.duration)
-            let minutes = totalSeconds / 60
-            let seconds = totalSeconds % 60
-            return String(format: "%02d:%02d", minutes, seconds)
-        }
-
-        return recordingVM.shouldPresentLiveView ? recordingVM.formattedDuration : nil
+    /// Static duration for the finalizing state; the live ticking duration
+    /// renders via `TimelineView` so the menu bar view isn't invalidated at
+    /// 1 Hz for the whole length of a recording.
+    private var completedDurationText: String? {
+        guard let completedContext = appState.completedRecordingContext else { return nil }
+        return RecordingDurationClock.formatted(completedContext.duration)
     }
 
     var body: some View {
@@ -77,10 +74,18 @@ struct MenuBarView: View {
 
                 Spacer()
 
-                if let durationText = menuDurationText {
+                if let durationText = completedDurationText {
                     Text(durationText)
                         .font(Typography.mono)
                         .foregroundStyle(Palette.textSecondary)
+                } else if recordingVM.shouldPresentLiveView {
+                    TimelineView(.periodic(from: .now, by: 1)) { timeline in
+                        Text(RecordingDurationClock.formatted(
+                            recordingVM.durationClock.elapsed(at: timeline.date)
+                        ))
+                        .font(Typography.mono)
+                        .foregroundStyle(Palette.textSecondary)
+                    }
                 }
             }
             .padding(.horizontal, Spacing.lg)

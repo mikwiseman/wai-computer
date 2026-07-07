@@ -1518,7 +1518,9 @@ class MacAppState: ObservableObject {
             completedRecordingContext = CompletedRecordingContext(
                 recordingId: recordingId,
                 transcript: "",
-                duration: recordingViewModel.duration,
+                // Live elapsed time: `duration` is a boundary snapshot and
+                // only freezes to the final value inside stopRecording().
+                duration: recordingViewModel.durationClock.elapsed(at: Date()),
                 recordingType: recordingViewModel.recordingType
             )
         }

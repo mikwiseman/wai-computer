@@ -214,10 +214,16 @@ struct LiveRecordingView: View {
             Text(recordingVM.statusText)
                 .font(Typography.displaySmall)
 
-            Text(recordingVM.formattedDuration)
+            // TimelineView keeps the 1 Hz clock refresh inside this one text
+            // node instead of publishing a tick through the whole window.
+            TimelineView(.periodic(from: .now, by: 1)) { timeline in
+                Text(RecordingDurationClock.formatted(
+                    recordingVM.durationClock.elapsed(at: timeline.date)
+                ))
                 .font(Typography.monoLarge)
                 .foregroundStyle(Palette.textSecondary)
                 .accessibilityAddTraits(.updatesFrequently)
+            }
 
             Spacer()
 

@@ -74,6 +74,31 @@ enum RecordingErrorKind {
     case general
 }
 
+/// Wall-clock model for the live recording timer.
+///
+/// Publishing a ticking `duration` invalidated every view observing the
+/// recording view model — including the entire `MacContentView` window —
+/// once per second for the whole length of a recording. The clock changes
+/// only at boundaries (start/pause/resume/stop); views that show a live
+/// timer derive the ticking string inside a `TimelineView`, so the 1 Hz
+/// invalidation stays confined to that one text node.
+struct RecordingDurationClock: Equatable {
+    /// Seconds accumulated across previous run stretches (through pauses).
+    var baseSeconds: TimeInterval = 0
+    /// Start of the current run stretch; nil while paused or idle.
+    var runningSince: Date?
+
+    func elapsed(at date: Date) -> TimeInterval {
+        let running = runningSince.map { max(0, date.timeIntervalSince($0)) } ?? 0
+        return baseSeconds + running
+    }
+
+    static func formatted(_ seconds: TimeInterval) -> String {
+        let total = Int(seconds)
+        return String(format: "%02d:%02d", total / 60, total % 60)
+    }
+}
+
 @MainActor
 class MacRecordingViewModel: ObservableObject {
     @Published var isRecording = false
@@ -86,7 +111,11 @@ class MacRecordingViewModel: ObservableObject {
     @Published var errorKind: RecordingErrorKind = .general
     @Published var recordingType: RecordingType = .note
     @Published var recordingInputSource: MacRecordingInputSource = SystemAudioGate.isSupported ? .dual : .microphone
+    /// Boundary snapshot of the elapsed time (start/pause/stop). Not ticked —
+    /// live timers render from `durationClock` inside a `TimelineView`.
     @Published var duration: TimeInterval = 0
+    /// Changes only on start/pause/resume/stop; see `RecordingDurationClock`.
+    @Published private(set) var durationClock = RecordingDurationClock()
     @Published var hasSystemAudio = false
     @Published var currentRecordingId: String?
     @Published var isServerComplete = false
@@ -132,9 +161,7 @@ class MacRecordingViewModel: ObservableObject {
 
 
     var formattedDuration: String {
-        let minutes = Int(duration) / 60
-        let seconds = Int(duration) % 60
-        return String(format: "%02d:%02d", minutes, seconds)
+        RecordingDurationClock.formatted(durationClock.elapsed(at: Date()))
     }
 
     var shouldPresentLiveView: Bool {
@@ -269,6 +296,7 @@ class MacRecordingViewModel: ObservableObject {
         recordingInputSource = inputSource
         hasSystemAudio = false
         duration = 0
+        durationClock = RecordingDurationClock()
         recording = nil
         self.apiClient = apiClient
         audioCapture = nil
@@ -282,6 +310,8 @@ class MacRecordingViewModel: ObservableObject {
         if testingMode.isRecordingFlow {
             currentRecordingId = MacUITestFixtures.completedRecording.id
             duration = TimeInterval(MacUITestFixtures.completedRecording.durationSeconds ?? 0)
+            // Static clock: UI tests assert a stable fixture duration.
+            durationClock = RecordingDurationClock(baseSeconds: duration, runningSince: nil)
             setPhase(.recording)
             isLoading = false
             return
@@ -445,6 +475,7 @@ class MacRecordingViewModel: ObservableObject {
                 startSystemAudioMonitor(for: dualCapture)
             }
 
+            durationClock = RecordingDurationClock(baseSeconds: 0, runningSince: Date())
             setPhase(.recording)
             isLoading = false
 
@@ -469,6 +500,11 @@ class MacRecordingViewModel: ObservableObject {
         }
 
         guard phase == .recording else { return }
+
+        // Freeze the wall clock into `duration` so persistence below reads the
+        // final elapsed value (the clock stopped ticking views, not time).
+        duration = durationClock.elapsed(at: Date())
+        durationClock = RecordingDurationClock(baseSeconds: duration, runningSince: nil)
 
         SentryHelper.addBreadcrumb(
             category: "recording",
@@ -646,6 +682,9 @@ class MacRecordingViewModel: ObservableObject {
 
         guard phase == .recording else { return }
 
+        duration = durationClock.elapsed(at: Date())
+        durationClock = RecordingDurationClock(baseSeconds: duration, runningSince: nil)
+
         SentryHelper.addBreadcrumb(
             category: "recording",
             message: "recording discarded",
@@ -719,6 +758,7 @@ class MacRecordingViewModel: ObservableObject {
         isServerComplete = false
         systemAudioWarning = nil
         duration = 0
+        durationClock = RecordingDurationClock()
         isPaused = false
         tearDownConversationAutoStop()
     }
@@ -728,6 +768,8 @@ class MacRecordingViewModel: ObservableObject {
         do {
             try await audioCapture?.pauseRecording()
             isPaused = true
+            duration = durationClock.elapsed(at: Date())
+            durationClock = RecordingDurationClock(baseSeconds: duration, runningSince: nil)
             autoStopMonitor?.setPaused(true, at: Date())
             conversationEndPromptReason = nil
             SentryHelper.addBreadcrumb(
@@ -746,6 +788,7 @@ class MacRecordingViewModel: ObservableObject {
         do {
             try await audioCapture?.resumeRecording()
             isPaused = false
+            durationClock = RecordingDurationClock(baseSeconds: duration, runningSince: Date())
             autoStopMonitor?.setPaused(false, at: Date())
             SentryHelper.addBreadcrumb(
                 category: "recording",
@@ -844,7 +887,7 @@ class MacRecordingViewModel: ObservableObject {
                 data: [
                     "recordingId": currentRecordingId ?? "unknown",
                     "reason": reason.rawValue,
-                    "duration": duration,
+                    "duration": durationClock.elapsed(at: now),
                 ]
             )
             MacRecordingAutoStopNotifier.shared.notifyPromptIfInactive(
@@ -873,7 +916,7 @@ class MacRecordingViewModel: ObservableObject {
                     "recordingId": currentRecordingId ?? "unknown",
                     "reason": reason.rawValue,
                     "action": action.rawValue,
-                    "duration": duration,
+                    "duration": durationClock.elapsed(at: now),
                 ]
             )
             switch action {
@@ -1440,6 +1483,10 @@ class MacRecordingViewModel: ObservableObject {
             .joined(separator: "\n\n")
     }
 
+    /// Drives the auto-stop state machine only. The visible timer no longer
+    /// ticks a @Published property — live duration derives from
+    /// `durationClock` inside a `TimelineView`, so this loop mutates nothing
+    /// unless the auto-stop monitor emits an event.
     private func startTimer() {
         timerTask?.cancel()
         timerTask = Task { [weak self] in
@@ -1449,8 +1496,6 @@ class MacRecordingViewModel: ObservableObject {
                 await MainActor.run {
                     guard let self else { return }
                     self.processAutoStopTick()
-                    guard !self.isPaused else { return }
-                    self.duration += 1
                 }
             }
         }

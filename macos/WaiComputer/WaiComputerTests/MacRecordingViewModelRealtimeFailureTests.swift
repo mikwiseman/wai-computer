@@ -33,6 +33,41 @@ final class MacRecordingViewModelStateTests: XCTestCase {
         XCTAssertEqual(viewModel.duration, TimeInterval(MacUITestFixtures.completedRecording.durationSeconds ?? 0))
     }
 
+    /// The clock is the boundary-only model that keeps 1 Hz ticking out of
+    /// @Published state: elapsed derives from wall time between boundaries.
+    func testDurationClockElapsedAcrossRunAndPauseStretches() {
+        let start = Date(timeIntervalSince1970: 1_000_000)
+
+        // Idle clock: nothing accumulates.
+        XCTAssertEqual(RecordingDurationClock().elapsed(at: start), 0)
+
+        // Running stretch accumulates wall time on top of the base.
+        let running = RecordingDurationClock(baseSeconds: 60, runningSince: start)
+        XCTAssertEqual(running.elapsed(at: start.addingTimeInterval(30)), 90)
+
+        // Paused clock is frozen at its base regardless of elapsed wall time.
+        let paused = RecordingDurationClock(baseSeconds: 90, runningSince: nil)
+        XCTAssertEqual(paused.elapsed(at: start.addingTimeInterval(3_600)), 90)
+
+        // Clock skew (date before runningSince) never yields negative time.
+        XCTAssertEqual(running.elapsed(at: start.addingTimeInterval(-5)), 60)
+
+        XCTAssertEqual(RecordingDurationClock.formatted(0), "00:00")
+        XCTAssertEqual(RecordingDurationClock.formatted(90), "01:30")
+        XCTAssertEqual(RecordingDurationClock.formatted(3_601), "60:01")
+    }
+
+    /// The recording timer must not tick `duration` once per second — that
+    /// invalidated every observer of the view model (the whole window) for
+    /// the length of a recording. Live timers render via TimelineView from
+    /// `durationClock` instead; this pins the source so the tick can't creep
+    /// back in.
+    func testTimerLoopDoesNotTickPublishedDuration() throws {
+        let source = try macSource("WaiComputer/Features/Recording/MacRecordingViewModel.swift")
+        XCTAssertFalse(source.contains("duration += 1"))
+        XCTAssertFalse(source.contains("self.duration += 1"))
+    }
+
     func testMacRecordingViewModelDoesNotExposeRealtimeTranscriptionTestHooks() throws {
         let source = try macSource("WaiComputer/Features/Recording/MacRecordingViewModel.swift")
 
