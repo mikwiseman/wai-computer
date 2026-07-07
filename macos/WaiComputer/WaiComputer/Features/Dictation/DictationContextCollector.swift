@@ -139,6 +139,11 @@ enum DictationContextCollector {
     ) -> DictationCleanupTextboxContext? {
         guard MacInputPermission.hasAccessibilityAccess else { return nil }
         let systemWide = AXUIElementCreateSystemWide()
+        // Bound the synchronous AX round-trip: this runs on the dictation
+        // start path (@MainActor), and a busy target app's AX server can
+        // otherwise block the hotkey for seconds (the default AX messaging
+        // timeout). Mirrors DictationEditWatcher's 0.5 s bound.
+        AXUIElementSetMessagingTimeout(systemWide, 0.5)
         guard let focusedValue = copyAttribute(
             systemWide,
             kAXFocusedUIElementAttribute

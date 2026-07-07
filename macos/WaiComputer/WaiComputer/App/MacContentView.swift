@@ -92,7 +92,11 @@ struct MacMainView: View {
     @EnvironmentObject var appState: MacAppState
     @EnvironmentObject var recordingViewModel: MacRecordingViewModel
     @EnvironmentObject private var languageManager: LanguageManager
-    @EnvironmentObject private var dictationManager: DictationManager
+    // NOTE: deliberately no DictationManager subscription here. A previous
+    // (never-read) @EnvironmentObject declaration subscribed the entire main
+    // window to dictationManager.objectWillChange, re-rendering the whole
+    // NavigationSplitView on every interim transcript update — several times
+    // per second — while the user was looking at the floating overlay.
     @StateObject private var libraryViewModel = MacLibraryViewModel()
     @StateObject private var importViewModel = MacImportViewModel()
     // Computer-use (Mac-edge channel): opt-in, off by default. Runs only while

@@ -940,19 +940,32 @@ struct CompanionHTMLPreview: View {
     var body: some View { _CompanionWebView(html: html) }
 }
 
+/// Tracks the last HTML pushed into the web view so SwiftUI update passes —
+/// which run for every streamed token while an artifact card is on screen —
+/// only trigger a cross-process reload when the artifact itself changed.
+final class _CompanionWebViewCoordinator {
+    var loadedHTML: String?
+}
+
 #if os(macOS)
 private struct _CompanionWebView: NSViewRepresentable {
     let html: String
+    func makeCoordinator() -> _CompanionWebViewCoordinator { _CompanionWebViewCoordinator() }
     func makeNSView(context: Context) -> WKWebView { WKWebView() }
     func updateNSView(_ nsView: WKWebView, context: Context) {
+        guard context.coordinator.loadedHTML != html else { return }
+        context.coordinator.loadedHTML = html
         nsView.loadHTMLString(html, baseURL: nil)
     }
 }
 #elseif os(iOS)
 private struct _CompanionWebView: UIViewRepresentable {
     let html: String
+    func makeCoordinator() -> _CompanionWebViewCoordinator { _CompanionWebViewCoordinator() }
     func makeUIView(context: Context) -> WKWebView { WKWebView() }
     func updateUIView(_ uiView: WKWebView, context: Context) {
+        guard context.coordinator.loadedHTML != html else { return }
+        context.coordinator.loadedHTML = html
         uiView.loadHTMLString(html, baseURL: nil)
     }
 }

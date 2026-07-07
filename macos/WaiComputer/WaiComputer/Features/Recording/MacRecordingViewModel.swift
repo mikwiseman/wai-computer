@@ -1524,7 +1524,13 @@ class MacRecordingViewModel: ObservableObject {
                         systemAudioStalled: stalled,
                         systemAudioReceivedAny: receivedAny
                     ) {
-                        self.systemAudioWarning = self.systemAudioUnavailableWarningText
+                        // Equality-guarded: an unconditional @Published write
+                        // here pulsed objectWillChange through every observer
+                        // (the whole window) once per second of dual capture.
+                        let warningText = self.systemAudioUnavailableWarningText
+                        if self.systemAudioWarning != warningText {
+                            self.systemAudioWarning = warningText
+                        }
                         if !warnedOnce {
                             warnedOnce = true
                             SentryHelper.addBreadcrumb(
@@ -1539,7 +1545,7 @@ class MacRecordingViewModel: ObservableObject {
                                 ]
                             )
                         }
-                    } else {
+                    } else if self.systemAudioWarning != nil {
                         self.systemAudioWarning = nil
                     }
                 }

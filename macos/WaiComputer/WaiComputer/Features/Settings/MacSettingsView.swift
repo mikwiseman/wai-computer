@@ -1814,12 +1814,24 @@ struct MacSettingsView: View {
         }
         #endif
 
-        hasMicrophonePermission = Self.hasMicrophonePermission
-        accessibilityStatus = MacInputPermission.accessibilityStatus()
-        systemAudioReadiness = Self.currentSystemAudioReadiness(
+        // Equality-guarded: this runs on a 1 Hz poll while the Voice tab is
+        // open; unconditional state writes re-rendered the settings tree
+        // every second even when nothing changed.
+        let microphone = Self.hasMicrophonePermission
+        if hasMicrophonePermission != microphone {
+            hasMicrophonePermission = microphone
+        }
+        let accessibility = MacInputPermission.accessibilityStatus()
+        if accessibilityStatus != accessibility {
+            accessibilityStatus = accessibility
+        }
+        let readiness = Self.currentSystemAudioReadiness(
             preflightPassedInCurrentProcess: systemAudioPreflightPassedInCurrentProcess,
             openedSettingsDuringCurrentAttempt: triggeredOpenSystemAudioSettings
         )
+        if systemAudioReadiness != readiness {
+            systemAudioReadiness = readiness
+        }
         dictationManager.refreshPermissionState()
         if dictationPermissionsReady {
             stopPermissionPolling()

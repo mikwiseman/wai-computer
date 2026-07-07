@@ -156,6 +156,12 @@ public struct CompanionView: View {
     /// Bumped on every streamed event so the list auto-scrolls while text grows
     /// within a single block.
     @State private var streamTick: Int = 0
+    /// Reference boxes: mutating them does NOT invalidate the view. The
+    /// throttle keeps the per-token auto-scroll from forcing a synchronous
+    /// layout pass on every streamed event; the cache memoizes immutable
+    /// stored-message timelines across the per-token body re-evaluations.
+    @State private var streamScrollThrottle = StreamScrollThrottle()
+    @State private var storedTimelineCache = StoredTimelineCache()
     // Whether the chat is scrolled near the bottom. While streaming we only
     // auto-scroll when this is true, so scrolling up mid-answer is not fought (107).
     @State private var isNearBottom: Bool = true
@@ -563,7 +569,9 @@ public struct CompanionView: View {
                     }
                 }
                 .onChangeCompat(of: streamTick) {
-                    guard isNearBottom else { return }
+                    // Throttled: an unthrottled per-token scrollTo forces a
+                    // synchronous layout pass for every streamed event.
+                    guard isNearBottom, streamScrollThrottle.shouldScroll() else { return }
                     proxy.scrollTo("bottomAnchor", anchor: .bottom)
                 }
             }
@@ -598,7 +606,9 @@ public struct CompanionView: View {
                     }
                 }
                 .onChangeCompat(of: streamTick) {
-                    guard isNearBottom else { return }
+                    // Throttled: an unthrottled per-token scrollTo forces a
+                    // synchronous layout pass for every streamed event.
+                    guard isNearBottom, streamScrollThrottle.shouldScroll() else { return }
                     proxy.scrollTo("bottomAnchor", anchor: .bottom)
                 }
             }
@@ -774,17 +784,30 @@ public struct CompanionView: View {
 
     /// The rich timeline for a finished message if we kept it this session,
     /// else a single markdown block from the stored final text.
+    ///
+    /// Cached per message id: the body re-evaluates on every streaming token,
+    /// and re-walking each historical message's tool-call JSON per token made
+    /// long chats stutter while an answer streamed. Stored messages are
+    /// immutable, so the cache never needs invalidation beyond chat switches.
     private func timelineItems(for message: CompanionMessage) -> [CompanionTurnItem] {
         if let reducer = completedTurns[message.id] {
             return reducer.items
         }
+        if let cached = storedTimelineCache.items[message.id] {
+            return cached
+        }
+        let items: [CompanionTurnItem]
         let storedItems = CompanionTurnReducer.storedItems(from: message.toolCalls)
         if !storedItems.isEmpty {
             let text = message.plainText.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !text.isEmpty else { return storedItems }
-            return storedItems + [.text(id: "stored-text-\(message.id)", markdown: message.plainText)]
+            items = text.isEmpty
+                ? storedItems
+                : storedItems + [.text(id: "stored-text-\(message.id)", markdown: message.plainText)]
+        } else {
+            items = [.text(id: message.id, markdown: message.plainText)]
         }
-        return [.text(id: message.id, markdown: message.plainText)]
+        storedTimelineCache.items[message.id] = items
+        return items
     }
 
     @ViewBuilder
@@ -1282,6 +1305,8 @@ public struct CompanionView: View {
         activeChatId = chatId
         messages = []
         completedTurns = [:]
+        storedTimelineCache.removeAll()
+        streamScrollThrottle.reset()
         isLoadingChat = true
         defer { isLoadingChat = false }
         do {
@@ -1301,6 +1326,8 @@ public struct CompanionView: View {
             messages = []
             liveTurn = CompanionTurnReducer()
             completedTurns = [:]
+            storedTimelineCache.removeAll()
+            streamScrollThrottle.reset()
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -1365,6 +1392,7 @@ public struct CompanionView: View {
         // Flip stage synchronously so the disabled button covers the gap.
         stage = .searching
         liveTurn = CompanionTurnReducer()
+        streamScrollThrottle.reset()
 
         var chatId = activeChatId
         if chatId == nil {
@@ -1680,5 +1708,41 @@ private struct FlowLayout: Layout {
             x += size.width + spacing
             rowHeight = max(rowHeight, size.height)
         }
+    }
+}
+
+/// Reference box for throttling the streaming auto-scroll. Mutating a class
+/// held in @State does not invalidate the view, so the per-event bookkeeping
+/// stays free; only the actual `scrollTo` (at most ~6 Hz) costs a layout pass.
+final class StreamScrollThrottle {
+    private var lastScrollAt = Date.distantPast
+    private let minimumInterval: TimeInterval
+
+    init(minimumInterval: TimeInterval = 0.15) {
+        self.minimumInterval = minimumInterval
+    }
+
+    /// True when enough time has passed since the last permitted scroll.
+    /// Marks the permitted moment, so callers just gate on the result.
+    func shouldScroll(at date: Date = Date()) -> Bool {
+        guard date.timeIntervalSince(lastScrollAt) >= minimumInterval else { return false }
+        lastScrollAt = date
+        return true
+    }
+
+    /// Forget the throttle window (e.g. when a new turn starts) so the first
+    /// event of the next stream scrolls immediately.
+    func reset() {
+        lastScrollAt = .distantPast
+    }
+}
+
+/// Reference box memoizing the timeline items derived from immutable stored
+/// messages, keyed by message id. Cleared when switching chats.
+final class StoredTimelineCache {
+    var items: [String: [CompanionTurnItem]] = [:]
+
+    func removeAll() {
+        items.removeAll()
     }
 }

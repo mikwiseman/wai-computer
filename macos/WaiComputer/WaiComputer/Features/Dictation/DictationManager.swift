@@ -1995,7 +1995,14 @@ final class DictationManager: ObservableObject {
         hotkeyManager.hotkey = selectedHotkey
         hotkeyManager.handsFreeHotkey = selectedHandsFreeHotkey
         let shouldEnable = isConfigured && isFeatureEnabled
-        isEnabled = shouldEnable
+        // Equality-guarded @Published write: this runs from the Settings 1 Hz
+        // permission poll, and an unconditional write re-rendered every
+        // observer of the manager (the whole main window) once per second.
+        // start()/stop() below stay unconditional — the repeated start() is
+        // what installs the global monitor once Accessibility gets granted.
+        if isEnabled != shouldEnable {
+            isEnabled = shouldEnable
+        }
         if shouldEnable {
             hotkeyManager.start()
         } else {
