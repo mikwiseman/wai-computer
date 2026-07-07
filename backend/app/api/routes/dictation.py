@@ -43,7 +43,7 @@ from app.core.cerebras_chat import (
     chat_completion_usage_response,
     get_cerebras_client,
 )
-from app.models.dictation import DictationDictionaryWord, DictationEntry
+from app.models.dictation import DictationDictionaryWord, DictationEntry, DictationSnippet
 
 router = APIRouter(prefix="/dictation", tags=["dictation"])
 logger = logging.getLogger(__name__)
@@ -1997,5 +1997,111 @@ async def delete_dictionary_word(
     word = result.scalar_one_or_none()
     if word is not None:
         await db.delete(word)
+        await db.flush()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+class SnippetResponse(BaseModel):
+    client_snippet_id: UUID
+    trigger: str
+    expansion: str
+    occurred_at: datetime
+
+
+class CreateSnippetRequest(BaseModel):
+    client_snippet_id: UUID
+    trigger: str = Field(min_length=1, max_length=120)
+    expansion: str = Field(min_length=1, max_length=4000)
+    occurred_at: datetime
+
+    @field_validator("trigger", "expansion", mode="before")
+    @classmethod
+    def strip_and_require(cls, value: object) -> object:
+        if not isinstance(value, str):
+            return value
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("must not be blank")
+        return cleaned
+
+
+def _serialize_snippet(snippet: DictationSnippet) -> SnippetResponse:
+    return SnippetResponse(
+        client_snippet_id=snippet.client_snippet_id,
+        trigger=snippet.trigger,
+        expansion=snippet.expansion,
+        occurred_at=snippet.occurred_at,
+    )
+
+
+@router.get("/snippets", response_model=list[SnippetResponse])
+async def list_dictation_snippets(user: CurrentUser, db: Database) -> list[SnippetResponse]:
+    """List the current user's snippets, oldest first (stable client order)."""
+    result = await db.execute(
+        select(DictationSnippet)
+        .where(DictationSnippet.user_id == user.id)
+        .order_by(DictationSnippet.occurred_at.asc())
+    )
+    return [_serialize_snippet(s) for s in result.scalars().all()]
+
+
+@router.post("/snippets", response_model=SnippetResponse)
+async def create_dictation_snippet(
+    request: CreateSnippetRequest,
+    user: CurrentUser,
+    db: Database,
+    response: Response,
+) -> SnippetResponse:
+    """Create a snippet. Idempotent by (user_id, client_snippet_id)."""
+    existing = await db.execute(
+        select(DictationSnippet).where(
+            DictationSnippet.user_id == user.id,
+            DictationSnippet.client_snippet_id == request.client_snippet_id,
+        )
+    )
+    found = existing.scalar_one_or_none()
+    if found is not None:
+        response.status_code = status.HTTP_200_OK
+        return _serialize_snippet(found)
+
+    snippet = DictationSnippet(
+        user_id=user.id,
+        client_snippet_id=request.client_snippet_id,
+        trigger=request.trigger,
+        expansion=request.expansion,
+        occurred_at=request.occurred_at,
+    )
+    db.add(snippet)
+    await db.flush()
+    logger.info(
+        "Dictation snippet stored: user=%s trigger_len=%d expansion_len=%d",
+        user.id,
+        len(request.trigger),
+        len(request.expansion),
+    )
+    response.status_code = status.HTTP_201_CREATED
+    return _serialize_snippet(snippet)
+
+
+@router.delete(
+    "/snippets/{client_snippet_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    response_class=Response,
+)
+async def delete_dictation_snippet(
+    client_snippet_id: UUID,
+    user: CurrentUser,
+    db: Database,
+) -> Response:
+    """Delete a snippet. Idempotent — 204 whether the row existed or not."""
+    result = await db.execute(
+        select(DictationSnippet).where(
+            DictationSnippet.user_id == user.id,
+            DictationSnippet.client_snippet_id == client_snippet_id,
+        )
+    )
+    snippet = result.scalar_one_or_none()
+    if snippet is not None:
+        await db.delete(snippet)
         await db.flush()
     return Response(status_code=status.HTTP_204_NO_CONTENT)

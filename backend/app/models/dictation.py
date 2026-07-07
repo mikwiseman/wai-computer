@@ -71,5 +71,30 @@ class DictationDictionaryWord(Base, UUIDMixin, TimestampMixin):
     )
 
 
+class DictationSnippet(Base, UUIDMixin, TimestampMixin):
+    """A voice-triggered text expansion ("my email" -> the full address)."""
+
+    __tablename__ = "dictation_snippets"
+
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    client_snippet_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    trigger: Mapped[str] = mapped_column(String(120), nullable=False)
+    expansion: Mapped[str] = mapped_column(String(4000), nullable=False)
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+    user: Mapped["User"] = relationship("User", back_populates="dictation_snippets")
+
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id", "client_snippet_id", name="uq_dictation_snippets_user_client_id"
+        ),
+    )
+
+
 # Avoid circular import.
 from app.models.user import User  # noqa: E402

@@ -334,3 +334,87 @@ async def test_user_delete_cascades_dictionary(
         )
     ).scalars().all()
     assert remaining == []
+
+
+# ---------- snippets ----------
+
+
+def _snippet_payload(**overrides) -> dict:
+    payload = {
+        "client_snippet_id": str(uuid4()),
+        "trigger": "my email",
+        "expansion": "hi@mikwiseman.com",
+        "occurred_at": datetime(2026, 7, 7, 12, 0, tzinfo=timezone.utc).isoformat(),
+    }
+    payload.update(overrides)
+    return payload
+
+
+@pytest.mark.asyncio
+async def test_post_snippet_creates_and_list_returns_it(client: AsyncClient):
+    headers = await _register(client, "snippets.create@example.com")
+    payload = _snippet_payload()
+
+    create = await client.post("/api/dictation/snippets", headers=headers, json=payload)
+    assert create.status_code == 201
+    body = create.json()
+    assert body["client_snippet_id"] == payload["client_snippet_id"]
+    assert body["trigger"] == "my email"
+    assert body["expansion"] == "hi@mikwiseman.com"
+
+    listed = await client.get("/api/dictation/snippets", headers=headers)
+    assert listed.status_code == 200
+    assert len(listed.json()) == 1
+
+
+@pytest.mark.asyncio
+async def test_post_snippet_is_idempotent_by_client_snippet_id(client: AsyncClient):
+    headers = await _register(client, "snippets.idempotent@example.com")
+    payload = _snippet_payload()
+
+    first = await client.post("/api/dictation/snippets", headers=headers, json=payload)
+    assert first.status_code == 201
+
+    again = {**payload, "expansion": "should not overwrite"}
+    second = await client.post("/api/dictation/snippets", headers=headers, json=again)
+    assert second.status_code == 200
+    assert second.json()["expansion"] == "hi@mikwiseman.com"
+
+
+@pytest.mark.asyncio
+async def test_delete_snippet_is_idempotent(client: AsyncClient):
+    headers = await _register(client, "snippets.delete@example.com")
+    payload = _snippet_payload()
+    await client.post("/api/dictation/snippets", headers=headers, json=payload)
+
+    first = await client.delete(
+        f"/api/dictation/snippets/{payload['client_snippet_id']}", headers=headers
+    )
+    assert first.status_code == 204
+
+    second = await client.delete(
+        f"/api/dictation/snippets/{payload['client_snippet_id']}", headers=headers
+    )
+    assert second.status_code == 204
+
+    listed = await client.get("/api/dictation/snippets", headers=headers)
+    assert listed.json() == []
+
+
+@pytest.mark.asyncio
+async def test_snippets_are_isolated_per_user(client: AsyncClient):
+    headers_a = await _register(client, "snippets.a@example.com")
+    headers_b = await _register(client, "snippets.b@example.com")
+    await client.post("/api/dictation/snippets", headers=headers_a, json=_snippet_payload())
+
+    listed_b = await client.get("/api/dictation/snippets", headers=headers_b)
+    assert listed_b.json() == []
+
+
+@pytest.mark.asyncio
+async def test_post_snippet_rejects_blank_trigger(client: AsyncClient):
+    headers = await _register(client, "snippets.blank@example.com")
+    payload = _snippet_payload(trigger="   ")
+
+    response = await client.post("/api/dictation/snippets", headers=headers, json=payload)
+    assert response.status_code == 422
