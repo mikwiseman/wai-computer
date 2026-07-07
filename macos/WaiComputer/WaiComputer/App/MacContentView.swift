@@ -1725,7 +1725,7 @@ private struct InlineLibraryErrorBanner: View {
             RoundedRectangle(cornerRadius: Radius.lg)
                 .strokeBorder(Palette.warning.opacity(0.35), lineWidth: 1)
         )
-        .shadow(color: .black.opacity(0.12), radius: 10, y: 4)
+        .waiShadow(.raised)
         .padding(.horizontal, Spacing.lg)
         .accessibilityIdentifier("library-inline-error-banner")
     }
@@ -2374,7 +2374,7 @@ private struct RecordingRecoveryNoticeBanner: View {
         .padding(.vertical, Spacing.md)
         .background(.ultraThinMaterial)
         .clipShape(RoundedRectangle(cornerRadius: Radius.md))
-        .shadow(color: .black.opacity(0.18), radius: 10, y: 4)
+        .waiShadow(.raised)
         .accessibilityIdentifier("recording-recovery-banner")
     }
 }

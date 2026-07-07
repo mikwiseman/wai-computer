@@ -14,7 +14,7 @@ struct OnboardingWelcomeSlide: View {
                 .resizable()
                 .scaledToFit()
                 .frame(width: 104, height: 104)
-                .shadow(color: .black.opacity(0.10), radius: 12, x: 0, y: 8)
+                .waiShadow(.raised)
                 .opacity(isActive ? 1 : 0)
                 .offset(y: isActive ? 0 : 12)
                 .animation(.easeOut(duration: 0.45).delay(0.05), value: isActive)

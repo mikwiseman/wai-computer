@@ -1460,7 +1460,9 @@ struct MacSettingsView: View {
                 .frame(width: 34, height: 34)
                 .overlay(
                     Image(systemName: "paintpalette.fill")
-                        .foregroundStyle(.white)
+                        // Contrast-correct ink for the selected accent —
+                        // plain white fails WCAG on the amber/green accents.
+                        .foregroundStyle(selectedAccentChoice.onAccentColor)
                 )
                 .accessibilityHidden(true)
 

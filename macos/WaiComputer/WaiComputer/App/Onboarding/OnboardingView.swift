@@ -458,12 +458,24 @@ struct OnboardingView: View {
         }
         #endif
 
-        microphonePermissionStatus = Self.permissionStatus(for: AVCaptureDevice.authorizationStatus(for: .audio))
-        accessibilityStatus = MacInputPermission.accessibilityStatus()
-        systemAudioReadiness = Self.currentSystemAudioReadiness(
+        // Equality-guarded: the 1 Hz permission poll otherwise re-rendered
+        // every slide (they are all mounted for the paging animation) once a
+        // second for the entire first-run flow.
+        let microphone = Self.permissionStatus(for: AVCaptureDevice.authorizationStatus(for: .audio))
+        if microphonePermissionStatus != microphone {
+            microphonePermissionStatus = microphone
+        }
+        let accessibility = MacInputPermission.accessibilityStatus()
+        if accessibilityStatus != accessibility {
+            accessibilityStatus = accessibility
+        }
+        let readiness = Self.currentSystemAudioReadiness(
             preflightPassedInCurrentProcess: systemAudioPreflightPassedInCurrentProcess,
             openedSettingsDuringCurrentAttempt: triggeredOpenSystemAudioSettings
         )
+        if systemAudioReadiness != readiness {
+            systemAudioReadiness = readiness
+        }
         dictationManager.refreshPermissionState()
         if dictationPermissionsReady {
             stopPermissionPolling()
@@ -971,7 +983,7 @@ private struct PermissionRow: View {
                         .padding(.horizontal, 16)
                         .padding(.vertical, 8)
                         .background(
-                            RoundedRectangle(cornerRadius: 999, style: .continuous)
+                            Capsule(style: .continuous)
                                 .fill(Palette.accent)
                         )
                 }
@@ -992,7 +1004,7 @@ private struct PermissionRow: View {
                             .padding(.horizontal, 16)
                             .padding(.vertical, 8)
                             .background(
-                                RoundedRectangle(cornerRadius: 999, style: .continuous)
+                                Capsule(style: .continuous)
                                     .fill(Palette.accent)
                             )
                     }

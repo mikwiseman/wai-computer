@@ -21,11 +21,11 @@ struct PermissionBanner: View {
         HStack(alignment: .center, spacing: Spacing.md) {
             ZStack {
                 Circle()
-                    .stroke(Color.red.opacity(0.6), lineWidth: 1.5)
+                    .stroke(Palette.danger.opacity(0.6), lineWidth: 1.5)
                     .frame(width: 22, height: 22)
                 Image(systemName: "exclamationmark")
                     .font(.system(size: 12, weight: .bold))
-                    .foregroundStyle(Color.red.opacity(0.9))
+                    .foregroundStyle(Palette.danger.opacity(0.9))
             }
 
             VStack(alignment: .leading, spacing: 1) {
@@ -48,7 +48,7 @@ struct PermissionBanner: View {
                     .padding(.horizontal, 16)
                     .padding(.vertical, 8)
                     .background(
-                        RoundedRectangle(cornerRadius: 999, style: .continuous)
+                        Capsule(style: .continuous)
                             .fill(Color.white.opacity(0.95))
                     )
             }
@@ -90,7 +90,7 @@ struct PermissionBanner: View {
             RoundedRectangle(cornerRadius: Radius.xl, style: .continuous)
                 .strokeBorder(Color.white.opacity(0.06), lineWidth: 1)
         )
-        .shadow(color: Color.black.opacity(0.35), radius: 22, y: 8)
+        .waiShadow(.floating)
         .accessibilityIdentifier("permission-banner-\(kind.identifierSuffix)")
     }
 

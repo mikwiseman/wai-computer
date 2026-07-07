@@ -189,7 +189,7 @@ struct DictationDictionaryView: View {
                 .foregroundStyle(Palette.textSecondary)
             HStack(spacing: 12) {
                 badgeLegend(label: biasBadgeLabel, color: Palette.accent, hint: t("Word boosts recognition", "Помогает распознаванию"))
-                badgeLegend(label: replaceBadgeLabel, color: .orange, hint: t("Auto-corrects to replacement", "Автоматически заменяет"))
+                badgeLegend(label: replaceBadgeLabel, color: Palette.warning, hint: t("Auto-corrects to replacement", "Автоматически заменяет"))
             }
         }
     }
@@ -211,7 +211,7 @@ struct DictationDictionaryView: View {
         .padding(10)
         .background(
             RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                .fill(Color.orange.opacity(0.10))
+                .fill(Palette.warning.opacity(0.10))
         )
     }
 
@@ -293,7 +293,7 @@ struct DictationDictionaryView: View {
                 Text(replacement)
                     .font(Typography.body)
                     .foregroundStyle(Palette.textSecondary)
-                badge(label: replaceBadgeLabel, color: .orange)
+                badge(label: replaceBadgeLabel, color: Palette.warning)
             } else {
                 badge(label: biasBadgeLabel, color: Palette.accent)
             }

@@ -80,7 +80,7 @@ struct LiveRecordingView: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)
-                .tint(.red)
+                .tint(Palette.recording)
                 .disabled(!recordingVM.canStopRecording)
                 .accessibilityIdentifier("stop-recording-button")
 
@@ -152,7 +152,7 @@ struct LiveRecordingView: View {
         }
         .padding(.horizontal, Spacing.xxl)
         .padding(.vertical, Spacing.md)
-        .background(Color.orange.opacity(0.12))
+        .background(Palette.warning.opacity(0.12))
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("conversation-end-banner")
     }

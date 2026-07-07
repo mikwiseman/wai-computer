@@ -275,7 +275,7 @@ struct MenuBarView: View {
                     } label: {
                         HStack(alignment: .top, spacing: Spacing.sm) {
                             Image(systemName: lastDictationCopied ? "checkmark" : "doc.on.doc")
-                                .foregroundStyle(lastDictationCopied ? .green : Palette.textSecondary)
+                                .foregroundStyle(lastDictationCopied ? Palette.success : Palette.textSecondary)
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(last.displayText)
                                     .font(Typography.bodySmall)

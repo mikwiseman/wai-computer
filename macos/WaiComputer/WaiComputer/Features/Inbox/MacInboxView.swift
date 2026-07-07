@@ -355,7 +355,7 @@ struct MacInboxView: View {
             InlineMessageRow(
                 systemImage: "exclamationmark.triangle.fill",
                 message: error,
-                color: .red,
+                color: Palette.danger,
                 onDismiss: { model.errorMessage = nil }
             )
         }
@@ -363,7 +363,7 @@ struct MacInboxView: View {
             InlineMessageRow(
                 systemImage: "checkmark.circle.fill",
                 message: status,
-                color: .green,
+                color: Palette.success,
                 onDismiss: { model.statusMessage = nil }
             )
         }
@@ -1048,9 +1048,9 @@ private struct MacInboxFileComposer: View {
     private var phaseColor: Color {
         switch phase {
         case .failed:
-            return .red
+            return Palette.danger
         case .added, .processing:
-            return .green
+            return Palette.success
         case .idle, .selected, .preparing, .uploading:
             return Palette.textSecondary
         }
@@ -1644,9 +1644,9 @@ private struct MacInboxListRow: View {
         case .neutral:
             return Palette.textSecondary
         case .warning:
-            return .orange
+            return Palette.warning
         case .error:
-            return .red
+            return Palette.danger
         }
     }
 }

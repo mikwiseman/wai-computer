@@ -71,6 +71,48 @@ enum Typography {
     static let mono: Font = .system(size: 13, design: .monospaced)
     /// 15pt medium mono — Recording timer
     static let monoLarge: Font = .system(size: 15, weight: .medium, design: .monospaced)
+
+    /// 26pt semibold sans — hero numbers/glyphs where serif display reads wrong
+    static let displaySans: Font = .system(size: 26, weight: .semibold)
+    /// 9pt medium sans — HUD/overlay micro text (dictation chrome)
+    static let micro: Font = .system(size: 9, weight: .medium)
+}
+
+// MARK: - Elevation
+
+/// Shadow tokens — one soft-elevation language instead of per-view literals.
+/// Use `.waiShadow(.raised)` for cards/menus and `.waiShadow(.floating)` for
+/// overlay panels; both stay warm-tinted-neutral and theme-agnostic.
+enum Elevation {
+    case raised
+    case floating
+
+    var color: Color {
+        switch self {
+        case .raised: return Color.black.opacity(0.12)
+        case .floating: return Color.black.opacity(0.30)
+        }
+    }
+
+    var radius: CGFloat {
+        switch self {
+        case .raised: return 10
+        case .floating: return 22
+        }
+    }
+
+    var y: CGFloat {
+        switch self {
+        case .raised: return 4
+        case .floating: return 8
+        }
+    }
+}
+
+extension View {
+    func waiShadow(_ elevation: Elevation) -> some View {
+        shadow(color: elevation.color, radius: elevation.radius, y: elevation.y)
+    }
 }
 
 // MARK: - Theme
