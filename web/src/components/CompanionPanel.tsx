@@ -400,8 +400,18 @@ export function CompanionPanel({
     })();
   }, [activeChatId, copy]);
 
+  // Auto-follow the stream. `behavior:"auto"` + rAF instead of "smooth":
+  // liveTurn changes on every streamed token, and a per-token smooth scroll
+  // never finishes animating — the compositor thrashes for the whole answer.
+  // rAF coalesces bursts of tokens into at most one scroll per frame.
+  const scrollScheduled = useRef(false);
   useEffect(() => {
-    threadEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+    if (scrollScheduled.current) return;
+    scrollScheduled.current = true;
+    requestAnimationFrame(() => {
+      scrollScheduled.current = false;
+      threadEndRef.current?.scrollIntoView({ behavior: "auto", block: "end" });
+    });
   }, [messages, liveTurn]);
 
   useEffect(() => {

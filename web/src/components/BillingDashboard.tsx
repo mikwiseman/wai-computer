@@ -377,7 +377,7 @@ const BANNER_STYLE: React.CSSProperties = {
   flexDirection: "column",
   gap: "0.25rem",
   padding: "1rem 1.15rem",
-  borderRadius: "12px",
+  borderRadius: "var(--radius-md)",
   background: "var(--accent-soft)",
   border: "1px solid var(--border)",
   marginBottom: "1.6rem",
@@ -401,7 +401,7 @@ const CARD_STYLE: React.CSSProperties = {
   flexDirection: "column",
   gap: "0.85rem",
   padding: "1.15rem 1.2rem",
-  borderRadius: "12px",
+  borderRadius: "var(--radius-md)",
   background: "var(--panel)",
   border: "1px solid var(--border)",
   marginBottom: "1.2rem",
@@ -425,7 +425,7 @@ const STATUS_PILL_STYLE: React.CSSProperties = {
   display: "inline-flex",
   alignItems: "center",
   padding: "0.18rem 0.6rem",
-  borderRadius: "999px",
+  borderRadius: "var(--radius-pill)",
   background: "var(--panel-subtle)",
   border: "1px solid var(--border)",
   fontSize: "0.78rem",
@@ -443,7 +443,7 @@ const SWITCH_ROW_STYLE: React.CSSProperties = {
 
 const SWITCH_SELECT_STYLE: React.CSSProperties = {
   padding: "0.4rem 0.6rem",
-  borderRadius: "8px",
+  borderRadius: "var(--radius-sm)",
   border: "1px solid var(--border)",
   background: "var(--panel-subtle)",
   color: "var(--ink)",
@@ -452,7 +452,7 @@ const SWITCH_SELECT_STYLE: React.CSSProperties = {
 
 const SWITCH_BUTTON_STYLE: React.CSSProperties = {
   padding: "0.45rem 0.95rem",
-  borderRadius: "8px",
+  borderRadius: "var(--radius-sm)",
   border: "1px solid var(--border)",
   background: "var(--panel-subtle)",
   color: "var(--ink)",
@@ -1025,7 +1025,7 @@ export function BillingDashboard({ locale, currency }: Props) {
               className="billing-portal"
               style={{
                 padding: "0.45rem 1rem",
-                borderRadius: "8px",
+                borderRadius: "var(--radius-sm)",
                 border: "1px solid var(--border)",
                 background: "var(--accent)",
                 color: "var(--accent-contrast)",

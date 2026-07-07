@@ -545,6 +545,11 @@ describe("DashboardClient", () => {
       mockReplace,
     ].forEach((fn) => fn.mockReset());
     mockListInbox.mockResolvedValue(baseInboxResponse);
+    // initialize() fetches the user and the lists in ONE parallel round-trip,
+    // so list mocks need safe defaults even in failure-path tests where only
+    // getCurrentUser rejects (a reset vi.fn() returns undefined, which would
+    // crash the render instead of exercising the error path).
+    mockListRecordings.mockResolvedValue([]);
     mockListFolders.mockResolvedValue([]);
     mockListDictationEntries.mockResolvedValue([]);
     mockListDictionaryWords.mockResolvedValue([]);

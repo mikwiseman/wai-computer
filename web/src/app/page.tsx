@@ -220,12 +220,12 @@ export default function Home() {
         <div className={styles.iconHalo}>
           <picture>
             <source
-              srcSet="/app-icon-dark.png"
+              srcSet="/app-icon-dark-320.png"
               media="(prefers-color-scheme: dark)"
             />
             <img
               className={styles.icon}
-              src="/app-icon.png"
+              src="/app-icon-320.png"
               width={160}
               height={160}
               alt=""

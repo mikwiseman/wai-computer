@@ -172,8 +172,8 @@
 
 .onboarding-record-button--recording {
   background: var(--danger);
-  color: #fff;
-  box-shadow: 0 8px 22px rgba(194, 65, 59, 0.28);
+  color: var(--danger-contrast);
+  box-shadow: 0 8px 22px color-mix(in srgb, var(--danger) 28%, transparent);
 }
 
 .onboarding-record-button--recording:hover:not(:disabled) {
@@ -181,7 +181,7 @@
 }
 
 .onboarding-record-button--recording::before {
-  background: #fff;
+  background: var(--danger-contrast);
   animation: onboarding-pulse 1s ease-in-out infinite;
 }
 

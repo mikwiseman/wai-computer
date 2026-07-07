@@ -67,7 +67,17 @@ export function CompanionTimeline({
           case "web_citations":
             return <WebCitationsCard key={item.id} citations={item.citations} locale={locale} />;
           case "text":
-            return <Markdown key={item.id} text={item.markdown} />;
+            // While the answer is still streaming, render the growing text as
+            // plain paragraphs: re-parsing the whole markdown string on every
+            // token is O(n²) per answer. The final markdown render happens
+            // when the turn completes (isLive flips false).
+            return isLive ? (
+              <p key={item.id} className="wai-live-text">
+                {item.markdown}
+              </p>
+            ) : (
+              <Markdown key={item.id} text={item.markdown} />
+            );
           case "action":
             return (
               <ActionCard

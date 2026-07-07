@@ -126,7 +126,7 @@ const TOGGLE_STYLE: React.CSSProperties = {
   background: "transparent",
   color: "var(--ink-soft)",
   border: "0",
-  borderRadius: "6px",
+  borderRadius: "var(--radius-sm)",
   padding: 0,
   cursor: "pointer",
 };
@@ -145,7 +145,7 @@ const METER_BAR_STYLE: React.CSSProperties = {
 
 const SEGMENT_BASE_STYLE: React.CSSProperties = {
   height: "4px",
-  borderRadius: "2px",
+  borderRadius: "var(--radius-xs, 2px)",
   transition: "background-color 0.18s ease",
 };
 

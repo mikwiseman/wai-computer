@@ -487,9 +487,11 @@
   gap: 1.1rem;
   padding: clamp(1.5rem, 4vw, 2.6rem);
   border-radius: var(--radius-lg);
-  background: #111216;
-  color: #f7f7fb;
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  /* Warm near-black — matches the warm-editorial dark ladder instead of
+   * the old cool #111216 island. */
+  background: #141210;
+  color: #f8f5f1;
+  border: 1px solid rgba(255, 250, 244, 0.07);
 }
 
 .benchmarkEyebrow {
@@ -517,7 +519,7 @@
 .benchmarkBody {
   margin: 0;
   max-width: 680px;
-  color: rgba(247, 247, 251, 0.72);
+  color: rgba(248, 245, 241, 0.72);
   font-size: 1rem;
   line-height: 1.55;
 }
@@ -530,7 +532,7 @@
   padding: 0 1.1rem;
   border-radius: var(--radius-md);
   background: #fff;
-  color: #111216;
+  color: #141210;
   font-weight: 600;
   font-size: 0.95rem;
   text-decoration: none;

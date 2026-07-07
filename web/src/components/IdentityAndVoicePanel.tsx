@@ -278,7 +278,7 @@ export function IdentityAndVoicePanel({ locale = "en" }: IdentityAndVoicePanelPr
                 marginTop: "1rem",
                 padding: "0.75rem 1rem",
                 border: "1px solid var(--border)",
-                borderRadius: "0.5rem",
+                borderRadius: "var(--radius-sm)",
               }}
             >
               <p style={{ margin: "0 0 0.5rem", fontWeight: 600 }}>

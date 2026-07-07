@@ -112,10 +112,10 @@ export function ResetPasswordClient({ token, locale }: ResetPasswordClientProps)
     <section className="auth-card">
       <header className="auth-card__hero" aria-label="WaiComputer">
         <picture>
-          <source srcSet="/app-icon-dark.png" media="(prefers-color-scheme: dark)" />
+          <source srcSet="/app-icon-dark-320.png" media="(prefers-color-scheme: dark)" />
           <img
             className="auth-card__icon"
-            src="/app-icon.png"
+            src="/app-icon-320.png"
             width={64}
             height={64}
             alt=""

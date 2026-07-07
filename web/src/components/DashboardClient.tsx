@@ -44,23 +44,68 @@ import {
   updateSettings,
   unlinkTelegram,
 } from "@/lib/api";
-import { CompanionPanel } from "@/components/CompanionPanel";
+import dynamic from "next/dynamic";
 import { RecordingDetailPanel } from "@/components/RecordingDetailPanel";
-import { ItemDetail } from "@/components/ItemDetail";
-import { AudioUpload } from "@/components/AudioUpload";
-import { LiveRecorder } from "@/components/LiveRecorder";
-import { McpConnectSection } from "@/components/McpConnectSection";
-import { ApiKeysSection } from "@/components/ApiKeysSection";
-import { ServerDataSection } from "@/components/ServerDataSection";
-import { IdentityAndVoicePanel } from "@/components/IdentityAndVoicePanel";
-import { ThemeAccentPicker } from "@/components/ThemeAccentPicker";
-import { TranscriptionSettingsPanel } from "@/components/TranscriptionSettingsPanel";
-import { DictationStatsHeader } from "@/components/DictationStatsHeader";
-import { DeleteAccountSection } from "@/components/DeleteAccountSection";
 import { AddAnythingPanel } from "@/components/AddAnythingPanel";
-import { DictatePanel } from "@/components/DictatePanel";
 import { PasswordField } from "@/components/PasswordField";
 import { Skeleton } from "@/components/Skeleton";
+
+// View-gated panels load on demand: they hydrate only when their view/modal
+// opens, keeping the default Inbox view's bundle and hydration lean. The
+// skeleton fallback holds layout while a chunk streams in.
+const panelFallback = <Skeleton lines={4} />;
+const CompanionPanel = dynamic(
+  () => import("@/components/CompanionPanel").then((m) => m.CompanionPanel),
+  { loading: () => panelFallback },
+);
+const ItemDetail = dynamic(
+  () => import("@/components/ItemDetail").then((m) => m.ItemDetail),
+  { loading: () => panelFallback },
+);
+const AudioUpload = dynamic(
+  () => import("@/components/AudioUpload").then((m) => m.AudioUpload),
+  { loading: () => panelFallback },
+);
+const LiveRecorder = dynamic(
+  () => import("@/components/LiveRecorder").then((m) => m.LiveRecorder),
+  { loading: () => panelFallback },
+);
+const McpConnectSection = dynamic(
+  () => import("@/components/McpConnectSection").then((m) => m.McpConnectSection),
+  { loading: () => panelFallback },
+);
+const ApiKeysSection = dynamic(
+  () => import("@/components/ApiKeysSection").then((m) => m.ApiKeysSection),
+  { loading: () => panelFallback },
+);
+const ServerDataSection = dynamic(
+  () => import("@/components/ServerDataSection").then((m) => m.ServerDataSection),
+  { loading: () => panelFallback },
+);
+const IdentityAndVoicePanel = dynamic(
+  () => import("@/components/IdentityAndVoicePanel").then((m) => m.IdentityAndVoicePanel),
+  { loading: () => panelFallback },
+);
+const ThemeAccentPicker = dynamic(
+  () => import("@/components/ThemeAccentPicker").then((m) => m.ThemeAccentPicker),
+  { loading: () => panelFallback },
+);
+const TranscriptionSettingsPanel = dynamic(
+  () => import("@/components/TranscriptionSettingsPanel").then((m) => m.TranscriptionSettingsPanel),
+  { loading: () => panelFallback },
+);
+const DictationStatsHeader = dynamic(
+  () => import("@/components/DictationStatsHeader").then((m) => m.DictationStatsHeader),
+  { loading: () => panelFallback },
+);
+const DeleteAccountSection = dynamic(
+  () => import("@/components/DeleteAccountSection").then((m) => m.DeleteAccountSection),
+  { loading: () => panelFallback },
+);
+const DictatePanel = dynamic(
+  () => import("@/components/DictatePanel").then((m) => m.DictatePanel),
+  { loading: () => panelFallback },
+);
 import { ApiError } from "@/lib/http";
 import type {
   BulkAction,
@@ -1025,12 +1070,15 @@ export function DashboardClient() {
       } else {
         setInitializing(true);
       }
-      const currentUser = await getCurrentUser();
-      setUser(currentUser);
-      await Promise.all([
+      // One parallel round-trip: the user check does not gate the list
+      // fetches (a 401 rejects the whole Promise.all and routes to login),
+      // and loadRecordingsState already refreshes folders in the same pass —
+      // the separate loadFoldersState call double-fetched /folders on boot.
+      const [currentUser] = await Promise.all([
+        getCurrentUser(),
         loadRecordingsState(),
-        loadFoldersState(),
       ]);
+      setUser(currentUser);
     } catch (error: unknown) {
       const text = formatError(error);
       if (error instanceof ApiError && error.status === 401) {
@@ -1107,6 +1155,10 @@ export function DashboardClient() {
     let cancelled = false;
     async function refreshSelectedRecording() {
       if (!selectedRecording) return;
+      // Skip hidden tabs: polling a processing recording from a background
+      // tab burns requests and re-renders for nobody; the focus listener
+      // refreshes immediately on return.
+      if (document.visibilityState === "hidden") return;
       try {
         const detail = await getRecording(selectedRecording.id);
         if (cancelled) return;
@@ -3305,7 +3357,12 @@ function UniversalInboxPanel({
 
   useEffect(() => {
     if (!hasProcessing) return undefined;
-    const id = window.setInterval(() => void loadInbox("replace"), 5000);
+    const id = window.setInterval(() => {
+      // Hidden tabs skip the poll — reloading a feed nobody can see just
+      // burns requests and reconciles every row for nothing.
+      if (document.visibilityState === "hidden") return;
+      void loadInbox("replace");
+    }, 5000);
     return () => window.clearInterval(id);
   }, [hasProcessing, loadInbox]);
 
