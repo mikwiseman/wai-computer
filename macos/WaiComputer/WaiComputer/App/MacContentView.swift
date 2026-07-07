@@ -147,6 +147,7 @@ struct MacMainView: View {
         case wai
         case history
         case dictionary
+        case snippets
         case settings
     }
 
@@ -159,7 +160,7 @@ struct MacMainView: View {
         switch selectedSection {
         case .trash, .none:
             return true
-        case .inbox, .allRecordings, .folder(_), .content, .search, .wai, .history, .dictionary, .settings:
+        case .inbox, .allRecordings, .folder(_), .content, .search, .wai, .history, .dictionary, .snippets, .settings:
             return false
         }
     }
@@ -205,6 +206,8 @@ struct MacMainView: View {
             return t("History", "История")
         case .dictionary:
             return t("Dictionary", "Словарь")
+        case .snippets:
+            return t("Snippets", "Сниппеты")
         case .settings:
             return t("Settings", "Настройки")
         case .none:
@@ -603,6 +606,7 @@ struct MacMainView: View {
             case "content": selectedSection = .inbox
             case "history": selectedSection = .history
             case "dictionary": selectedSection = .dictionary
+            case "snippets": selectedSection = .snippets
             case "agents": selectedSection = .wai
             case "search": selectedSection = .search
             case "trash": selectedSection = .trash
@@ -750,6 +754,7 @@ struct MacMainView: View {
             Section {
                 sidebarRow(t("History", "История"), icon: "clock", section: .history, identifier: "history")
                 sidebarRow(t("Dictionary", "Словарь"), icon: "book", section: .dictionary, identifier: "dictionary")
+                sidebarRow(t("Snippets", "Сниппеты"), icon: "text.badge.plus", section: .snippets, identifier: "snippets")
             } header: {
                 Text(t("Dictation", "Диктовка"))
                     .waiSectionHeader()
@@ -1225,6 +1230,8 @@ struct MacMainView: View {
             DictationHistoryView()
         case .dictionary:
             DictationDictionaryView()
+        case .snippets:
+            DictationSnippetsView()
         case .settings:
             MacSettingsView()
         }

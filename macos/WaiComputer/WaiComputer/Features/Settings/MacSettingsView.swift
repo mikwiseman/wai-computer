@@ -195,6 +195,8 @@ struct MacSettingsView: View {
     @State private var summaryStyle = "medium"
     @State private var summaryInstructions = ""
     @State private var summaryInstructionsSaveTask: Task<Void, Never>?
+    @State private var dictationStyleRules = ""
+    @State private var dictationStyleRulesSaveTask: Task<Void, Never>?
     @State private var mcpClient: McpClient = .openClaw
     @State private var mcpCopiedField: String?
     @State private var settingsLoaded = false
@@ -603,8 +605,39 @@ struct MacSettingsView: View {
     private var dictationSettingsSection: some View {
         dictationCoreSection
         dictationFormattingSection
+        dictationStyleRulesSection
         dictationPermissionsSection
         dictationTroubleshootingSection
+    }
+
+    /// Personal wording rules applied by AI cleanup — the "never use the
+    /// word utilize / always capitalize API" personalization layer.
+    private var dictationStyleRulesSection: some View {
+        Section {
+            VStack(alignment: .leading, spacing: Spacing.xs) {
+                TextEditor(text: $dictationStyleRules)
+                    .font(Typography.body)
+                    .frame(height: 72)
+                    .scrollContentBackground(.hidden)
+                    .background(Palette.surfaceSubtle)
+                    .cornerRadius(Radius.sm)
+                    .onChangeCompat(of: dictationStyleRules) { _, _ in
+                        guard settingsLoaded else { return }
+                        scheduleDictationStyleRulesSave(dictationStyleRules)
+                    }
+                    .accessibilityIdentifier("settings-dictation-style-rules-editor")
+                Text(t(
+                    "One rule per line — e.g. \u{201C}Never use the word utilize\u{201D}, \u{201C}Always capitalize API\u{201D}. Applied when AI cleanup is on; rules shape wording, never content.",
+                    "Одно правило на строку — например, «Никогда не использовать слово \u{00AB}юзать\u{00BB}», «API всегда заглавными». Работает при включенной AI-очистке; правила меняют формулировки, не содержание."
+                ))
+                .font(Typography.caption)
+                .foregroundStyle(Palette.textTertiary)
+            }
+        } header: {
+            Text(t("Personal Style Rules", "Личные правила стиля"))
+                .waiSectionHeader()
+                .accessibilityIdentifier("settings-dictation-style-rules-header")
+        }
     }
 
     /// On/off, hotkeys, and translation — how you talk. The contextual
@@ -1803,6 +1836,7 @@ struct MacSettingsView: View {
         summaryLanguage = settings.summaryLanguage
         summaryStyle = settings.summaryStyle
         summaryInstructions = settings.summaryInstructions ?? ""
+        dictationStyleRules = settings.dictationStyleRules ?? ""
         dictationManager.ingestSettings(settings)
     }
 
@@ -2206,6 +2240,18 @@ struct MacSettingsView: View {
             await saveSummarySettings(instructions: instructions)
             guard !Task.isCancelled else { return }
             summaryInstructionsSaveTask = nil
+        }
+    }
+
+    private func scheduleDictationStyleRulesSave(_ rules: String) {
+        dictationStyleRulesSaveTask?.cancel()
+        dictationStyleRulesSaveTask = Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(600))
+            guard !Task.isCancelled else { return }
+            let request = UpdateSettingsRequest(dictationStyleRules: rules)
+            _ = try? await appState.getAPIClient().updateSettings(request)
+            guard !Task.isCancelled else { return }
+            dictationStyleRulesSaveTask = nil
         }
     }
 

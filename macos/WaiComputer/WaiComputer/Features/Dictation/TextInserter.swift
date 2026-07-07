@@ -176,4 +176,23 @@ enum TextInserter {
         keyDown.post(tap: .cgSessionEventTap)
         keyUp.post(tap: .cgSessionEventTap)
     }
+
+    /// Post a bare Return keystroke — the trailing "press enter" dictation
+    /// command, sent after the paste so chat apps submit the message.
+    static func pressReturnKey() throws {
+        guard hasEventPostingPermission else {
+            throw TextInsertionError.eventPostingPermissionDenied
+        }
+        guard let source = CGEventSource(stateID: .combinedSessionState) else {
+            throw TextInsertionError.pasteSimulationFailed
+        }
+        let returnKey: CGKeyCode = 36
+        guard let keyDown = CGEvent(keyboardEventSource: source, virtualKey: returnKey, keyDown: true),
+              let keyUp = CGEvent(keyboardEventSource: source, virtualKey: returnKey, keyDown: false)
+        else {
+            throw TextInsertionError.pasteSimulationFailed
+        }
+        keyDown.post(tap: .cgSessionEventTap)
+        keyUp.post(tap: .cgSessionEventTap)
+    }
 }

@@ -622,6 +622,8 @@ final class GlobalHotkeyManager: ObservableObject {
     var onPushToTalkStop: (() -> Void)?
     var onTranslationStart: (() -> Void)?
     var onTranslationStop: (() -> Void)?
+    var onTransformStart: (() -> Void)?
+    var onTransformStop: (() -> Void)?
     var onAskAnythingStart: (() -> Void)?
     var onAskAnythingStop: (() -> Void)?
     var onHandsFreeToggle: (() -> Void)?
@@ -674,6 +676,7 @@ final class GlobalHotkeyManager: ObservableObject {
     private enum SpecialMode {
         case translation
         case askAnything
+        case transform
     }
     private var activeSpecialMode: SpecialMode?
 
@@ -817,6 +820,15 @@ final class GlobalHotkeyManager: ObservableObject {
             startSpecialMode(.askAnything)
             return
         }
+        // Hold the dictation key and tap Tab: command mode — dictate an
+        // instruction that transforms the current selection (or generates
+        // text at the cursor when nothing is selected).
+        if keyCode == UInt16(kVK_Tab),
+           activeSpecialMode == nil,
+           !isInPushToTalk {
+            startSpecialMode(.transform)
+            return
+        }
         if activeSpecialMode != nil {
             return
         }
@@ -835,6 +847,10 @@ final class GlobalHotkeyManager: ObservableObject {
             case .askAnything:
                 if !primaryStillDown {
                     stopSpecialMode(.askAnything)
+                }
+            case .transform:
+                if !primaryStillDown {
+                    stopSpecialMode(.transform)
                 }
             }
             return
@@ -983,6 +999,9 @@ final class GlobalHotkeyManager: ObservableObject {
         case .askAnything:
             log.info("Ask Anything dictation started")
             onAskAnythingStart?()
+        case .transform:
+            log.info("Transform dictation started")
+            onTransformStart?()
         }
     }
 
@@ -1004,6 +1023,9 @@ final class GlobalHotkeyManager: ObservableObject {
         case .askAnything:
             log.info("Ask Anything dictation stopped")
             onAskAnythingStop?()
+        case .transform:
+            log.info("Transform dictation stopped")
+            onTransformStop?()
         }
     }
 

@@ -58,6 +58,7 @@ final class DictationManager: ObservableObject {
         case dictation
         case translation
         case askAnything
+        case transform
     }
 
     // MARK: - Published State
@@ -174,6 +175,7 @@ final class DictationManager: ObservableObject {
     private let settingsCacheTTL: TimeInterval = 60
     var historyStore: DictationHistoryStore?
     var dictionaryStore: DictationDictionaryStore?
+    var snippetsStore: DictationSnippetsStore?
     var languageStore: DictationLanguageStore?
     /// Learns dictionary suggestions from how the user edits dictated text.
     var learningEngine: DictionaryLearningEngine?
@@ -419,6 +421,16 @@ final class DictationManager: ObservableObject {
             self.stopPushMode()
         }
 
+        hotkeyManager.onTransformStart = { [weak self] in
+            guard let self else { return }
+            self.beginDictationMode(.transform, handsFree: false)
+        }
+
+        hotkeyManager.onTransformStop = { [weak self] in
+            guard let self else { return }
+            self.stopPushMode()
+        }
+
         hotkeyManager.onAskAnythingStart = { [weak self] in
             guard let self else { return }
             self.beginDictationMode(.askAnything, handsFree: false)
@@ -595,7 +607,7 @@ final class DictationManager: ObservableObject {
         dictationContext = DictationContextCollector.collect(
             targetApp: targetApp,
             includeTextbox: contextAwareFormattingEnabled && (
-                cleanupLevel != "none" || mode == .translation
+                cleanupLevel != "none" || mode == .translation || mode == .transform
             )
         )
 
@@ -950,6 +962,9 @@ final class DictationManager: ObservableObject {
         case .askAnything:
             speculativeCleanup?.task.cancel()
             await answerAskAnything(question: rawText)
+        case .transform:
+            speculativeCleanup?.task.cancel()
+            await transformAndInsert(instruction: rawText)
         }
 
         await cleanup()
@@ -1221,11 +1236,30 @@ final class DictationManager: ObservableObject {
             ])
         }
 
-        await insertFinalText(
-            resolution.text,
-            rawText: rawText,
-            cleanedText: resolution.text != rawText ? resolution.text : nil
+        // Snippets expand after cleanup resolves: "my email" (alone or in a
+        // sentence) becomes its stored expansion right before insertion.
+        let expanded = SnippetExpander.apply(
+            to: resolution.text,
+            snippets: snippetsStore?.expansionRules ?? []
         )
+        // Trailing spoken command: "press enter" at the end strips the phrase
+        // and fires Return after the paste (dictate-and-send in chat apps).
+        let parsedCommand = DictationTrailingCommand.parse(expanded)
+        await insertFinalText(
+            parsedCommand.text,
+            rawText: rawText,
+            cleanedText: parsedCommand.text != rawText ? parsedCommand.text : nil
+        )
+        if parsedCommand.command == .pressEnter {
+            // Small beat so the paste lands before the submit keystroke.
+            try? await Task.sleep(for: .milliseconds(120))
+            do {
+                try TextInserter.pressReturnKey()
+                log.info("Trailing command executed: press enter")
+            } catch {
+                log.error("Trailing press-enter failed: \(error.localizedDescription)")
+            }
+        }
         if let notice = resolution.cleanupFallbackNotice {
             self.error = notice
         }
@@ -1305,6 +1339,55 @@ final class DictationManager: ObservableObject {
                 "context": "dictation.translation",
                 "rawChars": rawText.count,
                 "target": target.code,
+            ])
+        }
+    }
+
+    /// Command mode: the dictated text is an INSTRUCTION applied to the
+    /// selection captured at hotkey-down (or, with no selection, a request
+    /// for text to insert at the cursor). The paste replaces the live
+    /// selection natively, so the rewrite lands in place.
+    private func transformAndInsert(instruction: String) async {
+        guard let apiClient else {
+            let unavailable = NSError(
+                domain: "is.waiwai.computer.dictation.transform",
+                code: 1,
+                userInfo: [NSLocalizedDescriptionKey: "AI transform is unavailable because the API client is not configured."]
+            )
+            self.error = unavailable.userFacingMessage(context: .dictation)
+            instrumentationSession?.failure(unavailable, extras: ["stage": "transform"])
+            instrumentationSession = nil
+            return
+        }
+
+        let selectedText = dictationContext?.textbox?.selectedText
+        do {
+            let vocabulary = dictionaryStore?.vocabularyList ?? []
+            let transformed = try await apiClient.transformDictation(
+                instruction: instruction,
+                selectedText: selectedText,
+                vocabulary: vocabulary,
+                context: contextAwareFormattingEnabled ? dictationContext : nil
+            )
+            log.info("AI transform: \(instruction.count) instr chars, \(selectedText?.count ?? 0) selection chars → \(transformed.count) chars")
+            await insertFinalText(
+                transformed,
+                rawText: instruction,
+                cleanedText: transformed
+            )
+        } catch {
+            log.error("AI transform failed")
+            self.error = error.userFacingMessage(context: .dictation)
+            instrumentationSession?.failure(error, extras: [
+                "stage": "transform",
+                "instructionChars": instruction.count,
+                "selectionChars": selectedText?.count ?? 0,
+            ])
+            instrumentationSession = nil
+            SentryHelper.captureError(error, extras: [
+                "context": "dictation.transform",
+                "instructionChars": instruction.count,
+                "selectionChars": selectedText?.count ?? 0,
             ])
         }
     }

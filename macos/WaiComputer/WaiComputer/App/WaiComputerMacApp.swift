@@ -29,6 +29,7 @@ struct WaiComputerMacApp: App {
     @StateObject private var dictationManager: DictationManager
     @StateObject private var historyStore: DictationHistoryStore
     @StateObject private var dictionaryStore: DictationDictionaryStore
+    @StateObject private var snippetsStore: DictationSnippetsStore
     @StateObject private var languageStore: DictationLanguageStore
     @StateObject private var learningEngine: DictionaryLearningEngine
     @AppStorage(BetaChannelStore.userDefaultsKey) private var receiveBetaUpdates = false
@@ -52,9 +53,11 @@ struct WaiComputerMacApp: App {
         let dictation = DictationManager()
         let history = DictationHistoryStore()
         let dictionary = DictationDictionaryStore()
+        let snippets = DictationSnippetsStore()
         let languages = DictationLanguageStore()
         dictation.historyStore = history
         dictation.dictionaryStore = dictionary
+        dictation.snippetsStore = snippets
         dictation.languageStore = languages
         dictionary.onRealtimeHintsChanged = { [weak dictation] reason in
             dictation?.prefetchSessionConfigForCurrentLanguage(reason: reason)
@@ -91,6 +94,7 @@ struct WaiComputerMacApp: App {
         _dictationManager = StateObject(wrappedValue: dictation)
         _historyStore = StateObject(wrappedValue: history)
         _dictionaryStore = StateObject(wrappedValue: dictionary)
+        _snippetsStore = StateObject(wrappedValue: snippets)
         _languageStore = StateObject(wrappedValue: languages)
         _learningEngine = StateObject(wrappedValue: learningEngine)
         _appState = StateObject(wrappedValue: appState)
@@ -116,6 +120,7 @@ struct WaiComputerMacApp: App {
                 .environmentObject(dictationManager)
                 .environmentObject(historyStore)
                 .environmentObject(dictionaryStore)
+                .environmentObject(snippetsStore)
                 .environmentObject(languageStore)
                 .environmentObject(learningEngine)
                 .preferredColorScheme(selectedAppearanceMode.preferredColorScheme)
@@ -848,6 +853,7 @@ class MacAppState: ObservableObject {
                 guard self.isAuthenticated else { return }
                 await self.dictationManager.historyStore?.hydrate()
                 await self.dictationManager.dictionaryStore?.hydrate()
+                await self.dictationManager.snippetsStore?.hydrate()
             }
         }
 
@@ -1215,6 +1221,7 @@ class MacAppState: ObservableObject {
     private func clearLocalUserData() throws {
         dictationManager.historyStore?.clearLocalCache()
         dictationManager.dictionaryStore?.clearLocalCache()
+        dictationManager.snippetsStore?.clearLocalCache()
         try RecordingBackupStore.removeAllRecordings()
         try MacLocalUserDataStore.removeWaiComputerSupportDirectories()
         if let bundleIdentifier = Bundle.main.bundleIdentifier {
@@ -1287,9 +1294,11 @@ class MacAppState: ObservableObject {
             )
             dictationManager.historyStore?.attach(apiClient: apiClient)
             dictationManager.dictionaryStore?.attach(apiClient: apiClient)
+            dictationManager.snippetsStore?.attach(apiClient: apiClient)
             Task { [dictationManager] in
                 await dictationManager.historyStore?.hydrate()
                 await dictationManager.dictionaryStore?.hydrate()
+                await dictationManager.snippetsStore?.hydrate()
             }
         } catch {
             isAuthenticated = false
