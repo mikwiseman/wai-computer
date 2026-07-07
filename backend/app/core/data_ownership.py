@@ -139,6 +139,12 @@ DATA_OWNERSHIP: tuple[TableOwnershipEntry, ...] = (
         "dictation_dictionary_words", "owned_exportable", "User dictation dictionary."
     ),
     TableOwnershipEntry(
+        "dictation_snippets",
+        "owned_exportable",
+        "User dictation snippets (voice-triggered text expansions).",
+        contains_user_content=True,
+    ),
+    TableOwnershipEntry(
         "personalization_import_jobs",
         "owned_exportable",
         "Personalization import metadata and source text.",
