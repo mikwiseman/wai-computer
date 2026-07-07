@@ -241,6 +241,7 @@ public struct UserSettings: Codable, Sendable {
     public let dictationCleanupLevel: String
     public let dictationPostFilterProvider: String
     public let dictationPostFilterModel: String
+    public let dictationStyleRules: String?
     public let region: String
 
     public init(from decoder: Decoder) throws {
@@ -261,6 +262,7 @@ public struct UserSettings: Codable, Sendable {
         dictationCleanupLevel = try container.decode(String.self, forKey: .dictationCleanupLevel)
         dictationPostFilterProvider = try container.decode(String.self, forKey: .dictationPostFilterProvider)
         dictationPostFilterModel = try container.decode(String.self, forKey: .dictationPostFilterModel)
+        dictationStyleRules = try container.decodeIfPresent(String.self, forKey: .dictationStyleRules)
         region = try container.decodeIfPresent(String.self, forKey: .region) ?? "global"
     }
 
@@ -279,6 +281,7 @@ public struct UserSettings: Codable, Sendable {
         case dictationCleanupLevel = "dictation_cleanup_level"
         case dictationPostFilterProvider = "dictation_post_filter_provider"
         case dictationPostFilterModel = "dictation_post_filter_model"
+        case dictationStyleRules = "dictation_style_rules"
         case region
     }
 }
@@ -299,6 +302,7 @@ public struct UpdateSettingsRequest: Codable, Sendable {
     public var dictationCleanupLevel: String?
     public var dictationPostFilterProvider: String?
     public var dictationPostFilterModel: String?
+    public var dictationStyleRules: String?
     public var region: String?
 
     public init(
@@ -316,6 +320,7 @@ public struct UpdateSettingsRequest: Codable, Sendable {
         dictationCleanupLevel: String? = nil,
         dictationPostFilterProvider: String? = nil,
         dictationPostFilterModel: String? = nil,
+        dictationStyleRules: String? = nil,
         region: String? = nil
     ) {
         self.defaultLanguage = defaultLanguage
@@ -332,6 +337,7 @@ public struct UpdateSettingsRequest: Codable, Sendable {
         self.dictationCleanupLevel = dictationCleanupLevel
         self.dictationPostFilterProvider = dictationPostFilterProvider
         self.dictationPostFilterModel = dictationPostFilterModel
+        self.dictationStyleRules = dictationStyleRules
         self.region = region
     }
 
@@ -350,6 +356,7 @@ public struct UpdateSettingsRequest: Codable, Sendable {
         case dictationCleanupLevel = "dictation_cleanup_level"
         case dictationPostFilterProvider = "dictation_post_filter_provider"
         case dictationPostFilterModel = "dictation_post_filter_model"
+        case dictationStyleRules = "dictation_style_rules"
         case region
     }
 }

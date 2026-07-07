@@ -2050,6 +2050,86 @@ public actor APIClient {
         return response.text
     }
 
+    /// Command mode: apply a dictated instruction to the selected text, or
+    /// generate text for the cursor when `selectedText` is nil.
+    public func transformDictation(
+        instruction: String,
+        selectedText: String? = nil,
+        vocabulary: [String] = [],
+        context: DictationCleanupContext? = nil
+    ) async throws -> String {
+        struct TransformRequest: Encodable {
+            let instruction: String
+            let selectedText: String?
+            let vocabulary: [String]?
+            let context: DictationCleanupContext?
+
+            enum CodingKeys: String, CodingKey {
+                case instruction
+                case selectedText = "selected_text"
+                case vocabulary
+                case context
+            }
+        }
+        struct TransformResponse: Decodable {
+            let text: String
+        }
+        let cleaned = normalizedDictationVocabulary(vocabulary)
+        let payload = TransformRequest(
+            instruction: instruction,
+            selectedText: selectedText,
+            vocabulary: cleaned.isEmpty ? nil : cleaned,
+            context: context
+        )
+        let response: TransformResponse = try await request(
+            .POST,
+            path: "/api/dictation/transform",
+            body: payload,
+            timeoutInterval: 60
+        )
+        return response.text
+    }
+
+    // MARK: - Dictation Snippets
+
+    public struct DictationSnippetPayload: Codable, Equatable, Sendable {
+        public let clientSnippetId: UUID
+        public let trigger: String
+        public let expansion: String
+        public let occurredAt: Date
+
+        public init(clientSnippetId: UUID, trigger: String, expansion: String, occurredAt: Date) {
+            self.clientSnippetId = clientSnippetId
+            self.trigger = trigger
+            self.expansion = expansion
+            self.occurredAt = occurredAt
+        }
+
+        enum CodingKeys: String, CodingKey {
+            case clientSnippetId = "client_snippet_id"
+            case trigger
+            case expansion
+            case occurredAt = "occurred_at"
+        }
+    }
+
+    public func listDictationSnippets() async throws -> [DictationSnippetPayload] {
+        try await request(.GET, path: "/api/dictation/snippets")
+    }
+
+    public func createDictationSnippet(
+        _ snippet: DictationSnippetPayload
+    ) async throws -> DictationSnippetPayload {
+        try await request(.POST, path: "/api/dictation/snippets", body: snippet)
+    }
+
+    public func deleteDictationSnippet(clientSnippetId: UUID) async throws {
+        try await requestNoContent(
+            .DELETE,
+            path: "/api/dictation/snippets/\(clientSnippetId.uuidString.lowercased())"
+        )
+    }
+
     // MARK: - Realtime Voice Endpoints
 
     public func createRealtimeTranscriptionSession(
