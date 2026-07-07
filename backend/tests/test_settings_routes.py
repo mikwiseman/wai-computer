@@ -122,6 +122,46 @@ async def test_get_settings_returns_user_settings(client: AsyncClient):
 
 
 @pytest.mark.asyncio
+async def test_dictation_style_rules_roundtrip(client: AsyncClient):
+    """Personal dictation style rules persist through PATCH and read back."""
+    headers = await _register(client, "settings.style@example.com", "password-123")
+
+    read = await client.get("/api/settings", headers=headers)
+    assert read.status_code == 200
+    assert read.json()["dictation_style_rules"] is None
+
+    rules = "Never use the word utilize.\nAlways capitalize API and SDK."
+    patched = await client.patch(
+        "/api/settings",
+        headers=headers,
+        json={"dictation_style_rules": rules},
+    )
+    assert patched.status_code == 200
+    assert patched.json()["dictation_style_rules"] == rules
+
+    # Blank string clears the rules back to none.
+    cleared = await client.patch(
+        "/api/settings",
+        headers=headers,
+        json={"dictation_style_rules": "   "},
+    )
+    assert cleared.status_code == 200
+    assert cleared.json()["dictation_style_rules"] is None
+
+
+@pytest.mark.asyncio
+async def test_dictation_style_rules_rejects_overlong(client: AsyncClient):
+    headers = await _register(client, "settings.style2@example.com", "password-123")
+
+    response = await client.patch(
+        "/api/settings",
+        headers=headers,
+        json={"dictation_style_rules": "x" * 4001},
+    )
+    assert response.status_code == 422
+
+
+@pytest.mark.asyncio
 async def test_change_password_rejects_short_new_password(client: AsyncClient):
     """New password shorter than 8 characters should be rejected with 422."""
     headers = await _register(client, "settings.short@example.com", "password-123")

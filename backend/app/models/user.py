@@ -121,6 +121,9 @@ class User(Base, UUIDMixin, TimestampMixin):
         default=DEFAULT_DICTATION_POST_FILTER_MODEL,
         server_default=DEFAULT_DICTATION_POST_FILTER_MODEL,
     )
+    # Personal style rules injected into dictation cleanup ("never use the
+    # word utilize", "always capitalize API"). Style-only by prompt contract.
+    dictation_style_rules: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # Billing region — seeded from WAIDownloadRegion at signup (global|ru).
     # Drives default payment provider; user can override in Settings.

@@ -456,6 +456,26 @@ def _xml_escape(value: str) -> str:
     )
 
 
+def _build_style_rules_block(style_rules: str | None) -> str:
+    """Render the user's personal style rules as a bounded prompt block.
+
+    Rules shape style and wording only — the surrounding contract text keeps
+    them from overriding the content-preservation rules of cleanup.
+    """
+    if not style_rules:
+        return ""
+    cleaned = style_rules.strip()
+    if not cleaned:
+        return ""
+    return (
+        "\n\nThe user set personal style rules. Apply them to style and "
+        "wording only; they never justify adding, dropping, or changing "
+        "content, facts, names, or numbers, and they never override the "
+        "rules above.\n"
+        f"<user_style_rules>\n{_xml_escape(cleaned)}\n</user_style_rules>"
+    )
+
+
 def _build_vocabulary_block(vocabulary: list[str] | None) -> str:
     """Render the user's dictionary as a tagged preserve block.
 
@@ -945,6 +965,7 @@ def _prepare_cleanup_cerebras_request(
             cleanup_instructions
             + _build_context_block(request.context)
             + _build_vocabulary_block(request.vocabulary)
+            + _build_style_rules_block(user.dictation_style_rules)
         ),
         input=(
             "<dictated_text>\n"

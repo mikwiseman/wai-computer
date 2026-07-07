@@ -182,6 +182,47 @@ async def test_translate_dictation_translates_to_selected_target_language(
 
 
 @pytest.mark.asyncio
+async def test_cleanup_dictation_applies_user_style_rules(
+    client: AsyncClient,
+    auth_headers: dict,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Personal style rules from settings are injected into the cleanup prompt."""
+    captured: dict[str, object] = {}
+
+    async def _create(**kwargs: object):
+        captured.update(kwargs)
+        # Echo the content words: the cleanup output validator rejects
+        # responses that drop or replace them.
+        return _make_response("Please utilize the API for this.")
+
+    mock_client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=_create)))
+    _patch_settings(monkeypatch)
+    _patch_client(monkeypatch, mock_client)
+    await _enable_post_filter(client, auth_headers)
+
+    rules = "Never use the word utilize.\nAlways capitalize API."
+    patched = await client.patch(
+        "/api/settings",
+        headers=auth_headers,
+        json={"dictation_style_rules": rules},
+    )
+    assert patched.status_code == 200
+
+    response = await client.post(
+        "/api/dictation/cleanup",
+        headers=auth_headers,
+        json={"text": "please utilize the api for this"},
+    )
+
+    assert response.status_code == 200
+    instructions = captured["messages"][0]["content"]
+    assert "<user_style_rules>" in instructions
+    assert "Never use the word utilize." in instructions
+    assert "style and wording only" in instructions
+
+
+@pytest.mark.asyncio
 async def test_transform_dictation_rewrites_selection(
     client: AsyncClient,
     auth_headers: dict,

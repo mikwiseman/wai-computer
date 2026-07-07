@@ -1,7 +1,7 @@
 """User settings routes."""
 
 from fastapi import APIRouter, HTTPException, status
-from pydantic import BaseModel, field_validator, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.api.deps import CurrentUser, Database
 from app.config import get_settings as get_app_settings
@@ -65,6 +65,7 @@ class SettingsResponse(BaseModel):
     dictation_cleanup_level: str
     dictation_post_filter_provider: str
     dictation_post_filter_model: str
+    dictation_style_rules: str | None
     region: str
 
 
@@ -99,6 +100,7 @@ class UpdateSettingsRequest(BaseModel):
     dictation_cleanup_level: str | None = None
     dictation_post_filter_provider: str | None = None
     dictation_post_filter_model: str | None = None
+    dictation_style_rules: str | None = Field(default=None, max_length=4000)
     region: str | None = None
 
     @field_validator("region")
@@ -245,6 +247,7 @@ def _settings_response(user: CurrentUser) -> SettingsResponse:
         summary_language=user.summary_language,
         summary_style=user.summary_style,
         summary_instructions=user.summary_instructions,
+        dictation_style_rules=user.dictation_style_rules,
         dictation_live_stt_provider=DEFAULT_DICTATION_LIVE_STT_PROVIDER,
         dictation_live_stt_model=DEFAULT_DICTATION_LIVE_STT_MODEL,
         recording_live_stt_provider=DEFAULT_RECORDING_LIVE_STT_PROVIDER,
@@ -296,6 +299,9 @@ async def update_settings(
     # summary_instructions: allow explicit empty string to clear
     if request.summary_instructions is not None:
         user.summary_instructions = request.summary_instructions or None
+    # dictation_style_rules: blank clears back to none
+    if request.dictation_style_rules is not None:
+        user.dictation_style_rules = request.dictation_style_rules.strip() or None
     if request.dictation_cleanup_level is not None:
         user.dictation_cleanup_level = request.dictation_cleanup_level
         user.dictation_post_filter_enabled = request.dictation_cleanup_level != "none"
