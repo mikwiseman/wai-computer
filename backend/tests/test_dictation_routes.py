@@ -182,6 +182,106 @@ async def test_translate_dictation_translates_to_selected_target_language(
 
 
 @pytest.mark.asyncio
+async def test_transform_dictation_rewrites_selection(
+    client: AsyncClient,
+    auth_headers: dict,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Command mode: a dictated instruction transforms the selected text."""
+    captured: dict[str, object] = {}
+
+    async def _create(**kwargs: object):
+        captured.update(kwargs)
+        return _make_response("Ship the release notes today.")
+
+    mock_client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=_create)))
+    _patch_settings(monkeypatch)
+    _patch_client(monkeypatch, mock_client)
+
+    response = await client.post(
+        "/api/dictation/transform",
+        headers=auth_headers,
+        json={
+            "instruction": "make this more concise",
+            "selected_text": (
+                "So basically what I want to say is that we should really try to "
+                "ship the release notes at some point today."
+            ),
+            "vocabulary": ["WaiComputer"],
+            "context": {
+                "app": {
+                    "name": "Slack",
+                    "bundle_id": "com.tinyspeck.slackmacgap",
+                    "category": "chat",
+                }
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"text": "Ship the release notes today."}
+    assert captured["model"] == "gpt-oss-120b"
+    assert captured["reasoning_effort"] == "low"
+    instructions = captured["messages"][0]["content"]
+    assert "Apply the dictated instruction to the selected text" in instructions
+    assert "Output only the resulting text" in instructions
+    assert "<preserve_exact>" in instructions
+    assert "WaiComputer" in instructions
+    assert "<dictation_context>" in instructions
+    user_content = captured["messages"][1]["content"]
+    assert "<instruction>" in user_content
+    assert "make this more concise" in user_content
+    assert "<selected_text>" in user_content
+    assert "ship the release notes" in user_content
+
+
+@pytest.mark.asyncio
+async def test_transform_dictation_generates_without_selection(
+    client: AsyncClient,
+    auth_headers: dict,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Command mode with no selection generates text to insert at the cursor."""
+    captured: dict[str, object] = {}
+
+    async def _create(**kwargs: object):
+        captured.update(kwargs)
+        return _make_response("Dear team, the launch moves to Friday.")
+
+    mock_client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=_create)))
+    _patch_settings(monkeypatch)
+    _patch_client(monkeypatch, mock_client)
+
+    response = await client.post(
+        "/api/dictation/transform",
+        headers=auth_headers,
+        json={"instruction": "write a one-line note that the launch moves to Friday"},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"text": "Dear team, the launch moves to Friday."}
+    instructions = captured["messages"][0]["content"]
+    assert "no text is selected" in instructions.lower()
+    user_content = captured["messages"][1]["content"]
+    assert "<instruction>" in user_content
+    assert "<selected_text>" not in user_content
+
+
+@pytest.mark.asyncio
+async def test_transform_dictation_rejects_blank_instruction(
+    client: AsyncClient,
+    auth_headers: dict,
+):
+    response = await client.post(
+        "/api/dictation/transform",
+        headers=auth_headers,
+        json={"instruction": "   ", "selected_text": "Some text."},
+    )
+
+    assert response.status_code == 422
+
+
+@pytest.mark.asyncio
 async def test_translate_dictation_rejects_blank_target_language(
     client: AsyncClient,
     auth_headers: dict,

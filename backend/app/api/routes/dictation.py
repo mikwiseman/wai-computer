@@ -374,6 +374,46 @@ class CleanupProtectedTerm:
     literal: bool
 
 
+MAX_TRANSFORM_INSTRUCTION_CHARS = 4_000
+MAX_TRANSFORM_SELECTION_CHARS = 12_000
+
+
+class TransformRequest(BaseModel):
+    """Command mode: apply a dictated instruction to selected text (or
+    generate text at the cursor when nothing is selected)."""
+
+    instruction: str = Field(
+        min_length=1,
+        max_length=MAX_TRANSFORM_INSTRUCTION_CHARS,
+    )
+    selected_text: str | None = Field(
+        default=None,
+        max_length=MAX_TRANSFORM_SELECTION_CHARS,
+    )
+    vocabulary: list[str] | None = Field(default=None)
+    context: DictationCleanupContext | None = None
+
+    @field_validator("instruction", mode="before")
+    @classmethod
+    def clean_instruction(cls, value: object) -> object:
+        if not isinstance(value, str):
+            return value
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("instruction must not be blank")
+        return cleaned
+
+    @field_validator("selected_text", mode="before")
+    @classmethod
+    def clean_selection(cls, value: object) -> object | None:
+        if value is None:
+            return None
+        if not isinstance(value, str):
+            return value
+        cleaned = value.strip()
+        return cleaned or None
+
+
 class TranslationRequest(BaseModel):
     """Request to translate dictated text after realtime capture completes."""
 
@@ -1365,6 +1405,206 @@ async def cleanup_dictation_stream(request: CleanupRequest, user: CurrentUser):
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+def _transform_instructions(
+    *,
+    has_selection: bool,
+    context: DictationCleanupContext | None,
+    vocabulary: list[str] | None,
+) -> str:
+    """Build the command-mode prompt.
+
+    With a selection the instruction transforms it in place; without one the
+    instruction asks for text to insert at the cursor. Both stay strictly
+    output-only so the result can be pasted over the selection verbatim.
+    """
+    if has_selection:
+        core = (
+            "Apply the dictated instruction to the selected text.\n\n"
+            "Rules:\n"
+            "- The instruction was dictated by voice; ignore filler words in it.\n"
+            "- Follow the instruction faithfully: rewrite, shorten, expand, "
+            "change tone, translate, fix grammar, or reformat as asked.\n"
+            "- Preserve the selected text's meaning, facts, numbers, names, "
+            "URLs, and code except where the instruction explicitly changes "
+            "them.\n"
+            "- Preserve the original language of the selected text unless the "
+            "instruction asks for a translation or language change.\n"
+            "- Keep line breaks and list structure unless the instruction "
+            "changes the format.\n"
+            "- Never answer questions about the text, add commentary, or wrap "
+            "the result in quotes. Output only the resulting text."
+        )
+    else:
+        core = (
+            "Write the text the dictated instruction asks for; no text is "
+            "selected, so the result will be inserted at the cursor.\n\n"
+            "Rules:\n"
+            "- The instruction was dictated by voice; ignore filler words in it.\n"
+            "- Produce exactly the artifact requested (a sentence, message, "
+            "list, paragraph, code, etc.) — nothing else.\n"
+            "- Match the language of the instruction unless it asks otherwise.\n"
+            "- Never add commentary, preamble, or quotes. Output only the "
+            "resulting text."
+        )
+    return (
+        f"{core}"
+        f"{_build_context_block(context)}"
+        f"{_build_vocabulary_block(vocabulary)}"
+    )
+
+
+@router.post("/transform", response_model=CleanupResponse)
+async def transform_dictation(request: TransformRequest, user: CurrentUser):
+    """Command mode: apply a dictated instruction to the current selection."""
+    settings = get_settings()
+    if not settings.cerebras_api_key:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="AI transform is not configured (missing CEREBRAS_API_KEY).",
+        )
+
+    model = settings.cerebras_llm_model.strip() or "gpt-oss-120b"
+    selected_text = request.selected_text
+
+    if selected_text is not None:
+        user_content = (
+            "<instruction>\n"
+            f"{request.instruction}\n"
+            "</instruction>\n"
+            "<selected_text>\n"
+            f"{selected_text}\n"
+            "</selected_text>"
+        )
+        output_budget_source = selected_text
+    else:
+        user_content = (
+            "<instruction>\n"
+            f"{request.instruction}\n"
+            "</instruction>"
+        )
+        output_budget_source = request.instruction
+
+    response = None
+    started = time.monotonic()
+    try:
+        instructions = _transform_instructions(
+            has_selection=selected_text is not None,
+            context=request.context,
+            vocabulary=request.vocabulary,
+        )
+        response = await _create_dictation_cerebras_completion(
+            operation="dictation.transform",
+            model=model,
+            messages=[
+                {"role": "system", "content": instructions},
+                {"role": "user", "content": user_content},
+            ],
+            reasoning_effort="low",
+            # Transforms may legitimately expand the text (e.g. "turn this
+            # outline into an essay"), so budget generously relative to the
+            # larger of instruction/selection instead of the cleanup cap.
+            max_completion_tokens=max(
+                _cleanup_output_token_cap(output_budget_source) * 4,
+                1_024,
+            ),
+        )
+
+        transformed = chat_completion_text(response, operation="Dictation transform")
+
+        logger.info(
+            "Dictation transform: %d instruction chars, %d selection chars -> %d chars for user %s",
+            len(request.instruction),
+            len(selected_text or ""),
+            len(transformed),
+            user.id,
+        )
+        await _record_dictation_ai_usage(
+            operation="dictation.transform",
+            status_value=STATUS_SUCCEEDED,
+            user_id=user.id,
+            model=chat_completion_model(response, model),
+            response=response,
+            started=started,
+        )
+        return CleanupResponse(text=transformed)
+
+    except HTTPException:
+        raise
+    except openai.APIConnectionError as exc:
+        await _record_dictation_ai_usage(
+            operation="dictation.transform",
+            status_value=STATUS_FAILED,
+            user_id=user.id,
+            model=model,
+            response=response,
+            started=started,
+            error=exc,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Unable to connect to AI service",
+        ) from None
+    except openai.RateLimitError as exc:
+        await _record_dictation_ai_usage(
+            operation="dictation.transform",
+            status_value=STATUS_FAILED,
+            user_id=user.id,
+            model=model,
+            response=response,
+            started=started,
+            error=exc,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="AI service rate limit exceeded. Please try again later.",
+        ) from None
+    except openai.APIStatusError as exc:
+        await _record_dictation_ai_usage(
+            operation="dictation.transform",
+            status_value=STATUS_FAILED,
+            user_id=user.id,
+            model=model,
+            response=response,
+            started=started,
+            error=exc,
+        )
+        logger.warning("Dictation transform upstream error: %s", exc)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="AI service error. Please try again later.",
+        ) from exc
+    except CerebrasResponseError as exc:
+        await _record_dictation_ai_usage(
+            operation="dictation.transform",
+            status_value=STATUS_FAILED,
+            user_id=user.id,
+            model=model,
+            response=response,
+            started=started,
+            error=exc,
+        )
+        logger.warning("Dictation transform incomplete response: %s", exc)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="AI service returned an incomplete transform response.",
+        ) from exc
+    except Exception as exc:
+        await _record_dictation_ai_usage(
+            operation="dictation.transform",
+            status_value=STATUS_FAILED,
+            user_id=user.id,
+            model=model,
+            response=response,
+            started=started,
+            error=exc,
+        )
+        logger.exception("Dictation transform failed")
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="AI transform failed. Please try again.",
+        ) from exc
 
 
 @router.post("/translate", response_model=CleanupResponse)
