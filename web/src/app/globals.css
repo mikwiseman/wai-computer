@@ -2306,6 +2306,14 @@ a.primary-button[aria-disabled="true"]:hover {
   gap: 0.4rem;
 }
 
+/* Long meetings render hundreds of turns; skip layout/paint for offscreen
+ * rows so scrolling and re-renders stay smooth. The intrinsic-size estimate
+ * keeps the scrollbar stable while rows are skipped. */
+.transcript-row {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 7rem;
+}
+
 .transcript-row p,
 .note-section p,
 .reading-list {

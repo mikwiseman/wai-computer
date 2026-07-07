@@ -255,11 +255,21 @@ function automaticSummaryStartKey(recording: RecordingDetail): string {
   return `${recording.id}:${transcriptSignature}`;
 }
 
-function CopyButton({ text, label, copiedLabel }: { text: string; label: string; copiedLabel: string }) {
+function CopyButton({
+  text,
+  label,
+  copiedLabel,
+}: {
+  // A thunk defers building large payloads (a 3-hour transcript renders to
+  // megabytes of text) to the actual click instead of every render.
+  text: string | (() => string);
+  label: string;
+  copiedLabel: string;
+}) {
   const [copied, setCopied] = useState(false);
 
   const handleCopy = useCallback(async () => {
-    await navigator.clipboard.writeText(text);
+    await navigator.clipboard.writeText(typeof text === "function" ? text() : text);
     setCopied(true);
     setTimeout(() => setCopied(false), 1500);
   }, [text]);
@@ -762,6 +772,15 @@ function TranscriptTab({
   onRecordingUpdate?: (r: RecordingDetail) => void;
   copy: DetailCopy;
 }) {
+  // Merge consecutive same-speaker utterances into turns once per segment set:
+  // this drives both the reading view (one card per turn) and the copy buttons.
+  // Memoized because the panel re-renders on unrelated state (rename keystrokes,
+  // tab focus, notices) and a long meeting has 1000+ segments. Hooks stay above
+  // the empty-state early returns.
+  const turns = useMemo(() => mergeTurns(segments), [segments]);
+  const plainText = useCallback(() => renderTranscript(turns, "plain"), [turns]);
+  const timestampedText = useCallback(() => renderTranscript(turns, "timestamped"), [turns]);
+
   if (segments.length === 0) {
     if (isRecordingProcessing(status)) {
       return (
@@ -779,13 +798,6 @@ function TranscriptTab({
       </div>
     );
   }
-
-  // Merge consecutive same-speaker utterances into turns once: this drives both the
-  // reading view (one card per turn) and the copy buttons — plain prose by default,
-  // timestamped on demand.
-  const turns = mergeTurns(segments);
-  const plainText = renderTranscript(turns, "plain");
-  const timestampedText = renderTranscript(turns, "timestamped");
 
   return (
     <div className="reading-stack">
