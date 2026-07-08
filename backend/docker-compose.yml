@@ -101,7 +101,7 @@ services:
       TELEGRAM_BOT_API_BASE_URL: http://telegram-bot-api:8081
       TELEGRAM_FILE_BASE_URL: http://telegram-bot-api:8081/file
       TELEGRAM_LOCAL_FILE_ROOT: /var/lib/telegram-bot-api
-      TELEGRAM_DOWNLOAD_MAX_BYTES: ${TELEGRAM_DOWNLOAD_MAX_BYTES:-209715200}
+      TELEGRAM_DOWNLOAD_MAX_BYTES: ${TELEGRAM_DOWNLOAD_MAX_BYTES:-1073741824}
       GIT_SHA: ${GIT_SHA:-}
       GIT_DIRTY: ${GIT_DIRTY:-false}
     volumes:
