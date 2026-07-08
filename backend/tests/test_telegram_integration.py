@@ -5149,3 +5149,77 @@ async def test_summary_retry_callback_rejects_foreign_recording(db_session, monk
 
     assert capture.callback_answers[0]["text"] == "Запись не найдена."
     assert capture.messages == []
+
+
+@pytest.mark.asyncio
+async def test_media_status_message_updates_on_summarizing_stage(db_session, monkeypatch):
+    user = await _user(db_session, "telegram-stage-edit@example.com")
+    account = TelegramAccount(user_id=user.id, telegram_user_id=95, telegram_chat_id=95)
+    db_session.add(account)
+    await db_session.commit()
+    capture = _TelegramCapture()
+
+    async def fake_import(**kwargs):
+        await kwargs["on_stage"]("transcribing")  # ignored stage
+        await kwargs["on_stage"]("summarizing")
+        return SimpleNamespace(
+            recording=SimpleNamespace(title="Stage Test"),
+            summary=SimpleNamespace(summary="**Итог:** ок"),
+            transcript="ок",
+            transcript_document="00:00:00\nок\n",
+            speaker_names={},
+        )
+
+    monkeypatch.setattr(telegram_routes, "import_media_as_recording", fake_import)
+    await telegram_routes._handle_media_message(
+        db_session,
+        capture,
+        message={"message_id": 7, "chat": {"id": 95}},
+        account=account,
+        media={"kind": "voice", "file_id": "file-id"},
+    )
+
+    assert any(
+        "Пишу саммари" in edit["text"] for edit in capture.edited_messages
+    )
+
+
+@pytest.mark.asyncio
+async def test_summary_retry_callback_reports_failure_with_retry_button(
+    db_session, monkeypatch
+):
+    user = await _user(db_session, "telegram-retry-fail@example.com")
+    account = TelegramAccount(user_id=user.id, telegram_user_id=96, telegram_chat_id=96)
+    recording = Recording(
+        user_id=user.id,
+        title="Broken",
+        type="meeting",
+        status=RecordingStatus.READY.value,
+    )
+    db_session.add_all([account, recording])
+    await db_session.commit()
+    recording_id = recording.id  # capture before the handler's rollback expires it
+    capture = _TelegramCapture()
+
+    async def fail_regenerate(db, *, recording, user, source_label="telegram"):
+        raise RuntimeError("llm exploded")
+
+    monkeypatch.setattr(telegram_routes, "regenerate_recording_summary", fail_regenerate)
+
+    await telegram_routes._handle_callback_query(
+        db_session,
+        capture,
+        callback_query={
+            "id": "cb-3",
+            "from": {"id": 96},
+            "data": f"sumretry:{recording_id}",
+            "message": {"message_id": 79, "chat": {"id": 96}},
+        },
+    )
+
+    final = capture.messages[-1]
+    assert "Саммари снова не получилось" in final["text"]
+    assert (
+        final["reply_markup"]["inline_keyboard"][0][0]["callback_data"]
+        == f"sumretry:{recording_id}"
+    )

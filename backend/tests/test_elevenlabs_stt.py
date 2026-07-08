@@ -247,3 +247,14 @@ def test_builder_drops_whitespace_only_segments() -> None:
     }
     results = _results_from_scribe_payload(payload)
     assert [r.text for r in results] == ["Привет."]
+
+
+def test_builder_returns_none_for_whitespace_word_segment() -> None:
+    payload = {
+        "words": [
+            _word("   ", 0.0, 0.2),
+            _word("Привет.", 5.0, 5.4, speaker="speaker_1"),
+        ],
+    }
+    results = _results_from_scribe_payload(payload)
+    assert [r.text for r in results] == ["Привет."]
