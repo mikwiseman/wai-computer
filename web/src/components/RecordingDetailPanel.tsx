@@ -23,6 +23,7 @@ import type {
 } from "@/lib/types";
 import { SpeakerChip } from "@/components/SpeakerChip";
 import { SummaryAudioControls } from "@/components/SummaryAudioControls";
+import { SummaryMarkdown } from "@/components/SummaryMarkdown";
 
 type DetailLocale = "en" | "ru";
 const automaticSummaryStartKeys = new Set<string>();
@@ -969,7 +970,7 @@ function SummaryTab({
       {summary.summary ? (
         <section className="note-section">
           <h4>{copy.overview}</h4>
-          <p>{summary.summary}</p>
+          <SummaryMarkdown text={summary.summary} />
         </section>
       ) : null}
 
