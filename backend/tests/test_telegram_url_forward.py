@@ -24,7 +24,9 @@ class FakeTelegramClient:
     def __init__(self) -> None:
         self.messages: list[dict] = []
 
-    async def send_message(self, chat_id, text, *, reply_to_message_id=None, parse_mode=None):
+    async def send_message(
+        self, chat_id, text, *, reply_to_message_id=None, parse_mode=None, reply_markup=None
+    ):
         self.messages.append(
             {"chat_id": chat_id, "text": text, "parse_mode": parse_mode}
         )
