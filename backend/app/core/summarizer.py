@@ -169,6 +169,12 @@ MAP_REDUCE_CHUNK_CHARS = 28_000
 MAP_REDUCE_OVERLAP_LINES = 2
 MAP_REDUCE_MAX_CONCURRENCY = 4
 
+# gpt-oss reasoning tokens count against max_completion_tokens; 4096 starved
+# long-recording summaries (finish_reason=length killed the reduce pass on a
+# 74-minute meeting, prod 2026-07-08). Generous base + a one-shot retry ceiling.
+SUMMARY_MAX_COMPLETION_TOKENS = 8192
+SUMMARY_RETRY_MAX_COMPLETION_TOKENS = 24576
+
 
 def _require_cerebras_key() -> None:
     if not settings.cerebras_api_key:
@@ -249,31 +255,47 @@ async def _summarize_transcript_once(
     instructions: str | None = None,
     name: str = "recording_summary",
 ) -> SummaryResult:
-    """One Cerebras strict-structured-output summarization pass."""
+    """One Cerebras strict-structured-output summarization pass.
+
+    gpt-oss reasoning tokens count against ``max_completion_tokens``, and a rich
+    structured summary of a long recording can exceed the base budget — the
+    completion then stops with ``finish_reason=length`` and the whole summary
+    fails (prod 2026-07-08: a 74-minute meeting died on the reduce pass). Retry
+    once with a much larger budget before failing.
+    """
     _require_cerebras_key()
 
     prompt = build_summary_prompt(language=language, style=style, instructions=instructions)
     client = get_cerebras_client()
 
-    try:
+    async def _attempt(max_completion_tokens: int) -> _SummarySchema:
         response = await client.chat.completions.create(
             model=settings.cerebras_llm_model,
             messages=_summary_messages(prompt, transcript),
             response_format=strict_json_response_format(_SummarySchema, name=name),
             reasoning_effort="medium",
-            max_completion_tokens=4096,
+            max_completion_tokens=max_completion_tokens,
         )
-    except Exception as exc:  # noqa: BLE001 — capture for breadcrumbs then re-raise
-        capture_sentry_exception(exc)
-        raise SummarizationError(f"Summarization failed: {exc}") from exc
-
-    try:
-        parsed = chat_completion_parsed(
+        return chat_completion_parsed(
             response,
             _SummarySchema,
             operation="Summarization",
         )
-    except CerebrasResponseError as exc:
+
+    try:
+        try:
+            parsed = await _attempt(SUMMARY_MAX_COMPLETION_TOKENS)
+        except CerebrasResponseError as exc:
+            if "length" not in str(exc):
+                raise
+            add_sentry_breadcrumb(
+                category="summarizer",
+                message="Summarization retry with larger completion budget",
+                data={"first_budget": SUMMARY_MAX_COMPLETION_TOKENS},
+            )
+            parsed = await _attempt(SUMMARY_RETRY_MAX_COMPLETION_TOKENS)
+    except Exception as exc:  # noqa: BLE001 — capture for breadcrumbs then re-raise
+        capture_sentry_exception(exc)
         raise SummarizationError(f"Summarization failed: {exc}") from exc
 
     return SummaryResult(

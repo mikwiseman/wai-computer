@@ -186,10 +186,48 @@ class TestSummarizeTranscript:
         mock_client.chat.completions.create.assert_awaited_once()
         kwargs = mock_client.chat.completions.create.await_args.kwargs
         assert kwargs["model"] == "gpt-oss-120b"
-        assert kwargs["max_completion_tokens"] == 4096
+        assert kwargs["max_completion_tokens"] == summarizer_module.SUMMARY_MAX_COMPLETION_TOKENS
         assert kwargs["response_format"]["json_schema"]["name"] == "recording_summary"
         assert kwargs["reasoning_effort"] == "medium"
         assert "My meeting notes" in kwargs["messages"][1]["content"]
+
+    async def test_finish_reason_length_retries_with_larger_budget(self):
+        """finish_reason=length starved a 74-min meeting summary (prod 2026-07-08);
+        one retry with a larger completion budget must succeed instead of failing."""
+        starved = _text_response("truncated json")
+        starved.choices[0].finish_reason = "length"
+        mock_client = MagicMock()
+        mock_client.chat.completions.create = AsyncMock(
+            side_effect=[starved, _parsed_response(_summary_schema_payload())]
+        )
+
+        with patch("app.core.summarizer.get_cerebras_client", return_value=mock_client):
+            result = await summarize_transcript("Very long meeting transcript")
+
+        assert result.title == "Q1 Planning Meeting"
+        assert mock_client.chat.completions.create.await_count == 2
+        budgets = [
+            call.kwargs["max_completion_tokens"]
+            for call in mock_client.chat.completions.create.await_args_list
+        ]
+        assert budgets == [
+            summarizer_module.SUMMARY_MAX_COMPLETION_TOKENS,
+            summarizer_module.SUMMARY_RETRY_MAX_COMPLETION_TOKENS,
+        ]
+
+    async def test_finish_reason_length_on_retry_fails_loudly(self):
+        starved = _text_response("truncated json")
+        starved.choices[0].finish_reason = "length"
+        starved_again = _text_response("still truncated")
+        starved_again.choices[0].finish_reason = "length"
+        mock_client = MagicMock()
+        mock_client.chat.completions.create = AsyncMock(side_effect=[starved, starved_again])
+
+        with patch("app.core.summarizer.get_cerebras_client", return_value=mock_client):
+            with pytest.raises(SummarizationError, match="did not complete"):
+                await summarize_transcript("Very long meeting transcript")
+
+        assert mock_client.chat.completions.create.await_count == 2
 
     async def test_language_param_injected_into_prompt(self):
         mock_response = _parsed_response(_summary_schema_payload())
