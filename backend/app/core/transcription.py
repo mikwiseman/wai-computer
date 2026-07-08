@@ -8,6 +8,9 @@ import httpx
 
 from app.config import get_settings
 from app.core.deepgram import transcribe_audio_file as deepgram_transcribe_audio_file
+from app.core.elevenlabs_stt import (
+    transcribe_audio_file as elevenlabs_transcribe_audio_file,
+)
 from app.core.observability import (
     add_sentry_breadcrumb,
     capture_sentry_anomaly,
@@ -97,14 +100,14 @@ async def transcribe_audio_file(
     """Transcribe audio using the active speech-to-text runtime.
 
     Single batch choke point: every file-STT entrypoint (native uploads, Telegram
-    voice notes, imports) flows through here, so the Deepgram cost/abuse guards
+    voice notes, imports) flows through here, so the provider cost/abuse guards
     (kill-switch, circuit breaker, max-duration, daily minute budget, breaker-feed
     and minute-metering) live here once instead of per-entrypoint.
     """
     provider = provider or DEFAULT_FILE_STT_PROVIDER
     selected_model = model or DEFAULT_FILE_STT_MODEL
     provider, selected_model = validate_option("file_stt", provider, selected_model)
-    if provider != "deepgram":
+    if provider not in {"elevenlabs", "deepgram"}:
         raise ValueError(f"Unsupported file_stt_provider: {provider}.")
 
     settings = get_settings()
@@ -150,17 +153,28 @@ async def transcribe_audio_file(
     )
 
     try:
-        results = await deepgram_transcribe_audio_file(
-            audio_data,
-            language=language,
-            content_type=content_type,
-            channels=channels,
-            model=selected_model,
-            keyterms=keyterms,
-            replacements=replacements,
-            max_channels=settings.deepgram_max_channels,
-            audio_duration_seconds=audio_duration_seconds,
-        )
+        if provider == "elevenlabs":
+            results = await elevenlabs_transcribe_audio_file(
+                audio_data,
+                language=language,
+                content_type=content_type,
+                model=selected_model,
+                keyterms=keyterms,
+                replacements=replacements,
+                audio_duration_seconds=audio_duration_seconds,
+            )
+        else:
+            results = await deepgram_transcribe_audio_file(
+                audio_data,
+                language=language,
+                content_type=content_type,
+                channels=channels,
+                model=selected_model,
+                keyterms=keyterms,
+                replacements=replacements,
+                max_channels=settings.deepgram_max_channels,
+                audio_duration_seconds=audio_duration_seconds,
+            )
     except httpx.HTTPStatusError as exc:
         await record_provider_result(success=False, status_code=exc.response.status_code)
         error_code = _provider_error_code(exc) or "unknown"

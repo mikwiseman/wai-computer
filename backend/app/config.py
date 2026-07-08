@@ -139,11 +139,14 @@ class Settings(BaseSettings):
     agent_user_daily_runs_cap: int = 300
     agent_global_daily_runs_cap: int = 3000
 
-    # ElevenLabs — realtime conversational voice agents.
+    # ElevenLabs — realtime conversational voice agents + Scribe batch STT.
     elevenlabs_api_key: str = ""
     elevenlabs_conversation_agent_id: str = ""
     elevenlabs_recording_agent_id: str = ""
     elevenlabs_environment: str = "production"
+    # Scribe drops filler words ("uh", "эээ") from batch transcripts. Readability
+    # is the default; flip to false to get verbatim transcripts back.
+    elevenlabs_stt_no_verbatim: bool = True
 
     # xAI — server-side text-to-speech for generated summary audio.
     xai_api_key: str = ""

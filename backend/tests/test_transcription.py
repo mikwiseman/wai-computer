@@ -6,6 +6,7 @@ import httpx
 import pytest
 
 DEEPGRAM_FILE_STT_MODEL = "nova-3"
+ELEVENLABS_FILE_STT_MODEL = "scribe_v2"
 
 
 def test_provider_error_code_reads_openai_error_shape():
@@ -41,14 +42,42 @@ def test_provider_error_code_reads_deepgram_error_shape():
 
 
 @pytest.mark.asyncio
-async def test_transcription_dispatches_to_deepgram_file_stt():
+async def test_transcription_dispatches_default_to_elevenlabs_scribe():
+    with patch(
+        "app.core.transcription.elevenlabs_transcribe_audio_file",
+        new=AsyncMock(return_value=["ok"]),
+    ) as mock_elevenlabs:
+        from app.core.transcription import transcribe_audio_file
+
+        result = await transcribe_audio_file(b"audio", language="ru", content_type="audio/mp3")
+
+    assert result == ["ok"]
+    mock_elevenlabs.assert_awaited_once_with(
+        b"audio",
+        language="ru",
+        content_type="audio/mp3",
+        model=ELEVENLABS_FILE_STT_MODEL,
+        keyterms=None,
+        replacements=None,
+        audio_duration_seconds=None,
+    )
+
+
+@pytest.mark.asyncio
+async def test_transcription_dispatches_explicit_deepgram_file_stt():
     with patch(
         "app.core.transcription.deepgram_transcribe_audio_file",
         new=AsyncMock(return_value=["ok"]),
     ) as mock_deepgram:
         from app.core.transcription import transcribe_audio_file
 
-        result = await transcribe_audio_file(b"audio", language="ru", content_type="audio/mp3")
+        result = await transcribe_audio_file(
+            b"audio",
+            language="ru",
+            content_type="audio/mp3",
+            provider="deepgram",
+            model="nova-3",
+        )
 
     assert result == ["ok"]
     mock_deepgram.assert_awaited_once_with(
@@ -77,7 +106,7 @@ async def test_transcription_accepts_usage_purpose_without_forwarding_to_provide
         lambda **kwargs: sentry_breadcrumbs.append(kwargs),
     )
     transcribe = AsyncMock(return_value=["ok"])
-    monkeypatch.setattr(transcription, "deepgram_transcribe_audio_file", transcribe)
+    monkeypatch.setattr(transcription, "elevenlabs_transcribe_audio_file", transcribe)
 
     result = await transcription.transcribe_audio_file(
         b"audio",
@@ -91,11 +120,9 @@ async def test_transcription_accepts_usage_purpose_without_forwarding_to_provide
         b"audio",
         language="ru",
         content_type="audio/mp4",
-        channels=None,
-        model=DEEPGRAM_FILE_STT_MODEL,
+        model=ELEVENLABS_FILE_STT_MODEL,
         keyterms=None,
         replacements=None,
-        max_channels=2,
         audio_duration_seconds=None,
     )
     assert any(
@@ -112,9 +139,9 @@ async def test_transcription_ignores_removed_user_file_stt_choice():
         {"file_stt_provider": "removed-provider", "file_stt_model": "removed-model"},
     )()
     with patch(
-        "app.core.transcription.deepgram_transcribe_audio_file",
-        new=AsyncMock(return_value=["deepgram-ok"]),
-    ) as mock_deepgram:
+        "app.core.transcription.elevenlabs_transcribe_audio_file",
+        new=AsyncMock(return_value=["elevenlabs-ok"]),
+    ) as mock_elevenlabs:
         from app.core.transcription import transcribe_audio_file
 
         result = await transcribe_audio_file(
@@ -125,16 +152,14 @@ async def test_transcription_ignores_removed_user_file_stt_choice():
             user=user,
         )
 
-    assert result == ["deepgram-ok"]
-    mock_deepgram.assert_awaited_once_with(
+    assert result == ["elevenlabs-ok"]
+    mock_elevenlabs.assert_awaited_once_with(
         b"audio",
         language="en",
         content_type="audio/wav",
-        channels=1,
-        model=DEEPGRAM_FILE_STT_MODEL,
+        model=ELEVENLABS_FILE_STT_MODEL,
         keyterms=None,
         replacements=None,
-        max_channels=2,
         audio_duration_seconds=None,
     )
 
@@ -160,17 +185,23 @@ async def test_transcription_accepts_explicit_deepgram_file_stt():
 
 
 @pytest.mark.asyncio
-async def test_transcription_rejects_explicit_elevenlabs_file_stt():
-    from app.core.transcription import transcribe_audio_file
+async def test_transcription_accepts_explicit_elevenlabs_file_stt():
+    with patch(
+        "app.core.transcription.elevenlabs_transcribe_audio_file",
+        new=AsyncMock(return_value=["scribe-ok"]),
+    ) as mock_elevenlabs:
+        from app.core.transcription import transcribe_audio_file
 
-    with pytest.raises(ValueError, match="Unsupported file_stt option"):
-        await transcribe_audio_file(
+        result = await transcribe_audio_file(
             b"audio",
             language="en",
             content_type="audio/wav",
             provider="elevenlabs",
             model="scribe_v2",
         )
+
+    assert result == ["scribe-ok"]
+    mock_elevenlabs.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -226,6 +257,8 @@ async def test_transcription_surfaces_deepgram_quota_issue_without_provider_fall
                 language="auto",
                 content_type="audio/wav",
                 channels=1,
+                provider="deepgram",
+                model="nova-3",
             )
 
 
@@ -244,6 +277,8 @@ async def test_transcription_reraises_unexpected_deepgram_failure_without_fallba
                 language="ru",
                 content_type="audio/wav",
                 channels=1,
+                provider="deepgram",
+                model="nova-3",
             )
 
     messages = "\n".join(record.getMessage() for record in caplog.records)
@@ -258,7 +293,7 @@ async def test_transcription_logs_provider_latency_without_audio_or_error_body(c
     from app.core.transcript_utils import TranscriptResult
 
     with patch(
-        "app.core.transcription.deepgram_transcribe_audio_file",
+        "app.core.transcription.elevenlabs_transcribe_audio_file",
         new=AsyncMock(
             return_value=[
                 TranscriptResult(
@@ -279,7 +314,7 @@ async def test_transcription_logs_provider_latency_without_audio_or_error_body(c
 
     messages = "\n".join(record.getMessage() for record in caplog.records)
     assert "file STT completed" in messages
-    assert "provider=deepgram" in messages
+    assert "provider=elevenlabs" in messages
     assert "segment_count=1" in messages
     assert "private transcript" not in messages
     assert "secret-audio-bytes" not in messages
@@ -316,7 +351,7 @@ async def test_transcription_captures_slow_file_stt_without_audio_or_transcript(
     )
     monkeypatch.setattr(
         transcription,
-        "deepgram_transcribe_audio_file",
+        "elevenlabs_transcribe_audio_file",
         AsyncMock(
             return_value=[
                 TranscriptResult(
@@ -345,8 +380,8 @@ async def test_transcription_captures_slow_file_stt_without_audio_or_transcript(
             "message": "File transcription latency exceeded threshold",
             "category": "recording",
             "extras": {
-                "provider": "deepgram",
-                "model": DEEPGRAM_FILE_STT_MODEL,
+                "provider": "elevenlabs",
+                "model": ELEVENLABS_FILE_STT_MODEL,
                 "latency_ms": 121_000,
                 "slow_threshold_ms": 120_000,
                 "audio_duration_seconds": 30,
@@ -387,7 +422,13 @@ async def test_transcription_does_not_fallback_for_deepgram_bad_request():
         from app.core.transcription import transcribe_audio_file
 
         with pytest.raises(httpx.HTTPStatusError):
-            await transcribe_audio_file(b"wav", language="not-a-language", content_type="audio/wav")
+            await transcribe_audio_file(
+                b"wav",
+                language="not-a-language",
+                content_type="audio/wav",
+                provider="deepgram",
+                model="nova-3",
+            )
 
 
 def test_provider_error_code_handles_unstructured_error_payloads():

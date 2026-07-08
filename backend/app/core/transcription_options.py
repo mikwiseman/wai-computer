@@ -29,8 +29,8 @@ DEFAULT_DICTATION_LIVE_STT_PROVIDER = "deepgram"
 DEFAULT_DICTATION_LIVE_STT_MODEL = "nova-3"
 DEFAULT_RECORDING_LIVE_STT_PROVIDER = "deepgram"
 DEFAULT_RECORDING_LIVE_STT_MODEL = "nova-3"
-DEFAULT_FILE_STT_PROVIDER = "deepgram"
-DEFAULT_FILE_STT_MODEL = "nova-3"
+DEFAULT_FILE_STT_PROVIDER = "elevenlabs"
+DEFAULT_FILE_STT_MODEL = "scribe_v2"
 DEFAULT_DICTATION_POST_FILTER_PROVIDER = "disabled"
 DEFAULT_DICTATION_POST_FILTER_MODEL = "none"
 
@@ -74,6 +74,15 @@ TRANSCRIPTION_OPTIONS: dict[TranscriptionOptionGroup, tuple[ModelOption, ...]] =
     "dictation_live_stt": _DICTATION_REALTIME_OPTIONS,
     "recording_live_stt": _RECORDING_REALTIME_OPTIONS,
     "file_stt": (
+        ModelOption(
+            provider="elevenlabs",
+            model="scribe_v2",
+            label="ElevenLabs Scribe v2",
+            description=(
+                "Highest-accuracy batch transcription with speaker diarization "
+                "and filler-word removal."
+            ),
+        ),
         ModelOption(
             provider="deepgram",
             model="nova-3",

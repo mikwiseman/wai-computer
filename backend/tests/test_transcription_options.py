@@ -77,8 +77,8 @@ def test_default_stt_model_set_matches_stable_release_choice() -> None:
         "nova-3",
     )
     assert (DEFAULT_FILE_STT_PROVIDER, DEFAULT_FILE_STT_MODEL) == (
-        "deepgram",
-        "nova-3",
+        "elevenlabs",
+        "scribe_v2",
     )
 
 
@@ -218,15 +218,24 @@ def test_options_response_stt_groups_are_fixed() -> None:
     ]
 
 
-def test_options_response_file_stt_only_fixed_model() -> None:
+def test_options_response_file_stt_scribe_default_then_deepgram() -> None:
     out = options_response()
     assert out["file_stt"] == [
+        {
+            "provider": "elevenlabs",
+            "model": "scribe_v2",
+            "label": "ElevenLabs Scribe v2",
+            "description": (
+                "Highest-accuracy batch transcription with speaker diarization "
+                "and filler-word removal."
+            ),
+        },
         {
             "provider": "deepgram",
             "model": "nova-3",
             "label": "Deepgram Nova-3",
             "description": "Full-session batch transcription with v2 speaker diarization.",
-        }
+        },
     ]
     assert out["dictation_post_filter"] == []
 
@@ -267,7 +276,7 @@ def test_options_response_filters_unconfigured_providers() -> None:
 
     assert {entry["provider"] for entry in out["dictation_live_stt"]} == {"deepgram"}
     assert {entry["provider"] for entry in out["recording_live_stt"]} == {"deepgram"}
-    assert {entry["provider"] for entry in out["file_stt"]} == {"deepgram"}
+    assert {entry["provider"] for entry in out["file_stt"]} == {"elevenlabs", "deepgram"}
     assert out["dictation_post_filter"] == []
 
 

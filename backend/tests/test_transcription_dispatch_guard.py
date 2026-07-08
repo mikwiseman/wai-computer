@@ -55,7 +55,7 @@ async def test_dispatch_success_records_minutes_and_keeps_breaker_closed(setting
     async def _fake(*_a, **_k):
         return []
 
-    monkeypatch.setattr(dispatcher, "deepgram_transcribe_audio_file", _fake)
+    monkeypatch.setattr(dispatcher, "elevenlabs_transcribe_audio_file", _fake)
     await dispatcher.transcribe_audio_file(b"x", user_id="u1", audio_duration_seconds=60)
     today = datetime.now(timezone.utc).strftime("%Y%m%d")
     used_global = await guard.get_redis().get(f"dg:min:global:{today}")
@@ -73,7 +73,7 @@ async def test_dispatch_402_opens_breaker_and_reraises(settings, monkeypatch):
     async def _fake(*_a, **_k):
         raise httpx.HTTPStatusError("budget exceeded", request=request, response=response)
 
-    monkeypatch.setattr(dispatcher, "deepgram_transcribe_audio_file", _fake)
+    monkeypatch.setattr(dispatcher, "elevenlabs_transcribe_audio_file", _fake)
     with pytest.raises(httpx.HTTPStatusError):
         await dispatcher.transcribe_audio_file(b"x", user_id="u1", audio_duration_seconds=10)
     assert await guard.provider_breaker_open() is True
