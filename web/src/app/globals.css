@@ -3300,6 +3300,37 @@ a.primary-button[aria-disabled="true"]:hover {
   padding: 0;
 }
 
+.summary-markdown {
+  display: grid;
+  gap: 0.75rem;
+  font-size: 1.04rem;
+  line-height: 1.75;
+}
+
+.summary-markdown h3,
+.shared-subheading {
+  font-size: 1rem;
+  font-weight: 650;
+  margin-top: 0.35rem;
+}
+
+.summary-markdown code,
+.shared-section code.mono {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 0.92em;
+  background: color-mix(in srgb, var(--ink-faint) 12%, transparent);
+  border-radius: 0.3em;
+  padding: 0.08em 0.35em;
+}
+
+.summary-markdown ul {
+  margin: 0;
+}
+
+.shared-action-items li {
+  line-height: 1.65;
+}
+
 .empty-state {
   display: grid;
   gap: 0.45rem;

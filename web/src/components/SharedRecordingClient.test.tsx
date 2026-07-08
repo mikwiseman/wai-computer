@@ -100,9 +100,10 @@ describe("SharedRecordingClient", () => {
 
     expect(screen.getByText("The team reviewed public sharing.")).toBeInTheDocument();
     expect(screen.getByText("Open shared notes on web")).toBeInTheDocument();
-    // The shared note page intentionally omits the Action Items section (Mac parity),
-    // so action item tasks must not render even when present in the payload.
-    expect(screen.queryByText("Add the Mac share button")).not.toBeInTheDocument();
+    // Action items now render on the shared page — the Telegram bot links here
+    // as the recording's full view (summary + tasks + transcript).
+    expect(screen.getByText("Add the Mac share button")).toBeInTheDocument();
+    expect(screen.getByText("Action items")).toBeInTheDocument();
     expect(screen.getByText("Open the shared note in the web app.")).toBeInTheDocument();
     expect(screen.getByText("Mik")).toBeInTheDocument();
     expect(screen.getByText("2 min 5 sec")).toBeInTheDocument();
