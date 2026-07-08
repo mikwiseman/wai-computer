@@ -1308,6 +1308,9 @@ async def regenerate_recording_summary(
         generated_title = summary_result.title.strip()
         if generated_title:
             recording.title = generated_title[:500]
+    # The recording arrives from a plain select; load the summary relationship
+    # explicitly — lazy access in an async session raises MissingGreenlet.
+    await db.refresh(recording, attribute_names=["summary"])
     if recording.summary is not None:
         await db.delete(recording.summary)
         recording.summary = None

@@ -358,8 +358,9 @@ async def test_recording_detail_loader_skips_segment_embeddings(
     vector each, which pushed server TTFB to ~4.2s on production. Deferring
     the column keeps the payload query O(text), not O(vectors).
     """
-    from app.api.routes.recordings import _load_recording_detail
     from sqlalchemy import inspect as sa_inspect
+
+    from app.api.routes.recordings import _load_recording_detail
 
     recording = await _create_recording(client, auth_headers, title="Defer Embeddings")
     recording_id = UUID(recording["id"])
