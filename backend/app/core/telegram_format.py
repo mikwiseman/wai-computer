@@ -21,18 +21,39 @@ _BOLD_US_RE = re.compile(r"__(.+?)__")
 # never snake_case ``_`` inside a word.
 _ITALIC_STAR_RE = re.compile(r"(?<![\*\w])\*(?!\s)(.+?)(?<![\s\*])\*(?!\*)")
 _ITALIC_US_RE = re.compile(r"(?<![_\w])_(?!\s)(.+?)(?<![\s_])_(?!\w)")
+# ``` `monospace` ``` for numbers/amounts/dates (the scannable-metrics look).
+_CODE_RE = re.compile(r"`([^`\n]+)`")
 _HEADING_RE = re.compile(r"^#{1,6}\s+")
 _LEADING_BULLET_RE = re.compile(r"^([-*•–])\s+")
 
 
-def _convert_inline(text: str) -> tuple[str, bool]:
-    """Convert inline markdown emphasis to HTML. Returns (html, produced_bold)."""
+def _convert_emphasis(text: str) -> tuple[str, bool]:
     produced_bold = bool(_BOLD_STAR_RE.search(text) or _BOLD_US_RE.search(text))
     text = _BOLD_STAR_RE.sub(r"<b>\1</b>", text)
     text = _BOLD_US_RE.sub(r"<b>\1</b>", text)
     text = _ITALIC_STAR_RE.sub(r"<i>\1</i>", text)
     text = _ITALIC_US_RE.sub(r"<i>\1</i>", text)
     return text, produced_bold
+
+
+def _convert_inline(text: str) -> tuple[str, bool]:
+    """Convert inline markdown emphasis to HTML. Returns (html, produced_bold).
+
+    Code spans convert first and are opaque to the emphasis passes, so a ``*``
+    or ``_`` inside backticks never becomes a stray tag.
+    """
+    parts: list[str] = []
+    produced_bold = False
+    cursor = 0
+    for match in _CODE_RE.finditer(text):
+        before, before_bold = _convert_emphasis(text[cursor : match.start()])
+        parts.append(before)
+        produced_bold = produced_bold or before_bold
+        parts.append(f"<code>{match.group(1)}</code>")
+        cursor = match.end()
+    tail, tail_bold = _convert_emphasis(text[cursor:])
+    parts.append(tail)
+    return "".join(parts), produced_bold or tail_bold
 
 
 def telegram_html(text: str) -> str:

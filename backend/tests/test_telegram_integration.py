@@ -14,7 +14,7 @@ from uuid import uuid4
 
 import httpx
 import pytest
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.routes import telegram as telegram_routes
@@ -41,7 +41,15 @@ from app.models.billing import UsageWeek
 from app.models.companion import ChatMessage, Conversation
 from app.models.companion_pending_action import CompanionPendingAction
 from app.models.item import Item, ItemChunk, ItemSummary
-from app.models.recording import ActionItem, Highlight, Recording, RecordingStatus, Segment, Summary
+from app.models.recording import (
+    ActionItem,
+    Highlight,
+    Recording,
+    RecordingShare,
+    RecordingStatus,
+    Segment,
+    Summary,
+)
 from app.models.reminder import UserReminder
 from app.models.telegram import (
     TelegramAccount,
@@ -2854,6 +2862,10 @@ async def test_handle_media_message_imports_and_replies(
                 sentiment="neutral",
             ),
             transcript="Полная расшифровка",
+            transcript_document=(
+                "00:00:00 Мик\nПолная расшифровка\n"
+            ),
+            speaker_names={"speaker_0": "Мик"},
         )
 
     monkeypatch.setattr(telegram_routes, "import_media_as_recording", fake_import)
@@ -2871,7 +2883,7 @@ async def test_handle_media_message_imports_and_replies(
         {
             "chat_id": 44,
             "filename": "refleksiya-21-nedelya-17-23-maya.txt",
-            "data": "Полная расшифровка".encode("utf-8"),
+            "data": "00:00:00 Мик\nПолная расшифровка\n".encode("utf-8"),
             "caption": None,
             "reply_to_message_id": 12,
         }
@@ -3247,7 +3259,8 @@ async def test_handle_media_message_passes_telegram_duration_to_import(
     )
 
     assert seen["duration_seconds"] == 3600
-    assert "Готово. Запись сохранена" in capture.messages[-1]["text"]
+    # No transcript came back -> the bot says so instead of pretending success.
+    assert "не слышно речи" in capture.messages[-1]["text"]
 
 
 @pytest.mark.asyncio
@@ -4903,3 +4916,236 @@ def test_telegram_chunks_splits_long_messages():
     assert len(chunks) == 2
     assert "".join(chunks).replace("\n", "") == text.replace("\n", "")
     assert telegram_chunks("   ") == []
+
+
+# ---------------------------------------------------------------------------
+# Rich recording replies: meta line, page button, honest summary failure, retry
+# ---------------------------------------------------------------------------
+
+
+def test_format_recording_summary_message_has_title_meta_and_body() -> None:
+    recording = SimpleNamespace(
+        title="Созвон по Сколково",
+        duration_seconds=74 * 60 + 19,
+    )
+    summary = SimpleNamespace(
+        summary="**Формат встречи:** еженедельный созвон.\n- Оценка `60-70 млрд руб.`"
+    )
+    text = telegram_routes._format_recording_summary_message(
+        recording,
+        summary,
+        speaker_names={"speaker_0": "Дмитрий Рубин", "speaker_1": "Мик"},
+    )
+
+    lines = text.split("\n")
+    assert lines[0] == "<b>Созвон по Сколково</b>"
+    assert lines[1] == "<i>1 ч 14 мин · Дмитрий Рубин, Мик</i>"
+    assert "<b>Формат встречи:</b>" in text
+    assert "<code>60-70 млрд руб.</code>" in text
+
+
+def test_format_recording_meta_line_skips_short_or_solo() -> None:
+    solo = SimpleNamespace(title="Заметка", duration_seconds=42)
+    assert (
+        telegram_routes._format_recording_meta_line(solo, {"speaker_0": "Мик"}) is None
+    )
+    duo = SimpleNamespace(title="Звонок", duration_seconds=125)
+    assert telegram_routes._format_recording_meta_line(duo, None) == "<i>2 мин</i>"
+
+
+def test_transcript_document_filename_gets_date_prefix() -> None:
+    recording = SimpleNamespace(
+        title="Обсуждение стратегии Сколково",
+        created_at=datetime(2026, 7, 8, 11, 20, tzinfo=timezone.utc),
+    )
+    assert (
+        telegram_routes._transcript_document_filename(recording, media_kind="audio")
+        == "2026-07-08-obsuzhdenie-strategii-skolkovo.txt"
+    )
+
+
+@pytest.mark.asyncio
+async def test_media_reply_attaches_page_button(db_session, monkeypatch):
+    user = await _user(db_session, "telegram-page-button@example.com")
+    account = TelegramAccount(user_id=user.id, telegram_user_id=91, telegram_chat_id=91)
+    recording = Recording(
+        user_id=user.id,
+        title="Созвон",
+        type="meeting",
+        status=RecordingStatus.READY.value,
+        duration_seconds=600,
+    )
+    db_session.add_all([account, recording])
+    await db_session.commit()
+    capture = _TelegramCapture()
+
+    @asynccontextmanager
+    async def fake_db_context():
+        yield db_session
+
+    monkeypatch.setattr(telegram_routes, "get_db_context", fake_db_context)
+
+    async def fake_import(**kwargs):
+        return SimpleNamespace(
+            recording=recording,
+            summary=SimpleNamespace(summary="**Итог:** всё решили"),
+            transcript="всё решили",
+            transcript_document="00:00:00 Мик\nвсё решили\n",
+            speaker_names={"speaker_0": "Мик"},
+        )
+
+    monkeypatch.setattr(telegram_routes, "import_media_as_recording", fake_import)
+    await telegram_routes._handle_media_message(
+        db_session,
+        capture,
+        message={"message_id": 5, "chat": {"id": 91}},
+        account=account,
+        media={"kind": "voice", "file_id": "file-id"},
+    )
+
+    final = capture.messages[-1]
+    assert final["parse_mode"] == "HTML"
+    markup = final["reply_markup"]
+    assert markup is not None
+    button = markup["inline_keyboard"][0][0]
+    assert button["text"] == "🌐 Открыть страницу"
+    assert "/share/" in button["url"]
+
+    share_count = (
+        await db_session.execute(
+            select(func.count()).select_from(RecordingShare).where(
+                RecordingShare.recording_id == recording.id
+            )
+        )
+    ).scalar_one()
+    assert share_count == 1
+
+
+@pytest.mark.asyncio
+async def test_media_reply_summary_failure_offers_retry(db_session, monkeypatch):
+    user = await _user(db_session, "telegram-retry-offer@example.com")
+    account = TelegramAccount(user_id=user.id, telegram_user_id=92, telegram_chat_id=92)
+    recording = Recording(
+        user_id=user.id,
+        title=None,
+        type="meeting",
+        status=RecordingStatus.READY.value,
+    )
+    db_session.add_all([account, recording])
+    await db_session.commit()
+    capture = _TelegramCapture()
+
+    @asynccontextmanager
+    async def fake_db_context():
+        yield db_session
+
+    monkeypatch.setattr(telegram_routes, "get_db_context", fake_db_context)
+
+    async def fake_import(**kwargs):
+        return SimpleNamespace(
+            recording=recording,
+            summary=None,
+            transcript="длинная расшифровка",
+            transcript_document="00:00:00\nдлинная расшифровка\n",
+            speaker_names={},
+        )
+
+    monkeypatch.setattr(telegram_routes, "import_media_as_recording", fake_import)
+    await telegram_routes._handle_media_message(
+        db_session,
+        capture,
+        message={"message_id": 6, "chat": {"id": 92}},
+        account=account,
+        media={"kind": "audio", "file_id": "file-id"},
+    )
+
+    final = capture.messages[-1]
+    assert "Саммари сгенерировать не получилось" in final["text"]
+    rows = final["reply_markup"]["inline_keyboard"]
+    assert rows[0][0]["callback_data"] == f"sumretry:{recording.id}"
+    assert rows[1][0]["text"] == "🌐 Открыть страницу"
+
+
+@pytest.mark.asyncio
+async def test_summary_retry_callback_regenerates_and_replies(db_session, monkeypatch):
+    user = await _user(db_session, "telegram-retry-run@example.com")
+    account = TelegramAccount(user_id=user.id, telegram_user_id=93, telegram_chat_id=93)
+    recording = Recording(
+        user_id=user.id,
+        title="Restored",
+        type="meeting",
+        status=RecordingStatus.READY.value,
+        duration_seconds=300,
+    )
+    db_session.add_all([account, recording])
+    await db_session.commit()
+    capture = _TelegramCapture()
+
+    @asynccontextmanager
+    async def fake_db_context():
+        yield db_session
+
+    monkeypatch.setattr(telegram_routes, "get_db_context", fake_db_context)
+
+    async def fake_regenerate(db, *, recording, user, source_label="telegram"):
+        return (
+            SimpleNamespace(summary="**Итог:** восстановлено `100%`"),
+            {"speaker_0": "Мик", "speaker_1": "Рома"},
+        )
+
+    monkeypatch.setattr(telegram_routes, "regenerate_recording_summary", fake_regenerate)
+
+    await telegram_routes._handle_callback_query(
+        db_session,
+        capture,
+        callback_query={
+            "id": "cb-1",
+            "from": {"id": 93},
+            "data": f"sumretry:{recording.id}",
+            "message": {"message_id": 77, "chat": {"id": 93}},
+        },
+    )
+
+    assert capture.callback_answers[0]["text"] == "Пишу саммари…"
+    final = capture.messages[-1]
+    assert "<b>Restored</b>" in final["text"]
+    assert "<code>100%</code>" in final["text"]
+    assert "Мик, Рома" in final["text"]
+    assert final["reply_markup"]["inline_keyboard"][0][0]["text"] == "🌐 Открыть страницу"
+
+
+@pytest.mark.asyncio
+async def test_summary_retry_callback_rejects_foreign_recording(db_session, monkeypatch):
+    owner = await _user(db_session, "telegram-retry-owner@example.com")
+    stranger = await _user(db_session, "telegram-retry-stranger@example.com")
+    stranger_account = TelegramAccount(
+        user_id=stranger.id, telegram_user_id=94, telegram_chat_id=94
+    )
+    recording = Recording(
+        user_id=owner.id,
+        title="Private",
+        type="meeting",
+        status=RecordingStatus.READY.value,
+    )
+    db_session.add_all([stranger_account, recording])
+    await db_session.commit()
+    capture = _TelegramCapture()
+
+    async def fail_regenerate(*args, **kwargs):  # pragma: no cover - must not run
+        raise AssertionError("regeneration must not run for a foreign recording")
+
+    monkeypatch.setattr(telegram_routes, "regenerate_recording_summary", fail_regenerate)
+
+    await telegram_routes._handle_callback_query(
+        db_session,
+        capture,
+        callback_query={
+            "id": "cb-2",
+            "from": {"id": 94},
+            "data": f"sumretry:{recording.id}",
+            "message": {"message_id": 78, "chat": {"id": 94}},
+        },
+    )
+
+    assert capture.callback_answers[0]["text"] == "Запись не найдена."
+    assert capture.messages == []

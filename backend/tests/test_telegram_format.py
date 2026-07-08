@@ -96,3 +96,27 @@ def test_inline_escapes_html():
 
 def test_inline_empty():
     assert telegram_inline("") == ""
+
+
+def test_code_spans_render_monospace() -> None:
+    from app.core.telegram_format import telegram_html, telegram_inline
+
+    assert (
+        telegram_html("- Оценка рынка `60-70 млрд руб.` пока грязная")
+        == "- Оценка рынка <code>60-70 млрд руб.</code> пока грязная"
+    )
+    assert telegram_inline("цена `450 руб.`") == "цена <code>450 руб.</code>"
+
+
+def test_emphasis_inside_code_span_stays_literal() -> None:
+    from app.core.telegram_format import telegram_html
+
+    assert telegram_html("формула `a*b*c` и **важно**") == (
+        "формула <code>a*b*c</code> и <b>важно</b>"
+    )
+
+
+def test_code_span_content_is_escaped() -> None:
+    from app.core.telegram_format import telegram_html
+
+    assert telegram_html("сравнение `x < y`") == "сравнение <code>x &lt; y</code>"

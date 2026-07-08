@@ -2,7 +2,6 @@
 
 import logging
 import re
-import secrets
 from collections import Counter, defaultdict
 from datetime import datetime, timedelta, timezone
 from hashlib import sha256
@@ -50,6 +49,11 @@ from app.core.recording_audio_processing import (
     delete_staged_file,
     is_no_speech_placeholder,
     reset_recording_processing_state,
+)
+from app.core.recording_share import (
+    ShareTokenCollisionError,
+    create_recording_share,
+    share_token_hash,
 )
 from app.core.summarizer import (
     generate_title,
@@ -805,27 +809,7 @@ def _recording_detail_load_options():
 
 
 def _share_token_hash(token: str) -> str:
-    return sha256(token.encode("utf-8")).hexdigest()
-
-
-def _shared_recording_url(token: str) -> str:
-    return f"{app_settings.frontend_url.rstrip('/')}/share/{token}"
-
-
-async def _generate_unique_share_token(db: Database) -> tuple[str, str]:
-    for _ in range(5):
-        token = secrets.token_urlsafe(32)
-        token_hash = _share_token_hash(token)
-        existing_result = await db.execute(
-            select(RecordingShare.id).where(RecordingShare.token_hash == token_hash)
-        )
-        if existing_result.scalar_one_or_none() is None:
-            return token, token_hash
-
-    raise HTTPException(
-        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-        detail="Unable to create a share link. Please try again.",
-    )
+    return share_token_hash(token)
 
 
 def _serialize_shared_recording(
@@ -1649,9 +1633,13 @@ async def create_recording_share_link(
     if recording is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Recording not found")
 
-    token, token_hash = await _generate_unique_share_token(db)
-    share = RecordingShare(recording_id=recording.id, token_hash=token_hash)
-    db.add(share)
+    try:
+        share, token, url = await create_recording_share(db, recording_id=recording.id)
+    except ShareTokenCollisionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Unable to create a share link. Please try again.",
+        ) from exc
     await db.flush()
 
     add_sentry_breadcrumb(
@@ -1663,7 +1651,7 @@ async def create_recording_share_link(
     return RecordingShareLinkResponse(
         recording_id=str(recording.id),
         token=token,
-        url=_shared_recording_url(token),
+        url=url,
         created_at=share.created_at,
     )
 

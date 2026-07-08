@@ -6,6 +6,8 @@ import asyncio
 import logging
 import math
 import time
+from collections.abc import Awaitable, Callable
+from contextlib import suppress
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
 from io import BytesIO
@@ -15,6 +17,7 @@ from uuid import UUID
 import httpx
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.billing.quota import record_recording_transcript_words
 from app.config import get_settings
@@ -47,13 +50,14 @@ from app.core.summarizer import (
     summarize_transcript,
 )
 from app.core.summary_generation import combine_summary_instructions
+from app.core.transcript_document import build_transcript_document
 from app.core.transcript_utils import TranscriptResult
 from app.core.transcription import transcribe_audio_file
 from app.core.transcription_guard import TranscriptionGuardError
 from app.core.transcription_options import DEFAULT_FILE_STT_MODEL
 from app.core.voice_identification import identify_speakers_for_recording
 from app.models.highlight import Highlight
-from app.models.person import RecordingSpeakerEmbedding
+from app.models.person import Person, RecordingSpeakerEmbedding
 from app.models.recording import (
     ACTIVE_RECORDING_STATUSES,
     ActionItem,
@@ -79,8 +83,11 @@ names, projects, numbers, outcomes, and commitments verbatim.
 First decide what KIND of recording this is, then structure `summary` for it:
 - plan / to-do: group the tasks under short thematic section headers; LEAD with
   the concrete actions and put any context after them.
-- meeting / call: lead with Decisions and Action items (who does what by when),
-  then Open questions.
+- meeting / call: open with ONE bold-led context line, e.g.
+  **Формат встречи:** еженедельный созвон команды по подготовке к грантам.
+  Then thematic sections named after what was actually discussed (e.g.
+  **Юридический блок**, **Рынок и метрики (SAM/SOM)**), leading with decisions
+  and commitments (who does what by when), then open questions.
 - lecture / talk: a short outline of the topics with the key takeaways.
 - weekly reflection: the four sections Что понравилось / Что не понравилось /
   Что продолжать / Что изменить.
@@ -89,9 +96,15 @@ First decide what KIND of recording this is, then structure `summary` for it:
 Telegram formatting for `summary`:
 - Start each section with a short bold header in Markdown, e.g. **1) Продажи**.
 - Put the items under a header on their own lines starting with "- ".
+- Inside each bullet, wrap the 1-3 most load-bearing words in **bold** (the
+  decision, the deliverable, the name) so the eye can jump between them.
+- Wrap every number, amount, date, deadline, and metric in `backticks`:
+  `450 руб.`, `60-70 млрд руб.`, `1000 знаков`, `до пятницы`.
 - Most actionable content first; no greeting, no preamble, no meta-commentary.
 - Length follows the content: a one-line note stays one line — never pad to a
-  target length, never invent detail to fill sections.
+  target length, never invent detail to fill sections. For long recordings
+  stay under ~3500 characters by tightening bullets, not by dropping whole
+  topics.
 """
 
 MEDIA_RECORDING_SUMMARY_INSTRUCTIONS = """\
@@ -128,6 +141,12 @@ class ImportedRecordingResult:
     recording: Recording
     transcript: str
     summary: Summary | None
+    # Diarized, timestamped speaker-block rendering of the same transcript —
+    # what the Telegram bot attaches as the downloadable .txt.
+    transcript_document: str = ""
+    # Raw diarization label -> resolved display name (voice directory match or
+    # in-transcript introduction). Powers the reply's participants line.
+    speaker_names: dict[str, str] | None = None
 
 
 @dataclass(frozen=True)
@@ -616,12 +635,54 @@ async def _persist_segments(
         )
 
     recording.duration_seconds = recording_duration_seconds
-    speaker_names = {
-        label: getattr(assignment, "name", "").strip()
-        for label, assignment in extracted_names.items()
-        if getattr(assignment, "name", "").strip()
+    speaker_names = await _resolve_speaker_display_names(
+        db,
+        speaker_assignments=speaker_assignments,
+        extracted_names=extracted_names,
+    )
+    transcript_document = build_transcript_document(
+        transcript_results,
+        speaker_display_names=speaker_names,
+    )
+    return " ".join(transcript_parts), speaker_names, transcript_document
+
+
+async def _resolve_speaker_display_names(
+    db: AsyncSession,
+    *,
+    speaker_assignments: dict[str, tuple[UUID, float] | None],
+    extracted_names: dict,
+) -> dict[str, str]:
+    """Map raw diarization labels to real display names.
+
+    Voice-directory matches resolve through their Person record; direct
+    in-transcript introductions ("меня зовут Аня") win over a directory match
+    for the same cluster — they are the recording's own ground truth.
+    """
+    names: dict[str, str] = {}
+    person_ids = {
+        assignment[0]
+        for assignment in speaker_assignments.values()
+        if assignment is not None
     }
-    return " ".join(transcript_parts), speaker_names
+    if person_ids:
+        rows = await db.execute(select(Person).where(Person.id.in_(person_ids)))
+        people = {
+            person.id: person.display_name.strip()
+            for person in rows.scalars()
+            if (person.display_name or "").strip()
+        }
+        for label, assignment in speaker_assignments.items():
+            if assignment is None:
+                continue
+            display_name = people.get(assignment[0])
+            if display_name:
+                names[label] = display_name
+    for label, assignment in extracted_names.items():
+        extracted = getattr(assignment, "name", "").strip()
+        if extracted:
+            names[label] = extracted
+    return names
 
 
 async def _generate_imported_segment_embeddings(
@@ -911,12 +972,17 @@ async def import_media_as_recording(
     duration_seconds: float | None = None,
     recording: Recording | None = None,
     precomputed: TranscribedMedia | None = None,
+    on_stage: Callable[[str], Awaitable[None]] | None = None,
 ) -> ImportedRecordingResult:
     """Create a library recording from external media bytes and process it.
 
     When ``precomputed`` is supplied the media has already been normalised and
     transcribed by ``transcribe_media_bytes`` (intent routing): reuse those bytes
-    and transcript instead of paying for a second normalise + STT pass."""
+    and transcript instead of paying for a second normalise + STT pass.
+
+    ``on_stage`` (optional) is awaited at coarse progress points ("summarizing")
+    so a chat frontend can live-update its status message; its failures never
+    fail the import."""
     if not data:
         raise RecordingImportError("empty_file", "Файл пустой.")
     logger.info("external recording import started source=%s", source_label)
@@ -1010,7 +1076,7 @@ async def import_media_as_recording(
             await _delete_staged_file(staged_path)
             return ImportedRecordingResult(recording=recording, transcript="", summary=None)
 
-        transcript, speaker_names = await _persist_segments(
+        transcript, speaker_names, transcript_document = await _persist_segments(
             db=db,
             user_id=user.id,
             recording=recording,
@@ -1064,6 +1130,9 @@ async def import_media_as_recording(
                     fallback=recording,
                 )
 
+        if on_stage is not None:
+            with suppress(Exception):
+                await on_stage("summarizing")
         summary: Summary | None = None
         try:
             summary_result = await summarize_transcript(
@@ -1118,6 +1187,8 @@ async def import_media_as_recording(
             recording=recording,
             transcript=transcript,
             summary=summary,
+            transcript_document=transcript_document,
+            speaker_names=speaker_names,
         )
     except RecordingImportError as exc:
         await db.rollback()
@@ -1173,3 +1244,89 @@ async def import_media_as_recording(
     finally:
         if staged_path is not None:
             await _delete_staged_file(staged_path)
+
+
+async def regenerate_recording_summary(
+    db: AsyncSession,
+    *,
+    recording: Recording,
+    user: User,
+    source_label: str = "telegram",
+) -> tuple[Summary, dict[str, str]]:
+    """Re-run summarization for an already-imported recording.
+
+    Backs the Telegram retry button shown when an import finished with a
+    degraded (missing) summary. Rebuilds the labeled transcript from the
+    persisted segments, regenerates, and replaces the GENERATED summary
+    artifacts (manual action items survive). Failures raise — callers surface
+    them to the user instead of pretending success.
+    """
+    seg_result = await db.execute(
+        select(Segment)
+        .where(Segment.recording_id == recording.id)
+        .order_by(Segment.start_ms)
+        .options(selectinload(Segment.person))
+    )
+    segments = list(seg_result.scalars())
+    speech_results = [
+        TranscriptResult(
+            text=(seg.content or "").strip(),
+            speaker=seg.speaker,
+            is_final=True,
+            start_ms=seg.start_ms or 0,
+            end_ms=seg.end_ms or 0,
+            confidence=seg.confidence or 0.0,
+        )
+        for seg in segments
+        if (seg.content or "").strip()
+    ]
+    if not speech_results:
+        raise RecordingImportError("no_transcript", "У этой записи нет транскрипта.")
+    speaker_names = {
+        seg.speaker: seg.person.display_name.strip()
+        for seg in segments
+        if seg.speaker
+        and seg.person is not None
+        and (seg.person.display_name or "").strip()
+    }
+
+    summary_result = await summarize_transcript(
+        _labeled_summary_transcript(speech_results, speaker_names),
+        language=_summary_language(user, recording),
+        style=_summary_style(user, source_label=source_label),
+        instructions=combine_summary_instructions(
+            base_instructions=_summary_instructions(user, source_label=source_label),
+            personalization_instructions=await summary_personalization_instructions(
+                db,
+                user_id=user.id,
+            ),
+            override_instructions=_speaker_roster_instructions(speaker_names),
+        ),
+    )
+
+    if not (recording.title or "").strip():
+        generated_title = summary_result.title.strip()
+        if generated_title:
+            recording.title = generated_title[:500]
+    if recording.summary is not None:
+        await db.delete(recording.summary)
+        recording.summary = None
+    await db.execute(
+        delete(ActionItem).where(
+            ActionItem.recording_id == recording.id,
+            ActionItem.source == "generated",
+        )
+    )
+    await db.execute(delete(Highlight).where(Highlight.recording_id == recording.id))
+    await db.flush()
+
+    summary = await _persist_summary(
+        db=db,
+        recording=recording,
+        transcript_results=speech_results,
+        summary_result=summary_result,
+    )
+    await db.commit()
+    await db.refresh(recording)
+    await db.refresh(summary)
+    return summary, speaker_names

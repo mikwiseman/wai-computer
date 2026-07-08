@@ -74,8 +74,10 @@ from app.core.recording_import import (
     RecordingImportError,
     TranscribedMedia,
     import_media_as_recording,
+    regenerate_recording_summary,
     transcribe_media_bytes,
 )
+from app.core.recording_share import create_recording_share
 from app.core.retry_policy import is_retryable_exception
 from app.core.source_fetch import classify_url, find_first_url
 from app.core.telegram_client import (
@@ -97,6 +99,7 @@ from app.models.agent import Agent, AgentRun, AgentStep
 from app.models.companion import ChatMessage, Conversation
 from app.models.companion_pending_action import CompanionPendingAction
 from app.models.item import ItemSummary
+from app.models.recording import Recording
 from app.models.reminder import UserReminder
 from app.models.telegram import (
     TelegramAccount,
@@ -608,13 +611,17 @@ async def _send_chunks(
     *,
     reply_to_message_id: int | None = None,
     parse_mode: str | None = None,
+    reply_markup: dict[str, Any] | None = None,
 ) -> None:
-    for idx, chunk in enumerate(telegram_chunks(text)):
+    chunks = telegram_chunks(text)
+    for idx, chunk in enumerate(chunks):
         await client.send_message(
             chat_id,
             chunk,
             reply_to_message_id=reply_to_message_id if idx == 0 else None,
             parse_mode=parse_mode,
+            # Buttons belong under the final message of the reply, not mid-thread.
+            reply_markup=reply_markup if idx == len(chunks) - 1 else None,
         )
 
 
@@ -652,6 +659,67 @@ def _safe_transcript_filename(title: str | None, *, media_kind: str | None = Non
     if not slug:
         slug = f"telegram-{media_kind or 'media'}"
     return f"{slug}.txt"
+
+
+def _transcript_document_filename(recording: Any, *, media_kind: str | None) -> str:
+    """Dated, title-derived name for the attached transcript, e.g.
+    ``2026-07-08-obsuzhdenie-strategii-skolkovo.txt``."""
+    base = _safe_transcript_filename(
+        getattr(recording, "title", None),
+        media_kind=media_kind,
+    )
+    created_at = getattr(recording, "created_at", None)
+    if isinstance(created_at, datetime):
+        return f"{created_at.strftime('%Y-%m-%d')}-{base}"
+    return base
+
+
+SUMMARY_RETRY_CALLBACK_PREFIX = "sumretry:"
+
+
+def _recording_reply_keyboard(share_url: str | None) -> dict[str, Any] | None:
+    if not share_url:
+        return None
+    return {"inline_keyboard": [[{"text": "🌐 Открыть страницу", "url": share_url}]]}
+
+
+def _summary_retry_keyboard(
+    recording_id: Any,
+    share_url: str | None,
+) -> dict[str, Any] | None:
+    rows: list[list[dict[str, Any]]] = []
+    if recording_id is not None:
+        rows.append(
+            [
+                {
+                    "text": "Повторить саммари",
+                    "callback_data": f"{SUMMARY_RETRY_CALLBACK_PREFIX}{recording_id}",
+                }
+            ]
+        )
+    if share_url:
+        rows.append([{"text": "🌐 Открыть страницу", "url": share_url}])
+    return {"inline_keyboard": rows} if rows else None
+
+
+async def _mint_recording_share_url(recording: Any) -> str | None:
+    """Mint a public page link for the recording reply button.
+
+    Runs in its own session so a mint failure can neither fail the reply nor
+    poison the caller's transaction — the summary still goes out, the button
+    is simply absent, and the failure is captured for triage.
+    """
+    recording_id = getattr(recording, "id", None)
+    if recording_id is None:
+        return None
+    try:
+        async with get_db_context() as share_db:
+            _, _, url = await create_recording_share(share_db, recording_id=recording_id)
+            await share_db.commit()
+    except Exception:
+        logger.exception("telegram share link mint failed")
+        return None
+    return url
 
 
 def _safe_display_filename(filename: str | None) -> str:
@@ -701,17 +769,72 @@ async def _send_unsupported_document_message(
     )
 
 
-def _format_import_summary_message(result: Any) -> str:
-    title = str(getattr(result.recording, "title", "") or "").strip()
-    summary = getattr(result, "summary", None)
+def _format_recording_duration(duration_seconds: int | None) -> str | None:
+    if not isinstance(duration_seconds, int) or duration_seconds < 60:
+        return None
+    minutes = round(duration_seconds / 60)
+    hours, minutes = divmod(minutes, 60)
+    if hours and minutes:
+        return f"{hours} ч {minutes} мин"
+    if hours:
+        return f"{hours} ч"
+    return f"{minutes} мин"
+
+
+def _format_recording_meta_line(
+    recording: Any,
+    speaker_names: dict[str, str] | None,
+) -> str | None:
+    """One italic line under the title: duration + who spoke (when known)."""
+    parts: list[str] = []
+    duration = _format_recording_duration(getattr(recording, "duration_seconds", None))
+    if duration:
+        parts.append(duration)
+    names = [
+        name
+        for name in dict.fromkeys((speaker_names or {}).values())
+        if name and name.strip()
+    ]
+    if len(names) >= 2:
+        shown = ", ".join(names[:4])
+        if len(names) > 4:
+            shown += f" +{len(names) - 4}"
+        parts.append(shown)
+    if not parts:
+        return None
+    return f"<i>{escape(' · '.join(parts))}</i>"
+
+
+def _format_recording_summary_message(
+    recording: Any,
+    summary: Any,
+    *,
+    speaker_names: dict[str, str] | None = None,
+) -> str:
+    title = str(getattr(recording, "title", "") or "").strip()
     summary_text = str(getattr(summary, "summary", "") or "").strip()
 
-    sections: list[str] = []
+    header_lines: list[str] = []
     if title:
-        sections.append(f"<b>{escape(title)}</b>")
+        header_lines.append(f"<b>{escape(title)}</b>")
+    meta_line = _format_recording_meta_line(recording, speaker_names)
+    if meta_line:
+        header_lines.append(meta_line)
+
+    sections: list[str] = []
+    if header_lines:
+        sections.append("\n".join(header_lines))
     if summary_text:
         sections.append(_telegram_summary_html(summary_text))
     return "\n\n".join(sections).strip()
+
+
+def _format_import_summary_message(result: Any) -> str:
+    return _format_recording_summary_message(
+        result.recording,
+        getattr(result, "summary", None),
+        speaker_names=getattr(result, "speaker_names", None),
+    )
 
 
 def _telegram_summary_html(text: str) -> str:
@@ -2859,6 +2982,84 @@ async def _resolve_action_for_telegram(
     return ("Готово", "✅ Готово.")
 
 
+async def _handle_summary_retry_callback(
+    db: AsyncSession,
+    client: TelegramBotClient,
+    *,
+    account: TelegramAccount,
+    callback_id: str,
+    chat_id: int | None,
+    data: str,
+) -> None:
+    """Regenerate a failed recording summary from the retry button."""
+    try:
+        recording_id = UUID(data.removeprefix(SUMMARY_RETRY_CALLBACK_PREFIX))
+    except ValueError:
+        await client.answer_callback_query(callback_id)
+        return
+    if chat_id is None:
+        await client.answer_callback_query(callback_id)
+        return
+
+    result = await db.execute(
+        select(Recording).where(
+            Recording.id == recording_id,
+            Recording.user_id == account.user_id,
+            Recording.deleted_at.is_(None),
+        )
+    )
+    recording = result.scalar_one_or_none()
+    if recording is None:
+        await client.answer_callback_query(callback_id, text="Запись не найдена.")
+        return
+    user = await db.get(User, account.user_id)
+    if user is None:
+        await client.answer_callback_query(callback_id, text="Аккаунт не найден.")
+        return
+
+    await client.answer_callback_query(callback_id, text="Пишу саммари…")
+    status_response = await client.send_message(chat_id, "Пишу саммари…")
+    status_message_id = _sent_message_id(status_response)
+    action_task = asyncio.create_task(_send_chat_action_until_cancelled(client, chat_id))
+    try:
+        summary, speaker_names = await regenerate_recording_summary(
+            db,
+            recording=recording,
+            user=user,
+        )
+    except Exception:
+        logger.exception("telegram summary retry failed")
+        with suppress(Exception):
+            await db.rollback()
+        await client.send_message(
+            chat_id,
+            "Саммари снова не получилось. Попробуй позже.",
+            reply_markup=_summary_retry_keyboard(recording_id, None),
+        )
+        await _delete_status_message(
+            client, chat_id=chat_id, message_id=status_message_id
+        )
+        return
+    finally:
+        await _stop_chat_action_task(action_task)
+
+    share_url = await _mint_recording_share_url(recording)
+    reply = _format_recording_summary_message(
+        recording,
+        summary,
+        speaker_names=speaker_names,
+    )
+    if reply:
+        await _send_chunks(
+            client,
+            chat_id,
+            reply,
+            parse_mode="HTML",
+            reply_markup=_recording_reply_keyboard(share_url),
+        )
+    await _delete_status_message(client, chat_id=chat_id, message_id=status_message_id)
+
+
 async def _handle_callback_query(
     db: AsyncSession,
     client: TelegramBotClient,
@@ -2905,6 +3106,16 @@ async def _handle_callback_query(
             callback_id=callback_id,
             chat_id=chat_id,
             message_id=message_id if isinstance(message_id, int) else None,
+        )
+        return
+    if data.startswith(SUMMARY_RETRY_CALLBACK_PREFIX):
+        await _handle_summary_retry_callback(
+            db,
+            client,
+            account=account,
+            callback_id=callback_id,
+            chat_id=chat_id,
+            data=data,
         )
         return
     parsed = _parse_action_callback(data)
@@ -3786,6 +3997,19 @@ async def _handle_media_message(
     caption = str(message.get("caption") or "").strip()
     title = caption[:500] if caption else None
     action_task = asyncio.create_task(_send_chat_action_until_cancelled(client, chat_id))
+
+    async def _report_import_stage(stage: str) -> None:
+        if stage != "summarizing" or status_message_id is None:
+            return
+        try:
+            await client.edit_message_text(
+                chat_id,
+                status_message_id,
+                "Расшифровал. Пишу саммари…",
+            )
+        except TelegramClientError as exc:
+            logger.warning("telegram status edit failed error=%s", type(exc).__name__)
+
     try:
         result = await import_media_as_recording(
             db=db,
@@ -3798,6 +4022,7 @@ async def _handle_media_message(
             language=user.default_language,
             duration_seconds=_telegram_media_duration_seconds(media),
             precomputed=precomputed,
+            on_stage=_report_import_stage,
         )
     except RecordingImportError as exc:
         logger.warning(
@@ -3829,13 +4054,16 @@ async def _handle_media_message(
     if result.transcript:
         await client.send_document(
             chat_id,
-            filename=_safe_transcript_filename(
-                result.recording.title,
+            filename=_transcript_document_filename(
+                result.recording,
                 media_kind=str(media.get("kind") or "media"),
             ),
-            data=result.transcript.encode("utf-8"),
+            data=(result.transcript_document or result.transcript).encode("utf-8"),
             reply_to_message_id=message.get("message_id"),
         )
+    share_url = (
+        await _mint_recording_share_url(result.recording) if result.transcript else None
+    )
     summary_message = _format_import_summary_message(result)
     recording_id = getattr(result.recording, "id", None)
     if recording_id is not None:
@@ -3848,19 +4076,29 @@ async def _handle_media_message(
         )
     else:
         await _clear_telegram_active_context(db, account)
-    if summary_message:
+    if not result.transcript:
+        await client.send_message(
+            chat_id,
+            "В записи не слышно речи — расшифровывать нечего.",
+            reply_to_message_id=message.get("message_id"),
+        )
+    elif getattr(result, "summary", None) is not None and summary_message:
         await _send_chunks(
             client,
             chat_id,
             summary_message,
             reply_to_message_id=message.get("message_id"),
             parse_mode="HTML",
+            reply_markup=_recording_reply_keyboard(share_url),
         )
     else:
+        # The transcript is saved but the summary generation failed. Say so and
+        # offer a retry — never pretend the job finished.
         await client.send_message(
             chat_id,
-            f"Готово. Запись сохранена в библиотеку: {result.recording.title or 'Без названия'}",
+            "Расшифровка готова — файл выше. Саммари сгенерировать не получилось.",
             reply_to_message_id=message.get("message_id"),
+            reply_markup=_summary_retry_keyboard(recording_id, share_url),
         )
     await _delete_status_message(client, chat_id=chat_id, message_id=status_message_id)
 

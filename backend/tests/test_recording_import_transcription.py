@@ -180,11 +180,14 @@ def test_telegram_summary_instructions_are_scannable_and_kind_aware():
     from app.core.recording_import import TELEGRAM_IMPORT_SUMMARY_INSTRUCTIONS
 
     instructions = TELEGRAM_IMPORT_SUMMARY_INSTRUCTIONS
-    # No fixed character floor anymore (was "between 1000 and 3500 characters").
-    assert "1000" not in instructions
-    assert "3500" not in instructions
+    # No padding floor: length follows content, a ceiling only tightens.
+    assert "never pad" in instructions
+    assert "tightening bullets" in instructions
     # Kind-aware + scannable: bold markdown headers, dash bullets, action-first.
     assert "KIND" in instructions
     assert "**" in instructions  # instructs Markdown bold section headers
     assert "- " in instructions  # instructs dash bullets
     assert "plan" in instructions and "meeting" in instructions and "lecture" in instructions
+    # The wai-rocks-grade look: inline bold emphasis + monospace metrics.
+    assert "load-bearing words in **bold**" in instructions
+    assert "`backticks`" in instructions
