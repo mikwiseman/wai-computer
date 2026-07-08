@@ -9,7 +9,9 @@ import type { ReactNode } from "react";
  */
 
 const BOLD_RE = /\*\*(.+?)\*\*|__(.+?)__/;
-const ITALIC_RE = /(^|[^*\w])\*(?!\s)(.+?)(?<![\s*])\*(?!\*)/;
+// No lookbehind — it is a parse-time SyntaxError on Safari < 16.4 and this
+// component ships on the public /share page.
+const ITALIC_RE = /(^|[^*\w])\*([^\s*](?:[^*\n]*?[^\s*])?)\*(?!\*)/;
 const CODE_RE = /`([^`\n]+)`/;
 const HEADING_RE = /^#{1,6}\s+/;
 const BULLET_RE = /^[-*•–]\s+/;
