@@ -711,13 +711,25 @@ struct MacSettingsView: View {
     /// speak. The privacy line is the footer.
     private var dictationFormattingSection: some View {
         Section {
+            Picker(selection: $dictationManager.cleanupLevel) {
+                Text(t("Off — insert recognition as-is", "Выкл — вставлять как распознано")).tag("none")
+                Text(t("Light — fillers & stutters", "Лёгкая — филлеры и запинки")).tag("light")
+                Text(t("Medium — plus self-corrections", "Средняя — плюс самоисправления")).tag("medium")
+                Text(t("High — polished prose", "Высокая — отточенный текст")).tag("high")
+            } label: {
+                Text(t("AI cleanup", "AI-очистка"))
+            }
+                .font(Typography.body)
+                .disabled(!dictationManager.isFeatureEnabled)
+                .accessibilityIdentifier("settings-dictation-cleanup-level-picker")
+
             Text(
                 t(
-                    "Dictation uses Deepgram Nova-3 punctuation, numerals, and Dictionary terms during recognition. Text is inserted without a second AI cleanup pass.",
-                    "Диктовка использует пунктуацию, числа и термины из Словаря в Deepgram Nova-3 во время распознавания. Текст вставляется без второго AI-прохода очистки."
+                    "Recognition always applies Deepgram punctuation, numerals, and Dictionary terms. Cleanup adds an AI pass that removes fillers, keeps only your final intent after \u{201C}scratch that\u{201D} corrections, matches tone to the target app, and applies your Personal Style Rules — at the cost of a moment before the text lands.",
+                    "Распознавание всегда применяет пунктуацию, числа и термины из Словаря. Очистка добавляет AI-проход: убирает филлеры, оставляет только финальный вариант после самоисправлений, подстраивает тон под приложение и применяет твои личные правила стиля — ценой небольшой паузы перед вставкой."
                 )
             )
-                .font(Typography.body)
+                .font(Typography.caption)
                 .foregroundStyle(Palette.textTertiary)
 
             Toggle(isOn: $learnFromEditsEnabled) {

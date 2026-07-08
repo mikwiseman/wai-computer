@@ -245,10 +245,10 @@ final class DictationManager: ObservableObject {
         let defaults = UserDefaults.standard
         self.hotkeyChoice = defaults.string(forKey: Self.hotkeyDefaultsKey) ?? DictationHotkey.defaultPushToTalk.rawValue
         self.handsFreeHotkeyChoice = defaults.string(forKey: Self.handsFreeHotkeyDefaultsKey) ?? ""
-        // Cerebras cleanup is no longer part of dictation. Deepgram handles
-        // punctuation, numerals, and dictionary hints during recognition.
-        self.cleanupLevel = "none"
-        defaults.set("none", forKey: Self.cleanupLevelDefaultsKey)
+        // AI cleanup is opt-in, controlled ONLY by this Mac's Settings.
+        // Default off: Deepgram handles punctuation, numerals, and dictionary
+        // hints during recognition. Server-side settings never re-enable it.
+        self.cleanupLevel = defaults.string(forKey: Self.cleanupLevelDefaultsKey) ?? "none"
         defaults.removeObject(forKey: Self.legacyAICleanupDefaultsKey)
         if defaults.object(forKey: Self.contextAwareFormattingDefaultsKey) == nil {
             self.contextAwareFormattingEnabled = true
@@ -345,9 +345,9 @@ final class DictationManager: ObservableObject {
         let previousModel = cachedSettings?.dictationLiveSTTModel
         cachedSettings = settings
         cachedSettingsLoadedAt = Date()
-        // Ignore legacy server/user-default cleanup settings so stale accounts
-        // cannot silently re-enable the unstable post-filter.
-        cleanupLevel = "none"
+        // Cleanup level is local-only (Settings on this Mac); the legacy
+        // server-side setting is deliberately ignored so stale accounts
+        // cannot silently re-enable the post-filter.
         if DictationSessionConfigInvalidationPolicy.shouldClearVault(
             previousProvider: previousProvider,
             previousModel: previousModel,
@@ -608,6 +608,7 @@ final class DictationManager: ObservableObject {
             targetApp: targetApp,
             includeTextbox: contextAwareFormattingEnabled && (
                 cleanupLevel != "none" || mode == .translation || mode == .transform
+                    || mode == .askAnything
             )
         )
 
@@ -1452,11 +1453,22 @@ final class DictationManager: ObservableObject {
             isAskAnythingStreaming = false
         }
 
+        // "Ask about selected text": when the hotkey went down with a live
+        // selection, the question is about it — send both to the companion.
+        var content = question
+        if let selected = dictationContext?.textbox?.selectedText,
+           !selected.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            content = question
+                + "\n\nSelected text the question refers to:\n<selected_text>\n"
+                + selected
+                + "\n</selected_text>"
+        }
+
         do {
             let chat = try await apiClient.createCompanionChat()
             let stream = try await apiClient.streamCompanionMessage(
                 chatId: chat.id,
-                content: question
+                content: content
             )
             for await event in stream {
                 if Task.isCancelled { return }
