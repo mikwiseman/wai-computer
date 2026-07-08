@@ -219,3 +219,31 @@ async def test_transcribe_audio_file_raises_on_http_error(monkeypatch) -> None:
     with patch("httpx.AsyncClient.post", new=fake_post):
         with pytest.raises(httpx.HTTPStatusError):
             await transcribe_audio_file(b"audio", content_type="audio/wav")
+
+
+def test_sanitize_scribe_keyterms_drops_six_word_phrases() -> None:
+    assert sanitize_scribe_keyterms(["one two three four five six"]) == []
+    assert sanitize_scribe_keyterms(["one two three four five"]) == [
+        "one two three four five"
+    ]
+
+
+def test_apply_transcript_replacements_skips_blank_find() -> None:
+    assert apply_transcript_replacements("текст", [("", "x"), ("  ", "y")]) == "текст"
+    assert apply_transcript_replacements("текст", None) == "текст"
+
+
+def test_payload_rejects_non_dict_word_entries() -> None:
+    with pytest.raises(RuntimeError, match="invalid word entry"):
+        _results_from_scribe_payload({"words": ["not-a-dict"]})
+
+
+def test_builder_drops_whitespace_only_segments() -> None:
+    payload = {
+        "words": [
+            _spacing(0.0, 0.1),
+            _word("Привет.", 5.0, 5.5, speaker="speaker_1"),
+        ],
+    }
+    results = _results_from_scribe_payload(payload)
+    assert [r.text for r in results] == ["Привет."]

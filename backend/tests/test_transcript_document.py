@@ -142,3 +142,10 @@ def test_empty_segments_render_empty_document() -> None:
         )
         == ""
     )
+
+
+def test_resolve_document_speaker_keeps_custom_label_verbatim() -> None:
+    key, label, is_real = resolve_document_speaker("Channel 2", {})
+    assert key == "speaker:Channel 2"
+    assert label == "Channel 2"
+    assert is_real is False
