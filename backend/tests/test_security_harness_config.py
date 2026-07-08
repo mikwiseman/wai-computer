@@ -85,6 +85,9 @@ def test_production_telegram_media_uses_local_bot_api_service():
         "http://telegram-bot-api:8081/file"
     )
     assert api_service["environment"]["TELEGRAM_LOCAL_FILE_ROOT"] == "/var/lib/telegram-bot-api"
+    assert api_service["environment"]["TELEGRAM_DOWNLOAD_MAX_BYTES"] == (
+        "${TELEGRAM_DOWNLOAD_MAX_BYTES:-1073741824}"
+    )
     assert "tg_api_data:/var/lib/telegram-bot-api:ro" in api_service["volumes"]
     assert api_service["group_add"] == ["101"]
     assert api_service["depends_on"]["telegram-bot-api"]["condition"] == "service_started"
