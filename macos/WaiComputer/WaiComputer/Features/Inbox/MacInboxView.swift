@@ -352,19 +352,25 @@ struct MacInboxView: View {
     @ViewBuilder
     private var banners: some View {
         if let error = model.errorMessage {
-            InlineMessageRow(
+            InlineStatusBanner(
                 systemImage: "exclamationmark.triangle.fill",
                 message: error,
                 color: Palette.danger,
-                onDismiss: { model.errorMessage = nil }
+                autoDismissAfter: nil,
+                onDismiss: {
+                    withAnimation(.easeInOut(duration: 0.2)) { model.errorMessage = nil }
+                }
             )
         }
         if let status = model.statusMessage {
-            InlineMessageRow(
+            InlineStatusBanner(
                 systemImage: "checkmark.circle.fill",
                 message: status,
                 color: Palette.success,
-                onDismiss: { model.statusMessage = nil }
+                autoDismissAfter: InlineStatusBanner.statusDismissDelay,
+                onDismiss: {
+                    withAnimation(.easeInOut(duration: 0.2)) { model.statusMessage = nil }
+                }
             )
         }
     }
@@ -1322,39 +1328,53 @@ private struct MacInboxDisplayRow: Identifiable, Equatable {
     }
 
     private static func metadata(for row: InboxRow, language: LanguageManager.SupportedLanguage) -> String {
-        var parts: [String] = [sourceLabel(for: row.sourceKind, language: language)]
-        if let sublabel = displaySublabel(for: row, language: language) {
-            parts.append(sublabel)
+        // The icon and the Source filter already say "recording" vs "material";
+        // repeating that (plus the default "meeting" type) on every row is noise.
+        var parts: [String] = []
+        if let kind = kindLabel(for: row, language: language) {
+            parts.append(kind)
         }
-        parts.append(MacDateFormatting.string(
-            from: row.activityAt,
-            dateStyle: .medium,
-            timeStyle: .short,
-            language: language
-        ))
+        parts.append(MacDateFormatting.listTimestamp(from: row.activityAt, language: language))
         if let duration = row.durationSeconds {
-            parts.append(formatDuration(duration))
+            parts.append(MacDateFormatting.duration(seconds: duration))
         }
-        return parts.joined(separator: " / ")
+        return parts.joined(separator: " · ")
     }
 
-    private static func sourceLabel(
-        for sourceKind: InboxSourceKind,
-        language: LanguageManager.SupportedLanguage
-    ) -> String {
-        switch sourceKind {
+    /// Localized kind, shown only when it differentiates the row: recordings hide
+    /// the default "meeting"; materials show their kind (article, PDF, note…).
+    private static func kindLabel(for row: InboxRow, language: LanguageManager.SupportedLanguage) -> String? {
+        guard let raw = row.sublabel?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(),
+              !raw.isEmpty else { return nil }
+        switch row.sourceKind {
         case .recording:
-            return text("Recording", "Запись", language: language)
-        case .item:
-            return text("Material", "Материал", language: language)
-        case .chat:
-            return text("Material", "Материал", language: language)
+            switch raw {
+            case "meeting": return nil
+            case "note": return text("Note", "Заметка", language: language)
+            case "reflection": return text("Reflection", "Рефлексия", language: language)
+            case "dictation": return text("Dictation", "Диктовка", language: language)
+            default: return capitalizedRaw(raw)
+            }
+        case .item, .chat:
+            switch raw {
+            case "article": return text("Article", "Статья", language: language)
+            case "video": return text("Video", "Видео", language: language)
+            case "post": return text("Post", "Пост", language: language)
+            case "pdf": return "PDF"
+            case "email": return text("Email", "Письмо", language: language)
+            case "note": return text("Note", "Заметка", language: language)
+            case "event": return text("Event", "Событие", language: language)
+            case "message": return text("Message", "Сообщение", language: language)
+            case "transaction": return text("Transaction", "Транзакция", language: language)
+            case "chat": return text("Chat", "Чат", language: language)
+            case "file": return text("File", "Файл", language: language)
+            default: return capitalizedRaw(raw)
+            }
         }
     }
 
-    private static func displaySublabel(for row: InboxRow, language: LanguageManager.SupportedLanguage) -> String? {
-        guard let sublabel = row.sublabel else { return nil }
-        return sublabel
+    private static func capitalizedRaw(_ value: String) -> String {
+        value.prefix(1).uppercased() + value.dropFirst()
     }
 
     private static func statusLabel(
@@ -1392,12 +1412,6 @@ private struct MacInboxDisplayRow: Identifiable, Equatable {
         case .item: return "doc.text"
         case .chat: return "doc.text"
         }
-    }
-
-    private static func formatDuration(_ seconds: Int) -> String {
-        let mins = seconds / 60
-        let secs = seconds % 60
-        return String(format: "%d:%02d", mins, secs)
     }
 
     private static func text(
@@ -1861,31 +1875,3 @@ private struct MacInboxItemDetail: View {
     }
 }
 
-private struct InlineMessageRow: View {
-    @EnvironmentObject private var languageManager: LanguageManager
-    let systemImage: String
-    let message: String
-    let color: Color
-    let onDismiss: () -> Void
-
-    var body: some View {
-        HStack(spacing: Spacing.xs) {
-            Image(systemName: systemImage)
-                .foregroundStyle(color)
-            Text(message)
-                .font(Typography.bodySmall)
-                .foregroundStyle(color)
-                .lineLimit(3)
-            Spacer()
-            Button(action: onDismiss) {
-                Image(systemName: "xmark")
-            }
-            .buttonStyle(.plain)
-            .help(OnboardingL10n.text("Dismiss", "Закрыть", language: languageManager.current))
-            .accessibilityLabel(OnboardingL10n.text("Dismiss", "Закрыть", language: languageManager.current))
-        }
-        .padding(.horizontal, Spacing.lg)
-        .padding(.vertical, Spacing.sm)
-        .background(Palette.surfaceSubtle)
-    }
-}

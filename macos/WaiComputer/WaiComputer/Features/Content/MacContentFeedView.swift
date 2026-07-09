@@ -129,52 +129,30 @@ struct MacContentFeedView: View {
     @ViewBuilder
     private var errorBanner: some View {
         if let message = model.errorMessage {
-            HStack(spacing: Spacing.xs) {
-                Image(systemName: "exclamationmark.triangle.fill")
-                    .foregroundStyle(Palette.danger)
-                Text(message)
-                    .font(Typography.bodySmall)
-                    .foregroundStyle(Palette.danger)
-                    .textSelection(.enabled)
-                Spacer()
-                Button {
-                    model.errorMessage = nil
-                } label: {
-                    Image(systemName: "xmark")
+            InlineStatusBanner(
+                systemImage: "exclamationmark.triangle.fill",
+                message: message,
+                color: Palette.danger,
+                autoDismissAfter: nil,
+                onDismiss: {
+                    withAnimation(.easeInOut(duration: 0.2)) { model.errorMessage = nil }
                 }
-                .buttonStyle(.plain)
-                .help(t("Dismiss", "Закрыть"))
-                .accessibilityLabel(t("Dismiss", "Закрыть"))
-            }
-            .padding(.horizontal, Spacing.xl)
-            .padding(.vertical, Spacing.sm)
-            .background(Palette.surfaceSubtle)
+            )
         }
     }
 
     @ViewBuilder
     private var statusBanner: some View {
         if let message = model.statusMessage {
-            HStack(spacing: Spacing.xs) {
-                Image(systemName: "checkmark.circle.fill")
-                    .foregroundStyle(Palette.success)
-                Text(message)
-                    .font(Typography.bodySmall)
-                    .foregroundStyle(.secondary)
-                    .textSelection(.enabled)
-                Spacer()
-                Button {
-                    model.statusMessage = nil
-                } label: {
-                    Image(systemName: "xmark")
+            InlineStatusBanner(
+                systemImage: "checkmark.circle.fill",
+                message: message,
+                color: Palette.success,
+                autoDismissAfter: InlineStatusBanner.statusDismissDelay,
+                onDismiss: {
+                    withAnimation(.easeInOut(duration: 0.2)) { model.statusMessage = nil }
                 }
-                .buttonStyle(.plain)
-                .help(t("Dismiss", "Закрыть"))
-                .accessibilityLabel(t("Dismiss", "Закрыть"))
-            }
-            .padding(.horizontal, Spacing.xl)
-            .padding(.vertical, Spacing.sm)
-            .background(Palette.surfaceSubtle)
+            )
         }
     }
 
