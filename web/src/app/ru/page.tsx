@@ -2,6 +2,7 @@ import Link from "next/link";
 import Image from "next/image";
 import type { Metadata } from "next";
 import { LocaleSwitcher } from "@/components/LocaleSwitcher";
+import { ThemeToggle } from "@/components/ThemeToggle";
 import { PaymentComplianceSection } from "./PaymentCompliance";
 import styles from "../page.module.css";
 
@@ -210,6 +211,7 @@ export default function RuHome() {
           <Link href="/ru/benchmarks/dictation" className={styles.navLink}>
             Бенчмарк
           </Link>
+          <ThemeToggle locale="ru" />
           <LocaleSwitcher current="ru" />
           <Link href="/login" className={styles.signin}>
             Войти →

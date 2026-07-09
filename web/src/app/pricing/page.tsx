@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { LocaleSwitcher } from "@/components/LocaleSwitcher";
+import { ThemeToggle } from "@/components/ThemeToggle";
 import { PricingCards } from "@/components/PricingCards";
 import styles from "../page.module.css";
 
@@ -26,6 +27,7 @@ export default function PricingPage() {
           <span className={styles.brandWord}>WaiComputer</span>
         </Link>
         <nav className={styles.navLinks}>
+          <ThemeToggle locale="en" />
           <LocaleSwitcher current="en" />
           <Link href="/login" className={styles.signin}>
             Sign in →

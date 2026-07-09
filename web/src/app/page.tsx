@@ -2,6 +2,7 @@ import Link from "next/link";
 import Image from "next/image";
 import type { Metadata } from "next";
 import { LocaleSwitcher } from "@/components/LocaleSwitcher";
+import { ThemeToggle } from "@/components/ThemeToggle";
 import styles from "./page.module.css";
 
 const MAC_DMG_URL = "/releases/macos/WaiComputer-latest.dmg";
@@ -209,6 +210,7 @@ export default function Home() {
           <Link href="/benchmarks/dictation" className={styles.navLink}>
             Benchmark
           </Link>
+          <ThemeToggle locale="en" />
           <LocaleSwitcher current="en" />
           <Link href="/login" className={styles.signin}>
             Sign in →

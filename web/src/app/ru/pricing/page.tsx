@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { LocaleSwitcher } from "@/components/LocaleSwitcher";
+import { ThemeToggle } from "@/components/ThemeToggle";
 import { PricingCards } from "@/components/PricingCards";
 import { PaymentComplianceSection } from "../PaymentCompliance";
 import styles from "../../page.module.css";
@@ -27,6 +28,7 @@ export default function RuPricingPage() {
           <span className={styles.brandWord}>WaiComputer</span>
         </Link>
         <nav className={styles.navLinks}>
+          <ThemeToggle locale="ru" />
           <LocaleSwitcher current="ru" />
           <Link href="/login" className={styles.signin}>
             Войти →

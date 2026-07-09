@@ -49,6 +49,7 @@ import { RecordingDetailPanel } from "@/components/RecordingDetailPanel";
 import { AddAnythingPanel } from "@/components/AddAnythingPanel";
 import { PasswordField } from "@/components/PasswordField";
 import { Skeleton } from "@/components/Skeleton";
+import { ThemeToggle } from "@/components/ThemeToggle";
 
 // View-gated panels load on demand: they hydrate only when their view/modal
 // opens, keeping the default Inbox view's bundle and hydration lean. The
@@ -2054,6 +2055,10 @@ export function DashboardClient() {
             </div>
           ))}
         </nav>
+
+        <div style={{ margin: "var(--space-md) 0" }}>
+          <ThemeToggle locale={locale} />
+        </div>
 
         <div className="sidebar-footer">
           <button
