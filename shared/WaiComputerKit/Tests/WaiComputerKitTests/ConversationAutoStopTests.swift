@@ -2,107 +2,41 @@ import XCTest
 import AVFoundation
 @testable import WaiComputerKit
 
-final class SpeechActivityEstimatorTests: XCTestCase {
+final class SpeechWindowClassificationTests: XCTestCase {
 
-    // MARK: - Basic detection
+    private let config = ConversationAutoStopConfig.default
 
-    /// A dead-quiet room produces no speech activity, ever.
-    func testSilenceIsNeverSpeech() {
-        var estimator = SpeechActivityEstimator()
-        for _ in 0..<200 {
-            XCTAssertFalse(estimator.isSpeech(rms: 0.000_01))
-        }
+    /// A confident classifier verdict at conversational level is speech.
+    func testConfidentSpeechWindowCounts() {
+        XCTAssertTrue(config.isSpeech(SpeechWindowObservation(speechConfidence: 0.95, levelDb: -30)))
     }
 
-    /// Loud speech over a quiet floor is detected once the floor is warmed up.
-    func testSpeechOverQuietFloorIsDetected() {
-        var estimator = SpeechActivityEstimator()
-        for _ in 0..<50 {
-            _ = estimator.isSpeech(rms: 0.000_1) // ~-80 dBFS room tone
-        }
-        XCTAssertTrue(estimator.isSpeech(rms: 0.05)) // ~-26 dBFS speech
+    /// Music, typing, fans: the classifier keeps confidence far below the
+    /// threshold no matter how loud they are — never speech.
+    func testLoudNonSpeechIsRejected() {
+        XCTAssertFalse(config.isSpeech(SpeechWindowObservation(speechConfidence: 0.03, levelDb: -12)))
     }
 
-    /// Steady background noise (fan/AC) raises the floor so the noise itself
-    /// never counts as speech.
-    func testSteadyBackgroundNoiseIsNotSpeech() {
-        var estimator = SpeechActivityEstimator()
-        var detections = 0
-        for _ in 0..<400 {
-            if estimator.isSpeech(rms: 0.004) { detections += 1 } // ~-48 dBFS hum
-        }
-        // The first buffers may fire before the floor adapts; after warm-up the
-        // constant hum must be classified as floor, not speech.
-        var lateDetections = 0
-        for _ in 0..<200 {
-            if estimator.isSpeech(rms: 0.004) { lateDetections += 1 }
-        }
-        XCTAssertEqual(lateDetections, 0)
-        _ = detections
+    /// Digital silence produces a flat low-confidence "speech" prior (~0.2
+    /// observed on-device); it must stay below the threshold.
+    func testDigitalSilencePriorIsRejected() {
+        XCTAssertFalse(config.isSpeech(SpeechWindowObservation(speechConfidence: 0.21, levelDb: -95)))
     }
 
-    /// Speech clearly above a noisy floor is still detected.
-    func testSpeechOverNoisyFloorIsDetected() {
-        var estimator = SpeechActivityEstimator()
-        for _ in 0..<300 {
-            _ = estimator.isSpeech(rms: 0.004) // warm the floor at ~-48 dBFS
-        }
-        XCTAssertTrue(estimator.isSpeech(rms: 0.1)) // ~-20 dBFS speech
+    /// A confident verdict on near-silent audio (residual TV bleed through a
+    /// wall) is gated by the absolute level floor.
+    func testConfidentButInaudibleWindowIsRejected() {
+        XCTAssertFalse(config.isSpeech(SpeechWindowObservation(speechConfidence: 0.9, levelDb: -70)))
     }
 
-    /// Ultra-quiet blips above a near-zero floor stay below the absolute gate.
-    func testAbsoluteMinimumGateBlocksUltraQuietBlips() {
-        var estimator = SpeechActivityEstimator()
-        for _ in 0..<100 {
-            _ = estimator.isSpeech(rms: 0.000_001) // digital-silence floor
-        }
-        // 12 dB over that floor but far below any real speech level.
-        XCTAssertFalse(estimator.isSpeech(rms: 0.000_004))
+    /// Quiet-but-audible distant speech (the RMS heuristic's blind spot) now
+    /// counts: the classifier is confident and the level clears the gate.
+    func testQuietDistantSpeechIsDetected() {
+        XCTAssertTrue(config.isSpeech(SpeechWindowObservation(speechConfidence: 0.9, levelDb: -48)))
     }
+}
 
-
-    /// A conversation with natural pauses keeps the floor at the pause level,
-    /// so speech keeps being detected even after minutes of talking.
-    func testConversationWithPausesKeepsDetectingSpeech() {
-        var estimator = SpeechActivityEstimator()
-        var lastRoundDetected = false
-        for _ in 0..<40 { // ~40 speech/pause cycles
-            for _ in 0..<12 { lastRoundDetected = estimator.isSpeech(rms: 0.05) }
-            for _ in 0..<6 { _ = estimator.isSpeech(rms: 0.000_2) } // breath pause
-        }
-        XCTAssertTrue(lastRoundDetected)
-    }
-
-    /// Quiet speech (~-45 dBFS) in a quiet room clears the adaptive floor.
-    func testQuietSpeechInQuietRoomIsDetected() {
-        var estimator = SpeechActivityEstimator()
-        for _ in 0..<100 {
-            _ = estimator.isSpeech(rms: 0.000_3) // ~-70 dBFS room tone
-        }
-        XCTAssertTrue(estimator.isSpeech(rms: 0.005_6)) // ~-45 dBFS distant speech
-    }
-
-    /// The same ~-45 dBFS level over a ~-48 dBFS fan floor is floor jitter,
-    /// not speech.
-    func testNearFloorLevelOverNoisyFloorIsRejected() {
-        var estimator = SpeechActivityEstimator()
-        for _ in 0..<300 {
-            _ = estimator.isSpeech(rms: 0.004) // ~-48 dBFS fan
-        }
-        XCTAssertFalse(estimator.isSpeech(rms: 0.005_6)) // ~-45 dBFS
-    }
-
-    /// Continuous loud audio (webinar with no pauses) saturates the sliding
-    /// window, but the speech ceiling keeps every frame classified as speech —
-    /// the estimator must never talk itself out of detecting an ongoing talk.
-    func testContinuousLoudSpeechNeverStopsBeingSpeech() {
-        var estimator = SpeechActivityEstimator()
-        var allDetected = true
-        for _ in 0..<600 { // ~96 s of nonstop -26 dBFS audio
-            if !estimator.isSpeech(rms: 0.05) { allDetected = false }
-        }
-        XCTAssertTrue(allDetected)
-    }
+final class AudioLevelMeterTests: XCTestCase {
 
     /// RMS of a PCM buffer: silent buffer → 0, half-scale square wave → 0.5,
     /// and a 2-channel buffer reports the louder channel.
@@ -117,8 +51,92 @@ final class SpeechActivityEstimatorTests: XCTestCase {
             channels[0][i] = 0
             channels[1][i] = 0.5
         }
-        let rms = SpeechActivityEstimator.peakChannelRMS(of: buffer)
+        let rms = AudioLevelMeter.peakChannelRMS(of: buffer)
         XCTAssertEqual(rms, 0.5, accuracy: 0.001)
+    }
+}
+
+final class SoundAnalysisSpeechDetectorTests: XCTestCase {
+
+    private func makeBuffer(
+        channels: AVAudioChannelCount,
+        frames: AVAudioFrameCount = 2560,
+        fill: (Int, Int) -> Float
+    ) throws -> AVAudioPCMBuffer {
+        let format = try XCTUnwrap(AVAudioFormat(
+            commonFormat: .pcmFormatFloat32, sampleRate: 16_000, channels: channels, interleaved: false
+        ))
+        let buffer = try XCTUnwrap(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frames))
+        buffer.frameLength = frames
+        let data = try XCTUnwrap(buffer.floatChannelData)
+        for channel in 0..<Int(channels) {
+            for frame in 0..<Int(frames) {
+                data[channel][frame] = fill(channel, frame)
+            }
+        }
+        return buffer
+    }
+
+    /// The system classifier only reads channel 0, so the detector must fold
+    /// every channel into its mono feed: speech living only in channel 1
+    /// (system audio of a call) must reach the analyzer.
+    func testMixdownFoldsAllChannels() throws {
+        let stereo = try makeBuffer(channels: 2) { channel, frame in
+            channel == 1 ? sinf(Float(frame) * 0.2) * 0.5 : 0
+        }
+        let mono = try XCTUnwrap(SoundAnalysisSpeechDetector.monoMixdown(of: stereo))
+        XCTAssertEqual(mono.format.channelCount, 1)
+        XCTAssertEqual(mono.frameLength, stereo.frameLength)
+        let rms = AudioLevelMeter.peakChannelRMS(of: mono)
+        // Average of (0, 0.5·sine) — audible, half the single-channel RMS.
+        XCTAssertGreaterThan(rms, 0.1)
+    }
+
+    /// Mono input passes through without copying.
+    func testMonoPassesThrough() throws {
+        let mono = try makeBuffer(channels: 1) { _, frame in sinf(Float(frame) * 0.2) * 0.3 }
+        let out = try XCTUnwrap(SoundAnalysisSpeechDetector.monoMixdown(of: mono))
+        XCTAssertTrue(out === mono)
+    }
+
+    /// End-to-end smoke test against the real system classifier: feeding
+    /// buffers must produce windows, and non-speech audio (noise) must stay
+    /// below the speech threshold. Speech-positive behavior is covered by
+    /// live QA — test audio synthesis can't produce real voice here.
+    func testDetectorEmitsLowConfidenceWindowsForNoise() throws {
+        final class Box: @unchecked Sendable {
+            let lock = NSLock()
+            var observations: [SpeechWindowObservation] = []
+            func append(_ o: SpeechWindowObservation) {
+                lock.lock(); observations.append(o); lock.unlock()
+            }
+            var all: [SpeechWindowObservation] {
+                lock.lock(); defer { lock.unlock() }; return observations
+            }
+        }
+        let box = Box()
+        let detector = try SoundAnalysisSpeechDetector { box.append($0) }
+
+        // ~4 s of white noise in 160 ms buffers, like the capture cadence.
+        var seed: UInt64 = 0x5DEECE66D
+        for _ in 0..<25 {
+            let buffer = try makeBuffer(channels: 1) { _, _ in
+                seed = seed &* 6364136223846793005 &+ 1442695040888963407
+                return (Float(seed >> 40) / Float(1 << 24) - 0.5) * 0.2
+            }
+            detector.process(buffer)
+        }
+        detector.finish()
+
+        let observations = box.all
+        XCTAssertGreaterThanOrEqual(observations.count, 3, "analyzer produced no windows")
+        let config = ConversationAutoStopConfig.default
+        XCTAssertTrue(
+            observations.allSatisfy { !config.isSpeech($0) },
+            "noise classified as speech: \(observations)"
+        )
+        // Level metering rode along with the windows.
+        XCTAssertTrue(observations.allSatisfy { $0.levelDb > -40 && $0.levelDb < 0 })
     }
 }
 
@@ -137,11 +155,14 @@ final class ConversationAutoStopMonitorTests: XCTestCase {
         ConversationAutoStopMonitor(config: config, now: start)
     }
 
-    /// Speech shorthand: sustained speech-level audio (~1 s) bumps voice
-    /// activity; short bursts are ignored by design.
+    /// Speech shorthand: a confident utterance spanning a few classifier
+    /// windows (~0.5 s cadence) bumps voice activity.
     private func speak(_ monitor: ConversationAutoStopMonitor, at date: Date) {
-        for i in 0..<6 {
-            monitor.recordAudioLevel(rms: 0.08, at: date.addingTimeInterval(Double(i) * 0.16))
+        for i in 0..<3 {
+            monitor.recordSpeechWindow(
+                SpeechWindowObservation(speechConfidence: 0.95, levelDb: -28),
+                at: date.addingTimeInterval(Double(i) * 0.5)
+            )
         }
     }
 
@@ -163,37 +184,62 @@ final class ConversationAutoStopMonitorTests: XCTestCase {
         let monitor = makeMonitor()
         speak(monitor, at: start.addingTimeInterval(200))
         XCTAssertNil(monitor.tick(at: start.addingTimeInterval(300)))
-        let event = monitor.tick(at: start.addingTimeInterval(200 + 241))
+        let event = monitor.tick(at: start.addingTimeInterval(201 + 241))
         XCTAssertEqual(event, .beginPrompt(.silence))
     }
 
-    /// A single lone frame above the speech threshold (door slam) does not
-    /// reset the silence clock; only sustained speech does.
-    func testSingleFramePopDoesNotDeferPrompt() {
+    /// A single confident window (stray shout, TV flicker) does not reset the
+    /// silence clock; sustained speech does.
+    func testSingleSpeechWindowDoesNotDeferPrompt() {
         let monitor = makeMonitor()
-        monitor.recordAudioLevel(rms: 0.5, at: start.addingTimeInterval(200))
+        monitor.recordSpeechWindow(
+            SpeechWindowObservation(speechConfidence: 0.97, levelDb: -20),
+            at: start.addingTimeInterval(200)
+        )
         let event = monitor.tick(at: start.addingTimeInterval(241))
         XCTAssertEqual(event, .beginPrompt(.silence))
     }
 
-    /// Repeated short bursts (chair creaks, keyboard runs — under the
-    /// sustained-speech length) never reset the silence clock, no matter how
-    /// often they happen. This is the real quiet-room failure mode observed
-    /// live: sporadic ~0.3 s creaks kept a hard-reset clock at zero forever.
-    func testShortBurstsDoNotResetSilenceClock() {
+    /// Loud non-speech windows (music, typing runs, fan spin-ups) never reset
+    /// the silence clock, no matter how many arrive — the classifier keeps
+    /// their confidence low. This was the RMS heuristic's core failure.
+    func testLoudNonSpeechNeverResetsSilenceClock() {
         let monitor = makeMonitor()
-        for burstStart in [60.0, 120.0, 180.0, 230.0] {
-            for i in 0..<3 { // 3 frames < sustainedSpeechFrames (4)
-                monitor.recordAudioLevel(
-                    rms: 0.1,
-                    at: start.addingTimeInterval(burstStart + Double(i) * 0.16)
-                )
-            }
-            // Quiet frame ends each burst.
-            monitor.recordAudioLevel(rms: 0.000_1, at: start.addingTimeInterval(burstStart + 0.5))
+        for second in stride(from: 0.0, through: 240.0, by: 0.5) {
+            monitor.recordSpeechWindow(
+                SpeechWindowObservation(speechConfidence: 0.05, levelDb: -15),
+                at: start.addingTimeInterval(second)
+            )
         }
         let event = monitor.tick(at: start.addingTimeInterval(241))
         XCTAssertEqual(event, .beginPrompt(.silence))
+    }
+
+    /// Isolated confident windows separated by quiet never accumulate into a
+    /// sustained run.
+    func testIsolatedSpeechWindowsDoNotAccumulate() {
+        let monitor = makeMonitor()
+        for burstStart in [60.0, 120.0, 180.0, 230.0] {
+            monitor.recordSpeechWindow(
+                SpeechWindowObservation(speechConfidence: 0.9, levelDb: -25),
+                at: start.addingTimeInterval(burstStart)
+            )
+            monitor.recordSpeechWindow(
+                SpeechWindowObservation(speechConfidence: 0.1, levelDb: -60),
+                at: start.addingTimeInterval(burstStart + 0.5)
+            )
+        }
+        let event = monitor.tick(at: start.addingTimeInterval(241))
+        XCTAssertEqual(event, .beginPrompt(.silence))
+    }
+
+    // MARK: - Voice-activity surface (UI)
+
+    func testVoiceActiveReflectsRecentSpeech() {
+        let monitor = makeMonitor()
+        speak(monitor, at: start.addingTimeInterval(100))
+        XCTAssertTrue(monitor.isVoiceActive(at: start.addingTimeInterval(102)))
+        XCTAssertFalse(monitor.isVoiceActive(at: start.addingTimeInterval(108)))
     }
 
     // MARK: - Prompt lifecycle
@@ -202,12 +248,12 @@ final class ConversationAutoStopMonitorTests: XCTestCase {
         let monitor = makeMonitor()
         _ = monitor.tick(at: start.addingTimeInterval(241))
         speak(monitor, at: start.addingTimeInterval(250))
-        let event = monitor.tick(at: start.addingTimeInterval(251))
+        let event = monitor.tick(at: start.addingTimeInterval(252))
         XCTAssertEqual(event, .cancelPrompt)
         XCTAssertFalse(monitor.isPrompting)
         // Fully re-armed: next prompt needs another full silence window.
-        XCTAssertNil(monitor.tick(at: start.addingTimeInterval(250 + 239)))
-        XCTAssertEqual(monitor.tick(at: start.addingTimeInterval(250 + 242)), .beginPrompt(.silence))
+        XCTAssertNil(monitor.tick(at: start.addingTimeInterval(251 + 239)))
+        XCTAssertEqual(monitor.tick(at: start.addingTimeInterval(251 + 242)), .beginPrompt(.silence))
     }
 
     func testCountdownExpiryAutoStopsOnce() {
@@ -255,8 +301,8 @@ final class ConversationAutoStopMonitorTests: XCTestCase {
         let monitor = makeMonitor()
         monitor.noteCallEnded(at: start.addingTimeInterval(100))
         speak(monitor, at: start.addingTimeInterval(110))
-        XCTAssertNil(monitor.tick(at: start.addingTimeInterval(110 + 35)))
-        let event = monitor.tick(at: start.addingTimeInterval(110 + 241))
+        XCTAssertNil(monitor.tick(at: start.addingTimeInterval(111 + 35)))
+        let event = monitor.tick(at: start.addingTimeInterval(111 + 241))
         XCTAssertEqual(event, .beginPrompt(.silence))
     }
 
@@ -298,7 +344,7 @@ final class ConversationAutoStopMonitorTests: XCTestCase {
         XCTAssertEqual(monitor.tick(at: resumeAt.addingTimeInterval(241)), .beginPrompt(.silence))
     }
 
-    /// Audio frames that race in while paused must not bump the silence clock.
+    /// Speech windows that race in while paused must not bump the silence clock.
     func testAudioWhilePausedIsIgnored() {
         let monitor = makeMonitor()
         monitor.setPaused(true, at: start.addingTimeInterval(10))

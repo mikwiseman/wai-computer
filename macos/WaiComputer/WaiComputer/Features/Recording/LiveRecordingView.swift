@@ -228,6 +228,9 @@ struct LiveRecordingView: View {
             Spacer()
 
             HStack(spacing: Spacing.sm) {
+                if recordingVM.phase == .recording, !recordingVM.isPaused {
+                    voiceDetectionIndicator
+                }
                 if recordingVM.recordingInputSource == .dual {
                     recordingAudioIndicator
                 } else {
@@ -244,6 +247,51 @@ struct LiveRecordingView: View {
         }
         .padding(.horizontal, Spacing.xxl)
         .padding(.vertical, Spacing.xl)
+    }
+
+    /// Live speech-detection state: proof the classifier hears the room.
+    /// "Voice" while sustained speech is confirmed; once quiet, the running
+    /// clock that feeds the auto-stop timeout. Hidden when detection is off.
+    @ViewBuilder
+    private var voiceDetectionIndicator: some View {
+        if let voiceDetected = recordingVM.voiceDetected {
+            HStack(spacing: 4) {
+                if voiceDetected {
+                    Image(systemName: "waveform")
+                        .font(.system(size: 10))
+                        .foregroundStyle(Palette.success)
+                    Text(t("Voice", "Голос"))
+                        .font(Typography.label)
+                        .foregroundStyle(Palette.success)
+                } else {
+                    Image(systemName: "waveform.slash")
+                        .font(.system(size: 10))
+                        .foregroundStyle(Palette.textSecondary)
+                    // 1 Hz refresh stays inside this node, same pattern as
+                    // the duration clock above.
+                    TimelineView(.periodic(from: .now, by: 1)) { timeline in
+                        Text(quietLabel(at: timeline.date))
+                            .font(Typography.label)
+                            .foregroundStyle(Palette.textSecondary)
+                            .accessibilityAddTraits(.updatesFrequently)
+                    }
+                }
+            }
+            .help(t(
+                "Speech detection: the recording offers to stop after a long stretch without voice.",
+                "Распознавание речи: после долгой тишины запись предложит остановиться."
+            ))
+            .accessibilityIdentifier("voice-detection-indicator")
+        }
+    }
+
+    private func quietLabel(at date: Date) -> String {
+        guard let seconds = recordingVM.autoStopQuietSeconds(at: date), seconds >= 5 else {
+            return t("Quiet", "Тихо")
+        }
+        let minutes = seconds / 60
+        let rest = seconds % 60
+        return t("Quiet", "Тихо") + " " + String(format: "%d:%02d", minutes, rest)
     }
 
     @ViewBuilder

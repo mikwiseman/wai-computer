@@ -1,80 +1,24 @@
 import Foundation
 import AVFoundation
 
-/// Energy-based speech-activity estimator with an adaptive noise floor.
+/// One sound-classifier window verdict over ~1 s of captured audio.
 ///
-/// Works on per-buffer RMS values (one value per ~160 ms capture flush).
-/// The floor tracks the 20th percentile of a sliding window, so natural
-/// pauses between words keep it anchored at the room-tone level even during
-/// long stretches of continuous conversation. Detection requires both a
-/// relative margin over the floor and an absolute minimum level, so a
-/// dead-silent room never promotes electronics noise to "speech".
-public struct SpeechActivityEstimator: Sendable {
-    /// dB over the adaptive floor a frame must reach to count as speech.
-    private let activationMarginDb: Float
-    /// Absolute dBFS gate below which nothing counts as speech.
-    private let absoluteMinDb: Float
-    /// Absolute dBFS level that always counts as speech. Caps the adaptive
-    /// threshold so a window saturated with continuous loud speech (webinar,
-    /// monologue) can never raise the floor high enough to stop detecting
-    /// the very speech that saturated it.
-    private let speechCeilingDb: Float
-    /// Sliding window of recent frame levels (~41 s at 160 ms cadence).
-    private let windowCapacity: Int
+/// Produced by `SoundAnalysisSpeechDetector` every ~0.5 s (windows overlap by
+/// half). `speechConfidence` comes from the system sound classifier's
+/// "speech" class; `levelDb` is the peak buffer RMS (dBFS) observed while the
+/// window accumulated, so silent-but-confident quirks can be gated out.
+public struct SpeechWindowObservation: Equatable, Sendable {
+    public let speechConfidence: Double
+    public let levelDb: Float
 
-    private var window: [Float] = []
-    private var nextSlot = 0
-
-    /// Snapshot of the last classification, for diagnostics/logging.
-    public private(set) var lastLevelDb: Float = -100
-    public private(set) var lastThresholdDb: Float = -100
-
-    public init(
-        activationMarginDb: Float = 10,
-        absoluteMinDb: Float = -50,
-        speechCeilingDb: Float = -35,
-        windowCapacity: Int = 256
-    ) {
-        self.activationMarginDb = activationMarginDb
-        self.absoluteMinDb = absoluteMinDb
-        self.speechCeilingDb = speechCeilingDb
-        self.windowCapacity = max(windowCapacity, 8)
+    public init(speechConfidence: Double, levelDb: Float) {
+        self.speechConfidence = speechConfidence
+        self.levelDb = levelDb
     }
+}
 
-    /// Classify one capture buffer by its linear RMS level and fold it into
-    /// the adaptive floor.
-    public mutating func isSpeech(rms: Float) -> Bool {
-        let levelDb = Self.decibels(fromRMS: rms)
-        let floorDb = noiseFloorDb()
-        record(levelDb)
-        let threshold = max(min(floorDb + activationMarginDb, speechCeilingDb), absoluteMinDb)
-        lastLevelDb = levelDb
-        lastThresholdDb = threshold
-        return levelDb >= threshold
-    }
-
-    /// 20th percentile of the sliding window; a conservative default before
-    /// the window has any history.
-    private func noiseFloorDb() -> Float {
-        guard !window.isEmpty else { return -70 }
-        let sorted = window.sorted()
-        let index = Int(Float(sorted.count - 1) * 0.2)
-        return sorted[index]
-    }
-
-    private mutating func record(_ levelDb: Float) {
-        if window.count < windowCapacity {
-            window.append(levelDb)
-        } else {
-            window[nextSlot] = levelDb
-            nextSlot = (nextSlot + 1) % windowCapacity
-        }
-    }
-
-    static func decibels(fromRMS rms: Float) -> Float {
-        20 * log10(max(rms, 1e-7))
-    }
-
+/// Linear-RMS helpers shared by the capture pipeline and the detector.
+public enum AudioLevelMeter {
     /// Linear RMS of the loudest channel of a PCM buffer. Multichannel
     /// recordings (mic + system audio) count as active when either side
     /// carries signal.
@@ -95,6 +39,10 @@ public struct SpeechActivityEstimator: Sendable {
             peak = max(peak, (sum / Float(frames)).squareRoot())
         }
         return peak
+    }
+
+    public static func decibels(fromRMS rms: Float) -> Float {
+        20 * log10(max(rms, 1e-7))
     }
 }
 
@@ -124,22 +72,32 @@ public struct ConversationAutoStopConfig: Equatable, Sendable {
     public var callEndedTimeout: TimeInterval
     /// How long the prompt waits for a human before auto-stopping.
     public var countdown: TimeInterval
-    /// Consecutive speech-level frames (~160 ms each) required to count as
-    /// real voice. Short bursts — door slams, chair creaks, keyboard runs —
-    /// span a frame or two and must NOT reset the silence clock; actual
-    /// speech utterances sustain well past this.
-    public var sustainedSpeechFrames: Int
+    /// Classifier confidence at/above which a window counts as speech.
+    /// On-device measurements: real speech ≥ 0.95, music ≈ 0.01, typing ≈
+    /// 0.03, pink noise ≈ 0.10, digital silence ≈ 0.20 flat.
+    public var speechConfidenceThreshold: Double
+    /// Absolute dBFS gate — windows quieter than this are never speech, no
+    /// matter what the classifier thinks (guards the silence prior).
+    public var speechMinLevelDb: Float
+    /// Consecutive speech windows (~0.5 s cadence) required to count as real
+    /// voice. A lone confident window — a stray shout, one TV line bleeding
+    /// through — must not reset the silence clock; conversation sustains.
+    public var sustainedSpeechWindows: Int
 
     public init(
         silenceTimeout: TimeInterval,
         callEndedTimeout: TimeInterval,
         countdown: TimeInterval,
-        sustainedSpeechFrames: Int = 4
+        speechConfidenceThreshold: Double = 0.6,
+        speechMinLevelDb: Float = -55,
+        sustainedSpeechWindows: Int = 2
     ) {
         self.silenceTimeout = silenceTimeout
         self.callEndedTimeout = callEndedTimeout
         self.countdown = countdown
-        self.sustainedSpeechFrames = sustainedSpeechFrames
+        self.speechConfidenceThreshold = speechConfidenceThreshold
+        self.speechMinLevelDb = speechMinLevelDb
+        self.sustainedSpeechWindows = sustainedSpeechWindows
     }
 
     public static let `default` = ConversationAutoStopConfig(
@@ -147,14 +105,21 @@ public struct ConversationAutoStopConfig: Equatable, Sendable {
         callEndedTimeout: 30,
         countdown: 60
     )
+
+    /// Whether one classifier window counts as speech: confident AND audible.
+    public func isSpeech(_ observation: SpeechWindowObservation) -> Bool {
+        observation.speechConfidence >= speechConfidenceThreshold
+            && observation.levelDb >= speechMinLevelDb
+    }
 }
 
 /// Decides when a recording should end because the conversation is over.
 ///
-/// Thread-safe by a single lock: the audio pipeline feeds `recordAudioLevel`
-/// from its capture task while the UI timer calls `tick` on the main actor.
-/// The monitor never stops anything itself — it emits events and the owner
-/// (the recording view model) shows the prompt and performs the stop/pause.
+/// Thread-safe by a single lock: the speech detector feeds
+/// `recordSpeechWindow` from the analysis thread while the UI timer calls
+/// `tick` on the main actor. The monitor never stops anything itself — it
+/// emits events and the owner (the recording view model) shows the prompt and
+/// performs the stop/pause.
 public final class ConversationAutoStopMonitor: @unchecked Sendable {
     private enum State: Equatable {
         case monitoring
@@ -162,24 +127,29 @@ public final class ConversationAutoStopMonitor: @unchecked Sendable {
         case finished
     }
 
+    /// How long after the last confirmed speech window the "voice active"
+    /// UI surface stays lit. Windows arrive every ~0.5 s; a short decay keeps
+    /// the indicator honest without flickering between utterances.
+    private static let voiceActiveDecay: TimeInterval = 5
+
     private let config: ConversationAutoStopConfig
     private let lock = NSLock()
 
     private var state: State = .monitoring
-    private var estimator: SpeechActivityEstimator
     private var lastVoiceAt: Date
     private var callEndedAt: Date?
     private var isPausedFlag = false
-    private var consecutiveSpeechFrames = 0
+    private var consecutiveSpeechWindows = 0
+    private var lastObservation: SpeechWindowObservation?
+    private var startedAt: Date
 
     public init(
         config: ConversationAutoStopConfig = .default,
-        estimator: SpeechActivityEstimator = SpeechActivityEstimator(),
         now: Date = Date()
     ) {
         self.config = config
-        self.estimator = estimator
         self.lastVoiceAt = now
+        self.startedAt = now
     }
 
     public var isPrompting: Bool {
@@ -196,6 +166,15 @@ public final class ConversationAutoStopMonitor: @unchecked Sendable {
         return date.timeIntervalSince(lastVoiceAt)
     }
 
+    /// Whether sustained voice was confirmed within the last few seconds —
+    /// drives the live "hearing voice" indicator in the recording UI.
+    public func isVoiceActive(at date: Date) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        guard lastVoiceAt > startedAt else { return false }
+        return date.timeIntervalSince(lastVoiceAt) < Self.voiceActiveDecay
+    }
+
     /// Whether an external call-ended signal is pending confirmation.
     public var hasPendingCallEnded: Bool {
         lock.lock()
@@ -203,29 +182,31 @@ public final class ConversationAutoStopMonitor: @unchecked Sendable {
         return callEndedAt != nil
     }
 
-    /// Last classified audio level and the threshold it was compared to (dBFS).
-    public var levelDiagnostics: (levelDb: Float, thresholdDb: Float) {
+    /// Last classifier window received, for diagnostics/logging.
+    public var lastWindowDiagnostics: SpeechWindowObservation? {
         lock.lock()
         defer { lock.unlock() }
-        return (estimator.lastLevelDb, estimator.lastThresholdDb)
+        return lastObservation
     }
 
-    /// Feed one capture buffer's linear RMS level. Only sustained
-    /// speech-level audio (`sustainedSpeechFrames` consecutive frames)
-    /// counts as voice; short pops and creaks do not reset the clock.
-    public func recordAudioLevel(rms: Float, at date: Date) {
+    /// Feed one classifier window. Only sustained speech
+    /// (`sustainedSpeechWindows` consecutive confident windows) counts as
+    /// voice; lone confident windows and loud non-speech do not reset the
+    /// silence clock.
+    public func recordSpeechWindow(_ observation: SpeechWindowObservation, at date: Date) {
         lock.lock()
         defer { lock.unlock() }
         guard !isPausedFlag, state != .finished else { return }
 
-        if estimator.isSpeech(rms: rms) {
-            consecutiveSpeechFrames += 1
-            if consecutiveSpeechFrames >= config.sustainedSpeechFrames {
+        lastObservation = observation
+        if config.isSpeech(observation) {
+            consecutiveSpeechWindows += 1
+            if consecutiveSpeechWindows >= config.sustainedSpeechWindows {
                 lastVoiceAt = date
                 callEndedAt = nil
             }
         } else {
-            consecutiveSpeechFrames = 0
+            consecutiveSpeechWindows = 0
         }
     }
 
@@ -257,8 +238,9 @@ public final class ConversationAutoStopMonitor: @unchecked Sendable {
         } else {
             state = .monitoring
             lastVoiceAt = date
+            startedAt = date
             callEndedAt = nil
-            consecutiveSpeechFrames = 0
+            consecutiveSpeechWindows = 0
         }
     }
 
@@ -270,8 +252,9 @@ public final class ConversationAutoStopMonitor: @unchecked Sendable {
         guard state != .finished else { return }
         state = .monitoring
         lastVoiceAt = date
+        startedAt = date
         callEndedAt = nil
-        consecutiveSpeechFrames = 0
+        consecutiveSpeechWindows = 0
     }
 
     /// Advance the state machine. Call about once a second.

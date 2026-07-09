@@ -126,6 +126,12 @@ class MacRecordingViewModel: ObservableObject {
     @Published private(set) var conversationEndPromptReason: ConversationEndReason?
     /// Seconds left on the prompt countdown, for the banner UI.
     @Published private(set) var conversationEndCountdownSeconds: Int = 0
+    /// Live speech-detection state for the recording UI: nil while detection
+    /// is unavailable, true while the classifier hears sustained voice.
+    /// Flips a handful of times per minute; the running quiet clock is read
+    /// via `autoStopQuietSeconds(at:)` inside a TimelineView so the 1 Hz
+    /// updates never publish through the whole window.
+    @Published private(set) var voiceDetected: Bool?
 
     /// Guards against starting a new recording while cleanup is in progress
     private var isCleaningUp = false
@@ -147,6 +153,7 @@ class MacRecordingViewModel: ObservableObject {
     private var systemAudioMonitorTask: Task<Void, Never>?
     private var recordingActivity: NSObjectProtocol?
     private var autoStopMonitor: ConversationAutoStopMonitor?
+    private var autoStopDetector: SoundAnalysisSpeechDetector?
     /// `MicrophoneUsageWatcher` (macOS 14+); stored type-erased because stored
     /// properties can't be availability-gated.
     private var micUsageWatcher: AnyObject?
@@ -420,15 +427,12 @@ class MacRecordingViewModel: ObservableObject {
                 "Disk is full. Recording stopped to preserve what was captured.",
                 "Диск заполнен. Запись остановлена для сохранения того, что успели записать."
             )
-            let autoStopMonitor = self.autoStopMonitor
+            let autoStopDetector = self.autoStopDetector
             audioTask = Task.detached(priority: .userInitiated) { [weak self] in
                 guard let self else { return }
                 audioLog.info("Recording audio task started")
                 for await buffer in capture.audioBuffers {
-                    autoStopMonitor?.recordAudioLevel(
-                        rms: SpeechActivityEstimator.peakChannelRMS(of: buffer),
-                        at: Date()
-                    )
+                    autoStopDetector?.process(buffer)
                     bufferCount += 1
                     if bufferCount <= 5 || bufferCount % 50 == 0 {
                         audioLog.debug("Recording buffer count=\(bufferCount, privacy: .public) frames=\(buffer.frameLength, privacy: .public)")
@@ -818,13 +822,36 @@ class MacRecordingViewModel: ObservableObject {
         )
     }
 
+    /// Seconds without confirmed voice, for the header quiet clock. Reads the
+    /// lock-protected monitor directly — cheap, and keeps the per-second
+    /// refresh out of the published state.
+    func autoStopQuietSeconds(at date: Date) -> Int? {
+        guard let monitor = autoStopMonitor else { return nil }
+        return Int(monitor.secondsSinceLastVoice(at: date))
+    }
+
     private func startConversationAutoStop() {
+        voiceDetected = nil
         guard RecordingAutoStopSettings.isEnabled() else {
             audioLog.info("Conversation auto-stop disabled in settings")
             return
         }
         let config = RecordingAutoStopSettings.config()
         let monitor = ConversationAutoStopMonitor(config: config)
+        do {
+            // The detector feeds classifier windows from the analysis thread;
+            // the monitor is lock-protected for exactly this hand-off.
+            autoStopDetector = try SoundAnalysisSpeechDetector { [weak monitor] observation in
+                monitor?.recordSpeechWindow(observation, at: Date())
+            }
+        } catch {
+            // Without the classifier the silence clock would only ever see
+            // "no voice" and stop every recording at the timeout. Disable
+            // auto-stop for this session and say so loudly instead.
+            audioLog.error("Speech classifier unavailable — auto-stop disabled for this session: \(error, privacy: .public)")
+            SentryHelper.captureError(error, extras: ["action": "speechDetectorInit"])
+            return
+        }
         autoStopMonitor = monitor
         audioLog.info("Conversation auto-stop armed silenceTimeout=\(config.silenceTimeout, privacy: .public)s callEnded=\(config.callEndedTimeout, privacy: .public)s countdown=\(config.countdown, privacy: .public)s")
         MacRecordingAutoStopNotifier.shared.requestAuthorizationIfNeeded()
@@ -848,9 +875,12 @@ class MacRecordingViewModel: ObservableObject {
             (micUsageWatcher as? MicrophoneUsageWatcher)?.stop()
         }
         micUsageWatcher = nil
+        autoStopDetector?.finish()
+        autoStopDetector = nil
         autoStopMonitor = nil
         conversationEndPromptReason = nil
         conversationEndCountdownSeconds = 0
+        voiceDetected = nil
     }
 
     /// Runs on the recording timer (once a second) while a session is live.
@@ -863,11 +893,13 @@ class MacRecordingViewModel: ObservableObject {
         if conversationEndPromptReason != nil {
             conversationEndCountdownSeconds = Int((monitor.promptCountdownRemaining(at: now) ?? 0).rounded())
         }
+        let active = monitor.isVoiceActive(at: now)
+        if voiceDetected != active { voiceDetected = active }
         autoStopStatusLogTick += 1
         if autoStopStatusLogTick % 15 == 0 {
             let quiet = Int(monitor.secondsSinceLastVoice(at: now))
-            let levels = monitor.levelDiagnostics
-            audioLog.info("Auto-stop status quietSeconds=\(quiet, privacy: .public) pendingCallEnded=\(monitor.hasPendingCallEnded, privacy: .public) prompting=\(monitor.isPrompting, privacy: .public) levelDb=\(levels.levelDb, format: .fixed(precision: 1), privacy: .public) thresholdDb=\(levels.thresholdDb, format: .fixed(precision: 1), privacy: .public)")
+            let window = monitor.lastWindowDiagnostics
+            audioLog.info("Auto-stop status quietSeconds=\(quiet, privacy: .public) pendingCallEnded=\(monitor.hasPendingCallEnded, privacy: .public) prompting=\(monitor.isPrompting, privacy: .public) speechConf=\(window?.speechConfidence ?? -1, format: .fixed(precision: 2), privacy: .public) levelDb=\(window?.levelDb ?? -100, format: .fixed(precision: 1), privacy: .public)")
         }
     }
 
