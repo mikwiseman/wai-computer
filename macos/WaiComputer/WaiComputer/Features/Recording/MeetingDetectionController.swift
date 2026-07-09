@@ -38,6 +38,11 @@ final class MeetingDetectionController {
 
     /// Minimum gap between prompts, so one flapping call app cannot spam.
     private let promptCooldown: TimeInterval = 180
+    /// Transient mic grabs (Siri, a quick voice memo) release within a couple
+    /// of seconds; a call still holds the mic after this delay. The shipping
+    /// recorders all confirm before prompting (Screenpipe 2 sightings,
+    /// HushScribe 3 s re-verify).
+    private let confirmationDelay: TimeInterval = 3
 
     private let center: UNUserNotificationCenter
     /// True while WaiComputer itself owns the session (recording/finalizing) —
@@ -45,6 +50,7 @@ final class MeetingDetectionController {
     private let isBusy: @MainActor () -> Bool
     private var watcher: AnyObject?
     private var lastPromptAt: Date?
+    private var confirmationTask: Task<Void, Never>?
 
     init(
         center: UNUserNotificationCenter = .current(),
@@ -76,17 +82,31 @@ final class MeetingDetectionController {
             (watcher as? MicrophoneUsageWatcher)?.stop()
         }
         watcher = nil
+        confirmationTask?.cancel()
+        confirmationTask = nil
     }
 
     private func handleCallStarted(at date: Date) {
+        guard #available(macOS 14.0, *) else { return }
         guard MeetingDetectionSettings.isEnabled() else { return }
         guard !isBusy() else { return }
         if let lastPromptAt, date.timeIntervalSince(lastPromptAt) < promptCooldown {
             return
         }
-        lastPromptAt = date
-        meetingLog.info("Call started elsewhere — prompting to record")
-        deliverPrompt()
+        guard confirmationTask == nil else { return }
+        confirmationTask = Task { [weak self] in
+            defer { self?.confirmationTask = nil }
+            try? await Task.sleep(for: .seconds(self?.confirmationDelay ?? 3))
+            guard !Task.isCancelled, let self else { return }
+            guard MicrophoneUsageWatcher.otherProcessIsCapturingInput() == true else {
+                meetingLog.info("Mic grab was transient — no prompt")
+                return
+            }
+            guard !self.isBusy() else { return }
+            self.lastPromptAt = Date()
+            meetingLog.info("Call confirmed elsewhere — prompting to record")
+            self.deliverPrompt()
+        }
     }
 
     /// The category carries the "Record" action; registered at delivery time
