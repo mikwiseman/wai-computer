@@ -38,7 +38,8 @@ final class ContentFeedViewModel: ObservableObject {
         var types: [UTType] = [
             .pdf, .plainText, .html, .rtf, .commaSeparatedText, .json, .audio, .movie
         ]
-        for ext in ["md", "doc", "docx", "pptx", "xlsx", "mkv", "webm", "opus", "ogg"] {
+        for ext in ["md", "doc", "docx", "pptx", "xlsx"]
+            + MediaImportSupport.importableExtensions {
             if let type = UTType(filenameExtension: ext) {
                 types.append(type)
             }

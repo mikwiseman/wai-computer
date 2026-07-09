@@ -31,9 +31,9 @@ struct MacContentFeedView: View {
     private var importTypes: [UTType] {
         // Documents extract inline into an Item; audio/video are transcribed into
         // a Recording. `.audio`/`.movie` cover the common cases; the explicit
-        // extensions catch containers that don't conform to them (mkv/webm/opus).
+        // extensions catch containers that don't conform to them (mkv/webm/wma…).
         var types: [UTType] = [.pdf, .plainText, .audio, .movie]
-        for ext in ["md", "mkv", "webm", "opus", "ogg"] {
+        for ext in ["md"] + MediaImportSupport.importableExtensions {
             if let t = UTType(filenameExtension: ext) { types.append(t) }
         }
         return types

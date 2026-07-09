@@ -1437,6 +1437,38 @@ public actor APIClient {
         folderId: String? = nil,
         title: String? = nil
     ) async throws -> ItemUploadOutcome {
+        // Videos upload as their audio track when AVFoundation can extract it
+        // locally (mp4/mov/m4v) — a fraction of the bytes. Containers it can't
+        // read (mkv/webm/…) upload whole; the server's ffmpeg pipeline extracts.
+        // The original (video) filename is kept so the recording title derives
+        // from it, not from the temp file.
+        var payloadURL = fileURL
+        var uploadFilename = fileURL.lastPathComponent
+        var extractedTempURL: URL?
+        if MediaImportSupport.isVideoExtension(fileURL.pathExtension) {
+            if let extracted = await MediaAudioExtractor.extractAudioForUpload(source: fileURL) {
+                payloadURL = extracted
+                extractedTempURL = extracted
+                uploadFilename =
+                    fileURL.deletingPathExtension().lastPathComponent + ".m4a"
+            }
+        }
+        defer {
+            if let extractedTempURL {
+                try? FileManager.default.removeItem(at: extractedTempURL)
+            }
+        }
+
+        // Same client cap as recordings; media shares the server's
+        // UPLOAD_MAX_BYTES and would 413 there anyway.
+        let itemFileSize = try fileSize(at: payloadURL)
+        if itemFileSize > Int64(Self.maxRecordingUploadSizeBytes) {
+            throw APIError.httpError(
+                statusCode: 413,
+                message: "File too large. Maximum size is \(Self.maxRecordingUploadSizeBytes / (1024 * 1024))MB."
+            )
+        }
+
         let path = "/api/items/upload"
         let url = baseURL.appendingPathComponent(path)
         let boundary = "Boundary-\(UUID().uuidString)"
@@ -1445,13 +1477,19 @@ public actor APIClient {
         request.setValue(
             "multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type"
         )
-        request.timeoutInterval = 120
+        // Matches uploadAudio: large videos upload for minutes, and the interval
+        // is an idle timeout — it only fires when bytes stop flowing.
+        request.timeoutInterval = 600
         if let token = accessToken {
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         }
 
         let multipartFileURL = try createItemUploadRequestFile(
-            fileURL: fileURL, folderId: folderId, title: title, boundary: boundary
+            fileURL: payloadURL,
+            uploadFilename: uploadFilename,
+            folderId: folderId,
+            title: title,
+            boundary: boundary
         )
         defer { try? FileManager.default.removeItem(at: multipartFileURL) }
 
@@ -1483,29 +1521,21 @@ public actor APIClient {
         case "pdf": return "application/pdf"
         case "md", "markdown": return "text/markdown"
         case "txt", "text": return "text/plain"
-        case "mp3": return "audio/mpeg"
-        case "wav": return "audio/wav"
-        case "m4a": return "audio/mp4"
-        case "aac": return "audio/aac"
-        case "ogg", "oga": return "audio/ogg"
-        case "opus": return "audio/opus"
-        case "flac": return "audio/flac"
-        case "mp4": return "video/mp4"
-        case "mov": return "video/quicktime"
-        case "mkv": return "video/x-matroska"
-        case "webm": return "video/webm"
-        default: return "application/octet-stream"
+        default:
+            // Every importable audio/video container shares the media table
+            // (mirrors the backend's EXTENSION_TO_CONTENT_TYPE).
+            return MediaImportSupport.mimeType(forExtension: ext)
         }
     }
 
     private func createItemUploadRequestFile(
         fileURL: URL,
+        uploadFilename: String? = nil,
         folderId: String?,
         title: String?,
         boundary: String
     ) throws -> URL {
-        let fileData = try Data(contentsOf: fileURL)
-        let filename = fileURL.lastPathComponent
+        let filename = uploadFilename ?? fileURL.lastPathComponent
         let mimeType = itemUploadMimeType(fileURL.pathExtension)
 
         let uploadURL = FileManager.default.temporaryDirectory
@@ -1523,7 +1553,18 @@ public actor APIClient {
             "Content-Disposition: form-data; name=\"file\"; filename=\"\(filename)\"\r\n"
         )
         try writeString("Content-Type: \(mimeType)\r\n\r\n")
-        try output.write(contentsOf: fileData)
+
+        // Chunked file→file copy, like uploadAudio: a large video must never
+        // sit in the app's memory as one Data blob.
+        let input = try FileHandle(forReadingFrom: fileURL)
+        defer { try? input.close() }
+        while true {
+            let chunk = try input.read(upToCount: 64 * 1024) ?? Data()
+            if chunk.isEmpty {
+                break
+            }
+            try output.write(contentsOf: chunk)
+        }
         try writeString("\r\n")
 
         if let folderId, !folderId.isEmpty {
