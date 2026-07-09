@@ -6,7 +6,7 @@ local-mic speech. Processing uses it to attribute the diarization cluster
 that matches local speech to the device owner's self Person.
 
 Revision ID: 20260709_120000
-Revises: 20260707_223000
+Revises: 20260709_144403
 Create Date: 2026-07-09 12:00:00.000000
 """
 
@@ -19,7 +19,7 @@ from alembic import op
 from sqlalchemy.dialects.postgresql import JSONB
 
 revision: str = "20260709_120000"
-down_revision: Union[str, tuple[str, str], None] = "20260707_223000"
+down_revision: Union[str, tuple[str, str], None] = "20260709_144403"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
