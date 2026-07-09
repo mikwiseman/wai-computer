@@ -602,6 +602,27 @@ public struct RecordingDetail: Codable, Identifiable, Sendable {
     }
 }
 
+public extension Recording {
+    init(detail: RecordingDetail) {
+        self.init(
+            id: detail.id,
+            title: detail.title,
+            type: detail.type,
+            audioUrl: detail.audioUrl,
+            status: detail.status,
+            failureCode: detail.failureCode,
+            failureMessage: detail.failureMessage,
+            uploadedAt: detail.uploadedAt,
+            durationSeconds: detail.durationSeconds,
+            language: detail.language,
+            folderId: detail.folderId,
+            deletedAt: detail.deletedAt,
+            starredAt: detail.starredAt,
+            createdAt: detail.createdAt
+        )
+    }
+}
+
 /// Request to create a new recording
 public struct CreateRecordingRequest: Codable, Sendable {
     public var title: String?

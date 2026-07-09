@@ -3,9 +3,17 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ApiError } from "@/lib/http";
 import { getPreferences, updatePreferences } from "@/lib/api";
+import {
+  DEFAULT_THEME,
+  applyTheme,
+  isThemeChoice,
+  readStoredTheme,
+  writeStoredTheme,
+  type ThemeChoice,
+} from "@/lib/theme";
 import styles from "./ThemeAccentPicker.module.css";
 
-export type ThemeChoice = "system" | "light" | "dark";
+export type { ThemeChoice };
 export type AccentChoice =
   | "teal"
   | "amber"
@@ -15,10 +23,8 @@ export type AccentChoice =
   | "rose"
   | "graphite";
 
-const THEME_STORAGE_KEY = "wai_theme";
 const ACCENT_STORAGE_KEY = "wai_accent";
 
-const DEFAULT_THEME: ThemeChoice = "system";
 const DEFAULT_ACCENT: AccentChoice = "amber";
 
 const ACCENT_ORDER: AccentChoice[] = [
@@ -82,32 +88,13 @@ const COPY: Record<Locale, Copy> = {
   },
 };
 
-function isThemeChoice(value: unknown): value is ThemeChoice {
-  return value === "system" || value === "light" || value === "dark";
-}
-
 function isAccentChoice(value: unknown): value is AccentChoice {
   return typeof value === "string" && ACCENT_ORDER.includes(value as AccentChoice);
-}
-
-function applyTheme(theme: ThemeChoice): void {
-  if (typeof document === "undefined") return;
-  document.documentElement.setAttribute("data-theme", theme);
 }
 
 function applyAccent(accent: AccentChoice): void {
   if (typeof document === "undefined") return;
   document.documentElement.setAttribute("data-accent", accent);
-}
-
-function readStoredTheme(): ThemeChoice {
-  if (typeof window === "undefined") return DEFAULT_THEME;
-  try {
-    const raw = window.localStorage.getItem(THEME_STORAGE_KEY);
-    return isThemeChoice(raw) ? raw : DEFAULT_THEME;
-  } catch {
-    return DEFAULT_THEME;
-  }
 }
 
 function readStoredAccent(): AccentChoice {
@@ -117,15 +104,6 @@ function readStoredAccent(): AccentChoice {
     return isAccentChoice(raw) ? raw : DEFAULT_ACCENT;
   } catch {
     return DEFAULT_ACCENT;
-  }
-}
-
-function writeStoredTheme(theme: ThemeChoice): void {
-  if (typeof window === "undefined") return;
-  try {
-    window.localStorage.setItem(THEME_STORAGE_KEY, theme);
-  } catch {
-    // ignore quota / disabled storage
   }
 }
 

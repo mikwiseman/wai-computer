@@ -57,8 +57,11 @@ enum Typography {
     static let body: Font = .system(size: 14)
     /// 13pt regular sans — Secondary body
     static let bodySmall: Font = .system(size: 13)
-    /// 15pt regular sans — Transcript/summary (use with lineSpacing(6))
-    static let reading: Font = .system(size: 15)
+    /// 16pt regular sans — Transcript/summary (use with lineSpacing(6)).
+    /// Mirrors web `--font-reading-size` (17px CSS ≈ 16pt AppKit): hour-long
+    /// transcripts read tight at 15pt. Pair with `MacMainLayoutMetrics
+    /// .readingMeasure` — size without measure is not readable.
+    static let reading: Font = .system(size: 16)
 
     /// 12pt medium sans — Metadata, dates
     static let label: Font = .system(size: 12, weight: .medium)
@@ -478,6 +481,19 @@ struct WaiGhostButtonStyle: ButtonStyle {
     }
 }
 
+/// Quiet toolbar button — secondary ink instead of accent. Use for rows of
+/// utility actions (export/share/move) where five accent-tinted buttons
+/// would compete; reserve `WaiGhostButtonStyle` for the one action that
+/// deserves emphasis.
+struct WaiQuietButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(Typography.headingSmall)
+            .foregroundStyle(Palette.textSecondary)
+            .opacity(configuration.isPressed ? 0.6 : 1.0)
+    }
+}
+
 enum MacMainLayoutMetrics {
     static let sidebarMinWidth: CGFloat = 236
     static let sidebarIdealWidth: CGFloat = 264
@@ -496,6 +512,9 @@ enum MacMainLayoutMetrics {
     static let sidebarRowHorizontalPadding: CGFloat = 8
     static let sidebarFooterHorizontalPadding: CGFloat = 18
     static let searchContentMaxWidth: CGFloat = 880
+    /// Max width for running text (transcripts, summaries) — keeps long-form
+    /// content in the 60–72ch band. Mirrors web `--measure-reading` (44rem).
+    static let readingMeasure: CGFloat = 680
     static let minimumReadableDetailWidth: CGFloat = 520
     static let allColumnsReadableWidth: CGFloat = sidebarIdealWidth + listMinWidth + minimumReadableDetailWidth
 

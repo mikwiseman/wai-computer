@@ -55,7 +55,9 @@ export default async function RootLayout({
     requestHeaders.get("accept-language"),
   );
   return (
-    <html lang={lang} data-theme="system" data-accent="amber">
+    // suppressHydrationWarning: the inline no-FOUC script below mutates
+    // data-theme/data-accent before React hydrates; the mismatch is expected.
+    <html lang={lang} data-theme="system" data-accent="amber" suppressHydrationWarning>
       <body>
         <script
           dangerouslySetInnerHTML={{

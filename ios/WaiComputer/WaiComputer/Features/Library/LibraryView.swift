@@ -107,13 +107,24 @@ struct LibraryView: View {
                                 // result no longer appears behind the dismiss.
                                 performSearch()
                             }
+                        },
+                        onDetailChange: { detail in
+                            viewModel.applyRecordingDetail(detail)
                         }
                     )
                 }
             }
             .navigationDestination(isPresented: $showImportedDetail) {
                 if let importedRecording {
-                    RecordingDetailView(recording: importedRecording)
+                    RecordingDetailView(
+                        recording: importedRecording,
+                        onDetailChange: { detail in
+                            viewModel.applyRecordingDetail(detail)
+                            if importedRecording.id == detail.id {
+                                self.importedRecording = Recording(detail: detail)
+                            }
+                        }
+                    )
                 }
             }
             .overlay(alignment: .top) {
@@ -623,6 +634,9 @@ struct LibraryView: View {
                     await trashRecording(id: recording.id)
                 }
             },
+            onDetailChange: { detail in
+                viewModel.applyRecordingDetail(detail)
+            },
             onDidRename: {
                 Task { await viewModel.loadLibrary(apiClient: appState.getAPIClient()) }
             }
@@ -831,6 +845,9 @@ struct FolderRecordingsView: View {
                                         apiClient: appState.getAPIClient()
                                     )
                                 }
+                            },
+                            onDetailChange: { detail in
+                                viewModel.applyRecordingDetail(detail)
                             },
                             onDidRename: {
                                 Task { await viewModel.loadLibrary(apiClient: appState.getAPIClient()) }
@@ -1241,6 +1258,9 @@ struct TrashView: View {
                 Task {
                     await permanentlyDeleteRecording(id: recording.id)
                 }
+            },
+            onDetailChange: { detail in
+                viewModel.applyRecordingDetail(detail)
             }
         )
     }
@@ -1292,7 +1312,6 @@ struct TrashView: View {
         OnboardingL10n.text(english, russian, language: languageManager.current)
     }
 }
-
 
 // MARK: - Inline Banner
 
@@ -1669,6 +1688,24 @@ class LibraryViewModel: ObservableObject {
         isLoading = false
         error = nil
         #endif
+    }
+
+    func applyRecordingDetail(_ detail: RecordingDetail) {
+        let updated = Recording(detail: detail)
+
+        if let index = recordings.firstIndex(where: { $0.id == detail.id }),
+           recordings[index] != updated {
+            var next = recordings
+            next[index] = updated
+            recordings = next
+        }
+
+        if let index = trashedRecordings.firstIndex(where: { $0.id == detail.id }),
+           trashedRecordings[index] != updated {
+            var next = trashedRecordings
+            next[index] = updated
+            trashedRecordings = next
+        }
     }
 
     // MARK: - Folder Operations

@@ -365,6 +365,83 @@ final class OnboardingPermissionGateTests: XCTestCase {
         XCTAssertFalse(rowSource.contains(".foregroundStyle(.secondary)"))
     }
 
+    @MainActor
+    func testIOSLibraryViewModelPatchesCachedRowsFromFetchedDetail() {
+        let viewModel = LibraryViewModel()
+        let createdAt = Date(timeIntervalSince1970: 1_789_444_400)
+        viewModel.recordings = [
+            Recording(
+                id: "rec-active",
+                title: nil,
+                type: .meeting,
+                status: .processing,
+                durationSeconds: nil,
+                createdAt: createdAt
+            )
+        ]
+        viewModel.trashedRecordings = [
+            Recording(
+                id: "rec-trash",
+                title: "Old Trash",
+                type: .note,
+                status: .ready,
+                durationSeconds: 5,
+                deletedAt: createdAt,
+                createdAt: createdAt
+            )
+        ]
+
+        viewModel.applyRecordingDetail(
+            RecordingDetail(
+                id: "rec-active",
+                title: "Реформа продуктовых процессов с AI",
+                type: .meeting,
+                status: .ready,
+                durationSeconds: 563,
+                language: "ru",
+                createdAt: createdAt,
+                segments: [Segment(id: "s1", content: "Готовая расшифровка.")]
+            )
+        )
+        viewModel.applyRecordingDetail(
+            RecordingDetail(
+                id: "rec-trash",
+                title: "Trash Generated Title",
+                type: .note,
+                status: .failed,
+                failureCode: "failed_upload",
+                failureMessage: "Upload failed",
+                durationSeconds: 5,
+                deletedAt: createdAt,
+                createdAt: createdAt
+            )
+        )
+
+        XCTAssertEqual(viewModel.recordings.first?.title, "Реформа продуктовых процессов с AI")
+        XCTAssertEqual(viewModel.recordings.first?.status, .ready)
+        XCTAssertEqual(viewModel.recordings.first?.durationSeconds, 563)
+        XCTAssertEqual(viewModel.recordings.first?.language, "ru")
+        XCTAssertEqual(viewModel.trashedRecordings.first?.title, "Trash Generated Title")
+        XCTAssertEqual(viewModel.trashedRecordings.first?.status, .failed)
+        XCTAssertEqual(viewModel.trashedRecordings.first?.failureCode, "failed_upload")
+        XCTAssertEqual(viewModel.trashedRecordings.first?.failureMessage, "Upload failed")
+    }
+
+    func testIOSRecordingDetailRefreshPatchesLibraryRows() throws {
+        let librarySource = try iosSource("WaiComputer/Features/Library/LibraryView.swift")
+        let detailSource = try iosSource("WaiComputer/Features/Library/RecordingDetailView.swift")
+
+        XCTAssertTrue(librarySource.contains("func applyRecordingDetail(_ detail: RecordingDetail)"))
+        XCTAssertTrue(librarySource.contains("viewModel.applyRecordingDetail(detail)"))
+        XCTAssertTrue(detailSource.contains("var onDetailChange: ((RecordingDetail) -> Void)?"))
+        XCTAssertTrue(detailSource.contains(".onReceive(viewModel.$detail.compactMap { $0 })"))
+        XCTAssertTrue(librarySource.contains("if importedRecording.id == detail.id"))
+        XCTAssertTrue(librarySource.contains("self.importedRecording = Recording(detail: detail)"))
+        let detailChangeIndex = try XCTUnwrap(librarySource.range(of: "onDetailChange: { detail in")?.lowerBound)
+        let renameIndex = try XCTUnwrap(librarySource.range(of: "onDidRename:")?.lowerBound)
+        XCTAssertLessThan(detailChangeIndex, renameIndex)
+    }
+
     func testIOSUnifiedSearchUsesIPadSplitDetailWithoutBreakingCompactPushNavigation() throws {
         let source = try iosSource("WaiComputer/Features/Search/SearchView.swift")
 

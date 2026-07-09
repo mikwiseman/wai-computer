@@ -199,7 +199,7 @@ private struct MacTranscriptSegmentsCacheKey: Equatable {
 private extension View {
     func transcriptListRow() -> some View {
         self
-            .frame(maxWidth: 920, alignment: .leading)
+            .frame(maxWidth: MacMainLayoutMetrics.readingMeasure, alignment: .leading)
             .frame(maxWidth: .infinity, alignment: .leading)
             .listRowInsets(EdgeInsets(
                 top: 0,

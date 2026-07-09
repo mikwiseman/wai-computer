@@ -635,7 +635,7 @@ private struct OriginalMaterialChunk: Identifiable, Equatable {
 private extension View {
     func itemDetailListRow() -> some View {
         self
-            .frame(maxWidth: 860, alignment: .leading)
+            .frame(maxWidth: MacMainLayoutMetrics.readingMeasure, alignment: .leading)
             .frame(maxWidth: .infinity, alignment: .leading)
             .listRowInsets(EdgeInsets(
                 top: 0,

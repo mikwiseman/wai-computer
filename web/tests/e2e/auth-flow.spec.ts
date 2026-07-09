@@ -214,6 +214,22 @@ async function installAuthMocks(page: Page) {
       });
       return;
     }
+    if (path === "/api/folders" && method === "GET") {
+      await route.fulfill({
+        status: 200,
+        headers,
+        body: JSON.stringify([]),
+      });
+      return;
+    }
+    if (path === "/api/inbox" && method === "GET") {
+      await route.fulfill({
+        status: 200,
+        headers,
+        body: JSON.stringify({ rows: [], next_cursor: null, has_more: false }),
+      });
+      return;
+    }
     if (path === "/api/entities" && method === "GET") {
       await route.fulfill({
         status: 200,

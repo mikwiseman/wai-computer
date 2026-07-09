@@ -906,6 +906,20 @@ final class MacContentFeedViewModelTests: XCTestCase {
         XCTAssertFalse(source.contains("hasher.combine(segment."))
     }
 
+    func testRecordingDetailRefreshPatchesLibraryRows() throws {
+        let shellSource = try macSource("WaiComputer/App/MacContentView.swift")
+        let detailSource = try macSource("WaiComputer/Features/Library/MacRecordingDetailView.swift")
+        let librarySource = try macSource("WaiComputer/Features/Library/MacLibraryViewModel.swift")
+
+        XCTAssertTrue(librarySource.contains("func applyRecordingDetail(_ detail: RecordingDetail)"))
+        XCTAssertTrue(librarySource.contains("let updated = Recording(detail: detail)"))
+        XCTAssertTrue(shellSource.contains("onDetailChange: { detail in"))
+        XCTAssertTrue(shellSource.contains("libraryViewModel.applyRecordingDetail(detail)"))
+        XCTAssertTrue(detailSource.contains("var onDetailChange: ((RecordingDetail) -> Void)?"))
+        XCTAssertTrue(detailSource.contains(".onReceive(viewModel.$recordingDetail.compactMap { $0 })"))
+        XCTAssertBefore("onDetailChange: { detail in", "onDidRename:", in: shellSource)
+    }
+
     func testItemDetailShowsSummaryBeforeOriginalMaterial() throws {
         let source = try macSource("WaiComputer/Features/Content/MacItemDetailView.swift")
 
