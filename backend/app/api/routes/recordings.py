@@ -40,7 +40,7 @@ from app.core.capture_metadata import (
     CaptureMetadataError,
     parse_capture_metadata,
 )
-from app.core.embeddings import generate_embedding
+from app.core.embeddings import generate_embeddings
 from app.core.error_sanitizer import sanitize_failure_message
 from app.core.observability import (
     add_sentry_breadcrumb,
@@ -1122,33 +1122,43 @@ async def _persist_client_segments(
     transcript_chunks: list[str] = []
     end_times: list[int] = []
 
-    for segment in normalized_segments:
-        text = segment.text.strip()
-        embedding = None
-        try:
-            embedding = await generate_embedding(
-                text,
-                usage_user_id=recording.user_id,
-                usage_recording_id=recording.id,
-                usage_feature="recording",
-                usage_operation="embedding.segment",
+    segment_texts = [segment.text.strip() for segment in normalized_segments]
+    segment_embeddings: list[list[float] | None] = [None] * len(segment_texts)
+    try:
+        generated_embeddings = await generate_embeddings(
+            segment_texts,
+            usage_user_id=recording.user_id,
+            usage_recording_id=recording.id,
+            usage_feature="recording",
+            usage_operation="embedding.segment.batch",
+        )
+        if len(generated_embeddings) != len(segment_texts):
+            raise RuntimeError(
+                "embedding batch returned "
+                f"{len(generated_embeddings)} vectors for {len(segment_texts)} segments"
             )
-        except Exception as error:
-            logger.warning("Failed to generate embedding: %s", error)
+        segment_embeddings = generated_embeddings
+    except Exception as error:
+        logger.warning("Failed to generate segment embeddings: %s", error)
 
+    for segment, segment_text, embedding in zip(
+        normalized_segments,
+        segment_texts,
+        segment_embeddings,
+    ):
         db.add(
             Segment(
                 recording_id=recording.id,
                 speaker=segment.speaker,
                 raw_label=segment.speaker,
-                content=text,
+                content=segment_text,
                 start_ms=segment.start_ms,
                 end_ms=segment.end_ms,
                 confidence=segment.confidence,
                 embedding=embedding,
             )
         )
-        transcript_chunks.append(text)
+        transcript_chunks.append(segment_text)
         end_times.append(segment.end_ms)
 
     segment_duration_seconds = max(end_times) // 1000 if end_times else None

@@ -668,8 +668,8 @@ async def test_save_transcript_enqueues_waiting_summary_generation_job(
     assert enqueued_job_ids == []
 
     monkeypatch.setattr(
-        "app.api.routes.recordings.generate_embedding",
-        AsyncMock(return_value=[0.1] * 1536),
+        "app.api.routes.recordings.generate_embeddings",
+        AsyncMock(side_effect=lambda texts, **_: [[0.1] * 1536 for _ in texts]),
     )
 
     saved = await client.post(
@@ -1785,8 +1785,8 @@ async def test_save_transcript_persists_segments_before_audio_upload(
     recording = await _create_recording(client, auth_headers, title=None)
 
     monkeypatch.setattr(
-        "app.api.routes.recordings.generate_embedding",
-        AsyncMock(return_value=[0.1] * 1536),
+        "app.api.routes.recordings.generate_embeddings",
+        AsyncMock(side_effect=lambda texts, **_: [[0.1] * 1536 for _ in texts]),
     )
     monkeypatch.setattr(
         "app.api.routes.recordings.generate_title",
@@ -1832,8 +1832,8 @@ async def test_save_transcript_queues_summary_generation_automatically(
     recording_id = UUID(recording["id"])
 
     monkeypatch.setattr(
-        "app.api.routes.recordings.generate_embedding",
-        AsyncMock(return_value=[0.1] * 1536),
+        "app.api.routes.recordings.generate_embeddings",
+        AsyncMock(side_effect=lambda texts, **_: [[0.1] * 1536 for _ in texts]),
     )
     monkeypatch.setattr(
         "app.api.routes.recordings.generate_title",
@@ -1898,8 +1898,8 @@ async def test_save_transcript_replaces_stale_active_summary_job(
     await db_session.flush()
 
     monkeypatch.setattr(
-        "app.api.routes.recordings.generate_embedding",
-        AsyncMock(return_value=[0.1] * 1536),
+        "app.api.routes.recordings.generate_embeddings",
+        AsyncMock(side_effect=lambda texts, **_: [[0.1] * 1536 for _ in texts]),
     )
     monkeypatch.setattr(
         "app.api.routes.recordings.generate_title",
@@ -1952,8 +1952,8 @@ async def test_save_transcript_ignores_audio_backed_no_speech_recording(
     recording = await _create_recording(client, auth_headers, title=None, language="en")
 
     monkeypatch.setattr(
-        "app.api.routes.recordings.generate_embedding",
-        AsyncMock(return_value=[0.1] * 1536),
+        "app.api.routes.recordings.generate_embeddings",
+        AsyncMock(side_effect=lambda texts, **_: [[0.1] * 1536 for _ in texts]),
     )
     title_mock = AsyncMock(return_value="Late Live Transcript")
     monkeypatch.setattr("app.api.routes.recordings.generate_title", title_mock)
@@ -1999,8 +1999,8 @@ async def test_save_transcript_accepts_empty_payload_without_erasing_existing_se
     recording = await _create_recording(client, auth_headers, title=None)
 
     monkeypatch.setattr(
-        "app.api.routes.recordings.generate_embedding",
-        AsyncMock(return_value=[0.1] * 1536),
+        "app.api.routes.recordings.generate_embeddings",
+        AsyncMock(side_effect=lambda texts, **_: [[0.1] * 1536 for _ in texts]),
     )
     monkeypatch.setattr(
         "app.api.routes.recordings.enqueue_summary_generation",
@@ -2263,8 +2263,8 @@ async def test_resaving_transcript_replaces_segments_summary_and_generated_actio
     recording_id = UUID(recording["id"])
 
     monkeypatch.setattr(
-        "app.api.routes.recordings.generate_embedding",
-        AsyncMock(return_value=[0.1] * 1536),
+        "app.api.routes.recordings.generate_embeddings",
+        AsyncMock(side_effect=lambda texts, **_: [[0.1] * 1536 for _ in texts]),
     )
     monkeypatch.setattr(
         "app.api.routes.recordings.generate_title",
