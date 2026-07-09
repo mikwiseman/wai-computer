@@ -20,6 +20,12 @@ def make_settings():
     return _make
 
 
+def test_telegram_download_default_allows_one_gib_imports(make_settings):
+    settings = make_settings()
+
+    assert settings.telegram_download_max_bytes == 1024 * 1024 * 1024
+
+
 class TestAuthCookieDomainResolved:
     """Tests for Settings.auth_cookie_domain_resolved property."""
 

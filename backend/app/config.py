@@ -208,9 +208,9 @@ class Settings(BaseSettings):
     # Chat that receives best-effort operational alerts (anomalies worth
     # attention). 0 disables. Defaults to the operator's linked Telegram chat.
     telegram_ops_chat_id: int = 0
-    # Hosted Bot API defaults to 20 MB; production compose raises this to 1 GiB
-    # with the local telegram-bot-api service.
-    telegram_download_max_bytes: int = 20 * 1024 * 1024
+    # WaiComputer runs Telegram through a local Bot API server, which supports
+    # large downloads. Keep the app default aligned with production and .env.example.
+    telegram_download_max_bytes: int = 1024 * 1024 * 1024
     # Voice notes at or above this length are treated as library recordings without
     # intent classification — a recording is never risked on a misroute. Shorter
     # voice notes may be routed to the agent when addressed to Wai.
