@@ -13,29 +13,41 @@ interface AudioUploadProps {
   locale?: Locale;
 }
 
+// Mirrors the backend's media tables (app/core/media_audio.py): any container
+// ffmpeg can demux is importable — video audio is extracted server-side.
 const ACCEPTED_TYPES = [
   "audio/mpeg", "audio/mp3", "audio/mp4", "audio/m4a", "audio/x-m4a",
   "audio/wav", "audio/x-wav", "audio/webm", "audio/ogg", "audio/opus", "audio/flac",
+  "audio/aiff", "audio/x-aiff", "audio/x-ms-wma", "audio/amr", "audio/x-matroska",
+  "video/mp4", "video/quicktime", "video/webm", "video/x-matroska",
+  "video/x-msvideo", "video/mpeg", "video/x-m4v", "video/x-ms-wmv",
+  "video/x-flv", "video/3gpp", "video/mp2t",
 ];
-const ACCEPTED_FILE_EXTENSIONS = ["mp3", "m4a", "wav", "webm", "ogg", "opus", "flac"] as const;
-const ACCEPTED_FILE_INPUT = ".mp3,.m4a,.wav,.webm,.ogg,.opus,.flac";
+const ACCEPTED_FILE_EXTENSIONS = [
+  "mp3", "m4a", "aac", "wav", "webm", "ogg", "oga", "opus", "flac",
+  "aiff", "aif", "wma", "amr", "mka", "caf",
+  "mp4", "mov", "m4v", "mkv", "avi", "mpg", "mpeg", "wmv", "flv", "3gp", "3g2", "ts", "mts",
+] as const;
+const ACCEPTED_FILE_INPUT =
+  ".mp3,.m4a,.aac,.wav,.webm,.ogg,.oga,.opus,.flac,.aiff,.aif,.wma,.amr,.mka,.caf," +
+  ".mp4,.mov,.m4v,.mkv,.avi,.mpg,.mpeg,.wmv,.flv,.3gp,.3g2,.ts,.mts,audio/*,video/*";
 
 const COPY: Record<Locale, {
   unsupported: string; creating: string; uploading: string; failed: string; drop: string;
 }> = {
   en: {
-    unsupported: "Unsupported format. Use MP3, M4A, WAV, WebM, OGG, OPUS, or FLAC.",
+    unsupported: "Unsupported format. Use an audio file (MP3, M4A, WAV…) or a video (MP4, MOV, MKV…).",
     creating: "Creating recording...",
-    uploading: "Uploading audio...",
+    uploading: "Uploading file...",
     failed: "Upload failed",
-    drop: "Drop audio file here or click to upload",
+    drop: "Drop an audio or video file here or click to upload",
   },
   ru: {
-    unsupported: "Неподдерживаемый формат. Используйте MP3, M4A, WAV, WebM, OGG, OPUS или FLAC.",
+    unsupported: "Неподдерживаемый формат. Используйте аудио (MP3, M4A, WAV…) или видео (MP4, MOV, MKV…).",
     creating: "Создание записи...",
-    uploading: "Загрузка аудио...",
+    uploading: "Загрузка файла...",
     failed: "Не удалось загрузить",
-    drop: "Перетащите аудиофайл сюда или нажмите для загрузки",
+    drop: "Перетащите аудио- или видеофайл сюда или нажмите для загрузки",
   },
 };
 
@@ -132,7 +144,7 @@ export function AudioUpload({ onUploadComplete, onError, folderId = null, locale
         <div className="upload-zone__label">
           <span style={{ fontSize: "1.5rem" }}>+</span>
           <span>{copy.drop}</span>
-          <span className="upload-zone__formats">MP3, M4A, WAV, WebM, OGG, OPUS, FLAC</span>
+          <span className="upload-zone__formats">MP3, M4A, WAV, OGG, FLAC · MP4, MOV, MKV, AVI, WebM</span>
         </div>
       )}
     </div>

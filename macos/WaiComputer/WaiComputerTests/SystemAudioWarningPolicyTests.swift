@@ -64,11 +64,11 @@ final class SystemAudioWarningPolicyTests: XCTestCase {
     func testRecordingImportCopyUsesSelectedLanguage() {
         XCTAssertEqual(
             RecordingCopy.importPanelTitle(language: .english),
-            "Import Audio File"
+            "Import Audio or Video"
         )
         XCTAssertEqual(
             RecordingCopy.importPanelTitle(language: .russian),
-            "Импорт аудиофайла"
+            "Импорт аудио или видео"
         )
         XCTAssertFalse(
             RecordingCopy.importProcessingFailedFallback(language: .russian)

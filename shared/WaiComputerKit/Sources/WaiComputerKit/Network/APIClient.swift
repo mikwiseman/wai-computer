@@ -63,7 +63,7 @@ public enum HTTPMethod: String, Sendable {
 
 /// API Client for WaiComputer backend
 public actor APIClient {
-    public static let maxRecordingUploadSizeBytes = 200 * 1024 * 1024
+    public static let maxRecordingUploadSizeBytes = 1024 * 1024 * 1024
 
     private let baseURL: URL
     private var accessToken: String? {
@@ -2231,17 +2231,7 @@ public actor APIClient {
 
         let filename = fileURL.lastPathComponent
         let ext = fileURL.pathExtension.lowercased()
-        let mimeType: String
-        switch ext {
-        case "mp3": mimeType = "audio/mpeg"
-        case "wav": mimeType = "audio/wav"
-        case "m4a": mimeType = "audio/mp4"
-        case "ogg": mimeType = "audio/ogg"
-        case "webm": mimeType = "audio/webm"
-        case "opus": mimeType = "audio/opus"
-        case "flac": mimeType = "audio/flac"
-        default: mimeType = "application/octet-stream"
-        }
+        let mimeType = MediaImportSupport.mimeType(forExtension: ext)
 
         let uploadRequestFile = try createUploadRequestFile(
             sourceFileURL: fileURL,

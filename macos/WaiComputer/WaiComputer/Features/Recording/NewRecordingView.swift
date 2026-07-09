@@ -53,9 +53,9 @@ struct NewRecordingView: View {
                 // ⌘I is unbound elsewhere in the app; attach it for real so
                 // the printed hint is true on this screen.
                 RecordingOptionRow(
-                    title: t("Import Audio File", "Импорт аудиофайла"),
+                    title: t("Import Audio or Video", "Импорт аудио или видео"),
                     icon: "square.and.arrow.down",
-                    subtitle: t("Transcribe an existing audio file", "Расшифровать готовый аудиофайл"),
+                    subtitle: t("Transcribe an existing audio or video file", "Расшифровать готовый аудио- или видеофайл"),
                     shortcut: "⌘I",
                     keyEquivalent: KeyboardShortcut("i", modifiers: .command),
                     isPrimary: false,

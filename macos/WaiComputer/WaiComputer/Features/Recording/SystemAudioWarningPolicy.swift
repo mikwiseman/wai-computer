@@ -3,13 +3,13 @@ import WaiComputerKit
 
 enum RecordingCopy {
     static func importPanelTitle(language: LanguageManager.SupportedLanguage) -> String {
-        text("Import Audio File", "Импорт аудиофайла", language: language)
+        text("Import Audio or Video", "Импорт аудио или видео", language: language)
     }
 
     static func importProcessingFailedFallback(language: LanguageManager.SupportedLanguage) -> String {
         text(
-            "We couldn't transcribe that audio file right now. Please try again in a moment.",
-            "Не удалось расшифровать этот аудиофайл сейчас. Попробуй еще раз через минуту.",
+            "We couldn't transcribe that file right now. Please try again in a moment.",
+            "Не удалось расшифровать этот файл сейчас. Попробуй еще раз через минуту.",
             language: language
         )
     }

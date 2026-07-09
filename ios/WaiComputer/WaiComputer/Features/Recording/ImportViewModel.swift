@@ -11,7 +11,7 @@ class ImportViewModel: ObservableObject {
     @Published var showFileImporter = false
 
     static let allowedContentTypes: [UTType] = {
-        ["mp3", "wav", "m4a", "ogg", "webm", "opus", "flac"]
+        MediaImportSupport.importableExtensions
             .compactMap { UTType(filenameExtension: $0) }
     }()
 
@@ -37,11 +37,28 @@ class ImportViewModel: ObservableObject {
         uploadingFilename = filename
         isUploading = true
 
+        // Videos upload as their audio track when AVFoundation can extract it
+        // locally — a fraction of the bytes over cellular. Containers it can't
+        // read upload whole; the server's ffmpeg pipeline extracts.
+        var uploadURL = fileURL
+        var extractedTempURL: URL?
+        if MediaImportSupport.isVideoExtension(fileURL.pathExtension) {
+            if let extracted = await MediaAudioExtractor.extractAudioForUpload(source: fileURL) {
+                uploadURL = extracted
+                extractedTempURL = extracted
+            }
+        }
+        defer {
+            if let extractedTempURL {
+                try? FileManager.default.removeItem(at: extractedTempURL)
+            }
+        }
+
         var recordingId: String?
         do {
             let recording = try await apiClient.createRecording(title: filename, type: .note)
             recordingId = recording.id
-            let detail = try await apiClient.uploadAudio(recordingId: recording.id, fileURL: fileURL)
+            let detail = try await apiClient.uploadAudio(recordingId: recording.id, fileURL: uploadURL)
 
             if detail.status == .failed || detail.failureMessage?.isEmpty == false {
                 let message = UserFacingErrorFormatter.displayMessage(

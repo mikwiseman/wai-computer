@@ -646,8 +646,10 @@ final class APIClientTests: XCTestCase {
             case .httpError(let statusCode, let message):
                 XCTAssertEqual(statusCode, 413)
                 XCTAssertEqual(error.uploadFailureCode, "file_too_large")
-                XCTAssertEqual(message, "File too large. Maximum size is 200MB.")
-                XCTAssertEqual(error.localizedDescription, "File too large. Maximum size is 200MB.")
+                let expected =
+                    "File too large. Maximum size is \(APIClient.maxRecordingUploadSizeBytes / (1024 * 1024))MB."
+                XCTAssertEqual(message, expected)
+                XCTAssertEqual(error.localizedDescription, expected)
             default:
                 XCTFail("Expected 413 httpError, got \(error)")
             }

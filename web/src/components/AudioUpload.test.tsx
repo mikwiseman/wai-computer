@@ -31,17 +31,41 @@ describe("AudioUpload", () => {
 
     fireEvent.change(getFileInput(container), {
       target: {
-        files: [new File(["video"], "clip.mp4", { type: "audio/mp4" })],
+        files: [new File(["text"], "notes.txt", { type: "text/plain" })],
       },
     });
 
     await waitFor(() => {
       expect(onError).toHaveBeenCalledWith(
-        "Unsupported format. Use MP3, M4A, WAV, WebM, OGG, OPUS, or FLAC.",
+        "Unsupported format. Use an audio file (MP3, M4A, WAV…) or a video (MP4, MOV, MKV…).",
       );
     });
     expect(mockCreateRecording).not.toHaveBeenCalled();
     expect(mockUploadAudio).not.toHaveBeenCalled();
+  });
+
+  it("uploads a video file — the server extracts its audio track", async () => {
+    mockCreateRecording.mockResolvedValueOnce({ id: "rec-video" });
+    mockUploadAudio.mockResolvedValueOnce({ id: "rec-video", title: "Team call" });
+
+    const onUploadComplete = vi.fn();
+    const { container } = render(
+      <AudioUpload onUploadComplete={onUploadComplete} onError={vi.fn()} />,
+    );
+
+    fireEvent.change(getFileInput(container), {
+      target: {
+        files: [new File(["video"], "team-call.mp4", { type: "video/mp4" })],
+      },
+    });
+
+    await waitFor(() => {
+      expect(mockUploadAudio).toHaveBeenCalledWith(
+        "rec-video",
+        expect.objectContaining({ name: "team-call.mp4" }),
+      );
+      expect(onUploadComplete).toHaveBeenCalledWith({ id: "rec-video", title: "Team call" });
+    });
   });
 
   it("creates a recording and uploads a supported file", async () => {

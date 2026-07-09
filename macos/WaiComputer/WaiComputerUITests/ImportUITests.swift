@@ -63,8 +63,8 @@ final class ImportUITests: XCTestCase {
 
         // Verify the button label contains expected text
         let label = importButton.label
-        XCTAssertTrue(label.contains("Import Audio File"),
-                       "Import button label should contain 'Import Audio File', got: \(label)")
+        XCTAssertTrue(label.contains("Import Audio or Video"),
+                       "Import button label should contain 'Import Audio or Video', got: \(label)")
         XCTAssertTrue(label.contains("Transcribe an existing audio file"),
                        "Import button label should contain subtitle text, got: \(label)")
 
@@ -98,7 +98,7 @@ final class ImportUITests: XCTestCase {
         XCTAssertTrue(waitForElement(importButton, in: app, timeout: 3))
 
         let importLabel = importButton.label
-        XCTAssertTrue(importLabel.contains("Импорт аудиофайла"),
+        XCTAssertTrue(importLabel.contains("Импорт аудио или видео"),
                       "Import button label should contain Russian title, got: \(importLabel)")
         XCTAssertTrue(importLabel.contains("Расшифровать готовый аудиофайл"),
                       "Import button label should contain Russian subtitle, got: \(importLabel)")

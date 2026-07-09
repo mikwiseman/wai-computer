@@ -147,7 +147,7 @@ struct LibraryView: View {
                         Button {
                             importViewModel.showFileImporter = true
                         } label: {
-                            Label(t("Import Audio File", "Импорт аудио"), systemImage: "square.and.arrow.down")
+                            Label(t("Import Audio or Video", "Импорт аудио или видео"), systemImage: "square.and.arrow.down")
                         }
 
                         Button {
