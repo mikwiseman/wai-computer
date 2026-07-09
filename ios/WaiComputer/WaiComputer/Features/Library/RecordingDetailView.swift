@@ -294,10 +294,8 @@ struct RecordingDetailView: View {
                 .textSelection(.enabled)
 
             HStack(spacing: Spacing.sm) {
-                Text(IOSDateFormatting.string(
+                Text(IOSDateFormatting.listTimestamp(
                     from: detail.createdAt,
-                    dateStyle: .long,
-                    timeStyle: .short,
                     language: languageManager.current
                 ))
                 .font(Typography.caption)
@@ -1054,7 +1052,7 @@ struct RecordingDetailView: View {
     }
 
     private func formatDuration(_ seconds: Int) -> String {
-        String(format: "%d:%02d", seconds / 60, seconds % 60)
+        IOSDateFormatting.duration(seconds: seconds)
     }
 
     private var speakerLanguageCode: String {

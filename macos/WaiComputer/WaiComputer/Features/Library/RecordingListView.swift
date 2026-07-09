@@ -210,17 +210,15 @@ struct RecordingRowView: View {
                     .fill(Palette.typeColor(recording.type))
                     .frame(width: 6, height: 6)
 
-                Text(MacDateFormatting.string(
+                Text(MacDateFormatting.listTimestamp(
                     from: recording.createdAt,
-                    dateStyle: .medium,
-                    timeStyle: .short,
                     language: languageManager.current
                 ))
                     .font(Typography.label)
                     .foregroundStyle(Palette.textSecondary)
 
                 if let duration = recording.durationSeconds, duration > 0 {
-                    Text(formatDuration(duration))
+                    Text(MacDateFormatting.duration(seconds: duration))
                         .font(Typography.mono)
                         .foregroundStyle(Palette.textSecondary)
                 }
@@ -247,12 +245,6 @@ struct RecordingRowView: View {
             return MacMainLayoutMetrics.recordingRowFailureMinHeight
         }
         return MacMainLayoutMetrics.recordingRowMinHeight
-    }
-
-    private func formatDuration(_ seconds: Int) -> String {
-        let mins = seconds / 60
-        let secs = seconds % 60
-        return String(format: "%d:%02d", mins, secs)
     }
 
     private var statusColor: Color {

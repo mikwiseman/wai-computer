@@ -95,4 +95,41 @@ final class MacThemePreferencesTests: XCTestCase {
         XCTAssertTrue(russian.lowercased().contains("мая"), russian)
         XCTAssertFalse(russian.lowercased().contains("may"), russian)
     }
+
+    func testListTimestampLabelsTodayAndYesterday() {
+        let now = Date()
+        let today = MacDateFormatting.listTimestamp(from: now, language: .russian)
+        XCTAssertTrue(today.hasPrefix("Сегодня, "), today)
+
+        let yesterday = try! XCTUnwrap(
+            Calendar.current.date(byAdding: .day, value: -1, to: now)
+        )
+        let yesterdayLabel = MacDateFormatting.listTimestamp(from: yesterday, language: .english)
+        XCTAssertTrue(yesterdayLabel.hasPrefix("Yesterday, "), yesterdayLabel)
+    }
+
+    func testListTimestampDropsRussianYearSuffix() {
+        var components = DateComponents()
+        components.calendar = Calendar(identifier: .gregorian)
+        components.year = 2020
+        components.month = 3
+        components.day = 8
+        components.hour = 9
+        components.minute = 5
+        let date = try! XCTUnwrap(components.date)
+
+        let russian = MacDateFormatting.listTimestamp(from: date, language: .russian)
+        XCTAssertEqual(russian, "8 марта 2020, 09:05")
+
+        let english = MacDateFormatting.listTimestamp(from: date, language: .english)
+        XCTAssertTrue(english.contains("March 8, 2020"), english)
+    }
+
+    func testDurationRollsMinutesIntoHours() {
+        XCTAssertEqual(MacDateFormatting.duration(seconds: 53), "0:53")
+        XCTAssertEqual(MacDateFormatting.duration(seconds: 1_720), "28:40")
+        // 208 minutes must read as hours, never "208:40".
+        XCTAssertEqual(MacDateFormatting.duration(seconds: 12_520), "3:28:40")
+        XCTAssertEqual(MacDateFormatting.duration(seconds: 3_600), "1:00:00")
+    }
 }

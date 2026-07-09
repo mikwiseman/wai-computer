@@ -127,11 +127,18 @@ describe("RecordingDetailPanel", () => {
     clipboardWriteText = vi.spyOn(navigator.clipboard, "writeText").mockResolvedValue(undefined);
   });
 
-  it("renders title and metadata", () => {
+  it("renders title and metadata without the default meeting label", () => {
     render(<RecordingDetailPanel recording={makeRecording()} />);
     expect(screen.getByText("Budget Meeting")).toBeTruthy();
-    expect(screen.getByText("Meeting")).toBeTruthy();
+    // Nearly every recording is a meeting — the default type is hidden noise.
+    expect(screen.queryByText("Meeting")).toBeNull();
+    expect(screen.getByText(/April 1/)).toBeTruthy();
     expect(screen.getByText("6:00")).toBeTruthy();
+  });
+
+  it("labels non-default recording types", () => {
+    render(<RecordingDetailPanel recording={makeRecording({ type: "note" })} />);
+    expect(screen.getByText("Note")).toBeTruthy();
   });
 
   it("renders untitled when title is null", () => {

@@ -1923,10 +1923,7 @@ private struct CompletedRecordingTransitionView: View {
     }
 
     private func formatDuration(_ duration: TimeInterval) -> String {
-        let totalSeconds = Int(duration)
-        let minutes = totalSeconds / 60
-        let seconds = totalSeconds % 60
-        return String(format: "%02d:%02d", minutes, seconds)
+        MacDateFormatting.duration(seconds: Int(duration))
     }
 
     private var transitionHeaderRow: some View {

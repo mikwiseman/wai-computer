@@ -312,6 +312,65 @@ enum MacDateFormatting {
         }
         return formatter.string(from: date)
     }
+
+    /// Compact timestamp for list rows: "Сегодня, 10:25" / "Вчера, 18:19",
+    /// "8 июля, 10:25" within the current year, "8 июля 2025, 10:25" otherwise.
+    /// Avoids the verbose locale default "8 июля 2026 г., 10:25".
+    static func listTimestamp(
+        from date: Date,
+        language: LanguageManager.SupportedLanguage
+    ) -> String {
+        let calendar = Calendar.current
+        let time = string(from: date, dateStyle: .none, timeStyle: .short, language: language)
+        if calendar.isDateInToday(date) {
+            return "\(OnboardingL10n.text("Today", "Сегодня", language: language)), \(time)"
+        }
+        if calendar.isDateInYesterday(date) {
+            return "\(OnboardingL10n.text("Yesterday", "Вчера", language: language)), \(time)"
+        }
+        let sameYear = calendar.component(.year, from: date) == calendar.component(.year, from: Date())
+        let day = templatedString(from: date, template: sameYear ? "MMMMd" : "yMMMMd", language: language)
+        return "\(day), \(time)"
+    }
+
+    /// Duration as "0:53", "28:40", or hours-aware "3:28:40" — never "208:40".
+    static func duration(seconds: Int) -> String {
+        let clamped = max(0, seconds)
+        let hours = clamped / 3600
+        let minutes = (clamped % 3600) / 60
+        let secs = clamped % 60
+        if hours > 0 {
+            return String(format: "%d:%02d:%02d", hours, minutes, secs)
+        }
+        return String(format: "%d:%02d", minutes, secs)
+    }
+
+    private static func templatedString(
+        from date: Date,
+        template: String,
+        language: LanguageManager.SupportedLanguage
+    ) -> String {
+        let locale = locale(for: language)
+        let cacheKey = "tpl|\(locale.identifier)|\(template)"
+        formatterCacheLock.lock()
+        defer { formatterCacheLock.unlock() }
+        let formatter: DateFormatter
+        if let cached = formatterCache[cacheKey] {
+            formatter = cached
+        } else {
+            let created = DateFormatter()
+            created.locale = locale
+            if template == "yMMMMd", locale.identifier.hasPrefix("ru") {
+                // The locale template appends "г." ("8 июля 2025 г.") — noise in list rows.
+                created.dateFormat = "d MMMM yyyy"
+            } else {
+                created.setLocalizedDateFormatFromTemplate(template)
+            }
+            formatterCache[cacheKey] = created
+            formatter = created
+        }
+        return formatter.string(from: date)
+    }
 }
 
 // MARK: - Palette

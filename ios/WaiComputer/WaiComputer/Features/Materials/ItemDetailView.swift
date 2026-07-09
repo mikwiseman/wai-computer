@@ -502,10 +502,8 @@ struct ItemDetailView: View {
             ?? Self.isoPlain.date(from: iso) else {
             return iso
         }
-        return IOSDateFormatting.string(
+        return IOSDateFormatting.listTimestamp(
             from: date,
-            dateStyle: .medium,
-            timeStyle: .short,
             language: languageManager.current
         )
     }

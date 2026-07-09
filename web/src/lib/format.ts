@@ -65,3 +65,55 @@ export function stripInlineCodeMarkdown(text: string): string {
   if (!text) return text;
   return text.replace(/`([^`]+)`/g, "$1");
 }
+
+/**
+ * Compact human timestamp for list rows and detail headers:
+ * "Сегодня, 10:25" / "Вчера, 18:19", "8 июля, 10:25" within the current year,
+ * "8 июля 2025, 10:25" otherwise. Mirrors MacDateFormatting.listTimestamp in
+ * the Mac app so both surfaces read identically.
+ */
+export function formatListTimestamp(value: string, locale: AuthLocale): string {
+  const bcp = locale === "ru" ? "ru-RU" : "en-US";
+  const date = new Date(value);
+  const now = new Date();
+  const time = date.toLocaleTimeString(bcp, {
+    // Russian convention is 24h with a leading zero ("09:05"); US English is "9:05 AM".
+    hour: locale === "ru" ? "2-digit" : "numeric",
+    minute: "2-digit",
+  });
+  if (date.toDateString() === now.toDateString()) {
+    return `${locale === "ru" ? "Сегодня" : "Today"}, ${time}`;
+  }
+  const yesterday = new Date(now);
+  yesterday.setDate(now.getDate() - 1);
+  if (date.toDateString() === yesterday.toDateString()) {
+    return `${locale === "ru" ? "Вчера" : "Yesterday"}, ${time}`;
+  }
+  const sameYear = date.getFullYear() === now.getFullYear();
+  const day = date
+    .toLocaleDateString(
+      bcp,
+      sameYear
+        ? { day: "numeric", month: "long" }
+        : { day: "numeric", month: "long", year: "numeric" },
+    )
+    // Russian appends "г." after the year — noise outside formal dates.
+    .replace(/\s*г\.$/, "");
+  return `${day}, ${time}`;
+}
+
+/**
+ * Recorded duration as a clock string: "0:53", "28:40", or hours-aware
+ * "3:28:40" — never "208:40". Returns "" for absent/zero durations.
+ */
+export function formatDurationClock(seconds: number | null | undefined): string {
+  if (!seconds || seconds <= 0) return "";
+  const total = Math.floor(seconds);
+  const hours = Math.floor(total / 3600);
+  const mins = Math.floor((total % 3600) / 60);
+  const secs = total % 60;
+  if (hours > 0) {
+    return `${hours}:${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
+  }
+  return `${mins}:${secs.toString().padStart(2, "0")}`;
+}

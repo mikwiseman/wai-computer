@@ -291,7 +291,7 @@ final class OnboardingPermissionGateTests: XCTestCase {
         XCTAssertTrue(source.contains("originalMaterialSection(item)"))
         XCTAssertTrue(source.contains("sourceLabel(item.source)"))
         XCTAssertTrue(source.contains("formattedDate(item.occurredAt ?? item.createdAt)"))
-        XCTAssertTrue(source.contains("IOSDateFormatting.string("))
+        XCTAssertTrue(source.contains("IOSDateFormatting.listTimestamp("))
         XCTAssertTrue(source.contains("ScrollView {\n            VStack(alignment: .leading, spacing: Spacing.lg)"))
         XCTAssertTrue(source.contains(".navigationBarTitleDisplayMode(isRegularWidth ? .inline : .large)"))
     }
@@ -343,7 +343,7 @@ final class OnboardingPermissionGateTests: XCTestCase {
         let rowSource = try sourceSlice(
             source,
             startingAt: "struct RecordingRow: View",
-            endingBefore: "private func formatDuration"
+            endingBefore: "private var statusColor"
         )
 
         XCTAssertTrue(rowSource.contains("VStack(alignment: .leading, spacing: Spacing.xs)"))
@@ -355,7 +355,8 @@ final class OnboardingPermissionGateTests: XCTestCase {
         XCTAssertTrue(rowSource.contains(".minimumScaleFactor(0.85)"))
         XCTAssertTrue(rowSource.contains(".fixedSize(horizontal: true, vertical: false)"))
         XCTAssertTrue(rowSource.contains(".fill(Palette.typeColor(recording.type))"))
-        XCTAssertTrue(rowSource.contains("IOSDateFormatting.string("))
+        XCTAssertTrue(rowSource.contains("IOSDateFormatting.listTimestamp("))
+        XCTAssertTrue(rowSource.contains("IOSDateFormatting.duration(seconds:"))
         XCTAssertTrue(rowSource.contains(".font(Typography.mono)"))
         XCTAssertTrue(rowSource.contains(".foregroundStyle(Palette.textSecondary)"))
         XCTAssertTrue(rowSource.contains(".frame(maxWidth: .infinity, minHeight: rowMinHeight, alignment: .leading)"))

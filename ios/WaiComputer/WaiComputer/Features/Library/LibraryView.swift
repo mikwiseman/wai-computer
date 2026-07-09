@@ -1494,17 +1494,15 @@ struct RecordingRow: View {
                     .fill(Palette.typeColor(recording.type))
                     .frame(width: 6, height: 6)
 
-                Text(IOSDateFormatting.string(
+                Text(IOSDateFormatting.listTimestamp(
                     from: recording.createdAt,
-                    dateStyle: .medium,
-                    timeStyle: .short,
                     language: languageManager.current
                 ))
                 .font(Typography.label)
                 .foregroundStyle(Palette.textSecondary)
 
                 if let duration = recording.durationSeconds, duration > 0 {
-                    Text(formatDuration(duration))
+                    Text(IOSDateFormatting.duration(seconds: duration))
                         .font(Typography.mono)
                         .foregroundStyle(Palette.textSecondary)
                 }
@@ -1527,12 +1525,6 @@ struct RecordingRow: View {
             return 68
         }
         return 48
-    }
-
-    private func formatDuration(_ seconds: Int) -> String {
-        let minutes = seconds / 60
-        let remainingSeconds = seconds % 60
-        return String(format: "%d:%02d", minutes, remainingSeconds)
     }
 
     private var statusColor: Color {

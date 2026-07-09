@@ -11,7 +11,12 @@ import {
   startSummaryGeneration,
   updateRecording,
 } from "@/lib/api";
-import { formatSpeakerLabel, formatTimestamp } from "@/lib/format";
+import {
+  formatDurationClock,
+  formatListTimestamp,
+  formatSpeakerLabel,
+  formatTimestamp,
+} from "@/lib/format";
 import { mergeTurns, renderTranscript } from "@/lib/transcript";
 import type {
   Folder,
@@ -222,24 +227,23 @@ const COPY: Record<DetailLocale, DetailCopy> = {
   },
 };
 
-function formatDuration(seconds: number | null): string {
-  if (!seconds || seconds <= 0) return "";
-  const mins = Math.floor(seconds / 60);
-  const secs = seconds % 60;
-  return `${mins}:${secs.toString().padStart(2, "0")}`;
-}
-
-function formatDate(value: string): string {
-  return new Date(value).toLocaleDateString(undefined, { dateStyle: "medium" });
-}
-
 function formatError(error: unknown, fallback: string): string {
   if (error instanceof Error) return error.message;
   return fallback;
 }
 
-function recordingTypeLabel(type: string): string {
-  return type.charAt(0).toUpperCase() + type.slice(1);
+/**
+ * Localized recording type, or null for the default "meeting" — nearly every
+ * recording is a meeting, so labeling each one adds nothing.
+ */
+function recordingTypeLabel(type: string, locale: DetailLocale): string | null {
+  const raw = type.trim().toLowerCase();
+  if (!raw || raw === "meeting") return null;
+  const ru = locale === "ru";
+  if (raw === "note") return ru ? "Заметка" : "Note";
+  if (raw === "reflection") return ru ? "Рефлексия" : "Reflection";
+  if (raw === "dictation") return ru ? "Диктовка" : "Dictation";
+  return raw.charAt(0).toUpperCase() + raw.slice(1);
 }
 
 function automaticSummaryStartKey(recording: RecordingDetail): string {
@@ -545,9 +549,11 @@ export function RecordingDetailPanel({
           )}
           <div className="metadata-row">
             <span className="type-dot" aria-hidden="true" />
-            <span>{recordingTypeLabel(recording.type)}</span>
-            <span>{formatDate(recording.created_at)}</span>
-            {recording.duration_seconds ? <span>{formatDuration(recording.duration_seconds)}</span> : null}
+            {recordingTypeLabel(recording.type, locale) ? (
+              <span>{recordingTypeLabel(recording.type, locale)}</span>
+            ) : null}
+            <span>{formatListTimestamp(recording.created_at, locale)}</span>
+            {recording.duration_seconds ? <span>{formatDurationClock(recording.duration_seconds)}</span> : null}
           </div>
         </div>
 
