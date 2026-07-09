@@ -17,6 +17,7 @@ from app.api.routes.personalization import (
     update_personalization_term,
 )
 from app.core.personalization import (
+    _merge_glossary,
     estimate_keyterm_tokens,
     extract_candidate_terms,
     load_user_entity_terms,
@@ -93,6 +94,25 @@ def test_sanitize_keyterms_budget_truncates_russian_before_latin() -> None:
     assert len(russian) < len(latin)
     # And the kept Russian terms genuinely fit under the cap (no prod 400).
     assert sum(estimate_keyterm_tokens(term) for term in russian) <= 500
+
+
+def test_sanitize_keyterms_truncates_long_term_to_max_chars() -> None:
+    terms = sanitize_keyterms(["a" * 50], max_terms=10, max_chars=5)
+
+    assert terms == ["a" * 5]
+
+
+def test_sanitize_keyterms_drops_over_word_limit() -> None:
+    terms = sanitize_keyterms(
+        ["one two three"], max_terms=10, max_chars=100, max_words=2
+    )
+
+    assert terms == []
+
+
+def test_merge_glossary_dedupes_case_insensitively_and_caps() -> None:
+    assert _merge_glossary(["Anna"], ["anna", "Boris"]) == ["Anna", "Boris"]
+    assert _merge_glossary(["a", "b", "c"], cap=2) == ["a", "b"]
 
 
 def test_personalization_request_models_normalize_optional_fields() -> None:
@@ -670,6 +690,38 @@ async def test_load_user_replacements_returns_only_real_distinct_pairs(
 
 
 @pytest.mark.asyncio
+async def test_load_user_realtime_hints_drops_casefold_equal_replacements(
+    db_session: AsyncSession,
+):
+    user_id = uuid4()
+    db_session.add(
+        User(
+            id=user_id,
+            email=f"realtime-hints-noop-{user_id}@example.com",
+            password_hash="hash",
+            **{
+                "legal_terms_version": LEGAL_ACCEPTANCE["legal_terms_version"],
+                "legal_privacy_version": LEGAL_ACCEPTANCE["legal_privacy_version"],
+            },
+        )
+    )
+    db_session.add(
+        DictationDictionaryWord(
+            user_id=user_id,
+            client_word_id=uuid4(),
+            word="ok",
+            replacement="OK",
+            occurred_at=datetime.now(timezone.utc),
+        )
+    )
+    await db_session.flush()
+
+    hints = await load_user_realtime_hints(db_session, user_id=user_id, purpose="dictation")
+
+    assert hints.replacements == []
+
+
+@pytest.mark.asyncio
 async def test_load_user_realtime_hints_combines_keyterms_and_replacements(
     db_session: AsyncSession,
 ):
@@ -748,3 +800,37 @@ async def test_personalization_import_job_clears_source_text(
         )
     ).scalars().all()
     assert terms
+
+
+@pytest.mark.asyncio
+async def test_load_user_replacements_caps_at_two_hundred_pairs(
+    db_session: AsyncSession,
+):
+    user_id = uuid4()
+    db_session.add(
+        User(
+            id=user_id,
+            email=f"replacement-cap-{user_id}@example.com",
+            password_hash="hash",
+            **{
+                "legal_terms_version": LEGAL_ACCEPTANCE["legal_terms_version"],
+                "legal_privacy_version": LEGAL_ACCEPTANCE["legal_privacy_version"],
+            },
+        )
+    )
+    now = datetime.now(timezone.utc)
+    db_session.add_all(
+        DictationDictionaryWord(
+            user_id=user_id,
+            client_word_id=uuid4(),
+            word=f"word{index}",
+            replacement=f"замена{index}",
+            occurred_at=now,
+        )
+        for index in range(205)
+    )
+    await db_session.flush()
+
+    pairs = await load_user_replacements(db_session, user_id=user_id)
+
+    assert len(pairs) == 200

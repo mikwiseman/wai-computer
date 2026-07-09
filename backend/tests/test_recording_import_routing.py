@@ -203,7 +203,9 @@ async def test_import_batches_multi_segment_embeddings(
     monkeypatch.setattr("app.core.recording_import.settings.upload_staging_dir", str(tmp_path))
 
     async def fake_transcribe(*_args, **_kwargs):
-        return FileTranscription(words=[], segments=[_speech("один"), _speech("два"), _speech("три")])
+        return FileTranscription(
+            words=[], segments=[_speech("один"), _speech("два"), _speech("три")]
+        )
 
     async def fail_single_embedding(_text: str, **_: object):
         raise AssertionError("multi-segment imports must use batch embeddings")

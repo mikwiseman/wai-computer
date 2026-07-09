@@ -77,6 +77,7 @@ def test_resolve_detected_language_requires_confidence_and_known_code() -> None:
         )
         is None
     )
+
     assert (
         resolve_detected_recording_language(
             current="auto", detected="rus", probability=None
@@ -95,3 +96,10 @@ def test_resolve_detected_language_requires_confidence_and_known_code() -> None:
         )
         is None
     )
+
+
+def test_join_fragments_returns_non_empty_side() -> None:
+    from app.core.transcript_utils import _join_fragments
+
+    assert _join_fragments("Привет", "") == "Привет"
+    assert _join_fragments("", "мир") == "мир"

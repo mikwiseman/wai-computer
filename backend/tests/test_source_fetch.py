@@ -12,6 +12,9 @@ import pytest
 from app.core import source_fetch
 from app.core.source_fetch import (
     SourceFetchError,
+    _public_ip_address,
+    _resolve_host_addresses,
+    _resolve_host_addresses_sync,
     classify_url,
     fetch_url,
     find_first_url,
@@ -56,6 +59,25 @@ def test_classify_url(url: str, expected: str) -> None:
 )
 def test_youtube_video_id(url: str, vid: str | None) -> None:
     assert youtube_video_id(url) == vid
+
+
+def test_public_ip_address_handles_ipv6_mapped_ipv4() -> None:
+    assert _public_ip_address(ipaddress.ip_address("::ffff:8.8.8.8")) is True
+    assert _public_ip_address(ipaddress.ip_address("::ffff:10.0.0.1")) is False
+
+
+@pytest.mark.asyncio
+async def test_resolve_host_addresses_dedupes_socket_results(monkeypatch) -> None:
+    infos = [
+        (None, None, None, None, ("8.8.8.8", 0)),
+        (None, None, None, None, ("8.8.8.8", 0)),
+        (None, None, None, None, ("1.1.1.1", 0)),
+    ]
+    monkeypatch.setattr(source_fetch.socket, "getaddrinfo", lambda *args, **kwargs: infos)
+
+    expected = [ipaddress.ip_address("8.8.8.8"), ipaddress.ip_address("1.1.1.1")]
+    assert _resolve_host_addresses_sync("host") == expected
+    assert await _resolve_host_addresses("host") == expected
 
 
 class _FakeStream:

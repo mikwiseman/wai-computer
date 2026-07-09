@@ -5,7 +5,7 @@ import logging
 import wave
 from datetime import datetime, timezone
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import AsyncMock, MagicMock, Mock, patch
 from uuid import uuid4
 
 import httpx
@@ -14,6 +14,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import recording_audio_processing
+from app.core.media_audio import MediaAudioExtractionError
 from app.core.recording_audio_processing import process_staged_recording_upload
 from app.core.summary_generation import (
     WAITING_FOR_TRANSCRIPT_HASH,
@@ -442,6 +443,61 @@ async def test_process_staged_recording_upload_persists_canonical_segments(
     assert summary_job.task_id == "celery-recording-summary"
     assert not staged_path.exists()
     transcribe.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_process_staged_recording_upload_marks_failed_on_media_extraction_error(
+    db_session: AsyncSession,
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user = User(
+        email="queued-extraction-failure@example.com",
+        password_hash="x",
+        default_language="en",
+    )
+    db_session.add(user)
+    await db_session.flush()
+    recording = Recording(
+        user_id=user.id,
+        title=None,
+        type="meeting",
+        status=RecordingStatus.PROCESSING.value,
+        uploaded_at=datetime.now(timezone.utc),
+        language="en",
+    )
+    db_session.add(recording)
+    await db_session.commit()
+
+    staged_path = tmp_path / "recording.mp4"
+    staged_path.write_bytes(b"video")
+    monkeypatch.setattr(
+        "app.core.recording_audio_processing._extract_staged_media_audio",
+        AsyncMock(side_effect=MediaAudioExtractionError("bad_media", "no audio track")),
+    )
+    monkeypatch.setattr(
+        "app.core.recording_audio_processing.capture_sentry_anomaly",
+        MagicMock(),
+    )
+
+    await process_staged_recording_upload(
+        db_session,
+        recording_id=recording.id,
+        user_id=user.id,
+        staged_path=staged_path,
+        content_type="video/mp4",
+        user_default_language="en",
+    )
+
+    await db_session.refresh(recording)
+    segments = (
+        (await db_session.execute(select(Segment).where(Segment.recording_id == recording.id)))
+        .scalars()
+        .all()
+    )
+    assert recording.status == RecordingStatus.FAILED.value
+    assert recording.failure_code == "bad_media"
+    assert segments == []
 
 
 @pytest.mark.asyncio
@@ -2657,3 +2713,437 @@ async def test_process_staged_recording_upload_attributes_owner_from_sidecar(
     assert segments[2].person_id == user.self_person_id
     assert segments[1].person_id is None
     assert segments[0].match_confidence == 1.0
+
+
+@pytest.mark.asyncio
+async def test_process_staged_recording_upload_sidecar_owner_overrides_voiceprint_conflict(
+    db_session: AsyncSession,
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user = User(
+        email="sidecar-owner-conflict@example.com",
+        password_hash="x",
+        default_language="en",
+        first_name="Mik",
+    )
+    db_session.add(user)
+    await db_session.flush()
+    other_person = Person(user_id=user.id, display_name="Other")
+    db_session.add(other_person)
+    recording = Recording(
+        user_id=user.id,
+        title=None,
+        type="meeting",
+        status=RecordingStatus.PROCESSING.value,
+        uploaded_at=datetime.now(timezone.utc),
+        language="multi",
+        capture_metadata={
+            "version": 1,
+            "capture": "dual_mono_mix",
+            "local_speech_ms": [[0, 4000], [9000, 12000]],
+            "aec": False,
+        },
+    )
+    db_session.add(recording)
+    await db_session.commit()
+
+    staged_path = tmp_path / "recording.wav"
+    staged_path.write_bytes(b"audio")
+    transcript_results = [
+        TranscriptResult(
+            text="Я расскажу про план.",
+            speaker="speaker_0",
+            is_final=True,
+            start_ms=0,
+            end_ms=4000,
+            confidence=0.95,
+        ),
+        TranscriptResult(
+            text="Отлично, слушаю.",
+            speaker="speaker_1",
+            is_final=True,
+            start_ms=4200,
+            end_ms=8800,
+            confidence=0.94,
+        ),
+        TranscriptResult(
+            text="Вот детали.",
+            speaker="speaker_0",
+            is_final=True,
+            start_ms=9000,
+            end_ms=12000,
+            confidence=0.96,
+        ),
+    ]
+
+    monkeypatch.setattr(
+        "app.core.recording_audio_processing.transcribe_audio_file",
+        AsyncMock(return_value=FileTranscription(segments=transcript_results, words=[])),
+    )
+    monkeypatch.setattr(
+        "app.core.recording_audio_processing.generate_embedding",
+        AsyncMock(return_value=[0.1] * 1536),
+    )
+    monkeypatch.setattr(
+        "app.core.recording_audio_processing.generate_title",
+        AsyncMock(return_value="Sidecar Meeting"),
+    )
+    monkeypatch.setattr(
+        "app.core.recording_audio_processing.identify_speakers_for_recording",
+        AsyncMock(return_value={"speaker_0": (other_person.id, 0.8)}),
+    )
+    monkeypatch.setattr(
+        "app.core.recording_audio_processing.extract_speaker_names",
+        AsyncMock(return_value={}),
+    )
+    capture = MagicMock()
+    monkeypatch.setattr(
+        "app.core.recording_audio_processing.capture_sentry_anomaly",
+        capture,
+    )
+
+    await process_staged_recording_upload(
+        db_session,
+        recording_id=recording.id,
+        user_id=user.id,
+        staged_path=staged_path,
+        content_type="audio/wav",
+        user_default_language="en",
+    )
+
+    await db_session.refresh(user)
+    segments = (
+        (
+            await db_session.execute(
+                select(Segment)
+                .where(Segment.recording_id == recording.id)
+                .order_by(Segment.start_ms)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert "recording.owner_attribution.conflict" in [
+        call.args[0] for call in capture.call_args_list
+    ]
+    assert segments[0].person_id == user.self_person_id
+    assert segments[2].person_id == user.self_person_id
+    assert segments[0].match_confidence == 1.0
+    assert segments[2].match_confidence == 1.0
+
+
+@pytest.mark.asyncio
+async def test_process_staged_recording_upload_degrades_when_sidecar_owner_resolution_fails(
+    db_session: AsyncSession,
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user = User(
+        email="sidecar-owner-degraded@example.com",
+        password_hash="x",
+        default_language="en",
+        first_name="Mik",
+    )
+    db_session.add(user)
+    await db_session.flush()
+    recording = Recording(
+        user_id=user.id,
+        title=None,
+        type="meeting",
+        status=RecordingStatus.PROCESSING.value,
+        uploaded_at=datetime.now(timezone.utc),
+        language="multi",
+        capture_metadata={
+            "version": 1,
+            "capture": "dual_mono_mix",
+            "local_speech_ms": [[0, 4000]],
+            "aec": False,
+        },
+    )
+    db_session.add(recording)
+    await db_session.commit()
+
+    staged_path = tmp_path / "recording.wav"
+    staged_path.write_bytes(b"audio")
+    transcript_results = [
+        TranscriptResult(
+            text="Я расскажу про план.",
+            speaker="speaker_0",
+            is_final=True,
+            start_ms=0,
+            end_ms=4000,
+            confidence=0.95,
+        )
+    ]
+
+    monkeypatch.setattr(
+        "app.core.recording_audio_processing.transcribe_audio_file",
+        AsyncMock(return_value=FileTranscription(segments=transcript_results, words=[])),
+    )
+    monkeypatch.setattr(
+        "app.core.recording_audio_processing.generate_embedding",
+        AsyncMock(return_value=[0.1] * 1536),
+    )
+    monkeypatch.setattr(
+        "app.core.recording_audio_processing.generate_title",
+        AsyncMock(return_value="Sidecar Meeting"),
+    )
+    monkeypatch.setattr(
+        "app.core.recording_audio_processing.identify_speakers_for_recording",
+        AsyncMock(return_value={}),
+    )
+    monkeypatch.setattr(
+        "app.core.recording_audio_processing.extract_speaker_names",
+        AsyncMock(return_value={}),
+    )
+    monkeypatch.setattr(
+        "app.core.recording_audio_processing.resolve_owner_raw_label",
+        Mock(side_effect=RuntimeError("boom")),
+    )
+    capture = MagicMock()
+    monkeypatch.setattr(
+        "app.core.recording_audio_processing.capture_sentry_anomaly",
+        capture,
+    )
+
+    await process_staged_recording_upload(
+        db_session,
+        recording_id=recording.id,
+        user_id=user.id,
+        staged_path=staged_path,
+        content_type="audio/wav",
+        user_default_language="en",
+    )
+
+    await db_session.refresh(recording)
+    assert recording.status == RecordingStatus.READY.value
+    assert "recording.owner_attribution.degraded" in [
+        call.args[0] for call in capture.call_args_list
+    ]
+
+
+@pytest.mark.asyncio
+async def test_process_staged_recording_survives_voice_id_and_name_extraction_failures(
+    db_session: AsyncSession,
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user = User(
+        email="degraded-attribution@example.com",
+        password_hash="x",
+        default_language="en",
+    )
+    db_session.add(user)
+    await db_session.flush()
+    recording = Recording(
+        user_id=user.id,
+        title=None,
+        type="meeting",
+        status=RecordingStatus.PROCESSING.value,
+        uploaded_at=datetime.now(timezone.utc),
+        language="en",
+    )
+    db_session.add(recording)
+    await db_session.commit()
+
+    staged_path = tmp_path / "recording.wav"
+    staged_path.write_bytes(b"audio")
+    monkeypatch.setattr(
+        "app.core.recording_audio_processing.transcribe_audio_file",
+        AsyncMock(
+            return_value=FileTranscription(
+                segments=[
+                    TranscriptResult(
+                        text="Speakers stay unassigned but the transcript survives.",
+                        speaker="speaker_0",
+                        is_final=True,
+                        start_ms=0,
+                        end_ms=2500,
+                        confidence=0.9,
+                    ),
+                    TranscriptResult(
+                        text="Second cluster keeps flowing.",
+                        speaker="speaker_1",
+                        is_final=True,
+                        start_ms=2600,
+                        end_ms=5000,
+                        confidence=0.9,
+                    ),
+                ],
+                words=[],
+            )
+        ),
+    )
+    monkeypatch.setattr(
+        "app.core.recording_audio_processing.generate_embedding",
+        AsyncMock(return_value=[0.1] * 1536),
+    )
+    monkeypatch.setattr(
+        "app.core.recording_audio_processing.generate_title",
+        AsyncMock(return_value="Degraded Attribution"),
+    )
+    monkeypatch.setattr(
+        "app.core.recording_audio_processing.identify_speakers_for_recording",
+        AsyncMock(side_effect=RuntimeError("voice id offline")),
+    )
+    monkeypatch.setattr(
+        "app.core.recording_audio_processing.extract_speaker_names",
+        AsyncMock(side_effect=RuntimeError("llm offline")),
+    )
+
+    await process_staged_recording_upload(
+        db_session,
+        recording_id=recording.id,
+        user_id=user.id,
+        staged_path=staged_path,
+        content_type="audio/wav",
+        user_default_language="en",
+    )
+
+    await db_session.refresh(recording)
+    segments = (
+        (
+            await db_session.execute(
+                select(Segment).where(Segment.recording_id == recording.id)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert recording.status == RecordingStatus.READY.value
+    assert len(segments) == 2
+    assert all(segment.person_id is None for segment in segments)
+
+
+@pytest.mark.asyncio
+async def test_segment_embedding_batch_failure_counts_all_segments() -> None:
+    from app.core.recording_audio_processing import _embed_recording_segments
+
+    recording_id = uuid4()
+    recording = Recording(
+        id=recording_id,
+        user_id=uuid4(),
+        title="Batch",
+        type="meeting",
+        status=RecordingStatus.READY.value,
+    )
+    segments = [
+        Segment(
+            recording_id=recording_id,
+            speaker="speaker_0",
+            content=f"segment {index}",
+            start_ms=index * 1000,
+            end_ms=index * 1000 + 900,
+            confidence=0.9,
+        )
+        for index in range(3)
+    ]
+
+    with patch(
+        "app.core.recording_audio_processing.generate_embeddings",
+        AsyncMock(side_effect=RuntimeError("embedding offline")),
+    ):
+        failed = await _embed_recording_segments(
+            recording=recording,
+            segments=segments,
+            user_id=recording.user_id,
+            recording_id=recording_id,
+        )
+
+    assert failed == 3
+    assert all(segment.embedding is None for segment in segments)
+
+
+@pytest.mark.asyncio
+async def test_process_staged_video_unpacks_extraction_and_probes_duration(
+    db_session: AsyncSession,
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user = User(
+        email="video-extract@example.com",
+        password_hash="x",
+        default_language="en",
+    )
+    db_session.add(user)
+    await db_session.flush()
+    recording = Recording(
+        user_id=user.id,
+        title=None,
+        type="meeting",
+        status=RecordingStatus.PROCESSING.value,
+        uploaded_at=datetime.now(timezone.utc),
+        language="en",
+    )
+    db_session.add(recording)
+    await db_session.commit()
+
+    staged_path = tmp_path / "meeting.mp4"
+    staged_path.write_bytes(b"fake-video")
+    extracted_path = tmp_path / "meeting.flac"
+    extracted_path.write_bytes(b"fake-flac")
+
+    monkeypatch.setattr(
+        "app.core.recording_audio_processing._extract_staged_media_audio",
+        AsyncMock(return_value=(extracted_path, "audio/flac", 9)),
+    )
+    monkeypatch.setattr(
+        "app.core.recording_audio_processing._ffprobe_duration_seconds",
+        lambda path: 42.0,
+    )
+    captured: dict[str, object] = {}
+
+    async def fake_transcribe(path, **kwargs):
+        captured["content_type"] = kwargs["content_type"]
+        captured["duration"] = kwargs["audio_duration_seconds"]
+        return FileTranscription(
+            segments=[
+                TranscriptResult(
+                    text="Video audio extracted.",
+                    speaker="speaker_0",
+                    is_final=True,
+                    start_ms=0,
+                    end_ms=1500,
+                    confidence=0.9,
+                )
+            ],
+            words=[],
+        )
+
+    monkeypatch.setattr(
+        "app.core.recording_audio_processing.transcribe_audio_file",
+        fake_transcribe,
+    )
+    monkeypatch.setattr(
+        "app.core.recording_audio_processing.generate_embedding",
+        AsyncMock(return_value=[0.1] * 1536),
+    )
+    monkeypatch.setattr(
+        "app.core.recording_audio_processing.generate_title",
+        AsyncMock(return_value="Video Meeting"),
+    )
+    monkeypatch.setattr(
+        "app.core.recording_audio_processing.identify_speakers_for_recording",
+        AsyncMock(return_value={}),
+    )
+    monkeypatch.setattr(
+        "app.core.recording_audio_processing.extract_speaker_names",
+        AsyncMock(return_value={}),
+    )
+
+    await process_staged_recording_upload(
+        db_session,
+        recording_id=recording.id,
+        user_id=user.id,
+        staged_path=staged_path,
+        content_type="video/mp4",
+        user_default_language="en",
+    )
+
+    await db_session.refresh(recording)
+    assert recording.status == RecordingStatus.READY.value
+    # The compact FLAC (not the source container) reaches the provider, and the
+    # duration comes from the post-extraction probe.
+    assert captured["content_type"] == "audio/flac"
+    assert captured["duration"] == 42.0

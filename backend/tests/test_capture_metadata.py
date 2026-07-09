@@ -47,6 +47,9 @@ def test_parse_capture_metadata_accepts_valid_sidecar() -> None:
         json.dumps([1, 2]),
         json.dumps({"version": 2, "capture": "dual_mono_mix", "local_speech_ms": []}),
         json.dumps({"version": 1, "capture": "quantum", "local_speech_ms": []}),
+        json.dumps({"version": 1, "capture": "mic_only", "local_speech_ms": "x"}),
+        json.dumps({"version": 1, "capture": "mic_only", "local_speech_ms": [[0]]}),
+        json.dumps({"version": 1, "capture": "mic_only", "local_speech_ms": [[0, True]]}),
         json.dumps({"version": 1, "capture": "mic_only", "local_speech_ms": [[5, 5]]}),
         json.dumps({"version": 1, "capture": "mic_only", "local_speech_ms": [[-1, 5]]}),
         json.dumps(
@@ -125,6 +128,7 @@ def test_resolve_owner_handles_empty_inputs() -> None:
     assert (
         resolve_owner_raw_label([_segment(None, 0, 1000)], [(0, 1000)]) is None
     )
+    assert resolve_owner_raw_label([_segment("speaker_0", 0, 1000)], [(0, 0)]) is None
 
 
 @pytest.mark.asyncio

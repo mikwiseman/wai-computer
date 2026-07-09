@@ -195,3 +195,129 @@ def test_telegram_summary_instructions_are_scannable_and_kind_aware():
     # The wai-rocks-grade look: inline bold emphasis + monospace metrics.
     assert "load-bearing words in **bold**" in instructions
     assert "`backticks`" in instructions
+
+
+@pytest.mark.asyncio
+async def test_import_transcription_records_usage_on_provider_http_error(
+    monkeypatch, tmp_path
+):
+    import httpx
+
+    from app.core import recording_import
+
+    usage_events: list[dict] = []
+
+    async def fake_record_usage(db, **kwargs):
+        usage_events.append(kwargs)
+
+    request = httpx.Request("POST", "https://api.elevenlabs.io/v1/speech-to-text")
+    response = httpx.Response(429, request=request, json={"detail": {"status": "busy"}})
+
+    async def failing_transcribe(*args, **kwargs):
+        raise httpx.HTTPStatusError("throttled", request=request, response=response)
+
+    monkeypatch.setattr(recording_import, "transcribe_audio_file", failing_transcribe)
+    monkeypatch.setattr(recording_import, "record_deepgram_usage_event", fake_record_usage)
+    monkeypatch.setattr(recording_import, "load_user_keyterms", AsyncMock(return_value=[]))
+    monkeypatch.setattr(
+        recording_import, "load_user_replacements", AsyncMock(return_value=[])
+    )
+
+    media_path = tmp_path / "audio.wav"
+    media_path.write_bytes(b"audio")
+
+    with pytest.raises(httpx.HTTPStatusError):
+        await recording_import._transcribe(
+            db=object(),
+            media_path=media_path,
+            content_type="audio/wav",
+            language="auto",
+            user=SimpleNamespace(id=uuid4()),
+            audio_duration_seconds=12.0,
+        )
+
+    assert len(usage_events) == 1
+    event = usage_events[0]
+    assert event["status"] == "failed"
+    assert event["provider_status_code"] == 429
+    assert event["billable_seconds"] == 0
+
+
+@pytest.mark.asyncio
+async def test_import_transcription_records_usage_on_unexpected_error(
+    monkeypatch, tmp_path
+):
+    from app.core import recording_import
+
+    usage_events: list[dict] = []
+
+    async def fake_record_usage(db, **kwargs):
+        usage_events.append(kwargs)
+
+    async def failing_transcribe(*args, **kwargs):
+        raise RuntimeError("socket closed")
+
+    monkeypatch.setattr(recording_import, "transcribe_audio_file", failing_transcribe)
+    monkeypatch.setattr(recording_import, "record_deepgram_usage_event", fake_record_usage)
+    monkeypatch.setattr(recording_import, "load_user_keyterms", AsyncMock(return_value=[]))
+    monkeypatch.setattr(
+        recording_import, "load_user_replacements", AsyncMock(return_value=[])
+    )
+
+    media_path = tmp_path / "audio.wav"
+    media_path.write_bytes(b"audio")
+
+    with pytest.raises(RuntimeError):
+        await recording_import._transcribe(
+            db=object(),
+            media_path=media_path,
+            content_type="audio/wav",
+            language="auto",
+            user=SimpleNamespace(id=uuid4()),
+        )
+
+    assert len(usage_events) == 1
+    assert usage_events[0]["status"] == "failed"
+    assert usage_events[0]["error_type"] == "RuntimeError"
+
+
+@pytest.mark.asyncio
+async def test_resolve_speaker_display_names_prefers_intros_over_directory(
+    db_session,
+):
+    from app.core.recording_import import _resolve_speaker_display_names
+    from app.models.person import Person
+    from app.models.user import User
+    from tests.conftest import LEGAL_ACCEPTANCE
+
+    user = User(
+        email=f"speaker-names-{uuid4()}@example.com",
+        password_hash="hash",
+        **{
+            "legal_terms_version": LEGAL_ACCEPTANCE["legal_terms_version"],
+            "legal_privacy_version": LEGAL_ACCEPTANCE["legal_privacy_version"],
+        },
+    )
+    db_session.add(user)
+    await db_session.flush()
+    anna = Person(user_id=user.id, display_name="  Анна  ")
+    blank = Person(user_id=user.id, display_name="   ")
+    db_session.add_all([anna, blank])
+    await db_session.flush()
+
+    names = await _resolve_speaker_display_names(
+        db_session,
+        speaker_assignments={
+            "speaker_0": (anna.id, 0.9),
+            "speaker_1": None,
+            "speaker_2": (blank.id, 0.8),
+        },
+        extracted_names={
+            "speaker_0": SimpleNamespace(name="  Аня  "),
+            "speaker_3": SimpleNamespace(name=""),
+        },
+    )
+
+    # Directory match resolves the display name; a same-cluster introduction
+    # overrides it; blank names never leak.
+    assert names == {"speaker_0": "Аня"}

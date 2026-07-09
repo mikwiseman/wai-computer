@@ -339,3 +339,9 @@ def test_builder_returns_none_for_whitespace_word_segment() -> None:
     }
     results = _results_from_scribe_payload(payload).segments
     assert [r.text for r in results] == ["Привет."]
+
+
+def test_builder_returns_none_for_empty_word_text() -> None:
+    results = _results_from_scribe_payload({"words": [_word("", 0.0, 0.2)]}).segments
+
+    assert results == []

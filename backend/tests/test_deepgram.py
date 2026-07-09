@@ -1,14 +1,21 @@
 """Tests for Deepgram speech-to-text helpers."""
 
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
+import httpx
 import pytest
 
 from app.core.deepgram import (
+    _detected_language_from_deepgram,
+    _file_content_chunks,
+    _integer_index,
+    _wav_header_bytes,
+    _words_from_deepgram_utterance,
     build_realtime_websocket_url,
     normalize_deepgram_language,
     require_deepgram_api_key,
     sanitize_deepgram_keyterms,
+    transcribe_audio_file,
     validate_deepgram_language,
 )
 
@@ -178,3 +185,98 @@ def test_require_deepgram_api_key_requires_configured_key() -> None:
 
         with pytest.raises(ValueError, match="DEEPGRAM_API_KEY not configured"):
             require_deepgram_api_key()
+
+
+def test_integer_index_accepts_only_integer_values() -> None:
+    assert _integer_index(True) is None
+    assert _integer_index(3.0) == 3
+    assert _integer_index(" 7 ") == 7
+    assert _integer_index("x") is None
+    assert _integer_index(2.5) is None
+
+
+def test_words_from_deepgram_utterance_rejects_non_list_words() -> None:
+    assert _words_from_deepgram_utterance({"words": "nope"}) == []
+
+
+def test_words_from_deepgram_utterance_skips_invalid_words_and_bool_confidence() -> None:
+    words = _words_from_deepgram_utterance(
+        {
+            "speaker": 0,
+            "words": [
+                "x",
+                {"punctuated_word": "", "word": ""},
+                {"word": "Привет", "start": 0.1, "end": 0.5, "confidence": True},
+            ],
+        }
+    )
+
+    assert len(words) == 1
+    assert words[0].text == "Привет"
+    assert words[0].confidence is None
+
+
+def test_detected_language_from_deepgram_handles_missing_and_bool_confidence() -> None:
+    assert _detected_language_from_deepgram({"channels": []}) == (None, None)
+    assert _detected_language_from_deepgram(
+        {"channels": [{"detected_language": "ru", "language_confidence": 0.9}]}
+    ) == ("ru", 0.9)
+    assert _detected_language_from_deepgram(
+        {"channels": [{"detected_language": "ru", "language_confidence": True}]}
+    ) == ("ru", None)
+
+
+@pytest.mark.asyncio
+async def test_file_content_chunks_streams_path_and_wav_header_reads_prefix(tmp_path) -> None:
+    content = b"RIFF" + b"x" * 70_000
+    path = tmp_path / "recording.wav"
+    path.write_bytes(content)
+
+    assert _wav_header_bytes(path) == content[: 64 * 1024]
+    chunks = []
+    async for chunk in _file_content_chunks(path):
+        chunks.append(chunk)
+    assert b"".join(chunks) == content
+
+
+@pytest.mark.asyncio
+async def test_transcribe_audio_file_clamps_path_wav_channels(tmp_path) -> None:
+    header = bytearray(44)
+    header[:4] = b"RIFF"
+    header[8:12] = b"WAVE"
+    header[22:24] = (2).to_bytes(2, byteorder="little")
+    path = tmp_path / "stereo.wav"
+    path.write_bytes(bytes(header) + b"audio")
+    response = httpx.Response(
+        200,
+        json={
+            "results": {
+                "utterances": [
+                    {
+                        "start": 0.0,
+                        "end": 0.5,
+                        "confidence": 0.9,
+                        "speaker": 0,
+                        "transcript": "clamped",
+                    }
+                ]
+            }
+        },
+        request=httpx.Request("POST", "https://api.deepgram.com/v1/listen"),
+    )
+
+    with (
+        patch("app.core.deepgram.get_settings") as mock_settings,
+        patch("httpx.AsyncClient.post", new=AsyncMock(return_value=response)),
+        patch("app.core.observability.capture_sentry_anomaly") as capture,
+    ):
+        mock_settings.return_value.deepgram_api_key = "deepgram-test-key"
+        results = await transcribe_audio_file(
+            path,
+            content_type="audio/wav",
+            max_channels=1,
+        )
+
+    assert [segment.text for segment in results.segments] == ["clamped"]
+    capture.assert_called_once()
+    assert capture.call_args.args[0] == "recording.file_stt.channels_clamped"

@@ -491,3 +491,27 @@ def test_deepgram_payload_words_absent_yields_empty_word_list() -> None:
 
     assert transcription.words == []
     assert transcription.detected_language is None
+
+
+def test_deepgram_detected_language_ignores_malformed_channel() -> None:
+    from app.core.deepgram import _results_from_deepgram_payload
+
+    payload = {
+        "results": {
+            "channels": ["not-a-dict"],
+            "utterances": [
+                {
+                    "start": 0.0,
+                    "end": 1.0,
+                    "confidence": 0.9,
+                    "channel": 0,
+                    "speaker": 0,
+                    "transcript": "hi",
+                }
+            ],
+        }
+    }
+
+    transcription = _results_from_deepgram_payload(payload)
+    assert transcription.detected_language is None
+    assert transcription.language_probability is None
