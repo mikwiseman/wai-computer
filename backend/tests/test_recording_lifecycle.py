@@ -40,8 +40,8 @@ async def test_full_recording_lifecycle(
     # Step 2: Save a live transcript (simulates streaming segments)
     # ------------------------------------------------------------------ #
     monkeypatch.setattr(
-        "app.api.routes.recordings.generate_embedding",
-        AsyncMock(return_value=[0.1] * 1536),
+        "app.api.routes.recordings.generate_embeddings",
+        AsyncMock(side_effect=lambda texts, **_: [[0.1] * 1536 for _ in texts]),
     )
     monkeypatch.setattr(
         "app.api.routes.recordings.generate_title",

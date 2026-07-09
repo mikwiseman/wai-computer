@@ -135,8 +135,8 @@ async def test_export_txt_format(
     recording_id = recording["id"]
 
     monkeypatch.setattr(
-        "app.api.routes.recordings.generate_embedding",
-        AsyncMock(return_value=[0.1] * 1536),
+        "app.api.routes.recordings.generate_embeddings",
+        AsyncMock(side_effect=lambda texts, **_: [[0.1] * 1536 for _ in texts]),
     )
     monkeypatch.setattr(
         "app.api.routes.recordings.generate_title",
@@ -180,8 +180,8 @@ async def test_export_srt_format_includes_timestamps(
     recording_id = recording["id"]
 
     monkeypatch.setattr(
-        "app.api.routes.recordings.generate_embedding",
-        AsyncMock(return_value=[0.1] * 1536),
+        "app.api.routes.recordings.generate_embeddings",
+        AsyncMock(side_effect=lambda texts, **_: [[0.1] * 1536 for _ in texts]),
     )
     monkeypatch.setattr(
         "app.api.routes.recordings.generate_title",
@@ -227,8 +227,8 @@ async def test_export_markdown_format_returns_structured_content(
     recording_id = recording["id"]
 
     monkeypatch.setattr(
-        "app.api.routes.recordings.generate_embedding",
-        AsyncMock(return_value=[0.1] * 1536),
+        "app.api.routes.recordings.generate_embeddings",
+        AsyncMock(side_effect=lambda texts, **_: [[0.1] * 1536 for _ in texts]),
     )
     monkeypatch.setattr(
         "app.api.routes.recordings.generate_title",
@@ -452,8 +452,8 @@ async def test_save_transcript_with_very_long_text(
     recording_id = recording["id"]
 
     monkeypatch.setattr(
-        "app.api.routes.recordings.generate_embedding",
-        AsyncMock(return_value=[0.1] * 1536),
+        "app.api.routes.recordings.generate_embeddings",
+        AsyncMock(side_effect=lambda texts, **_: [[0.1] * 1536 for _ in texts]),
     )
     monkeypatch.setattr(
         "app.api.routes.recordings.generate_title",
@@ -593,8 +593,8 @@ async def test_save_transcript_sets_duration_from_end_times(
     recording_id = recording["id"]
 
     monkeypatch.setattr(
-        "app.api.routes.recordings.generate_embedding",
-        AsyncMock(return_value=[0.1] * 1536),
+        "app.api.routes.recordings.generate_embeddings",
+        AsyncMock(side_effect=lambda texts, **_: [[0.1] * 1536 for _ in texts]),
     )
     monkeypatch.setattr(
         "app.api.routes.recordings.generate_title",
@@ -667,8 +667,8 @@ async def test_export_content_disposition_header(
     recording_id = recording["id"]
 
     monkeypatch.setattr(
-        "app.api.routes.recordings.generate_embedding",
-        AsyncMock(return_value=[0.1] * 1536),
+        "app.api.routes.recordings.generate_embeddings",
+        AsyncMock(side_effect=lambda texts, **_: [[0.1] * 1536 for _ in texts]),
     )
     monkeypatch.setattr(
         "app.api.routes.recordings.generate_title",

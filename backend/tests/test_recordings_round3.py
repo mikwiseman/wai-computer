@@ -350,8 +350,8 @@ async def test_save_transcript_multiple_segments(
     rec = await _create_recording(client, auth_headers, title=None)
 
     monkeypatch.setattr(
-        "app.api.routes.recordings.generate_embedding",
-        AsyncMock(return_value=[0.1] * 1536),
+        "app.api.routes.recordings.generate_embeddings",
+        AsyncMock(side_effect=lambda texts, **_: [[0.1] * 1536 for _ in texts]),
     )
     monkeypatch.setattr(
         "app.api.routes.recordings.generate_title",
@@ -1237,7 +1237,7 @@ async def test_save_transcript_embedding_failure_still_saves(
     rec = await _create_recording(client, auth_headers, title=None)
 
     monkeypatch.setattr(
-        "app.api.routes.recordings.generate_embedding",
+        "app.api.routes.recordings.generate_embeddings",
         AsyncMock(side_effect=RuntimeError("Embedding service down")),
     )
     monkeypatch.setattr(
