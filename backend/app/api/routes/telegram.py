@@ -4126,15 +4126,23 @@ async def _import_telegram_media_and_reply(
         await _stop_chat_action_task(action_task)
 
     if result.transcript:
-        await client.send_document(
-            chat_id,
-            filename=_transcript_document_filename(
-                result.recording,
-                media_kind=str(media.get("kind") or "media"),
-            ),
-            data=(result.transcript_document or result.transcript).encode("utf-8"),
-            reply_to_message_id=message.get("message_id"),
-        )
+        try:
+            await client.send_document(
+                chat_id,
+                filename=_transcript_document_filename(
+                    result.recording,
+                    media_kind=str(media.get("kind") or "media"),
+                ),
+                data=(result.transcript_document or result.transcript).encode("utf-8"),
+                reply_to_message_id=message.get("message_id"),
+            )
+        except TelegramClientError as exc:
+            # The recording is imported; a failed .txt attachment must not
+            # swallow the summary + share link that follow.
+            logger.warning(
+                "telegram transcript document send failed error=%s",
+                type(exc).__name__,
+            )
     share_url = (
         await _mint_recording_share_url(result.recording) if result.transcript else None
     )

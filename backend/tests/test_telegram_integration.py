@@ -4781,7 +4781,11 @@ async def test_telegram_client_can_send_document_bytes():
     assert client_mock.post.await_args.kwargs["data"] == {
         "chat_id": "123",
         "caption": "Transcript",
-        "reply_to_message_id": "9",
+        # Tolerant reply shape: the document still sends when the original
+        # message is gone (allow_sending_without_reply).
+        "reply_parameters": json.dumps(
+            {"message_id": 9, "allow_sending_without_reply": True}
+        ),
     }
     assert client_mock.post.await_args.kwargs["files"] == {
         "document": ("reflection.txt", b"transcript", "text/plain; charset=utf-8")

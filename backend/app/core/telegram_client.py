@@ -293,7 +293,15 @@ class TelegramBotClient:
         if caption:
             payload["caption"] = caption
         if reply_to_message_id is not None:
-            payload["reply_to_message_id"] = str(reply_to_message_id)
+            # Same tolerant reply shape as send_message: if the original
+            # message is gone (deleted, or a worker replying after the fact),
+            # the document still sends instead of failing with HTTP 400.
+            payload["reply_parameters"] = json.dumps(
+                {
+                    "message_id": reply_to_message_id,
+                    "allow_sending_without_reply": True,
+                }
+            )
         return await self._post_multipart(
             "sendDocument",
             data=payload,
