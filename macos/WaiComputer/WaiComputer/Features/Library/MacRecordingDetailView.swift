@@ -57,7 +57,7 @@ struct MacRecordingDetailView: View {
     var body: some View {
         Group {
             if viewModel.isLoading && viewModel.recordingDetail == nil {
-                ProgressView(t("Loading...", "Загрузка..."))
+                ProgressView(t("Loading…", "Загрузка…"))
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if let detail = viewModel.recordingDetail {
                 VStack(spacing: 0) {
@@ -1016,26 +1016,26 @@ struct MacRecordingDetailView: View {
 
     private func summaryGenerationStatusText(_ state: SummaryGenerationState?) -> String {
         guard let state else {
-            return t("Starting summary generation...", "Запускаем генерацию сводки...")
+            return t("Starting summary generation…", "Запускаем генерацию сводки…")
         }
 
         switch state.status {
         case "queued":
             if state.stage == "waiting_for_transcript" {
-                return t("Waiting for transcript...", "Ждем расшифровку...")
+                return t("Waiting for transcript…", "Ждем расшифровку…")
             }
             return t("Summary generation is queued.", "Генерация сводки в очереди.")
         case "running":
             switch state.stage {
             case "preparing_transcript":
-                return t("Preparing transcript...", "Подготавливаем расшифровку...")
+                return t("Preparing transcript…", "Подготавливаем расшифровку…")
             case "saving_summary":
-                return t("Saving summary...", "Сохраняем сводку...")
+                return t("Saving summary…", "Сохраняем сводку…")
             default:
-                return t("Generating summary...", "Генерируем сводку...")
+                return t("Generating summary…", "Генерируем сводку…")
             }
         default:
-            return t("Generating summary...", "Генерируем сводку...")
+            return t("Generating summary…", "Генерируем сводку…")
         }
     }
 
@@ -1098,7 +1098,7 @@ struct MacRecordingDetailView: View {
         HStack(alignment: .center, spacing: Spacing.sm) {
             ProgressView()
                 .controlSize(.small)
-            Text(state?.message ?? t("Creating summary audio...", "Создаем аудио сводки..."))
+            Text(state?.message ?? t("Creating summary audio…", "Создаем аудио сводки…"))
                 .font(Typography.bodySmall)
                 .foregroundStyle(Palette.textSecondary)
         }

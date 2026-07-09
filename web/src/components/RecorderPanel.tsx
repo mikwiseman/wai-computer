@@ -86,7 +86,7 @@ export function RecorderPanel({ onRecordingComplete, onError }: RecorderPanelPro
     return (
       <div className="recorder-panel recorder-panel--processing">
         <span className="upload-zone__spinner" />
-        <span>Uploading and transcribing...</span>
+        <span>Uploading and transcribing…</span>
       </div>
     );
   }

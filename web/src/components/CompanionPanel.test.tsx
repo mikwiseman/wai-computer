@@ -253,7 +253,7 @@ describe("CompanionPanel", () => {
     render(<CompanionPanel recordings={recordings} />);
 
     expect(await screen.findByTestId("companion-message-streaming-status"))
-      .toHaveTextContent("Still working...");
+      .toHaveTextContent("Still working…");
     expect(screen.getByText("Checking sources")).toBeInTheDocument();
   });
 

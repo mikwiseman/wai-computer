@@ -802,7 +802,7 @@ struct MacSettingsView: View {
                     status: SystemAudioReadinessPolicy.permissionStatus(for: systemAudioReadiness),
                     identifierBase: "settings-permission-system-audio",
                     grantLabel: isRequestingSystemAudioPermission
-                        ? t("Testing...", "Проверяем...")
+                        ? t("Testing…", "Проверяем…")
                         : t("Test System Audio", "Проверить звук Mac"),
                     grantAction: requestSystemAudioPermission,
                     settingsAction: { MacPrivacySettings.openSystemAudio() },
@@ -969,7 +969,7 @@ struct MacSettingsView: View {
                 HStack(spacing: Spacing.sm) {
                     ProgressView()
                         .controlSize(.small)
-                    Text(t("Loading data map...", "Загружаем карту данных..."))
+                    Text(t("Loading data map…", "Загружаем карту данных…"))
                         .font(Typography.body)
                         .foregroundStyle(Palette.textSecondary)
                 }
@@ -1172,7 +1172,7 @@ struct MacSettingsView: View {
                 Button {
                     Task { await startServerDataSetupCheck() }
                 } label: {
-                    Text(serverDataSubmitting ? t("Checking...", "Проверяем...") : t("Check server", "Проверить сервер"))
+                    Text(serverDataSubmitting ? t("Checking…", "Проверяем…") : t("Check server", "Проверить сервер"))
                 }
                 .disabled(!serverDataCanSubmit || serverDataSubmitting)
                 .accessibilityIdentifier("settings-server-data-check-button")
@@ -1227,7 +1227,7 @@ struct MacSettingsView: View {
                 HStack {
                     ProgressView()
                         .controlSize(.small)
-                    Text(t("Loading Telegram status...", "Загружаем статус Telegram..."))
+                    Text(t("Loading Telegram status…", "Загружаем статус Telegram…"))
                         .font(Typography.body)
                         .foregroundStyle(Palette.textSecondary)
                 }

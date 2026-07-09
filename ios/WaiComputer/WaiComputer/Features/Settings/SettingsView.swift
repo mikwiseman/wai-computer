@@ -1027,7 +1027,7 @@ struct RecordingPipelineView: View {
                 Section {
                     HStack {
                         ProgressView()
-                        Text(t("Loading recording pipeline...", "Загружаем пайплайн записи..."))
+                        Text(t("Loading recording pipeline…", "Загружаем пайплайн записи…"))
                             .foregroundStyle(.secondary)
                     }
                 }
@@ -1187,7 +1187,7 @@ struct RecordingPipelineView: View {
             HStack(spacing: Spacing.sm) {
                 ProgressView()
                     .controlSize(.small)
-                Text(t("Reading capture and server model settings...", "Читаем настройки записи и серверных моделей..."))
+                Text(t("Reading capture and server model settings…", "Читаем настройки записи и серверных моделей…"))
                     .font(Typography.caption)
                     .foregroundStyle(Palette.textTertiary)
             }
@@ -1437,7 +1437,7 @@ struct SummarySettingsView: View {
                 Section {
                     HStack {
                         ProgressView()
-                        Text(t("Loading summary settings...", "Загружаем настройки резюме..."))
+                        Text(t("Loading summary settings…", "Загружаем настройки резюме…"))
                             .foregroundStyle(.secondary)
                     }
                 }
@@ -1621,7 +1621,7 @@ struct SummarySettingsView: View {
             HStack(spacing: Spacing.sm) {
                 ProgressView()
                     .controlSize(.small)
-                Text(t("Loading summary settings...", "Загружаем настройки резюме..."))
+                Text(t("Loading summary settings…", "Загружаем настройки резюме…"))
                     .font(Typography.caption)
                     .foregroundStyle(Palette.textTertiary)
             }
@@ -2029,7 +2029,7 @@ struct ServerDataView: View {
                         Text(t("Audio retention", "Хранение аудио"))
                     }
                 } else if isLoading {
-                    ProgressView(t("Loading data map...", "Загружаем карту данных..."))
+                    ProgressView(t("Loading data map…", "Загружаем карту данных…"))
                 }
             } header: {
                 Text(t("Server", "Сервер"))
@@ -2103,7 +2103,7 @@ struct ServerDataView: View {
                         HStack(spacing: Spacing.sm) {
                             ProgressView()
                                 .controlSize(.small)
-                            Text(t("Reading ownership and server status...", "Читаем владение данными и статус сервера..."))
+                            Text(t("Reading ownership and server status…", "Читаем владение данными и статус сервера…"))
                                 .font(Typography.caption)
                                 .foregroundStyle(Palette.textTertiary)
                         }
@@ -2304,7 +2304,7 @@ struct ExportReadinessView: View {
                         language: languageManager.current
                     )
                 } else if isLoading {
-                    ProgressView(t("Loading export map...", "Загружаем карту экспорта..."))
+                    ProgressView(t("Loading export map…", "Загружаем карту экспорта…"))
                 }
             } header: {
                 Text(t("Export readiness", "Готовность экспорта"))
@@ -2417,7 +2417,7 @@ struct ExportReadinessView: View {
                         HStack(spacing: Spacing.sm) {
                             ProgressView()
                                 .controlSize(.small)
-                            Text(t("Reading migration ownership data...", "Читаем данные владения для миграции..."))
+                            Text(t("Reading migration ownership data…", "Читаем данные владения для миграции…"))
                                 .font(Typography.caption)
                                 .foregroundStyle(Palette.textTertiary)
                         }

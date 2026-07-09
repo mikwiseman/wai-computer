@@ -106,11 +106,11 @@ const defaultCopy: ArenaCopy = {
   emptyRecording: "No audio was captured. Start a new round and speak for at least a second.",
   requestFailed: "Transcription request failed.",
   voteFailed: "Confirmation was not saved.",
-  transcribingSameAudio: "Transcribing the same audio...",
+  transcribingSameAudio: "Transcribing the same audio…",
   waitingForVote: "Waiting for review.",
   livePass: "Live pass",
   fullPass: "Full pass",
-  liveWaiting: "Waiting for transcript...",
+  liveWaiting: "Waiting for transcript…",
   liveConnectionFailed: "Live benchmark connection failed.",
 };
 

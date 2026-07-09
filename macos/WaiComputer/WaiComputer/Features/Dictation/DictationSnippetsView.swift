@@ -45,7 +45,7 @@ struct DictationSnippetsView: View {
                 HStack {
                     Image(systemName: "magnifyingglass")
                         .foregroundStyle(Palette.textTertiary)
-                    TextField(t("Search snippets...", "Искать в сниппетах..."), text: $searchText)
+                    TextField(t("Search snippets…", "Искать в сниппетах…"), text: $searchText)
                         .textFieldStyle(.plain)
                         .font(Typography.body)
                 }

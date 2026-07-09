@@ -447,9 +447,9 @@ final class ModelEdgeCaseTests: XCTestCase {
             failureMessage: longMessage
         )
         let preview = recording.failurePreviewText!
-        XCTAssertEqual(preview.count, 90) // 87 chars + "..."
-        XCTAssertTrue(preview.hasSuffix("..."))
-        XCTAssertEqual(preview, String(repeating: "A", count: 87) + "...")
+        XCTAssertEqual(preview.count, 90) // 89 chars + "…"
+        XCTAssertTrue(preview.hasSuffix("…"))
+        XCTAssertEqual(preview, String(repeating: "A", count: 89) + "…")
     }
 
     func testFailurePreviewTextReplacesNewlinesWithSpaces() {
@@ -488,7 +488,7 @@ final class ModelEdgeCaseTests: XCTestCase {
         )
         let preview = recording.failurePreviewText!
         XCTAssertEqual(preview.count, 90)
-        XCTAssertTrue(preview.hasSuffix("..."))
+        XCTAssertTrue(preview.hasSuffix("…"))
         XCTAssertFalse(preview.contains("\n"))
     }
 }

@@ -3,8 +3,6 @@ import WaiComputerKit
 
 final class DictationCopyTests: XCTestCase {
     func testOverlayCopyUsesRussianLanguage() {
-        XCTAssertEqual(DictationCopy.handsFreeBadge(language: .russian), "Режим без рук")
-        assertRussian(DictationCopy.handsFreeBadge(language: .russian))
         assertRussian(DictationCopy.overlayStatus(.idle, language: .russian))
         assertRussian(DictationCopy.overlayStatus(.connecting, language: .russian))
         assertRussian(DictationCopy.overlayStatus(.listening, language: .russian))

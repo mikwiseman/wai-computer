@@ -44,7 +44,7 @@ struct DictationHistoryView: View {
             HStack {
                 Image(systemName: "magnifyingglass")
                     .foregroundStyle(Palette.textTertiary)
-                TextField(t("Search dictations...", "Искать в диктовках..."), text: $searchText)
+                TextField(t("Search dictations…", "Искать в диктовках…"), text: $searchText)
                     .textFieldStyle(.plain)
                     .font(Typography.body)
             }

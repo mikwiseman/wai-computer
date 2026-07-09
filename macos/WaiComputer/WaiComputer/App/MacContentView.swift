@@ -13,7 +13,7 @@ struct MacContentView: View {
             if !appState.hasCompletedPreAuthOnboarding {
                 OnboardingView(phase: .preAuth)
             } else if appState.isCheckingAuth {
-                ProgressView(t("Loading...", "Загрузка..."))
+                ProgressView(t("Loading…", "Загрузка…"))
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if !appState.isAuthenticated {
                 MacAuthView()
@@ -324,7 +324,7 @@ struct MacMainView: View {
             VStack(spacing: Spacing.md) {
                 ProgressView()
                     .controlSize(.small)
-                Text(t("Importing", "Импортируем") + " \(importViewModel.currentFilename)...")
+                Text(t("Importing", "Импортируем") + " \(importViewModel.currentFilename)…")
                     .font(Typography.bodySmall)
                     .foregroundStyle(Palette.textSecondary)
                     .lineLimit(1)
@@ -1684,19 +1684,19 @@ private struct LibraryBulkOperationBanner: View {
     private var message: String {
         switch operation.kind {
         case .moving:
-            return t("Moving \(operation.totalCount) recordings...", "Перемещаем записи: \(operation.totalCount)...")
+            return t("Moving \(operation.totalCount) recordings…", "Перемещаем записи: \(operation.totalCount)…")
         case .movingToTrash:
-            return t("Moving \(operation.totalCount) recordings to Trash...", "Перемещаем записи в корзину: \(operation.totalCount)...")
+            return t("Moving \(operation.totalCount) recordings to Trash…", "Перемещаем записи в корзину: \(operation.totalCount)…")
         case .restoring:
-            return t("Restoring \(operation.totalCount) recordings...", "Восстанавливаем записи: \(operation.totalCount)...")
+            return t("Restoring \(operation.totalCount) recordings…", "Восстанавливаем записи: \(operation.totalCount)…")
         case .deletingPermanently:
             if operation.completedCount > 0 {
                 return t(
-                    "Deleting \(operation.completedCount) of \(operation.totalCount) recordings...",
-                    "Удаляем записи: \(operation.completedCount) из \(operation.totalCount)..."
+                    "Deleting \(operation.completedCount) of \(operation.totalCount) recordings…",
+                    "Удаляем записи: \(operation.completedCount) из \(operation.totalCount)…"
                 )
             }
-            return t("Deleting \(operation.totalCount) recordings...", "Удаляем записи: \(operation.totalCount)...")
+            return t("Deleting \(operation.totalCount) recordings…", "Удаляем записи: \(operation.totalCount)…")
         }
     }
 
@@ -1918,7 +1918,7 @@ private struct CompletedRecordingTransitionView: View {
             } else {
                 VStack {
                     Spacer()
-                    ProgressView(t("Finalizing transcript...", "Завершаем расшифровку..."))
+                    ProgressView(t("Finalizing transcript…", "Завершаем расшифровку…"))
                         .foregroundStyle(Palette.textSecondary)
                     Spacer()
                 }
@@ -1948,7 +1948,7 @@ private struct CompletedRecordingTransitionView: View {
                 .controlSize(.small)
                 .frame(width: 12, height: 12)
 
-            Text(t("Saving transcript...", "Сохраняем расшифровку..."))
+            Text(t("Saving transcript…", "Сохраняем расшифровку…"))
                 .font(Typography.displaySmall)
                 .foregroundStyle(Palette.textSecondary)
                 .lineLimit(2)

@@ -865,7 +865,7 @@ private struct OnboardingPermissionSlide: View {
         let primary: PermissionRow.Action? = systemAudioReadiness == .setupNeeded
             ? PermissionRow.Action(
                 label: isRequestingSystemAudioPermission
-                    ? t("Setting Up...", "Настраиваем...")
+                    ? t("Setting Up…", "Настраиваем…")
                     : t("Set Up", "Настроить"),
                 identifier: "setup",
                 run: requestSystemAudioPermission

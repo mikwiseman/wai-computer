@@ -78,12 +78,12 @@ class RecordingViewModel: ObservableObject {
         case .idle:
             return t("Tap to start recording", "Нажмите, чтобы начать запись", language: language)
         case .preparing:
-            return t("Preparing recording...", "Готовим запись...", language: language)
+            return t("Preparing recording…", "Готовим запись…", language: language)
         case .recording:
             if isPaused { return t("Paused", "Пауза", language: language) }
-            return t("Recording...", "Идет запись...", language: language)
+            return t("Recording…", "Идет запись…", language: language)
         case .finalizing:
-            return t("Saving transcript...", "Сохраняем расшифровку...", language: language)
+            return t("Saving transcript…", "Сохраняем расшифровку…", language: language)
         }
     }
 
@@ -100,12 +100,12 @@ class RecordingViewModel: ObservableObject {
         case .idle:
             return t("Start a recording to see live transcription.", "Начните запись, чтобы увидеть живую расшифровку.", language: language)
         case .preparing:
-            return t("Preparing microphone...", "Готовим микрофон...", language: language)
+            return t("Preparing microphone…", "Готовим микрофон…", language: language)
         case .recording:
             if isPaused { return t("Paused.", "Пауза.", language: language) }
-            return t("Listening...", "Слушаем...", language: language)
+            return t("Listening…", "Слушаем…", language: language)
         case .finalizing:
-            return t("Saving...", "Сохраняем...", language: language)
+            return t("Saving…", "Сохраняем…", language: language)
         }
     }
 
@@ -1171,7 +1171,7 @@ class RecordingViewModel: ObservableObject {
         if interimSpeaker == lastSpeaker {
             return interimText
         }
-        let speaker = interimSpeaker.map(displaySpeaker) ?? "..."
+        let speaker = interimSpeaker.map(displaySpeaker) ?? "…"
         return "\(speaker): \(interimText)"
     }
 

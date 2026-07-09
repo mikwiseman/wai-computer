@@ -97,7 +97,7 @@ public enum UserFacingErrorFormatter {
         let normalized = display.replacingOccurrences(of: "\n", with: " ")
 
         guard normalized.count > maxLength else { return normalized }
-        return String(normalized.prefix(maxLength - 3)) + "..."
+        return String(normalized.prefix(maxLength - 1)) + "…"
     }
 
     private static func genericMessage(for context: UserFacingErrorContext) -> String {

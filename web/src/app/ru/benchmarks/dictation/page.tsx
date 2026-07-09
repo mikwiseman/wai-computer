@@ -76,11 +76,11 @@ const arenaCopy = {
   emptyRecording: "Аудио не записалось. Начни новый battle и говори хотя бы секунду.",
   requestFailed: "Запрос транскрибации не удался.",
   voteFailed: "Подтверждение не удалось сохранить.",
-  transcribingSameAudio: "Распознаём тот же аудиофайл...",
+  transcribingSameAudio: "Распознаём тот же аудиофайл…",
   waitingForVote: "Ждём слепой выбор.",
   livePass: "Live pass",
   fullPass: "Full pass",
-  liveWaiting: "Ждём live-транскрипт...",
+  liveWaiting: "Ждём live-транскрипт…",
   liveConnectionFailed: "Live benchmark не подключился. Попробуй новый раунд.",
 };
 

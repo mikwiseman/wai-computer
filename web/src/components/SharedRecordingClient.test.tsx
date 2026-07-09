@@ -91,7 +91,7 @@ describe("SharedRecordingClient", () => {
 
     render(<SharedRecordingClient token="share-token" />);
 
-    expect(screen.getByText("Opening shared note...")).toBeInTheDocument();
+    expect(screen.getByText("Opening shared note…")).toBeInTheDocument();
 
     await waitFor(() => {
       expect(mockGetSharedRecording).toHaveBeenCalledWith("share-token");
@@ -162,7 +162,7 @@ describe("SharedRecordingClient", () => {
 
     render(<SharedRecordingClient token="missing-token" locale="ru" />);
 
-    expect(screen.getByText("Открываем общую запись...")).toBeInTheDocument();
+    expect(screen.getByText("Открываем общую запись…")).toBeInTheDocument();
     await waitFor(() => {
       expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent(
         "Общая запись недоступна",

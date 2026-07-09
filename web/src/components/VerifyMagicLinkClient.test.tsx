@@ -68,7 +68,7 @@ describe("VerifyMagicLinkClient", () => {
       expect(mockReplace).toHaveBeenCalledWith("/onboarding");
     });
 
-    expect(screen.getByTestId("verify-message")).toHaveTextContent("Magic link verified. Redirecting...");
+    expect(screen.getByTestId("verify-message")).toHaveTextContent("Magic link verified. Redirecting…");
   });
 
   it("redirects onboarded users to dashboard", async () => {
@@ -81,7 +81,7 @@ describe("VerifyMagicLinkClient", () => {
       expect(mockReplace).toHaveBeenCalledWith("/dashboard");
     });
 
-    expect(screen.getByTestId("verify-message")).toHaveTextContent("Magic link verified. Redirecting...");
+    expect(screen.getByTestId("verify-message")).toHaveTextContent("Magic link verified. Redirecting…");
   });
 
   it("renders ApiError failure state", async () => {
@@ -109,7 +109,7 @@ describe("VerifyMagicLinkClient", () => {
 
     render(<VerifyMagicLinkClient token="pending-token" />);
 
-    expect(screen.getByTestId("verify-message")).toHaveTextContent("Verifying token...");
+    expect(screen.getByTestId("verify-message")).toHaveTextContent("Verifying token…");
     expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Verifying sign-in link");
   });
 

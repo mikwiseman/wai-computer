@@ -503,7 +503,7 @@ final class CompanionPresentationTests: XCTestCase {
 
         XCTAssertEqual(
             reducer.notificationPreview(maxCharacters: 48),
-            "Here are the direct links for GPU rental..."
+            "Here are the direct links for GPU rental…"
         )
     }
 

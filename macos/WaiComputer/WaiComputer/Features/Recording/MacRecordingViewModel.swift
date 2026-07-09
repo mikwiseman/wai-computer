@@ -45,11 +45,11 @@ enum MacRecordingInputSource: String, CaseIterable, Equatable {
     func preparingText(language: LanguageManager.SupportedLanguage) -> String {
         switch self {
         case .dual:
-            return OnboardingL10n.text("Preparing audio capture...", "Готовим захват аудио...", language: language)
+            return OnboardingL10n.text("Preparing audio capture…", "Готовим захват аудио…", language: language)
         case .microphone:
-            return OnboardingL10n.text("Preparing microphone...", "Готовим микрофон...", language: language)
+            return OnboardingL10n.text("Preparing microphone…", "Готовим микрофон…", language: language)
         case .systemAudio:
-            return OnboardingL10n.text("Preparing system audio...", "Готовим звук Mac...", language: language)
+            return OnboardingL10n.text("Preparing system audio…", "Готовим звук Mac…", language: language)
         }
     }
 
@@ -203,7 +203,7 @@ class MacRecordingViewModel: ObservableObject {
             }
             return t("Recording", "Идет запись", language: language)
         case .finalizing:
-            return t("Saving transcript...", "Сохраняем расшифровку...", language: language)
+            return t("Saving transcript…", "Сохраняем расшифровку…", language: language)
         }
     }
 
@@ -251,8 +251,8 @@ class MacRecordingViewModel: ObservableObject {
             )
         case .finalizing:
             return t(
-                "Uploading final audio for transcription and summary...",
-                "Загружаем финальное аудио для расшифровки и сводки...",
+                "Uploading final audio for transcription and summary…",
+                "Загружаем финальное аудио для расшифровки и сводки…",
                 language: language
             )
         }

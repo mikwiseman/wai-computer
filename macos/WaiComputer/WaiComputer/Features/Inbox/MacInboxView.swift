@@ -949,7 +949,7 @@ private struct MacInboxFileComposer: View {
                     .accessibilityIdentifier("mac-inbox-upload-primary-button")
 
                     Button(action: onChoose) {
-                        Text(t("Choose Another...", "Выбрать другой..."))
+                        Text(t("Choose Another…", "Выбрать другой…"))
                     }
                     .buttonStyle(.bordered)
                     .disabled(isAdding)

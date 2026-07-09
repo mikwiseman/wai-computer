@@ -26,19 +26,19 @@ const COPY: Record<
   }
 > = {
   en: {
-    verifying: "Verifying token...",
+    verifying: "Verifying token…",
     missingToken: "Missing token.",
     genericFailure: "Verification failed.",
-    verified: "Magic link verified. Redirecting...",
+    verified: "Magic link verified. Redirecting…",
     title: "Verifying sign-in link",
     backToLogin: "Back to login",
     tagline: "Your second brain",
   },
   ru: {
-    verifying: "Проверяем ссылку...",
+    verifying: "Проверяем ссылку…",
     missingToken: "Ссылка для входа отсутствует.",
     genericFailure: "Не удалось проверить ссылку.",
-    verified: "Ссылка подтверждена. Перенаправляем...",
+    verified: "Ссылка подтверждена. Перенаправляем…",
     title: "Проверка ссылки для входа",
     backToLogin: "Вернуться ко входу",
     tagline: "Твой второй мозг",

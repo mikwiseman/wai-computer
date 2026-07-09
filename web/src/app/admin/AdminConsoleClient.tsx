@@ -457,7 +457,7 @@ export function AdminConsoleClient() {
 
         {message ? <p className="inline-success">{message}</p> : null}
         {error ? <p className="inline-alert">{error}</p> : null}
-        {busy ? <p className="muted-text">Loading...</p> : null}
+        {busy ? <p className="muted-text">Loading…</p> : null}
 
         {tab === "overview" && stats ? (
           <div className="admin-section">

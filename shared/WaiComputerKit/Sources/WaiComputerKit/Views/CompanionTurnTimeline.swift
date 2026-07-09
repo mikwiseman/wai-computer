@@ -284,7 +284,7 @@ public struct CompanionTurnReducer: Equatable, Sendable {
         guard !text.isEmpty else { return nil }
         guard text.count > maxCharacters else { return text }
 
-        let ellipsis = "..."
+        let ellipsis = "…"
         let characterLimit = max(maxCharacters - ellipsis.count, 1)
         let hardLimitIndex = text.index(text.startIndex, offsetBy: characterLimit)
         var prefix = String(text[..<hardLimitIndex]).trimmingCharacters(in: .whitespacesAndNewlines)

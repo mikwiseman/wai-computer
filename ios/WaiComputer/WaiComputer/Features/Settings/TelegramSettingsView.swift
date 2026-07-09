@@ -45,7 +45,7 @@ struct TelegramSettingsView: View {
                 if telegramLoading && telegramStatus == nil {
                     HStack {
                         ProgressView()
-                        Text(t("Loading Telegram status...", "Загружаем статус Telegram..."))
+                        Text(t("Loading Telegram status…", "Загружаем статус Telegram…"))
                             .font(Typography.body)
                             .foregroundStyle(Palette.textSecondary)
                     }
@@ -159,7 +159,7 @@ struct TelegramSettingsView: View {
                     HStack(spacing: Spacing.sm) {
                         ProgressView()
                             .controlSize(.small)
-                        Text(t("Loading Telegram status...", "Загружаем статус Telegram..."))
+                        Text(t("Loading Telegram status…", "Загружаем статус Telegram…"))
                             .font(Typography.caption)
                             .foregroundStyle(Palette.textTertiary)
                     }

@@ -596,7 +596,7 @@ describe("DashboardClient", () => {
     await user.click(screen.getByTestId("reload-dashboard"));
 
     expect(screen.getByTestId("user-email")).toHaveTextContent("dashboard@example.com");
-    expect(screen.getByTestId("dashboard-refreshing")).toHaveTextContent("Refreshing dashboard...");
+    expect(screen.getByTestId("dashboard-refreshing")).toHaveTextContent("Refreshing dashboard…");
     expect(screen.queryByTestId("dashboard-loading")).not.toBeInTheDocument();
     expect(screen.getByTestId("reload-dashboard")).toBeDisabled();
 
@@ -612,7 +612,7 @@ describe("DashboardClient", () => {
     const user = userEvent.setup();
 
     render(<DashboardClient />);
-    expect(screen.getByTestId("dashboard-loading")).toHaveTextContent("Loading dashboard...");
+    expect(screen.getByTestId("dashboard-loading")).toHaveTextContent("Loading dashboard…");
 
     await waitForDashboardReady();
     await openInboxCreatePane(user);

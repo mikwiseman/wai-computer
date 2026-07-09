@@ -295,8 +295,8 @@ final class MacInboxViewModel: ObservableObject {
         isAdding = true
         defer { isAdding = false }
         uploadPhase = .preparing(OnboardingL10n.text(
-            "Preparing \(file.filename)...",
-            "Готовим \(file.filename)...",
+            "Preparing \(file.filename)…",
+            "Готовим \(file.filename)…",
             language: LanguageManager.shared.current
         ))
 
@@ -306,8 +306,8 @@ final class MacInboxViewModel: ObservableObject {
 
         do {
             uploadPhase = .uploading(OnboardingL10n.text(
-                "Uploading \(file.filename)...",
-                "Загружаем \(file.filename)...",
+                "Uploading \(file.filename)…",
+                "Загружаем \(file.filename)…",
                 language: LanguageManager.shared.current
             ))
             let outcome = try await apiClient.uploadItem(fileURL: file.url, folderId: folderId)

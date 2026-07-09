@@ -365,10 +365,10 @@ interface DashboardCopy {
 
 const COPY: Record<Locale, DashboardCopy> = {
   en: {
-    loadingDashboard: "Loading dashboard...",
-    refreshing: "Refreshing dashboard...",
+    loadingDashboard: "Loading dashboard…",
+    refreshing: "Refreshing dashboard…",
     reload: "Reload",
-    reloading: "Reloading...",
+    reloading: "Reloading…",
     logout: "Logout",
     noUser: "No user",
     fallbackTitle: "WaiComputer",
@@ -483,14 +483,14 @@ const COPY: Record<Locale, DashboardCopy> = {
       untitled: "(untitled)",
       couldNotProcess: "Could not process this recording. Please try again or contact support.",
       newRecordingHeading: "New Recording",
-      titlePlaceholder: "Create an empty note...",
+      titlePlaceholder: "Create an empty note…",
       create: "Create",
       typeNote: "Note",
       typeMeeting: "Meeting",
       typeReflection: "Reflection",
     },
     search: {
-      placeholder: "Search your second brain...",
+      placeholder: "Search your second brain…",
       submit: "Search",
       hybrid: "Hybrid",
       semantic: "Semantic",
@@ -516,7 +516,7 @@ const COPY: Record<Locale, DashboardCopy> = {
       developerGroupBody:
         "Connect AI tools through MCP or create read-only tokens for automation.",
       dictationHeading: "Dictation",
-      loadingSettings: "Loading account settings...",
+      loadingSettings: "Loading account settings…",
       dictationBody:
         "Dictation uses Deepgram Nova-3 punctuation, numerals, and your dictionary terms during recognition.",
       settingsUpdated: "Settings updated.",
@@ -537,7 +537,7 @@ const COPY: Record<Locale, DashboardCopy> = {
       instructions:
         "Tap “Link Telegram” — the bot will open. After you press Start linking finishes automatically.",
       linkButton: "Link Telegram",
-      linkOpening: "Opening...",
+      linkOpening: "Opening…",
       awaitingStart:
         "Waiting for Start in Telegram. You don't need to come back and copy a code.",
       codeLabel: "Code from Telegram",
@@ -558,10 +558,10 @@ const COPY: Record<Locale, DashboardCopy> = {
     },
   },
   ru: {
-    loadingDashboard: "Загружаем дашборд...",
-    refreshing: "Обновляем дашборд...",
+    loadingDashboard: "Загружаем дашборд…",
+    refreshing: "Обновляем дашборд…",
     reload: "Обновить",
-    reloading: "Обновляем...",
+    reloading: "Обновляем…",
     logout: "Выйти",
     noUser: "Нет пользователя",
     fallbackTitle: "WaiComputer",
@@ -679,14 +679,14 @@ const COPY: Record<Locale, DashboardCopy> = {
       couldNotProcess:
         "Не удалось обработать эту запись. Попробуйте ещё раз или обратитесь в поддержку.",
       newRecordingHeading: "Новая запись",
-      titlePlaceholder: "Создать пустую заметку...",
+      titlePlaceholder: "Создать пустую заметку…",
       create: "Создать",
       typeNote: "Заметка",
       typeMeeting: "Встреча",
       typeReflection: "Размышление",
     },
     search: {
-      placeholder: "Искать по второму мозгу...",
+      placeholder: "Искать по второму мозгу…",
       submit: "Найти",
       hybrid: "Гибридный",
       semantic: "Семантический",
@@ -713,7 +713,7 @@ const COPY: Record<Locale, DashboardCopy> = {
       developerGroupBody:
         "Подключите AI-инструменты через MCP или создайте read-only токены для автоматизации.",
       dictationHeading: "Диктовка",
-      loadingSettings: "Загружаем настройки аккаунта...",
+      loadingSettings: "Загружаем настройки аккаунта…",
       dictationBody:
         "Диктовка использует Deepgram Nova-3: пунктуацию, числа и ваши словарные термины прямо при распознавании.",
       settingsUpdated: "Настройки сохранены.",
@@ -734,7 +734,7 @@ const COPY: Record<Locale, DashboardCopy> = {
       instructions:
         "Нажмите «Привязать Telegram» — откроется бот. После Start привязка завершится автоматически.",
       linkButton: "Привязать Telegram",
-      linkOpening: "Открываем...",
+      linkOpening: "Открываем…",
       awaitingStart: "Ждем Start в Telegram. Возвращаться и копировать код не нужно.",
       codeLabel: "Код из Telegram",
       codeHelp: "Только если вы начали привязку из Telegram.",
@@ -3648,8 +3648,8 @@ function UniversalInboxPanel({
             <p>
               {loading
                 ? locale === "ru"
-                  ? "Загрузка..."
-                  : "Loading..."
+                  ? "Загрузка…"
+                  : "Loading…"
                 : folderName
                   ? locale === "ru"
                     ? `${folderName} / ${rows.length} объектов`
@@ -3874,8 +3874,8 @@ function UniversalInboxPanel({
             >
               {loadingMore
                 ? locale === "ru"
-                  ? "Загрузка..."
-                  : "Loading..."
+                  ? "Загрузка…"
+                  : "Loading…"
                 : locale === "ru"
                   ? "Показать ещё"
                   : "Load more"}

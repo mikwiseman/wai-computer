@@ -38,17 +38,6 @@ struct DictationOverlayView: View {
                     .foregroundStyle(.white.opacity(0.6))
             }
 
-            // Mode badge
-            if manager.isHandsFree {
-                Text(DictationCopy.handsFreeBadge(language: languageManager.current))
-                    .font(.system(size: 9, weight: .semibold))
-                    .foregroundStyle(Palette.onAccent)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(Palette.accent)
-                    .clipShape(Capsule())
-            }
-
             // Cancel button
             Button {
                 Task { await manager.cancelDictation() }
@@ -142,9 +131,6 @@ struct DictationOverlayView: View {
     }
 
     private var formattedDuration: String {
-        let seconds = Int(manager.dictationDuration)
-        let mins = seconds / 60
-        let secs = seconds % 60
-        return String(format: "%d:%02d", mins, secs)
+        MacDateFormatting.duration(seconds: Int(manager.dictationDuration))
     }
 }

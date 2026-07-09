@@ -331,9 +331,9 @@ struct ItemDetailView: View {
     private func summaryPlaceholder(_ item: Item) -> String {
         switch item.status {
         case "fetching":
-            return t("Reading the source material...", "Читаем исходный материал...")
+            return t("Reading the source material…", "Читаем исходный материал…")
         case "summarizing":
-            return t("Building the summary...", "Готовим сводку...")
+            return t("Building the summary…", "Готовим сводку…")
         default:
             return t("No summary yet.", "Сводки пока нет.")
         }

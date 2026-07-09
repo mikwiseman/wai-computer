@@ -106,7 +106,7 @@ struct IOSUnifiedSearchView: View {
                 .foregroundStyle(Palette.textTertiary)
 
             TextField(
-                t("Search your second brain...", "Искать по второму мозгу..."),
+                t("Search your second brain…", "Искать по второму мозгу…"),
                 text: $viewModel.query
             )
             .textFieldStyle(.plain)
@@ -160,7 +160,7 @@ struct IOSUnifiedSearchView: View {
     @ViewBuilder
     private var searchContent: some View {
         if viewModel.isLoading {
-            ProgressView(t("Searching...", "Ищем..."))
+            ProgressView(t("Searching…", "Ищем…"))
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .accessibilityIdentifier("ios-unified-search-loading")
         } else if let error = viewModel.error {
@@ -564,7 +564,7 @@ struct LibrarySearchResults: View {
             .accessibilityIdentifier("search-error-state")
             Spacer(minLength: 0)
         } else if viewModel.isLoading {
-            ProgressView(t("Searching...", "Ищем..."))
+            ProgressView(t("Searching…", "Ищем…"))
                 .padding(.top, Spacing.xxl)
                 .accessibilityIdentifier("search-loading")
             Spacer(minLength: 0)

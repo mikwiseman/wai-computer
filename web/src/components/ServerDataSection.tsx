@@ -26,7 +26,7 @@ const COPY = {
   en: {
     title: "Server & Data",
     intro: "Choose where WaiComputer runs and verify what belongs to you.",
-    loading: "Loading server information...",
+    loading: "Loading server information…",
     cloud: "Wai Cloud",
     selfHost: "My server",
     provisioning: "Provisioning",
@@ -54,7 +54,7 @@ const COPY = {
     publicKeyHelp: "Use a public key that already has access to the VPS.",
     password: "Temporary password",
     start: "Check setup",
-    starting: "Checking...",
+    starting: "Checking…",
     checklistTitle: "Setup checklist",
     checklistIntro:
       "Create the provider keys before setup. Wai keeps those keys server-side on your server, never in browser or mobile clients.",
@@ -89,7 +89,7 @@ const COPY = {
   ru: {
     title: "Сервер и данные",
     intro: "Выберите, где работает WaiComputer, и проверьте, какие данные принадлежат вам.",
-    loading: "Загружаем информацию о сервере...",
+    loading: "Загружаем информацию о сервере…",
     cloud: "Wai Cloud",
     selfHost: "Мой сервер",
     provisioning: "Настройка",
@@ -117,7 +117,7 @@ const COPY = {
     publicKeyHelp: "Используйте публичный ключ, у которого уже есть доступ к VPS.",
     password: "Временный пароль",
     start: "Проверить настройку",
-    starting: "Проверяем...",
+    starting: "Проверяем…",
     checklistTitle: "Чеклист настройки",
     checklistIntro:
       "Создайте ключи провайдеров до настройки. Wai хранит эти ключи только на вашем сервере, а не в браузере или мобильных приложениях.",
@@ -442,7 +442,7 @@ export function ServerDataSection({
                 onChange={(event) =>
                   setForm((current) => ({ ...current, ssh_public_key: event.target.value }))
                 }
-                placeholder="ssh-ed25519 AAAA..."
+                placeholder="ssh-ed25519 AAAA…"
                 required
                 rows={3}
               />

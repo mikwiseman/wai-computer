@@ -22,7 +22,7 @@ struct ContentView: View {
         let environment = ProcessInfo.processInfo.environment
         Group {
             if appState.isCheckingAuth {
-                ProgressView("Loading...")
+                ProgressView("Loading…")
             } else if !appState.hasCompletedOnboarding {
                 OnboardingView()
             } else if appState.isAuthenticated {
@@ -653,7 +653,7 @@ private struct IOSWorkspaceSplitView: View {
                 HStack(spacing: Spacing.sm) {
                     ProgressView()
                         .controlSize(.small)
-                    Text(t("Loading Folders...", "Загружаем папки..."))
+                    Text(t("Loading Folders…", "Загружаем папки…"))
                         .font(Typography.bodySmall)
                         .foregroundStyle(Palette.textSecondary)
                 }
@@ -955,7 +955,7 @@ private struct IOSWorkspaceTrashView: View {
     @ViewBuilder
     private var content: some View {
         if viewModel.isLoading && viewModel.trashedRecordings.isEmpty {
-            ProgressView(t("Loading Trash...", "Загружаем корзину..."))
+            ProgressView(t("Loading Trash…", "Загружаем корзину…"))
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .accessibilityIdentifier("ios-workspace-trash-loading")
         } else if let error = viewModel.error,

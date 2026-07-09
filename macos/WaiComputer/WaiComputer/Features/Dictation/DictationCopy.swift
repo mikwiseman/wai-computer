@@ -26,10 +26,6 @@ enum DictationCopy {
         }
     }
 
-    static func handsFreeBadge(language: LanguageManager.SupportedLanguage) -> String {
-        text("Hands-free", "Режим без рук", language: language)
-    }
-
     static func overlayStatus(
         _ status: OverlayStatus,
         language: LanguageManager.SupportedLanguage
@@ -38,13 +34,13 @@ enum DictationCopy {
         case .idle:
             return text("Ready", "Готово", language: language)
         case .connecting:
-            return text("Connecting...", "Подключаемся...", language: language)
+            return text("Connecting…", "Подключаемся…", language: language)
         case .listening:
-            return text("Listening...", "Слушаем...", language: language)
+            return text("Listening…", "Слушаем…", language: language)
         case .processing:
-            return text("Processing...", "Обрабатываем...", language: language)
+            return text("Processing…", "Обрабатываем…", language: language)
         case .inserting:
-            return text("Inserting...", "Вставляем...", language: language)
+            return text("Inserting…", "Вставляем…", language: language)
         }
     }
 

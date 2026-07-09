@@ -12,7 +12,7 @@ export const metadata: Metadata = {
 
 export default function AdminPage() {
   return (
-    <Suspense fallback={<main className="admin-console-loading">Loading admin...</main>}>
+    <Suspense fallback={<main className="admin-console-loading">Loading admin…</main>}>
       <AdminConsoleClient />
     </Suspense>
   );

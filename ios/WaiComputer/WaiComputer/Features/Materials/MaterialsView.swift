@@ -141,7 +141,7 @@ struct IOSInboxView: View {
                 if feed.isUploadingFile {
                     IOSInboxStatusBanner(
                         systemImage: "arrow.up.doc",
-                        message: t("Uploading file...", "Загружаем файл...")
+                        message: t("Uploading file…", "Загружаем файл…")
                     )
                     .padding(.bottom, Spacing.lg)
                 } else if let status = feed.statusMessage {
@@ -271,7 +271,7 @@ struct IOSInboxView: View {
         let recordings = scopedRecordings
 
         if libraryViewModel.isLoading && recordings.isEmpty {
-            ProgressView(t("Loading recordings...", "Загрузка записей..."))
+            ProgressView(t("Loading recordings…", "Загрузка записей…"))
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .accessibilityIdentifier("ios-inbox-recordings-loading")
         } else if recordings.isEmpty {
@@ -308,7 +308,7 @@ struct IOSInboxView: View {
     @ViewBuilder
     private var materialsContent: some View {
         if feed.isLoading && feed.entries.isEmpty {
-            ProgressView(t("Loading materials...", "Загрузка материалов..."))
+            ProgressView(t("Loading materials…", "Загрузка материалов…"))
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .accessibilityIdentifier("ios-inbox-materials-loading")
         } else if feed.entries.isEmpty {
@@ -734,7 +734,7 @@ private struct IOSInboxMaterialRow: View {
                     .font(Typography.labelSmall)
                     .foregroundStyle(Palette.accent)
                 if !entry.hasSummary {
-                    Text(t("summarizing...", "конспект..."))
+                    Text(t("summarizing…", "конспект…"))
                         .font(Typography.labelSmall)
                         .foregroundStyle(Palette.textTertiary)
                 }

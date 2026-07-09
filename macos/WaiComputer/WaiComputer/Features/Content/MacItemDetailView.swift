@@ -316,9 +316,9 @@ struct MacItemDetailView: View {
     private var summaryPlaceholder: String {
         switch item.status {
         case "fetching":
-            return t("Reading the source material...", "Читаем исходный материал...")
+            return t("Reading the source material…", "Читаем исходный материал…")
         case "summarizing":
-            return t("Building the summary...", "Готовим сводку...")
+            return t("Building the summary…", "Готовим сводку…")
         default:
             return t("No summary yet.", "Сводки пока нет.")
         }
@@ -408,7 +408,7 @@ struct MacItemDetailView: View {
                 .accessibilityIdentifier("item-summary-audio-play-button")
                 .accessibilityLabel(summaryAudioPlaybackButtonTitle)
 
-                Text(isDownloadingSummaryAudio ? t("Loading audio...", "Загружаем аудио...") : t("Audio ready", "Аудио готово"))
+                Text(isDownloadingSummaryAudio ? t("Loading audio…", "Загружаем аудио…") : t("Audio ready", "Аудио готово"))
                     .font(Typography.bodySmall)
                     .foregroundStyle(Palette.textSecondary)
             } else {
@@ -429,7 +429,7 @@ struct MacItemDetailView: View {
             HStack(alignment: .center, spacing: Spacing.sm) {
                 ProgressView()
                     .controlSize(.small)
-                Text(summaryAudio?.message ?? t("Creating summary audio...", "Создаем аудио сводки..."))
+                Text(summaryAudio?.message ?? t("Creating summary audio…", "Создаем аудио сводки…"))
                     .font(Typography.bodySmall)
                     .foregroundStyle(Palette.textSecondary)
             }

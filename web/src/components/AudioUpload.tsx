@@ -37,15 +37,15 @@ const COPY: Record<Locale, {
 }> = {
   en: {
     unsupported: "Unsupported format. Use an audio file (MP3, M4A, WAV…) or a video (MP4, MOV, MKV…).",
-    creating: "Creating recording...",
-    uploading: "Uploading file...",
+    creating: "Creating recording…",
+    uploading: "Uploading file…",
     failed: "Upload failed",
     drop: "Drop an audio or video file here or click to upload",
   },
   ru: {
     unsupported: "Неподдерживаемый формат. Используйте аудио (MP3, M4A, WAV…) или видео (MP4, MOV, MKV…).",
-    creating: "Создание записи...",
-    uploading: "Загрузка файла...",
+    creating: "Создание записи…",
+    uploading: "Загрузка файла…",
     failed: "Не удалось загрузить",
     drop: "Перетащите аудио- или видеофайл сюда или нажмите для загрузки",
   },

@@ -52,7 +52,7 @@ struct LibraryView: View {
                         onOpenRecording: { result in searchTarget = result }
                     )
                 } else if viewModel.isLoading && viewModel.recordings.isEmpty {
-                    ProgressView(t("Loading recordings...", "Загрузка записей..."))
+                    ProgressView(t("Loading recordings…", "Загрузка записей…"))
                 } else if viewModel.recordings.isEmpty && viewModel.trashedRecordings.isEmpty && viewModel.folders.isEmpty {
                     ContentUnavailableView(
                         t("No Recordings", "Нет записей"),
@@ -70,7 +70,7 @@ struct LibraryView: View {
             .searchable(
                 text: $searchViewModel.query,
                 placement: .navigationBarDrawer(displayMode: .automatic),
-                prompt: Text(t("Search recordings...", "Искать в записях..."))
+                prompt: Text(t("Search recordings…", "Искать в записях…"))
             )
             .onSubmit(of: .search) {
                 performSearch()
@@ -1904,7 +1904,7 @@ private struct ImportUploadOverlay: View {
                     .controlSize(.large)
 
                 if let filename {
-                    Text(String(format: t("Uploading %@...", "Загрузка %@..."), filename))
+                    Text(String(format: t("Uploading %@…", "Загрузка %@…"), filename))
                         .font(.headline)
                         .foregroundStyle(.primary)
                 }

@@ -261,7 +261,7 @@ describe("AuthForm", () => {
     await user.click(submitButton);
 
     await waitFor(() => {
-      expect(submitButton).toHaveTextContent("Please wait...");
+      expect(submitButton).toHaveTextContent("Please wait…");
       expect(submitButton).toBeDisabled();
     });
 

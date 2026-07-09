@@ -532,7 +532,7 @@ struct RecordingDetailView: View {
             if let summary = detail.summary {
                 if isGeneratingSummaryAudio {
                     regularProgressRow(
-                        text: detail.summaryAudio?.message ?? t("Creating summary audio...", "Создаем аудио сводки..."),
+                        text: detail.summaryAudio?.message ?? t("Creating summary audio…", "Создаем аудио сводки…"),
                         identifier: "summary-audio-progress"
                     )
                 } else if detail.summaryAudio?.isFailed == true {
@@ -1102,7 +1102,7 @@ struct RecordingDetailView: View {
 
     private func summaryGenerationStatusText(state: SummaryGenerationState?) -> String {
         guard let state else {
-            return t("Starting summary generation...", "Запускаем генерацию сводки...")
+            return t("Starting summary generation…", "Запускаем генерацию сводки…")
         }
         switch state.status {
         case "queued":
@@ -1110,14 +1110,14 @@ struct RecordingDetailView: View {
         case "running":
             switch state.stage {
             case "preparing_transcript":
-                return t("Preparing transcript...", "Подготавливаем расшифровку...")
+                return t("Preparing transcript…", "Подготавливаем расшифровку…")
             case "saving_summary":
-                return t("Saving summary...", "Сохраняем сводку...")
+                return t("Saving summary…", "Сохраняем сводку…")
             default:
-                return t("Generating summary...", "Генерируем сводку...")
+                return t("Generating summary…", "Генерируем сводку…")
             }
         default:
-            return t("Generating summary...", "Генерируем сводку...")
+            return t("Generating summary…", "Генерируем сводку…")
         }
     }
 
@@ -1465,7 +1465,7 @@ struct SummaryTabView: View {
         HStack(spacing: 8) {
             ProgressView()
                 .controlSize(.small)
-            Text(audioState?.message ?? t("Creating summary audio...", "Создаем аудио сводки..."))
+            Text(audioState?.message ?? t("Creating summary audio…", "Создаем аудио сводки…"))
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
@@ -1511,7 +1511,7 @@ struct SummaryTabView: View {
 
     private var summaryGenerationStatusText: String {
         guard let state = generationState else {
-            return t("Starting summary generation...", "Запускаем генерацию сводки...")
+            return t("Starting summary generation…", "Запускаем генерацию сводки…")
         }
         switch state.status {
         case "queued":
@@ -1519,14 +1519,14 @@ struct SummaryTabView: View {
         case "running":
             switch state.stage {
             case "preparing_transcript":
-                return t("Preparing transcript...", "Подготавливаем расшифровку...")
+                return t("Preparing transcript…", "Подготавливаем расшифровку…")
             case "saving_summary":
-                return t("Saving summary...", "Сохраняем сводку...")
+                return t("Saving summary…", "Сохраняем сводку…")
             default:
-                return t("Generating summary...", "Генерируем сводку...")
+                return t("Generating summary…", "Генерируем сводку…")
             }
         default:
-            return t("Generating summary...", "Генерируем сводку...")
+            return t("Generating summary…", "Генерируем сводку…")
         }
     }
 

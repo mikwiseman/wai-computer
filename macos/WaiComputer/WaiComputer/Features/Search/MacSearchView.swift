@@ -98,7 +98,7 @@ struct MacSearchView: View {
                     .foregroundStyle(Palette.textTertiary)
 
                 TextField(
-                    t("Search your second brain...", "Искать по второму мозгу..."),
+                    t("Search your second brain…", "Искать по второму мозгу…"),
                     text: $viewModel.query
                 )
                     .textFieldStyle(.plain)
@@ -148,7 +148,7 @@ struct MacSearchView: View {
     private var searchResults: some View {
         if viewModel.isLoading {
             VStack {
-                ProgressView(t("Searching...", "Ищем..."))
+                ProgressView(t("Searching…", "Ищем…"))
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if let searchError = viewModel.error, !searchError.isEmpty {

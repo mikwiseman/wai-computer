@@ -285,7 +285,7 @@ private struct BillingStatusBody: View {
             HStack(spacing: Spacing.sm) {
                 ProgressView()
                     .controlSize(.small)
-                Text(t("Loading subscription...", "Загружаем подписку..."))
+                Text(t("Loading subscription…", "Загружаем подписку…"))
                     .font(Typography.caption)
                     .foregroundStyle(Palette.textTertiary)
             }

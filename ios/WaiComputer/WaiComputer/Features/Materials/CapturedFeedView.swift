@@ -173,7 +173,7 @@ struct CapturedFeedView: View {
         .overlay(alignment: .bottom) {
             VStack(spacing: Spacing.xs) {
                 if model.isUploadingFile {
-                    Text(t("Uploading file...", "Загружаем файл..."))
+                    Text(t("Uploading file…", "Загружаем файл…"))
                         .font(Typography.bodySmall)
                         .foregroundStyle(.white)
                         .padding(Spacing.sm)
@@ -289,7 +289,7 @@ struct CapturedFeedView: View {
 
     private func captureDraftField(minHeight: CGFloat) -> some View {
         TextField(
-            t("Paste a link or any text...", "Вставьте ссылку или любой текст..."),
+            t("Paste a link or any text…", "Вставьте ссылку или любой текст…"),
             text: $draft,
             axis: .vertical
         )
@@ -524,7 +524,7 @@ struct CapturedFeedView: View {
             return t("needs input", "нужны данные")
         }
         if !entry.hasSummary {
-            return t("summarizing...", "конспект...")
+            return t("summarizing…", "конспект…")
         }
         return nil
     }

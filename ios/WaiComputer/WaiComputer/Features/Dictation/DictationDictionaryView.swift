@@ -150,7 +150,7 @@ struct DictationDictionaryView: View {
         HStack(spacing: Spacing.sm) {
             Image(systemName: "magnifyingglass")
                 .foregroundStyle(Palette.textTertiary)
-            TextField(t("Search dictionary...", "Искать в словаре..."), text: $searchText)
+            TextField(t("Search dictionary…", "Искать в словаре…"), text: $searchText)
                 .textFieldStyle(.plain)
                 .font(Typography.body)
                 .accessibilityIdentifier("ios-dictation-dictionary-search-field")

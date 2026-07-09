@@ -131,7 +131,7 @@ struct IdentityAndVoiceSettingsView: View {
             HStack(spacing: Spacing.sm) {
                 ProgressView()
                     .controlSize(.small)
-                Text(t("Loading identity settings...", "Загружаем настройки профиля..."))
+                Text(t("Loading identity settings…", "Загружаем настройки профиля…"))
                     .font(Typography.caption)
                     .foregroundStyle(Palette.textTertiary)
             }
@@ -361,7 +361,7 @@ struct IdentityAndVoiceSettingsView: View {
     private var savingRow: some View {
         HStack(spacing: Spacing.xs) {
             ProgressView().controlSize(.mini)
-            Text(t("Saving...", "Сохранение..."))
+            Text(t("Saving…", "Сохранение…"))
                 .font(Typography.caption)
                 .foregroundStyle(Palette.textTertiary)
         }

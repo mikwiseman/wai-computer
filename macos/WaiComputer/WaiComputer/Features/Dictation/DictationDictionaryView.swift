@@ -56,7 +56,7 @@ struct DictationDictionaryView: View {
                 HStack {
                     Image(systemName: "magnifyingglass")
                         .foregroundStyle(Palette.textTertiary)
-                    TextField(t("Search dictionary...", "Искать в словаре..."), text: $searchText)
+                    TextField(t("Search dictionary…", "Искать в словаре…"), text: $searchText)
                         .textFieldStyle(.plain)
                         .font(Typography.body)
                 }
@@ -219,7 +219,7 @@ struct DictationDictionaryView: View {
     private var addRow: some View {
         VStack(spacing: Spacing.xs) {
             HStack(spacing: Spacing.sm) {
-                TextField(t("Word or phrase...", "Слово или фраза..."), text: $newWord)
+                TextField(t("Word or phrase…", "Слово или фраза…"), text: $newWord)
                     .textFieldStyle(.roundedBorder)
                     .font(Typography.body)
                     .onSubmit { commitWord() }
@@ -228,7 +228,7 @@ struct DictationDictionaryView: View {
                     .font(.caption)
                     .foregroundStyle(Palette.textTertiary)
 
-                TextField(t("Replace with... (optional)", "Заменять на... (необязательно)"), text: $newReplacement)
+                TextField(t("Replace with… (optional)", "Заменять на… (необязательно)"), text: $newReplacement)
                     .textFieldStyle(.roundedBorder)
                     .font(Typography.body)
                     .onSubmit { commitWord() }

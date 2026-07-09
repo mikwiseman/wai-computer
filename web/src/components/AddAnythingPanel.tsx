@@ -62,15 +62,15 @@ export function AddAnythingPanel({
     setStatus(
       captureMode === "inbox"
         ? locale === "ru"
-          ? "Сохраняем в Инбокс..."
-          : "Saving to Inbox..."
+          ? "Сохраняем в Инбокс…"
+          : "Saving to Inbox…"
         : isUrl
           ? locale === "ru"
-            ? "Загружаем и резюмируем..."
-            : "Fetching and summarizing..."
+            ? "Загружаем и резюмируем…"
+            : "Fetching and summarizing…"
           : locale === "ru"
-            ? "Резюмируем..."
-            : "Summarizing...",
+            ? "Резюмируем…"
+            : "Summarizing…",
     );
     try {
       const folderInput = folderId ? { folder_id: folderId } : {};
@@ -133,7 +133,7 @@ export function AddAnythingPanel({
           setStatus(locale === "ru" ? "Файл сохранён в Инбокс." : "File saved to Inbox.");
           return;
         }
-        setStatus(locale === "ru" ? "Резюмируем..." : "Summarizing...");
+        setStatus(locale === "ru" ? "Резюмируем…" : "Summarizing…");
         const finished = await pollForSummary(created.id);
         setResult(finished);
         setStatus("");
@@ -192,8 +192,8 @@ export function AddAnythingPanel({
           className="add-anything__input"
           placeholder={
             locale === "ru"
-              ? "Вставьте ссылку или текст..."
-              : "Paste a link or any text..."
+              ? "Вставьте ссылку или текст…"
+              : "Paste a link or any text…"
           }
           value={value}
           rows={3}
@@ -215,8 +215,8 @@ export function AddAnythingPanel({
           >
             {busy
               ? locale === "ru"
-                ? "Добавляем..."
-                : "Adding..."
+                ? "Добавляем…"
+                : "Adding…"
               : captureMode === "summary"
                 ? locale === "ru"
                   ? "Добавить в мозг"

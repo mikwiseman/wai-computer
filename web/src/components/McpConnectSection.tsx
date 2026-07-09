@@ -48,7 +48,7 @@ const COPY: Record<Locale, Copy> = {
     intro:
       "Give your AI agent a brain. WaiComputer exposes an MCP (Model Context Protocol) server, so any agent — OpenClaw, Hermes, Claude, Cursor, … — can recall everything you've captured (ask your brain a cited question, search recordings, notes, and chats) and, if you allow it, remember new facts back. You approve each agent by name on wai.computer and can revoke any time.",
     endpointError: "Could not load the MCP endpoint for this server.",
-    endpointLoading: "Loading MCP endpoint...",
+    endpointLoading: "Loading MCP endpoint…",
     copyUrl: "Copy URL",
     copied: "Copied",
     copySnippet: "Copy snippet",
@@ -74,7 +74,7 @@ const COPY: Record<Locale, Copy> = {
     intro:
       "Дайте вашему ИИ-агенту память. WaiComputer предоставляет MCP-сервер (Model Context Protocol), так что любой агент — OpenClaw, Hermes, Claude, Cursor, … — может вспоминать всё, что вы сохранили (задать вопрос мозгу с цитатами, искать по записям, заметкам и чатам) и, если вы разрешите, запоминать новые факты. Каждого агента вы подтверждаете по имени на wai.computer и можете отозвать доступ в любой момент.",
     endpointError: "Не удалось загрузить MCP-адрес для этого сервера.",
-    endpointLoading: "Загрузка MCP-адреса...",
+    endpointLoading: "Загрузка MCP-адреса…",
     copyUrl: "Скопировать URL",
     copied: "Скопировано",
     copySnippet: "Скопировать фрагмент",
