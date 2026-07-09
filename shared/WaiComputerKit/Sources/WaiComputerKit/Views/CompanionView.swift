@@ -1604,8 +1604,7 @@ public struct CompanionView: View {
     }
 
     private func formatMs(_ ms: Int) -> String {
-        let total = ms / 1000
-        return String(format: "%d:%02d", total / 60, total % 60)
+        ClockDuration.string(seconds: ms / 1000)
     }
 
     private var isRussian: Bool {

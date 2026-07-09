@@ -28,7 +28,11 @@ class ImportViewModel: ObservableObject {
 
     private func uploadFile(fileURL: URL, apiClient: APIClient) async {
         guard fileURL.startAccessingSecurityScopedResource() else {
-            errorMessage = "Unable to access the selected file."
+            errorMessage = OnboardingL10n.text(
+                "Unable to access the selected file.",
+                "Не удалось открыть выбранный файл.",
+                language: LanguageManager.shared.current
+            )
             return
         }
         defer { fileURL.stopAccessingSecurityScopedResource() }

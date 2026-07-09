@@ -75,13 +75,10 @@ public struct Segment: Codable, Identifiable, Sendable {
         return end - start
     }
 
-    /// Formatted timestamp (MM:SS)
+    /// Formatted timestamp for transcript rows ("05:30", "1:05:30").
     public var formattedTimestamp: String {
         guard let start = startMs else { return "--:--" }
-        let seconds = start / 1000
-        let minutes = seconds / 60
-        let remainingSeconds = seconds % 60
-        return String(format: "%02d:%02d", minutes, remainingSeconds)
+        return ClockDuration.padded(seconds: start / 1000)
     }
 
     public func userFacingSpeakerLabel(languageCode: String?) -> String? {

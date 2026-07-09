@@ -106,7 +106,7 @@ struct MenuBarView: View {
                         HStack {
                             Image(systemName: recordingVM.canResumeRecording ? "play.circle.fill" : "pause.circle")
                                 .foregroundStyle(Palette.textSecondary)
-                            Text(recordingVM.canResumeRecording ? t("Resume Recording", "Продолжить запись") : t("Pause Recording", "Пауза"))
+                            Text(recordingVM.canResumeRecording ? t("Resume Recording", "Продолжить запись") : t("Pause Recording", "Приостановить запись"))
                                 .font(Typography.body)
                             Spacer()
                             Text("\u{21E7}\u{2318}P")
@@ -146,7 +146,7 @@ struct MenuBarView: View {
                     HStack {
                         Image(systemName: "hourglass.circle")
                             .foregroundStyle(Palette.textSecondary)
-                        Text(t("Saving Transcript", "Сохраняем расшифровку"))
+                        Text(t("Saving transcript", "Сохраняем расшифровку"))
                             .font(Typography.body)
                         Spacer()
                     }

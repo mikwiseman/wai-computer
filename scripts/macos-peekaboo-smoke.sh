@@ -514,7 +514,7 @@ run_main_search_smoke() {
 
   click_identifier "$json_path" sidebar-search
   json_path="$(wait_for_ui_text search-ready "Search your second brain")"
-  set_identifier_label_role_value search-bar "Search your second brain..." "text field" search search-field
+  set_identifier_label_role_value search-bar "Search your second brain…" "text field" search search-field
 
   json_path="$(capture_ui search-query-entered)"
   ui_contains "$json_path" "Search" || die "Search submit button missing"

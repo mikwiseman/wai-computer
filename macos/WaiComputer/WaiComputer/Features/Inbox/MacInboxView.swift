@@ -273,17 +273,17 @@ struct MacInboxView: View {
         case .recording?:
             return t(
                 "Record your microphone and computer audio.",
-                "Запишите микрофон и звук компьютера."
+                "Запиши микрофон и звук компьютера."
             )
         case .item?:
             return t(
                 "Upload a file.",
-                "Загрузите файл."
+                "Загрузи файл."
             )
         case .chat?, nil:
             return t(
                 "Record or upload a file.",
-                "Запишите или загрузите файл."
+                "Запиши или загрузи файл."
             )
         }
     }
@@ -445,7 +445,7 @@ struct MacInboxView: View {
                     .font(Typography.displaySmall)
                 Text(t(
                     "Select a recording or material on the left to open it here.",
-                    "Выберите запись или материал слева, чтобы открыть здесь."
+                    "Выбери запись или материал слева, чтобы открыть здесь."
                 ))
                 .font(Typography.bodySmall)
                 .foregroundStyle(Palette.textSecondary)
@@ -581,7 +581,7 @@ struct MacInboxView: View {
                                 : t("Record into Inbox", "Записать в Инбокс"),
                             message: t(
                                 "Start a new recording with microphone and system audio.",
-                                "Начните новую запись с микрофоном и звуком компьютера."
+                                "Начни новую запись с микрофоном и звуком компьютера."
                             ),
                             primaryTitle: t("Start Recording", "Начать запись"),
                             primaryAccessibilityIdentifier: "start-recording-button",
@@ -678,7 +678,7 @@ struct MacInboxView: View {
         guard urls.count == 1, let url = urls.first else {
             model.errorMessage = t(
                 "Drop one file at a time.",
-                "Перетащите один файл за раз."
+                "Перетащи один файл за раз."
             )
             return false
         }
@@ -869,7 +869,7 @@ private struct MacInboxBulkSelectionDetailView: View {
                     .font(Typography.displaySmall)
                 Text(t(
                     "Use the menu or Delete key to remove them.",
-                    "Используйте меню или клавишу Delete, чтобы удалить выбранное."
+                    "Используй меню или клавишу Delete, чтобы удалить выбранное."
                 ))
                 .font(Typography.bodySmall)
                 .foregroundStyle(Palette.textSecondary)
@@ -976,7 +976,7 @@ private struct MacInboxFileComposer: View {
                 Image(systemName: "square.and.arrow.down")
                     .font(.system(size: 22, weight: .semibold))
                     .foregroundStyle(Palette.accent)
-                Text(t("Drop a file here", "Перетащите файл сюда"))
+                Text(t("Drop a file here", "Перетащи файл сюда"))
                     .font(Typography.headingMedium)
                 Text(t("or click to choose one from your Mac", "или нажмите, чтобы выбрать с компьютера"))
                     .font(Typography.bodySmall)
@@ -1262,18 +1262,18 @@ private struct MacInboxEmptyState: View {
     private var message: String {
         switch sourceKind {
         case .recording:
-            return t("Start a new recording.", "Начните новую запись.")
+            return t("Start a new recording.", "Начни новую запись.")
         case .item:
-            return t("Upload a file.", "Загрузите файл.")
+            return t("Upload a file.", "Загрузи файл.")
         case .none:
             return t(
                 "Start a new recording.",
-                "Начните новую запись."
+                "Начни новую запись."
             )
         case .chat:
             return t(
                 "Start a new recording.",
-                "Начните новую запись."
+                "Начни новую запись."
             )
         }
     }
@@ -1356,20 +1356,7 @@ private struct MacInboxDisplayRow: Identifiable, Equatable {
             default: return capitalizedRaw(raw)
             }
         case .item, .chat:
-            switch raw {
-            case "article": return text("Article", "Статья", language: language)
-            case "video": return text("Video", "Видео", language: language)
-            case "post": return text("Post", "Пост", language: language)
-            case "pdf": return "PDF"
-            case "email": return text("Email", "Письмо", language: language)
-            case "note": return text("Note", "Заметка", language: language)
-            case "event": return text("Event", "Событие", language: language)
-            case "message": return text("Message", "Сообщение", language: language)
-            case "transaction": return text("Transaction", "Транзакция", language: language)
-            case "chat": return text("Chat", "Чат", language: language)
-            case "file": return text("File", "Файл", language: language)
-            default: return capitalizedRaw(raw)
-            }
+            return ItemKindLabel.text(raw, language: language)
         }
     }
 

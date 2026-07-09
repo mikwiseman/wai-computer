@@ -114,7 +114,10 @@ struct ComparisonListView: View {
         VStack(alignment: .leading, spacing: Spacing.xxs) {
             Text(entry.title ?? t("Comparison", "Сравнение"))
                 .font(Typography.body.weight(.medium))
-            Text(t("\(entry.itemCount) items", "\(entry.itemCount) материалов"))
+            Text(t(
+                entry.itemCount == 1 ? "1 item" : "\(entry.itemCount) items",
+                "\(entry.itemCount) \(RussianPlural.form(entry.itemCount, one: "материал", few: "материала", many: "материалов"))"
+            ))
                 .font(Typography.labelSmall)
                 .foregroundStyle(Palette.textTertiary)
         }

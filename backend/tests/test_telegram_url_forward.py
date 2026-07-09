@@ -102,7 +102,7 @@ async def test_forward_youtube_link_replies_with_summary(db_session, monkeypatch
     reply = client.messages[-1]["text"]
     assert client.messages[-1]["parse_mode"] == "HTML"
     assert "Solar Explainer" in reply
-    assert "Key moments" in reply
+    assert "Ключевые моменты" in reply
     assert "[00:42] Thesis stated" in reply
 
     # Item persisted with summary.

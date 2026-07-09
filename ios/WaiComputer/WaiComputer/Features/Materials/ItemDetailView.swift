@@ -43,7 +43,10 @@ struct ItemDetailView: View {
                 )
             }
         }
-        .navigationTitle(item?.kind.capitalized ?? t("Item", "Материал"))
+        .navigationTitle(
+            item.flatMap { ItemKindLabel.text($0.kind, language: languageManager.current) }
+                ?? t("Item", "Материал")
+        )
         .navigationBarTitleDisplayMode(isRegularWidth ? .inline : .large)
         .toolbar {
             if item != nil {
@@ -133,7 +136,7 @@ struct ItemDetailView: View {
 
     private func regularHeader(_ item: Item) -> some View {
         VStack(alignment: .leading, spacing: Spacing.xs) {
-            Text(item.kind.uppercased())
+            Text(ItemKindLabel.text(item.kind, language: languageManager.current) ?? item.kind)
                 .font(Typography.labelSmall)
                 .foregroundStyle(Palette.textTertiary)
             Text(item.title ?? t("Untitled", "Без названия"))
@@ -389,7 +392,7 @@ struct ItemDetailView: View {
 
     private func header(_ item: Item) -> some View {
         VStack(alignment: .leading, spacing: Spacing.xs) {
-            Text(item.kind.uppercased())
+            Text(ItemKindLabel.text(item.kind, language: languageManager.current) ?? item.kind)
                 .font(Typography.labelSmall)
                 .foregroundStyle(Palette.textTertiary)
             Text(item.title ?? t("Untitled", "Без названия"))

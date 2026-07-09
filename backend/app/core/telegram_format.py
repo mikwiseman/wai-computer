@@ -111,3 +111,16 @@ def telegram_inline(text: str) -> str:
         return ""
     inline, _ = _convert_inline(escape(text.strip()))
     return inline
+
+
+def ru_plural(count: int, one: str, few: str, many: str) -> str:
+    """Russian plural form for ``count`` (1 запись / 2 записи / 5 записей)."""
+    n = abs(count) % 100
+    if 11 <= n <= 14:
+        return many
+    n %= 10
+    if n == 1:
+        return one
+    if 2 <= n <= 4:
+        return few
+    return many

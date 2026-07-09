@@ -38,7 +38,7 @@ def format_item_reply(item: Item, summary: ItemSummary | None) -> str:
 
     if (item.metadata_ or {}).get("transcript_source") == "audio_stt":
         sections.append(
-            "<i>No captions on this video — I transcribed the audio.</i>"
+            "<i>Субтитров нет — расшифровал аудио.</i>"
         )
 
     if summary is not None and (summary.summary or "").strip():
@@ -47,7 +47,7 @@ def format_item_reply(item: Item, summary: ItemSummary | None) -> str:
     moments = (summary.key_moments if summary else None) or []
     if moments:
         video_url = _youtube_moment_link(item)
-        lines = ["<b>Key moments</b>"]
+        lines = ["<b>Ключевые моменты</b>"]
         for moment in moments[:_MAX_MOMENTS]:
             label = telegram_inline(str(moment.get("moment") or "").strip())
             if not label:
@@ -73,12 +73,12 @@ def format_item_reply(item: Item, summary: ItemSummary | None) -> str:
     ]
     if todo_lines:
         sections.append(
-            "<b>To do</b>\n" + "\n".join(f"☐ {t}" for t in todo_lines[:_MAX_MOMENTS])
+            "<b>Задачи</b>\n" + "\n".join(f"☐ {t}" for t in todo_lines[:_MAX_MOMENTS])
         )
 
     body = "\n\n".join(s for s in sections if s).strip()
     if not body:
-        return "Saved to your brain."
+        return "Сохранил в память."
     return body
 
 

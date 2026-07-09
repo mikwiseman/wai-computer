@@ -29,10 +29,10 @@ def test_format_reply_with_summary_and_moments() -> None:
     out = format_item_reply(_item(), summary)
     assert "<b>My Video</b>" in out
     assert "solar economics" in out
-    assert "Key moments" in out
+    assert "Ключевые моменты" in out
     assert "[00:30] Thesis stated" in out
     assert "• Counterpoint raised" in out  # no timestamp -> bullet
-    assert "To do" in out
+    assert "Задачи" in out
     assert "Read the white paper" in out
 
 
@@ -48,7 +48,7 @@ def test_format_reply_escapes_html() -> None:
 
 def test_format_reply_without_summary() -> None:
     out = format_item_reply(_item(title=None), None)
-    assert out == "Saved to your brain."
+    assert out == "Сохранил в память."
 
 
 def test_format_reply_moments_capped() -> None:
@@ -99,4 +99,4 @@ def test_format_reply_discloses_audio_stt_fallback() -> None:
     item.metadata_ = {"video_id": "abc", "transcript_source": "audio_stt"}
     summary = ItemSummary(item_id=None, summary="s", key_moments=[], action_items=[])
     out = format_item_reply(item, summary)
-    assert "transcribed the audio" in out
+    assert "расшифровал аудио" in out

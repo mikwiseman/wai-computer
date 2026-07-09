@@ -202,7 +202,7 @@ struct DictationDictionaryView: View {
                 .foregroundStyle(Palette.warning)
             Text(t(
                 "\(dictionaryStore.words.count) entries — long vocabulary lists can confuse the recognizer and slow language detection. Keep entries focused on words that genuinely get misheard.",
-                "\(dictionaryStore.words.count) записей — длинные словари могут путать распознаватель и замедлять определение языка. Оставляй только слова, которые действительно часто слышатся неверно."
+                "\(dictionaryStore.words.count) \(RussianPlural.form(dictionaryStore.words.count, one: "запись", few: "записи", many: "записей")) — длинные словари могут путать распознаватель и замедлять определение языка. Оставляй только слова, которые действительно часто слышатся неверно."
             ))
                 .font(Typography.caption)
                 .foregroundStyle(Palette.textSecondary)

@@ -22,7 +22,7 @@ struct ContentView: View {
         let environment = ProcessInfo.processInfo.environment
         Group {
             if appState.isCheckingAuth {
-                ProgressView("Loading…")
+                ProgressView(OnboardingL10n.text("Loading…", "Загрузка…", language: LanguageManager.shared.current))
             } else if !appState.hasCompletedOnboarding {
                 OnboardingView()
             } else if appState.isAuthenticated {

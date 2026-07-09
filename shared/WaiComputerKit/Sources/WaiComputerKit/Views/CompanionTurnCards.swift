@@ -120,7 +120,7 @@ struct CompanionThinkingCard: View {
                 Image(systemName: "brain")
                     .font(.system(size: 11))
                     .foregroundStyle(accent.opacity(0.85))
-                Text(companionLocaleIsRussian(locale) ? "Размышляю" : "Thinking")
+                Text(companionLocaleIsRussian(locale) ? "Думаю…" : "Thinking…")
                     .font(.system(size: 13, weight: .medium))
                 if isLive {
                     ProgressView().controlSize(.mini)

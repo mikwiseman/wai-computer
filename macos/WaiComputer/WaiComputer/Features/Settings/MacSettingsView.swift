@@ -61,8 +61,8 @@ private let mcpClientGuides: [McpClient: McpClientGuide] = [
         )
     ),
     .claudeAI: McpClientGuide(
-        stepsEnglish: "Open Customize -> Connectors and click the + button, paste the URL, then approve the request on wai.computer when prompted.",
-        stepsRussian: "Открой Customize -> Connectors, нажми +, вставь URL и подтверди запрос на wai.computer.",
+        stepsEnglish: "Open Customize → Connectors and click the + button, paste the URL, then approve the request on wai.computer when prompted.",
+        stepsRussian: "Открой Customize → Connectors, нажми +, вставь URL и подтверди запрос на wai.computer.",
         snippet: nil,
         externalLink: (
             englishLabel: "Open Connectors in Claude.ai",
@@ -85,8 +85,8 @@ private let mcpClientGuides: [McpClient: McpClientGuide] = [
         externalLink: nil
     ),
     .chatGPT: McpClientGuide(
-        stepsEnglish: "Open ChatGPT -> Settings -> Connectors. Enable Developer Mode, add an MCP server, and paste the URL.",
-        stepsRussian: "Открой ChatGPT -> Settings -> Connectors. Включи Developer Mode, добавь MCP-сервер и вставь URL.",
+        stepsEnglish: "Open ChatGPT → Settings → Connectors. Enable Developer Mode, add an MCP server, and paste the URL.",
+        stepsRussian: "Открой ChatGPT → Settings → Connectors. Включи Developer Mode, добавь MCP-сервер и вставь URL.",
         snippet: nil,
         externalLink: nil
     ),
@@ -1409,7 +1409,7 @@ struct MacSettingsView: View {
         case "pending":
             return t("pending", "ожидает")
         case "blocked":
-            return t("blocked", "блок")
+            return t("Blocked", "Заблокировано")
         default:
             return status
         }

@@ -162,7 +162,8 @@ struct BillingSection: View {
             case "active": return "billing.status.active"
             case "past_due": return "billing.status.pastDue"
             case "canceled": return "billing.status.canceled"
-            default: return LocalizedStringKey(sub.status.capitalized)
+            case "expired": return "billing.status.expired"
+            default: return "billing.status.inactive"
             }
         }()
         let color: Color = {

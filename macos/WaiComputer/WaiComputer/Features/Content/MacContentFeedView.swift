@@ -190,7 +190,7 @@ struct MacContentFeedView: View {
                     t("Nothing here yet", "Пока пусто"),
                     systemImage: "tray",
                     description: Text(t("Add a link or text above, or connect a source.",
-                                        "Добавьте ссылку или текст выше, либо подключите источник."))
+                                        "Добавь ссылку или текст выше, либо подключи источник."))
                 )
             } else {
                 List {
@@ -215,7 +215,7 @@ struct MacContentFeedView: View {
                     .font(Typography.bodySmall.weight(.medium))
                     .lineLimit(2)
                 HStack(spacing: Spacing.xs) {
-                    Text(entry.kind.uppercased())
+                    Text(ItemKindLabel.text(entry.kind, language: languageManager.current) ?? entry.kind)
                         .font(Typography.labelSmall)
                         .foregroundStyle(Palette.textTertiary)
                     if entry.status == "failed" {
@@ -267,10 +267,10 @@ struct MacContentFeedView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
             ContentUnavailableViewCompat(
-                t("Select an item", "Выберите материал"),
+                t("Select an item", "Выбери материал"),
                 systemImage: "doc.text.magnifyingglass",
                 description: Text(t("See its summary and key moments.",
-                                    "Посмотрите краткое содержание и ключевые моменты."))
+                                    "Посмотри краткое содержание и ключевые моменты."))
             )
         }
     }

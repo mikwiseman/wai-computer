@@ -94,8 +94,7 @@ struct RecordingDurationClock: Equatable {
     }
 
     static func formatted(_ seconds: TimeInterval) -> String {
-        let total = Int(seconds)
-        return String(format: "%02d:%02d", total / 60, total % 60)
+        ClockDuration.padded(seconds: Int(seconds))
     }
 }
 
@@ -357,8 +356,8 @@ class MacRecordingViewModel: ObservableObject {
                     )
                     guard granted else {
                         error = t(
-                            "Microphone permission denied. Open System Settings -> Privacy & Security -> Microphone and enable WaiComputer.",
-                            "Доступ к микрофону запрещен. Открой Системные настройки -> Конфиденциальность и безопасность -> Микрофон и включи WaiComputer."
+                            "Microphone permission denied. Open System Settings → Privacy & Security → Microphone and enable WaiComputer.",
+                            "Доступ к микрофону запрещен. Открой Системные настройки → Конфиденциальность и безопасность → Микрофон и включи WaiComputer."
                         )
                         errorKind = .micPermission
                         await resetAfterStartFailure()

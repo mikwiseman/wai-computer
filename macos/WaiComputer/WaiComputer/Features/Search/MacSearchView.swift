@@ -331,10 +331,11 @@ struct UnifiedResultRow: View {
         switch hit.kind.lowercased() {
         case "meeting": return t("Meeting", "Встреча")
         case "note": return t("Note", "Заметка")
-        case "chat": return t("Chat", "Чат")
+        case "chat": return t("Thread", "Диалог")
         case "article": return t("Article", "Статья")
-        case "reflection": return t("Reflection", "Размышление")
-        default: return hit.kind
+        case "reflection": return t("Reflection", "Рефлексия")
+        default:
+            return ItemKindLabel.text(hit.kind, language: languageManager.current) ?? hit.kind
         }
     }
 

@@ -53,7 +53,7 @@ final class ContentFeedViewModel: ObservableObject {
             entries = try await apiClient.listItems(kind: kind, folderId: folderId).items
             errorMessage = nil
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = error.userFacingMessage(context: .generic)
         }
     }
 
@@ -121,7 +121,7 @@ final class ContentFeedViewModel: ObservableObject {
             await load()
             return created.id
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = error.userFacingMessage(context: .generic)
             return nil
         }
     }
@@ -130,7 +130,11 @@ final class ContentFeedViewModel: ObservableObject {
     func uploadFile(_ fileURL: URL) async -> ItemUploadOutcome? {
         guard !isAdding, !isUploadingFile else { return nil }
         guard fileURL.startAccessingSecurityScopedResource() else {
-            errorMessage = "Unable to access the selected file."
+            errorMessage = OnboardingL10n.text(
+                "Unable to access the selected file.",
+                "Не удалось открыть выбранный файл.",
+                language: LanguageManager.shared.current
+            )
             return nil
         }
         defer { fileURL.stopAccessingSecurityScopedResource() }
@@ -167,7 +171,7 @@ final class ContentFeedViewModel: ObservableObject {
             errorMessage = nil
             return outcome
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = error.userFacingMessage(context: .generic)
             return nil
         }
     }
@@ -200,7 +204,7 @@ final class ContentFeedViewModel: ObservableObject {
             try await apiClient.deleteItem(id: id)
             entries.removeAll { $0.id == id }
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = error.userFacingMessage(context: .generic)
         }
     }
 
@@ -217,7 +221,7 @@ final class ContentFeedViewModel: ObservableObject {
             await load()
             return true
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = error.userFacingMessage(context: .generic)
             return false
         }
     }
@@ -249,7 +253,7 @@ final class ContentFeedViewModel: ObservableObject {
             isSelecting = false
             compareSelection.removeAll()
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = error.userFacingMessage(context: .generic)
         }
     }
 }

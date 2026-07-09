@@ -80,7 +80,7 @@ struct MacItemDetailView: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: Spacing.xs) {
             HStack {
-                Text(item.kind.uppercased())
+                Text(ItemKindLabel.text(item.kind, language: languageManager.current) ?? item.kind)
                     .font(Typography.labelSmall)
                     .foregroundStyle(Palette.textTertiary)
                 Spacer()

@@ -179,7 +179,7 @@ struct OnboardingVoiceSetupSlide: View {
                 recorder.reset()
                 onAdvance()
             } catch {
-                recorder.errorMessage = error.localizedDescription
+                recorder.errorMessage = t("Couldn't save your voice. Please try again.", "Не удалось сохранить голос. Попробуй ещё раз.")
                 recorder.state = .recorded
             }
         }

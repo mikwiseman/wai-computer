@@ -730,11 +730,11 @@ private struct IOSInboxMaterialRow: View {
                 .lineLimit(2)
 
             HStack(spacing: Spacing.xs) {
-                Text(entry.kind.uppercased())
+                Text(ItemKindLabel.text(entry.kind, language: languageManager.current) ?? entry.kind)
                     .font(Typography.labelSmall)
                     .foregroundStyle(Palette.accent)
                 if !entry.hasSummary {
-                    Text(t("summarizing…", "конспект…"))
+                    Text(t("summarizing…", "суммируем…"))
                         .font(Typography.labelSmall)
                         .foregroundStyle(Palette.textTertiary)
                 }
@@ -958,7 +958,11 @@ struct MaterialsView: View {
             Text(hit.title ?? t("Untitled", "Без названия"))
                 .font(Typography.body.weight(.medium)).lineLimit(1)
             Text(hit.snippet).font(Typography.bodySmall).foregroundStyle(Palette.textSecondary).lineLimit(2)
-            Text(hit.sourceKind == "item" ? hit.kind.uppercased() : t("RECORDING", "ЗАПИСЬ"))
+            Text(
+                hit.sourceKind == "item"
+                    ? (ItemKindLabel.text(hit.kind, language: languageManager.current) ?? hit.kind).uppercased()
+                    : t("RECORDING", "ЗАПИСЬ")
+            )
                 .font(Typography.labelSmall).foregroundStyle(Palette.textTertiary)
         }
         .padding(.vertical, Spacing.xxs)

@@ -54,7 +54,9 @@ final class MacRecordingViewModelStateTests: XCTestCase {
 
         XCTAssertEqual(RecordingDurationClock.formatted(0), "00:00")
         XCTAssertEqual(RecordingDurationClock.formatted(90), "01:30")
-        XCTAssertEqual(RecordingDurationClock.formatted(3_601), "60:01")
+        // Hours roll up — a 1h+ meeting must never read "60:01".
+        XCTAssertEqual(RecordingDurationClock.formatted(3_601), "1:00:01")
+        XCTAssertEqual(RecordingDurationClock.formatted(12_520), "3:28:40")
     }
 
     /// The recording timer must not tick `duration` once per second — that

@@ -193,7 +193,10 @@ private struct BillingStatusBody: View {
             case "past_due": return t("Past due", "Просрочена")
             case "canceled": return t("Canceled", "Отменена")
             case "expired": return t("Expired", "Истекла")
-            default: return sub.status.capitalized
+            case "trialing": return t("Trial", "Пробный период")
+            case "incomplete", "incomplete_expired", "unpaid":
+                return t("Payment issue", "Проблема с оплатой")
+            default: return t("Inactive", "Неактивна")
             }
         }()
         let color: Color = {

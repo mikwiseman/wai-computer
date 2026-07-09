@@ -46,8 +46,8 @@ enum DictationCopy {
 
     static func microphonePermissionDenied(language: LanguageManager.SupportedLanguage) -> String {
         text(
-            "Microphone permission denied. Open System Settings -> Privacy & Security -> Microphone and enable WaiComputer.",
-            "Нет доступа к микрофону. Открой Системные настройки -> Конфиденциальность и безопасность -> Микрофон и включи WaiComputer.",
+            "Microphone permission denied. Open System Settings → Privacy & Security → Microphone and enable WaiComputer.",
+            "Нет доступа к микрофону. Открой Системные настройки → Конфиденциальность и безопасность → Микрофон и включи WaiComputer.",
             language: language
         )
     }

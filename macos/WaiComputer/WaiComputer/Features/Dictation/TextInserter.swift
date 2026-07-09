@@ -17,7 +17,7 @@ enum TextInsertionError: LocalizedError {
         case .clipboardWriteFailed:
             return "Failed to prepare dictated text for insertion."
         case .eventPostingPermissionDenied:
-            return "WaiComputer needs Accessibility permission to paste into other apps. The text is on your clipboard - enable WaiComputer in System Settings -> Privacy & Security -> Accessibility, restart WaiComputer, and try again."
+            return "WaiComputer needs Accessibility permission to paste into other apps. The text is on your clipboard - enable WaiComputer in System Settings → Privacy & Security → Accessibility, restart WaiComputer, and try again."
         case .pasteSimulationFailed:
             return "Could not paste text. It's been copied to your clipboard — press ⌘V to paste manually."
         case .modifierStuck:

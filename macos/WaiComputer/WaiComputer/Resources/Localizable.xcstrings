@@ -580,6 +580,40 @@
         }
       }
     },
+    "billing.status.expired" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Expired"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Истекла"
+          }
+        }
+      }
+    },
+    "billing.status.inactive" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Inactive"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Неактивна"
+          }
+        }
+      }
+    },
     "billing.status.canceled" : {
       "extractionState" : "manual",
       "localizations" : {

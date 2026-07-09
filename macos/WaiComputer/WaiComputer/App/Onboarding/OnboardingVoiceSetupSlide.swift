@@ -278,7 +278,11 @@ final class VoiceEnrollmentRecorder: NSObject, ObservableObject, AVAudioRecorder
             recorder.delegate = self
             recorder.isMeteringEnabled = true
             guard recorder.record() else {
-                errorMessage = "Could not start the microphone."
+                errorMessage = OnboardingL10n.text(
+                    "Could not start the microphone.",
+                    "Не удалось включить микрофон.",
+                    language: LanguageManager.shared.current
+                )
                 return
             }
             self.recorder = recorder
@@ -287,7 +291,11 @@ final class VoiceEnrollmentRecorder: NSObject, ObservableObject, AVAudioRecorder
             self.state = .recording
             startTimer()
         } catch {
-            errorMessage = "Microphone error: \(error.localizedDescription)"
+            errorMessage = OnboardingL10n.text(
+                "Microphone error. Check access in System Settings and try again.",
+                "Ошибка микрофона. Проверь доступ в Системных настройках и попробуй ещё раз.",
+                language: LanguageManager.shared.current
+            )
         }
     }
 

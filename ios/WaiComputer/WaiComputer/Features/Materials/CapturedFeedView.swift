@@ -41,10 +41,18 @@ struct CapturedFeedView: View {
                 .listRowBackground(Color.clear)
 
             if model.entries.isEmpty {
-                emptyState
-                    .listRowInsets(EdgeInsets())
-                    .listRowSeparator(.hidden)
-                    .listRowBackground(Color.clear)
+                Group {
+                    if model.isLoading {
+                        ProgressView()
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, Spacing.xl)
+                    } else {
+                        emptyState
+                    }
+                }
+                .listRowInsets(EdgeInsets())
+                .listRowSeparator(.hidden)
+                .listRowBackground(Color.clear)
             } else {
                 ForEach(model.entries) { entry in
                     if model.isSelecting {
@@ -165,7 +173,7 @@ struct CapturedFeedView: View {
                     }
                 }
             case .failure(let error):
-                model.errorMessage = error.localizedDescription
+                model.errorMessage = error.userFacingMessage(context: .generic)
             }
         }
         .refreshable { await loadFeed() }
@@ -197,6 +205,11 @@ struct CapturedFeedView: View {
                         .foregroundStyle(.white)
                         .padding(Spacing.sm)
                         .background(.red, in: Capsule())
+                        .task(id: error) {
+                            try? await Task.sleep(nanoseconds: 6_000_000_000)
+                            guard !Task.isCancelled else { return }
+                            model.errorMessage = nil
+                        }
                 }
             }
             .padding(.bottom, Spacing.md)
@@ -421,7 +434,7 @@ struct CapturedFeedView: View {
                 .foregroundStyle(Palette.textPrimary)
                 .lineLimit(2)
             HStack(spacing: Spacing.xs) {
-                Text(entry.kind.uppercased())
+                Text(ItemKindLabel.text(entry.kind, language: languageManager.current) ?? entry.kind)
                     .font(Typography.labelSmall)
                     .foregroundStyle(Palette.accent)
                 if let status = statusLabel(for: entry) {
@@ -524,7 +537,7 @@ struct CapturedFeedView: View {
             return t("needs input", "нужны данные")
         }
         if !entry.hasSummary {
-            return t("summarizing…", "конспект…")
+            return t("summarizing…", "суммируем…")
         }
         return nil
     }

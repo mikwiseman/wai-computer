@@ -64,9 +64,7 @@ class RecordingViewModel: ObservableObject {
     private var transcriptTask: Task<Void, Never>?
 
     var formattedDuration: String {
-        let minutes = Int(duration) / 60
-        let seconds = Int(duration) % 60
-        return String(format: "%02d:%02d", minutes, seconds)
+        ClockDuration.padded(seconds: Int(duration))
     }
 
     var statusText: String {

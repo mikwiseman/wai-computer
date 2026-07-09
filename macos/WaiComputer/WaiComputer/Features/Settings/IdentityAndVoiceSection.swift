@@ -39,7 +39,7 @@ struct IdentityAndVoiceSection: View {
                 }
             }
         } header: {
-            Text(t("Identity & Voice", "Удостоверение и голос"))
+            Text(t("Identity & Voice", "Профиль и голос"))
                 .waiSectionHeader()
                 .accessibilityIdentifier("settings-identity-header")
         } footer: {
@@ -47,7 +47,7 @@ struct IdentityAndVoiceSection: View {
                 "Your name and voiceprint are private until you turn on sharing. "
                 + "We never share audio or transcripts.",
                 "Твоё имя и голосовой слепок остаются приватными, пока ты не включишь "
-                + "шаринг. Мы никогда не передаём аудио и расшифровки."
+                + "доступ. Мы никогда не передаём аудио и расшифровки."
             ))
             .font(Typography.caption)
             .foregroundStyle(Palette.textTertiary)
@@ -166,7 +166,7 @@ struct IdentityAndVoiceSection: View {
             missing.append(t("an enrolled voice sample", "образец голоса"))
         }
         return String(
-            format: t("Add %@ to enable sharing.", "Добавь %@, чтобы включить шаринг."),
+            format: t("Add %@ to enable sharing.", "Добавь %@, чтобы поделиться голосом."),
             missing.joined(separator: t(" and ", " и "))
         )
     }
@@ -227,8 +227,8 @@ struct IdentityAndVoiceSection: View {
             error = nil
         } catch {
             self.error = enabled
-                ? t("Could not turn on voice sharing.", "Не удалось включить шаринг голоса.")
-                : t("Could not turn off voice sharing.", "Не удалось выключить шаринг голоса.")
+                ? t("Could not turn on voice sharing.", "Не удалось открыть доступ к голосу.")
+                : t("Could not turn off voice sharing.", "Не удалось закрыть доступ к голосу.")
         }
     }
 

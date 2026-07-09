@@ -88,7 +88,7 @@ from app.core.telegram_client import (
     TelegramFileTooLargeError,
     telegram_chunks,
 )
-from app.core.telegram_format import telegram_html
+from app.core.telegram_format import ru_plural, telegram_html
 from app.core.telegram_intent import (
     VoiceRouteDecision,
     classify_voice_transcript,
@@ -2526,7 +2526,12 @@ async def _handle_export_command(
     )
     await client.send_message(
         chat_id,
-        f"Экспорт готов: {len(recordings)} записей, {len(action_items)} задач.",
+        (
+            f"Экспорт готов: {len(recordings)} "
+            f"{ru_plural(len(recordings), 'запись', 'записи', 'записей')}, "
+            f"{len(action_items)} "
+            f"{ru_plural(len(action_items), 'задача', 'задачи', 'задач')}."
+        ),
         reply_to_message_id=message.get("message_id"),
     )
 
@@ -3254,8 +3259,9 @@ async def _handle_text_message(
         await _send_chunks(
             client,
             chat_id,
-            answer,
+            telegram_html(answer),
             reply_to_message_id=message.get("message_id"),
+            parse_mode="HTML",
         )
     # Surface each proposed action as a tap-to-approve card (inline buttons)
     # rather than a "/approve <uuid>" command the user must copy-paste.
@@ -3812,7 +3818,8 @@ async def _handle_voice_as_message(
     if chat_id is not None:
         echo = transcript.strip()
         if len(echo) > 600:
-            echo = echo[:600].rstrip() + "…"
+            cut = echo.rfind(" ", 0, 600)
+            echo = echo[: cut if cut > 300 else 600].rstrip() + "…"
         await client.send_message(
             chat_id,
             f"🎙 <i>«{escape(echo)}»</i>",

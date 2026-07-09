@@ -47,6 +47,11 @@ struct WaiHomeView: View {
             .overlay(alignment: .top) {
                 if let loadError {
                     citationLoadBanner(loadError)
+                        .task(id: loadError) {
+                            try? await Task.sleep(nanoseconds: 6_000_000_000)
+                            guard !Task.isCancelled else { return }
+                            self.loadError = nil
+                        }
                 }
             }
             .task {

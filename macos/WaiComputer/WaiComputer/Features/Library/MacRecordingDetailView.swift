@@ -364,9 +364,7 @@ struct MacRecordingDetailView: View {
                     .foregroundStyle(Palette.textSecondary)
 
                 if let duration = detail.durationSeconds, duration > 0 {
-                    let mins = duration / 60
-                    let secs = duration % 60
-                    Text(String(format: "%d:%02d", mins, secs))
+                    Text(MacDateFormatting.duration(seconds: duration))
                         .font(Typography.mono)
                         .foregroundStyle(Palette.textSecondary)
                 }
