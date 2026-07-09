@@ -1139,11 +1139,34 @@ a.primary-button[aria-disabled="true"]:hover {
   color: var(--accent-contrast);
 }
 
+/* Utility actions read as quiet footer links, not a stack of white pills
+ * competing with the primary nav. */
 .sidebar-footer {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 0.5rem;
-  padding-top: 1rem;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.15rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--surface-hairline);
+}
+
+.sidebar-footer .ghost-button {
+  border: none;
+  background: transparent;
+  min-height: 28px;
+  padding: 0.25rem 0.5rem;
+  color: var(--ink-faint);
+  font-size: var(--font-label-size);
+  font-weight: 500;
+}
+
+.sidebar-footer .ghost-button:hover {
+  background: var(--surface-hover);
+  color: var(--ink);
+}
+
+.sidebar-footer .danger-button:hover {
+  color: var(--danger);
 }
 
 .workspace {
@@ -1265,13 +1288,15 @@ a.primary-button[aria-disabled="true"]:hover {
 }
 
 .inbox-filters select {
+  width: auto;
   min-width: 132px;
   border: 1px solid var(--border);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-pill);
   background: var(--panel);
-  color: var(--ink);
-  padding: 0.4rem 0.55rem;
+  color: var(--ink-soft);
+  padding: 0.35rem 0.65rem;
   font-size: var(--font-label-size);
+  min-height: 30px;
 }
 
 .inbox-segmented {
@@ -1500,17 +1525,16 @@ a.primary-button[aria-disabled="true"]:hover {
 .inbox-create__grid {
   display: grid;
   grid-template-columns: minmax(220px, 0.85fr) minmax(300px, 1.25fr);
-  gap: 0.8rem;
+  gap: 1rem 2rem;
 }
 
+/* Borderless groups — the outer panel already frames this area; boxed
+ * cards inside a boxed panel read as chrome, not content. */
 .inbox-command-card {
   display: grid;
   align-content: start;
   gap: 0.85rem;
-  border: 1px solid var(--surface-hairline);
-  border-radius: var(--radius-md);
-  background: var(--surface-subtle);
-  padding: 0.9rem;
+  padding: 0.35rem 0;
 }
 
 .inbox-command-card--wide {
@@ -2200,13 +2224,15 @@ a.primary-button[aria-disabled="true"]:hover {
   overflow: hidden;
 }
 
+/* Title owns the full width; actions drop to a quiet toolbar line below —
+ * side-by-side they squeezed long titles into a 3-line column. */
 .detail-panel__header {
   display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 1rem;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.75rem;
   border-bottom: 1px solid var(--border);
-  padding: 1rem 1.05rem;
+  padding: 1rem 1.25rem 0.85rem;
 }
 
 .detail-panel__title-block {
@@ -2237,18 +2263,39 @@ a.primary-button[aria-disabled="true"]:hover {
   min-width: 0;
 }
 
+/* One calm row of compact controls — the old 360px cap forced a ragged
+ * two-column pile of five differently-sized buttons next to the title. */
 .detail-panel__actions {
   display: flex;
   flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 0.5rem;
-  max-width: 360px;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 0.4rem;
   min-width: 0;
 }
 
 .detail-panel__actions .select-button {
   width: auto;
-  min-width: 140px;
+  min-width: 0;
+}
+
+.detail-panel__actions .ghost-button,
+.detail-panel__actions .select-button {
+  min-height: 30px;
+  padding: 0.3rem 0.7rem;
+  font-size: var(--font-label-size);
+  font-weight: 500;
+}
+
+/* Destructive action stays quiet until hovered — red text, no pill. */
+.detail-panel__actions .danger-button {
+  border-color: transparent;
+  background: transparent;
+}
+
+.detail-panel__actions .danger-button:hover {
+  border-color: color-mix(in srgb, var(--danger) 35%, transparent);
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
 }
 
 .tab-strip {
