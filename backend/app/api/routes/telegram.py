@@ -26,6 +26,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import CurrentUser, Database
 from app.config import get_settings
+from app.core import media_audio
 from app.core import user_memory as user_memory_module
 from app.core.agent_dispatch import AgentDispatchError, enqueue_agent_run
 from app.core.agent_runtime import (
@@ -1295,12 +1296,17 @@ def _extract_media(message: dict[str, Any]) -> dict[str, Any] | None:
     if isinstance(document, dict) and document.get("file_id"):
         mime_type = str(document.get("mime_type") or "").lower()
         file_name = str(document.get("file_name") or "").lower()
-        audio_ext = (".mp3", ".m4a", ".wav", ".ogg", ".opus", ".flac", ".aac", ".webm")
-        video_ext = (".mp4", ".mov", ".mkv", ".webm")
+        media_extensions = tuple(
+            f".{ext}"
+            for ext in sorted(
+                media_audio.SUPPORTED_AUDIO_EXTENSIONS
+                | media_audio.SUPPORTED_VIDEO_EXTENSIONS
+            )
+        )
         if (
             mime_type.startswith("audio/")
             or mime_type.startswith("video/")
-            or file_name.endswith(audio_ext + video_ext)
+            or file_name.endswith(media_extensions)
         ):
             return {"kind": "document", **document}
     return None
