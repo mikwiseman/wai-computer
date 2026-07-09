@@ -9,18 +9,27 @@ from uuid import uuid4
 
 from celery import Celery
 from celery.schedules import crontab
-from celery.signals import before_task_publish, task_postrun, task_prerun, worker_process_init
+from celery.signals import (
+    after_setup_logger,
+    after_setup_task_logger,
+    before_task_publish,
+    task_postrun,
+    task_prerun,
+    worker_process_init,
+)
 from kombu import Exchange, Queue
 
 from app.config import get_settings
 from app.core.observability import (
     begin_request_context,
+    configure_logging,
     current_request_id,
     end_request_context,
     initialize_sentry,
 )
 
 settings = get_settings()
+configure_logging(log_format=settings.log_format)
 REQUEST_ID_HEADER = "x-request-id"
 _REQUEST_CONTEXT_ATTR = "_wai_request_context_tokens"
 initialize_sentry(
@@ -28,6 +37,14 @@ initialize_sentry(
     debug=settings.debug,
     include_celery=True,
 )
+
+
+def _configure_celery_logging(logger=None, **_kwargs) -> None:  # noqa: ANN001
+    configure_logging(log_format=settings.log_format, logger=logger)
+
+
+after_setup_logger.connect(_configure_celery_logging)
+after_setup_task_logger.connect(_configure_celery_logging)
 
 
 @before_task_publish.connect

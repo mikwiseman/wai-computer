@@ -179,18 +179,64 @@ async def test_transcribe_audio_file_posts_multipart_and_parses(monkeypatch) -> 
     assert captured["url"] == ELEVENLABS_STT_URL
     assert captured["headers"] == {"xi-api-key": "sk_test"}
     fields = captured["data"]
-    assert ("model_id", "scribe_v2") in fields
-    assert ("diarize", "true") in fields
-    assert ("tag_audio_events", "false") in fields
-    assert ("no_verbatim", "true") in fields
-    assert ("language_code", "ru") in fields
-    assert ("keyterms", "WaiComputer") in fields
-    assert ("keyterms", "Сколково") in fields
+    assert fields["model_id"] == "scribe_v2"
+    assert fields["diarize"] == "true"
+    assert fields["tag_audio_events"] == "false"
+    assert fields["no_verbatim"] == "true"
+    assert fields["language_code"] == "ru"
+    assert fields["keyterms"] == ["WaiComputer", "Сколково"]
     filename, payload_bytes, content_type = captured["files"]["file"]
     assert filename == "audio.mp3"
     assert payload_bytes == b"audio-bytes"
     assert content_type == "audio/mpeg"
     assert [r.text for r in results] == ["Готово."]
+
+
+@pytest.mark.asyncio
+async def test_transcribe_audio_file_builds_async_multipart_request(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+    real_async_client = httpx.AsyncClient
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        captured["content_type"] = request.headers["content-type"]
+        captured["body"] = await request.aread()
+        return httpx.Response(
+            200,
+            json={
+                "language_code": "en",
+                "words": [
+                    _word("Done.", 0.0, 0.5),
+                ],
+            },
+            request=request,
+        )
+
+    def client_factory(*args, **kwargs):  # noqa: ANN002, ANN003, ANN202
+        kwargs["transport"] = httpx.MockTransport(handler)
+        return real_async_client(*args, **kwargs)
+
+    monkeypatch.setattr(
+        "app.core.elevenlabs_stt.get_settings",
+        lambda: type(
+            "S", (), {"elevenlabs_api_key": "sk_test", "elevenlabs_stt_no_verbatim": False}
+        )(),
+    )
+    monkeypatch.setattr("app.core.elevenlabs_stt.httpx.AsyncClient", client_factory)
+
+    results = await transcribe_audio_file(
+        b"audio-bytes",
+        language="auto",
+        content_type="audio/wav",
+        keyterms=["Alpha", "Beta"],
+    )
+
+    assert [result.text for result in results] == ["Done."]
+    assert str(captured["content_type"]).startswith("multipart/form-data")
+    body = bytes(captured["body"]).decode("utf-8", errors="replace")
+    assert body.count('name="keyterms"') == 2
+    assert "Alpha" in body
+    assert "Beta" in body
+    assert 'name="file"; filename="audio.wav"' in body
 
 
 @pytest.mark.asyncio

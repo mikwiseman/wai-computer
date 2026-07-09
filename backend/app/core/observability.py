@@ -120,16 +120,16 @@ class JsonLogFormatter(logging.Formatter):
         return json.dumps(payload, ensure_ascii=False, separators=(",", ":"), default=str)
 
 
-def configure_logging(*, log_format: str = "text") -> None:
-    """Attach request-context and redaction filtering to the root logger once."""
-    root_logger = logging.getLogger()
+def configure_logging(*, log_format: str = "text", logger: logging.Logger | None = None) -> None:
+    """Attach request-context and redaction filtering to a logger's handlers once."""
+    target_logger = logger or logging.getLogger()
     formatter: logging.Formatter
     if log_format == "json":
         formatter = JsonLogFormatter()
     else:
         formatter = logging.Formatter(TEXT_LOG_FORMAT)
 
-    for handler in root_logger.handlers:
+    for handler in target_logger.handlers:
         handler.setFormatter(formatter)
         if not any(isinstance(existing, RequestContextFilter) for existing in handler.filters):
             handler.addFilter(RequestContextFilter())

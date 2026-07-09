@@ -1,3 +1,5 @@
+import subprocess
+import sys
 from types import SimpleNamespace
 
 from celery.schedules import crontab
@@ -22,6 +24,31 @@ class DummySessionFactory:
 
     def __call__(self, *args, **kwargs):
         return {"engine_label": self.engine.label, "args": args, "kwargs": kwargs}
+
+
+def test_celery_worker_import_configures_redacting_logging_in_clean_process():
+    script = """
+import logging
+logging.getLogger().handlers.clear()
+logging.basicConfig(level=logging.INFO)
+import app.tasks.celery_app  # noqa: F401
+from app.core.observability import RedactingLogFilter
+has_filter = any(
+    isinstance(log_filter, RedactingLogFilter)
+    for handler in logging.getLogger().handlers
+    for log_filter in handler.filters
+)
+print("redacting-filter:" + ("yes" if has_filter else "no"))
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", script],
+        cwd=".",
+        capture_output=True,
+        check=True,
+        text=True,
+    )
+
+    assert result.stdout.strip() == "redacting-filter:yes"
 
 
 def test_reset_db_runtime_recreates_engine(monkeypatch):

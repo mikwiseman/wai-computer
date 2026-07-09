@@ -263,19 +263,20 @@ async def transcribe_audio_file(
     api_key = require_elevenlabs_api_key()
     settings = get_settings()
 
-    fields: list[tuple[str, str]] = [
-        ("model_id", model or ELEVENLABS_BATCH_MODEL),
-        ("diarize", "true"),
-        ("tag_audio_events", "false"),
-        ("timestamps_granularity", "word"),
-    ]
+    fields: dict[str, str | list[str]] = {
+        "model_id": model or ELEVENLABS_BATCH_MODEL,
+        "diarize": "true",
+        "tag_audio_events": "false",
+        "timestamps_granularity": "word",
+    }
     if settings.elevenlabs_stt_no_verbatim:
-        fields.append(("no_verbatim", "true"))
+        fields["no_verbatim"] = "true"
     language_code = resolve_scribe_language_code(language)
     if language_code is not None:
-        fields.append(("language_code", language_code))
-    for term in sanitize_scribe_keyterms(keyterms):
-        fields.append(("keyterms", term))
+        fields["language_code"] = language_code
+    sanitized_keyterms = sanitize_scribe_keyterms(keyterms)
+    if sanitized_keyterms:
+        fields["keyterms"] = sanitized_keyterms
 
     async with httpx.AsyncClient(timeout=_batch_timeout(audio_duration_seconds)) as client:
         response = await client.post(
