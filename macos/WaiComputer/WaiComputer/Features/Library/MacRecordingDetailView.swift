@@ -212,7 +212,7 @@ struct MacRecordingDetailView: View {
                 systemImage: copiedSection == section ? "checkmark" : "doc.on.doc"
             )
         }
-        .buttonStyle(WaiGhostButtonStyle())
+        .buttonStyle(WaiQuietButtonStyle())
         .help(copiedSection == section ? t("Copied!", "Скопировано") : title)
     }
 
@@ -404,7 +404,7 @@ struct MacRecordingDetailView: View {
                         Image(systemName: "square.and.arrow.down")
                     }
                 }
-                .buttonStyle(WaiGhostButtonStyle())
+                .buttonStyle(WaiQuietButtonStyle())
                 .help(t("Export Recording", "Экспортировать запись"))
                 .accessibilityLabel(t("Export Recording", "Экспортировать запись"))
 
@@ -422,7 +422,7 @@ struct MacRecordingDetailView: View {
                         Image(systemName: copiedSection == "share-link" ? "checkmark" : "square.and.arrow.up")
                     }
                 }
-                .buttonStyle(WaiGhostButtonStyle())
+                .buttonStyle(WaiQuietButtonStyle())
                 .help(t("Create a web share link", "Создать ссылку для просмотра"))
                 .accessibilityLabel(
                     copiedSection == "share-link"
@@ -486,7 +486,7 @@ struct MacRecordingDetailView: View {
                     Image(systemName: isPlaying ? "stop.fill" : "play.fill")
                 }
             }
-            .buttonStyle(WaiGhostButtonStyle())
+            .buttonStyle(WaiQuietButtonStyle())
             .help(summaryAudioPlaybackButtonTitle(isDownloading: isDownloading, isPlaying: isPlaying))
             .disabled(isDownloading)
             .accessibilityIdentifier("recording-detail-summary-audio-play-button")
@@ -509,7 +509,7 @@ struct MacRecordingDetailView: View {
                     Image(systemName: state?.isFailed == true ? "arrow.clockwise" : "waveform")
                 }
             }
-            .buttonStyle(WaiGhostButtonStyle())
+            .buttonStyle(WaiQuietButtonStyle())
             .help(summaryAudioButtonTitle(state: state, isGenerating: isGenerating))
             .disabled(isGenerating)
             .accessibilityIdentifier("recording-detail-summary-audio-create-button")
@@ -553,7 +553,7 @@ struct MacRecordingDetailView: View {
                 Image(systemName: "folder")
             }
         }
-        .buttonStyle(WaiGhostButtonStyle())
+        .buttonStyle(WaiQuietButtonStyle())
         .help(t("Move to Folder", "Переместить в папку"))
         .accessibilityLabel(t("Move to Folder", "Переместить в папку"))
         .disabled(detail.folderId == nil && folders.isEmpty)
@@ -635,7 +635,7 @@ struct MacRecordingDetailView: View {
                     }
                 }
             }
-            .frame(maxWidth: 920, alignment: .leading)
+            .frame(maxWidth: MacMainLayoutMetrics.readingMeasure, alignment: .leading)
             .frame(maxWidth: .infinity, alignment: .leading)
             .listRowInsets(EdgeInsets(
                 top: 0,
@@ -901,7 +901,7 @@ struct MacRecordingDetailView: View {
                     } label: {
                         Image(systemName: copiedSection == "transcript-all" ? "checkmark" : "doc.on.doc")
                     }
-                    .buttonStyle(WaiGhostButtonStyle())
+                    .buttonStyle(WaiQuietButtonStyle())
                     .help(t("Copy transcript", "Скопировать расшифровку"))
                     .accessibilityLabel(
                         copiedSection == "transcript-all"

@@ -481,6 +481,19 @@ struct WaiGhostButtonStyle: ButtonStyle {
     }
 }
 
+/// Quiet toolbar button — secondary ink instead of accent. Use for rows of
+/// utility actions (export/share/move) where five accent-tinted buttons
+/// would compete; reserve `WaiGhostButtonStyle` for the one action that
+/// deserves emphasis.
+struct WaiQuietButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(Typography.headingSmall)
+            .foregroundStyle(Palette.textSecondary)
+            .opacity(configuration.isPressed ? 0.6 : 1.0)
+    }
+}
+
 enum MacMainLayoutMetrics {
     static let sidebarMinWidth: CGFloat = 236
     static let sidebarIdealWidth: CGFloat = 264
