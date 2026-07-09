@@ -8,6 +8,8 @@ tokens).
 
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
 from uuid import UUID, uuid4
 
 import pytest
@@ -146,6 +148,46 @@ async def test_create_accepts_ingest_write_scope(
         headers=auth_headers,
     )
     assert invalid.status_code == 422
+
+
+def test_create_api_key_request_accepts_default_scopes_none() -> None:
+    from app.api.routes.api_keys import CreateApiKeyRequest
+
+    assert CreateApiKeyRequest(name="Default worker").scopes is None
+
+
+@pytest.mark.asyncio
+async def test_api_key_dependency_helpers_cover_resolution_branches(monkeypatch) -> None:
+    from app.api import deps
+
+    owner = SimpleNamespace(id=uuid4())
+    api_key = SimpleNamespace(user_id=owner.id)
+
+    class _Result:
+        def __init__(self, value):
+            self._value = value
+
+        def scalar_one_or_none(self):
+            return self._value
+
+    class _DB:
+        def __init__(self, value):
+            self.value = value
+            self.executed = False
+
+        async def execute(self, _statement):
+            self.executed = True
+            return _Result(self.value)
+
+    monkeypatch.setattr(deps, "resolve_api_key", AsyncMock(return_value=api_key))
+    db = _DB(owner)
+    assert await deps._user_for_api_key(db, "wc_live_test") is owner
+    assert db.executed
+
+    assert await deps._principal_for_api_key(_DB(None), "wc_live_test") is None
+
+    monkeypatch.setattr(deps, "resolve_api_key", AsyncMock(return_value=None))
+    assert await deps._user_for_api_key(_DB(owner), "wc_live_missing") is None
 
 
 @pytest.mark.asyncio
