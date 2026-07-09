@@ -137,7 +137,7 @@ class User(Base, UUIDMixin, TimestampMixin):
         String(10), default="system", server_default="system", nullable=False
     )
     accent: Mapped[str] = mapped_column(
-        String(12), default="teal", server_default="teal", nullable=False
+        String(12), default="amber", server_default="amber", nullable=False
     )
     account_status: Mapped[str] = mapped_column(
         String(20), default="active", server_default="active", nullable=False, index=True

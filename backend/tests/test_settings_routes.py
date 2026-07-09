@@ -537,13 +537,13 @@ async def test_update_transcription_settings_rejects_invalid_model(client: Async
 
 @pytest.mark.asyncio
 async def test_get_preferences_returns_defaults_for_new_user(client: AsyncClient):
-    """A freshly registered user returns the column defaults: system + teal."""
+    """A freshly registered user returns the column defaults: system + amber."""
     headers = await _register(client, "settings.prefs.default@example.com", "password-123")
 
     response = await client.get("/api/settings/preferences", headers=headers)
 
     assert response.status_code == 200
-    assert response.json() == {"theme": "system", "accent": "teal"}
+    assert response.json() == {"theme": "system", "accent": "amber"}
 
 
 @pytest.mark.asyncio
@@ -557,11 +557,11 @@ async def test_patch_preferences_persists_theme(client: AsyncClient):
         json={"theme": "dark"},
     )
     assert patch.status_code == 200
-    assert patch.json() == {"theme": "dark", "accent": "teal"}
+    assert patch.json() == {"theme": "dark", "accent": "amber"}
 
     fetched = await client.get("/api/settings/preferences", headers=headers)
     assert fetched.status_code == 200
-    assert fetched.json() == {"theme": "dark", "accent": "teal"}
+    assert fetched.json() == {"theme": "dark", "accent": "amber"}
 
 
 @pytest.mark.asyncio
@@ -594,7 +594,7 @@ async def test_patch_preferences_rejects_invalid_theme(client: AsyncClient):
     assert response.status_code == 422
 
     fetched = await client.get("/api/settings/preferences", headers=headers)
-    assert fetched.json() == {"theme": "system", "accent": "teal"}
+    assert fetched.json() == {"theme": "system", "accent": "amber"}
 
 
 @pytest.mark.asyncio
