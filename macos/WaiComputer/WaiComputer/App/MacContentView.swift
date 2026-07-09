@@ -621,6 +621,13 @@ struct MacMainView: View {
                 selectedSection = .inbox
             }
         }
+        .onReceive(NotificationCenter.default.publisher(for: .macStartMeetingRecording)) { _ in
+            // "Record" action on the meeting-detected notification. The
+            // detector only prompts while idle, but the user may have started
+            // something in the meantime — never stomp a live session.
+            guard recordingViewModel.phase == .idle else { return }
+            startRecording(type: .meeting)
+        }
         .onReceive(NotificationCenter.default.publisher(for: .pendingRecordingSyncDidFinish)) { _ in
             Task {
                 await reloadLibrary()

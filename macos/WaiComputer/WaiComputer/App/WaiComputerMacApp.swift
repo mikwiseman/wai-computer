@@ -9,6 +9,7 @@ extension Notification.Name {
     static let macInboxCommand = Notification.Name("macInboxCommand")
     static let macCreateFolder = Notification.Name("macCreateFolder")
     static let macOpenWaiChat = Notification.Name("macOpenWaiChat")
+    static let macStartMeetingRecording = Notification.Name("macStartMeetingRecording")
     static let waicomputerIncomingURL = Notification.Name("waicomputerIncomingURL")
     static let waicomputerCheckForUpdates = Notification.Name("waicomputerCheckForUpdates")
 }
@@ -721,6 +722,8 @@ class MacAppState: ObservableObject {
     private let apiClient: APIClient
     private var hasAttemptedStoredSessionRestore = false
     private var pendingRecordingSyncObserver: NSObjectProtocol?
+    /// Prompts to record when another app starts a call while we're idle.
+    private var meetingDetection: MeetingDetectionController?
 
     init(
         recordingViewModel: MacRecordingViewModel,
@@ -862,6 +865,17 @@ class MacAppState: ObservableObject {
         } else {
             isCheckingAuth = false
         }
+
+        // Meeting detection runs for the whole app lifetime; prompts are
+        // suppressed while a recording session owns the mic.
+        let meetingDetection = MeetingDetectionController(
+            isBusy: { [weak recordingViewModel] in
+                guard let recordingViewModel else { return true }
+                return recordingViewModel.phase != .idle
+            }
+        )
+        meetingDetection.start()
+        self.meetingDetection = meetingDetection
     }
 
     deinit {

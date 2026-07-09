@@ -98,7 +98,25 @@ final class MacWaiTaskNotificationCenter: NSObject, UNUserNotificationCenterDele
         didReceive response: UNNotificationResponse,
         withCompletionHandler completionHandler: @escaping () -> Void
     ) {
-        guard let chatId = response.notification.request.content.userInfo["chatId"] as? String else {
+        let userInfo = response.notification.request.content.userInfo
+
+        if userInfo[MeetingDetectionController.userInfoKey] as? Bool == true {
+            let startRecording =
+                response.actionIdentifier == MeetingDetectionController.startActionIdentifier
+            Task { @MainActor in
+                Self.reopenMainWindowIfPossible()
+                // The "Record" action starts immediately; a plain click just
+                // opens the app with the recording surface ready.
+                NotificationCenter.default.post(
+                    name: startRecording ? .macStartMeetingRecording : .showNewRecording,
+                    object: nil
+                )
+                completionHandler()
+            }
+            return
+        }
+
+        guard let chatId = userInfo["chatId"] as? String else {
             completionHandler()
             return
         }

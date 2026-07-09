@@ -189,6 +189,7 @@ struct MacSettingsView: View {
     @AppStorage(RecordingAutoStopSettings.enabledKey) private var recordingAutoStopEnabled = true
     @AppStorage(RecordingAutoStopSettings.silenceMinutesKey) private var recordingAutoStopSilenceMinutes = RecordingAutoStopSettings.defaultSilenceMinutes
     @AppStorage(RecordingAutoStopSettings.actionKey) private var recordingAutoStopAction = RecordingAutoStopSettings.Action.stop.rawValue
+    @AppStorage(MeetingDetectionSettings.enabledKey) private var meetingDetectionEnabled = true
     @AppStorage(BetaChannelStore.userDefaultsKey) private var receiveBetaUpdates = false
     @EnvironmentObject var languageStore: DictationLanguageStore
     @State private var summaryLanguage = "auto"
@@ -400,6 +401,19 @@ struct MacSettingsView: View {
 
     private var recordingAutoStopSection: some View {
         Section {
+            Toggle(isOn: $meetingDetectionEnabled) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(t("Suggest recording when a call starts", "Предлагать запись, когда начинается звонок"))
+                    Text(t(
+                        "When another app starts using the microphone — Zoom, Meet, FaceTime — WaiComputer sends a notification offering to record. It checks which apps hold the mic, never the audio itself.",
+                        "Когда другое приложение начинает использовать микрофон — Zoom, Meet, FaceTime — WaiComputer пришлет уведомление с предложением записать. Проверяется только какие приложения держат микрофон, не сам звук."
+                    ))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                }
+            }
+            .accessibilityIdentifier("settings-meeting-detection-toggle")
+
             Toggle(isOn: $recordingAutoStopEnabled) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(t("Stop recording when the conversation ends", "Останавливать запись после разговора"))
