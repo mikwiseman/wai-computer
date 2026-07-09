@@ -104,34 +104,64 @@ def test_ffprobe_duration_seconds_maps_subprocess_errors(
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    ("content_type", "payload"),
+    ("content_type", "ext", "payload"),
     [
-        ("audio/mp4; codecs=mp4a", b"m4a-audio"),
-        ("audio/m4a", b"m4a-audio"),
-        ("audio/x-m4a", b"m4a-audio"),
-        ("video/mp4", b"mp4-video"),
-        ("audio/wav", b"wav-audio"),
+        ("audio/mp4; codecs=mp4a", "m4a", b"m4a-audio"),
+        ("audio/m4a", "m4a", b"m4a-audio"),
+        ("audio/x-m4a", "m4a", b"m4a-audio"),
+        ("audio/wav", "wav", b"wav-audio"),
+        ("audio/mpeg", "mp3", b"mp3-audio"),
     ],
 )
-async def test_normalize_audio_upload_for_transcription_keeps_deepgram_supported_containers(
+async def test_extract_staged_media_audio_keeps_provider_ready_containers(
     monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
     content_type: str,
+    ext: str,
     payload: bytes,
 ) -> None:
     def run(*_args, **_kwargs):
         raise AssertionError("ffmpeg should not run for Deepgram-supported containers")
 
     monkeypatch.setattr(recording_audio_processing.subprocess, "run", run)
+    staged = tmp_path / f"recording.{ext}"
+    staged.write_bytes(payload)
 
-    audio_data, returned_content_type = (
-        await recording_audio_processing._normalize_audio_upload_for_transcription(
-            payload,
-            content_type=content_type,
-        )
+    extracted = await recording_audio_processing._extract_staged_media_audio(
+        staged,
+        content_type=content_type,
     )
 
-    assert audio_data == payload
-    assert returned_content_type == content_type
+    assert extracted is None  # provider-ready audio passes through untouched
+    assert staged.read_bytes() == payload
+
+
+@pytest.mark.asyncio
+async def test_extract_staged_media_audio_reduces_video_to_flac(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    staged = tmp_path / "recording.mp4"
+    staged.write_bytes(b"mp4-video")
+
+    async def fake_extract(source, dest):
+        assert source == staged
+        dest.write_bytes(b"flac-audio")
+        return dest
+
+    monkeypatch.setattr(recording_audio_processing, "extract_audio_to_flac", fake_extract)
+
+    extracted = await recording_audio_processing._extract_staged_media_audio(
+        staged,
+        content_type="video/mp4",
+    )
+
+    assert extracted is not None
+    extracted_path, extracted_content_type, extracted_size = extracted
+    assert extracted_path.name == "recording.stt.flac"
+    assert extracted_content_type == "audio/flac"
+    assert extracted_size == len(b"flac-audio")
+    assert not staged.exists()  # the original video is dropped after extraction
 
 
 def test_audio_processing_helper_edge_branches() -> None:
@@ -451,7 +481,14 @@ async def test_process_staged_recording_upload_sends_m4a_container_to_provider(
         )
     ]
 
-    transcribe = AsyncMock(return_value=transcript_results)
+    stt_payloads: list[bytes] = []
+
+    async def capture_transcribe(media_path, **kwargs):
+        # The staged file is deleted after processing; capture at call time.
+        stt_payloads.append(media_path.read_bytes())
+        return transcript_results
+
+    transcribe = AsyncMock(side_effect=capture_transcribe)
     monkeypatch.setattr(
         "app.core.recording_audio_processing._ffprobe_duration_seconds",
         lambda *_args, **_kwargs: 12.0,
@@ -487,7 +524,7 @@ async def test_process_staged_recording_upload_sends_m4a_container_to_provider(
     transcribe.assert_awaited_once()
     _, kwargs = transcribe.await_args
     assert kwargs["content_type"] == "audio/mp4"
-    assert transcribe.await_args.args[0] == b"m4a-audio"
+    assert stt_payloads == [b"m4a-audio"]  # original container streamed by path
     await db_session.refresh(recording)
     assert recording.status == RecordingStatus.READY.value
     assert not staged_path.exists()
@@ -1102,8 +1139,8 @@ async def test_process_staged_recording_upload_marks_deepgram_400_terminal(
         AsyncMock(side_effect=error),
     )
     monkeypatch.setattr(
-        "app.core.recording_audio_processing._normalize_audio_upload_for_transcription",
-        AsyncMock(return_value=(b"bad-media", "audio/mp4")),
+        "app.core.recording_audio_processing._extract_staged_media_audio",
+        AsyncMock(return_value=None),
     )
     monkeypatch.setattr(
         "app.core.recording_audio_processing.capture_sentry_anomaly",
@@ -1371,7 +1408,13 @@ async def test_process_staged_recording_upload_skips_voice_identification_for_ov
         "voice_identification_max_audio_bytes",
         30 * 1024 * 1024,
     )
-    transcribe = AsyncMock(return_value=transcript_results)
+    stt_payloads: list[bytes] = []
+
+    async def capture_transcribe(media_path, **kwargs):
+        stt_payloads.append(media_path.read_bytes())
+        return transcript_results
+
+    transcribe = AsyncMock(side_effect=capture_transcribe)
     monkeypatch.setattr(
         "app.core.recording_audio_processing.transcribe_audio_file",
         transcribe,
@@ -1418,7 +1461,7 @@ async def test_process_staged_recording_upload_skips_voice_identification_for_ov
     )
 
     transcribe.assert_awaited_once()
-    assert transcribe.await_args.args[0] == b"audio"
+    assert stt_payloads == [b"audio"]  # original container streamed by path
     assert transcribe.await_args.kwargs["content_type"] == "audio/mp4"
     assert transcribe.await_args.kwargs["audio_duration_seconds"] == 9_236
     identify_mock.assert_awaited_once()
@@ -1915,8 +1958,8 @@ async def test_process_staged_recording_upload_continues_after_duration_probe_fa
         transcribe,
     )
     monkeypatch.setattr(
-        "app.core.recording_audio_processing._normalize_audio_upload_for_transcription",
-        AsyncMock(return_value=(b"provider-media", "audio/flac")),
+        "app.core.recording_audio_processing._extract_staged_media_audio",
+        AsyncMock(return_value=None),
     )
     monkeypatch.setattr(
         "app.core.recording_audio_processing.capture_sentry_anomaly",
@@ -2004,8 +2047,8 @@ async def test_process_staged_recording_upload_retries_after_previous_decode_fai
         transcribe,
     )
     monkeypatch.setattr(
-        "app.core.recording_audio_processing._normalize_audio_upload_for_transcription",
-        AsyncMock(return_value=(b"provider-media", "audio/flac")),
+        "app.core.recording_audio_processing._extract_staged_media_audio",
+        AsyncMock(return_value=None),
     )
     monkeypatch.setattr(
         "app.core.recording_audio_processing.capture_sentry_anomaly",

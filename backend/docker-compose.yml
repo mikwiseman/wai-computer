@@ -292,6 +292,10 @@ services:
         GIT_SHA: ${GIT_SHA:-}
         GIT_DIRTY: ${GIT_DIRTY:-false}
     container_name: waicomputer-celery-recording-worker
+    group_add:
+      # telegram-bot-api stores local files under 0750/0640 paths owned by 101:101;
+      # the Telegram media import task reads them from the shared volume.
+      - "101"
     env_file:
       - ${WAICOMPUTER_ENV_FILE:-.env}
     environment:
@@ -300,12 +304,17 @@ services:
       SUMMARY_AUDIO_STORAGE_DIR: /var/lib/waicomputer/summary-audio
       REDIS_URL: redis://redis:6379/0
       VOICE_IDENTIFICATION_ENABLED: "true"
+      TELEGRAM_BOT_API_BASE_URL: http://telegram-bot-api:8081
+      TELEGRAM_FILE_BASE_URL: http://telegram-bot-api:8081/file
+      TELEGRAM_LOCAL_FILE_ROOT: /var/lib/telegram-bot-api
+      TELEGRAM_DOWNLOAD_MAX_BYTES: ${TELEGRAM_DOWNLOAD_MAX_BYTES:-1073741824}
       GIT_SHA: ${GIT_SHA:-}
       GIT_DIRTY: ${GIT_DIRTY:-false}
     volumes:
       - recording_uploads:/var/lib/waicomputer/uploads
       - summary_audio:/var/lib/waicomputer/summary-audio
       - speechbrain_cache:/root/.cache/speechbrain
+      - tg_api_data:/var/lib/telegram-bot-api:ro
     networks:
       - internal
     depends_on:

@@ -10,7 +10,7 @@ import pytest
 
 
 @pytest.mark.asyncio
-async def test_import_transcription_uses_locked_file_stt_runtime(monkeypatch):
+async def test_import_transcription_uses_locked_file_stt_runtime(monkeypatch, tmp_path):
     from app.core import recording_import
 
     calls: list[dict[str, object]] = []
@@ -31,9 +31,11 @@ async def test_import_transcription_uses_locked_file_stt_runtime(monkeypatch):
         AsyncMock(return_value=[]),
     )
 
+    media_path = tmp_path / "audio.wav"
+    media_path.write_bytes(b"audio")
     await recording_import._transcribe(
         db=object(),
-        data=b"audio",
+        media_path=media_path,
         content_type="audio/wav",
         language="auto",
         user=SimpleNamespace(
@@ -55,13 +57,13 @@ async def test_import_transcription_uses_locked_file_stt_runtime(monkeypatch):
 
 # --- pure import-path helpers (pre-existing, cost-surface adjacent) -----------
 def test_is_video_media_by_content_type_then_extension():
-    from app.core.recording_import import _is_video_media
+    from app.core.media_audio import is_video_media
 
-    assert _is_video_media("mp4", "video/mp4") is True
-    assert _is_video_media("mp3", "audio/mpeg") is False
+    assert is_video_media("mp4", "video/mp4") is True
+    assert is_video_media("mp3", "audio/mpeg") is False
     # falls back to extension when content type is unhelpful
-    assert _is_video_media("mp4", None) is True
-    assert _is_video_media("mp3", None) is False
+    assert is_video_media("mp4", None) is True
+    assert is_video_media("mp3", None) is False
 
 
 def test_resolve_language_normalizes_auto_multi():

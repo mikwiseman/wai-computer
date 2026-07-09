@@ -916,6 +916,16 @@ class _TelegramCapture:
             raise TelegramFileTooLargeError("Telegram file exceeds configured limit")
         return self.data
 
+    async def download_file_to_path(
+        self, file: TelegramFile, dest, *, max_bytes: int | None = None
+    ) -> int:
+        assert file.file_path == self.file.file_path
+        if max_bytes is not None and len(self.data) > max_bytes:
+            raise TelegramFileTooLargeError("Telegram file exceeds configured limit")
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_bytes(self.data)
+        return len(self.data)
+
 
 @pytest.mark.asyncio
 async def test_handle_start_command_existing_and_missing_link(db_session: AsyncSession):
@@ -2829,18 +2839,21 @@ async def test_handle_url_message_saves_links_and_reports_processing_edges(
 async def test_handle_media_message_imports_and_replies(
     db_session: AsyncSession,
     monkeypatch,
+    tmp_path,
 ):
     user = await _user(db_session)
     account = TelegramAccount(user_id=user.id, telegram_user_id=44, telegram_chat_id=44)
     db_session.add(account)
     await db_session.commit()
     capture = _TelegramCapture()
+    pending = _wire_eager_media_enqueue(monkeypatch, db_session, capture, tmp_path)
 
     async def fake_import(**kwargs):
         assert kwargs["filename"] == "voice/file.ogg"
         assert kwargs["title"] is None
         assert kwargs["duration_seconds"] is None
         assert kwargs["source_label"] == "telegram"
+        assert kwargs["source_path"] is not None and kwargs["source_path"].exists()
         for _ in range(20):
             if capture.actions:
                 break
@@ -2876,6 +2889,7 @@ async def test_handle_media_message_imports_and_replies(
         account=account,
         media={"kind": "voice", "file_id": "file-id"},
     )
+    await asyncio.gather(*pending)
 
     assert "Расшифровываю" in capture.messages[0]["text"]
     assert capture.deleted_messages == [{"chat_id": 44, "message_id": 1}]
@@ -2900,12 +2914,14 @@ async def test_handle_media_message_imports_and_replies(
 async def test_handle_media_message_marks_pending_context_before_import(
     db_session: AsyncSession,
     monkeypatch,
+    tmp_path,
 ):
     user = await _user(db_session, "telegram-media-pending@example.com")
     account = TelegramAccount(user_id=user.id, telegram_user_id=52, telegram_chat_id=52)
     db_session.add(account)
     await db_session.commit()
     capture = _TelegramCapture()
+    pending = _wire_eager_media_enqueue(monkeypatch, db_session, capture, tmp_path)
     recording_id = uuid4()
     seen_contexts: list[dict[str, Any] | None] = []
 
@@ -2926,6 +2942,7 @@ async def test_handle_media_message_marks_pending_context_before_import(
         account=account,
         media={"kind": "voice", "file_id": "file-id"},
     )
+    await asyncio.gather(*pending)
 
     assert seen_contexts[0]["ref_type"] == "pending_recording"
     assert seen_contexts[0]["source"] == "telegram"
@@ -2937,12 +2954,14 @@ async def test_handle_media_message_marks_pending_context_before_import(
 async def test_handle_media_message_surfaces_unexpected_import_crash(
     db_session: AsyncSession,
     monkeypatch,
+    tmp_path,
 ):
     user = await _user(db_session, "telegram-media-crash@example.com")
     account = TelegramAccount(user_id=user.id, telegram_user_id=57, telegram_chat_id=57)
     db_session.add(account)
     await db_session.commit()
     capture = _TelegramCapture()
+    pending = _wire_eager_media_enqueue(monkeypatch, db_session, capture, tmp_path)
 
     async def broken_import(**kwargs):
         raise RuntimeError("provider worker crashed")
@@ -2956,6 +2975,7 @@ async def test_handle_media_message_surfaces_unexpected_import_crash(
         account=account,
         media={"kind": "voice", "file_id": "file-id"},
     )
+    await asyncio.gather(*pending)
 
     assert "Расшифровываю" in capture.messages[0]["text"]
     assert capture.messages[-1]["text"] == telegram_routes.TELEGRAM_RECORDING_IMPORT_ERROR_REPLY
@@ -3144,6 +3164,7 @@ async def test_handle_media_message_rejects_too_large_file(
 async def test_handle_media_message_download_size_user_and_import_errors(
     db_session: AsyncSession,
     monkeypatch,
+    tmp_path,
 ):
     capture = _TelegramCapture()
     account = TelegramAccount(user_id=uuid4(), telegram_user_id=48, telegram_chat_id=48)
@@ -3161,6 +3182,7 @@ async def test_handle_media_message_download_size_user_and_import_errors(
     db_session.add(account)
     await db_session.commit()
     capture = _TelegramCapture()
+    pending = _wire_eager_media_enqueue(monkeypatch, db_session, capture, tmp_path)
     capture.file = TelegramFile("file-id", "voice/file.ogg", 999)
     monkeypatch.setattr(telegram_routes.settings, "telegram_download_max_bytes", 100)
     await telegram_routes._handle_media_message(
@@ -3170,9 +3192,11 @@ async def test_handle_media_message_download_size_user_and_import_errors(
         account=account,
         media={"kind": "voice", "file_id": "file-id"},
     )
+    await asyncio.gather(*pending)
     assert "слишком большой" in capture.messages[-1]["text"]
 
     capture = _TelegramCapture()
+    pending = _wire_eager_media_enqueue(monkeypatch, db_session, capture, tmp_path)
     capture.data = b"x" * 101
     await telegram_routes._handle_media_message(
         db_session,
@@ -3181,12 +3205,14 @@ async def test_handle_media_message_download_size_user_and_import_errors(
         account=account,
         media={"kind": "voice", "file_id": "file-id"},
     )
+    await asyncio.gather(*pending)
     assert "слишком большой" in capture.messages[-1]["text"]
 
     async def broken_import(**kwargs):
         raise RecordingImportError("bad_media", "Не удалось импортировать.")
 
     capture = _TelegramCapture()
+    pending = _wire_eager_media_enqueue(monkeypatch, db_session, capture, tmp_path)
     monkeypatch.setattr(telegram_routes.settings, "telegram_download_max_bytes", 1_000)
     monkeypatch.setattr(telegram_routes, "import_media_as_recording", broken_import)
     await telegram_routes._handle_media_message(
@@ -3196,18 +3222,22 @@ async def test_handle_media_message_download_size_user_and_import_errors(
         account=account,
         media={"kind": "voice", "file_id": "file-id", "file_name": "voice.ogg"},
     )
+    await asyncio.gather(*pending)
     assert capture.messages[-1]["text"] == "Не удалось импортировать."
 
 
 @pytest.mark.asyncio
 async def test_handle_media_message_reports_hosted_telegram_file_limit(
     db_session: AsyncSession,
+    monkeypatch,
+    tmp_path,
 ):
     user = await _user(db_session, "media-getfile-limit@example.com")
     account = TelegramAccount(user_id=user.id, telegram_user_id=50, telegram_chat_id=50)
     db_session.add(account)
     await db_session.commit()
     capture = _TelegramCapture()
+    pending = _wire_eager_media_enqueue(monkeypatch, db_session, capture, tmp_path)
 
     async def get_file_too_big(file_id: str) -> TelegramFile:
         assert file_id == "file-id"
@@ -3222,6 +3252,7 @@ async def test_handle_media_message_reports_hosted_telegram_file_limit(
         account=account,
         media={"kind": "audio", "file_id": "file-id", "file_name": "lecture.mp3"},
     )
+    await asyncio.gather(*pending)
 
     assert "слишком большой" in capture.messages[-1]["text"]
     assert capture.deleted_messages == [{"chat_id": 50, "message_id": 1}]
@@ -3232,12 +3263,14 @@ async def test_handle_media_message_reports_hosted_telegram_file_limit(
 async def test_handle_media_message_passes_telegram_duration_to_import(
     db_session: AsyncSession,
     monkeypatch,
+    tmp_path,
 ):
     user = await _user(db_session, "media-duration@example.com")
     account = TelegramAccount(user_id=user.id, telegram_user_id=51, telegram_chat_id=51)
     db_session.add(account)
     await db_session.commit()
     capture = _TelegramCapture()
+    pending = _wire_eager_media_enqueue(monkeypatch, db_session, capture, tmp_path)
     seen: dict[str, Any] = {}
 
     async def fake_import(**kwargs):
@@ -3257,6 +3290,7 @@ async def test_handle_media_message_passes_telegram_duration_to_import(
         account=account,
         media={"kind": "audio", "file_id": "file-id", "duration": 3600},
     )
+    await asyncio.gather(*pending)
 
     assert seen["duration_seconds"] == 3600
     # No transcript came back -> the bot says so instead of pretending success.
@@ -3514,6 +3548,8 @@ async def test_handle_update_processes_linked_text_message(
 
 
 def _fake_transcribed(text: str):
+    from pathlib import Path
+
     from app.core.recording_import import TranscribedMedia
 
     return TranscribedMedia(
@@ -3522,23 +3558,65 @@ def _fake_transcribed(text: str):
                 text=text, speaker=None, is_final=True, start_ms=0, end_ms=1000, confidence=0.9
             )
         ],
-        media_data=b"telegram audio",
+        # discard() tolerates an already-missing file, so no fixture needed.
+        media_path=Path("/tmp/telegram-intent-test.ogg"),
         media_content_type="audio/ogg",
         media_ext="ogg",
     )
+
+
+def _wire_eager_media_enqueue(monkeypatch, db_session, capture, tmp_path):
+    """Run the real Telegram media-import worker coroutine inline when the
+    webhook enqueues it (Celery eager mode), using the test's capture client
+    and DB session. Returns the list of scheduled tasks — await them after the
+    handler returns."""
+
+    from app.tasks import telegram_media_import as tmi
+    from app.tasks.celery_app import celery_app as real_celery_app
+
+    pending: list = []
+
+    @asynccontextmanager
+    async def fake_db_context():
+        yield db_session
+
+    real_settings = telegram_routes.settings
+    monkeypatch.setattr(tmi, "get_db_context", fake_db_context)
+    monkeypatch.setattr(tmi, "TelegramBotClient", lambda: capture)
+    monkeypatch.setattr(
+        tmi,
+        "get_settings",
+        lambda: SimpleNamespace(
+            upload_staging_dir=str(tmp_path),
+            telegram_download_max_bytes=real_settings.telegram_download_max_bytes,
+        ),
+    )
+
+    def fake_send_task(name, kwargs=None, **_):
+        assert name == "app.tasks.telegram_media_import.import_telegram_media"
+        # Unscheduled coroutine: the test awaits it AFTER the webhook handler
+        # finishes, so the shared test session never sees concurrent use.
+        pending.append(tmi._run(**kwargs))
+
+    monkeypatch.setattr(real_celery_app, "send_task", fake_send_task)
+    return pending
 
 
 def _wire_voice_routing(
     monkeypatch,
     db_session,
     capture,
+    tmp_path=None,
     *,
     transcript="сколько будет один плюс два",
     decision=None,
     classify_raises=False,
 ):
     """Stub the heavy steps so _route_media_message can be driven end-to-end:
-    transcription, classification, recording import, and the agent turn."""
+    transcription, classification, recording import, and the agent turn. The
+    metadata file route enqueues the media-import worker; run it eagerly so
+    those tests still observe the import."""
+    import tempfile
 
     @asynccontextmanager
     async def fake_db_context():
@@ -3567,8 +3645,20 @@ def _wire_voice_routing(
     classify_mock = AsyncMock(side_effect=fake_classify)
     monkeypatch.setattr(telegram_routes, "classify_voice_transcript", classify_mock)
 
+    from pathlib import Path as _Path
+
+    pending = _wire_eager_media_enqueue(
+        monkeypatch,
+        db_session,
+        capture,
+        _Path(tmp_path) if tmp_path is not None else _Path(tempfile.mkdtemp()),
+    )
+
     return SimpleNamespace(
-        transcribe=transcribe_mock, import_=import_mock, classify=classify_mock
+        transcribe=transcribe_mock,
+        import_=import_mock,
+        classify=classify_mock,
+        pending=pending,
     )
 
 
@@ -3655,6 +3745,7 @@ async def test_forwarded_voice_is_filed_without_classification(db_session, monke
     await telegram_routes._handle_update(
         _voice_update(302, tid=53, extra={"forward_origin": {"type": "user"}})
     )
+    await asyncio.gather(*mocks.pending)
 
     mocks.classify.assert_not_called()
     mocks.transcribe.assert_not_called()  # metadata alone decided: file
@@ -3673,6 +3764,7 @@ async def test_long_voice_is_filed_without_classification(db_session, monkeypatc
     await telegram_routes._handle_update(
         _voice_update(303, tid=54, extra={"voice": {"file_id": "file-id", "duration": 600}})
     )
+    await asyncio.gather(*mocks.pending)
 
     mocks.classify.assert_not_called()
     mocks.import_.assert_awaited_once()
@@ -4339,32 +4431,18 @@ async def test_telegram_ogg_audio_import_normalizes_before_transcription(
     user = await _user(db_session)
     monkeypatch.setattr("app.core.recording_import.settings.upload_staging_dir", str(tmp_path))
 
-    class FakeSegment:
-        def set_frame_rate(self, value):
-            assert value == 16_000
-            return self
+    async def fake_extract(source, dest):
+        # ffmpeg runs file→file: the ogg source stays on disk, FLAC comes out.
+        assert source.suffix == ".oga"
+        assert source.read_bytes() == b"telegram ogg"
+        dest.write_bytes(b"flac from telegram")
+        return dest
 
-        def set_channels(self, value):
-            assert value == 1
-            return self
+    monkeypatch.setattr("app.core.recording_import.extract_audio_to_flac", fake_extract)
 
-        def set_sample_width(self, value):
-            assert value == 2
-            return self
-
-        def export(self, output, format):
-            assert format == "wav"
-            output.write(b"wav from telegram")
-
-    def fake_from_file(file_obj, *, format=None):
-        assert format == "ogg"
-        return FakeSegment()
-
-    monkeypatch.setattr("pydub.AudioSegment.from_file", fake_from_file)
-
-    async def fake_transcribe(data: bytes, **kwargs):
-        assert data == b"wav from telegram"
-        assert kwargs["content_type"] == "audio/wav"
+    async def fake_transcribe(media_path, **kwargs):
+        assert media_path.read_bytes() == b"flac from telegram"
+        assert kwargs["content_type"] == "audio/flac"
         return [
             TranscriptResult(
                 text="Голосовое расшифровано",
@@ -4421,28 +4499,17 @@ async def test_video_import_normalizes_audio_before_transcription(
     user = await _user(db_session)
     monkeypatch.setattr("app.core.recording_import.settings.upload_staging_dir", str(tmp_path))
 
-    class FakeSegment:
-        def set_frame_rate(self, value):
-            assert value == 16_000
-            return self
+    async def fake_extract(source, dest):
+        assert source.suffix == ".mp4"
+        assert source.read_bytes() == b"mp4"
+        dest.write_bytes(b"flac audio")
+        return dest
 
-        def set_channels(self, value):
-            assert value == 1
-            return self
+    monkeypatch.setattr("app.core.recording_import.extract_audio_to_flac", fake_extract)
 
-        def set_sample_width(self, value):
-            assert value == 2
-            return self
-
-        def export(self, output, format):
-            assert format == "wav"
-            output.write(b"wav audio")
-
-    monkeypatch.setattr("pydub.AudioSegment.from_file", lambda *args, **kwargs: FakeSegment())
-
-    async def fake_transcribe(data: bytes, **kwargs):
-        assert data == b"wav audio"
-        assert kwargs["content_type"] == "audio/wav"
+    async def fake_transcribe(media_path, **kwargs):
+        assert media_path.read_bytes() == b"flac audio"
+        assert kwargs["content_type"] == "audio/flac"
         return [
             TranscriptResult(
                 text="Видео расшифровано",
@@ -4965,7 +5032,7 @@ def test_transcript_document_filename_gets_date_prefix() -> None:
 
 
 @pytest.mark.asyncio
-async def test_media_reply_attaches_page_button(db_session, monkeypatch):
+async def test_media_reply_attaches_page_button(db_session, monkeypatch, tmp_path):
     user = await _user(db_session, "telegram-page-button@example.com")
     account = TelegramAccount(user_id=user.id, telegram_user_id=91, telegram_chat_id=91)
     recording = Recording(
@@ -4978,6 +5045,7 @@ async def test_media_reply_attaches_page_button(db_session, monkeypatch):
     db_session.add_all([account, recording])
     await db_session.commit()
     capture = _TelegramCapture()
+    pending = _wire_eager_media_enqueue(monkeypatch, db_session, capture, tmp_path)
 
     @asynccontextmanager
     async def fake_db_context():
@@ -5002,6 +5070,7 @@ async def test_media_reply_attaches_page_button(db_session, monkeypatch):
         account=account,
         media={"kind": "voice", "file_id": "file-id"},
     )
+    await asyncio.gather(*pending)
 
     final = capture.messages[-1]
     assert final["parse_mode"] == "HTML"
@@ -5022,7 +5091,7 @@ async def test_media_reply_attaches_page_button(db_session, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_media_reply_summary_failure_offers_retry(db_session, monkeypatch):
+async def test_media_reply_summary_failure_offers_retry(db_session, monkeypatch, tmp_path):
     user = await _user(db_session, "telegram-retry-offer@example.com")
     account = TelegramAccount(user_id=user.id, telegram_user_id=92, telegram_chat_id=92)
     recording = Recording(
@@ -5034,6 +5103,7 @@ async def test_media_reply_summary_failure_offers_retry(db_session, monkeypatch)
     db_session.add_all([account, recording])
     await db_session.commit()
     capture = _TelegramCapture()
+    pending = _wire_eager_media_enqueue(monkeypatch, db_session, capture, tmp_path)
 
     @asynccontextmanager
     async def fake_db_context():
@@ -5058,6 +5128,7 @@ async def test_media_reply_summary_failure_offers_retry(db_session, monkeypatch)
         account=account,
         media={"kind": "audio", "file_id": "file-id"},
     )
+    await asyncio.gather(*pending)
 
     final = capture.messages[-1]
     assert "Саммари сгенерировать не получилось" in final["text"]
@@ -5152,12 +5223,15 @@ async def test_summary_retry_callback_rejects_foreign_recording(db_session, monk
 
 
 @pytest.mark.asyncio
-async def test_media_status_message_updates_on_summarizing_stage(db_session, monkeypatch):
+async def test_media_status_message_updates_on_summarizing_stage(
+    db_session, monkeypatch, tmp_path
+):
     user = await _user(db_session, "telegram-stage-edit@example.com")
     account = TelegramAccount(user_id=user.id, telegram_user_id=95, telegram_chat_id=95)
     db_session.add(account)
     await db_session.commit()
     capture = _TelegramCapture()
+    pending = _wire_eager_media_enqueue(monkeypatch, db_session, capture, tmp_path)
 
     async def fake_import(**kwargs):
         await kwargs["on_stage"]("transcribing")  # ignored stage
@@ -5178,6 +5252,7 @@ async def test_media_status_message_updates_on_summarizing_stage(db_session, mon
         account=account,
         media={"kind": "voice", "file_id": "file-id"},
     )
+    await asyncio.gather(*pending)
 
     assert any(
         "Пишу саммари" in edit["text"] for edit in capture.edited_messages

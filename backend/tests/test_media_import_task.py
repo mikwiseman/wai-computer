@@ -131,7 +131,8 @@ async def test_import_calls_recording_pipeline(db_session, monkeypatch, tmp_path
         title="My clip",
         language="en",
     )
-    assert captured["data"] == b"video-bytes"
+    # Handed over by path — the task never loads the media into memory.
+    assert captured["source_path"] == staged
     assert captured["source_label"] == "upload"
     assert captured["title"] == "My clip"
     assert captured["user"].id == user.id
@@ -449,7 +450,7 @@ async def test_precreated_recording_is_failed_when_normalization_rejects_media(
 
     monkeypatch.setattr(
         recording_import,
-        "_normalize_media_for_transcription",
+        "_normalize_media_file_for_transcription",
         reject_media,
     )
 

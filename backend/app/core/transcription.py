@@ -2,6 +2,7 @@
 
 import logging
 import math
+from pathlib import Path
 from time import perf_counter
 
 import httpx
@@ -84,7 +85,7 @@ def _provider_error_code(error: httpx.HTTPStatusError) -> str | None:
 
 
 async def transcribe_audio_file(
-    audio_data: bytes,
+    audio_data: bytes | Path,
     language: str = "en",
     model: str | None = None,
     content_type: str = "audio/wav",
@@ -98,6 +99,9 @@ async def transcribe_audio_file(
     usage_purpose: str | None = None,
 ) -> list[TranscriptResult]:
     """Transcribe audio using the active speech-to-text runtime.
+
+    ``audio_data`` is either in-memory bytes (small payloads) or a ``Path`` to
+    an on-disk file, which providers stream without loading into memory.
 
     Single batch choke point: every file-STT entrypoint (native uploads, Telegram
     voice notes, imports) flows through here, so the provider cost/abuse guards
@@ -135,7 +139,9 @@ async def transcribe_audio_file(
     await check_minutes_budget(guard_user_id, estimated_minutes)
 
     started_at = perf_counter()
-    audio_bytes = len(audio_data)
+    audio_bytes = (
+        audio_data.stat().st_size if isinstance(audio_data, Path) else len(audio_data)
+    )
     start_data = {
         "provider": provider,
         "model": selected_model,

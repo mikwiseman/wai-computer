@@ -108,10 +108,12 @@ async def test_upload_unsupported_extension_returns_415(
     recording = await _create_recording(client, auth_headers)
     recording_id = recording["id"]
 
+    # Video containers are importable now (audio gets extracted); a text file
+    # is still not transcribable media.
     response = await client.post(
         f"/api/recordings/{recording_id}/upload",
         headers=auth_headers,
-        files={"file": ("video.avi", b"fake data", "video/avi")},
+        files={"file": ("notes.txt", b"fake data", "text/plain")},
     )
     assert response.status_code == 415
     assert "Unsupported file type" in response.json()["detail"]

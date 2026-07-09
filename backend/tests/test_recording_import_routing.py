@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from unittest.mock import AsyncMock
 
 import httpx
@@ -39,7 +40,7 @@ def _speech(text: str = "Привет из Telegram") -> TranscriptResult:
 def test_transcribed_media_filters_no_speech_and_exposes_plain_text():
     media = TranscribedMedia(
         transcript_results=[_speech("один два три"), _speech("(no speech detected)"), _speech("")],
-        media_data=b"x",
+        media_path=Path("/tmp/x.wav"),
         media_content_type="audio/wav",
         media_ext="wav",
     )

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import shutil
 import urllib.error
 import urllib.request
 import uuid
@@ -393,6 +394,63 @@ class TelegramBotClient:
             path = self._resolve_local_file_path(file)
             return await asyncio.to_thread(self._read_local_file, path, max_bytes)
         return await self._download_http_file(file, max_bytes)
+
+    @staticmethod
+    def _copy_local_file(source: Path, dest: Path, max_bytes: int | None) -> int:
+        try:
+            stat = source.stat()
+        except OSError as exc:
+            raise TelegramClientError("Telegram local file is not available") from exc
+        if not source.is_file():
+            raise TelegramClientError("Telegram local file is not available")
+        if max_bytes is not None and stat.st_size > max_bytes:
+            raise TelegramFileTooLargeError("Telegram file exceeds configured limit")
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(source, dest)
+        return dest.stat().st_size
+
+    async def _download_http_file_to_path(
+        self, file: TelegramFile, dest: Path, max_bytes: int | None
+    ) -> int:
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        total = 0
+        try:
+            async with httpx.AsyncClient(timeout=600.0) as client:
+                async with client.stream(
+                    "GET", f"{self._file_base}/{file.file_path}"
+                ) as response:
+                    if response.status_code >= 400:
+                        raise TelegramClientError(
+                            f"Telegram file download returned HTTP {response.status_code}"
+                        )
+                    with dest.open("wb") as handle:
+                        async for chunk in response.aiter_bytes():
+                            total += len(chunk)
+                            if max_bytes is not None and total > max_bytes:
+                                raise TelegramFileTooLargeError(
+                                    "Telegram file exceeds configured limit"
+                                )
+                            handle.write(chunk)
+        except httpx.HTTPError as exc:
+            dest.unlink(missing_ok=True)
+            raise TelegramClientError("Telegram file download failed") from exc
+        except BaseException:
+            dest.unlink(missing_ok=True)
+            raise
+        return total
+
+    async def download_file_to_path(
+        self, file: TelegramFile, dest: Path, *, max_bytes: int | None = None
+    ) -> int:
+        """Materialise a Telegram file on our disk without buffering it in memory.
+
+        With a local Bot API server the file already sits on the shared volume
+        and is copied file→file; otherwise it streams over HTTP in chunks.
+        Returns the byte size."""
+        if self._local_file_root is not None:
+            source = self._resolve_local_file_path(file)
+            return await asyncio.to_thread(self._copy_local_file, source, dest, max_bytes)
+        return await self._download_http_file_to_path(file, dest, max_bytes)
 
 
 def telegram_chunks(text: str, *, limit: int = 3900) -> list[str]:

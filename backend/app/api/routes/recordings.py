@@ -34,6 +34,7 @@ from app.api.summary_audio import (
 )
 from app.billing.quota import record_recording_transcript_words
 from app.config import get_settings
+from app.core import media_audio
 from app.core.embeddings import generate_embedding
 from app.core.error_sanitizer import sanitize_failure_message
 from app.core.observability import (
@@ -3249,16 +3250,13 @@ async def generate_summary(
         ) from exc
 
 
-ALLOWED_AUDIO_EXTENSIONS = {"mp3", "wav", "m4a", "ogg", "webm", "opus", "flac"}
-EXTENSION_TO_CONTENT_TYPE = {
-    "mp3": "audio/mpeg",
-    "wav": "audio/wav",
-    "m4a": "audio/mp4",
-    "ogg": "audio/ogg",
-    "webm": "audio/webm",
-    "opus": "audio/opus",
-    "flac": "audio/flac",
-}
+# Any media container ffmpeg can demux is importable: provider-ready audio
+# passes straight to STT, everything else (video, exotic audio) is reduced to
+# FLAC by the processing worker before transcription.
+ALLOWED_AUDIO_EXTENSIONS = (
+    media_audio.SUPPORTED_AUDIO_EXTENSIONS | media_audio.SUPPORTED_VIDEO_EXTENSIONS
+)
+EXTENSION_TO_CONTENT_TYPE = media_audio.EXTENSION_TO_CONTENT_TYPE
 MAX_UPLOAD_SIZE = app_settings.upload_max_bytes
 
 

@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
+from collections.abc import AsyncIterator
+from pathlib import Path
 from typing import Literal
 from urllib.parse import urlencode
 
@@ -419,8 +422,29 @@ def _speaker_label_from_utterance(utterance: dict) -> str | None:
     return f"Channel {channel_index + 1}"
 
 
+_FILE_STREAM_CHUNK_BYTES = 4 * 1024 * 1024
+
+
+async def _file_content_chunks(path: Path) -> AsyncIterator[bytes]:
+    """Stream a file for the request body without loading it into memory."""
+    handle = await asyncio.to_thread(path.open, "rb")
+    try:
+        while True:
+            chunk = await asyncio.to_thread(handle.read, _FILE_STREAM_CHUNK_BYTES)
+            if not chunk:
+                return
+            yield chunk
+    finally:
+        await asyncio.to_thread(handle.close)
+
+
+def _wav_header_bytes(path: Path) -> bytes:
+    with path.open("rb") as handle:
+        return handle.read(64 * 1024)
+
+
 async def transcribe_audio_file(
-    audio_data: bytes,
+    audio_data: bytes | Path,
     *,
     language: str = "en",
     content_type: str = "audio/wav",
@@ -431,13 +455,21 @@ async def transcribe_audio_file(
     max_channels: int | None = None,
     audio_duration_seconds: float | None = None,
 ) -> list[TranscriptResult]:
-    """Transcribe an uploaded audio file with Deepgram pre-recorded STT."""
+    """Transcribe an uploaded audio file with Deepgram pre-recorded STT.
+
+    A ``Path`` payload is streamed from disk with an explicit Content-Length,
+    keeping worker memory flat for large media."""
     api_key = require_deepgram_api_key()
     resolved_content_type = DEEPGRAM_CONTENT_TYPE_ALIASES.get(content_type, content_type)
 
     resolved_channels = channels
     if resolved_channels is None and resolved_content_type == "audio/wav":
-        resolved_channels = detect_wav_channels(audio_data)
+        header = (
+            await asyncio.to_thread(_wav_header_bytes, audio_data)
+            if isinstance(audio_data, Path)
+            else audio_data
+        )
+        resolved_channels = detect_wav_channels(header)
     channel_count = max(1, resolved_channels or 1)
 
     # Deepgram bills per channel. Notes/meetings are mono; clamp a stereo or
@@ -466,14 +498,23 @@ async def transcribe_audio_file(
         replacements=replacements,
     )
 
+    headers = {
+        "Authorization": f"Token {api_key}",
+        "Content-Type": resolved_content_type,
+    }
+    if isinstance(audio_data, Path):
+        # Explicit Content-Length keeps the streamed upload a plain sized body
+        # (no chunked transfer-encoding surprises at the provider edge).
+        headers["Content-Length"] = str(audio_data.stat().st_size)
+        content: bytes | AsyncIterator[bytes] = _file_content_chunks(audio_data)
+    else:
+        content = audio_data
+
     async with httpx.AsyncClient(timeout=_batch_timeout(audio_duration_seconds)) as client:
         response = await client.post(
             url,
-            headers={
-                "Authorization": f"Token {api_key}",
-                "Content-Type": resolved_content_type,
-            },
-            content=audio_data,
+            headers=headers,
+            content=content,
         )
         response.raise_for_status()
         payload = response.json()

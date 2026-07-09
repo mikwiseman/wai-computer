@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from hashlib import sha256
 from html import escape
+from pathlib import Path
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -3750,34 +3751,45 @@ async def _route_media_message(
     finally:
         await _stop_chat_action_task(action_task)
 
-    if decision is None:
-        if not transcribed.has_speech:
-            decision = VoiceRouteDecision("file", "no_speech")
-        else:
-            decision = await classify_voice_transcript(
-                transcribed.transcript_text,
-                recent_assistant_message=await _recent_assistant_text(db, account),
-            )
+    try:
+        if decision is None:
+            if not transcribed.has_speech:
+                decision = VoiceRouteDecision("file", "no_speech")
+            else:
+                decision = await classify_voice_transcript(
+                    transcribed.transcript_text,
+                    recent_assistant_message=await _recent_assistant_text(db, account),
+                )
 
-    # Privacy-safe: only the route + reason tag, never the transcript.
-    logger.info("telegram voice routed route=%s reason=%s", decision.route, decision.reason)
-
-    if decision.route == "message" and transcribed.has_speech:
-        await _handle_voice_as_message(
-            db, client, message=message, account=account, transcript=transcribed.transcript_text
+        # Privacy-safe: only the route + reason tag, never the transcript.
+        logger.info(
+            "telegram voice routed route=%s reason=%s", decision.route, decision.reason
         )
-        return
 
-    # File it, reusing the download + transcript we already produced.
-    await _handle_media_message(
-        db,
-        client,
-        message=message,
-        account=account,
-        media=media,
-        prefetched=(data, file_path),
-        precomputed=transcribed,
-    )
+        if decision.route == "message" and transcribed.has_speech:
+            await _handle_voice_as_message(
+                db,
+                client,
+                message=message,
+                account=account,
+                transcript=transcribed.transcript_text,
+            )
+            return
+
+        # File it, reusing the download + transcript we already produced.
+        await _handle_media_message(
+            db,
+            client,
+            message=message,
+            account=account,
+            media=media,
+            source_filename=file_path,
+            precomputed=transcribed,
+        )
+    finally:
+        # The normalised intent-media file belongs to this routing pass; the
+        # import (if any) has finished with it by now.
+        await transcribed.discard()
 
 
 async def _handle_voice_as_message(
@@ -3937,14 +3949,18 @@ async def _handle_media_message(
     message: dict[str, Any],
     account: TelegramAccount,
     media: dict[str, Any],
-    prefetched: tuple[bytes, str | None] | None = None,
+    source_filename: str | None = None,
     precomputed: TranscribedMedia | None = None,
 ) -> None:
     """Save media as a library recording.
 
-    ``prefetched`` / ``precomputed`` let intent routing hand over a voice note it
-    already downloaded and transcribed so it is filed without a second download or
-    STT pass; when both are None this is the unchanged historical import flow.
+    ``precomputed`` lets intent routing hand over a voice note it already
+    downloaded and transcribed so it is filed inline without a second download
+    or STT pass (``source_filename`` preserves the Telegram file path as the
+    extension hint). Everything else — including every video and large audio
+    file — is handed to the recording Celery worker: the download and
+    ffmpeg/STT work must never run inside the API process (a 236 MB video
+    OOM-killed the webhook worker on 2026-07-09, silently losing the import).
     """
     chat_id = _telegram_chat_id(message)
     if chat_id is None:
@@ -3979,21 +3995,73 @@ async def _handle_media_message(
         status_message_id=status_message_id,
     )
 
-    if prefetched is not None:
-        data, downloaded_file_path = prefetched
-    else:
-        downloaded = await _download_telegram_media(
+    if precomputed is not None:
+        # Voice note already downloaded + transcribed for intent routing —
+        # filing it reuses that work and stays cheap enough for the API process.
+        await _import_telegram_media_and_reply(
             db,
             client,
-            account=account,
             message=message,
-            file_id=file_id,
+            account=account,
+            user=user,
+            media=media,
             status_message_id=status_message_id,
+            source_filename=source_filename,
+            precomputed=precomputed,
         )
-        if downloaded is None:
-            return
-        data, downloaded_file_path = downloaded
+        return
 
+    try:
+        from app.tasks.celery_app import celery_app
+
+        celery_app.send_task(
+            "app.tasks.telegram_media_import.import_telegram_media",
+            kwargs={
+                "account_id": str(account.id),
+                "user_id": str(user.id),
+                "message": message,
+                "media": media,
+                "status_message_id": status_message_id,
+            },
+            queue="recording",
+            routing_key="recording",
+        )
+    except Exception:  # noqa: BLE001 — broker down: tell the sender, don't go silent.
+        logger.exception("telegram media import enqueue failed")
+        await _set_telegram_import_error_context(
+            db,
+            account,
+            message=TELEGRAM_RECORDING_IMPORT_ERROR_REPLY,
+        )
+        await client.send_message(
+            chat_id,
+            TELEGRAM_RECORDING_IMPORT_ERROR_REPLY,
+            reply_to_message_id=message.get("message_id"),
+        )
+        await _delete_status_message(client, chat_id=chat_id, message_id=status_message_id)
+
+
+async def _import_telegram_media_and_reply(
+    db: AsyncSession,
+    client: TelegramBotClient,
+    *,
+    message: dict[str, Any],
+    account: TelegramAccount,
+    user: User,
+    media: dict[str, Any],
+    status_message_id: int | None,
+    source_path: Path | None = None,
+    source_filename: str | None = None,
+    precomputed: TranscribedMedia | None = None,
+) -> None:
+    """Import already-materialised Telegram media and deliver the full reply flow
+    (progress edits, transcript .txt, summary + share button, error messages).
+
+    Runs inside the API process only for tiny precomputed voice notes; the
+    recording Celery worker calls it with ``source_path`` for everything else."""
+    chat_id = _telegram_chat_id(message)
+    if chat_id is None:
+        return
     caption = str(message.get("caption") or "").strip()
     title = caption[:500] if caption else None
     action_task = asyncio.create_task(_send_chat_action_until_cancelled(client, chat_id))
@@ -4014,8 +4082,8 @@ async def _handle_media_message(
         result = await import_media_as_recording(
             db=db,
             user=user,
-            data=data,
-            filename=media.get("file_name") or downloaded_file_path,
+            source_path=source_path,
+            filename=media.get("file_name") or source_filename,
             content_type=media.get("mime_type"),
             title=title,
             source_label="telegram",

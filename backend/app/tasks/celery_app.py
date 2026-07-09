@@ -118,6 +118,10 @@ celery_app.conf.update(
             "queue": "recording",
             "routing_key": "recording",
         },
+        "app.tasks.telegram_media_import.import_telegram_media": {
+            "queue": "recording",
+            "routing_key": "recording",
+        },
         "app.tasks.summary_generation.generate_recording_summary": {
             "queue": "summary",
             "routing_key": "summary",
@@ -171,6 +175,7 @@ celery_app.conf.update(
         "app.tasks.recording_audio_processing",
         "app.tasks.summary_audio_generation",
         "app.tasks.summary_generation",
+        "app.tasks.telegram_media_import",
         "app.tasks.telegram_reminders",
     ],
 )

@@ -117,11 +117,12 @@ async def _import(
                 )
                 return
             raise FileNotFoundError(staged_path)
-        data = staged_file.read_bytes()
+        # Hand the staged file over by path: ffmpeg extraction and the STT
+        # upload both stream from disk, so a large video never enters memory.
         await import_media_as_recording(
             db=db,
             user=user,
-            data=data,
+            source_path=staged_file,
             filename=filename,
             content_type=content_type,
             title=title,

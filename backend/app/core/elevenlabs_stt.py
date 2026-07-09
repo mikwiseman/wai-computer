@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import math
 import re
+from pathlib import Path
+from typing import BinaryIO
 
 import httpx
 
@@ -250,7 +252,7 @@ def _upload_filename(content_type: str) -> str:
 
 
 async def transcribe_audio_file(
-    audio_data: bytes,
+    audio_data: bytes | Path,
     *,
     language: str = "auto",
     content_type: str = "audio/wav",
@@ -259,7 +261,10 @@ async def transcribe_audio_file(
     replacements: list[tuple[str, str]] | None = None,
     audio_duration_seconds: float | None = None,
 ) -> list[TranscriptResult]:
-    """Transcribe an uploaded audio file with ElevenLabs Scribe."""
+    """Transcribe an uploaded audio file with ElevenLabs Scribe.
+
+    ``Path`` payloads are handed to httpx as file objects, which it streams
+    into the multipart body without buffering the whole file in memory."""
     api_key = require_elevenlabs_api_key()
     settings = get_settings()
 
@@ -278,14 +283,30 @@ async def transcribe_audio_file(
     if sanitized_keyterms:
         fields["keyterms"] = sanitized_keyterms
 
-    async with httpx.AsyncClient(timeout=_batch_timeout(audio_duration_seconds)) as client:
-        response = await client.post(
-            ELEVENLABS_STT_URL,
-            headers={"xi-api-key": api_key},
-            data=fields,
-            files={"file": (_upload_filename(content_type), audio_data, content_type)},
+    file_handle = audio_data.open("rb") if isinstance(audio_data, Path) else None
+    try:
+        upload_payload: bytes | BinaryIO = (
+            file_handle if file_handle is not None else audio_data  # type: ignore[assignment]
         )
-        response.raise_for_status()
-        payload = response.json()
+        async with httpx.AsyncClient(
+            timeout=_batch_timeout(audio_duration_seconds)
+        ) as client:
+            response = await client.post(
+                ELEVENLABS_STT_URL,
+                headers={"xi-api-key": api_key},
+                data=fields,
+                files={
+                    "file": (
+                        _upload_filename(content_type),
+                        upload_payload,
+                        content_type,
+                    )
+                },
+            )
+            response.raise_for_status()
+            payload = response.json()
+    finally:
+        if file_handle is not None:
+            file_handle.close()
 
     return _results_from_scribe_payload(payload, replacements=replacements)

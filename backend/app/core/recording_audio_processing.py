@@ -8,6 +8,7 @@ import re
 import subprocess
 import time
 import wave
+from contextlib import suppress
 from pathlib import Path
 from time import perf_counter
 from uuid import UUID
@@ -26,6 +27,13 @@ from app.core.deepgram_usage import (
 )
 from app.core.embeddings import generate_embedding, generate_embeddings
 from app.core.error_sanitizer import sanitize_failure_message
+from app.core.media_audio import (
+    EXTRACTED_AUDIO_CONTENT_TYPE,
+    EXTRACTED_AUDIO_EXT,
+    MediaAudioExtractionError,
+    extract_audio_to_flac,
+    is_video_media,
+)
 from app.core.observability import (
     add_sentry_breadcrumb,
     capture_sentry_anomaly,
@@ -272,15 +280,26 @@ def _non_wav_duration_seconds(path: Path, _content_type: str) -> float:
     return _ffprobe_duration_seconds(path)
 
 
-async def _normalize_audio_upload_for_transcription(
-    audio_data: bytes,
+async def _extract_staged_media_audio(
+    staged_path: Path,
     *,
     content_type: str,
-) -> tuple[bytes, str]:
-    # Deepgram batch STT accepts common container formats (MP4/M4A/WAV/FLAC/Ogg/WebM)
-    # and auto-detects them from headers. Keep the original bytes here instead of
-    # expanding multi-hour compressed audio into a large in-memory WAV/FLAC buffer.
-    return audio_data, content_type
+) -> tuple[Path, str, int] | None:
+    """Reduce a staged VIDEO upload to a compact FLAC audio track.
+
+    Audio uploads keep their original container — Deepgram batch STT accepts
+    the common ones (MP3/M4A/WAV/FLAC/Ogg/WebM) and that path is production
+    proven; only video goes through ffmpeg. Returns ``(extracted_path,
+    content_type, size_bytes)``, or None for audio. The original staged file is
+    deleted after a successful extraction — the FLAC replaces it for every
+    downstream step (STT, voice-ID, cleanup)."""
+    ext = staged_path.suffix.lstrip(".").lower()
+    if not is_video_media(ext, content_type):
+        return None
+    extracted_path = staged_path.with_name(f"{staged_path.stem}.stt.{EXTRACTED_AUDIO_EXT}")
+    await extract_audio_to_flac(staged_path, extracted_path)
+    delete_staged_file(staged_path)
+    return extracted_path, EXTRACTED_AUDIO_CONTENT_TYPE, extracted_path.stat().st_size
 
 
 def _audio_duration_seconds(
@@ -870,147 +889,182 @@ async def process_staged_recording_upload(
         delete_staged_file(staged_path)
         return
 
+    source_content_type = content_type
     provider_content_type = content_type
     try:
         await reset_recording_processing_state(recording_id, db)
 
-        # NOTE: reads the full staged file into memory for the multipart
-        # upload. Bounded by the 200 MB upload cap — safe for a single-task
-        # Celery worker with ≥1 GB RAM.
-        with staged_path.open("rb") as staged_file:
-            _recording_lifecycle_breadcrumb(
-                "Recording file transcription started",
+        # Video containers (and audio formats providers reject) are reduced to
+        # a compact FLAC on disk first; ffmpeg works file→file so worker memory
+        # stays flat no matter how large the upload is.
+        try:
+            extracted = await _extract_staged_media_audio(
+                staged_path,
+                content_type=content_type,
+            )
+        except MediaAudioExtractionError as exc:
+            logger.warning(
+                "audio extraction failed recording_id=%s code=%s",
+                recording_id,
+                exc.code,
+            )
+            await mark_recording_processing_failed(
+                db,
                 recording_id=recording_id,
-                data={
+                failure_code=exc.code,
+                failure_message=exc.message,
+            )
+            capture_sentry_anomaly(
+                "recording.audio_extraction.failed",
+                "Staged media audio extraction failed",
+                category="recording",
+                extras={
+                    "recording_id": str(recording_id),
                     "content_type": content_type,
-                    "audio_duration_seconds": audio_duration_seconds,
-                    "client_duration_seconds": client_duration_seconds,
                     "staged_size_bytes": staged_size_bytes,
+                    "extraction_code": exc.code,
                 },
+                level="error",
             )
-            keyterms = await load_user_keyterms(db, user_id=user_id, purpose="recording")
-            replacements = await load_user_replacements(db, user_id=user_id)
-            deepgram_addons = ["speaker_diarization"]
-            if keyterms:
-                deepgram_addons.append("keyterm_prompting")
-            audio_data = staged_file.read()
-            provider_audio_data, provider_content_type = (
-                await _normalize_audio_upload_for_transcription(
-                    audio_data,
-                    content_type=content_type,
-                )
+            delete_staged_file(staged_path)
+            return
+        if extracted is not None:
+            staged_path, content_type, staged_size_bytes = extracted
+            provider_content_type = content_type
+            if audio_duration_seconds is None:
+                # The original container exceeded the probe byte cap or failed
+                # the probe; the compact FLAC always probes cheaply.
+                with suppress(AudioDurationProbeError):
+                    audio_duration_seconds = _ffprobe_duration_seconds(staged_path)
+
+        _recording_lifecycle_breadcrumb(
+            "Recording file transcription started",
+            recording_id=recording_id,
+            data={
+                "content_type": content_type,
+                "source_content_type": source_content_type,
+                "audio_duration_seconds": audio_duration_seconds,
+                "client_duration_seconds": client_duration_seconds,
+                "staged_size_bytes": staged_size_bytes,
+            },
+        )
+        keyterms = await load_user_keyterms(db, user_id=user_id, purpose="recording")
+        replacements = await load_user_replacements(db, user_id=user_id)
+        deepgram_addons = ["speaker_diarization"]
+        if keyterms:
+            deepgram_addons.append("keyterm_prompting")
+        stt_size_bytes = staged_path.stat().st_size
+        provider_audio_seconds = _provider_audio_seconds(
+            audio_duration_seconds=audio_duration_seconds,
+            client_duration_seconds=client_duration_seconds,
+        )
+        file_stt_started_at = time.perf_counter()
+        try:
+            transcript_results = await transcribe_audio_file(
+                staged_path,
+                language=recording_language,
+                content_type=provider_content_type,
+                audio_duration_seconds=provider_audio_seconds,
+                keyterms=keyterms,
+                replacements=replacements,
+                user_id=str(user_id),
+                usage_purpose="recording",
             )
-            provider_audio_seconds = _provider_audio_seconds(
-                audio_duration_seconds=audio_duration_seconds,
-                client_duration_seconds=client_duration_seconds,
+        except TranscriptionGuardError as exc:
+            await record_deepgram_usage_event(
+                db,
+                user_id=user_id,
+                recording_id=recording_id,
+                operation="file_stt",
+                purpose="recording",
+                status="refused",
+                model=DEFAULT_FILE_STT_MODEL,
+                language=recording_language,
+                content_type=provider_content_type,
+                audio_seconds=provider_audio_seconds,
+                billable_seconds=0,
+                channel_count=1,
+                audio_bytes=stt_size_bytes,
+                latency_ms=round((time.perf_counter() - file_stt_started_at) * 1000),
+                guard_code=exc.code,
+                billing_mode="pre_recorded",
+                language_mode="multilingual",
+                addons=deepgram_addons,
+                commit=True,
             )
-            file_stt_started_at = time.perf_counter()
-            try:
-                transcript_results = await transcribe_audio_file(
-                    provider_audio_data,
-                    language=recording_language,
-                    content_type=provider_content_type,
-                    audio_duration_seconds=provider_audio_seconds,
-                    keyterms=keyterms,
-                    replacements=replacements,
-                    user_id=str(user_id),
-                    usage_purpose="recording",
-                )
-            except TranscriptionGuardError as exc:
-                await record_deepgram_usage_event(
-                    db,
-                    user_id=user_id,
-                    recording_id=recording_id,
-                    operation="file_stt",
-                    purpose="recording",
-                    status="refused",
-                    model=DEFAULT_FILE_STT_MODEL,
-                    language=recording_language,
-                    content_type=provider_content_type,
+            raise
+        except httpx.HTTPStatusError as exc:
+            await record_deepgram_usage_event(
+                db,
+                user_id=user_id,
+                recording_id=recording_id,
+                operation="file_stt",
+                purpose="recording",
+                status="failed",
+                model=DEFAULT_FILE_STT_MODEL,
+                language=recording_language,
+                content_type=provider_content_type,
+                audio_seconds=provider_audio_seconds,
+                billable_seconds=0,
+                channel_count=1,
+                audio_bytes=stt_size_bytes,
+                latency_ms=round((time.perf_counter() - file_stt_started_at) * 1000),
+                provider_status_code=exc.response.status_code,
+                provider_error_code=provider_error_code(exc),
+                error_type=type(exc).__name__,
+                billing_mode="pre_recorded",
+                language_mode="multilingual",
+                addons=deepgram_addons,
+                commit=True,
+            )
+            raise
+        except Exception as exc:
+            await record_deepgram_usage_event(
+                db,
+                user_id=user_id,
+                recording_id=recording_id,
+                operation="file_stt",
+                purpose="recording",
+                status="failed",
+                model=DEFAULT_FILE_STT_MODEL,
+                language=recording_language,
+                content_type=provider_content_type,
+                audio_seconds=provider_audio_seconds,
+                billable_seconds=0,
+                channel_count=1,
+                audio_bytes=stt_size_bytes,
+                latency_ms=round((time.perf_counter() - file_stt_started_at) * 1000),
+                error_type=type(exc).__name__,
+                billing_mode="pre_recorded",
+                language_mode="multilingual",
+                addons=deepgram_addons,
+                commit=True,
+            )
+            raise
+        else:
+            await record_deepgram_usage_event(
+                db,
+                user_id=user_id,
+                recording_id=recording_id,
+                operation="file_stt",
+                purpose="recording",
+                status="succeeded",
+                model=DEFAULT_FILE_STT_MODEL,
+                language=recording_language,
+                content_type=provider_content_type,
+                audio_seconds=provider_audio_seconds,
+                billable_seconds=effective_billable_seconds(
                     audio_seconds=provider_audio_seconds,
-                    billable_seconds=0,
                     channel_count=1,
-                    audio_bytes=len(provider_audio_data),
-                    latency_ms=round((time.perf_counter() - file_stt_started_at) * 1000),
-                    guard_code=exc.code,
-                    billing_mode="pre_recorded",
-                    language_mode="multilingual",
-                    addons=deepgram_addons,
-                    commit=True,
-                )
-                raise
-            except httpx.HTTPStatusError as exc:
-                await record_deepgram_usage_event(
-                    db,
-                    user_id=user_id,
-                    recording_id=recording_id,
-                    operation="file_stt",
-                    purpose="recording",
-                    status="failed",
-                    model=DEFAULT_FILE_STT_MODEL,
-                    language=recording_language,
-                    content_type=provider_content_type,
-                    audio_seconds=provider_audio_seconds,
-                    billable_seconds=0,
-                    channel_count=1,
-                    audio_bytes=len(provider_audio_data),
-                    latency_ms=round((time.perf_counter() - file_stt_started_at) * 1000),
-                    provider_status_code=exc.response.status_code,
-                    provider_error_code=provider_error_code(exc),
-                    error_type=type(exc).__name__,
-                    billing_mode="pre_recorded",
-                    language_mode="multilingual",
-                    addons=deepgram_addons,
-                    commit=True,
-                )
-                raise
-            except Exception as exc:
-                await record_deepgram_usage_event(
-                    db,
-                    user_id=user_id,
-                    recording_id=recording_id,
-                    operation="file_stt",
-                    purpose="recording",
-                    status="failed",
-                    model=DEFAULT_FILE_STT_MODEL,
-                    language=recording_language,
-                    content_type=provider_content_type,
-                    audio_seconds=provider_audio_seconds,
-                    billable_seconds=0,
-                    channel_count=1,
-                    audio_bytes=len(provider_audio_data),
-                    latency_ms=round((time.perf_counter() - file_stt_started_at) * 1000),
-                    error_type=type(exc).__name__,
-                    billing_mode="pre_recorded",
-                    language_mode="multilingual",
-                    addons=deepgram_addons,
-                    commit=True,
-                )
-                raise
-            else:
-                await record_deepgram_usage_event(
-                    db,
-                    user_id=user_id,
-                    recording_id=recording_id,
-                    operation="file_stt",
-                    purpose="recording",
-                    status="succeeded",
-                    model=DEFAULT_FILE_STT_MODEL,
-                    language=recording_language,
-                    content_type=provider_content_type,
-                    audio_seconds=provider_audio_seconds,
-                    billable_seconds=effective_billable_seconds(
-                        audio_seconds=provider_audio_seconds,
-                        channel_count=1,
-                    ),
-                    channel_count=1,
-                    audio_bytes=len(provider_audio_data),
-                    latency_ms=round((time.perf_counter() - file_stt_started_at) * 1000),
-                    billing_mode="pre_recorded",
-                    language_mode="multilingual",
-                    addons=deepgram_addons,
-                    commit=True,
-                )
+                ),
+                channel_count=1,
+                audio_bytes=stt_size_bytes,
+                latency_ms=round((time.perf_counter() - file_stt_started_at) * 1000),
+                billing_mode="pre_recorded",
+                language_mode="multilingual",
+                addons=deepgram_addons,
+                commit=True,
+            )
         _recording_lifecycle_breadcrumb(
             "Recording file transcription completed",
             recording_id=recording_id,

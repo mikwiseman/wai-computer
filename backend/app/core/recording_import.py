@@ -10,9 +10,8 @@ from collections.abc import Awaitable, Callable
 from contextlib import suppress
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
-from io import BytesIO
 from pathlib import Path
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import httpx
 from sqlalchemy import delete, select
@@ -29,6 +28,19 @@ from app.core.deepgram_usage import (
 )
 from app.core.embeddings import generate_embedding, generate_embeddings
 from app.core.error_sanitizer import sanitize_failure_message
+from app.core.media_audio import (
+    CONTENT_TYPE_TO_EXTENSION,
+    EXTENSION_TO_CONTENT_TYPE,
+    EXTRACTED_AUDIO_CONTENT_TYPE,
+    EXTRACTED_AUDIO_EXT,
+    SUPPORTED_AUDIO_EXTENSIONS,
+    SUPPORTED_VIDEO_EXTENSIONS,
+    MediaAudioExtractionError,
+    extract_audio_to_flac,
+    is_video_media,
+    media_requires_audio_extraction,
+    probe_media_duration_seconds,
+)
 from app.core.observability import capture_sentry_anomaly, fingerprint_text
 from app.core.personalization import (
     load_user_keyterms,
@@ -151,16 +163,19 @@ class ImportedRecordingResult:
 
 @dataclass(frozen=True)
 class TranscribedMedia:
-    """Normalised media bytes plus their transcript, produced WITHOUT persisting a
+    """Normalised on-disk media plus its transcript, produced WITHOUT persisting a
     recording. Lets a caller transcribe once to inspect what was said (intent
     routing), then either feed the text to the agent or hand these results back to
     ``import_media_as_recording(precomputed=...)`` so the audio is never transcribed
-    twice."""
+    twice. The caller owns ``media_path`` cleanup (``discard()``)."""
 
     transcript_results: list[TranscriptResult]
-    media_data: bytes
+    media_path: Path
     media_content_type: str
     media_ext: str
+
+    async def discard(self) -> None:
+        await _delete_staged_file(self.media_path)
 
     @property
     def speech_results(self) -> list[TranscriptResult]:
@@ -178,42 +193,6 @@ class TranscribedMedia:
     def transcript_text(self) -> str:
         """Plain spoken text (no speaker labels) for classification / chat input."""
         return " ".join(tr.text.strip() for tr in self.speech_results).strip()
-
-
-CONTENT_TYPE_TO_EXTENSION = {
-    "audio/mpeg": "mp3",
-    "audio/mp3": "mp3",
-    "audio/wav": "wav",
-    "audio/x-wav": "wav",
-    "audio/mp4": "m4a",
-    "audio/m4a": "m4a",
-    "audio/aac": "aac",
-    "audio/ogg": "ogg",
-    "audio/oga": "oga",
-    "audio/opus": "opus",
-    "audio/webm": "webm",
-    "audio/flac": "flac",
-    "video/mp4": "mp4",
-    "video/quicktime": "mov",
-    "video/webm": "webm",
-}
-EXTENSION_TO_CONTENT_TYPE = {
-    "mp3": "audio/mpeg",
-    "wav": "audio/wav",
-    "m4a": "audio/mp4",
-    "aac": "audio/aac",
-    "ogg": "audio/ogg",
-    "oga": "audio/ogg",
-    "opus": "audio/opus",
-    "webm": "audio/webm",
-    "flac": "audio/flac",
-    "mp4": "video/mp4",
-    "mov": "video/quicktime",
-    "mkv": "video/x-matroska",
-}
-SUPPORTED_AUDIO_EXTENSIONS = {"mp3", "wav", "m4a", "aac", "ogg", "oga", "opus", "webm", "flac"}
-SUPPORTED_VIDEO_EXTENSIONS = {"mp4", "mov", "webm", "mkv"}
-AUDIO_EXTENSIONS_REQUIRING_NORMALIZATION = {"ogg", "oga", "opus", "webm"}
 
 
 def resolve_import_extension(filename: str | None, content_type: str | None) -> str:
@@ -234,56 +213,25 @@ def resolve_import_extension(filename: str | None, content_type: str | None) -> 
     )
 
 
-def _is_video_media(ext: str, content_type: str | None) -> bool:
-    normalized_content_type = (content_type or "").split(";")[0].strip().lower()
-    if normalized_content_type.startswith("video/"):
-        return True
-    if normalized_content_type.startswith("audio/"):
-        return False
-    return ext in SUPPORTED_VIDEO_EXTENSIONS
-
-
-def _is_audio_media_requiring_normalization(ext: str, content_type: str | None) -> bool:
-    normalized_content_type = (content_type or "").split(";")[0].strip().lower()
-    if ext in AUDIO_EXTENSIONS_REQUIRING_NORMALIZATION:
-        return True
-    return normalized_content_type in {"audio/ogg", "audio/oga", "audio/opus", "audio/webm"}
-
-
-def _pydub_format(ext: str) -> str | None:
-    if ext == "mov":
-        return None
-    if ext == "oga":
-        return "ogg"
-    return ext
-
-
-async def _normalize_media_for_transcription(
-    data: bytes,
+async def _normalize_media_file_for_transcription(
+    source: Path,
     *,
     ext: str,
     content_type: str,
-) -> tuple[bytes, str, str]:
-    """Extract audio from videos and normalize containers STT providers reject."""
-    if not _is_video_media(ext, content_type) and not _is_audio_media_requiring_normalization(
-        ext,
-        content_type,
-    ):
-        return data, content_type, ext
+    dest: Path,
+) -> tuple[Path, str, str]:
+    """Extract audio from videos and normalize containers STT providers reject.
 
-    def convert() -> bytes:
-        from pydub import AudioSegment
-
-        segment = AudioSegment.from_file(BytesIO(data), format=_pydub_format(ext))
-        segment = segment.set_frame_rate(16_000).set_channels(1).set_sample_width(2)
-        output = BytesIO()
-        segment.export(output, format="wav")
-        return output.getvalue()
-
+    File→file via ffmpeg so memory stays flat regardless of source size; returns
+    the source untouched when the provider accepts it directly."""
+    if not media_requires_audio_extraction(ext, content_type):
+        return source, content_type, ext
     try:
-        wav_data = await asyncio.to_thread(convert)
-    except Exception as exc:
-        if _is_video_media(ext, content_type):
+        await extract_audio_to_flac(source, dest)
+    except MediaAudioExtractionError as exc:
+        if exc.code == "no_audio_stream":
+            raise RecordingImportError(exc.code, exc.message) from exc
+        if is_video_media(ext, content_type):
             raise RecordingImportError(
                 "video_audio_extract_failed",
                 "Не получилось извлечь звук из видео.",
@@ -292,7 +240,7 @@ async def _normalize_media_for_transcription(
             "audio_decode_failed",
             "Не получилось прочитать аудио.",
         ) from exc
-    return wav_data, "audio/wav", "wav"
+    return dest, EXTRACTED_AUDIO_CONTENT_TYPE, EXTRACTED_AUDIO_EXT
 
 
 async def _write_staged_file(
@@ -422,7 +370,7 @@ def _duration_seconds_from_media_or_transcript(
 async def _transcribe(
     *,
     db: AsyncSession,
-    data: bytes,
+    media_path: Path,
     content_type: str,
     language: str,
     user: User,
@@ -432,13 +380,14 @@ async def _transcribe(
 ) -> list[TranscriptResult]:
     keyterms = await load_user_keyterms(db, user_id=user.id, purpose="recording")
     replacements = await load_user_replacements(db, user_id=user.id)
+    media_size_bytes = media_path.stat().st_size
     deepgram_addons = ["speaker_diarization"]
     if keyterms:
         deepgram_addons.append("keyterm_prompting")
     started_at = time.perf_counter()
     try:
         results = await transcribe_audio_file(
-            data,
+            media_path,
             language=language,
             content_type=content_type,
             keyterms=keyterms,
@@ -461,7 +410,7 @@ async def _transcribe(
             audio_seconds=audio_duration_seconds,
             billable_seconds=0,
             channel_count=1,
-            audio_bytes=len(data),
+            audio_bytes=media_size_bytes,
             latency_ms=round((time.perf_counter() - started_at) * 1000),
             guard_code=exc.code,
             billing_mode="pre_recorded",
@@ -484,7 +433,7 @@ async def _transcribe(
             audio_seconds=audio_duration_seconds,
             billable_seconds=0,
             channel_count=1,
-            audio_bytes=len(data),
+            audio_bytes=media_size_bytes,
             latency_ms=round((time.perf_counter() - started_at) * 1000),
             provider_status_code=exc.response.status_code,
             provider_error_code=provider_error_code(exc),
@@ -509,7 +458,7 @@ async def _transcribe(
             audio_seconds=audio_duration_seconds,
             billable_seconds=0,
             channel_count=1,
-            audio_bytes=len(data),
+            audio_bytes=media_size_bytes,
             latency_ms=round((time.perf_counter() - started_at) * 1000),
             error_type=type(exc).__name__,
             billing_mode="pre_recorded",
@@ -534,7 +483,7 @@ async def _transcribe(
             channel_count=1,
         ),
         channel_count=1,
-        audio_bytes=len(data),
+        audio_bytes=media_size_bytes,
         latency_ms=round((time.perf_counter() - started_at) * 1000),
         billing_mode="pre_recorded",
         language_mode="multilingual",
@@ -928,7 +877,8 @@ async def transcribe_media_bytes(
     the Deepgram cost/abuse guards still apply) but persists nothing. Used to read a
     voice note's content for intent routing; the returned results can be replayed
     into ``import_media_as_recording(precomputed=...)`` so the audio is transcribed
-    exactly once whether it ends up filed or answered."""
+    exactly once whether it ends up filed or answered. The caller owns the returned
+    ``media_path`` and must ``discard()`` it when done."""
     if not data:
         raise RecordingImportError("empty_file", "Файл пустой.")
     ext = resolve_import_extension(filename, content_type)
@@ -936,24 +886,43 @@ async def transcribe_media_bytes(
         (content_type or "").split(";")[0].strip().lower()
         or EXTENSION_TO_CONTENT_TYPE.get(ext, "application/octet-stream")
     )
-    media_data, media_content_type, media_ext = await _normalize_media_for_transcription(
-        data,
-        ext=ext,
-        content_type=normalized_content_type,
-    )
-    transcript_results = await _transcribe(
-        db=db,
-        data=media_data,
-        content_type=media_content_type,
-        language=_resolve_language(user, language) or "auto",
-        user=user,
-        audio_duration_seconds=duration_seconds,
-        recording_id=None,
-        source_label=source_label,
-    )
+    root = Path(settings.upload_staging_dir) / "intent" / str(user.id)
+    await asyncio.to_thread(root.mkdir, parents=True, exist_ok=True)
+    stem = uuid4().hex
+    source_path = root / f"{stem}.{ext}"
+    await asyncio.to_thread(source_path.write_bytes, data)
+    media_path: Path | None = None
+    try:
+        media_path, media_content_type, media_ext = (
+            await _normalize_media_file_for_transcription(
+                source_path,
+                ext=ext,
+                content_type=normalized_content_type,
+                dest=root / f"{stem}.stt.{EXTRACTED_AUDIO_EXT}",
+            )
+        )
+        transcript_results = await _transcribe(
+            db=db,
+            media_path=media_path,
+            content_type=media_content_type,
+            language=_resolve_language(user, language) or "auto",
+            user=user,
+            audio_duration_seconds=duration_seconds,
+            recording_id=None,
+            source_label=source_label,
+        )
+    except BaseException:
+        if media_path is not None and media_path != source_path:
+            await _delete_staged_file(media_path)
+        await _delete_staged_file(source_path)
+        raise
+    if media_path != source_path:
+        # The normalised FLAC replaces the source container; the original is
+        # no longer needed for voice-ID or a later import replay.
+        await _delete_staged_file(source_path)
     return TranscribedMedia(
         transcript_results=transcript_results,
-        media_data=media_data,
+        media_path=media_path,
         media_content_type=media_content_type,
         media_ext=media_ext,
     )
@@ -963,7 +932,8 @@ async def import_media_as_recording(
     *,
     db: AsyncSession,
     user: User,
-    data: bytes,
+    data: bytes | None = None,
+    source_path: Path | None = None,
     filename: str | None,
     content_type: str | None,
     title: str | None,
@@ -974,21 +944,28 @@ async def import_media_as_recording(
     precomputed: TranscribedMedia | None = None,
     on_stage: Callable[[str], Awaitable[None]] | None = None,
 ) -> ImportedRecordingResult:
-    """Create a library recording from external media bytes and process it.
+    """Create a library recording from external media and process it.
 
-    When ``precomputed`` is supplied the media has already been normalised and
-    transcribed by ``transcribe_media_bytes`` (intent routing): reuse those bytes
-    and transcript instead of paying for a second normalise + STT pass.
+    The media arrives either as ``data`` bytes (small payloads, e.g. voice
+    notes), as an on-disk ``source_path`` (large staged uploads/downloads —
+    never loaded into memory; the CALLER owns that file's cleanup), or as
+    ``precomputed`` — media already normalised and transcribed by
+    ``transcribe_media_bytes`` (intent routing), reused so the audio is never
+    transcribed twice (the caller owns ``precomputed.media_path`` too).
 
     ``on_stage`` (optional) is awaited at coarse progress points ("summarizing")
     so a chat frontend can live-update its status message; its failures never
     fail the import."""
-    if not data:
+    if precomputed is None and source_path is None and not data:
+        raise RecordingImportError("empty_file", "Файл пустой.")
+    if source_path is not None and (
+        not source_path.exists() or source_path.stat().st_size == 0
+    ):
         raise RecordingImportError("empty_file", "Файл пустой.")
     logger.info("external recording import started source=%s", source_label)
 
     recording_id: UUID | None = recording.id if recording is not None else None
-    staged_path: Path | None = None
+    owned_paths: list[Path] = []
 
     try:
         ext = resolve_import_extension(filename, content_type)
@@ -996,18 +973,8 @@ async def import_media_as_recording(
             (content_type or "").split(";")[0].strip().lower()
             or EXTENSION_TO_CONTENT_TYPE.get(ext, "application/octet-stream")
         )
-        media_kind = "video" if _is_video_media(ext, normalized_content_type) else "audio"
+        media_kind = "video" if is_video_media(ext, normalized_content_type) else "audio"
         explicit_title = bool((title or "").strip())
-        if precomputed is not None:
-            media_data = precomputed.media_data
-            media_content_type = precomputed.media_content_type
-            media_ext = precomputed.media_ext
-        else:
-            media_data, media_content_type, media_ext = await _normalize_media_for_transcription(
-                data,
-                ext=ext,
-                content_type=normalized_content_type,
-            )
         now = datetime.now(timezone.utc)
         if recording is None:
             recording = Recording(
@@ -1033,14 +1000,46 @@ async def import_media_as_recording(
             recording.failure_message = None
         await db.flush()
         recording_id = recording.id
-
-        staged_path = await _write_staged_file(
-            user_id=user.id,
-            recording_id=recording_id,
-            data=media_data,
-            ext=media_ext,
-        )
+        # Commit the PROCESSING row before the potentially slow ffmpeg
+        # extraction so no transaction stays open for minutes.
         await db.commit()
+
+        if precomputed is not None:
+            media_path = precomputed.media_path
+            media_content_type = precomputed.media_content_type
+        else:
+            if source_path is not None:
+                raw_path = source_path
+            else:
+                assert data is not None
+                raw_path = await _write_staged_file(
+                    user_id=user.id,
+                    recording_id=recording_id,
+                    data=data,
+                    ext=ext,
+                )
+                owned_paths.append(raw_path)
+            extraction_dest = (
+                Path(settings.upload_staging_dir)
+                / str(user.id)
+                / f"{recording_id}.stt.{EXTRACTED_AUDIO_EXT}"
+            )
+            media_path, media_content_type, _media_ext = (
+                await _normalize_media_file_for_transcription(
+                    raw_path,
+                    ext=ext,
+                    content_type=normalized_content_type,
+                    dest=extraction_dest,
+                )
+            )
+            if media_path != raw_path:
+                owned_paths.append(media_path)
+
+        if duration_seconds is None:
+            # Guards and billing estimates need a duration; containers carry it
+            # even when the sender's metadata (web upload, forwarded file) doesn't.
+            duration_seconds = await probe_media_duration_seconds(media_path)
+        media_size_bytes = media_path.stat().st_size
 
         await db.execute(delete(Summary).where(Summary.recording_id == recording.id))
         await db.execute(delete(Segment).where(Segment.recording_id == recording.id))
@@ -1057,7 +1056,7 @@ async def import_media_as_recording(
         else:
             transcript_results = await _transcribe(
                 db=db,
-                data=media_data,
+                media_path=media_path,
                 content_type=media_content_type,
                 language=recording.language or "auto",
                 user=user,
@@ -1073,15 +1072,14 @@ async def import_media_as_recording(
         if not speech_results:
             apply_no_speech_failure(recording, user.default_language)
             await db.commit()
-            await _delete_staged_file(staged_path)
             return ImportedRecordingResult(recording=recording, transcript="", summary=None)
 
         transcript, speaker_names, transcript_document = await _persist_segments(
             db=db,
             user_id=user.id,
             recording=recording,
-            staged_path=staged_path,
-            staged_size_bytes=len(media_data),
+            staged_path=media_path,
+            staged_size_bytes=media_size_bytes,
             transcript_results=speech_results,
             duration_seconds=duration_seconds,
         )
@@ -1242,8 +1240,8 @@ async def import_media_as_recording(
                 recording = failed
         raise RecordingImportError("processing_failed", "Не получилось обработать файл.") from exc
     finally:
-        if staged_path is not None:
-            await _delete_staged_file(staged_path)
+        for owned_path in owned_paths:
+            await _delete_staged_file(owned_path)
 
 
 async def regenerate_recording_summary(
