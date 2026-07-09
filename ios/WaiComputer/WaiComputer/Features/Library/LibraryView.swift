@@ -1281,7 +1281,7 @@ struct TrashView: View {
     private var emptyTrashMessage: String {
         let count = viewModel.trashedRecordings.count
         if OnboardingL10n.language(for: languageManager.current) == .russian {
-            let noun = RussianPlural.recordings(count)
+            let noun = RussianPlural.form(count, one: "запись", few: "записи", many: "записей")
             return "Это навсегда удалит \(count) \(noun). Это действие нельзя отменить."
         }
         let noun = count == 1 ? "recording" : "recordings"
@@ -1293,30 +1293,6 @@ struct TrashView: View {
     }
 }
 
-// MARK: - Russian Pluralization
-
-/// Russian noun pluralization for counts (1 → singular, 2–4 → few, 0/5–20 →
-/// many, with the standard teen exception). Used for user-facing count copy.
-enum RussianPlural {
-    static func recordings(_ count: Int) -> String {
-        forms(count, one: "запись", few: "записи", many: "записей")
-    }
-
-    static func forms(_ count: Int, one: String, few: String, many: String) -> String {
-        let mod100 = abs(count) % 100
-        if (11...14).contains(mod100) {
-            return many
-        }
-        switch abs(count) % 10 {
-        case 1:
-            return one
-        case 2, 3, 4:
-            return few
-        default:
-            return many
-        }
-    }
-}
 
 // MARK: - Inline Banner
 
