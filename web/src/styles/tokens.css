@@ -121,15 +121,24 @@
   --font-body-small: var(--font-body-small-weight) var(--font-body-small-size) /
     var(--font-body-small-line) var(--font-family-sans);
 
-  /* Reading — 16px regular sans, generous line-height for transcripts and
-   * summaries (the 2026 readability floor for reading-heavy products; the
-   * old 15px read tight over long transcripts). Mac uses `.lineSpacing(6)`
-   * which translates to ~1.7 leading. */
-  --font-reading-size: 1rem;
-  --font-reading-line: 1.7;
+  /* Reading — 17px regular sans, generous line-height for transcripts and
+   * summaries (Granola/Notion-class reading comfort; 16px still read tight
+   * over hour-long transcripts). Mac uses `.lineSpacing(6)` ≈ 1.7 leading.
+   * Pair with `--measure-reading` — size without measure is not readable. */
+  --font-reading-size: 1.0625rem;
+  --font-reading-line: 1.75;
   --font-reading-weight: 400;
   --font-reading: var(--font-reading-weight) var(--font-reading-size) /
     var(--font-reading-line) var(--font-family-sans);
+
+  /* ---------------------------------------------------------------------
+   * Measure — max line length for running text. The single biggest
+   * readability lever: long-form content must stay in the 60–72ch band.
+   *   reading — transcripts, summaries, share page, long descriptions
+   *   tight   — empty states, hints, footnotes
+   * --------------------------------------------------------------------- */
+  --measure-reading: 44rem;
+  --measure-tight: 34rem;
 
   /* Label — 12pt medium sans. Metadata, dates. */
   --font-label-size: 0.75rem;
@@ -435,18 +444,19 @@
   color-scheme: dark;
   /* Warm near-black ladder — the same warm hue as the light theme so both
    * themes read as one product (not flat black; e2e guard: bg luma 18 < 80,
-   * ink luma 238 > 150). */
+   * ink luma 238 > 150). Panel sits a full step above bg and borders a step
+   * above panel so cards separate without shadows — the flat-wall fix. */
   --bg: #131211;
-  --panel: #1b1917;
-  --panel-subtle: #252220;
-  --panel-raised: #161514;
-  --ink: #f1eee8;
-  --ink-soft: #c6c0b5;
-  --ink-faint: #948d80;
+  --panel: #1e1b18;
+  --panel-subtle: #2a2620;
+  --panel-raised: #171614;
+  --ink: #f3f0e9;
+  --ink-soft: #cec8bc;
+  --ink-faint: #a09889;
   --warm: #e0a15d;
   --warm-soft: rgba(224, 161, 93, 0.18);
-  --border: #363129;
-  --border-strong: #4e4840;
+  --border: #3a342b;
+  --border-strong: #544d42;
   --danger: #ff8a82;
   --danger-contrast: #2a0907;
   --warning: #ffb35b;
@@ -460,12 +470,12 @@
   --shadow: var(--shadow-3);
 
   /* Surface + material — alpha overlays on dark `--bg`. */
-  --surface-subtle: rgba(241, 238, 232, 0.05);
-  --surface-hover: rgba(241, 238, 232, 0.08);
-  --surface-hairline: rgba(241, 238, 232, 0.10);
+  --surface-subtle: rgba(243, 240, 233, 0.05);
+  --surface-hover: rgba(243, 240, 233, 0.08);
+  --surface-hairline: rgba(243, 240, 233, 0.10);
   --material-thin-bg: rgba(24, 22, 20, 0.66);
   --material-regular-bg: rgba(24, 22, 20, 0.84);
-  --material-thin-border: rgba(241, 238, 232, 0.08);
+  --material-thin-border: rgba(243, 240, 233, 0.08);
   --material-tint-amber: rgba(255, 159, 10, 0.14);
   --material-tint-accent: var(--accent-soft);
 
@@ -577,16 +587,16 @@
     color-scheme: dark;
     /* Keep in sync with the explicit [data-theme="dark"] block above. */
     --bg: #131211;
-    --panel: #1b1917;
-    --panel-subtle: #252220;
-    --panel-raised: #161514;
-    --ink: #f1eee8;
-    --ink-soft: #c6c0b5;
-    --ink-faint: #948d80;
+    --panel: #1e1b18;
+    --panel-subtle: #2a2620;
+    --panel-raised: #171614;
+    --ink: #f3f0e9;
+    --ink-soft: #cec8bc;
+    --ink-faint: #a09889;
     --warm: #e0a15d;
     --warm-soft: rgba(224, 161, 93, 0.18);
-    --border: #363129;
-    --border-strong: #4e4840;
+    --border: #3a342b;
+    --border-strong: #544d42;
     --danger: #ff8a82;
     --danger-contrast: #2a0907;
     --warning: #ffb35b;
@@ -599,12 +609,12 @@
     --shadow-3: 0 20px 56px rgba(0, 0, 0, 0.34);
     --shadow: var(--shadow-3);
 
-    --surface-subtle: rgba(241, 238, 232, 0.05);
-    --surface-hover: rgba(241, 238, 232, 0.08);
-    --surface-hairline: rgba(241, 238, 232, 0.10);
+    --surface-subtle: rgba(243, 240, 233, 0.05);
+    --surface-hover: rgba(243, 240, 233, 0.08);
+    --surface-hairline: rgba(243, 240, 233, 0.10);
     --material-thin-bg: rgba(24, 22, 20, 0.66);
     --material-regular-bg: rgba(24, 22, 20, 0.84);
-    --material-thin-border: rgba(241, 238, 232, 0.08);
+    --material-thin-border: rgba(243, 240, 233, 0.08);
     --material-tint-amber: rgba(255, 159, 10, 0.14);
     --material-tint-accent: var(--accent-soft);
 

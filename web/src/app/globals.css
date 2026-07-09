@@ -2292,7 +2292,7 @@ a.primary-button[aria-disabled="true"]:hover {
   display: flex;
   flex-direction: column;
   gap: 1.1rem;
-  max-width: 850px;
+  max-width: var(--measure-reading);
   padding: 1.55rem 2rem 2rem;
 }
 
@@ -2349,8 +2349,25 @@ a.primary-button[aria-disabled="true"]:hover {
 .transcript-row p,
 .note-section p,
 .reading-list {
-  font-size: var(--font-body-large-size);
-  line-height: 1.75;
+  font-size: var(--font-reading-size);
+  line-height: var(--font-reading-line);
+  max-width: var(--measure-reading);
+}
+
+/* Speaker turn header: name in primary ink so turns scan at a glance;
+ * timestamp drops to a faint label so it stops competing with content. */
+.transcript-row .metadata-row {
+  gap: 0.6rem;
+}
+
+.transcript-row .metadata-row strong {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.transcript-row .metadata-row .mono {
+  color: var(--ink-faint);
+  font-size: var(--font-label-size);
 }
 
 .reading-list {
@@ -3248,11 +3265,13 @@ a.primary-button[aria-disabled="true"]:hover {
   padding: clamp(1rem, 4vw, 2.4rem);
 }
 
+/* Editorial reading column: the card is sized so body text naturally sits
+ * in the 60–70ch band — the wide 880px card put ~100 chars on a line. */
 .shared-note {
-  max-width: 880px;
+  max-width: calc(var(--measure-reading) + 2 * clamp(1.2rem, 4vw, 2.5rem));
   margin: 0 auto;
   border: 1px solid var(--border);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-lg);
   background: var(--panel);
   box-shadow: none;
 }
@@ -3286,14 +3305,28 @@ a.primary-button[aria-disabled="true"]:hover {
   font-size: var(--font-label-size);
 }
 
+/* Serif display title — the shared note is the product's editorial face;
+ * the old 3.4rem bold sans read as a shouting wall, not a document. */
 .shared-note h1 {
-  font-size: clamp(2rem, 5vw, 3.4rem);
-  line-height: 1.08;
+  font-family: var(--font-family-serif);
+  font-size: clamp(1.75rem, 1.2rem + 2.2vw, 2.5rem);
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  line-height: 1.15;
   overflow-wrap: anywhere;
+  text-wrap: balance;
 }
 
 .shared-note__download {
   white-space: nowrap;
+}
+
+/* Dot-separated meta line (type · date · duration) in the note header only —
+ * transcript rows reuse .metadata-row and must stay dot-free. */
+.shared-note__header .metadata-row span + span::before {
+  content: "·";
+  margin-right: 0.55rem;
+  color: var(--ink-faint);
 }
 
 .shared-note__download-error {
@@ -3314,12 +3347,15 @@ a.primary-button[aria-disabled="true"]:hover {
 .shared-section h2 {
   color: var(--ink-faint);
   font-size: var(--font-label-size);
+  font-weight: 600;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
 }
 
 .shared-section > p {
-  font-size: 1.04rem;
-  line-height: 1.75;
+  font-size: var(--font-reading-size);
+  line-height: var(--font-reading-line);
+  max-width: var(--measure-reading);
 }
 
 .shared-action-stack,
@@ -3330,15 +3366,19 @@ a.primary-button[aria-disabled="true"]:hover {
 .summary-markdown {
   display: grid;
   gap: 0.75rem;
-  font-size: 1.04rem;
-  line-height: 1.75;
+  font-size: var(--font-reading-size);
+  line-height: var(--font-reading-line);
+  max-width: var(--measure-reading);
 }
 
+/* In-content subheads must sit clearly above body size — at 1rem they
+ * disappeared into the text and the document read as one flat wall. */
 .summary-markdown h3,
 .shared-subheading {
-  font-size: 1rem;
-  font-weight: 650;
-  margin-top: 0.35rem;
+  font-size: var(--font-heading-large-size);
+  font-weight: 600;
+  line-height: 1.3;
+  margin-top: 0.65rem;
 }
 
 .summary-markdown code,
@@ -3368,6 +3408,13 @@ a.primary-button[aria-disabled="true"]:hover {
 .empty-state h3 {
   color: var(--ink);
   font-size: 1.05rem;
+}
+
+/* Share-page unavailable state renders an h1 — without this it inherited
+ * the page-level display size and shouted a 3rem gray error. */
+.empty-state h1 {
+  color: var(--ink);
+  font: var(--font-display-small);
 }
 
 .summary-generation-state {
