@@ -19,7 +19,7 @@ from app.core.recording_import import (
     transcribe_media_bytes,
 )
 from app.core.summarizer import SummaryResult
-from app.core.transcript_utils import TranscriptResult
+from app.core.transcript_utils import FileTranscription, TranscriptResult
 from app.models.recording import Recording, RecordingStatus, Segment
 from app.models.user import User
 
@@ -58,7 +58,7 @@ async def test_transcribe_media_bytes_returns_transcript_without_persisting(
     await db_session.commit()
 
     async def fake_transcribe(*_args, **_kwargs):
-        return [_speech("сколько будет один плюс два")]
+        return FileTranscription(words=[], segments=[_speech("сколько будет один плюс два")])
 
     monkeypatch.setattr("app.core.recording_import.transcribe_audio_file", fake_transcribe)
 
@@ -95,7 +95,7 @@ async def test_import_with_precomputed_skips_second_transcription(
 
     async def counting_transcribe(*_args, **_kwargs):
         transcribe_calls["n"] += 1
-        return [_speech("полный текст записи")]
+        return FileTranscription(words=[], segments=[_speech("полный текст записи")])
 
     async def fake_embedding(_text: str, **_: object):
         raise RuntimeError("embedding offline")
@@ -203,7 +203,7 @@ async def test_import_batches_multi_segment_embeddings(
     monkeypatch.setattr("app.core.recording_import.settings.upload_staging_dir", str(tmp_path))
 
     async def fake_transcribe(*_args, **_kwargs):
-        return [_speech("один"), _speech("два"), _speech("три")]
+        return FileTranscription(words=[], segments=[_speech("один"), _speech("два"), _speech("три")])
 
     async def fail_single_embedding(_text: str, **_: object):
         raise AssertionError("multi-segment imports must use batch embeddings")
@@ -290,16 +290,19 @@ async def test_import_prefers_known_media_duration_over_provider_timestamp_drift
     monkeypatch.setattr("app.core.recording_import.settings.upload_staging_dir", str(tmp_path))
 
     async def fake_transcribe(*_args, **_kwargs):
-        return [
-            TranscriptResult(
-                text="длинная встреча",
-                speaker="speaker_0",
-                is_final=True,
-                start_ms=0,
-                end_ms=(46 * 60 + 51) * 1000,
-                confidence=0.95,
-            )
-        ]
+        return FileTranscription(
+            words=[],
+            segments=[
+                TranscriptResult(
+                    text="длинная встреча",
+                    speaker="speaker_0",
+                    is_final=True,
+                    start_ms=0,
+                    end_ms=(46 * 60 + 51) * 1000,
+                    confidence=0.95,
+                )
+            ],
+        )
 
     async def fake_embedding(_text: str, **_: object):
         return None

@@ -418,7 +418,7 @@ def test_youtube_api_uses_proxy_when_configured(monkeypatch) -> None:
 
 @pytest.mark.asyncio
 async def test_transcribe_youtube_audio_builds_segments(monkeypatch) -> None:
-    from app.core.transcript_utils import TranscriptResult
+    from app.core.transcript_utils import FileTranscription, TranscriptResult
 
     def fake_download(url):
         return b"audio-bytes", "audio/mp4", 12.5
@@ -428,20 +428,23 @@ async def test_transcribe_youtube_audio_builds_segments(monkeypatch) -> None:
         assert kwargs["user_id"] == "u1"
         assert kwargs["content_type"] == "audio/mp4"
         assert kwargs["audio_duration_seconds"] == 12.5
-        return [
-            TranscriptResult(
-                text="hello", speaker=None, is_final=True,
-                start_ms=0, end_ms=900, confidence=0.9,
-            ),
-            TranscriptResult(
-                text="  ", speaker=None, is_final=True,
-                start_ms=900, end_ms=1000, confidence=0.9,
-            ),
-            TranscriptResult(
-                text="there", speaker=None, is_final=True,
-                start_ms=1000, end_ms=1800, confidence=0.9,
-            ),
-        ]
+        return FileTranscription(
+            words=[],
+            segments=[
+                TranscriptResult(
+                    text="hello", speaker=None, is_final=True,
+                    start_ms=0, end_ms=900, confidence=0.9,
+                ),
+                TranscriptResult(
+                    text="  ", speaker=None, is_final=True,
+                    start_ms=900, end_ms=1000, confidence=0.9,
+                ),
+                TranscriptResult(
+                    text="there", speaker=None, is_final=True,
+                    start_ms=1000, end_ms=1800, confidence=0.9,
+                ),
+            ],
+        )
 
     monkeypatch.setattr(source_fetch, "_download_youtube_audio", fake_download)
     with patch("app.core.transcription.transcribe_audio_file", side_effect=fake_stt):
@@ -462,7 +465,9 @@ async def test_transcribe_youtube_audio_no_speech_raises(monkeypatch) -> None:
         return b"a", "audio/mp4", 1.0
 
     async def fake_stt(data, **kwargs):
-        return []
+        from app.core.transcript_utils import FileTranscription
+
+        return FileTranscription(segments=[], words=[])
 
     monkeypatch.setattr(source_fetch, "_download_youtube_audio", fake_download)
     with patch("app.core.transcription.transcribe_audio_file", side_effect=fake_stt):

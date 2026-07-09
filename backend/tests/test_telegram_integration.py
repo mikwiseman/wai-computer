@@ -34,7 +34,7 @@ from app.core.telegram_client import (
     TelegramFileTooLargeError,
     telegram_chunks,
 )
-from app.core.transcript_utils import TranscriptResult
+from app.core.transcript_utils import FileTranscription, TranscriptResult
 from app.core.unified_search import UnifiedHit
 from app.models.agent import Agent, AgentRun
 from app.models.billing import UsageWeek
@@ -269,7 +269,7 @@ async def test_import_media_as_recording_persists_transcript_and_summary(
     monkeypatch.setattr("app.core.recording_import.settings.upload_staging_dir", str(tmp_path))
 
     async def fake_transcribe(*args, **kwargs):
-        return [
+        return FileTranscription(words=[], segments=[
             TranscriptResult(
                 text="Привет из Telegram",
                 speaker="speaker_1",
@@ -278,7 +278,7 @@ async def test_import_media_as_recording_persists_transcript_and_summary(
                 end_ms=1200,
                 confidence=0.95,
             )
-        ]
+        ])
 
     async def fake_embedding(text: str, **_: object):
         raise RuntimeError("embedding offline")
@@ -401,7 +401,7 @@ async def test_import_media_keeps_transcript_when_summary_fails(
     )
 
     async def fake_transcribe(*args, **kwargs):
-        return [
+        return FileTranscription(words=[], segments=[
             TranscriptResult(
                 text="Транскрипт сохранен",
                 speaker="speaker_1",
@@ -410,7 +410,7 @@ async def test_import_media_keeps_transcript_when_summary_fails(
                 end_ms=1400,
                 confidence=0.96,
             )
-        ]
+        ])
 
     async def fake_summary(*args, **kwargs):
         raise RuntimeError("summary offline")
@@ -479,7 +479,7 @@ async def test_import_media_keeps_transcript_when_billing_fails(
     )
 
     async def fake_transcribe(*args, **kwargs):
-        return [
+        return FileTranscription(words=[], segments=[
             TranscriptResult(
                 text="Транскрипт и саммари сохранены",
                 speaker="speaker_1",
@@ -488,7 +488,7 @@ async def test_import_media_keeps_transcript_when_billing_fails(
                 end_ms=1600,
                 confidence=0.95,
             )
-        ]
+        ])
 
     async def fake_summary(*args, **kwargs):
         return SummaryResult(
@@ -4265,7 +4265,7 @@ async def test_import_media_no_speech_marks_recording_failed(
     monkeypatch.setattr("app.core.recording_import.settings.upload_staging_dir", str(tmp_path))
 
     async def fake_transcribe(*args, **kwargs):
-        return [
+        return FileTranscription(words=[], segments=[
             TranscriptResult(
                 text="[no speech detected]",
                 speaker=None,
@@ -4274,7 +4274,7 @@ async def test_import_media_no_speech_marks_recording_failed(
                 end_ms=500,
                 confidence=None,
             )
-        ]
+        ])
 
     monkeypatch.setattr("app.core.recording_import.transcribe_audio_file", fake_transcribe)
     result = await import_media_as_recording(
@@ -4374,7 +4374,7 @@ async def test_import_media_uses_summary_title_without_separate_title_generation
     monkeypatch.setattr("app.core.recording_import.settings.upload_staging_dir", str(tmp_path))
 
     async def fake_transcribe(*args, **kwargs):
-        return [
+        return FileTranscription(words=[], segments=[
             TranscriptResult(
                 text="Текст без заголовка",
                 speaker=None,
@@ -4383,7 +4383,7 @@ async def test_import_media_uses_summary_title_without_separate_title_generation
                 end_ms=1000,
                 confidence=0.9,
             )
-        ]
+        ])
 
     async def fake_summary(*args, **kwargs):
         return SummaryResult(
@@ -4443,16 +4443,19 @@ async def test_telegram_ogg_audio_import_normalizes_before_transcription(
     async def fake_transcribe(media_path, **kwargs):
         assert media_path.read_bytes() == b"flac from telegram"
         assert kwargs["content_type"] == "audio/flac"
-        return [
-            TranscriptResult(
-                text="Голосовое расшифровано",
-                speaker=None,
-                is_final=True,
-                start_ms=0,
-                end_ms=1000,
-                confidence=0.9,
-            )
-        ]
+        return FileTranscription(
+            words=[],
+            segments=[
+                TranscriptResult(
+                    text="Голосовое расшифровано",
+                    speaker=None,
+                    is_final=True,
+                    start_ms=0,
+                    end_ms=1000,
+                    confidence=0.9,
+                )
+            ],
+        )
 
     async def fake_summary(*args, **kwargs):
         return SummaryResult(
@@ -4510,16 +4513,19 @@ async def test_video_import_normalizes_audio_before_transcription(
     async def fake_transcribe(media_path, **kwargs):
         assert media_path.read_bytes() == b"flac audio"
         assert kwargs["content_type"] == "audio/flac"
-        return [
-            TranscriptResult(
-                text="Видео расшифровано",
-                speaker=None,
-                is_final=True,
-                start_ms=0,
-                end_ms=1000,
-                confidence=0.9,
-            )
-        ]
+        return FileTranscription(
+            words=[],
+            segments=[
+                TranscriptResult(
+                    text="Видео расшифровано",
+                    speaker=None,
+                    is_final=True,
+                    start_ms=0,
+                    end_ms=1000,
+                    confidence=0.9,
+                )
+            ],
+        )
 
     async def fake_summary(*args, **kwargs):
         instructions = kwargs["instructions"]

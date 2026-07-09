@@ -8,6 +8,8 @@ from uuid import uuid4
 
 import pytest
 
+from app.core.transcript_utils import FileTranscription
+
 
 @pytest.mark.asyncio
 async def test_import_transcription_uses_locked_file_stt_runtime(monkeypatch, tmp_path):
@@ -17,7 +19,7 @@ async def test_import_transcription_uses_locked_file_stt_runtime(monkeypatch, tm
 
     async def fake_transcribe_audio_file(*args, **kwargs):
         calls.append({"args": args, "kwargs": kwargs})
-        return []
+        return FileTranscription(segments=[], words=[])
 
     monkeypatch.setattr(recording_import, "transcribe_audio_file", fake_transcribe_audio_file)
     monkeypatch.setattr(

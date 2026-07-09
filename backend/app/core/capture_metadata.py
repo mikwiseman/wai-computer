@@ -119,14 +119,6 @@ def capture_metadata_from_stored(payload: object) -> CaptureMetadata | None:
         return None
 
 
-class _TimedSegment:
-    """Protocol-ish view of persisted segments used by owner attribution."""
-
-    speaker: str | None
-    start_ms: int | None
-    end_ms: int | None
-
-
 def _overlap_ms(
     start_ms: int, end_ms: int, intervals: list[tuple[int, int]]
 ) -> int:

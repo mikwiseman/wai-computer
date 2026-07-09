@@ -13,6 +13,7 @@ import pytest
 from app.config import get_settings
 from app.core import transcription as dispatcher
 from app.core import transcription_guard as guard
+from app.core.transcript_utils import FileTranscription
 from app.core.transcription_guard import TranscriptionGuardError
 
 
@@ -53,7 +54,7 @@ async def test_dispatch_rejects_over_minute_budget(settings, monkeypatch):
 
 async def test_dispatch_success_records_minutes_and_keeps_breaker_closed(settings, monkeypatch):
     async def _fake(*_a, **_k):
-        return []
+        return FileTranscription(segments=[], words=[])
 
     monkeypatch.setattr(dispatcher, "elevenlabs_transcribe_audio_file", _fake)
     await dispatcher.transcribe_audio_file(b"x", user_id="u1", audio_duration_seconds=60)
