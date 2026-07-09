@@ -1,5 +1,6 @@
 "use client";
 
+import { formatDurationClock } from "@/lib/format";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
@@ -468,9 +469,7 @@ export function DictatePanel({ locale = "en" }: DictatePanelProps) {
             {state === "recording" ? (
               <span className="live-recorder__dot" aria-hidden="true" />
             ) : null}
-            <span className="mono live-recorder__timer">{`${Math.floor(seconds / 60)}:${(seconds % 60)
-              .toString()
-              .padStart(2, "0")}`}</span>
+            <span className="mono live-recorder__timer">{seconds > 0 ? formatDurationClock(seconds) : "0:00"}</span>
             <span className="live-recorder__label">
               {phase === "preparing"
                 ? copy.preparing

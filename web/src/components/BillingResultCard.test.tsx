@@ -55,13 +55,12 @@ describe("BillingResultCard", () => {
     );
   });
 
-  it("explains that 4242 is a Stripe test card, not a T-Bank test card", () => {
+  it("explains a failed payment without leaking test-card debug copy", () => {
     render(<BillingResultCard kind="cancel" locale="ru" />);
 
     expect(screen.getByRole("heading", { name: "Оплата не прошла" })).toBeInTheDocument();
-    expect(screen.getByText(/4242 4242 4242 4242/)).toHaveTextContent(
-      /Stripe test card, а не тестовая карта Т-Банка/i,
-    );
+    expect(screen.getByText(/Попробуй другую карту/)).toBeInTheDocument();
+    expect(screen.queryByText(/4242/)).toBeNull();
   });
 
   it("does not link unauthenticated browser returns back to billing", () => {

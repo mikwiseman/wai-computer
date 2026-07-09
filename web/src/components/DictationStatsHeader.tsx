@@ -1,5 +1,6 @@
 "use client";
 
+import { ruPlural } from "@/lib/format";
 import type { DictationEntry } from "@/lib/types";
 
 type Locale = "en" | "ru";
@@ -61,7 +62,11 @@ export function DictationStatsHeader({ entries, locale = "en" }: DictationStatsH
       </div>
       <div className="dictation-stat">
         <strong>{streak}</strong>
-        <span>{copy.streak}</span>
+        <span>
+          {locale === "ru"
+            ? `${ruPlural(streak, "день", "дня", "дней")} подряд`
+            : copy.streak}
+        </span>
       </div>
     </div>
   );

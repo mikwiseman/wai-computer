@@ -694,6 +694,7 @@ export function RecordingDetailPanel({
             recordingId={recording.id}
             onRecordingUpdate={onRecordingUpdate}
             copy={copy}
+            locale={locale}
           />
         )}
         {tab === "summary" && (
@@ -772,12 +773,14 @@ function TranscriptTab({
   recordingId,
   onRecordingUpdate,
   copy,
+  locale,
 }: {
   segments: Segment[];
   status: string;
   recordingId: string;
   onRecordingUpdate?: (r: RecordingDetail) => void;
   copy: DetailCopy;
+  locale: DetailLocale;
 }) {
   // Merge consecutive same-speaker utterances into turns once per segment set:
   // this drives both the reading view (one card per turn) and the copy buttons.
@@ -830,7 +833,7 @@ function TranscriptTab({
           !head.display_name && !head.person_id
             ? {
                 ...head,
-                display_name: formatSpeakerLabel(head.speaker, head.raw_label, null),
+                display_name: formatSpeakerLabel(head.speaker, head.raw_label, null, locale),
               }
             : head;
         return (
@@ -951,9 +954,9 @@ function SummaryTab({
 
   const fullSummaryText = [
     summary.summary,
-    summary.key_points?.length ? "\nKey Points:\n" + summary.key_points.map((p) => `- ${p}`).join("\n") : null,
-    summary.topics?.length ? "\nTopics: " + summary.topics.join(" · ") : null,
-    summary.people_mentioned?.length ? "\nPeople: " + summary.people_mentioned.join(", ") : null,
+    summary.key_points?.length ? `\n${copy.keyPoints}:\n` + summary.key_points.map((p) => `- ${p}`).join("\n") : null,
+    summary.topics?.length ? `\n${copy.topics}: ` + summary.topics.join(" · ") : null,
+    summary.people_mentioned?.length ? `\n${copy.people}: ` + summary.people_mentioned.join(", ") : null,
   ]
     .filter(Boolean)
     .join("\n");

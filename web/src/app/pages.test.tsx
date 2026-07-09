@@ -477,7 +477,7 @@ describe("app pages", () => {
     cleanup();
     render(await BillingCancelPage({ searchParams: Promise.resolve({ provider: "tinkoff" }) }));
     expect(screen.getByRole("heading", { level: 1, name: "Оплата не прошла" })).toBeInTheDocument();
-    expect(screen.getByText(/4242 4242 4242 4242/)).toBeInTheDocument();
+    expect(screen.getByText(/Попробуй другую карту/)).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "Вернуться к подписке" })).not.toBeInTheDocument();
 
     cleanup();

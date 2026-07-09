@@ -368,7 +368,7 @@ function formatDate(iso: string | null | undefined, locale: Locale): string | nu
     year: "numeric",
     month: "long",
     day: "numeric",
-  });
+  }).replace(/\s*г\.$/, "");
 }
 
 // Inline-style constants kept at module scope so re-renders don't recreate them.

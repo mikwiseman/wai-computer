@@ -117,3 +117,21 @@ export function formatDurationClock(seconds: number | null | undefined): string 
   }
   return `${mins}:${secs.toString().padStart(2, "0")}`;
 }
+
+/**
+ * Russian plural form for a count: ruPlural(2, "день", "дня", "дней") → "дня".
+ */
+export function ruPlural(count: number, one: string, few: string, many: string): string {
+  const n = Math.abs(count) % 100;
+  if (n >= 11 && n <= 14) return many;
+  switch (n % 10) {
+    case 1:
+      return one;
+    case 2:
+    case 3:
+    case 4:
+      return few;
+    default:
+      return many;
+  }
+}

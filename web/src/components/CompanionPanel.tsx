@@ -382,6 +382,7 @@ export function CompanionPanel({
   }, [initialChatId]);
 
   useEffect(() => {
+    setError(null);
     if (!activeChatId) {
       setMessages([]);
       setActiveScope(null);

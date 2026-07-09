@@ -106,7 +106,7 @@ describe("SharedRecordingClient", () => {
     expect(screen.getByText("Action items")).toBeInTheDocument();
     expect(screen.getByText("Open the shared note in the web app.")).toBeInTheDocument();
     expect(screen.getByText("Mik")).toBeInTheDocument();
-    expect(screen.getByText("2 min 5 sec")).toBeInTheDocument();
+    expect(screen.getByText("2:05")).toBeInTheDocument();
   });
 
   it("downloads markdown from a public shared recording", async () => {
