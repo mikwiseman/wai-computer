@@ -1,8 +1,9 @@
-"""Tests for read-only API keys (Personal Access Tokens).
+"""Tests for scoped API keys (Personal Access Tokens).
 
 A `wc_live_` token is the headless machine-to-machine credential: it authenticates
-the REST API and `/mcp` as Bearer, is read-only (safe HTTP methods only), and is
-managed only from a real session (a token can't mint/list/revoke tokens).
+the REST API and `/mcp` as Bearer, is read-only by default (safe HTTP methods
+only), and is managed only from a real session (a token can't mint/list/revoke
+tokens).
 """
 
 from contextlib import asynccontextmanager
@@ -43,11 +44,14 @@ async def _create_key(
     *,
     name: str = "CI bot",
     expires_at: str | None = None,
+    scopes: list[str] | None = None,
     allow_memory_write: bool = False,
 ) -> dict:
     body: dict = {"name": name}
     if expires_at is not None:
         body["expires_at"] = expires_at
+    if scopes is not None:
+        body["scopes"] = scopes
     if allow_memory_write:
         body["allow_memory_write"] = True
     response = await client.post("/api/api-keys", json=body, headers=auth_headers)
@@ -122,6 +126,77 @@ async def test_api_key_is_read_only(client: AsyncClient, auth_headers: dict) -> 
         headers={"Authorization": f"Bearer {token}"},
     )
     assert response.status_code == 403, response.text
+
+
+@pytest.mark.asyncio
+async def test_create_accepts_ingest_write_scope(
+    client: AsyncClient, auth_headers: dict
+) -> None:
+    created = await _create_key(
+        client,
+        auth_headers,
+        name="Ingest worker",
+        scopes=["ingest:write"],
+    )
+    assert created["scopes"] == ["ingest:write"]
+
+    invalid = await client.post(
+        "/api/api-keys",
+        json={"name": "Bad worker", "scopes": ["recordings:write"]},
+        headers=auth_headers,
+    )
+    assert invalid.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_ingest_write_api_key_can_only_post_whitelisted_ingest_routes(
+    client: AsyncClient, auth_headers: dict
+) -> None:
+    token = (await _create_key(client, auth_headers, scopes=["ingest:write"]))["token"]
+    headers = {"Authorization": f"Bearer {token}"}
+    missing_recording_id = str(uuid4())
+
+    created = await client.post(
+        "/api/recordings",
+        json={"title": "ingested note", "type": "note"},
+        headers=headers,
+    )
+    assert created.status_code == 201, created.text
+
+    transcript = await client.post(
+        f"/api/recordings/{missing_recording_id}/transcript",
+        json={"segments": [], "duration_seconds": 0},
+        headers=headers,
+    )
+    assert transcript.status_code == 404, transcript.text
+
+    upload = await client.post(
+        f"/api/recordings/{missing_recording_id}/upload",
+        files={"file": ("sample.wav", b"RIFF0000WAVEfmt ", "audio/wav")},
+        headers=headers,
+    )
+    assert upload.status_code == 404, upload.text
+
+    summary_generation = await client.post(
+        f"/api/recordings/{missing_recording_id}/summary-generation",
+        json={},
+        headers=headers,
+    )
+    assert summary_generation.status_code == 404, summary_generation.text
+
+    recording_id = created.json()["id"]
+    star = await client.post(f"/api/recordings/{recording_id}/star", headers=headers)
+    assert star.status_code == 403, star.text
+
+    update = await client.patch(
+        f"/api/recordings/{recording_id}",
+        json={"title": "still blocked"},
+        headers=headers,
+    )
+    assert update.status_code == 403, update.text
+
+    delete = await client.delete(f"/api/recordings/{recording_id}", headers=headers)
+    assert delete.status_code == 403, delete.text
 
 
 @pytest.mark.asyncio

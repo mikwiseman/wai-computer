@@ -10,11 +10,16 @@ from datetime import datetime, timezone
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Response, status
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import select
 
 from app.api.deps import Database, SessionUser
-from app.core.api_keys import API_KEY_READ_SCOPE, API_KEY_WRITE_SCOPE, generate_api_key
+from app.core.api_keys import (
+    API_KEY_ALLOWED_SCOPES,
+    API_KEY_READ_SCOPE,
+    API_KEY_WRITE_SCOPE,
+    generate_api_key,
+)
 from app.models.api_key import ApiKey
 
 router = APIRouter(prefix="/api-keys", tags=["api-keys"])
@@ -23,9 +28,20 @@ router = APIRouter(prefix="/api-keys", tags=["api-keys"])
 class CreateApiKeyRequest(BaseModel):
     name: str = Field(min_length=1, max_length=255)
     expires_at: datetime | None = None
-    # Opt-in: also unlock the MCP `remember` write tool for an agent acting as a
-    # memory bank. The REST API stays read-only regardless. Default off.
+    scopes: list[str] | None = None
+    # Backward-compatible opt-in for the MCP `remember` write tool. New callers
+    # can pass explicit scopes instead.
     allow_memory_write: bool = False
+
+    @field_validator("scopes")
+    @classmethod
+    def validate_scopes(cls, value: list[str] | None) -> list[str] | None:
+        if value is None:
+            return None
+        invalid = sorted(set(value) - API_KEY_ALLOWED_SCOPES)
+        if invalid:
+            raise ValueError(f"Unsupported API key scopes: {', '.join(invalid)}")
+        return value
 
 
 class ApiKeyResponse(BaseModel):
@@ -67,9 +83,9 @@ async def create_api_key(
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Name is required"
         )
-    scopes = [API_KEY_READ_SCOPE]
+    scopes = list(dict.fromkeys(payload.scopes or [API_KEY_READ_SCOPE]))
     if payload.allow_memory_write:
-        scopes.append(API_KEY_WRITE_SCOPE)
+        scopes = list(dict.fromkeys([*scopes, API_KEY_WRITE_SCOPE]))
     plaintext, token_hash_value, prefix, last4 = generate_api_key()
     api_key = ApiKey(
         user_id=user.id,

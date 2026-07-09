@@ -8,10 +8,11 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
-from app.core.api_keys import is_api_key, resolve_api_key
+from app.core.api_keys import API_KEY_INGEST_WRITE_SCOPE, is_api_key, resolve_api_key
 from app.core.observability import bind_user_context
 from app.core.security import decode_access_token
 from app.db.session import get_db
+from app.models.api_key import ApiKey
 from app.models.user import User
 
 settings = get_settings()
@@ -35,6 +36,12 @@ def _extract_access_token(
 
 
 SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
+INGEST_WRITE_ROUTES = {
+    ("POST", "/api/recordings"),
+    ("POST", "/api/recordings/{recording_id}/transcript"),
+    ("POST", "/api/recordings/{recording_id}/upload"),
+    ("POST", "/api/recordings/{recording_id}/summary-generation"),
+}
 
 
 async def _user_for_api_key(db: AsyncSession, token: str) -> User | None:
@@ -44,6 +51,26 @@ async def _user_for_api_key(db: AsyncSession, token: str) -> User | None:
         return None
     result = await db.execute(select(User).where(User.id == api_key.user_id))
     return result.scalar_one_or_none()
+
+
+async def _principal_for_api_key(db: AsyncSession, token: str) -> tuple[ApiKey, User] | None:
+    """Resolve a live ``wc_live_`` API key and its owning user."""
+    api_key = await resolve_api_key(db, token)
+    if api_key is None:
+        return None
+    result = await db.execute(select(User).where(User.id == api_key.user_id))
+    user = result.scalar_one_or_none()
+    if user is None:
+        return None
+    return api_key, user
+
+
+def _api_key_can_write_ingest(api_key: ApiKey, request: Request) -> bool:
+    if API_KEY_INGEST_WRITE_SCOPE not in (api_key.scopes or []):
+        return False
+    route = request.scope.get("route")
+    route_path = getattr(route, "path", request.url.path)
+    return (request.method, route_path) in INGEST_WRITE_ROUTES
 
 
 def _require_active_account(user: User) -> None:
@@ -77,15 +104,18 @@ async def get_current_user(
         )
 
     if is_api_key(token):
-        user = await _user_for_api_key(db, token)
-        if user is None:
+        principal = await _principal_for_api_key(db, token)
+        if principal is None:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid or expired token",
                 headers={"WWW-Authenticate": "Bearer"},
             )
+        api_key, user = principal
         _require_active_account(user)
-        if request.method not in SAFE_METHODS:
+        if request.method not in SAFE_METHODS and not _api_key_can_write_ingest(
+            api_key, request
+        ):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="This API token is read-only",
