@@ -757,7 +757,7 @@ describe("DashboardClient", () => {
 
     await waitFor(() => {
       expect(screen.getByTestId("select-recording-r2")).toHaveTextContent("Untitled recording");
-      expect(screen.getByTestId("select-recording-r2")).toHaveTextContent("Recording / note / Feb 27, 2026");
+      expect(screen.getByTestId("select-recording-r2")).toHaveTextContent("Note · February 27");
     });
 
     await user.click(screen.getByTestId("select-recording-r2"));

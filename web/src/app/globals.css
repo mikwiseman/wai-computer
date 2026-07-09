@@ -966,6 +966,33 @@ a.primary-button[aria-disabled="true"]:hover {
   color: var(--accent-strong);
 }
 
+.dashboard-message {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.dashboard-message--error {
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
+  color: var(--danger);
+}
+
+.dashboard-message__close {
+  border: none;
+  background: none;
+  color: inherit;
+  font-size: 1.1rem;
+  line-height: 1;
+  padding: 0 0.15rem;
+  cursor: pointer;
+  opacity: 0.7;
+}
+
+.dashboard-message__close:hover {
+  opacity: 1;
+}
+
 .loading-screen {
   display: grid;
   min-height: 100dvh;

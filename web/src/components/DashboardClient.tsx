@@ -107,6 +107,7 @@ const DictatePanel = dynamic(
   { loading: () => panelFallback },
 );
 import { ApiError } from "@/lib/http";
+import { formatDurationClock, formatListTimestamp } from "@/lib/format";
 import type {
   BulkAction,
   DictationDictionaryWord,
@@ -769,17 +770,6 @@ function formatError(error: unknown): string {
   return "Unexpected error";
 }
 
-function formatDuration(seconds: number | null): string {
-  if (!seconds || seconds <= 0) return "";
-  const mins = Math.floor(seconds / 60);
-  const secs = seconds % 60;
-  return `${mins}:${secs.toString().padStart(2, "0")}`;
-}
-
-function formatDate(value: string, locale: Locale): string {
-  const bcp = locale === "ru" ? "ru-RU" : undefined;
-  return new Date(value).toLocaleDateString(bcp, { dateStyle: "medium" });
-}
 
 function typeLabel(type: RecordingType, copy: DashboardCopy): string {
   switch (type) {
@@ -850,7 +840,31 @@ export function DashboardClient() {
 
   const [initializing, setInitializing] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
+  // Transient feedback line under the header. Statuses auto-dismiss after 4s
+  // so confirmations never linger; errors stay until closed (Toast contract).
+  const [message, setMessageState] = useState<
+    { text: string; tone: "status" | "error" } | null
+  >(null);
+  const clearMessage = useCallback(() => setMessageState(null), []);
+  const showStatus = useCallback(
+    (text: string) => setMessageState({ text, tone: "status" }),
+    [],
+  );
+  const showError = useCallback(
+    (text: string) => setMessageState({ text, tone: "error" }),
+    [],
+  );
+  useEffect(() => {
+    if (!message || message.tone === "error") return;
+    const timer = window.setTimeout(() => setMessageState(null), 4000);
+    return () => window.clearTimeout(timer);
+  }, [message]);
+  // Stable identity: children hang effects off onError, so a fresh lambda per
+  // render would retrigger them (e.g. resurrect a just-trashed detail row).
+  const showPanelError = useCallback(
+    (text: string | null) => setMessageState(text ? { text, tone: "error" } : null),
+    [],
+  );
   const [user, setUser] = useState<User | null>(null);
 
   const [recordings, setRecordings] = useState<Recording[]>([]);
@@ -975,7 +989,7 @@ export function DashboardClient() {
   async function handleBulk(action: BulkAction, folderId?: string | null) {
     if (selectedIds.size === 0) return;
     const ids = [...selectedIds];
-    setMessage(null);
+    clearMessage();
     try {
       await bulkRecordingOperation(ids, action, folderId);
       await Promise.all([loadRecordingsState(), loadTrashRecordingsState()]);
@@ -984,7 +998,7 @@ export function DashboardClient() {
       }
       exitSelectMode();
     } catch (error: unknown) {
-      setMessage(formatError(error));
+      showError(formatError(error));
     }
   }
 
@@ -1014,7 +1028,7 @@ export function DashboardClient() {
         setDictationEntries([]);
         setDictationEntriesUnavailable(true);
       } else {
-        setMessage(formatError(error));
+        showError(formatError(error));
       }
     } finally {
       setDictationEntriesLoading(false);
@@ -1033,7 +1047,7 @@ export function DashboardClient() {
         setDictionaryWords([]);
         setDictionaryUnavailable(true);
       } else {
-        setMessage(formatError(error));
+        showError(formatError(error));
       }
     } finally {
       setDictionaryLoading(false);
@@ -1056,7 +1070,7 @@ export function DashboardClient() {
       setSettingsLoadedOnce(true);
       setSettingsLoading(false);
     } catch (error: unknown) {
-      setMessage(formatError(error));
+      showError(formatError(error));
       setSettingsLoadedOnce(true);
       setSettingsLoading(false);
     }
@@ -1085,7 +1099,7 @@ export function DashboardClient() {
         router.replace("/login");
         return;
       }
-      setMessage(text);
+      showStatus(text);
     } finally {
       setInitializing(false);
       setRefreshing(false);
@@ -1095,7 +1109,7 @@ export function DashboardClient() {
   const handleRefreshTelegramStatus = useCallback(
     async (options: { silent?: boolean } = {}) => {
       if (!options.silent) setTelegramLoading(true);
-      if (!options.silent) setMessage(null);
+      if (!options.silent) clearMessage();
       try {
         const status = await getTelegramLinkStatus();
         setTelegramStatus(status);
@@ -1103,16 +1117,16 @@ export function DashboardClient() {
           setTelegramPairing(null);
           if (status.linked) {
             setTelegramLinkCode("");
-            setMessage(copy.telegram.linked);
+            showStatus(copy.telegram.linked);
           }
         }
       } catch (error: unknown) {
-        if (!options.silent) setMessage(formatError(error));
+        if (!options.silent) showError(formatError(error));
       } finally {
         if (!options.silent) setTelegramLoading(false);
       }
     },
-    [copy.telegram.linked],
+    [clearMessage, copy.telegram.linked, showError, showStatus],
   );
 
   useEffect(() => {
@@ -1180,7 +1194,7 @@ export function DashboardClient() {
           await loadRecordingsState();
         }
       } catch (error: unknown) {
-        if (!cancelled) setMessage(formatError(error));
+        if (!cancelled) showError(formatError(error));
       }
     }
     const interval = window.setInterval(refreshSelectedRecording, 2500);
@@ -1201,7 +1215,7 @@ export function DashboardClient() {
 
   async function handleCreateRecording(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setMessage(null);
+    clearMessage();
     try {
       await createRecording({
         title: recordingTitle.length > 0 ? recordingTitle : null,
@@ -1213,21 +1227,21 @@ export function DashboardClient() {
       setSelectedRecording(null);
       setSelectedMode("active");
       setView("inbox");
-      setMessage(copy.msg.recordingCreated);
+      showStatus(copy.msg.recordingCreated);
     } catch (error: unknown) {
-      setMessage(formatError(error));
+      showError(formatError(error));
     }
   }
 
   async function handleSelectRecording(recordingId: string, mode: DetailMode = "active") {
-    setMessage(null);
+    clearMessage();
     try {
       const detail = await getRecording(recordingId);
       handleRecordingDetailUpdate(detail);
       setSelectedMode(mode);
       setView(mode === "trash" ? "trash" : "inbox");
     } catch (error: unknown) {
-      setMessage(formatError(error));
+      showError(formatError(error));
     }
   }
 
@@ -1255,7 +1269,7 @@ export function DashboardClient() {
   }, []);
 
   async function handleDeleteRecording(recordingId: string, options?: { permanent?: boolean }) {
-    setMessage(null);
+    clearMessage();
     try {
       if (options) {
         await deleteRecording(recordingId, options);
@@ -1269,38 +1283,38 @@ export function DashboardClient() {
         loadRecordingsState(),
         options?.permanent ? loadTrashRecordingsState() : Promise.resolve(),
       ]);
-      setMessage(
+      showStatus(
         options?.permanent
           ? copy.msg.recordingDeletedPermanently
           : copy.msg.recordingTrashed,
       );
     } catch (error: unknown) {
-      setMessage(formatError(error));
+      showError(formatError(error));
     }
   }
 
   async function handleRestoreRecording(recordingId: string) {
-    setMessage(null);
+    clearMessage();
     try {
       await restoreRecording(recordingId);
       if (selectedRecording?.id === recordingId) {
         setSelectedRecording(null);
       }
       await Promise.all([loadRecordingsState(), loadTrashRecordingsState()]);
-      setMessage(copy.msg.recordingRestored);
+      showStatus(copy.msg.recordingRestored);
     } catch (error: unknown) {
-      setMessage(formatError(error));
+      showError(formatError(error));
     }
   }
 
   async function handleSearch(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const query = searchQuery.trim();
-    setMessage(null);
+    clearMessage();
     if (query.length === 0) {
       setSearchResponse(null);
       setUnifiedResponse(null);
-      setMessage(copy.search.enterQuery);
+      showStatus(copy.search.enterQuery);
       return;
     }
     try {
@@ -1320,33 +1334,33 @@ export function DashboardClient() {
       }
       setSearchResponse(await fulltextSearch({ q: query, limit: 25, offset: 0 }));
     } catch (error: unknown) {
-      setMessage(formatError(error));
+      showError(formatError(error));
     }
   }
 
   async function handleChangePassword(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setMessage(null);
+    clearMessage();
     try {
       const response = await changePassword(accountHasPassword ? currentPassword : "", newPassword);
       setCurrentPassword("");
       setNewPassword("");
       setUser((current) => current ? { ...current, has_password: true } : current);
-      setMessage(response.message);
+      showStatus(response.message);
     } catch (error: unknown) {
-      setMessage(formatError(error));
+      showError(formatError(error));
     }
   }
 
   async function handleUpdateAccountSettings(patch: Partial<UserSettings>) {
-    setMessage(null);
+    clearMessage();
     setSettingsSaving(true);
     try {
       const updated = await updateSettings(patch);
       setAccountSettings(updated);
-      setMessage(copy.settings.settingsUpdated);
+      showStatus(copy.settings.settingsUpdated);
     } catch (error: unknown) {
-      setMessage(formatError(error));
+      showError(formatError(error));
     } finally {
       setSettingsSaving(false);
     }
@@ -1354,14 +1368,14 @@ export function DashboardClient() {
 
   async function handleStartTelegramLink() {
     setTelegramLoading(true);
-    setMessage(null);
+    clearMessage();
     try {
       const response = await startTelegramLink();
       setTelegramPairing(response);
       window.location.href = response.deep_link;
-      setMessage(copy.telegram.opened);
+      showStatus(copy.telegram.opened);
     } catch (error: unknown) {
-      setMessage(formatError(error));
+      showError(formatError(error));
     } finally {
       setTelegramLoading(false);
     }
@@ -1371,18 +1385,18 @@ export function DashboardClient() {
     event.preventDefault();
     const code = telegramLinkCode.trim();
     if (!code) {
-      setMessage(copy.telegram.enterCode);
+      showStatus(copy.telegram.enterCode);
       return;
     }
     setTelegramLoading(true);
-    setMessage(null);
+    clearMessage();
     try {
       setTelegramStatus(await claimTelegramLinkCode(code));
       setTelegramPairing(null);
       setTelegramLinkCode("");
-      setMessage(copy.telegram.linked);
+      showStatus(copy.telegram.linked);
     } catch (error: unknown) {
-      setMessage(formatError(error));
+      showError(formatError(error));
     } finally {
       setTelegramLoading(false);
     }
@@ -1390,26 +1404,26 @@ export function DashboardClient() {
 
   async function handleUnlinkTelegram() {
     setTelegramLoading(true);
-    setMessage(null);
+    clearMessage();
     try {
       await unlinkTelegram();
       setTelegramPairing(null);
       setTelegramLinkCode("");
       setTelegramStatus(await getTelegramLinkStatus());
     } catch (error: unknown) {
-      setMessage(formatError(error));
+      showError(formatError(error));
     } finally {
       setTelegramLoading(false);
     }
   }
 
   async function handleLogout() {
-    setMessage(null);
+    clearMessage();
     try {
       await logout();
       router.replace("/login");
     } catch (error: unknown) {
-      setMessage(formatError(error));
+      showError(formatError(error));
     }
   }
 
@@ -1418,10 +1432,10 @@ export function DashboardClient() {
     event.preventDefault();
     const trimmed = newFolderName.trim();
     if (!trimmed) {
-      setMessage(copy.folders.addError);
+      showStatus(copy.folders.addError);
       return;
     }
-    setMessage(null);
+    clearMessage();
     try {
       const folder = await createFolder(trimmed);
       setFolders((current) =>
@@ -1429,9 +1443,9 @@ export function DashboardClient() {
       );
       setNewFolderName("");
       setIsFolderCreatorOpen(false);
-      setMessage(copy.folders.created);
+      showStatus(copy.folders.created);
     } catch (error: unknown) {
-      setMessage(formatError(error));
+      showError(formatError(error));
     }
   }
 
@@ -1440,10 +1454,10 @@ export function DashboardClient() {
     if (!folderRenameTarget) return;
     const trimmed = folderRenameValue.trim();
     if (!trimmed) {
-      setMessage(copy.folders.addError);
+      showStatus(copy.folders.addError);
       return;
     }
-    setMessage(null);
+    clearMessage();
     try {
       const updated = await renameFolder(folderRenameTarget.id, trimmed);
       setFolders((current) =>
@@ -1453,15 +1467,15 @@ export function DashboardClient() {
       );
       setFolderRenameTarget(null);
       setFolderRenameValue("");
-      setMessage(copy.folders.renamed);
+      showStatus(copy.folders.renamed);
     } catch (error: unknown) {
-      setMessage(formatError(error));
+      showError(formatError(error));
     }
   }
 
   async function handleConfirmDeleteFolder() {
     if (!folderDeleteTarget) return;
-    setMessage(null);
+    clearMessage();
     try {
       await deleteFolder(folderDeleteTarget.id);
       setFolders((current) =>
@@ -1473,9 +1487,9 @@ export function DashboardClient() {
       }
       await loadRecordingsState();
       setFolderDeleteTarget(null);
-      setMessage(copy.folders.deleted);
+      showStatus(copy.folders.deleted);
     } catch (error: unknown) {
-      setMessage(formatError(error));
+      showError(formatError(error));
     }
   }
 
@@ -1494,7 +1508,7 @@ export function DashboardClient() {
     recordingId: string,
     folderId: string | null,
   ) {
-    setMessage(null);
+    clearMessage();
     // Optimistic local update so the sidebar count and folder filter respond
     // before the network round-trip.
     setRecordings((current) =>
@@ -1511,7 +1525,7 @@ export function DashboardClient() {
       await assignRecordingToFolder(recordingId, folderId);
       await loadRecordingsState();
     } catch (error: unknown) {
-      setMessage(formatError(error));
+      showError(formatError(error));
       // Reload to reconcile the optimistic state with the canonical truth.
       await loadRecordingsState();
     }
@@ -1529,14 +1543,14 @@ export function DashboardClient() {
   }
 
   async function handleDropItemToFolder(itemId: string, folderId: string | null) {
-    setMessage(null);
+    clearMessage();
     try {
       await assignItemToFolder(itemId, folderId);
       setItemsReloadKey((key) => key + 1);
       setInboxReloadToken((token) => token + 1);
       await loadFoldersState();
     } catch (error: unknown) {
-      setMessage(formatError(error));
+      showError(formatError(error));
     }
   }
 
@@ -1546,45 +1560,45 @@ export function DashboardClient() {
   }
 
   async function handleDropItemToTrash(itemId: string) {
-    setMessage(null);
+    clearMessage();
     try {
       await deleteItem(itemId);
       setItemsReloadKey((key) => key + 1);
       setInboxReloadToken((token) => token + 1);
       await loadFoldersState();
     } catch (error: unknown) {
-      setMessage(formatError(error));
+      showError(formatError(error));
     }
   }
 
   // Dictation history handlers ---------------------------------------------
   async function handleDeleteDictationEntry(entryId: string) {
-    setMessage(null);
+    clearMessage();
     const previous = dictationEntries;
     setDictationEntries((current) =>
       current.filter((entry) => entry.client_entry_id !== entryId),
     );
     try {
       await deleteDictationEntry(entryId);
-      setMessage(copy.history.deleted);
+      showStatus(copy.history.deleted);
     } catch (error: unknown) {
       setDictationEntries(previous);
-      setMessage(formatError(error));
+      showError(formatError(error));
     }
   }
 
   async function handleClearAllDictation() {
-    setMessage(null);
+    clearMessage();
     const previous = dictationEntries;
     setDictationEntries([]);
     try {
       await Promise.all(
         previous.map((entry) => deleteDictationEntry(entry.client_entry_id)),
       );
-      setMessage(copy.history.deleted);
+      showStatus(copy.history.deleted);
     } catch (error: unknown) {
       setDictationEntries(previous);
-      setMessage(formatError(error));
+      showError(formatError(error));
     }
   }
 
@@ -1593,16 +1607,16 @@ export function DashboardClient() {
     event.preventDefault();
     const trimmed = newWord.trim();
     if (!trimmed) {
-      setMessage(copy.dictionary.enterWord);
+      showStatus(copy.dictionary.enterWord);
       return;
     }
     // Client-side dedupe (Mac parity: rejects duplicates by lowercase word).
     const lower = trimmed.toLowerCase();
     if (dictionaryWords.some((w) => w.word.toLowerCase() === lower)) {
-      setMessage(copy.dictionary.duplicate);
+      showStatus(copy.dictionary.duplicate);
       return;
     }
-    setMessage(null);
+    clearMessage();
     try {
       const word = await createDictionaryWord({
         word: trimmed,
@@ -1611,25 +1625,25 @@ export function DashboardClient() {
       setDictionaryWords((current) => [...current, word]);
       setNewWord("");
       setNewReplacement("");
-      setMessage(copy.dictionary.created);
+      showStatus(copy.dictionary.created);
     } catch (error: unknown) {
       if (error instanceof ApiError && error.status === 404) {
         setDictionaryUnavailable(true);
       }
-      setMessage(formatError(error));
+      showError(formatError(error));
     }
   }
 
   async function handleDeleteDictionaryWord(wordId: string) {
-    setMessage(null);
+    clearMessage();
     try {
       await deleteDictionaryWord(wordId);
       setDictionaryWords((current) =>
         current.filter((word) => word.client_word_id !== wordId),
       );
-      setMessage(copy.dictionary.deleted);
+      showStatus(copy.dictionary.deleted);
     } catch (error: unknown) {
-      setMessage(formatError(error));
+      showError(formatError(error));
     }
   }
 
@@ -1687,11 +1701,11 @@ export function DashboardClient() {
   }, []);
 
   const goToView = useCallback((next: DashboardView) => {
-    setMessage(null);
+    clearMessage();
     setView(next);
     setSelectedRecording(null);
     setIsShortcutCheatsheetOpen(false);
-  }, []);
+  }, [clearMessage]);
 
   const handlePendingInboxSourceConsumed = useCallback(() => {
     setPendingInboxSource(null);
@@ -1821,7 +1835,7 @@ export function DashboardClient() {
                     className="sidebar-nav__item"
                     aria-current={view === item.key ? "page" : undefined}
                     onClick={() => {
-                      setMessage(null);
+                      clearMessage();
                       setActiveFolderId(null);
                       setSelectedRecording(null);
                       setSelectedMode("active");
@@ -2079,8 +2093,20 @@ export function DashboardClient() {
         </header>
 
         {message ? (
-          <p className="dashboard-message" data-testid="dashboard-message" role="status">
-            {message}
+          <p
+            className={`dashboard-message${message.tone === "error" ? " dashboard-message--error" : ""}`}
+            data-testid="dashboard-message"
+            role={message.tone === "error" ? "alert" : "status"}
+          >
+            <span>{message.text}</span>
+            <button
+              type="button"
+              className="dashboard-message__close"
+              aria-label={locale === "ru" ? "Закрыть" : "Dismiss"}
+              onClick={clearMessage}
+            >
+              ×
+            </button>
           </p>
         ) : null}
 
@@ -2104,7 +2130,8 @@ export function DashboardClient() {
             onDeleteRecording={handleDeleteRecording}
             onRefreshRecordings={loadRecordingsState}
             onItemsChanged={() => setItemsReloadKey((key) => key + 1)}
-            onError={setMessage}
+            onError={showPanelError}
+            onStatus={showStatus}
           />
         ) : null}
         {view === "folder" && currentFolder ? (
@@ -2124,7 +2151,8 @@ export function DashboardClient() {
             onDeleteRecording={handleDeleteRecording}
             onRefreshRecordings={loadRecordingsState}
             onItemsChanged={() => setItemsReloadKey((key) => key + 1)}
-            onError={setMessage}
+            onError={showPanelError}
+            onStatus={showStatus}
           />
         ) : null}
         {view === "trash" ? renderLibrary("trash", trashRecordings) : null}
@@ -2386,9 +2414,12 @@ export function DashboardClient() {
                       <span className="recording-row__main">
                         <strong>{recording.title ?? copy.library.untitled}</strong>
                         <small>
-                          {typeLabel(recording.type, copy)} / {formatDate(recording.created_at, locale)}
+                          {recording.type !== "meeting"
+                            ? `${typeLabel(recording.type, copy)} · `
+                            : ""}
+                          {formatListTimestamp(recording.created_at, locale)}
                           {recording.duration_seconds
-                            ? ` / ${formatDuration(recording.duration_seconds)}`
+                            ? ` · ${formatDurationClock(recording.duration_seconds)}`
                             : ""}
                         </small>
                       </span>
@@ -2438,7 +2469,7 @@ export function DashboardClient() {
                   setSelectedMode("active");
                   await loadRecordingsState();
                 }}
-                onError={setMessage}
+                onError={showError}
               />
             </div>
           )}
@@ -2626,10 +2657,10 @@ export function DashboardClient() {
                     {entry.cleaned_text ?? entry.raw_text}
                   </p>
                   <p className="metadata-row">
-                    <span>{formatDate(entry.occurred_at, locale)}</span>
+                    <span>{formatListTimestamp(entry.occurred_at, locale)}</span>
                     {entry.duration_seconds > 0 ? (
                       <span>
-                        {copy.history.durationLabel} {formatDuration(Math.round(entry.duration_seconds))}
+                        {copy.history.durationLabel} {formatDurationClock(Math.round(entry.duration_seconds))}
                       </span>
                     ) : null}
                     <span>{copy.history.wordsLabel(entry.word_count)}</span>
@@ -3028,18 +3059,39 @@ function inboxStatusLabel(row: VisibleInboxRow, locale: Locale): string | null {
   return "archived";
 }
 
-function sourceLabel(kind: VisibleInboxSourceKind, locale: Locale): string {
-  if (locale === "ru") {
-    if (kind === "recording") return "Запись";
-    return "Материал";
-  }
-  if (kind === "recording") return "Recording";
-  return "Material";
-}
+const ITEM_KIND_LABELS: Record<string, [en: string, ru: string]> = {
+  article: ["Article", "Статья"],
+  video: ["Video", "Видео"],
+  post: ["Post", "Пост"],
+  pdf: ["PDF", "PDF"],
+  email: ["Email", "Письмо"],
+  note: ["Note", "Заметка"],
+  event: ["Event", "Событие"],
+  message: ["Message", "Сообщение"],
+  transaction: ["Transaction", "Транзакция"],
+  chat: ["Chat", "Чат"],
+  file: ["File", "Файл"],
+};
 
-function inboxSublabel(row: VisibleInboxRow): string | null {
-  if (!row.sublabel) return null;
-  return row.sublabel;
+/**
+ * Localized kind, shown only when it differentiates the row: the icon and the
+ * Source filter already say recording vs material, and nearly every recording
+ * is a meeting — repeating "Запись / meeting" on each row is noise.
+ */
+function inboxKindLabel(row: VisibleInboxRow, locale: Locale): string | null {
+  const raw = row.sublabel?.trim().toLowerCase();
+  if (!raw) return null;
+  const ru = locale === "ru";
+  if (row.source_kind === "recording") {
+    if (raw === "meeting") return null;
+    if (raw === "note") return ru ? "Заметка" : "Note";
+    if (raw === "reflection") return ru ? "Рефлексия" : "Reflection";
+    if (raw === "dictation") return ru ? "Диктовка" : "Dictation";
+    return raw.charAt(0).toUpperCase() + raw.slice(1);
+  }
+  const pair = ITEM_KIND_LABELS[raw];
+  if (pair) return ru ? pair[1] : pair[0];
+  return raw.charAt(0).toUpperCase() + raw.slice(1);
 }
 
 function recordingRowFromDetail(detail: RecordingDetail): VisibleInboxRow {
@@ -3134,6 +3186,7 @@ function UniversalInboxPanel({
   onRefreshRecordings,
   onItemsChanged,
   onError,
+  onStatus,
 }: {
   locale: Locale;
   copy: DashboardCopy;
@@ -3160,6 +3213,7 @@ function UniversalInboxPanel({
   onRefreshRecordings: () => Promise<void>;
   onItemsChanged: () => void;
   onError: (message: string | null) => void;
+  onStatus: (message: string) => void;
 }) {
   const [rows, setRows] = useState<VisibleInboxRow[]>([]);
   const [selectedRow, setSelectedRow] = useState<VisibleInboxRow | null>(null);
@@ -3520,6 +3574,16 @@ function UniversalInboxPanel({
       await loadInbox("replace");
       await onRefreshRecordings();
       onItemsChanged();
+      const count = rowsToTrash.length;
+      onStatus(
+        locale === "ru"
+          ? count === 1
+            ? "Удалён 1 объект."
+            : `Удалено объектов: ${count}.`
+          : count === 1
+            ? "Deleted 1 item."
+            : `Deleted ${count} items.`,
+      );
     } catch (error: unknown) {
       onError(formatError(error));
     } finally {
@@ -3728,7 +3792,7 @@ function UniversalInboxPanel({
           <ul className="inbox-list">
             {rows.map((row, index) => {
               const statusLabel = inboxStatusLabel(row, locale);
-              const sublabel = inboxSublabel(row);
+              const kindLabel = inboxKindLabel(row, locale);
               return (
                 <li key={row.id}>
                   {selectMode ? (
@@ -3778,11 +3842,10 @@ function UniversalInboxPanel({
                     <span className="inbox-row__main">
                       <strong>{inboxTitle(row, locale)}</strong>
                       <small>
-                        {sourceLabel(row.source_kind, locale)}
-                        {sublabel ? ` / ${sublabel}` : ""} /{" "}
-                        {formatDate(row.activity_at, locale)}
+                        {kindLabel ? `${kindLabel} · ` : ""}
+                        {formatListTimestamp(row.activity_at, locale)}
                         {row.duration_seconds
-                          ? ` / ${formatDuration(row.duration_seconds)}`
+                          ? ` · ${formatDurationClock(row.duration_seconds)}`
                           : ""}
                       </small>
                     </span>
