@@ -1,5 +1,6 @@
 """API dependencies for authentication and database access."""
 
+import re
 from typing import Annotated
 
 from fastapi import Depends, HTTPException, Request, status
@@ -36,12 +37,12 @@ def _extract_access_token(
 
 
 SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
-INGEST_WRITE_ROUTES = {
-    ("POST", "/api/recordings"),
-    ("POST", "/api/recordings/{recording_id}/transcript"),
-    ("POST", "/api/recordings/{recording_id}/upload"),
-    ("POST", "/api/recordings/{recording_id}/summary-generation"),
-}
+# Matched against the concrete request path: the app wraps routers in lazy
+# includes, so request.scope["route"] does not expose a usable template path.
+INGEST_WRITE_PATH_PATTERNS = (
+    re.compile(r"^/api/recordings$"),
+    re.compile(r"^/api/recordings/[^/]+/(?:transcript|upload|summary-generation)$"),
+)
 
 
 async def _user_for_api_key(db: AsyncSession, token: str) -> User | None:
@@ -68,9 +69,10 @@ async def _principal_for_api_key(db: AsyncSession, token: str) -> tuple[ApiKey, 
 def _api_key_can_write_ingest(api_key: ApiKey, request: Request) -> bool:
     if API_KEY_INGEST_WRITE_SCOPE not in (api_key.scopes or []):
         return False
-    route = request.scope.get("route")
-    route_path = getattr(route, "path", request.url.path)
-    return (request.method, route_path) in INGEST_WRITE_ROUTES
+    if request.method != "POST":
+        return False
+    path = request.url.path.rstrip("/") or "/"
+    return any(p.match(path) for p in INGEST_WRITE_PATH_PATTERNS)
 
 
 def _require_active_account(user: User) -> None:
