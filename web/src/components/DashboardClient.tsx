@@ -508,9 +508,9 @@ const COPY: Record<Locale, DashboardCopy> = {
       workspaceGroupTitle: "Inbox & sources",
       workspaceGroupBody:
         "Choose where WaiComputer runs, connect sources, and keep every recording and material flowing into Inbox.",
-      voiceGroupTitle: "Voice, summaries & appearance",
+      voiceGroupTitle: "Appearance, voice & summaries",
       voiceGroupBody:
-        "Tune language, voice identity, summaries, and the visual theme.",
+        "Pick the visual theme, then tune language, voice identity, and summaries.",
       accountGroupTitle: "Account",
       accountGroupBody: "Password and account controls live here so everyday setup stays focused.",
       developerGroupTitle: "Developer access",
@@ -704,9 +704,9 @@ const COPY: Record<Locale, DashboardCopy> = {
       workspaceGroupTitle: "Инбокс и источники",
       workspaceGroupBody:
         "Выберите, где работает WaiComputer, подключите источники и отправляйте записи и материалы в Инбокс.",
-      voiceGroupTitle: "Голос, саммари и внешний вид",
+      voiceGroupTitle: "Внешний вид, голос и саммари",
       voiceGroupBody:
-        "Настройте язык, голосовой профиль, саммари и тему.",
+        "Выберите тему оформления, затем настройте язык, голосовой профиль и саммари.",
       accountGroupTitle: "Аккаунт",
       accountGroupBody:
         "Пароль и управление аккаунтом собраны отдельно, чтобы основная настройка не распухала.",
@@ -2516,11 +2516,13 @@ export function DashboardClient() {
             </button>
           </form>
 
-          <p data-testid="search-total" className="muted-text">
-            {copy.search.total(
-              (searchMode === "everything" ? unifiedResponse?.total : searchResponse?.total) ?? 0,
-            )}
-          </p>
+          {(searchMode === "everything" ? unifiedResponse : searchResponse) ? (
+            <p data-testid="search-total" className="muted-text">
+              {copy.search.total(
+                (searchMode === "everything" ? unifiedResponse?.total : searchResponse?.total) ?? 0,
+              )}
+            </p>
+          ) : null}
           {searchMode === "everything" && unifiedResponse?.results ? (
             unifiedResponse.results.length > 0 ? (
               <ul className="search-results" data-testid="unified-search-results">
@@ -2874,6 +2876,44 @@ export function DashboardClient() {
   function renderSettingsView() {
     return (
       <section className="tool-panel settings-panel">
+        <div className="settings-group" data-testid="settings-group-voice">
+          <header className="settings-group__header">
+            <h2>{copy.settings.voiceGroupTitle}</h2>
+            <p>{copy.settings.voiceGroupBody}</p>
+          </header>
+          <section className="settings-form" data-testid="appearance-settings">
+            <h3>{locale === "ru" ? "Внешний вид" : "Appearance"}</h3>
+            <ThemeAccentPicker locale={locale} />
+          </section>
+          <IdentityAndVoicePanel locale={locale} />
+          {accountSettings ? (
+            <TranscriptionSettingsPanel
+              settings={accountSettings}
+              transcriptionOptions={transcriptionOptions}
+              onUpdate={(patch) => void handleUpdateAccountSettings(patch)}
+              busy={settingsSaving}
+              locale={locale}
+            />
+          ) : null}
+          <div className="settings-form">
+            <h3>{copy.settings.dictationHeading}</h3>
+            {settingsLoading ? (
+              <p className="settings-note">{copy.settings.loadingSettings}</p>
+            ) : null}
+            {accountSettings ? (
+              <p className="settings-note">{copy.settings.dictationBody}</p>
+            ) : settingsLoadedOnce && !settingsLoading ? (
+              <button
+                type="button"
+                className="ghost-button compact-button"
+                onClick={() => void loadAccountSettings()}
+              >
+                {copy.retryLoadSettings}
+              </button>
+            ) : null}
+          </div>
+        </div>
+
         <div className="settings-group" data-testid="settings-group-workspace">
           <header className="settings-group__header">
             <h2>{copy.settings.workspaceGroupTitle}</h2>
@@ -2943,44 +2983,6 @@ export function DashboardClient() {
                 </details>
               </div>
             )}
-          </div>
-        </div>
-
-        <div className="settings-group" data-testid="settings-group-voice">
-          <header className="settings-group__header">
-            <h2>{copy.settings.voiceGroupTitle}</h2>
-            <p>{copy.settings.voiceGroupBody}</p>
-          </header>
-          <section className="settings-form" data-testid="appearance-settings">
-            <h3>{locale === "ru" ? "Внешний вид" : "Appearance"}</h3>
-            <ThemeAccentPicker locale={locale} />
-          </section>
-          <IdentityAndVoicePanel locale={locale} />
-          {accountSettings ? (
-            <TranscriptionSettingsPanel
-              settings={accountSettings}
-              transcriptionOptions={transcriptionOptions}
-              onUpdate={(patch) => void handleUpdateAccountSettings(patch)}
-              busy={settingsSaving}
-              locale={locale}
-            />
-          ) : null}
-          <div className="settings-form">
-            <h3>{copy.settings.dictationHeading}</h3>
-            {settingsLoading ? (
-              <p className="settings-note">{copy.settings.loadingSettings}</p>
-            ) : null}
-            {accountSettings ? (
-              <p className="settings-note">{copy.settings.dictationBody}</p>
-            ) : settingsLoadedOnce && !settingsLoading ? (
-              <button
-                type="button"
-                className="ghost-button compact-button"
-                onClick={() => void loadAccountSettings()}
-              >
-                {copy.retryLoadSettings}
-              </button>
-            ) : null}
           </div>
         </div>
 

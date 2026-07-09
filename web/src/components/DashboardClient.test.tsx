@@ -877,6 +877,8 @@ describe("DashboardClient", () => {
     await user.click(screen.getByTestId("search-submit"));
 
     await waitFor(() => {
+      // A search that ran and found nothing still reports its zero total —
+      // only the pre-search state hides the counter.
       expect(screen.getByTestId("search-total")).toHaveTextContent("Total: 0");
       expect(screen.getByTestId("search-no-results")).toHaveTextContent("No matching transcript segments found.");
     });
@@ -923,7 +925,7 @@ describe("DashboardClient", () => {
     await user.selectOptions(screen.getByTestId("search-mode"), "semantic");
 
     await waitFor(() => {
-      expect(screen.getByTestId("search-total")).toHaveTextContent("Total: 0");
+      expect(screen.queryByTestId("search-total")).toBeNull();
     });
     expect(screen.queryByTestId("search-results")).not.toBeInTheDocument();
   });
@@ -946,7 +948,7 @@ describe("DashboardClient", () => {
     });
     expect(mockSearch).not.toHaveBeenCalled();
     expect(mockUnifiedSearch).not.toHaveBeenCalled();
-    expect(screen.getByTestId("search-total")).toHaveTextContent("Total: 0");
+    expect(screen.queryByTestId("search-total")).toBeNull();
   });
 
   // --- Password change clears fields on success ---
@@ -1362,7 +1364,7 @@ describe("DashboardClient", () => {
     // Switch to semantic — results cleared
     await user.selectOptions(screen.getByTestId("search-mode"), "semantic");
     await waitFor(() => {
-      expect(screen.getByTestId("search-total")).toHaveTextContent("Total: 0");
+      expect(screen.queryByTestId("search-total")).toBeNull();
     });
 
     // Search again in semantic mode
@@ -1374,7 +1376,7 @@ describe("DashboardClient", () => {
     // Switch back to hybrid — results cleared again
     await user.selectOptions(screen.getByTestId("search-mode"), "hybrid");
     await waitFor(() => {
-      expect(screen.getByTestId("search-total")).toHaveTextContent("Total: 0");
+      expect(screen.queryByTestId("search-total")).toBeNull();
     });
   });
 
