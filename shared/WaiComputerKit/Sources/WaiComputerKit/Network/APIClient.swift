@@ -2243,7 +2243,8 @@ public actor APIClient {
         recordingId: String,
         fileURL: URL,
         clientDurationSeconds: Int? = nil,
-        clientFileSizeBytes: Int64? = nil
+        clientFileSizeBytes: Int64? = nil,
+        captureMetadataJSON: String? = nil
     ) async throws -> RecordingDetail {
         // `clientFileSizeBytes` is retained for source compatibility. The
         // multipart field is populated from the bytes actually copied into the
@@ -2279,7 +2280,8 @@ public actor APIClient {
             filename: filename,
             mimeType: mimeType,
             boundary: boundary,
-            clientDurationSeconds: clientDurationSeconds
+            clientDurationSeconds: clientDurationSeconds,
+            captureMetadataJSON: captureMetadataJSON
         )
         defer { try? FileManager.default.removeItem(at: uploadRequestFile.url) }
 
@@ -2316,7 +2318,8 @@ public actor APIClient {
         filename: String,
         mimeType: String,
         boundary: String,
-        clientDurationSeconds: Int?
+        clientDurationSeconds: Int?,
+        captureMetadataJSON: String? = nil
     ) throws -> (url: URL, copiedFileSizeBytes: Int64) {
         let uploadURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("wai-upload-\(UUID().uuidString).multipart")
@@ -2340,6 +2343,10 @@ public actor APIClient {
                 name: "client_duration_seconds",
                 value: String(clientDurationSeconds)
             )
+        }
+
+        if let captureMetadataJSON, !captureMetadataJSON.isEmpty {
+            try writeField(name: "capture_metadata", value: captureMetadataJSON)
         }
 
         try writeString("--\(boundary)\r\n")

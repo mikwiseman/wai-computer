@@ -113,6 +113,10 @@ class Recording(Base, UUIDMixin, TimestampMixin):
         server_default="0",
     )
     language: Mapped[str | None] = mapped_column(String(10))
+    # Validated client capture sidecar (see app/core/capture_metadata.py):
+    # capture topology + merged local-mic speech intervals for owner
+    # attribution. NULL for imports and legacy clients.
+    capture_metadata: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     folder_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("folders.id", ondelete="SET NULL"),

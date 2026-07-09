@@ -74,7 +74,7 @@ def test_payload_groups_words_into_speaker_segments() -> None:
         ],
     }
 
-    results = _results_from_scribe_payload(payload)
+    results = _results_from_scribe_payload(payload).segments
 
     assert [r.text for r in results] == ["Привет всем.", "Привет-привет."]
     assert [r.speaker for r in results] == ["speaker_0", "speaker_1"]
@@ -84,6 +84,41 @@ def test_payload_groups_words_into_speaker_segments() -> None:
     expected_confidence = round((math.exp(-0.05) + math.exp(-0.15)) / 2, 4)
     assert results[0].confidence == pytest.approx(expected_confidence)
     assert all(r.is_final for r in results)
+
+
+def test_payload_surfaces_words_and_detected_language() -> None:
+    payload = {
+        "language_code": "rus",
+        "language_probability": 0.97,
+        "words": [
+            _word("Привет", 0.0, 0.4, logprob=-0.05),
+            _spacing(0.4, 0.41),
+            _word("всем.", 0.5, 0.8, logprob=-0.15),
+            _word("Hello.", 1.1, 1.6, speaker="speaker_1"),
+        ],
+    }
+
+    transcription = _results_from_scribe_payload(payload)
+
+    assert transcription.detected_language == "rus"
+    assert transcription.language_probability == pytest.approx(0.97)
+    assert [w.text for w in transcription.words] == ["Привет", "всем.", "Hello."]
+    assert [w.speaker for w in transcription.words] == [
+        "speaker_0",
+        "speaker_0",
+        "speaker_1",
+    ]
+    assert transcription.words[0].start_ms == 0
+    assert transcription.words[0].end_ms == 400
+    assert transcription.words[0].confidence == pytest.approx(math.exp(-0.05))
+    # No logprob -> no fabricated confidence.
+    assert transcription.words[2].confidence is None
+
+
+def test_payload_without_language_fields_returns_none() -> None:
+    transcription = _results_from_scribe_payload({"words": [_word("hi", 0.0, 0.2)]})
+    assert transcription.detected_language is None
+    assert transcription.language_probability is None
 
 
 def test_payload_splits_same_speaker_on_long_gap() -> None:
@@ -98,7 +133,7 @@ def test_payload_splits_same_speaker_on_long_gap() -> None:
         ],
     }
 
-    results = _results_from_scribe_payload(payload)
+    results = _results_from_scribe_payload(payload).segments
 
     assert [r.text for r in results] == ["Первая мысль.", "Вторая мысль."]
     assert results[0].speaker == results[1].speaker == "speaker_0"
@@ -113,7 +148,7 @@ def test_payload_splits_monologue_on_sentence_after_soft_duration() -> None:
             words.append(_spacing(cursor + 0.4, cursor + 0.41))
             cursor += 0.5
         words[-2]["text"] = words[-2]["text"] + "."
-    results = _results_from_scribe_payload({"words": words})
+    results = _results_from_scribe_payload({"words": words}).segments
 
     assert len(results) > 1
     assert all(len(r.text) > 0 for r in results)
@@ -129,7 +164,7 @@ def test_payload_skips_audio_events_and_empty(monkeypatch) -> None:
             _word("Привет.", 0.6, 1.0),
         ],
     }
-    results = _results_from_scribe_payload(payload)
+    results = _results_from_scribe_payload(payload).segments
     assert [r.text for r in results] == ["Привет."]
 
 
@@ -167,14 +202,14 @@ async def test_transcribe_audio_file_posts_multipart_and_parses(monkeypatch) -> 
         )(),
     )
     with patch("httpx.AsyncClient.post", new=fake_post):
-        results = await transcribe_audio_file(
+        results = (await transcribe_audio_file(
             b"audio-bytes",
             language="ru-RU",
             content_type="audio/mpeg",
             keyterms=["WaiComputer", "Сколково"],
             replacements=[("готово", "Готово")],
             audio_duration_seconds=90.0,
-        )
+        )).segments
 
     assert captured["url"] == ELEVENLABS_STT_URL
     assert captured["headers"] == {"xi-api-key": "sk_test"}
@@ -223,12 +258,12 @@ async def test_transcribe_audio_file_builds_async_multipart_request(monkeypatch)
     )
     monkeypatch.setattr("app.core.elevenlabs_stt.httpx.AsyncClient", client_factory)
 
-    results = await transcribe_audio_file(
+    results = (await transcribe_audio_file(
         b"audio-bytes",
         language="auto",
         content_type="audio/wav",
         keyterms=["Alpha", "Beta"],
-    )
+    )).segments
 
     assert [result.text for result in results] == ["Done."]
     assert str(captured["content_type"]).startswith("multipart/form-data")
@@ -291,7 +326,7 @@ def test_builder_drops_whitespace_only_segments() -> None:
             _word("Привет.", 5.0, 5.5, speaker="speaker_1"),
         ],
     }
-    results = _results_from_scribe_payload(payload)
+    results = _results_from_scribe_payload(payload).segments
     assert [r.text for r in results] == ["Привет."]
 
 
@@ -302,5 +337,5 @@ def test_builder_returns_none_for_whitespace_word_segment() -> None:
             _word("Привет.", 5.0, 5.4, speaker="speaker_1"),
         ],
     }
-    results = _results_from_scribe_payload(payload)
+    results = _results_from_scribe_payload(payload).segments
     assert [r.text for r in results] == ["Привет."]

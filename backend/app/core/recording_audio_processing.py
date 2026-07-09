@@ -19,6 +19,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.billing.quota import record_recording_transcript_words
 from app.config import get_settings
+from app.core.capture_metadata import (
+    capture_metadata_from_stored,
+    ensure_self_person,
+    resolve_owner_raw_label,
+)
 from app.core.content import with_title_context
 from app.core.deepgram_usage import (
     effective_billable_seconds,
@@ -51,7 +56,10 @@ from app.core.summary_generation import (
     fail_active_summary_generation_jobs,
     start_recording_summary_generation_job,
 )
-from app.core.transcript_utils import TranscriptResult
+from app.core.transcript_utils import (
+    TranscriptResult,
+    resolve_detected_recording_language,
+)
 from app.core.transcription import transcribe_audio_file
 from app.core.transcription_guard import TranscriptionGuardError
 from app.core.transcription_options import DEFAULT_FILE_STT_MODEL
@@ -59,6 +67,7 @@ from app.core.voice_identification import identify_speakers_for_recording
 from app.models.highlight import Highlight
 from app.models.person import RecordingSpeakerEmbedding
 from app.models.recording import ActionItem, Recording, RecordingStatus, Segment, Summary
+from app.models.user import User
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -960,7 +969,7 @@ async def process_staged_recording_upload(
         )
         file_stt_started_at = time.perf_counter()
         try:
-            transcript_results = await transcribe_audio_file(
+            transcription = await transcribe_audio_file(
                 staged_path,
                 language=recording_language,
                 content_type=provider_content_type,
@@ -1065,6 +1074,7 @@ async def process_staged_recording_upload(
                 addons=deepgram_addons,
                 commit=True,
             )
+        transcript_results = transcription.segments
         _recording_lifecycle_breadcrumb(
             "Recording file transcription completed",
             recording_id=recording_id,
@@ -1153,6 +1163,16 @@ async def process_staged_recording_upload(
             transcript_end_ms=max_end_ms,
             segment_count=len(speech_transcript_results),
         )
+        detected_language = resolve_detected_recording_language(
+            current=recording.language,
+            detected=transcription.detected_language,
+            probability=transcription.language_probability,
+        )
+        if detected_language:
+            # Pin the provider-detected language so title/summary prompts and
+            # future re-processing speak the recording's actual language
+            # instead of the generic auto/multi placeholder.
+            recording.language = detected_language
         recording.status = RecordingStatus.READY.value
         recording.failure_code = None
         recording.failure_message = None
@@ -1249,6 +1269,53 @@ async def process_staged_recording_upload(
                     "error_type": type(exc).__name__,
                     "error_fingerprint": fingerprint_text(str(exc)),
                     "segment_count": len(speech_transcript_results),
+                },
+            )
+
+        # Owner attribution from the capture sidecar: the diarization cluster
+        # that physically matches local-mic speech IS the device owner. This
+        # outranks a voiceprint match for the owner cluster — the mic timeline
+        # is direct evidence, the voiceprint a statistical guess.
+        try:
+            capture_meta = capture_metadata_from_stored(recording.capture_metadata)
+            if capture_meta is not None and capture_meta.local_speech_ms:
+                owner_label = resolve_owner_raw_label(
+                    speech_transcript_results, capture_meta.local_speech_ms
+                )
+                if owner_label:
+                    owner_user = await db.get(User, user_id)
+                    if owner_user is not None:
+                        self_person_id = await ensure_self_person(db, user=owner_user)
+                        previous = speaker_assignments.get(owner_label)
+                        if previous is not None and previous[0] != self_person_id:
+                            capture_sentry_anomaly(
+                                "recording.owner_attribution.conflict",
+                                "Mic-timeline owner disagreed with voiceprint match",
+                                category="recording",
+                                extras={
+                                    "recording_id": str(recording_id),
+                                    "voiceprint_person_id": str(previous[0]),
+                                },
+                                level="warning",
+                            )
+                        speaker_assignments[owner_label] = (self_person_id, 1.0)
+                        _recording_lifecycle_breadcrumb(
+                            "Recording owner attributed from capture sidecar",
+                            recording_id=recording_id,
+                            data={"capture": capture_meta.capture},
+                        )
+        except Exception as exc:
+            logger.warning(
+                "Owner attribution from capture sidecar failed error_type=%s",
+                type(exc).__name__,
+            )
+            capture_sentry_anomaly(
+                "recording.owner_attribution.degraded",
+                "Recording completed without sidecar owner attribution",
+                category="recording",
+                extras={
+                    "recording_id": str(recording_id),
+                    "error_type": type(exc).__name__,
                 },
             )
 

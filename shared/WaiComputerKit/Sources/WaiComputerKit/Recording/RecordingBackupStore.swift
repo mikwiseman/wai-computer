@@ -52,6 +52,9 @@ public struct RecordingBackupManifest: Codable, Sendable, Equatable {
     public var lastSyncAttemptAt: Date?
     public var syncAttemptCount: Int
     public var lastFailureCode: String?
+    /// Serialized capture sidecar (see LocalSpeechTracker/CaptureSidecar);
+    /// uploaded as the `capture_metadata` form field with the audio.
+    public var captureMetadataJSON: String?
 
     public var isPermanentFailure: Bool { syncState == .permanentFailure }
     public var requiresAuthentication: Bool { syncState == .authenticationRequired }
@@ -63,6 +66,7 @@ public struct RecordingBackupManifest: Codable, Sendable, Equatable {
         case segmentCount, transcript, lastErrorMessage, updatedAt, hasAudioFile
         case syncState, serverJobId, lastSyncAttemptAt, syncAttemptCount, lastFailureCode
         case isPermanentFailure, requiresAuthentication, isReadyForSync, isServerProcessing
+        case captureMetadataJSON
     }
 
     public init(from decoder: Decoder) throws {
@@ -81,6 +85,7 @@ public struct RecordingBackupManifest: Codable, Sendable, Equatable {
         lastSyncAttemptAt = try container.decodeIfPresent(Date.self, forKey: .lastSyncAttemptAt)
         syncAttemptCount = try container.decodeIfPresent(Int.self, forKey: .syncAttemptCount) ?? 0
         lastFailureCode = try container.decodeIfPresent(String.self, forKey: .lastFailureCode)
+        captureMetadataJSON = try container.decodeIfPresent(String.self, forKey: .captureMetadataJSON)
 
         if let storedState = try container.decodeIfPresent(RecordingBackupSyncState.self, forKey: .syncState) {
             syncState = storedState
@@ -120,6 +125,7 @@ public struct RecordingBackupManifest: Codable, Sendable, Equatable {
         try container.encodeIfPresent(lastSyncAttemptAt, forKey: .lastSyncAttemptAt)
         try container.encode(syncAttemptCount, forKey: .syncAttemptCount)
         try container.encodeIfPresent(lastFailureCode, forKey: .lastFailureCode)
+        try container.encodeIfPresent(captureMetadataJSON, forKey: .captureMetadataJSON)
     }
 
     public init(
@@ -138,6 +144,7 @@ public struct RecordingBackupManifest: Codable, Sendable, Equatable {
         lastSyncAttemptAt: Date? = nil,
         syncAttemptCount: Int = 0,
         lastFailureCode: String? = nil,
+        captureMetadataJSON: String? = nil,
         isPermanentFailure: Bool = false,
         requiresAuthentication: Bool = false,
         isReadyForSync: Bool = true,
@@ -170,6 +177,7 @@ public struct RecordingBackupManifest: Codable, Sendable, Equatable {
         self.lastSyncAttemptAt = lastSyncAttemptAt
         self.syncAttemptCount = syncAttemptCount
         self.lastFailureCode = lastFailureCode
+        self.captureMetadataJSON = captureMetadataJSON
     }
 }
 
@@ -514,6 +522,16 @@ public enum RecordingBackupStore {
         manifest.syncState = .localRecording
         manifest.serverJobId = nil
         manifest.lastFailureCode = nil
+        manifest.updatedAt = Date()
+        try writeManifest(manifest, to: backup.manifestURL)
+    }
+
+    /// Attach the capture sidecar (local-speech intervals + capture topology)
+    /// so retried uploads keep sending it until the server accepts the audio.
+    public static func setCaptureMetadataJSON(recordingId: String, json: String?) throws {
+        guard let backup = try existingBackup(recordingId: recordingId),
+              var manifest = try readManifest(from: backup.manifestURL) else { return }
+        manifest.captureMetadataJSON = json
         manifest.updatedAt = Date()
         try writeManifest(manifest, to: backup.manifestURL)
     }

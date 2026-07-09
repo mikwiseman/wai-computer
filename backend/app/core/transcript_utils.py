@@ -25,6 +25,140 @@ class TranscriptResult:
 
 
 @dataclass
+class TranscriptWord:
+    """Word-level unit from the STT provider.
+
+    Kept in memory for processing-time passes (channel merge, echo dedup,
+    speaker re-alignment); not persisted today.
+    """
+
+    text: str
+    speaker: str | None
+    start_ms: int
+    end_ms: int
+    confidence: float | None = None
+
+
+@dataclass
+class FileTranscription:
+    """Complete result of one batch file-STT call.
+
+    ``segments`` is the utterance-shaped view every existing consumer uses;
+    ``words`` preserves the provider's word stream; ``detected_language`` /
+    ``language_probability`` surface the provider's own language detection
+    (ISO code as returned by the provider — Scribe uses ISO 639-3).
+    """
+
+    segments: list[TranscriptResult]
+    words: list[TranscriptWord]
+    detected_language: str | None = None
+    language_probability: float | None = None
+
+
+# Provider language detection → app recording language. Scribe reports ISO
+# 639-3 codes; the app stores the short subtags the rest of the stack uses
+# (settings UI, Deepgram language validation, summary/title prompts).
+_ISO_639_3_TO_APP = {
+    "rus": "ru",
+    "eng": "en",
+    "ukr": "uk",
+    "bel": "be",
+    "deu": "de",
+    "ger": "de",
+    "fra": "fr",
+    "fre": "fr",
+    "spa": "es",
+    "ita": "it",
+    "por": "pt",
+    "nld": "nl",
+    "dut": "nl",
+    "pol": "pl",
+    "ces": "cs",
+    "cze": "cs",
+    "slk": "sk",
+    "bul": "bg",
+    "srp": "sr",
+    "hrv": "hr",
+    "bos": "bs",
+    "slv": "sl",
+    "mkd": "mk",
+    "ron": "ro",
+    "rum": "ro",
+    "hun": "hu",
+    "ell": "el",
+    "gre": "el",
+    "tur": "tr",
+    "heb": "he",
+    "ara": "ar",
+    "hin": "hi",
+    "jpn": "ja",
+    "kor": "ko",
+    "zho": "zh",
+    "cmn": "zh",
+    "fin": "fi",
+    "swe": "sv",
+    "nor": "no",
+    "nob": "no",
+    "dan": "da",
+    "est": "et",
+    "lav": "lv",
+    "lit": "lt",
+    "kat": "ka",
+    "hye": "hy",
+    "kaz": "kk",
+    "uzb": "uz",
+    "aze": "az",
+    "vie": "vi",
+    "tha": "th",
+    "ind": "id",
+    "msa": "ms",
+    "may": "ms",
+    "fas": "fa",
+    "per": "fa",
+    "urd": "ur",
+    "ben": "bn",
+    "tam": "ta",
+    "tel": "te",
+    "mar": "mr",
+    "kan": "kn",
+    "tgl": "tl",
+    "cat": "ca",
+}
+
+# recording.language values that mean "the user did not pin a language".
+_UNPINNED_LANGUAGES = {"", "auto", "multi", "und"}
+
+# Below this the provider's guess is too uncertain to pin the recording to a
+# single language (heavy code-switching lands here); keep the unpinned value.
+DETECTED_LANGUAGE_MIN_PROBABILITY = 0.7
+
+
+def resolve_detected_recording_language(
+    *,
+    current: str | None,
+    detected: str | None,
+    probability: float | None,
+) -> str | None:
+    """Return the app language code to persist on the recording, or ``None``.
+
+    Only fills in a language when the user left it unpinned (``auto``/``multi``/
+    empty), the provider reported one confidently, and the code maps to an app
+    subtag. An explicit user choice is never overwritten.
+    """
+    normalized_current = (current or "").strip().lower()
+    if normalized_current not in _UNPINNED_LANGUAGES:
+        return None
+    if not detected:
+        return None
+    if probability is None or probability < DETECTED_LANGUAGE_MIN_PROBABILITY:
+        return None
+    normalized = detected.strip().lower()
+    if len(normalized) == 2 and normalized.isalpha():
+        return normalized
+    return _ISO_639_3_TO_APP.get(normalized)
+
+
+@dataclass
 class TranscriptTurn:
     """Consecutive same-speaker utterances merged into a single speaker turn.
 

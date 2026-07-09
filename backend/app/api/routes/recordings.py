@@ -35,11 +35,17 @@ from app.api.summary_audio import (
 from app.billing.quota import record_recording_transcript_words
 from app.config import get_settings
 from app.core import media_audio
+from app.core.capture_metadata import (
+    CaptureMetadata,
+    CaptureMetadataError,
+    parse_capture_metadata,
+)
 from app.core.embeddings import generate_embedding
 from app.core.error_sanitizer import sanitize_failure_message
 from app.core.observability import (
     add_sentry_breadcrumb,
     bind_recording_context,
+    capture_sentry_anomaly,
     capture_sentry_message,
     safe_filename_metadata,
     safe_text_digest,
@@ -3268,6 +3274,7 @@ async def upload_audio_file(
     file: UploadFile = File(...),
     client_duration_seconds: int | None = Form(default=None),
     client_file_size_bytes: int | None = Form(default=None),
+    capture_metadata: str | None = Form(default=None),
 ) -> RecordingDetailResponse:
     """Upload an imported audio file to an existing recording."""
     bind_recording_context(str(recording_id))
@@ -3335,6 +3342,23 @@ async def upload_audio_file(
         ext,
         file.content_type or "application/octet-stream",
     )
+
+    # The capture sidecar only enhances speaker attribution; a malformed one
+    # must never fail the upload (that would lose the recording). Invalid
+    # payloads are surfaced as an anomaly and attribution falls back to
+    # voiceprints alone.
+    parsed_capture_metadata: CaptureMetadata | None = None
+    if capture_metadata:
+        try:
+            parsed_capture_metadata = parse_capture_metadata(capture_metadata)
+        except CaptureMetadataError as exc:
+            capture_sentry_anomaly(
+                "recording.capture_metadata.invalid",
+                "Recording upload carried an invalid capture sidecar",
+                category="recording",
+                extras={"recording_id": str(recording_id), "error": str(exc)},
+                level="warning",
+            )
 
     if not await _claim_audio_upload(recording_id, user_id, db):
         await file.close()
@@ -3437,6 +3461,8 @@ async def upload_audio_file(
     recording.failure_message = None
     recording.audio_url = None
     recording.duration_seconds = None
+    if parsed_capture_metadata is not None:
+        recording.capture_metadata = parsed_capture_metadata.as_dict()
     await db.commit()
 
     try:

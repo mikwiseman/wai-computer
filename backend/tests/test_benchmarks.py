@@ -56,11 +56,13 @@ def test_check_benchmark_rate_limit_uses_client_ip(monkeypatch):
 async def test_transcribe_candidate_returns_transcript_metadata(monkeypatch):
     async def fake_transcribe_audio_file(*args, **kwargs):
         del args, kwargs
-        return [
-            SimpleNamespace(text=" hello "),
-            SimpleNamespace(text="world"),
-            SimpleNamespace(text="  "),
-        ]
+        return SimpleNamespace(
+            segments=[
+                SimpleNamespace(text=" hello "),
+                SimpleNamespace(text="world"),
+                SimpleNamespace(text="  "),
+            ]
+        )
 
     monkeypatch.setattr(benchmarks, "transcribe_audio_file", fake_transcribe_audio_file)
 

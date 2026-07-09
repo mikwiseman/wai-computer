@@ -12,7 +12,12 @@ import httpx
 
 from app.config import get_settings
 from app.core.personalization import sanitize_keyterms
-from app.core.transcript_utils import TranscriptResult, detect_wav_channels
+from app.core.transcript_utils import (
+    FileTranscription,
+    TranscriptResult,
+    TranscriptWord,
+    detect_wav_channels,
+)
 
 DEEPGRAM_REALTIME_WS_URL = "wss://api.deepgram.com/v1/listen"
 DEEPGRAM_REALTIME_MODEL = "nova-3"
@@ -336,7 +341,61 @@ def build_batch_url(
     return f"{DEEPGRAM_BATCH_URL}?{urlencode(params)}"
 
 
-def _results_from_deepgram_payload(payload: object) -> list[TranscriptResult]:
+def _words_from_deepgram_utterance(utterance: dict) -> list[TranscriptWord]:
+    """Map one utterance's word entries onto the shared word model.
+
+    Words inherit the utterance's resolved speaker label so word- and
+    segment-level views agree (per-word ``speaker`` can disagree with the
+    utterance split on boundary words; the utterance is the display truth).
+    """
+    words_obj = utterance.get("words")
+    if not isinstance(words_obj, list):
+        return []
+    speaker = _speaker_label_from_utterance(utterance)
+    words: list[TranscriptWord] = []
+    for word in words_obj:
+        if not isinstance(word, dict):
+            continue
+        text = str(word.get("punctuated_word") or word.get("word") or "").strip()
+        if not text:
+            continue
+        confidence = word.get("confidence")
+        words.append(
+            TranscriptWord(
+                text=text,
+                speaker=speaker,
+                start_ms=int(float(word.get("start", 0.0)) * 1000),
+                end_ms=int(float(word.get("end", 0.0)) * 1000),
+                confidence=(
+                    float(confidence)
+                    if isinstance(confidence, (int, float))
+                    and not isinstance(confidence, bool)
+                    else None
+                ),
+            )
+        )
+    return words
+
+
+def _detected_language_from_deepgram(results_obj: dict) -> tuple[str | None, float | None]:
+    """Surface Deepgram's language detection when present (detect_language)."""
+    channels = results_obj.get("channels")
+    if not isinstance(channels, list) or not channels:
+        return None, None
+    first = channels[0]
+    if not isinstance(first, dict):
+        return None, None
+    detected = first.get("detected_language")
+    confidence = first.get("language_confidence")
+    return (
+        str(detected) if isinstance(detected, str) and detected else None,
+        float(confidence)
+        if isinstance(confidence, (int, float)) and not isinstance(confidence, bool)
+        else None,
+    )
+
+
+def _results_from_deepgram_payload(payload: object) -> FileTranscription:
     """Map a Deepgram pre-recorded response into normalized transcript segments."""
     if not isinstance(payload, dict):
         raise RuntimeError(
@@ -352,6 +411,7 @@ def _results_from_deepgram_payload(payload: object) -> list[TranscriptResult]:
         )
 
     results: list[TranscriptResult] = []
+    words: list[TranscriptWord] = []
     for utterance in utterances:
         if not isinstance(utterance, dict):
             raise RuntimeError("Deepgram STT returned an invalid utterance entry")
@@ -373,7 +433,15 @@ def _results_from_deepgram_payload(payload: object) -> list[TranscriptResult]:
                 confidence=float(utterance.get("confidence", 0.0)),
             )
         )
-    return results
+        words.extend(_words_from_deepgram_utterance(utterance))
+
+    detected_language, language_probability = _detected_language_from_deepgram(results_obj)
+    return FileTranscription(
+        segments=results,
+        words=words,
+        detected_language=detected_language,
+        language_probability=language_probability,
+    )
 
 
 def _batch_timeout(audio_duration_seconds: float | None) -> httpx.Timeout:
@@ -454,7 +522,7 @@ async def transcribe_audio_file(
     replacements: list[tuple[str, str]] | None = None,
     max_channels: int | None = None,
     audio_duration_seconds: float | None = None,
-) -> list[TranscriptResult]:
+) -> FileTranscription:
     """Transcribe an uploaded audio file with Deepgram pre-recorded STT.
 
     A ``Path`` payload is streamed from disk with an explicit Content-Length,

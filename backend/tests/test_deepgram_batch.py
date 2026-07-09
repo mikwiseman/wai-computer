@@ -145,9 +145,11 @@ async def test_transcribe_audio_file_parses_utterances_into_segments() -> None:
         patch("httpx.AsyncClient.post", new=post),
     ):
         mock_settings.return_value.deepgram_api_key = "deepgram-test-key"
-        results = await transcribe_audio_file(
-            b"wav-data", language="multi", content_type="audio/wav", channels=1
-        )
+        results = (
+            await transcribe_audio_file(
+                b"wav-data", language="multi", content_type="audio/wav", channels=1
+            )
+        ).segments
 
     assert results == [
         TranscriptResult(
@@ -201,7 +203,9 @@ async def test_transcribe_audio_file_detects_multichannel_wav() -> None:
         patch("httpx.AsyncClient.post", new=post),
     ):
         mock_settings.return_value.deepgram_api_key = "deepgram-test-key"
-        results = await transcribe_audio_file(b"stereo-wav", content_type="audio/wav")
+        results = (
+            await transcribe_audio_file(b"stereo-wav", content_type="audio/wav")
+        ).segments
 
     assert results[0].speaker == "Channel 1"
     sent_url = post.await_args.args[0]
@@ -234,7 +238,9 @@ async def test_transcribe_audio_file_accepts_list_channel_index() -> None:
         patch("httpx.AsyncClient.post", new=AsyncMock(return_value=response)),
     ):
         mock_settings.return_value.deepgram_api_key = "deepgram-test-key"
-        results = await transcribe_audio_file(b"m4a", content_type="audio/mp4", channels=1)
+        results = (
+            await transcribe_audio_file(b"m4a", content_type="audio/mp4", channels=1)
+        ).segments
 
     assert results[0].speaker == "Channel 1"
 
@@ -339,7 +345,9 @@ async def test_transcribe_audio_file_speaker_none_without_speaker_or_channel() -
         patch("httpx.AsyncClient.post", new=AsyncMock(return_value=response)),
     ):
         mock_settings.return_value.deepgram_api_key = "deepgram-test-key"
-        results = await transcribe_audio_file(b"wav", content_type="audio/wav", channels=1)
+        results = (
+            await transcribe_audio_file(b"wav", content_type="audio/wav", channels=1)
+        ).segments
 
     assert results[0].speaker is None
 
@@ -393,7 +401,9 @@ async def test_transcribe_audio_file_skips_empty_utterance_transcript() -> None:
         patch("httpx.AsyncClient.post", new=AsyncMock(return_value=response)),
     ):
         mock_settings.return_value.deepgram_api_key = "deepgram-test-key"
-        results = await transcribe_audio_file(b"wav", content_type="audio/wav", channels=1)
+        results = (
+            await transcribe_audio_file(b"wav", content_type="audio/wav", channels=1)
+        ).segments
 
     assert [result.text for result in results] == ["kept"]
 
@@ -404,3 +414,80 @@ async def test_transcribe_audio_file_requires_api_key() -> None:
         mock_settings.return_value.deepgram_api_key = ""
         with pytest.raises(ValueError, match="DEEPGRAM_API_KEY not configured"):
             await transcribe_audio_file(b"wav", content_type="audio/wav", channels=1)
+
+
+def test_deepgram_payload_surfaces_words_and_detected_language() -> None:
+    from app.core.deepgram import _results_from_deepgram_payload
+
+    payload = {
+        "results": {
+            "channels": [
+                {
+                    "detected_language": "ru",
+                    "language_confidence": 0.93,
+                    "alternatives": [{"transcript": "привет мир"}],
+                }
+            ],
+            "utterances": [
+                {
+                    "start": 0.0,
+                    "end": 1.0,
+                    "confidence": 0.97,
+                    "channel": 0,
+                    "speaker": 0,
+                    "transcript": "Привет, мир.",
+                    "words": [
+                        {
+                            "word": "привет",
+                            "punctuated_word": "Привет,",
+                            "start": 0.0,
+                            "end": 0.4,
+                            "confidence": 0.99,
+                        },
+                        {
+                            "word": "мир",
+                            "punctuated_word": "мир.",
+                            "start": 0.5,
+                            "end": 1.0,
+                            "confidence": 0.95,
+                        },
+                    ],
+                }
+            ],
+        }
+    }
+
+    transcription = _results_from_deepgram_payload(payload)
+
+    assert transcription.detected_language == "ru"
+    assert transcription.language_probability == 0.93
+    assert [w.text for w in transcription.words] == ["Привет,", "мир."]
+    # Words inherit the utterance's resolved diarization label.
+    assert {w.speaker for w in transcription.words} == {"speaker_0"}
+    assert transcription.words[0].start_ms == 0
+    assert transcription.words[0].end_ms == 400
+    assert transcription.words[1].confidence == 0.95
+
+
+def test_deepgram_payload_words_absent_yields_empty_word_list() -> None:
+    from app.core.deepgram import _results_from_deepgram_payload
+
+    payload = {
+        "results": {
+            "utterances": [
+                {
+                    "start": 0.0,
+                    "end": 1.0,
+                    "confidence": 0.9,
+                    "channel": 0,
+                    "speaker": 0,
+                    "transcript": "hi",
+                }
+            ]
+        }
+    }
+
+    transcription = _results_from_deepgram_payload(payload)
+
+    assert transcription.words == []
+    assert transcription.detected_language is None

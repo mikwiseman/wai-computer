@@ -49,6 +49,9 @@ public final class DualAudioCapture: AudioCaptureProtocol, @unchecked Sendable {
     private let continuationLock: UnsafeMutablePointer<os_unfair_lock>
     private var micBuffer: [Float] = []
     private var systemBuffer: [Float] = []
+    /// Frame-clock tracker of local (mic) speech, fed pre-mix so the owner
+    /// stays identifiable even in mono-mix mode. Guarded by `lock`.
+    private var localSpeechTracker: LocalSpeechTracker?
     /// Whether system audio has delivered any buffers since recording started.
     public private(set) var systemAudioStreamActive = false
 
@@ -120,7 +123,20 @@ public final class DualAudioCapture: AudioCaptureProtocol, @unchecked Sendable {
 
         _isRecording = true
         setPaused(false)
+        lock.lock()
+        localSpeechTracker = LocalSpeechTracker(sampleRate: config.sampleRate)
+        lock.unlock()
         startDualMode()
+    }
+
+    /// Merged `[start_ms, end_ms]` intervals of local-mic speech for the
+    /// capture sidecar. Call after `stopRecording()`; drains the tracker.
+    public func drainLocalSpeechIntervalsMs() -> [[Int]] {
+        lock.lock()
+        defer { lock.unlock() }
+        guard var tracker = localSpeechTracker else { return [] }
+        localSpeechTracker = nil
+        return tracker.finish()
     }
 
     /// Dual mode: accumulate both streams, flush as 2-channel buffers.
@@ -319,6 +335,10 @@ public final class DualAudioCapture: AudioCaptureProtocol, @unchecked Sendable {
             sysSamples = Array(repeating: 0.0, count: frames)
         }
 
+        localSpeechTracker?.ingest(
+            mic: micSamples,
+            system: systemAudioUsable ? sysSamples : []
+        )
         let continuation = bufferContinuation
         lock.unlock()
 

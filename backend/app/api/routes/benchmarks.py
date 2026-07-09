@@ -112,7 +112,7 @@ async def _transcribe_candidate(
     started = time.perf_counter()
     candidate_id = uuid4().hex
     try:
-        segments = await transcribe_audio_file(
+        transcription = await transcribe_audio_file(
             audio_data,
             language=language,
             model=model,
@@ -137,7 +137,7 @@ async def _transcribe_candidate(
         )
 
     transcript = " ".join(
-        segment.text.strip() for segment in segments if segment.text.strip()
+        segment.text.strip() for segment in transcription.segments if segment.text.strip()
     ).strip()
     return DictationBenchmarkCandidate(
         id=candidate_id,

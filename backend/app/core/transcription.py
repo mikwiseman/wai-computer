@@ -17,7 +17,7 @@ from app.core.observability import (
     capture_sentry_anomaly,
     fingerprint_text,
 )
-from app.core.transcript_utils import TranscriptResult
+from app.core.transcript_utils import FileTranscription
 from app.core.transcription_guard import (
     TranscriptionGuardError,
     check_minutes_budget,
@@ -97,7 +97,7 @@ async def transcribe_audio_file(
     replacements: list[tuple[str, str]] | None = None,
     user_id: str | None = None,
     usage_purpose: str | None = None,
-) -> list[TranscriptResult]:
+) -> FileTranscription:
     """Transcribe audio using the active speech-to-text runtime.
 
     ``audio_data`` is either in-memory bytes (small payloads) or a ``Path`` to
@@ -160,7 +160,7 @@ async def transcribe_audio_file(
 
     try:
         if provider == "elevenlabs":
-            results = await elevenlabs_transcribe_audio_file(
+            transcription = await elevenlabs_transcribe_audio_file(
                 audio_data,
                 language=language,
                 content_type=content_type,
@@ -170,7 +170,7 @@ async def transcribe_audio_file(
                 audio_duration_seconds=audio_duration_seconds,
             )
         else:
-            results = await deepgram_transcribe_audio_file(
+            transcription = await deepgram_transcribe_audio_file(
                 audio_data,
                 language=language,
                 content_type=content_type,
@@ -232,7 +232,7 @@ async def transcribe_audio_file(
         "audio_bytes": audio_bytes,
         "content_type": content_type,
         "channels": channels,
-        "segment_count": len(results),
+        "segment_count": len(transcription.segments),
     }
     if usage_purpose is not None:
         completion_data["usage_purpose"] = usage_purpose
@@ -242,7 +242,7 @@ async def transcribe_audio_file(
         provider,
         selected_model,
         latency_ms,
-        len(results),
+        len(transcription.segments),
         audio_bytes,
         content_type,
         channels,
@@ -259,4 +259,4 @@ async def transcribe_audio_file(
             category="recording",
             extras=completion_data,
         )
-    return results
+    return transcription

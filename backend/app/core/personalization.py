@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.dictation import DictationDictionaryWord
 from app.models.entity import Entity
+from app.models.person import Person
 from app.models.personalization import PersonalizationImportJob, PersonalizationTerm
 
 TERM_STATUS_VALUES = {"active", "candidate", "rejected"}
@@ -175,8 +176,14 @@ async def load_user_keyterms(
     user_id: UUID,
     purpose: str,
 ) -> list[str]:
-    """Load active terms for provider STT keyterm hints."""
-    del purpose
+    """Load active terms for provider STT keyterm hints.
+
+    For recording transcription the list also carries the proper nouns most
+    likely to be spoken — tagged People (with aliases) and person/project/
+    organization entities from the brain graph — so the recogniser is biased
+    toward the user's real names instead of phonetic near-misses. Explicit
+    user terms stay first: sanitization truncates from the tail.
+    """
     terms_result = await db.execute(
         select(PersonalizationTerm)
         .where(
@@ -200,6 +207,22 @@ async def load_user_keyterms(
         raw_terms.append(word.word)
         if word.replacement:
             raw_terms.append(word.replacement)
+
+    if purpose == "recording":
+        persons_result = await db.execute(
+            select(Person.display_name, Person.aliases)
+            .where(Person.user_id == user_id)
+            .order_by(Person.updated_at.desc())
+            .limit(80)
+        )
+        for display_name, aliases in persons_result.all():
+            if display_name and display_name.strip():
+                raw_terms.append(display_name.strip())
+            if isinstance(aliases, list):
+                raw_terms.extend(
+                    str(alias).strip() for alias in aliases if str(alias).strip()
+                )
+        raw_terms.extend(await load_user_entity_terms(db, user_id=user_id))
 
     return sanitize_keyterms(raw_terms, max_terms=100, max_chars=100, max_words=8, token_budget=500)
 

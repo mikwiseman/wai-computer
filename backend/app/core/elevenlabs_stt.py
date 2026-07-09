@@ -16,7 +16,11 @@ from typing import BinaryIO
 import httpx
 
 from app.config import get_settings
-from app.core.transcript_utils import TranscriptResult
+from app.core.transcript_utils import (
+    FileTranscription,
+    TranscriptResult,
+    TranscriptWord,
+)
 
 ELEVENLABS_STT_URL = "https://api.elevenlabs.io/v1/speech-to-text"
 ELEVENLABS_BATCH_MODEL = "scribe_v2"
@@ -166,8 +170,12 @@ def _results_from_scribe_payload(
     payload: object,
     *,
     replacements: list[tuple[str, str]] | None = None,
-) -> list[TranscriptResult]:
-    """Assemble Scribe word-level output into utterance-shaped segments."""
+) -> FileTranscription:
+    """Assemble Scribe word-level output into utterance-shaped segments.
+
+    The returned ``words`` keep the provider's raw text (no find/replace
+    applied) — they exist for timing/alignment passes, not display.
+    """
     if not isinstance(payload, dict):
         raise RuntimeError(
             f"ElevenLabs STT returned unexpected payload type={type(payload).__name__}"
@@ -177,6 +185,7 @@ def _results_from_scribe_payload(
         raise RuntimeError("ElevenLabs STT response missing words array")
 
     results: list[TranscriptResult] = []
+    transcript_words: list[TranscriptWord] = []
     current = _SegmentBuilder()
 
     def close_current() -> None:
@@ -217,9 +226,35 @@ def _results_from_scribe_payload(
         if current.empty():
             current.speaker = speaker
         current.add_word(word, start=start, end=end)
+        word_text = str(word.get("text") or "").strip()
+        if word_text:
+            transcript_words.append(
+                TranscriptWord(
+                    text=word_text,
+                    speaker=speaker,
+                    start_ms=int(round(start * 1000)),
+                    end_ms=int(round(end * 1000)),
+                    confidence=_word_confidence(word),
+                )
+            )
 
     close_current()
-    return results
+
+    detected_language = payload.get("language_code")
+    language_probability = payload.get("language_probability")
+    return FileTranscription(
+        segments=results,
+        words=transcript_words,
+        detected_language=(
+            str(detected_language) if isinstance(detected_language, str) else None
+        ),
+        language_probability=(
+            float(language_probability)
+            if isinstance(language_probability, (int, float))
+            and not isinstance(language_probability, bool)
+            else None
+        ),
+    )
 
 
 def _batch_timeout(audio_duration_seconds: float | None) -> httpx.Timeout:
@@ -260,7 +295,7 @@ async def transcribe_audio_file(
     keyterms: list[str] | None = None,
     replacements: list[tuple[str, str]] | None = None,
     audio_duration_seconds: float | None = None,
-) -> list[TranscriptResult]:
+) -> FileTranscription:
     """Transcribe an uploaded audio file with ElevenLabs Scribe.
 
     ``Path`` payloads are handed to httpx as file objects, which it streams

@@ -19,7 +19,7 @@ from app.core.summary_generation import (
     WAITING_FOR_TRANSCRIPT_HASH,
     WAITING_FOR_TRANSCRIPT_STAGE,
 )
-from app.core.transcript_utils import TranscriptResult
+from app.core.transcript_utils import FileTranscription, TranscriptResult
 from app.models.billing import UsageWeek
 from app.models.person import Person, RecordingSpeakerEmbedding
 from app.models.recording import (
@@ -385,7 +385,7 @@ async def test_process_staged_recording_upload_persists_canonical_segments(
         )
     ]
 
-    transcribe = AsyncMock(return_value=transcript_results)
+    transcribe = AsyncMock(return_value=FileTranscription(segments=transcript_results, words=[]))
     monkeypatch.setattr(
         "app.core.recording_audio_processing.transcribe_audio_file",
         transcribe,
@@ -486,7 +486,7 @@ async def test_process_staged_recording_upload_sends_m4a_container_to_provider(
     async def capture_transcribe(media_path, **kwargs):
         # The staged file is deleted after processing; capture at call time.
         stt_payloads.append(media_path.read_bytes())
-        return transcript_results
+        return FileTranscription(segments=transcript_results, words=[])
 
     transcribe = AsyncMock(side_effect=capture_transcribe)
     monkeypatch.setattr(
@@ -681,7 +681,7 @@ async def test_process_staged_recording_upload_survives_title_and_embedding_fail
 
     monkeypatch.setattr(
         "app.core.recording_audio_processing.transcribe_audio_file",
-        AsyncMock(return_value=transcript_results),
+        AsyncMock(return_value=FileTranscription(segments=transcript_results, words=[])),
     )
     monkeypatch.setattr(
         "app.core.recording_audio_processing.generate_embedding", _fail_embedding
@@ -753,7 +753,7 @@ async def test_process_staged_recording_upload_commits_transcript_before_embeddi
     async def _cancel_embedding(*_args, **_kwargs):
         raise asyncio.CancelledError()
 
-    transcribe = AsyncMock(return_value=transcript_results)
+    transcribe = AsyncMock(return_value=FileTranscription(segments=transcript_results, words=[]))
     monkeypatch.setattr(
         "app.core.recording_audio_processing.transcribe_audio_file",
         transcribe,
@@ -840,7 +840,7 @@ async def test_process_staged_recording_upload_commits_transcript_before_billing
     async def _fail_billing(*_args, **_kwargs):
         raise RuntimeError("billing ledger unavailable")
 
-    transcribe = AsyncMock(return_value=transcript_results)
+    transcribe = AsyncMock(return_value=FileTranscription(segments=transcript_results, words=[]))
     degraded: list[dict[str, object]] = []
     monkeypatch.setattr(
         "app.core.recording_audio_processing.transcribe_audio_file",
@@ -981,7 +981,7 @@ async def test_process_staged_recording_upload_batches_segment_embeddings(
 
     monkeypatch.setattr(
         "app.core.recording_audio_processing.transcribe_audio_file",
-        AsyncMock(return_value=transcript_results),
+        AsyncMock(return_value=FileTranscription(segments=transcript_results, words=[])),
     )
     monkeypatch.setattr(
         "app.core.recording_audio_processing.generate_title",
@@ -1230,7 +1230,7 @@ async def test_process_staged_recording_upload_applies_extracted_speaker_names(
     apply_mock = AsyncMock(return_value={"speaker_0": "Mik"})
     monkeypatch.setattr(
         "app.core.recording_audio_processing.transcribe_audio_file",
-        AsyncMock(return_value=transcript_results),
+        AsyncMock(return_value=FileTranscription(segments=transcript_results, words=[])),
     )
     monkeypatch.setattr(
         "app.core.recording_audio_processing.generate_embedding",
@@ -1309,7 +1309,7 @@ async def test_process_staged_recording_upload_stores_speaker_embeddings_and_ass
     monkeypatch.setattr(recording_audio_processing.settings, "voice_identification_enabled", True)
     monkeypatch.setattr(
         "app.core.recording_audio_processing.transcribe_audio_file",
-        AsyncMock(return_value=transcript_results),
+        AsyncMock(return_value=FileTranscription(segments=transcript_results, words=[])),
     )
     monkeypatch.setattr(
         "app.core.recording_audio_processing.generate_embedding",
@@ -1412,7 +1412,7 @@ async def test_process_staged_recording_upload_skips_voice_identification_for_ov
 
     async def capture_transcribe(media_path, **kwargs):
         stt_payloads.append(media_path.read_bytes())
-        return transcript_results
+        return FileTranscription(segments=transcript_results, words=[])
 
     transcribe = AsyncMock(side_effect=capture_transcribe)
     monkeypatch.setattr(
@@ -1518,7 +1518,7 @@ async def test_process_staged_recording_upload_preserves_client_duration(
 
     monkeypatch.setattr(
         "app.core.recording_audio_processing.transcribe_audio_file",
-        AsyncMock(return_value=transcript_results),
+        AsyncMock(return_value=FileTranscription(segments=transcript_results, words=[])),
     )
     monkeypatch.setattr(
         "app.core.recording_audio_processing.generate_embedding",
@@ -1644,7 +1644,7 @@ async def test_process_staged_recording_upload_alerts_when_processing_is_slow(
     )
     monkeypatch.setattr(
         "app.core.recording_audio_processing.transcribe_audio_file",
-        AsyncMock(return_value=transcript_results),
+        AsyncMock(return_value=FileTranscription(segments=transcript_results, words=[])),
     )
     monkeypatch.setattr(
         "app.core.recording_audio_processing.generate_embedding",
@@ -1943,7 +1943,7 @@ async def test_process_staged_recording_upload_continues_after_duration_probe_fa
             confidence=0.9,
         )
     ]
-    transcribe = AsyncMock(return_value=transcript_results)
+    transcribe = AsyncMock(return_value=FileTranscription(segments=transcript_results, words=[]))
     capture = Mock()
 
     def _decode_failed(*_args, **_kwargs):
@@ -2032,7 +2032,7 @@ async def test_process_staged_recording_upload_retries_after_previous_decode_fai
             confidence=0.9,
         )
     ]
-    transcribe = AsyncMock(return_value=transcript_results)
+    transcribe = AsyncMock(return_value=FileTranscription(segments=transcript_results, words=[]))
     capture = Mock()
 
     def _decode_failed(*_args, **_kwargs):
@@ -2116,16 +2116,21 @@ async def test_process_staged_recording_upload_allows_provider_minimum_wav(
 
     staged_path = tmp_path / "minimum-provider-duration.wav"
     _write_wav(staged_path, frame_count=1600)
-    transcribe = AsyncMock(return_value=[
-        TranscriptResult(
-            text="Minimum audio accepted.",
-            speaker="speaker_0",
-            is_final=True,
-            start_ms=0,
-            end_ms=100,
-            confidence=0.9,
+    transcribe = AsyncMock(
+        return_value=FileTranscription(
+            segments=[
+                TranscriptResult(
+                    text="Minimum audio accepted.",
+                    speaker="speaker_0",
+                    is_final=True,
+                    start_ms=0,
+                    end_ms=100,
+                    confidence=0.9,
+                )
+            ],
+            words=[],
         )
-    ])
+    )
     monkeypatch.setattr(
         "app.core.recording_audio_processing.transcribe_audio_file",
         transcribe,
@@ -2344,7 +2349,7 @@ async def test_process_staged_recording_upload_fails_empty_transcript_without_ti
 
     monkeypatch.setattr(
         "app.core.recording_audio_processing.transcribe_audio_file",
-        AsyncMock(return_value=transcript_results),
+        AsyncMock(return_value=FileTranscription(segments=transcript_results, words=[])),
     )
     title_mock = AsyncMock(return_value="Wrong Title")
     monkeypatch.setattr("app.core.recording_audio_processing.generate_title", title_mock)
@@ -2379,3 +2384,276 @@ def _write_wav(path, *, frame_count: int, sample_rate: int = 16_000) -> None:
         wav_file.setsampwidth(2)
         wav_file.setframerate(sample_rate)
         wav_file.writeframes(b"\0\0" * frame_count)
+
+
+@pytest.mark.asyncio
+async def test_process_staged_recording_upload_pins_detected_language(
+    db_session: AsyncSession,
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user = User(
+        email="detected-language@example.com",
+        password_hash="x",
+        default_language="en",
+    )
+    db_session.add(user)
+    await db_session.flush()
+    recording = Recording(
+        user_id=user.id,
+        title=None,
+        type="meeting",
+        status=RecordingStatus.PROCESSING.value,
+        uploaded_at=datetime.now(timezone.utc),
+        language="multi",
+    )
+    db_session.add(recording)
+    await db_session.commit()
+
+    staged_path = tmp_path / "recording.wav"
+    staged_path.write_bytes(b"audio")
+    transcribe = AsyncMock(
+        return_value=FileTranscription(
+            segments=[
+                TranscriptResult(
+                    text="Привет из распознавания.",
+                    speaker="speaker_0",
+                    is_final=True,
+                    start_ms=0,
+                    end_ms=1500,
+                    confidence=0.95,
+                )
+            ],
+            words=[],
+            detected_language="rus",
+            language_probability=0.99,
+        )
+    )
+    monkeypatch.setattr(
+        "app.core.recording_audio_processing.transcribe_audio_file",
+        transcribe,
+    )
+    monkeypatch.setattr(
+        "app.core.recording_audio_processing.generate_embedding",
+        AsyncMock(return_value=[0.1] * 1536),
+    )
+    monkeypatch.setattr(
+        "app.core.recording_audio_processing.generate_title",
+        AsyncMock(return_value="Русская встреча"),
+    )
+    monkeypatch.setattr(
+        "app.core.recording_audio_processing.identify_speakers_for_recording",
+        AsyncMock(return_value={}),
+    )
+    monkeypatch.setattr(
+        "app.core.recording_audio_processing.extract_speaker_names",
+        AsyncMock(return_value={}),
+    )
+
+    await process_staged_recording_upload(
+        db_session,
+        recording_id=recording.id,
+        user_id=user.id,
+        staged_path=staged_path,
+        content_type="audio/wav",
+        user_default_language="en",
+    )
+
+    await db_session.refresh(recording)
+    assert recording.status == RecordingStatus.READY.value
+    assert recording.language == "ru"
+
+
+@pytest.mark.asyncio
+async def test_process_staged_recording_upload_keeps_user_pinned_language(
+    db_session: AsyncSession,
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user = User(
+        email="pinned-language@example.com",
+        password_hash="x",
+        default_language="en",
+    )
+    db_session.add(user)
+    await db_session.flush()
+    recording = Recording(
+        user_id=user.id,
+        title=None,
+        type="meeting",
+        status=RecordingStatus.PROCESSING.value,
+        uploaded_at=datetime.now(timezone.utc),
+        language="en",
+    )
+    db_session.add(recording)
+    await db_session.commit()
+
+    staged_path = tmp_path / "recording.wav"
+    staged_path.write_bytes(b"audio")
+    monkeypatch.setattr(
+        "app.core.recording_audio_processing.transcribe_audio_file",
+        AsyncMock(
+            return_value=FileTranscription(
+                segments=[
+                    TranscriptResult(
+                        text="Hello.",
+                        speaker="speaker_0",
+                        is_final=True,
+                        start_ms=0,
+                        end_ms=900,
+                        confidence=0.95,
+                    )
+                ],
+                words=[],
+                detected_language="rus",
+                language_probability=0.99,
+            )
+        ),
+    )
+    monkeypatch.setattr(
+        "app.core.recording_audio_processing.generate_embedding",
+        AsyncMock(return_value=[0.1] * 1536),
+    )
+    monkeypatch.setattr(
+        "app.core.recording_audio_processing.generate_title",
+        AsyncMock(return_value="Pinned"),
+    )
+    monkeypatch.setattr(
+        "app.core.recording_audio_processing.identify_speakers_for_recording",
+        AsyncMock(return_value={}),
+    )
+    monkeypatch.setattr(
+        "app.core.recording_audio_processing.extract_speaker_names",
+        AsyncMock(return_value={}),
+    )
+
+    await process_staged_recording_upload(
+        db_session,
+        recording_id=recording.id,
+        user_id=user.id,
+        staged_path=staged_path,
+        content_type="audio/wav",
+        user_default_language="en",
+    )
+
+    await db_session.refresh(recording)
+    assert recording.language == "en"
+
+
+@pytest.mark.asyncio
+async def test_process_staged_recording_upload_attributes_owner_from_sidecar(
+    db_session: AsyncSession,
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.models.person import Person
+
+    user = User(
+        email="sidecar-owner@example.com",
+        password_hash="x",
+        default_language="en",
+        first_name="Mik",
+    )
+    db_session.add(user)
+    await db_session.flush()
+    recording = Recording(
+        user_id=user.id,
+        title=None,
+        type="meeting",
+        status=RecordingStatus.PROCESSING.value,
+        uploaded_at=datetime.now(timezone.utc),
+        language="multi",
+        capture_metadata={
+            "version": 1,
+            "capture": "dual_mono_mix",
+            "local_speech_ms": [[0, 4000], [9000, 12000]],
+            "aec": False,
+        },
+    )
+    db_session.add(recording)
+    await db_session.commit()
+
+    staged_path = tmp_path / "recording.wav"
+    staged_path.write_bytes(b"audio")
+    transcript_results = [
+        TranscriptResult(
+            text="Я расскажу про план.",
+            speaker="speaker_0",
+            is_final=True,
+            start_ms=0,
+            end_ms=4000,
+            confidence=0.95,
+        ),
+        TranscriptResult(
+            text="Отлично, слушаю.",
+            speaker="speaker_1",
+            is_final=True,
+            start_ms=4200,
+            end_ms=8800,
+            confidence=0.94,
+        ),
+        TranscriptResult(
+            text="Вот детали.",
+            speaker="speaker_0",
+            is_final=True,
+            start_ms=9000,
+            end_ms=12000,
+            confidence=0.96,
+        ),
+    ]
+
+    monkeypatch.setattr(
+        "app.core.recording_audio_processing.transcribe_audio_file",
+        AsyncMock(
+            return_value=FileTranscription(segments=transcript_results, words=[])
+        ),
+    )
+    monkeypatch.setattr(
+        "app.core.recording_audio_processing.generate_embedding",
+        AsyncMock(return_value=[0.1] * 1536),
+    )
+    monkeypatch.setattr(
+        "app.core.recording_audio_processing.generate_title",
+        AsyncMock(return_value="Sidecar Meeting"),
+    )
+    monkeypatch.setattr(
+        "app.core.recording_audio_processing.identify_speakers_for_recording",
+        AsyncMock(return_value={}),
+    )
+    monkeypatch.setattr(
+        "app.core.recording_audio_processing.extract_speaker_names",
+        AsyncMock(return_value={}),
+    )
+
+    await process_staged_recording_upload(
+        db_session,
+        recording_id=recording.id,
+        user_id=user.id,
+        staged_path=staged_path,
+        content_type="audio/wav",
+        user_default_language="en",
+    )
+
+    await db_session.refresh(user)
+    assert user.self_person_id is not None
+    self_person = (
+        await db_session.execute(select(Person).where(Person.id == user.self_person_id))
+    ).scalar_one()
+    assert self_person.display_name == "Mik"
+
+    segments = (
+        (
+            await db_session.execute(
+                select(Segment)
+                .where(Segment.recording_id == recording.id)
+                .order_by(Segment.start_ms)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert [seg.raw_label for seg in segments] == ["speaker_0", "speaker_1", "speaker_0"]
+    assert segments[0].person_id == user.self_person_id
+    assert segments[2].person_id == user.self_person_id
+    assert segments[1].person_id is None
+    assert segments[0].match_confidence == 1.0

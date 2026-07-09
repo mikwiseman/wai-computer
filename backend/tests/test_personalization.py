@@ -545,6 +545,80 @@ async def test_load_user_keyterms_includes_replacements_and_dictation_dictionary
 
 
 @pytest.mark.asyncio
+async def test_load_user_keyterms_recording_includes_people_and_entities(
+    db_session: AsyncSession,
+):
+    from app.models.person import Person
+
+    user_id = uuid4()
+    db_session.add(
+        User(
+            id=user_id,
+            email=f"people-keyterms-{user_id}@example.com",
+            password_hash="hash",
+            **{
+                "legal_terms_version": LEGAL_ACCEPTANCE["legal_terms_version"],
+                "legal_privacy_version": LEGAL_ACCEPTANCE["legal_privacy_version"],
+            },
+        )
+    )
+    db_session.add(
+        PersonalizationTerm(
+            user_id=user_id,
+            term="ExplicitTerm",
+            normalized_term="explicitterm",
+            status="active",
+            source="manual",
+            frequency=9,
+        )
+    )
+    db_session.add(
+        Person(
+            user_id=user_id,
+            display_name="Анна Каренина",
+            aliases=["Аня", "Anna"],
+        )
+    )
+    db_session.add(Entity(user_id=user_id, type="project", name="Астерис"))
+    db_session.add(Entity(user_id=user_id, type="topic", name="планы на год"))
+    await db_session.flush()
+
+    keyterms = await load_user_keyterms(db_session, user_id=user_id, purpose="recording")
+
+    # Explicit user terms outrank derived name hints.
+    assert keyterms[0] == "ExplicitTerm"
+    assert {"Анна Каренина", "Аня", "Anna", "Астерис"} <= set(keyterms)
+    # Free-form topics are not recognition hints.
+    assert "планы на год" not in keyterms
+
+
+@pytest.mark.asyncio
+async def test_load_user_keyterms_summary_purpose_skips_people_and_entities(
+    db_session: AsyncSession,
+):
+    from app.models.person import Person
+
+    user_id = uuid4()
+    db_session.add(
+        User(
+            id=user_id,
+            email=f"summary-keyterms-{user_id}@example.com",
+            password_hash="hash",
+            **{
+                "legal_terms_version": LEGAL_ACCEPTANCE["legal_terms_version"],
+                "legal_privacy_version": LEGAL_ACCEPTANCE["legal_privacy_version"],
+            },
+        )
+    )
+    db_session.add(Person(user_id=user_id, display_name="Илья Muromets"))
+    await db_session.flush()
+
+    keyterms = await load_user_keyterms(db_session, user_id=user_id, purpose="summary")
+
+    assert "Илья Muromets" not in keyterms
+
+
+@pytest.mark.asyncio
 async def test_load_user_replacements_returns_only_real_distinct_pairs(
     db_session: AsyncSession,
 ):

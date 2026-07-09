@@ -5,8 +5,28 @@ from unittest.mock import AsyncMock, patch
 import httpx
 import pytest
 
+from app.core.transcript_utils import FileTranscription, TranscriptResult
+
 DEEPGRAM_FILE_STT_MODEL = "nova-3"
 ELEVENLABS_FILE_STT_MODEL = "scribe_v2"
+
+
+def _stub_transcription(marker: str) -> FileTranscription:
+    """Provider stub result carrying a recognizable marker segment."""
+    return FileTranscription(
+        segments=[
+            TranscriptResult(
+                text=marker,
+                speaker=None,
+                is_final=True,
+                start_ms=0,
+                end_ms=1000,
+                confidence=1.0,
+            )
+        ],
+        words=[],
+    )
+
 
 
 def test_provider_error_code_reads_openai_error_shape():
@@ -45,13 +65,13 @@ def test_provider_error_code_reads_deepgram_error_shape():
 async def test_transcription_dispatches_default_to_elevenlabs_scribe():
     with patch(
         "app.core.transcription.elevenlabs_transcribe_audio_file",
-        new=AsyncMock(return_value=["ok"]),
+        new=AsyncMock(return_value=_stub_transcription("ok")),
     ) as mock_elevenlabs:
         from app.core.transcription import transcribe_audio_file
 
         result = await transcribe_audio_file(b"audio", language="ru", content_type="audio/mp3")
 
-    assert result == ["ok"]
+    assert [seg.text for seg in result.segments] == ["ok"]
     mock_elevenlabs.assert_awaited_once_with(
         b"audio",
         language="ru",
@@ -67,7 +87,7 @@ async def test_transcription_dispatches_default_to_elevenlabs_scribe():
 async def test_transcription_dispatches_explicit_deepgram_file_stt():
     with patch(
         "app.core.transcription.deepgram_transcribe_audio_file",
-        new=AsyncMock(return_value=["ok"]),
+        new=AsyncMock(return_value=_stub_transcription("ok")),
     ) as mock_deepgram:
         from app.core.transcription import transcribe_audio_file
 
@@ -79,7 +99,7 @@ async def test_transcription_dispatches_explicit_deepgram_file_stt():
             model="nova-3",
         )
 
-    assert result == ["ok"]
+    assert [seg.text for seg in result.segments] == ["ok"]
     mock_deepgram.assert_awaited_once_with(
         b"audio",
         language="ru",
@@ -105,7 +125,7 @@ async def test_transcription_accepts_usage_purpose_without_forwarding_to_provide
         "add_sentry_breadcrumb",
         lambda **kwargs: sentry_breadcrumbs.append(kwargs),
     )
-    transcribe = AsyncMock(return_value=["ok"])
+    transcribe = AsyncMock(return_value=_stub_transcription("ok"))
     monkeypatch.setattr(transcription, "elevenlabs_transcribe_audio_file", transcribe)
 
     result = await transcription.transcribe_audio_file(
@@ -115,7 +135,7 @@ async def test_transcription_accepts_usage_purpose_without_forwarding_to_provide
         usage_purpose="recording",
     )
 
-    assert result == ["ok"]
+    assert [seg.text for seg in result.segments] == ["ok"]
     transcribe.assert_awaited_once_with(
         b"audio",
         language="ru",
@@ -140,7 +160,7 @@ async def test_transcription_ignores_removed_user_file_stt_choice():
     )()
     with patch(
         "app.core.transcription.elevenlabs_transcribe_audio_file",
-        new=AsyncMock(return_value=["elevenlabs-ok"]),
+        new=AsyncMock(return_value=_stub_transcription("elevenlabs-ok")),
     ) as mock_elevenlabs:
         from app.core.transcription import transcribe_audio_file
 
@@ -152,7 +172,7 @@ async def test_transcription_ignores_removed_user_file_stt_choice():
             user=user,
         )
 
-    assert result == ["elevenlabs-ok"]
+    assert [seg.text for seg in result.segments] == ["elevenlabs-ok"]
     mock_elevenlabs.assert_awaited_once_with(
         b"audio",
         language="en",
@@ -168,7 +188,7 @@ async def test_transcription_ignores_removed_user_file_stt_choice():
 async def test_transcription_accepts_explicit_deepgram_file_stt():
     with patch(
         "app.core.transcription.deepgram_transcribe_audio_file",
-        new=AsyncMock(return_value=["ok"]),
+        new=AsyncMock(return_value=_stub_transcription("ok")),
     ) as mock_deepgram:
         from app.core.transcription import transcribe_audio_file
 
@@ -180,7 +200,7 @@ async def test_transcription_accepts_explicit_deepgram_file_stt():
             model="nova-3",
         )
 
-    assert result == ["ok"]
+    assert [seg.text for seg in result.segments] == ["ok"]
     mock_deepgram.assert_awaited_once()
 
 
@@ -188,7 +208,7 @@ async def test_transcription_accepts_explicit_deepgram_file_stt():
 async def test_transcription_accepts_explicit_elevenlabs_file_stt():
     with patch(
         "app.core.transcription.elevenlabs_transcribe_audio_file",
-        new=AsyncMock(return_value=["scribe-ok"]),
+        new=AsyncMock(return_value=_stub_transcription("scribe-ok")),
     ) as mock_elevenlabs:
         from app.core.transcription import transcribe_audio_file
 
@@ -200,7 +220,7 @@ async def test_transcription_accepts_explicit_elevenlabs_file_stt():
             model="scribe_v2",
         )
 
-    assert result == ["scribe-ok"]
+    assert [seg.text for seg in result.segments] == ["scribe-ok"]
     mock_elevenlabs.assert_awaited_once()
 
 
@@ -290,21 +310,24 @@ async def test_transcription_reraises_unexpected_deepgram_failure_without_fallba
 
 @pytest.mark.asyncio
 async def test_transcription_logs_provider_latency_without_audio_or_error_body(caplog):
-    from app.core.transcript_utils import TranscriptResult
+    from app.core.transcript_utils import FileTranscription, TranscriptResult
 
     with patch(
         "app.core.transcription.elevenlabs_transcribe_audio_file",
         new=AsyncMock(
-            return_value=[
-                TranscriptResult(
-                    text="private transcript must not be logged",
-                    speaker=None,
-                    is_final=True,
-                    start_ms=0,
-                    end_ms=1000,
-                    confidence=0.9,
-                )
-            ]
+            return_value=FileTranscription(
+                segments=[
+                    TranscriptResult(
+                        text="private transcript must not be logged",
+                        speaker=None,
+                        is_final=True,
+                        start_ms=0,
+                        end_ms=1000,
+                        confidence=0.9,
+                    )
+                ],
+                words=[],
+            )
         ),
     ):
         from app.core.transcription import transcribe_audio_file
@@ -325,7 +348,7 @@ async def test_transcription_captures_slow_file_stt_without_audio_or_transcript(
     monkeypatch: pytest.MonkeyPatch,
 ):
     from app.core import transcription
-    from app.core.transcript_utils import TranscriptResult
+    from app.core.transcript_utils import FileTranscription, TranscriptResult
 
     sentry_messages: list[dict[str, object]] = []
     sentry_breadcrumbs: list[dict[str, object]] = []
@@ -353,16 +376,19 @@ async def test_transcription_captures_slow_file_stt_without_audio_or_transcript(
         transcription,
         "elevenlabs_transcribe_audio_file",
         AsyncMock(
-            return_value=[
-                TranscriptResult(
-                    text="private transcript must stay out of Sentry",
-                    speaker=None,
-                    is_final=True,
-                    start_ms=0,
-                    end_ms=1000,
-                    confidence=0.9,
-                )
-            ]
+            return_value=FileTranscription(
+                segments=[
+                    TranscriptResult(
+                        text="private transcript must stay out of Sentry",
+                        speaker=None,
+                        is_final=True,
+                        start_ms=0,
+                        end_ms=1000,
+                        confidence=0.9,
+                    )
+                ],
+                words=[],
+            )
         ),
     )
 
@@ -373,7 +399,7 @@ async def test_transcription_captures_slow_file_stt_without_audio_or_transcript(
         audio_duration_seconds=30,
     )
 
-    assert len(result) == 1
+    assert len(result.segments) == 1
     assert sentry_messages == [
         {
             "alert_code": "recording.file_stt.slow",

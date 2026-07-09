@@ -386,7 +386,7 @@ async def _transcribe(
         deepgram_addons.append("keyterm_prompting")
     started_at = time.perf_counter()
     try:
-        results = await transcribe_audio_file(
+        transcription = await transcribe_audio_file(
             media_path,
             language=language,
             content_type=content_type,
@@ -490,7 +490,7 @@ async def _transcribe(
         addons=deepgram_addons,
         commit=True,
     )
-    return results
+    return transcription.segments
 
 
 async def _persist_segments(

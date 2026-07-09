@@ -415,7 +415,7 @@ async def _transcribe_youtube_audio(
     data, content_type, duration = await asyncio.to_thread(
         _download_youtube_audio, url
     )
-    results = await transcribe_audio_file(
+    transcription = await transcribe_audio_file(
         data,
         language="multi",
         content_type=content_type,
@@ -429,7 +429,7 @@ async def _transcribe_youtube_audio(
             "start_ms": r.start_ms,
             "end_ms": r.end_ms,
         }
-        for r in results
+        for r in transcription.segments
         if (r.text or "").strip()
     ]
     text = " ".join(s["content"] for s in segments).strip()

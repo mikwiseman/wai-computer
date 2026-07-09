@@ -573,6 +573,31 @@ class MacRecordingViewModel: ObservableObject {
             await capture?.stopRecording()
             _ = await sendingTask?.result
 
+            // Persist the capture sidecar: local-mic speech intervals let the
+            // server attribute the matching diarization cluster to the owner.
+            if #available(macOS 14.2, *),
+               let dualCapture = capture as? DualAudioCapture,
+               let recordingId {
+                let intervals = dualCapture.drainLocalSpeechIntervalsMs()
+                if !intervals.isEmpty,
+                   let sidecarJSON = CaptureSidecar.json(
+                       capture: dualCapture.mixToMono ? "dual_mono_mix" : "dual_two_channel",
+                       localSpeechIntervalsMs: intervals
+                   ) {
+                    do {
+                        try RecordingBackupStore.setCaptureMetadataJSON(
+                            recordingId: recordingId,
+                            json: sidecarJSON
+                        )
+                    } catch {
+                        SentryHelper.captureError(
+                            error,
+                            extras: ["action": "persistCaptureSidecar", "recordingId": recordingId]
+                        )
+                    }
+                }
+            }
+
             // Finalize the local WAV file so it has correct header sizes.
             let audioFinalizedForPersistence = self.finalizeRecordingAudioForPersistence(
                 fileWriter,
@@ -1237,11 +1262,15 @@ class MacRecordingViewModel: ObservableObject {
             )
 
             do {
+                let captureMetadataJSON = try? RecordingBackupStore.manifest(
+                    recordingId: recordingId
+                )?.captureMetadataJSON
                 let detail = try await client.uploadAudio(
                     recordingId: recordingId,
                     fileURL: audioFileURL,
                     clientDurationSeconds: clientDurationSeconds,
-                    clientFileSizeBytes: clientFileSizeBytes
+                    clientFileSizeBytes: clientFileSizeBytes,
+                    captureMetadataJSON: captureMetadataJSON ?? nil
                 )
                 guard detail.status != .failed else {
                     let technicalReason = UserFacingErrorFormatter.displayMessage(
