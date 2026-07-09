@@ -1186,6 +1186,12 @@ struct MacMainView: View {
                             await libraryViewModel.loadLibrary(apiClient: appState.getAPIClient())
                         }
                     },
+                    onDetailChange: { detail in
+                        libraryViewModel.applyRecordingDetail(detail)
+                        if prefetchedRecordingDetail?.id == detail.id {
+                            prefetchedRecordingDetail = detail
+                        }
+                    },
                     onDidRename: {
                         prefetchedRecordingDetail = nil
                         Task {

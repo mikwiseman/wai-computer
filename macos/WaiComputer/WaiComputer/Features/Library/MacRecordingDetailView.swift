@@ -15,6 +15,7 @@ struct MacRecordingDetailView: View {
     var onDelete: (() -> Void)?
     var onRestore: (() -> Void)?
     var onMoveToFolder: ((String?) -> Void)?
+    var onDetailChange: ((RecordingDetail) -> Void)?
     var onDidRename: (() -> Void)?
     @Binding var pendingTitleEditId: String?
     @EnvironmentObject var appState: MacAppState
@@ -41,6 +42,7 @@ struct MacRecordingDetailView: View {
         onDelete: (() -> Void)? = nil,
         onRestore: (() -> Void)? = nil,
         onMoveToFolder: ((String?) -> Void)? = nil,
+        onDetailChange: ((RecordingDetail) -> Void)? = nil,
         onDidRename: (() -> Void)? = nil
     ) {
         self.recordingId = recordingId
@@ -49,6 +51,7 @@ struct MacRecordingDetailView: View {
         self.onDelete = onDelete
         self.onRestore = onRestore
         self.onMoveToFolder = onMoveToFolder
+        self.onDetailChange = onDetailChange
         self.onDidRename = onDidRename
         _pendingTitleEditId = pendingTitleEditId
         _viewModel = StateObject(wrappedValue: MacRecordingDetailViewModel(initialDetail: initialDetail))
@@ -135,6 +138,9 @@ struct MacRecordingDetailView: View {
             loadTask = Task {
                 await loadRecordingDetail(recordingId: recordingId, showLoading: false)
             }
+        }
+        .onReceive(viewModel.$recordingDetail.compactMap { $0 }) { detail in
+            onDetailChange?(detail)
         }
         .onChangeCompat(of: pendingTitleEditId) { _, requested in
             guard let requested, requested == recordingId, mode == .active else { return }

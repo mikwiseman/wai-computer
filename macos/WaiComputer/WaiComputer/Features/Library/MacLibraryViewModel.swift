@@ -148,6 +148,24 @@ class MacLibraryViewModel: ObservableObject {
         self.folders = folders
     }
 
+    func applyRecordingDetail(_ detail: RecordingDetail) {
+        let updated = Recording(detail: detail)
+
+        if let index = recordings.firstIndex(where: { $0.id == detail.id }),
+           recordings[index] != updated {
+            var next = recordings
+            next[index] = updated
+            recordings = next
+        }
+
+        if let index = trashedRecordings.firstIndex(where: { $0.id == detail.id }),
+           trashedRecordings[index] != updated {
+            var next = trashedRecordings
+            next[index] = updated
+            trashedRecordings = next
+        }
+    }
+
     @discardableResult
     func createFolder(name: String, apiClient: APIClient) async -> Folder? {
         do {

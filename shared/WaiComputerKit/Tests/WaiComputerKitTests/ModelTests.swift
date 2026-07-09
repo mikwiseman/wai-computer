@@ -171,6 +171,49 @@ final class ModelTests: XCTestCase {
         )
     }
 
+    func testRecordingFromDetailPreservesListVisibleFields() {
+        let createdAt = Date(timeIntervalSince1970: 1_789_444_400)
+        let uploadedAt = Date(timeIntervalSince1970: 1_789_444_460)
+        let starredAt = Date(timeIntervalSince1970: 1_789_444_520)
+        let detail = RecordingDetail(
+            id: "rec-generated-title",
+            title: "Реформа продуктовых процессов с AI",
+            type: .meeting,
+            audioUrl: "https://storage.example.com/audio.opus",
+            status: .ready,
+            failureCode: "transient",
+            failureMessage: "Recovered",
+            uploadedAt: uploadedAt,
+            durationSeconds: 563,
+            language: "ru",
+            folderId: "folder-ai",
+            deletedAt: nil,
+            starredAt: starredAt,
+            createdAt: createdAt,
+            segments: [
+                Segment(id: "seg-1", content: "Transcript text.", startMs: 0, endMs: 1_000)
+            ],
+            summary: Summary(summary: "Generated summary.")
+        )
+
+        let recording = Recording(detail: detail)
+
+        XCTAssertEqual(recording.id, detail.id)
+        XCTAssertEqual(recording.title, detail.title)
+        XCTAssertEqual(recording.type, detail.type)
+        XCTAssertEqual(recording.audioUrl, detail.audioUrl)
+        XCTAssertEqual(recording.status, detail.status)
+        XCTAssertEqual(recording.failureCode, detail.failureCode)
+        XCTAssertEqual(recording.failureMessage, detail.failureMessage)
+        XCTAssertEqual(recording.uploadedAt, detail.uploadedAt)
+        XCTAssertEqual(recording.durationSeconds, detail.durationSeconds)
+        XCTAssertEqual(recording.language, detail.language)
+        XCTAssertEqual(recording.folderId, detail.folderId)
+        XCTAssertEqual(recording.deletedAt, detail.deletedAt)
+        XCTAssertEqual(recording.starredAt, detail.starredAt)
+        XCTAssertEqual(recording.createdAt, detail.createdAt)
+    }
+
     func testRecordingDetailDecodeWithSegmentsAndSummary() throws {
         let json = """
         {

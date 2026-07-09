@@ -107,13 +107,24 @@ struct LibraryView: View {
                                 // result no longer appears behind the dismiss.
                                 performSearch()
                             }
+                        },
+                        onDetailChange: { detail in
+                            viewModel.applyRecordingDetail(detail)
                         }
                     )
                 }
             }
             .navigationDestination(isPresented: $showImportedDetail) {
                 if let importedRecording {
-                    RecordingDetailView(recording: importedRecording)
+                    RecordingDetailView(
+                        recording: importedRecording,
+                        onDetailChange: { detail in
+                            viewModel.applyRecordingDetail(detail)
+                            if importedRecording.id == detail.id {
+                                self.importedRecording = Recording(detail: detail)
+                            }
+                        }
+                    )
                 }
             }
             .overlay(alignment: .top) {
@@ -623,6 +634,9 @@ struct LibraryView: View {
                     await trashRecording(id: recording.id)
                 }
             },
+            onDetailChange: { detail in
+                viewModel.applyRecordingDetail(detail)
+            },
             onDidRename: {
                 Task { await viewModel.loadLibrary(apiClient: appState.getAPIClient()) }
             }
@@ -831,6 +845,9 @@ struct FolderRecordingsView: View {
                                         apiClient: appState.getAPIClient()
                                     )
                                 }
+                            },
+                            onDetailChange: { detail in
+                                viewModel.applyRecordingDetail(detail)
                             },
                             onDidRename: {
                                 Task { await viewModel.loadLibrary(apiClient: appState.getAPIClient()) }
@@ -1241,6 +1258,9 @@ struct TrashView: View {
                 Task {
                     await permanentlyDeleteRecording(id: recording.id)
                 }
+            },
+            onDetailChange: { detail in
+                viewModel.applyRecordingDetail(detail)
             }
         )
     }
@@ -1281,7 +1301,7 @@ struct TrashView: View {
     private var emptyTrashMessage: String {
         let count = viewModel.trashedRecordings.count
         if OnboardingL10n.language(for: languageManager.current) == .russian {
-            let noun = RussianPlural.recordings(count)
+            let noun = RussianPlural.form(count, one: "запись", few: "записи", many: "записей")
             return "Это навсегда удалит \(count) \(noun). Это действие нельзя отменить."
         }
         let noun = count == 1 ? "recording" : "recordings"
@@ -1290,31 +1310,6 @@ struct TrashView: View {
 
     private func t(_ english: String, _ russian: String) -> String {
         OnboardingL10n.text(english, russian, language: languageManager.current)
-    }
-}
-
-// MARK: - Russian Pluralization
-
-/// Russian noun pluralization for counts (1 → singular, 2–4 → few, 0/5–20 →
-/// many, with the standard teen exception). Used for user-facing count copy.
-enum RussianPlural {
-    static func recordings(_ count: Int) -> String {
-        forms(count, one: "запись", few: "записи", many: "записей")
-    }
-
-    static func forms(_ count: Int, one: String, few: String, many: String) -> String {
-        let mod100 = abs(count) % 100
-        if (11...14).contains(mod100) {
-            return many
-        }
-        switch abs(count) % 10 {
-        case 1:
-            return one
-        case 2, 3, 4:
-            return few
-        default:
-            return many
-        }
     }
 }
 
@@ -1693,6 +1688,24 @@ class LibraryViewModel: ObservableObject {
         isLoading = false
         error = nil
         #endif
+    }
+
+    func applyRecordingDetail(_ detail: RecordingDetail) {
+        let updated = Recording(detail: detail)
+
+        if let index = recordings.firstIndex(where: { $0.id == detail.id }),
+           recordings[index] != updated {
+            var next = recordings
+            next[index] = updated
+            recordings = next
+        }
+
+        if let index = trashedRecordings.firstIndex(where: { $0.id == detail.id }),
+           trashedRecordings[index] != updated {
+            var next = trashedRecordings
+            next[index] = updated
+            trashedRecordings = next
+        }
     }
 
     // MARK: - Folder Operations

@@ -18,6 +18,7 @@ struct RecordingDetailView: View {
     var onTrash: (() -> Void)?
     var onRestore: (() -> Void)?
     var onPermanentDelete: (() -> Void)?
+    var onDetailChange: ((RecordingDetail) -> Void)?
     var onDidRename: (() -> Void)?
 
     @StateObject private var viewModel = RecordingDetailViewModel()
@@ -42,6 +43,7 @@ struct RecordingDetailView: View {
         onTrash: (() -> Void)? = nil,
         onRestore: (() -> Void)? = nil,
         onPermanentDelete: (() -> Void)? = nil,
+        onDetailChange: ((RecordingDetail) -> Void)? = nil,
         onDidRename: (() -> Void)? = nil
     ) {
         self.recording = recording
@@ -51,6 +53,7 @@ struct RecordingDetailView: View {
         self.onTrash = onTrash
         self.onRestore = onRestore
         self.onPermanentDelete = onPermanentDelete
+        self.onDetailChange = onDetailChange
         self.onDidRename = onDidRename
     }
 
@@ -144,6 +147,9 @@ struct RecordingDetailView: View {
                     showLoading: false
                 )
             }
+        }
+        .onReceive(viewModel.$detail.compactMap { $0 }) { detail in
+            onDetailChange?(detail)
         }
     }
 
