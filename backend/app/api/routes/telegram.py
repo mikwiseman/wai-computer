@@ -1678,6 +1678,10 @@ async def _handle_digest_command(
                 reply_to_message_id=message.get("message_id"),
             )
             return
+    except Exception:
+        # Unexpected failure: never leave a stale «Собираю материалы…» behind.
+        await _delete_status_message(client, chat_id=chat_id, message_id=status_message_id)
+        raise
     finally:
         await _stop_chat_action_task(action_task)
 
@@ -3311,6 +3315,9 @@ async def _handle_tts_callback(
             deliver_summary_audio_telegram_task,
         )
 
+        # The worker must see the QUEUED artifact row, so commit before enqueue
+        # (same ordering as the app summary-audio routes).
+        await db.commit()
         try:
             async_result = deliver_summary_audio_telegram_task.delay(
                 artifact_id=str(artifact.id),
@@ -3908,6 +3915,10 @@ async def _answer_photo_question(
                 reply_to_message_id=message.get("message_id"),
             )
             return
+    except Exception:
+        # Unexpected failure: never leave a stale «Смотрю на фото…» behind.
+        await _delete_status_message(client, chat_id=chat_id, message_id=status_message_id)
+        raise
     finally:
         await _stop_chat_action_task(action_task)
 
@@ -3944,6 +3955,8 @@ async def _answer_photo_question(
         )
         await db.flush()
         if created:
+            # The summary worker must see the committed item row.
+            await db.commit()
             await enqueue_item_processing(db, item)
         await _set_telegram_active_context(
             db, account, ref_type="item", ref_id=item.id, title=item.title
@@ -4166,6 +4179,8 @@ async def _process_photo_album(
                 )
                 await db.flush()
                 if created:
+                    # The summary worker must see the committed item row.
+                    await db.commit()
                     await enqueue_item_processing(db, item)
                 await _set_telegram_active_context(
                     db, account, ref_type="item", ref_id=item.id, title=item.title
@@ -4262,6 +4277,10 @@ async def _process_photo_album(
             parse_mode="HTML",
             reply_markup=_item_reply_keyboard(item.id),
         )
+    except Exception:
+        # Unexpected failure: never leave a stale «Принял альбом…» behind.
+        await _delete_status_message(client, chat_id=chat_id, message_id=status_message_id)
+        raise
     finally:
         await _stop_chat_action_task(action_task)
 
