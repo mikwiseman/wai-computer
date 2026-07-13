@@ -14,6 +14,8 @@ interface Copy {
   confirmBody: string;
   confirm: string;
   cancel: string;
+  typeToConfirm: string;
+  typeWord: string;
   deleting: string;
   failed: string;
 }
@@ -28,6 +30,8 @@ const COPY: Record<Locale, Copy> = {
       "This permanently deletes your account, recordings, folders, and summaries. This cannot be undone.",
     confirm: "Delete account",
     cancel: "Cancel",
+    typeToConfirm: "Type DELETE to confirm:",
+    typeWord: "DELETE",
     deleting: "Deleting…",
     failed: "Could not delete the account. Please try again.",
   },
@@ -40,6 +44,8 @@ const COPY: Record<Locale, Copy> = {
       "Это безвозвратно удалит ваш аккаунт, записи, папки и саммари. Отменить будет нельзя.",
     confirm: "Удалить аккаунт",
     cancel: "Отмена",
+    typeToConfirm: "Введите УДАЛИТЬ для подтверждения:",
+    typeWord: "УДАЛИТЬ",
     deleting: "Удаляем…",
     failed: "Не удалось удалить аккаунт. Попробуйте ещё раз.",
   },
@@ -56,6 +62,8 @@ export function DeleteAccountSection({ onDeleted, locale = "en" }: DeleteAccount
   const [open, setOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [confirmText, setConfirmText] = useState("");
+  const confirmed = confirmText.trim().toUpperCase() === copy.typeWord;
 
   async function handleDelete() {
     setDeleting(true);
@@ -82,7 +90,7 @@ export function DeleteAccountSection({ onDeleted, locale = "en" }: DeleteAccount
         type="button"
         className="ghost-button compact-button danger-button"
         data-testid="delete-account"
-        onClick={() => setOpen(true)}
+        onClick={() => { setConfirmText(""); setOpen(true); }}
       >
         {copy.button}
       </button>
@@ -100,6 +108,17 @@ export function DeleteAccountSection({ onDeleted, locale = "en" }: DeleteAccount
           <div className="modal-card">
             <h3>{copy.confirmTitle}</h3>
             <p>{copy.confirmBody}</p>
+            <label className="settings-note" style={{ display: "block" }}>
+              {copy.typeToConfirm}
+              <input
+                type="text"
+                data-testid="confirm-delete-account-input"
+                value={confirmText}
+                onChange={(event) => setConfirmText(event.target.value)}
+                autoComplete="off"
+                autoFocus
+              />
+            </label>
             <div className="modal-actions">
               <button
                 type="button"
@@ -113,7 +132,7 @@ export function DeleteAccountSection({ onDeleted, locale = "en" }: DeleteAccount
                 type="button"
                 className="ghost-button danger-button"
                 data-testid="confirm-delete-account-action"
-                disabled={deleting}
+                disabled={deleting || !confirmed}
                 onClick={() => void handleDelete()}
               >
                 {deleting ? copy.deleting : copy.confirm}

@@ -64,20 +64,21 @@ export function ComparisonView({ comparisonId, onClose, onError }: ComparisonVie
   const rows = set?.rows ?? [];
 
   return (
-    <div
-      className="comparison-view__backdrop"
-      role="dialog"
-      aria-modal="true"
-      aria-label="Comparison"
-      onClick={onClose}
-    >
+    <div className="comparison-view__backdrop" onClick={onClose}>
       <div
         className="comparison-view"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="comparison-view-title"
+        tabIndex={-1}
+        ref={(node) => node?.focus()}
         onClick={(e) => e.stopPropagation()}
         data-testid="comparison-view"
       >
         <header className="comparison-view__header">
-          <h2 className="comparison-view__title">{set?.title ?? "Comparison"}</h2>
+          <h2 className="comparison-view__title" id="comparison-view-title">
+            {set?.title ?? "Comparison"}
+          </h2>
           <button
             type="button"
             className="ghost-button compact-button"

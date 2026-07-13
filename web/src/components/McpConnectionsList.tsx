@@ -11,6 +11,8 @@ interface Copy {
   never: string;
   errLoad: string;
   errRevoke: string;
+  confirmRevoke: string;
+  cancel: string;
   heading: string;
   note: string;
   loading: string;
@@ -25,6 +27,8 @@ const COPY: Record<Locale, Copy> = {
     never: "never",
     errLoad: "Couldn’t load connected clients.",
     errRevoke: "Couldn’t revoke that client.",
+    confirmRevoke: "Revoke now",
+    cancel: "Cancel",
     heading: "Connected clients",
     note: "Apps you’ve approved to read your library — and, where you granted it (the “memory write” badge), to save memories too. Revoke any you no longer use — access is cut off on wai.computer immediately.",
     loading: "Loading…",
@@ -37,6 +41,8 @@ const COPY: Record<Locale, Copy> = {
     never: "никогда",
     errLoad: "Не удалось загрузить подключённые клиенты.",
     errRevoke: "Не удалось отозвать доступ клиента.",
+    confirmRevoke: "Точно отозвать",
+    cancel: "Отмена",
     heading: "Подключённые клиенты",
     note: "Приложения, которым вы разрешили читать вашу библиотеку — а где вы дали право (значок «memory write») — и сохранять память. Отзовите те, которыми больше не пользуетесь — доступ на wai.computer прекращается сразу.",
     loading: "Загрузка…",
@@ -63,6 +69,7 @@ export function McpConnectionsList({ locale = "en" }: McpConnectionsListProps) {
   const [connections, setConnections] = useState<McpConnection[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [revoking, setRevoking] = useState<string | null>(null);
+  const [confirmingRevoke, setConfirmingRevoke] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setError(null);
@@ -79,6 +86,7 @@ export function McpConnectionsList({ locale = "en" }: McpConnectionsListProps) {
   }, [load]);
 
   async function handleRevoke(clientId: string) {
+    setConfirmingRevoke(null);
     setRevoking(clientId);
     setError(null);
     try {
@@ -135,15 +143,37 @@ export function McpConnectionsList({ locale = "en" }: McpConnectionsListProps) {
                   {formatDate(connection.last_active_at, copy.never)}
                 </span>
               </div>
-              <button
-                type="button"
-                className="ghost-button compact-button"
-                data-testid={`mcp-revoke-${connection.client_id}`}
-                disabled={revoking === connection.client_id}
-                onClick={() => void handleRevoke(connection.client_id)}
-              >
-                {revoking === connection.client_id ? copy.revoking : copy.revoke}
-              </button>
+              {confirmingRevoke === connection.client_id ? (
+                <span className="row-actions">
+                  <button
+                    type="button"
+                    className="ghost-button compact-button"
+                    data-testid={`mcp-revoke-cancel-${connection.client_id}`}
+                    onClick={() => setConfirmingRevoke(null)}
+                  >
+                    {copy.cancel}
+                  </button>
+                  <button
+                    type="button"
+                    className="ghost-button compact-button danger-button"
+                    data-testid={`mcp-revoke-confirm-${connection.client_id}`}
+                    disabled={revoking === connection.client_id}
+                    onClick={() => void handleRevoke(connection.client_id)}
+                  >
+                    {revoking === connection.client_id ? copy.revoking : copy.confirmRevoke}
+                  </button>
+                </span>
+              ) : (
+                <button
+                  type="button"
+                  className="ghost-button compact-button danger-button"
+                  data-testid={`mcp-revoke-${connection.client_id}`}
+                  disabled={revoking === connection.client_id}
+                  onClick={() => setConfirmingRevoke(connection.client_id)}
+                >
+                  {revoking === connection.client_id ? copy.revoking : copy.revoke}
+                </button>
+              )}
             </li>
           ))}
         </ul>

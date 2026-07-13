@@ -493,13 +493,13 @@ describe("app pages", () => {
 
     cleanup();
     render(await BillingCancelPage({ searchParams: Promise.resolve({ provider: "tinkoff" }) }));
-    expect(screen.getByRole("heading", { level: 1, name: "Оплата не прошла" })).toBeInTheDocument();
-    expect(screen.getByText(/Попробуй другую карту/)).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 1, name: "Оплата отменена" })).toBeInTheDocument();
+    expect(screen.getByText(/деньги не списаны/)).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "Вернуться к подписке" })).not.toBeInTheDocument();
 
     cleanup();
     render(<RuBillingCancelPage />);
-    expect(screen.getByRole("heading", { level: 1, name: "Оплата не прошла" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 1, name: "Оплата отменена" })).toBeInTheDocument();
 
     cleanup();
     render(<RuBillingSuccessPage />);

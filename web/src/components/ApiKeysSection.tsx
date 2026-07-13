@@ -21,6 +21,8 @@ interface Copy {
   errLoad: string;
   errCreate: string;
   errRevoke: string;
+  confirmRevoke: string;
+  cancel: string;
   loading: string;
   empty: string;
   lastUsed: string;
@@ -52,6 +54,8 @@ const COPY: Record<Locale, Copy> = {
     errLoad: "Couldn’t load API tokens.",
     errCreate: "Couldn’t create the token.",
     errRevoke: "Couldn’t revoke the token.",
+    confirmRevoke: "Revoke now",
+    cancel: "Cancel",
     loading: "Loading…",
     empty: "No API tokens yet.",
     lastUsed: "last used",
@@ -81,6 +85,8 @@ const COPY: Record<Locale, Copy> = {
     errLoad: "Не удалось загрузить API-токены.",
     errCreate: "Не удалось создать токен.",
     errRevoke: "Не удалось отозвать токен.",
+    confirmRevoke: "Точно отозвать",
+    cancel: "Отмена",
     loading: "Загрузка…",
     empty: "Пока нет API-токенов.",
     lastUsed: "последнее использование",
@@ -122,6 +128,7 @@ export function ApiKeysSection({ locale = "en" }: ApiKeysSectionProps) {
   const [created, setCreated] = useState<ApiKeyCreated | null>(null);
   const [copied, setCopied] = useState(false);
   const [revoking, setRevoking] = useState<string | null>(null);
+  const [confirmingRevoke, setConfirmingRevoke] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setError(null);
@@ -158,6 +165,7 @@ export function ApiKeysSection({ locale = "en" }: ApiKeysSectionProps) {
   }
 
   async function handleRevoke(id: string) {
+    setConfirmingRevoke(null);
     setRevoking(id);
     setError(null);
     try {
@@ -181,6 +189,7 @@ export function ApiKeysSection({ locale = "en" }: ApiKeysSectionProps) {
           type="text"
           data-testid="api-key-name-input"
           placeholder={copy.placeholder}
+          aria-label={copy.placeholder}
           value={name}
           onChange={(event) => setName(event.target.value)}
         />
@@ -266,15 +275,37 @@ export function ApiKeysSection({ locale = "en" }: ApiKeysSectionProps) {
                   {key.prefix}…{key.last4} · {copy.lastUsed} {formatDate(key.last_used_at, copy.never)}
                 </span>
               </div>
-              <button
-                type="button"
-                className="ghost-button compact-button"
-                data-testid={`api-key-revoke-${key.id}`}
-                disabled={revoking === key.id}
-                onClick={() => void handleRevoke(key.id)}
-              >
-                {revoking === key.id ? copy.revoking : copy.revoke}
-              </button>
+              {confirmingRevoke === key.id ? (
+                <span className="row-actions">
+                  <button
+                    type="button"
+                    className="ghost-button compact-button"
+                    data-testid={`api-key-revoke-cancel-${key.id}`}
+                    onClick={() => setConfirmingRevoke(null)}
+                  >
+                    {copy.cancel}
+                  </button>
+                  <button
+                    type="button"
+                    className="ghost-button compact-button danger-button"
+                    data-testid={`api-key-revoke-confirm-${key.id}`}
+                    disabled={revoking === key.id}
+                    onClick={() => void handleRevoke(key.id)}
+                  >
+                    {revoking === key.id ? copy.revoking : copy.confirmRevoke}
+                  </button>
+                </span>
+              ) : (
+                <button
+                  type="button"
+                  className="ghost-button compact-button danger-button"
+                  data-testid={`api-key-revoke-${key.id}`}
+                  disabled={revoking === key.id}
+                  onClick={() => setConfirmingRevoke(key.id)}
+                >
+                  {revoking === key.id ? copy.revoking : copy.revoke}
+                </button>
+              )}
             </li>
           ))}
         </ul>

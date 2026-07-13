@@ -90,6 +90,8 @@ describe("ApiKeysSection", () => {
     mockedRevoke.mockResolvedValue(undefined);
     render(<ApiKeysSection />);
     fireEvent.click(await screen.findByTestId("api-key-revoke-key-1"));
+    // Revoking is destructive for live integrations — it now takes a confirm.
+    fireEvent.click(await screen.findByTestId("api-key-revoke-confirm-key-1"));
     await waitFor(() => {
       expect(mockedRevoke).toHaveBeenCalledWith("key-1");
     });

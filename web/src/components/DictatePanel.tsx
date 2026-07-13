@@ -470,7 +470,7 @@ export function DictatePanel({ locale = "en" }: DictatePanelProps) {
               <span className="live-recorder__dot" aria-hidden="true" />
             ) : null}
             <span className="mono live-recorder__timer">{seconds > 0 ? formatDurationClock(seconds) : "0:00"}</span>
-            <span className="live-recorder__label">
+            <span className="live-recorder__label" aria-live="polite">
               {phase === "preparing"
                 ? copy.preparing
                 : state === "connecting"
@@ -488,8 +488,10 @@ export function DictatePanel({ locale = "en" }: DictatePanelProps) {
           </div>
           {committed || interim ? (
             <p className="live-recorder__transcript">
-              {committed}
-              {interim ? <span className="live-recorder__interim"> {interim}</span> : null}
+              {committed ? <span aria-live="polite">{committed}</span> : null}
+              {interim ? (
+                <span className="live-recorder__interim" aria-hidden="true"> {interim}</span>
+              ) : null}
             </p>
           ) : null}
         </div>

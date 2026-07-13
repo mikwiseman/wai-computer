@@ -588,7 +588,9 @@ describe("BillingDashboard", () => {
     await userEvent.click(upgrade);
 
     await waitFor(() => expect(mockedCheckout).toHaveBeenCalled());
-    expect(await screen.findByText("Couldn't load billing info.")).toBeInTheDocument();
+    // The failure renders inline; the dashboard itself must stay mounted.
+    expect(await screen.findByTestId("billing-action-error")).toHaveTextContent("network down");
+    expect(screen.getByRole("button", { name: "Upgrade to Pro" })).toBeInTheDocument();
   });
 
   it("dismisses the cancel confirmation when the user keeps Pro", async () => {
@@ -630,7 +632,9 @@ describe("BillingDashboard", () => {
     await userEvent.click(screen.getByRole("button", { name: "Yes, cancel" }));
 
     await waitFor(() => expect(mockedCancel).toHaveBeenCalled());
-    expect(await screen.findByText("Couldn't load billing info.")).toBeInTheDocument();
+    // Inline error; the plan card stays on screen for a retry.
+    expect(await screen.findByTestId("billing-action-error")).toHaveTextContent("500");
+    expect(screen.getByRole("button", { name: "Cancel subscription" })).toBeInTheDocument();
   });
 
   it("shows the same-period notice without calling the API when the chosen period matches", async () => {
@@ -662,7 +666,8 @@ describe("BillingDashboard", () => {
     await userEvent.click(screen.getByRole("button", { name: "Switch" }));
 
     await waitFor(() => expect(mockedSwitch).toHaveBeenCalledWith("yearly"));
-    expect(await screen.findByText("Couldn't load billing info.")).toBeInTheDocument();
+    expect(await screen.findByTestId("billing-action-error")).toHaveTextContent("switch failed");
+    expect(screen.getByLabelText(/Switch plan/i)).toBeInTheDocument();
   });
 
   it("localizes 'active subscription already exists' promo errors in Russian", async () => {
@@ -791,8 +796,6 @@ describe("BillingDashboard", () => {
         accepted_recurring_terms: true,
       }),
     );
-    expect(
-      await screen.findByText("Не удалось загрузить данные подписки."),
-    ).toBeInTheDocument();
+    expect(await screen.findByTestId("billing-action-error")).toBeInTheDocument();
   });
 });

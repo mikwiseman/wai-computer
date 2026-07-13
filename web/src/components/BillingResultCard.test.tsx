@@ -58,8 +58,8 @@ describe("BillingResultCard", () => {
   it("explains a failed payment without leaking test-card debug copy", () => {
     render(<BillingResultCard kind="cancel" locale="ru" />);
 
-    expect(screen.getByRole("heading", { name: "Оплата не прошла" })).toBeInTheDocument();
-    expect(screen.getByText(/Попробуй другую карту/)).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Оплата отменена" })).toBeInTheDocument();
+    expect(screen.getByText(/деньги не списаны/)).toBeInTheDocument();
     expect(screen.queryByText(/4242/)).toBeNull();
   });
 

@@ -49,6 +49,8 @@ describe("McpConnectionsList", () => {
     render(<McpConnectionsList />);
 
     fireEvent.click(await screen.findByTestId("mcp-revoke-bot-client"));
+    // Revoking cuts off a live client — it now takes a confirm.
+    fireEvent.click(await screen.findByTestId("mcp-revoke-confirm-bot-client"));
 
     await waitFor(() => {
       expect(mockedRevoke).toHaveBeenCalledWith("bot-client");

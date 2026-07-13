@@ -530,6 +530,9 @@ export function BillingDashboard({ locale, currency }: Props) {
   const [proPlan, setProPlan] = useState<BillingPlan | null>(null);
   const [upgradePeriod, setUpgradePeriod] = useState<"month" | "year">("month");
   const [acceptedRecurring, setAcceptedRecurring] = useState(false);
+  // Action failures (upgrade/cancel/switch) render inline — only the boot
+  // fetch may replace the whole dashboard with the load-error screen.
+  const [actionError, setActionError] = useState<string | null>(null);
 
   useEffect(() => {
     Promise.all([
@@ -608,9 +611,9 @@ export function BillingDashboard({ locale, currency }: Props) {
         accepted_recurring_terms: provider === "tinkoff" ? acceptedRecurring : false,
       });
       window.location.href = session.checkout_url;
-    } catch {
+    } catch (upgradeError: unknown) {
       setInFlight(false);
-      setError(copy.loadError);
+      setActionError(localizeBillingError(upgradeError, locale));
     }
   }
 
@@ -621,8 +624,8 @@ export function BillingDashboard({ locale, currency }: Props) {
       await cancelBillingSubscription();
       const fresh = await getBillingSubscription();
       setSub(fresh);
-    } catch {
-      setError(copy.loadError);
+    } catch (cancelError: unknown) {
+      setActionError(localizeBillingError(cancelError, locale));
     } finally {
       setInFlight(false);
     }
@@ -687,8 +690,8 @@ export function BillingDashboard({ locale, currency }: Props) {
     try {
       await switchBillingPlan(switchPeriod);
       setSwitchMessage(copy.switchAccepted);
-    } catch {
-      setError(copy.loadError);
+    } catch (switchError: unknown) {
+      setActionError(localizeBillingError(switchError, locale));
     } finally {
       setSwitchInFlight(false);
     }
@@ -756,6 +759,12 @@ export function BillingDashboard({ locale, currency }: Props) {
       </h1>
 
       {bannerNode}
+
+      {actionError ? (
+        <p className="billing-error" role="alert" data-testid="billing-action-error">
+          {actionError}
+        </p>
+      ) : null}
 
       {/* ----- Plan card ----- */}
       <article style={CARD_STYLE} aria-labelledby="billing-plan-card">

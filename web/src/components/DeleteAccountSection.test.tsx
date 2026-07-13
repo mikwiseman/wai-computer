@@ -26,6 +26,9 @@ describe("DeleteAccountSection", () => {
 
     await user.click(screen.getByTestId("delete-account"));
     expect(screen.getByTestId("confirm-delete-account")).toBeTruthy();
+    // Irreversible: the confirm button stays disabled until DELETE is typed.
+    expect(screen.getByTestId("confirm-delete-account-action")).toBeDisabled();
+    await user.type(screen.getByTestId("confirm-delete-account-input"), "DELETE");
     await user.click(screen.getByTestId("confirm-delete-account-action"));
 
     await waitFor(() => expect(mockDeleteAccount).toHaveBeenCalledTimes(1));

@@ -406,7 +406,7 @@ export function ServerDataSection({
                 setForm((current) => ({ ...current, vps_ip: event.target.value }))
               }
               required
-              inputMode="numeric"
+              autoComplete="off"
               placeholder="203.0.113.10"
             />
             <small className="server-data-help">{copy.ipHelp}</small>

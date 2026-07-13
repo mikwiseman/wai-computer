@@ -33,7 +33,7 @@ const ACCEPTED_FILE_INPUT =
   ".mp4,.mov,.m4v,.mkv,.avi,.mpg,.mpeg,.wmv,.flv,.3gp,.3g2,.ts,.mts,audio/*,video/*";
 
 const COPY: Record<Locale, {
-  unsupported: string; creating: string; uploading: string; failed: string; drop: string;
+  unsupported: string; creating: string; uploading: string; failed: string; drop: string; uploadLabel: string;
 }> = {
   en: {
     unsupported: "Unsupported format. Use an audio file (MP3, M4A, WAV…) or a video (MP4, MOV, MKV…).",
@@ -41,6 +41,7 @@ const COPY: Record<Locale, {
     uploading: "Uploading file…",
     failed: "Upload failed",
     drop: "Drop an audio or video file here or click to upload",
+    uploadLabel: "Upload an audio or video file",
   },
   ru: {
     unsupported: "Неподдерживаемый формат. Используйте аудио (MP3, M4A, WAV…) или видео (MP4, MOV, MKV…).",
@@ -48,6 +49,7 @@ const COPY: Record<Locale, {
     uploading: "Загрузка файла…",
     failed: "Не удалось загрузить",
     drop: "Перетащите аудио- или видеофайл сюда или нажмите для загрузки",
+    uploadLabel: "Загрузить аудио- или видеофайл",
   },
 };
 
@@ -80,10 +82,14 @@ export function AudioUpload({ onUploadComplete, onError, folderId = null, locale
 
     setUploading(true);
 
-    try {
-      for (let index = 0; index < files.length; index += 1) {
-        const file = files[index];
-        const prefix = files.length > 1 ? `${index + 1}/${files.length}: ` : "";
+    // Upload each file independently: one file's failure must not abandon the
+    // rest of the batch. Collect per-file errors and surface them together once
+    // every file has had its turn, so the successful uploads still complete.
+    const failures: string[] = [];
+    for (let index = 0; index < files.length; index += 1) {
+      const file = files[index];
+      const prefix = files.length > 1 ? `${index + 1}/${files.length}: ` : "";
+      try {
         setProgress(`${prefix}${copy.creating}`);
         // Pass an empty title so the backend auto-generates one from the
         // transcript content instead of using the filename verbatim.
@@ -97,14 +103,16 @@ export function AudioUpload({ onUploadComplete, onError, folderId = null, locale
         setProgress(`${prefix}${copy.uploading}`);
         const detail = await uploadAudio(recording.id, file);
         onUploadComplete(detail);
+      } catch (err) {
+        failures.push(`${prefix}${err instanceof Error ? err.message : copy.failed}`);
       }
+    }
 
-      setProgress("");
-    } catch (err) {
-      onError(err instanceof Error ? err.message : copy.failed);
-    } finally {
-      setUploading(false);
-      setProgress("");
+    setUploading(false);
+    setProgress("");
+
+    if (failures.length > 0) {
+      onError(failures.join("\n"));
     }
   }, [folderId, onUploadComplete, onError, validateFile, copy.creating, copy.uploading, copy.unsupported, copy.failed]);
 
@@ -122,10 +130,21 @@ export function AudioUpload({ onUploadComplete, onError, folderId = null, locale
   return (
     <div
       className={`upload-zone ${isDragging ? "upload-zone--dragging" : ""}`}
+      role="button"
+      tabIndex={0}
+      aria-label={copy.uploadLabel}
+      aria-disabled={uploading || undefined}
       onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
       onDragLeave={() => setIsDragging(false)}
       onDrop={handleDrop}
       onClick={() => !uploading && fileInputRef.current?.click()}
+      onKeyDown={(e) => {
+        if (uploading) return;
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          fileInputRef.current?.click();
+        }
+      }}
     >
       <input
         ref={fileInputRef}
@@ -136,7 +155,7 @@ export function AudioUpload({ onUploadComplete, onError, folderId = null, locale
         style={{ display: "none" }}
       />
       {uploading ? (
-        <div className="upload-zone__status">
+        <div className="upload-zone__status" role="status" aria-live="polite">
           <span className="upload-zone__spinner" />
           <span>{progress}</span>
         </div>

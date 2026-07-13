@@ -152,8 +152,9 @@ describe("LiveRecorder", () => {
 
     await user.click(screen.getByRole("button", { name: "Record in browser" }));
 
-    // Moves into the active view with the Listening label.
+    // Moves into the active view with the Listening label, announced politely.
     await waitFor(() => expect(screen.getByText("Listening…")).toBeInTheDocument());
+    expect(screen.getByText("Listening…")).toHaveAttribute("aria-live", "polite");
     expect(screen.getByTestId("live-recorder").getAttribute("data-state")).toBe("recording");
     // Timer is shown starting at 0:00.
     expect(screen.getByText("0:00")).toBeInTheDocument();
@@ -379,7 +380,7 @@ describe("LiveRecorder", () => {
       expect(screen.getByRole("button", { name: "Record in browser" })).toBeInTheDocument();
     });
 
-    it("skips saving when nothing was transcribed", async () => {
+    it("skips saving when nothing was transcribed and explains why", async () => {
       FakeTranscriber.stopSegments = [];
       const { user } = await startRecording();
 
@@ -388,6 +389,8 @@ describe("LiveRecorder", () => {
       await waitFor(() =>
         expect(screen.getByRole("button", { name: "Record in browser" })).toBeInTheDocument(),
       );
+      // A "no speech captured" notice now shows instead of a silent reset.
+      expect(screen.getByRole("status")).toHaveTextContent("No speech was captured");
       expect(mockCreateRecording).not.toHaveBeenCalled();
       expect(mockSaveTranscript).not.toHaveBeenCalled();
     });
@@ -418,7 +421,10 @@ describe("LiveRecorder", () => {
     });
   });
 
-  it("clears the timer and forwards transcriber errors", async () => {
+  it("shows an inline error and keeps the transcript when the realtime connection drops", async () => {
+    // Previously the realtime error was forwarded to the parent onError, which
+    // swapped the recorder out and discarded the on-screen transcript. Now the
+    // drop is surfaced inline (localized) with the transcript preserved.
     const onError = vi.fn();
     const user = userEvent.setup();
     render(<LiveRecorder onRecordingComplete={vi.fn()} onError={onError} />);
@@ -426,9 +432,19 @@ describe("LiveRecorder", () => {
     await waitFor(() => expect(screen.getByText("Listening…")).toBeInTheDocument());
 
     const transcriber = FakeTranscriber.instances[0];
+    act(() => transcriber.emitUpdate("meeting so far", ""));
+    await waitFor(() => expect(screen.getByText("meeting so far")).toBeInTheDocument());
+
     act(() => transcriber.emitError("Realtime connection lost"));
 
-    expect(onError).toHaveBeenCalledWith("Realtime connection lost");
+    // Inline localized alert, not a bubbled parent error.
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Recording stopped unexpectedly. Start again to keep going.",
+    );
+    expect(onError).not.toHaveBeenCalled();
+    // The captured transcript stays visible, and a fresh start is offered.
+    expect(screen.getByText("meeting so far")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Record in browser" })).toBeInTheDocument();
   });
 
   it("stops an active transcriber on unmount without saving an empty recording", async () => {

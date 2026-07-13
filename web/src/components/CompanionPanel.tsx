@@ -333,6 +333,7 @@ export function CompanionPanel({
   const copy = COPY[locale];
 
   const [chats, setChats] = useState<CompanionConversation[]>([]);
+  const [chatsLoaded, setChatsLoaded] = useState(false);
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
   const [activeScope, setActiveScope] = useState<CompanionConversation["scope"]>(null);
   const [messages, setMessages] = useState<CompanionMessage[]>([]);
@@ -372,6 +373,10 @@ export function CompanionPanel({
         }
       } catch (e) {
         setError(formatError(e, COPY[detectLocale()]));
+      } finally {
+        // Returning users must not flash the cold-start empty state while
+        // their chats are still loading.
+        setChatsLoaded(true);
       }
     })();
   }, [initialChatId]);
@@ -515,6 +520,8 @@ export function CompanionPanel({
         chatId = chat.id;
       } catch (e) {
         setError(formatError(e, copy));
+        // Nothing was sent — put the question back so a retry is one click.
+        setInput((current) => (current.trim() ? current : question));
         setLoading(false);
         setStage("idle");
         return;
@@ -557,6 +564,9 @@ export function CompanionPanel({
           turn = markTurnInterrupted(turn, failedText(locale));
           setLiveTurn(turn);
           setError(evt.message);
+          // Failed mid-turn — restore the question for an easy retry unless
+          // the user already started typing something else.
+          setInput((current) => (current.trim() ? current : question));
           break;
         }
         if (evt.type === "turn_start" && evt.title) {
@@ -606,6 +616,7 @@ export function CompanionPanel({
       turn = markTurnInterrupted(turn, failedText(locale));
       setLiveTurn(turn);
       setError(formatError(e, copy));
+      setInput((current) => (current.trim() ? current : question));
       try {
         const refreshed = await getChat(chatId);
         setMessages(refreshed.messages);
@@ -684,7 +695,7 @@ export function CompanionPanel({
     }
   }
 
-  const hasNoChats = chats.length === 0 && !activeChatId;
+  const hasNoChats = chatsLoaded && chats.length === 0 && !activeChatId;
   const isEmptyActive =
     !!activeChatId && messages.length === 0 && turnIsEmpty(liveTurn) && !loading;
   const hasBrainScope = Boolean(activeScope?.brain_space_id);
@@ -768,7 +779,12 @@ export function CompanionPanel({
         </aside>
       ) : null}
 
-      <div className="qa-output" data-testid="companion-thread">
+      <div
+        className="qa-output"
+        data-testid="companion-thread"
+        role="log"
+        aria-label={locale === "ru" ? "Диалог с Wai" : "Wai conversation"}
+      >
         {hasNoChats ? (
           <div className="empty-state empty-state--center">
             <h3>{copy.emptyHeading}</h3>

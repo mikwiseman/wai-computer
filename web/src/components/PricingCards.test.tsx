@@ -32,7 +32,7 @@ describe("PricingCards", () => {
     expect(screen.getByText("$12 / month")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Sign in to upgrade" })).toBeInTheDocument();
 
-    await userEvent.click(screen.getByRole("tab", { name: /Yearly/i }));
+    await userEvent.click(screen.getByRole("button", { name: /Yearly/i }));
 
     expect(screen.getByText("$96 / year")).toBeInTheDocument();
   });
@@ -71,7 +71,7 @@ describe("PricingCards", () => {
     mockedCheckout.mockResolvedValue({ provider: "tinkoff", checkout_url: "#checkout" });
     render(<PricingCards locale="ru" currency="rub" signedIn />);
 
-    await userEvent.click(screen.getByRole("tab", { name: /Годовая/i }));
+    await userEvent.click(screen.getByRole("button", { name: /Годовая/i }));
     await userEvent.click(screen.getByRole("radio", { name: /Stripe/i }));
     await userEvent.click(screen.getByRole("button", { name: /Оформить Pro/i }));
 

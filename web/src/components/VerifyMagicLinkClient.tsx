@@ -119,7 +119,9 @@ export function VerifyMagicLinkClient({ token, locale: rawLocale }: VerifyMagicL
         <h1>{copy.title}</h1>
       </header>
 
-      <p data-testid="verify-message">{message}</p>
+      <p data-testid="verify-message" role="status" className="auth-card__message">
+        {message}
+      </p>
       <Link href="/login">{copy.backToLogin}</Link>
     </section>
   );

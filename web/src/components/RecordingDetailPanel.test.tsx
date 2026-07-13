@@ -562,6 +562,37 @@ describe("RecordingDetailPanel", () => {
     expect(screen.queryByText("positive")).toBeNull();
   });
 
+  it("navigates the tab strip with the keyboard (WAI-ARIA Tabs pattern)", async () => {
+    // The tab strip had roving tabIndex but no key handler, so the Summary tab
+    // was unreachable without a pointer. Arrow/Home/End must move focus and
+    // select (automatic activation).
+    const user = userEvent.setup();
+    render(<RecordingDetailPanel recording={makeRecording()} />);
+
+    const transcriptTab = screen.getByRole("tab", { name: "Transcript" });
+    const summaryTab = screen.getByRole("tab", { name: "Summary" });
+
+    transcriptTab.focus();
+    expect(transcriptTab).toHaveAttribute("aria-selected", "true");
+    expect(transcriptTab).toHaveAttribute("tabindex", "0");
+    expect(summaryTab).toHaveAttribute("tabindex", "-1");
+
+    await user.keyboard("{ArrowRight}");
+    expect(summaryTab).toHaveFocus();
+    expect(summaryTab).toHaveAttribute("aria-selected", "true");
+    // Selection followed focus: the Summary panel is now shown.
+    expect(screen.getByText("Summary unavailable")).toBeTruthy();
+
+    await user.keyboard("{ArrowLeft}");
+    expect(transcriptTab).toHaveFocus();
+    expect(transcriptTab).toHaveAttribute("aria-selected", "true");
+
+    await user.keyboard("{End}");
+    expect(summaryTab).toHaveFocus();
+    await user.keyboard("{Home}");
+    expect(transcriptTab).toHaveFocus();
+  });
+
   it("does not render the removed actions tab", () => {
     const recording = makeRecording({
       action_items: [

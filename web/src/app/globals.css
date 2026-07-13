@@ -2799,6 +2799,7 @@ a.primary-button[aria-disabled="true"]:hover {
 }
 .wai-action-buttons {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 0.4rem;
   margin-top: 0.55rem;
@@ -2897,6 +2898,8 @@ a.primary-button[aria-disabled="true"]:hover {
   height: 320px;
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
+  /* Deliberately white in both themes: the iframe renders arbitrary
+   * user/AI HTML that assumes a light page background. */
   background: #fff;
 }
 .wai-artifact-code {
@@ -3389,6 +3392,19 @@ a.primary-button[aria-disabled="true"]:hover {
 .shared-note__download-error {
   color: var(--danger);
   font-size: var(--font-body-small-size);
+}
+
+/* Footer CTA — same editorial column width as the note card above so their
+ * left/right edges line up (the card uses this exact max-width expression). */
+.shared-footer {
+  max-width: calc(var(--measure-reading) + 2 * clamp(1.2rem, 4vw, 2.5rem));
+  margin: 2rem auto 0;
+  padding: 1.6rem;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.85rem;
 }
 
 .shared-section {
@@ -4207,7 +4223,7 @@ a.primary-button[aria-disabled="true"]:hover {
   color: var(--color-text-secondary);
 }
 
-.pricing-toggle button[aria-selected="true"] {
+.pricing-toggle button[aria-pressed="true"] {
   background: var(--accent);
   color: var(--accent-contrast);
 }
@@ -5931,6 +5947,13 @@ a.primary-button[aria-disabled="true"]:hover {
 }
 
 .toast__close {
+  /* At least a 32px square hit area (bumped to 44px on coarse pointers by the
+   * touch-target block below) so the × is comfortably tappable. */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 32px;
+  min-height: 32px;
   background: transparent;
   border: 0;
   color: var(--ink-faint);

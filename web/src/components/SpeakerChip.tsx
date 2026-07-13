@@ -29,6 +29,31 @@ export function SpeakerChip({
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const rootRef = useRef<HTMLSpanElement | null>(null);
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
+
+  // Popover dismissal: Escape and outside clicks close it; focus returns to
+  // the chip that opened it so keyboard users aren't dropped at <body>.
+  useEffect(() => {
+    if (!open) return;
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key !== "Escape") return;
+      event.stopPropagation();
+      setOpen(false);
+      triggerRef.current?.focus();
+    }
+    function onPointerDown(event: MouseEvent) {
+      if (rootRef.current && !rootRef.current.contains(event.target as Node)) {
+        setOpen(false);
+      }
+    }
+    document.addEventListener("keydown", onKeyDown);
+    document.addEventListener("mousedown", onPointerDown);
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      document.removeEventListener("mousedown", onPointerDown);
+    };
+  }, [open]);
 
   useEffect(() => {
     if (!open || people !== null) return;
@@ -118,17 +143,25 @@ export function SpeakerChip({
   const isAssigned = Boolean(segment.display_name && segment.person_id);
 
   return (
-    <span className="speaker-chip-wrapper">
+    <span className="speaker-chip-wrapper" ref={rootRef}>
       <button
+        ref={triggerRef}
         type="button"
         className="speaker-chip"
         data-assigned={isAssigned ? "true" : "false"}
+        aria-expanded={open}
+        aria-haspopup="dialog"
         onClick={() => setOpen((value) => !value)}
         disabled={!canAssign || pending}
         title={
           isAuto && confidencePct !== null
             ? `Auto-assigned (${confidencePct}% match) — click to override`
             : "Click to assign"
+        }
+        aria-label={
+          isAuto && confidencePct !== null
+            ? `${label} — auto-assigned, ${confidencePct}% match. Assign speaker.`
+            : `${label} — assign speaker`
         }
       >
         <strong>{label}</strong>
@@ -139,7 +172,11 @@ export function SpeakerChip({
         ) : null}
       </button>
       {open ? (
-        <div className="speaker-chip-popover" role="dialog">
+        <div
+          className="speaker-chip-popover"
+          role="dialog"
+          aria-label={segment.speaker ?? "Assign speaker"}
+        >
           <input
             ref={inputRef}
             value={filter}

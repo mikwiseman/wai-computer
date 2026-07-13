@@ -233,7 +233,8 @@ export function OnboardingClient({ initialLocale }: OnboardingClientProps) {
         }
       }, 100);
     } catch (err) {
-      setError(err instanceof Error ? err.message : copy.micError);
+      console.error("onboarding mic error", err);
+      setError(copy.micError);
       stopStream();
       setState("idle");
     }
@@ -279,7 +280,7 @@ export function OnboardingClient({ initialLocale }: OnboardingClientProps) {
   const isRecording = state === "recording";
 
   return (
-    <div className="onboarding-shell">
+    <main id="main" className="onboarding-shell">
       <p className="onboarding-step">{copy.step}</p>
       <h1>{copy.heading}</h1>
       <p className="onboarding-lead">{copy.lead}</p>
@@ -350,7 +351,7 @@ export function OnboardingClient({ initialLocale }: OnboardingClientProps) {
       </button>
 
       <p className="onboarding-privacy">{copy.privacy}</p>
-    </div>
+    </main>
   );
 }
 

@@ -16,6 +16,8 @@ interface Copy {
   listening: string;
   defaultTitle: () => string;
   micDenied: string;
+  noSpeech: string;
+  recordingError: string;
 }
 
 const COPY: Record<Locale, Copy> = {
@@ -27,6 +29,8 @@ const COPY: Record<Locale, Copy> = {
     listening: "Listening…",
     defaultTitle: () => `Recording ${new Date().toLocaleString()}`,
     micDenied: "Microphone access is required to record.",
+    noSpeech: "No speech was captured — nothing to save.",
+    recordingError: "Recording stopped unexpectedly. Start again to keep going.",
   },
   ru: {
     start: "Запись в браузере",
@@ -36,6 +40,8 @@ const COPY: Record<Locale, Copy> = {
     listening: "Слушаю…",
     defaultTitle: () => `Запись ${new Date().toLocaleString()}`,
     micDenied: "Для записи нужен доступ к микрофону.",
+    noSpeech: "Речь не распознана — сохранять нечего.",
+    recordingError: "Запись неожиданно остановилась. Начните заново, чтобы продолжить.",
   },
 };
 
@@ -84,6 +90,7 @@ export function LiveRecorder({
   const [interim, setInterim] = useState("");
   const [includeSystem, setIncludeSystem] = useState(false);
   const [note, setNote] = useState<string | null>(null);
+  const [liveError, setLiveError] = useState<string | null>(null);
   const supportsSystemAudio =
     typeof navigator !== "undefined"
     && typeof navigator.mediaDevices?.getDisplayMedia === "function";
@@ -119,6 +126,7 @@ export function LiveRecorder({
     setInterim("");
     setSeconds(0);
     setNote(null);
+    setLiveError(null);
     const streams: MediaStream[] = [];
     try {
       streams.push(await navigator.mediaDevices.getUserMedia({ audio: true }));
@@ -178,10 +186,14 @@ export function LiveRecorder({
         setCommitted(c);
         setInterim(i);
       },
-      onError: (message) => {
+      onError: () => {
         if (!mountedRef.current) return;
         clearTimer();
-        onError(message);
+        // Surface the drop inline and keep the visible transcript, instead of
+        // bubbling to the parent (which swaps this recorder out and discards the
+        // on-screen transcript). The transcriber has already cleaned up its
+        // socket by the time this fires.
+        setLiveError(copy.recordingError);
       },
     });
     transcriberRef.current = transcriber;
@@ -193,7 +205,7 @@ export function LiveRecorder({
     ) {
       timerRef.current = setInterval(() => setSeconds((s) => s + 1), 1000);
     }
-  }, [clearTimer, copy.micDenied, includeSystem, locale, onError, supportsSystemAudio]);
+  }, [clearTimer, copy.micDenied, copy.recordingError, includeSystem, locale, onError, supportsSystemAudio]);
 
   const stop = useCallback(async () => {
     clearTimer();
@@ -213,11 +225,13 @@ export function LiveRecorder({
       return;
     }
     if (segments.length === 0) {
-      // Nothing transcribed — don't create an empty recording.
+      // Nothing transcribed — don't create an empty recording, but say why
+      // nothing was saved instead of silently snapping back to idle.
       setState("idle");
       setSeconds(0);
       setCommitted("");
       setInterim("");
+      setNote(copy.noSpeech);
       return;
     }
     try {
@@ -242,7 +256,19 @@ export function LiveRecorder({
 
   return (
     <div className="live-recorder" data-testid="live-recorder" data-state={state}>
-      {!isActive ? (
+      {liveError ? (
+        <div className="live-recorder__active">
+          <p className="inline-alert" role="alert">{liveError}</p>
+          {committed ? (
+            <div className="live-recorder__transcript">
+              <p aria-live="polite">{committed}</p>
+            </div>
+          ) : null}
+          <button type="button" className="live-recorder__start" onClick={() => void start()}>
+            {copy.start}
+          </button>
+        </div>
+      ) : !isActive ? (
         <div className="live-recorder__idle">
           <button type="button" className="live-recorder__start" onClick={() => void start()}>
             {copy.start}
@@ -261,7 +287,7 @@ export function LiveRecorder({
               </span>
             </label>
           ) : null}
-          {note ? <p className="settings-note">{note}</p> : null}
+          {note ? <p className="settings-note" role="status">{note}</p> : null}
         </div>
       ) : (
         <div className="live-recorder__active">
@@ -270,7 +296,7 @@ export function LiveRecorder({
               <span className="live-recorder__dot" aria-hidden="true" />
             ) : null}
             <span className="mono live-recorder__timer">{formatTimer(seconds)}</span>
-            <span className="live-recorder__label">
+            <span className="live-recorder__label" aria-live="polite">
               {state === "connecting"
                 ? copy.connecting
                 : state === "stopping"

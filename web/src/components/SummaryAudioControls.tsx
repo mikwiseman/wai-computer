@@ -3,11 +3,43 @@
 import { useState } from "react";
 import type { SummaryAudio } from "@/lib/types";
 
+type Locale = "en" | "ru";
+
+const COPY: Record<
+  Locale,
+  {
+    download: string;
+    downloading: string;
+    creating: string;
+    create: string;
+    retry: string;
+    player: string;
+  }
+> = {
+  en: {
+    download: "Download audio",
+    downloading: "Downloading…",
+    creating: "Creating audio…",
+    create: "Create audio",
+    retry: "Try audio again",
+    player: "Summary audio",
+  },
+  ru: {
+    download: "Скачать аудио",
+    downloading: "Скачиваем…",
+    creating: "Создаём аудио…",
+    create: "Создать аудио",
+    retry: "Попробовать ещё раз",
+    player: "Аудио-резюме",
+  },
+};
+
 interface SummaryAudioControlsProps {
   state: SummaryAudio | null | undefined;
   onCreate: () => Promise<void>;
   onDownload: () => Promise<Blob>;
   filename: string;
+  locale?: Locale;
 }
 
 function isActive(state: SummaryAudio | null | undefined): boolean {
@@ -19,7 +51,9 @@ export function SummaryAudioControls({
   onCreate,
   onDownload,
   filename,
+  locale = "en",
 }: SummaryAudioControlsProps) {
+  const copy = COPY[locale];
   const [busy, setBusy] = useState(false);
 
   const handleCreate = async () => {
@@ -51,26 +85,34 @@ export function SummaryAudioControls({
   if (state?.status === "succeeded" && state.audio_url) {
     return (
       <div className="summary-audio" data-testid="summary-audio-ready">
-        <audio className="summary-audio__player" controls preload="none" src={state.audio_url} />
+        <audio
+          className="summary-audio__player"
+          controls
+          preload="none"
+          src={state.audio_url}
+          aria-label={copy.player}
+        />
         <button
           type="button"
           className="ghost-button compact-button"
           onClick={() => void handleDownload()}
           disabled={busy}
         >
-          {busy ? "Downloading…" : "Download audio"}
+          {busy ? copy.downloading : copy.download}
         </button>
       </div>
     );
   }
 
   if (isActive(state)) {
+    const percent = state?.progress_percent ?? 0;
     return (
-      <div className="summary-audio" data-testid="summary-audio-active">
+      <div className="summary-audio" data-testid="summary-audio-active" role="status">
         <button type="button" className="ghost-button compact-button" disabled>
-          Creating audio…
+          {copy.creating}
         </button>
-        <span className="muted-text">{state?.progress_percent ?? 0}%</span>
+        <progress max={100} value={percent} aria-label={copy.creating} />
+        <span className="muted-text">{percent}%</span>
       </div>
     );
   }
@@ -83,10 +125,12 @@ export function SummaryAudioControls({
         onClick={() => void handleCreate()}
         disabled={busy}
       >
-        {busy ? "Creating audio…" : state?.status === "failed" ? "Try audio again" : "Create audio"}
+        {busy ? copy.creating : state?.status === "failed" ? copy.retry : copy.create}
       </button>
       {state?.status === "failed" && state.error_message ? (
-        <span className="error-text">{state.error_message}</span>
+        <span className="error-text" role="alert">
+          {state.error_message}
+        </span>
       ) : null}
     </div>
   );

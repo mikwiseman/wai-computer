@@ -217,8 +217,10 @@ export function PasswordField({
   const toggleLabel = visible ? copy.hide : copy.show;
 
   return (
-    <label htmlFor={id}>
-      <span>{label}</span>
+    <div>
+      <label htmlFor={id}>
+        <span>{label}</span>
+      </label>
       <span style={WRAP_STYLE}>
         <input
           id={id}
@@ -300,6 +302,6 @@ export function PasswordField({
           </span>
         </div>
       ) : null}
-    </label>
+    </div>
   );
 }

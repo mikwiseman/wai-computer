@@ -308,8 +308,9 @@ describe("DictatePanel recording lifecycle", () => {
     act(() => {
       lastTranscriber().opts.onUpdate?.({ committed: "hello", interim: "world" });
     });
-    expect(screen.getByText("hello")).toBeTruthy();
-    expect(screen.getByText("world")).toBeTruthy();
+    // Committed text is a polite live region; interim is hidden from SRs.
+    expect(screen.getByText("hello")).toHaveAttribute("aria-live", "polite");
+    expect(screen.getByText("world")).toHaveAttribute("aria-hidden", "true");
   });
 
   it("starts a wall-clock timer when the transcriber is recording, then clears it on error", async () => {

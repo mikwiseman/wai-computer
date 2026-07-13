@@ -79,7 +79,9 @@ describe("OnboardingClient", () => {
     fireEvent.click(screen.getByRole("button", { name: "Record" }));
 
     await waitFor(() => {
-      expect(screen.getByText("Microphone blocked")).toBeInTheDocument();
+      // Raw getUserMedia exceptions stay in the console; the UI shows the
+      // localized copy so RU users aren't handed an English DOMException.
+      expect(screen.getByText("Could not start microphone")).toBeInTheDocument();
     });
   });
 

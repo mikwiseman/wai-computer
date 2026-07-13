@@ -47,9 +47,9 @@ const COPY: Record<BillingResultLocale, Record<BillingResultKind, Copy>> = {
     },
     cancel: {
       eyebrow: "Подписка",
-      title: "Оплата не прошла",
+      title: "Оплата отменена",
       body:
-        "Платёж не был подтверждён: банк отклонил операцию или форма оплаты была закрыта. Попробуй другую карту или повтори оплату из WaiComputer.",
+        "Платёж не был выполнен — деньги не списаны. Вы можете вернуться в WaiComputer и попробовать снова в любой момент.",
       cta: "Открыть WaiComputer →",
       redirectNotice: "",
     },

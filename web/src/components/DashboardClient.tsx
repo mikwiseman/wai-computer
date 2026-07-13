@@ -1129,7 +1129,9 @@ export function DashboardClient() {
         router.replace("/login");
         return;
       }
-      showStatus(text);
+      // Boot failure leaves the whole dashboard degraded — keep the error on
+      // screen (errors don't auto-dismiss) instead of a 4-second status blip.
+      showError(text);
     } finally {
       setInitializing(false);
       setRefreshing(false);

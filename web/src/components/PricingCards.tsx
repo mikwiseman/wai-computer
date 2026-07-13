@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
+import { getCurrentUser } from "@/lib/api";
 import { createBillingCheckout } from "@/lib/billing";
 
 type Locale = "en" | "ru";
@@ -51,7 +52,7 @@ const COPY: Record<
     sub: "Free for everyday voice notes. Pro when you need it everywhere.",
     monthly: "Monthly",
     yearly: "Yearly",
-    save: "Save 20%",
+    save: "Save 33%",
     free: {
       name: "Free",
       price: "$0",
@@ -96,7 +97,7 @@ const COPY: Record<
     sub: "Бесплатно для повседневных голосовых заметок. Pro — когда WaiComputer нужен везде.",
     monthly: "Помесячно",
     yearly: "Годовая",
-    save: "−20%",
+    save: "−33%",
     free: {
       name: "Бесплатный",
       price: "0 ₽",
@@ -151,11 +152,31 @@ interface Props {
 export function PricingCards({
   locale,
   currency,
-  signedIn = false,
+  signedIn,
   loginPath = "/login",
 }: Props) {
   const copy = COPY[locale];
   const [period, setPeriod] = useState<"month" | "year">("month");
+  // The server pages render this component without auth context. When the
+  // prop is absent, resolve the session client-side so signed-in visitors get
+  // a real checkout button instead of a login wall. The prop, when provided,
+  // always wins (computed at render, no state echo).
+  const [detectedSignedIn, setDetectedSignedIn] = useState(false);
+  const resolvedSignedIn = signedIn ?? detectedSignedIn;
+  useEffect(() => {
+    if (signedIn !== undefined) return;
+    let cancelled = false;
+    getCurrentUser()
+      .then(() => {
+        if (!cancelled) setDetectedSignedIn(true);
+      })
+      .catch(() => {
+        if (!cancelled) setDetectedSignedIn(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [signedIn]);
   // RU UI users can pay with T-Bank (RUB) or Stripe (USD). Other locales always Stripe.
   const [provider, setProvider] = useState<Provider>(
     locale === "ru" && currency === "rub" ? "tinkoff" : "stripe",
@@ -181,7 +202,7 @@ export function PricingCards({
 
   async function handleUpgrade() {
     setError(null);
-    if (!signedIn) {
+    if (!resolvedSignedIn) {
       window.location.href = `${loginPath}?returnTo=/billing`;
       return;
     }
@@ -213,17 +234,17 @@ export function PricingCards({
         <p>{copy.sub}</p>
       </header>
 
-      <div className="pricing-toggle" role="tablist">
+      <div className="pricing-toggle" role="group" aria-label={copy.monthly + " / " + copy.yearly}>
         <button
-          role="tab"
-          aria-selected={period === "month"}
+          type="button"
+          aria-pressed={period === "month"}
           onClick={() => setPeriod("month")}
         >
           {copy.monthly}
         </button>
         <button
-          role="tab"
-          aria-selected={period === "year"}
+          type="button"
+          aria-pressed={period === "year"}
           onClick={() => setPeriod("year")}
         >
           {copy.yearly} <span className="pricing-save">{copy.save}</span>
@@ -239,7 +260,7 @@ export function PricingCards({
               <li key={f}>{f}</li>
             ))}
           </ul>
-          <Link className="pricing-cta pricing-cta--free" href={signedIn ? "/dashboard" : "/register"}>
+          <Link className="pricing-cta pricing-cta--free" href={resolvedSignedIn ? "/dashboard" : "/register"}>
             {copy.free.cta}
           </Link>
         </article>
@@ -336,10 +357,11 @@ export function PricingCards({
             className="pricing-cta"
             onClick={handleUpgrade}
             disabled={
-              inFlight || (signedIn && requiresRecurringConsent && !acceptedRecurring)
+              inFlight ||
+              (resolvedSignedIn && requiresRecurringConsent && !acceptedRecurring)
             }
           >
-            {inFlight ? copy.pro.ctaInFlight : signedIn ? copy.pro.cta : copy.signInPrompt}
+            {inFlight ? copy.pro.ctaInFlight : resolvedSignedIn ? copy.pro.cta : copy.signInPrompt}
           </button>
           {error ? <p className="pricing-error">{error}</p> : null}
         </article>

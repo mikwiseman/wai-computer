@@ -344,6 +344,7 @@ export function ItemDetail({
       {summary?.summary ? (
         <section className="item-detail__section">
           <SummaryAudioControls
+            locale={locale}
             state={item.summary_audio}
             onCreate={handleCreateAudio}
             onDownload={handleDownloadAudio}

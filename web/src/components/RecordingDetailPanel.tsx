@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   createRecordingShareLink,
   downloadRecordingSummaryAudio,
@@ -332,6 +332,42 @@ export function RecordingDetailPanel({
         ["summary", copy.tabSummary],
       ] as const,
     [copy.tabTranscript, copy.tabSummary],
+  );
+  const tabRefs = useRef<Record<Tab, HTMLButtonElement | null>>({
+    transcript: null,
+    summary: null,
+  });
+
+  // WAI-ARIA Tabs pattern with automatic activation: arrow keys (and Home/End)
+  // move focus between tabs and select the focused one, so the whole tab strip
+  // is reachable without a pointer.
+  const handleTabKeyDown = useCallback(
+    (event: React.KeyboardEvent<HTMLButtonElement>) => {
+      const order = tabs.map(([key]) => key);
+      const currentIndex = order.indexOf(tab);
+      let nextIndex: number;
+      switch (event.key) {
+        case "ArrowRight":
+          nextIndex = (currentIndex + 1) % order.length;
+          break;
+        case "ArrowLeft":
+          nextIndex = (currentIndex - 1 + order.length) % order.length;
+          break;
+        case "Home":
+          nextIndex = 0;
+          break;
+        case "End":
+          nextIndex = order.length - 1;
+          break;
+        default:
+          return;
+      }
+      event.preventDefault();
+      const nextKey = order[nextIndex];
+      setTab(nextKey);
+      tabRefs.current[nextKey]?.focus();
+    },
+    [tab, tabs],
   );
 
   useEffect(() => {
@@ -671,10 +707,14 @@ export function RecordingDetailPanel({
             className="tab-button"
             type="button"
             role="tab"
+            ref={(el) => {
+              tabRefs.current[key] = el;
+            }}
             aria-selected={tab === key}
             aria-controls={`recording-panel-${key}`}
             tabIndex={tab === key ? 0 : -1}
             onClick={() => setTab(key)}
+            onKeyDown={handleTabKeyDown}
           >
             {label}
           </button>
@@ -710,6 +750,7 @@ export function RecordingDetailPanel({
             onCreateAudio={handleCreateSummaryAudio}
             onDownloadAudio={handleDownloadSummaryAudio}
             copy={copy}
+            locale={locale}
           />
         )}
       </div>
@@ -872,6 +913,7 @@ function SummaryTab({
   onCreateAudio,
   onDownloadAudio,
   copy,
+  locale,
 }: {
   recording: RecordingDetail;
   summary: Summary | null;
@@ -884,6 +926,7 @@ function SummaryTab({
   onCreateAudio: () => Promise<void>;
   onDownloadAudio: () => Promise<Blob>;
   copy: DetailCopy;
+  locale: DetailLocale;
 }) {
   if (!summary) {
     const status = summaryGeneration?.status ?? "not_started";
@@ -970,6 +1013,7 @@ function SummaryTab({
         </div>
       </div>
       <SummaryAudioControls
+        locale={locale}
         state={summaryAudio}
         onCreate={onCreateAudio}
         onDownload={onDownloadAudio}
