@@ -478,6 +478,7 @@ describe("AdminConsoleClient — error and branch coverage", () => {
       reason: "cancellation pending",
     });
     await userEvent.click(within(tinkoffItem).getByRole("button", { name: "Run renewal now" }));
+    await userEvent.click(await screen.findByTestId("admin-confirm-action"));
 
     expect(await screen.findByText("Renewal skipped: cancellation pending.")).toBeInTheDocument();
   });
@@ -487,6 +488,7 @@ describe("AdminConsoleClient — error and branch coverage", () => {
 
     mockedRunRenewal.mockResolvedValueOnce({ charged: false, skipped: true });
     await userEvent.click(within(tinkoffItem).getByRole("button", { name: "Run renewal now" }));
+    await userEvent.click(await screen.findByTestId("admin-confirm-action"));
 
     expect(await screen.findByText("Renewal skipped: not eligible.")).toBeInTheDocument();
   });
@@ -496,6 +498,7 @@ describe("AdminConsoleClient — error and branch coverage", () => {
 
     mockedRunRenewal.mockResolvedValueOnce({ charged: false, status: "past_due" });
     await userEvent.click(within(tinkoffItem).getByRole("button", { name: "Run renewal now" }));
+    await userEvent.click(await screen.findByTestId("admin-confirm-action"));
 
     expect(
       await screen.findByText("Renewal attempt failed at the provider (status: past_due)."),
@@ -507,6 +510,7 @@ describe("AdminConsoleClient — error and branch coverage", () => {
 
     mockedRunRenewal.mockResolvedValueOnce({ charged: false });
     await userEvent.click(within(tinkoffItem).getByRole("button", { name: "Run renewal now" }));
+    await userEvent.click(await screen.findByTestId("admin-confirm-action"));
 
     expect(
       await screen.findByText("Renewal attempt failed at the provider (status: unknown)."),
@@ -518,6 +522,7 @@ describe("AdminConsoleClient — error and branch coverage", () => {
 
     mockedRunRenewal.mockRejectedValueOnce(new Error("renewal exploded"));
     await userEvent.click(within(tinkoffItem).getByRole("button", { name: "Run renewal now" }));
+    await userEvent.click(await screen.findByTestId("admin-confirm-action"));
 
     expect(await screen.findByText("renewal exploded")).toBeInTheDocument();
   });

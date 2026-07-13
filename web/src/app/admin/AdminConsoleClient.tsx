@@ -65,6 +65,15 @@ type PromoDraft = {
   expires_at: string; // yyyy-mm-dd; "" means no expiry
 };
 
+// A pending confirmation for a destructive or money-moving action. The action
+// only runs once the admin confirms in the modal.
+type ConfirmRequest = {
+  title: string;
+  body: string;
+  confirmLabel: string;
+  onConfirm: () => void;
+};
+
 const TABS: Array<{ id: AdminTab; label: string }> = [
   { id: "overview", label: "Overview" },
   { id: "promos", label: "Promo codes" },
@@ -229,6 +238,7 @@ export function AdminConsoleClient() {
     grantDays: 30,
   });
   const [billingReason, setBillingReason] = useState("");
+  const [confirm, setConfirm] = useState<ConfirmRequest | null>(null);
 
   async function refreshAll() {
     setError(null);
@@ -455,8 +465,8 @@ export function AdminConsoleClient() {
           </button>
         </div>
 
-        {message ? <p className="inline-success">{message}</p> : null}
-        {error ? <p className="inline-alert">{error}</p> : null}
+        {message ? <p className="inline-success" role="status">{message}</p> : null}
+        {error ? <p className="inline-alert" role="status">{error}</p> : null}
         {busy ? <p className="muted-text">Loading…</p> : null}
 
         {tab === "overview" && stats ? (
@@ -557,6 +567,7 @@ export function AdminConsoleClient() {
               drafts={promoDrafts}
               setDrafts={setPromoDrafts}
               busy={busy}
+              requestConfirm={setConfirm}
               onSave={(promoId) =>
                 runAction(async () => {
                   const draft = promoDrafts[promoId];
@@ -593,32 +604,46 @@ export function AdminConsoleClient() {
                 <input value={userQuery} onChange={(event) => setUserQuery(event.target.value)} placeholder="email or id" />
                 <button type="submit" disabled={busy}>Search</button>
               </form>
-              <table className="admin-table">
-                <thead>
-                  <tr>
-                    <th>Email</th>
-                    <th>Status</th>
-                    <th>Plan</th>
-                    <th>Words</th>
-                    <th>Hours</th>
-                    <th>AI tokens</th>
-                    <th>Money</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {users.map((user) => (
-                    <tr key={user.id} onClick={() => void openUser(user.id)}>
-                      <td>{user.email}</td>
-                      <td>{user.account_status}</td>
-                      <td>{user.current_plan}</td>
-                      <td>{fmtNumber(user.dictation_words + user.recording_words)}</td>
-                      <td>{fmtHours(user.transcription_duration_seconds)}</td>
-                      <td>{fmtNumber(user.companion_total_tokens)}</td>
-                      <td>{fmtMoneyByCurrency(user.revenue_by_currency)}</td>
+              <div className="admin-table-wrap">
+                <table className="admin-table">
+                  <thead>
+                    <tr>
+                      <th>Email</th>
+                      <th>Status</th>
+                      <th>Plan</th>
+                      <th>Words</th>
+                      <th>Hours</th>
+                      <th>AI tokens</th>
+                      <th>Money</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {users.map((user) => (
+                      <tr
+                        key={user.id}
+                        role="button"
+                        tabIndex={0}
+                        aria-label={`Open ${user.email}`}
+                        onClick={() => void openUser(user.id)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter" || event.key === " ") {
+                            event.preventDefault();
+                            void openUser(user.id);
+                          }
+                        }}
+                      >
+                        <td>{user.email}</td>
+                        <td>{user.account_status}</td>
+                        <td>{user.current_plan}</td>
+                        <td>{fmtNumber(user.dictation_words + user.recording_words)}</td>
+                        <td>{fmtHours(user.transcription_duration_seconds)}</td>
+                        <td>{fmtNumber(user.companion_total_tokens)}</td>
+                        <td>{fmtMoneyByCurrency(user.revenue_by_currency)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
             {selectedUser ? (
               <div className="admin-detail-panel">
@@ -653,7 +678,7 @@ export function AdminConsoleClient() {
                     setSelectedUser(await getAdminUser(selectedUser.id));
                   }, "Admin Pro granted.")}>Grant Pro</button>
                 </div>
-                <BillingList subscriptions={selectedUserBilling} reason={billingReason} setReason={setBillingReason} busy={busy} runAction={runAction} onRunRenewal={handleRunRenewal} />
+                <BillingList subscriptions={selectedUserBilling} reason={billingReason} setReason={setBillingReason} busy={busy} runAction={runAction} onRunRenewal={handleRunRenewal} requestConfirm={setConfirm} />
               </div>
             ) : null}
           </div>
@@ -664,7 +689,7 @@ export function AdminConsoleClient() {
             <div className="admin-action-row admin-action-row--wide">
               <input value={billingReason} onChange={(event) => setBillingReason(event.target.value)} placeholder="billing reason" />
             </div>
-            <BillingList subscriptions={billing} reason={billingReason} setReason={setBillingReason} busy={busy} runAction={runAction} onRunRenewal={handleRunRenewal} />
+            <BillingList subscriptions={billing} reason={billingReason} setReason={setBillingReason} busy={busy} runAction={runAction} onRunRenewal={handleRunRenewal} requestConfirm={setConfirm} />
           </div>
         ) : null}
 
@@ -995,29 +1020,65 @@ export function AdminConsoleClient() {
 
         {tab === "audit" ? (
           <div className="admin-section">
-            <table className="admin-table">
-              <thead>
-                <tr>
-                  <th>Time</th>
-                  <th>Action</th>
-                  <th>Target</th>
-                  <th>Reason</th>
-                </tr>
-              </thead>
-              <tbody>
-                {audit.map((item) => (
-                  <tr key={item.id}>
-                    <td>{fmtDate(item.created_at)}</td>
-                    <td>{item.action}</td>
-                    <td>{item.target_type}:{item.target_id}</td>
-                    <td>{item.reason ?? "-"}</td>
+            <div className="admin-table-wrap">
+              <table className="admin-table">
+                <thead>
+                  <tr>
+                    <th>Time</th>
+                    <th>Action</th>
+                    <th>Target</th>
+                    <th>Reason</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {audit.map((item) => (
+                    <tr key={item.id}>
+                      <td>{fmtDate(item.created_at)}</td>
+                      <td>{item.action}</td>
+                      <td>{item.target_type}:{item.target_id}</td>
+                      <td>{item.reason ?? "-"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
         ) : null}
       </section>
+
+      {confirm ? (
+        <div
+          className="modal-backdrop"
+          role="dialog"
+          aria-modal="true"
+          data-testid="admin-confirm-modal"
+          onClick={(event) => {
+            if (event.target === event.currentTarget) setConfirm(null);
+          }}
+        >
+          <div className="modal-card">
+            <h3>{confirm.title}</h3>
+            <p>{confirm.body}</p>
+            <div className="modal-actions">
+              <button type="button" className="ghost-button" onClick={() => setConfirm(null)}>
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="ghost-button danger-button"
+                data-testid="admin-confirm-action"
+                onClick={() => {
+                  const run = confirm.onConfirm;
+                  setConfirm(null);
+                  run();
+                }}
+              >
+                {confirm.confirmLabel}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </main>
   );
 }
@@ -1523,6 +1584,7 @@ function PromoTable({
   drafts,
   setDrafts,
   busy,
+  requestConfirm,
   onSave,
   onToggle,
   onArchive,
@@ -1531,6 +1593,7 @@ function PromoTable({
   drafts: Record<string, PromoDraft>;
   setDrafts: Dispatch<SetStateAction<Record<string, PromoDraft>>>;
   busy: boolean;
+  requestConfirm: (request: ConfirmRequest) => void;
   onSave: (promoId: string) => Promise<void>;
   onToggle: (promo: AdminPromoCode) => Promise<void>;
   onArchive: (promo: AdminPromoCode) => Promise<void>;
@@ -1598,7 +1661,12 @@ function PromoTable({
                 <td className="admin-row-actions">
                   <button type="button" className="ghost-button compact-button" disabled={busy} onClick={() => void onSave(promo.id)}>Save</button>
                   <button type="button" className="ghost-button compact-button" disabled={busy} onClick={() => void onToggle(promo)}>{promo.active ? "Pause" : "Resume"}</button>
-                  <button type="button" className="ghost-button compact-button danger-button" disabled={busy} onClick={() => void onArchive(promo)}>Archive</button>
+                  <button type="button" className="ghost-button compact-button danger-button" disabled={busy} onClick={() => requestConfirm({
+                    title: "Archive promo code?",
+                    body: `Archiving ${code} stops all future redemptions and can't be undone.`,
+                    confirmLabel: "Archive",
+                    onConfirm: () => void onArchive(promo),
+                  })}>Archive</button>
                 </td>
               </tr>
             );
@@ -1666,6 +1734,7 @@ function BillingList({
   busy,
   runAction,
   onRunRenewal,
+  requestConfirm,
 }: {
   subscriptions: AdminBillingSubscription[];
   reason: string;
@@ -1673,6 +1742,7 @@ function BillingList({
   busy: boolean;
   runAction: (action: () => Promise<void>, success: string) => Promise<void>;
   onRunRenewal: (id: string) => void;
+  requestConfirm: (request: ConfirmRequest) => void;
 }) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draft, setDraft] = useState<SubEditDraft | null>(null);
@@ -1702,14 +1772,24 @@ function BillingList({
                 }
               }}>{editingId === sub.id ? "Close" : "Edit"}</button>
               {sub.provider === "tinkoff" ? (
-                <button type="button" className="ghost-button compact-button" disabled={busy} onClick={() => onRunRenewal(sub.id)}>Run renewal now</button>
+                <button type="button" className="ghost-button compact-button" disabled={busy} onClick={() => requestConfirm({
+                  title: "Run renewal now?",
+                  body: `This charges ${sub.user_email}'s card for the ${sub.plan} ${sub.billing_period} plan immediately.`,
+                  confirmLabel: "Charge now",
+                  onConfirm: () => onRunRenewal(sub.id),
+                })}>Run renewal now</button>
               ) : null}
               <button type="button" className="ghost-button compact-button" disabled={busy} onClick={() => void runAction(async () => {
                 await cancelAdminSubscription(sub.id, { mode: "period_end", reason: reason || null });
               }, "Subscription cancellation scheduled.")}>Cancel later</button>
-              <button type="button" className="ghost-button compact-button danger-button" disabled={busy} onClick={() => void runAction(async () => {
-                await cancelAdminSubscription(sub.id, { mode: "immediate", reason: reason || null });
-              }, "Subscription canceled.")}>Cancel now</button>
+              <button type="button" className="ghost-button compact-button danger-button" disabled={busy} onClick={() => requestConfirm({
+                title: "Cancel subscription now?",
+                body: `${sub.user_email} loses Pro access immediately. This can't be undone.`,
+                confirmLabel: "Cancel subscription",
+                onConfirm: () => void runAction(async () => {
+                  await cancelAdminSubscription(sub.id, { mode: "immediate", reason: reason || null });
+                }, "Subscription canceled."),
+              })}>Cancel now</button>
               <button type="button" className="ghost-button compact-button" disabled={busy} onClick={() => void runAction(async () => {
                 await resumeAdminSubscription(sub.id, { reason: reason || null });
               }, "Subscription resumed.")}>Resume</button>
@@ -1791,9 +1871,14 @@ function BillingList({
                     <td>{invoice.status}</td>
                     <td>{fmtDate(invoice.paid_at)}</td>
                     <td>
-                      <button type="button" className="ghost-button compact-button danger-button" disabled={busy || invoice.status !== "paid"} onClick={() => void runAction(async () => {
-                        await refundAdminInvoice(invoice.id, { amount_minor: null, reason: reason || "requested_by_customer" });
-                      }, "Invoice refunded.")}>Refund</button>
+                      <button type="button" className="ghost-button compact-button danger-button" disabled={busy || invoice.status !== "paid"} onClick={() => requestConfirm({
+                        title: "Refund invoice?",
+                        body: `Refund ${invoice.amount} ${invoice.currency} to ${sub.user_email}? This can't be undone.`,
+                        confirmLabel: "Refund",
+                        onConfirm: () => void runAction(async () => {
+                          await refundAdminInvoice(invoice.id, { amount_minor: null, reason: reason || "requested_by_customer" });
+                        }, "Invoice refunded."),
+                      })}>Refund</button>
                     </td>
                   </tr>
                 ))}

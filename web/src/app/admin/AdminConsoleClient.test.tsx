@@ -840,6 +840,7 @@ describe("AdminConsoleClient", () => {
     await waitFor(() => expect(mockedUpdatePromo).toHaveBeenCalledWith("promo-1", { active: false }));
 
     await userEvent.click(within(row as HTMLTableRowElement).getByRole("button", { name: "Archive" }));
+    await userEvent.click(await screen.findByTestId("admin-confirm-action"));
 
     await waitFor(() => expect(mockedArchivePromo).toHaveBeenCalledWith("promo-1"));
   });
@@ -890,6 +891,7 @@ describe("AdminConsoleClient", () => {
     );
 
     await userEvent.click(within(stripeItem).getByRole("button", { name: "Cancel now" }));
+    await userEvent.click(await screen.findByTestId("admin-confirm-action"));
     await waitFor(() =>
       expect(mockedCancelSubscription).toHaveBeenCalledWith("sub-1", {
         mode: "immediate",
@@ -905,10 +907,43 @@ describe("AdminConsoleClient", () => {
     );
 
     await userEvent.click(within(stripeItem).getByRole("button", { name: "Refund" }));
+    await userEvent.click(await screen.findByTestId("admin-confirm-action"));
     await waitFor(() =>
       expect(mockedRefundInvoice).toHaveBeenCalledWith("invoice-1", {
         amount_minor: null,
         reason: "billing issue",
+      }),
+    );
+  });
+
+  it("gates a destructive billing action behind the confirm modal", async () => {
+    render(<AdminConsoleClient />);
+
+    await screen.findByText("Total users");
+    await userEvent.click(screen.getByRole("button", { name: "Billing" }));
+    const stripeItem = (await screen.findByText("stripe · pro · active · renewing")).closest(
+      "section",
+    ) as HTMLElement;
+
+    // Clicking the row action opens the confirmation but does not cancel yet.
+    await userEvent.click(within(stripeItem).getByRole("button", { name: "Cancel now" }));
+    expect(await screen.findByTestId("admin-confirm-modal")).toBeInTheDocument();
+    expect(mockedCancelSubscription).not.toHaveBeenCalled();
+
+    // Dismissing the modal leaves the subscription untouched.
+    await userEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    await waitFor(() =>
+      expect(screen.queryByTestId("admin-confirm-modal")).not.toBeInTheDocument(),
+    );
+    expect(mockedCancelSubscription).not.toHaveBeenCalled();
+
+    // Re-opening and confirming performs the immediate cancel.
+    await userEvent.click(within(stripeItem).getByRole("button", { name: "Cancel now" }));
+    await userEvent.click(await screen.findByTestId("admin-confirm-action"));
+    await waitFor(() =>
+      expect(mockedCancelSubscription).toHaveBeenCalledWith("sub-1", {
+        mode: "immediate",
+        reason: null,
       }),
     );
   });
@@ -971,6 +1006,7 @@ describe("AdminConsoleClient", () => {
       "section",
     ) as HTMLElement;
     await userEvent.click(within(tinkoffItem).getByRole("button", { name: "Run renewal now" }));
+    await userEvent.click(await screen.findByTestId("admin-confirm-action"));
 
     await waitFor(() =>
       expect(mockedRunRenewal).toHaveBeenCalledWith("sub-tinkoff", { reason: null }),
