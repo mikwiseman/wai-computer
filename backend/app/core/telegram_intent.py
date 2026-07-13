@@ -140,6 +140,95 @@ async def classify_voice_transcript(
     return VoiceRouteDecision("file", f"{parsed.target}_{parsed.confidence}")
 
 
+CaptionRoute = Literal["question", "label"]
+
+
+@dataclass(frozen=True)
+class CaptionRouteDecision:
+    """Whether a photo caption is a question for Wai or an archival label.
+
+    ``route`` is ``"question"`` (answer the caption about the image, then file it)
+    or ``"label"`` (historical flow: OCR + summarise + file). ``reason`` is a short
+    machine tag for logs, never shown to the user.
+    """
+
+    route: CaptionRoute
+    reason: str
+
+
+class _CaptionIntentSchema(BaseModel):
+    target: Literal["assistant", "archive"]
+    confidence: Literal["high", "medium", "low"]
+    reason: str
+
+
+async def classify_photo_caption(caption: str) -> CaptionRouteDecision:
+    """Classify a photo caption: a question addressed to Wai, or a filing label?
+
+    Mirrors the voice-note policy: filing is lossless (the photo is saved either
+    way), answering instead of filing changes what the user gets back — so the
+    default on any uncertainty or classifier failure is ``label``, with a distinct
+    ``reason`` so the degradation is observable rather than silent.
+    """
+    text = (caption or "").strip()
+    if not text:
+        return CaptionRouteDecision("label", "empty_caption")
+
+    settings = get_settings()
+    if not settings.cerebras_api_key:
+        return CaptionRouteDecision("label", "classifier_unconfigured")
+
+    client = get_cerebras_client()
+    try:
+        response = await client.chat.completions.create(
+            model=settings.cerebras_llm_model,
+            messages=[
+                {"role": "system", "content": _CAPTION_CLASSIFIER_PROMPT},
+                {"role": "user", "content": f'Photo caption: "{text[:1200]}"'},
+            ],
+            response_format=strict_json_response_format(
+                _CaptionIntentSchema, name="caption_intent"
+            ),
+            reasoning_effort="low",
+            max_completion_tokens=512,
+        )
+        parsed = chat_completion_parsed(
+            response, _CaptionIntentSchema, operation="Caption intent"
+        )
+    except Exception as exc:  # noqa: BLE001 — any classifier failure routes to the safe default
+        logger.warning("caption intent classification failed error=%s", type(exc).__name__)
+        return CaptionRouteDecision("label", "classifier_error")
+
+    if parsed.target == "assistant" and parsed.confidence in {"high", "medium"}:
+        return CaptionRouteDecision("question", f"assistant_{parsed.confidence}")
+    return CaptionRouteDecision("label", f"{parsed.target}_{parsed.confidence}")
+
+
+_CAPTION_CLASSIFIER_PROMPT = """\
+You route a photo (or photo album) sent with a caption to Wai, a "second brain"
+assistant, through its Telegram bot. Decide what the caption is.
+
+- "assistant": the caption asks Wai about the image or tells Wai to do something
+  with it — a question, a command, a request that expects an answer. Examples:
+  "что это?", "переведи", "сколько тут калорий?", "who is this?", "выпиши все
+  цифры", "правильно ли составлен договор?", "summarize this slide", "объясни
+  этот график".
+- "archive": the caption is a label, title, or context note for saving the photo —
+  no answer expected. Examples: "чек за обед", "слайды с митапа", "договор
+  аренды", "паспорт кота", "whiteboard after planning", a date, a project name.
+
+Rules:
+- A question mark or an imperative aimed at Wai (translate, extract, explain,
+  count, check, compare) is "assistant".
+- A bare noun phrase naming what the photo IS is "archive".
+- When genuinely unsure, choose "archive" with low confidence — saving with a
+  label is always safe; answering instead of labelling is not.
+
+Return JSON: {"target": "assistant"|"archive", "confidence": "high"|"medium"|"low",
+"reason": "<= 8 words"}.
+"""
+
+
 _CLASSIFIER_PROMPT = """\
 You route a single short VOICE message sent to Wai, a voice-first "second brain"
 assistant, through its Telegram bot. Decide who the message is addressed to.

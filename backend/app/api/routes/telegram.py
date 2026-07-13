@@ -63,7 +63,7 @@ from app.core.document_extract import (
     extract_document_text,
     resolve_document_extension,
 )
-from app.core.item_ingest import ingest_item
+from app.core.item_ingest import enqueue_item_processing, ingest_item
 from app.core.item_processing import process_item, summarize_and_embed_item
 from app.core.item_telegram import format_fetch_error_reply, format_item_reply
 from app.core.item_titles import clean_title, title_from_filename
@@ -71,7 +71,7 @@ from app.core.mcp_tools import (
     list_action_items_for_mcp,
     list_recordings_for_mcp,
 )
-from app.core.ocr import OcrError, ocr_image
+from app.core.ocr import OcrError, answer_about_images, ocr_image
 from app.core.recording_import import (
     RecordingImportError,
     TranscribedMedia,
@@ -91,6 +91,7 @@ from app.core.telegram_client import (
 from app.core.telegram_format import ru_plural, telegram_html
 from app.core.telegram_intent import (
     VoiceRouteDecision,
+    classify_photo_caption,
     classify_voice_transcript,
     route_voice_by_metadata,
 )
@@ -3440,6 +3441,26 @@ async def _handle_photo_message(
         )
         return
 
+    question_caption = str(message.get("caption") or "").strip()
+    if question_caption:
+        caption_route = await classify_photo_caption(question_caption)
+        # Privacy-safe: only the route + reason tag, never the caption itself.
+        logger.info(
+            "telegram photo caption routed route=%s reason=%s",
+            caption_route.route,
+            caption_route.reason,
+        )
+        if caption_route.route == "question":
+            await _answer_photo_question(
+                db,
+                client,
+                message=message,
+                account=account,
+                photo=photo,
+                caption=question_caption,
+            )
+            return
+
     status_response = await client.send_message(
         chat_id,
         "Принял фото. Распознаю и делаю краткое содержание.",
@@ -3549,6 +3570,108 @@ async def _handle_photo_message(
         reply_to_message_id=message.get("message_id"),
         parse_mode="HTML",
     )
+
+
+async def _answer_photo_question(
+    db: AsyncSession,
+    client: TelegramBotClient,
+    *,
+    message: dict[str, Any],
+    account: TelegramAccount,
+    photo: dict[str, Any],
+    caption: str,
+) -> None:
+    """A photo whose caption is addressed to Wai: answer the caption about the
+    image, then file the photo + answer as a material (lossless either way).
+
+    The answer is the reply; filing happens quietly afterwards so the user isn't
+    spammed with a second summary of the same photo."""
+    chat_id = _telegram_chat_id(message)
+    if chat_id is None:
+        return
+    file_id = str(photo.get("file_id"))
+
+    status_response = await client.send_message(
+        chat_id,
+        "Смотрю на фото и отвечаю.",
+        reply_to_message_id=message.get("message_id"),
+    )
+    status_message_id = _sent_message_id(status_response)
+    action_task = asyncio.create_task(_send_chat_action_until_cancelled(client, chat_id))
+    try:
+        downloaded = await _download_telegram_media(
+            db,
+            client,
+            account=account,
+            message=message,
+            file_id=file_id,
+            status_message_id=status_message_id,
+        )
+        if downloaded is None:
+            return
+        data, _file_path = downloaded
+        mime_type = str(photo.get("mime_type") or "image/jpeg")
+        try:
+            answer = await answer_about_images(
+                [(data, mime_type)], question=caption
+            )
+        except OcrError:
+            await _delete_status_message(
+                client, chat_id=chat_id, message_id=status_message_id
+            )
+            await client.send_message(
+                chat_id,
+                "Не смог ответить по этому фото. Попробуй ещё раз позже.",
+                reply_to_message_id=message.get("message_id"),
+            )
+            return
+    finally:
+        await _stop_chat_action_task(action_task)
+
+    await _delete_status_message(client, chat_id=chat_id, message_id=status_message_id)
+    await _send_chunks(
+        client,
+        chat_id,
+        telegram_html(answer),
+        reply_to_message_id=message.get("message_id"),
+        parse_mode="HTML",
+    )
+
+    # File the photo + answer as a material so the exchange lands in the brain.
+    source_ref = str(photo.get("file_unique_id") or file_id)
+    try:
+        item, created = await ingest_item(
+            db,
+            account.user_id,
+            source="telegram",
+            source_ref=source_ref,
+            kind="image",
+            title=clean_title(caption) or "Фото",
+            body=f"Вопрос: {caption}\n\nОтвет: {answer}",
+            metadata={
+                "telegram": {
+                    "file_unique_id": photo.get("file_unique_id"),
+                    "mime_type": photo.get("mime_type"),
+                    "kind": photo.get("kind"),
+                    "size": len(data),
+                },
+                "vision_qa": True,
+            },
+            embed=True,
+        )
+        await db.flush()
+        if created:
+            await enqueue_item_processing(db, item)
+        await _set_telegram_active_context(
+            db, account, ref_type="item", ref_id=item.id, title=item.title
+        )
+    except Exception:  # noqa: BLE001 - the answer was delivered; filing failure must still be visible.
+        logger.exception("telegram photo question ingest failed")
+        await client.send_message(
+            chat_id,
+            "Ответил, но не смог сохранить фото в материалы.",
+            reply_to_message_id=message.get("message_id"),
+        )
 
 
 def _is_forwarded(message: dict[str, Any]) -> bool:

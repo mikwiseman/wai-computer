@@ -132,3 +132,65 @@ async def ocr_image(
         return response_output_text(response).strip()
     except OpenAIResponseError:
         return ""
+
+
+_ANSWER_INSTRUCTION = (
+    "You are Wai, the user's second-brain assistant. The user sent {count} "
+    "image(s) with the message below. Answer that message directly, grounded "
+    "ONLY in what the image(s) show. If asked to transcribe or translate, be "
+    "verbatim and complete. Reply in the same language as the user's message. "
+    "Do not describe the images unless asked — answer the question.\n\n"
+    "User's message: {question}"
+)
+
+
+async def answer_about_images(
+    images: list[tuple[bytes, str]],
+    *,
+    question: str,
+    model: str | None = None,
+) -> str:
+    """Answer a user's question about one or more images via the vision LLM.
+
+    ``images`` is a list of ``(data, mime_type)`` pairs in the order the user sent
+    them. Raises :class:`OcrError` on an API failure or an empty answer — the
+    caller surfaces the failure to the user instead of silently filing the photo.
+    """
+    if not images or not question.strip():
+        raise OcrError("Vision answer requires at least one image and a question")
+    settings = get_settings()
+    client = get_openai_client()
+    content: list[dict[str, str]] = [
+        {
+            "type": "input_text",
+            "text": _ANSWER_INSTRUCTION.format(count=len(images), question=question.strip()),
+        }
+    ]
+    for data, mime_type in images:
+        mime = (mime_type or "image/jpeg").split(";")[0].strip().lower()
+        if mime not in _IMAGE_MIME_ALLOWLIST:
+            mime = "image/jpeg"
+        encoded = base64.b64encode(data).decode("ascii")
+        content.append(
+            {
+                "type": "input_image",
+                "image_url": f"data:{mime};base64,{encoded}",
+            }
+        )
+    try:
+        response = await client.responses.create(
+            model=model or settings.openai_llm_model,
+            input=[{"role": "user", "content": content}],
+        )
+        ensure_response_completed(response, operation="Image answer")
+    except Exception as exc:  # noqa: BLE001 — surface any failure as a typed OcrError
+        logger.warning("image answer failed error_type=%s", type(exc).__name__)
+        raise OcrError(f"Image answer request failed: {type(exc).__name__}") from exc
+
+    try:
+        answer = response_output_text(response).strip()
+    except OpenAIResponseError as exc:
+        raise OcrError("Image answer was empty") from exc
+    if not answer:
+        raise OcrError("Image answer was empty")
+    return answer

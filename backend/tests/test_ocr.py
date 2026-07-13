@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from app.core import ocr
-from app.core.ocr import OcrError, ocr_pdf
+from app.core.ocr import OcrError, answer_about_images, ocr_pdf
 
 pytestmark = pytest.mark.asyncio
 
@@ -63,3 +63,53 @@ async def test_ocr_pdf_sends_pdf_as_input_file() -> None:
     assert content[0]["type"] == "input_text"
     assert content[1]["type"] == "input_file"
     assert content[1]["file_data"].startswith("data:application/pdf;base64,")
+
+
+# --- answer_about_images (photo caption Q&A) ---
+
+
+async def test_answer_about_images_sends_question_and_every_image() -> None:
+    captured: dict = {}
+
+    async def fake_create(**kwargs):
+        captured.update(kwargs)
+        return SimpleNamespace(
+            output_text="На чеке 1200 ₽.", status="completed", error=None, output=[]
+        )
+
+    client = SimpleNamespace(responses=SimpleNamespace(create=fake_create))
+    with patch.object(ocr, "get_openai_client", return_value=client):
+        answer = await answer_about_images(
+            [(b"img-one", "image/png"), (b"img-two", "image/jpeg")],
+            question="сколько тут итого?",
+        )
+    assert answer == "На чеке 1200 ₽."
+    content = captured["input"][0]["content"]
+    assert content[0]["type"] == "input_text"
+    assert "сколько тут итого?" in content[0]["text"]
+    assert "2 image(s)" in content[0]["text"]
+    assert [part["type"] for part in content[1:]] == ["input_image", "input_image"]
+    assert content[1]["image_url"].startswith("data:image/png;base64,")
+    assert content[2]["image_url"].startswith("data:image/jpeg;base64,")
+
+
+async def test_answer_about_images_api_failure_raises_ocrerror() -> None:
+    with patch.object(
+        ocr, "get_openai_client", return_value=_fake_client(raises=RuntimeError("boom"))
+    ):
+        with pytest.raises(OcrError):
+            await answer_about_images([(b"img", "image/jpeg")], question="что это?")
+
+
+async def test_answer_about_images_empty_answer_raises_ocrerror() -> None:
+    # An empty answer is a failure for Q&A (unlike OCR, where no text is valid).
+    with patch.object(ocr, "get_openai_client", return_value=_fake_client(output_text="  ")):
+        with pytest.raises(OcrError):
+            await answer_about_images([(b"img", "image/jpeg")], question="что это?")
+
+
+async def test_answer_about_images_requires_images_and_question() -> None:
+    with pytest.raises(OcrError):
+        await answer_about_images([], question="что это?")
+    with pytest.raises(OcrError):
+        await answer_about_images([(b"img", "image/jpeg")], question="   ")

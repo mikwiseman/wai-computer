@@ -9,6 +9,7 @@ import pytest
 
 from app.core import telegram_intent
 from app.core.telegram_intent import (
+    classify_photo_caption,
     classify_voice_transcript,
     route_voice_by_metadata,
 )
@@ -134,3 +135,57 @@ async def test_unconfigured_classifier_files(monkeypatch):
     _patch_classifier(monkeypatch, api_key="")
     d = await classify_voice_transcript("сколько будет один плюс два")
     assert (d.route, d.reason) == ("file", "classifier_unconfigured")
+
+
+# --- photo caption classifier (Cerebras) ---
+
+
+@pytest.mark.asyncio
+async def test_caption_question_routes_to_answer(monkeypatch):
+    _patch_classifier(
+        monkeypatch,
+        payload={"target": "assistant", "confidence": "high", "reason": "asks translation"},
+    )
+    d = await classify_photo_caption("переведи этот текст")
+    assert (d.route, d.reason) == ("question", "assistant_high")
+
+
+@pytest.mark.asyncio
+async def test_caption_label_routes_to_archive(monkeypatch):
+    _patch_classifier(
+        monkeypatch,
+        payload={"target": "archive", "confidence": "high", "reason": "filing label"},
+    )
+    d = await classify_photo_caption("чек за обед")
+    assert (d.route, d.reason) == ("label", "archive_high")
+
+
+@pytest.mark.asyncio
+async def test_caption_low_confidence_defaults_to_label(monkeypatch):
+    _patch_classifier(
+        monkeypatch,
+        payload={"target": "assistant", "confidence": "low", "reason": "unsure"},
+    )
+    d = await classify_photo_caption("хм")
+    assert (d.route, d.reason) == ("label", "assistant_low")
+
+
+@pytest.mark.asyncio
+async def test_empty_caption_labels_without_calling_model(monkeypatch):
+    _patch_classifier(monkeypatch, error=RuntimeError("should not be called"))
+    d = await classify_photo_caption("   ")
+    assert (d.route, d.reason) == ("label", "empty_caption")
+
+
+@pytest.mark.asyncio
+async def test_caption_classifier_error_defaults_to_label(monkeypatch):
+    _patch_classifier(monkeypatch, error=RuntimeError("cerebras down"))
+    d = await classify_photo_caption("что это?")
+    assert (d.route, d.reason) == ("label", "classifier_error")
+
+
+@pytest.mark.asyncio
+async def test_caption_classifier_unconfigured_defaults_to_label(monkeypatch):
+    _patch_classifier(monkeypatch, api_key="")
+    d = await classify_photo_caption("что это?")
+    assert (d.route, d.reason) == ("label", "classifier_unconfigured")
