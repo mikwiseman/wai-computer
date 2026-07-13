@@ -424,3 +424,138 @@ async def test_run_processes_unprocessed_parts_in_message_order(
     )
     # Only unprocessed parts, ordered by message_id.
     assert seen == [[71, 72]]
+
+
+@pytest.mark.asyncio
+async def test_album_question_vision_failure_is_honest(db_session, monkeypatch):
+    user, account = await _linked_account(db_session, "tg-album-8@example.com", 9401)
+    capture = _Capture()
+    capture.data = b"jpeg-bytes"
+
+    async def fake_classify(caption):
+        return CaptionRouteDecision("question", "assistant_high")
+
+    async def failing_answer(images, *, question, model=None):
+        from app.core.ocr import OcrError
+
+        raise OcrError("boom")
+
+    monkeypatch.setattr(telegram_routes, "classify_photo_caption", fake_classify)
+    monkeypatch.setattr(telegram_routes, "answer_about_images", failing_answer)
+
+    parts = _parts_for(account, [_album_message(81, group="album-8", caption="что это?")])
+    db_session.add_all(parts)
+    await db_session.flush()
+
+    await telegram_routes._process_photo_album(
+        db_session, capture, account=account, parts=parts
+    )
+
+    assert any("Не смог ответить по этому альбому" in m["text"] for m in capture.messages)
+    assert all(p.processed_at is not None for p in parts)
+    items = (
+        (await db_session.execute(select(Item).where(Item.user_id == user.id)))
+        .scalars()
+        .all()
+    )
+    assert items == []
+
+
+@pytest.mark.asyncio
+async def test_album_ocr_failure_and_empty_body_are_honest(db_session, monkeypatch):
+    user, account = await _linked_account(db_session, "tg-album-9@example.com", 9401)
+
+    async def failing_ocr(images, *, model=None):
+        from app.core.ocr import OcrError
+
+        raise OcrError("boom")
+
+    monkeypatch.setattr(telegram_routes, "ocr_images", failing_ocr)
+    capture = _Capture()
+    capture.data = b"jpeg-bytes"
+    parts = _parts_for(account, [_album_message(91, group="album-9")])
+    db_session.add_all(parts)
+    await db_session.flush()
+    await telegram_routes._process_photo_album(
+        db_session, capture, account=account, parts=parts
+    )
+    assert any("Не смог распознать альбом" in m["text"] for m in capture.messages)
+
+    async def empty_ocr(images, *, model=None):
+        return "   "
+
+    monkeypatch.setattr(telegram_routes, "ocr_images", empty_ocr)
+    capture2 = _Capture()
+    capture2.data = b"jpeg-bytes"
+    parts2 = _parts_for(account, [_album_message(92, group="album-10")])
+    db_session.add_all(parts2)
+    await db_session.flush()
+    await telegram_routes._process_photo_album(
+        db_session, capture2, account=account, parts=parts2
+    )
+    assert any(
+        "не нашёл текста" in m["text"] for m in capture2.messages
+    )
+    items = (
+        (await db_session.execute(select(Item).where(Item.user_id == user.id)))
+        .scalars()
+        .all()
+    )
+    assert items == []
+
+
+@pytest.mark.asyncio
+async def test_album_with_no_photo_parts_marks_processed_quietly(db_session):
+    _user, account = await _linked_account(db_session, "tg-album-11@example.com", 9401)
+    capture = _Capture()
+    part = TelegramMediaGroupPart(
+        media_group_id="album-11",
+        telegram_user_id=account.telegram_user_id,
+        chat_id=9401,
+        message_id=111,
+        message={"message_id": 111, "chat": {"id": 9401}, "media_group_id": "album-11"},
+    )
+    db_session.add(part)
+    await db_session.flush()
+
+    await telegram_routes._process_photo_album(
+        db_session, capture, account=account, parts=[part]
+    )
+    assert part.processed_at is not None
+    assert capture.messages == []
+
+
+@pytest.mark.asyncio
+async def test_album_download_failure_skips_part_but_keeps_rest(db_session, monkeypatch):
+    user, account = await _linked_account(db_session, "tg-album-12@example.com", 9401)
+    _fake_item_pipeline(monkeypatch)
+    _stub_album_ocr(monkeypatch, "Image 1: ok\nText: hi")
+
+    downloads = []
+
+    async def flaky_download(db, client, *, account, message, file_id, status_message_id):
+        downloads.append(file_id)
+        if file_id == "file-121":
+            return None  # e.g. too large; error already replied for that part
+        return (b"jpeg-bytes", "photos/x.jpg")
+
+    monkeypatch.setattr(telegram_routes, "_download_telegram_media", flaky_download)
+
+    parts = _parts_for(
+        account,
+        [_album_message(121, group="album-12"), _album_message(122, group="album-12")],
+    )
+    db_session.add_all(parts)
+    await db_session.flush()
+
+    await telegram_routes._process_photo_album(
+        db_session, capture := _Capture(), account=account, parts=parts
+    )
+
+    assert downloads == ["file-121", "file-122"]
+    item = (
+        await db_session.execute(select(Item).where(Item.user_id == user.id))
+    ).scalar_one()
+    assert item.metadata_["telegram"]["count"] == 1
+    assert item.metadata_["telegram"]["file_unique_ids"] == ["uniq-122"]
+    assert any("Краткое содержание" in m["text"] for m in capture.messages)

@@ -187,3 +187,23 @@ async def test_uncaptioned_photo_never_calls_classifier(
     )
 
     assert "Принял фото" in capture.messages[0]["text"]
+
+
+async def test_question_caption_ingest_failure_still_reports(db_session, monkeypatch):
+    _user, account = await _linked_account(db_session, "tg-photo-qafile@example.com", 9301)
+    capture = _Capture()
+    capture.data = b"jpeg-bytes"
+    _route_caption(monkeypatch, "question", "assistant_high")
+    _stub_answer(monkeypatch)
+
+    async def broken_ingest(*args, **kwargs):
+        raise RuntimeError("db hiccup")
+
+    monkeypatch.setattr(telegram_routes, "ingest_item", broken_ingest)
+
+    await _photo_message(db_session, capture, account, caption="что это?")
+
+    # The answer was delivered first; the filing failure is surfaced after.
+    texts = [m["text"] for m in capture.messages]
+    assert any("Это чек на 1200" in t for t in texts)
+    assert any("не смог сохранить фото в материалы" in t for t in texts)

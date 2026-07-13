@@ -250,3 +250,44 @@ async def test_download_http_file_enforces_max_bytes():
             await client.download_file(
                 TelegramFile("file-id", "voice/big.ogg", None), max_bytes=6
             )
+
+
+@pytest.mark.asyncio
+async def test_send_audio_builds_multipart_payload():
+    client = TelegramBotClient.__new__(TelegramBotClient)
+    captured = {}
+
+    async def fake_post_multipart(method, *, data, files):
+        captured.update({"method": method, "data": data, "files": files})
+        return {"message_id": 9}
+
+    client._post_multipart = fake_post_multipart  # type: ignore[method-assign]
+    result = await client.send_audio(
+        42,
+        filename="summary.mp3",
+        data=b"ID3",
+        title="Планёрка",
+        caption="cap",
+        reply_to_message_id=7,
+    )
+    assert result == {"message_id": 9}
+    assert captured["method"] == "sendAudio"
+    assert captured["data"]["chat_id"] == "42"
+    assert captured["data"]["title"] == "Планёрка"
+    assert captured["data"]["caption"] == "cap"
+    assert '"allow_sending_without_reply": true' in captured["data"]["reply_parameters"]
+    assert captured["files"]["audio"] == ("summary.mp3", b"ID3", "audio/mpeg")
+
+
+@pytest.mark.asyncio
+async def test_send_audio_omits_optional_fields():
+    client = TelegramBotClient.__new__(TelegramBotClient)
+    captured = {}
+
+    async def fake_post_multipart(method, *, data, files):
+        captured.update({"data": data})
+        return {}
+
+    client._post_multipart = fake_post_multipart  # type: ignore[method-assign]
+    await client.send_audio(42, filename="a.mp3", data=b"x")
+    assert set(captured["data"]) == {"chat_id"}

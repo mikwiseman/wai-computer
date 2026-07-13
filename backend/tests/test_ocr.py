@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from app.core import ocr
-from app.core.ocr import OcrError, answer_about_images, ocr_images, ocr_pdf
+from app.core.ocr import OcrError, answer_about_images, ocr_image, ocr_images, ocr_pdf
 
 pytestmark = pytest.mark.asyncio
 
@@ -63,6 +63,59 @@ async def test_ocr_pdf_sends_pdf_as_input_file() -> None:
     assert content[0]["type"] == "input_text"
     assert content[1]["type"] == "input_file"
     assert content[1]["file_data"].startswith("data:application/pdf;base64,")
+
+
+# --- ocr_image (single-photo describe + transcribe) ---
+
+
+async def test_ocr_image_returns_description_and_text() -> None:
+    captured: dict = {}
+
+    async def fake_create(**kwargs):
+        captured.update(kwargs)
+        return SimpleNamespace(
+            output_text="Чек из ресторана.\nText: Итого 1200 ₽",
+            status="completed",
+            error=None,
+            output=[],
+        )
+
+    client = SimpleNamespace(responses=SimpleNamespace(create=fake_create))
+    with patch.object(ocr, "get_openai_client", return_value=client):
+        text = await ocr_image(b"jpeg", mime_type="image/png")
+    assert "Итого 1200" in text
+    content = captured["input"][0]["content"]
+    assert content[1]["type"] == "input_image"
+    assert content[1]["image_url"].startswith("data:image/png;base64,")
+
+
+async def test_ocr_image_unknown_mime_falls_to_jpeg() -> None:
+    captured: dict = {}
+
+    async def fake_create(**kwargs):
+        captured.update(kwargs)
+        return SimpleNamespace(output_text="ok", status="completed", error=None, output=[])
+
+    client = SimpleNamespace(responses=SimpleNamespace(create=fake_create))
+    with patch.object(ocr, "get_openai_client", return_value=client):
+        await ocr_image(b"img", mime_type="application/octet-stream")
+    assert captured["input"][0]["content"][1]["image_url"].startswith(
+        "data:image/jpeg;base64,"
+    )
+
+
+async def test_ocr_image_empty_input_and_empty_output() -> None:
+    assert await ocr_image(b"") == ""
+    with patch.object(ocr, "get_openai_client", return_value=_fake_client(output_text=" ")):
+        assert await ocr_image(b"img") == ""
+
+
+async def test_ocr_image_api_failure_raises_ocrerror() -> None:
+    with patch.object(
+        ocr, "get_openai_client", return_value=_fake_client(raises=RuntimeError("boom"))
+    ):
+        with pytest.raises(OcrError):
+            await ocr_image(b"img")
 
 
 # --- answer_about_images (photo caption Q&A) ---

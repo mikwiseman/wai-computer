@@ -252,3 +252,66 @@ async def test_tts_callback_ignores_malformed_data(db_session, monkeypatch):
 
     assert capture.audios == []
     assert len(capture.callback_answers) == 2
+
+
+@pytest.mark.asyncio
+async def test_tts_callback_enqueue_failure_is_honest(db_session, monkeypatch):
+    user, account = await _linked_account(db_session, "tg-tts-6@example.com", 9601)
+    rec = await _seed_ready_recording(db_session, user.id)
+    artifact = _artifact(user.id, rec.id, status=SummaryAudioStatus.QUEUED.value)
+    db_session.add(artifact)
+    await db_session.flush()
+
+    async def fake_start(db, *, source_kind, source_id, user_id):
+        return artifact
+
+    monkeypatch.setattr(telegram_routes, "start_summary_audio_artifact", fake_start)
+
+    def broken_delay(**kwargs):
+        raise RuntimeError("broker down")
+
+    monkeypatch.setattr(
+        "app.tasks.telegram_summary_audio.deliver_summary_audio_telegram_task.delay",
+        broken_delay,
+    )
+
+    capture = _AudioCapture()
+    await _tts_callback(db_session, capture, account, f"tts:rec:{rec.id}")
+
+    assert artifact.status == SummaryAudioStatus.FAILED.value
+    assert artifact.error_code == "summary_audio_enqueue_failed"
+    assert capture.callback_answers[-1]["text"] == "Не получилось"
+    assert any("Не смог запустить озвучку" in m["text"] for m in capture.messages)
+
+
+@pytest.mark.asyncio
+async def test_tts_callback_succeeded_but_file_missing_is_honest(
+    db_session, monkeypatch
+):
+    user, account = await _linked_account(db_session, "tg-tts-7@example.com", 9601)
+    rec = await _seed_ready_recording(db_session, user.id)
+    artifact = _artifact(
+        user.id, rec.id, status=SummaryAudioStatus.SUCCEEDED.value, storage_path=None
+    )
+
+    async def fake_start(db, *, source_kind, source_id, user_id):
+        return artifact
+
+    monkeypatch.setattr(telegram_routes, "start_summary_audio_artifact", fake_start)
+
+    def missing_file(a):
+        raise SummaryAudioError(
+            code="summary_audio_file_missing",
+            message="Audio file is missing.",
+            status_code=404,
+        )
+
+    monkeypatch.setattr(
+        telegram_routes, "resolve_summary_audio_file_path", missing_file
+    )
+
+    capture = _AudioCapture()
+    await _tts_callback(db_session, capture, account, f"tts:rec:{rec.id}")
+
+    assert any("отправить не вышло" in m["text"] for m in capture.messages)
+    assert capture.audios == []
