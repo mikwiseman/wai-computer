@@ -308,6 +308,35 @@ class TelegramBotClient:
             files={"document": (filename, data, "text/plain; charset=utf-8")},
         )
 
+    async def send_audio(
+        self,
+        chat_id: int,
+        *,
+        filename: str,
+        data: bytes,
+        title: str | None = None,
+        caption: str | None = None,
+        reply_to_message_id: int | None = None,
+    ) -> dict[str, Any]:
+        payload = {"chat_id": str(chat_id)}
+        if title:
+            payload["title"] = title
+        if caption:
+            payload["caption"] = caption
+        if reply_to_message_id is not None:
+            # Same tolerant reply shape as send_document.
+            payload["reply_parameters"] = json.dumps(
+                {
+                    "message_id": reply_to_message_id,
+                    "allow_sending_without_reply": True,
+                }
+            )
+        return await self._post_multipart(
+            "sendAudio",
+            data=payload,
+            files={"audio": (filename, data, "audio/mpeg")},
+        )
+
     async def send_chat_action(self, chat_id: int, action: str = "typing") -> None:
         await self._post("sendChatAction", {"chat_id": chat_id, "action": action})
 

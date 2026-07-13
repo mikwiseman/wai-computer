@@ -178,6 +178,7 @@ celery_app.conf.update(
         "app.tasks.telegram_album_import",
         "app.tasks.telegram_media_import",
         "app.tasks.telegram_reminders",
+        "app.tasks.telegram_summary_audio",
     ],
 )
 

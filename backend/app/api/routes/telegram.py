@@ -82,6 +82,13 @@ from app.core.recording_import import (
 from app.core.recording_share import create_recording_share
 from app.core.retry_policy import is_retryable_exception
 from app.core.source_fetch import classify_url, find_first_url
+from app.core.summary_audio import (
+    SUMMARY_AUDIO_SOURCE_ITEM,
+    SUMMARY_AUDIO_SOURCE_RECORDING,
+    SummaryAudioError,
+    resolve_summary_audio_file_path,
+    start_summary_audio_artifact,
+)
 from app.core.telegram_client import (
     TelegramBotClient,
     TelegramClientError,
@@ -108,9 +115,10 @@ from app.db.session import get_db_context
 from app.models.agent import Agent, AgentRun, AgentStep
 from app.models.companion import ChatMessage, Conversation
 from app.models.companion_pending_action import CompanionPendingAction
-from app.models.item import ItemSummary
+from app.models.item import Item, ItemSummary
 from app.models.recording import Recording
 from app.models.reminder import UserReminder
+from app.models.summary_audio import SummaryAudioStatus
 from app.models.telegram import (
     TelegramAccount,
     TelegramBotLinkCode,
@@ -693,12 +701,31 @@ def _transcript_document_filename(recording: Any, *, media_kind: str | None) -> 
 
 
 SUMMARY_RETRY_CALLBACK_PREFIX = "sumretry:"
+TTS_CALLBACK_PREFIX = "tts:"
 
 
-def _recording_reply_keyboard(share_url: str | None) -> dict[str, Any] | None:
-    if not share_url:
+def _tts_button(kind: str, source_id: Any) -> dict[str, Any]:
+    return {
+        "text": "🎧 Озвучить",
+        "callback_data": f"{TTS_CALLBACK_PREFIX}{kind}:{source_id}",
+    }
+
+
+def _recording_reply_keyboard(
+    share_url: str | None, recording_id: Any = None
+) -> dict[str, Any] | None:
+    rows: list[list[dict[str, Any]]] = []
+    if share_url:
+        rows.append([{"text": "🌐 Открыть страницу", "url": share_url}])
+    if recording_id is not None:
+        rows.append([_tts_button("rec", recording_id)])
+    if not rows:
         return None
-    return {"inline_keyboard": [[{"text": "🌐 Открыть страницу", "url": share_url}]]}
+    return {"inline_keyboard": rows}
+
+
+def _item_reply_keyboard(item_id: Any) -> dict[str, Any]:
+    return {"inline_keyboard": [[_tts_button("item", item_id)]]}
 
 
 def _summary_retry_keyboard(
@@ -2986,6 +3013,7 @@ async def _handle_url_message(
         reply,
         reply_to_message_id=message.get("message_id"),
         parse_mode="HTML",
+        reply_markup=_item_reply_keyboard(item.id),
     )
 
 
@@ -3168,9 +3196,151 @@ async def _handle_summary_retry_callback(
             chat_id,
             reply,
             parse_mode="HTML",
-            reply_markup=_recording_reply_keyboard(share_url),
+            reply_markup=_recording_reply_keyboard(share_url, recording.id),
         )
     await _delete_status_message(client, chat_id=chat_id, message_id=status_message_id)
+
+
+async def _summary_audio_source_title(
+    db: AsyncSession,
+    *,
+    recording_id: Any,
+    item_id: Any,
+) -> str | None:
+    if recording_id is not None:
+        recording = await db.get(Recording, recording_id)
+        title = getattr(recording, "title", None)
+        return title.strip() if isinstance(title, str) and title.strip() else None
+    if item_id is not None:
+        item = await db.get(Item, item_id)
+        title = getattr(item, "title", None)
+        return title.strip() if isinstance(title, str) and title.strip() else None
+    return None
+
+
+async def deliver_summary_audio_to_telegram(
+    db: AsyncSession,
+    client: TelegramBotClient,
+    *,
+    artifact: Any,
+    chat_id: int,
+    reply_to_message_id: int | None,
+) -> None:
+    """Send a SUCCEEDED summary-audio artifact into the chat as a 🎧 track."""
+    path = resolve_summary_audio_file_path(artifact)
+    data = path.read_bytes()
+    title = await _summary_audio_source_title(
+        db, recording_id=artifact.recording_id, item_id=artifact.item_id
+    )
+    base = _safe_transcript_filename(title, media_kind="summary").removesuffix(".txt")
+    extension = path.suffix.lstrip(".") or "mp3"
+    await client.send_audio(
+        chat_id,
+        filename=f"{base}.{extension}",
+        data=data,
+        title=title or "Саммари",
+        reply_to_message_id=reply_to_message_id,
+    )
+
+
+async def _handle_tts_callback(
+    db: AsyncSession,
+    client: TelegramBotClient,
+    *,
+    account: TelegramAccount,
+    callback_id: str,
+    chat_id: int | None,
+    reply_to_message_id: int | None,
+    data: str,
+) -> None:
+    """🎧 Озвучить: start-or-reuse the durable summary-audio artifact and deliver
+    it to this chat — the wai-rocks "audio podcast", on demand instead of on
+    every capture. Reuses the same artifact pipeline (ownership, caps, hash
+    dedupe) as the apps."""
+    kind, _, raw_id = data.removeprefix(TTS_CALLBACK_PREFIX).partition(":")
+    source_kind = {
+        "rec": SUMMARY_AUDIO_SOURCE_RECORDING,
+        "item": SUMMARY_AUDIO_SOURCE_ITEM,
+    }.get(kind)
+    try:
+        source_id = UUID(raw_id)
+    except ValueError:
+        await client.answer_callback_query(callback_id)
+        return
+    if source_kind is None or chat_id is None:
+        await client.answer_callback_query(callback_id)
+        return
+
+    try:
+        artifact = await start_summary_audio_artifact(
+            db,
+            source_kind=source_kind,
+            source_id=source_id,
+            user_id=account.user_id,
+        )
+        await db.flush()
+    except SummaryAudioError as exc:
+        await client.answer_callback_query(callback_id, text="Не получилось")
+        await client.send_message(
+            chat_id,
+            f"Озвучить не получится: {exc.message}",
+            reply_to_message_id=reply_to_message_id,
+        )
+        return
+
+    if artifact.status == SummaryAudioStatus.SUCCEEDED.value:
+        await client.answer_callback_query(callback_id, text="Отправляю аудио")
+        try:
+            await deliver_summary_audio_to_telegram(
+                db,
+                client,
+                artifact=artifact,
+                chat_id=chat_id,
+                reply_to_message_id=reply_to_message_id,
+            )
+        except SummaryAudioError as exc:
+            await client.send_message(
+                chat_id,
+                f"Аудио есть, но отправить не вышло: {exc.message}",
+                reply_to_message_id=reply_to_message_id,
+            )
+        return
+
+    if artifact.status == SummaryAudioStatus.QUEUED.value and not artifact.task_id:
+        from app.tasks.telegram_summary_audio import (
+            deliver_summary_audio_telegram_task,
+        )
+
+        try:
+            async_result = deliver_summary_audio_telegram_task.delay(
+                artifact_id=str(artifact.id),
+                chat_id=chat_id,
+                reply_to_message_id=reply_to_message_id,
+            )
+            artifact.task_id = str(async_result.id)
+            await db.flush()
+        except Exception:  # noqa: BLE001 — broker down: fail loudly, never pretend success
+            logger.exception("telegram summary audio enqueue failed")
+            artifact.status = SummaryAudioStatus.FAILED.value
+            artifact.error_code = "summary_audio_enqueue_failed"
+            artifact.error_message = "Failed to start summary audio generation."
+            await db.flush()
+            await client.answer_callback_query(callback_id, text="Не получилось")
+            await client.send_message(
+                chat_id,
+                "Не смог запустить озвучку. Попробуй ещё раз позже.",
+                reply_to_message_id=reply_to_message_id,
+            )
+            return
+        await client.answer_callback_query(
+            callback_id, text="Готовлю аудио — пришлю сюда"
+        )
+        return
+
+    # RUNNING, or QUEUED with a task already claimed by another tap/app request.
+    await client.answer_callback_query(
+        callback_id, text="Аудио уже готовится — момент"
+    )
 
 
 async def _handle_callback_query(
@@ -3228,6 +3398,17 @@ async def _handle_callback_query(
             account=account,
             callback_id=callback_id,
             chat_id=chat_id,
+            data=data,
+        )
+        return
+    if data.startswith(TTS_CALLBACK_PREFIX):
+        await _handle_tts_callback(
+            db,
+            client,
+            account=account,
+            callback_id=callback_id,
+            chat_id=chat_id,
+            reply_to_message_id=message_id if isinstance(message_id, int) else None,
             data=data,
         )
         return
@@ -3512,6 +3693,7 @@ async def _handle_document_message(
         reply,
         reply_to_message_id=message.get("message_id"),
         parse_mode="HTML",
+        reply_markup=_item_reply_keyboard(item.id),
     )
 
 
@@ -3669,6 +3851,7 @@ async def _handle_photo_message(
         reply,
         reply_to_message_id=message.get("message_id"),
         parse_mode="HTML",
+        reply_markup=_item_reply_keyboard(item.id),
     )
 
 
@@ -4077,6 +4260,7 @@ async def _process_photo_album(
             reply,
             reply_to_message_id=reply_to,
             parse_mode="HTML",
+            reply_markup=_item_reply_keyboard(item.id),
         )
     finally:
         await _stop_chat_action_task(action_task)
@@ -4445,6 +4629,7 @@ async def _handle_forwarded_text(
         reply,
         reply_to_message_id=message.get("message_id"),
         parse_mode="HTML",
+        reply_markup=_item_reply_keyboard(item.id),
     )
 
 
@@ -4709,7 +4894,7 @@ async def _import_telegram_media_and_reply(
             summary_message,
             reply_to_message_id=message.get("message_id"),
             parse_mode="HTML",
-            reply_markup=_recording_reply_keyboard(share_url),
+            reply_markup=_recording_reply_keyboard(share_url, recording_id),
         )
     else:
         # The transcript is saved but the summary generation failed. Say so and
