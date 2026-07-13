@@ -175,6 +175,7 @@ celery_app.conf.update(
         "app.tasks.recording_audio_processing",
         "app.tasks.summary_audio_generation",
         "app.tasks.summary_generation",
+        "app.tasks.telegram_album_import",
         "app.tasks.telegram_media_import",
         "app.tasks.telegram_reminders",
     ],

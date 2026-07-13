@@ -71,7 +71,7 @@ from app.core.mcp_tools import (
     list_action_items_for_mcp,
     list_recordings_for_mcp,
 )
-from app.core.ocr import OcrError, answer_about_images, ocr_image
+from app.core.ocr import OcrError, answer_about_images, ocr_image, ocr_images
 from app.core.recording_import import (
     RecordingImportError,
     TranscribedMedia,
@@ -107,6 +107,7 @@ from app.models.reminder import UserReminder
 from app.models.telegram import (
     TelegramAccount,
     TelegramBotLinkCode,
+    TelegramMediaGroupPart,
     TelegramPairing,
     TelegramUpdate,
 )
@@ -3674,6 +3675,314 @@ async def _answer_photo_question(
         )
 
 
+ALBUM_DEBOUNCE_SECONDS = 3
+
+
+async def _buffer_album_photo(
+    db: AsyncSession,
+    client: TelegramBotClient,
+    *,
+    message: dict[str, Any],
+    account: TelegramAccount,
+) -> None:
+    """Buffer one photo of a Telegram album and debounce the album task.
+
+    Telegram sends an album as N separate messages within ~a second. Each part
+    is stored (workers may interleave, so the buffer is the DB) and the FIRST
+    stored part schedules the processing task ``ALBUM_DEBOUNCE_SECONDS`` later.
+    A straggler arriving after the album was already processed falls back to
+    the single-photo flow so it is never dropped."""
+    chat_id = _telegram_chat_id(message)
+    media_group_id = str(message.get("media_group_id") or "")
+    message_id = message.get("message_id")
+    if chat_id is None or not media_group_id or not isinstance(message_id, int):
+        return
+
+    already_processed = (
+        await db.execute(
+            select(TelegramMediaGroupPart.id)
+            .where(
+                TelegramMediaGroupPart.media_group_id == media_group_id,
+                TelegramMediaGroupPart.processed_at.is_not(None),
+            )
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+    if already_processed is not None:
+        photo = _extract_photo(message)
+        if photo is not None:
+            await _handle_photo_message(
+                db, client, message=message, account=account, photo=photo
+            )
+        return
+
+    inserted = await db.execute(
+        pg_insert(TelegramMediaGroupPart)
+        .values(
+            media_group_id=media_group_id,
+            telegram_user_id=account.telegram_user_id,
+            chat_id=chat_id,
+            message_id=message_id,
+            message=message,
+        )
+        .on_conflict_do_nothing(constraint="uq_tg_media_group_part")
+    )
+    await db.flush()
+    if not inserted.rowcount:
+        return
+
+    part_count = (
+        await db.execute(
+            select(TelegramMediaGroupPart.id).where(
+                TelegramMediaGroupPart.media_group_id == media_group_id
+            )
+        )
+    ).all()
+    if len(part_count) == 1:
+        from app.tasks.telegram_album_import import process_telegram_media_group_task
+
+        process_telegram_media_group_task.apply_async(
+            kwargs={
+                "media_group_id": media_group_id,
+                "telegram_user_id": account.telegram_user_id,
+            },
+            countdown=ALBUM_DEBOUNCE_SECONDS,
+        )
+        with suppress(TelegramClientError):
+            await client.send_chat_action(chat_id)
+
+
+async def _process_photo_album(
+    db: AsyncSession,
+    client: TelegramBotClient,
+    *,
+    account: TelegramAccount,
+    parts: list[TelegramMediaGroupPart],
+) -> None:
+    """Process a buffered Telegram photo album as ONE capture.
+
+    Wai-rocks-style: the album gets a single combined vision pass and a single
+    reply — a caption addressed to Wai is answered about all photos together,
+    otherwise the album is filed as one material. Parts are marked processed on
+    every outcome (the task never retries; failures are surfaced to the user)."""
+    photo_parts = [part for part in parts if _extract_photo(part.message) is not None]
+    processed_at = datetime.now(timezone.utc)
+    for part in parts:
+        part.processed_at = processed_at
+    if not photo_parts:
+        await db.flush()
+        return
+
+    first_message = photo_parts[0].message
+    chat_id = photo_parts[0].chat_id
+    reply_to = photo_parts[0].message_id
+    await db.flush()
+
+    user = await _ensure_active_user(db, client, message=first_message, account=account)
+    if user is None:
+        return
+
+    caption = ""
+    for part in photo_parts:
+        candidate = str(part.message.get("caption") or "").strip()
+        if candidate:
+            caption = candidate
+            break
+
+    status_response = await client.send_message(
+        chat_id,
+        f"Принял альбом ({len(photo_parts)} фото). Обрабатываю.",
+        reply_to_message_id=reply_to,
+    )
+    status_message_id = _sent_message_id(status_response)
+    action_task = asyncio.create_task(_send_chat_action_until_cancelled(client, chat_id))
+    try:
+        images: list[tuple[bytes, str]] = []
+        file_unique_ids: list[str] = []
+        for part in photo_parts:
+            photo = _extract_photo(part.message)
+            if photo is None:
+                continue
+            downloaded = await _download_telegram_media(
+                db,
+                client,
+                account=account,
+                message=part.message,
+                file_id=str(photo.get("file_id")),
+                status_message_id=None,
+            )
+            if downloaded is None:
+                # The size/download error was already replied for this part;
+                # keep going so the rest of the album still lands.
+                continue
+            data, _file_path = downloaded
+            images.append((data, str(photo.get("mime_type") or "image/jpeg")))
+            file_unique_ids.append(
+                str(photo.get("file_unique_id") or photo.get("file_id"))
+            )
+
+        if not images:
+            await _delete_status_message(
+                client, chat_id=chat_id, message_id=status_message_id
+            )
+            return
+
+        route = "label"
+        if caption:
+            caption_route = await classify_photo_caption(caption)
+            # Privacy-safe: only the route + reason tag, never the caption itself.
+            logger.info(
+                "telegram album caption routed route=%s reason=%s count=%s",
+                caption_route.route,
+                caption_route.reason,
+                len(images),
+            )
+            route = caption_route.route
+
+        media_group_id = photo_parts[0].media_group_id
+        telegram_meta: dict[str, Any] = {
+            "media_group_id": media_group_id,
+            "file_unique_ids": file_unique_ids,
+            "count": len(images),
+        }
+
+        if route == "question":
+            try:
+                answer = await answer_about_images(images, question=caption)
+            except OcrError:
+                await _delete_status_message(
+                    client, chat_id=chat_id, message_id=status_message_id
+                )
+                await client.send_message(
+                    chat_id,
+                    "Не смог ответить по этому альбому. Попробуй ещё раз позже.",
+                    reply_to_message_id=reply_to,
+                )
+                return
+            await _delete_status_message(
+                client, chat_id=chat_id, message_id=status_message_id
+            )
+            await _send_chunks(
+                client,
+                chat_id,
+                telegram_html(answer),
+                reply_to_message_id=reply_to,
+                parse_mode="HTML",
+            )
+            try:
+                item, created = await ingest_item(
+                    db,
+                    account.user_id,
+                    source="telegram",
+                    source_ref=media_group_id,
+                    dedup_key=f"telegram:album:{media_group_id}",
+                    kind="image",
+                    title=clean_title(caption) or f"Альбом ({len(images)} фото)",
+                    body=f"Вопрос: {caption}\n\nОтвет: {answer}",
+                    metadata={"telegram": telegram_meta, "vision_qa": True},
+                    embed=True,
+                )
+                await db.flush()
+                if created:
+                    await enqueue_item_processing(db, item)
+                await _set_telegram_active_context(
+                    db, account, ref_type="item", ref_id=item.id, title=item.title
+                )
+            except Exception:  # noqa: BLE001 - answer delivered; filing failure must be visible.
+                logger.exception("telegram album question ingest failed")
+                await client.send_message(
+                    chat_id,
+                    "Ответил, но не смог сохранить альбом в материалы.",
+                    reply_to_message_id=reply_to,
+                )
+            return
+
+        try:
+            body = await ocr_images(images)
+        except OcrError:
+            await _delete_status_message(
+                client, chat_id=chat_id, message_id=status_message_id
+            )
+            await client.send_message(
+                chat_id,
+                "Не смог распознать альбом. Попробуй ещё раз позже.",
+                reply_to_message_id=reply_to,
+            )
+            return
+        if not body.strip():
+            await _delete_status_message(
+                client, chat_id=chat_id, message_id=status_message_id
+            )
+            await client.send_message(
+                chat_id,
+                "В альбоме не нашёл текста или распознаваемого содержания.",
+                reply_to_message_id=reply_to,
+            )
+            return
+
+        try:
+            item, created = await ingest_item(
+                db,
+                account.user_id,
+                source="telegram",
+                source_ref=media_group_id,
+                dedup_key=f"telegram:album:{media_group_id}",
+                kind="image",
+                title=clean_title(caption) or f"Альбом ({len(images)} фото)",
+                body=(f"{caption}\n\n{body}".strip() if caption else body),
+                metadata={"telegram": telegram_meta},
+                embed=True,
+            )
+            await db.flush()
+        except Exception:  # noqa: BLE001 - failed import should be explicit to the sender.
+            logger.exception("telegram album ingest failed")
+            await _delete_status_message(
+                client, chat_id=chat_id, message_id=status_message_id
+            )
+            await client.send_message(
+                chat_id,
+                "Не смог сохранить альбом в материалы. Попробуй позже.",
+                reply_to_message_id=reply_to,
+            )
+            return
+
+        summary = (
+            await db.execute(select(ItemSummary).where(ItemSummary.item_id == item.id))
+        ).scalar_one_or_none()
+        if created or summary is None:
+            try:
+                summary = await summarize_and_embed_item(db, item)
+                await db.flush()
+            except Exception:  # noqa: BLE001 - keep the saved item and surface the failure.
+                logger.exception("telegram album summary failed")
+                await _delete_status_message(
+                    client, chat_id=chat_id, message_id=status_message_id
+                )
+                await client.send_message(
+                    chat_id,
+                    "Сохранил альбом, но не смог сделать краткое содержание. Попробуй позже.",
+                    reply_to_message_id=reply_to,
+                )
+                return
+
+        await _delete_status_message(
+            client, chat_id=chat_id, message_id=status_message_id
+        )
+        reply = format_item_reply(item, summary)
+        await _set_telegram_active_context(
+            db, account, ref_type="item", ref_id=item.id, title=item.title
+        )
+        await _send_chunks(
+            client,
+            chat_id,
+            reply,
+            reply_to_message_id=reply_to,
+            parse_mode="HTML",
+        )
+    finally:
+        await _stop_chat_action_task(action_task)
+
+
 def _is_forwarded(message: dict[str, Any]) -> bool:
     """True when the message was forwarded from someone else — archived content, not
     something the user is saying to Wai."""
@@ -4415,13 +4724,19 @@ async def _handle_update(update: dict[str, Any]) -> None:
                     media=media,
                 )
             elif (photo := _extract_photo(message)) is not None:
-                await _handle_photo_message(
-                    db,
-                    client,
-                    message=message,
-                    account=account,
-                    photo=photo,
-                )
+                media_group_id = message.get("media_group_id")
+                if isinstance(media_group_id, str) and media_group_id:
+                    await _buffer_album_photo(
+                        db, client, message=message, account=account
+                    )
+                else:
+                    await _handle_photo_message(
+                        db,
+                        client,
+                        message=message,
+                        account=account,
+                        photo=photo,
+                    )
             elif (document := _extract_document(message)) is not None:
                 await _handle_document_message(
                     db,

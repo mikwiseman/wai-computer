@@ -134,6 +134,61 @@ async def ocr_image(
         return ""
 
 
+_ALBUM_INSTRUCTION = (
+    "You are given {count} images that the user sent together as one album. "
+    "For EACH image, output a section that starts with the line 'Image N:' "
+    "(N is its 1-based position), then one line describing what it shows, then "
+    "— if it contains any text — a line 'Text:' followed by ALL visible text "
+    "transcribed verbatim in reading order. Do not summarise, translate, or "
+    "add commentary beyond the one-line descriptions."
+)
+
+
+async def ocr_images(
+    images: list[tuple[bytes, str]],
+    *,
+    model: str | None = None,
+) -> str:
+    """Describe + OCR an ordered album of images in one vision pass.
+
+    Returns per-image sections (``Image 1: … Text: …``) so an album can be
+    ingested as a single material. Raises :class:`OcrError` on an API failure —
+    never a silent empty on error. An album with genuinely no content returns "".
+    """
+    if not images:
+        return ""
+    settings = get_settings()
+    client = get_openai_client()
+    content: list[dict[str, str]] = [
+        {"type": "input_text", "text": _ALBUM_INSTRUCTION.format(count=len(images))}
+    ]
+    for data, mime_type in images:
+        mime = (mime_type or "image/jpeg").split(";")[0].strip().lower()
+        if mime not in _IMAGE_MIME_ALLOWLIST:
+            mime = "image/jpeg"
+        encoded = base64.b64encode(data).decode("ascii")
+        content.append(
+            {
+                "type": "input_image",
+                "image_url": f"data:{mime};base64,{encoded}",
+            }
+        )
+    try:
+        response = await client.responses.create(
+            model=model or settings.openai_llm_model,
+            input=[{"role": "user", "content": content}],
+        )
+        ensure_response_completed(response, operation="Album OCR")
+    except Exception as exc:  # noqa: BLE001 — surface any failure as a typed OcrError
+        logger.warning("album OCR failed error_type=%s", type(exc).__name__)
+        raise OcrError(f"Album OCR request failed: {type(exc).__name__}") from exc
+
+    try:
+        return response_output_text(response).strip()
+    except OpenAIResponseError:
+        return ""
+
+
 _ANSWER_INSTRUCTION = (
     "You are Wai, the user's second-brain assistant. The user sent {count} "
     "image(s) with the message below. Answer that message directly, grounded "

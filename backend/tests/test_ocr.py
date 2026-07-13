@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from app.core import ocr
-from app.core.ocr import OcrError, answer_about_images, ocr_pdf
+from app.core.ocr import OcrError, answer_about_images, ocr_images, ocr_pdf
 
 pytestmark = pytest.mark.asyncio
 
@@ -113,3 +113,36 @@ async def test_answer_about_images_requires_images_and_question() -> None:
         await answer_about_images([], question="что это?")
     with pytest.raises(OcrError):
         await answer_about_images([(b"img", "image/jpeg")], question="   ")
+
+
+# --- ocr_images (album OCR in one pass) ---
+
+
+async def test_ocr_images_sends_all_images_with_album_instruction() -> None:
+    captured: dict = {}
+
+    async def fake_create(**kwargs):
+        captured.update(kwargs)
+        return SimpleNamespace(
+            output_text="Image 1: чек\nText: 1200", status="completed", error=None, output=[]
+        )
+
+    client = SimpleNamespace(responses=SimpleNamespace(create=fake_create))
+    with patch.object(ocr, "get_openai_client", return_value=client):
+        text = await ocr_images([(b"a", "image/png"), (b"b", "image/jpeg")])
+    assert "Image 1: чек" in text
+    content = captured["input"][0]["content"]
+    assert "2 images" in content[0]["text"]
+    assert [part["type"] for part in content[1:]] == ["input_image", "input_image"]
+
+
+async def test_ocr_images_empty_input_returns_empty() -> None:
+    assert await ocr_images([]) == ""
+
+
+async def test_ocr_images_api_failure_raises_ocrerror() -> None:
+    with patch.object(
+        ocr, "get_openai_client", return_value=_fake_client(raises=RuntimeError("boom"))
+    ):
+        with pytest.raises(OcrError):
+            await ocr_images([(b"img", "image/jpeg")])

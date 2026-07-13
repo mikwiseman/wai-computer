@@ -3,7 +3,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import BigInteger, DateTime, ForeignKey, String, Text
+from sqlalchemy import BigInteger, DateTime, ForeignKey, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -94,6 +94,28 @@ class TelegramBotLinkCode(Base, UUIDMixin, TimestampMixin):
     )
 
     user: Mapped["User | None"] = relationship("User")
+
+
+class TelegramMediaGroupPart(Base, UUIDMixin, TimestampMixin):
+    """One buffered photo of a Telegram album (media group).
+
+    Telegram delivers an album as N independent messages that share a
+    ``media_group_id``. The webhook buffers each photo here and a debounced
+    Celery task processes the whole album at once — the buffer lives in the DB
+    because the API runs multiple gunicorn workers, so in-process aggregation
+    would split albums across processes."""
+
+    __tablename__ = "telegram_media_group_parts"
+    __table_args__ = (
+        UniqueConstraint("media_group_id", "message_id", name="uq_tg_media_group_part"),
+    )
+
+    media_group_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    telegram_user_id: Mapped[int] = mapped_column(BigInteger, nullable=False, index=True)
+    chat_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    message_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    message: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    processed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class TelegramUpdate(Base):
