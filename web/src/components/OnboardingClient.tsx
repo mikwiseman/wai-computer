@@ -38,7 +38,7 @@ const COPY: Record<
   }
 > = {
   en: {
-    step: "Step 1 of 1",
+    step: "Welcome",
     heading: "Set up your universal Inbox",
     lead:
       "WaiComputer keeps recordings, files, links, notes, and Wai agent threads in one Inbox. Add anything, filter by type, and give Wai a task when you need an answer or action.",
@@ -78,7 +78,7 @@ const COPY: Record<
     uploadError: "Upload failed",
   },
   ru: {
-    step: "Шаг 1 из 1",
+    step: "Добро пожаловать",
     heading: "Настройте универсальный Инбокс",
     lead:
       "WaiComputer собирает записи, файлы, ссылки, заметки и чаты Wai в одном Инбоксе. Добавляйте всё, фильтруйте по типу и спрашивайте Wai, когда нужен ответ.",

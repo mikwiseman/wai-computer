@@ -3104,6 +3104,34 @@ a.primary-button[aria-disabled="true"]:hover {
   color: var(--ink);
 }
 
+/* Idle-state guidance on the Dictate tool — the panel used to be a lone
+ * button over a large empty canvas. */
+.dictate-tips {
+  max-width: var(--measure-tight);
+  margin-top: var(--space-lg);
+  padding: var(--space-lg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--panel);
+}
+
+.dictate-tips h4 {
+  margin: 0 0 var(--space-sm);
+  font: var(--font-heading-small);
+  color: var(--ink);
+}
+
+.dictate-tips ul {
+  margin: 0;
+  padding-left: 1.1rem;
+  list-style: disc;
+  display: grid;
+  gap: var(--space-xs);
+  color: var(--ink-soft);
+  font-size: var(--font-body-small-size);
+  line-height: 1.5;
+}
+
 .settings-group:last-child {
   padding-bottom: 0;
   border-bottom: 0;

@@ -42,6 +42,8 @@ interface Copy {
   pasteHint: string;
   macUpsell: string;
   micDenied: string;
+  tipsTitle: string;
+  tips: string[];
   dictionaryFailed: string;
   historyFailed: string;
   empty: string;
@@ -62,6 +64,12 @@ const COPY: Record<Locale, Copy> = {
     pasteHint: "Press ⌘/Ctrl+V to paste it wherever you like.",
     macUpsell: "For system-wide push-to-talk that types into any app, get the Mac app.",
     micDenied: "Microphone access is required to dictate.",
+    tipsTitle: "How it works",
+    tips: [
+      "Your dictionary applies automatically — names and terms you taught Wai come out right.",
+      "Every dictation is saved to Dictation History, so nothing is lost after you paste.",
+      "Speak naturally in English or Russian; the language is detected for you.",
+    ],
     dictionaryFailed: "Dictionary could not load — copied transcript without custom replacements.",
     historyFailed: "Copied transcript, but dictation history could not be saved.",
     empty: "Didn't catch anything — try again.",
@@ -80,6 +88,12 @@ const COPY: Record<Locale, Copy> = {
     pasteHint: "Нажмите ⌘/Ctrl+V, чтобы вставить.",
     macUpsell: "Для системной диктовки в любое приложение — установите приложение для Mac.",
     micDenied: "Для диктовки нужен доступ к микрофону.",
+    tipsTitle: "Как это работает",
+    tips: [
+      "Ваш словарь применяется автоматически — имена и термины распознаются правильно.",
+      "Каждая диктовка сохраняется в истории, так что после вставки ничего не теряется.",
+      "Говорите свободно по-русски или по-английски — язык определяется сам.",
+    ],
     dictionaryFailed: "Не удалось загрузить словарь — скопирована расшифровка без ваших замен.",
     historyFailed: "Расшифровка скопирована, но история диктовки не сохранилась.",
     empty: "Ничего не распознал — попробуйте ещё раз.",
@@ -496,9 +510,19 @@ export function DictatePanel({ locale = "en" }: DictatePanelProps) {
           ) : null}
         </div>
       ) : (
-        <button type="button" className="dictate-start" onClick={() => void start()}>
-          {copy.start}
-        </button>
+        <>
+          <button type="button" className="dictate-start" onClick={() => void start()}>
+            {copy.start}
+          </button>
+          <div className="dictate-tips" data-testid="dictate-tips">
+            <h4>{copy.tipsTitle}</h4>
+            <ul>
+              {copy.tips.map((tip) => (
+                <li key={tip}>{tip}</li>
+              ))}
+            </ul>
+          </div>
+        </>
       )}
 
       <p className="settings-note dictate-upsell">{copy.macUpsell}</p>
