@@ -2920,9 +2920,26 @@ export function DashboardClient() {
   }
 
   function renderSettingsView() {
+    const settingsSections = [
+      { id: "settings-voice", label: copy.settings.voiceGroupTitle },
+      { id: "settings-workspace", label: copy.settings.workspaceGroupTitle },
+      { id: "settings-account", label: copy.settings.accountGroupTitle },
+      { id: "settings-developer", label: copy.settings.developerGroupTitle },
+    ];
     return (
       <section className="tool-panel settings-panel">
-        <div className="settings-group" data-testid="settings-group-voice">
+        <nav
+          className="settings-anchor-nav"
+          aria-label={locale === "ru" ? "Разделы настроек" : "Settings sections"}
+        >
+          {settingsSections.map((section) => (
+            <a key={section.id} href={`#${section.id}`}>
+              {section.label}
+            </a>
+          ))}
+        </nav>
+
+        <div id="settings-voice" className="settings-group" data-testid="settings-group-voice">
           <header className="settings-group__header">
             <h2>{copy.settings.voiceGroupTitle}</h2>
             <p>{copy.settings.voiceGroupBody}</p>
@@ -2960,7 +2977,7 @@ export function DashboardClient() {
           </div>
         </div>
 
-        <div className="settings-group" data-testid="settings-group-workspace">
+        <div id="settings-workspace" className="settings-group" data-testid="settings-group-workspace">
           <header className="settings-group__header">
             <h2>{copy.settings.workspaceGroupTitle}</h2>
             <p>{copy.settings.workspaceGroupBody}</p>
@@ -3032,7 +3049,7 @@ export function DashboardClient() {
           </div>
         </div>
 
-        <div className="settings-group" data-testid="settings-group-account">
+        <div id="settings-account" className="settings-group" data-testid="settings-group-account">
           <header className="settings-group__header">
             <h2>{copy.settings.accountGroupTitle}</h2>
             <p>{copy.settings.accountGroupBody}</p>
@@ -3073,7 +3090,7 @@ export function DashboardClient() {
           <DeleteAccountSection onDeleted={() => router.replace("/login")} locale={locale} />
         </div>
 
-        <div className="settings-group" data-testid="settings-group-developer">
+        <div id="settings-developer" className="settings-group" data-testid="settings-group-developer">
           <header className="settings-group__header">
             <h2>{copy.settings.developerGroupTitle}</h2>
             <p>{copy.settings.developerGroupBody}</p>

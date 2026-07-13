@@ -76,7 +76,7 @@ _UNIFIED_SQL = text(
     ),
     item_fts AS (
         SELECT ic.id AS chunk_id, i.id AS parent_id, ic.content,
-               i.title, i.kind, i.created_at, NULL::integer AS start_ms, NULL::integer AS end_ms,
+               COALESCE(NULLIF(i.title, ''), LEFT(i.body, 64)) AS title, i.kind, i.created_at, NULL::integer AS start_ms, NULL::integer AS end_ms,
                ROW_NUMBER() OVER (ORDER BY ts_rank(
                    to_tsvector('russian', lower(ic.content COLLATE "und-x-icu")),
                    plainto_tsquery('russian', lower(:q COLLATE "und-x-icu"))) DESC) AS rn
@@ -89,7 +89,7 @@ _UNIFIED_SQL = text(
     ),
     item_sem AS (
         SELECT ic.id AS chunk_id, i.id AS parent_id, ic.content,
-               i.title, i.kind, i.created_at, NULL::integer AS start_ms, NULL::integer AS end_ms,
+               COALESCE(NULLIF(i.title, ''), LEFT(i.body, 64)) AS title, i.kind, i.created_at, NULL::integer AS start_ms, NULL::integer AS end_ms,
                ROW_NUMBER() OVER (ORDER BY ic.embedding <=> CAST(:emb AS vector)) AS rn
         FROM item_chunks ic JOIN items i ON ic.item_id = i.id
         WHERE i.user_id = :uid AND i.deleted_at IS NULL AND i.state IS DISTINCT FROM 'archived'

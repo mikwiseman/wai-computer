@@ -29,3 +29,18 @@ def title_from_filename(filename: str | None) -> str | None:
     base = (filename or "").strip().rsplit("/", 1)[-1].rsplit("\\", 1)[-1]
     stem = (base.rsplit(".", 1)[0] if "." in base else base).strip()
     return clean_title(stem)
+
+
+def title_from_body(body: str | None, *, limit: int = 64) -> str | None:
+    """Derive a display-only title from the first words of the body.
+
+    Presentation fallback for items whose real title hasn't been generated
+    yet (or never will be) — the stored title stays NULL so the summarizer's
+    title can still land later.
+    """
+    text = " ".join((body or "").split())
+    if not text:
+        return None
+    if len(text) <= limit:
+        return text
+    return text[: limit - 1].rstrip() + "…"

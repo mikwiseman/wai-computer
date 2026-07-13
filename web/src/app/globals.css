@@ -3071,6 +3071,37 @@ a.primary-button[aria-disabled="true"]:hover {
   gap: 0.85rem;
   padding-bottom: 1.15rem;
   border-bottom: 1px solid var(--border);
+  /* Anchor-nav jumps land the section title below the sticky chip bar. */
+  scroll-margin-top: 64px;
+}
+
+/* Sticky jump-links for the (long) settings scroll. */
+.settings-anchor-nav {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+  margin: calc(-1 * var(--space-sm)) 0 var(--space-sm);
+  padding: var(--space-sm) 0;
+  background: var(--panel);
+}
+
+.settings-anchor-nav a {
+  padding: 0.3rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  color: var(--ink-soft);
+  font-size: var(--font-body-small-size);
+  text-decoration: none;
+  transition: color var(--motion-duration-fast) var(--motion-ease-standard),
+    background var(--motion-duration-fast) var(--motion-ease-standard);
+}
+
+.settings-anchor-nav a:hover {
+  background: var(--surface-subtle);
+  color: var(--ink);
 }
 
 .settings-group:last-child {
@@ -4128,9 +4159,24 @@ a.primary-button[aria-disabled="true"]:hover {
 
   .sidebar-nav {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 4px 8px;
     max-width: 100%;
     overflow-x: visible;
+  }
+
+  /* Flatten the grouped sections into one uniform pill grid — the desktop
+   * 3-column-by-section layout read as broken columns on phones. */
+  .sidebar-section {
+    display: contents;
+  }
+
+  .sidebar-section__header {
+    display: none;
+  }
+
+  .sidebar-folder-group {
+    grid-column: 1 / -1;
   }
 
   .sidebar-nav__item {
@@ -6018,10 +6064,11 @@ a.primary-button[aria-disabled="true"]:hover {
 }
 
 @media (max-width: 700px) {
+  /* Let the page scroll instead of clipping the sidebar mid-control —
+   * the 34dvh cap used to cut the theme toggle and footer in half. */
   .app-sidebar {
-    max-height: 34dvh;
-    overflow-y: auto;
-    overscroll-behavior: contain;
+    max-height: none;
+    overflow-y: visible;
   }
 
   .brand-block {

@@ -53,7 +53,7 @@ from app.core.document_extract import (
     resolve_document_extension,
 )
 from app.core.item_ingest import enqueue_item_processing, ingest_item
-from app.core.item_titles import clean_title, title_from_filename
+from app.core.item_titles import clean_title, title_from_body, title_from_filename
 from app.core.summary_audio import (
     SUMMARY_AUDIO_SOURCE_ITEM,
     SummaryAudioError,
@@ -226,7 +226,7 @@ def _item_response(item: Item, summary: ItemSummary | None) -> ItemResponse:
         source_ref=item.source_ref,
         url=item.url,
         kind=item.kind,
-        title=item.title,
+        title=item.title or title_from_body(item.body),
         body=item.body,
         occurred_at=item.occurred_at.isoformat() if item.occurred_at else None,
         state=item.state,
