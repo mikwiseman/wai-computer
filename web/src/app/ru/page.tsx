@@ -198,7 +198,7 @@ function BrainIcon() {
 
 export default function RuHome() {
   return (
-    <main className={styles.landing}>
+    <main id="main" className={styles.landing}>
       <header className={styles.nav}>
         <Link href="/ru" className={styles.brand} aria-label="WaiComputer">
           <span className={styles.brandMark} aria-hidden="true" />

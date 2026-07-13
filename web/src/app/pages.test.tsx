@@ -1,5 +1,5 @@
 import type React from "react";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import DashboardPage from "./dashboard/page";
 import LoginPage from "./login/page";
@@ -29,12 +29,18 @@ const requestHeaderMock = vi.hoisted(() => ({
   referer: null as string | null,
 }));
 const mockReplace = vi.fn();
+const mockGetCurrentUser = vi.fn();
 const authFormMock = vi.fn();
 const dashboardClientMock = vi.fn();
 const verifyClientMock = vi.fn();
 const onboardingClientMock = vi.fn();
 const sharedRecordingClientMock = vi.fn();
 let mockSearchParams = new URLSearchParams();
+
+vi.mock("@/lib/api", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/api")>()),
+  getCurrentUser: (...args: unknown[]) => mockGetCurrentUser(...args),
+}));
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ replace: mockReplace }),
@@ -97,6 +103,8 @@ vi.mock("@/components/SharedRecordingClient", () => ({
 describe("app pages", () => {
   beforeEach(() => {
     mockReplace.mockClear();
+    mockGetCurrentUser.mockReset();
+    mockGetCurrentUser.mockRejectedValue(new Error("unauthenticated"));
     authFormMock.mockClear();
     dashboardClientMock.mockClear();
     verifyClientMock.mockClear();
@@ -130,8 +138,14 @@ describe("app pages", () => {
     };
     expect(call.mode).toBe("login");
     expect(call.initialLocale).toBe("en");
+    // Un-enrolled (or unknown) users land on onboarding after password login.
     call.onSuccess();
-    expect(mockReplace).toHaveBeenCalledWith("/dashboard");
+    await waitFor(() => expect(mockReplace).toHaveBeenCalledWith("/onboarding"));
+
+    mockReplace.mockClear();
+    mockGetCurrentUser.mockResolvedValue({ has_enrolled_voice: true });
+    call.onSuccess();
+    await waitFor(() => expect(mockReplace).toHaveBeenCalledWith("/dashboard"));
   });
 
   it("renders register page and wires onSuccess to router", async () => {
@@ -145,8 +159,9 @@ describe("app pages", () => {
     };
     expect(call.mode).toBe("register");
     expect(call.initialLocale).toBe("en");
+    // Fresh accounts always start at onboarding.
     call.onSuccess();
-    expect(mockReplace).toHaveBeenCalledWith("/dashboard");
+    expect(mockReplace).toHaveBeenCalledWith("/onboarding");
   });
 
   it("passes browser locale from request headers to auth pages", async () => {
@@ -174,11 +189,13 @@ describe("app pages", () => {
 
   it("rejects external returnTo targets after login", async () => {
     mockSearchParams = new URLSearchParams({ returnTo: "https://evil.example/callback" });
+    mockGetCurrentUser.mockResolvedValue({ has_enrolled_voice: true });
     render(await LoginPage());
 
     const call = authFormMock.mock.calls[0]?.[0] as { mode: string; onSuccess: () => void };
     call.onSuccess();
-    expect(mockReplace).toHaveBeenCalledWith("/dashboard");
+    await waitFor(() => expect(mockReplace).toHaveBeenCalledWith("/dashboard"));
+    expect(mockReplace).not.toHaveBeenCalledWith(expect.stringContaining("evil.example"));
   });
 
   it("renders dashboard wrapper", () => {

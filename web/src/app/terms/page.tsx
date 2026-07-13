@@ -16,7 +16,7 @@ export const metadata: Metadata = {
 
 export default function TermsPage() {
   return (
-    <main className={styles.legalPage}>
+    <main id="main" className={styles.legalPage}>
       <div className={styles.legalShell}>
         <Link className={styles.backLink} href="/">
           WaiComputer

@@ -9,6 +9,7 @@ import {
   startItemSummaryAudio,
 } from "@/lib/api";
 import { SummaryAudioControls } from "@/components/SummaryAudioControls";
+import { SummaryMarkdown } from "@/components/SummaryMarkdown";
 import type { Item, KeyMoment } from "@/lib/types";
 
 type Locale = "en" | "ru";
@@ -19,8 +20,12 @@ interface Copy {
   notFound: string;
   deleting: string;
   delete: string;
+  deleteConfirmTitle: string;
+  deleteConfirmBody: string;
+  cancel: string;
   fetching: string;
   summarizing: string;
+  sourceText: string;
   recoverNotice: string;
   pastePlaceholder: string;
   processing: string;
@@ -46,8 +51,12 @@ const COPY: Record<Locale, Copy> = {
     notFound: "Item not found.",
     deleting: "Deleting…",
     delete: "Delete",
+    deleteConfirmTitle: "Delete this material?",
+    deleteConfirmBody: "It will be removed permanently — this can't be undone.",
+    cancel: "Cancel",
     fetching: "Fetching the source text…",
     summarizing: "Extracted text is being summarized. This material will update automatically.",
+    sourceText: "Source text",
     recoverNotice: "Couldn't read this automatically — paste the text below, or retry the source.",
     pastePlaceholder: "Paste the text here…",
     processing: "Processing…",
@@ -71,8 +80,12 @@ const COPY: Record<Locale, Copy> = {
     notFound: "Материал не найден.",
     deleting: "Удаление…",
     delete: "Удалить",
+    deleteConfirmTitle: "Удалить этот материал?",
+    deleteConfirmBody: "Он будет удалён навсегда — это нельзя отменить.",
+    cancel: "Отмена",
     fetching: "Загружаем исходный текст…",
     summarizing: "Извлечённый текст обрабатывается. Материал обновится автоматически.",
+    sourceText: "Исходный текст",
     recoverNotice: "Не удалось прочитать автоматически — вставьте текст ниже или повторите загрузку источника.",
     pastePlaceholder: "Вставьте текст сюда…",
     processing: "Обработка…",
@@ -102,7 +115,12 @@ interface ItemDetailProps {
   locale?: Locale;
 }
 
-function displayTitle(title: string | null, url: string | null, untitled: string): string {
+function displayTitle(
+  title: string | null,
+  url: string | null,
+  body: string | null,
+  untitled: string,
+): string {
   const cleaned = title?.trim();
   if (
     cleaned &&
@@ -112,7 +130,12 @@ function displayTitle(title: string | null, url: string | null, untitled: string
   ) {
     return cleaned;
   }
-  return url ?? untitled;
+  if (url) return url;
+  const excerpt = body?.trim().replace(/\s+/g, " ");
+  if (excerpt) {
+    return excerpt.length > 64 ? `${excerpt.slice(0, 63).trimEnd()}…` : excerpt;
+  }
+  return untitled;
 }
 
 /** Detail view for a non-recording Item: summary, key-moments table, key points. */
@@ -179,6 +202,7 @@ export function ItemDetail({
   const [pasteText, setPasteText] = useState("");
   const [recovering, setRecovering] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
 
   const handleReprocess = async (body?: string) => {
     if (recovering) return;
@@ -255,13 +279,16 @@ export function ItemDetail({
     <article className="item-detail">
       <header className="item-detail__header">
         <span className="item-detail__kind">{item.kind}</span>
-        <h2 className="item-detail__title">{displayTitle(item.title, item.url, copy.untitled)}</h2>
+        <h2 className="item-detail__title">
+          {displayTitle(item.title, item.url, item.body, copy.untitled)}
+        </h2>
         {showDelete ? (
           <button
             type="button"
             className="ghost-button compact-button"
+            data-testid="item-delete"
             disabled={deleting}
-            onClick={() => void handleDelete()}
+            onClick={() => setConfirmingDelete(true)}
           >
             {deleting ? copy.deleting : copy.delete}
           </button>
@@ -274,7 +301,7 @@ export function ItemDetail({
       </header>
 
       {(item.status === "fetching" || item.status === "summarizing") && !summary?.summary ? (
-        <div className="item-detail__processing" data-testid="item-processing">
+        <div className="item-detail__processing" data-testid="item-processing" role="status">
           {item.status === "fetching" ? copy.fetching : copy.summarizing}
         </div>
       ) : null}
@@ -320,9 +347,11 @@ export function ItemDetail({
             state={item.summary_audio}
             onCreate={handleCreateAudio}
             onDownload={handleDownloadAudio}
-            filename={`${displayTitle(item.title, item.url, copy.untitled).replace(/[/\\]/g, "_")}-summary.mp3`}
+            filename={`${displayTitle(item.title, item.url, item.body, copy.untitled).replace(/[/\\]/g, "_")}-summary.mp3`}
           />
-          <p className="item-detail__summary">{summary.summary}</p>
+          <div className="item-detail__summary">
+            <SummaryMarkdown text={summary.summary} />
+          </div>
         </section>
       ) : null}
 
@@ -359,6 +388,57 @@ export function ItemDetail({
             ))}
           </ul>
         </section>
+      ) : null}
+
+      {item.body?.trim() ? (
+        summary?.summary ? (
+          <details className="item-detail__section item-detail__source-text" data-testid="item-body">
+            <summary className="item-detail__h3 item-detail__source-toggle">
+              {copy.sourceText}
+            </summary>
+            <p className="item-detail__body">{item.body}</p>
+          </details>
+        ) : (
+          <section className="item-detail__section item-detail__source-text" data-testid="item-body">
+            <h3 className="item-detail__h3">{copy.sourceText}</h3>
+            <p className="item-detail__body">{item.body}</p>
+          </section>
+        )
+      ) : null}
+      {confirmingDelete ? (
+        <div
+          className="modal-backdrop"
+          role="dialog"
+          aria-modal="true"
+          data-testid="item-delete-modal"
+        >
+          <div className="modal-card">
+            <h3>{copy.deleteConfirmTitle}</h3>
+            <p className="settings-note">{copy.deleteConfirmBody}</p>
+            <div className="row-actions">
+              <button
+                type="button"
+                className="ghost-button compact-button"
+                data-testid="item-delete-cancel"
+                onClick={() => setConfirmingDelete(false)}
+              >
+                {copy.cancel}
+              </button>
+              <button
+                type="button"
+                className="ghost-button compact-button danger-button"
+                data-testid="item-delete-confirm"
+                disabled={deleting}
+                onClick={() => {
+                  setConfirmingDelete(false);
+                  void handleDelete();
+                }}
+              >
+                {copy.delete}
+              </button>
+            </div>
+          </div>
+        </div>
       ) : null}
     </article>
   );

@@ -18,7 +18,7 @@ export default async function ResetPasswordPage({ searchParams }: ResetPasswordP
     ?? resolveAuthLocaleFromAcceptLanguage(requestHeaders.get("accept-language"));
 
   return (
-    <main className="container auth-page">
+    <main id="main" className="container auth-page">
       <ResetPasswordClient token={params.token ?? null} locale={initialLocale} />
     </main>
   );

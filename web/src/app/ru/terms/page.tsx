@@ -17,7 +17,7 @@ export const metadata: Metadata = {
 
 export default function RuTermsPage() {
   return (
-    <main className={styles.legalPage}>
+    <main id="main" className={styles.legalPage}>
       <div className={styles.legalShell}>
         <Link className={styles.backLink} href="/ru">
           WaiComputer

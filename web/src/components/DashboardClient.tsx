@@ -304,15 +304,17 @@ interface DashboardCopy {
   search: {
     placeholder: string;
     submit: string;
+    modeLabel: string;
     hybrid: string;
     semantic: string;
     fts: string;
     everything: string;
     total: (n: number) => string;
     enterQuery: string;
+    emptyTitle: string;
+    emptyBody: string;
     noResultsTitle: string;
     noResultsBody: string;
-    score: string;
     open: string;
   };
   // Settings
@@ -368,8 +370,8 @@ const COPY: Record<Locale, DashboardCopy> = {
   en: {
     loadingDashboard: "Loading dashboard…",
     refreshing: "Refreshing dashboard…",
-    reload: "Reload",
-    reloading: "Reloading…",
+    reload: "Refresh",
+    reloading: "Refreshing…",
     logout: "Logout",
     noUser: "No user",
     fallbackTitle: "WaiComputer",
@@ -409,7 +411,7 @@ const COPY: Record<Locale, DashboardCopy> = {
     history: {
       title: "Dictation History",
       subtitle: "Every voice-to-text insert from Mac and web.",
-      emptyTitle: "No Dictation Yet",
+      emptyTitle: "No dictation yet",
       emptyBody: "Open WaiComputer on Mac or web to start dictating.",
       notAvailableTitle: "Dictation History Unavailable",
       notAvailableBody:
@@ -477,9 +479,9 @@ const COPY: Record<Locale, DashboardCopy> = {
       newButton: "New",
       emptyTitle: "No Recordings",
       emptyBody: "Record in the browser or import an audio file.",
-      trashEmptyTitle: "Trash is Empty",
+      trashEmptyTitle: "Trash is empty",
       trashEmptyBody: "Deleted recordings will appear here.",
-      selectTitle: "Select a Recording",
+      selectTitle: "Select a recording",
       selectTrashBody: "Choose a trashed recording to restore or delete it permanently.",
       untitled: "(untitled)",
       couldNotProcess: "Could not process this recording. Please try again or contact support.",
@@ -493,15 +495,18 @@ const COPY: Record<Locale, DashboardCopy> = {
     search: {
       placeholder: "Search your second brain…",
       submit: "Search",
+      modeLabel: "Search mode",
       hybrid: "Hybrid",
       semantic: "Semantic",
       fts: "Full text",
       everything: "Everything",
-      total: (n) => `Total: ${n}`,
+      total: (n) => (n === 1 ? "1 result" : `${n} results`),
       enterQuery: "Enter a search query.",
-      noResultsTitle: "No Results",
-      noResultsBody: "No matching transcript segments found.",
-      score: "Score",
+      emptyTitle: "Search everything you've captured",
+      emptyBody:
+        "Recordings, notes, links, and Wai chats — by keyword or by meaning. Try a person, a topic, or a phrase you remember.",
+      noResultsTitle: "No results",
+      noResultsBody: "Nothing matched this search. Try fewer or different words.",
       open: "Open",
     },
     settings: {
@@ -521,7 +526,7 @@ const COPY: Record<Locale, DashboardCopy> = {
       dictationBody:
         "Dictation uses Deepgram Nova-3 punctuation, numerals, and your dictionary terms during recognition.",
       settingsUpdated: "Settings updated.",
-      accountHeading: "Account",
+      accountHeading: "Password",
       magicLinkNote:
         "You signed in with a magic link. Set a password to use email and password login.",
       currentPassword: "Current password",
@@ -689,15 +694,26 @@ const COPY: Record<Locale, DashboardCopy> = {
     search: {
       placeholder: "Искать по второму мозгу…",
       submit: "Найти",
+      modeLabel: "Режим поиска",
       hybrid: "Гибридный",
       semantic: "Семантический",
       fts: "По тексту",
       everything: "Везде",
-      total: (n) => `Всего: ${n}`,
+      total: (n) => {
+        const mod10 = n % 10;
+        const mod100 = n % 100;
+        if (mod10 === 1 && mod100 !== 11) return `${n} результат`;
+        if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) {
+          return `${n} результата`;
+        }
+        return `${n} результатов`;
+      },
       enterQuery: "Введите поисковый запрос.",
+      emptyTitle: "Ищите по всему, что вы сохранили",
+      emptyBody:
+        "Записи, заметки, ссылки и чаты Wai — по словам или по смыслу. Попробуйте имя, тему или фразу, которую помните.",
       noResultsTitle: "Ничего не найдено",
-      noResultsBody: "Не нашли подходящих фрагментов транскрипта.",
-      score: "Релевантность",
+      noResultsBody: "По этому запросу ничего нет. Попробуйте другие слова.",
       open: "Открыть",
     },
     settings: {
@@ -718,7 +734,7 @@ const COPY: Record<Locale, DashboardCopy> = {
       dictationBody:
         "Диктовка использует Deepgram Nova-3: пунктуацию, числа и ваши словарные термины прямо при распознавании.",
       settingsUpdated: "Настройки сохранены.",
-      accountHeading: "Аккаунт",
+      accountHeading: "Пароль",
       magicLinkNote:
         "Вы вошли по magic-ссылке. Задайте пароль, чтобы входить по email и паролю.",
       currentPassword: "Текущий пароль",
@@ -769,6 +785,19 @@ function formatError(error: unknown): string {
   if (error instanceof ApiError) return error.message;
   if (error instanceof Error) return error.message;
   return "Unexpected error";
+}
+
+function formatItemCount(count: number, locale: Locale): string {
+  if (locale === "ru") {
+    const mod10 = count % 10;
+    const mod100 = count % 100;
+    if (mod10 === 1 && mod100 !== 11) return `${count} объект`;
+    if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) {
+      return `${count} объекта`;
+    }
+    return `${count} объектов`;
+  }
+  return count === 1 ? "1 item" : `${count} items`;
 }
 
 
@@ -1907,6 +1936,20 @@ export function DashboardClient() {
                 );
               })}
 
+              {/* Billing is a standalone route, not a dashboard view — link it
+               * from Tools so the plan/quota page is reachable in-app. */}
+              {index === navSections.length - 1 ? (
+                <a
+                  className="sidebar-nav__item sidebar-nav__route"
+                  data-testid="tab-billing"
+                  href="/billing"
+                >
+                  <span>
+                    <strong>{locale === "ru" ? "Оплата и план" : "Billing"}</strong>
+                  </span>
+                </a>
+              ) : null}
+
               {/* Folders block lives right after the Workspace section. */}
               {index === 0 ? (
                 <div className="sidebar-folder-group">
@@ -2498,7 +2541,7 @@ export function DashboardClient() {
             />
             <select
               data-testid="search-mode"
-              aria-label={copy.search.submit}
+              aria-label={copy.search.modeLabel}
               value={searchMode}
               onChange={(event) => {
                 setSearchMode(event.target.value as SearchMode);
@@ -2538,8 +2581,7 @@ export function DashboardClient() {
                             : hit.source_kind === "item"
                               ? hit.kind
                               : "recording"
-                        ).toUpperCase()} /{" "}
-                        {copy.search.score} {hit.score.toFixed(2)}
+                        ).toUpperCase()}
                       </small>
                       <button
                         type="button"
@@ -2573,10 +2615,7 @@ export function DashboardClient() {
                   <strong>{result.recording_title ?? copy.library.untitled}</strong>
                   <p>{result.content}</p>
                   <div className="search-result-footer">
-                    <small>
-                      {result.speaker ? `${result.speaker} / ` : ""}
-                      {copy.search.score} {result.score.toFixed(2)}
-                    </small>
+                    <small>{result.speaker ?? ""}</small>
                     <button
                       type="button"
                       className="ghost-button compact-button"
@@ -2592,6 +2631,11 @@ export function DashboardClient() {
             <div className="empty-state" data-testid="search-no-results">
               <h3>{copy.search.noResultsTitle}</h3>
               <p>{copy.search.noResultsBody}</p>
+            </div>
+          ) : !unifiedResponse && !searchResponse ? (
+            <div className="empty-state" data-testid="search-empty-hint">
+              <h3>{copy.search.emptyTitle}</h3>
+              <p>{copy.search.emptyBody}</p>
             </div>
           ) : null}
         </section>
@@ -3223,6 +3267,15 @@ function UniversalInboxPanel({
   onStatus: (message: string) => void;
 }) {
   const [rows, setRows] = useState<VisibleInboxRow[]>([]);
+  // Fresh row count for callbacks created on earlier renders (loadInbox).
+  const rowsRef = useRef<VisibleInboxRow[]>(rows);
+  rowsRef.current = rows;
+  // Last item snapshot synced to the list — gates ItemDetail poll callbacks.
+  const lastSyncedItemRef = useRef<{
+    id: string;
+    status: string;
+    title: string | null;
+  } | null>(null);
   const [selectedRow, setSelectedRow] = useState<VisibleInboxRow | null>(null);
   const [selectedRecording, setSelectedRecording] = useState<RecordingDetail | null>(
     null,
@@ -3239,6 +3292,10 @@ function UniversalInboxPanel({
   const [selectMode, setSelectMode] = useState(false);
   const [selectedRowIds, setSelectedRowIds] = useState<Set<string>>(new Set());
   const [bulkBusy, setBulkBusy] = useState(false);
+  // Rows awaiting delete confirmation (single, bulk, or keyboard-initiated).
+  // Recordings soft-delete into Trash; items disappear for good, so nothing
+  // destructive fires without an explicit confirm.
+  const [pendingTrash, setPendingTrash] = useState<InboxRow[] | null>(null);
   const lastToggledIndexRef = useRef<number | null>(null);
   const inboxRequestId = useRef(0);
 
@@ -3303,12 +3360,18 @@ function UniversalInboxPanel({
   );
 
   const loadInbox = useCallback(
-    async (mode: "replace" | "append" = "replace") => {
+    async (
+      mode: "replace" | "append" = "replace",
+      options?: { skeleton?: boolean },
+    ) => {
       if (mode === "append") {
         if (!nextCursor || loadingMore) return rows;
         setLoadingMore(true);
       } else {
-        setLoading(true);
+        // Skeletons are for the first paint and filter switches only.
+        // Refreshes with rows on screen stay silent — flashing the whole
+        // list on every poll or selection reads as data loss.
+        setLoading(options?.skeleton === true || rowsRef.current.length === 0);
       }
       const requestId = inboxRequestId.current + 1;
       inboxRequestId.current = requestId;
@@ -3352,7 +3415,10 @@ function UniversalInboxPanel({
     setLoadError(null);
     setSelectedRowIds(new Set());
     lastToggledIndexRef.current = null;
-    void loadInbox("replace");
+    // A filter switch is a new list, not a refresh of the current one —
+    // drop the old rows and show the skeleton (not stale data) over the fetch.
+    setRows([]);
+    void loadInbox("replace", { skeleton: true });
   // The first page reloads when filters change. Cursor changes are driven by
   // explicit "Load more" clicks and must not restart the list.
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -3598,17 +3664,18 @@ function UniversalInboxPanel({
     }
   }
 
-  async function bulkTrashSelected() {
-    await trashRows(rows.filter((row) => selectedRowIds.has(row.id)));
+  function requestTrashSelected() {
+    setPendingTrash(rows.filter((row) => selectedRowIds.has(row.id)));
   }
 
-  // Delete/Backspace trashes the selection (in select mode) or the open row.
+  // Delete/Backspace asks to trash the selection (in select mode) or the open
+  // row — the confirm modal below fires the actual deletion.
   // No dependency array: the handler closes over fresh state each render, and
   // re-subscribing keydown per render mirrors useKeyboardShortcuts below.
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
       if (event.key !== "Delete" && event.key !== "Backspace") return;
-      if (bulkBusy) return;
+      if (bulkBusy || pendingTrash) return;
       const target = event.target as HTMLElement | null;
       if (
         target &&
@@ -3619,12 +3686,12 @@ function UniversalInboxPanel({
       }
       if (selectMode && selectedRowIds.size > 0) {
         event.preventDefault();
-        void bulkTrashSelected();
+        requestTrashSelected();
         return;
       }
       if (selectedRow && !showCreate) {
         event.preventDefault();
-        void trashRows([selectedRow]);
+        setPendingTrash([selectedRow]);
       }
     }
     window.addEventListener("keydown", onKeyDown);
@@ -3658,12 +3725,8 @@ function UniversalInboxPanel({
                   ? "Загрузка…"
                   : "Loading…"
                 : folderName
-                  ? locale === "ru"
-                    ? `${folderName} / ${rows.length} объектов`
-                    : `${folderName} / ${rows.length} items`
-                : locale === "ru"
-                  ? `${rows.length} объектов`
-                  : `${rows.length} items`}
+                  ? `${folderName} / ${formatItemCount(rows.length, locale)}`
+                  : formatItemCount(rows.length, locale)}
             </p>
           </div>
           <div className="row-actions">
@@ -3733,9 +3796,9 @@ function UniversalInboxPanel({
               className="ghost-button compact-button danger-button"
               data-testid="bulk-trash"
               disabled={bulkBusy}
-              onClick={() => void bulkTrashSelected()}
+              onClick={requestTrashSelected}
             >
-              {locale === "ru" ? "В корзину" : "Move to Trash"}
+              {locale === "ru" ? "Удалить" : "Delete"}
             </button>
           </div>
         ) : null}
@@ -4021,10 +4084,78 @@ function UniversalInboxPanel({
               onItemsChanged();
               void loadInbox("replace");
             }}
-            onItemChange={() => void loadInbox("replace")}
+            onItemChange={(item) => {
+              // ItemDetail polls every couple of seconds while a material is
+              // summarizing — only sync the list when a row-visible field
+              // actually changed, not on every poll tick.
+              const prev = lastSyncedItemRef.current;
+              if (
+                prev &&
+                prev.id === item.id &&
+                prev.status === item.status &&
+                prev.title === item.title
+              ) {
+                return;
+              }
+              lastSyncedItemRef.current = {
+                id: item.id,
+                status: item.status,
+                title: item.title,
+              };
+              void loadInbox("replace");
+            }}
           />
         )}
       </section>
+
+      {pendingTrash ? (
+        <div
+          className="modal-backdrop"
+          role="dialog"
+          aria-modal="true"
+          data-testid="inbox-delete-modal"
+        >
+          <div className="modal-card">
+            <h3>
+              {locale === "ru"
+                ? pendingTrash.length === 1
+                  ? "Удалить объект?"
+                  : `Удалить объекты (${pendingTrash.length})?`
+                : pendingTrash.length === 1
+                  ? "Delete this item?"
+                  : `Delete ${pendingTrash.length} items?`}
+            </h3>
+            <p className="settings-note">
+              {locale === "ru"
+                ? "Записи попадут в корзину. Заметки, ссылки и файлы будут удалены навсегда."
+                : "Recordings move to Trash. Notes, links, and files are removed permanently."}
+            </p>
+            <div className="row-actions">
+              <button
+                type="button"
+                className="ghost-button compact-button"
+                data-testid="inbox-delete-cancel"
+                onClick={() => setPendingTrash(null)}
+              >
+                {locale === "ru" ? "Отмена" : "Cancel"}
+              </button>
+              <button
+                type="button"
+                className="ghost-button compact-button danger-button"
+                data-testid="inbox-delete-confirm"
+                disabled={bulkBusy}
+                onClick={() => {
+                  const rowsToTrash = pendingTrash;
+                  setPendingTrash(null);
+                  void trashRows(rowsToTrash);
+                }}
+              >
+                {locale === "ru" ? "Удалить" : "Delete"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

@@ -15,9 +15,18 @@ export default function RuLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  // The root layout already renders <html lang="en"> — we re-tag the inner
-  // tree with a Russian language attribute via a data-locale fence so
-  // screen readers and search engines pick up the locale shift without
-  // requiring a parallel <html> root.
-  return <div lang="ru">{children}</div>;
+  // The root layout guesses <html lang> from Accept-Language, which is wrong
+  // for an EN-configured browser on /ru/* (and vice versa). URL wins: stamp
+  // the root element before paint so screen readers and translate prompts see
+  // Russian, and keep the inner lang fence for the SSR snapshot.
+  return (
+    <div lang="ru">
+      <script
+        dangerouslySetInnerHTML={{
+          __html: 'document.documentElement.lang="ru";',
+        }}
+      />
+      {children}
+    </div>
+  );
 }

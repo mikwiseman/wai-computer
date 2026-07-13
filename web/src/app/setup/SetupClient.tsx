@@ -11,7 +11,7 @@ export function SetupClient() {
   const [choice, setChoice] = useState<Choice>("cloud");
 
   return (
-    <main className="setup-shell">
+    <main id="main" className="setup-shell">
       <section className="setup-hero">
         <div>
           <h1>Choose where your data lives</h1>

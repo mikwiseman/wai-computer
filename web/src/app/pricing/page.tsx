@@ -20,7 +20,7 @@ export const metadata: Metadata = {
 
 export default function PricingPage() {
   return (
-    <main className="container pricing-page">
+    <main id="main" className="container pricing-page">
       <header className={styles.nav}>
         <Link href="/" className={styles.brand} aria-label="WaiComputer home">
           <span className={styles.brandMark} aria-hidden="true" />

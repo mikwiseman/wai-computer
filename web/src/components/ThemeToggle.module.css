@@ -32,6 +32,16 @@
   outline-offset: 1px;
 }
 
+/* 44 pt touch floor on coarse pointers — the toggle is the only theme
+ * control anonymous mobile visitors get (share page, marketing). */
+@media (hover: none) and (pointer: coarse) {
+  .option {
+    width: 40px;
+    height: 40px;
+    min-height: 40px;
+  }
+}
+
 .optionSelected {
   background: var(--panel);
   color: var(--ink);

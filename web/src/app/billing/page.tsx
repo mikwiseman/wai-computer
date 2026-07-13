@@ -7,7 +7,7 @@ export const metadata: Metadata = {
 
 export default function BillingPage() {
   return (
-    <main className="container">
+    <main id="main" className="container">
       <BillingDashboard locale="en" currency="usd" />
     </main>
   );

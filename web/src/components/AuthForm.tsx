@@ -19,6 +19,7 @@ const COPY: Record<
     primarySubmit: string;
     sendMagicLoading: string;
     passwordMode: string;
+    magicMode: string;
     password: string;
     passwordSubmit: Record<Mode, string>;
     passwordLoading: string;
@@ -46,6 +47,7 @@ const COPY: Record<
     primarySubmit: "Email me a sign-in link",
     sendMagicLoading: "Sending…",
     passwordMode: "Use password instead",
+    magicMode: "Email me a sign-in link instead",
     password: "Password",
     passwordSubmit: {
       login: "Sign in with password",
@@ -78,6 +80,7 @@ const COPY: Record<
     primarySubmit: "Отправить ссылку для входа",
     sendMagicLoading: "Отправляем…",
     passwordMode: "Использовать пароль",
+    magicMode: "Войти по ссылке на email",
     password: "Пароль",
     passwordSubmit: {
       login: "Войти по паролю",
@@ -267,100 +270,123 @@ export function AuthForm({ mode, onSuccess, initialLocale }: AuthFormProps) {
         <h1>{copy.title[mode]}</h1>
       </header>
 
-      <form onSubmit={onSendMagicLink} className="auth-form">
-        <label htmlFor="email">
-          <span>{copy.email}</span>
-          <input
-            id="email"
-            data-testid="auth-email"
-            name="email"
-            type="email"
-            required
-            value={email}
-            onChange={(event) => setEmail(event.target.value)}
-          />
-        </label>
-
-        {mode === "register" ? (
-          <label className="auth-legal-consent">
+      {/* Exactly one form is mounted at a time so Enter always submits the
+        * visible flow and the card keeps a single primary action. Email and
+        * legal consent live in shared state, so switching modes loses nothing. */}
+      {(() => {
+        const emailField = (
+          <label htmlFor="email">
+            <span>{copy.email}</span>
             <input
-              data-testid="legal-consent-checkbox"
-              type="checkbox"
-              checked={acceptedLegalTerms}
-              onChange={(event) => setAcceptedLegalTerms(event.target.checked)}
-              disabled={loading}
+              id="email"
+              data-testid="auth-email"
+              name="email"
+              type="email"
+              autoComplete="email"
+              required
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
             />
-            <span>
-              {renderLegalConsent(
-                copy.legalConsent,
-                <Link href={locale === "ru" ? "/ru/terms" : "/terms"}>{copy.terms}</Link>,
-                <Link href={locale === "ru" ? "/ru/privacy" : "/privacy"}>{copy.privacy}</Link>,
-              )}
-            </span>
           </label>
-        ) : null}
+        );
+        const legalConsent =
+          mode === "register" ? (
+            <label className="auth-legal-consent">
+              <input
+                data-testid="legal-consent-checkbox"
+                type="checkbox"
+                checked={acceptedLegalTerms}
+                onChange={(event) => setAcceptedLegalTerms(event.target.checked)}
+                disabled={loading}
+              />
+              <span>
+                {renderLegalConsent(
+                  copy.legalConsent,
+                  <Link href={locale === "ru" ? "/ru/terms" : "/terms"}>{copy.terms}</Link>,
+                  <Link href={locale === "ru" ? "/ru/privacy" : "/privacy"}>{copy.privacy}</Link>,
+                )}
+              </span>
+            </label>
+          ) : null;
 
-        <button
-          className="primary-button"
-          data-testid="magic-link-button"
-          type="submit"
-          disabled={
-            loading
-            || email.trim().length === 0
-            || (mode === "register" && !acceptedLegalTerms)
-          }
-        >
-          {pendingAction === "magic" ? copy.sendMagicLoading : copy.primarySubmit}
-        </button>
-      </form>
+        return passwordMode ? (
+          <form onSubmit={onPasswordSubmit} className="auth-form">
+            {emailField}
+            {legalConsent}
+            <PasswordField
+              id="password"
+              name="password"
+              data-testid="auth-password"
+              label={copy.password}
+              value={password}
+              onChange={setPassword}
+              locale={locale}
+              showStrength={mode === "register"}
+              required
+              autoComplete={mode === "register" ? "new-password" : "current-password"}
+            />
 
-      {passwordMode ? (
-        <form onSubmit={onPasswordSubmit} className="auth-form">
-          <PasswordField
-            id="password"
-            name="password"
-            data-testid="auth-password"
-            label={copy.password}
-            value={password}
-            onChange={setPassword}
-            locale={locale}
-            showStrength={mode === "register"}
-            required
-            autoComplete={mode === "register" ? "new-password" : "current-password"}
-          />
+            <button
+              className="primary-button"
+              data-testid="auth-submit"
+              type="submit"
+              disabled={loading || (mode === "register" && !acceptedLegalTerms)}
+            >
+              {pendingAction === "password" ? copy.passwordLoading : copy.passwordSubmit[mode]}
+            </button>
 
-          <button
-            className="primary-button"
-            data-testid="auth-submit"
-            type="submit"
-            disabled={loading || (mode === "register" && !acceptedLegalTerms)}
-          >
-            {pendingAction === "password" ? copy.passwordLoading : copy.passwordSubmit[mode]}
-          </button>
+            {mode === "login" ? (
+              <button
+                className="ghost-button"
+                data-testid="forgot-password-button"
+                type="button"
+                onClick={() => setForgotPasswordMode(true)}
+                disabled={loading}
+              >
+                {copy.forgotPassword}
+              </button>
+            ) : null}
 
-          {mode === "login" ? (
             <button
               className="ghost-button"
-              data-testid="forgot-password-button"
+              data-testid="magic-mode-button"
               type="button"
-              onClick={() => setForgotPasswordMode(true)}
+              onClick={() => setPasswordMode(false)}
               disabled={loading}
             >
-              {copy.forgotPassword}
+              {copy.magicMode}
             </button>
-          ) : null}
-        </form>
-      ) : (
-        <button
-          className="ghost-button"
-          data-testid="password-mode-button"
-          type="button"
-          onClick={() => setPasswordMode(true)}
-          disabled={loading}
-        >
-          {copy.passwordMode}
-        </button>
-      )}
+          </form>
+        ) : (
+          <>
+            <form onSubmit={onSendMagicLink} className="auth-form">
+              {emailField}
+              {legalConsent}
+              <button
+                className="primary-button"
+                data-testid="magic-link-button"
+                type="submit"
+                disabled={
+                  loading
+                  || email.trim().length === 0
+                  || (mode === "register" && !acceptedLegalTerms)
+                }
+              >
+                {pendingAction === "magic" ? copy.sendMagicLoading : copy.primarySubmit}
+              </button>
+            </form>
+            <button
+              className="ghost-button"
+              data-testid="password-mode-button"
+              type="button"
+              onClick={() => setPasswordMode(true)}
+              disabled={loading}
+            >
+              {copy.passwordMode}
+            </button>
+          </>
+        );
+      })()}
 
       {forgotPasswordMode && mode === "login" ? (
         <form

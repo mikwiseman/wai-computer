@@ -150,7 +150,8 @@ describe("ItemDetail", () => {
     render(<ItemDetail itemId="i1" onDeleted={onDeleted} />);
 
     await waitFor(() => expect(screen.getByText("Solar Explainer")).toBeInTheDocument());
-    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    fireEvent.click(screen.getByTestId("item-delete"));
+    fireEvent.click(screen.getByTestId("item-delete-confirm"));
 
     await waitFor(() => expect(mockDeleteItem).toHaveBeenCalledWith("i1"));
     expect(onDeleted).toHaveBeenCalledWith("i1");

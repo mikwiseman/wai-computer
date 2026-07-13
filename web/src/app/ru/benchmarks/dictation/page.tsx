@@ -105,7 +105,7 @@ export default function RuDictationBenchmarkPage() {
   const previewRows = results.slice(0, 3);
 
   return (
-    <main className={styles.page}>
+    <main id="main" className={styles.page}>
       <header className={styles.nav}>
         <Link href="/ru" className={styles.brand} aria-label="WaiComputer">
           <span className={styles.brandMark} aria-hidden="true" />

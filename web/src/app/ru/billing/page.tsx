@@ -7,7 +7,7 @@ export const metadata: Metadata = {
 
 export default function RuBillingPage() {
   return (
-    <main className="container">
+    <main id="main" className="container">
       <BillingDashboard locale="ru" currency="rub" />
     </main>
   );

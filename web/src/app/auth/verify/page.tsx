@@ -19,7 +19,7 @@ export default async function VerifyMagicLinkPage({ searchParams }: VerifyPagePr
     ?? resolveAuthLocaleFromAcceptLanguage(requestHeaders.get("accept-language"));
 
   return (
-    <main className="container auth-page">
+    <main id="main" className="container auth-page">
       <VerifyMagicLinkClient
         token={params.token ?? null}
         locale={initialLocale}

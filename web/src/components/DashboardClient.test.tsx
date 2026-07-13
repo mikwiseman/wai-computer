@@ -651,21 +651,21 @@ describe("DashboardClient", () => {
     await user.click(screen.getByTestId("search-submit"));
     await waitFor(() => {
       expect(mockSearch).toHaveBeenCalled();
-      expect(screen.getByTestId("search-total")).toHaveTextContent("Total: 5");
+      expect(screen.getByTestId("search-total")).toHaveTextContent("5 results");
     });
 
     await user.selectOptions(screen.getByTestId("search-mode"), "semantic");
     await user.click(screen.getByTestId("search-submit"));
     await waitFor(() => {
       expect(mockSemanticSearch).toHaveBeenCalled();
-      expect(screen.getByTestId("search-total")).toHaveTextContent("Total: 4");
+      expect(screen.getByTestId("search-total")).toHaveTextContent("4 results");
     });
 
     await user.selectOptions(screen.getByTestId("search-mode"), "fts");
     await user.click(screen.getByTestId("search-submit"));
     await waitFor(() => {
       expect(mockFulltextSearch).toHaveBeenCalled();
-      expect(screen.getByTestId("search-total")).toHaveTextContent("Total: 3");
+      expect(screen.getByTestId("search-total")).toHaveTextContent("3 results");
     });
 
     await openSettingsView(user);
@@ -799,7 +799,7 @@ describe("DashboardClient", () => {
     );
     expect(screen.getByText("Solar PDF")).toBeInTheDocument();
     expect(screen.getByText("Planning")).toBeInTheDocument();
-    expect(screen.getByTestId("unified-result-c3")).toHaveTextContent("WAI / Score 0.60");
+    expect(screen.getByTestId("unified-result-c3")).toHaveTextContent("WAI");
     expect(mockUnifiedSearch).toHaveBeenCalledWith({ q: "solar", limit: 25 });
   });
 
@@ -844,12 +844,11 @@ describe("DashboardClient", () => {
     await user.click(screen.getByTestId("search-submit"));
 
     await waitFor(() => {
-      expect(screen.getByTestId("search-total")).toHaveTextContent("Total: 2");
+      expect(screen.getByTestId("search-total")).toHaveTextContent("2 results");
       expect(screen.getByTestId("search-results")).toBeInTheDocument();
       expect(screen.getByTestId("search-result-seg1")).toHaveTextContent("Planning");
       expect(screen.getByTestId("search-result-seg1")).toHaveTextContent("We discussed the roadmap");
       expect(screen.getByTestId("search-result-seg1")).toHaveTextContent("Alice");
-      expect(screen.getByTestId("search-result-seg1")).toHaveTextContent("0.95");
       expect(screen.getByTestId("search-result-seg2")).toHaveTextContent("(untitled)");
     });
 
@@ -879,8 +878,8 @@ describe("DashboardClient", () => {
     await waitFor(() => {
       // A search that ran and found nothing still reports its zero total —
       // only the pre-search state hides the counter.
-      expect(screen.getByTestId("search-total")).toHaveTextContent("Total: 0");
-      expect(screen.getByTestId("search-no-results")).toHaveTextContent("No matching transcript segments found.");
+      expect(screen.getByTestId("search-total")).toHaveTextContent("0 results");
+      expect(screen.getByTestId("search-no-results")).toHaveTextContent("Nothing matched this search. Try fewer or different words.");
     });
   });
 
@@ -917,7 +916,7 @@ describe("DashboardClient", () => {
     await user.click(screen.getByTestId("search-submit"));
 
     await waitFor(() => {
-      expect(screen.getByTestId("search-total")).toHaveTextContent("Total: 1");
+      expect(screen.getByTestId("search-total")).toHaveTextContent("1 result");
       expect(screen.getByTestId("search-results")).toBeInTheDocument();
     });
 
@@ -1358,7 +1357,7 @@ describe("DashboardClient", () => {
     await user.type(screen.getByTestId("search-query"), "test");
     await user.click(screen.getByTestId("search-submit"));
     await waitFor(() => {
-      expect(screen.getByTestId("search-total")).toHaveTextContent("Total: 1");
+      expect(screen.getByTestId("search-total")).toHaveTextContent("1 result");
     });
 
     // Switch to semantic — results cleared
@@ -1370,7 +1369,7 @@ describe("DashboardClient", () => {
     // Search again in semantic mode
     await user.click(screen.getByTestId("search-submit"));
     await waitFor(() => {
-      expect(screen.getByTestId("search-total")).toHaveTextContent("Total: 1");
+      expect(screen.getByTestId("search-total")).toHaveTextContent("1 result");
     });
 
     // Switch back to hybrid — results cleared again
@@ -1759,7 +1758,7 @@ describe("DashboardClient", () => {
     });
 
     // The trash detail pane shows the "select a recording" prompt, not a recorder.
-    expect(screen.getByText("Select a Recording")).toBeInTheDocument();
+    expect(screen.getByText("Select a recording")).toBeInTheDocument();
     expect(screen.queryByTestId("recording-title")).not.toBeInTheDocument();
   });
 
@@ -1941,6 +1940,7 @@ describe("DashboardClient", () => {
     expect(screen.getByTestId("bulk-bar")).toHaveTextContent("2 selected");
 
     await user.click(screen.getByTestId("bulk-trash"));
+    await user.click(screen.getByTestId("inbox-delete-confirm"));
 
     await waitFor(() => {
       expect(mockBulkRecordingOperation).toHaveBeenCalledWith(["r1"], "delete");
@@ -1971,6 +1971,7 @@ describe("DashboardClient", () => {
     });
 
     await user.keyboard("{Delete}");
+    await user.click(screen.getByTestId("inbox-delete-confirm"));
 
     await waitFor(() => {
       expect(mockBulkRecordingOperation).toHaveBeenCalledWith(["r1"], "delete");

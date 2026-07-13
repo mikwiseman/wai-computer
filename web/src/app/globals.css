@@ -259,7 +259,11 @@ textarea {
 input:focus,
 select:focus,
 textarea:focus,
-button:focus-visible {
+button:focus-visible,
+a:focus-visible,
+summary:focus-visible,
+[role="button"]:focus-visible,
+[tabindex]:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
@@ -1109,6 +1113,12 @@ a.primary-button[aria-disabled="true"]:hover {
 .sidebar-nav__item strong,
 .sidebar-nav__item small {
   display: block;
+}
+
+/* Route links (e.g. Billing) share the nav-row look but are anchors. */
+.sidebar-nav__route {
+  text-decoration: none;
+  font: inherit;
 }
 
 .sidebar-nav__item strong {
@@ -2990,7 +3000,7 @@ a.primary-button[aria-disabled="true"]:hover {
 }
 
 .search-form {
-  grid-template-columns: minmax(0, 1fr) minmax(150px, 180px) auto;
+  grid-template-columns: minmax(0, 1fr) minmax(110px, 150px) auto;
 }
 
 .search-workspace {
@@ -3857,6 +3867,24 @@ a.primary-button[aria-disabled="true"]:hover {
   margin-bottom: 0.5rem;
 }
 
+.item-detail__header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: 0.75rem;
+}
+
+.item-detail__header .item-detail__title,
+.item-detail__header .item-detail__source {
+  grid-column: 1 / -1;
+}
+
+/* Delete sits top-right beside the kind eyebrow, not as a full-width row. */
+.item-detail__header > .compact-button {
+  grid-area: 1 / 2;
+  justify-self: end;
+}
+
 .item-detail__kind {
   color: var(--ink-faint);
   font-size: var(--font-label-small-size);
@@ -3917,6 +3945,7 @@ a.primary-button[aria-disabled="true"]:hover {
 
 .item-detail__summary {
   margin: 0;
+  max-width: var(--measure-reading);
   color: var(--ink-soft);
   font-size: var(--font-body-size);
   line-height: var(--font-body-line);
@@ -3927,6 +3956,25 @@ a.primary-button[aria-disabled="true"]:hover {
   padding-left: 1.1rem;
   color: var(--ink-soft);
   font-size: var(--font-body-small-size);
+}
+
+.item-detail__body {
+  margin: 0.4rem 0 0;
+  max-width: var(--measure-reading);
+  color: var(--ink-soft);
+  font-size: var(--font-reading-size);
+  line-height: var(--font-reading-line);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.item-detail__source-toggle {
+  cursor: pointer;
+  color: var(--ink-soft);
+}
+
+.item-detail__source-toggle:hover {
+  color: var(--ink);
 }
 
 .recorder-panel {
@@ -5915,12 +5963,34 @@ a.primary-button[aria-disabled="true"]:hover {
  * Desktop keeps the dense look.
  * ===================================================================== */
 @media (hover: none) and (pointer: coarse) {
+  /* Every interactive control — not just compact buttons — meets the
+   * Apple/Material 44 pt floor on touch devices. Desktop keeps density. */
+  button,
+  select,
+  .compact-button,
+  .sidebar-folder-group__header .compact-button,
+  .sidebar-folder-list__item .compact-button,
+  .primary-button,
+  a.primary-button,
+  .ghost-button,
+  .wai-primary-button,
+  .wai-ghost-button {
+    min-height: 44px;
+  }
+
   .compact-button,
   .sidebar-folder-group__header .compact-button,
   .sidebar-folder-list__item .compact-button {
-    min-height: 44px;
     padding: 0.5rem 0.8rem;
     font-size: var(--font-body-size);
+  }
+
+  /* Icon-only controls (theme toggle, close ×, password eye) get a 44px
+   * square hit area via padding rather than visual size. */
+  .toast__close,
+  [class*="__close"] {
+    min-width: 44px;
+    min-height: 44px;
   }
 }
 

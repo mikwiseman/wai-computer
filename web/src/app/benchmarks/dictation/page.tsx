@@ -52,7 +52,7 @@ export default function DictationBenchmarkPage() {
   const previewRows = results.slice(0, 3);
 
   return (
-    <main className={styles.page}>
+    <main id="main" className={styles.page}>
       <header className={styles.nav}>
         <Link href="/" className={styles.brand} aria-label="WaiComputer home">
           <span className={styles.brandMark} aria-hidden="true" />

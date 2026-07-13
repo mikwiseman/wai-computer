@@ -157,7 +157,7 @@ export function SharedRecordingClient({
 
   if (loading) {
     return (
-      <main className="shared-page">
+      <main id="main" className="shared-page">
         <div className="shared-note">
           <p className="muted-text">{labels.opening}</p>
         </div>
@@ -167,7 +167,7 @@ export function SharedRecordingClient({
 
   if (error || !recording) {
     return (
-      <main className="shared-page">
+      <main id="main" className="shared-page">
         <div className="shared-note">
           <div className="empty-state empty-state--center">
             <h1>{labels.unavailableTitle}</h1>
@@ -180,7 +180,7 @@ export function SharedRecordingClient({
   }
 
   return (
-    <main className="shared-page">
+    <main id="main" className="shared-page">
       <article className="shared-note">
         <header className="shared-note__header">
           <div className="shared-note__topline">

@@ -2,8 +2,8 @@ import { DashboardClient } from "@/components/DashboardClient";
 
 export default function DashboardPage() {
   return (
-    <main className="container">
+    <div className="container">
       <DashboardClient />
-    </main>
+    </div>
   );
 }

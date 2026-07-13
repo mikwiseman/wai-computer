@@ -31,7 +31,7 @@ export default async function NotFound() {
   const copy = COPY[locale];
 
   return (
-    <main className="container auth-page" lang={locale}>
+    <main id="main" className="container auth-page" lang={locale}>
       <section className="auth-card auth-card--compact">
         <div className="auth-card__brand">
           <div className="brand-mark" aria-hidden="true" />

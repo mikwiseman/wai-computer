@@ -12,11 +12,13 @@ export function RegisterClient({ initialLocale }: RegisterClientProps) {
   const router = useRouter();
 
   return (
-    <main className="container auth-page">
+    <main id="main" className="container auth-page">
       <AuthForm
         mode="register"
         initialLocale={initialLocale}
-        onSuccess={() => router.replace("/dashboard")}
+        // Fresh accounts go through onboarding — same as first-time magic-link
+        // users in VerifyMagicLinkClient.
+        onSuccess={() => router.replace("/onboarding")}
       />
     </main>
   );

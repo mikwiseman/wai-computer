@@ -414,7 +414,7 @@ export function AdminConsoleClient() {
   }
 
   return (
-    <main className="admin-console">
+    <main id="main" className="admin-console">
       <aside className="admin-console__sidebar" aria-label="Admin navigation">
         <div>
           <p className="admin-kicker">WaiComputer</p>

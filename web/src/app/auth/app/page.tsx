@@ -19,7 +19,7 @@ export default async function AppMagicLinkPage({ searchParams }: AppMagicLinkPag
     ?? resolveAuthLocaleFromAcceptLanguage(requestHeaders.get("accept-language"));
 
   return (
-    <main className="container auth-page">
+    <main id="main" className="container auth-page">
       <AppOpenClient
         token={params.token ?? null}
         client={normalizeWaiComputerAppClient(params.client)}

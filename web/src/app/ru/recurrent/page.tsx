@@ -9,7 +9,7 @@ export const metadata = {
 
 export default function RuRecurrentAgreementPage() {
   return (
-    <main className={styles.legalPage}>
+    <main id="main" className={styles.legalPage}>
       <div className={styles.legalShell}>
         <Link className={styles.backLink} href="/ru">
           WaiComputer
