@@ -291,13 +291,35 @@ export function McpConnectSection({ locale = "en" }: McpConnectSectionProps) {
         </button>
       </div>
 
-      <div className="tab-strip mcp-client-tabs" role="tablist" aria-label="MCP client">
+      <div
+        className="tab-strip mcp-client-tabs"
+        role="tablist"
+        aria-label="MCP client"
+        onKeyDown={(event) => {
+          // WAI-ARIA tabs: arrows move selection; Home/End jump.
+          const index = guides.findIndex((client) => client.id === selected);
+          let next = -1;
+          if (event.key === "ArrowRight") next = (index + 1) % guides.length;
+          else if (event.key === "ArrowLeft") {
+            next = (index - 1 + guides.length) % guides.length;
+          } else if (event.key === "Home") next = 0;
+          else if (event.key === "End") next = guides.length - 1;
+          if (next === -1) return;
+          event.preventDefault();
+          setSelected(guides[next].id);
+          const buttons = event.currentTarget.querySelectorAll<HTMLButtonElement>("[role=tab]");
+          buttons[next]?.focus();
+        }}
+      >
         {guides.map((client) => (
           <button
             key={client.id}
             type="button"
             role="tab"
+            id={`mcp-tab-${client.id}`}
             aria-selected={client.id === selected}
+            aria-controls="mcp-client-guide-panel"
+            tabIndex={client.id === selected ? 0 : -1}
             className="tab-button"
             onClick={() => setSelected(client.id)}
           >
@@ -306,7 +328,13 @@ export function McpConnectSection({ locale = "en" }: McpConnectSectionProps) {
         ))}
       </div>
 
-      <div className="mcp-client-guide" data-testid={`mcp-guide-${guide.id}`}>
+      <div
+        className="mcp-client-guide"
+        id="mcp-client-guide-panel"
+        role="tabpanel"
+        aria-labelledby={`mcp-tab-${guide.id}`}
+        data-testid={`mcp-guide-${guide.id}`}
+      >
         <p>{guide.steps}</p>
 
         {snippet ? (

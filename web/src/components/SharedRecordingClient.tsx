@@ -159,7 +159,7 @@ export function SharedRecordingClient({
     return (
       <main id="main" className="shared-page">
         <div className="shared-note">
-          <p className="muted-text">{labels.opening}</p>
+          <p className="muted-text" role="status">{labels.opening}</p>
         </div>
       </main>
     );
@@ -332,19 +332,7 @@ function SharedFooterCta({
 }) {
   const labels = copy[locale];
   return (
-    <footer
-      role="contentinfo"
-      style={{
-        maxWidth: "880px",
-        margin: "2rem auto 0",
-        padding: "1.6rem",
-        textAlign: "center",
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        gap: "0.85rem",
-      }}
-    >
+    <footer role="contentinfo" className="shared-footer">
       <p style={{ color: "var(--ink-soft)", margin: 0 }}>{labels.ctaTagline}</p>
       <Link href={homeHref} className="primary-button" data-testid="shared-cta">
         {labels.ctaLink}
