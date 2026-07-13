@@ -4,6 +4,10 @@ import { resolveAuthLocaleFromAcceptLanguage } from "@/lib/auth-locale";
 
 import "./onboarding.css";
 
+export const metadata = {
+  title: "Welcome — WaiComputer",
+};
+
 export const dynamic = "force-dynamic";
 
 export default async function OnboardingPage() {

@@ -3,6 +3,7 @@ import { resolveAuthLocaleFromAcceptLanguage } from "@/lib/auth-locale";
 import { ResetPasswordClient } from "./ResetPasswordClient";
 
 export const metadata = {
+  title: "Reset password — WaiComputer",
   referrer: "no-referrer",
 };
 

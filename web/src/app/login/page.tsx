@@ -6,6 +6,7 @@ import { LoginClient, resolveLoginRedirect } from "./LoginClient";
 export { resolveLoginRedirect };
 
 export const metadata = {
+  title: "Sign in — WaiComputer",
   referrer: "no-referrer",
 } as const;
 

@@ -4,6 +4,7 @@ import { normalizeWaiComputerAppClient } from "@/lib/app-client";
 import { AppOpenClient } from "./AppOpenClient";
 
 export const metadata = {
+  title: "Open the app — WaiComputer",
   referrer: "no-referrer",
 };
 

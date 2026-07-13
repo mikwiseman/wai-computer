@@ -3,6 +3,7 @@ import { VerifyMagicLinkClient } from "@/components/VerifyMagicLinkClient";
 import { resolveAuthLocaleFromAcceptLanguage } from "@/lib/auth-locale";
 
 export const metadata = {
+  title: "Sign-in link — WaiComputer",
   referrer: "no-referrer",
 };
 

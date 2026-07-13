@@ -3,6 +3,7 @@ import { resolveAuthLocaleFromAcceptLanguage } from "@/lib/auth-locale";
 import { RegisterClient } from "./RegisterClient";
 
 export const metadata = {
+  title: "Create account — WaiComputer",
   referrer: "no-referrer",
 } as const;
 
