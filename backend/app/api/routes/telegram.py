@@ -88,6 +88,13 @@ from app.core.telegram_client import (
     TelegramFileTooLargeError,
     telegram_chunks,
 )
+from app.core.telegram_digest import (
+    DIGEST_MAX_DAYS,
+    build_digest_prompt_block,
+    collect_digest_sources,
+    generate_telegram_digest,
+    parse_digest_days,
+)
 from app.core.telegram_format import ru_plural, telegram_html
 from app.core.telegram_intent import (
     VoiceRouteDecision,
@@ -160,6 +167,7 @@ TELEGRAM_BOT_COMMANDS = [
     {"command": "approve_always", "description": "Подтвердить действие всегда"},
     {"command": "reject", "description": "Отклонить действие"},
     {"command": "meetings", "description": "Последние встречи"},
+    {"command": "digest", "description": "Дайджест за сегодня или N дней"},
     {"command": "search", "description": "Поиск по записям и расшифровкам"},
     {"command": "web", "description": "Ссылка для входа в веб-версию"},
     {"command": "mcp", "description": "Получить MCP-токен для агентов"},
@@ -291,6 +299,7 @@ def _telegram_help_text(*, linked: bool) -> str:
         "/approve_always <action_id> — подтвердить всегда\n"
         "/reject <action_id> — отклонить действие\n"
         "/meetings — последние встречи\n"
+        "/digest [дней] — дайджест всего, что я сохранил за период\n"
         "/search <запрос> — поиск по записям, саммари и расшифровкам\n"
         "/web — ссылка для входа в веб-версию\n"
         "/mcp — MCP-токен для подключения агентов\n"
@@ -390,6 +399,11 @@ def _text_intent(text: str) -> tuple[str, str] | None:
     )
     if lower.startswith(search_prefixes) or any(marker in lower for marker in search_questions):
         return "search", _extract_search_query(stripped)
+
+    digest_markers = ("дайджест", "digest")
+    if any(marker in lower for marker in digest_markers) and len(lower) <= 60:
+        digit = next((token for token in lower.split() if token.isdigit()), "")
+        return "digest", digit
 
     meeting_markers = ("встреч", "meeting", "meetings")
     list_markers = (
@@ -1577,6 +1591,86 @@ async def _handle_meetings_command(
     )
 
 
+async def _handle_digest_command(
+    db: AsyncSession,
+    client: TelegramBotClient,
+    *,
+    message: dict[str, Any],
+    account: TelegramAccount,
+    arg: str,
+) -> None:
+    chat_id = _telegram_chat_id(message)
+    if chat_id is None:
+        return
+    if await _ensure_active_user(db, client, message=message, account=account) is None:
+        return
+    requested_days = parse_digest_days(arg)
+    if requested_days is None:
+        await client.send_message(
+            chat_id,
+            "Формат: /digest — за сегодня, /digest 3 — за последние 3 дня "
+            f"(максимум {DIGEST_MAX_DAYS}).",
+            reply_to_message_id=message.get("message_id"),
+        )
+        return
+    days = min(requested_days, DIGEST_MAX_DAYS)
+
+    period_label = "за сегодня" if days == 1 else f"за последние {days} дн."
+    status_response = await client.send_message(
+        chat_id,
+        f"Собираю материалы {period_label}.",
+        reply_to_message_id=message.get("message_id"),
+    )
+    status_message_id = _sent_message_id(status_response)
+    action_task = asyncio.create_task(_send_chat_action_until_cancelled(client, chat_id))
+    try:
+        sources, total = await collect_digest_sources(db, account.user_id, days=days)
+        if not sources:
+            await _delete_status_message(
+                client, chat_id=chat_id, message_id=status_message_id
+            )
+            await client.send_message(
+                chat_id,
+                f"Материалов {period_label} пока нет: ни записей, ни сохранённого. "
+                "Пришли голосовое, ссылку или фото — и будет что дайджестить.",
+                reply_to_message_id=message.get("message_id"),
+            )
+            return
+        try:
+            digest_text = await generate_telegram_digest(
+                build_digest_prompt_block(sources), days=days, total_sources=total
+            )
+        except Exception:  # noqa: BLE001 - digest failure must be honest, never silent.
+            logger.exception("telegram digest generation failed")
+            await _delete_status_message(
+                client, chat_id=chat_id, message_id=status_message_id
+            )
+            await client.send_message(
+                chat_id,
+                "Дайджест собрать не получилось. Попробуй ещё раз позже.",
+                reply_to_message_id=message.get("message_id"),
+            )
+            return
+    finally:
+        await _stop_chat_action_task(action_task)
+
+    await _delete_status_message(client, chat_id=chat_id, message_id=status_message_id)
+    notes = ""
+    if requested_days > DIGEST_MAX_DAYS:
+        notes = f"<i>Максимум {DIGEST_MAX_DAYS} дней — показываю их.</i>\n"
+    if total > len(sources):
+        notes += f"<i>Материалов {total}, в дайджест вошли последние {len(sources)}.</i>\n"
+    count_label = f"{total} {ru_plural(total, 'материал', 'материала', 'материалов')}"
+    header = f"<b>Дайджест {escape(period_label)}</b> · {count_label}"
+    await _send_chunks(
+        client,
+        chat_id,
+        f"{notes}{header}\n\n{telegram_html(digest_text)}",
+        reply_to_message_id=message.get("message_id"),
+        parse_mode="HTML",
+    )
+
+
 async def _handle_search_command(
     db: AsyncSession,
     client: TelegramBotClient,
@@ -2399,6 +2493,11 @@ async def _handle_account_command(
         return True
     if intent == "meetings":
         await _handle_meetings_command(db, client, message=message, account=account)
+        return True
+    if intent == "digest":
+        await _handle_digest_command(
+            db, client, message=message, account=account, arg=arg
+        )
         return True
     if intent == "search":
         await _handle_search_command(db, client, message=message, account=account, query=arg)
