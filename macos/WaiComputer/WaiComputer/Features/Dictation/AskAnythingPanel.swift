@@ -120,6 +120,7 @@ struct AskAnythingAnswerView: View {
                     .frame(width: 28, height: 28)
             }
             .buttonStyle(.plain)
+            .accessibilityLabel(t("Close", "Закрыть"))
             .accessibilityIdentifier("ask-anything-close-button")
         }
         .padding(.horizontal, Spacing.xl)
@@ -145,6 +146,7 @@ struct AskAnythingAnswerView: View {
                     .frame(width: 28, height: 28)
             }
             .buttonStyle(.plain)
+            .accessibilityLabel(t("Copy question", "Скопировать вопрос"))
             .accessibilityIdentifier("ask-anything-copy-question-button")
         }
         .padding(.horizontal, Spacing.xl)
@@ -169,6 +171,7 @@ struct AskAnythingAnswerView: View {
                 }
                 .buttonStyle(.plain)
                 .disabled(manager.askAnythingAnswerChunks.isEmpty)
+                .accessibilityLabel(t("Copy answer", "Скопировать ответ"))
                 .accessibilityIdentifier("ask-anything-copy-answer-button")
             }
             .padding(.horizontal, Spacing.lg)
@@ -192,27 +195,32 @@ struct AskAnythingAnswerView: View {
                         .padding(Spacing.lg)
                 }
             } else {
-                List {
-                    ForEach(manager.askAnythingAnswerChunks) { chunk in
-                        Text(chunk.text)
-                            .font(.system(size: 22, weight: .regular, design: .default))
-                            .lineSpacing(6)
-                            .foregroundStyle(Palette.textPrimary)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .textSelection(.enabled)
-                            .listRowInsets(EdgeInsets(
-                                top: chunk.id == 0 ? Spacing.lg : Spacing.xs,
-                                leading: Spacing.lg,
-                                bottom: Spacing.xs,
-                                trailing: Spacing.lg
-                            ))
-                            .listRowSeparator(.hidden)
-                            .listRowBackground(Color.clear)
+                VStack(spacing: 0) {
+                    if manager.askAnythingIsError {
+                        askAnythingErrorBanner
                     }
+                    List {
+                        ForEach(manager.askAnythingAnswerChunks) { chunk in
+                            Text(chunk.text)
+                                .font(.system(size: 22, weight: .regular, design: .default))
+                                .lineSpacing(6)
+                                .foregroundStyle(Palette.textPrimary)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .textSelection(.enabled)
+                                .listRowInsets(EdgeInsets(
+                                    top: chunk.id == 0 ? Spacing.lg : Spacing.xs,
+                                    leading: Spacing.lg,
+                                    bottom: Spacing.xs,
+                                    trailing: Spacing.lg
+                                ))
+                                .listRowSeparator(.hidden)
+                                .listRowBackground(Color.clear)
+                        }
+                    }
+                    .listStyle(.plain)
+                    .scrollContentBackground(.hidden)
+                    .accessibilityIdentifier("ask-anything-answer-list")
                 }
-                .listStyle(.plain)
-                .scrollContentBackground(.hidden)
-                .accessibilityIdentifier("ask-anything-answer-list")
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -232,6 +240,26 @@ struct AskAnythingAnswerView: View {
             "No answer. Hold the hotkey to ask again.",
             "Ответа нет. Зажми клавишу и спроси ещё раз."
         )
+    }
+
+    private var askAnythingErrorBanner: some View {
+        HStack(spacing: Spacing.sm) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundStyle(Palette.danger)
+            Text(t(
+                "Something went wrong. Hold the hotkey to ask again.",
+                "Что-то пошло не так. Зажми клавишу и спроси ещё раз."
+            ))
+            .font(Typography.bodySmall)
+            .foregroundStyle(Palette.danger)
+            .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, Spacing.lg)
+        .padding(.vertical, Spacing.sm)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Palette.danger.opacity(0.10))
+        .accessibilityIdentifier("ask-anything-error-banner")
     }
 
     private func t(_ english: String, _ russian: String) -> String {

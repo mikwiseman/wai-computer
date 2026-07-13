@@ -825,7 +825,7 @@ struct MacRecordingDetailView: View {
             if transcriptionFailed {
                 Text(recordingFailureText)
                     .font(Typography.body)
-                    .foregroundStyle(Palette.recording)
+                    .foregroundStyle(Palette.danger)
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityIdentifier("summary-failed-state")
             } else if waitingForTranscript || transcriptPending {
@@ -885,7 +885,7 @@ struct MacRecordingDetailView: View {
             }
         }
         .padding(Spacing.lg)
-        .background(transcriptionFailed ? Palette.recording.opacity(0.10) : Palette.surfaceSubtle)
+        .background(transcriptionFailed ? Palette.danger.opacity(0.10) : Palette.surfaceSubtle)
         .clipShape(RoundedRectangle(cornerRadius: Radius.md))
     }
 
@@ -938,7 +938,7 @@ struct MacRecordingDetailView: View {
             HStack(alignment: .top, spacing: Spacing.sm) {
                 Image(systemName: "exclamationmark.triangle.fill")
                     .font(Typography.headingSmall)
-                    .foregroundStyle(Palette.recording)
+                    .foregroundStyle(Palette.danger)
                 Text(recordingFailureText)
                     .font(Typography.bodySmall)
                     .foregroundStyle(Palette.textSecondary)
@@ -947,7 +947,7 @@ struct MacRecordingDetailView: View {
             .padding(.horizontal, Spacing.md)
             .padding(.vertical, Spacing.sm)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Palette.recording.opacity(0.10))
+            .background(Palette.danger.opacity(0.10))
             .clipShape(RoundedRectangle(cornerRadius: Radius.md))
             .accessibilityIdentifier("transcript-failed-state")
         case .empty, .content:
@@ -1069,7 +1069,7 @@ struct MacRecordingDetailView: View {
     private func summaryGenerationFailure(state: SummaryGenerationState?) -> some View {
         Text(summaryGenerationFailureText(state))
             .font(Typography.caption)
-            .foregroundStyle(Palette.recording)
+            .foregroundStyle(Palette.danger)
             .multilineTextAlignment(.center)
             .fixedSize(horizontal: false, vertical: true)
             .accessibilityIdentifier("summary-generation-failure")
@@ -1116,7 +1116,7 @@ struct MacRecordingDetailView: View {
     private func summaryAudioFailure(state: SummaryAudioState?) -> some View {
         Text(state?.errorMessage ?? t("Summary audio generation failed.", "Не удалось создать аудио сводки."))
             .font(Typography.caption)
-            .foregroundStyle(Palette.recording)
+            .foregroundStyle(Palette.danger)
             .fixedSize(horizontal: false, vertical: true)
             .accessibilityIdentifier("summary-audio-failure")
     }
@@ -1300,12 +1300,13 @@ private struct MacRecordingSummaryActionItemSignature: Equatable {
 private struct RecordingDetailInlineErrorBanner: View {
     let message: String
     let onDismiss: () -> Void
+    @EnvironmentObject private var languageManager: LanguageManager
 
     var body: some View {
         HStack(alignment: .top, spacing: Spacing.sm) {
             Image(systemName: "wifi.exclamationmark")
                 .font(Typography.headingSmall)
-                .foregroundStyle(Palette.recording)
+                .foregroundStyle(Palette.danger)
 
             Text(message)
                 .font(Typography.bodySmall)
@@ -1320,11 +1321,11 @@ private struct RecordingDetailInlineErrorBanner: View {
                     .foregroundStyle(Palette.textTertiary)
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("Dismiss recording detail message")
+            .accessibilityLabel(OnboardingL10n.text("Dismiss", "Закрыть", language: languageManager.current))
         }
         .padding(.horizontal, Spacing.md)
         .padding(.vertical, Spacing.sm)
-        .background(Palette.recording.opacity(0.10))
+        .background(Palette.danger.opacity(0.10))
         .clipShape(RoundedRectangle(cornerRadius: Radius.md))
         .accessibilityIdentifier("recording-detail-inline-error")
     }

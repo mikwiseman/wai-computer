@@ -76,6 +76,9 @@ final class DictationManager: ObservableObject {
     @Published private(set) var askAnythingQuestion = ""
     @Published private(set) var askAnythingAnswerChunks: [AskAnythingAnswerChunk] = []
     @Published private(set) var isAskAnythingStreaming = false
+    /// True when the current answer text is a failure message, so the panel can
+    /// style it distinctly instead of rendering it as if it were a real answer.
+    @Published private(set) var askAnythingIsError = false
     @Published private(set) var cleanupPreview = ""
     @Published var isEnabled = false
     @Published var error: String?
@@ -1396,6 +1399,7 @@ final class DictationManager: ObservableObject {
     private func resetAskAnythingAnswerChunks() {
         nextAskAnythingAnswerChunkID = 0
         askAnythingAnswerChunks = []
+        askAnythingIsError = false
     }
 
     private func setAskAnythingAnswer(_ text: String) {
@@ -1488,10 +1492,19 @@ final class DictationManager: ObservableObject {
                 }
             }
         } catch {
+            // The user closed the panel mid-flight — the request was cancelled
+            // on purpose, so don't paint an error or pop the global alert.
+            if Task.isCancelled || error is CancellationError {
+                return
+            }
             if askAnythingAnswerChunks.isEmpty {
                 setAskAnythingAnswer(error.userFacingMessage(context: .dictation))
             }
-            self.error = error.userFacingMessage(context: .dictation)
+            // Set after `setAskAnythingAnswer`, which resets the flag. The panel
+            // renders the answer text as an error (empty stream) or shows a
+            // failure note over the partial answer (mid-stream failure) instead
+            // of popping the global "Dictation Error" alert over another app.
+            askAnythingIsError = true
             instrumentationSession?.failure(error, extras: ["stage": "ask_anything"])
             instrumentationSession = nil
             SentryHelper.captureError(error, extras: ["context": "dictation.ask_anything"])
@@ -2163,6 +2176,9 @@ final class DictationManager: ObservableObject {
     }
 
     func closeAskAnythingAnswer() {
+        // Cancel any in-flight Ask Anything request so it can't fail after the
+        // panel is dismissed and pop an unrelated global "Dictation Error" alert.
+        stopAndInsertTask?.cancel()
         askAnythingPanel?.hideAnimated()
         askAnythingPanel = nil
     }

@@ -57,6 +57,9 @@ struct MacInboxView: View {
     /// user explicitly chooses to add — this keeps the giant "Add to Inbox" wall
     /// out of folder browsing. Always ignored in the Inbox (folderId == nil).
     @State private var folderComposerActive = false
+    /// Rows queued behind the delete confirmation dialog. Materials and chats
+    /// are deleted permanently, so every delete path routes through here first.
+    @State private var pendingInboxDeletion: [InboxDetailRef]?
 
     init(
         apiClient: APIClient,
@@ -128,6 +131,26 @@ struct MacInboxView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .confirmationDialog(
+            inboxDeletionTitle,
+            isPresented: Binding(
+                get: { pendingInboxDeletion != nil },
+                set: { if !$0 { pendingInboxDeletion = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button(inboxDeletionConfirmLabel, role: .destructive) {
+                if let details = pendingInboxDeletion {
+                    performDeleteInboxRows(details)
+                }
+                pendingInboxDeletion = nil
+            }
+            Button(t("Cancel", "Отмена"), role: .cancel) {
+                pendingInboxDeletion = nil
+            }
+        } message: {
+            Text(inboxDeletionMessage)
+        }
         .task {
             await model.configureScope(sourceKind: initialSourceKind, folderId: folderId)
             await model.load()
@@ -789,7 +812,15 @@ struct MacInboxView: View {
         deleteInboxRows(selectedInboxDetails)
     }
 
+    /// Every delete entry point (Delete key, bulk button, context menu) funnels
+    /// here and only queues the rows — the confirmation dialog performs the
+    /// deletion, because materials and chats are removed permanently.
     private func deleteInboxRows(_ details: [InboxDetailRef]) {
+        guard !details.isEmpty else { return }
+        pendingInboxDeletion = details
+    }
+
+    private func performDeleteInboxRows(_ details: [InboxDetailRef]) {
         guard !details.isEmpty else { return }
         Task {
             let didDelete = await model.deleteRows(details)
@@ -797,6 +828,34 @@ struct MacInboxView: View {
             clearInboxSelection()
             await onLibraryChanged()
         }
+    }
+
+    /// Recordings move to Trash (recoverable); materials and chats are deleted
+    /// permanently. The dialog copy adapts so the warning is honest.
+    private var inboxDeletionContainsPermanent: Bool {
+        (pendingInboxDeletion ?? []).contains { $0.kind != .recording }
+    }
+
+    private var inboxDeletionTitle: String {
+        let count = pendingInboxDeletion?.count ?? 0
+        return count > 1
+            ? t("Delete \(count) items?", "Удалить объекты? (\(count))")
+            : t("Delete this item?", "Удалить этот объект?")
+    }
+
+    private var inboxDeletionConfirmLabel: String {
+        (pendingInboxDeletion?.count ?? 0) > 1
+            ? t("Delete Selected", "Удалить выбранное")
+            : t("Delete", "Удалить")
+    }
+
+    private var inboxDeletionMessage: String {
+        inboxDeletionContainsPermanent
+            ? t("This can't be undone.", "Это действие нельзя отменить.")
+            : t(
+                "Recordings move to Trash — you can restore them later.",
+                "Записи переместятся в корзину — их можно будет восстановить."
+            )
     }
 
     private func t(_ english: String, _ russian: String) -> String {
@@ -1788,7 +1847,7 @@ private struct MacInboxItemDetail: View {
             item = item?.withSummaryAudio(state)
             await pollSummaryAudioUntilReady()
         } catch {
-            errorMessage = error.localizedDescription
+            markSummaryAudioFailed(message: error.userFacingMessage(context: .library))
         }
     }
 
@@ -1804,10 +1863,33 @@ private struct MacInboxItemDetail: View {
                     return
                 }
             } catch {
-                errorMessage = error.localizedDescription
+                markSummaryAudioFailed(message: error.userFacingMessage(context: .library))
                 return
             }
         }
+        // The job is still "active" after ~60s of polling. Stop waiting and
+        // surface a retryable failure instead of leaving the progress banner
+        // spinning forever — the parent's generating flag reads
+        // `summaryAudio.isActive`, so it would otherwise stay true with no retry.
+        guard !Task.isCancelled else { return }
+        markSummaryAudioFailed(message: t(
+            "Audio is taking longer than expected. Try again.",
+            "Аудио готовится дольше обычного. Попробуйте ещё раз."
+        ))
+    }
+
+    /// Force the local summary-audio state to `failed` so the detail pane shows
+    /// the failure text plus the "Try Audio Again" retry button, instead of a
+    /// stuck progress banner.
+    private func markSummaryAudioFailed(message: String) {
+        guard let current = item else { return }
+        item = current.withSummaryAudio(SummaryAudioState(
+            artifactId: current.summaryAudio?.artifactId,
+            sourceKind: current.summaryAudio?.sourceKind ?? "item",
+            sourceId: current.summaryAudio?.sourceId ?? itemId,
+            status: "failed",
+            errorMessage: message
+        ))
     }
 
     private func playOrStopSummaryAudio() async {

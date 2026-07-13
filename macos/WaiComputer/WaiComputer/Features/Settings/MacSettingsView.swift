@@ -210,6 +210,7 @@ struct MacSettingsView: View {
     @State private var telegramQRCodeCache = MacTelegramQRCodeCache()
     @State private var telegramLinkPollTask: Task<Void, Never>?
     @State private var telegramShowCodeEntry = false
+    @State private var showTelegramDisconnectConfirm = false
     @State private var serverDataInfo: SystemInfo?
     @State private var serverDataMap: DataOwnershipMap?
     @State private var serverDataLoading = false
@@ -502,6 +503,16 @@ struct MacSettingsView: View {
                     Text("settings.account.memberSince", bundle: .main)
                 }
                 .font(Typography.body)
+            } else {
+                // Profile still loading (e.g. Settings opened before the session
+                // rehydrates) — show a spinner instead of an empty section.
+                LabeledContent {
+                    ProgressView().controlSize(.small)
+                } label: {
+                    Text("settings.account.email", bundle: .main)
+                }
+                .font(Typography.body)
+                .accessibilityIdentifier("settings-account-loading")
             }
         } header: {
             Text("settings.account.title", bundle: .main)
@@ -1241,12 +1252,27 @@ struct MacSettingsView: View {
                 .font(Typography.body)
 
                 Button(role: .destructive) {
-                    Task { await unlinkTelegram() }
+                    showTelegramDisconnectConfirm = true
                 } label: {
                     Text(t("Disconnect Telegram", "Отключить Telegram"))
                 }
                 .disabled(telegramLoading)
                 .accessibilityIdentifier("settings-telegram-unlink-button")
+                .confirmationDialog(
+                    t("Disconnect Telegram?", "Отключить Telegram?"),
+                    isPresented: $showTelegramDisconnectConfirm,
+                    titleVisibility: .visible
+                ) {
+                    Button(t("Disconnect", "Отключить"), role: .destructive) {
+                        Task { await unlinkTelegram() }
+                    }
+                    Button(t("Cancel", "Отмена"), role: .cancel) {}
+                } message: {
+                    Text(t(
+                        "You'll need to pair again from the bot to reconnect.",
+                        "Чтобы снова подключить, нужно будет заново привязать бота."
+                    ))
+                }
             } else {
                 Text(t(
                     "Connect @waicomputer_bot to send voice messages, videos, and text questions to Wai. You can start from WaiComputer or enter a code from the bot.",

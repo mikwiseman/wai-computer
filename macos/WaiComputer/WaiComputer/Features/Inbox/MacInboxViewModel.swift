@@ -138,7 +138,7 @@ final class MacInboxViewModel: ObservableObject {
             scheduleProcessingRefreshIfNeeded()
         } catch {
             guard generation == loadGeneration else { return }
-            errorMessage = error.localizedDescription
+            errorMessage = error.userFacingMessage(context: .library)
         }
     }
 
@@ -162,7 +162,7 @@ final class MacInboxViewModel: ObservableObject {
             scheduleProcessingRefreshIfNeeded()
         } catch {
             guard generation == loadGeneration else { return }
-            errorMessage = error.localizedDescription
+            errorMessage = error.userFacingMessage(context: .library)
         }
     }
 
@@ -239,7 +239,7 @@ final class MacInboxViewModel: ObservableObject {
             await load()
             return rows.first { $0.id == "item:\(created.id)" }?.detail ?? detail
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = error.userFacingMessage(context: .library)
             return nil
         }
     }
@@ -273,8 +273,8 @@ final class MacInboxViewModel: ObservableObject {
             }
             selectedUploadFileHasScopedAccess = false
             selectedUploadFile = nil
-            uploadPhase = .failed(error.localizedDescription)
-            errorMessage = error.localizedDescription
+            uploadPhase = .failed(error.userFacingMessage(context: .library))
+            errorMessage = error.userFacingMessage(context: .library)
         }
     }
 
@@ -350,8 +350,8 @@ final class MacInboxViewModel: ObservableObject {
                 return rows.first { $0.id == "recording:\(recordingId)" }?.detail ?? detail
             }
         } catch {
-            uploadPhase = .failed(error.localizedDescription)
-            errorMessage = error.localizedDescription
+            uploadPhase = .failed(error.userFacingMessage(context: .library))
+            errorMessage = error.userFacingMessage(context: .library)
             return nil
         }
     }
@@ -362,8 +362,12 @@ final class MacInboxViewModel: ObservableObject {
         isAdding = true
         defer { isAdding = false }
 
-        do {
-            for detail in details {
+        var deletedCount = 0
+        var lastError: Error?
+        // Continue on error: a mid-list failure must not hide that earlier items
+        // were already deleted server-side, nor stop the rest from being tried.
+        for detail in details {
+            do {
                 switch detail.kind {
                 case .recording:
                     try await apiClient.deleteRecording(id: detail.id, permanent: false)
@@ -372,16 +376,26 @@ final class MacInboxViewModel: ObservableObject {
                 case .chat:
                     try await apiClient.deleteCompanionChat(chatId: detail.id)
                 }
+                deletedCount += 1
+            } catch {
+                lastError = error
             }
-            errorMessage = nil
-            statusMessage = Self.deleteStatusMessage(count: details.count)
-            await load()
-            return true
-        } catch {
-            errorMessage = error.localizedDescription
-            await load()
-            return false
         }
+
+        let failureCount = details.count - deletedCount
+        if failureCount == 0 {
+            errorMessage = nil
+            statusMessage = Self.deleteStatusMessage(count: deletedCount)
+        } else if deletedCount > 0 {
+            statusMessage = nil
+            errorMessage = Self.partialDeleteMessage(deleted: deletedCount, failed: failureCount)
+        } else {
+            statusMessage = nil
+            errorMessage = lastError?.userFacingMessage(context: .library)
+                ?? Self.deleteFailedMessage(count: failureCount)
+        }
+        await load()
+        return deletedCount > 0
     }
 
     private func uniqueDetails(_ details: [InboxDetailRef]) -> [InboxDetailRef] {
@@ -395,6 +409,22 @@ final class MacInboxViewModel: ObservableObject {
         OnboardingL10n.text(
             count == 1 ? "Deleted 1 item." : "Deleted \(count) items.",
             count == 1 ? "Удалён 1 объект." : "Удалено объектов: \(count).",
+            language: LanguageManager.shared.current
+        )
+    }
+
+    private static func partialDeleteMessage(deleted: Int, failed: Int) -> String {
+        OnboardingL10n.text(
+            "Deleted \(deleted); \(failed) couldn't be deleted.",
+            "Удалено: \(deleted); не удалось удалить: \(failed).",
+            language: LanguageManager.shared.current
+        )
+    }
+
+    private static func deleteFailedMessage(count: Int) -> String {
+        OnboardingL10n.text(
+            count == 1 ? "Couldn't delete this item." : "Couldn't delete these items.",
+            count == 1 ? "Не удалось удалить объект." : "Не удалось удалить объекты.",
             language: LanguageManager.shared.current
         )
     }

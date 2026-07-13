@@ -294,7 +294,7 @@ struct MacItemDetailView: View {
         VStack(alignment: .leading, spacing: Spacing.xs) {
             HStack(alignment: .top, spacing: Spacing.sm) {
                 Image(systemName: "exclamationmark.triangle.fill")
-                    .foregroundStyle(Palette.recording)
+                    .foregroundStyle(Palette.danger)
                 Text(t("Couldn't summarize this item.", "Не удалось обработать материал."))
                     .font(Typography.bodySmall)
                     .foregroundStyle(Palette.textPrimary)
@@ -308,7 +308,7 @@ struct MacItemDetailView: View {
             }
         }
         .padding(Spacing.md)
-        .background(Palette.recording.opacity(0.10))
+        .background(Palette.danger.opacity(0.10))
         .clipShape(RoundedRectangle(cornerRadius: Radius.md))
         .accessibilityIdentifier("item-summary-failed")
     }
@@ -435,13 +435,13 @@ struct MacItemDetailView: View {
             }
             .padding(.horizontal, Spacing.md)
             .padding(.vertical, Spacing.sm)
-            .background(Palette.recording.opacity(0.10))
+            .background(Palette.accentSubtle)
             .clipShape(RoundedRectangle(cornerRadius: Radius.md))
             .accessibilityIdentifier("item-summary-audio-progress")
         } else if summaryAudio?.isFailed == true {
             Text(summaryAudio?.errorMessage ?? t("Summary audio generation failed.", "Не удалось создать аудио сводки."))
                 .font(Typography.caption)
-                .foregroundStyle(Palette.recording)
+                .foregroundStyle(Palette.danger)
                 .fixedSize(horizontal: false, vertical: true)
                 .accessibilityIdentifier("item-summary-audio-failure")
         }

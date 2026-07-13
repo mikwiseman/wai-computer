@@ -1714,6 +1714,7 @@ private struct LibraryBulkOperationBanner: View {
 private struct InlineLibraryErrorBanner: View {
     let message: String
     let onDismiss: () -> Void
+    @EnvironmentObject private var languageManager: LanguageManager
 
     var body: some View {
         HStack(spacing: Spacing.sm) {
@@ -1732,7 +1733,7 @@ private struct InlineLibraryErrorBanner: View {
                     .foregroundStyle(Palette.textSecondary)
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("Dismiss library message")
+            .accessibilityLabel(OnboardingL10n.text("Dismiss", "Закрыть", language: languageManager.current))
         }
         .padding(.horizontal, Spacing.lg)
         .padding(.vertical, Spacing.sm)
@@ -2147,7 +2148,7 @@ struct MacAuthView: View {
 
             if let error = appState.error {
                 Text(error)
-                    .foregroundStyle(Palette.recording)
+                    .foregroundStyle(Palette.danger)
                     .font(Typography.caption)
                     .accessibilityIdentifier("auth-error-text")
             }
@@ -2257,7 +2258,7 @@ struct MacAuthView: View {
     private func authFieldHint(_ text: String, isError: Bool) -> some View {
         Text(text)
             .font(Typography.caption)
-            .foregroundStyle(isError ? Palette.recording : Palette.textSecondary)
+            .foregroundStyle(isError ? Palette.danger : Palette.textSecondary)
             .frame(maxWidth: 380, alignment: .leading)
     }
 

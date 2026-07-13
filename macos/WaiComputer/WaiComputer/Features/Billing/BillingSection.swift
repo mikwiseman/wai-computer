@@ -168,10 +168,10 @@ struct BillingSection: View {
         }()
         let color: Color = {
             switch sub.status {
-            case "active", "trialing": return .green
-            case "past_due": return .orange
-            case "canceled", "expired": return .gray
-            default: return .secondary
+            case "active", "trialing": return Palette.success
+            case "past_due": return Palette.warning
+            case "canceled", "expired": return Palette.textTertiary
+            default: return Palette.textSecondary
             }
         }()
         Text(labelKey, bundle: .main)
@@ -198,12 +198,12 @@ struct BillingSection: View {
                     Text("billing.usage.title", bundle: .main)
                     Spacer()
                     Text("\(usage.wordsUsed.formatted()) / \(displayCap!.formatted())")
-                        .foregroundStyle(usage.capExceeded ? .red : .primary)
+                        .foregroundStyle(usage.capExceeded ? Palette.danger : Palette.textPrimary)
                         .monospacedDigit()
                 }
                 let fraction = min(1.0, max(0.0, Double(usage.wordsUsed) / Double(displayCap!)))
                 ProgressView(value: fraction)
-                    .tint(usage.capExceeded ? .red : fraction > 0.8 ? .orange : .accentColor)
+                    .tint(usage.capExceeded ? Palette.danger : (fraction > 0.8 ? Palette.warning : Palette.accent))
                 Text("billing.usage.resetsSunday", bundle: .main)
                     .font(Typography.caption)
                     .foregroundStyle(Palette.textTertiary)

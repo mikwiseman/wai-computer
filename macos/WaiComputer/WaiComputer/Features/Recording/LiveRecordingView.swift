@@ -330,7 +330,7 @@ struct LiveRecordingView: View {
         case .micAndSystem, .systemAudioStarting, .microphoneOnly:
             return Palette.textSecondary
         case .systemAudioDegraded:
-            return .yellow
+            return Palette.warning
         }
     }
 

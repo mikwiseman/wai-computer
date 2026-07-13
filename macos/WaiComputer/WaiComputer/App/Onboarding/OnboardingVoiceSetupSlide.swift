@@ -111,7 +111,7 @@ struct OnboardingVoiceSetupSlide: View {
         Button(action: handleRecordTap) {
             ZStack {
                 Circle()
-                    .fill(recorder.state == .recording ? Color.red : Palette.accent)
+                    .fill(recorder.state == .recording ? Palette.recording : Palette.accent)
                     .frame(width: 72, height: 72)
                 Image(systemName: recorder.state == .recording ? "stop.fill" : "mic.fill")
                     .font(.system(size: 28, weight: .semibold))
@@ -123,6 +123,10 @@ struct OnboardingVoiceSetupSlide: View {
         }
         .buttonStyle(.plain)
         .disabled(!hasMicrophonePermission || recorder.state == .uploading)
+        .accessibilityLabel(recorder.state == .recording
+            ? t("Stop recording", "Остановить запись")
+            : t("Start recording", "Начать запись"))
+        .accessibilityIdentifier("onboarding-voice-record-button")
     }
 
     @ViewBuilder
@@ -131,13 +135,16 @@ struct OnboardingVoiceSetupSlide: View {
             HStack {
                 Button(t("Skip for now", "Пропустить пока"), action: skipAndAdvance)
                     .buttonStyle(WaiGhostButtonStyle())
+                    .accessibilityIdentifier("onboarding-voice-skip-button")
                 Spacer()
                 if recorder.state == .recorded {
                     Button(t("Re-record", "Записать заново"), action: handleRecordTap)
                         .buttonStyle(WaiGhostButtonStyle())
+                        .accessibilityIdentifier("onboarding-voice-rerecord-button")
                     Button(t("Use this take", "Использовать запись"), action: submit)
                         .buttonStyle(WaiPrimaryButtonStyle(isDisabled: recorder.state == .uploading || !recorder.hasMinimumDuration))
                         .disabled(recorder.state == .uploading || !recorder.hasMinimumDuration)
+                        .accessibilityIdentifier("onboarding-voice-use-take-button")
                         // The slide owns the primary CTA on this page (the
                         // shared footer hides its Continue), so Return
                         // submits the take instead of discarding it.
@@ -185,7 +192,7 @@ struct OnboardingVoiceSetupSlide: View {
                 recorder.reset()
                 onAdvance()
             } catch {
-                recorder.errorMessage = error.localizedDescription
+                recorder.errorMessage = error.userFacingMessage(context: .generic)
                 recorder.state = .recorded
             }
         }

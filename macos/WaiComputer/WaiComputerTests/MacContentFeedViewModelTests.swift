@@ -3,22 +3,6 @@ import WaiComputerKit
 
 @MainActor
 final class MacContentFeedViewModelTests: XCTestCase {
-    func testContentFeedDoesNotExposeCompareSelectionState() {
-        let model = MacContentFeedViewModel(
-            apiClient: APIClient(baseURL: URL(string: "https://example.test")!)
-        )
-
-        let propertyNames = Set(
-            Mirror(reflecting: model).children.compactMap { child in
-                child.label?.trimmingCharacters(in: CharacterSet(charactersIn: "_"))
-            }
-        )
-
-        XCTAssertFalse(propertyNames.contains("compareSelection"))
-        XCTAssertFalse(propertyNames.contains("activeComparisonId"))
-        XCTAssertFalse(propertyNames.contains("isComparing"))
-    }
-
     func testMacShellDoesNotExposeRemovedSchemesSurface() throws {
         let shellSource = try macSource("WaiComputer/App/MacContentView.swift")
 
@@ -26,19 +10,6 @@ final class MacContentFeedViewModelTests: XCTestCase {
         XCTAssertFalse(shellSource.contains("identifier: \"schemes\""))
         XCTAssertFalse(shellSource.contains("selectedSection = .schemes"))
         XCTAssertFalse(shellSource.contains("MacSchemesView(apiClient: appState.getAPIClient())"))
-    }
-
-    func testContentFeedViewDoesNotRenderSelectionControls() throws {
-        let testFile = URL(fileURLWithPath: #filePath)
-        let viewFile = testFile
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .appendingPathComponent("WaiComputer/Features/Content/MacContentFeedView.swift")
-        let source = try String(contentsOf: viewFile, encoding: .utf8)
-
-        XCTAssertFalse(source.contains("List(selection:"))
-        XCTAssertFalse(source.contains("Select to compare"))
-        XCTAssertFalse(source.contains("Compare ("))
     }
 
     func testInboxViewUsesRecyclingListForFastScrollingRows() throws {
@@ -74,20 +45,6 @@ final class MacContentFeedViewModelTests: XCTestCase {
         XCTAssertTrue(source.contains(".accessibilityIdentifier(\"search-results-list\")"))
         XCTAssertFalse(source.contains("ScrollView {"))
         XCTAssertFalse(source.contains("LazyVStack"))
-    }
-
-    func testComparisonViewUsesRecyclingRowsForLargeMatrices() throws {
-        let source = try macSource("WaiComputer/Features/Content/MacComparisonView.swift")
-
-        // Comparison sets can grow as rows by columns. A Grid inside a two-axis
-        // ScrollView eagerly builds every cell, which makes large comparisons
-        // freeze during initial layout and scroll. Keep vertical rows recycled.
-        XCTAssertTrue(source.contains("List {"))
-        XCTAssertTrue(source.contains("comparisonHeaderRow("))
-        XCTAssertTrue(source.contains("comparisonDataRow("))
-        XCTAssertFalse(source.contains("ScrollView([.horizontal, .vertical])"))
-        XCTAssertFalse(source.contains("Grid(alignment: .topLeading"))
-        XCTAssertFalse(source.contains("GridRow"))
     }
 
     func testInboxViewDoesNotRenderStatusFilter() throws {

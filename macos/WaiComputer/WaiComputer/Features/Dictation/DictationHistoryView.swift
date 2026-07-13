@@ -259,6 +259,7 @@ private struct HistoryEntryRow: View {
     @State private var isExpanded = false
     @State private var isEditing = false
     @State private var draft = ""
+    @State private var showDeleteConfirm = false
 
     var body: some View {
         HStack(alignment: .top, spacing: Spacing.md) {
@@ -330,12 +331,23 @@ private struct HistoryEntryRow: View {
                 .buttonStyle(.plain)
                 .help(t("Copy to clipboard", "Скопировать в буфер"))
 
-                Button(action: onDelete) {
+                Button { showDeleteConfirm = true } label: {
                     Image(systemName: "trash")
-                        .foregroundStyle(Palette.textSecondary)
+                        .foregroundStyle(isHovered ? Palette.danger : Palette.textSecondary)
                 }
                 .buttonStyle(.plain)
                 .help(t("Delete", "Удалить"))
+                .accessibilityLabel(t("Delete", "Удалить"))
+                .confirmationDialog(
+                    t("Delete this dictation?", "Удалить эту диктовку?"),
+                    isPresented: $showDeleteConfirm,
+                    titleVisibility: .visible
+                ) {
+                    Button(t("Delete", "Удалить"), role: .destructive) { onDelete() }
+                    Button(t("Cancel", "Отмена"), role: .cancel) {}
+                } message: {
+                    Text(t("This can't be undone.", "Это действие нельзя отменить."))
+                }
             }
         }
         .padding(.horizontal, Spacing.xl)

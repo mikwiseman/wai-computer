@@ -52,7 +52,7 @@ struct OnboardingView: View {
                 .padding(.bottom, Spacing.xxl)
                 .padding(.top, Spacing.md)
         }
-        .frame(minWidth: 800, minHeight: 640)
+        .frame(minWidth: 960, minHeight: 640)
         .background(Color(NSColor.windowBackgroundColor).ignoresSafeArea())
         .onAppear {
             currentPage = Self.clampedPageIndex(currentPage, pageCount: pages.count)
@@ -128,6 +128,11 @@ struct OnboardingView: View {
                     }
                     .frame(width: geo.size.width)
                     .accessibilityHidden(index != currentPage)
+                    // Off-screen slides stay mounted for the paging animation.
+                    // Disable them so an inactive slide's `.keyboardShortcut`
+                    // (e.g. Return on the sandbox/voice CTAs) can't fire while a
+                    // different slide is on screen.
+                    .disabled(index != currentPage)
                 }
             }
             .frame(width: geo.size.width * CGFloat(pages.count), alignment: .leading)
@@ -696,11 +701,14 @@ private struct OnboardingPermissionSlide: View {
             .frame(maxWidth: 500, maxHeight: 510, alignment: .center)
             .scrollBounceBasedOnSizeCompat()
 
-            permissionExplanationPanel
-                .frame(maxWidth: 360, alignment: .leading)
+            ScrollView {
+                permissionExplanationPanel
+            }
+            .frame(maxWidth: 360, maxHeight: 510, alignment: .leading)
+            .scrollBounceBasedOnSizeCompat()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .padding(.horizontal, 48)
+        .padding(.horizontal, Spacing.xxl)
         .opacity(isActive ? 1 : 0)
         .offset(y: isActive ? 0 : 16)
         .animation(.easeOut(duration: 0.45).delay(0.1), value: isActive)

@@ -73,7 +73,7 @@ struct SpeakerChipView: View {
                 HStack(alignment: .top, spacing: Spacing.xs) {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(Palette.recording)
+                        .foregroundStyle(Palette.danger)
                         .frame(width: SpeakerAssignmentPopoverLayout.errorIconWidth, alignment: .leading)
                     Text(loadError)
                         .font(Typography.caption)
@@ -83,7 +83,7 @@ struct SpeakerChipView: View {
                 .padding(.horizontal, Spacing.sm)
                 .padding(.vertical, Spacing.xs)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Palette.recording.opacity(0.10))
+                .background(Palette.danger.opacity(0.10))
                 .clipShape(RoundedRectangle(cornerRadius: Radius.md))
             }
             List {
