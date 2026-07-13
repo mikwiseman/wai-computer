@@ -20,7 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.routes import telegram as telegram_routes
 from app.core import companion_actions as ca
 from app.core import companion_actuators
-from app.core.agent_runtime import RETRYABLE_AGENT_ERROR_PREFIX, static_config_planner
+from app.core.agent_runtime import static_config_planner
 from app.core.recording_import import (
     RecordingImportError,
     import_media_as_recording,
@@ -1154,299 +1154,12 @@ async def test_telegram_remember_and_remind_commands_persist_portable_state(
 
 
 @pytest.mark.asyncio
-async def test_telegram_agent_commands_start_list_status_cancel_and_approvals(
-    db_session: AsyncSession,
-    monkeypatch,
-):
-    user = await _user(db_session, "telegram-agents@example.com")
-    account = TelegramAccount(user_id=user.id, telegram_user_id=77, telegram_chat_id=77)
-    agent = Agent(
-        user_id=user.id,
-        name="Researcher",
-        kind="research",
-        trigger_type="manual",
-        config={"steps": [{"tool": "note", "args": {"text": "hello"}}]},
-    )
-    db_session.add_all([account, agent])
-    await db_session.commit()
-    capture = _TelegramCapture()
-    dispatched: list[str] = []
-    monkeypatch.setattr(
-        telegram_routes,
-        "enqueue_agent_run",
-        lambda run_id: dispatched.append(str(run_id)) or "task-telegram",
-    )
-
-    message = {"message_id": 301, "chat": {"id": 77}}
-    await telegram_routes._handle_account_command(
-        db_session,
-        capture,
-        message=message,
-        account=account,
-        intent="agents",
-    )
-    await telegram_routes._handle_account_command(
-        db_session,
-        capture,
-        message=message,
-        account=account,
-        intent="run",
-        arg="Researcher check today",
-    )
-    run = (
-        await db_session.execute(select(AgentRun).where(AgentRun.agent_id == agent.id))
-    ).scalar_one()
-    await telegram_routes._handle_account_command(
-        db_session,
-        capture,
-        message=message,
-        account=account,
-        intent="list",
-    )
-    await telegram_routes._handle_account_command(
-        db_session,
-        capture,
-        message=message,
-        account=account,
-        intent="status",
-        arg=str(run.id)[:8],
-    )
-    await telegram_routes._handle_account_command(
-        db_session,
-        capture,
-        message=message,
-        account=account,
-        intent="cancel",
-        arg=str(run.id)[:8],
-    )
-
-    assert "Researcher" in capture.messages[0]["text"]
-    assert "Запустил" in capture.messages[1]["text"]
-    assert dispatched == [str(run.id)]
-    assert "Последние запуски" in capture.messages[2]["text"]
-    assert "pending approvals" in capture.messages[3]["text"]
-    assert "Остановил" in capture.messages[4]["text"]
-    await db_session.refresh(run)
-    assert run.status == "cancelled"
-
-
-@pytest.mark.asyncio
-async def test_telegram_agent_commands_empty_invalid_and_dispatch_failure(
-    db_session: AsyncSession,
-    monkeypatch,
-):
-    user = await _user(db_session, "telegram-agent-edges@example.com")
-    account = TelegramAccount(user_id=user.id, telegram_user_id=79, telegram_chat_id=79)
-    disabled = Agent(
-        user_id=user.id,
-        name="Disabled",
-        kind="research",
-        trigger_type="manual",
-        enabled=False,
-        config={"steps": [{"tool": "note", "args": {"text": "off"}}]},
-    )
-    brokered = Agent(
-        user_id=user.id,
-        name="Brokered",
-        kind="research",
-        trigger_type="manual",
-        config={"steps": [{"tool": "note", "args": {"text": "later"}}]},
-    )
-    db_session.add_all([account, disabled, brokered])
-    await db_session.commit()
-    capture = _TelegramCapture()
-    message = {"message_id": 401, "chat": {"id": 79}}
-
-    async def command(intent: str, arg: str = "") -> None:
-        await telegram_routes._handle_account_command(
-            db_session,
-            capture,
-            message=message,
-            account=account,
-            intent=intent,
-            arg=arg,
-        )
-
-    await command("agents")
-    await command("run")
-    await command("run", "missing-agent do it")
-    await command("run", "Disabled do it")
-    await command("runs")
-    await command("run_status", "missing-run")
-    await command("cancel_run", "missing-run")
-    await command("approvals")
-    await command("approve", "not-a-uuid")
-
-    def fail_dispatch(_run_id):
-        raise telegram_routes.AgentDispatchError("broker offline")
-
-    monkeypatch.setattr(telegram_routes, "enqueue_agent_run", fail_dispatch)
-    await command("run", "Brokered do it")
-    await command("run", "Brokered do it")
-
-    assert "Disabled" in capture.messages[0]["text"]
-    assert "Формат: /run" in capture.messages[1]["text"]
-    assert "Агент не найден" in capture.messages[2]["text"]
-    assert "Агент выключен" in capture.messages[3]["text"]
-    assert "Запусков агентов пока нет" in capture.messages[4]["text"]
-    assert "Запуск не найден" in capture.messages[5]["text"]
-    assert "Запуск не найден" in capture.messages[6]["text"]
-    assert "Нет действий" in capture.messages[7]["text"]
-    assert "Нужен action_id" in capture.messages[8]["text"]
-    assert "Не смог запустить агента: broker offline" in capture.messages[9]["text"]
-    assert "status: failed" in capture.messages[10]["text"]
-
-
-@pytest.mark.asyncio
-async def test_telegram_run_requires_id_for_duplicate_agent_names(
-    db_session: AsyncSession,
-    monkeypatch,
-):
-    user = await _user(db_session, "telegram-agent-duplicate@example.com")
-    account = TelegramAccount(user_id=user.id, telegram_user_id=75, telegram_chat_id=75)
-    first = Agent(
-        user_id=user.id,
-        name="Researcher",
-        kind="research",
-        trigger_type="manual",
-        config={"steps": [{"tool": "note", "args": {"text": "first"}}]},
-    )
-    second = Agent(
-        user_id=user.id,
-        name="Researcher",
-        kind="research",
-        trigger_type="manual",
-        config={"steps": [{"tool": "note", "args": {"text": "second"}}]},
-    )
-    db_session.add_all([account, first, second])
-    await db_session.commit()
-    capture = _TelegramCapture()
-    dispatched: list[str] = []
-    monkeypatch.setattr(
-        telegram_routes,
-        "enqueue_agent_run",
-        lambda run_id: dispatched.append(str(run_id)) or "task-duplicate",
-    )
-
-    await telegram_routes._handle_account_command(
-        db_session,
-        capture,
-        message={"message_id": 407, "chat": {"id": 75}},
-        account=account,
-        intent="run",
-        arg="Researcher compare notes",
-    )
-
-    assert "Несколько агентов" in capture.messages[-1]["text"]
-    assert str(first.id)[:8] in capture.messages[-1]["text"]
-    assert str(second.id)[:8] in capture.messages[-1]["text"]
-    assert dispatched == []
-    runs = (await db_session.execute(select(AgentRun).where(AgentRun.user_id == user.id))).all()
-    assert runs == []
-
-
-@pytest.mark.asyncio
-async def test_telegram_run_supports_multi_word_agent_name(
-    db_session: AsyncSession,
-    monkeypatch,
-):
-    user = await _user(db_session, "telegram-agent-multiword@example.com")
-    account = TelegramAccount(user_id=user.id, telegram_user_id=74, telegram_chat_id=74)
-    agent = Agent(
-        user_id=user.id,
-        name="Daily Researcher",
-        kind="research",
-        trigger_type="manual",
-        config={"steps": [{"tool": "note", "args": {"text": "first"}}]},
-    )
-    db_session.add_all([account, agent])
-    await db_session.commit()
-    capture = _TelegramCapture()
-    dispatched: list[str] = []
-    monkeypatch.setattr(
-        telegram_routes,
-        "enqueue_agent_run",
-        lambda run_id: dispatched.append(str(run_id)) or "task-multiword",
-    )
-
-    await telegram_routes._handle_account_command(
-        db_session,
-        capture,
-        message={"message_id": 409, "chat": {"id": 74}},
-        account=account,
-        intent="run",
-        arg="Daily Researcher compare notes",
-    )
-
-    run = (
-        await db_session.execute(select(AgentRun).where(AgentRun.agent_id == agent.id))
-    ).scalar_one()
-    assert "Запустил: Daily Researcher" in capture.messages[-1]["text"]
-    assert run.trigger_payload["objective"] == "compare notes"
-    assert dispatched == [str(run.id)]
-
-
-@pytest.mark.asyncio
-async def test_telegram_run_requires_objective_after_agent_ref(
-    db_session: AsyncSession,
-    monkeypatch,
-):
-    user = await _user(db_session, "telegram-agent-objective-required@example.com")
-    account = TelegramAccount(user_id=user.id, telegram_user_id=76, telegram_chat_id=76)
-    agent = Agent(
-        user_id=user.id,
-        name="Researcher",
-        kind="research",
-        trigger_type="manual",
-        config={"steps": [{"tool": "note", "args": {"text": "first"}}]},
-    )
-    db_session.add_all([account, agent])
-    await db_session.commit()
-    capture = _TelegramCapture()
-    dispatched: list[str] = []
-    monkeypatch.setattr(
-        telegram_routes,
-        "enqueue_agent_run",
-        lambda run_id: dispatched.append(str(run_id)) or "task-objective",
-    )
-
-    await telegram_routes._handle_account_command(
-        db_session,
-        capture,
-        message={"message_id": 408, "chat": {"id": 76}},
-        account=account,
-        intent="run",
-        arg="Researcher",
-    )
-
-    assert "Формат: /run" in capture.messages[-1]["text"]
-    assert dispatched == []
-    runs = (await db_session.execute(select(AgentRun).where(AgentRun.user_id == user.id))).all()
-    assert runs == []
-
-
-@pytest.mark.asyncio
-async def test_telegram_command_guards_missing_chat_inactive_user_and_short_refs(
+async def test_telegram_command_guards_missing_chat_and_inactive_user(
     db_session: AsyncSession,
 ):
     user = await _user(db_session, "telegram-command-guards@example.com")
     account = TelegramAccount(user_id=user.id, telegram_user_id=83, telegram_chat_id=83)
-    agent = Agent(
-        user_id=user.id,
-        name="Lookup",
-        kind="research",
-        trigger_type="manual",
-        config={"steps": [{"tool": "note", "args": {"text": "lookup"}}]},
-    )
-    db_session.add_all([account, agent])
-    await db_session.flush()
-    run = AgentRun(
-        agent_id=agent.id,
-        user_id=user.id,
-        trigger_key=f"manual:{agent.id}:lookup",
-        trigger_kind="manual",
-    )
-    db_session.add(run)
+    db_session.add(account)
     await db_session.commit()
     capture = _TelegramCapture()
 
@@ -1460,32 +1173,6 @@ async def test_telegram_command_guards_missing_chat_inactive_user_and_short_refs
     )
     await telegram_routes._handle_settings_command(
         capture, message=missing_chat_message, linked=True
-    )
-    await telegram_routes._handle_agents_command(
-        db_session, capture, message=missing_chat_message, account=account
-    )
-    await telegram_routes._handle_run_command(
-        db_session, capture, message=missing_chat_message, account=account, arg="Lookup test"
-    )
-    await telegram_routes._handle_runs_command(
-        db_session, capture, message=missing_chat_message, account=account
-    )
-    await telegram_routes._handle_run_status_command(
-        db_session, capture, message=missing_chat_message, account=account, arg=str(run.id)
-    )
-    await telegram_routes._handle_cancel_run_command(
-        db_session, capture, message=missing_chat_message, account=account, arg=str(run.id)
-    )
-    await telegram_routes._handle_approvals_command(
-        db_session, capture, message=missing_chat_message, account=account
-    )
-    await telegram_routes._handle_approval_decision_command(
-        db_session,
-        capture,
-        message=missing_chat_message,
-        account=account,
-        arg=str(uuid4()),
-        decision="once",
     )
     await telegram_routes._handle_text_message(
         db_session,
@@ -1515,349 +1202,10 @@ async def test_telegram_command_guards_missing_chat_inactive_user_and_short_refs
 
     user.account_status = "paused"
     await db_session.flush()
-    await telegram_routes._handle_agents_command(
+    await telegram_routes._handle_meetings_command(
         db_session, capture, message=message, account=account
     )
     assert "сейчас не активен" in capture.messages[-1]["text"]
-
-    user.account_status = "active"
-    await db_session.flush()
-    assert await telegram_routes._load_agent_ref(db_session, user_id=user.id, ref=" ") is None
-    assert await telegram_routes._load_agent_ref(
-        db_session, user_id=user.id, ref=str(agent.id)
-    ) == agent
-    assert await telegram_routes._load_agent_ref(
-        db_session, user_id=user.id, ref=str(agent.id)[:8]
-    ) == agent
-    assert await telegram_routes._load_run_ref(
-        db_session, user_id=user.id, ref=str(run.id)
-    ) == run
-    assert await telegram_routes._load_run_ref(
-        db_session, user_id=user.id, ref="short"
-    ) is None
-
-
-@pytest.mark.asyncio
-async def test_telegram_can_resolve_agent_pending_action(
-    db_session: AsyncSession,
-    monkeypatch,
-):
-    user = await _user(db_session, "telegram-agent-approval@example.com")
-    account = TelegramAccount(user_id=user.id, telegram_user_id=78, telegram_chat_id=78)
-    agent = Agent(
-        user_id=user.id,
-        name="Messenger",
-        kind="message",
-        trigger_type="manual",
-        config={
-            "steps": [
-                {
-                    "tool": "propose_action",
-                    "args": {
-                        "kind": "send",
-                        "tool_name": "send_message_telegram",
-                        "action_args": {"text": "hello"},
-                        "preview": "Send to you: hello",
-                        "recipient_display": "you",
-                    },
-                }
-            ]
-        },
-    )
-    db_session.add_all([account, agent])
-    await db_session.flush()
-    run = AgentRun(
-        agent_id=agent.id,
-        user_id=user.id,
-        trigger_key=f"manual:{agent.id}:telegram-approval",
-        trigger_kind="manual",
-    )
-    db_session.add(run)
-    await db_session.flush()
-    await telegram_routes.run_job(
-        db_session,
-        run.id,
-        planner=static_config_planner,
-        executor=telegram_routes.execute_agent_step,
-    )
-    row = (
-        await db_session.execute(
-            select(CompanionPendingAction).where(CompanionPendingAction.agent_run_id == run.id)
-        )
-    ).scalar_one()
-    capture = _TelegramCapture()
-
-    class FakeTelegram:
-        async def send_message(self, chat_id, text, **_kwargs):
-            return {"message_id": 99, "chat_id": chat_id, "text": text}
-
-    monkeypatch.setattr(companion_actuators, "TelegramBotClient", FakeTelegram)
-    await telegram_routes._handle_account_command(
-        db_session,
-        capture,
-        message={"message_id": 302, "chat": {"id": 78}},
-        account=account,
-        intent="approvals",
-    )
-    await telegram_routes._handle_account_command(
-        db_session,
-        capture,
-        message={"message_id": 303, "chat": {"id": 78}},
-        account=account,
-        intent="approve_always",
-        arg=str(row.id),
-    )
-
-    assert str(row.id) in capture.messages[0]["text"]
-    assert f"/approve_always {row.id}" in capture.messages[0]["text"]
-    assert "Выполнил действие" in capture.messages[1]["text"]
-    await db_session.refresh(row)
-    await db_session.refresh(run)
-    assert row.status == "executed"
-    assert row.decision == "always"
-    assert run.status == "done"
-
-
-@pytest.mark.asyncio
-async def test_telegram_approvals_expires_stale_actions_before_listing(
-    db_session: AsyncSession,
-):
-    user = await _user(db_session, "telegram-expired-approvals@example.com")
-    account = TelegramAccount(user_id=user.id, telegram_user_id=84, telegram_chat_id=84)
-    db_session.add(account)
-    await db_session.flush()
-    expired = await ca.propose_action(
-        db_session,
-        user_id=user.id,
-        conversation_id=None,
-        kind="send",
-        tool_name="send_message_telegram",
-        args={"text": "expired"},
-        preview="expired",
-        idempotency_key=f"expired:{uuid4().hex}",
-        ttl_seconds=-1,
-    )
-    active = await ca.propose_action(
-        db_session,
-        user_id=user.id,
-        conversation_id=None,
-        kind="send",
-        tool_name="send_message_telegram",
-        args={"text": "active"},
-        preview="active",
-        idempotency_key=f"active:{uuid4().hex}",
-    )
-    await db_session.commit()
-    capture = _TelegramCapture()
-
-    await telegram_routes._handle_account_command(
-        db_session,
-        capture,
-        message={"message_id": 304, "chat": {"id": 84}},
-        account=account,
-        intent="approvals",
-    )
-
-    assert str(active.id) in capture.messages[-1]["text"]
-    assert str(expired.id) not in capture.messages[-1]["text"]
-    await db_session.refresh(expired)
-    assert expired.status == "expired"
-
-
-@pytest.mark.asyncio
-async def test_telegram_rejects_agent_approval_for_terminal_run(
-    db_session: AsyncSession,
-):
-    user = await _user(db_session, "telegram-terminal-agent-approval@example.com")
-    account = TelegramAccount(user_id=user.id, telegram_user_id=85, telegram_chat_id=85)
-    agent = Agent(
-        user_id=user.id,
-        name="Terminal",
-        kind="message",
-        trigger_type="manual",
-        config={"steps": [{"tool": "note", "args": {"text": "done"}}]},
-    )
-    db_session.add_all([account, agent])
-    await db_session.flush()
-    run = AgentRun(
-        agent_id=agent.id,
-        user_id=user.id,
-        trigger_key=f"manual:{agent.id}:terminal-approval",
-        trigger_kind="manual",
-        status="done",
-    )
-    db_session.add(run)
-    await db_session.flush()
-    row = await ca.propose_action(
-        db_session,
-        user_id=user.id,
-        conversation_id=None,
-        agent_run_id=run.id,
-        agent_step_idx=1,
-        kind="send",
-        tool_name="send_message_telegram",
-        args={"text": "too late"},
-        preview="Send too late",
-        idempotency_key=f"terminal:{uuid4().hex}",
-    )
-    await db_session.commit()
-    capture = _TelegramCapture()
-
-    await telegram_routes._handle_account_command(
-        db_session,
-        capture,
-        message={"message_id": 307, "chat": {"id": 85}},
-        account=account,
-        intent="approve",
-        arg=str(row.id),
-    )
-
-    assert "запуск уже завершен" in capture.messages[-1]["text"]
-    await db_session.refresh(row)
-    assert row.status == "pending"
-
-
-@pytest.mark.asyncio
-async def test_telegram_can_reject_agent_pending_action(
-    db_session: AsyncSession,
-):
-    user = await _user(db_session, "telegram-agent-reject@example.com")
-    account = TelegramAccount(user_id=user.id, telegram_user_id=80, telegram_chat_id=80)
-    agent = Agent(
-        user_id=user.id,
-        name="Messenger",
-        kind="message",
-        trigger_type="manual",
-        config={
-            "steps": [
-                {
-                    "tool": "propose_action",
-                    "args": {
-                        "kind": "send",
-                        "tool_name": "send_message_telegram",
-                        "action_args": {"text": "hello"},
-                        "preview": "Send to you: hello",
-                    },
-                }
-            ]
-        },
-    )
-    db_session.add_all([account, agent])
-    await db_session.flush()
-    run = AgentRun(
-        agent_id=agent.id,
-        user_id=user.id,
-        trigger_key=f"manual:{agent.id}:telegram-reject",
-        trigger_kind="manual",
-    )
-    db_session.add(run)
-    await db_session.flush()
-    await telegram_routes.run_job(
-        db_session,
-        run.id,
-        planner=static_config_planner,
-        executor=telegram_routes.execute_agent_step,
-    )
-    row = (
-        await db_session.execute(
-            select(CompanionPendingAction).where(
-                CompanionPendingAction.agent_run_id == run.id
-            )
-        )
-    ).scalar_one()
-    capture = _TelegramCapture()
-
-    await telegram_routes._handle_account_command(
-        db_session,
-        capture,
-        message={"message_id": 304, "chat": {"id": 80}},
-        account=account,
-        intent="reject",
-        arg=str(row.id),
-    )
-
-    assert "Отклонил действие" in capture.messages[-1]["text"]
-    await db_session.refresh(row)
-    await db_session.refresh(run)
-    assert row.status == "rejected"
-    assert run.status == "failed"
-
-
-@pytest.mark.asyncio
-async def test_telegram_desktop_approval_dispatches_to_mac_edge(
-    db_session: AsyncSession,
-):
-    user = await _user(db_session, "telegram-desktop-approval@example.com")
-    account = TelegramAccount(user_id=user.id, telegram_user_id=81, telegram_chat_id=81)
-    db_session.add(account)
-    await db_session.flush()
-    row = await ca.propose_action(
-        db_session,
-        user_id=user.id,
-        conversation_id=None,
-        kind="desktop_action",
-        tool_name="desktop_open",
-        args={"target": "https://wai.computer"},
-        preview="Open WaiComputer",
-        idempotency_key=f"desktop:{uuid4().hex}",
-        device_target=str(uuid4()),
-    )
-    await db_session.flush()
-    capture = _TelegramCapture()
-
-    await telegram_routes._handle_account_command(
-        db_session,
-        capture,
-        message={"message_id": 305, "chat": {"id": 81}},
-        account=account,
-        intent="approve",
-        arg=str(row.id),
-    )
-
-    assert "Mac edge" in capture.messages[-1]["text"]
-    await db_session.refresh(row)
-    assert row.status == "approved"
-
-
-@pytest.mark.asyncio
-async def test_telegram_approval_reports_actuation_error(
-    db_session: AsyncSession,
-    monkeypatch,
-):
-    user = await _user(db_session, "telegram-actuation-error@example.com")
-    account = TelegramAccount(user_id=user.id, telegram_user_id=82, telegram_chat_id=82)
-    db_session.add(account)
-    await db_session.flush()
-    row = await ca.propose_action(
-        db_session,
-        user_id=user.id,
-        conversation_id=None,
-        kind="send",
-        tool_name="send_message_telegram",
-        args={"text": "hello"},
-        preview="Send hello",
-        idempotency_key=f"send:{uuid4().hex}",
-    )
-    await db_session.flush()
-    capture = _TelegramCapture()
-
-    async def fail_execute_action(*_args, **_kwargs):
-        raise telegram_routes.ActuationError("blocked", "telegram blocked")
-
-    monkeypatch.setattr(telegram_routes, "execute_action", fail_execute_action)
-
-    await telegram_routes._handle_account_command(
-        db_session,
-        capture,
-        message={"message_id": 306, "chat": {"id": 82}},
-        account=account,
-        intent="approve",
-        arg=str(row.id),
-    )
-
-    assert "Действие не выполнено: telegram blocked" in capture.messages[-1]["text"]
-    await db_session.refresh(row)
-    assert row.status == "failed"
 
 
 @pytest.mark.asyncio
@@ -2326,7 +1674,6 @@ def test_action_callback_parse_and_keyboard_roundtrip():
 
 @pytest.mark.asyncio
 async def test_handle_callback_query_approves_action(db_session: AsyncSession, monkeypatch):
-    from app.core import companion_actuators
     from app.core.companion_actions import propose_action
     from app.models.companion import Conversation
 
@@ -2415,6 +1762,130 @@ async def test_handle_callback_query_rejects_action(db_session: AsyncSession):
     assert capture.callback_answers[-1]["text"] == "Отклонено"
     await db_session.refresh(row)
     assert row.status == "rejected"
+
+
+@pytest.mark.asyncio
+async def test_handle_callback_query_guards_terminal_agent_run(
+    db_session: AsyncSession,
+):
+    user = await _user(db_session, "telegram-callback-terminal-run@example.com")
+    account = TelegramAccount(user_id=user.id, telegram_user_id=993, telegram_chat_id=993)
+    agent = Agent(
+        user_id=user.id,
+        name="Terminal",
+        kind="message",
+        trigger_type="manual",
+        config={"steps": [{"tool": "note", "args": {"text": "done"}}]},
+    )
+    db_session.add_all([account, agent])
+    await db_session.flush()
+    run = AgentRun(
+        agent_id=agent.id,
+        user_id=user.id,
+        trigger_key=f"manual:{agent.id}:terminal-callback",
+        trigger_kind="manual",
+        status="done",
+    )
+    db_session.add(run)
+    await db_session.flush()
+    row = await ca.propose_action(
+        db_session,
+        user_id=user.id,
+        conversation_id=None,
+        agent_run_id=run.id,
+        agent_step_idx=1,
+        kind="send",
+        tool_name="send_message_telegram",
+        args={"text": "too late"},
+        preview="Send too late",
+        idempotency_key=f"terminal:{uuid4().hex}",
+    )
+    await db_session.commit()
+
+    capture = _TelegramCapture()
+    await telegram_routes._handle_callback_query(
+        db_session,
+        capture,
+        callback_query={
+            "id": "cbq-terminal",
+            "from": {"id": 993},
+            "data": f"act:once:{row.id}",
+            "message": {"message_id": 57, "chat": {"id": 993}},
+        },
+    )
+
+    assert capture.callback_answers[-1]["text"] == "Не удалось"
+    assert "запуск уже завершен" in capture.edited_messages[-1]["text"]
+    await db_session.refresh(row)
+    assert row.status == "pending"
+
+
+@pytest.mark.asyncio
+async def test_handle_callback_query_reject_resumes_agent_run(
+    db_session: AsyncSession,
+):
+    user = await _user(db_session, "telegram-callback-agent-reject@example.com")
+    account = TelegramAccount(user_id=user.id, telegram_user_id=994, telegram_chat_id=994)
+    agent = Agent(
+        user_id=user.id,
+        name="Messenger",
+        kind="message",
+        trigger_type="manual",
+        config={
+            "steps": [
+                {
+                    "tool": "propose_action",
+                    "args": {
+                        "kind": "send",
+                        "tool_name": "send_message_telegram",
+                        "action_args": {"text": "hello"},
+                        "preview": "Send to you: hello",
+                    },
+                }
+            ]
+        },
+    )
+    db_session.add_all([account, agent])
+    await db_session.flush()
+    run = AgentRun(
+        agent_id=agent.id,
+        user_id=user.id,
+        trigger_key=f"manual:{agent.id}:callback-reject",
+        trigger_kind="manual",
+    )
+    db_session.add(run)
+    await db_session.flush()
+    await telegram_routes.run_job(
+        db_session,
+        run.id,
+        planner=static_config_planner,
+        executor=telegram_routes.execute_agent_step,
+    )
+    row = (
+        await db_session.execute(
+            select(CompanionPendingAction).where(
+                CompanionPendingAction.agent_run_id == run.id
+            )
+        )
+    ).scalar_one()
+
+    capture = _TelegramCapture()
+    await telegram_routes._handle_callback_query(
+        db_session,
+        capture,
+        callback_query={
+            "id": "cbq-agent-reject",
+            "from": {"id": 994},
+            "data": f"act:reject:{row.id}",
+            "message": {"message_id": 58, "chat": {"id": 994}},
+        },
+    )
+
+    assert capture.callback_answers[-1]["text"] == "Отклонено"
+    await db_session.refresh(row)
+    await db_session.refresh(run)
+    assert row.status == "rejected"
+    assert run.status == "failed"
 
 
 @pytest.mark.asyncio
@@ -2710,37 +2181,6 @@ async def test_handle_text_message_reports_retryable_provider_errors(
 
     assert "временный лимит провайдера" in capture.messages[-1]["text"]
     assert "Не получилось обработать" not in capture.messages[-1]["text"]
-
-
-@pytest.mark.asyncio
-async def test_format_wai_run_reply_surfaces_retrying_state(
-    db_session: AsyncSession,
-):
-    user = await _user(db_session, "telegram-retrying-run@example.com")
-    agent = Agent(
-        user_id=user.id,
-        name="Wai",
-        kind="wai",
-        trigger_type="chat",
-    )
-    db_session.add(agent)
-    await db_session.flush()
-    run = AgentRun(
-        agent_id=agent.id,
-        user_id=user.id,
-        trigger_key=f"telegram:retry:{uuid4().hex}",
-        trigger_kind="telegram",
-        status="pending",
-        error=f"{RETRYABLE_AGENT_ERROR_PREFIX}: RateLimitError",
-    )
-    db_session.add(run)
-    await db_session.flush()
-
-    text = await telegram_routes._format_wai_run_reply(db_session, run)
-
-    assert "продолжает задачу" in text
-    assert "RateLimitError" not in text
-    assert "Не получилось выполнить" not in text
 
 
 @pytest.mark.asyncio
