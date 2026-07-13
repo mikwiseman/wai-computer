@@ -366,6 +366,12 @@ DATA_OWNERSHIP: tuple[TableOwnershipEntry, ...] = (
         "Telegram webhook idempotency ledger is local to the receiving server.",
     ),
     TableOwnershipEntry(
+        "telegram_media_group_parts",
+        "self_host_local",
+        "Short-lived Telegram album buffer (raw update payloads) is server-local.",
+        contains_user_content=True,
+    ),
+    TableOwnershipEntry(
         "dictation_benchmark_votes", "owned_exportable", "User benchmark vote metadata."
     ),
     TableOwnershipEntry(
