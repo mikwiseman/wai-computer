@@ -39,9 +39,11 @@ const ToastContext = createContext<ToastApi | null>(null);
 const DEFAULT_DURATION = 3200;
 
 /**
- * Single toast stack. Auto-dismisses success/info after 3.2s; errors stick
- * until manually closed (matches Mac alert behavior). Honours
- * `prefers-reduced-motion` via the global rule in globals.css.
+ * Single toast stack. Auto-dismisses success/info after 3.2s — paused while the
+ * toast is hovered or holds focus (WCAG 2.2.1, Timing Adjustable) — while errors
+ * stick until manually closed (matches Mac alert behavior). Each toast owns its
+ * own lifetime timer (see ToastItem). Honours `prefers-reduced-motion` via the
+ * global rule in globals.css.
  */
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<ToastEntry[]>([]);
@@ -51,19 +53,11 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     setToasts((current) => current.filter((t) => t.id !== id));
   }, []);
 
-  const show = useCallback(
-    ({ message, tone = "info", durationMs }: ToastInput) => {
-      const id = ++idRef.current;
-      const entry: ToastEntry = { id, message, tone, durationMs };
-      setToasts((current) => [...current, entry]);
-      const lifetime =
-        durationMs ?? (tone === "error" ? Infinity : DEFAULT_DURATION);
-      if (Number.isFinite(lifetime)) {
-        window.setTimeout(() => dismiss(id), lifetime);
-      }
-    },
-    [dismiss],
-  );
+  const show = useCallback(({ message, tone = "info", durationMs }: ToastInput) => {
+    const id = ++idRef.current;
+    const entry: ToastEntry = { id, message, tone, durationMs };
+    setToasts((current) => [...current, entry]);
+  }, []);
 
   const api = useMemo<ToastApi>(
     () => ({
@@ -78,14 +72,12 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   return (
     <ToastContext.Provider value={api}>
       {children}
-      <div
-        className="toast-stack"
-        role="region"
-        aria-label="Notifications"
-        aria-live="polite"
-      >
+      {/* Region landmark only — the single live-region level lives on each
+          toast (role=status/alert). A redundant aria-live here would nest live
+          regions and double-announce. */}
+      <div className="toast-stack" role="region" aria-label="Notifications">
         {toasts.map((toast) => (
-          <ToastItem key={toast.id} toast={toast} onDismiss={() => dismiss(toast.id)} />
+          <ToastItem key={toast.id} toast={toast} onDismiss={dismiss} />
         ))}
       </div>
     </ToastContext.Provider>
@@ -97,24 +89,62 @@ function ToastItem({
   onDismiss,
 }: {
   toast: ToastEntry;
-  onDismiss: () => void;
+  onDismiss: (id: number) => void;
 }) {
-  useEffect(() => {
-    // Re-trigger entrance animation on mount.
+  const { id } = toast;
+  const lifetime =
+    toast.durationMs ?? (toast.tone === "error" ? Infinity : DEFAULT_DURATION);
+
+  // Remaining lifetime, preserved across hover/focus pauses so the toast keeps
+  // its full reading window when the pointer or focus leaves (WCAG 2.2.1).
+  const remainingRef = useRef(lifetime);
+  const deadlineRef = useRef<number | null>(null);
+  const timerRef = useRef<number | null>(null);
+
+  const clearTimer = useCallback(() => {
+    if (timerRef.current !== null) {
+      window.clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
   }, []);
+
+  const resume = useCallback(() => {
+    clearTimer();
+    if (!Number.isFinite(remainingRef.current)) return; // errors stay sticky
+    deadlineRef.current = Date.now() + remainingRef.current;
+    timerRef.current = window.setTimeout(
+      () => onDismiss(id),
+      remainingRef.current,
+    );
+  }, [clearTimer, onDismiss, id]);
+
+  const pause = useCallback(() => {
+    if (timerRef.current === null || deadlineRef.current === null) return;
+    clearTimer();
+    remainingRef.current = Math.max(0, deadlineRef.current - Date.now());
+  }, [clearTimer]);
+
+  useEffect(() => {
+    resume();
+    return clearTimer;
+  }, [resume, clearTimer]);
 
   return (
     <div
       className={`toast toast--${toast.tone ?? "info"}`}
       role={toast.tone === "error" ? "alert" : "status"}
       data-testid={`toast-${toast.tone ?? "info"}`}
+      onMouseEnter={pause}
+      onMouseLeave={resume}
+      onFocus={pause}
+      onBlur={resume}
     >
       <p>{toast.message}</p>
       <button
         type="button"
         className="toast__close"
         aria-label="Dismiss"
-        onClick={onDismiss}
+        onClick={() => onDismiss(id)}
       >
         ×
       </button>

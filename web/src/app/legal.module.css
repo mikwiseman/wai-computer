@@ -1,5 +1,5 @@
 .legalPage {
-  min-height: 100vh;
+  min-height: 100dvh;
   background: var(--bg);
   color: var(--ink);
   padding: clamp(1.25rem, 4vw, 3rem);
@@ -26,6 +26,7 @@
 }
 
 .legalHeader h1 {
+  font-family: var(--font-family-serif);
   font-size: clamp(2.1rem, 6vw, 3.4rem);
   line-height: 1.05;
   color: var(--ink);
@@ -56,16 +57,27 @@
 
 .legalContent p,
 .legalContent li {
+  max-width: var(--measure-reading);
   color: var(--ink-soft);
-  font-size: 1rem;
-  line-height: 1.68;
+  font-size: var(--font-reading-size);
+  line-height: var(--font-reading-line);
 }
 
+/* Real disc bullets: the list must stay in normal block flow — a `display:
+ * grid`/`flex` container turns <li> into grid/flex items and suppresses the
+ * marker entirely (globals also resets `ul { list-style: none }`). */
 .legalContent ul {
-  display: grid;
-  gap: 0.45rem;
   margin: 0;
-  padding-left: 1.2rem;
+  padding-left: 1.4rem;
+  list-style: disc;
+}
+
+.legalContent li {
+  margin-bottom: 0.5rem;
+}
+
+.legalContent li:last-child {
+  margin-bottom: 0;
 }
 
 .legalContent a {

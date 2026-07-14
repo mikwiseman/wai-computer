@@ -1,7 +1,7 @@
 .landing {
   display: flex;
   flex-direction: column;
-  min-height: 100vh;
+  min-height: 100dvh;
   background: var(--bg);
   padding: clamp(1.25rem, 3vw, 2rem) clamp(1.25rem, 5vw, 3rem);
   gap: clamp(2.5rem, 6vw, 4.5rem);
@@ -496,8 +496,11 @@
 
 .benchmarkEyebrow {
   margin: 0;
-  /* Amber on dark surface — same accent token as the rest of the page. */
-  color: var(--accent-amber);
+  /* The benchmark island is deliberately always-dark (fixed #141210 surface,
+   * theme-independent), so pin a literal dark-tuned amber. var(--accent-amber)
+   * would flip to the light-theme #ff9500 on light pages, drifting from the
+   * island's fixed palette. */
+  color: #ff9f0a;
   font-size: 0.72rem;
   font-weight: 600;
   letter-spacing: 0.12em;
@@ -541,6 +544,15 @@
 
 .benchmarkCta:hover {
   background: rgba(255, 255, 255, 0.86);
+}
+
+/* The island CTA is an <a>, so the global coarse-pointer button floor in
+ * globals.css doesn't reach it. Meet the 44px touch minimum here; desktop
+ * keeps the denser 38px. */
+@media (hover: none) and (pointer: coarse) {
+  .benchmarkCta {
+    min-height: 44px;
+  }
 }
 
 /* Pricing teaser --------------------------------------------------------- */
@@ -816,15 +828,17 @@
 }
 
 .navLink {
-  color: var(--ink);
-  opacity: 0.7;
+  /* Dim via the semantic muted-ink token, not opacity: opacity washes the
+   * glyph edges and ignores theme, whereas --ink-soft is the tuned muted ink
+   * (matches .signin above). */
+  color: var(--ink-soft);
   text-decoration: none;
   font-weight: 500;
-  transition: opacity 0.12s ease;
+  transition: color 0.12s ease;
 }
 
 .navLink:hover {
-  opacity: 1;
+  color: var(--ink);
 }
 
 /* Responsive ------------------------------------------------------------- */

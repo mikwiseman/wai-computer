@@ -39,17 +39,7 @@ export default async function NotFound() {
         </div>
 
         <header className="auth-card__header">
-          <p
-            style={{
-              color: "var(--ink-faint)",
-              fontSize: "0.78rem",
-              fontWeight: 740,
-              letterSpacing: "0.08em",
-              textTransform: "uppercase",
-            }}
-          >
-            {copy.eyebrow}
-          </p>
+          <p className="auth-card__tagline">{copy.eyebrow}</p>
           <h1>{copy.title}</h1>
         </header>
 

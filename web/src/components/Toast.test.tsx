@@ -1,4 +1,4 @@
-import { render, screen, act } from "@testing-library/react";
+import { render, screen, act, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -37,11 +37,13 @@ function renderWithProvider() {
 }
 
 describe("ToastProvider + useToast", () => {
-  it("renders the live region wrapper with accessibility attributes", () => {
+  it("renders the notifications region wrapper without a nested live region", () => {
     renderWithProvider();
     const region = screen.getByRole("region", { name: "Notifications" });
     expect(region).toHaveClass("toast-stack");
-    expect(region).toHaveAttribute("aria-live", "polite");
+    // The live-region level lives on each toast (role=status/alert); a redundant
+    // aria-live on the wrapper would nest live regions and double-announce.
+    expect(region).not.toHaveAttribute("aria-live");
   });
 
   it("shows an info toast with status role and info testid/class", async () => {
@@ -178,6 +180,61 @@ describe("ToastProvider + useToast", () => {
         vi.advanceTimersByTime(1);
       });
       expect(screen.queryByText("custom msg")).not.toBeInTheDocument();
+    });
+
+    it("pauses the auto-dismiss timer while the toast is hovered (WCAG 2.2.1)", () => {
+      renderWithProvider();
+      fireClick("show-info");
+      const toast = screen.getByTestId("toast-info");
+
+      // Part-way through the 3.2s lifetime the pointer enters the toast.
+      act(() => {
+        vi.advanceTimersByTime(2000);
+      });
+      act(() => {
+        fireEvent.mouseEnter(toast);
+      });
+
+      // While hovered, time well past the original deadline must NOT dismiss it.
+      act(() => {
+        vi.advanceTimersByTime(10_000);
+      });
+      expect(screen.getByText("info msg")).toBeInTheDocument();
+
+      // On leave the timer resumes and the toast dismisses after its lifetime.
+      act(() => {
+        fireEvent.mouseLeave(toast);
+      });
+      act(() => {
+        vi.advanceTimersByTime(3200);
+      });
+      expect(screen.queryByText("info msg")).not.toBeInTheDocument();
+    });
+
+    it("pauses the auto-dismiss timer while focus is within the toast", () => {
+      renderWithProvider();
+      fireClick("show-info");
+      const closeButton = screen.getByRole("button", { name: "Dismiss" });
+
+      act(() => {
+        vi.advanceTimersByTime(2000);
+      });
+      act(() => {
+        fireEvent.focusIn(closeButton);
+      });
+
+      act(() => {
+        vi.advanceTimersByTime(10_000);
+      });
+      expect(screen.getByText("info msg")).toBeInTheDocument();
+
+      act(() => {
+        fireEvent.focusOut(closeButton);
+      });
+      act(() => {
+        vi.advanceTimersByTime(3200);
+      });
+      expect(screen.queryByText("info msg")).not.toBeInTheDocument();
     });
   });
 });

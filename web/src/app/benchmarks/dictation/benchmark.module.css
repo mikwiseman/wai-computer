@@ -1,7 +1,16 @@
 .page {
-  min-height: 100vh;
-  background: linear-gradient(180deg, #f6f7fb 0%, #eff4f2 46%, #f7f7fb 100%);
-  color: #111216;
+  min-height: 100dvh;
+  /* Pin this page to the theme-aware violet ramp so it keeps its purple
+   * identity in BOTH light and dark, without hijacking the user's global
+   * accent choice. Everything below uses var(--accent*), which resolves to
+   * these locally (a value set on this element overrides the inherited
+   * amber from <html> for the whole subtree). */
+  --accent: var(--accent-violet);
+  --accent-strong: var(--accent-violet-strong);
+  --accent-soft: var(--accent-violet-soft);
+  --accent-contrast: var(--accent-violet-contrast);
+  background: var(--bg);
+  color: var(--ink);
   padding: 22px clamp(16px, 4vw, 48px) 56px;
 }
 
@@ -18,14 +27,14 @@
   display: inline-flex;
   align-items: center;
   gap: 10px;
-  color: #111216;
+  color: var(--ink);
   font-weight: 820;
 }
 
 .brandMark {
   width: 22px;
   height: 22px;
-  background: linear-gradient(135deg, #111216 0%, #6b4eff 100%);
+  background: linear-gradient(135deg, var(--ink) 0%, var(--accent) 100%);
   mask: url("/brand-mark.svg") center / contain no-repeat;
   -webkit-mask: url("/brand-mark.svg") center / contain no-repeat;
 }
@@ -34,7 +43,7 @@
   display: inline-flex;
   align-items: center;
   gap: 18px;
-  color: #5d6070;
+  color: var(--ink-soft);
   font-size: 0.95rem;
   font-weight: 680;
 }
@@ -72,7 +81,7 @@
 
 .eyebrow {
   margin: 0 0 10px;
-  color: #6b4eff;
+  color: var(--accent-strong);
   font-size: 0.76rem;
   font-weight: 850;
   letter-spacing: 0.08em;
@@ -91,7 +100,7 @@
 .heroText {
   max-width: 690px;
   margin: 0;
-  color: #4e5260;
+  color: var(--ink-soft);
   font-size: 1.15rem;
   line-height: 1.55;
 }
@@ -102,6 +111,8 @@
   gap: 12px;
 }
 
+/* Primary CTA — a neutral solid that stays high-contrast in both themes:
+ * dark button on the light page, light button on the dark page. */
 .heroActions a,
 .primaryButton {
   min-height: 46px;
@@ -111,17 +122,17 @@
   border: 0;
   border-radius: 7px;
   padding: 0 18px;
-  background: #111216;
-  color: #fff;
+  background: var(--ink);
+  color: var(--bg);
   font: inherit;
   font-weight: 780;
   cursor: pointer;
 }
 
 .heroActions a:last-child {
-  background: #fff;
-  color: #111216;
-  border: 1px solid #d9dce6;
+  background: var(--panel);
+  color: var(--ink);
+  border: 1px solid var(--border);
 }
 
 .primaryButton:disabled {
@@ -129,16 +140,21 @@
   opacity: 0.65;
 }
 
+/* Deliberately-dark demo surface — a mock of the app's dark recording UI, so
+ * it stays dark in BOTH themes (same treatment as the landing benchmark
+ * island). Colours inside are literal: theme tokens would resolve to the PAGE
+ * theme, not this fixed-dark context, so on a light page var(--ink) etc. would
+ * render dark-on-dark. A faint light border keeps it separated on a dark page. */
 .arenaPreview {
   min-height: 460px;
-  border: 1px solid rgba(17, 18, 22, 0.12);
+  border: 1px solid rgba(255, 250, 244, 0.08);
   border-radius: 8px;
-  background: #111216;
-  color: #fff;
+  background: #141210;
+  color: #f8f5f1;
   padding: 18px;
   display: grid;
   align-content: space-between;
-  box-shadow: 0 28px 80px rgba(17, 18, 22, 0.22);
+  box-shadow: 0 28px 80px rgba(0, 0, 0, 0.32);
 }
 
 .previewHeader,
@@ -214,7 +230,7 @@
   min-height: 104px;
   border-top: 1px solid rgba(255, 255, 255, 0.14);
   padding: 12px;
-  color: #fff;
+  color: #f8f5f1;
   display: grid;
   align-content: space-between;
 }
@@ -250,7 +266,7 @@
 .sectionHeader p:last-child {
   max-width: 440px;
   margin: 0;
-  color: #5d6070;
+  color: var(--ink-soft);
   line-height: 1.5;
 }
 
@@ -258,16 +274,16 @@
 .matrix,
 .arena {
   padding: 32px 0;
-  border-top: 1px solid #d9dce6;
+  border-top: 1px solid var(--border);
 }
 
 .tableWrap {
   width: 100%;
   min-width: 0;
   overflow-x: auto;
-  border: 1px solid #d9dce6;
+  border: 1px solid var(--border);
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.88);
+  background: var(--panel);
 }
 
 .table {
@@ -279,13 +295,13 @@
 .table th,
 .table td {
   padding: 16px 18px;
-  border-bottom: 1px solid #e7e9f0;
+  border-bottom: 1px solid var(--border);
   text-align: left;
   vertical-align: middle;
 }
 
 .table th {
-  color: #686d7c;
+  color: var(--ink-faint);
   font-size: 0.76rem;
   font-weight: 850;
   letter-spacing: 0.07em;
@@ -298,7 +314,7 @@
 
 .rank {
   width: 58px;
-  color: #6b4eff;
+  color: var(--accent-strong);
   font-size: 1.05rem;
   font-weight: 860;
 }
@@ -313,7 +329,7 @@
 }
 
 .modelName span {
-  color: #686d7c;
+  color: var(--ink-faint);
   font-size: 0.82rem;
 }
 
@@ -329,14 +345,14 @@
   gap: 16px;
   align-items: center;
   padding: 16px;
-  border: 1px solid #d9dce6;
+  border: 1px solid var(--border);
   border-radius: 8px;
-  background: #fff;
-  color: #4e5260;
+  background: var(--panel);
+  color: var(--ink-soft);
 }
 
 .notice a {
-  color: #6b4eff;
+  color: var(--accent-strong);
   font-weight: 780;
 }
 
@@ -348,10 +364,10 @@
 
 .matrixItem {
   min-height: 166px;
-  border: 1px solid #d9dce6;
+  border: 1px solid var(--border);
   border-radius: 8px;
   padding: 15px;
-  background: #fff;
+  background: var(--panel);
   display: grid;
   align-content: space-between;
   gap: 18px;
@@ -364,7 +380,7 @@
 
 .matrixItem p {
   margin: 0;
-  color: #5d6070;
+  color: var(--ink-soft);
   font-size: 0.86rem;
   line-height: 1.42;
 }
@@ -378,8 +394,8 @@
 .pill {
   padding: 5px 8px;
   border-radius: 999px;
-  background: #ece9ff;
-  color: #4d38ce;
+  background: var(--accent-soft);
+  color: var(--accent-strong);
   font-size: 0.72rem;
   font-weight: 780;
 }
@@ -393,6 +409,7 @@
   align-items: flex-end;
 }
 
+/* Fixed-dark status board — same rationale as .arenaPreview above. */
 .arenaStatusBoard {
   min-width: 300px;
   display: grid;
@@ -400,8 +417,8 @@
   gap: 6px;
   padding: 8px;
   border-radius: 8px;
-  background: #111216;
-  color: #fff;
+  background: #141210;
+  color: #f8f5f1;
 }
 
 .arenaStatusBoard span,
@@ -428,8 +445,8 @@
 
 .arenaStatusBoard strong {
   grid-column: 1 / -1;
-  color: #111216;
-  background: #fff;
+  color: #141210;
+  background: #f8f5f1;
 }
 
 .battleConsole {
@@ -441,9 +458,9 @@
 .recorderPanel,
 .runningPanel,
 .candidate {
-  border: 1px solid #d9dce6;
+  border: 1px solid var(--border);
   border-radius: 8px;
-  background: #fff;
+  background: var(--panel);
 }
 
 .recorderPanel {
@@ -457,22 +474,22 @@
   width: 14px;
   height: 14px;
   border-radius: 50%;
-  background: #aeb3c5;
+  background: var(--ink-faint);
 }
 
 .liveDot[data-state="recording"] {
-  background: #ff4f45;
-  box-shadow: 0 0 0 8px rgba(255, 79, 69, 0.12);
+  background: var(--danger);
+  box-shadow: 0 0 0 8px color-mix(in srgb, var(--danger) 14%, transparent);
 }
 
 .liveDot[data-state="uploading"] {
-  background: #6b4eff;
-  box-shadow: 0 0 0 8px rgba(107, 78, 255, 0.12);
+  background: var(--accent);
+  box-shadow: 0 0 0 8px var(--accent-soft);
 }
 
 .liveDot[data-state="done"] {
-  background: #0f7c68;
-  box-shadow: 0 0 0 8px rgba(15, 124, 104, 0.12);
+  background: var(--accent-green);
+  box-shadow: 0 0 0 8px var(--accent-green-soft);
 }
 
 .timer {
@@ -488,7 +505,7 @@
   gap: 5px;
   padding: 12px;
   border-radius: 8px;
-  background: #f0f2f7;
+  background: var(--panel-subtle);
   overflow: hidden;
 }
 
@@ -496,7 +513,7 @@
   flex: 1;
   min-width: 3px;
   border-radius: 999px;
-  background: linear-gradient(180deg, #6b4eff, #0f7c68);
+  background: linear-gradient(180deg, var(--accent), var(--accent-green));
   animation: wavePulse 920ms ease-in-out infinite alternate;
 }
 
@@ -506,13 +523,13 @@
   align-items: center;
   gap: 8px;
   padding: 10px;
-  border: 1px solid #e0e3ec;
+  border: 1px solid var(--border);
   border-radius: 8px;
-  background: #fafafc;
+  background: var(--panel-subtle);
 }
 
 .battleStrip span {
-  color: #686d7c;
+  color: var(--ink-faint);
   font-size: 0.78rem;
   font-weight: 760;
 }
@@ -527,14 +544,14 @@
   width: 42px;
   height: 42px;
   border-radius: 50%;
-  color: #fff;
-  background: #111216;
+  color: var(--bg);
+  background: var(--ink);
   font-weight: 880;
 }
 
 .recorderHint {
   margin: 0;
-  color: #4e5260;
+  color: var(--ink-soft);
   line-height: 1.5;
 }
 
@@ -547,7 +564,7 @@
 
 .languagePicker > span,
 .panelLabel {
-  color: #686d7c;
+  color: var(--ink-faint);
   font-size: 0.76rem;
   font-weight: 850;
   letter-spacing: 0.07em;
@@ -559,7 +576,7 @@
   gap: 6px;
   padding: 4px;
   border-radius: 8px;
-  background: #f0f2f7;
+  background: var(--panel-subtle);
 }
 
 .languageButton,
@@ -575,14 +592,14 @@
 
 .languageButton {
   background: transparent;
-  color: #4e5260;
+  color: var(--ink-soft);
   cursor: pointer;
 }
 
 .languageSelected {
-  background: #fff;
-  color: #111216;
-  box-shadow: 0 1px 8px rgba(17, 18, 22, 0.09);
+  background: var(--panel);
+  color: var(--ink);
+  box-shadow: var(--shadow-1);
 }
 
 .recorderActions {
@@ -594,7 +611,7 @@
 
 .privateRound {
   max-width: 300px;
-  color: #686d7c;
+  color: var(--ink-faint);
   font-size: 0.78rem;
   line-height: 1.35;
   text-align: right;
@@ -620,7 +637,7 @@
   gap: 10px;
   border-radius: 8px;
   padding: 9px;
-  background: #f6f7fb;
+  background: var(--panel-subtle);
 }
 
 .modelRail span,
@@ -630,8 +647,8 @@
   width: 32px;
   height: 32px;
   border-radius: 50%;
-  color: #fff;
-  background: #6b4eff;
+  color: var(--accent-contrast);
+  background: var(--accent);
   font-weight: 860;
 }
 
@@ -643,8 +660,8 @@
   min-width: 54px;
   border-radius: 999px;
   padding: 4px 7px;
-  color: #0f7c68;
-  background: #dff5ef;
+  color: var(--accent-green-strong);
+  background: var(--accent-green-soft);
   font-size: 0.72rem;
   font-style: normal;
   font-weight: 820;
@@ -652,19 +669,19 @@
 }
 
 .modelRail em[data-status="error"] {
-  color: #c2382d;
-  background: #ffe3df;
+  color: var(--accent-rose-strong);
+  background: var(--accent-rose-soft);
 }
 
 .modelRail em[data-status="listening"],
 .modelRail em[data-status="running"] {
-  color: #4d38ce;
-  background: #ece9ff;
+  color: var(--accent-strong);
+  background: var(--accent-soft);
 }
 
 .modelRail em[data-status="standby"] {
-  color: #686d7c;
-  background: #e7e9f0;
+  color: var(--ink-faint);
+  background: var(--surface-subtle);
 }
 
 .resultTabs {
@@ -672,9 +689,9 @@
   display: inline-flex;
   gap: 6px;
   padding: 5px;
-  border: 1px solid #d9dce6;
+  border: 1px solid var(--border);
   border-radius: 8px;
-  background: #fff;
+  background: var(--panel);
 }
 
 .resultTabs button {
@@ -683,7 +700,7 @@
   border-radius: 7px;
   padding: 0 14px;
   background: transparent;
-  color: #686d7c;
+  color: var(--ink-faint);
   font: inherit;
   font-size: 0.82rem;
   font-weight: 820;
@@ -691,8 +708,8 @@
 }
 
 .resultTabs button[data-active="true"] {
-  background: #111216;
-  color: #fff;
+  background: var(--ink);
+  color: var(--bg);
 }
 
 .candidateGrid {
@@ -710,24 +727,24 @@
 }
 
 .candidatePending {
-  background: #fafafc;
+  background: var(--panel-subtle);
 }
 
 .candidatePending .transcriptText {
-  color: #686d7c;
+  color: var(--ink-faint);
 }
 
 .candidateMeta,
 .candidateFooter,
 .reveal {
-  color: #686d7c;
+  color: var(--ink-faint);
   font-size: 0.84rem;
   font-weight: 720;
 }
 
 .transcriptText {
   margin: 0;
-  color: #111216;
+  color: var(--ink);
   font-size: 1rem;
   line-height: 1.58;
   white-space: pre-wrap;
@@ -745,24 +762,24 @@
 }
 
 .voteButton {
-  background: #ece9ff;
-  color: #4d38ce;
+  background: var(--accent-soft);
+  color: var(--accent-strong);
 }
 
 .voteButton:disabled {
-  color: #8f94a3;
-  background: #e7e9f0;
+  color: var(--ink-faint);
+  background: var(--surface-subtle);
   cursor: not-allowed;
 }
 
 .voteSelected {
-  background: #0f7c68;
-  color: #fff;
+  background: var(--accent-green);
+  color: var(--accent-green-contrast);
 }
 
 .reveal {
   padding-top: 10px;
-  border-top: 1px solid #e7e9f0;
+  border-top: 1px solid var(--border);
 }
 
 @keyframes wavePulse {
