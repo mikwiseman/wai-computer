@@ -954,7 +954,7 @@ async def test_handle_start_command_existing_and_missing_link(db_session: AsyncS
     )
 
     assert "Telegram привязан" in capture.messages[0]["text"]
-    assert "/meetings" in capture.messages[0]["text"]
+    assert "Просто пиши или говори" in capture.messages[0]["text"]
     # A brand-new user is offered Telegram-only signup (consent button), not a code.
     assert "Условия" in capture.messages[1]["text"]
     assert capture.messages[1]["reply_markup"]["inline_keyboard"]
@@ -1068,7 +1068,7 @@ async def test_handle_update_routes_help_meetings_and_natural_search(
     await send_text(203, "покажи последние встречи")
     await send_text(204, "найди запуск")
 
-    assert "/meetings" in capture.messages[0]["text"]
+    assert "Просто пиши или говори" in capture.messages[0]["text"]
     assert "/actions" not in capture.messages[0]["text"]
     assert "Roadmap Sync" in capture.messages[1]["text"]
     assert "Private note" not in capture.messages[1]["text"]
@@ -3375,7 +3375,7 @@ async def test_handle_update_branches_and_failures(db_session: AsyncSession, mon
     assert (await db_session.get(TelegramUpdate, 103)).status == "completed"
     # Unlinked user's first message -> Telegram-only signup consent prompt.
     assert "Условия" in capture.messages[0]["text"]
-    assert "/meetings" in capture.messages[1]["text"]
+    assert "Просто пиши или говори" in capture.messages[1]["text"]
     failed = await db_session.get(TelegramUpdate, 106)
     assert failed.status == "failed"
     assert failed.error_code == "TelegramClientError"

@@ -394,9 +394,9 @@ def test_digest_text_intent_routes():
     assert telegram_routes._text_intent(long_prose) != ("digest", "")
 
 
-def test_digest_in_help_and_bot_commands():
-    assert "/digest" in telegram_routes._telegram_help_text(linked=True)
-    assert any(
-        c["command"] == "digest" for c in telegram_routes.TELEGRAM_BOT_COMMANDS
-    )
+def test_digest_in_help_and_minimal_bot_menu():
+    assert "дайджест" in telegram_routes._telegram_help_text(linked=True)
+    # The menu is deliberately minimal — everyday actions go through natural
+    # language and typed commands share handlers with the NL intents.
+    assert [c["command"] for c in telegram_routes.TELEGRAM_BOT_COMMANDS] == ["help"]
     assert json.dumps(telegram_routes.TELEGRAM_BOT_COMMANDS, ensure_ascii=False)
