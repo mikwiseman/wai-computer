@@ -32,7 +32,7 @@ struct LanguagePickerView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: Spacing.md) {
             autoDetectRow
-            Divider()
+            WaiDivider()
                 .padding(.vertical, 4)
             languageList
             footerHint
@@ -42,12 +42,16 @@ struct LanguagePickerView: View {
     // MARK: - Subviews
 
     private var autoDetectRow: some View {
-        Button {
-            if !store.isAutoDetect {
-                store.setAutoDetect()
-                onSelectionChanged?()
+        LanguagePickerRow(
+            isSelected: store.isAutoDetect,
+            accessibilityIdentifier: "language-picker-auto",
+            action: {
+                if !store.isAutoDetect {
+                    store.setAutoDetect()
+                    onSelectionChanged?()
+                }
             }
-        } label: {
+        ) {
             HStack(spacing: Spacing.md) {
                 Image(systemName: store.isAutoDetect ? "checkmark.circle.fill" : "circle")
                     .foregroundStyle(store.isAutoDetect ? Palette.accent : Palette.textTertiary)
@@ -66,10 +70,7 @@ struct LanguagePickerView: View {
                 Spacer()
             }
             .padding(.vertical, 4)
-            .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
-        .accessibilityIdentifier("language-picker-auto")
     }
 
     private var languageList: some View {
@@ -82,10 +83,14 @@ struct LanguagePickerView: View {
 
     private func row(for entry: DictationLanguageCatalog.Entry) -> some View {
         let isSelected = store.selectedLanguages.contains(entry.code)
-        return Button {
-            store.toggle(entry.code)
-            onSelectionChanged?()
-        } label: {
+        return LanguagePickerRow(
+            isSelected: isSelected,
+            accessibilityIdentifier: "language-picker-row-\(entry.code)",
+            action: {
+                store.toggle(entry.code)
+                onSelectionChanged?()
+            }
+        ) {
             HStack(spacing: Spacing.md) {
                 Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
                     .foregroundStyle(isSelected ? Palette.accent : Palette.textTertiary)
@@ -107,10 +112,7 @@ struct LanguagePickerView: View {
                     .foregroundStyle(Palette.textTertiary)
             }
             .padding(.vertical, 6)
-            .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
-        .accessibilityIdentifier("language-picker-row-\(entry.code)")
     }
 
     @ViewBuilder
@@ -172,5 +174,30 @@ struct LanguagePickerView: View {
             return entry.nativeName == primaryName(for: entry) ? "" : entry.nativeName
         }
         return entry.nativeName == entry.englishName ? "" : entry.nativeName
+    }
+}
+
+/// A selectable picker row with the shared hover affordance (surface-tint on
+/// pointer-over) used across NewRecordingView / MacSearchView, plus the
+/// `.isSelected` trait so VoiceOver announces the current choice.
+private struct LanguagePickerRow<Content: View>: View {
+    let isSelected: Bool
+    let accessibilityIdentifier: String
+    let action: () -> Void
+    @ViewBuilder let content: () -> Content
+    @State private var isHovered = false
+
+    var body: some View {
+        Button(action: action) {
+            content()
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(isHovered ? Palette.surfaceHover : Color.clear)
+                .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { isHovered = $0 }
+        .accessibilityIdentifier(accessibilityIdentifier)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 }

@@ -43,12 +43,12 @@ struct DictationDictionaryView: View {
             }
             .padding(Spacing.xl)
 
-            Divider()
+            WaiDivider()
 
             // Suggestions learned from the user's edits (one-tap accept).
             if !learningEngine.suggestions.isEmpty {
                 suggestionsSection
-                Divider()
+                WaiDivider()
             }
 
             // Search
@@ -63,7 +63,7 @@ struct DictationDictionaryView: View {
                 .padding(.horizontal, Spacing.xl)
                 .padding(.vertical, Spacing.md)
 
-                Divider()
+                WaiDivider()
             }
 
             // Word list
@@ -89,12 +89,29 @@ struct DictationDictionaryView: View {
             } else {
                 List {
                     ForEach(visibleWords) { word in
-                        wordRow(word)
+                        DictationWordRow(
+                            word: word,
+                            biasLabel: biasBadgeLabel,
+                            replaceLabel: replaceBadgeLabel,
+                            onEdit: { beginEdit(word) },
+                            onDelete: { dictionaryStore.delete(word) }
+                        )
+                        .listRowSeparator(.hidden)
+                        .listRowBackground(Color.clear)
                     }
                 }
+                .listStyle(.plain)
+                .scrollContentBackground(.hidden)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .onEscapeKeyCompat {
+            // Escape backs out of an in-progress inline edit, mirroring the
+            // Cancel button next to the add row.
+            if editingWord != nil {
+                cancelEdit()
+            }
+        }
     }
 
     @ViewBuilder
@@ -239,6 +256,7 @@ struct DictationDictionaryView: View {
                         .foregroundStyle(Palette.textSecondary)
                 }
                 Button(editingWord == nil ? t("Add", "Добавить") : t("Save", "Сохранить")) { commitWord() }
+                    .buttonStyle(.borderedProminent)
                     .disabled(newWord.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
             if let duplicate = duplicateWord {
@@ -273,65 +291,8 @@ struct DictationDictionaryView: View {
     }
 
     @ViewBuilder
-    private func wordRow(_ word: DictionaryWord) -> some View {
-        HStack(spacing: 8) {
-            Text(word.word)
-                .font(Typography.body)
-                .foregroundStyle(Palette.textPrimary)
-
-            if word.isLearned {
-                Image(systemName: "sparkles")
-                    .font(.caption2)
-                    .foregroundStyle(Palette.accent)
-                    .help(t("Learned from your edits", "Выучено из твоих правок"))
-            }
-
-            if let replacement = word.replacement, replacement != word.word {
-                Image(systemName: "arrow.right")
-                    .font(.caption)
-                    .foregroundStyle(Palette.textTertiary)
-                Text(replacement)
-                    .font(Typography.body)
-                    .foregroundStyle(Palette.textSecondary)
-                badge(label: replaceBadgeLabel, color: Palette.warning)
-            } else {
-                badge(label: biasBadgeLabel, color: Palette.accent)
-            }
-
-            Spacer()
-
-            Button {
-                dictionaryStore.delete(word)
-            } label: {
-                Image(systemName: "xmark")
-                    .font(.caption)
-                    .foregroundStyle(Palette.textTertiary)
-            }
-            .buttonStyle(.plain)
-            .help(t("Remove word", "Удалить слово"))
-        }
-        .padding(.vertical, Spacing.xs)
-        .contentShape(Rectangle())
-        .contextMenu {
-            Button(t("Edit…", "Изменить…")) { beginEdit(word) }
-            Button(t("Remove word", "Удалить слово"), role: .destructive) {
-                dictionaryStore.delete(word)
-            }
-        }
-    }
-
-    @ViewBuilder
     private func badge(label: String, color: Color) -> some View {
-        Text(label)
-            .font(.system(size: 9, weight: .semibold, design: .monospaced))
-            .tracking(0.6)
-            .foregroundStyle(color)
-            .padding(.horizontal, 6)
-            .padding(.vertical, 2)
-            .background(
-                RoundedRectangle(cornerRadius: 4, style: .continuous)
-                    .fill(color.opacity(0.12))
-            )
+        DictationBadge(label: label, color: color)
     }
 
     @ViewBuilder
@@ -410,6 +371,87 @@ struct DictationDictionaryView: View {
 
     private var replaceBadgeLabel: String {
         t("REPLACE", "ЗАМЕНА")
+    }
+
+    private func t(_ english: String, _ russian: String) -> String {
+        OnboardingL10n.text(english, russian, language: languageManager.current)
+    }
+}
+
+/// Small monospaced pill marking a dictionary entry as a recognition booster
+/// (BIAS) or an auto-replacement (REPLACE).
+private struct DictationBadge: View {
+    let label: String
+    let color: Color
+
+    var body: some View {
+        Text(label)
+            .font(.system(size: 9, weight: .semibold, design: .monospaced))
+            .tracking(0.6)
+            .foregroundStyle(color)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(
+                RoundedRectangle(cornerRadius: 4, style: .continuous)
+                    .fill(color.opacity(0.12))
+            )
+    }
+}
+
+/// One dictionary entry row with the shared hover affordance (surface-tint on
+/// pointer-over) used across the app's clickable rows.
+private struct DictationWordRow: View {
+    @EnvironmentObject private var languageManager: LanguageManager
+    let word: DictionaryWord
+    let biasLabel: String
+    let replaceLabel: String
+    let onEdit: () -> Void
+    let onDelete: () -> Void
+    @State private var isHovered = false
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Text(word.word)
+                .font(Typography.body)
+                .foregroundStyle(Palette.textPrimary)
+
+            if word.isLearned {
+                Image(systemName: "sparkles")
+                    .font(.caption2)
+                    .foregroundStyle(Palette.accent)
+                    .help(t("Learned from your edits", "Выучено из твоих правок"))
+            }
+
+            if let replacement = word.replacement, replacement != word.word {
+                Image(systemName: "arrow.right")
+                    .font(.caption)
+                    .foregroundStyle(Palette.textTertiary)
+                Text(replacement)
+                    .font(Typography.body)
+                    .foregroundStyle(Palette.textSecondary)
+                DictationBadge(label: replaceLabel, color: Palette.warning)
+            } else {
+                DictationBadge(label: biasLabel, color: Palette.accent)
+            }
+
+            Spacer()
+
+            Button(action: onDelete) {
+                Image(systemName: "xmark")
+                    .font(.caption)
+                    .foregroundStyle(Palette.textTertiary)
+            }
+            .buttonStyle(.plain)
+            .help(t("Remove word", "Удалить слово"))
+        }
+        .padding(.vertical, Spacing.xs)
+        .background(isHovered ? Palette.surfaceHover : Color.clear)
+        .contentShape(Rectangle())
+        .onHover { isHovered = $0 }
+        .contextMenu {
+            Button(t("Edit…", "Изменить…"), action: onEdit)
+            Button(t("Remove word", "Удалить слово"), role: .destructive, action: onDelete)
+        }
     }
 
     private func t(_ english: String, _ russian: String) -> String {

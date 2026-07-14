@@ -23,7 +23,7 @@ struct OnboardingLanguagesSlide: View {
                     "One language gives the lowest latency. Auto-detect lets you switch naturally. You can change this later in Settings.",
                     "Один язык дает минимальную задержку. Автоопределение позволяет свободно переключаться. Это можно изменить позже в настройках."
                 ))
-                    .font(.system(size: 14))
+                    .font(Typography.body)
                     .foregroundStyle(Palette.textSecondary)
                     .multilineTextAlignment(.center)
                     .lineSpacing(3)

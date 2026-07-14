@@ -39,7 +39,7 @@ struct DictationSnippetsView: View {
             }
             .padding(Spacing.xl)
 
-            Divider()
+            WaiDivider()
 
             if !snippetsStore.snippets.isEmpty {
                 HStack {
@@ -52,7 +52,7 @@ struct DictationSnippetsView: View {
                 .padding(.horizontal, Spacing.xl)
                 .padding(.vertical, Spacing.md)
 
-                Divider()
+                WaiDivider()
             }
 
             if snippetsStore.snippets.isEmpty {
@@ -77,9 +77,13 @@ struct DictationSnippetsView: View {
             } else {
                 List {
                     ForEach(visibleSnippets) { snippet in
-                        snippetRow(snippet)
-                            .listRowSeparator(.hidden)
-                            .listRowBackground(Color.clear)
+                        DictationSnippetRow(
+                            snippet: snippet,
+                            onEdit: { editingSnippet = snippet },
+                            onDelete: { snippetsStore.delete(snippet) }
+                        )
+                        .listRowSeparator(.hidden)
+                        .listRowBackground(Color.clear)
                     }
                 }
                 .listStyle(.plain)
@@ -143,7 +147,32 @@ struct DictationSnippetsView: View {
         }
     }
 
-    private func snippetRow(_ snippet: DictationSnippet) -> some View {
+    private func addSnippet() {
+        duplicateTrigger = nil
+        let trigger = newTrigger.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard snippetsStore.add(trigger: trigger, expansion: newExpansion) else {
+            duplicateTrigger = trigger
+            return
+        }
+        newTrigger = ""
+        newExpansion = ""
+    }
+
+    private func t(_ english: String, _ russian: String) -> String {
+        OnboardingL10n.text(english, russian, language: languageManager.current)
+    }
+}
+
+/// One snippet row with the shared hover affordance (surface-tint on
+/// pointer-over) used across the app's clickable rows.
+private struct DictationSnippetRow: View {
+    @EnvironmentObject private var languageManager: LanguageManager
+    let snippet: DictationSnippet
+    let onEdit: () -> Void
+    let onDelete: () -> Void
+    @State private var isHovered = false
+
+    var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: Spacing.lg) {
             Text(snippet.trigger)
                 .font(Typography.headingSmall)
@@ -159,18 +188,14 @@ struct DictationSnippetsView: View {
                 .lineLimit(2)
                 .frame(maxWidth: .infinity, alignment: .leading)
 
-            Button {
-                editingSnippet = snippet
-            } label: {
+            Button(action: onEdit) {
                 Image(systemName: "pencil")
             }
             .buttonStyle(.plain)
             .foregroundStyle(Palette.textTertiary)
             .help(t("Edit snippet", "Редактировать сниппет"))
 
-            Button {
-                snippetsStore.delete(snippet)
-            } label: {
+            Button(action: onDelete) {
                 Image(systemName: "trash")
             }
             .buttonStyle(.plain)
@@ -179,17 +204,9 @@ struct DictationSnippetsView: View {
         }
         .padding(.vertical, Spacing.sm)
         .padding(.horizontal, Spacing.xl)
-    }
-
-    private func addSnippet() {
-        duplicateTrigger = nil
-        let trigger = newTrigger.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard snippetsStore.add(trigger: trigger, expansion: newExpansion) else {
-            duplicateTrigger = trigger
-            return
-        }
-        newTrigger = ""
-        newExpansion = ""
+        .background(isHovered ? Palette.surfaceHover : Color.clear)
+        .contentShape(Rectangle())
+        .onHover { isHovered = $0 }
     }
 
     private func t(_ english: String, _ russian: String) -> String {
@@ -242,6 +259,7 @@ private struct SnippetEditSheet: View {
             HStack {
                 Spacer()
                 Button(t("Cancel", "Отмена")) { dismiss() }
+                    .keyboardShortcut(.cancelAction)
                 Button(t("Save", "Сохранить")) {
                     if onSave(trigger, expansion) {
                         dismiss()
@@ -250,6 +268,7 @@ private struct SnippetEditSheet: View {
                     }
                 }
                 .buttonStyle(.borderedProminent)
+                .keyboardShortcut(.defaultAction)
                 .disabled(
                     trigger.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
                     expansion.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty

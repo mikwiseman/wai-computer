@@ -38,7 +38,7 @@ struct DictationHistoryView: View {
             }
             .padding(Spacing.xl)
 
-            Divider()
+            WaiDivider()
 
             // Search
             HStack {
@@ -51,7 +51,7 @@ struct DictationHistoryView: View {
             .padding(.horizontal, Spacing.xl)
             .padding(.vertical, Spacing.md)
 
-            Divider()
+            WaiDivider()
 
             // Entries list
             if groups.isEmpty {

@@ -13,7 +13,7 @@ final class OnboardingPermissionUITests: XCTestCase {
             scenario: "onboarding_flow",
             forceOnboarding: true,
             permissionMock: "missing",
-            launchArguments: ["-waiUserLanguage", "en", "-nativeOnboardingV4CurrentPage", "2"]
+            launchArguments: ["-waiUserLanguage", "en", "-nativeOnboardingV4CurrentPage", "1"]
         )
         app.launch()
         app.activate()
@@ -43,7 +43,7 @@ final class OnboardingPermissionUITests: XCTestCase {
             scenario: "onboarding_flow",
             forceOnboarding: true,
             permissionMock: "missing_not_determined",
-            launchArguments: ["-waiUserLanguage", "en", "-nativeOnboardingV4CurrentPage", "2"]
+            launchArguments: ["-waiUserLanguage", "en", "-nativeOnboardingV4CurrentPage", "1"]
         )
         app.launch()
         app.activate()
@@ -88,7 +88,7 @@ final class OnboardingPermissionUITests: XCTestCase {
             permissionMock: "needs_restart_accessibility",
             launchArguments: [
                 "-waiUserLanguage", "en",
-                "-nativeOnboardingV4CurrentPage", "2",
+                "-nativeOnboardingV4CurrentPage", "1",
                 "-nativeOnboardingV4Completed", "NO",
             ]
         )
@@ -108,7 +108,7 @@ final class OnboardingPermissionUITests: XCTestCase {
             scenario: "onboarding_flow",
             forceOnboarding: true,
             permissionMock: "needs_restart_accessibility",
-            launchArguments: ["-waiUserLanguage", "en", "-nativeOnboardingV4CurrentPage", "2"]
+            launchArguments: ["-waiUserLanguage", "en", "-nativeOnboardingV4CurrentPage", "1"]
         )
         app.launch()
         app.activate()
@@ -125,13 +125,32 @@ final class OnboardingPermissionUITests: XCTestCase {
 
     @MainActor
     func testOnboardingBackButtonReturnsToPreviousSlide() throws {
+        // Page 1 is now the permission slide (the marketing value-props slide
+        // was removed); Back returns to Welcome.
         let app = launchOnboarding(currentPage: 1, permissionMock: "missing")
 
-        XCTAssertTrue(waitForElement(app.staticTexts["Two ways to use WaiComputer"], in: app, timeout: 8))
+        XCTAssertTrue(waitForElement(app.staticTexts["Give WaiComputer permissions"], in: app, timeout: 8))
 
         app.buttons.matching(identifier: "onboarding-back-button").firstMatch.click()
 
         XCTAssertTrue(waitForElement(app.staticTexts["Welcome to WaiComputer"], in: app, timeout: 3))
+    }
+
+    @MainActor
+    func testOnboardingPermissionSkipAdvancesToLanguagesInsteadOfCompleting() throws {
+        // The permission-page skip is step-scoped: it must walk the user on to
+        // Languages, not silently drop the rest of setup. Page 1 = permission.
+        let app = launchOnboarding(currentPage: 1, permissionMock: "missing")
+
+        XCTAssertTrue(waitForElement(app.staticTexts["Give WaiComputer permissions"], in: app, timeout: 8))
+
+        let skipButton = app.buttons.matching(identifier: "onboarding-skip-button").firstMatch
+        XCTAssertTrue(waitForElement(skipButton, in: app, timeout: 3))
+        XCTAssertEqual(skipButton.label, "Skip for now")
+        skipButton.click()
+
+        XCTAssertTrue(waitForElement(app.staticTexts["Choose dictation languages"], in: app, timeout: 3))
+        XCTAssertFalse(app.textFields["Email"].exists, "Permission skip must not exit setup into auth")
     }
 
     @MainActor
@@ -154,7 +173,7 @@ final class OnboardingPermissionUITests: XCTestCase {
     @MainActor
     func testRussianPermissionSlideDoesNotMixEnglishMicrophoneCopy() throws {
         let app = launchOnboarding(
-            currentPage: 2,
+            currentPage: 1,
             permissionMock: "missing",
             launchArguments: ["-waiUserLanguage", "ru"]
         )
@@ -166,7 +185,7 @@ final class OnboardingPermissionUITests: XCTestCase {
 
     @MainActor
     func testHotkeySelectionUpdatesWithoutLeavingHotkeySlide() throws {
-        let app = launchOnboarding(currentPage: 4, permissionMock: "missing")
+        let app = launchOnboarding(currentPage: 3, permissionMock: "missing")
 
         XCTAssertTrue(waitForElement(app.staticTexts["Pick your dictation key"], in: app, timeout: 8))
 

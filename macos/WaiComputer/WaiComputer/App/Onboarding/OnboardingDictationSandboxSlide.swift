@@ -108,7 +108,7 @@ struct OnboardingDictationSandboxSlide: View {
                 Text(t("and speak. Release to insert.", "и говори. Отпусти, чтобы вставить текст."))
             }
         }
-        .font(.system(size: 14))
+        .font(Typography.body)
         .foregroundStyle(Palette.textSecondary)
     }
 
@@ -116,7 +116,7 @@ struct OnboardingDictationSandboxSlide: View {
     private var sandboxField: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(t("Compose", "Текст"))
-                .font(.system(size: 11, weight: .medium))
+                .font(Typography.labelSmall)
                 .tracking(0.6)
                 .foregroundStyle(Palette.textTertiary)
                 .textCase(.uppercase)

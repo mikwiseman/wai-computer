@@ -25,10 +25,10 @@ struct OnboardingWelcomeSlide: View {
                     .foregroundStyle(Palette.textPrimary)
                     .accessibilityIdentifier("onboarding-welcome-title")
                 Text(t(
-                    "Record, upload, save links, and chat with Wai from one Inbox — set up in 90 seconds.",
-                    "Записывай, загружай файлы, сохраняй ссылки и общайся с Wai из одного Инбокса — настройка займет около 90 секунд."
+                    "Record, upload, save links, and chat with Wai from one Inbox.",
+                    "Записывай, загружай файлы, сохраняй ссылки и общайся с Wai из одного Инбокса."
                 ))
-                    .font(.system(size: 15))
+                    .font(Typography.bodyLarge)
                     .foregroundStyle(Palette.textSecondary)
                     .multilineTextAlignment(.center)
                     .lineSpacing(3)
@@ -52,7 +52,7 @@ struct OnboardingWelcomeSlide: View {
     private var languagePicker: some View {
         VStack(spacing: 10) {
             Text(t("Choose app language", "Выбери язык приложения"))
-                .font(.system(size: 12, weight: .medium))
+                .font(Typography.label)
                 .foregroundStyle(Palette.textTertiary)
                 .textCase(.uppercase)
                 .tracking(0.8)
@@ -66,7 +66,7 @@ struct OnboardingWelcomeSlide: View {
             .padding(2)
             .background(
                 RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                    .fill(Color.secondary.opacity(0.12))
+                    .fill(Palette.surfaceSubtle)
             )
 
             Text(t(

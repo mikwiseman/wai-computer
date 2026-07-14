@@ -50,6 +50,11 @@ struct DictationOverlayView: View {
                     .clipShape(Circle())
             }
             .buttonStyle(.plain)
+            .accessibilityLabel(OnboardingL10n.text(
+                "Cancel dictation",
+                "Отменить диктовку",
+                language: languageManager.current
+            ))
         }
         .padding(.horizontal, Spacing.lg)
         .padding(.vertical, Spacing.md)

@@ -118,6 +118,7 @@ struct MenuBarView: View {
                         .padding(.horizontal, Spacing.lg)
                     }
                     .buttonStyle(.plain)
+                    .menuRowHover()
                     .disabled(!recordingVM.canPauseRecording && !recordingVM.canResumeRecording)
 
                     Button {
@@ -141,6 +142,7 @@ struct MenuBarView: View {
                         .padding(.horizontal, Spacing.lg)
                     }
                     .buttonStyle(.plain)
+                    .menuRowHover()
                     .disabled(!recordingVM.canStopRecording)
                 } else if appState.completedRecordingContext != nil {
                     HStack {
@@ -172,6 +174,7 @@ struct MenuBarView: View {
                         .padding(.horizontal, Spacing.lg)
                     }
                     .buttonStyle(.plain)
+                    .menuRowHover()
 
                     Button {
                         Task { await appState.startRecording(type: .meeting, inputSource: .dual) }
@@ -191,6 +194,7 @@ struct MenuBarView: View {
                         .padding(.horizontal, Spacing.lg)
                     }
                     .buttonStyle(.plain)
+                    .menuRowHover()
 
                     Button {
                         appState.pendingMainWindowAction = .inboxCommand(.uploadFile)
@@ -211,6 +215,7 @@ struct MenuBarView: View {
                         .padding(.horizontal, Spacing.lg)
                     }
                     .buttonStyle(.plain)
+                    .menuRowHover()
                 }
             }
 
@@ -254,6 +259,7 @@ struct MenuBarView: View {
                             .padding(.horizontal, Spacing.lg)
                         }
                         .buttonStyle(.plain)
+                        .menuRowHover()
                     }
                 }
             }
@@ -276,7 +282,7 @@ struct MenuBarView: View {
                         HStack(alignment: .top, spacing: Spacing.sm) {
                             Image(systemName: lastDictationCopied ? "checkmark" : "doc.on.doc")
                                 .foregroundStyle(lastDictationCopied ? Palette.success : Palette.textSecondary)
-                            VStack(alignment: .leading, spacing: 2) {
+                            VStack(alignment: .leading, spacing: Spacing.xxs) {
                                 Text(last.displayText)
                                     .font(Typography.bodySmall)
                                     .foregroundStyle(Palette.textPrimary)
@@ -298,6 +304,7 @@ struct MenuBarView: View {
                         .padding(.horizontal, Spacing.lg)
                     }
                     .buttonStyle(.plain)
+                    .menuRowHover()
                     .help(t("Copy last dictation to clipboard", "Скопировать последнюю диктовку"))
                 }
 
@@ -397,6 +404,29 @@ struct MenuBarView: View {
 
     private func t(_ english: String, _ russian: String) -> String {
         OnboardingL10n.text(english, russian, language: languageManager.current)
+    }
+}
+
+/// Pointer-over affordance for the menu-bar popover rows: an inset, rounded
+/// surface tint that mirrors the hover pattern on the app's other clickable
+/// rows (NewRecordingView / MacSearchView).
+private struct MenuRowHoverModifier: ViewModifier {
+    @State private var isHovered = false
+
+    func body(content: Content) -> some View {
+        content
+            .background(
+                RoundedRectangle(cornerRadius: Radius.sm, style: .continuous)
+                    .fill(isHovered ? Palette.surfaceHover : Color.clear)
+                    .padding(.horizontal, Spacing.sm)
+            )
+            .onHover { isHovered = $0 }
+    }
+}
+
+private extension View {
+    func menuRowHover() -> some View {
+        modifier(MenuRowHoverModifier())
     }
 }
 

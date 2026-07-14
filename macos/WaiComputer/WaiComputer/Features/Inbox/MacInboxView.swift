@@ -125,7 +125,13 @@ struct MacInboxView: View {
     var body: some View {
         HStack(spacing: 0) {
             listPane
-                .frame(minWidth: 340, idealWidth: 430, maxWidth: 520, maxHeight: .infinity, alignment: .topLeading)
+                .frame(
+                    minWidth: MacMainLayoutMetrics.listMinWidth,
+                    idealWidth: MacMainLayoutMetrics.listIdealWidth,
+                    maxWidth: MacMainLayoutMetrics.listMaxWidth,
+                    maxHeight: .infinity,
+                    alignment: .topLeading
+                )
             Divider()
             detailPane
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -229,9 +235,9 @@ struct MacInboxView: View {
     private var listPane: some View {
         VStack(spacing: 0) {
             header
-            Divider()
+            WaiDivider()
             filters
-            Divider()
+            WaiDivider()
             banners
             rows
         }
@@ -408,12 +414,18 @@ struct MacInboxView: View {
                 ProgressView()
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if model.rows.isEmpty {
-                MacInboxEmptyState(
-                    sourceKind: model.sourceKind,
-                    folderName: scopedFolder?.name,
-                    onRecord: onStartRecording,
-                    onUpload: openFileComposer
-                )
+                // Suppress the "empty" invitation while a load error is on
+                // screen — the error banner above already explains why the
+                // list is empty, and pairing it with "No Recordings Yet" reads
+                // as a contradiction.
+                if model.errorMessage == nil {
+                    MacInboxEmptyState(
+                        sourceKind: model.sourceKind,
+                        folderName: scopedFolder?.name,
+                        onRecord: onStartRecording,
+                        onUpload: openFileComposer
+                    )
+                }
             } else {
                 MacInboxRowsList(
                     rows: model.rows,
@@ -631,6 +643,14 @@ struct MacInboxView: View {
         }
         .dropDestination(for: URL.self) { urls, _ in
             handleDroppedFiles(urls)
+        }
+        .onEscapeKeyCompat {
+            // In a folder, Escape mirrors the "Done" button and returns the
+            // pane to its calm placeholder. In the Inbox there is nothing to
+            // dismiss, so it is a no-op.
+            if scopedFolder != nil {
+                folderComposerActive = false
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
@@ -1005,6 +1025,7 @@ private struct MacInboxFileComposer: View {
                         }
                     }
                     .buttonStyle(.borderedProminent)
+                    .keyboardShortcut(.defaultAction)
                     .disabled(phase.isWorking || isAdding)
                     .accessibilityIdentifier("mac-inbox-upload-primary-button")
 
@@ -1081,6 +1102,7 @@ private struct MacInboxFileComposer: View {
             .buttonStyle(.plain)
             .disabled(isAdding)
             .help(t("Remove file", "Убрать файл"))
+            .accessibilityLabel(t("Remove file", "Убрать файл"))
         }
         .padding(Spacing.md)
         .background(Palette.surfaceHover)
@@ -1169,6 +1191,7 @@ private struct MacInboxInlineActionComposer: View {
                     }
                 }
                 .buttonStyle(.borderedProminent)
+                .keyboardShortcut(.defaultAction)
                 .disabled(isWorking)
                 .optionalAccessibilityIdentifier(primaryAccessibilityIdentifier)
             }
@@ -1660,7 +1683,7 @@ private struct MacInboxListRow: View {
             VStack(alignment: .leading, spacing: 3) {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                     Text(display.title)
-                        .font(.system(size: 15, weight: .semibold))
+                        .font(Typography.headingMedium)
                         .foregroundStyle(Palette.textPrimary)
                         .lineLimit(1)
                         .truncationMode(.tail)
@@ -1670,7 +1693,7 @@ private struct MacInboxListRow: View {
                         // background tint, never the text color — 11pt
                         // orange/red text failed WCAG AA (~2.2:1).
                         Text(status)
-                            .font(.system(size: 12, weight: .medium))
+                            .font(Typography.label)
                             .foregroundStyle(Palette.textPrimary)
                             .lineLimit(1)
                             .padding(.horizontal, 8)
@@ -1680,7 +1703,7 @@ private struct MacInboxListRow: View {
                     }
                 }
                 Text(display.metadata)
-                    .font(.system(size: 12, weight: .medium))
+                    .font(Typography.label)
                     .foregroundStyle(Palette.textSecondary)
                     .lineLimit(1)
                     .truncationMode(.tail)

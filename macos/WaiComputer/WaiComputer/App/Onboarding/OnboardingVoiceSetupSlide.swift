@@ -24,18 +24,12 @@ struct OnboardingVoiceSetupSlide: View {
                     .foregroundStyle(Palette.textPrimary)
                 Text(
                     t(
-                        "Record a short sample so WaiComputer can recognize you in future meetings without manual speaker tagging. Takes about 20 seconds.",
-                        "Запиши короткий образец: WaiComputer будет узнавать твой голос во встречах без ручной разметки спикеров. Это займет около 20 секунд."
+                        "Optional: record a short sample (5–20 seconds) so WaiComputer recognizes your voice in meetings.",
+                        "Опционально: запиши короткий образец (5–20 секунд), чтобы WaiComputer узнавал твой голос во встречах."
                     )
                 )
                 .font(Typography.body)
                 .foregroundStyle(Palette.textSecondary)
-                Text(t(
-                    "Record at least 5 seconds. This also checks the same microphone path used for dictation.",
-                    "Запиши минимум 5 секунд. Так мы проверим тот же микрофонный путь, который потом используется для диктовки."
-                ))
-                .font(Typography.label)
-                .foregroundStyle(Palette.textTertiary)
             }
             .multilineTextAlignment(.center)
             .frame(maxWidth: 540)
@@ -81,7 +75,7 @@ struct OnboardingVoiceSetupSlide: View {
 
     private var promptText: String {
         t(
-            "Hi, I'm setting up Wai Computer. It records meetings, calls, and ideas through my day so I don't have to remember them all. Wai listens, transcribes the people I talk to, and keeps the moments that matter.",
+            "Hi, I'm setting up WaiComputer. It records meetings, calls, and ideas through my day so I don't have to remember them all. Wai listens, transcribes the people I talk to, and keeps the moments that matter.",
             "Привет, я настраиваю WaiComputer. Он записывает встречи, звонки и идеи в течение дня, чтобы мне не приходилось все запоминать. Wai слушает, расшифровывает людей, с которыми я говорю, и сохраняет важные моменты."
         )
     }

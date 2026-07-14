@@ -123,7 +123,7 @@ struct LiveRecordingView: View {
                 .font(.system(size: 16, weight: .semibold))
                 .foregroundStyle(Palette.warning)
 
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: Spacing.xxs) {
                 Text(reason == .callEnded
                      ? t("The call has ended.", "Звонок завершился.")
                      : t("Sounds like the conversation is over.", "Похоже, разговор закончился."))

@@ -1816,7 +1816,7 @@ private struct MainToolbarIconLabel: View {
     var body: some View {
         Label(title, systemImage: systemImage)
             .labelStyle(.iconOnly)
-            .font(.system(size: 15, weight: .semibold))
+            .font(Typography.headingMedium)
             .symbolRenderingMode(.hierarchical)
             .foregroundStyle(color)
             .frame(
@@ -2269,12 +2269,12 @@ struct MacAuthView: View {
                 .toggleStyle(.checkbox)
                 .accessibilityIdentifier("auth-legal-consent-toggle")
 
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: Spacing.xs) {
                 Text(t("I agree to WaiComputer's legal terms.", "Я принимаю юридические условия WaiComputer."))
                     .font(Typography.caption)
                     .foregroundStyle(Palette.textSecondary)
 
-                HStack(spacing: 6) {
+                HStack(spacing: Spacing.xs) {
                     Link(t("Terms of Service", "Условия сервиса"), destination: termsOfServiceURL)
                     Text("·")
                         .foregroundStyle(Palette.textTertiary)
@@ -2371,6 +2371,7 @@ struct MacAuthView: View {
 private struct RecordingRecoveryNoticeBanner: View {
     let message: String
     let onDismiss: () -> Void
+    @EnvironmentObject private var languageManager: LanguageManager
 
     var body: some View {
         HStack(alignment: .top, spacing: Spacing.sm) {
@@ -2387,6 +2388,11 @@ private struct RecordingRecoveryNoticeBanner: View {
                     .foregroundStyle(Palette.textSecondary)
             }
             .buttonStyle(.plain)
+            .accessibilityLabel(OnboardingL10n.text(
+                "Dismiss",
+                "Закрыть",
+                language: languageManager.current
+            ))
         }
         .padding(.horizontal, Spacing.lg)
         .padding(.vertical, Spacing.md)

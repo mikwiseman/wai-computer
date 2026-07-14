@@ -82,8 +82,6 @@ struct OnboardingView: View {
                         switch pages[index] {
                         case .welcome:
                             OnboardingWelcomeSlide(isActive: index == currentPage)
-                        case .valueProps:
-                            OnboardingValuePropsSlide(isActive: index == currentPage)
                         case .permission:
                             OnboardingPermissionSlide(
                                 isActive: index == currentPage,
@@ -154,7 +152,7 @@ struct OnboardingView: View {
                 }
                 VStack(spacing: 6) {
                     Text(pages[index].breadcrumbLabel(language: languageManager.current).uppercased())
-                        .font(.system(size: 11, weight: .medium))
+                        .font(Typography.labelSmall)
                         .tracking(1.3)
                         .foregroundStyle(index == currentPage ? Palette.textPrimary : Palette.textTertiary)
                     Rectangle()
@@ -207,9 +205,11 @@ struct OnboardingView: View {
             Spacer()
 
             // Plain "Skip" skips only the current step. The whole-phase exit
-            // exists only on permission/sandbox, where the label says so
-            // ("Skip setup"). Voice setup renders its own "Skip for now",
-            // so the footer skip is hidden there.
+            // ("Skip setup") exists only on the sandbox page, where the label
+            // says so. The permission page shows a step-scoped "Skip for now"
+            // that advances to Languages instead of dropping the rest of the
+            // flow. Voice setup renders its own "Skip for now", so the footer
+            // skip is hidden there.
             if !isVoiceSetupPage {
                 Button(skipButtonTitle, action: handleSkipTap)
                     .buttonStyle(WaiGhostButtonStyle())
@@ -231,24 +231,35 @@ struct OnboardingView: View {
     }
 
     private var skipButtonTitle: String {
-        isPermissionPage || isSandboxPage
-            ? t("Skip setup", "Пропустить настройку")
-            : t("Skip", "Пропустить")
+        if isSandboxPage {
+            return t("Skip setup", "Пропустить настройку")
+        }
+        if isPermissionPage {
+            // Step-scoped: skipping permissions still walks the user through
+            // Languages and Hotkey, so the label promises "for now", not a
+            // whole-phase exit.
+            return t("Skip for now", "Пропустить пока")
+        }
+        return t("Skip", "Пропустить")
     }
 
     private func handleSkipTap() {
-        if isPermissionPage || isSandboxPage {
-            // Explicit opt-out of the whole setup phase; the "Skip setup"
+        if isSandboxPage {
+            // The sandbox is the only whole-phase opt-out; the "Skip setup"
             // label makes that scope unmistakable.
             completeOnboarding()
         } else {
+            // Everywhere else — including the permission page — skip is
+            // step-scoped and advances to the next slide instead of dropping
+            // the remaining Languages/Hotkey steps.
             skipCurrentStep()
         }
     }
 
-    /// Skips only the current slide. From the marketing slides this lands on
-    /// the permission page, so a misread "Skip" cannot silently drop
-    /// mic/Accessibility/language/hotkey setup.
+    /// Skips only the current slide. From the welcome slide this lands on the
+    /// permission page; from the permission page it advances to Languages, so
+    /// a misread "Skip" cannot silently drop mic/Accessibility/language/hotkey
+    /// setup.
     private func skipCurrentStep() {
         if let permissionIndex = pages.firstIndex(of: .permission), currentPage < permissionIndex {
             withAnimation(.easeInOut(duration: 0.3)) {
@@ -285,7 +296,7 @@ struct OnboardingView: View {
         if isPermissionPage {
             refreshPermissions()
             if dictationPermissionsReady {
-                // Advance to the verify slide.
+                // Advance to the languages slide.
                 withAnimation(.easeInOut(duration: 0.3)) {
                     currentPage = min(currentPage + 1, pages.count - 1)
                 }
@@ -687,7 +698,7 @@ private struct OnboardingPermissionSlide: View {
                                     "Already granted? Restart WaiComputer to apply",
                                     "Уже разрешено? Перезапусти WaiComputer"
                                 ))
-                                    .font(.system(size: 12, weight: .medium))
+                                    .font(Typography.label)
                                     .underline()
                             }
                             .foregroundStyle(Palette.accent)
@@ -732,13 +743,13 @@ private struct OnboardingPermissionSlide: View {
                     .foregroundStyle(Palette.textPrimary)
                     .fixedSize(horizontal: false, vertical: true)
                 Text(permissionBody)
-                    .font(.system(size: 14))
+                    .font(Typography.body)
                     .foregroundStyle(Palette.textSecondary)
                     .lineSpacing(3)
                     .fixedSize(horizontal: false, vertical: true)
             }
 
-            Divider()
+            WaiDivider()
 
             VStack(alignment: .leading, spacing: 10) {
                 explanationRow(
@@ -774,7 +785,7 @@ private struct OnboardingPermissionSlide: View {
                 .foregroundStyle(Palette.accent)
                 .frame(width: 18, height: 18)
             Text(text)
-                .font(.system(size: 13))
+                .font(Typography.bodySmall)
                 .foregroundStyle(Palette.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -943,10 +954,10 @@ private struct PermissionRow: View {
             HStack(alignment: .center, spacing: 12) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(title)
-                        .font(.system(size: 15, weight: .semibold))
+                        .font(Typography.headingMedium)
                         .foregroundStyle(Palette.textPrimary)
                     Text(detail)
-                        .font(.system(size: 13))
+                        .font(Typography.bodySmall)
                         .foregroundStyle(Palette.textSecondary)
                         .lineLimit(2)
                         .fixedSize(horizontal: false, vertical: true)
@@ -1001,7 +1012,7 @@ private struct PermissionRow: View {
         case .staleNeedsRestart:
             HStack(spacing: 6) {
                 Text(t("Restart Required", "Нужен перезапуск"))
-                    .font(.system(size: 11, weight: .medium))
+                    .font(Typography.labelSmall)
                     .foregroundStyle(Palette.accent)
                     .accessibilityIdentifier("\(identifierBase)-restart-required")
                 if let restartAction {

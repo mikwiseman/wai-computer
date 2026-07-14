@@ -403,7 +403,7 @@ struct MacSettingsView: View {
     private var recordingAutoStopSection: some View {
         Section {
             Toggle(isOn: $meetingDetectionEnabled) {
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: Spacing.xxs) {
                     Text(t("Suggest recording when a call starts", "Предлагать запись, когда начинается звонок"))
                     Text(t(
                         "When another app starts using the microphone — Zoom, Meet, FaceTime — WaiComputer sends a notification offering to record. It checks which apps hold the mic, never the audio itself.",
@@ -416,7 +416,7 @@ struct MacSettingsView: View {
             .accessibilityIdentifier("settings-meeting-detection-toggle")
 
             Toggle(isOn: $recordingAutoStopEnabled) {
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: Spacing.xxs) {
                     Text(t("Stop recording when the conversation ends", "Останавливать запись после разговора"))
                     Text(t(
                         "After a long silence — or when a call app hangs up — WaiComputer asks, waits a minute, then stops on its own.",
@@ -524,7 +524,7 @@ struct MacSettingsView: View {
     private var computerUseSection: some View {
         Section {
             Toggle(isOn: $computerUseEnabled) {
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: Spacing.xxs) {
                     Text(t("Let Wai control this Mac", "Разрешить Wai управлять этим Mac"))
                     Text(t(
                         "Experimental. While the assistant is open, Wai can open the apps and links you approve. Off by default.",
@@ -1045,7 +1045,7 @@ struct MacSettingsView: View {
     }
 
     private func serverDataMetric(title: String, value: String) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: Spacing.xxs) {
             Text(value)
                 .font(Typography.body.weight(.semibold))
                 .foregroundStyle(Palette.textPrimary)
@@ -1115,7 +1115,7 @@ struct MacSettingsView: View {
                     Text(t("SSH public key installed on the VPS", "Публичный SSH-ключ на VPS"))
                         .font(Typography.caption.weight(.semibold))
                     TextEditor(text: $serverDataSSHPublicKey)
-                        .font(.system(.body, design: .monospaced))
+                        .font(Typography.mono)
                         .frame(minHeight: 76)
                         .overlay(
                             RoundedRectangle(cornerRadius: Radius.sm)
@@ -1304,6 +1304,10 @@ struct MacSettingsView: View {
                                 .interpolation(.none)
                                 .resizable()
                                 .frame(width: 132, height: 132)
+                                .accessibilityLabel(t(
+                                    "Telegram pairing QR code",
+                                    "QR-код для привязки Telegram"
+                                ))
                                 .accessibilityIdentifier("settings-telegram-qr")
                         }
                         Button {
@@ -1333,12 +1337,19 @@ struct MacSettingsView: View {
                 // required step (138).
                 DisclosureGroup(isExpanded: $telegramShowCodeEntry) {
                     HStack {
-                        TextField("", text: $telegramLinkCode)
+                        TextField(t("Pairing code", "Код привязки"), text: $telegramLinkCode)
                             .textFieldStyle(.roundedBorder)
                             .labelsHidden()
                             .help(t("Paste the code from the bot.", "Вставь код из бота."))
+                            .accessibilityLabel(t("Pairing code", "Код привязки"))
                             .disabled(telegramLoading)
                             .accessibilityIdentifier("settings-telegram-code-field")
+                            .onSubmit {
+                                guard !telegramLoading,
+                                      !telegramLinkCode.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                                else { return }
+                                Task { await claimTelegramLinkCode() }
+                            }
                         Button {
                             Task { await claimTelegramLinkCode() }
                         } label: {
@@ -1577,45 +1588,76 @@ struct MacSettingsView: View {
     }
 
     private func accentChoiceButton(_ choice: MacAccentChoice) -> some View {
-        let isSelected = selectedAccentChoice == choice
-        return Button {
-            accentChoiceRawValue = choice.rawValue
-        } label: {
-            HStack(spacing: Spacing.sm) {
-                Circle()
-                    .fill(choice.previewColor)
-                    .frame(width: 14, height: 14)
-                    .overlay(Circle().strokeBorder(Palette.border, lineWidth: 1))
-                    .accessibilityHidden(true)
+        AccentChoiceButton(
+            choice: choice,
+            isSelected: selectedAccentChoice == choice,
+            title: accentTitle(choice),
+            selectedColor: selectedAccentChoice.previewColor,
+            selectedValueLabel: t("Selected", "Выбрано"),
+            notSelectedValueLabel: t("Not selected", "Не выбрано"),
+            onSelect: { accentChoiceRawValue = choice.rawValue }
+        )
+    }
 
-                Text(accentTitle(choice))
-                    .font(Typography.bodySmall)
-                    .foregroundStyle(Palette.textPrimary)
-                    .lineLimit(1)
+    /// One accent swatch row. Extracted so it can carry the shared hover
+    /// affordance (surface-tint on pointer-over) that the app's other clickable
+    /// rows use; a computed `accentChoiceButton` view can't hold hover state.
+    private struct AccentChoiceButton: View {
+        let choice: MacAccentChoice
+        let isSelected: Bool
+        let title: String
+        let selectedColor: Color
+        let selectedValueLabel: String
+        let notSelectedValueLabel: String
+        let onSelect: () -> Void
+        @State private var isHovered = false
 
-                Spacer(minLength: Spacing.xs)
-
-                if isSelected {
-                    Image(systemName: "checkmark")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(selectedAccentChoice.previewColor)
+        var body: some View {
+            Button(action: onSelect) {
+                HStack(spacing: Spacing.sm) {
+                    Circle()
+                        .fill(choice.previewColor)
+                        .frame(width: 14, height: 14)
+                        .overlay(Circle().strokeBorder(Palette.border, lineWidth: 1))
                         .accessibilityHidden(true)
+
+                    Text(title)
+                        .font(Typography.bodySmall)
+                        .foregroundStyle(Palette.textPrimary)
+                        .lineLimit(1)
+
+                    Spacer(minLength: Spacing.xs)
+
+                    if isSelected {
+                        Image(systemName: "checkmark")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(selectedColor)
+                            .accessibilityHidden(true)
+                    }
                 }
+                .padding(.horizontal, Spacing.sm)
+                .padding(.vertical, Spacing.sm)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(rowBackground)
+                .clipShape(RoundedRectangle(cornerRadius: Radius.md))
+                .overlay(
+                    RoundedRectangle(cornerRadius: Radius.md)
+                        .strokeBorder(isSelected ? selectedColor : Palette.border, lineWidth: isSelected ? 1.5 : 1)
+                )
             }
-            .padding(.horizontal, Spacing.sm)
-            .padding(.vertical, Spacing.sm)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(isSelected ? selectedAccentChoice.previewColor.opacity(0.12) : Palette.surfaceSubtle)
-            .clipShape(RoundedRectangle(cornerRadius: Radius.md))
-            .overlay(
-                RoundedRectangle(cornerRadius: Radius.md)
-                    .strokeBorder(isSelected ? selectedAccentChoice.previewColor : Palette.border, lineWidth: isSelected ? 1.5 : 1)
-            )
+            .buttonStyle(.plain)
+            .onHover { isHovered = $0 }
+            .accessibilityLabel(title)
+            .accessibilityValue(isSelected ? selectedValueLabel : notSelectedValueLabel)
+            .accessibilityIdentifier("settings-accent-\(choice.rawValue)")
         }
-        .buttonStyle(.plain)
-        .accessibilityLabel(accentTitle(choice))
-        .accessibilityValue(isSelected ? t("Selected", "Выбрано") : t("Not selected", "Не выбрано"))
-        .accessibilityIdentifier("settings-accent-\(choice.rawValue)")
+
+        private var rowBackground: Color {
+            if isSelected {
+                return selectedColor.opacity(0.12)
+            }
+            return isHovered ? Palette.surfaceHover : Palette.surfaceSubtle
+        }
     }
 
     private func appearanceTitle(_ mode: MacAppearanceMode) -> String {
@@ -1657,6 +1699,7 @@ struct MacSettingsView: View {
                     .textSelection(.enabled)
                     .lineLimit(1)
                     .truncationMode(.middle)
+                    .help(mcpEndpointURL)
                 Spacer()
                 Button {
                     copyMcpValue(mcpEndpointURL, field: "endpoint")

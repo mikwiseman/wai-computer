@@ -3,7 +3,6 @@ import WaiComputerKit
 
 enum OnboardingPage: Int, CaseIterable, Identifiable {
     case welcome
-    case valueProps
     case permission
     case languages
     case hotkey
@@ -16,8 +15,6 @@ enum OnboardingPage: Int, CaseIterable, Identifiable {
         switch self {
         case .welcome:
             return OnboardingL10n.text("Welcome", "Старт", language: language)
-        case .valueProps:
-            return OnboardingL10n.text("What", "Что", language: language)
         case .permission:
             return OnboardingL10n.text("Allow", "Доступ", language: language)
         case .languages:
@@ -39,7 +36,7 @@ enum OnboardingPhase {
     var pages: [OnboardingPage] {
         switch self {
         case .preAuth:
-            return [.welcome, .valueProps, .permission, .languages, .hotkey]
+            return [.welcome, .permission, .languages, .hotkey]
         case .postAuth:
             return [.sandbox, .voiceSetup]
         }

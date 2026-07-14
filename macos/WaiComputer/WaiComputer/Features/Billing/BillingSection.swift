@@ -219,10 +219,9 @@ struct BillingSection: View {
             Text("billing.period.month", bundle: .main).tag(BillingDisplayPeriod.month)
             Text("billing.period.year", bundle: .main).tag(BillingDisplayPeriod.year)
         } label: {
-            Text("billing.period.month", bundle: .main).hidden()
+            Text(t("Billing period", "Период оплаты"))
         }
         .pickerStyle(.segmented)
-        .labelsHidden()
         .disabled(checkoutInFlight || regionUpdateInFlight || promoInFlight)
 
         if let pro = currentProPlan() {
@@ -262,14 +261,23 @@ struct BillingSection: View {
 
     private var promoControls: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Divider()
+            WaiDivider()
             LabeledContent {
                 HStack(spacing: 8) {
                     TextField("", text: $promoCode)
                         .textFieldStyle(.roundedBorder)
                         .frame(maxWidth: 220)
                         .help(t("Enter promo code", "Введи промокод"))
+                        .accessibilityLabel(t("Promo code", "Промокод"))
                         .accessibilityIdentifier("settings-billing-promo-code")
+                        .onSubmit {
+                            guard !promoInFlight,
+                                  !checkoutInFlight,
+                                  !regionUpdateInFlight,
+                                  !promoCode.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                            else { return }
+                            Task { await claimPromoCode() }
+                        }
                     Button {
                         Task { await claimPromoCode() }
                     } label: {

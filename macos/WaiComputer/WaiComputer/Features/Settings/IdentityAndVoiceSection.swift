@@ -18,6 +18,10 @@ struct IdentityAndVoiceSection: View {
     @State private var lastName: String = ""
     @State private var sharing: VoiceSharingState?
     @State private var loading: Bool = true
+    /// True only after a successful load. The name fields stay disabled until
+    /// then so a Return on the empty placeholders can't autosave a blank name
+    /// over a saved one when the initial fetch failed.
+    @State private var identityLoaded: Bool = false
     @State private var savingNames: Bool = false
     @State private var toggling: Bool = false
     @State private var error: String?
@@ -29,7 +33,7 @@ struct IdentityAndVoiceSection: View {
                 ProgressView().controlSize(.small)
             } else {
                 identityFields
-                Divider()
+                WaiDivider()
                 voiceSharingRow
                 if let error {
                     Text(error)
@@ -83,6 +87,7 @@ struct IdentityAndVoiceSection: View {
             TextField(t("First name", "Имя"), text: $firstName)
                 .textFieldStyle(.roundedBorder)
                 .frame(maxWidth: 220)
+                .disabled(!identityLoaded)
                 .onSubmit { Task { await saveNames() } }
                 .accessibilityIdentifier("settings-identity-first-name")
         } label: {
@@ -94,6 +99,7 @@ struct IdentityAndVoiceSection: View {
             TextField(t("Last name", "Фамилия"), text: $lastName)
                 .textFieldStyle(.roundedBorder)
                 .frame(maxWidth: 220)
+                .disabled(!identityLoaded)
                 .onSubmit { Task { await saveNames() } }
                 .accessibilityIdentifier("settings-identity-last-name")
         } label: {
@@ -135,9 +141,12 @@ struct IdentityAndVoiceSection: View {
                     "Поделиться голосом в справочнике WaiComputer"
                 ))
                     .font(Typography.body)
-                Text(toggleSubtitle(state))
-                    .font(Typography.caption)
-                    .foregroundStyle(Palette.textTertiary)
+                let subtitle = toggleSubtitle(state)
+                if !subtitle.isEmpty {
+                    Text(subtitle)
+                        .font(Typography.caption)
+                        .foregroundStyle(Palette.textTertiary)
+                }
             }
         }
         .toggleStyle(.switch)
@@ -190,6 +199,7 @@ struct IdentityAndVoiceSection: View {
             firstName = ident.firstName ?? ""
             lastName = ident.lastName ?? ""
             sharing = share
+            identityLoaded = true
             error = nil
         } catch {
             self.error = t("Could not load identity settings.", "Не удалось загрузить настройки профиля.")
