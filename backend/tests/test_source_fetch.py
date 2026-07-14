@@ -39,6 +39,8 @@ def test_find_first_url() -> None:
         ("https://youtu.be/abc", "youtube"),
         ("https://www.instagram.com/reel/xyz/", "instagram"),
         ("https://www.tiktok.com/@u/video/1", "tiktok"),
+        ("https://x.com/user/status/123", "twitter"),
+        ("https://twitter.com/user/status/123", "twitter"),
         ("https://example.com/file.pdf", "pdf"),
         ("https://example.com/blog/post", "article"),
     ],
@@ -208,6 +210,16 @@ async def test_tiktok_raises_share_required() -> None:
     assert ei.value.code == "tiktok_share_required"
 
 
+@pytest.mark.asyncio
+async def test_twitter_raises_share_required() -> None:
+    # X's anti-bot wall makes article extraction junk — the refusal must be
+    # explicit and actionable, like Instagram/TikTok.
+    with pytest.raises(SourceFetchError) as ei:
+        await fetch_url("https://x.com/user/status/123")
+    assert ei.value.code == "twitter_share_required"
+    assert "X (Twitter)" in ei.value.message
+
+
 _CAPTION_SEGMENTS = [
     {"content": "hello world", "start_ms": 0, "end_ms": 2000},
     {"content": "transcript", "start_ms": 2000, "end_ms": 3500},
@@ -220,15 +232,38 @@ async def test_youtube_fetches_transcript() -> None:
         source_fetch,
         "_fetch_youtube_transcript",
         return_value=("hello world transcript", "en", _CAPTION_SEGMENTS),
+    ), patch.object(
+        source_fetch,
+        "_youtube_oembed_title",
+        return_value="Never Gonna Give You Up",
     ):
         content = await fetch_url("https://youtu.be/dQw4w9WgXcQ")
     assert content.source_type == "youtube"
     assert content.kind == "video"
     assert content.body == "hello world transcript"
+    # Captions carry no video title — oEmbed fills it in.
+    assert content.title == "Never Gonna Give You Up"
     assert content.metadata["video_id"] == "dQw4w9WgXcQ"
     assert content.metadata["language"] == "en"
     assert content.metadata["transcript_source"] == "captions"
     assert content.metadata["segments"] == _CAPTION_SEGMENTS
+
+
+@pytest.mark.asyncio
+async def test_youtube_title_is_best_effort() -> None:
+    """An oEmbed miss must never fail the fetch — the summarizer titles later."""
+
+    async def _oembed_down(_url):
+        raise RuntimeError("network down")
+
+    with patch.object(
+        source_fetch,
+        "_fetch_youtube_transcript",
+        return_value=("hello world transcript", "en", _CAPTION_SEGMENTS),
+    ), patch.object(source_fetch, "_http_get", side_effect=_oembed_down):
+        content = await fetch_url("https://youtu.be/dQw4w9WgXcQ")
+    assert content.title is None
+    assert content.body == "hello world transcript"
 
 
 @pytest.mark.asyncio

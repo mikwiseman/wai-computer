@@ -29,7 +29,7 @@ import ipaddress
 import re
 import socket
 from dataclasses import dataclass, field
-from urllib.parse import parse_qs, urljoin, urlparse
+from urllib.parse import parse_qs, quote, urljoin, urlparse
 
 # ---------------------------------------------------------------------------
 # Result + error types
@@ -64,6 +64,7 @@ class SourceFetchError(Exception):
 _YOUTUBE_HOSTS = {"youtube.com", "www.youtube.com", "m.youtube.com", "youtu.be"}
 _INSTAGRAM_HOSTS = {"instagram.com", "www.instagram.com"}
 _TIKTOK_HOSTS = {"tiktok.com", "www.tiktok.com", "vm.tiktok.com"}
+_TWITTER_HOSTS = {"twitter.com", "www.twitter.com", "x.com", "www.x.com", "mobile.twitter.com"}
 _URL_RE = re.compile(r"https?://[^\s<>\"')]+", re.IGNORECASE)
 MAX_FETCH_BYTES = 25 * 1024 * 1024
 MAX_FETCH_REDIRECTS = 5
@@ -90,6 +91,8 @@ def classify_url(url: str) -> str:
         return "instagram"
     if host in _TIKTOK_HOSTS:
         return "tiktok"
+    if host in _TWITTER_HOSTS:
+        return "twitter"
     if path.endswith(".pdf"):
         return "pdf"
     return "article"
@@ -494,6 +497,21 @@ def _pdf_page_count(data: bytes) -> int:
 _AUDIO_FALLBACK_CODES = {"youtube_no_transcript", "youtube_blocked"}
 
 
+async def _youtube_oembed_title(url: str) -> str | None:
+    """Video title via the public oEmbed endpoint. Best-effort: oEmbed is not
+    gated by YouTube's anti-bot wall, but a miss must never fail the fetch."""
+    import json as _json
+
+    try:
+        data, _ = await _http_get(
+            "https://www.youtube.com/oembed?format=json&url=" + quote(url, safe="")
+        )
+        title = _json.loads(data.decode("utf-8", errors="replace")).get("title")
+        return title.strip() if isinstance(title, str) and title.strip() else None
+    except Exception:  # noqa: BLE001 — cosmetic metadata only
+        return None
+
+
 async def _fetch_youtube(url: str, stt_user_id: str | None = None) -> FetchedContent:
     vid = youtube_video_id(url)
     if not vid:
@@ -523,7 +541,9 @@ async def _fetch_youtube(url: str, stt_user_id: str | None = None) -> FetchedCon
         source_type="youtube",
         kind="video",
         url=url,
-        title=None,  # filled by the summarizer's generated title
+        # The real video title when oEmbed answers; otherwise the summarizer's
+        # generated title fills the gap later.
+        title=await _youtube_oembed_title(url),
         body=text,
         metadata={
             "video_id": vid,
@@ -605,6 +625,12 @@ async def fetch_url(url: str, *, stt_user_id: str | None = None) -> FetchedConte
         return await _fetch_blocked(url, "Instagram")
     if source_type == "tiktok":
         return await _fetch_blocked(url, "TikTok")
+    if source_type == "twitter":
+        raise SourceFetchError(
+            "X (Twitter) doesn't allow apps to read posts. Paste the post text "
+            "(or a screenshot) and I'll add it to your brain.",
+            code="twitter_share_required",
+        )
     if source_type == "pdf":
         return await _fetch_pdf(url)
     return await _fetch_article(url)
