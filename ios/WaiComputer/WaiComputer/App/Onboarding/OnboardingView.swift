@@ -226,7 +226,7 @@ struct OnboardingView: View {
                     systemImage: "checkmark.circle.fill"
                 )
                 .font(Typography.label)
-                .foregroundStyle(.green)
+                .foregroundStyle(Palette.success)
                 .accessibilityIdentifier("onboarding-mic-status-granted")
             case .denied:
                 VStack(spacing: Spacing.sm) {
@@ -235,7 +235,7 @@ struct OnboardingView: View {
                         systemImage: "exclamationmark.triangle.fill"
                     )
                     .font(Typography.label)
-                    .foregroundStyle(Palette.recording)
+                    .foregroundStyle(Palette.danger)
                     Button(t("Open Settings", "Открыть настройки"), action: openSystemSettings)
                         .buttonStyle(WaiGhostButtonStyle())
                         .accessibilityIdentifier("onboarding-mic-open-settings")

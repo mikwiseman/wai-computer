@@ -145,6 +145,7 @@ struct McpConnectView: View {
                     ShareLink(item: url) {
                         Image(systemName: "square.and.arrow.up")
                     }
+                    .accessibilityLabel(t("Share MCP URL", "Поделиться MCP-адресом"))
                     .accessibilityIdentifier("settings-mcp-share")
                 }
             }

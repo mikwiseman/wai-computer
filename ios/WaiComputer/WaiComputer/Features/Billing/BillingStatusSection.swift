@@ -193,7 +193,6 @@ private struct BillingStatusBody: View {
             case "past_due": return t("Past due", "Просрочена")
             case "canceled": return t("Canceled", "Отменена")
             case "expired": return t("Expired", "Истекла")
-            case "trialing": return t("Trial", "Пробный период")
             case "incomplete", "incomplete_expired", "unpaid":
                 return t("Payment issue", "Проблема с оплатой")
             default: return t("Inactive", "Неактивна")
@@ -201,10 +200,10 @@ private struct BillingStatusBody: View {
         }()
         let color: Color = {
             switch sub.status {
-            case "active", "trialing": return .green
-            case "past_due": return .orange
-            case "canceled", "expired": return .gray
-            default: return .secondary
+            case "active", "trialing": return Palette.success
+            case "past_due": return Palette.warning
+            case "canceled", "expired": return Palette.textTertiary
+            default: return Palette.textSecondary
             }
         }()
         Text(label)
@@ -223,12 +222,12 @@ private struct BillingStatusBody: View {
                     Text(t("Words this week", "Слов за неделю"))
                     Spacer()
                     Text("\(usage.wordsUsed.formatted()) / \(displayCap.formatted())")
-                        .foregroundStyle(usage.capExceeded ? .red : .primary)
+                        .foregroundStyle(usage.capExceeded ? Palette.danger : Palette.textPrimary)
                         .monospacedDigit()
                 }
                 let fraction = min(1.0, max(0.0, Double(usage.wordsUsed) / Double(displayCap)))
                 ProgressView(value: fraction)
-                    .tint(usage.capExceeded ? .red : fraction > 0.8 ? .orange : Palette.accent)
+                    .tint(usage.capExceeded ? Palette.danger : fraction > 0.8 ? Palette.warning : Palette.accent)
                 Text(t("Resets every Sunday", "Сбрасывается каждое воскресенье"))
                     .font(Typography.caption)
                     .foregroundStyle(Palette.textTertiary)
@@ -298,7 +297,7 @@ private struct BillingStatusBody: View {
     private func errorText(_ message: String, identifier: String) -> some View {
         Text(message)
             .font(Typography.caption)
-            .foregroundStyle(.red)
+            .foregroundStyle(Palette.danger)
             .fixedSize(horizontal: false, vertical: true)
             .accessibilityIdentifier(identifier)
     }
@@ -393,13 +392,11 @@ private struct BillingStatusBody: View {
         )
     }
 
-    /// Resolve a billing error against the in-app language. Falls back to the
-    /// raw localized description for unknown messages rather than masking it.
+    /// Resolve a billing error into a sanitized, localized message. Never surface
+    /// a raw `error.localizedDescription` to the user (privacy + no leaked
+    /// internals) — route through the shared user-facing formatter.
     private func localizedLoadError(_ error: Error) -> String {
-        let message = error.localizedDescription.trimmingCharacters(in: .whitespacesAndNewlines)
-        return message.isEmpty
-            ? t("Something went wrong. Please try again.", "Что-то пошло не так. Попробуй ещё раз.")
-            : message
+        error.userFacingMessage(context: .generic)
     }
 
     private func t(_ english: String, _ russian: String) -> String {

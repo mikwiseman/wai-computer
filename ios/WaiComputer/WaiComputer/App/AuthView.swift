@@ -234,7 +234,7 @@ struct AuthView: View {
     private func fieldHint(_ text: String, isError: Bool, maxWidth: CGFloat?) -> some View {
         Text(text)
             .font(Typography.caption)
-            .foregroundStyle(isError ? Palette.recording : Palette.textSecondary)
+            .foregroundStyle(isError ? Palette.danger : Palette.textSecondary)
             .frame(maxWidth: maxWidth ?? .infinity, alignment: .leading)
     }
 
@@ -299,7 +299,7 @@ struct AuthView: View {
         if let error = appState.error {
             Text(error)
                 .font(Typography.caption)
-                .foregroundStyle(Palette.recording)
+                .foregroundStyle(Palette.danger)
                 .frame(maxWidth: maxWidth ?? .infinity)
                 .accessibilityIdentifier("auth-error-text")
         }

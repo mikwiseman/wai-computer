@@ -20,6 +20,7 @@ struct ItemDetailView: View {
     @State private var isPlayingAudio = false
     @State private var audioPlayer: AVAudioPlayer?
     @State private var audioPlaybackToken = UUID()
+    @State private var showDeleteConfirmation = false
 
     private func t(_ english: String, _ russian: String) -> String {
         OnboardingL10n.text(english, russian, language: languageManager.current)
@@ -52,12 +53,25 @@ struct ItemDetailView: View {
             if item != nil {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button(role: .destructive) {
-                        Task { await delete() }
+                        showDeleteConfirmation = true
                     } label: {
                         Image(systemName: "trash")
                     }
+                    .accessibilityLabel(t("Delete Item", "Удалить материал"))
                 }
             }
+        }
+        .confirmationDialog(
+            t("Delete this item?", "Удалить этот материал?"),
+            isPresented: $showDeleteConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button(t("Delete", "Удалить"), role: .destructive) {
+                Task { await delete() }
+            }
+            Button(t("Cancel", "Отмена"), role: .cancel) {}
+        } message: {
+            Text(t("This action cannot be undone.", "Это действие нельзя отменить."))
         }
         .task { await load() }
     }
@@ -313,7 +327,7 @@ struct ItemDetailView: View {
         VStack(alignment: .leading, spacing: Spacing.xs) {
             HStack(alignment: .top, spacing: Spacing.sm) {
                 Image(systemName: "exclamationmark.triangle.fill")
-                    .foregroundStyle(Palette.recording)
+                    .foregroundStyle(Palette.danger)
                 Text(t("Couldn't summarize this item.", "Не удалось обработать материал."))
                     .font(Typography.bodySmall)
                     .foregroundStyle(Palette.textPrimary)
@@ -327,7 +341,7 @@ struct ItemDetailView: View {
             }
         }
         .padding(Spacing.md)
-        .background(Palette.recording.opacity(0.10))
+        .background(Palette.danger.opacity(0.10))
         .clipShape(RoundedRectangle(cornerRadius: 8))
     }
 
@@ -384,7 +398,7 @@ struct ItemDetailView: View {
                 .buttonStyle(.bordered)
                 if audio?.isFailed == true {
                     Text(t("Audio generation failed.", "Не удалось создать аудио."))
-                        .font(Typography.labelSmall).foregroundStyle(.red)
+                        .font(Typography.labelSmall).foregroundStyle(Palette.danger)
                 }
             }
         }

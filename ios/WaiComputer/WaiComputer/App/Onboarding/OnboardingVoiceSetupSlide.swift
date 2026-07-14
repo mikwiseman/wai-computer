@@ -59,7 +59,7 @@ struct OnboardingVoiceSetupSlide: View {
             if let error = recorder.errorMessage {
                 Text(error)
                     .font(Typography.caption)
-                    .foregroundStyle(.red)
+                    .foregroundStyle(Palette.danger)
             }
 
             HStack {
@@ -139,6 +139,9 @@ struct OnboardingVoiceSetupSlide: View {
         }
         .buttonStyle(.plain)
         .disabled(!hasMicrophonePermission || recorder.state == .uploading)
+        .accessibilityLabel(recorder.state == .recording
+            ? t("Stop Recording", "Остановить запись")
+            : t("Start Recording", "Начать запись"))
         .accessibilityIdentifier("onboarding-voice-record-button")
     }
 

@@ -425,7 +425,7 @@ struct LibraryView: View {
                     NavigationLink(destination: TrashView(viewModel: viewModel)) {
                         HStack {
                             Image(systemName: "trash")
-                                .foregroundStyle(.red)
+                                .foregroundStyle(Palette.danger)
                             Text(t("Trash", "Корзина"))
                             Spacer()
                             Text("\(viewModel.trashedRecordings.count)")
@@ -500,7 +500,7 @@ struct LibraryView: View {
                         NavigationLink(destination: TrashView(viewModel: viewModel)) {
                             HStack {
                                 Image(systemName: "trash")
-                                    .foregroundStyle(.red)
+                                    .foregroundStyle(Palette.danger)
                                 Text(t("Trash", "Корзина"))
                                 Spacer()
                                 Text("\(viewModel.trashedRecordings.count)")
@@ -885,7 +885,7 @@ struct FolderRecordingsView: View {
                             } label: {
                                 Label(t("Unfiled", "Без папки"), systemImage: "tray")
                             }
-                            .tint(.blue)
+                            .tint(Palette.accent)
                         }
                         .contextMenu {
                             Button {
@@ -1040,7 +1040,7 @@ struct TrashView: View {
                     Button(t("Empty Trash", "Очистить корзину"), role: .destructive) {
                         showEmptyTrashConfirmation = true
                     }
-                    .foregroundStyle(.red)
+                    .foregroundStyle(Palette.danger)
                 }
             }
             if isEditing && !selection.isEmpty {
@@ -1128,7 +1128,7 @@ struct TrashView: View {
                     } label: {
                         Label(t("Restore", "Восстановить"), systemImage: "arrow.uturn.backward")
                     }
-                    .tint(.green)
+                    .tint(Palette.success)
                 }
             }
         }
@@ -1157,7 +1157,7 @@ struct TrashView: View {
                             } label: {
                                 Label(t("Restore", "Восстановить"), systemImage: "arrow.uturn.backward")
                             }
-                            .tint(.green)
+                            .tint(Palette.success)
                         }
                 }
             }
@@ -1341,7 +1341,7 @@ private struct InlineLibraryBanner: View {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
-        .background(Color.orange)
+        .background(Palette.warning)
         .clipShape(RoundedRectangle(cornerRadius: 12))
         .shadow(color: .black.opacity(0.15), radius: 10, y: 4)
         .padding(.horizontal)
@@ -1524,7 +1524,7 @@ struct RecordingRow: View {
 
     private var statusColor: Color {
         if recording.isFailedUpload || hasPermanentLocalFailure {
-            return Palette.recording
+            return Palette.danger
         }
         return Palette.textSecondary
     }

@@ -24,6 +24,7 @@ struct TelegramSettingsView: View {
     @State private var telegramError: String?
     @State private var telegramLinkPollTask: Task<Void, Never>?
     @State private var telegramShowCodeEntry = false
+    @State private var showUnlinkConfirmation = false
 
     var body: some View {
         Group {
@@ -35,6 +36,21 @@ struct TelegramSettingsView: View {
         }
         .navigationTitle("Telegram")
         .navigationBarTitleDisplayMode(.inline)
+        .confirmationDialog(
+            t("Disconnect Telegram?", "Отключить Telegram?"),
+            isPresented: $showUnlinkConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button(t("Disconnect", "Отключить"), role: .destructive) {
+                Task { await unlinkTelegram() }
+            }
+            Button(t("Cancel", "Отмена"), role: .cancel) {}
+        } message: {
+            Text(t(
+                "The bot will stop capturing your messages until you reconnect.",
+                "Бот перестанет сохранять твои сообщения, пока ты не подключишься снова."
+            ))
+        }
         .task { await loadTelegramStatus() }
         .onDisappear { stopTelegramLinkPolling() }
     }
@@ -52,13 +68,13 @@ struct TelegramSettingsView: View {
                 } else if telegramStatus?.linked == true {
                     LabeledContent {
                         Text(telegramDisplayName)
-                            .foregroundStyle(.green)
+                            .foregroundStyle(Palette.success)
                     } label: {
                         Text("Telegram")
                     }
 
                     Button(role: .destructive) {
-                        Task { await unlinkTelegram() }
+                        showUnlinkConfirmation = true
                     } label: {
                         Text(t("Disconnect Telegram", "Отключить Telegram"))
                     }
@@ -71,7 +87,7 @@ struct TelegramSettingsView: View {
                 if let telegramError {
                     Text(telegramError)
                         .font(Typography.caption)
-                        .foregroundStyle(.red)
+                        .foregroundStyle(Palette.danger)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             } footer: {
@@ -101,7 +117,7 @@ struct TelegramSettingsView: View {
                 if let telegramError {
                     Text(telegramError)
                         .font(Typography.caption)
-                        .foregroundStyle(.red)
+                        .foregroundStyle(Palette.danger)
                         .fixedSize(horizontal: false, vertical: true)
                         .accessibilityIdentifier("settings-telegram-error")
                 }
@@ -168,11 +184,11 @@ struct TelegramSettingsView: View {
                         title: telegramDisplayName,
                         subtitle: t("Connected", "Подключено"),
                         systemImage: "checkmark.circle.fill",
-                        tint: .green
+                        tint: Palette.success
                     )
 
                     Button(role: .destructive) {
-                        Task { await unlinkTelegram() }
+                        showUnlinkConfirmation = true
                     } label: {
                         Label(t("Disconnect Telegram", "Отключить Telegram"), systemImage: "xmark.circle")
                     }

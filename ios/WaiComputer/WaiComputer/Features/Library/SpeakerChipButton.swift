@@ -279,7 +279,7 @@ private struct SpeakerAssignSheet: View {
         HStack(alignment: .top, spacing: Spacing.xs) {
             Image(systemName: "exclamationmark.triangle.fill")
                 .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(Palette.recording)
+                .foregroundStyle(Palette.danger)
                 .frame(width: SpeakerAssignLayout.errorIconWidth, alignment: .leading)
             Text(message)
                 .font(Typography.caption)
@@ -289,7 +289,7 @@ private struct SpeakerAssignSheet: View {
         .padding(.horizontal, Spacing.sm)
         .padding(.vertical, Spacing.xs)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Palette.recording.opacity(0.10))
+        .background(Palette.danger.opacity(0.10))
         .clipShape(RoundedRectangle(cornerRadius: SpeakerAssignLayout.rowCornerRadius, style: .continuous))
         .padding(.horizontal, Spacing.lg)
         .padding(.bottom, Spacing.sm)

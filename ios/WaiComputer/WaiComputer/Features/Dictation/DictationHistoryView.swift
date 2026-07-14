@@ -390,7 +390,7 @@ private struct HistoryEntryRow: View {
                 if isEditing {
                     Button { commitEdit() } label: {
                         Image(systemName: "checkmark.circle")
-                            .foregroundStyle(.green)
+                            .foregroundStyle(Palette.success)
                     }
                     .buttonStyle(.borderless)
                     .accessibilityLabel(t("Save correction", "Сохранить исправление"))
@@ -419,7 +419,7 @@ private struct HistoryEntryRow: View {
                     DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { isCopied = false }
                 } label: {
                     Image(systemName: isCopied ? "checkmark" : "doc.on.doc")
-                        .foregroundStyle(isCopied ? .green : Palette.textSecondary)
+                        .foregroundStyle(isCopied ? Palette.success : Palette.textSecondary)
                 }
                 .buttonStyle(.borderless)
                 .accessibilityLabel(t("Copy to clipboard", "Скопировать в буфер"))

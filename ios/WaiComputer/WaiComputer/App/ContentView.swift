@@ -1075,13 +1075,14 @@ private struct IOSWorkspaceNewFolderSheet: View {
 }
 
 struct IOSWorkspaceErrorBanner: View {
+    @EnvironmentObject private var languageManager: LanguageManager
     let message: String
     let onDismiss: () -> Void
 
     var body: some View {
         HStack(spacing: Spacing.sm) {
             Image(systemName: "exclamationmark.triangle.fill")
-                .foregroundStyle(Palette.recording)
+                .foregroundStyle(Palette.danger)
             Text(message)
                 .font(Typography.bodySmall)
                 .foregroundStyle(Palette.textPrimary)
@@ -1093,7 +1094,7 @@ struct IOSWorkspaceErrorBanner: View {
             }
             .buttonStyle(.plain)
             .foregroundStyle(Palette.textSecondary)
-            .accessibilityLabel("Dismiss")
+            .accessibilityLabel(OnboardingL10n.text("Dismiss", "Закрыть", language: languageManager.current))
         }
         .padding(.horizontal, Spacing.md)
         .padding(.vertical, Spacing.sm)
@@ -1267,7 +1268,7 @@ private struct IOSWorkspaceSidebarFooter: View {
         case let (nil, .some(build)):
             return build
         case (nil, nil):
-            return "Unknown"
+            return OnboardingL10n.text("Unknown", "Неизвестно", language: languageManager.current)
         }
     }
 

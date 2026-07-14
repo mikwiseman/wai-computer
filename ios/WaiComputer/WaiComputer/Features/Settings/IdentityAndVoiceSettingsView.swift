@@ -212,7 +212,7 @@ struct IdentityAndVoiceSettingsView: View {
         if let error {
             Text(error)
                 .font(Typography.caption)
-                .foregroundStyle(.red)
+                .foregroundStyle(Palette.danger)
                 .fixedSize(horizontal: false, vertical: true)
                 .accessibilityIdentifier("settings-identity-error")
         }
@@ -300,7 +300,7 @@ struct IdentityAndVoiceSettingsView: View {
             Label(isReady ? readyText : missingText, systemImage: isReady ? "checkmark.circle.fill" : "exclamationmark.circle")
                 .labelStyle(.titleAndIcon)
                 .font(Typography.caption)
-                .foregroundStyle(isReady ? .green : .orange)
+                .foregroundStyle(isReady ? Palette.success : Palette.warning)
         }
     }
 

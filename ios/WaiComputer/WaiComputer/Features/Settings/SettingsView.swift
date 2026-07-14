@@ -35,7 +35,7 @@ struct SettingsView: View {
         case let (nil, .some(build)):
             return build
         case (nil, nil):
-            return "Unknown"
+            return t("Unknown", "Неизвестно")
         }
     }
 
@@ -700,7 +700,7 @@ struct SettingsView: View {
                 title: title,
                 subtitle: subtitle,
                 systemImage: systemImage,
-                titleColor: role == .destructive ? .red : Palette.textPrimary,
+                titleColor: role == .destructive ? Palette.danger : Palette.textPrimary,
                 accessorySystemImage: nil
             )
         }
@@ -947,7 +947,7 @@ struct SettingsView: View {
                 Label(t("Granted", "Разрешено"), systemImage: "checkmark.circle.fill")
                     .labelStyle(.titleAndIcon)
                     .font(Typography.bodySmall)
-                    .foregroundStyle(.green)
+                    .foregroundStyle(Palette.success)
             case .denied:
                 Button(t("Open Settings", "Открыть настройки")) {
                     openAppSettings()
@@ -1094,7 +1094,7 @@ struct RecordingPipelineView: View {
                 Section {
                     Text(loadError)
                         .font(Typography.caption)
-                        .foregroundStyle(.red)
+                        .foregroundStyle(Palette.danger)
                         .fixedSize(horizontal: false, vertical: true)
                     Button(t("Retry", "Повторить")) {
                         Task { await loadSnapshot(force: true) }
@@ -1319,7 +1319,7 @@ struct RecordingPipelineView: View {
         return HStack(alignment: .top, spacing: Spacing.sm) {
             Image(systemName: option == nil ? "exclamationmark.triangle" : "cpu")
                 .font(.system(size: 16, weight: .medium))
-                .foregroundStyle(option == nil ? .orange : Palette.accent)
+                .foregroundStyle(option == nil ? Palette.warning : Palette.accent)
                 .frame(width: 24)
                 .padding(.top, 2)
                 .accessibilityHidden(true)
@@ -1332,7 +1332,7 @@ struct RecordingPipelineView: View {
                     .foregroundStyle(Palette.textPrimary)
                 Text(modelDescription(option: option, provider: provider, model: model, context: context))
                     .font(Typography.caption)
-                    .foregroundStyle(option == nil ? .orange : Palette.textTertiary)
+                    .foregroundStyle(option == nil ? Palette.warning : Palette.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
@@ -1466,7 +1466,7 @@ struct SummarySettingsView: View {
                 Section {
                     Text(settingsError)
                         .font(Typography.caption)
-                        .foregroundStyle(.red)
+                        .foregroundStyle(Palette.danger)
                         .fixedSize(horizontal: false, vertical: true)
                     Button(t("Retry", "Повторить")) {
                         Task { await loadSettings(force: true) }
@@ -1776,7 +1776,7 @@ struct SummarySettingsView: View {
     private func summaryRegularError(_ error: String) -> some View {
         Text(error)
             .font(Typography.caption)
-            .foregroundStyle(.red)
+            .foregroundStyle(Palette.danger)
             .fixedSize(horizontal: false, vertical: true)
             .accessibilityIdentifier("settings-summary-error")
     }
@@ -2067,7 +2067,7 @@ struct ServerDataView: View {
                 Section {
                     Text(loadError)
                         .font(Typography.caption)
-                        .foregroundStyle(.red)
+                        .foregroundStyle(Palette.danger)
                         .fixedSize(horizontal: false, vertical: true)
                     Button(t("Retry", "Повторить")) {
                         Task { await loadSnapshot(force: true) }
@@ -2334,7 +2334,7 @@ struct ExportReadinessView: View {
                 Section {
                     Text(loadError)
                         .font(Typography.caption)
-                        .foregroundStyle(.red)
+                        .foregroundStyle(Palette.danger)
                         .fixedSize(horizontal: false, vertical: true)
                     Button(t("Retry", "Повторить")) {
                         Task { await loadSnapshot(force: true) }
@@ -2698,9 +2698,9 @@ private struct OwnershipEntryRow: View {
         case .ownedExportable:
             return Palette.accent
         case .reconnectRequired:
-            return .orange
+            return Palette.warning
         case .selfHostLocal:
-            return .green
+            return Palette.success
         case .hostedControlPlane, .excludedWithReason:
             return Palette.textTertiary
         }

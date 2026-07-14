@@ -399,7 +399,7 @@ struct RecordingDetailView: View {
         }
         .buttonStyle(.bordered)
         .controlSize(.regular)
-        .tint(role == .destructive ? Palette.recording : Palette.accent)
+        .tint(role == .destructive ? Palette.danger : Palette.accent)
         .accessibilityLabel(title)
     }
 
@@ -831,7 +831,7 @@ struct RecordingDetailView: View {
     private func regularFailureText(_ text: String, identifier: String) -> some View {
         Text(text)
             .font(Typography.bodySmall)
-            .foregroundStyle(Palette.recording)
+            .foregroundStyle(Palette.danger)
             .fixedSize(horizontal: false, vertical: true)
             .accessibilityIdentifier(identifier)
     }
@@ -1210,7 +1210,7 @@ private struct RecordingDetailInlineErrorBanner: View {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
-        .background(Color.orange)
+        .background(Palette.warning)
         .clipShape(RoundedRectangle(cornerRadius: 12))
         .shadow(color: .black.opacity(0.15), radius: 10, y: 4)
         .accessibilityIdentifier("recording-detail-inline-error")
@@ -1477,7 +1477,7 @@ struct SummaryTabView: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
-        .background(Palette.recording.opacity(0.10))
+        .background(Palette.accent.opacity(0.10))
         .clipShape(RoundedRectangle(cornerRadius: 8))
         .accessibilityIdentifier("summary-audio-progress")
     }
@@ -1485,7 +1485,7 @@ struct SummaryTabView: View {
     private var summaryAudioFailure: some View {
         Text(audioState?.errorMessage ?? t("Summary audio generation failed.", "Не удалось создать аудио сводки."))
             .font(.caption)
-            .foregroundStyle(Palette.recording)
+            .foregroundStyle(Palette.danger)
             .multilineTextAlignment(.leading)
             .fixedSize(horizontal: false, vertical: true)
             .accessibilityIdentifier("summary-audio-failure")
@@ -1501,7 +1501,7 @@ struct SummaryTabView: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
-        .background(Palette.recording.opacity(0.10))
+        .background(Palette.accent.opacity(0.10))
         .clipShape(RoundedRectangle(cornerRadius: 8))
         .accessibilityIdentifier("summary-generation-progress")
     }
@@ -1509,7 +1509,7 @@ struct SummaryTabView: View {
     private var summaryGenerationFailure: some View {
         Text(summaryGenerationFailureText)
             .font(.caption)
-            .foregroundStyle(Palette.recording)
+            .foregroundStyle(Palette.danger)
             .multilineTextAlignment(.center)
             .fixedSize(horizontal: false, vertical: true)
             .accessibilityIdentifier("summary-generation-failure")
@@ -1665,18 +1665,14 @@ struct PriorityBadge: View {
     }
 
     private var backgroundColor: Color {
-        switch priority {
-        case .high: return .red.opacity(0.2)
-        case .medium: return .orange.opacity(0.2)
-        case .low: return .gray.opacity(0.2)
-        }
+        foregroundColor.opacity(0.2)
     }
 
     private var foregroundColor: Color {
         switch priority {
-        case .high: return .red
-        case .medium: return .orange
-        case .low: return .gray
+        case .high: return Palette.priorityHigh
+        case .medium: return Palette.priorityMedium
+        case .low: return Palette.priorityLow
         }
     }
 }
@@ -1731,7 +1727,7 @@ struct CopyButton: View {
         } label: {
             Image(systemName: copiedSection == section ? "checkmark" : "doc.on.doc")
                 .font(.caption)
-                .foregroundStyle(copiedSection == section ? .orange : .secondary)
+                .foregroundStyle(copiedSection == section ? Palette.accent : Palette.textSecondary)
         }
     }
 }

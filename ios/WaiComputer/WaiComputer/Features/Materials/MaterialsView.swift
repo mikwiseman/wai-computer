@@ -345,7 +345,7 @@ struct IOSInboxView: View {
                                 } label: {
                                     Label(t("Unfiled", "Без папки"), systemImage: "tray")
                                 }
-                                .tint(.blue)
+                                .tint(Palette.accent)
                             }
                         }
                         .accessibilityIdentifier("ios-inbox-material-\(entry.id)")
@@ -685,6 +685,7 @@ private struct IOSInboxRegularDetailPlaceholder: View {
 }
 
 private struct IOSInboxStatusBanner: View {
+    @EnvironmentObject private var languageManager: LanguageManager
     let systemImage: String
     let message: String
     var onDismiss: (() -> Void)? = nil
@@ -704,6 +705,7 @@ private struct IOSInboxStatusBanner: View {
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(Palette.textSecondary)
+                .accessibilityLabel(OnboardingL10n.text("Dismiss", "Закрыть", language: languageManager.current))
             }
         }
         .padding(.horizontal, Spacing.md)

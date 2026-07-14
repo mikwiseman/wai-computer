@@ -77,7 +77,7 @@ struct CapturedFeedView: View {
                                     } label: {
                                         Label(t("Unfiled", "Без папки"), systemImage: "tray")
                                     }
-                                    .tint(.blue)
+                                    .tint(Palette.accent)
                                 }
                             }
                     }
@@ -194,7 +194,7 @@ struct CapturedFeedView: View {
                             .font(Typography.bodySmall)
                             .foregroundStyle(.white)
                             .padding(Spacing.sm)
-                            .background(.green, in: Capsule())
+                            .background(Palette.success, in: Capsule())
                     }
                     .buttonStyle(.plain)
                 }
@@ -204,7 +204,7 @@ struct CapturedFeedView: View {
                         .font(Typography.bodySmall)
                         .foregroundStyle(.white)
                         .padding(Spacing.sm)
-                        .background(.red, in: Capsule())
+                        .background(Palette.danger, in: Capsule())
                         .task(id: error) {
                             try? await Task.sleep(nanoseconds: 6_000_000_000)
                             guard !Task.isCancelled else { return }
@@ -544,7 +544,7 @@ struct CapturedFeedView: View {
 
     private func statusColor(for entry: ItemListEntry) -> Color {
         if entry.status == "failed" || entry.status == "needs_input" {
-            return .red
+            return Palette.danger
         }
         return Palette.textTertiary
     }

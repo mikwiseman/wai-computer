@@ -301,7 +301,7 @@ struct DictationDictionaryView: View {
                 .foregroundStyle(Palette.textSecondary)
             HStack(spacing: 12) {
                 badgeLegend(label: biasBadgeLabel, color: Palette.accent, hint: t("boosts recognition", "помогает распознаванию"))
-                badgeLegend(label: replaceBadgeLabel, color: .orange, hint: t("auto-corrects", "автозамена"))
+                badgeLegend(label: replaceBadgeLabel, color: Palette.warning, hint: t("auto-corrects", "автозамена"))
             }
         }
         .padding(.vertical, Spacing.xxs)
@@ -312,7 +312,7 @@ struct DictationDictionaryView: View {
         HStack(alignment: .top, spacing: 8) {
             Image(systemName: "exclamationmark.triangle.fill")
                 .font(.caption)
-                .foregroundStyle(.orange)
+                .foregroundStyle(Palette.warning)
             Text(t(
                 "\(dictionaryStore.words.count) entries — long vocabulary lists can confuse the recognizer and slow language detection. Keep entries focused on words that genuinely get misheard.",
                 "\(dictionaryStore.words.count) \(RussianPlural.form(dictionaryStore.words.count, one: "запись", few: "записи", many: "записей")) — длинные словари могут путать распознаватель и замедлять определение языка. Оставляй только слова, которые действительно часто слышатся неверно."
@@ -324,7 +324,7 @@ struct DictationDictionaryView: View {
         .padding(10)
         .background(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(Color.orange.opacity(0.10))
+                .fill(Palette.warning.opacity(0.10))
         )
     }
 
@@ -374,7 +374,7 @@ struct DictationDictionaryView: View {
                         "\"\(duplicate)\" уже есть в словаре."
                     ))
                         .font(Typography.caption)
-                        .foregroundStyle(.red)
+                        .foregroundStyle(Palette.danger)
                     if let existing = existingEntry(matching: duplicate) {
                         Button(t("Edit the existing entry", "Изменить существующую запись")) {
                             beginEdit(existing)
@@ -449,7 +449,7 @@ struct DictationDictionaryView: View {
     private func dictionaryWordBadges(for word: DictionaryWord) -> some View {
         HStack(spacing: Spacing.xs) {
             if let replacement = word.replacement, replacement != word.word {
-                badge(label: replaceBadgeLabel, color: .orange)
+                badge(label: replaceBadgeLabel, color: Palette.warning)
             } else {
                 badge(label: biasBadgeLabel, color: Palette.accent)
             }

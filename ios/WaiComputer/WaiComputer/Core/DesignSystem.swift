@@ -223,7 +223,15 @@ enum Palette {
     static let surfaceHover = Color.primary.opacity(0.08)
     static let border = Color.primary.opacity(0.10)
 
+    /// Live-recording indicator only (pulsing dot, record/stop tint). For error
+    /// and failure states use `danger` — mirrors macOS `Palette`.
     static let recording = Color.red
+
+    /// Semantic status colors. Mirror the macOS `Palette` so error/success/
+    /// warning states read consistently across platforms.
+    static let danger = Color(uiColor: .systemRed)
+    static let success = Color(uiColor: .systemGreen)
+    static let warning = Color(uiColor: .systemOrange)
 
     static let priorityHigh = Color(red: 0.85, green: 0.35, blue: 0.30)
     static let priorityMedium = Color(red: 0.80, green: 0.58, blue: 0.30)
