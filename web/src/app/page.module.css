@@ -464,6 +464,8 @@
   width: 100%;
   height: auto;
   max-width: 100%;
+  /* White app screenshots glare on the dark theme — theme-aware dim. */
+  filter: var(--media-dim);
 }
 
 .screensCaption {
@@ -909,6 +911,12 @@
   .navLink,
   .signin {
     overflow-wrap: anywhere;
+  }
+
+  /* Keep Sign in anchored to the right edge of its wrapped row instead of
+   * dangling left under the nav links. */
+  .signin {
+    margin-left: auto;
   }
 
   .hero {

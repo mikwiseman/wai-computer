@@ -154,7 +154,11 @@ describe("SharedRecordingClient", () => {
     await waitFor(() => {
       expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Shared note unavailable");
     });
-    expect(screen.getByText("Shared note not found")).toBeInTheDocument();
+    // The terse backend "not found" maps to the actionable explanation
+    // instead of repeating the title.
+    expect(
+      screen.getByText("This link may have been removed or expired. Ask the sender for a new one."),
+    ).toBeInTheDocument();
   });
 
   it("renders unavailable state in Russian", async () => {

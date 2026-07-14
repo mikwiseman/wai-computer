@@ -13,7 +13,7 @@ const copy = {
   en: {
     opening: "Opening shared note…",
     unavailableTitle: "Shared note unavailable",
-    unavailableFallback: "The link may have been removed.",
+    unavailableFallback: "This link may have been removed or expired. Ask the sender for a new one.",
     unavailableError: "Shared note unavailable.",
     brandSubtitle: "Shared note",
     downloading: "Downloading…",
@@ -35,7 +35,7 @@ const copy = {
   ru: {
     opening: "Открываем общую запись…",
     unavailableTitle: "Общая запись недоступна",
-    unavailableFallback: "Ссылка могла быть удалена.",
+    unavailableFallback: "Ссылка могла быть удалена или устарела. Попросите отправителя поделиться заново.",
     unavailableError: "Общая запись недоступна.",
     brandSubtitle: "Общая запись",
     downloading: "Скачиваем…",
@@ -75,8 +75,14 @@ function formatTimestamp(ms: number | null): string {
 
 
 function formatError(error: unknown, locale: AuthLocale): string {
-  if (error instanceof Error) return error.message;
-  return copy[locale].unavailableError;
+  const labels = copy[locale];
+  if (error instanceof Error) {
+    // The backend's terse "not found" would only repeat the page title —
+    // surface the actionable explanation instead.
+    if (/not found/i.test(error.message)) return labels.unavailableFallback;
+    return error.message;
+  }
+  return labels.unavailableError;
 }
 
 function downloadFile(blob: Blob, filename: string) {

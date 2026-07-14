@@ -348,6 +348,11 @@
    * as possible without changing visual output. */
   --shadow: var(--shadow-3);
 
+  /* Bright media (product screenshots, photos) keeps full brightness on
+   * light surfaces and dims slightly on dark ones so white UI shots don't
+   * glare. Consumers: `filter: var(--media-dim)`. */
+  --media-dim: none;
+
   /* Legacy semantic aliases retained for in-place refactor of globals.css. */
   --color-text-primary: var(--ink);
   --color-text-secondary: var(--ink-soft);
@@ -468,6 +473,7 @@
   --shadow-2: 0 12px 32px rgba(0, 0, 0, 0.32);
   --shadow-3: 0 20px 56px rgba(0, 0, 0, 0.34);
   --shadow: var(--shadow-3);
+  --media-dim: brightness(0.88) contrast(1.02);
 
   /* Surface + material — alpha overlays on dark `--bg`. */
   --surface-subtle: rgba(243, 240, 233, 0.05);
@@ -608,6 +614,7 @@
     --shadow-2: 0 12px 32px rgba(0, 0, 0, 0.32);
     --shadow-3: 0 20px 56px rgba(0, 0, 0, 0.34);
     --shadow: var(--shadow-3);
+    --media-dim: brightness(0.88) contrast(1.02);
 
     --surface-subtle: rgba(243, 240, 233, 0.05);
     --surface-hover: rgba(243, 240, 233, 0.08);
