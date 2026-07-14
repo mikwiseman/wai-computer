@@ -1368,8 +1368,8 @@ struct RecordingPipelineView: View {
             loadError = nil
         } catch {
             loadError = t(
-                "Couldn't load recording pipeline: \(error.localizedDescription)",
-                "Не удалось загрузить пайплайн записи: \(error.localizedDescription)"
+                "Couldn't load recording pipeline: \(error.userFacingMessage(context: .generic))",
+                "Не удалось загрузить пайплайн записи: \(error.userFacingMessage(context: .generic))"
             )
         }
     }
@@ -1810,8 +1810,8 @@ struct SummarySettingsView: View {
             settingsLoaded = true
         } catch {
             settingsError = t(
-                "Couldn't load summary settings: \(error.localizedDescription)",
-                "Не удалось загрузить настройки резюме: \(error.localizedDescription)"
+                "Couldn't load summary settings: \(error.userFacingMessage(context: .generic))",
+                "Не удалось загрузить настройки резюме: \(error.userFacingMessage(context: .generic))"
             )
         }
     }
@@ -1840,8 +1840,8 @@ struct SummarySettingsView: View {
             settingsError = nil
         } catch {
             settingsError = t(
-                "Couldn't save summary settings: \(error.localizedDescription)",
-                "Не удалось сохранить настройки резюме: \(error.localizedDescription)"
+                "Couldn't save summary settings: \(error.userFacingMessage(context: .generic))",
+                "Не удалось сохранить настройки резюме: \(error.userFacingMessage(context: .generic))"
             )
         }
     }
@@ -2250,7 +2250,7 @@ struct ServerDataView: View {
         do {
             snapshot = try await loadServerDataSnapshot(appState: appState)
         } catch {
-            loadError = error.localizedDescription
+            loadError = error.userFacingMessage(context: .generic)
         }
         isLoading = false
     }
@@ -2514,7 +2514,7 @@ struct ExportReadinessView: View {
         do {
             snapshot = try await loadServerDataSnapshot(appState: appState)
         } catch {
-            loadError = error.localizedDescription
+            loadError = error.userFacingMessage(context: .generic)
         }
         isLoading = false
     }

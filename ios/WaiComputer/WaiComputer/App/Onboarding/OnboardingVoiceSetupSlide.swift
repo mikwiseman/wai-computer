@@ -130,7 +130,7 @@ struct OnboardingVoiceSetupSlide: View {
         Button(action: handleRecordTap) {
             ZStack {
                 Circle()
-                    .fill(recorder.state == .recording ? Color.red : Palette.accent)
+                    .fill(recorder.state == .recording ? Palette.recording : Palette.accent)
                     .frame(width: 88, height: 88)
                 Image(systemName: recorder.state == .recording ? "stop.fill" : "mic.fill")
                     .font(.system(size: 32, weight: .semibold))
@@ -271,8 +271,8 @@ final class VoiceEnrollmentRecorder: NSObject, ObservableObject, AVAudioRecorder
             try AVAudioSession.sharedInstance().setActive(true)
         } catch {
             errorMessage = t(
-                "Audio session error: \(error.localizedDescription)",
-                "Ошибка аудиосессии: \(error.localizedDescription)"
+                "Audio session error: \(error.userFacingMessage(context: .generic))",
+                "Ошибка аудиосессии: \(error.userFacingMessage(context: .generic))"
             )
             return
         }
@@ -304,8 +304,8 @@ final class VoiceEnrollmentRecorder: NSObject, ObservableObject, AVAudioRecorder
             startTimer()
         } catch {
             errorMessage = t(
-                "Microphone error: \(error.localizedDescription)",
-                "Ошибка микрофона: \(error.localizedDescription)"
+                "Microphone error: \(error.userFacingMessage(context: .generic))",
+                "Ошибка микрофона: \(error.userFacingMessage(context: .generic))"
             )
         }
     }

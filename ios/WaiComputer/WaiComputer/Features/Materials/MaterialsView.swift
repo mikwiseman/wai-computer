@@ -558,7 +558,7 @@ struct IOSInboxView: View {
                 }
             }
         case .failure(let error):
-            feed.errorMessage = error.localizedDescription
+            feed.errorMessage = error.userFacingMessage(context: .library)
         }
     }
 

@@ -542,7 +542,7 @@ struct ItemDetailView: View {
         do {
             item = try await apiClient.getItem(id: itemId)
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = error.userFacingMessage(context: .library)
         }
     }
 
@@ -611,7 +611,7 @@ struct ItemDetailView: View {
             onDeleted?()
             dismiss()
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = error.userFacingMessage(context: .library)
         }
     }
 }

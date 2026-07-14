@@ -515,8 +515,8 @@ struct TelegramSettingsView: View {
         } catch {
             if !silent {
                 telegramError = t(
-                    "Couldn't load Telegram status: \(error.localizedDescription)",
-                    "Не удалось загрузить статус Telegram: \(error.localizedDescription)"
+                    "Couldn't load Telegram status: \(error.userFacingMessage(context: .generic))",
+                    "Не удалось загрузить статус Telegram: \(error.userFacingMessage(context: .generic))"
                 )
             }
         }
@@ -540,8 +540,8 @@ struct TelegramSettingsView: View {
             }
         } catch {
             telegramError = t(
-                "Couldn't start Telegram pairing: \(error.localizedDescription)",
-                "Не удалось начать привязку Telegram: \(error.localizedDescription)"
+                "Couldn't start Telegram pairing: \(error.userFacingMessage(context: .generic))",
+                "Не удалось начать привязку Telegram: \(error.userFacingMessage(context: .generic))"
             )
         }
         telegramLoading = false
@@ -560,8 +560,8 @@ struct TelegramSettingsView: View {
             telegramError = nil
         } catch {
             telegramError = t(
-                "Couldn't link Telegram with this code: \(error.localizedDescription)",
-                "Не удалось привязать Telegram по коду: \(error.localizedDescription)"
+                "Couldn't link Telegram with this code: \(error.userFacingMessage(context: .generic))",
+                "Не удалось привязать Telegram по коду: \(error.userFacingMessage(context: .generic))"
             )
         }
         telegramLoading = false
@@ -579,8 +579,8 @@ struct TelegramSettingsView: View {
             telegramError = nil
         } catch {
             telegramError = t(
-                "Couldn't disconnect Telegram: \(error.localizedDescription)",
-                "Не удалось отключить Telegram: \(error.localizedDescription)"
+                "Couldn't disconnect Telegram: \(error.userFacingMessage(context: .generic))",
+                "Не удалось отключить Telegram: \(error.userFacingMessage(context: .generic))"
             )
         }
         telegramLoading = false
