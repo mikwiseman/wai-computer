@@ -570,6 +570,29 @@ describe("DashboardClient", () => {
     });
   });
 
+  it("shows an actionable welcome empty state on a fresh Inbox", async () => {
+    arrangeHappyPathMocks();
+    // A truly empty Inbox surfaces the onboarding welcome state.
+    mockListInbox.mockResolvedValue(baseInboxResponse);
+    const user = userEvent.setup();
+
+    render(<DashboardClient />);
+    await waitForDashboardReady();
+
+    const welcome = await screen.findByTestId("inbox-empty-welcome");
+    expect(welcome).toHaveTextContent("Welcome to WaiComputer");
+    expect(screen.getByTestId("inbox-empty-record")).toBeInTheDocument();
+    expect(screen.getByTestId("inbox-empty-mac")).toHaveAttribute(
+      "href",
+      "/releases/macos/WaiComputer-latest.dmg",
+    );
+    // "Connect Telegram" deep-links into the Settings Telegram section.
+    expect(screen.getByTestId("inbox-empty-telegram")).toBeInTheDocument();
+
+    // "Record now" reveals the browser recorder that lives in the create pane.
+    await user.click(screen.getByTestId("inbox-empty-record"));
+  });
+
   it("renders initialization error message for non-401 failure", async () => {
     mockGetCurrentUser.mockRejectedValue(new Error("Init failed"));
     render(<DashboardClient />);

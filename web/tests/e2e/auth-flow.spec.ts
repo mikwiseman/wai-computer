@@ -354,8 +354,9 @@ test.describe("Auth flow", () => {
     await fillEmailAfterHydration(page, "test@example.com");
     await page.getByTestId("magic-link-button").click();
 
-    // Should show the success message from the mock
-    await expect(page.getByTestId("auth-message")).toContainText("Magic link sent to your email");
+    // Should swap the form for the "check your email" confirmation state
+    await expect(page.getByTestId("magic-link-sent")).toContainText("Check your email");
+    await expect(page.getByTestId("magic-link-sent")).toContainText("test@example.com");
     expect(authRequests.lastMagicLinkRequest()).toEqual({
       email: "test@example.com",
       locale: "en",
@@ -369,7 +370,7 @@ test.describe("Auth flow", () => {
     await fillEmailAfterHydration(page, "brand-new@example.com");
     await page.getByTestId("magic-link-button").click();
 
-    await expect(page.getByTestId("auth-message")).toContainText("Magic link sent to your email");
+    await expect(page.getByTestId("magic-link-sent")).toContainText("Check your email");
     expect(authRequests.lastMagicLinkRequest()).toEqual({
       email: "brand-new@example.com",
       locale: "en",
@@ -474,7 +475,7 @@ test.describe("Auth flow", () => {
     await page.goto("/auth/verify?token=valid-token");
 
     await expect(page).toHaveURL(/\/onboarding/);
-    await expect(page.getByRole("heading", { name: "Set up your universal Inbox" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Teach Wai your voice" })).toBeVisible();
   });
 
   test("magic link verification with invalid token shows error", async ({ page }) => {
@@ -514,7 +515,7 @@ test.describe("Auth flow with Russian browser locale", () => {
     await fillEmailAfterHydration(page, "ru@example.com");
     await page.getByTestId("magic-link-button").click();
 
-    await expect(page.getByTestId("auth-message")).toContainText("Magic link sent to your email");
+    await expect(page.getByTestId("magic-link-sent")).toContainText("Проверьте почту");
     expect(authRequests.lastMagicLinkRequest()).toEqual({
       email: "ru@example.com",
       locale: "ru",

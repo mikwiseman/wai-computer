@@ -52,6 +52,7 @@ describe("AuthForm", () => {
 
     expect(screen.queryByTestId("auth-password")).not.toBeInTheDocument();
     expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Sign in");
+    expect(screen.getByRole("link", { name: "Need an account?" })).toHaveAttribute("href", "/register");
 
     await user.type(screen.getByTestId("auth-email"), "login@example.com");
     await user.click(screen.getByTestId("magic-link-button"));
@@ -65,8 +66,9 @@ describe("AuthForm", () => {
     expect(mockLogin).not.toHaveBeenCalled();
     expect(mockRegister).not.toHaveBeenCalled();
     expect(onSuccess).not.toHaveBeenCalled();
-    expect(screen.getByTestId("auth-message")).toHaveTextContent("Magic link sent");
-    expect(screen.getByRole("link", { name: "Need an account?" })).toHaveAttribute("href", "/register");
+    const sent = await screen.findByTestId("magic-link-sent");
+    expect(sent).toHaveTextContent("Check your email");
+    expect(sent).toHaveTextContent("login@example.com");
   });
 
   it("uses magic link as the primary register flow for new emails", async () => {
@@ -75,6 +77,8 @@ describe("AuthForm", () => {
     mockRequestMagicLink.mockResolvedValue({ message: "Magic link sent" });
 
     render(<AuthForm mode="register" onSuccess={onSuccess} />);
+
+    expect(screen.getByRole("link", { name: "Have an account?" })).toHaveAttribute("href", "/login");
 
     await user.type(screen.getByTestId("auth-email"), "register@example.com");
     expect(screen.getByTestId("magic-link-button")).toBeDisabled();
@@ -90,7 +94,7 @@ describe("AuthForm", () => {
     });
     expect(mockRegister).not.toHaveBeenCalled();
     expect(onSuccess).not.toHaveBeenCalled();
-    expect(screen.getByRole("link", { name: "Have an account?" })).toHaveAttribute("href", "/login");
+    expect(await screen.findByTestId("magic-link-sent")).toHaveTextContent("Check your email");
   });
 
   it("shows error messages for ApiError and Error submissions", async () => {
@@ -132,11 +136,11 @@ describe("AuthForm", () => {
     expect(magicButton).not.toBeDisabled();
 
     await user.click(magicButton);
-    await waitFor(() => {
-      expect(screen.getByTestId("auth-message")).toHaveTextContent("Magic link sent");
-    });
+    await screen.findByTestId("magic-link-sent");
 
-    await user.click(magicButton);
+    // "Send again" returns to the form; the retry rejects with a non-Error.
+    await user.click(screen.getByTestId("magic-link-resend"));
+    await user.click(screen.getByTestId("magic-link-button"));
     await waitFor(() => {
       expect(screen.getByTestId("auth-message")).toHaveTextContent("Unexpected error");
     });

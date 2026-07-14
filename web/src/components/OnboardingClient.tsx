@@ -17,7 +17,6 @@ const COPY: Record<
     step: string;
     heading: string;
     lead: string;
-    setupItems: Array<{ title: string; body: string }>;
     prompt: string;
     record: string;
     stop: string;
@@ -32,30 +31,13 @@ const COPY: Record<
     statusUploading: string;
     micError: string;
     uploadError: string;
-    serverTitle: string;
-    serverBody: string;
-    serverAction: string;
   }
 > = {
   en: {
     step: "Welcome",
-    heading: "Set up your universal Inbox",
+    heading: "Teach Wai your voice",
     lead:
-      "WaiComputer keeps recordings, files, links, notes, and Wai agent threads in one Inbox. Add anything, filter by type, and give Wai a task when you need an answer or action.",
-    setupItems: [
-      {
-        title: "Add anything",
-        body: "Record, upload a PDF or audio file, paste a link, or give Wai a task.",
-      },
-      {
-        title: "Organize once",
-        body: "Use folders for recordings and materials; filters keep the full Inbox simple.",
-      },
-      {
-        title: "Teach your voice",
-        body: "Optional voice setup helps Wai label you in future meetings.",
-      },
-    ],
+      "Optional: read the short paragraph below (about 20 seconds) so Wai can recognize you in meetings. You can skip this and do it later in Settings.",
     prompt:
       "Hi, I'm setting up WaiComputer. It keeps my recordings, materials, notes, and Wai agent threads in one Inbox so I can find the important moments later. Wai listens, summarizes, remembers, and helps me act on everything I saved.",
     record: "Record",
@@ -66,10 +48,6 @@ const COPY: Record<
     uploading: "Uploading voice signature…",
     privacy:
       "We store a 192-number signature, not your audio. The recording is deleted after the signature is created.",
-    serverTitle: "Use your own server",
-    serverBody:
-      "Have a VPS IP, root password or SSH key, and provider API keys ready? Open Server & Data now; you can also do this later from Settings.",
-    serverAction: "Set up my server",
     statusIdle: "Press the mic to start",
     statusRecording: (elapsed) => `Recording… ${Math.floor(elapsed)}s / ${MAX_DURATION_S}s`,
     statusRecorded: (elapsed) => `Recorded ${Math.floor(elapsed)}s. Use it or re-record.`,
@@ -79,23 +57,9 @@ const COPY: Record<
   },
   ru: {
     step: "Добро пожаловать",
-    heading: "Настройте универсальный Инбокс",
+    heading: "Научите Wai узнавать ваш голос",
     lead:
-      "WaiComputer собирает записи, файлы, ссылки, заметки и чаты Wai в одном Инбоксе. Добавляйте всё, фильтруйте по типу и спрашивайте Wai, когда нужен ответ.",
-    setupItems: [
-      {
-        title: "Добавляйте всё",
-        body: "Запишите голос, загрузите PDF или аудио, вставьте ссылку или начните чат.",
-      },
-      {
-        title: "Разложите один раз",
-        body: "Папки работают для записей и материалов, а фильтры сохраняют Инбокс простым.",
-      },
-      {
-        title: "Научите голосу",
-        body: "Необязательная настройка голоса помогает Wai узнавать вас на встречах.",
-      },
-    ],
+      "Опционально: прочитайте короткий абзац ниже (около 20 секунд), чтобы Wai узнавал вас на встречах. Можно пропустить и настроить позже в настройках.",
     prompt:
       "Привет, я настраиваю WaiComputer. Он хранит мои записи, материалы, заметки и чаты в одном Инбоксе, чтобы я мог быстро найти важные моменты. Wai слушает, делает саммари и помогает задавать вопросы по всему, что я сохранил.",
     record: "Записать",
@@ -106,10 +70,6 @@ const COPY: Record<
     uploading: "Загружаем голосовой профиль…",
     privacy:
       "Мы храним профиль из 192 чисел, а не вашу аудиозапись. Сама запись удаляется сразу после создания профиля.",
-    serverTitle: "Использовать свой сервер",
-    serverBody:
-      "Уже есть IP VPS, пароль root или SSH-ключ и API-ключи провайдеров? Откройте «Сервер и данные» сейчас; это можно сделать позже в настройках.",
-    serverAction: "Настроить сервер",
     statusIdle: "Нажмите микрофон, чтобы начать",
     statusRecording: (elapsed) => `Запись… ${Math.floor(elapsed)}с / ${MAX_DURATION_S}с`,
     statusRecorded: (elapsed) => `Записано ${Math.floor(elapsed)}с. Используйте или перезапишите.`,
@@ -264,11 +224,6 @@ export function OnboardingClient({ initialLocale }: OnboardingClientProps) {
     router.replace("/dashboard");
   }
 
-  function openServerSetup() {
-    markOnboardingSeen();
-    router.replace("/dashboard#server-data");
-  }
-
   function reset() {
     setAudioBlob(null);
     setElapsed(0);
@@ -284,25 +239,6 @@ export function OnboardingClient({ initialLocale }: OnboardingClientProps) {
       <p className="onboarding-step">{copy.step}</p>
       <h1>{copy.heading}</h1>
       <p className="onboarding-lead">{copy.lead}</p>
-
-      <div className="onboarding-setup-grid">
-        {copy.setupItems.map((item) => (
-          <section key={item.title} className="onboarding-setup-item">
-            <strong>{item.title}</strong>
-            <span>{item.body}</span>
-          </section>
-        ))}
-      </div>
-
-      <section className="onboarding-server-setup">
-        <div>
-          <strong>{copy.serverTitle}</strong>
-          <span>{copy.serverBody}</span>
-        </div>
-        <button type="button" className="ghost-button compact-button" onClick={openServerSetup}>
-          {copy.serverAction}
-        </button>
-      </section>
 
       <article className="onboarding-prompt-card">
         <p>{copy.prompt}</p>

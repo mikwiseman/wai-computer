@@ -618,6 +618,23 @@ h4 {
   padding: 0.75rem;
 }
 
+.auth-sent {
+  display: grid;
+  gap: 0.85rem;
+  justify-items: center;
+  text-align: center;
+}
+
+.auth-sent__body {
+  color: var(--ink-soft);
+  font-size: var(--font-body-size);
+  line-height: 1.5;
+}
+
+.auth-sent .ghost-button {
+  justify-self: center;
+}
+
 .billing-result-shell {
   min-height: 100dvh;
   display: grid;
@@ -3569,6 +3586,40 @@ a.primary-button[aria-disabled="true"]:hover {
   min-height: 100%;
   place-content: center;
   text-align: center;
+}
+
+.inbox-empty-welcome {
+  justify-items: start;
+  max-width: 42ch;
+}
+
+.inbox-empty-actions {
+  margin-top: 0.35rem;
+}
+
+.inbox-empty-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 1.1rem;
+  margin-top: 0.6rem;
+}
+
+.inbox-empty-links a,
+.inbox-empty-links button {
+  border: 0;
+  background: none;
+  padding: 0;
+  color: var(--accent-strong);
+  font: inherit;
+  font-size: var(--font-label-size);
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.inbox-empty-links a:hover,
+.inbox-empty-links button:hover {
+  text-decoration: underline;
 }
 
 .upload-zone {

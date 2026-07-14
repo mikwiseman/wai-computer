@@ -3,9 +3,9 @@ import Image from "next/image";
 import type { Metadata } from "next";
 import { LocaleSwitcher } from "@/components/LocaleSwitcher";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import { MAC_DMG_URL } from "@/lib/links";
 import styles from "./page.module.css";
 
-const MAC_DMG_URL = "/releases/macos/WaiComputer-latest.dmg";
 const WEB_APP_URL = "/dashboard";
 const TESTFLIGHT_URL = "https://testflight.apple.com/join/rtnJQzwk";
 const PRIVACY_URL = "/privacy";
@@ -214,6 +214,9 @@ export default function Home() {
           <LocaleSwitcher current="en" />
           <Link href="/login" className={styles.signin}>
             Sign in →
+          </Link>
+          <Link href="/register" className={styles.getStarted}>
+            Get started
           </Link>
         </nav>
       </header>

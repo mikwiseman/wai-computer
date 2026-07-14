@@ -108,6 +108,7 @@ const DictatePanel = dynamic(
   { loading: () => panelFallback },
 );
 import { ApiError } from "@/lib/http";
+import { macDmgUrl } from "@/lib/links";
 import { formatDurationClock, formatListTimestamp } from "@/lib/format";
 import type {
   BulkAction,
@@ -180,7 +181,9 @@ function viewFromCurrentLocation(): DashboardView | null {
   if (requestedView) return requestedView;
 
   const hash = window.location.hash.replace(/^#/, "");
-  if (hash === "server-data" || hash === "settings") return "settings";
+  if (hash === "server-data" || hash === "settings" || hash.startsWith("settings-")) {
+    return "settings";
+  }
   return dashboardViewFromLocationValue(hash);
 }
 
@@ -978,11 +981,46 @@ export function DashboardClient() {
   }, []);
 
   useEffect(() => {
-    if (view !== "settings" || window.location.hash !== "#server-data") return;
-    window.requestAnimationFrame(() => {
-      document.getElementById("server-data")?.scrollIntoView({ block: "start" });
-    });
+    if (view !== "settings") return;
+    const hash = window.location.hash.replace(/^#/, "");
+    // Deep-link scroll targets inside Settings: the Server & Data anchor and
+    // any settings group/section id (e.g. the Telegram section).
+    if (hash !== "server-data" && !hash.startsWith("settings-")) return;
+    // Settings sections above the target keep growing while their data
+    // (billing, telegram status) streams in, which pushes the target back
+    // below the fold after the first scroll. Re-scroll until the target's
+    // position is stable across two frames, bounded to ~1.5s.
+    let cancelled = false;
+    let attempts = 0;
+    let lastTop: number | null = null;
+    const settle = () => {
+      if (cancelled) return;
+      const target = document.getElementById(hash);
+      if (target) {
+        const top = target.getBoundingClientRect().top;
+        if (lastTop !== null && Math.abs(top - lastTop) < 1 && Math.abs(top) < 8) {
+          return;
+        }
+        lastTop = top;
+        target.scrollIntoView({ block: "start" });
+      }
+      attempts += 1;
+      if (attempts < 10) window.setTimeout(settle, 150);
+    };
+    window.requestAnimationFrame(settle);
+    return () => {
+      cancelled = true;
+    };
   }, [view]);
+
+  // Jump straight to the Telegram linking section from anywhere (e.g. the
+  // empty-Inbox welcome). Switching the view triggers the scroll effect above.
+  const goToTelegramSettings = useCallback(() => {
+    setActiveFolderId(null);
+    setSelectedRecording(null);
+    window.location.hash = "settings-telegram";
+    setView("settings");
+  }, []);
 
   const accountHasPassword = user?.has_password !== false;
 
@@ -2182,6 +2220,7 @@ export function DashboardClient() {
             onItemsChanged={() => setItemsReloadKey((key) => key + 1)}
             onError={showPanelError}
             onStatus={showStatus}
+            onConnectTelegram={goToTelegramSettings}
           />
         ) : null}
         {view === "folder" && currentFolder ? (
@@ -2983,7 +3022,7 @@ export function DashboardClient() {
             <p>{copy.settings.workspaceGroupBody}</p>
           </header>
           <ServerDataSection locale={locale} />
-          <div className="settings-form">
+          <div id="settings-telegram" className="settings-form">
             <h3>{copy.telegram.heading}</h3>
             <p className="settings-note">{copy.telegram.intro}</p>
             {telegramStatus?.linked ? (
@@ -3257,6 +3296,7 @@ function UniversalInboxPanel({
   onItemsChanged,
   onError,
   onStatus,
+  onConnectTelegram,
 }: {
   locale: Locale;
   copy: DashboardCopy;
@@ -3284,6 +3324,7 @@ function UniversalInboxPanel({
   onItemsChanged: () => void;
   onError: (message: string | null) => void;
   onStatus: (message: string) => void;
+  onConnectTelegram?: () => void;
 }) {
   const [rows, setRows] = useState<VisibleInboxRow[]>([]);
   // Fresh row count for callbacks created on earlier renders (loadInbox).
@@ -3317,6 +3358,16 @@ function UniversalInboxPanel({
   const [pendingTrash, setPendingTrash] = useState<InboxRow[] | null>(null);
   const lastToggledIndexRef = useRef<number | null>(null);
   const inboxRequestId = useRef(0);
+  // The "Record now" empty-state CTA reveals and scrolls to the browser
+  // recorder that already lives in the create panel — no separate entry point.
+  const recordCardRef = useRef<HTMLElement | null>(null);
+  const focusRecorder = useCallback(() => {
+    setSelectedRow(null);
+    setShowCreate(true);
+    window.requestAnimationFrame(() => {
+      recordCardRef.current?.scrollIntoView?.({ behavior: "smooth", block: "center" });
+    });
+  }, []);
 
   const selectInboxSource = useCallback(
     async (source: PendingInboxSource) => {
@@ -3869,14 +3920,49 @@ function UniversalInboxPanel({
             <Skeleton height="0.8rem" lines={6} />
           </div>
         ) : rows.length === 0 ? (
-          <div className="empty-state">
-            <h3>{locale === "ru" ? "Пока пусто" : "Nothing here yet"}</h3>
-            <p>
-              {locale === "ru"
-                ? "Добавьте запись, файл, ссылку или текст."
-                : "Add a recording, file, link, or text."}
-            </p>
-          </div>
+          folderId == null ? (
+            <div className="empty-state inbox-empty-welcome" data-testid="inbox-empty-welcome">
+              <h3>{locale === "ru" ? "Добро пожаловать в WaiComputer" : "Welcome to WaiComputer"}</h3>
+              <p>
+                {locale === "ru"
+                  ? "Запишите разговор, добавьте файл или спросите Wai — всё окажется здесь, в Инбоксе."
+                  : "Record a conversation, add a file, or ask Wai — it all lands here in your Inbox."}
+              </p>
+              <div className="inbox-empty-actions">
+                <button
+                  type="button"
+                  className="primary-button compact-button"
+                  data-testid="inbox-empty-record"
+                  onClick={focusRecorder}
+                >
+                  {locale === "ru" ? "Записать сейчас" : "Record now"}
+                </button>
+              </div>
+              <div className="inbox-empty-links">
+                <a href={macDmgUrl(locale)} download data-testid="inbox-empty-mac">
+                  {locale === "ru" ? "Скачать приложение для Mac" : "Download the Mac app"}
+                </a>
+                {onConnectTelegram ? (
+                  <button
+                    type="button"
+                    data-testid="inbox-empty-telegram"
+                    onClick={onConnectTelegram}
+                  >
+                    {locale === "ru" ? "Подключить Telegram" : "Connect Telegram"}
+                  </button>
+                ) : null}
+              </div>
+            </div>
+          ) : (
+            <div className="empty-state">
+              <h3>{locale === "ru" ? "Пока пусто" : "Nothing here yet"}</h3>
+              <p>
+                {locale === "ru"
+                  ? "Добавьте запись, файл, ссылку или текст."
+                  : "Add a recording, file, link, or text."}
+              </p>
+            </div>
+          )
         ) : (
           <ul className="inbox-list">
             {rows.map((row, index) => {
@@ -3996,7 +4082,7 @@ function UniversalInboxPanel({
             </header>
 
             <div className="inbox-create__grid">
-              <section className="inbox-command-card">
+              <section className="inbox-command-card" ref={recordCardRef}>
                 <div>
                   <h4>{locale === "ru" ? "Записать" : "Record"}</h4>
                   <p>

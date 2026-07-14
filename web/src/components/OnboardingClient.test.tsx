@@ -31,14 +31,14 @@ describe("OnboardingClient", () => {
     });
   });
 
-  it("renders the Inbox setup prompt and allows skipping onboarding", () => {
+  it("renders the single voice-enrollment action and allows skipping onboarding", () => {
     render(<OnboardingClient />);
 
-    expect(screen.getByRole("heading", { level: 1, name: "Set up your universal Inbox" })).toBeInTheDocument();
-    expect(screen.getByText(/recordings, files, links, notes, and Wai agent threads/i)).toBeInTheDocument();
-    expect(screen.getByText("Add anything")).toBeInTheDocument();
-    expect(screen.getByText("Organize once")).toBeInTheDocument();
-    expect(screen.getByText("Teach your voice")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 1, name: "Teach Wai your voice" })).toBeInTheDocument();
+    expect(screen.getByText(/read the short paragraph below/i)).toBeInTheDocument();
+    // The multi-step setup grid and own-server block are gone.
+    expect(screen.queryByText("Use your own server")).not.toBeInTheDocument();
+    expect(screen.queryByText("Add anything")).not.toBeInTheDocument();
     expect(localStorageValues.voice_onboarding_complete).toBeUndefined();
 
     fireEvent.click(screen.getByRole("button", { name: "Skip for now" }));
@@ -47,22 +47,10 @@ describe("OnboardingClient", () => {
     expect(mockReplace).toHaveBeenCalledWith("/dashboard");
   });
 
-  it("offers own-server setup during onboarding and routes to Server & Data", () => {
-    render(<OnboardingClient />);
-
-    expect(screen.getByText("Use your own server")).toBeInTheDocument();
-    expect(screen.getByText(/VPS IP, root password or SSH key, and provider API keys/i)).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole("button", { name: "Set up my server" }));
-
-    expect(localStorageValues.voice_onboarding_complete).toBe("true");
-    expect(mockReplace).toHaveBeenCalledWith("/dashboard#server-data");
-  });
-
   it("does not mark onboarding seen just because the screen mounted", () => {
     render(<OnboardingClient />);
 
-    expect(screen.getByRole("heading", { level: 1, name: "Set up your universal Inbox" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 1, name: "Teach Wai your voice" })).toBeInTheDocument();
     expect(localStorageValues.voice_onboarding_complete).toBeUndefined();
     expect(mockReplace).not.toHaveBeenCalled();
   });

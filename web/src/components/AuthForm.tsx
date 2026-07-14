@@ -36,6 +36,9 @@ const COPY: Record<
     privacy: string;
     switchLink: Record<Mode, string>;
     tagline: string;
+    sentTitle: string;
+    sentBody: (email: string) => string;
+    sentResend: string;
   }
 > = {
   en: {
@@ -70,6 +73,9 @@ const COPY: Record<
       register: "Have an account?",
     },
     tagline: "Your second brain",
+    sentTitle: "Check your email",
+    sentBody: (email) => `We sent a sign-in link to ${email}`,
+    sentResend: "Send again",
   },
   ru: {
     title: {
@@ -103,6 +109,9 @@ const COPY: Record<
       register: "Уже есть аккаунт?",
     },
     tagline: "Твой второй мозг",
+    sentTitle: "Проверьте почту",
+    sentBody: (email) => `Мы отправили ссылку для входа на ${email}`,
+    sentResend: "Отправить ещё раз",
   },
 };
 
@@ -179,6 +188,8 @@ export function AuthForm({ mode, onSuccess, initialLocale }: AuthFormProps) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [message, setMessage] = useState<string | null>(null);
+  const [magicLinkSent, setMagicLinkSent] = useState(false);
+  const [sentEmail, setSentEmail] = useState("");
   const [passwordMode, setPasswordMode] = useState(false);
   const [forgotPasswordMode, setForgotPasswordMode] = useState(false);
   const [acceptedLegalTerms, setAcceptedLegalTerms] = useState(false);
@@ -220,13 +231,15 @@ export function AuthForm({ mode, onSuccess, initialLocale }: AuthFormProps) {
     if (mode === "register" && !acceptedLegalTerms) return;
     setMessage(null);
     setPendingAction("magic");
+    const trimmedEmail = email.trim();
     try {
-      const response = await requestMagicLink(email.trim(), {
+      await requestMagicLink(trimmedEmail, {
         locale,
         region: authRegion(locale),
         ...(mode === "register" ? { acceptedLegalTerms } : {}),
       });
-      setMessage(response.message);
+      setSentEmail(trimmedEmail);
+      setMagicLinkSent(true);
     } catch (error: unknown) {
       setMessage(describeError(error, locale));
     } finally {
@@ -266,6 +279,24 @@ export function AuthForm({ mode, onSuccess, initialLocale }: AuthFormProps) {
         <span className="auth-card__tagline">{copy.tagline}</span>
       </header>
 
+      {magicLinkSent ? (
+        <div className="auth-sent" data-testid="magic-link-sent">
+          <h1>{copy.sentTitle}</h1>
+          <p className="auth-sent__body">{copy.sentBody(sentEmail)}</p>
+          <button
+            className="ghost-button"
+            data-testid="magic-link-resend"
+            type="button"
+            onClick={() => {
+              setMagicLinkSent(false);
+              setMessage(null);
+            }}
+          >
+            {copy.sentResend}
+          </button>
+        </div>
+      ) : (
+      <>
       <header className="auth-card__header">
         <h1>{copy.title[mode]}</h1>
       </header>
@@ -411,6 +442,8 @@ export function AuthForm({ mode, onSuccess, initialLocale }: AuthFormProps) {
           {copy.switchLink[mode]}
         </Link>
       </div>
+      </>
+      )}
 
       {message ? (
         <p className="auth-card__message" data-testid="auth-message" role="status">

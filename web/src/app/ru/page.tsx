@@ -4,9 +4,9 @@ import type { Metadata } from "next";
 import { LocaleSwitcher } from "@/components/LocaleSwitcher";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { PaymentComplianceSection } from "./PaymentCompliance";
+import { MAC_DMG_URL_RU as MAC_DMG_URL } from "@/lib/links";
 import styles from "../page.module.css";
 
-const MAC_DMG_URL = "/releases/macos/WaiComputer-ru-latest.dmg";
 const WEB_APP_URL = "/dashboard";
 const TESTFLIGHT_URL = "https://testflight.apple.com/join/rtnJQzwk";
 const PRIVACY_URL = "/ru/privacy";
@@ -215,6 +215,9 @@ export default function RuHome() {
           <LocaleSwitcher current="ru" />
           <Link href="/login" className={styles.signin}>
             Войти →
+          </Link>
+          <Link href="/register" className={styles.getStarted}>
+            Создать аккаунт
           </Link>
         </nav>
       </header>
