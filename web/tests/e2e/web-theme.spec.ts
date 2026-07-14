@@ -146,7 +146,7 @@ test.describe("web-facing theme and responsive pass", () => {
 
     await expect(page.getByRole("link", { name: "Вернуться к подписке" })).toHaveCount(0);
 
-    const styles = await page.getByRole("heading", { name: "Оплата не прошла" }).evaluate((element) => {
+    const styles = await page.getByRole("heading", { name: "Оплата отменена" }).evaluate((element) => {
       const style = getComputedStyle(element);
       return {
         display: style.display,

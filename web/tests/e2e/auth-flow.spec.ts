@@ -19,7 +19,13 @@ function jsonHeaders(route: Route) {
  * Valid credentials: test@example.com / password123
  * Magic link verify: token "valid-token" succeeds, anything else fails.
  */
-async function installAuthMocks(page: Page) {
+async function installAuthMocks(
+  page: Page,
+  options: { enrolledVoice?: boolean } = {},
+) {
+  // Fresh accounts (default) route to onboarding after auth; pass
+  // enrolledVoice: true to model a returning user who lands on /dashboard.
+  const enrolledVoice = options.enrolledVoice ?? false;
   let isAuthenticated = false;
   let authenticatedEmail = "test@example.com";
   let lastMagicLinkRequest: unknown = null;
@@ -181,6 +187,7 @@ async function installAuthMocks(page: Page) {
           email: authenticatedEmail,
           created_at: "2026-01-01T00:00:00Z",
           has_password: true,
+          has_enrolled_voice: enrolledVoice,
           region: "global",
         }),
       });
@@ -276,6 +283,9 @@ test.describe("Auth flow", () => {
   });
 
   test("login with valid credentials redirects to dashboard", async ({ page }) => {
+    // Returning, voice-enrolled user — the fresh-user onboarding path is
+    // covered by the register + magic-link tests below.
+    await installAuthMocks(page, { enrolledVoice: true });
     await page.goto("/login");
 
     // Verify the login page renders
@@ -292,7 +302,7 @@ test.describe("Auth flow", () => {
     await expect(page.getByTestId("user-email")).toContainText("test@example.com");
   });
 
-  test("register redirects to dashboard", async ({ page }) => {
+  test("register routes fresh accounts through onboarding", async ({ page }) => {
     await page.goto("/register");
 
     // Verify the register page renders
@@ -304,9 +314,9 @@ test.describe("Auth flow", () => {
     await page.getByTestId("auth-password").fill("securePass1");
     await page.getByTestId("auth-submit").click();
 
-    // Should redirect to dashboard
-    await expect(page).toHaveURL(/\/dashboard/);
-    await expect(page.getByTestId("user-email")).toContainText("newuser@example.com");
+    // Fresh accounts always onboard first (voice setup), matching the
+    // magic-link flow; the dashboard comes after.
+    await expect(page).toHaveURL(/\/onboarding/);
   });
 
   test("login with wrong credentials shows error message", async ({ page }) => {

@@ -217,6 +217,7 @@ async function installApiMock(page: Page, state: MockState) {
           email: "qa@example.com",
           created_at: baseTimestamp,
           has_password: true,
+          has_enrolled_voice: true,
         }),
       });
       return;
